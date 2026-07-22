@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { CANONICAL_INDEX_FORMAT_VERSION } from '../../src/contracts/generation-policy.js'
+import { CANONICAL_INDEX_FORMAT_VERSION } from '../../src/domain/index/build-state.js'
 import { compareRefs, loadOrBuildSnapshot, type CompareRefsDependencies, type SnapshotDependencies } from '../../src/infrastructure/time-travel.js'
 import type { TimeTravelResult } from '../../src/runtime/time-travel.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'

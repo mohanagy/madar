@@ -13,11 +13,12 @@ import type {
   MadarEvidenceStrengthLevel,
   MadarVerificationTarget,
 } from '../contracts/context-recovery.js'
-import type { IndexingManifest, IndexingReasonCode } from '../contracts/indexing.js'
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import {
-  readIndexingManifestForGraph,
-  relevantIndexingUncertainty,
-} from '../infrastructure/indexing-manifest.js'
+  readBuildState,
+  type IndexBuildState,
+  type IndexingReasonCode,
+} from '../domain/index/build-state.js'
 import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import {
   readDiscoverySafetyMetadata,
@@ -54,7 +55,7 @@ export interface MadarResponseEvidence {
     reasons: Partial<Record<DiscoveryExclusionReason, number>>
     relevant_reasons: Partial<Record<DiscoveryExclusionReason, number>>
   }
-  /** Share-safe aggregate. Local paths remain only in indexing-manifest.json. */
+  /** Share-safe aggregate. Exact supported-failure paths remain only in graph.json. */
   indexing_completeness?: {
     state: 'complete' | 'partial' | 'failed'
     total_uncertain: number
@@ -70,6 +71,10 @@ const MEDIUM_CONFIDENCE_MAX = HIGH_CONFIDENCE_THRESHOLD - 0.01
 const LOW_CONFIDENCE_MAX = MEDIUM_CONFIDENCE_THRESHOLD - 0.01
 const GENERIC_SCOPE_SEGMENTS = new Set(['src', 'test', 'tests', 'docs', 'lib', 'libs', 'packages', 'apps'])
 const GENERIC_SCOPE_WRAPPERS = new Set(['libs', 'packages', 'apps'])
+const GENERIC_INDEXING_QUERY_TOKENS = new Set([
+  'and', 'code', 'does', 'file', 'files', 'flow', 'from', 'how', 'into', 'path', 'repo', 'repository',
+  'src', 'the', 'this', 'through', 'what', 'where', 'with',
+])
 
 function roundScore(value: number): number {
   return Math.round(Math.min(1, Math.max(0, value)) * 100) / 100
@@ -378,6 +383,63 @@ function normalizeSourcePath(path: string): string {
   return path.replaceAll('\\', '/').replace(/^\.?\//, '')
 }
 
+function readIndexBuildStateForGraph(graphPath: string): IndexBuildState | null {
+  try {
+    return readBuildState(loadGraphArtifact(graphPath))
+  } catch {
+    return null
+  }
+}
+
+function indexingQueryTokens(value: string): Set<string> {
+  return new Set(
+    value
+      .toLowerCase()
+      .replaceAll('\\', '/')
+      .split(/[^a-z0-9_]+/)
+      .filter((token) => token.length >= 3 && !GENERIC_INDEXING_QUERY_TOKENS.has(token)),
+  )
+}
+
+function supportedFailureMatches(
+  path: string,
+  queryTokens: ReadonlySet<string>,
+  owners: readonly string[],
+): boolean {
+  const normalizedPath = normalizeSourcePath(path).toLowerCase()
+  const ownerMatch = owners.some((owner) => {
+    const normalizedOwner = normalizeSourcePath(owner).toLowerCase()
+    return normalizedOwner.length > 0
+      && (normalizedPath.includes(normalizedOwner) || normalizedOwner.includes(normalizedPath))
+  })
+  if (ownerMatch) return true
+  if (queryTokens.size === 0) return false
+  const pathTokens = indexingQueryTokens(normalizedPath)
+  return [...queryTokens].some((token) => pathTokens.has(token))
+}
+
+function relevantSupportedIndexingUncertainty(
+  state: IndexBuildState,
+  input: { question?: string; coveredWorkflowOwners?: readonly string[] } = {},
+) {
+  const failures = state.completeness.supported_failures
+  const queryTokens = indexingQueryTokens(input.question ?? '')
+  const owners = input.coveredWorkflowOwners ?? []
+  const relevant = failures.filter((failure) => supportedFailureMatches(failure.path, queryTokens, owners))
+  const reasons: Partial<Record<IndexingReasonCode, number>> = {}
+  const relevantReasons: Partial<Record<IndexingReasonCode, number>> = {}
+  for (const failure of failures) reasons[failure.reason] = (reasons[failure.reason] ?? 0) + 1
+  for (const failure of relevant) relevantReasons[failure.reason] = (relevantReasons[failure.reason] ?? 0) + 1
+  return {
+    total: failures.length,
+    relevant: relevant.length,
+    state: state.completeness.summary.state,
+    reasons,
+    relevant_reasons: relevantReasons,
+    has_relevant_failures: relevant.length > 0,
+  }
+}
+
 function confidenceCapForScore(confidence: MadarResponsePackConfidence): number {
   switch (confidence) {
     case 'high':
@@ -561,7 +623,9 @@ export function assessMadarResponseEvidence(input: {
   expandable?: readonly ContextPackExpandableRef[] | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
-  indexingManifest?: IndexingManifest | null | undefined
+  indexBuildState?: IndexBuildState | null | undefined
+  /** @deprecated Derived manifests are deliberately ignored as evidence authority. */
+  indexingManifest?: unknown
   missingPhases?: readonly ContextPackExecutionPhase[] | undefined
   question?: string | undefined
   recovery?: ContextPackRecoveryPlan | undefined
@@ -722,13 +786,13 @@ export function assessMadarResponseEvidence(input: {
     )
   }
 
-  const indexingManifest = input.indexingManifest !== undefined
-    ? input.indexingManifest
+  const indexBuildState = input.indexBuildState !== undefined
+    ? input.indexBuildState
     : input.graphPath
-      ? readIndexingManifestForGraph(input.graphPath)
+      ? readIndexBuildStateForGraph(input.graphPath)
       : null
-  const indexingUncertainty = indexingManifest
-    ? relevantIndexingUncertainty(indexingManifest, {
+  const indexingUncertainty = indexBuildState
+    ? relevantSupportedIndexingUncertainty(indexBuildState, {
         ...(input.question ? { question: input.question } : {}),
         coveredWorkflowOwners,
       })
@@ -824,7 +888,9 @@ export function buildMadarResponseEvidence(input: {
   expandable?: readonly ContextPackExpandableRef[] | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
-  indexingManifest?: IndexingManifest | null | undefined
+  indexBuildState?: IndexBuildState | null | undefined
+  /** @deprecated Derived manifests are deliberately ignored as evidence authority. */
+  indexingManifest?: unknown
   question?: string | undefined
   recovery?: ContextPackRecoveryPlan | undefined
   score?: number | undefined

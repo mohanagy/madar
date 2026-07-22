@@ -5,21 +5,60 @@ import { dirname, join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { loadGraphArtifact, writeGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
+import { buildSourceCatalog, readSourceFileHash } from '../../src/adapters/filesystem/source-catalog.js'
 import { GRAPH_ARTIFACT_VERSION } from '../../src/domain/graph/artifact.js'
+import { attachBuildState, INDEX_BUILD_STATE_VERSION, INDEX_ENGINE_ID } from '../../src/domain/index/build-state.js'
 import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
 import { runContextPromptCommand } from '../../src/infrastructure/context-prompt-command.js'
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
-import { generateGraph } from '../../src/infrastructure/generate.js'
+import { generateIndex as generateGraph } from '../../src/application/generate-index.js'
 import { runHandoffCommand } from '../../src/infrastructure/handoff-command.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
-import { fileContentFingerprint } from '../../src/shared/graph-build-freshness.js'
 import { rewriteCanonicalGraphFixture, writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 const sandboxRoots: string[] = []
 const PACKAGE_VERSION = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string }
 const OUT_GRAPH_PATH_PATTERN = /[\\/]out[\\/]graph\.json$/
 const OUT_MISSING_GRAPH_PATH_PATTERN = /[\\/]out[\\/]missing\.json$/
+const fileContentFingerprint = (path: string): string => readSourceFileHash(path) ?? ''
+
+function authenticateGraphFixture(graphPath: string, root: string): void {
+  const catalog = buildSourceCatalog(root)
+  const graph = loadGraphArtifact(graphPath)
+  const indexed = catalog.snapshot.supported.length
+  attachBuildState(graph, {
+    version: INDEX_BUILD_STATE_VERSION,
+    engine_id: INDEX_ENGINE_ID,
+    policy: catalog.policy,
+    sources: catalog.snapshot,
+    source_root: catalog.sourceRoot,
+    corpus: {
+      supported_files: indexed,
+      unsupported_files: catalog.snapshot.unsupported.length,
+      total_words: catalog.totalWords,
+      warning: catalog.warning,
+    },
+    completeness: {
+      summary: {
+        state: 'complete',
+        candidates: indexed,
+        counts: {
+          indexed,
+          indexed_with_warnings: 0,
+          skipped_by_policy: 0,
+          unsupported: catalog.snapshot.unsupported.length,
+          failed: 0,
+        },
+        reason_buckets: { indexed },
+        capability_buckets: { 'builtin:index:typescript': indexed },
+      },
+      supported_failures: [],
+    },
+  })
+  writeGraphArtifact(graph, graphPath)
+}
 
 type FixtureState = 'fresh' | 'modified' | 'unrelated_modified' | 'deleted' | 'shared_modified'
 
@@ -214,6 +253,7 @@ function createFreshnessFixture(state: FixtureState): FreshnessFixture {
       ],
     },
   )
+  authenticateGraphFixture(graphPath, root)
 
   utimesSync(authPath, sourceTime, sourceTime)
   utimesSync(sessionPath, sourceTime, sourceTime)
@@ -584,7 +624,7 @@ describe('freshness surfaces', () => {
     const fixture = createMadarignoreFreshnessFixture(initial)
     writeFileSync(fixture.ignorePath, 'src/**\n', 'utf8')
 
-    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 2 }))
   })
 
   it('invalidates Git freshness when .madarignore is deleted', async () => {
@@ -600,7 +640,10 @@ describe('freshness surfaces', () => {
     const fixture = createMadarignoreFreshnessFixture('absent', true)
     writeFileSync(fixture.ignorePath, 'src/**\n', 'utf8')
 
-    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({
+      status: 'partially_stale',
+      changed_source_count: 2,
+    }))
   })
 
   it.each(['dirty', 'dirty-deleted'] as const)('uses the dirty-at-build .madarignore state as the Git freshness baseline: %s', async (initial) => {
@@ -610,10 +653,13 @@ describe('freshness surfaces', () => {
 
     if (initial === 'dirty') writeFileSync(fixture.ignorePath, 'src/**\n', 'utf8')
     else writeFileSync(fixture.ignorePath, '# restored\n', 'utf8')
-    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({
+      status: 'partially_stale',
+      changed_source_count: initial === 'dirty' ? 2 : 1,
+    }))
   })
 
-  it('fails closed when graph freshness metadata uses the retired v3 contract', async () => {
+  it('fails closed when authenticated graph metadata is tampered', async () => {
     const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
     const fixture = createUnsupportedReceiptFreshnessFixture(true)
     rewriteCanonicalGraphFixture(fixture.graphPath, {
@@ -625,7 +671,7 @@ describe('freshness surfaces', () => {
 
     expect(analyzeGraphContextFreshness!(fixture.graphPath)).toEqual(expect.objectContaining({
       status: 'partially_stale',
-      generated_at: null,
+      generated_at: expect.any(String),
       changed_source_count: 1,
     }))
   })
@@ -809,9 +855,14 @@ describe('freshness surfaces', () => {
     git(fixture.root, ['commit', '-m', 'add empty source'])
     const generated = generateGraph(fixture.root)
     rewriteCanonicalGraphFixture(generated.graphPath, { filterNode: (_id, attributes) => attributes.source_file !== 'src/empty.ts' })
+    authenticateGraphFixture(generated.graphPath, fixture.root)
     rmSync(emptyPath)
 
-    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1, missing_source_count: 0 }))
+    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({
+      status: 'stale',
+      changed_source_count: 1,
+      missing_source_count: 1,
+    }))
   })
 
   it.each([

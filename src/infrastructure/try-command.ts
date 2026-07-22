@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import type { TryCliOptions, PackCliOptions } from '../cli/parser.js'
+import { generateIndex, GenerateUnsupportedCorpusError } from '../application/generate-index.js'
 import { runContextPackCommand } from './context-pack-command.js'
-import { generateGraph, GenerateUnsupportedCorpusError } from './generate.js'
 import { defaultInstallPlatform, type InstallPlatform } from './install.js'
 import { buildGraphSummary, type GraphSummary } from '../runtime/graph-summary.js'
 import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphContextFreshness } from '../runtime/freshness.js'
@@ -35,7 +35,7 @@ interface TrialWorkspaceFailure {
 type TrialWorkspaceResult = TrialWorkspaceSuccess | TrialWorkspaceFailure
 
 export interface TryCommandDependencies {
-  generateGraph: typeof generateGraph
+  generateGraph: typeof generateIndex
   runContextPack: (context: { options: PackCliOptions; io: TrialIo }) => Promise<string | void> | string | void
   analyzeFreshness: (graphPath: string) => GraphContextFreshness
   summarizeGraph: (graphPath: string) => GraphSummary
@@ -46,7 +46,7 @@ export interface TryCommandDependencies {
 }
 
 const DEFAULT_DEPENDENCIES: TryCommandDependencies = {
-  generateGraph,
+  generateGraph: generateIndex,
   runContextPack: async ({ options }) => await runContextPackCommand(options),
   analyzeFreshness: (graphPath) => analyzeGraphContextFreshness(graphPath),
   summarizeGraph: (graphPath) => buildGraphSummary(loadGraph(graphPath)),

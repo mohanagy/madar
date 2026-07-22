@@ -1,9 +1,12 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
-import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
-import type { IndexingManifest } from '../contracts/indexing.js'
-import { watcherStateBlocksGraphReads, type WatcherState } from '../contracts/watcher-state.js'
+import {
+  loadAcceptedIndex,
+  readMatchingDiagnostics,
+  type IndexDiagnostics,
+} from '../adapters/filesystem/index-store.js'
+import { buildSourceCatalog } from '../adapters/filesystem/source-catalog.js'
 import {
   CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
   CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
@@ -25,17 +28,9 @@ import {
 } from './install.js'
 import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphContextFreshnessStatus } from '../runtime/freshness.js'
 import { isSemanticRuntimeAvailable } from '../runtime/semantic.js'
+import type { IndexBuildState } from '../domain/index/build-state.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
-import { readIndexingManifestForGraph } from './indexing-manifest.js'
-import {
-  buildGenerationPolicy,
-  generationOptionsFromPolicy,
-  readGraphGenerationPolicy,
-} from './generation-policy.js'
-import { loadManifestMetadata } from '../pipeline/detect.js'
-import { collectGitVisibleFiles } from '../shared/git.js'
-import { readWatcherStateForGraph } from './watcher-state.js'
 import {
   readDiscoverySafetyMetadata,
   type DiscoveryExclusion,
@@ -73,16 +68,14 @@ interface GraphCheck {
   recommendation: string
   discoverySafety: DiscoverySafetySummary | null
   discoveryExclusions: DiscoveryExclusion[]
-  indexingManifest: IndexingManifest | null
+  buildState: IndexBuildState | null
+  indexingDiagnostics: IndexDiagnostics | null
   generationPolicy: {
     storedFingerprint: string | null
     currentFingerprint: string | null
     match: boolean | null
     reason: string
   }
-  watcherState: WatcherState | null
-  watcherLive: boolean
-  watcherPolicyMatchesPublished: boolean | null
 }
 
 export interface DoctorReport {
@@ -350,53 +343,30 @@ function readMcpCheck(
   }
 }
 
-function graphRootPath(graphPath: string, fallback: string): string {
-  const rootPath = loadGraphArtifact(graphPath).graph.root_path
-  return typeof rootPath === 'string' && rootPath.trim().length > 0
-    ? resolve(rootPath)
-    : resolve(fallback)
-}
-
-function watcherProcessIsLive(state: WatcherState | null): boolean {
-  if (!state || state.status === 'stopped') {
-    return false
-  }
-  try {
-    process.kill(state.pid, 0)
-    return true
-  } catch (error) {
-    return error !== null && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === 'EPERM'
-  }
-}
-
-function readGenerationPolicyCheck(graphPath: string, projectDir: string): GraphCheck['generationPolicy'] {
-  const manifestPath = join(resolve(graphPath, '..'), 'manifest.json')
-  const graphPolicy = readGraphGenerationPolicy(graphPath)
-  const manifestPolicy = loadManifestMetadata(manifestPath).generation_policy ?? null
-  const storedPolicy = graphPolicy ?? manifestPolicy
-  if (!storedPolicy) {
+function readGenerationPolicyCheck(buildState: IndexBuildState | null): GraphCheck['generationPolicy'] {
+  if (!buildState) {
     return {
       storedFingerprint: null,
       currentFingerprint: null,
-      match: null,
-      reason: 'unavailable; regenerate once to enable policy-preserving auto-refresh',
-    }
-  }
-
-  if (!graphPolicy || !manifestPolicy || graphPolicy.fingerprint !== manifestPolicy.fingerprint) {
-    return {
-      storedFingerprint: graphPolicy?.fingerprint ?? manifestPolicy?.fingerprint ?? null,
-      currentFingerprint: null,
       match: false,
-      reason: 'graph and source manifest do not contain the same valid generation policy; a full rebuild is required',
+      reason: 'authoritative build state is unavailable; a full rebuild is required',
     }
   }
 
+  const storedPolicy = buildState.policy
   try {
-    const rootPath = graphRootPath(graphPath, projectDir)
-    const options = generationOptionsFromPolicy(storedPolicy)
-    const gitVisibleFiles = options.respectGitignore ? collectGitVisibleFiles(rootPath) : null
-    const currentPolicy = buildGenerationPolicy(rootPath, options, gitVisibleFiles)
+    const strict = storedPolicy.settings.indexing_strict
+    const currentCatalog = buildSourceCatalog(buildState.source_root.root_path, {
+      followSymlinks: storedPolicy.settings.follow_symlinks,
+      respectGitignore: storedPolicy.settings.respect_gitignore,
+      ...(strict ? {
+        indexingStrict: {
+          maxFailed: strict.max_failed,
+          maxUnsupported: strict.max_unsupported,
+        },
+      } : {}),
+    })
+    const currentPolicy = currentCatalog.policy
     const match = storedPolicy.fingerprint === currentPolicy.fingerprint
     return {
       storedFingerprint: storedPolicy.fingerprint,
@@ -414,19 +384,17 @@ function readGenerationPolicyCheck(graphPath: string, projectDir: string): Graph
   }
 }
 
-function readGraphCheck(graphPath: string, now: number, projectDir: string): GraphCheck {
+function readGraphCheck(graphPath: string, now: number): GraphCheck {
   const resolvedGraphPath = resolve(graphPath)
   const freshness = analyzeGraphContextFreshness(resolvedGraphPath)
   const ageMs = freshness.generated_ms === null
     ? null
     : Math.max(0, Math.trunc(now - freshness.generated_ms))
   const discoverySafety = readDiscoverySafetyMetadata(resolvedGraphPath)
-  const indexingManifest = readIndexingManifestForGraph(resolvedGraphPath)
-  const watcherState = readWatcherStateForGraph(resolvedGraphPath)
-  const generationPolicy = readGenerationPolicyCheck(resolvedGraphPath, projectDir)
-  const watcherPolicyMatchesPublished = watcherState && generationPolicy.storedFingerprint
-    ? watcherState.stored_policy_fingerprint === generationPolicy.storedFingerprint
-    : null
+  const accepted = loadAcceptedIndex(resolvedGraphPath)
+  const buildState = accepted?.state ?? null
+  const indexingDiagnostics = buildState ? readMatchingDiagnostics(resolvedGraphPath) : null
+  const generationPolicy = readGenerationPolicyCheck(buildState)
 
   return {
     graphPath: resolvedGraphPath,
@@ -441,11 +409,9 @@ function readGraphCheck(graphPath: string, now: number, projectDir: string): Gra
     recommendation: freshness.recommendation,
     discoverySafety: discoverySafety?.summary ?? null,
     discoveryExclusions: discoverySafety?.exclusions ?? [],
-    indexingManifest,
+    buildState,
+    indexingDiagnostics,
     generationPolicy,
-    watcherState,
-    watcherLive: watcherProcessIsLive(watcherState),
-    watcherPolicyMatchesPublished,
   }
 }
 
@@ -511,13 +477,6 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
     report.graph.freshness === 'possibly_stale'
     || report.graph.freshness === 'stale'
     || report.graph.generationPolicy.match === false
-    || (report.graph.watcherState !== null
-      && report.graph.watcherState.status !== 'stopped'
-      && (
-        !report.graph.watcherLive
-        || watcherStateBlocksGraphReads(report.graph.watcherState)
-        || report.graph.watcherPolicyMatchesPublished === false
-      ))
   ) {
     nextCommands.add('madar generate . --update')
   }
@@ -576,7 +535,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const now = options.now ?? Date.now()
   const resolvedGraphPath = resolve(projectDir, graphPath)
   const packageVersion = readPackageVersion(findPackageRoot())
-  const graph = readGraphCheck(resolvedGraphPath, now, projectDir)
+  const graph = readGraphCheck(resolvedGraphPath, now)
 
   const claudeMcp = readMcpCheck('claude', resolve(projectDir, '.mcp.json'), 'mcpServers')
   const cursorMcp = readMcpCheck('cursor', resolve(projectDir, '.cursor', 'mcp.json'), 'mcpServers')
@@ -702,22 +661,13 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
     semantic,
   }
   const nextCommands = computeNextCommands(partialReport)
-  const indexingRequiresAttention = graph.indexingManifest !== null && (
-    graph.indexingManifest.summary.counts.failed > 0
-    || graph.indexingManifest.summary.counts.indexed_with_warnings > 0
-  )
-  const watcherRequiresAttention = graph.watcherState !== null
-    && graph.watcherState.status !== 'stopped'
-    && (
-      !graph.watcherLive
-      || watcherStateBlocksGraphReads(graph.watcherState)
-      || graph.watcherPolicyMatchesPublished === false
-    )
+  const indexingRequiresAttention = graph.buildState !== null
+    && graph.buildState.completeness.summary.state !== 'complete'
   const healthy = graph.exists
+    && graph.buildState !== null
     && graph.freshness === 'fresh'
     && !indexingRequiresAttention
     && graph.generationPolicy.match !== false
-    && !watcherRequiresAttention
     && agents.every((agent) => agent.status === 'configured')
     && mcpChecks.every((check) => check.status === 'ok')
 
@@ -752,22 +702,14 @@ function formatGraphLine(graph: GraphCheck): string[] {
   lines.push(
     `- generation policy: ${policy.match === null ? 'unavailable' : policy.match ? 'match' : 'mismatch'} (${policy.reason})`,
   )
-  if (!graph.watcherState) {
-    lines.push('- watcher: inactive (no watcher state)')
+  if (graph.buildState) {
+    lines.push(`- authoritative index: accepted (build ${graph.buildState.build_id})`)
+    lines.push(graph.indexingDiagnostics
+      ? `- derived diagnostics: current (build ${graph.indexingDiagnostics.build_id})`
+      : '- derived diagnostics: unavailable or mismatched (optional; accepted graph remains authoritative)')
   } else {
-    const watcher = graph.watcherState
-    const liveLabel = watcher.status === 'stopped' ? 'inactive' : graph.watcherLive ? 'live' : 'not live'
-    lines.push(
-      `- watcher: ${watcher.status} (${liveLabel}; coverage=${watcher.coverage}; mode=${watcher.event_mode}; interval=${watcher.current_interval_ms}ms)`,
-      `- watcher last reconciliation: ${watcher.last_reconciliation_at ?? 'never'} (${watcher.last_reconciliation_duration_ms ?? 'unknown'}ms; files=${watcher.last_reconciliation_file_count ?? 'unknown'}; directories=${watcher.last_reconciliation_directory_count ?? 'unknown'})`,
-      `- watcher policy: ${watcher.policy_match === null || graph.watcherPolicyMatchesPublished === null ? 'unknown' : watcher.policy_match && graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'} (stored=${watcher.stored_policy_fingerprint?.slice(0, 12) ?? 'none'}; current=${watcher.current_policy_fingerprint?.slice(0, 12) ?? 'none'}; published=${graph.generationPolicy.storedFingerprint?.slice(0, 12) ?? 'none'})`,
-    )
-    if (watcher.pending_since) {
-      lines.push(`- watcher pending since: ${watcher.pending_since}`)
-    }
-    if (watcher.failure_reason) {
-      lines.push(`- watcher failure: ${watcher.failure_reason}`)
-    }
+    lines.push('- authoritative index: unavailable (graph has no valid authenticated build state)')
+    lines.push('- derived diagnostics: unavailable')
   }
   if (graph.discoverySafety && graph.discoverySafety.total > 0) {
     lines.push(
@@ -783,24 +725,31 @@ function formatGraphLine(graph: GraphCheck): string[] {
   } else {
     lines.push('- safety exclusions: none')
   }
-  if (graph.indexingManifest) {
-    const { summary } = graph.indexingManifest
+  if (graph.buildState) {
+    const { summary } = graph.buildState.completeness
     lines.push(
       `- indexing completeness: ${summary.state} (${summary.counts.indexed} indexed, ${summary.counts.indexed_with_warnings} warnings, ${summary.counts.skipped_by_policy} policy skips, ${summary.counts.unsupported} unsupported, ${summary.counts.failed} failed)`,
     )
-    const affected = graph.indexingManifest.outcomes.filter((outcome) =>
-      outcome.status === 'failed' || outcome.status === 'unsupported' || outcome.status === 'indexed_with_warnings')
-    if (affected.length > 0) {
-      lines.push('- incomplete indexing paths:')
-      for (const outcome of affected.slice(0, 20)) {
-        lines.push(`  - ${JSON.stringify(outcome.path)} (${outcome.status}; ${outcome.reason}; ${outcome.capability ?? 'no capability'})`)
+    if (graph.indexingDiagnostics) {
+      const affected = graph.indexingDiagnostics.outcomes.filter((outcome) =>
+        outcome.status === 'failed' || outcome.status === 'unsupported' || outcome.status === 'indexed_with_warnings')
+      if (affected.length > 0) {
+        lines.push('- indexing detail paths:')
+        for (const outcome of affected.slice(0, 20)) {
+          lines.push(`  - ${JSON.stringify(outcome.path)} (${outcome.status}; ${outcome.reason}; ${outcome.capability ?? 'no capability'})`)
+        }
+        if (affected.length > 20) {
+          lines.push(`  - ... ${affected.length - 20} more; inspect indexing-manifest.json`)
+        }
       }
-      if (affected.length > 20) {
-        lines.push(`  - ... ${affected.length - 20} more; inspect indexing-manifest.json`)
+      if (graph.indexingDiagnostics.index_diagnostics.length > 0) {
+        lines.push(`- Index diagnostics: ${graph.indexingDiagnostics.index_diagnostics.length} (inspect indexing-manifest.json)`)
       }
-    }
-    if (graph.indexingManifest.index_diagnostics.length > 0) {
-      lines.push(`- Index diagnostics: ${graph.indexingManifest.index_diagnostics.length} (inspect indexing-manifest.json)`)
+    } else if (graph.buildState.completeness.supported_failures.length > 0) {
+      lines.push('- supported indexing failures:')
+      for (const failure of graph.buildState.completeness.supported_failures.slice(0, 20)) {
+        lines.push(`  - ${JSON.stringify(failure.path)} (${failure.reason})`)
+      }
     }
   } else {
     lines.push("- indexing completeness: unavailable (regenerate with 'madar generate . --update')")
@@ -853,24 +802,27 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
         .map((entry) => `${JSON.stringify(entry.path)}[${entry.reason}]`)
         .join(', ')
     : 'none'
-  const indexing = report.graph.indexingManifest
+  const buildState = report.graph.buildState
+  const indexing = buildState?.completeness.summary ?? null
   const indexingSummary = indexing
-    ? `${indexing.summary.state} (indexed=${indexing.summary.counts.indexed}, warnings=${indexing.summary.counts.indexed_with_warnings}, skipped=${indexing.summary.counts.skipped_by_policy}, unsupported=${indexing.summary.counts.unsupported}, failed=${indexing.summary.counts.failed})`
+    ? `${indexing.state} (indexed=${indexing.counts.indexed}, warnings=${indexing.counts.indexed_with_warnings}, skipped=${indexing.counts.skipped_by_policy}, unsupported=${indexing.counts.unsupported}, failed=${indexing.counts.failed})`
     : 'unavailable'
-  const incompletePaths = indexing
-    ? indexing.outcomes
+  const incompletePaths = report.graph.indexingDiagnostics
+    ? report.graph.indexingDiagnostics.outcomes
         .filter((outcome) => outcome.status === 'failed' || outcome.status === 'unsupported' || outcome.status === 'indexed_with_warnings')
         .slice(0, 20)
         .map((outcome) => `${JSON.stringify(outcome.path)}[${outcome.reason}]`)
         .join(', ') || 'none'
-    : 'none'
-  const watcher = report.graph.watcherState
-  const watcherSummary = watcher
-    ? `${watcher.status} (live=${report.graph.watcherLive}, coverage=${watcher.coverage}, mode=${watcher.event_mode}, interval=${watcher.current_interval_ms}ms, published_policy=${report.graph.watcherPolicyMatchesPublished === null ? 'unknown' : report.graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'}, pending=${watcher.pending_since ?? 'no'}, failure=${watcher.failure_reason ?? 'none'})`
-    : 'inactive'
-  const reconciliationSummary = watcher
-    ? `${watcher.last_reconciliation_at ?? 'never'} (duration=${watcher.last_reconciliation_duration_ms ?? 'unknown'}ms, files=${watcher.last_reconciliation_file_count ?? 'unknown'}, directories=${watcher.last_reconciliation_directory_count ?? 'unknown'}, next=${watcher.next_reconciliation_at ?? 'none'})`
-    : 'unavailable'
+    : buildState?.completeness.supported_failures
+        .slice(0, 20)
+        .map((failure) => `${JSON.stringify(failure.path)}[${failure.reason}]`)
+        .join(', ') || 'none'
+  const acceptedSummary = buildState ? `accepted (${buildState.build_id})` : 'unavailable'
+  const diagnosticsSummary = report.graph.indexingDiagnostics
+    ? `current (${report.graph.indexingDiagnostics.build_id})`
+    : buildState
+      ? 'unavailable-or-mismatched (optional)'
+      : 'unavailable'
   const policy = report.graph.generationPolicy
   const policySummary = `${policy.match === null ? 'unavailable' : policy.match ? 'match' : 'mismatch'} (stored=${policy.storedFingerprint?.slice(0, 12) ?? 'none'}, current=${policy.currentFingerprint?.slice(0, 12) ?? 'none'}; ${policy.reason})`
 
@@ -878,9 +830,9 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
     `[madar status] ${report.healthy ? 'healthy' : 'attention needed'}`,
     `version ${report.packageVersion}`,
     `graph ${graphStatus}`,
+    `build ${acceptedSummary}`,
     `generation-policy ${policySummary}`,
-    `watcher ${watcherSummary}`,
-    `reconciliation ${reconciliationSummary}`,
+    `diagnostics ${diagnosticsSummary}`,
     `agents ${agentSummary}`,
     `mcp ${mcpSummary}`,
     `safety ${safetySummary}`,

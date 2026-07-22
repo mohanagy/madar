@@ -4,6 +4,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, re
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
+import { generateIndex, type GenerateIndexOptions, type GenerateIndexResult } from '../../application/generate-index.js'
 import type { ContextPackTaskKind } from '../../contracts/context-pack.js'
 import {
   executeNativeAgentCompare,
@@ -21,7 +22,6 @@ import {
   type BenchmarkEnvironment,
   type BenchmarkExpectedEnvironment,
 } from './environment.js'
-import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from '../generate.js'
 import { shellEscape } from '../../shared/shell.js'
 import { findPackageRoot } from '../../shared/package-metadata.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
@@ -196,7 +196,7 @@ export interface BenchmarkSuiteDependencies {
   tasks?: BenchmarkSuiteTask[]
   tasksPath?: string
   now?: () => Date
-  generateGraph?: (rootPath?: string, options?: GenerateGraphOptions) => GenerateGraphResult
+  generateGraph?: (rootPath?: string, options?: GenerateIndexOptions) => GenerateIndexResult
   captureBenchmarkEnvironment?: (
     options: { projectRoot: string },
   ) => Promise<BenchmarkEnvironment>
@@ -639,7 +639,7 @@ function execTemplateForWorkspace(execTemplate: string, workspaceRoot: string): 
 
 function prepareBenchmarkWorkspace(
   sourceRoot: string,
-  runGenerateGraph: (rootPath?: string, options?: GenerateGraphOptions) => GenerateGraphResult,
+  runGenerateGraph: (rootPath?: string, options?: GenerateIndexOptions) => GenerateIndexResult,
   scratchRoot: string,
   graphRoot?: string,
 ): string {
@@ -1067,7 +1067,7 @@ export async function runBenchmarkSuite(
   const tasksPath = dependencies.tasksPath ?? (dependencies.tasks === undefined ? configuredTasksPath : null)
   const tasks = dependencies.tasks ?? loadBenchmarkSuiteTasks(tasksPath ?? DEFAULT_TASKS_PATH)
   const now = dependencies.now ?? (() => new Date())
-  const runGenerateGraph = dependencies.generateGraph ?? generateGraph
+  const runGenerateGraph = dependencies.generateGraph ?? generateIndex
   const getBenchmarkEnvironment = dependencies.captureBenchmarkEnvironment ?? captureBenchmarkEnvironment
   const runCompare = dependencies.executeNativeAgentCompare ?? executeNativeAgentCompare
   const isolation = benchmarkIsolationEnabled()

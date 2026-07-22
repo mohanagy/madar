@@ -81,19 +81,19 @@ Use `--require-fresh-context` on `madar pack`, `madar prompt`, or `madar handoff
 
 Cached `context_pack` explain responses still refresh the current freshness receipt before reuse, so a cache hit does not hide newly changed or missing indexed source files.
 
-With `--auto-refresh`, filesystem events invalidate the graph immediately and adaptive authoritative reconciliations verify the full watched corpus. Graph-backed MCP requests fail closed while reconciliation is pending/failed or watcher coverage/policy is not trustworthy. Generation policy is versioned and fingerprinted in both `graph.json` and `manifest.json`, so automatic refresh preserves Git-ignore, symlink, exclusion, canonical-index format, and strict-indexing settings. Source or policy drift runs a full canonical rebuild; Madar does not reuse per-file extraction fragments. `madar doctor` and `madar status` expose the local `watcher-state.json` health record. Full behavior and artifact migration are documented in [Auto-refresh and generation policy](../auto-refresh.md).
+With `--auto-refresh`, one process owns reconciliation for its lifetime. Filesystem events trigger low-latency checks and periodic polling provides a backstop. Each pass scans one canonical source catalog. An unchanged pass parses nothing and does not republish; every changed source, compiler control, or policy pass performs the same full canonical reconcile. Madar keeps no in-memory or persistent AST, per-file fact, or dependency cache, and `watcher-state.json` is not authoritative. Full behavior and upgrade guidance are documented in [Auto-refresh and generation policy](../auto-refresh.md).
 
-The stdio transport and MCP discovery stay responsive while initial reconciliation runs in a background worker. Until the watcher reaches `idle` with matching published policy, graph-backed calls return the structured error type `madar_graph_not_ready`. For transient `starting`, `pending`, or `reconciling` states, `retryable` is `true`, `retry_after_ms` is `1000`, and the suggested action is to retry the same request without bypassing Madar. Terminal failures, incomplete graphs, and policy mismatches set `retryable` to `false` and suggest graph repair; inspect `madar status`, then run `madar generate . --update` when required.
+The stdio transport and MCP discovery stay responsive while the process-local controller reconciles. Graph-backed calls remain unavailable until the controller's accepted build id matches the authenticated build in `graph.json`. Transient `starting`, `pending`, and `reconciling` states return `madar_graph_not_ready` with `retryable: true`; terminal failures return `retryable: false` and suggest graph repair. These states are held in the running process rather than persisted as watcher health files.
 
 ## Common commands
 
 ```bash
 madar generate .                          # canonical JS/TS index
-madar generate . --update                 # full canonical rebuild of an existing graph
+madar generate . --update                 # cold no-op if unchanged; otherwise full reconcile
 madar generate . --respect-gitignore      # exclude files ignored by Git
 madar generate . --strict-indexing        # fail on any failed/unsupported candidate
 madar generate . --max-indexing-failed 1 --max-indexing-unsupported 3
-madar watch .                             # rebuild on file change
+madar watch .                             # no-op when unchanged; fully reconcile changes
 madar watch . --respect-gitignore         # watch only Git-visible source changes
 madar summary                             # bounded JSON overview
 madar pack "how does auth work?" --task explain --format text
@@ -115,11 +115,11 @@ madar federate frontend/graph.json backend/graph.json
 madar --help
 ```
 
-Generated code graphs are always directed and preserve parallel evidence-bearing relationships. The CLI no longer exposes direction modes. Artifacts from the predecessor schema are intentionally unsupported; regenerate them once with `madar generate . --update`.
+Generated code graphs are always directed and preserve parallel evidence-bearing relationships. The CLI no longer exposes direction modes. Artifacts from the predecessor schema are intentionally unsupported. After upgrading, run `madar generate . --update` once in each workspace, then restart or reconnect the MCP process so it loads the new authenticated build.
 
-Every generation also writes local and share-safe indexing-completeness manifests beside `graph.json`. A valid graph is not a claim of complete source coverage. `--strict-indexing` uses zero failed and zero unsupported candidates as its thresholds; either `--max-indexing-failed N` or `--max-indexing-unsupported N` enables strict mode with the supplied allowance. See [Indexing completeness](../indexing-completeness.md) for outcome meanings, path-redaction behavior, and confidence effects.
+The authoritative `graph.json` embeds its build id, source snapshot, generation policy, source-root identity, corpus counts, completeness summary, and supported-file failures. Madar also attempts to write `GRAPH_REPORT.md`, `indexing-manifest.json`, and `indexing-manifest.share-safe.json` as derived diagnostics. A missing, stale, or mismatched derived file is ignored; it does not invalidate or replace an authenticated graph.
 
-The local schema-v2 `indexing-manifest.json` is the authoritative coverage receipt. Its `summary`, `outcomes`, and mode-free `index_diagnostics` fields report what the canonical JS/TS index handled and which recognized files remain unsupported. Graph metadata retains only the aggregate `indexing_completeness` signal. Mixed-mode predecessor artifacts are intentionally unsupported: run `madar generate . --update` to replace one with a canonical-only graph. `--update` performs a full canonical rebuild; `--cluster-only` reuses the existing graph and recomputes clustering, analysis, and export without indexing source again.
+By default, only failures while indexing supported `.ts`, `.tsx`, `.js`, and `.jsx` files make supported-index completeness partial or failed. Unsupported languages and policy skips remain informational, while safety exclusions are reported separately. Strict indexing can additionally turn configured failed or unsupported counts into publication gates: `--strict-indexing` uses zero for both thresholds, and either `--max-indexing-failed N` or `--max-indexing-unsupported N` enables strict mode with the supplied allowance. `--cluster-only` reuses the accepted graph and recomputes clustering, analysis, and export without scanning or indexing source again. See [Indexing completeness](../indexing-completeness.md) for the full contract.
 
 On Windows, `compare`, `review-compare`, and benchmark `--exec` templates run under `cmd.exe`, so prefer `type {prompt_file} | claude ...` over PowerShell-specific piping or quoting.
 

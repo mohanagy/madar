@@ -1,74 +1,117 @@
-# Performance benchmark plan for `generate`, `update`, and `cluster-only`
+# Incremental-index performance gate
 
-> **Tracking issue:** [#178](https://github.com/mohanagy/madar/issues/178)
+> Tracking issue: [#592](https://github.com/mohanagy/madar/issues/592)
 
-This benchmark is a **measurement harness**, not a performance gate. Its job is to keep graph-generation regressions visible with a tiny reproducible fixture in CI and a repeatable manual flow for larger local repositories.
+The acceptance evaluator is
+[`tools/eval/core-reset/incremental-performance.mjs`](../../../tools/eval/core-reset/incremental-performance.mjs).
+It is development-only and is excluded from the npm package.
 
-## What the benchmark covers
+The evaluator measures the actual Core Reset contract:
 
-The synthetic harness runs four variants on isolated fixture copies:
+- clean whole generation;
+- clean canonical index stage;
+- a cold one-shot no-op update;
+- a warm no-op through one retained in-process update session;
+- a private leaf edit through that same retained session;
+- the private leaf edit at the canonical index-stage boundary.
 
-1. `generate` — generation through the canonical TypeScript/JavaScript index
-2. `update-noop` — a full canonical `generate --update` with no source changes
-3. `update-changed` — a full canonical `generate --update` after mutating one code file
-4. `cluster-only` — `generate --cluster-only` after a baseline graph already exists
+Every eligible run uses at least three warmups and 20 measured trials. Receipts
+include raw samples, nearest-rank p50/p95, parsed/reused/invalidated and
+dependency-closure counts, hardware, OS, Node version, the exact command and
+configuration, corpus fingerprint, and pinned repository commit.
 
-`--update` is intentionally measured as a full rebuild in this phase. The benchmark does not claim per-file incremental extraction or cache-hit behavior.
+The candidate receipt fails closed unless it has a compatible clean-generation
+baseline recorded from protected base
+`8886a0299ee30765ce149ca7ad5d1779496b78b5` on the same corpus and machine.
+Receipt objects use sorted canonical JSON for their SHA-256 identity; no
+timestamp participates. The subject is authenticated by HEAD commit/tree,
+an exact Git worktree tree OID that includes dirty and untracked files, the
+porcelain-status digest, and a compiled-distribution fingerprint. A source or
+distribution change during measurement invalidates the run.
 
-## Metrics tracked
+## Build both subjects
 
-Every variant records the same structured fields in `<variant>.json` and `summary.json`:
-
-- wall-clock time (`wall_clock_ms`)
-- supported and unsupported indexing counts from the canonical completeness receipt
-- graph size (`node_count`, `edge_count`, `graph_size_bytes`)
-- output size (`output_size_bytes`)
-
-The benchmark reads these from structured `GenerateGraphResult` fields where possible instead of scraping human-readable terminal notes.
-
-## CI-safe synthetic benchmark
-
-Run the checked-in fixture benchmark from the repo root after building:
-
-```bash
-npm run build
-node docs/benchmarks/performance/run.mjs
-```
-
-Artifacts land under `docs/benchmarks/performance/results/<timestamp>/`:
-
-1. one JSON file per variant
-2. `summary.json` with the full matrix
-3. the copied per-variant workspaces used for the run
-
-This fixture is intentionally small. It is for **schema and path coverage**, not for proving absolute throughput on real repositories.
-
-## Manual large-repo benchmark flow
-
-For a local large repository, point the same harness at another workspace:
+Build the candidate normally:
 
 ```bash
 npm run build
-MADAR_PERF_FIXTURE=/absolute/path/to/repo \
-MADAR_PERF_RESULTS_DIR=/absolute/path/to/output-dir \
-node docs/benchmarks/performance/run.mjs
 ```
 
-Use the synthetic fixture in CI, and use the local-repo run when you want realistic wall-clock measurements for:
+Create a detached checkout of the protected base outside this worktree, install
+the locked dependencies, and build it. The examples below call its compiled
+tree `<protected-base>/dist/src`.
 
-- initial `generate`
-- full canonical `update` after a narrow change
-- `cluster-only` refresh cost
-- canonical full-build cost
+## Fixed 500-file fixture
 
-## Interpreting results
+Record the protected-base clean-generation distribution first:
 
-- Supported counts cover `.ts`, `.tsx`, `.js`, and `.jsx`. Recognized files outside that scope remain unsupported and contribute no graph facts.
-- `update-noop` still rebuilds the canonical graph. Only `cluster-only` skips source indexing.
-- Compare `graph_size_bytes` and `output_size_bytes` together: the graph file can stay flat while the total output directory still grows.
+```bash
+node tools/eval/core-reset/incremental-performance.mjs \
+  --mode baseline \
+  --dist-root <protected-base>/dist/src \
+  --subject-worktree <protected-base> \
+  --fixture-files 500 \
+  --warmups 3 \
+  --trials 20 \
+  --output /tmp/madar-perf/fixed-baseline.json
+```
 
-## Non-goals
+Then measure the candidate:
 
-- Do not turn this into a strict perf threshold in CI.
-- Do not claim broad performance wins from the synthetic fixture alone.
-- Do not optimize generation paths without a before/after measurement from this harness or a real local workspace run.
+```bash
+node tools/eval/core-reset/incremental-performance.mjs \
+  --mode candidate \
+  --dist-root ./dist/src \
+  --subject-worktree . \
+  --fixture-files 500 \
+  --warmups 3 \
+  --trials 20 \
+  --baseline-receipt /tmp/madar-perf/fixed-baseline.json \
+  --output /tmp/madar-perf/fixed-candidate.json
+```
+
+The synthetic corpus has exactly 500 supported TypeScript files. Its leaf body
+changes without changing the exported surface, so the expected measured update
+counts are one parsed/invalidated file, 499 reused files, and a zero-sized
+dependency closure.
+
+## Pinned held-out repository
+
+The evaluator clones only local Git objects into a disposable standalone
+checkout and verifies the exact commit. It never fetches or mutates the supplied
+checkout.
+
+```bash
+node tools/eval/core-reset/incremental-performance.mjs \
+  --mode candidate \
+  --dist-root ./dist/src \
+  --subject-worktree . \
+  --repository /absolute/path/to/openstatus \
+  --repository-commit 295e5a72f52c172d326aa950e81043e72a4f20c0 \
+  --graph-root . \
+  --mutation-file apps/workflows/src/checker/alerting.ts \
+  --warmups 3 \
+  --trials 20 \
+  --baseline-receipt /tmp/madar-perf/openstatus-baseline.json \
+  --output /tmp/madar-perf/openstatus-candidate.json
+```
+
+Record the matching held-out baseline with the same repository, commit, graph
+root, mutation file, warmups, and trials while pointing `--dist-root` at the
+protected-base build.
+
+## Gates encoded in the receipt
+
+- cold no-op p50 is at most 20% of clean generation p50;
+- warm no-op parses and invalidates zero files and does not publish;
+- a private leaf edit parses/invalidates one file with zero dependency closure;
+- warm index-stage p50 is at most 50% of clean index-stage p50;
+- warm refresh p50/p95 are at most 75%/80% of clean generation p50/p95;
+- candidate clean-generation p50 is no more than 10% above the protected base;
+- the synthetic corpus has at least 500 supported files, or the held-out
+  corpus is non-empty and pinned to an exact Git commit; every distribution
+  has at least 20 measured samples after at least three warmups.
+
+Exit status `0` means every encoded gate passed. Status `2` means a valid
+receipt was written but at least one gate failed. Status `1` means the
+measurement itself was invalid.

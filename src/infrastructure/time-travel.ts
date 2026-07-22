@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
-import { CANONICAL_INDEX_FORMAT_VERSION } from '../contracts/generation-policy.js'
+import { generateIndex, type GenerateIndexOptions, type GenerateIndexResult } from '../application/generate-index.js'
+import { CANONICAL_INDEX_FORMAT_VERSION } from '../domain/index/build-state.js'
 import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { compareTimeTravelGraphs, type CompareTimeTravelGraphsOptions, type TimeTravelResult } from '../runtime/time-travel.js'
 import { validateGraphOutputPath } from '../shared/security.js'
 import { resolveMadarOutputDirectory, resolveMadarWorkspace } from '../shared/workspace.js'
-import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -43,7 +43,7 @@ export interface SnapshotGitDependencies {
 export interface SnapshotDependencies {
   rootDir?: string
   git?: SnapshotGitDependencies
-  generateGraph?: (rootPath: string, options: GenerateGraphOptions) => MaybePromise<GenerateGraphResult | Pick<GenerateGraphResult, 'graphPath' | 'reportPath'>>
+  generateGraph?: (rootPath: string, options: GenerateIndexOptions) => MaybePromise<GenerateIndexResult | Pick<GenerateIndexResult, 'graphPath' | 'reportPath'>>
 }
 
 export interface CompareRefsInput extends Omit<CompareTimeTravelGraphsOptions, 'fromRef' | 'toRef'> {
@@ -165,7 +165,7 @@ function canReuseSnapshot(rootDir: string, commitSha: string): boolean {
   )
 }
 
-function persistSnapshot(rootDir: string, ref: string, commitSha: string, generated: Pick<GenerateGraphResult, 'graphPath' | 'reportPath'>): TimeTravelSnapshot {
+function persistSnapshot(rootDir: string, ref: string, commitSha: string, generated: Pick<GenerateIndexResult, 'graphPath' | 'reportPath'>): TimeTravelSnapshot {
   const destinationDir = snapshotDir(rootDir, commitSha)
   const tempDir = snapshotTempDir(rootDir, commitSha)
   mkdirSync(tempDir, { recursive: true })
@@ -285,7 +285,7 @@ function resolvedSnapshotDependencies(dependencies: SnapshotDependencies): Requi
       ...defaultGitDependencies(rootDir),
       ...(dependencies.git ?? {}),
     },
-    generateGraph: dependencies.generateGraph ?? generateGraph,
+    generateGraph: dependencies.generateGraph ?? generateIndex,
   }
 }
 

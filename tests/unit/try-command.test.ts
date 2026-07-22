@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { GenerateUnsupportedCorpusError } from '../../src/infrastructure/generate.js'
+import { GenerateUnsupportedCorpusError } from '../../src/application/generate-index.js'
 import type { GraphContextFreshness, GraphContextFreshnessStatus } from '../../src/runtime/freshness.js'
 import type { GraphSummary } from '../../src/runtime/graph-summary.js'
 import { runTryCommand, type TryCommandDependencies } from '../../src/infrastructure/try-command.js'
@@ -69,7 +69,6 @@ function createDependencies(overrides: Partial<TryCommandDependencies> = {}): Tr
       graphPath: resolve(rootPath, 'out', 'graph.json'),
       reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
       totalFiles: 12,
-      codeFiles: 12,
       indexedFiles: 12,
       totalWords: 1000,
       nodeCount: 12,
@@ -79,9 +78,7 @@ function createDependencies(overrides: Partial<TryCommandDependencies> = {}): Tr
       warning: null,
       notes: [],
       discoverySafety: { version: 1, summary: { total: 0, sensitive: 0, unreadable: 0, reasons: {} }, exclusions: [] },
-      discoveryExclusions: [],
       indexingManifestPath: resolve(rootPath, 'out', 'indexing-manifest.json'),
-      indexingShareSafeManifestPath: resolve(rootPath, 'out', 'indexing-manifest.share-safe.json'),
       indexing: {
         state: 'complete', candidates: 12,
         counts: { indexed: 12, indexed_with_warnings: 0, skipped_by_policy: 0, unsupported: 0, failed: 0 },
@@ -172,7 +169,6 @@ describe('runTryCommand', () => {
           graphPath: resolve(resolvedRoot, 'out', 'graph.json'),
           reportPath: resolve(resolvedRoot, 'out', 'GRAPH_REPORT.md'),
           totalFiles: 12,
-          codeFiles: 12,
           indexedFiles: 12,
           totalWords: 1000,
           nodeCount: 12,

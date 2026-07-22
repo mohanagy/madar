@@ -5,7 +5,7 @@ import { join, resolve, sep } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import type { NativeAgentCompareReport, NativeAgentCompareResult } from '../../src/infrastructure/compare.js'
-import type { GenerateGraphResult } from '../../src/infrastructure/generate.js'
+import type { GenerateIndexResult } from '../../src/application/generate-index.js'
 import {
   loadBenchmarkSuiteRepos,
   loadBenchmarkSuiteTasks,
@@ -50,7 +50,7 @@ function createFixtureRepo(root: string): string {
   return root
 }
 
-function generateResult(rootPath: string): GenerateGraphResult {
+function generateResult(rootPath: string): GenerateIndexResult {
   const outputDir = join(rootPath, 'out')
   const graphPath = join(outputDir, 'graph.json')
   mkdirSync(outputDir, { recursive: true })
@@ -62,7 +62,6 @@ function generateResult(rootPath: string): GenerateGraphResult {
     graphPath,
     reportPath: join(outputDir, 'GRAPH_REPORT.md'),
     totalFiles: 1,
-    codeFiles: 1,
     indexedFiles: 1,
     totalWords: 10,
     nodeCount: 1,
@@ -76,9 +75,7 @@ function generateResult(rootPath: string): GenerateGraphResult {
       summary: { total: 0, sensitive: 0, unreadable: 0, reasons: {} },
       exclusions: [],
     },
-    discoveryExclusions: [],
     indexingManifestPath: join(outputDir, 'indexing-manifest.json'),
-    indexingShareSafeManifestPath: join(outputDir, 'indexing-manifest.share-safe.json'),
     indexing: {
       state: 'complete',
       candidates: 1,
@@ -86,6 +83,7 @@ function generateResult(rootPath: string): GenerateGraphResult {
       reason_buckets: { indexed: 1 },
       capability_buckets: { canonical_typescript_javascript: 1 },
     },
+    buildId: 'a'.repeat(64),
   }
 }
 

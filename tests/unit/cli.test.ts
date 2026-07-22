@@ -105,7 +105,7 @@ function createDependencies(): CliTestDependencies {
       return {
       corpus_tokens: 1000,
       corpus_words: 750,
-      corpus_source: 'manifest',
+      corpus_source: 'graph',
       nodes: 10,
       edges: 20,
       structure_signals: {
@@ -175,13 +175,12 @@ function createDependencies(): CliTestDependencies {
       edges: 2,
     }),
     generateGraph: (rootPath = '.', options = {}) => ({
-      mode: options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate',
+      mode: options.clusterOnly ? 'cluster-only' : 'generate',
       rootPath: resolve(rootPath),
       outputDir: resolve(rootPath, 'out'),
       graphPath: resolve(rootPath, 'out', 'graph.json'),
       reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
       totalFiles: 3,
-      codeFiles: 2,
       indexedFiles: 2,
       totalWords: 120,
       nodeCount: 5,
@@ -202,11 +201,7 @@ function createDependencies(): CliTestDependencies {
           { path: 'config/credentials.json', kind: 'sensitive', reason: 'secret_config' },
         ],
       },
-      discoveryExclusions: [
-        { path: 'config/credentials.json', kind: 'sensitive', reason: 'secret_config' },
-      ],
       indexingManifestPath: resolve(rootPath, 'out', 'indexing-manifest.json'),
-      indexingShareSafeManifestPath: resolve(rootPath, 'out', 'indexing-manifest.share-safe.json'),
       indexing: {
         state: 'complete',
         candidates: 2,
@@ -214,6 +209,16 @@ function createDependencies(): CliTestDependencies {
         reason_buckets: { indexed: 2 },
         capability_buckets: { 'builtin:index:typescript': 2 },
       },
+      updateReceipt: {
+        mode: 'cold_reconcile', scanned_files: 3, parsed_files: 2, reused_files: 0,
+        invalidated_files: 2, dependency_closure_size: 2, fallback_reason: 'cold_process',
+        previous_build_id: null, accepted_build_id: 'a'.repeat(64), publication_advanced: true,
+      },
+      buildId: 'a'.repeat(64),
+    }),
+    updateIndex: (rootPath = '.', options = {}) => ({
+      ...createDependencies().generateGraph(rootPath, options),
+      mode: 'update',
     }),
     watchGraph: async () => {},
     serveGraph: async () => {},
@@ -2696,6 +2701,8 @@ describe('cli main', () => {
     expect(logs[0]).toContain('graph.json')
     expect(logs[0]).toContain('Semantic anomalies: 2 high-signal item(s)')
     expect(logs[0]).toContain('Safety exclusions: 1 (1 sensitive, 0 unreadable)')
+    expect(logs[0]).toContain('Update: mode=cold_reconcile, scanned=3, parsed=2, reused=0, invalidated=2, closure=2')
+    expect(logs[0]).toContain(`Publication: fallback=cold_process, previous=none, accepted=${'a'.repeat(64)}, advanced=true`)
     expect(logs[0]).toContain('"config/credentials.json" (secret_config)')
     expect(logs[0]).toContain('madar codex install     # Codex CLI')
   })

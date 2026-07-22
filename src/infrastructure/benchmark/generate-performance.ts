@@ -1,7 +1,8 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 
-import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from '../generate.js'
+import { generateIndex, type GenerateIndexOptions, type GenerateIndexResult } from '../../application/generate-index.js'
+import { updateIndex } from '../../application/update-index.js'
 
 export type GeneratePerformanceVariantName =
   | 'generate'
@@ -10,7 +11,7 @@ export type GeneratePerformanceVariantName =
   | 'cluster-only'
 
 export interface GeneratePerformanceVariantSummary {
-  mode: GenerateGraphResult['mode']
+  mode: GenerateIndexResult['mode']
   wall_clock_ms: number
   total_files: number
   code_files: number
@@ -83,7 +84,7 @@ function prepareWorkspace(fixtureRoot: string, workDir: string, name: string): s
 }
 
 function summarizeVariant(
-  result: GenerateGraphResult,
+  result: GenerateIndexResult,
   wallClockMs: number,
 ): GeneratePerformanceVariantSummary {
   const graphSizeBytes = existsSync(result.graphPath) ? statSync(result.graphPath).size : 0
@@ -91,7 +92,7 @@ function summarizeVariant(
     mode: result.mode,
     wall_clock_ms: wallClockMs,
     total_files: result.totalFiles,
-    code_files: result.codeFiles,
+    code_files: result.totalFiles,
     indexed_files: result.indexedFiles,
     unsupported_files: result.indexing?.counts.unsupported ?? 0,
     node_count: result.nodeCount,
@@ -106,11 +107,12 @@ function runVariant(
   fixtureRoot: string,
   workDir: string,
   name: GeneratePerformanceVariantName,
-  options: GenerateGraphOptions,
+  options: GenerateIndexOptions & { update?: boolean },
 ): GeneratePerformanceVariantSummary {
   const workspace = prepareWorkspace(fixtureRoot, workDir, name)
   const startedAt = Date.now()
-  const result = generateGraph(workspace, options)
+  const { update, ...indexOptions } = options
+  const result = update ? updateIndex(workspace, indexOptions) : generateIndex(workspace, indexOptions)
   const summary = summarizeVariant(result, Date.now() - startedAt)
   writeFileSync(join(workDir, `${name}.json`), `${JSON.stringify(summary, null, 2)}\n`, 'utf8')
   return summary
@@ -152,10 +154,11 @@ function runPreparedVariant(
   workspace: string,
   workDir: string,
   name: GeneratePerformanceVariantName,
-  options: GenerateGraphOptions,
+  options: GenerateIndexOptions & { update?: boolean },
 ): GeneratePerformanceVariantSummary {
   const startedAt = Date.now()
-  const result = generateGraph(workspace, options)
+  const { update, ...indexOptions } = options
+  const result = update ? updateIndex(workspace, indexOptions) : generateIndex(workspace, indexOptions)
   const summary = summarizeVariant(result, Date.now() - startedAt)
   writeFileSync(join(workDir, `${name}.json`), `${JSON.stringify(summary, null, 2)}\n`, 'utf8')
   return summary
@@ -171,11 +174,11 @@ export function runGeneratePerformanceBenchmark(options: RunGeneratePerformanceB
   variants.generate = runVariant(fixtureRoot, workDir, 'generate', {})
 
   const updateNoopWorkspace = prepareWorkspace(fixtureRoot, workDir, 'update-noop')
-  generateGraph(updateNoopWorkspace, {})
+  generateIndex(updateNoopWorkspace, {})
   variants['update-noop'] = runPreparedVariant(updateNoopWorkspace, workDir, 'update-noop', { update: true })
 
   const updateChangedWorkspace = prepareWorkspace(fixtureRoot, workDir, 'update-changed')
-  generateGraph(updateChangedWorkspace, {})
+  generateIndex(updateChangedWorkspace, {})
   appendMutation(updateChangedWorkspace)
   variants['update-changed'] = runPreparedVariant(
     updateChangedWorkspace,
@@ -185,7 +188,7 @@ export function runGeneratePerformanceBenchmark(options: RunGeneratePerformanceB
   )
 
   const clusterOnlyWorkspace = prepareWorkspace(fixtureRoot, workDir, 'cluster-only')
-  generateGraph(clusterOnlyWorkspace, {})
+  generateIndex(clusterOnlyWorkspace, {})
   variants['cluster-only'] = runPreparedVariant(
     clusterOnlyWorkspace,
     workDir,

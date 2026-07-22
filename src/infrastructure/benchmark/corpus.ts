@@ -1,8 +1,7 @@
-import { dirname, join } from 'node:path'
+import { loadGraphArtifact } from '../../adapters/filesystem/graph-artifact.js'
+import { readBuildState } from '../../domain/index/build-state.js'
 
-import { loadManifestMetadata } from '../../pipeline/detect.js'
-
-export type CorpusBaselineSource = 'provided' | 'manifest' | 'estimated'
+export type CorpusBaselineSource = 'provided' | 'graph' | 'estimated'
 
 export interface CorpusBaseline {
   words: number
@@ -42,13 +41,13 @@ export function resolveCorpusBaseline(nodeCount: number, options: CorpusBaseline
   }
 
   if (options.graphPath) {
-    const manifestPath = join(dirname(options.graphPath), 'manifest.json')
-    const manifestWords = loadManifestMetadata(manifestPath).total_words
-    if (typeof manifestWords === 'number' && Number.isFinite(manifestWords) && manifestWords >= 0) {
+    let graphWords: number | null = null
+    try { graphWords = readBuildState(loadGraphArtifact(options.graphPath))?.corpus.total_words ?? null } catch { /* estimate below */ }
+    if (typeof graphWords === 'number' && Number.isFinite(graphWords) && graphWords >= 0) {
       return {
-        words: Math.floor(manifestWords),
-        tokens: corpusTokensFromWords(manifestWords),
-        source: 'manifest',
+        words: Math.floor(graphWords),
+        tokens: corpusTokensFromWords(graphWords),
+        source: 'graph',
       }
     }
   }

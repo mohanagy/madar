@@ -20,7 +20,7 @@ Benchmark expectations do not enter `RetrieveOptions` or any production retrieva
 
 ## Generation and indexing
 
-Generation has one scanner-to-index path. The scanner identifies `.ts`, `.tsx`, `.js`, and `.jsx` files for one canonical TypeScript compiler program. Recognized files outside that scope contribute no graph facts and are reported as unsupported in the indexing-completeness receipt.
+Generation has one scanner-to-index path. The scanner identifies `.ts`, `.tsx`, `.js`, and `.jsx` files for one canonical TypeScript compiler program. Recognized files outside that scope contribute no graph facts and are reported as informational `unsupported` outcomes in the optional diagnostics.
 
 The canonical JS/TS path has one owner for each phase:
 
@@ -31,7 +31,9 @@ The canonical JS/TS path has one owner for each phase:
 | Semantic indexing | Program, source files, and type checker | Files, symbols, relationships, and diagnostics | Imports, calls, type relationships, and framework facts share the same symbol identities. |
 | Direct graph write | Canonical index facts | Directed graph | Framework roles, metadata, relationship evidence, and provenance are written without projection or legacy augmentation. |
 
-`madar generate . --update` performs the same full canonical build against current source. It is not a per-file incremental extraction mode. `--cluster-only` is the separate graph-reuse operation: it skips source indexing and recomputes clustering, analysis, and export from the existing graph.
+`madar generate . --update` scans the canonical source catalog, reuses an unchanged accepted graph with zero parses and no publication, and performs a full canonical reconcile when source or controls changed.
+
+`madar watch` and MCP `--auto-refresh` use the same update operation. Unchanged checks are no-ops; every changed source, compiler-control, or policy check rebuilds the complete canonical index. Madar keeps no AST, per-file fact, dependency-closure, or compiler-session cache in memory or on disk. `--cluster-only` is the separate graph-reuse operation: it skips source scanning and indexing and recomputes clustering, analysis, and export from the accepted graph.
 
 ## Source-safe observability
 
@@ -47,6 +49,6 @@ Events never contain prompt text, paths, labels, snippets, repository names, sou
 
 ## Artifact and correctness gates
 
-New indexing manifests use schema v2 with `summary`, `outcomes`, and mode-free `index_diagnostics`. Graph metadata keeps only aggregate `indexing_completeness`; it does not store requested modes, extraction strategies, or fallback receipts. Predecessor mixed-mode artifacts fail closed with a regeneration instruction instead of loading through a compatibility adapter.
+`graph.json` is the authoritative artifact and atomic commit marker. Its authenticated index-build state includes the build id, source snapshot, policy, source-root identity, corpus counts, completeness summary, and supported-file failures. Reports and local/share-safe indexing manifests are derived diagnostics written before the graph; their failure is non-blocking, and consumers ignore diagnostics whose build id does not match the graph. Predecessor mixed-mode artifacts fail closed with a one-time regeneration instruction instead of loading through a compatibility adapter.
 
-Gold fixtures lock canonical language facts, framework roles and relationships, file ownership, deterministic ordering, and negative-file precision. Unsupported-language and non-code fixtures verify that those files produce no graph nodes or edges while their coverage limitation remains explicit.
+Gold fixtures lock canonical language facts, framework roles and relationships, file ownership, deterministic ordering, and negative-file precision. Unsupported-language and non-code fixtures verify that those files produce no graph nodes or edges while remaining visible as informational inventory.

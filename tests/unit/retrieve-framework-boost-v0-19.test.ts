@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
-import { generateGraph } from '../../src/infrastructure/generate.js'
+import { generateIndex as generateGraph } from '../../src/application/generate-index.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 

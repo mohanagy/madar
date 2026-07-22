@@ -71,11 +71,11 @@ Madar supports these project-local installers:
 
 Installer details are in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md). Step-by-step setup and smoke tests are in the [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md).
 
-After upgrading Madar, rerun your agent's install command to refresh its managed profile. Older profiles may lack automatic refresh or Codex's longer startup window.
+After upgrading, rerun the agent install, run `madar generate . --update` once, and restart or reconnect MCP.
 
-Codex installs create a workspace-scoped MCP block with longer startup and tool timeouts. Madar stays available during initial reconciliation; graph-backed calls become available once the graph is ready.
+Codex installs use a workspace-scoped MCP block with longer timeouts. Stdio stays available while `graph.json` is reconciled.
 
-Starting with `0.31.3`, a graph-backed call made while Madar is `starting`, `pending`, or `reconciling` returns a structured retryable response. The agent should retry the same Madar request after the suggested delay instead of bypassing Madar or running generation manually. A dead refresh owner is recovered automatically; only failed, incomplete, or policy-mismatched graph states ask for repair.
+During `starting`, `pending`, or `reconciling`, graph calls return a retryable response. Retry the same request; terminal failures ask for repair.
 
 ## What Changes for the Agent
 
@@ -124,7 +124,9 @@ madar summary
 madar pack "how does auth work?" --task explain --format text
 ```
 
-`madar generate .` has one compiler-backed indexing path for `.js`, `.jsx`, `.ts`, and `.tsx`. Other source languages and non-code files do not enter the graph; recognized unsupported files remain visible in the indexing-completeness receipt so missing coverage is explicit. See the [CLI reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
+`madar generate .` has one compiler-backed indexing path for `.js`, `.jsx`, `.ts`, and `.tsx`. Other formats produce no graph facts; their `unsupported` outcomes are informational. See the [CLI reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md).
+
+`madar generate . --update` skips parsing and publication when the accepted graph is unchanged. Every changed CLI, watch, or MCP update performs the same full canonical reconcile; Madar keeps no AST, per-file fact, or dependency cache between updates.
 
 Create a provider-ready prompt:
 
@@ -138,7 +140,7 @@ Create a share-safe handoff for another coding tool:
 madar handoff "add auth telemetry" --task implement --consumer copilot
 ```
 
-Generated graphs and indexing manifests stay in the project output location. See the [getting-started tutorial](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md) for a reproducible sample workspace and expected output.
+`graph.json` is authoritative. Reports and indexing manifests are optional derived diagnostics. See the [getting-started tutorial](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md) for a reproducible example.
 
 ## Where Madar Fits
 
@@ -163,7 +165,7 @@ Madar complements agents and IDE indexing. It is not a hosted knowledge base, ru
 
 - **Privacy:** Madar graph generation runs locally and does not require an API key. Your coding agent may still send prompts or selected file context to its own model provider, depending on that agent's configuration.
 - **Sensitive files:** ordinary security source code remains indexable, while private keys, `.env*`, credential stores, and known non-source secret material are excluded. This is a path policy, not a content-level secret scanner.
-- **Freshness:** installed MCP profiles use automatic refresh. Manual CLI users can regenerate with `madar generate .`; strict workflows can require `--require-fresh-context` or `--require-fresh-graph`.
+- **Freshness:** MCP profiles refresh in process; CLI users can run `madar generate . --update`. Strict workflows can require `--require-fresh-context` or `--require-fresh-graph`.
 - **Worktrees:** run Madar and the agent from the same linked Git worktree. Each worktree receives isolated graph artifacts outside the checkout; reconnect the MCP server after switching worktrees.
 - **Telemetry:** Telemetry is disabled unless you explicitly enable it. Controls and the exact source-safe event schema are documented in [telemetry](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md).
 

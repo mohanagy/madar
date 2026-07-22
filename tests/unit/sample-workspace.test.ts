@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 
 import { describe, expect, it } from 'vitest'
 
-import { generateGraph } from '../../src/infrastructure/generate.js'
+import { generateIndex as generateGraph } from '../../src/application/generate-index.js'
 import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { loadGraph } from '../../src/runtime/serve.js'

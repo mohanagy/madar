@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -7,8 +7,16 @@ import { describe, expect, it } from 'vitest'
 import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 import type { ContextPackCoverage } from '../../src/contracts/context-pack.js'
+import {
+  attachBuildState,
+  CANONICAL_INDEX_FORMAT_VERSION,
+  createGenerationPolicy,
+  createSourceSnapshot,
+  INDEX_BUILD_STATE_VERSION,
+  INDEX_ENGINE_ID,
+} from '../../src/domain/index/build-state.js'
+import { deserializeGraphArtifact, serializeGraphArtifact } from '../../src/domain/graph/artifact.js'
 import { buildMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
-import { createIndexingManifest } from '../../src/pipeline/indexing-outcomes.js'
 import { buildDiscoverySafetyMetadata, relevantDiscoveryExclusions } from '../../src/shared/discovery-safety.js'
 
 describe('mcp-response-evidence', () => {
@@ -152,33 +160,9 @@ describe('mcp-response-evidence', () => {
     expect(evidence.agent_directive).toBe('verify_one_targeted_file')
   })
 
-  it('downgrades only relevant indexing uncertainty and exposes share-safe reason aggregates', () => {
-    const indexingManifest = createIndexingManifest({
-      outcomes: [
-        {
-          path: 'src/index.ts',
-          kind: 'file',
-          status: 'indexed',
-          reason: 'indexed',
-          capability: 'builtin:index:typescript',
-        },
-        {
-          path: 'src/auth/token-loader.ts',
-          kind: 'file',
-          status: 'failed',
-          reason: 'canonical_file_missing',
-          capability: 'builtin:index:typescript',
-          diagnostics: [{ code: 'parser_failed', level: 'error', message: 'private parser detail' }],
-        },
-        {
-          path: 'src/billing/legacy.vue',
-          kind: 'file',
-          status: 'unsupported',
-          reason: 'unsupported_file_type',
-          capability: null,
-        },
-      ],
-    })
+  it('uses authenticated graph completeness and keeps unsupported inventory informational', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-index-evidence-'))
+    const graphPath = join(root, 'out', 'graph.json')
     const coverage: ContextPackCoverage = {
       required_evidence: ['primary'],
       semantic_required: [],
@@ -192,38 +176,103 @@ describe('mcp-response-evidence', () => {
       available_relationships: 1,
       selected_relationships: 1,
     }
+    try {
+      mkdirSync(dirname(graphPath), { recursive: true })
+      writeCanonicalGraphFixture(graphPath, { root_path: root })
+      const graph = deserializeGraphArtifact(readFileSync(graphPath, 'utf8'))
+      attachBuildState(graph, {
+        version: INDEX_BUILD_STATE_VERSION,
+        engine_id: INDEX_ENGINE_ID,
+        policy: createGenerationPolicy({
+          index_format_version: CANONICAL_INDEX_FORMAT_VERSION,
+          respect_gitignore: true,
+          follow_symlinks: false,
+          exclusion_rules_fingerprint: '0'.repeat(64),
+          indexing_strict: null,
+        }),
+        sources: createSourceSnapshot({
+          supported: [
+            { path: 'src/index.ts', hash: '1'.repeat(64) },
+            { path: 'src/auth/token-loader.ts', hash: '2'.repeat(64) },
+          ],
+          controls: [],
+          unsupported: [{ path: 'src/billing/legacy.vue', hash: '3'.repeat(64) }],
+        }),
+        source_root: {
+          kind: 'directory',
+          root_path: root,
+          worktree_root: null,
+          scope: '.',
+        },
+        corpus: {
+          supported_files: 2,
+          unsupported_files: 1,
+          total_words: 20,
+          warning: null,
+        },
+        completeness: {
+          summary: {
+            state: 'partial',
+            candidates: 3,
+            counts: {
+              indexed: 1,
+              indexed_with_warnings: 0,
+              skipped_by_policy: 0,
+              unsupported: 1,
+              failed: 1,
+            },
+            reason_buckets: {
+              indexed: 1,
+              canonical_file_missing: 1,
+              unsupported_file_type: 1,
+            },
+            capability_buckets: { 'builtin:index:typescript': 2 },
+          },
+          supported_failures: [{ path: 'src/auth/token-loader.ts', reason: 'canonical_file_missing' }],
+        },
+      })
+      writeFileSync(graphPath, serializeGraphArtifact(graph), 'utf8')
 
-    const relevant = buildMadarResponseEvidence({
-      indexingManifest,
-      question: 'How does the auth token loader work?',
-      coveredWorkflowOwners: ['src/auth/auth-service.ts'],
-      coverage,
-    })
-    const unrelated = buildMadarResponseEvidence({
-      indexingManifest,
-      question: 'How are invoices rendered?',
-      coveredWorkflowOwners: ['src/invoices/render.ts'],
-      coverage,
-    })
+      const relevant = buildMadarResponseEvidence({
+        graphPath,
+        question: 'How does the auth token loader work?',
+        coveredWorkflowOwners: ['src/auth/auth-service.ts'],
+        coverage,
+      })
+      const unrelated = buildMadarResponseEvidence({
+        graphPath,
+        question: 'How are invoices rendered?',
+        coveredWorkflowOwners: ['src/invoices/render.ts'],
+        coverage,
+      })
 
-    expect(relevant.pack_confidence).toBe('low')
-    expect(relevant.coverage).toBe('partial')
-    expect(relevant.answerability).toMatchObject({
-      state: 'insufficient',
-      broad_search_fallback: 'allowed',
-    })
-    expect(relevant.indexing_completeness).toEqual({
-      state: 'partial',
-      total_uncertain: 2,
-      relevant_uncertain: 1,
-      reasons: { canonical_file_missing: 1, unsupported_file_type: 1 },
-      relevant_reasons: { canonical_file_missing: 1 },
-    })
-    expect(JSON.stringify(relevant)).not.toContain('token-loader.ts')
-    expect(JSON.stringify(relevant)).not.toContain('private parser detail')
-    expect(unrelated.pack_confidence).toBe('high')
-    expect(unrelated.coverage).toBe('complete')
-    expect(unrelated.indexing_completeness?.relevant_uncertain).toBe(0)
+      expect(relevant.pack_confidence).toBe('low')
+      expect(relevant.coverage).toBe('partial')
+      expect(relevant.answerability).toMatchObject({
+        state: 'insufficient',
+        broad_search_fallback: 'allowed',
+      })
+      expect(relevant.indexing_completeness).toEqual({
+        state: 'partial',
+        total_uncertain: 1,
+        relevant_uncertain: 1,
+        reasons: { canonical_file_missing: 1 },
+        relevant_reasons: { canonical_file_missing: 1 },
+      })
+      expect(JSON.stringify(relevant)).not.toContain('token-loader.ts')
+      expect(JSON.stringify(relevant)).not.toContain('legacy.vue')
+      expect(unrelated.pack_confidence).toBe('high')
+      expect(unrelated.coverage).toBe('complete')
+      expect(unrelated.indexing_completeness).toEqual({
+        state: 'partial',
+        total_uncertain: 1,
+        relevant_uncertain: 0,
+        reasons: { canonical_file_missing: 1 },
+        relevant_reasons: {},
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('matches hidden credential-store reasons and indirect workflow-owner paths', () => {
