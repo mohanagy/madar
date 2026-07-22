@@ -1,79 +1,36 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
   classifySourceDomain,
-  isDiscoveryPathIgnored,
-  isManagedAgentInstructionFile,
-  loadMadarignorePatterns,
+  isPollutedSourcePath,
 } from '../../src/shared/source-discovery.js'
 
-function mkSandbox(): string {
-  return mkdtempSync(join(tmpdir(), 'source-discovery-'))
-}
+describe('query source classification', () => {
+  const root = resolve('workspace', 'project')
 
-describe('source discovery', () => {
-  let sandbox: string
+  it('keeps handwritten library source while rejecting top-level build output', () => {
+    expect(classifySourceDomain(join(root, 'src', 'lib', 'helper.ts'), root)).toBe('production')
+    expect(isPollutedSourcePath(join(root, 'src', 'lib', 'helper.ts'), root)).toBe(false)
 
-  beforeEach(() => {
-    sandbox = mkSandbox()
+    expect(classifySourceDomain(join(root, 'lib', 'index.js'), root)).toBe('build_artifact')
+    expect(classifySourceDomain(join(root, 'lib', 'index.d.ts'), root)).toBe('build_artifact')
+    expect(isPollutedSourcePath(join(root, 'lib', 'index.js'), root)).toBe(true)
   })
 
-  afterEach(() => {
-    rmSync(sandbox, { recursive: true, force: true })
+  it('classifies non-production domains without owning filesystem discovery', () => {
+    expect(classifySourceDomain(join(root, 'tests', 'auth.test.ts'), root)).toBe('test')
+    expect(classifySourceDomain(join(root, 'benchmarks', 'query.bench.ts'), root)).toBe('benchmark')
+    expect(classifySourceDomain(join(root, 'fixtures', 'sample.ts'), root)).toBe('fixture')
+    expect(classifySourceDomain(join(root, 'generated', 'client.ts'), root)).toBe('generated')
+    expect(classifySourceDomain(join(root, 'docs', 'design.md'), root)).toBe('docs')
+    expect(classifySourceDomain(join(root, 'tsconfig.json'), root)).toBe('config')
   })
 
-  it('does not hard-ignore production code under src/lib', () => {
-    const file = join(sandbox, 'src/lib/helper.ts')
-    mkdirSync(join(file, '..'), { recursive: true })
-    writeFileSync(file, 'export function helper() { return 1 }\n', 'utf8')
-
-    const patterns = loadMadarignorePatterns(sandbox)
-
-    expect(isDiscoveryPathIgnored(file, sandbox, patterns)).toBe(false)
-    expect(classifySourceDomain(file, sandbox)).toBe('production')
-  })
-
-  it('still hard-ignores top-level lib build output', () => {
-    const file = join(sandbox, 'lib/index.js')
-    mkdirSync(join(file, '..'), { recursive: true })
-    writeFileSync(file, 'export function helper() { return 1 }\n', 'utf8')
-
-    const patterns = loadMadarignorePatterns(sandbox)
-
-    expect(isDiscoveryPathIgnored(file, sandbox, patterns)).toBe(true)
-    expect(classifySourceDomain(file, sandbox)).toBe('build_artifact')
-  })
-
-  it('still hard-ignores top-level lib declaration output', () => {
-    const file = join(sandbox, 'lib/helper.d.ts')
-    mkdirSync(join(file, '..'), { recursive: true })
-    writeFileSync(file, 'export declare function helper(): number\n', 'utf8')
-
-    const patterns = loadMadarignorePatterns(sandbox)
-
-    expect(isDiscoveryPathIgnored(file, sandbox, patterns)).toBe(true)
-    expect(classifySourceDomain(file, sandbox)).toBe('build_artifact')
-  })
-
-  it('does not hard-ignore hand-written TypeScript source under top-level lib', () => {
-    const file = join(sandbox, 'lib/middleware/link.ts')
-    mkdirSync(join(file, '..'), { recursive: true })
-    writeFileSync(file, 'export function linkMiddleware() { return 1 }\n', 'utf8')
-
-    const patterns = loadMadarignorePatterns(sandbox)
-
-    expect(isDiscoveryPathIgnored(file, sandbox, patterns)).toBe(false)
-    expect(classifySourceDomain(file, sandbox)).toBe('production')
-  })
-
-  it('recognizes relative managed instruction files under Windows roots', () => {
-    const root = 'D:\\a\\madar\\madar'
-
-    expect(isManagedAgentInstructionFile('AGENTS.md', root)).toBe(true)
-    expect(isManagedAgentInstructionFile(`${root}\\CLAUDE.md`, root)).toBe(true)
+  it('recognizes polluted paths under POSIX and Windows roots', () => {
+    expect(isPollutedSourcePath(join(root, 'node_modules', 'pkg', 'index.js'), root)).toBe(true)
+    expect(isPollutedSourcePath('D:\\a\\madar\\madar\\out\\graph.json', 'D:\\a\\madar\\madar')).toBe(true)
+    expect(isPollutedSourcePath('D:\\a\\madar\\madar\\src\\main.ts', 'D:\\a\\madar\\madar')).toBe(false)
   })
 })

@@ -157,8 +157,8 @@ export interface GenerateCliOptions {
   update: boolean
   clusterOnly: boolean
   watch: boolean
-  followSymlinks: boolean
-  respectGitignore: boolean
+  followSymlinks?: true
+  respectGitignore?: true
   debounceSeconds: number
   neo4jPushUri: string | null
   neo4jUser: string | null
@@ -1677,8 +1677,8 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let update = false
   let clusterOnly = false
   let watch = false
-  let followSymlinks = false
-  let respectGitignore = false
+  let followSymlinks: true | undefined
+  let respectGitignore: true | undefined
   let debounceSeconds = 3
   let neo4jPushUri: string | null = null
   let neo4jUser: string | null = null
@@ -1833,8 +1833,8 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     update,
     clusterOnly,
     watch,
-    followSymlinks,
-    respectGitignore,
+    ...(followSymlinks ? { followSymlinks } : {}),
+    ...(respectGitignore ? { respectGitignore } : {}),
     debounceSeconds,
     neo4jPushUri,
     neo4jUser,

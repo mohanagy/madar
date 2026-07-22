@@ -1,14 +1,12 @@
-import { createHash } from 'node:crypto'
 import { createServer, type Server, type ServerResponse } from 'node:http'
-import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { validateGraphPath } from '../shared/security.js'
-import { readGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
-import { graphFreshnessHeaders, graphFreshnessMetadata, resourceFreshnessHeaders, resourceFreshnessMetadata } from './freshness.js'
-import { communitiesFromGraph, getCommunity, getNeighbors, getNode, graphStats, loadGraph, queryGraph, semanticAnomaliesSummary, shortestPath } from './serve.js'
-import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
-import { deserializeGraphArtifact, GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
+import { readGraphArtifactReceipt, type GraphArtifactReceipt } from '../adapters/filesystem/graph-artifact.js'
+import { readMatchingReportReceipt } from '../adapters/filesystem/index-store.js'
+import { graphFreshnessFromReceipt, graphFreshnessHeaders, resourceFreshnessHeaders, resourceFreshnessMetadata } from './freshness.js'
+import { communitiesFromGraph, getCommunity, getNeighbors, getNode, graphStats, queryGraph, semanticAnomaliesSummary, shortestPath } from './serve.js'
+import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
 
 export interface ServeLogger {
   log(message?: string): void
@@ -164,18 +162,9 @@ function parsePositiveInteger(value: string | null, field: string, defaultValue:
   return parsed
 }
 
-function createGraphLoader(graphPath: string): () => KnowledgeGraph {
-  let cachedGraph: KnowledgeGraph | null = null
-  let cachedMtime = -1
-
-  return () => {
-    const currentMtime = statSync(graphPath).mtimeMs
-    if (!cachedGraph || currentMtime !== cachedMtime) {
-      cachedGraph = loadGraph(graphPath)
-      cachedMtime = currentMtime
-    }
-    return cachedGraph
-  }
+function createGraphLoader(graphPath: string): () => GraphArtifactReceipt {
+  let cached: GraphArtifactReceipt | null = null
+  return () => (cached = readGraphArtifactReceipt(graphPath, cached))
 }
 
 function allowRequest(rateLimitState: Map<string, { count: number; resetAt: number }>, remoteAddress: string | undefined, now = Date.now()): boolean {
@@ -215,8 +204,6 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
   const outputDir = dirname(graphPath)
   const graph = createGraphLoader(graphPath)
   const rateLimitState = new Map<string, { count: number; resetAt: number }>()
-  let validatedGraphHash: string | null = null
-
   const server = createServer((request, response) => {
     try {
       if (!allowRequest(rateLimitState, request.socket.remoteAddress)) {
@@ -225,17 +212,14 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
       }
 
       const url = new URL(request.url ?? '/', `http://${host}`)
+      const receipt = graph()
       if (url.pathname === '/graph.json') {
-        const artifact = readGraphArtifact(graphPath)
-        const artifactHash = createHash('sha256').update(artifact).digest('hex')
-        if (artifactHash !== validatedGraphHash) {
-          deserializeGraphArtifact(artifact)
-          validatedGraphHash = artifactHash
-        }
-        sendText(response, 200, artifact, 'application/json; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, graphPath, artifact, artifactHash)))
+        sendText(response, 200, receipt.artifact, 'application/json; charset=utf-8', resourceFreshnessHeaders(
+          resourceFreshnessMetadata(graphPath, graphPath, receipt.artifact, receipt.graphSha256, receipt),
+        ))
         return
       }
-      const graphHeaders = graphFreshnessHeaders(graphFreshnessMetadata(graphPath))
+      const graphHeaders = graphFreshnessHeaders(graphFreshnessFromReceipt(receipt))
 
       if (url.pathname === '/' || url.pathname === '/index.html') {
         sendText(response, 200, renderIndex(outputDir), 'text/html; charset=utf-8', graphHeaders)
@@ -244,11 +228,14 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
 
       if (url.pathname === '/GRAPH_REPORT.md') {
         const reportPath = join(outputDir, 'GRAPH_REPORT.md')
-        if (!existsSync(reportPath)) {
-          sendText(response, 404, 'GRAPH_REPORT.md not found.')
+        const report = readMatchingReportReceipt(graphPath, receipt)
+        if (!report) {
+          sendText(response, 404, 'GRAPH_REPORT.md not found or does not match the accepted graph.')
           return
         }
-        sendText(response, 200, readFileSync(reportPath, 'utf8'), 'text/markdown; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, reportPath)))
+        sendText(response, 200, report.report, 'text/markdown; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(
+          graphPath, reportPath, report.report, report.graphSha256, { ...report, resourceModifiedMs: report.reportModifiedMs },
+        )))
         return
       }
 
@@ -258,14 +245,14 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
       }
 
       if (url.pathname === '/stats') {
-        const loadedGraph = graph()
+        const loadedGraph = receipt.graph
         sendText(response, 200, graphStats(loadedGraph, communitiesFromGraph(loadedGraph)), 'text/plain; charset=utf-8', graphHeaders)
         return
       }
 
       if (url.pathname === '/anomalies') {
         const limit = parsePositiveInteger(url.searchParams.get('limit'), 'limit', 5, 100)
-        sendText(response, 200, semanticAnomaliesSummary(graphPath, limit), 'text/plain; charset=utf-8', graphHeaders)
+        sendText(response, 200, semanticAnomaliesSummary(receipt.graph, limit), 'text/plain; charset=utf-8', graphHeaders)
         return
       }
 
@@ -283,7 +270,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
         sendText(
           response,
           200,
-          queryGraph(graph(), question, {
+          queryGraph(receipt.graph, question, {
             mode,
             tokenBudget: budget,
             rankBy,
@@ -298,13 +285,13 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
       if (url.pathname === '/path') {
         const source = parseQueryText(url.searchParams.get('source'), 'source', MAX_HTTP_LABEL_LENGTH)
         const target = parseQueryText(url.searchParams.get('target'), 'target', MAX_HTTP_LABEL_LENGTH)
-        sendText(response, 200, shortestPath(graph(), source, target), 'text/plain; charset=utf-8', graphHeaders)
+        sendText(response, 200, shortestPath(receipt.graph, source, target), 'text/plain; charset=utf-8', graphHeaders)
         return
       }
 
       if (url.pathname === '/node') {
         const label = parseQueryText(url.searchParams.get('label'), 'label', MAX_HTTP_LABEL_LENGTH)
-        sendText(response, 200, getNode(graph(), label), 'text/plain; charset=utf-8', graphHeaders)
+        sendText(response, 200, getNode(receipt.graph, label), 'text/plain; charset=utf-8', graphHeaders)
         return
       }
 
@@ -315,7 +302,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
           sendText(response, 400, `Query parameter 'relation' exceeds maximum length of ${MAX_HTTP_LABEL_LENGTH}`)
           return
         }
-        sendText(response, 200, getNeighbors(graph(), label, relation), 'text/plain; charset=utf-8', graphHeaders)
+        sendText(response, 200, getNeighbors(receipt.graph, label, relation), 'text/plain; charset=utf-8', graphHeaders)
         return
       }
 
@@ -325,7 +312,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
           sendText(response, 400, 'Missing required numeric query parameter: id')
           return
         }
-        const loadedGraph = graph()
+        const loadedGraph = receipt.graph
         sendText(response, 200, getCommunity(loadedGraph, communitiesFromGraph(loadedGraph), communityId), 'text/plain; charset=utf-8', graphHeaders)
         return
       }

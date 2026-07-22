@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 /** Publish one text artifact with same-filesystem rename semantics. */
@@ -16,3 +16,8 @@ export function writeTextFileAtomically(outputPath: string, content: string): vo
   }
 }
 
+/** Stronger cache identity than mtime/size alone for atomically replaced files. */
+export function fileIdentity(path: string): string {
+  const stats = statSync(path)
+  return `${stats.dev}:${stats.ino}:${stats.ctimeMs}:${stats.mtimeMs}:${stats.size}`
+}

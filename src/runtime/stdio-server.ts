@@ -1,12 +1,12 @@
 import { createInterface } from 'node:readline'
-import { realpathSync, statSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
-import { startWatchIndex, type GraphAutoRefreshController } from '../infrastructure/watch-index.js'
+import { startWatchIndex, updateIndexInWorker, type GraphAutoRefreshController } from '../infrastructure/watch-index.js'
 import { diffGraphs } from './diff.js'
 import { buildGraphSummary } from './graph-summary.js'
 import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isToolEnabledInProfile, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
@@ -48,6 +48,7 @@ import { resolveGraphSourceRoot } from '../shared/graph-source-root.js'
 import { resolveMadarWorkspace } from '../shared/workspace.js'
 import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
 import { readBuildState } from '../domain/index/build-state.js'
+import { readGraphArtifactReceipt, type GraphArtifactReceipt } from '../adapters/filesystem/graph-artifact.js'
 
 const JSONRPC_PARSE_ERROR = -32700
 const JSONRPC_INVALID_REQUEST = -32600
@@ -68,7 +69,7 @@ const MAX_STDIO_DIFF_ITEMS = 100
 const MAX_RESOURCE_SUBSCRIPTIONS = 16
 const MAX_CONTEXT_PROMPT_SESSIONS = 256
 const MAX_CONTEXT_PACK_CACHE_ENTRIES = 256
-const graphCache = new Map<string, { mtimeMs: number; size: number; graph: ReturnType<typeof loadGraph> }>()
+const graphCache = new Map<string, GraphArtifactReceipt>()
 const graphBuildStateCache = new WeakMap<ReturnType<typeof loadGraph>, ReturnType<typeof readBuildState>>()
 const MAX_COMPLETION_VALUES = 25
 const MAX_LOG_NOTIFICATION_CHARS = 10_000
@@ -694,16 +695,15 @@ function errorToolResult(text: string): { content: Array<{ type: 'text'; text: s
 }
 
 function loadGraphCached(graphPath: string): ReturnType<typeof loadGraph> {
-  const safeGraphPath = validateGraphPath(graphPath)
-  const currentGraphStat = statSync(safeGraphPath)
-  const cached = graphCache.get(safeGraphPath)
-  if (cached && cached.mtimeMs === currentGraphStat.mtimeMs && cached.size === currentGraphStat.size) {
-    return cached.graph
-  }
+  return loadGraphReceiptCached(graphPath).graph
+}
 
-  const graph = loadGraph(safeGraphPath)
-  graphCache.set(safeGraphPath, { mtimeMs: currentGraphStat.mtimeMs, size: currentGraphStat.size, graph })
-  return graph
+function loadGraphReceiptCached(graphPath: string): GraphArtifactReceipt {
+  const safeGraphPath = validateGraphPath(graphPath)
+  const cached = graphCache.get(safeGraphPath)
+  const receipt = readGraphArtifactReceipt(safeGraphPath, cached)
+  graphCache.set(safeGraphPath, receipt)
+  return receipt
 }
 
 function sanitizePromptValue(value: string | null, fallback: string): string {
@@ -950,6 +950,7 @@ export function handleStdioRequest(
           numberParamAlias,
           recordParam,
           loadGraphCached,
+          loadGraphReceiptCached,
           queryOptionsFromParams,
           handleGraphDiff,
           compareRefs: async (input) => {
@@ -1057,7 +1058,7 @@ export function handleStdioRequest(
       case 'diff':
         return handleGraphDiff(id, graphPath, params)
       case 'anomalies':
-        return ok(id, semanticAnomaliesSummary(graphPath, numberParamAlias(params, ['top_n', 'topN'], { min: 1, max: 100 }) ?? 5))
+        return ok(id, semanticAnomaliesSummary(loadGraphCached(graphPath), numberParamAlias(params, ['top_n', 'topN'], { min: 1, max: 100 }) ?? 5))
       case 'node': {
         const graph = loadGraphCached(graphPath)
         const label = stringParam(params, 'label')
@@ -1140,6 +1141,7 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
 
     const startAutoRefresh = options.autoRefreshStarter ?? startWatchIndex
     autoRefresh = startAutoRefresh(workspace.rootPath, options.autoRefreshDebounceSeconds ?? 1, {
+      update: updateIndexInWorker,
       // stdout is reserved for JSON-RPC; watcher progress stays silent unless
       // a reconciliation fails.
       logger: {

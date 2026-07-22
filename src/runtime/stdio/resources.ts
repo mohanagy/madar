@@ -1,11 +1,12 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Writable } from 'node:stream'
 
 import { freshnessAnnotations, resourceFreshnessMetadata } from '../freshness.js'
 import { validateGraphPath } from '../../shared/security.js'
 import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
-import { loadGraphArtifact } from '../../adapters/filesystem/graph-artifact.js'
+import { readGraphArtifactReceipt, type GraphArtifactReceipt } from '../../adapters/filesystem/graph-artifact.js'
+import { readMatchingReportReceipt } from '../../adapters/filesystem/index-store.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -64,7 +65,7 @@ function resourceUri(name: string): string {
   return `madar://artifact/${name}`
 }
 
-export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
+export function resourcesForGraph(graphPath: string, knownReceipt?: GraphArtifactReceipt): McpResourceDefinition[] {
   // During a first auto-refresh startup the MCP transport is available before
   // graph.json. Resource discovery must return an empty list instead of making
   // initialize fail through notification bookkeeping.
@@ -73,6 +74,9 @@ export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
     return []
   }
   const safeGraphPath = validateGraphPath(effectiveGraphPath)
+  const graphReceipt = knownReceipt?.graphPath === safeGraphPath ? knownReceipt : readGraphArtifactReceipt(safeGraphPath)
+  const graphArtifact = graphReceipt.artifact
+  const reportReceipt = readMatchingReportReceipt(safeGraphPath, graphReceipt)
   const outputDir = dirname(safeGraphPath)
   const candidates: McpResourceDefinition[] = [
     {
@@ -94,11 +98,16 @@ export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
   ]
 
   return candidates
-    .filter((resource) => existsSync(resource.filePath))
-    .map((resource) => ({
-      ...resource,
-      annotations: freshnessAnnotations(resourceFreshnessMetadata(safeGraphPath, resource.filePath)),
-    }))
+    .filter((resource) => existsSync(resource.filePath)
+      && (resource.name !== 'GRAPH_REPORT.md' || reportReceipt !== null))
+    .map((resource) => {
+      const content = resource.name === 'graph.json' ? graphArtifact : reportReceipt!.report
+      const reportFreshness = reportReceipt ? { ...reportReceipt, resourceModifiedMs: reportReceipt.reportModifiedMs } : undefined
+      return { ...resource, annotations: freshnessAnnotations(resourceFreshnessMetadata(
+        safeGraphPath, resource.filePath, content, graphReceipt.graphSha256,
+        resource.name === 'graph.json' ? graphReceipt : reportFreshness,
+      )) }
+    })
 }
 
 function resourceListSignature(resources: readonly McpResourceDefinition[]): string {
@@ -166,23 +175,33 @@ export function handleResourceRead(
     return helpers.failure(id, helpers.jsonrpcInvalidParams, `resources/read requires a string uri parameter <= ${helpers.maxStdioTextLength} characters`)
   }
 
-  const resource = resourcesForGraph(graphPath).find((entry) => entry.uri === uri)
+  const safeGraphPath = validateGraphPath(resolveWorkspaceGraphPath(graphPath))
+  const graphReceipt = readGraphArtifactReceipt(safeGraphPath)
+  const resource = resourcesForGraph(graphPath, graphReceipt).find((entry) => entry.uri === uri)
   if (!resource) {
     return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unknown resource: ${uri}`)
   }
 
-  if (statSync(resource.filePath).size > helpers.maxResourceBytes) {
+  const receipt = resource.name === 'GRAPH_REPORT.md' ? readMatchingReportReceipt(safeGraphPath, graphReceipt) : null
+  if (resource.name === 'GRAPH_REPORT.md' && receipt === null) {
+    return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unknown resource: ${uri}`)
+  }
+  const text = receipt?.report ?? graphReceipt.artifact
+  if (Buffer.byteLength(text) > helpers.maxResourceBytes) {
     return helpers.failure(id, helpers.jsonrpcServerError, `Resource too large to read over stdio: ${resource.name}`)
   }
-  if (resource.name === 'graph.json') loadGraphArtifact(resource.filePath)
+  const annotations = freshnessAnnotations(resourceFreshnessMetadata(
+    safeGraphPath, resource.filePath, text, graphReceipt.graphSha256,
+    receipt ? { ...receipt, resourceModifiedMs: receipt.reportModifiedMs } : graphReceipt,
+  ))
 
   return helpers.ok(id, {
     contents: [
       {
         uri: resource.uri,
         mimeType: resource.mimeType,
-        text: readFileSync(resource.filePath, 'utf8'),
-        annotations: resource.annotations,
+        text,
+        annotations,
       },
     ],
   })

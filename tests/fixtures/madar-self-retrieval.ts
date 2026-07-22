@@ -9,16 +9,19 @@ interface FixtureNode {
 }
 
 const NODES: FixtureNode[] = [
-  { id: 'generate_command', label: 'runGenerateCommand', source: '/src/infrastructure/generate.ts', community: 0 },
-  { id: 'detect_sources', label: 'detectProjectFiles', source: '/src/pipeline/detect.ts', community: 0 },
+  { id: 'generate_index', label: 'generateIndex', source: '/src/application/generate-index.ts', community: 0 },
+  { id: 'source_catalog', label: 'buildSourceCatalog', source: '/src/adapters/filesystem/source-catalog.ts', community: 0 },
   { id: 'index_sources', label: 'buildCanonicalTypeScriptIndex', source: '/src/adapters/typescript/index.ts', community: 0 },
-  { id: 'generation_bridge', label: 'GenerationPipeline.run', source: '/src/infrastructure/generate.ts', community: 0 },
+  { id: 'generation_bridge', label: 'buildAndPublishIndex', source: '/src/application/generate-index.ts', community: 0 },
+  { id: 'build_state', label: 'attachBuildState', source: '/src/domain/index/build-state.ts', community: 0 },
+  { id: 'publish_index', label: 'publishAcceptedIndex', source: '/src/adapters/filesystem/index-store.ts', community: 0 },
   { id: 'generation_distractor', label: 'GraphGenerationSummary', source: '/src/pipeline/report.ts', community: 9 },
 
-  { id: 'watch_graph', label: 'GraphArtifact.publish', source: '/src/infrastructure/watch.ts', community: 1 },
-  { id: 'watch_edits', label: 'EditObserver.detectChanges', source: '/src/infrastructure/watch.ts', community: 1 },
-  { id: 'watch_reconcile', label: 'AutoRefreshCoordinator.reconcile', source: '/src/infrastructure/watch.ts', community: 1, role: 'watcher' },
-  { id: 'watch_state', label: 'writeWatcherState', source: '/src/infrastructure/watcher-state.ts', community: 1 },
+  { id: 'watch_index', label: 'watchIndex', source: '/src/infrastructure/watch-index.ts', community: 1 },
+  { id: 'watch_controller', label: 'startWatchIndex', source: '/src/infrastructure/watch-index.ts', community: 1, role: 'watcher' },
+  { id: 'update_index', label: 'updateIndex', source: '/src/application/update-index.ts', community: 1 },
+  { id: 'load_index', label: 'loadAcceptedIndex', source: '/src/adapters/filesystem/index-store.ts', community: 1 },
+  { id: 'snapshot_compare', label: 'sourceSnapshotsEqual', source: '/src/domain/index/build-state.ts', community: 1 },
   { id: 'watch_distractor', label: 'GraphUpdateFormatter', source: '/src/pipeline/report.ts', community: 9 },
 
   { id: 'evidence_contract', label: 'MadarResponseEvidence', source: '/src/runtime/mcp-response-evidence.ts', community: 2 },
@@ -41,12 +44,17 @@ const NODES: FixtureNode[] = [
 ]
 
 const EDGES: Array<[string, string, string]> = [
-  ['generation_bridge', 'generate_command', 'coordinates'],
-  ['generation_bridge', 'detect_sources', 'coordinates'],
-  ['generation_bridge', 'index_sources', 'coordinates'],
-  ['watch_reconcile', 'watch_graph', 'coordinates'],
-  ['watch_reconcile', 'watch_edits', 'coordinates'],
-  ['watch_reconcile', 'watch_state', 'writes_state'],
+  ['generate_index', 'source_catalog', 'calls'],
+  ['generate_index', 'index_sources', 'calls'],
+  ['generate_index', 'generation_bridge', 'calls'],
+  ['generation_bridge', 'build_state', 'calls'],
+  ['generation_bridge', 'publish_index', 'calls'],
+  ['watch_index', 'watch_controller', 'calls'],
+  ['watch_controller', 'update_index', 'calls'],
+  ['update_index', 'source_catalog', 'calls'],
+  ['update_index', 'load_index', 'calls'],
+  ['update_index', 'snapshot_compare', 'calls'],
+  ['update_index', 'generation_bridge', 'calls'],
   ['evidence_bridge', 'evidence_contract', 'coordinates'],
   ['evidence_bridge', 'quality_signals', 'coordinates'],
   ['evidence_bridge', 'confidence_decision', 'coordinates'],

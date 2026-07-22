@@ -465,7 +465,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '  generate [path]       build graph artifacts for a folder (default .)',
     '    --update             reuse an unchanged graph; cold changed runs reconcile fully',
     '    --cluster-only       re-cluster an existing graph.json without re-indexing source',
-    '    --watch              retain an in-process index and update affected dependencies',
+    '    --watch              watch for changes; unchanged runs skip work, changed runs reconcile fully',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --strict-indexing    fail when any candidate is failed or unsupported',
@@ -1001,8 +1001,8 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       const generate = options.update ? dependencies.updateIndex : dependencies.generateGraph
       const result = generate(options.path, {
         clusterOnly: options.clusterOnly,
-        followSymlinks: options.followSymlinks,
-        respectGitignore: options.respectGitignore,
+        ...(options.followSymlinks === undefined ? {} : { followSymlinks: options.followSymlinks }),
+        ...(options.respectGitignore === undefined ? {} : { respectGitignore: options.respectGitignore }),
         ...(options.strictIndexing
           ? {
               indexingStrict: {
@@ -1036,8 +1036,8 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       }))
       if (options.watch) {
         await dependencies.watchGraph(options.path, options.debounceSeconds, {
-          followSymlinks: options.followSymlinks,
-          respectGitignore: options.respectGitignore,
+          ...(options.followSymlinks === undefined ? {} : { followSymlinks: options.followSymlinks }),
+          ...(options.respectGitignore === undefined ? {} : { respectGitignore: options.respectGitignore }),
           ...(options.strictIndexing
             ? {
                 indexingStrict: {

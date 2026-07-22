@@ -19,10 +19,14 @@ import {
   type IndexBuildState,
   type IndexingReasonCode,
 } from '../domain/index/build-state.js'
-import { readGraphSourceRoot } from '../shared/graph-source-root.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
+import { readGraphSourceRoot, resolveGraphSourceRoot } from '../shared/graph-source-root.js'
 import {
+  parseDiscoverySafetyMetadata,
   readDiscoverySafetyMetadata,
+  reasonBuckets,
   relevantDiscoveryExclusions,
+  relevantPathEntries,
   type DiscoveryExclusionReason,
   type DiscoverySafetyMetadata,
 } from '../shared/discovery-safety.js'
@@ -71,10 +75,6 @@ const MEDIUM_CONFIDENCE_MAX = HIGH_CONFIDENCE_THRESHOLD - 0.01
 const LOW_CONFIDENCE_MAX = MEDIUM_CONFIDENCE_THRESHOLD - 0.01
 const GENERIC_SCOPE_SEGMENTS = new Set(['src', 'test', 'tests', 'docs', 'lib', 'libs', 'packages', 'apps'])
 const GENERIC_SCOPE_WRAPPERS = new Set(['libs', 'packages', 'apps'])
-const GENERIC_INDEXING_QUERY_TOKENS = new Set([
-  'and', 'code', 'does', 'file', 'files', 'flow', 'from', 'how', 'into', 'path', 'repo', 'repository',
-  'src', 'the', 'this', 'through', 'what', 'where', 'with',
-])
 
 function roundScore(value: number): number {
   return Math.round(Math.min(1, Math.max(0, value)) * 100) / 100
@@ -391,51 +391,18 @@ function readIndexBuildStateForGraph(graphPath: string): IndexBuildState | null 
   }
 }
 
-function indexingQueryTokens(value: string): Set<string> {
-  return new Set(
-    value
-      .toLowerCase()
-      .replaceAll('\\', '/')
-      .split(/[^a-z0-9_]+/)
-      .filter((token) => token.length >= 3 && !GENERIC_INDEXING_QUERY_TOKENS.has(token)),
-  )
-}
-
-function supportedFailureMatches(
-  path: string,
-  queryTokens: ReadonlySet<string>,
-  owners: readonly string[],
-): boolean {
-  const normalizedPath = normalizeSourcePath(path).toLowerCase()
-  const ownerMatch = owners.some((owner) => {
-    const normalizedOwner = normalizeSourcePath(owner).toLowerCase()
-    return normalizedOwner.length > 0
-      && (normalizedPath.includes(normalizedOwner) || normalizedOwner.includes(normalizedPath))
-  })
-  if (ownerMatch) return true
-  if (queryTokens.size === 0) return false
-  const pathTokens = indexingQueryTokens(normalizedPath)
-  return [...queryTokens].some((token) => pathTokens.has(token))
-}
-
 function relevantSupportedIndexingUncertainty(
   state: IndexBuildState,
   input: { question?: string; coveredWorkflowOwners?: readonly string[] } = {},
 ) {
   const failures = state.completeness.supported_failures
-  const queryTokens = indexingQueryTokens(input.question ?? '')
-  const owners = input.coveredWorkflowOwners ?? []
-  const relevant = failures.filter((failure) => supportedFailureMatches(failure.path, queryTokens, owners))
-  const reasons: Partial<Record<IndexingReasonCode, number>> = {}
-  const relevantReasons: Partial<Record<IndexingReasonCode, number>> = {}
-  for (const failure of failures) reasons[failure.reason] = (reasons[failure.reason] ?? 0) + 1
-  for (const failure of relevant) relevantReasons[failure.reason] = (relevantReasons[failure.reason] ?? 0) + 1
+  const relevant = relevantPathEntries(failures, input)
   return {
     total: failures.length,
     relevant: relevant.length,
     state: state.completeness.summary.state,
-    reasons,
-    relevant_reasons: relevantReasons,
+    reasons: reasonBuckets(failures),
+    relevant_reasons: reasonBuckets(relevant),
     has_relevant_failures: relevant.length > 0,
   }
 }
@@ -466,6 +433,7 @@ function moreRestrictiveConfidence(
 function scopeQualityAssessment(
   graphPath: string | undefined,
   coveredWorkflowOwners: readonly string[],
+  graph?: KnowledgeGraph,
 ): {
   confidenceCap: MadarResponsePackConfidence
   reason: string
@@ -511,7 +479,9 @@ function scopeQualityAssessment(
   }
 
   const expectedGraphPath = `${candidateScopes[0]}/out/graph.json`
-  const normalizedSourceRoot = normalizeSourcePath(readGraphSourceRoot(graphPath))
+  const normalizedSourceRoot = normalizeSourcePath(
+    graph ? resolveGraphSourceRoot(graphPath, graph) : readGraphSourceRoot(graphPath),
+  )
   const sourceRootMatchesScope = normalizedSourceRoot === candidateScopes[0]
     || normalizedSourceRoot.endsWith(`/${candidateScopes[0]}`)
   if (normalizedGraphPath === expectedGraphPath || normalizedGraphPath.endsWith(`/${expectedGraphPath}`) || sourceRootMatchesScope) {
@@ -623,6 +593,7 @@ export function assessMadarResponseEvidence(input: {
   expandable?: readonly ContextPackExpandableRef[] | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
+  graph?: KnowledgeGraph | undefined
   indexBuildState?: IndexBuildState | null | undefined
   /** @deprecated Derived manifests are deliberately ignored as evidence authority. */
   indexingManifest?: unknown
@@ -678,7 +649,7 @@ export function assessMadarResponseEvidence(input: {
   let sourceVerificationBlocked = false
 
   if (runtimeGeneration) {
-    const scopeQuality = scopeQualityAssessment(input.graphPath, coveredWorkflowOwners)
+    const scopeQuality = scopeQualityAssessment(input.graphPath, coveredWorkflowOwners, input.graph)
     confidenceCap = moreRestrictiveConfidence(confidenceCap, scopeQuality.confidenceCap)
     confidenceReasons.push(scopeQuality.reason)
     if (scopeQuality.confidenceCap !== 'high') {
@@ -751,6 +722,8 @@ export function assessMadarResponseEvidence(input: {
 
   const discoverySafety = input.discoverySafety !== undefined
     ? input.discoverySafety
+    : input.graph
+      ? parseDiscoverySafetyMetadata(input.graph.graph.discovery_safety)
     : input.graphPath
       ? readDiscoverySafetyMetadata(input.graphPath)
       : null
@@ -788,6 +761,8 @@ export function assessMadarResponseEvidence(input: {
 
   const indexBuildState = input.indexBuildState !== undefined
     ? input.indexBuildState
+    : input.graph
+      ? readBuildState(input.graph)
     : input.graphPath
       ? readIndexBuildStateForGraph(input.graphPath)
       : null
@@ -888,6 +863,7 @@ export function buildMadarResponseEvidence(input: {
   expandable?: readonly ContextPackExpandableRef[] | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
+  graph?: KnowledgeGraph | undefined
   indexBuildState?: IndexBuildState | null | undefined
   /** @deprecated Derived manifests are deliberately ignored as evidence authority. */
   indexingManifest?: unknown

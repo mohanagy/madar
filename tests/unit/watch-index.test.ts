@@ -6,6 +6,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { generateIndex, type GenerateIndexResult } from '../../src/application/generate-index.js'
 import { SourceChangedDuringBuildError } from '../../src/application/generate-index.js'
+import { updateIndex } from '../../src/application/update-index.js'
+import {
+  acquireIndexLease,
+  loadAcceptedIndex,
+  readMatchingDiagnostics,
+  readMatchingReport,
+} from '../../src/adapters/filesystem/index-store.js'
 import { IndexLeaseContentionError } from '../../src/domain/index/build-state.js'
 import { startWatchIndex } from '../../src/infrastructure/watch-index.js'
 
@@ -70,13 +77,53 @@ function wait(ms = 15): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function useFakeClock(): void {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] })
+}
+
+async function advance(ms = 0): Promise<void> {
+  await vi.advanceTimersByTimeAsync(ms)
+}
+
 afterEach(() => {
   vi.useRealTimers()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
 describe('watch index', () => {
+  it('settles without reconciling when its signal is already aborted', async () => {
+    const abort = new AbortController()
+    abort.abort()
+    let calls = 0
+    let eventSources = 0
+    const controller = startWatchIndex('.', 0, {
+      signal: abort.signal,
+      update: () => { calls += 1; return updateResult(calls) },
+      eventSource: () => { eventSources += 1; return { close() {} } },
+      logger: { log() {}, error() {} },
+    })
+
+    await Promise.all([controller.startupSettled, controller.completed])
+    expect(controller.state()).toBe('stopped')
+    expect(calls).toBe(0)
+    expect(eventSources).toBe(0)
+  })
+
+  it('cancels startup reconciliation when stopped before its microtask runs', async () => {
+    let calls = 0
+    const controller = startWatchIndex('.', 0, {
+      update: () => { calls += 1; return updateResult(calls) },
+      eventSource: () => ({ close() {} }),
+      logger: { log() {}, error() {} },
+    })
+    controller.stop()
+
+    await controller.completed
+    expect(calls).toBe(0)
+  })
+
   it('coalesces a burst into one following reconciliation', async () => {
+    useFakeClock()
     let changed: (() => void) | null = null
     let calls = 0
     const update = () => updateResult(++calls)
@@ -93,7 +140,9 @@ describe('watch index', () => {
     expect(calls).toBe(1)
 
     for (let index = 0; index < 10; index += 1) (changed as (() => void) | null)?.()
-    await wait(30)
+    await advance(9)
+    expect(calls).toBe(1)
+    await advance(1)
 
     expect(calls).toBe(2)
     expect(controller.state()).toBe('idle')
@@ -102,11 +151,15 @@ describe('watch index', () => {
   })
 
   it('schedules exactly one follow-up when an edit arrives during a build', async () => {
+    useFakeClock()
     let changed: (() => void) | null = null
     let calls = 0
-    const update = () => {
+    let finishFirst: (() => void) | null = null
+    const update = (): GenerateIndexResult | Promise<GenerateIndexResult> => {
       calls += 1
-      if (calls === 1) changed?.()
+      if (calls === 1) return new Promise((resolvePromise) => {
+        finishFirst = () => resolvePromise(updateResult(1))
+      })
       return updateResult(calls)
     }
     const controller = startWatchIndex('.', 0, {
@@ -118,8 +171,13 @@ describe('watch index', () => {
       },
       logger: { log() {}, error() {} },
     })
+    await Promise.resolve()
+    expect(calls).toBe(1)
+    for (let index = 0; index < 5; index += 1) (changed as (() => void) | null)?.()
+    expect(calls).toBe(1)
+    ;(finishFirst as (() => void) | null)?.()
     await controller.startupSettled
-    await wait()
+    await advance()
 
     expect(calls).toBe(2)
     expect(controller.acceptedBuildId()).toBe(updateResult(2).buildId)
@@ -128,6 +186,7 @@ describe('watch index', () => {
   })
 
   it('immediately retries a source-change race without starting parallel builders', async () => {
+    useFakeClock()
     let calls = 0
     let active = 0
     let maximumActive = 0
@@ -149,16 +208,18 @@ describe('watch index', () => {
       logger: { log() {}, error() {} },
     })
     await controller.startupSettled
-    await wait()
+    await advance()
 
     expect(calls).toBe(2)
     expect(maximumActive).toBe(1)
     expect(controller.failureReason()).toBeNull()
     expect(controller.state()).toBe('idle')
     controller.stop()
+    await controller.completed
   })
 
   it('recovers from a failed reconciliation on the next event', async () => {
+    useFakeClock()
     let changed: (() => void) | null = null
     let calls = 0
     const update = () => {
@@ -180,19 +241,25 @@ describe('watch index', () => {
     expect(controller.failureReason()).toContain('injected failure')
 
     ;(changed as (() => void) | null)?.()
-    await wait()
+    await advance()
     expect(calls).toBe(2)
     expect(controller.state()).toBe('idle')
     expect(controller.failureReason()).toBeNull()
     controller.stop()
+    await controller.completed
   })
 
   it('keeps lease contention pending and retries without an external event', async () => {
+    useFakeClock()
     let calls = 0
     const errors: string[] = []
     const update = () => {
       calls += 1
-      if (calls === 1) throw new IndexLeaseContentionError('/fixture/out')
+      if (calls === 1) {
+        const error = new Error('worker-shaped contention')
+        error.name = 'IndexLeaseContentionError'
+        throw error
+      }
       return updateResult(calls)
     }
     const controller = startWatchIndex('.', 0, {
@@ -207,7 +274,9 @@ describe('watch index', () => {
     expect(controller.state()).toBe('pending')
     expect(controller.failureReason()).toBeNull()
 
-    await wait(75)
+    await advance(49)
+    expect(calls).toBe(1)
+    await advance(1)
     expect(calls).toBe(2)
     expect(controller.state()).toBe('idle')
     expect(controller.failureReason()).toBeNull()
@@ -216,8 +285,98 @@ describe('watch index', () => {
     await controller.completed
   })
 
+  it('retries a real competing owner of the same output lease', async () => {
+    useFakeClock()
+    const root = sandbox()
+    write(root, 'src/main.ts', 'export const value = 1\n')
+    const generated = generateIndex(root)
+    const release = acquireIndexLease(generated.outputDir)
+    const controller = startWatchIndex(root, 0, {
+      seed: generated,
+      pollIntervalMs: 60_000,
+      eventSource: () => ({ close() {} }),
+      logger: { log() {}, error() {} },
+    })
+    try {
+      await controller.startupSettled
+      expect(controller.state()).toBe('pending')
+      expect(controller.failureReason()).toBeNull()
+      release()
+      await advance(50)
+      expect(controller.state()).toBe('idle')
+      expect(controller.acceptedBuildId()).toBe(generated.buildId)
+    } finally {
+      release()
+      controller.stop()
+      await controller.completed
+    }
+  })
+
+  it('serializes two controllers publishing to the same output', async () => {
+    useFakeClock()
+    const root = sandbox()
+    const source = write(root, 'src/main.ts', 'export const value = 1\n')
+    const generated = generateIndex(root)
+    const changed: Array<() => void> = []
+    const commits: string[] = []
+    const reconciliations: Array<{ buildId: string; mode: string | undefined }> = []
+    let active = 0
+    let maximumActive = 0
+    const observedUpdate = (owner: string): typeof updateIndex => (path = '.', options = {}) => {
+      active += 1
+      maximumActive = Math.max(maximumActive, active)
+      try {
+        const result = updateIndex(path, {
+          ...options,
+          storeDependencies: {
+            ...options.storeDependencies,
+            hook(step) {
+              options.storeDependencies?.hook?.(step)
+              if (step === 'before_graph_commit') commits.push(owner)
+            },
+          },
+        })
+        reconciliations.push({ buildId: result.buildId, mode: result.updateReceipt?.mode })
+        return result
+      } finally {
+        active -= 1
+      }
+    }
+    const controllerOptions = (owner: string) => ({
+      seed: generated,
+      update: observedUpdate(owner),
+      pollIntervalMs: 60_000,
+      eventSource: (_root: string, notify: () => void) => {
+        changed.push(notify)
+        return { close() {} }
+      },
+      logger: { log() {}, error() {} },
+    })
+    const first = startWatchIndex(root, 0, controllerOptions('first'))
+    const second = startWatchIndex(root, 0, controllerOptions('second'))
+    await Promise.all([first.startupSettled, second.startupSettled])
+    reconciliations.length = 0
+
+    writeFileSync(source, 'export const value = 2\n', 'utf8')
+    changed.forEach((notify) => notify())
+    await advance()
+
+    const accepted = loadAcceptedIndex(generated.graphPath)
+    expect(maximumActive).toBe(1)
+    expect(commits).toHaveLength(1)
+    expect(reconciliations.map(({ mode }) => mode).sort()).toEqual(['cold_noop', 'cold_reconcile'])
+    expect(new Set(reconciliations.map(({ buildId }) => buildId))).toEqual(new Set([accepted?.state.build_id]))
+    expect(first.acceptedBuildId()).toBe(accepted?.state.build_id)
+    expect(second.acceptedBuildId()).toBe(accepted?.state.build_id)
+    expect(readMatchingDiagnostics(generated.graphPath)?.build_id).toBe(accepted?.state.build_id)
+    expect(readMatchingReport(generated.graphPath)).toContain(accepted?.state.build_id)
+    first.stop()
+    second.stop()
+    await Promise.all([first.completed, second.completed])
+  })
+
   it('bounds repeated lease retries before reporting a terminal failure', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] })
+    useFakeClock()
     let calls = 0
     const update = (): GenerateIndexResult => {
       calls += 1

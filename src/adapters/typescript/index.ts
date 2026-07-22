@@ -731,8 +731,7 @@ function createIndexCompilerHost(
   const baseGetSourceFile = host.getSourceFile.bind(host)
   const baseResolveModuleNames = host.resolveModuleNames?.bind(host)
   const canRead = (fileName: string): boolean =>
-    !isSameOrNestedPath(fileName, root)
-    || isDeclarationFilePath(fileName)
+    isDeclarationFilePath(fileName)
     || isCompilerMetadataPath(fileName)
     || !isProgramSourcePath(fileName)
     || pathToFileId.has(fileName)

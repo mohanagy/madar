@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 
 import { GRAPH_ARTIFACT_VERSION } from '../../src/domain/graph/artifact.js'
+import { generateIndex } from '../../src/application/generate-index.js'
 import { startGraphServer } from '../../src/runtime/http-server.js'
 import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
@@ -31,6 +32,37 @@ function withTempDir<T>(callback: (tempDir: string) => Promise<T> | T): Promise<
 }
 
 describe('startGraphServer', () => {
+  test('serves only a report authenticated to the accepted graph', async () => {
+    await withTempDir(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
+      const generated = generateIndex(tempDir)
+      const handle = await startGraphServer({ graphPath: generated.graphPath, port: 0 })
+
+      try {
+        const health = await fetch(`${handle.url}health`)
+        const report = await fetch(`${handle.url}GRAPH_REPORT.md`)
+        const reportText = await report.text()
+        const graphVersion = createHash('sha256').update(readFileSync(generated.graphPath, 'utf8')).digest('hex').slice(0, 12)
+        expect(report.status).toBe(200)
+        expect(report.headers.get('x-madar-graph-version')).toBe(graphVersion)
+        expect(report.headers.get('x-madar-graph-version')).toBe(health.headers.get('x-madar-graph-version'))
+        expect(report.headers.get('x-madar-resource-bytes')).toBe(String(Buffer.byteLength(reportText)))
+        expect(reportText).toContain(`<!-- madar-build-id: ${generated.buildId} -->`)
+
+        writeFileSync(
+          generated.reportPath,
+          `<!-- madar-build-id: ${'0'.repeat(64)} -->\n# stale report\n`,
+          'utf8',
+        )
+        const stale = await fetch(`${handle.url}GRAPH_REPORT.md`)
+        expect(stale.status).toBe(404)
+        expect(await stale.text()).toContain('does not match the accepted graph')
+      } finally {
+        await handle.close()
+      }
+    })
+  })
+
   test('serves graph artifacts and runtime query endpoints', async () => {
     await withTempDir(async (tempDir) => {
       const outputDir = join(tempDir, 'out')
@@ -170,7 +202,7 @@ describe('startGraphServer', () => {
       const handle = await startGraphServer({ graphPath, port: 0, logger: { log() {}, error() {} } })
 
       try {
-        for (const endpoint of ['stats', 'query?q=auth', 'graph.json']) {
+        for (const endpoint of ['stats', 'query?q=auth', 'graph.json', 'GRAPH_REPORT.md']) {
           const response = await fetch(`${handle.url}${endpoint}`)
           expect(response.status).toBe(500)
           expect(await response.text()).toContain(GRAPH_REGENERATION_INSTRUCTION)

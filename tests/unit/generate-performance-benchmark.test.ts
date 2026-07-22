@@ -16,6 +16,7 @@ interface PerformanceHarness {
   }
   buildBaselineReceipt(input: Record<string, unknown>): Record<string, any>
   buildCandidateReceipt(input: Record<string, unknown>): Record<string, any>
+  buildShippingReceipt(input: Record<string, unknown>): Record<string, any>
   canonicalJson(value: unknown): string
   subjectIdentity(worktree: string, distRoot: string): Record<string, any>
 }
@@ -234,6 +235,66 @@ describe('incremental performance evaluation harness', () => {
       ratio: null,
       pass: false,
     })
+  })
+
+  it('grades the simplified shipping path without carrying warm-session measurements', async () => {
+    const harness = await loadHarness()
+    const baseline = harness.buildBaselineReceipt({
+      subject: subject('8886a0299ee30765ce149ca7ad5d1779496b78b5'),
+      corpus,
+      environment,
+      protocol,
+      samples: samples(100),
+    })
+    const coldNoop = samples(
+      10,
+      { parsed_files: 0, reused_files: 500, invalidated_files: 0, dependency_closure_size: 0 },
+      false,
+    ).map((sample) => ({ ...sample, mode: 'cold_noop' }))
+    const input = {
+      subject: subject('64c4d240f7561210a8170ea629b7692f3a7ed466'),
+      baseline,
+      corpus,
+      environment,
+      protocol: { ...protocol, persistent_warm_session: false },
+      samples: { clean_generation: samples(105), cold_noop: coldNoop },
+    }
+
+    const first = harness.buildShippingReceipt(input)
+    const second = harness.buildShippingReceipt(structuredClone(input))
+
+    expect(first).toEqual(second)
+    expect(first).toMatchObject({
+      receipt_kind: 'core-reset-full-reconcile-performance',
+      eligible_for_acceptance: true,
+      protocol: { persistent_warm_session: false },
+      measurements: {
+        clean_generation: { count: 20 },
+        cold_noop: {
+          count: 20,
+          parsed_files: { min: 0, max: 0 },
+          invalidated_files: { min: 0, max: 0 },
+        },
+      },
+      gates: {
+        subject_identity: { clean: true, tree_matches_head: true, pass: true },
+        sample_protocol: { pass: true },
+        corpus_eligibility: { kind: 'synthetic_fixture', pass: true },
+        cold_noop_p50_ratio: { pass: true },
+        cold_noop_zero_parse: { pass: true },
+        clean_generation_regression: { baseline_compatible: true, pass: true },
+      },
+    })
+    expect(Object.keys(first.measurements)).toEqual(['clean_generation', 'cold_noop'])
+    expect(first.receipt_sha256).toMatch(/^[a-f0-9]{64}$/)
+
+    for (const invalidSubject of [subject('64c4d240f7561210a8170ea629b7692f3a7ed466', true), {
+      ...subject('64c4d240f7561210a8170ea629b7692f3a7ed466'), worktree_tree_oid: '2'.repeat(40),
+    }]) {
+      const invalid = harness.buildShippingReceipt({ ...input, subject: invalidSubject })
+      expect(invalid.gates.subject_identity.pass).toBe(false)
+      expect(invalid.eligible_for_acceptance).toBe(false)
+    }
   })
 
   it('accepts a pinned non-empty held-out corpus without applying the synthetic 500-file minimum', async () => {

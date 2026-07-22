@@ -1,44 +1,24 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
-
+import { buildCanonicalTypeScriptIndex, type CanonicalTypeScriptIndexResult } from '../adapters/typescript/index.js'
+import { buildSourceCatalog, sourceCatalogStillCurrent, type SourceCatalog, type SourceCatalogOptions } from '../adapters/filesystem/source-catalog.js'
 import {
-  buildCanonicalTypeScriptIndex,
-  type CanonicalTypeScriptIndexResult,
-} from '../adapters/typescript/index.js'
-import {
-  buildSourceCatalog,
-  sourceCatalogStillCurrent,
-  type SourceCatalog,
-  type SourceCatalogOptions,
-} from '../adapters/filesystem/source-catalog.js'
-import {
-  acquireIndexLease,
-  INDEX_DIAGNOSTICS_VERSION,
-  loadAcceptedIndex,
-  publishAcceptedIndex,
-  readMatchingDiagnostics,
-  type IndexDiagnostics,
-  type IndexStoreDependencies,
+  acquireIndexLease, INDEX_DIAGNOSTICS_VERSION, loadAcceptedIndex, publishAcceptedIndex,
+  readMatchingDiagnostics, type IndexDiagnosticsInput, type IndexStoreDependencies,
 } from '../adapters/filesystem/index-store.js'
 import {
-  attachBuildState,
-  INDEX_BUILD_STATE_VERSION,
-  INDEX_ENGINE_ID,
-  type IndexDiagnosticReceipt,
-  type IndexingDiagnostic,
-  type IndexingOutcome,
-  type IndexingStrictThresholds,
-  type IndexingSummary,
-  type UpdateReceipt,
+  attachBuildState, INDEX_BUILD_STATE_VERSION, INDEX_ENGINE_ID, type IndexBuildState,
+  type IndexDiagnosticReceipt, type IndexingDiagnostic, type IndexingOutcome,
+  type IndexingStrictThresholds, type IndexingSummary, type UpdateReceipt,
 } from '../domain/index/build-state.js'
+import { compareCodeUnits } from '../domain/graph/canonical-json.js'
 import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../pipeline/analyze.js'
 import { cluster, scoreAll } from '../pipeline/cluster.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import { generate as generateReport } from '../pipeline/report.js'
-import type { DiscoverySafetyMetadata } from '../shared/discovery-safety.js'
+import { buildDiscoverySafetyMetadata, parseDiscoverySafetyMetadata, type DiscoverySafetyMetadata } from '../shared/discovery-safety.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
-
 export type ProgressStep =
   | { step: 'detect'; message: string }
   | { step: 'index'; message: string; current?: number; total?: number }
@@ -47,32 +27,10 @@ export type ProgressStep =
   | { step: 'analyze'; message: string }
   | { step: 'export'; message: string }
 export interface GenerateIndexOptions extends SourceCatalogOptions {
-  clusterOnly?: boolean
-  onProgress?: (progress: ProgressStep) => void
-  /** Fault-injection seam for the publication contract tests. */
+  clusterOnly?: boolean; onProgress?: (progress: ProgressStep) => void
   storeDependencies?: Partial<IndexStoreDependencies>
 }
-export interface GenerateIndexResult {
-  mode: 'generate' | 'update' | 'cluster-only'
-  rootPath: string
-  outputDir: string
-  graphPath: string
-  reportPath: string
-  totalFiles: number
-  indexedFiles: number
-  totalWords: number
-  nodeCount: number
-  edgeCount: number
-  communityCount: number
-  semanticAnomalyCount: number
-  warning: string | null
-  notes: string[]
-  discoverySafety: DiscoverySafetyMetadata
-  indexingManifestPath: string
-  indexing: IndexingSummary
-  buildId: string
-  updateReceipt?: UpdateReceipt
-}
+type GenerateIndexMode = 'generate' | 'update' | 'cluster-only'
 export type GenerateUnsupportedCorpusCode = 'NO_SUPPORTED_FILES' | 'NO_GRAPH_NODES'
 export class GenerateUnsupportedCorpusError extends Error {
   constructor(
@@ -101,12 +59,10 @@ export class SourceChangedDuringBuildError extends Error {
   }
 }
 function supportedCapability(filePath: string): string {
-  switch (extname(filePath).toLowerCase()) {
-    case '.js': return 'builtin:index:javascript'
-    case '.jsx': return 'builtin:index:jsx'
-    case '.tsx': return 'builtin:index:tsx'
-    default: return 'builtin:index:typescript'
-  }
+  const extension = extname(filePath).toLowerCase()
+  if (extension === '.js') return 'builtin:index:javascript'
+  if (extension === '.jsx') return 'builtin:index:jsx'
+  return extension === '.tsx' ? 'builtin:index:tsx' : 'builtin:index:typescript'
 }
 function canonicalOutcomes(catalog: SourceCatalog, result: CanonicalTypeScriptIndexResult) {
   const local = (path: string) => path.replaceAll('\\', '/').replace(/^\.\//, '')
@@ -169,11 +125,10 @@ function summarize(outcomes: readonly IndexingOutcome[]): IndexingSummary {
     state: supportedFailures === 0 ? 'complete' : supportedFailures === supported.length ? 'failed' : 'partial',
     candidates: outcomes.length,
     counts,
-    reason_buckets: Object.fromEntries(Object.entries(reasons).sort(([left], [right]) => left.localeCompare(right))),
-    capability_buckets: Object.fromEntries(Object.entries(capabilities).sort(([left], [right]) => left.localeCompare(right))),
+    reason_buckets: Object.fromEntries(Object.entries(reasons).sort(([left], [right]) => compareCodeUnits(left, right))),
+    capability_buckets: Object.fromEntries(Object.entries(capabilities).sort(([left], [right]) => compareCodeUnits(left, right))),
   }
 }
-
 function thresholdViolations(summary: IndexingSummary, strict: IndexingStrictThresholds | undefined): string[] {
   if (!strict) return []
   const failures: string[] = []
@@ -181,29 +136,24 @@ function thresholdViolations(summary: IndexingSummary, strict: IndexingStrictThr
   if (summary.counts.unsupported > strict.maxUnsupported) failures.push(`unsupported=${summary.counts.unsupported} exceeds maxUnsupported=${strict.maxUnsupported}`)
   return failures
 }
-
 function missingCorpusError(catalog: SourceCatalog, code: GenerateUnsupportedCorpusCode): GenerateUnsupportedCorpusError {
   const base = code === 'NO_SUPPORTED_FILES'
     ? 'No supported TypeScript or JavaScript files were found in the target path.'
     : 'The canonical TypeScript/JavaScript index did not produce graph nodes from the detected source files.'
   return new GenerateUnsupportedCorpusError(code, base, catalog.discoverySafety)
 }
-
 function canonicalMatchesCatalog(catalog: SourceCatalog, canonical: CanonicalTypeScriptIndexResult): boolean {
   if (canonical.files.length !== catalog.snapshot.supported.length) return false
-  const indexed = new Map(canonical.files.map((file) => [
-    file.path.replaceAll('\\', '/').replace(/^\.\//, ''),
-    file.hash,
-  ]))
+  const indexed = new Map(canonical.files.map((file) =>
+    [file.path.replaceAll('\\', '/').replace(/^\.\//, ''), file.hash]))
   return catalog.snapshot.supported.every((entry) => indexed.get(entry.path) === entry.hash)
 }
-
-function finalizeGraph(graph: KnowledgeGraph, catalog: SourceCatalog, progress?: GenerateIndexOptions['onProgress']) {
+function finalizeGraph(graph: KnowledgeGraph, rootPath: string, progress?: GenerateIndexOptions['onProgress']) {
   progress?.({ step: 'build', message: `Built graph: ${graph.numberOfNodes()} nodes, ${graph.numberOfEdges()} edges` })
   progress?.({ step: 'cluster', message: 'Clustering communities...' })
   const communities = cluster(graph)
   const cohesion = scoreAll(graph, communities)
-  const labels = buildCommunityLabels(graph, communities, { rootPath: catalog.rootPath })
+  const labels = buildCommunityLabels(graph, communities, { rootPath })
   progress?.({ step: 'cluster', message: `Found ${Object.keys(communities).length} communities` })
   progress?.({ step: 'analyze', message: 'Analyzing structure...' })
   const godNodeList = godNodes(graph)
@@ -220,12 +170,87 @@ function finalizeGraph(graph: KnowledgeGraph, catalog: SourceCatalog, progress?:
   }
   return { communities, cohesion, labels, godNodeList, surprises, anomalies, questions }
 }
-
+export function indexResultFromState(input: {
+  mode: GenerateIndexMode; rootPath: string; graph: KnowledgeGraph
+  state: IndexBuildState; notes: string[]; updateReceipt?: UpdateReceipt
+}) {
+  const outputDir = resolveMadarOutputDirectory(input.rootPath)
+  const communities = new Set(input.graph.nodeEntries()
+    .map(([, attributes]) => attributes.community)
+    .filter((value): value is number => typeof value === 'number' && value >= 0))
+  const anomalies = Array.isArray(input.graph.graph.semantic_anomalies) ? input.graph.graph.semantic_anomalies.length : 0
+  return {
+    mode: input.mode,
+    rootPath: input.rootPath,
+    outputDir,
+    graphPath: join(outputDir, 'graph.json'),
+    reportPath: join(outputDir, 'GRAPH_REPORT.md'),
+    totalFiles: input.state.corpus.supported_files,
+    indexedFiles: input.state.completeness.summary.counts.indexed
+      + input.state.completeness.summary.counts.indexed_with_warnings,
+    totalWords: input.state.corpus.total_words,
+    nodeCount: input.graph.numberOfNodes(),
+    edgeCount: input.graph.numberOfEdges(),
+    communityCount: communities.size,
+    semanticAnomalyCount: anomalies,
+    warning: input.state.corpus.warning,
+    notes: input.notes,
+    discoverySafety: parseDiscoverySafetyMetadata(input.graph.graph.discovery_safety) ?? buildDiscoverySafetyMetadata([]),
+    indexingManifestPath: join(outputDir, 'indexing-manifest.json'),
+    indexing: input.state.completeness.summary,
+    buildId: input.state.build_id,
+    ...(input.updateReceipt ? { updateReceipt: input.updateReceipt } : {}),
+  }
+}
+export type GenerateIndexResult = ReturnType<typeof indexResultFromState>
+function finalizeAndPublishIndex(input: {
+  graph: KnowledgeGraph; rootPath: string; mode: GenerateIndexResult['mode']
+  state: Omit<IndexBuildState, 'build_id'> & { build_id?: string }
+  diagnostics: (state: IndexBuildState) => IndexDiagnosticsInput; notes: (diagnosticWarnings: string[]) => string[]
+  options: GenerateIndexOptions
+  updateReceipt?: Omit<UpdateReceipt, 'accepted_build_id' | 'publication_advanced'>
+  assertCurrent?: () => void
+}): GenerateIndexResult {
+  const finalized = finalizeGraph(input.graph, input.rootPath, input.options.onProgress)
+  const { build_id: _previousBuildId, ...nextState } = input.state
+  const state = attachBuildState(input.graph, nextState)
+  const discoverySafety = parseDiscoverySafetyMetadata(input.graph.graph.discovery_safety)
+    ?? buildDiscoverySafetyMetadata([])
+  const report = generateReport(
+    input.graph, finalized.communities, finalized.cohesion, finalized.labels, finalized.godNodeList,
+    finalized.surprises, finalized.anomalies, {
+      total_files: state.corpus.supported_files,
+      total_words: state.corpus.total_words,
+      warning: state.corpus.warning,
+      discovery_safety: discoverySafety.summary,
+      indexing_completeness: state.completeness.summary,
+    }, { input: 0, output: 0 }, input.rootPath, finalized.questions,
+  )
+  input.options.onProgress?.({ step: 'export', message: 'Writing outputs...' })
+  const publication = publishAcceptedIndex({
+    graph: input.graph,
+    outputDir: resolveMadarOutputDirectory(input.rootPath),
+    report,
+    diagnostics: input.diagnostics(state),
+    ...(input.assertCurrent ? { assertCurrent: input.assertCurrent } : {}),
+    ...(input.options.storeDependencies ? { dependencies: input.options.storeDependencies } : {}),
+  })
+  const updateReceipt = input.updateReceipt ? {
+    ...input.updateReceipt,
+    accepted_build_id: state.build_id,
+    publication_advanced: true,
+  } : undefined
+  return indexResultFromState({
+    mode: input.mode,
+    rootPath: input.rootPath,
+    graph: input.graph,
+    state,
+    notes: input.notes(publication.diagnosticWarnings),
+    ...(updateReceipt ? { updateReceipt } : {}),
+  })
+}
 export function buildAndPublishIndex(input: {
-  catalog: SourceCatalog
-  canonical?: CanonicalTypeScriptIndexResult
-  mode: 'generate' | 'update'
-  options?: GenerateIndexOptions
+  catalog: SourceCatalog; mode: 'generate' | 'update'; options?: GenerateIndexOptions
   updateReceipt?: Omit<UpdateReceipt, 'accepted_build_id' | 'publication_advanced'>
   verifyCurrent?: () => boolean
 }): GenerateIndexResult {
@@ -236,7 +261,7 @@ export function buildAndPublishIndex(input: {
     step: 'index', message: `Indexing ${catalog.supportedFiles.length} TypeScript/JavaScript file(s)...`,
     current: 0, total: catalog.supportedFiles.length,
   })
-  const canonical = input.canonical ?? buildCanonicalTypeScriptIndex({ root: catalog.rootPath, files: catalog.supportedFiles })
+  const canonical = buildCanonicalTypeScriptIndex({ root: catalog.rootPath, files: catalog.supportedFiles })
   if (!canonicalMatchesCatalog(catalog, canonical)) throw new SourceChangedDuringBuildError()
   const canonicalReceipts = canonicalOutcomes(catalog, canonical)
   const outcomes = [
@@ -244,7 +269,7 @@ export function buildAndPublishIndex(input: {
       entry.capability?.startsWith('builtin:index:') === true && entry.status === 'indexed'
     )),
     ...canonicalReceipts.outcomes,
-  ].sort((left, right) => left.path.localeCompare(right.path))
+  ].sort((left, right) => compareCodeUnits(left.path, right.path))
   const summary = summarize(outcomes)
   const outputDir = resolveMadarOutputDirectory(catalog.rootPath)
   const supportedIndexFailures = outcomes.filter((entry) =>
@@ -257,90 +282,45 @@ export function buildAndPublishIndex(input: {
   const graph = canonical.graph
   if (graph.numberOfNodes() === 0) throw missingCorpusError(catalog, 'NO_GRAPH_NODES')
   graph.graph.discovery_safety = catalog.discoverySafety
-  const finalized = finalizeGraph(graph, catalog, options.onProgress)
-  const supportedFailures = outcomes
-    .filter((entry) => entry.capability?.startsWith('builtin:index:') === true && entry.status === 'failed')
-    .map((entry) => ({ path: entry.path, reason: entry.reason }))
-  const state = attachBuildState(graph, {
-    version: INDEX_BUILD_STATE_VERSION,
-    engine_id: INDEX_ENGINE_ID,
-    policy: catalog.policy,
-    sources: catalog.snapshot,
-    source_root: catalog.sourceRoot,
-    corpus: {
-      supported_files: catalog.snapshot.supported.length,
-      unsupported_files: catalog.snapshot.unsupported.length,
-      total_words: catalog.totalWords,
-      warning: catalog.warning,
+  const notes: string[] = []
+  if (canonicalReceipts.diagnostics.length > 0) notes.push(`Canonical index reported ${canonicalReceipts.diagnostics.length} diagnostic(s).`)
+  if (catalog.snapshot.unsupported.length > 0) notes.push(`${catalog.snapshot.unsupported.length} recognized unsupported file(s) are informational and do not reduce JS/TS completeness.`)
+  if (catalog.discoverySafety.summary.total > 0) notes.push(`${catalog.discoverySafety.summary.total} safety exclusion(s) were not indexed.`)
+  return finalizeAndPublishIndex({
+    graph, rootPath: catalog.rootPath, mode: input.mode, options,
+    state: {
+      version: INDEX_BUILD_STATE_VERSION,
+      engine_id: INDEX_ENGINE_ID,
+      policy: catalog.policy,
+      sources: catalog.snapshot,
+      source_root: catalog.sourceRoot,
+      corpus: {
+        supported_files: catalog.snapshot.supported.length,
+        unsupported_files: catalog.snapshot.unsupported.length,
+        total_words: catalog.totalWords,
+        warning: catalog.warning,
+      },
+      completeness: { summary, supported_failures: [] },
     },
-    completeness: { summary, supported_failures: supportedFailures },
-  })
-  const reportCorpus = {
-    total_files: catalog.snapshot.supported.length,
-    total_words: catalog.totalWords,
-    warning: catalog.warning,
-    discovery_safety: catalog.discoverySafety.summary,
-    indexing_completeness: summary,
-  }
-  const report = generateReport(
-    graph, finalized.communities, finalized.cohesion, finalized.labels, finalized.godNodeList,
-    finalized.surprises, finalized.anomalies, reportCorpus, { input: 0, output: 0 },
-    catalog.rootPath, finalized.questions,
-  )
-  const diagnostics: IndexDiagnostics = {
-    version: INDEX_DIAGNOSTICS_VERSION,
-    build_id: state.build_id,
-    generated_at: new Date().toISOString(),
-    summary,
-    outcomes,
-    index_diagnostics: canonicalReceipts.diagnostics,
-  }
-  options.onProgress?.({ step: 'export', message: 'Writing outputs...' })
-  const publication = publishAcceptedIndex({
-    graph, outputDir, report, diagnostics,
+    diagnostics: (state) => ({
+      version: INDEX_DIAGNOSTICS_VERSION,
+      build_id: state.build_id,
+      generated_at: new Date().toISOString(),
+      summary,
+      outcomes,
+      index_diagnostics: canonicalReceipts.diagnostics,
+    }),
+    notes: (warnings) => [...warnings, ...notes],
     assertCurrent: () => {
       if (!canonicalMatchesCatalog(catalog, canonical) || (input.verifyCurrent && !input.verifyCurrent())) {
         throw new SourceChangedDuringBuildError()
       }
     },
-    ...(options.storeDependencies ? { dependencies: options.storeDependencies } : {}),
+    ...(input.updateReceipt ? { updateReceipt: input.updateReceipt } : {}),
   })
-  const notes = [...publication.diagnosticWarnings]
-  if (canonicalReceipts.diagnostics.length > 0) notes.push(`Canonical index reported ${canonicalReceipts.diagnostics.length} diagnostic(s).`)
-  if (catalog.snapshot.unsupported.length > 0) notes.push(`${catalog.snapshot.unsupported.length} recognized unsupported file(s) are informational and do not reduce JS/TS completeness.`)
-  if (catalog.discoverySafety.summary.total > 0) notes.push(`${catalog.discoverySafety.summary.total} safety exclusion(s) were not indexed.`)
-  const updateReceipt = input.updateReceipt ? {
-    ...input.updateReceipt,
-    accepted_build_id: state.build_id,
-    publication_advanced: true,
-  } : undefined
-  return {
-    mode: input.mode,
-    rootPath: catalog.rootPath,
-    outputDir,
-    graphPath: publication.graphPath,
-    reportPath: publication.reportPath,
-    totalFiles: catalog.snapshot.supported.length,
-    indexedFiles: canonical.files.length,
-    totalWords: catalog.totalWords,
-    nodeCount: graph.numberOfNodes(),
-    edgeCount: graph.numberOfEdges(),
-    communityCount: Object.keys(finalized.communities).length,
-    semanticAnomalyCount: finalized.anomalies.length,
-    warning: catalog.warning,
-    notes,
-    discoverySafety: catalog.discoverySafety,
-    indexingManifestPath: publication.diagnosticsPath,
-    indexing: summary,
-    buildId: state.build_id,
-    ...(updateReceipt ? { updateReceipt } : {}),
-  }
 }
-
-function generateClusterOnly(rootPath: string, options: GenerateIndexOptions): GenerateIndexResult {
-  const root = resolve(rootPath)
-  const outputDir = resolveMadarOutputDirectory(root)
-  const graphPath = join(outputDir, 'graph.json')
+function generateClusterOnly(root: string, options: GenerateIndexOptions): GenerateIndexResult {
+  const graphPath = join(resolveMadarOutputDirectory(root), 'graph.json')
   const accepted = loadAcceptedIndex(graphPath)
   if (!accepted) throw new Error('--cluster-only requires a current authoritative graph. Run `madar generate .` first.')
   const storedRoot = accepted.state.source_root.root_path
@@ -348,64 +328,19 @@ function generateClusterOnly(rootPath: string, options: GenerateIndexOptions): G
     throw new Error('--cluster-only graph belongs to a different source workspace.')
   }
   if (options.indexingStrict) throw new Error('--cluster-only cannot change indexing thresholds.')
-  const catalog: SourceCatalog = {
-    rootPath: root,
-    supportedFiles: accepted.state.sources.supported.map((entry) => resolve(root, entry.path)),
-    snapshot: accepted.state.sources,
-    policy: accepted.state.policy,
-    sourceRoot: accepted.state.source_root,
-    outcomes: readMatchingDiagnostics(graphPath)?.outcomes ?? [],
-    discoverySafety: accepted.graph.graph.discovery_safety as DiscoverySafetyMetadata,
-    totalWords: accepted.state.corpus.total_words,
-    warning: accepted.state.corpus.warning,
-    scannedFiles: 0,
-  }
-  const finalized = finalizeGraph(accepted.graph, catalog, options.onProgress)
-  const state = attachBuildState(accepted.graph, {
-    version: accepted.state.version,
-    engine_id: accepted.state.engine_id,
-    policy: accepted.state.policy,
-    sources: accepted.state.sources,
-    source_root: accepted.state.source_root,
-    corpus: accepted.state.corpus,
-    completeness: accepted.state.completeness,
+  const matchingDiagnostics = readMatchingDiagnostics(graphPath)
+  if (!matchingDiagnostics) throw new Error('--cluster-only requires matching index diagnostics. Run `madar generate . --update` to repair them first.')
+  const { graph_sha256: _previousGraphSha256, ...diagnostics } = matchingDiagnostics
+  return finalizeAndPublishIndex({
+    graph: accepted.graph, rootPath: root, mode: 'cluster-only', options,
+    state: accepted.state,
+    diagnostics: (state) => ({ ...diagnostics, build_id: state.build_id }),
+    notes: (warnings) => [
+      'Re-clustered the accepted graph without scanning or indexing source files.',
+      ...warnings,
+    ],
   })
-  const diagnostics = readMatchingDiagnostics(graphPath) ?? {
-    version: INDEX_DIAGNOSTICS_VERSION,
-    build_id: state.build_id,
-    generated_at: new Date().toISOString(),
-    summary: state.completeness.summary,
-    outcomes: [],
-    index_diagnostics: [],
-  }
-  diagnostics.build_id = state.build_id
-  const report = generateReport(
-    accepted.graph, finalized.communities, finalized.cohesion, finalized.labels, finalized.godNodeList,
-    finalized.surprises, finalized.anomalies, {
-      total_files: state.corpus.supported_files,
-      total_words: state.corpus.total_words,
-      warning: state.corpus.warning,
-      discovery_safety: catalog.discoverySafety.summary,
-      indexing_completeness: state.completeness.summary,
-    }, { input: 0, output: 0 }, root, finalized.questions,
-  )
-  const publication = publishAcceptedIndex({
-    graph: accepted.graph, outputDir, report, diagnostics,
-    ...(options.storeDependencies ? { dependencies: options.storeDependencies } : {}),
-  })
-  return {
-    mode: 'cluster-only', rootPath: root, outputDir, graphPath: publication.graphPath, reportPath: publication.reportPath,
-    totalFiles: state.corpus.supported_files,
-    indexedFiles: state.corpus.supported_files, totalWords: state.corpus.total_words,
-    nodeCount: accepted.graph.numberOfNodes(), edgeCount: accepted.graph.numberOfEdges(),
-    communityCount: Object.keys(finalized.communities).length, semanticAnomalyCount: finalized.anomalies.length,
-    warning: state.corpus.warning, notes: ['Re-clustered the accepted graph without scanning or indexing source files.', ...publication.diagnosticWarnings],
-    discoverySafety: catalog.discoverySafety,
-    indexingManifestPath: publication.diagnosticsPath,
-    indexing: state.completeness.summary, buildId: state.build_id,
-  }
 }
-
 export function generateIndex(rootPath = '.', options: GenerateIndexOptions = {}): GenerateIndexResult {
   const root = resolve(rootPath)
   const outputDir = resolveMadarOutputDirectory(root)
@@ -418,12 +353,8 @@ export function generateIndex(rootPath = '.', options: GenerateIndexOptions = {}
       step: 'detect',
       message: `Found ${catalog.snapshot.supported.length} supported file(s) (~${catalog.totalWords.toLocaleString()} words)`,
     })
-    const canonical = buildCanonicalTypeScriptIndex({ root, files: catalog.supportedFiles })
     return buildAndPublishIndex({
-      catalog,
-      canonical,
-      mode: 'generate',
-      options,
+      catalog, mode: 'generate', options,
       verifyCurrent: () => sourceCatalogStillCurrent(catalog, options),
     })
   } finally { release() }

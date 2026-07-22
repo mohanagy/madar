@@ -1,163 +1,120 @@
+import { randomUUID } from 'node:crypto'
 import { watch as watchFilesystem, type FSWatcher } from 'node:fs'
 import { resolve } from 'node:path'
-
+import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads'
 import { updateIndex, type UpdateIndexOptions } from '../application/update-index.js'
 import type { GenerateIndexResult } from '../application/generate-index.js'
-import { IndexLeaseContentionError } from '../domain/index/build-state.js'
-
+import { releaseIndexLeaseOwner } from '../adapters/filesystem/index-store.js'
+import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 const LEASE_RETRY_BASE_MS = 50
 const LEASE_RETRY_MAX_MS = 2_000
 const LEASE_RETRY_LIMIT = 12
-
 export interface WatchIndexLogger {
-  log(message?: string): void
-  error(message?: string): void
+  log(message?: string): void; error(message?: string): void
 }
-
 export type WatchIndexState = 'starting' | 'idle' | 'pending' | 'reconciling' | 'failed' | 'stopped'
-
 export interface WatchIndexOptions extends UpdateIndexOptions {
-  signal?: AbortSignal
-  pollIntervalMs?: number
-  seed?: Pick<GenerateIndexResult, 'buildId'>
-  logger?: WatchIndexLogger
-  /** Hermetic event-source seam; production uses fs.watch. */
+  signal?: AbortSignal; pollIntervalMs?: number; seed?: Pick<GenerateIndexResult, 'buildId'>; logger?: WatchIndexLogger
   eventSource?: (root: string, changed: () => void) => { close(): void }
-  /** Hermetic reconciliation seam; production uses the one-shot application use case. */
-  update?: typeof updateIndex
+  update?: (...args: Parameters<typeof updateIndex>) => GenerateIndexResult | Promise<GenerateIndexResult>
 }
-
 export interface GraphAutoRefreshController {
-  startupComplete(): boolean
-  failureReason(): string | null
-  state(): WatchIndexState
-  acceptedBuildId(): string | null
-  readonly startupSettled: Promise<void>
-  stop(): void
-  readonly completed: Promise<void>
+  startupComplete(): boolean; failureReason(): string | null; state(): WatchIndexState
+  acceptedBuildId(): string | null; readonly startupSettled: Promise<void>
+  stop(): void; readonly completed: Promise<void>
 }
-
 function defaultEventSource(root: string, changed: () => void): FSWatcher {
   try {
-    return watchFilesystem(root, { recursive: true }, (_event, filename) => {
-      const path = filename?.toString().replaceAll('\\', '/') ?? ''
-      if (/^(?:out|node_modules|\.git)(?:\/|$)/.test(path)) return
+    const watcher = watchFilesystem(root, { recursive: true }, (_event, filename) => {
+      if (/^(?:out|node_modules|\.git)(?:\/|$)/.test(filename?.toString().replaceAll('\\', '/') ?? '')) return
       changed()
     })
-  } catch {
-    return { close() {} } as FSWatcher
-  }
+    watcher.on('error', () => { watcher.close(); changed() })
+    return watcher
+  } catch { return { close() {} } as FSWatcher }
 }
-
-export function startWatchIndex(
-  rootPath = '.',
-  debounceSeconds = 1,
-  options: WatchIndexOptions = {},
-): GraphAutoRefreshController {
+export function updateIndexInWorker(rootPath = '.'): Promise<GenerateIndexResult> {
+  const entry = new URL(import.meta.url)
+  if (!entry.pathname.endsWith('.js')) return Promise.resolve().then(() => updateIndex(rootPath))
+  const leaseOwnerToken = randomUUID()
+  return new Promise((resolvePromise, reject) => {
+    const worker = new Worker(entry, { workerData: { madar_update_root: resolve(rootPath), madar_lease_owner: leaseOwnerToken } })
+    let answered = false
+    const abandon = () => { try { releaseIndexLeaseOwner(resolveMadarOutputDirectory(rootPath), leaseOwnerToken) } catch {} }
+    worker.once('message', (result) => { answered = true; resolvePromise(result as GenerateIndexResult) })
+    worker.once('error', (error) => { abandon(); reject(error) })
+    worker.once('exit', (code) => { if (!answered) { abandon(); reject(new Error(`Madar index worker exited before replying (${code})`)) } })
+  })
+}
+if (!isMainThread && typeof workerData?.madar_update_root === 'string') {
+  parentPort?.postMessage(updateIndex(workerData.madar_update_root, { leaseOwnerToken: workerData.madar_lease_owner }))
+}
+export function startWatchIndex(rootPath = '.', debounceSeconds = 1,
+  options: WatchIndexOptions = {}): GraphAutoRefreshController {
   const root = resolve(rootPath)
   const logger = options.logger ?? console
   const update = options.update ?? updateIndex
-  const debounceMs = Math.max(0, Math.round(debounceSeconds * 1_000))
-  const pollMs = Math.max(50, options.pollIntervalMs ?? 5 * 60_000)
   let currentState: WatchIndexState = 'starting'
   let failure: string | null = null
   let buildId: string | null = options.seed?.buildId ?? null
   let startupComplete = false
-  let stopped = false
-  let dirty = true
-  let building = false
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
-  let leaseRetryTimer: ReturnType<typeof setTimeout> | null = null
-  let leaseRetryAttempts = 0
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null
+  let eventSource: { close(): void } | null = null
   let pollTimer: ReturnType<typeof setInterval> | null = null
-  let resolveStartup!: () => void
-  let resolveCompleted!: () => void
+  let leaseRetryAttempts = 0
+  let dirty = false
+  let resolveStartup!: () => void, resolveCompleted!: () => void
   const startupSettled = new Promise<void>((resolvePromise) => { resolveStartup = resolvePromise })
   const completed = new Promise<void>((resolvePromise) => { resolveCompleted = resolvePromise })
-
-  const settleStartup = (): void => {
-    if (startupComplete) return
-    startupComplete = true
-    resolveStartup()
-  }
-
-  const finish = (): void => {
-    if (!stopped || building) return
-    currentState = 'stopped'
-    settleStartup()
-    resolveCompleted()
-  }
-
-  const clearLeaseRetry = (): void => {
-    if (leaseRetryTimer) clearTimeout(leaseRetryTimer)
-    leaseRetryTimer = null
-  }
-
-  const scheduleLeaseRetry = (): boolean => {
-    if (leaseRetryAttempts >= LEASE_RETRY_LIMIT) return false
-    const delay = Math.min(LEASE_RETRY_MAX_MS, LEASE_RETRY_BASE_MS * (2 ** leaseRetryAttempts))
-    leaseRetryAttempts += 1
-    dirty = true
-    failure = null
-    currentState = 'pending'
-    clearLeaseRetry()
-    leaseRetryTimer = setTimeout(() => {
-      leaseRetryTimer = null
-      reconcile()
+  const settleStartup = (): void => { if (!startupComplete) { startupComplete = true; resolveStartup() } }
+  const stopped = (): boolean => currentState === 'stopped'
+  const schedule = (delay: number): void => {
+    if (pendingTimer) clearTimeout(pendingTimer)
+    const timer = setTimeout(() => {
+      if (pendingTimer === timer) reconcile()
     }, delay)
-    return true
+    pendingTimer = timer
   }
-
   const reconcile = (): void => {
-    if (stopped || building || !dirty) return
-    building = true
+    if (currentState === 'stopped') return
+    pendingTimer = null
+    failure = null
     currentState = 'reconciling'
-    dirty = false
-    queueMicrotask(() => {
+    queueMicrotask(async () => {
+      if (stopped()) { settleStartup(); resolveCompleted(); return }
       try {
-        const result = update(root, options)
+        const result = await update(root, options)
         buildId = result.buildId
-        failure = null
         leaseRetryAttempts = 0
         logger.log(`[madar watch] ${result.updateReceipt?.mode ?? 'update'} accepted ${result.buildId.slice(0, 12)}`)
       } catch (error) {
-        if (error instanceof IndexLeaseContentionError && scheduleLeaseRetry()) {
+        if (stopped()) return
+        const leaseContention = error instanceof Error && error.name === 'IndexLeaseContentionError'
+        if (leaseContention && leaseRetryAttempts < LEASE_RETRY_LIMIT) {
+          const delay = Math.min(LEASE_RETRY_MAX_MS, LEASE_RETRY_BASE_MS * (2 ** leaseRetryAttempts++))
+          schedule(delay)
           logger.log(`[madar watch] index lease busy; retrying (${leaseRetryAttempts}/${LEASE_RETRY_LIMIT})`)
         } else {
           failure = error instanceof Error ? error.message : String(error)
-          currentState = 'failed'
           logger.error(`[madar watch] ${failure}`)
-          if (error instanceof Error && error.name === 'SourceChangedDuringBuildError') {
-            leaseRetryAttempts = 0
-            dirty = true
-          }
+          if (!leaseContention) leaseRetryAttempts = 0
+          if (error instanceof Error && error.name === 'SourceChangedDuringBuildError') schedule(0)
         }
       } finally {
-        building = false
         settleStartup()
-        if (stopped) finish()
-        else if (dirty && leaseRetryTimer === null) reconcile()
-        else if (leaseRetryTimer !== null) currentState = 'pending'
-        else currentState = failure ? 'failed' : 'idle'
+        if (stopped()) resolveCompleted()
+        else if (dirty) { dirty = false; currentState = 'pending'; schedule(0) }
+        else currentState = pendingTimer ? 'pending' : failure ? 'failed' : 'idle'
       }
     })
   }
-
   const changed = (): void => {
-    if (stopped) return
-    clearLeaseRetry()
+    if (currentState === 'stopped') return
     leaseRetryAttempts = 0
-    dirty = true
-    if (!building) currentState = 'pending'
-    if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(reconcile, debounceMs)
+    if (currentState === 'reconciling') { dirty = true; return }
+    currentState = 'pending'
+    schedule(Math.max(0, Math.round(debounceSeconds * 1_000)))
   }
-
-  const eventSource = (options.eventSource ?? defaultEventSource)(root, changed)
-  pollTimer = setInterval(changed, pollMs)
-  options.signal?.addEventListener('abort', () => controller.stop(), { once: true })
-  reconcile()
-
   const controller: GraphAutoRefreshController = {
     startupComplete: () => startupComplete,
     failureReason: () => failure,
@@ -165,20 +122,22 @@ export function startWatchIndex(
     acceptedBuildId: () => buildId,
     startupSettled,
     stop() {
-      if (stopped) return
-      stopped = true
-      eventSource.close()
-      if (debounceTimer) clearTimeout(debounceTimer)
-      clearLeaseRetry()
+      if (currentState === 'stopped') return
+      if (currentState !== 'reconciling') { settleStartup(); resolveCompleted() }
+      currentState = 'stopped'
+      eventSource?.close()
+      if (pendingTimer) clearTimeout(pendingTimer)
       if (pollTimer) clearInterval(pollTimer)
-      finish()
     },
     completed,
   }
+  if (options.signal?.aborted) controller.stop()
+  else {
+    eventSource = (options.eventSource ?? defaultEventSource)(root, changed)
+    pollTimer = setInterval(changed, Math.max(50, options.pollIntervalMs ?? 5 * 60_000))
+    options.signal?.addEventListener('abort', () => controller.stop(), { once: true })
+    reconcile()
+  }
   return controller
 }
-
-export async function watchIndex(rootPath = '.', debounceSeconds = 1, options: WatchIndexOptions = {}): Promise<void> {
-  const controller = startWatchIndex(rootPath, debounceSeconds, options)
-  await controller.completed
-}
+export function watchIndex(rootPath = '.', debounceSeconds = 1, options: WatchIndexOptions = {}): Promise<void> { return startWatchIndex(rootPath, debounceSeconds, options).completed }

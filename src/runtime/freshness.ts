@@ -1,21 +1,22 @@
 import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
 
-import { loadGraphArtifact, readGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { loadGraphArtifact, parseGraphArtifact, readGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import { buildSourceCatalog } from '../adapters/filesystem/source-catalog.js'
-import { deserializeGraphArtifact } from '../domain/graph/artifact.js'
 import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { readBuildState, type IndexBuildState, type SourceSnapshotEntry } from '../domain/index/build-state.js'
 import type { RetrieveResult } from './retrieve.js'
 import { readPackageVersion } from '../shared/package-metadata.js'
 import { validateGraphPath } from '../shared/security.js'
+import { resolveMadarWorkspace } from '../shared/workspace.js'
 
 export interface GraphFreshnessMetadata {
   graphVersion: string
   graphModifiedMs: number
   graphModifiedAt: string
 }
+export interface ArtifactFreshnessReceipt { graphSha256: string; graphModifiedMs: number; resourceModifiedMs?: number }
 
 export interface ResourceFreshnessMetadata extends GraphFreshnessMetadata {
   resourceBytes: number
@@ -48,11 +49,14 @@ export interface GraphContextFreshness {
   changed_selected_context_count: number
   missing_selected_context_count: number
   changed_outside_selected_context_count: number
+  current_generation_policy_fingerprint?: string
+  generation_policy_error?: string
   recommendation: string
 }
 
 interface IndexedSourceFiles {
   rootPath: string
+  graphPath: string
   sourceFiles: string[]
   buildState: IndexBuildState | null
 }
@@ -226,6 +230,7 @@ function indexedSourceFilesFromGraph(
 
   return {
     rootPath,
+    graphPath,
     sourceFiles,
     buildState,
   }
@@ -251,6 +256,10 @@ function collectMissingSourceFiles(indexed: IndexedSourceFiles): Set<string> {
 
 const allRelevantIndexedSourceFiles = (indexed: IndexedSourceFiles): Set<string> => new Set(indexed.sourceFiles)
 
+function canonicalPath(path: string): string {
+  try { return realpathSync(path) } catch { return resolve(path) }
+}
+
 function compareEntries(
   changed: Set<string>,
   stored: readonly SourceSnapshotEntry[],
@@ -263,10 +272,17 @@ function compareEntries(
   }
 }
 
-function catalogChangedSourceFiles(indexed: IndexedSourceFiles): Set<string> {
+type CatalogComparison = [changed: Set<string>, currentPolicy: string | null, error: string | null]
+
+function catalogChangedSourceFiles(indexed: IndexedSourceFiles): CatalogComparison {
   const state = indexed.buildState
-  if (!state) return allRelevantIndexedSourceFiles(indexed)
+  if (!state) return [allRelevantIndexedSourceFiles(indexed), null, 'authoritative build state is unavailable']
   try {
+    if (basename(dirname(indexed.graphPath)) === 'out'
+      && canonicalPath(resolveMadarWorkspace(state.source_root.root_path).graphPath)
+        !== canonicalPath(indexed.graphPath)) {
+      return [new Set([...indexed.sourceFiles, '.madar-source-root']), null, 'graph belongs to a different source workspace']
+    }
     const current = buildSourceCatalog(indexed.rootPath, {
       followSymlinks: state.policy.settings.follow_symlinks,
       respectGitignore: state.policy.settings.respect_gitignore,
@@ -280,16 +296,25 @@ function catalogChangedSourceFiles(indexed: IndexedSourceFiles): Set<string> {
     const changed = new Set<string>()
     const changedControls = new Set<string>()
     compareEntries(changedControls, state.sources.controls, current.snapshot.controls)
-    // Keep both the causal control and affected supported paths so scoped
-    // freshness cannot call selected code fresh after an ignore/config edit.
     compareEntries(changed, state.sources.supported, current.snapshot.supported)
     for (const path of changedControls) changed.add(path)
     compareEntries(changed, state.sources.unsupported, current.snapshot.unsupported)
-    if (changedControls.size === 0 && state.policy.fingerprint !== current.policy.fingerprint) {
+    compareEntries(changed, state.sources.inventory, current.snapshot.inventory)
+    const policyChanged = state.policy.fingerprint !== current.policy.fingerprint
+    if (changedControls.size > 0 || policyChanged) {
+      // Compiler, discovery, and generation-policy controls can change the
+      // meaning of every indexed source without changing its bytes. Retain
+      // the causal control receipt and mark all supported sources affected so
+      // scoped freshness cannot incorrectly report a selected file as fresh.
+      for (const entry of state.sources.supported) changed.add(entry.path)
+    }
+    if (changedControls.size === 0 && policyChanged) {
       changed.add('.madar-policy')
     }
-    return changed
-  } catch { return allRelevantIndexedSourceFiles(indexed) }
+    return [changed, current.policy.fingerprint, null]
+  } catch (error) {
+    return [allRelevantIndexedSourceFiles(indexed), null, error instanceof Error ? error.message : String(error)]
+  }
 }
 
 function graphVersionForPath(graphPath: string): { graphVersion: string; mtimeMs: number } {
@@ -302,7 +327,7 @@ function graphVersionForPath(graphPath: string): { graphVersion: string; mtimeMs
 
   if (cached?.contentHash === contentHash) return { graphVersion: cached.graphVersion, mtimeMs: truncatedMtime }
 
-  deserializeGraphArtifact(artifact)
+  parseGraphArtifact(artifact)
   const graphVersion = contentHash.slice(0, VERSION_HASH_LENGTH)
   graphVersionCache.set(safeGraphPath, { graphVersion, contentHash })
 
@@ -322,10 +347,19 @@ export function graphFreshnessMetadata(graphPath: string): GraphFreshnessMetadat
   }
 }
 
+export function graphFreshnessFromReceipt(receipt: ArtifactFreshnessReceipt): GraphFreshnessMetadata {
+  return {
+    graphVersion: receipt.graphSha256.slice(0, VERSION_HASH_LENGTH),
+    graphModifiedMs: receipt.graphModifiedMs,
+    graphModifiedAt: new Date(receipt.graphModifiedMs).toUTCString(),
+  }
+}
+
 export function analyzeGraphContextFreshness(
   graphPath: string,
   graph?: Pick<KnowledgeGraph, 'graph' | 'nodeEntries'>,
   selection?: GraphContextFreshnessSelection,
+  knownFreshness?: GraphFreshnessMetadata,
 ): GraphContextFreshness {
   let safeGraphPath: string
   try {
@@ -343,7 +377,7 @@ export function analyzeGraphContextFreshness(
     throw error
   }
 
-  const graphFreshness = graphFreshnessMetadata(safeGraphPath)
+  const graphFreshness = knownFreshness ?? graphFreshnessMetadata(safeGraphPath)
   const indexed = graph
     ? indexedSourceFilesFromGraph(graph, safeGraphPath)
     : indexedSourceFilesFromGraphJson(safeGraphPath)
@@ -352,7 +386,7 @@ export function analyzeGraphContextFreshness(
   const selectedSourceFiles = normalizedSourceFileSet(indexed.rootPath, selection?.selected_source_files)
   const selectedIndexedSourceFiles = [...selectedSourceFiles].filter((sourceFile) => indexedSourceFileSet.has(sourceFile))
   const missingSourceFiles = collectMissingSourceFiles(indexed)
-  const changedSourceFiles = catalogChangedSourceFiles(indexed)
+  const [changedSourceFiles, currentPolicyFingerprint, policyError] = catalogChangedSourceFiles(indexed)
   const changedSourceCount = changedSourceFiles.size
   const missingSourceCount = missingSourceFiles.size
 
@@ -392,6 +426,8 @@ export function analyzeGraphContextFreshness(
     changed_selected_context_count: changedSelectedContextCount,
     missing_selected_context_count: missingSelectedContextCount,
     changed_outside_selected_context_count: Math.max(0, changedSourceCount - changedSelectedContextCount),
+    ...(currentPolicyFingerprint ? { current_generation_policy_fingerprint: currentPolicyFingerprint } : {}),
+    ...(policyError ? { generation_policy_error: policyError } : {}),
     recommendation: freshnessRecommendation(status, selectedContextStatus),
   }
 }
@@ -420,14 +456,21 @@ export function requireFreshSelectedContext(
   )
 }
 
-export function resourceFreshnessMetadata(graphPath: string, resourcePath: string, validatedGraphContent?: string, validatedGraphHash?: string): ResourceFreshnessMetadata {
-  const resourceStat = statSync(resourcePath)
-  const resourceModifiedMs = truncateMtime(resourceStat.mtimeMs)
+export function resourceFreshnessMetadata(graphPath: string, resourcePath: string, resourceContent?: string,
+  validatedGraphHash?: string, receipt?: ArtifactFreshnessReceipt): ResourceFreshnessMetadata {
+  if (resourceContent !== undefined && resourcePath !== graphPath && !validatedGraphHash) throw new Error('Non-graph resource metadata requires an authenticated graph hash')
+  const exactResourceModifiedMs = receipt?.resourceModifiedMs
+    ?? (resourcePath === graphPath ? receipt?.graphModifiedMs : undefined)
+  const resourceStat = exactResourceModifiedMs !== undefined && resourceContent !== undefined ? null : statSync(resourcePath)
+  const resourceModifiedMs = exactResourceModifiedMs ?? truncateMtime(resourceStat!.mtimeMs)
   const resourceName = basename(resourcePath)
-  const graphFreshness = validatedGraphContent === undefined
+  const graphFreshness = resourceContent === undefined
     ? graphFreshnessMetadata(graphPath)
-    : { graphVersion: (validatedGraphHash ?? createHash('sha256').update(validatedGraphContent).digest('hex')).slice(0, VERSION_HASH_LENGTH), graphModifiedMs: resourceModifiedMs, graphModifiedAt: new Date(resourceModifiedMs).toUTCString() }
-  const resourceBytes = validatedGraphContent === undefined ? resourceStat.size : Buffer.byteLength(validatedGraphContent)
+    : (() => {
+        const graphModifiedMs = receipt?.graphModifiedMs ?? (resourcePath === graphPath ? resourceModifiedMs : truncateMtime(statSync(graphPath).mtimeMs))
+        return { graphVersion: (validatedGraphHash ?? createHash('sha256').update(resourceContent).digest('hex')).slice(0, VERSION_HASH_LENGTH), graphModifiedMs, graphModifiedAt: new Date(graphModifiedMs).toUTCString() }
+      })()
+  const resourceBytes = resourceContent === undefined ? resourceStat!.size : Buffer.byteLength(resourceContent)
 
   return {
     ...graphFreshness,

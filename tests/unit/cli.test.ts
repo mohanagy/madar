@@ -929,8 +929,6 @@ describe('cli parser', () => {
       update: false,
       clusterOnly: false,
       watch: false,
-      followSymlinks: false,
-      respectGitignore: false,
       debounceSeconds: 3,
       neo4jPushUri: null,
       neo4jUser: null,
@@ -1255,6 +1253,8 @@ describe('cli main', () => {
     expect(help).toContain('--version')
     expect(help).toContain('generate [path]')
     expect(help).toContain('watch [path]')
+    expect(help).toContain('changed runs reconcile fully')
+    expect(help).not.toContain('retain an in-process index')
     expect(help).toContain('serve [graph.json]')
     expect(help).not.toContain('--directed')
     expect(help).not.toContain('--undirected')
@@ -2705,6 +2705,22 @@ describe('cli main', () => {
     expect(logs[0]).toContain(`Publication: fallback=cold_process, previous=none, accepted=${'a'.repeat(64)}, advanced=true`)
     expect(logs[0]).toContain('"config/credentials.json" (secret_config)')
     expect(logs[0]).toContain('madar codex install     # Codex CLI')
+  })
+
+  it('does not override an accepted update policy when flags are omitted', async () => {
+    const { io } = createIo()
+    const dependencies = createDependencies()
+    const update = dependencies.updateIndex
+    let capturedOptions: Parameters<CliDependencies['updateIndex']>[1] | undefined
+    dependencies.updateIndex = (rootPath, options) => {
+      capturedOptions = options
+      return update(rootPath, options)
+    }
+
+    await expect(executeCli(['generate', 'src', '--update'], io, dependencies)).resolves.toBe(0)
+
+    expect(capturedOptions).not.toHaveProperty('followSymlinks')
+    expect(capturedOptions).not.toHaveProperty('respectGitignore')
   })
 
   it('pushes the generated graph to neo4j when requested', async () => {

@@ -3,6 +3,8 @@ import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { federate } from '../../src/pipeline/federate.js'
+import { readMatchingReport } from '../../src/adapters/filesystem/index-store.js'
+import { resourcesForGraph } from '../../src/runtime/stdio/resources.js'
 import { readCanonicalGraphFixture, writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function withTempDir(fn: (dir: string) => void): void {
@@ -42,7 +44,7 @@ describe('federate', () => {
         { id: 'db', label: 'Database' },
       ], [['handler', 'db']])
 
-      const outputDir = join(dir, 'federated')
+      const outputDir = join(dir, 'out', 'federated')
       const result = federate([graph1, graph2], { outputDir })
 
       expect(result.repos).toEqual(['frontend', 'backend'])
@@ -50,6 +52,8 @@ describe('federate', () => {
       expect(result.totalEdges).toBeGreaterThanOrEqual(2)
       expect(existsSync(result.graphPath)).toBe(true)
       expect(existsSync(result.reportPath)).toBe(true)
+      expect(readMatchingReport(result.graphPath)).toContain('madar-graph-sha256')
+      expect(resourcesForGraph(result.graphPath).map((resource) => resource.name)).toContain('GRAPH_REPORT.md')
     })
   })
 

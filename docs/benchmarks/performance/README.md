@@ -9,10 +9,10 @@ warm/session APIs.
 
 The development-only evaluator at
 [`tools/eval/core-reset/incremental-performance.mjs`](../../../tools/eval/core-reset/incremental-performance.mjs)
-is retained only to audit or reproduce the stopped checkpoint. It is excluded
-from the npm package. Do not run it against the current production `dist`;
-the current implementation intentionally no longer provides the session API
-that this historical experiment measured.
+is excluded from the npm package. Its `baseline` and `candidate` modes audit or
+reproduce the stopped warm-session checkpoint. Its `shipping` mode measures
+the current cold-no-op/full-reconcile path from a clean exact-commit worktree;
+it does not invoke or claim the removed session API.
 
 ## Immutable evidence
 

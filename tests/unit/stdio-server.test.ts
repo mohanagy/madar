@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { join, resolve } from 'node:path'
@@ -8,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { buildSourceCatalog } from '../../src/adapters/filesystem/source-catalog.js'
+import { authenticateReportForGraph } from '../../src/adapters/filesystem/index-store.js'
 import { generateIndex } from '../../src/application/generate-index.js'
 import {
   attachBuildState,
@@ -113,6 +115,11 @@ function createGraphFixtureRoot(): string {
     },
   })
   writeFileSync(join(root, 'graph.json'), serializeGraphArtifact(graph), 'utf8')
+  writeFileSync(
+    join(root, 'GRAPH_REPORT.md'),
+    authenticateReportForGraph('# Graph Report\n\n- AuthService calls HttpClient\n', graph),
+    'utf8',
+  )
   return root
 }
 
@@ -321,6 +328,11 @@ describe('stdio runtime', () => {
         method: 'resources/read',
         params: { uri: 'madar://artifact/GRAPH_REPORT.md' },
       }))
+      const graphResourceRead = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 10,
+        method: 'resources/read',
+        params: { uri: 'madar://artifact/graph.json' },
+      }))
       const communityPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
         id: 8,
         method: 'prompts/get',
@@ -408,11 +420,18 @@ describe('stdio runtime', () => {
       expect((promptGet?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('How does auth reach transport?')
       expect((promptGet?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('Top communities:')
       expect((promptGet?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('Auth Services')
-      expect((resourceRead?.result as { contents: Array<{ text: string }> }).contents[0]?.text).toContain('# Graph Report')
-      expect((resourceRead?.result as { contents: Array<{ annotations?: Record<string, unknown> }> }).contents[0]?.annotations?.graph_version).toMatch(/^[a-f0-9]{12}$/)
-      expect((resourceRead?.result as { contents: Array<{ annotations?: Record<string, unknown> }> }).contents[0]?.annotations?.resource_modified_ms).toEqual(
+      const reportContent = (resourceRead?.result as { contents: Array<{ text: string; annotations?: Record<string, unknown> }> }).contents[0]!
+      const expectedGraphVersion = createHash('sha256').update(readFileSync(graphPath, 'utf8')).digest('hex').slice(0, 12)
+      const graphContent = (graphResourceRead?.result as { contents: Array<{ text: string; annotations?: Record<string, unknown> }> }).contents[0]!
+      expect(reportContent.text).toContain('# Graph Report')
+      expect(reportContent.annotations?.graph_version).toBe(expectedGraphVersion)
+      expect(reportContent.text.match(/madar-graph-sha256: ([a-f0-9]{64})/)?.[1]?.slice(0, 12)).toBe(expectedGraphVersion)
+      expect(reportContent.annotations?.resource_bytes).toBe(Buffer.byteLength(reportContent.text))
+      expect(reportContent.annotations?.resource_modified_ms).toEqual(
         expect.any(Number),
       )
+      expect(createHash('sha256').update(graphContent.text).digest('hex').slice(0, 12)).toBe(graphContent.annotations?.graph_version)
+      expect(graphContent.annotations?.resource_bytes).toBe(Buffer.byteLength(graphContent.text))
       expect((communityPrompt?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('Auth Services')
       expect((communityPrompt?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('AuthService')
       expect((communityPrompt?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('HttpClient')
@@ -2639,6 +2658,34 @@ describe('stdio runtime', () => {
     } finally {
       vi.doUnmock('node:fs')
       vi.resetModules()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.runIf(process.platform !== 'win32')('reloads after an equal-size atomic replacement with preserved mtime', () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const fixedTime = new Date('2026-01-01T00:00:00.000Z')
+      utimesSync(graphPath, fixedTime, fixedTime)
+      const beforeBytes = readFileSync(graphPath, 'utf8')
+      const beforeStat = statSync(graphPath)
+      const replacementBytes = beforeBytes.replaceAll('AuthService', 'Replacement')
+      expect(Buffer.byteLength(replacementBytes)).toBe(Buffer.byteLength(beforeBytes))
+
+      const before = handleStdioRequest(graphPath, { id: 1, method: 'node', params: { label: 'AuthService' } })
+      const temporary = join(root, 'replacement.graph.json')
+      writeFileSync(temporary, replacementBytes, 'utf8')
+      utimesSync(temporary, fixedTime, fixedTime)
+      renameSync(temporary, graphPath)
+
+      const after = handleStdioRequest(graphPath, { id: 2, method: 'node', params: { label: 'Replacement' } })
+
+      expect((before as { result: string }).result).toContain('Node: AuthService')
+      expect((after as { result: string }).result).toContain('Node: Replacement')
+      expect(statSync(graphPath).size).toBe(beforeStat.size)
+      expect(statSync(graphPath).mtimeMs).toBe(beforeStat.mtimeMs)
+    } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })

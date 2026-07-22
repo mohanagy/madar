@@ -203,6 +203,83 @@ export function buildBaselineReceipt(input) {
   return { ...body, receipt_sha256: sha256(canonicalJson(body)) }
 }
 
+export function buildShippingReceipt(input) {
+  const clean = summarizeTrials(input.samples.clean_generation)
+  const coldNoop = summarizeTrials(input.samples.cold_noop)
+  const baselineP50 = input.baseline?.measurements?.clean_generation?.elapsed_ms?.p50 ?? null
+  const baselineCompatible = Boolean(input.baseline)
+    && input.baseline.schema_version === 2
+    && input.baseline.receipt_kind === 'core-reset-clean-generation-baseline'
+    && input.baseline.subject.head_commit === PROTECTED_BASE
+    && input.baseline.subject.dirty === false
+    && input.baseline.corpus.fingerprint === input.corpus.fingerprint
+    && input.baseline.protocol.warmups >= DEFAULT_WARMUPS
+    && input.baseline.protocol.trials >= DEFAULT_TRIALS
+    && input.baseline.environment.fingerprint === input.environment.fingerprint
+  const cleanRatio = baselineCompatible ? ratio(clean.elapsed_ms.p50, baselineP50) : null
+  const corpusPass = input.corpus.kind === 'synthetic_fixture'
+    ? input.corpus.supported_files >= DEFAULT_FIXTURE_FILES
+    : input.corpus.kind === 'held_out_repository'
+      && input.corpus.supported_files > 0
+      && /^[a-f0-9]{40}$/.test(input.corpus.commit)
+  const subjectPass = input.subject.dirty === false
+    && input.subject.head_tree_oid === input.subject.worktree_tree_oid
+    && /^[a-f0-9]{40}$/.test(input.subject.head_commit)
+  const gates = {
+    subject_identity: {
+      head_commit: input.subject.head_commit, clean: input.subject.dirty === false,
+      tree_matches_head: input.subject.head_tree_oid === input.subject.worktree_tree_oid, pass: subjectPass,
+    },
+    sample_protocol: {
+      actual: { warmups: input.protocol.warmups, trials: input.protocol.trials },
+      minimum: { warmups: DEFAULT_WARMUPS, trials: DEFAULT_TRIALS },
+      pass: input.protocol.warmups >= DEFAULT_WARMUPS && input.protocol.trials >= DEFAULT_TRIALS
+        && input.samples.clean_generation.length >= DEFAULT_TRIALS
+        && input.samples.cold_noop.length >= DEFAULT_TRIALS,
+    },
+    corpus_eligibility: {
+      kind: input.corpus.kind,
+      supported_files: input.corpus.supported_files,
+      requirement: input.corpus.kind === 'synthetic_fixture'
+        ? `at least ${DEFAULT_FIXTURE_FILES} supported files`
+        : 'non-empty supported corpus pinned to a 40-character Git commit',
+      pass: corpusPass,
+    },
+    cold_noop_p50_ratio: gate(ratio(coldNoop.elapsed_ms.p50, clean.elapsed_ms.p50), 0.20),
+    cold_noop_zero_parse: {
+      pass: all(input.samples.cold_noop, (sample) => sample.mode === 'cold_noop'
+        && sample.parsed_files === 0 && sample.invalidated_files === 0
+        && sample.publication_advanced === false),
+    },
+    clean_generation_regression: {
+      baseline_compatible: baselineCompatible,
+      ratio: cleanRatio,
+      maximum_regression: 0.10,
+      pass: cleanRatio !== null && cleanRatio <= 1.10,
+    },
+  }
+  const body = {
+    schema_version: 1,
+    receipt_kind: 'core-reset-full-reconcile-performance',
+    issue: 592,
+    eligible_for_acceptance: Object.values(gates).every((entry) => entry.pass),
+    subject: input.subject,
+    baseline: input.baseline ? {
+      head_commit: input.baseline.subject.head_commit,
+      receipt_sha256: input.baseline.receipt_sha256,
+      clean_generation_p50_ms: baselineP50,
+      compatible: baselineCompatible,
+    } : null,
+    corpus: input.corpus,
+    environment: input.environment,
+    protocol: { ...input.protocol, shipping_path: 'cold_noop_or_full_canonical_reconcile' },
+    measurements: { clean_generation: clean, cold_noop: coldNoop },
+    samples: input.samples,
+    gates,
+  }
+  return { ...body, receipt_sha256: sha256(canonicalJson(body)) }
+}
+
 function parseInteger(value, flag) {
   const parsed = Number(value)
   if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${flag} must be a positive integer`)
@@ -218,7 +295,7 @@ function option(argv, flag) {
 
 function parseArgs(argv) {
   const mode = option(argv, '--mode') ?? 'candidate'
-  if (!['baseline', 'candidate'].includes(mode)) throw new Error('--mode must be baseline or candidate')
+  if (!['baseline', 'candidate', 'shipping'].includes(mode)) throw new Error('--mode must be baseline, candidate, or shipping')
   const warmups = parseInteger(option(argv, '--warmups') ?? String(DEFAULT_WARMUPS), '--warmups')
   const trials = parseInteger(option(argv, '--trials') ?? String(DEFAULT_TRIALS), '--trials')
   if (warmups < DEFAULT_WARMUPS) throw new Error(`--warmups must be at least ${DEFAULT_WARMUPS}`)
@@ -426,6 +503,15 @@ async function loadSubject(distRoot, requireIncremental) {
   throw new Error(`compatible ${requireIncremental ? 'incremental ' : ''}Madar build not found under ${distRoot}`)
 }
 
+async function loadShippingSubject(distRoot) {
+  const currentGenerate = await importIfPresent(join(distRoot, 'application', 'generate-index.js'))
+  const currentUpdate = await importIfPresent(join(distRoot, 'application', 'update-index.js'))
+  if (currentGenerate?.generateIndex && currentUpdate?.updateIndex) {
+    return { generate: currentGenerate.generateIndex, update: currentUpdate.updateIndex }
+  }
+  throw new Error(`compatible full-reconcile Madar build not found under ${distRoot}`)
+}
+
 function timed(run) {
   const started = performance.now()
   const value = run()
@@ -468,6 +554,13 @@ function measureClean(subject, root, protocol) {
     removeOutput(root)
     const measurement = timed(() => subject.generate(root, {}))
     return { elapsed_ms: measurement.elapsed_ms }
+  })
+}
+
+function measureColdNoop(subject, root, protocol) {
+  return measuredIterations(protocol, () => {
+    const measurement = timed(() => subject.update(root, {}))
+    return receiptMetrics(measurement.value, measurement.elapsed_ms)
   })
 }
 
@@ -593,6 +686,10 @@ function writeReceipt(path, receipt) {
 
 async function main() {
   const config = parseArgs(process.argv.slice(2))
+  const distRelative = relative(config.subjectWorktree, config.distRoot).replaceAll('\\', '/')
+  if (config.mode === 'shipping' && (distRelative === '..' || distRelative.startsWith('../') || isAbsolute(distRelative))) {
+    throw new Error('--mode shipping requires --dist-root to belong to --subject-worktree')
+  }
   const tempRoot = mkdtempSync(join(tmpdir(), 'madar-incremental-performance-'))
   try {
     const subject = subjectIdentity(config.subjectWorktree, config.distRoot)
@@ -604,7 +701,7 @@ async function main() {
       clock: 'performance.now',
       percentile: 'nearest-rank',
       mutation_application_in_timed_window: false,
-      persistent_warm_session: true,
+      persistent_warm_session: config.mode !== 'shipping',
       command: config.command,
       configuration: {
         fixture_files: config.fixtureFiles,
@@ -613,7 +710,9 @@ async function main() {
         mutation_file: config.mutationFile,
       },
     }
-    const subjectModules = await loadSubject(config.distRoot, config.mode === 'candidate')
+    const subjectModules = config.mode === 'shipping'
+      ? await loadShippingSubject(config.distRoot)
+      : await loadSubject(config.distRoot, config.mode === 'candidate')
     const clean = measureClean(subjectModules, prepared.root, protocol)
     if (config.mode === 'baseline') {
       const completedSubject = subjectIdentity(config.subjectWorktree, config.distRoot)
@@ -629,6 +728,26 @@ async function main() {
       })
       writeReceipt(config.output, receipt)
       process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`)
+      return
+    }
+    if (config.mode === 'shipping') {
+      const coldNoop = measureColdNoop(subjectModules, prepared.root, protocol)
+      const completedSubject = subjectIdentity(config.subjectWorktree, config.distRoot)
+      if (canonicalJson(completedSubject) !== canonicalJson(subject)) {
+        throw new Error('subject source tree or compiled distribution changed during shipping measurement')
+      }
+      const baseline = config.baselineReceipt ? readReceipt(config.baselineReceipt) : null
+      const receipt = buildShippingReceipt({
+        subject,
+        baseline,
+        corpus: prepared.corpus,
+        environment,
+        protocol,
+        samples: { clean_generation: clean, cold_noop: coldNoop },
+      })
+      writeReceipt(config.output, receipt)
+      process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`)
+      if (!Object.values(receipt.gates).every((entry) => entry.pass)) process.exitCode = 2
       return
     }
     const incremental = measureCandidate(subjectModules, prepared.root, prepared.mutationPath, protocol)

@@ -63,7 +63,7 @@ import { buildTaskContextPlan } from '../task-context-planner.js'
 import type { TimeTravelView } from '../time-travel.js'
 import {
   analyzeGraphContextFreshness,
-  graphFreshnessMetadata,
+  graphFreshnessFromReceipt,
   requireFreshGraph,
   requireFreshSelectedContext,
   selectedContextSourceFilesFromRetrieveResult,
@@ -82,6 +82,7 @@ import {
   shortestPath,
 } from '../serve.js'
 import type { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
+import type { GraphArtifactReceipt } from '../../adapters/filesystem/graph-artifact.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -103,6 +104,7 @@ interface ToolHelpers {
   numberParamAlias(params: unknown, keys: readonly string[], options?: { min?: number; max?: number }): number | null
   recordParam(params: unknown, key: string): Record<string, unknown> | null
   loadGraphCached(graphPath: string): KnowledgeGraph
+  loadGraphReceiptCached(graphPath: string): GraphArtifactReceipt
   queryOptionsFromParams(id: string | number | null, params: unknown): { failureResponse?: StdioResponse; queryOptions?: Record<string, unknown> }
   handleGraphDiff(id: string | number | null, currentGraphPath: string, params: unknown): StdioResponse
   compareRefs(input: CompareRefsInput): Promise<unknown>
@@ -123,7 +125,7 @@ interface ToolHelpers {
   recordContextPackNodeIds(sessionId: string, nodeIds: string[]): void
   /** Slice #81 — clears the recorded node-id set for a delta session. */
   clearContextPackNodeIds(sessionId: string): boolean
-  readStoredCommunityLabels(graphPath: string): Record<number, string>
+  readStoredCommunityLabels(graphPath: string, graph?: KnowledgeGraph): Record<number, string>
   jsonrpcInvalidParams: number
   jsonrpcServerError: number
   maxStdioTextLength: number
@@ -527,6 +529,7 @@ function evidenceForRetrievePayload(
     relationships?: readonly unknown[]
   },
   graphPath: string,
+  graph?: KnowledgeGraph,
 ) {
   const matchedNodes = payload.matched_nodes ?? []
   const relationships = payload.relationships ?? []
@@ -550,6 +553,7 @@ function evidenceForRetrievePayload(
   })
   return buildMadarResponseEvidence({
     evidencePlan,
+    graph,
     graphPath,
     question: payload.question,
     recovery: payload.recovery,
@@ -564,11 +568,13 @@ function evidenceForPathPayload(
   },
   graphPath: string,
   question?: string,
+  graph?: KnowledgeGraph,
 ) {
   return buildMadarResponseEvidence({
     answerContract: payload.answer_contract,
     coverage: payload.coverage,
     executionSlice: payload.execution_slice,
+    graph,
     graphPath,
     question,
     missingPhases: missingPhasesFromPayload(payload),
@@ -585,8 +591,9 @@ function evidenceForImpactPayload(payload: {
   affected_files?: string[]
   direct_dependents?: Array<{ source_file: string }>
   transitive_dependents?: Array<{ source_file: string }>
-}, graphPath: string, question?: string) {
+}, graphPath: string, question?: string, graph?: KnowledgeGraph) {
   return buildMadarResponseEvidence({
+    graph,
     graphPath,
     question,
     coveredWorkflowOwners: collectWorkflowOwners(
@@ -600,8 +607,9 @@ function evidenceForImpactPayload(payload: {
 
 function evidenceForGraphSummaryPayload(payload: {
   entrypoints?: Array<{ source_file: string }>
-}, graphPath: string) {
+}, graphPath: string, graph?: KnowledgeGraph) {
   return buildMadarResponseEvidence({
+    graph,
     graphPath,
     coveredWorkflowOwners: collectWorkflowOwners((payload.entrypoints ?? []).map((entry) => entry.source_file)),
   })
@@ -1157,7 +1165,7 @@ function buildFocusedExpansionPayload(
   const communities = communitiesFromGraph(graph)
   const communityLabels = {
     ...buildCommunityLabels(graph, communities),
-    ...helpers.readStoredCommunityLabels(graphPath),
+    ...helpers.readStoredCommunityLabels(graphPath, graph),
   }
   const focusFiles = stored.follow_up.focus_files
   const focusRanges = stored.follow_up.focus_ranges ?? []
@@ -1306,7 +1314,7 @@ function buildFocusedExpansionPayload(
       ...retrieval,
       matched_nodes: compactRetrieval.matched_nodes,
       relationships: compactRetrieval.relationships,
-    }, graphPath),
+    }, graphPath, graph),
   }
 }
 
@@ -1317,7 +1325,9 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
   }
 
   const toolArguments = helpers.recordParam(params, 'arguments') ?? {}
-  const graph = helpers.loadGraphCached(graphPath)
+  const graphReceipt = helpers.loadGraphReceiptCached(graphPath)
+  const graph = graphReceipt.graph
+  const knownGraphFreshness = graphFreshnessFromReceipt(graphReceipt)
 
   switch (toolName) {
     case 'query_graph': {
@@ -1345,7 +1355,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       return 'error' in diffResponse && diffResponse.error ? diffResponse : helpers.ok(id, helpers.textToolResult(String(diffResponse.result ?? '')))
     }
     case 'semantic_anomalies':
-      return helpers.ok(id, helpers.textToolResult(semanticAnomaliesSummary(graphPath, helpers.numberParamAlias(toolArguments, ['top_n', 'topN'], { min: 1, max: 100 }) ?? 5)))
+      return helpers.ok(id, helpers.textToolResult(semanticAnomaliesSummary(graph, helpers.numberParamAlias(toolArguments, ['top_n', 'topN'], { min: 1, max: 100 }) ?? 5)))
     case 'get_neighbors': {
       const label = helpers.stringParam(toolArguments, 'label')
       if (!label) {
@@ -1375,7 +1385,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const summary = buildGraphSummary(graph)
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...summary,
-        evidence: evidenceForGraphSummaryPayload(summary, graphPath),
+        evidence: evidenceForGraphSummaryPayload(summary, graphPath, graph),
       })))
     }
     case 'god_nodes':
@@ -1395,7 +1405,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const zoomRaw = helpers.stringParam(toolArguments, 'zoom') ?? 'mid'
       const zoom: CommunityZoomLevel = zoomRaw === 'micro' || zoomRaw === 'mid' || zoomRaw === 'macro' ? zoomRaw : 'mid'
       const detailCommunities = communitiesFromGraph(graph)
-      const detailLabels = { ...buildCommunityLabels(graph, detailCommunities), ...helpers.readStoredCommunityLabels(graphPath) }
+      const detailLabels = { ...buildCommunityLabels(graph, detailCommunities), ...helpers.readStoredCommunityLabels(graphPath, graph) }
       const details = communityDetailsAtZoom(graph, detailCommunities, detailLabels, detailCommunityId, zoom)
       if (!details) {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unknown community: ${detailCommunityId}`)
@@ -1404,7 +1414,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
     }
     case 'community_overview': {
       const overviewCommunities = communitiesFromGraph(graph)
-      const overviewLabels = { ...buildCommunityLabels(graph, overviewCommunities), ...helpers.readStoredCommunityLabels(graphPath) }
+      const overviewLabels = { ...buildCommunityLabels(graph, overviewCommunities), ...helpers.readStoredCommunityLabels(graphPath, graph) }
       const overview = communityDetailsMicro(graph, overviewCommunities, overviewLabels)
       return helpers.ok(id, helpers.textToolResult(JSON.stringify(overview)))
     }
@@ -1422,7 +1432,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const impactDepth = helpers.numberParamAlias(toolArguments, ['depth'], { min: 1, max: 5 })
       const rawEdgeTypes = toolArguments.edge_types
       const edgeTypes = Array.isArray(rawEdgeTypes) ? rawEdgeTypes.filter((t): t is string => typeof t === 'string') : undefined
-      const communityLabels = helpers.readStoredCommunityLabels(graphPath)
+      const communityLabels = helpers.readStoredCommunityLabels(graphPath, graph)
       const impactResult = analyzeImpact(graph, communityLabels, {
         label,
         ...(impactDepth !== null ? { depth: impactDepth } : {}),
@@ -1438,7 +1448,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       return helpers.ok(id, helpers.textToolResult(JSON.stringify(
         {
           ...impactPayload,
-          evidence: evidenceForImpactPayload(impactResult, graphPath, label),
+          evidence: evidenceForImpactPayload(impactResult, graphPath, label, graph),
         },
       )))
     }
@@ -1479,6 +1489,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ...prResult,
           evidence: buildMadarResponseEvidence({
             coverage: prResult.review_bundle.coverage,
+            graph,
             graphPath,
             coveredWorkflowOwners: collectWorkflowOwners(prResult.changed_files),
           }),
@@ -1490,6 +1501,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         missing_context: (prResult.review_bundle.coverage ?? emptyCoverage()).missing_required,
         evidence: buildMadarResponseEvidence({
           coverage: prResult.review_bundle.coverage,
+          graph,
           graphPath,
           coveredWorkflowOwners: collectWorkflowOwners(prResult.changed_files),
         }),
@@ -1582,7 +1594,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             }
         return helpers.ok(id, helpers.textToolResult(JSON.stringify({
           ...payload,
-          evidence: evidenceForRetrievePayload(payload, graphPath),
+          evidence: evidenceForRetrievePayload(payload, graphPath, graph),
         })))
       }).catch((error: unknown) => {
         // A rejected retrieve (e.g. missing optional semantic dependency) must
@@ -1628,7 +1640,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       if (requireFreshContextInput !== undefined && typeof requireFreshContextInput !== 'boolean') {
         return helpers.failure(id, helpers.jsonrpcInvalidParams, 'require_fresh_context must be a boolean')
       }
-      const initialGraphContextFreshness = analyzeGraphContextFreshness(graphPath, graph)
+      const initialGraphContextFreshness = analyzeGraphContextFreshness(graphPath, graph, undefined, knownGraphFreshness)
       if (requireFreshGraphInput === true) {
         try {
           requireFreshGraph(initialGraphContextFreshness, 'require_fresh_graph')
@@ -1673,7 +1685,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const includeSelectionDiagnostics = toolArguments.verbose === true
       const deltaSessionId = helpers.stringParamAlias(toolArguments, ['delta_session_id', 'deltaSessionId'])
       const cacheGraphVersion = !deltaSessionId && task === 'explain'
-        ? graphFreshnessMetadata(graphPath).graphVersion
+        ? knownGraphFreshness.graphVersion
         : null
       const cacheKey = cacheGraphVersion
         ? buildContextPackCacheKey({
@@ -1698,7 +1710,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             }
             const cachedGraphFreshness = analyzeGraphContextFreshness(graphPath, graph, {
               selected_source_files: selectedContextSourceFilesFromCachedExplainPayload(cachedPayload),
-            })
+            }, knownGraphFreshness)
             if (requireFreshContextInput === true) {
               try {
                 requireFreshSelectedContext(cachedGraphFreshness, 'require_fresh_context')
@@ -1753,6 +1765,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         })
         const evidence = buildMadarResponseEvidence({
           coverage: reviewMetadata.coverage,
+          graph,
           graphPath,
           question: prompt,
           coveredWorkflowOwners: collectWorkflowOwners(
@@ -1797,7 +1810,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       const graphContextFreshness = analyzeGraphContextFreshness(graphPath, graph, {
         selected_source_files: selectedContextSourceFilesFromRetrieveResult(retrieval),
-      })
+      }, knownGraphFreshness)
       if (requireFreshContextInput === true) {
         try {
           requireFreshSelectedContext(graphContextFreshness, 'require_fresh_context')
@@ -1813,7 +1826,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       if (task === 'impact') {
         const communityLabels = {
           ...buildCommunityLabels(graph, communitiesFromGraph(graph)),
-          ...helpers.readStoredCommunityLabels(graphPath),
+          ...helpers.readStoredCommunityLabels(graphPath, graph),
         }
         const impactTarget = pickImpactTarget(retrieval)
         const impactResult = analyzeImpact(graph, communityLabels, {
@@ -1824,6 +1837,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         const metadata = impactMetadata(impactResult, resolvedBudget, prompt, initialPlan.evidence.recipe_id, contextPackLevelTyped ?? undefined)
         const evidence = buildMadarResponseEvidence({
           coverage: metadata.coverage,
+          graph,
           graphPath,
           question: prompt,
           coveredWorkflowOwners: collectWorkflowOwners(
@@ -1944,6 +1958,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           coverage: deltaResult.delta_pack.coverage,
           executionSlice: deltaResult.delta_pack.execution_slice,
           expandable: deltaResult.delta_pack.expandable,
+          graph,
           graphPath,
           question: prompt,
           recovery: deltaResult.delta_pack.recovery,
@@ -2020,7 +2035,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         ...(fullPack.recovery ? { recovery: fullPack.recovery } : {}),
         matched_nodes: resolvedNodes.nodes,
         relationships: serializedPack.relationships,
-      }, graphPath)
+      }, graphPath, graph)
       const basePayload = withContextPackGovernance({
         ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
         resolution,
@@ -2158,7 +2173,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       if (resetSession && sessionId) {
         helpers.clearContextPromptSession(sessionId)
       }
-      const initialGraphFreshness = analyzeGraphContextFreshness(graphPath, graph)
+      const initialGraphFreshness = analyzeGraphContextFreshness(graphPath, graph, undefined, knownGraphFreshness)
       if (requireFreshGraphInput === true) {
         try {
           requireFreshGraph(initialGraphFreshness, 'require_fresh_graph')
@@ -2177,7 +2192,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       const graphFreshness = analyzeGraphContextFreshness(graphPath, graph, {
         selected_source_files: selectedContextSourceFilesFromRetrieveResult(retrieval),
-      })
+      }, knownGraphFreshness)
       if (requireFreshContextInput === true) {
         try {
           requireFreshSelectedContext(graphFreshness, 'require_fresh_context')
@@ -2226,7 +2241,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
               token_count: promptPack.token_count,
             },
         ...contextMetadata(retrieval),
-        evidence: evidenceForRetrievePayload(retrieval, graphPath),
+        evidence: evidenceForRetrievePayload(retrieval, graphPath, graph),
       })))
     }
     case 'context_session_reset': {
@@ -2266,7 +2281,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath, question),
+        evidence: evidenceForPathPayload(result, graphPath, question, graph),
       })))
     }
     case 'feature_map': {
@@ -2296,7 +2311,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath, question),
+        evidence: evidenceForPathPayload(result, graphPath, question, graph),
       })))
     }
     case 'risk_map': {
@@ -2326,7 +2341,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath, question),
+        evidence: evidenceForPathPayload(result, graphPath, question, graph),
       })))
     }
     case 'implementation_checklist': {
@@ -2356,7 +2371,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       })
       return helpers.ok(id, helpers.textToolResult(JSON.stringify({
         ...result,
-        evidence: evidenceForPathPayload(result, graphPath, question),
+        evidence: evidenceForPathPayload(result, graphPath, question, graph),
       })))
     }
     case 'time_travel_compare': {

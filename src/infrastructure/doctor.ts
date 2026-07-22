@@ -6,7 +6,6 @@ import {
   readMatchingDiagnostics,
   type IndexDiagnostics,
 } from '../adapters/filesystem/index-store.js'
-import { buildSourceCatalog } from '../adapters/filesystem/source-catalog.js'
 import {
   CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
   CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
@@ -343,7 +342,10 @@ function readMcpCheck(
   }
 }
 
-function readGenerationPolicyCheck(buildState: IndexBuildState | null): GraphCheck['generationPolicy'] {
+function readGenerationPolicyCheck(
+  buildState: IndexBuildState | null,
+  freshness: ReturnType<typeof analyzeGraphContextFreshness>,
+): GraphCheck['generationPolicy'] {
   if (!buildState) {
     return {
       storedFingerprint: null,
@@ -352,35 +354,16 @@ function readGenerationPolicyCheck(buildState: IndexBuildState | null): GraphChe
       reason: 'authoritative build state is unavailable; a full rebuild is required',
     }
   }
-
   const storedPolicy = buildState.policy
-  try {
-    const strict = storedPolicy.settings.indexing_strict
-    const currentCatalog = buildSourceCatalog(buildState.source_root.root_path, {
-      followSymlinks: storedPolicy.settings.follow_symlinks,
-      respectGitignore: storedPolicy.settings.respect_gitignore,
-      ...(strict ? {
-        indexingStrict: {
-          maxFailed: strict.max_failed,
-          maxUnsupported: strict.max_unsupported,
-        },
-      } : {}),
-    })
-    const currentPolicy = currentCatalog.policy
-    const match = storedPolicy.fingerprint === currentPolicy.fingerprint
-    return {
-      storedFingerprint: storedPolicy.fingerprint,
-      currentFingerprint: currentPolicy.fingerprint,
-      match,
-      reason: match ? 'stored policy matches current corpus controls' : 'corpus controls changed; a full rebuild is required',
-    }
-  } catch (error) {
-    return {
-      storedFingerprint: storedPolicy.fingerprint,
-      currentFingerprint: null,
-      match: false,
-      reason: `unable to evaluate current policy: ${error instanceof Error ? error.message : String(error)}`,
-    }
+  const currentFingerprint = freshness.current_generation_policy_fingerprint ?? null
+  const match = currentFingerprint !== null && storedPolicy.fingerprint === currentFingerprint
+  return {
+    storedFingerprint: storedPolicy.fingerprint,
+    currentFingerprint,
+    match,
+    reason: currentFingerprint === null
+      ? `unable to evaluate current policy: ${freshness.generation_policy_error ?? 'unknown error'}`
+      : match ? 'stored policy matches current corpus controls' : 'corpus controls changed; a full rebuild is required',
   }
 }
 
@@ -394,7 +377,7 @@ function readGraphCheck(graphPath: string, now: number): GraphCheck {
   const accepted = loadAcceptedIndex(resolvedGraphPath)
   const buildState = accepted?.state ?? null
   const indexingDiagnostics = buildState ? readMatchingDiagnostics(resolvedGraphPath) : null
-  const generationPolicy = readGenerationPolicyCheck(buildState)
+  const generationPolicy = readGenerationPolicyCheck(buildState, freshness)
 
   return {
     graphPath: resolvedGraphPath,
