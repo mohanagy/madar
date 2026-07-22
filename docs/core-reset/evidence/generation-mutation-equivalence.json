@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "core-reset-generation-mutation-equivalence",
+  "status": "passed",
+  "issue": "https://github.com/mohanagy/madar/issues/592",
+  "pull_request": "https://github.com/mohanagy/madar/pull/594",
+  "subject": {
+    "protected_base": "8886a0299ee30765ce149ca7ad5d1779496b78b5",
+    "implementation_commit": "1be24dc45a5f07c352c74fc374feb95a9440df8e",
+    "final_pr_head": "3f40c5b64cdd63054c52ed67588b782034f8b935",
+    "ci_head": "3f40c5b64cdd63054c52ed67588b782034f8b935",
+    "merge_commit": "b56966c06c0ae1b04c252f297036f332fa1b384c",
+    "final_and_merge_tree": "0cead2d3488dac136affa4bec047f8b5f11418a3",
+    "runtime_source_or_package_drift_after_implementation": false
+  },
+  "environment": {
+    "node": "v22.9.0",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "verification": {
+    "command": "npm run test:run -- tests/unit/update-index.test.ts tests/unit/generate-index.test.ts tests/unit/index-store.test.ts tests/unit/watch-index.test.ts tests/unit/source-catalog.test.ts --maxWorkers=1",
+    "test_files_passed": 5,
+    "tests_passed": 92,
+    "tests_failed": 0,
+    "duration_seconds": 61.26,
+    "ci_run": "https://github.com/mohanagy/madar/actions/runs/29942216697",
+    "ci_matrix_jobs_passed": 6
+  },
+  "test_files": [
+    {
+      "path": "tests/unit/update-index.test.ts",
+      "sha256": "e3630271323ae71a63fa65679c84e34e185fc24233596969a08917c5ab0c467e"
+    },
+    {
+      "path": "tests/unit/generate-index.test.ts",
+      "sha256": "2c2795b386cbe7ffd2dcf5d71e9f97357ceb45fd40d7db9031dbea9dae97a0d1"
+    },
+    {
+      "path": "tests/unit/index-store.test.ts",
+      "sha256": "1f1db3c854e84a1a1992984ab7ad1895d3e71437433e47bb6f620b38e8090528"
+    },
+    {
+      "path": "tests/unit/watch-index.test.ts",
+      "sha256": "e9e9baf182b4cd2a2089b06fd3693ddf554b0077a5c7b1cdd389616e1643d3b9"
+    },
+    {
+      "path": "tests/unit/source-catalog.test.ts",
+      "sha256": "80d30f9fd7cd4f9d11d8d237e83c553c712cc265d97ce64d3b3e2dad5a0b778e"
+    }
+  ],
+  "mutation_cases": [
+    "cold_no_op",
+    "add_and_import",
+    "private_leaf_change",
+    "exported_signature_change",
+    "delete_with_zero_stale_facts",
+    "rename_with_zero_stale_facts",
+    "compiler_control_change",
+    "transitive_compiler_control_change",
+    "madarignore_add_change_delete",
+    "gitignore_respected_and_ignored",
+    "recognized_unsupported_add_delete_rename",
+    "safety_exclusion_add_remove",
+    "allowed_symlink_add_retarget_delete",
+    "outside_or_broken_symlink_rejection",
+    "copied_workspace_root",
+    "linked_worktree_isolation"
+  ],
+  "publication_and_concurrency_cases": [
+    "first_graph_commit_failure",
+    "replacement_graph_commit_failure",
+    "derived_diagnostic_failure",
+    "source_edit_at_commit_boundary",
+    "edit_during_build_follow_up",
+    "watch_burst_coalescing",
+    "failed_reconciliation_recovery",
+    "lease_contention_retry",
+    "concurrent_controller_serialization"
+  ],
+  "equivalence_contract": {
+    "update_equals_clean_generation": true,
+    "authoritative_graph_bytes_equal": true,
+    "derived_diagnostics_equal_except_generated_at": true,
+    "deterministic_build_id_equal": true,
+    "zero_stale_nodes_or_edges_after_delete_or_rename": true,
+    "graph_commits_last": true,
+    "maximum_concurrent_builders": 1,
+    "accepted_result": "complete_previous_graph_complete_new_graph_or_explicit_failure"
+  },
+  "outcome": "The shipped cold no-op or full canonical reconciliation path is hermetically clean-equivalent across the accepted mutation, publication-failure, worktree, and concurrency cases. The stopped warm incremental path is absent."
+}

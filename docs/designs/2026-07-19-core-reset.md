@@ -3,7 +3,7 @@
 > **Tracking issue:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
 > **Project:** [Madar Roadmap](https://github.com/users/mohanagy/projects/8)
-> **Status:** accepted — `generation-and-incremental` is the sole active phase under [#592](https://github.com/mohanagy/madar/issues/592) from protected base `8886a0299ee30765ce149ca7ad5d1779496b78b5`; retrieval and delivery remain blocked
+> **Status:** accepted — phases through `generation-and-incremental` are complete; no phase is active; `evidence-path-query` is Ready but requires a separately accepted work-item contract before activation
 
 ## Decision
 
@@ -112,9 +112,9 @@ src/
 
 Dependency direction is `adapters -> application -> domain`. Domain code must not import the filesystem, MCP, CLI, TypeScript compiler, or evaluation tooling.
 
-## Active amendment — generation and incremental index
+## Completed amendment — generation and reconciliation
 
-The repository owner approved the phase contract in [#592](https://github.com/mohanagy/madar/issues/592) and amended [#577](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586) on 2026-07-22, authorizing one deletion-led implementation from protected base `8886a0299ee30765ce149ca7ad5d1779496b78b5`. The same issues now record the mandatory stop amendment after the fixed incremental gate failed. That stop amendment narrows the shipping architecture below; it does not complete the phase.
+The repository owner approved the phase contract in [#592](https://github.com/mohanagy/madar/issues/592) and amended [#577](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586) on 2026-07-22, authorizing one deletion-led implementation from protected base `8886a0299ee30765ce149ca7ad5d1779496b78b5`. The mandatory stop amendment narrowed the shipping architecture after the fixed incremental gate failed. [PR #594](https://github.com/mohanagy/madar/pull/594) later passed every accepted replacement, deletion, evidence, CI, and review gate and was squash-merged at `b56966c06c0ae1b04c252f297036f332fa1b384c`.
 
 ### Reconciliation boundary
 
@@ -139,7 +139,7 @@ There is no generation directory, persistent fact cache, versioned snapshot stor
 
 ### Deletion, ownership, and budget
 
-The phase owns exactly 15 predecessor files / 3,839 LOC recorded in the removal manifest. It may add at most these six replacements and 2,200 production LOC:
+The phase owned and removed exactly 15 predecessor files / 3,839 LOC recorded in the removal manifest. It added only these six permitted replacements and 2,190 production LOC:
 
 - `src/application/generate-index.ts`
 - `src/application/update-index.ts`
@@ -148,11 +148,11 @@ The phase owns exactly 15 predecessor files / 3,839 LOC recorded in the removal 
 - `src/adapters/filesystem/index-store.ts`
 - `src/infrastructure/watch-index.ts`
 
-`src/core/pipeline/stage.ts`, `src/runtime/freshness.ts`, and `src/shared/source-discovery.ts` transfer to `evidence-path-query`; `src/infrastructure/doctor.ts` transfers to `thin-delivery`. Those recipient phases remain proposed and blocked. The active phase may mechanically rewire their index-facing imports, but cannot redesign their deferred query or delivery behavior.
+`src/core/pipeline/stage.ts`, `src/runtime/freshness.ts`, and `src/shared/source-discovery.ts` transferred to `evidence-path-query`; `src/infrastructure/doctor.ts` transferred to `thin-delivery`. Evidence-path query is Ready but not active; thin delivery remains proposed and blocked. Neither recipient behavior was redesigned by the completed generation phase.
 
-The implementation must finish at no more than 130 production files / 67,454 production LOC, with net production delta at most `-1,500`, no new runtime or development dependency, and no more than 296 npm files / 2,700,000 unpacked bytes; packed bytes cannot increase.
+The implementation finished at 130 production files / 66,418 production LOC, with net production delta `-2,536`, no new runtime or development dependency, and 276 npm files / 2,699,851 unpacked bytes; packed bytes decreased from the protected-base package.
 
-Exact runtime commit `1be24dc45a5f07c352c74fc374feb95a9440df8e` removes all 15 predecessor files and retains exactly the six replacements. The inventory is 130 production TypeScript files / 66,418 LOC with `+2,190 / -4,726 / net -2,536`. Package dry-run is 276 files / 572,143 packed bytes / 2,699,851 unpacked bytes. The compatible [shipping receipt](../core-reset/evidence/generation-full-reconcile-500.json) passes cold no-op at `0.067` of clean generation, zero parse/invalidation/publication, and clean-generation regression at `1.045`. These are exact runtime measurements, not phase-completion claims; final CI, PR, merge, and completion evidence remains open.
+Exact runtime commit `1be24dc45a5f07c352c74fc374feb95a9440df8e` removes all 15 predecessor files and retains exactly the six replacements. The inventory is 130 production TypeScript files / 66,418 LOC with `+2,190 / -4,726 / net -2,536`. Package dry-run is 276 files / 572,143 packed bytes / 2,699,851 unpacked bytes. The compatible [shipping receipt](../core-reset/evidence/generation-full-reconcile-500.json) passes cold no-op at `0.067` of clean generation, zero parse/invalidation/publication, and clean-generation regression at `1.045`. The [hermetic mutation-equivalence receipt](../core-reset/evidence/generation-mutation-equivalence.json) records 5 focused files / 92 passing tests for clean equivalence, zero stale facts, graph-last failure handling, worktree isolation, and serialized concurrent publication. All six jobs in [CI run 29942216697](https://github.com/mohanagy/madar/actions/runs/29942216697) passed; 1,885 tests passed with 2 skipped under coverage; three independent P0/P1 audits found no blocker; and zero review threads remained. CodeRabbit explicitly skipped the non-default base, so the owner-approved exception is recorded without claiming a completed CodeRabbit review.
 
 ### Correctness and performance gates
 
@@ -266,7 +266,7 @@ Any change to the product job, non-goals, architecture boundary, compatibility p
 
 ## Acceptance
 
-The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.com/mohanagy/madar/issues/577) after the governance review passed. Scope/baseline, directed-multigraph, canonical-index, and legacy/non-code deletion phases later passed their gates. On 2026-07-22 the owner accepted [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the linked RFC amendment, authorizing only `generation-and-incremental`, then approved the recorded stop amendment after its fixed incremental gate failed. Acceptance does not waive implementation, deletion, evidence, review, or completion gates; the phase remains active.
+The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.com/mohanagy/madar/issues/577) after the governance review passed. Scope/baseline, directed-multigraph, canonical-index, legacy/non-code deletion, and generation/reconciliation phases later passed their gates. On 2026-07-22 the owner accepted [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the linked RFC amendment, then approved the recorded stop amendment after its fixed incremental gate failed. PR #594 completed that narrowed contract. No phase is active; Evidence-path query is Ready but still requires its own accepted contract and explicit activation.
 
 ## Decision log
 
@@ -275,4 +275,5 @@ The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.co
 | 2026-07-19 | Proposed | Opened #577 and created the deletion-led product, architecture, validation, and change-control contract. |
 | 2026-07-19 | Accepted | The repository owner approved the complete checklist; scope and baseline may begin after the governing documentation PR merges. |
 | 2026-07-22 | Accepted amendment | The owner approved [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586): a bounded warm in-memory experiment, honest cold reconciliation, one authoritative graph artifact, graph-last publication, four ownership transfers, strict deletion/size/performance gates, and no persistent cache or transaction subsystem. The following stop amendment supersedes the experiment. |
-| 2026-07-22 | Stop amendment and runtime proof | The fixed 500-file gate failed at candidate `1d3c9b6` / tree `6bd1ae` with ratios `0.824`, `1.047`, and `1.029`. Held-out timing was intentionally skipped and the failed path was deleted. Exact runtime `1be24dc` ships only cold no-op plus full canonical reconciliation with no session cache and passes the compatible shipping receipt at cold-noop ratio `0.067`, zero parse/invalidation/publication, and clean regression `1.045`. The phase remains In progress pending CI, PR, merge, and completion evidence. |
+| 2026-07-22 | Stop amendment and runtime proof | The fixed 500-file gate failed at candidate `1d3c9b6` / tree `6bd1ae` with ratios `0.824`, `1.047`, and `1.029`. Held-out timing was intentionally skipped and the failed path was deleted. Exact runtime `1be24dc` ships only cold no-op plus full canonical reconciliation with no session cache and passes the compatible shipping receipt at cold-noop ratio `0.067`, zero parse/invalidation/publication, and clean regression `1.045`. |
+| 2026-07-22 | Generation and reconciliation complete | PR #594 was squash-merged at `b56966c06c0ae1b04c252f297036f332fa1b384c` after all six CI jobs, coverage, package, performance, independent-review, and zero-thread gates passed. No phase is active; Evidence-path query is Ready but not activated. |

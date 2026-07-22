@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583), the Canonical TypeScript/JavaScript index passed through [#585](https://github.com/mohanagy/madar/issues/585) and [PR #586](https://github.com/mohanagy/madar/pull/586), and the combined deletion of legacy extraction and non-code/other-language ingestion passed through [#588](https://github.com/mohanagy/madar/issues/588) and [PR #590](https://github.com/mohanagy/madar/pull/590). [#592](https://github.com/mohanagy/madar/issues/592) is accepted; Generation and incremental index is the sole In progress phase from protected base `8886a0299ee30765ce149ca7ad5d1779496b78b5`.
+The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, and Generation and reconciliation have passed. The latest phase completed through [#592](https://github.com/mohanagy/madar/issues/592) and merged [PR #594](https://github.com/mohanagy/madar/pull/594). No phase is In progress; Evidence-path query is Ready but not active.
 
 ## Passed — directed multigraph
 
@@ -38,26 +38,29 @@ PR #590 was squash-merged into protected `core-reset` at `d46031eed7b0cf2d8bb7b7
 
 The resulting npm package has 314 files, 592,783 packed bytes, and 2,794,076 unpacked bytes. It is materially smaller than baseline but still fails the final `<150` files / `<1,500,000` unpacked-byte package gate; deletion completion does not claim otherwise.
 
-## In progress — generation and incremental index
+## Passed — generation and reconciliation
 
-The owner accepted the exact contract in [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and amended [RFC #577](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586). `generation-and-incremental` is the only active phase. Evidence-path query and thin delivery remain blocked.
+The owner accepted the exact contract in [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and amended [RFC #577](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586). The completed phase shipped cold no-op plus full canonical reconciliation; Evidence-path query is now Ready but not active, while thin delivery remains blocked.
 
-The phase deletes 15 predecessor files / 3,839 LOC, transfers three mixed query files to `evidence-path-query` and `doctor.ts` to `thin-delivery`, and permits at most six focused replacements / 2,200 production LOC. It must finish net `<= -1,500` LOC at `<=130` production files / `<=67,454` LOC, add no runtime or development dependency, and reduce the npm package to `<=296` files / `<=2,700,000` unpacked bytes without increasing packed bytes.
+The phase removed 15 predecessor files / 3,839 LOC, transferred three mixed query files to `evidence-path-query` and `doctor.ts` to `thin-delivery`, and added the six permitted replacements. It finished net `-2,536` LOC at 130 production files / 66,418 LOC, added no runtime or development dependency, and reduced the npm package to 276 files / 2,699,851 unpacked bytes without increasing packed bytes.
 
-The fixed 500-file performance gate stopped the proposed incremental path. Candidate checkpoint `1d3c9b6d264a5c76d212b93da7c63718cbe49b3d` at worktree tree `6bd1ae5762afaa868d5cf6ce165b061aa290bfda` measured warm index p50 ratio `0.824`, refresh p50 `1.047`, and refresh p95 `1.029`, missing all three required ratios. Held-out timing was intentionally skipped because it could not reverse the mandatory fixed-gate stop. The failed Program/fact/closure path was deleted.
+The fixed 500-file performance gate stopped the proposed incremental path. Candidate checkpoint `1d3c9b6d264a5c76d212b93da7c63718cbe49b3d` at worktree tree `6bd1ae5762afaa868d5cf6ce165b061aa290bfda` measured warm index p50 ratio `0.824`, refresh p50 `1.047`, and refresh p95 `1.029`, missing all three required ratios. These sealed receipt values supersede the provisional ratios posted earlier in #592/#577. Held-out timing was intentionally skipped because it could not reverse the mandatory fixed-gate stop. The failed Program/fact/closure path was deleted.
 
-The shipping architecture is cold no-op plus one full canonical reconcile for every changed source state. It has no in-memory or disk session cache. `graph.json` is the sole authoritative artifact and commits last; diagnostic sidecars are derived/non-blocking. Clean-equivalent add/change/delete/rename/control/ignore/recognized-unsupported-file/symlink/worktree behavior, zero stale facts, and publication fault/concurrency safety remain mandatory. Only successful `.ts/.tsx/.js/.jsx` indexing determines completeness; supported failures are incomplete, unsupported files are informational, and safety exclusions remain separate.
+The shipping architecture is cold no-op plus one full canonical reconcile for every changed source state. It has no in-memory or disk session cache. `graph.json` is the sole authoritative artifact and commits last; diagnostic sidecars are derived/non-blocking. Clean-equivalent add/change/delete/rename/control/ignore/recognized-unsupported-file/symlink/worktree behavior, zero stale facts, and publication fault/concurrency safety passed. Only successful `.ts/.tsx/.js/.jsx` indexing determines completeness; supported failures are incomplete, unsupported files are informational, and safety exclusions remain separate.
 
-Exact runtime commit `1be24dc45a5f07c352c74fc374feb95a9440df8e` records all 15 predecessors absent and all six replacements present. The [inventory receipt](core-reset/evidence/generation-incremental-inventory.json) measures 130 production TypeScript files / 66,418 LOC with `+2,190 / -4,726 / net -2,536`, and an npm dry-run of 276 files / 572,143 packed bytes / 2,699,851 unpacked bytes. The compatible [shipping receipt](core-reset/evidence/generation-full-reconcile-500.json) passes cold no-op at `0.067` of clean generation with zero parse/invalidation/publication and clean regression at `1.045`. The [failed-gate receipt](core-reset/evidence/generation-incremental-stop-500.json) and [protected-base receipt](core-reset/evidence/generation-incremental-protected-base-500.json) preserve why the incremental path was deleted. Final CI, PR, merge, and completion evidence is still open, so the phase remains **In progress** and later phases remain blocked.
+Exact runtime commit `1be24dc45a5f07c352c74fc374feb95a9440df8e` records all 15 predecessors absent and all six replacements present. The [inventory receipt](core-reset/evidence/generation-incremental-inventory.json) measures 130 production TypeScript files / 66,418 LOC with `+2,190 / -4,726 / net -2,536`, and an npm dry-run of 276 files / 572,143 packed bytes / 2,699,851 unpacked bytes. The compatible [shipping receipt](core-reset/evidence/generation-full-reconcile-500.json) passes cold no-op at `0.067` of clean generation with zero parse/invalidation/publication and clean regression at `1.045`. The [hermetic mutation-equivalence receipt](core-reset/evidence/generation-mutation-equivalence.json) records 5 focused files / 92 passing tests across clean equivalence, zero-stale-fact, publication-failure, worktree, and concurrency cases. The [failed-gate receipt](core-reset/evidence/generation-incremental-stop-500.json) and [protected-base receipt](core-reset/evidence/generation-incremental-protected-base-500.json) preserve why the incremental path was deleted.
 
-## Next — dependency-ordered replacement
+[PR #594](https://github.com/mohanagy/madar/pull/594) was squash-merged at `b56966c06c0ae1b04c252f297036f332fa1b384c` from final head `3f40c5b64cdd63054c52ed67588b782034f8b935`. All six jobs in [CI run 29942216697](https://github.com/mohanagy/madar/actions/runs/29942216697) passed, including 156 files / 1,885 tests passed with 2 skipped under coverage. Three independent P0/P1 audits found no blocker and zero review threads remained. CodeRabbit explicitly skipped the non-default base; the owner-approved exception is documented in the [exact-head review receipt](https://github.com/mohanagy/madar/pull/594#issuecomment-5049404550) without claiming a completed CodeRabbit review.
 
-Only one technical phase may be active at a time. After the active generation/incremental phase passes, the remaining order is:
+## Ready — evidence-path query
 
-1. Generic evidence-path retrieval and deletion of the context/governance stack.
-2. Thin MCP, CLI, Claude Code, and Codex delivery.
-3. Move evaluation tooling outside runtime and reduce the npm package.
-4. Publish a beta under npm tag `next` for external validation.
+No phase is In progress. `evidence-path-query` is Ready, but work cannot start until a separately accepted issue freezes its deletion boundary, held-out correctness and one-call completeness gates, production LOC budget, non-goals, and explicit owner activation. Existing #565 and #574 are inputs to that contract, not implementation authorization.
+
+After Evidence-path query, the remaining dependency order is:
+
+1. Thin MCP, CLI, Claude Code, and Codex delivery.
+2. Move evaluation tooling outside runtime and reduce the npm package.
+3. Publish a beta under npm tag `next` for external validation.
 
 Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
 
