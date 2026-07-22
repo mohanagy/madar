@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "fixture_id": "evidence-path-performance-v1",
+  "generator": {
+    "algorithm": "component-ring-with-fixed-skip-v1",
+    "seed": "sha256-counter-v1:evidence-path-performance-v1",
+    "component_count": 150,
+    "nodes_per_component": 100,
+    "node_count": 15000,
+    "edge_count": 30000,
+    "node_id": "n plus zero-padded global index width 5",
+    "node_label": "flow plus zero-padded component width 3 plus phase plus zero-padded local index width 2",
+    "source_file": "src/fixture/flow-{component}/node-{local}.ts",
+    "source_domain": "production",
+    "phases": [
+      "route",
+      "service",
+      "queue",
+      "worker",
+      "storage"
+    ],
+    "phase_rule": "phases[local_index modulo 5]",
+    "line_number_rule": "local_index plus 1",
+    "snippet_rule": "export function {label}() { return '{component}:{phase}:{local}'; }",
+    "edges": [
+      {
+        "count_per_component": 100,
+        "from": "local_index",
+        "to": "(local_index + 1) modulo 100",
+        "relation_rule": "calls"
+      },
+      {
+        "count_per_component": 100,
+        "from": "local_index",
+        "to": "(local_index + 37) modulo 100",
+        "relation_rule": "depends_on"
+      }
+    ],
+    "serialization": "RFC 8785 JSON Canonicalization Scheme"
+  },
+  "queries": [
+    "Trace flow-007 from route through service to storage.",
+    "How does flow-042 write to and read from shared storage?",
+    "Trace the queue-to-worker boundary in flow-113.",
+    "Trace the public route and serializer path in flow-128.",
+    "Which evidence path implements flow-999?"
+  ],
+  "protocol": {
+    "graph_loaded_before_timer": true,
+    "warmup_invocations": 3,
+    "measured_invocations": 20,
+    "query_schedule": "queries[index modulo 5]",
+    "clock": "node:perf_hooks performance.now",
+    "percentile": "nearest-rank p95 over the 20 elapsed_ms samples",
+    "process_model": "one Node process; one parsed graph reused by all invocations",
+    "closure_pass_max": 1,
+    "selected_file_max": 12,
+    "snippet_max": 25,
+    "serialized_token_max": 4000,
+    "p95_ms_max": 500
+  },
+  "reference_environment": {
+    "node": "v22.9.0",
+    "platform": "darwin",
+    "release": "25.3.0",
+    "arch": "arm64",
+    "cpu": "Apple M3 Max",
+    "memory_bytes": 51539607552
+  },
+  "runner": "node tools/eval/core-reset/evidence-path-performance.mjs --contract tools/eval/core-reset/contracts/evidence-path-performance-v1.json --receipt docs/core-reset/evidence/evidence-path-performance.json",
+  "receipt": "docs/core-reset/evidence/evidence-path-performance.json"
+}

@@ -9,6 +9,10 @@ new benchmark product and is not part of the Madar runtime.
 - `contracts/evaluation-contract.json` pins the repositories, questions,
   expected evidence paths, comparator protocols, measurements, human rubric,
   and anti-tuning rules.
+- `contracts/evidence-path-performance-v1.json` pins the synthetic
+  evidence-query topology, five queries, measurement order, result caps, and
+  reference environment. Its accepted SHA-256 is
+  `11338a8d40590e682b9fa55abf41b19301bcafe495acd4f89cb8d0552a68e799`.
 - `schemas/` validates the contract and baseline receipt in CI.
 - `record-baseline.mjs` records the frozen `@lubab/madar@0.32.0` baseline without changing it. Its legacy CLI arguments are part of that version-pinned receipt protocol, not commands for the current candidate build.
 - The accepted receipt lives under `docs/core-reset/evidence/`; generated raw
@@ -22,6 +26,36 @@ in-scope TypeScript phases must be evidenced and Go phases must be identified
 honestly as unsupported. Scope guards do not authorize Go indexing and never
 contribute to cross-arm medians or pass/fail. Documenso and Formbricks are the
 blocking comparator questions.
+
+## Evidence-path activation contract
+
+[Core Reset issue #596](https://github.com/mohanagy/madar/issues/596) uses
+Documenso and Formbricks as blocking one-call TypeScript/JavaScript gates. The
+OpenStatus question remains diagnostic only: incident mutation, notification
+delivery, public HTML, and JSON feeds require direct TypeScript evidence, while
+the Go checker and Tinybird phases must be reported as unsupported. None of
+these repository identifiers, expected paths, phase labels, or scoring terms
+may enter production source or query output.
+
+The performance descriptor deterministically generates 150 components of 100
+nodes: exactly 15,000 nodes and 30,000 directed edges. Each node has one
+`calls` edge to `(local + 1) % 100` and one `depends_on` edge to
+`(local + 37) % 100`; IDs, labels, paths, snippets, five queries, order, and RFC
+8785 serialization are fixed. CI validates the descriptor bytes, hash, and
+derived graph counts without importing it from production.
+
+The accepted reference environment is Node `v22.9.0`, Darwin `25.3.0` arm64,
+Apple M3 Max, and 51,539,607,552 bytes RAM. A later implementation-evidence
+runner will perform three warm-ups and at least 20 measured queries with the
+graph already loaded. Warm p95 must be below 500 ms, closure-pass count at most
+one, and every sample within the 12-file, 25-snippet, and 4,000-token caps.
+Measurements from another environment are diagnostic only.
+
+The accepted receipt path is
+`docs/core-reset/evidence/evidence-path-performance.json`. The runner and its
+receipt are implementation evidence: activation does not create the receipt or
+claim that the timing gate passed. This descriptor and every Core Reset receipt
+remain development-only and excluded from `dist` and npm.
 
 The canonical default SPI fixture covers exactly `.js`, `.jsx`, `.ts`, and
 `.tsx`. The extensions `.mjs`, `.cjs`, `.mts`, and `.cts` are not part of this
