@@ -114,14 +114,14 @@ Dependency direction is `adapters -> application -> domain`. Domain code must no
 
 ## Active amendment — generation and incremental index
 
-The repository owner approved the exact phase contract in [#592](https://github.com/mohanagy/madar/issues/592) and amended [#577](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586) on 2026-07-22. Activation itself delivers no runtime behavior; it authorizes one deletion-led implementation from protected base `8886a0299ee30765ce149ca7ad5d1779496b78b5`.
+The repository owner approved the phase contract in [#592](https://github.com/mohanagy/madar/issues/592) and amended [#577](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586) on 2026-07-22, authorizing one deletion-led implementation from protected base `8886a0299ee30765ce149ca7ad5d1779496b78b5`. The same issues now record the mandatory stop amendment after the fixed incremental gate failed. That stop amendment narrows the shipping architecture below; it does not complete the phase.
 
-### Incremental boundary
+### Reconciliation boundary
 
-- Real reuse exists only inside a long-lived MCP/watch process. That process may retain the TypeScript Program/builder state, file versions, per-file canonical facts, and reverse dependencies in memory.
 - A cold no-op scans hashes, parses no source, runs no clustering/reporting, publishes nothing, and preserves accepted artifact bytes and identity.
-- A cold process with source changes performs a full canonical reconcile and reports `fallback_reason: cold_process`; it is never described as incremental.
-- No AST, fact, graph-diff, or dependency cache persists across processes. Cross-process caching requires a later RFC amendment backed by measurements.
+- Every changed source state performs one full canonical reconcile and reports that mode truthfully; it is never described as incremental.
+- No in-memory or disk session cache survives. The rejected TypeScript Program/builder state, per-file fact, reverse-dependency closure, and graph-diff path is deleted rather than kept dormant.
+- No AST, fact, graph-diff, or dependency cache persists within or across processes. Any future cache requires a later RFC amendment backed by measurements.
 
 ### Completeness boundary
 
@@ -152,13 +152,15 @@ The phase owns exactly 15 predecessor files / 3,839 LOC recorded in the removal 
 
 The implementation must finish at no more than 130 production files / 67,454 production LOC, with net production delta at most `-1,500`, no new runtime or development dependency, and no more than 296 npm files / 2,700,000 unpacked bytes; packed bytes cannot increase.
 
+Exact runtime commit `151f08ed1ca4db4f15dbe96d87f03d7226d4f3e2` removes all 15 predecessor files and retains exactly the six replacements. The inventory is 130 production TypeScript files / 66,418 LOC with `+2,189 / -4,725 / net -2,536`. Package dry-run is 276 files / 572,142 packed bytes / 2,699,814 unpacked bytes. The compatible [shipping receipt](../core-reset/evidence/generation-full-reconcile-500.json) passes cold no-op at `0.065` of clean generation, zero parse/invalidation/publication, and clean-generation regression at `1.08`. These are exact runtime measurements, not phase-completion claims; final CI, PR, merge, and completion evidence remains open.
+
 ### Correctness and performance gates
 
-Add/change/delete/rename, compiler-control, ignore-policy, recognized-unsupported-file add/delete/rename, symlink, and linked-worktree updates must equal clean generation exactly, with zero stale nodes or edges. Fault-injection, edit-during-build, and concurrent-update tests must prove graph-last publication and one complete winner.
+Add/change/delete/rename, compiler-control, ignore-policy, recognized-unsupported-file add/delete/rename, symlink, and linked-worktree updates must equal clean generation exactly through the full-reconcile path, with zero stale nodes or edges. Fault-injection, edit-during-build, and concurrent-update tests must prove graph-last publication and one complete winner.
 
-Cold no-op median must be at most 20% of clean generation. Warm index-stage median must be at most 50% of clean indexing on a fixed 500+ file fixture. Clean generation may regress by at most 10% from the protected-base measurement. After at least three warm-ups, at least 20 measured trials must report p50/p95, environment, parsed/reused/invalidated counts, and a pinned held-out repository commit. User-visible warm leaf-edit p50 must be at most 75% and p95 at most 80% of clean generation on both corpora; no other measured warm mutation may be more than 10% slower than clean.
+Cold no-op median must be at most 20% of clean generation, and clean generation may regress by at most 10% from the protected-base measurement. The fixed 500-file experiment used three warm-ups and 20 measured trials. Candidate checkpoint `1d3c9b6d264a5c76d212b93da7c63718cbe49b3d`, worktree tree `6bd1ae5762afaa868d5cf6ce165b061aa290bfda`, measured warm index p50 ratio `0.824` against `<=0.50`, refresh p50 ratio `1.047` against `<=0.75`, and refresh p95 ratio `1.029` against `<=0.80`. The [receipt](../core-reset/evidence/generation-incremental-stop-500.json) is explicitly ineligible for acceptance.
 
-If real reuse, clean equivalence, end-to-end improvement, deletion, or size gates fail, the phase stops and simplifies to one honest full reconcile. It does not keep unused incremental code or add a cache/transaction framework.
+That result triggered the accepted stop condition. Held-out timing was intentionally skipped because it could not reverse a fixed-gate failure. The failed incremental path was deleted, and the implementation simplified to cold no-op plus one honest full canonical reconcile. The stopped warm ratios are historical decision evidence, not continuing acceptance gates. The phase does not keep unused incremental code or add a cache/transaction framework.
 
 ## Public surface target
 
@@ -198,7 +200,7 @@ Existing names are preserved only when their meaning remains valid.
 2. Establish held-out graph and answer fixtures.
 3. Replace the graph with a directed multigraph schema.
 4. Make the TypeScript Program index canonical and delete legacy extraction.
-5. Implement clean-equivalent warm-session add/change/delete/rename/worktree refresh with honest cold reconciliation and coherent graph-last publication.
+5. Implement clean-equivalent cold no-op and changed-state full reconciliation with coherent graph-last publication; delete the failed incremental experiment.
 6. Replace retrieval and delete the context/governance stack.
 7. Replace CLI/MCP and remove extra transports and integrations.
 8. Move evaluation tooling outside runtime and reduce the npm package.
@@ -225,7 +227,7 @@ Merging code alone is not completion.
 The detailed scorecard is [`docs/core-reset/scorecard.md`](../core-reset/scorecard.md). The stable release requires:
 
 - correct directed multigraph behavior and deterministic serialization;
-- incremental output equivalent to a clean rebuild with proven warm reuse and user-visible refresh improvement;
+- changed-state output equivalent to a clean rebuild, a true cold no-op, and no retained failed incremental or session-cache path;
 - labelled TypeScript/framework extraction gates;
 - held-out answer correctness no worse than the best comparator;
 - material provider-input and end-to-end latency improvement;
@@ -264,7 +266,7 @@ Any change to the product job, non-goals, architecture boundary, compatibility p
 
 ## Acceptance
 
-The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.com/mohanagy/madar/issues/577) after the governance review passed. Scope/baseline, directed-multigraph, canonical-index, and legacy/non-code deletion phases later passed their gates. On 2026-07-22 the owner accepted [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the linked RFC amendment, authorizing only `generation-and-incremental` after this governance amendment merges. Acceptance does not waive its implementation, deletion, evidence, review, or completion gates.
+The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.com/mohanagy/madar/issues/577) after the governance review passed. Scope/baseline, directed-multigraph, canonical-index, and legacy/non-code deletion phases later passed their gates. On 2026-07-22 the owner accepted [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the linked RFC amendment, authorizing only `generation-and-incremental`, then approved the recorded stop amendment after its fixed incremental gate failed. Acceptance does not waive implementation, deletion, evidence, review, or completion gates; the phase remains active.
 
 ## Decision log
 
@@ -272,4 +274,5 @@ The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.co
 | --- | --- | --- |
 | 2026-07-19 | Proposed | Opened #577 and created the deletion-led product, architecture, validation, and change-control contract. |
 | 2026-07-19 | Accepted | The repository owner approved the complete checklist; scope and baseline may begin after the governing documentation PR merges. |
-| 2026-07-22 | Accepted amendment | The owner approved [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586): warm in-memory reuse only, honest cold reconciliation, one authoritative graph artifact, graph-last publication, four ownership transfers, strict deletion/size/performance gates, and no persistent cache or transaction subsystem. |
+| 2026-07-22 | Accepted amendment | The owner approved [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586): a bounded warm in-memory experiment, honest cold reconciliation, one authoritative graph artifact, graph-last publication, four ownership transfers, strict deletion/size/performance gates, and no persistent cache or transaction subsystem. The following stop amendment supersedes the experiment. |
+| 2026-07-22 | Stop amendment and runtime proof | The fixed 500-file gate failed at candidate `1d3c9b6` / tree `6bd1ae` with ratios `0.824`, `1.047`, and `1.029`. Held-out timing was intentionally skipped and the failed path was deleted. Exact runtime `151f08e` ships only cold no-op plus full canonical reconciliation with no session cache and passes the compatible shipping receipt at cold-noop ratio `0.065`, zero parse/invalidation/publication, and clean regression `1.08`. The phase remains In progress pending CI, PR, merge, and completion evidence. |

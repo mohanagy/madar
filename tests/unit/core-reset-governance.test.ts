@@ -21,6 +21,9 @@ import { productionSourceDelta, sourceInventory } from '../../tools/eval/core-re
 const read = (path: string): string => readFileSync(resolve(path), 'utf8')
 const git = process.platform === 'win32' ? 'git.exe' : 'git'
 const INCREMENTAL_BASE = '8886a0299ee30765ce149ca7ad5d1779496b78b5'
+const INCREMENTAL_IMPLEMENTATION = '151f08ed1ca4db4f15dbe96d87f03d7226d4f3e2'
+const STOPPED_INCREMENTAL_CANDIDATE = '1d3c9b6d264a5c76d212b93da7c63718cbe49b3d'
+const STOPPED_INCREMENTAL_TREE = '6bd1ae5762afaa868d5cf6ce165b061aa290bfda'
 const INCREMENTAL_PREDECESSORS = [
   'src/infrastructure/generate.ts',
   'src/contracts/generation-policy.ts',
@@ -52,6 +55,9 @@ const INCREMENTAL_REPLACEMENTS = [
   'src/adapters/filesystem/index-store.ts',
   'src/infrastructure/watch-index.ts',
 ] as const
+const INCREMENTAL_OWNED_REPLACEMENTS = INCREMENTAL_REPLACEMENTS.filter(
+  (path) => path !== 'src/domain/index/build-state.ts',
+)
 
 function productionTypeScriptFiles(directory = 'src'): string[] {
   return readdirSync(resolve(directory), { withFileTypes: true }).flatMap((entry) => {
@@ -128,20 +134,24 @@ describe('core reset governance', () => {
     expect(design).toContain('not a permanent V1/V2 split')
     expect(design).toContain('Merging code alone is not completion')
     expect(design).toContain('issues/592')
-    expect(design).toContain('Real reuse exists only inside a long-lived MCP/watch process')
+    expect(design).toContain('No in-memory or disk session cache survives')
     expect(design).toContain('`graph.json` is the sole authoritative index artifact and atomic commit marker')
-    expect(design).toContain('at least 20 measured trials')
-    expect(design).toContain('Clean generation may regress by at most 10%')
+    expect(design).toContain('three warm-ups and 20 measured trials')
+    expect(design).toContain('clean generation may regress by at most 10%')
+    expect(design).toContain('Held-out timing was intentionally skipped')
+    expect(design).toContain('The failed incremental path was deleted')
     expect(design).toContain('Only successfully indexed `.ts`, `.tsx`, `.js`, and `.jsx` inputs determine supported-index completeness')
     expect(design).toContain('There is no generation directory, persistent fact cache, versioned snapshot store')
     expect(scorecard).toContain('**Status:** accepted')
     expect(scorecard).toContain('| Directed multigraph | **Passed**')
     expect(scorecard).toContain('| Canonical TypeScript index | **Passed**')
     expect(scorecard).toContain('| Legacy extraction plus non-code/other-language ingestion | **Passed**')
-    expect(scorecard).toContain('| Incremental index | **In progress**')
+    expect(scorecard).toContain('| Generation and reconciliation | **In progress**')
     expect(scorecard).toContain('single In progress phase through #592')
-    expect(scorecard).toContain('clean generation itself may regress at most 10%')
+    expect(scorecard).toContain('clean generation may regress at most 10%')
     expect(scorecard).toContain('recognized unsupported files and expected policy exclusions are informational')
+    expect(scorecard).toContain('The fixed 500-file experiment stopped the incremental design')
+    expect(scorecard).toContain('There is no in-memory or disk session cache')
     expect(scorecard).not.toContain('Ready — not In progress')
     expect(scorecard).not.toContain('No phase is In progress')
     expect(scorecard).toContain('final CodeRabbit rerun was rate-limited')
@@ -168,11 +178,15 @@ describe('core reset governance', () => {
         ready_phase: string | null
         base_commit: string
         completed_phase_commit: string
+        implementation_commit: string
         production_typescript_files: number
         production_typescript_loc: number
         production_loc_added: number
         production_loc_removed: number
         production_loc_net: number
+        npm_files: number
+        npm_packed_bytes: number
+        npm_unpacked_bytes: number
       }
       items: Array<{
         id: string
@@ -192,11 +206,18 @@ describe('core reset governance', () => {
         npm_package_budget?: { files_max: number; unpacked_bytes_max: number; packed_bytes_delta_max: number }
         performance_budget?: {
           cold_noop_median_ratio_max: number
-          warm_index_median_ratio_max: number
-          warm_e2e_p50_ratio_max: number
-          warm_e2e_p95_ratio_max: number
           clean_generation_regression_ratio_max: number
           measured_trials_min: number
+        }
+        stopped_incremental_gate?: {
+          candidate_checkpoint: string
+          candidate_worktree_tree: string
+          fixed_fixture_supported_files: number
+          warm_index_p50_ratio: number
+          warm_refresh_p50_ratio: number
+          warm_refresh_p95_ratio: number
+          heldout: string
+          failed_path: string
         }
         completeness_contract?: {
           supported_extensions: string[]
@@ -219,6 +240,14 @@ describe('core reset governance', () => {
           owner_approval: string
           rfc_amendment: string
           protected_base: string
+        }
+        implementation?: {
+          commit: string
+          mode: string
+          in_memory_session_cache: string
+          disk_session_cache: string
+          failed_incremental_path: string
+          evidence_receipts: string[]
         }
         runtime_dependencies_removed?: string[]
         retired_cli_flags?: string[]
@@ -264,11 +293,15 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: INCREMENTAL_BASE,
       completed_phase_commit: 'd46031eed7b0cf2d8bb7b7b6267a51322d9e2490',
-      production_typescript_files: 139,
-      production_typescript_loc: 68_954,
-      production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
+      implementation_commit: INCREMENTAL_IMPLEMENTATION,
+      production_typescript_files: 130,
+      production_typescript_loc: 66_418,
+      production_loc_added: 2_189,
+      production_loc_removed: 4_725,
+      production_loc_net: -2_536,
+      npm_files: 276,
+      npm_packed_bytes: 572_142,
+      npm_unpacked_bytes: 2_699_814,
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
@@ -388,7 +421,8 @@ describe('core reset governance', () => {
     ])
     expect(generation).toMatchObject({
       status: 'in_progress',
-      sources: [...INCREMENTAL_PREDECESSORS],
+      sources: INCREMENTAL_OWNED_REPLACEMENTS,
+      removed_sources: [...INCREMENTAL_PREDECESSORS],
       transferred_sources: Object.keys(INCREMENTAL_TRANSFERS),
       replacement_sources: [...INCREMENTAL_REPLACEMENTS],
       production_file_budget: { added_max: 6, removed_min: 15 },
@@ -399,11 +433,18 @@ describe('core reset governance', () => {
       npm_package_budget: { files_max: 296, unpacked_bytes_max: 2_700_000, packed_bytes_delta_max: 0 },
       performance_budget: {
         cold_noop_median_ratio_max: 0.20,
-        warm_index_median_ratio_max: 0.50,
-        warm_e2e_p50_ratio_max: 0.75,
-        warm_e2e_p95_ratio_max: 0.80,
         clean_generation_regression_ratio_max: 0.10,
         measured_trials_min: 20,
+      },
+      stopped_incremental_gate: {
+        candidate_checkpoint: STOPPED_INCREMENTAL_CANDIDATE,
+        candidate_worktree_tree: STOPPED_INCREMENTAL_TREE,
+        fixed_fixture_supported_files: 500,
+        warm_index_p50_ratio: 0.824,
+        warm_refresh_p50_ratio: 1.047,
+        warm_refresh_p95_ratio: 1.029,
+        heldout: 'intentionally_skipped_after_fixed_gate_stop',
+        failed_path: 'deleted',
       },
       completeness_contract: {
         supported_extensions: ['.ts', '.tsx', '.js', '.jsx'],
@@ -440,10 +481,24 @@ describe('core reset governance', () => {
         rfc_amendment: 'https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586',
         protected_base: INCREMENTAL_BASE,
       },
+      implementation: {
+        commit: INCREMENTAL_IMPLEMENTATION,
+        mode: 'cold_noop_or_full_canonical_reconcile',
+        in_memory_session_cache: 'absent',
+        disk_session_cache: 'absent',
+        failed_incremental_path: 'deleted',
+        evidence_receipts: [
+          'docs/core-reset/evidence/generation-incremental-protected-base-500.json',
+          'docs/core-reset/evidence/generation-incremental-stop-500.json',
+          'docs/core-reset/evidence/generation-full-reconcile-500.json',
+          'docs/core-reset/evidence/generation-incremental-inventory.json',
+        ],
+      },
     })
     const incrementalBaseFiles = productionTypeScriptFilesAtCommit(INCREMENTAL_BASE)
     expect(INCREMENTAL_PREDECESSORS.every((path) => incrementalBaseFiles.includes(path))).toBe(true)
-    expect(INCREMENTAL_PREDECESSORS.every((path) => existsSync(resolve(path)))).toBe(true)
+    expect(INCREMENTAL_PREDECESSORS.every((path) => !existsSync(resolve(path)))).toBe(true)
+    expect(INCREMENTAL_REPLACEMENTS.every((path) => existsSync(resolve(path)))).toBe(true)
     expect(logicalLocAtCommit(INCREMENTAL_BASE, INCREMENTAL_PREDECESSORS)).toBe(3_839)
     for (const id of ['evidence-path-query', 'thin-delivery']) {
       expect(manifest.items.find((item) => item.id === id)?.status).toBe('proposed')
@@ -478,11 +533,15 @@ describe('core reset governance', () => {
         completed_phase: string
         active_phase: string | null
         base_commit: string
+        implementation_commit: string
         production_typescript_files: number
         production_typescript_loc: number
         production_loc_added: number
         production_loc_removed: number
         production_loc_net: number
+        npm_files: number
+        npm_packed_bytes: number
+        npm_unpacked_bytes: number
       }
       items: Array<{
         id: string
@@ -521,19 +580,147 @@ describe('core reset governance', () => {
       production_loc_removed: current.production_loc_removed,
       production_loc_net: current.production_loc_net,
     })
+    expect(current).toMatchObject({
+      implementation_commit: INCREMENTAL_IMPLEMENTATION,
+      npm_files: 276,
+      npm_packed_bytes: 572_142,
+      npm_unpacked_bytes: 2_699_814,
+    })
   })
 
-  it('activates generation governance without smuggling in implementation', () => {
-    expect(productionSourceDelta(INCREMENTAL_BASE)).toEqual({ added: 0, removed: 0, net: 0 })
-    const implementationDiff = execFileSync(
+  it('records the simplified implementation without retaining the failed warm path', () => {
+    expect(productionSourceDelta(INCREMENTAL_BASE)).toEqual({ added: 2_189, removed: 4_725, net: -2_536 })
+    expect(execFileSync(git, ['cat-file', '-t', `${INCREMENTAL_IMPLEMENTATION}^{commit}`], { encoding: 'utf8' }).trim())
+      .toBe('commit')
+    const sourceDrift = execFileSync(
       git,
-      ['diff', '--name-only', INCREMENTAL_BASE, '--', 'src', 'package.json', 'package-lock.json'],
+      ['diff', '--name-only', INCREMENTAL_IMPLEMENTATION, '--', 'src', 'package.json', 'package-lock.json'],
       { encoding: 'utf8' },
     ).trim()
-    expect(implementationDiff).toBe('')
-    for (const replacement of INCREMENTAL_REPLACEMENTS) {
-      expect(existsSync(resolve(replacement)), `${replacement} must not exist in the activation-only change`).toBe(false)
+    expect(sourceDrift).toBe('')
+    for (const predecessor of INCREMENTAL_PREDECESSORS) {
+      expect(existsSync(resolve(predecessor)), `${predecessor} must be deleted`).toBe(false)
     }
+    for (const replacement of INCREMENTAL_REPLACEMENTS) {
+      expect(existsSync(resolve(replacement)), `${replacement} must exist`).toBe(true)
+    }
+
+    const production = productionTypeScriptFiles().map((path) => read(path)).join('\n')
+    for (const rejectedApi of [
+      'warm_incremental',
+      'CanonicalTypeScriptIndexSession',
+      'createCanonicalTypeScriptIndexSession',
+      'createUpdateIndexSession',
+      'persistentWarmSession',
+      'indexSession',
+    ]) {
+      expect(production, `${rejectedApi} must not survive in production`).not.toContain(rejectedApi)
+    }
+
+    const stop = JSON.parse(read('docs/core-reset/evidence/generation-incremental-stop-500.json')) as {
+      measured_candidate_commit: string
+      eligible_for_acceptance: boolean
+      subject: { worktree_tree_oid: string }
+      gates: {
+        warm_index_p50_ratio: { actual: number; pass: boolean }
+        warm_refresh_p50_ratio: { actual: number; pass: boolean }
+        warm_refresh_p95_ratio: { actual: number; pass: boolean }
+      }
+      stop_condition: { triggered: boolean; held_out: { status: string } }
+    }
+    expect(stop).toMatchObject({
+      measured_candidate_commit: STOPPED_INCREMENTAL_CANDIDATE,
+      eligible_for_acceptance: false,
+      subject: { worktree_tree_oid: STOPPED_INCREMENTAL_TREE },
+      gates: {
+        warm_index_p50_ratio: { actual: 0.824, pass: false },
+        warm_refresh_p50_ratio: { actual: 1.047, pass: false },
+        warm_refresh_p95_ratio: { actual: 1.029, pass: false },
+      },
+      stop_condition: { triggered: true, held_out: { status: 'intentionally_skipped' } },
+    })
+
+    const receipt = JSON.parse(read('docs/core-reset/evidence/generation-incremental-inventory.json')) as unknown
+    expect(receipt).toEqual({
+      schema_version: 1,
+      issue: 'https://github.com/mohanagy/madar/issues/592',
+      protected_base: INCREMENTAL_BASE,
+      implementation_commit: INCREMENTAL_IMPLEMENTATION,
+      production: {
+        typescript_files: 130,
+        typescript_loc: 66_418,
+        loc_added: 2_189,
+        loc_removed: 4_725,
+        loc_net: -2_536,
+        predecessor_files_removed: 15,
+        predecessor_loc_removed: 3_839,
+        replacement_files: 6,
+        replacement_loc: 1_484,
+        runtime_dependencies_added: 0,
+        development_dependencies_added: 0,
+      },
+      package: {
+        command: 'npm pack --dry-run --json',
+        name: '@lubab/madar',
+        version: '0.32.0',
+        files: 276,
+        packed_bytes: 572_142,
+        unpacked_bytes: 2_699_814,
+        shasum: '78957a04db589c8555100ea3c461b94ca3adc510',
+        integrity: 'sha512-0k2QI/KUN9Bmfk/47bVl0sabxPhvOrfiR17/ZELpVPiBe0hnv8OD3sX8sY5/m+0MCiROlOBROYuLcPXEPEILwg==',
+      },
+      budgets: {
+        production_files_pass: true,
+        production_loc_pass: true,
+        production_delta_pass: true,
+        replacement_surface_pass: true,
+        package_files_pass: true,
+        package_unpacked_bytes_pass: true,
+        package_packed_bytes_pass: true,
+        dependency_additions_pass: true,
+      },
+    })
+
+    const shipping = JSON.parse(read('docs/core-reset/evidence/generation-full-reconcile-500.json')) as {
+      eligible_for_acceptance: boolean
+      receipt_sha256: string
+      subject: { head_commit: string; dirty: boolean; head_tree_oid: string; worktree_tree_oid: string }
+      environment: { node: string }
+      protocol: { warmups: number; trials: number; persistent_warm_session: boolean; shipping_path: string }
+      gates: {
+        subject_identity: { pass: boolean }
+        sample_protocol: { pass: boolean }
+        corpus_eligibility: { pass: boolean }
+        cold_noop_p50_ratio: { actual: number; pass: boolean }
+        cold_noop_zero_parse: { pass: boolean }
+        clean_generation_regression: { baseline_compatible: boolean; ratio: number; pass: boolean }
+      }
+    }
+    expect(shipping).toMatchObject({
+      eligible_for_acceptance: true,
+      receipt_sha256: 'a2a46f9580478dc7318f1e064d60d5de874657b7758f8e7fb12f26793b468f38',
+      subject: {
+        head_commit: INCREMENTAL_IMPLEMENTATION,
+        dirty: false,
+        head_tree_oid: 'b76855f51f08f8884423dc1234d616ad1122b24e',
+        worktree_tree_oid: 'b76855f51f08f8884423dc1234d616ad1122b24e',
+      },
+      environment: { node: 'v22.9.0' },
+      protocol: {
+        warmups: 3,
+        trials: 20,
+        persistent_warm_session: false,
+        shipping_path: 'cold_noop_or_full_canonical_reconcile',
+      },
+      gates: {
+        subject_identity: { pass: true },
+        sample_protocol: { pass: true },
+        corpus_eligibility: { pass: true },
+        cold_noop_p50_ratio: { actual: 0.065, pass: true },
+        cold_noop_zero_parse: { pass: true },
+        clean_generation_regression: { baseline_compatible: true, ratio: 1.08, pass: true },
+      },
+    })
   })
 
   it('keeps retired exporter flags out of active commands without rewriting frozen v0.32 evidence', () => {

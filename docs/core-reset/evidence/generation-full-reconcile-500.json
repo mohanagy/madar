@@ -1,0 +1,443 @@
+{
+  "baseline": {
+    "clean_generation_p50_ms": 5839.249,
+    "compatible": true,
+    "head_commit": "8886a0299ee30765ce149ca7ad5d1779496b78b5",
+    "receipt_sha256": "eb664578ddccfcf4961b68496a4201ee665ca6b3bab6c20bc37c87c5dbc7eb8c"
+  },
+  "corpus": {
+    "commit": "synthetic-500-v1",
+    "fingerprint": "3ed25dfd4b39025fe84a3991d869bb1936bcd7bce6a349cfd25ca6c1a3c4e16b",
+    "graph_root": ".",
+    "id": "synthetic-500-v1",
+    "kind": "synthetic_fixture",
+    "supported_files": 500
+  },
+  "eligible_for_acceptance": true,
+  "environment": {
+    "architecture": "arm64",
+    "cpu_count": 16,
+    "cpu_model": "Apple M3 Max",
+    "fingerprint": "8e886cb9663698d115f37c239d5e245de4dcce84f4d20483d68d52f39877699f",
+    "node": "v22.9.0",
+    "platform": "darwin",
+    "release": "25.3.0",
+    "total_memory_bytes": 51539607552
+  },
+  "gates": {
+    "clean_generation_regression": {
+      "baseline_compatible": true,
+      "maximum_regression": 0.1,
+      "pass": true,
+      "ratio": 1.08
+    },
+    "cold_noop_p50_ratio": {
+      "actual": 0.065,
+      "maximum": 0.2,
+      "pass": true
+    },
+    "cold_noop_zero_parse": {
+      "pass": true
+    },
+    "corpus_eligibility": {
+      "kind": "synthetic_fixture",
+      "pass": true,
+      "requirement": "at least 500 supported files",
+      "supported_files": 500
+    },
+    "sample_protocol": {
+      "actual": {
+        "trials": 20,
+        "warmups": 3
+      },
+      "minimum": {
+        "trials": 20,
+        "warmups": 3
+      },
+      "pass": true
+    },
+    "subject_identity": {
+      "clean": true,
+      "head_commit": "151f08ed1ca4db4f15dbe96d87f03d7226d4f3e2",
+      "pass": true,
+      "tree_matches_head": true
+    }
+  },
+  "issue": 592,
+  "measurements": {
+    "clean_generation": {
+      "count": 20,
+      "elapsed_ms": {
+        "max": 6553.913,
+        "min": 5861.959,
+        "p50": 6305.115,
+        "p95": 6522.117
+      }
+    },
+    "cold_noop": {
+      "count": 20,
+      "dependency_closure_size": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "elapsed_ms": {
+        "max": 459.233,
+        "min": 394.258,
+        "p50": 407.803,
+        "p95": 453.16
+      },
+      "invalidated_files": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "parsed_files": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "reused_files": {
+        "max": 500,
+        "min": 500,
+        "p50": 500,
+        "p95": 500
+      }
+    }
+  },
+  "protocol": {
+    "clock": "performance.now",
+    "command": [
+      "node",
+      "tools/eval/core-reset/incremental-performance.mjs",
+      "--mode",
+      "shipping",
+      "--warmups",
+      "3",
+      "--trials",
+      "20",
+      "--fixture-files",
+      "500",
+      "--dist-root",
+      "<dist-root>",
+      "--subject-worktree",
+      "<subject-worktree>",
+      "--baseline-receipt",
+      "<baseline-receipt>",
+      "--output",
+      "<output>"
+    ],
+    "configuration": {
+      "fixture_files": 500,
+      "graph_root": ".",
+      "mutation_file": null,
+      "repository_commit": null
+    },
+    "mutation_application_in_timed_window": false,
+    "percentile": "nearest-rank",
+    "persistent_warm_session": false,
+    "shipping_path": "cold_noop_or_full_canonical_reconcile",
+    "trials": 20,
+    "warmups": 3
+  },
+  "receipt_kind": "core-reset-full-reconcile-performance",
+  "receipt_sha256": "a2a46f9580478dc7318f1e064d60d5de874657b7758f8e7fb12f26793b468f38",
+  "samples": {
+    "clean_generation": [
+      {
+        "elapsed_ms": 6310.905,
+        "ordinal": 1
+      },
+      {
+        "elapsed_ms": 6398.734,
+        "ordinal": 2
+      },
+      {
+        "elapsed_ms": 6281.085,
+        "ordinal": 3
+      },
+      {
+        "elapsed_ms": 6305.115,
+        "ordinal": 4
+      },
+      {
+        "elapsed_ms": 6166.537,
+        "ordinal": 5
+      },
+      {
+        "elapsed_ms": 6553.913,
+        "ordinal": 6
+      },
+      {
+        "elapsed_ms": 6166.107,
+        "ordinal": 7
+      },
+      {
+        "elapsed_ms": 6314.908,
+        "ordinal": 8
+      },
+      {
+        "elapsed_ms": 6303.894,
+        "ordinal": 9
+      },
+      {
+        "elapsed_ms": 6169.703,
+        "ordinal": 10
+      },
+      {
+        "elapsed_ms": 6473.337,
+        "ordinal": 11
+      },
+      {
+        "elapsed_ms": 6161.12,
+        "ordinal": 12
+      },
+      {
+        "elapsed_ms": 6150.977,
+        "ordinal": 13
+      },
+      {
+        "elapsed_ms": 6226.176,
+        "ordinal": 14
+      },
+      {
+        "elapsed_ms": 6377.704,
+        "ordinal": 15
+      },
+      {
+        "elapsed_ms": 6522.117,
+        "ordinal": 16
+      },
+      {
+        "elapsed_ms": 5861.959,
+        "ordinal": 17
+      },
+      {
+        "elapsed_ms": 6311.814,
+        "ordinal": 18
+      },
+      {
+        "elapsed_ms": 6502.922,
+        "ordinal": 19
+      },
+      {
+        "elapsed_ms": 6424.807,
+        "ordinal": 20
+      }
+    ],
+    "cold_noop": [
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 453.16,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 1,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 432.357,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 2,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 459.233,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 3,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 440.155,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 4,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 419.579,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 5,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 413.244,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 6,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 403.865,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 7,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 405.063,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 8,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 406.035,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 9,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 398.001,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 10,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 395.567,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 11,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 403.199,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 12,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 417.599,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 13,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 394.258,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 14,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 412.007,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 15,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 407.803,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 16,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 415.627,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 17,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 404.33,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 18,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 409.759,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 19,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 402.84,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 20,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      }
+    ]
+  },
+  "schema_version": 1,
+  "subject": {
+    "dirty": false,
+    "dist_fingerprint": "ccb5354023a9eef87a0ddd8382d6427d3dec4d3db6c9037ef2305d49d4939fe0",
+    "head_commit": "151f08ed1ca4db4f15dbe96d87f03d7226d4f3e2",
+    "head_tree_oid": "b76855f51f08f8884423dc1234d616ad1122b24e",
+    "status_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "worktree_tree_oid": "b76855f51f08f8884423dc1234d616ad1122b24e"
+  }
+}
