@@ -215,7 +215,6 @@ describe('built-in install templates', () => {
     expect(content).toContain('It indexes `.ts`, `.tsx`, `.js`, and `.jsx`.')
     expect(content).toContain('Other recognized formats are reported as unsupported')
     expect(content).toContain('Treat local MCP servers and hooks as trust boundaries.')
-    expect(content).toContain('The platform installer writes workspace guidance to AGENTS.md (Codex).')
     expect(content).not.toContain('add <url>')
     expect(content).not.toContain('direct audio/video URL ingests')
     expectMarkdownPackRoutingTable(content)

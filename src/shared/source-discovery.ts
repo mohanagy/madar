@@ -66,7 +66,6 @@ export const DEFAULT_HARD_IGNORE_GLOBS = [
 ] as const
 
 const MANAGED_AGENT_INSTRUCTION_FILENAMES = new Set(['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'])
-
 const TEST_DOMAIN_RE = /(?:^|\/)(?:__tests__|tests?|spec|specs|e2e|cypress|playwright)(?:\/|$)|\.(?:test|spec)\.[^/]+$/i
 const BENCHMARK_DOMAIN_RE = /(?:^|\/)(?:bench|benchmark|benchmarks|perf|performance)(?:\/|$)|\.(?:bench|benchmark)\.[^/]+$/i
 const FIXTURE_DOMAIN_RE = /(?:^|\/)(?:fixtures?|__fixtures__|mocks?|__mocks__)(?:\/|$)|\.fixture\.[^/]+$/i
@@ -120,9 +119,8 @@ function matchesPatternValue(value: string, pattern: string): boolean {
 function relativeWorkspacePath(path: string, root: string): string | null {
   const normalizedRoot = normalizePathLike(root)
   const normalizedPath = normalizePathLike(path)
-  const windowsAbsoluteRoot = /^[A-Za-z]:\//.test(normalizedRoot)
   const windowsAbsolutePath = /^[A-Za-z]:\//.test(normalizedPath)
-  if (windowsAbsoluteRoot || windowsAbsolutePath) {
+  if (windowsAbsolutePath) {
     const rootPrefix = normalizedRoot.endsWith('/') ? normalizedRoot : `${normalizedRoot}/`
     const lowerRoot = normalizedRoot.toLowerCase()
     const lowerRootPrefix = rootPrefix.toLowerCase()
@@ -172,7 +170,6 @@ export function normalizeSourcePath(path: string): string {
 }
 
 export const isCanonicalCompilerControlFile = (path: string): boolean => /^(?:package\.json|(?:ts|js)config(?:\..+)?\.json)$/i.test(basename(path))
-
 export function isManagedAgentInstructionFile(path: string, root: string): boolean {
   const relativePath = relativeWorkspacePath(path, root)
   return relativePath !== null && MANAGED_AGENT_INSTRUCTION_FILENAMES.has(normalizeSourcePath(relativePath))

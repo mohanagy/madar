@@ -15,7 +15,7 @@ export interface GraphBuildFilesystemFreshnessMetadata {
 }
 
 export interface GraphBuildFreshnessMetadata {
-  format_version: 3
+  format_version: 4
   strategy: 'git' | 'filesystem'
   generated_at: string
   generated_ms: number
@@ -70,7 +70,7 @@ function indexedSourceFiles(rootPath: string, sourceFiles: readonly string[]): s
   )].sort((left, right) => left.localeCompare(right))
 }
 
-const existingFingerprints = (root: string, paths: readonly string[]): Record<string, string> => Object.fromEntries(paths.flatMap((path) => existsSync(resolve(root, path)) ? [[path, fileContentFingerprint(resolve(root, path))]] : []))
+const existingFingerprints = (root: string, paths: readonly string[], includeMissing = false): Record<string, string> => Object.fromEntries(paths.flatMap((path) => existsSync(resolve(root, path)) ? [[path, fileContentFingerprint(resolve(root, path))]] : includeMissing ? [[path, '']] : []))
 
 export function buildGraphBuildFreshnessMetadata(rootPath: string, sourceFiles: readonly string[], options: { supportedReceiptPaths: readonly string[]; unsupportedReceiptPaths: readonly string[]; compilerControlPaths: readonly string[]; followSymlinks?: boolean; respectGitignore?: boolean }): GraphBuildFreshnessMetadata {
   const generatedMs = Date.now()
@@ -78,10 +78,10 @@ export function buildGraphBuildFreshnessMetadata(rootPath: string, sourceFiles: 
   const indexedFiles = indexedSourceFiles(rootPath, sourceFiles)
   const supportedReceiptPaths = indexedSourceFiles(rootPath, options.supportedReceiptPaths)
   const unsupportedReceiptPaths = indexedSourceFiles(rootPath, options.unsupportedReceiptPaths)
-  const controlFileFingerprints = existingFingerprints(rootPath, options.compilerControlPaths)
+  const controlFileFingerprints = existingFingerprints(rootPath, [...new Set([...options.compilerControlPaths, '.madarignore'])], true)
   const snapshot = readGitSnapshot(rootPath)
   const common = {
-    format_version: 3 as const,
+    format_version: 4 as const,
     generated_at: generatedAt,
     generated_ms: generatedMs,
     supported_receipt_paths: supportedReceiptPaths,
@@ -91,11 +91,11 @@ export function buildGraphBuildFreshnessMetadata(rootPath: string, sourceFiles: 
     respect_gitignore: options.respectGitignore === true,
   }
 
-  if (snapshot) {
+  if (snapshot && common.respect_gitignore) {
     const unsupported = new Set(unsupportedReceiptPaths)
     const relevant = new Set([...supportedReceiptPaths, ...unsupportedReceiptPaths, ...Object.keys(controlFileFingerprints)])
     const dirtyFiles = snapshot.dirtyFiles.filter((filePath) => relevant.has(filePath))
-    const dirtyFileFingerprints = existingFingerprints(rootPath, dirtyFiles.filter((path) => !unsupported.has(path)))
+    const dirtyFileFingerprints = existingFingerprints(rootPath, dirtyFiles.filter((path) => !unsupported.has(path)), true)
 
     return {
       ...common,
@@ -124,7 +124,7 @@ export function isGraphBuildFreshnessMetadata(value: unknown): value is GraphBui
 
   const candidate = value as Partial<GraphBuildFreshnessMetadata>
   if (
-    candidate.format_version !== 3 || (candidate.strategy !== 'git' && candidate.strategy !== 'filesystem')
+    candidate.format_version !== 4 || (candidate.strategy !== 'git' && candidate.strategy !== 'filesystem')
     || typeof candidate.generated_at !== 'string'
     || typeof candidate.generated_ms !== 'number'
     || !Number.isFinite(candidate.generated_ms)

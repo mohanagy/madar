@@ -35,7 +35,7 @@ function createGraphFixtureRoot(): string {
   writeFileSync(join(root, 'transport.ts'), 'export class Transport {}\n', 'utf8')
   const generatedMs = Date.now()
   const graphBuildFreshness = {
-    format_version: 3,
+    format_version: 4,
     strategy: 'filesystem',
     generated_at: new Date(generatedMs).toISOString(),
     generated_ms: generatedMs,

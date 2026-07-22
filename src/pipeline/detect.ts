@@ -526,11 +526,14 @@ export function collectFreshnessCandidatePaths(root: string, options: DetectOpti
     throw new Error(`Workspace root not found: ${resolve(root)}`)
   }
   const found = discoverCandidates(root, options)
-  return { supported: found.codeFiles.map((path) => localDiscoveryPath(root, path)), unsupported: found.unsupportedReceiptPaths, controls: found.compilerControlPaths }
-}
-
-export function collectUnsupportedReceiptPaths(root: string, options: DetectOptions = {}): string[] {
-  return collectFreshnessCandidatePaths(root, options).unsupported
+  return {
+    supported: found.codeFiles.map((path) => localDiscoveryPath(root, path)),
+    unsupported: found.unsupportedReceiptPaths,
+    controls: [...new Set([
+      ...found.compilerControlPaths,
+      ...(existsSync(resolve(root, '.madarignore')) ? ['.madarignore'] : []),
+    ])].sort(),
+  }
 }
 
 export function detect(root: string, options: DetectOptions = {}): DetectResult {

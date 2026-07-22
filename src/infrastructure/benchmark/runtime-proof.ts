@@ -2,10 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 
 import type { RuntimeProofObligationKind, RuntimeProofProfile } from '../../contracts/runtime-proof.js'
-
-function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  return Object.keys(value).every((key) => keys.includes(key))
-}
+import { hasOnlyKeys } from '../../shared/guards.js'
 
 function parseRuntimeProofStringArray(
   profileName: string,

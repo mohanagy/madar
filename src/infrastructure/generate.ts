@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { loadGraphArtifact, writeGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
@@ -11,7 +10,6 @@ import type {
   IndexingSummary,
 } from '../contracts/indexing.js'
 import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
-import { canonicalJsonString } from '../domain/graph/canonical-json.js'
 import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../pipeline/analyze.js'
 import { cluster, scoreAll } from '../pipeline/cluster.js'
@@ -21,7 +19,7 @@ import {
   type DetectResult,
   detect,
   FileType,
-  loadManifestDocument, loadManifestMetadata,
+  loadManifestMetadata,
   writeManifestSnapshot,
 } from '../pipeline/detect.js'
 import { canonicalTypeScriptIndexingOutcomes } from '../pipeline/indexing-generation.js'
@@ -40,7 +38,6 @@ import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 import {
   INDEXING_MANIFEST_FILENAME,
   readIndexingManifestForGraph,
-  writeFailedIndexingManifests,
   writeIndexingManifests,
 } from './indexing-manifest.js'
 import {
@@ -139,7 +136,6 @@ function detectionSummary(detection: DetectResult, indexing: IndexingSummary): R
     indexing_completeness: indexing,
   }
 }
-
 function graphIndexingMetadata(manifest: IndexingManifest): Record<string, unknown> {
   return {
     version: manifest.version,
@@ -147,14 +143,7 @@ function graphIndexingMetadata(manifest: IndexingManifest): Record<string, unkno
     summary: manifest.summary,
   }
 }
-
-const artifactDigest = (value: unknown): string => createHash('sha256').update(canonicalJsonString(value)).digest('hex')
-
-function outputDirectory(rootPath: string): string {
-  return resolveMadarOutputDirectory(rootPath)
-}
-
-function missingCanonicalIndexMessage(totalFiles: number, discoverySafety?: DiscoverySafetyMetadata): string {
+function missingCodeExtractionMessage(totalFiles: number, discoverySafety?: DiscoverySafetyMetadata): string {
   const baseMessage = totalFiles === 0
     ? 'No supported TypeScript or JavaScript files were found in the target path.'
     : 'The canonical TypeScript/JavaScript index did not produce graph nodes from the detected source files.'
@@ -171,49 +160,19 @@ function missingCanonicalIndexMessage(totalFiles: number, discoverySafety?: Disc
   ].join('\n')
 }
 
-function missingCanonicalIndexError(
-  totalFiles: number,
-  discoverySafety?: DiscoverySafetyMetadata,
-): GenerateUnsupportedCorpusError {
+function missingCodeExtractionError(totalFiles: number, discoverySafety?: DiscoverySafetyMetadata): GenerateUnsupportedCorpusError {
   return new GenerateUnsupportedCorpusError(
     totalFiles === 0 ? 'NO_SUPPORTED_FILES' : 'NO_GRAPH_NODES',
-    missingCanonicalIndexMessage(totalFiles, discoverySafety),
+    missingCodeExtractionMessage(totalFiles, discoverySafety),
     discoverySafety,
   )
 }
 
-function storedDiscoverySafety(graph: KnowledgeGraph): DiscoverySafetyMetadata {
-  return parseDiscoverySafetyMetadata(graph.graph.discovery_safety) ?? buildDiscoverySafetyMetadata([])
+function outputDirectory(rootPath: string): string {
+  return resolveMadarOutputDirectory(rootPath)
 }
 
 const RETIRED_OUTPUTS = ['cache', 'docs', 'wiki', 'graph.html', 'graph-pages', 'graph.svg', 'graph.graphml', 'cypher.txt', 'obsidian']
-
-function commitStagedPublication(outputDir: string, transactionDir: string, names: readonly string[], retired: readonly string[]): void {
-  const [stageDir, backupDir] = ['staged', 'previous'].map((name) => join(transactionDir, name)) as [string, string]
-  const moved: Array<[string, string]> = [], published: string[] = []
-  mkdirSync(backupDir, { recursive: true })
-  try {
-    for (const [index, name] of [...new Set([...names, ...retired])].entries()) {
-      const target = join(outputDir, name)
-      if (!existsSync(target)) continue
-      const backup = join(backupDir, String(index))
-      renameSync(target, backup)
-      moved.push([target, backup])
-    }
-    for (const name of names) {
-      const target = join(outputDir, name)
-      renameSync(join(stageDir, name), target)
-      published.push(target)
-    }
-  } catch (error) {
-    for (const target of published.reverse()) rmSync(target, { recursive: true, force: true })
-    for (const [target, backup] of moved.reverse()) renameSync(backup, target)
-    throw error
-  } finally {
-    try { rmSync(transactionDir, { recursive: true, force: true }) } catch { /* named retired outputs are already absent */ }
-  }
-}
-
 export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}): GenerateGraphResult {
   if (options.update && options.clusterOnly) throw new Error('--update and --cluster-only cannot be used together')
 
@@ -245,6 +204,12 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       throw new Error('--cluster-only requires an existing graph. Run `madar generate .` first.')
     }
     graph = loadGraphArtifact(graphPath)
+    const storedRootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : ''
+    if (!existsSync(storedRootPath) || realpathSync(storedRootPath) !== realpathSync(resolvedRootPath)) {
+      throw new Error(
+        '--cluster-only graph belongs to a different source workspace. Run `madar generate . --update` in this workspace.',
+      )
+    }
     const storedPolicy = readStoredGenerationPolicy(graphPath, manifestPath)
     if (!storedPolicy) {
       throw new Error(
@@ -267,12 +232,8 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
         '--cluster-only requires the current indexing manifest. Run `madar generate . --update` to regenerate it.',
       )
     }
-    const binding = graph.graph.publication_binding as { source_manifest_sha256?: unknown; indexing_manifest_sha256?: unknown } | undefined
-    if (binding?.source_manifest_sha256 !== artifactDigest(loadManifestDocument(manifestPath)) || binding.indexing_manifest_sha256 !== artifactDigest(storedManifest)) {
-      throw new Error('--cluster-only requires indexing metadata from the same generation. Run `madar generate . --update`.')
-    }
     indexingManifest = storedManifest
-    discoverySafety = storedDiscoverySafety(graph)
+    discoverySafety = parseDiscoverySafetyMetadata(graph.graph.discovery_safety) ?? buildDiscoverySafetyMetadata([])
     indexedFiles = indexingManifest.summary.counts.indexed + indexingManifest.summary.counts.indexed_with_warnings
     codeFiles = indexingManifest.outcomes.filter((outcome) =>
       outcome.capability?.startsWith('builtin:index:') === true).length
@@ -300,7 +261,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
     const gitVisibleFiles = options.respectGitignore ? collectGitVisibleFiles(resolvedRootPath) : null
     const generationPolicy = buildGenerationPolicy(resolvedRootPath, options, gitVisibleFiles)
-    progress?.({ step: 'detect', message: 'Scanning TypeScript and JavaScript files...' })
+    progress?.({ step: 'detect', message: 'Scanning files...' })
     const detected = detect(resolvedRootPath, detectOptions(options, gitVisibleFiles))
     discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
     const indexingOutcomes: IndexingOutcome[] = [...(detected.indexing_outcomes ?? [])]
@@ -310,10 +271,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     codeFiles = detectedCodeFiles.length
     totalWords = detected.total_words
     warning = detected.warning
-    progress?.({
-      step: 'detect',
-      message: `Found ${detected.total_files} supported source file(s) (~${detected.total_words.toLocaleString()} words)`,
-    })
+    progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
     progress?.({
       step: 'index',
       message: `Indexing ${detectedCodeFiles.length} TypeScript/JavaScript file(s)...`,
@@ -367,20 +325,17 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     if (options.indexingStrict) {
       const violations = indexingStrictViolations(indexingManifest.summary, options.indexingStrict)
       if (violations.length > 0) {
-        const failedArtifacts = writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
+        const failedArtifacts = writeIndexingManifests(resolvedOutputDir, indexingManifest, true)
         throw new IndexingCompletenessError(failedArtifacts.manifestPath, indexingManifest.summary, violations)
       }
     }
 
     graph = canonical.graph
     if (graph.numberOfNodes() === 0) {
-      writeFailedIndexingManifests(resolvedOutputDir, indexingManifest)
-      throw missingCanonicalIndexError(detected.total_files, discoverySafety)
+      writeIndexingManifests(resolvedOutputDir, indexingManifest, true)
+      throw missingCodeExtractionError(detected.total_files, discoverySafety)
     }
-    graph.graph.indexing_completeness = graphIndexingMetadata(indexingManifest)
-    graph.graph.discovery_safety = discoverySafety
     graph.graph.generation_policy = generationPolicy
-    graph.graph.publication_binding = { source_manifest_sha256: artifactDigest(sourceManifestSnapshot.document), indexing_manifest_sha256: artifactDigest(indexingManifest) }
     graph.graph.graph_build_freshness = buildGraphBuildFreshnessMetadata(
       resolvedRootPath,
       graph.nodeEntries()
@@ -445,25 +400,18 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   )
 
   progress?.({ step: 'export', message: 'Writing outputs...' })
-  const indexingArtifacts = { manifestPath: indexingManifestPath, shareSafeManifestPath: join(resolvedOutputDir, 'indexing-manifest.share-safe.json') }
-  const transactionDir = join(resolvedOutputDir, `.madar-publication-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-  const stageDir = join(transactionDir, 'staged')
-  const publishedNames = ['GRAPH_REPORT.md']
-  try {
-    mkdirSync(stageDir, { recursive: true })
-    writeTextFileAtomically(join(stageDir, 'GRAPH_REPORT.md'), `${report}\n`)
-    if (!options.clusterOnly && sourceManifestSnapshot) {
-      writeIndexingManifests(stageDir, indexingManifest)
-      writeManifestSnapshot(sourceManifestSnapshot, join(stageDir, 'manifest.json'))
-      publishedNames.push(INDEXING_MANIFEST_FILENAME, 'indexing-manifest.share-safe.json', 'manifest.json')
-    }
-    writeGraphArtifact(graph, join(stageDir, 'graph.json'))
-    publishedNames.push('graph.json')
-    const failedNames = options.clusterOnly ? [] : ['indexing-manifest.failed.json', 'indexing-manifest.failed.share-safe.json']
-    commitStagedPublication(resolvedOutputDir, transactionDir, publishedNames, [...RETIRED_OUTPUTS, ...failedNames])
-  } catch (error) {
-    rmSync(transactionDir, { recursive: true, force: true })
-    throw error
+  writeTextFileAtomically(reportPath, `${report}\n`)
+  writeGraphArtifact(graph, graphPath)
+  const indexingArtifacts = {
+    manifestPath: indexingManifestPath,
+    shareSafeManifestPath: join(resolvedOutputDir, 'indexing-manifest.share-safe.json'),
+  }
+  if (!options.clusterOnly && sourceManifestSnapshot) {
+    Object.assign(indexingArtifacts, writeIndexingManifests(resolvedOutputDir, indexingManifest))
+    writeManifestSnapshot(sourceManifestSnapshot, manifestPath)
+  }
+  for (const name of RETIRED_OUTPUTS) {
+    rmSync(join(resolvedOutputDir, name), { recursive: true, force: true })
   }
 
   return {

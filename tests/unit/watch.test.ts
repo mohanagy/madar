@@ -8,6 +8,7 @@ import { describe, expect, test, vi } from 'vitest'
 
 import { parseGenerationPolicy } from '../../src/contracts/generation-policy.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
+import { tryAcquireRefreshLease } from '../../src/infrastructure/refresh-lease.js'
 import { readWatcherStateForGraph } from '../../src/infrastructure/watcher-state.js'
 import {
   notifyOnly,
@@ -16,6 +17,7 @@ import {
   startGraphAutoRefresh,
   WATCHED_EXTENSIONS,
   watch,
+  type WatchReconciliationMetrics,
 } from '../../src/infrastructure/watch.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
 import { readCanonicalGraphFixture } from '../helpers/graph-artifact.js'
@@ -176,6 +178,36 @@ describe('background auto-refresh', () => {
     })
   })
 
+  test('does not rebuild when managed root agent instructions were added after generation', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
+      const generated = generateGraph(tempDir)
+      writeFileSync(join(tempDir, 'AGENTS.md'), '# Madar instructions\n', 'utf8')
+      writeFileSync(join(tempDir, 'CLAUDE.md'), '# Madar instructions\n', 'utf8')
+      const rebuild = vi.fn(() => true)
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 20,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await refresh.startupSettled
+        expect(refresh.startupComplete?.()).toBe(true)
+        expect(refresh.initialRebuilt).toBe(false)
+        expect(rebuild).not.toHaveBeenCalled()
+        expect(readWatcherStateForGraph(generated.graphPath)).toMatchObject({
+          status: 'idle',
+          coverage: 'complete',
+          policy_match: true,
+        })
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  })
+
   test('rebuilds when an indexed source changes', async () => {
     await withTempDirAsync(async (tempDir) => {
       const source = join(tempDir, 'main.ts')
@@ -193,6 +225,61 @@ describe('background auto-refresh', () => {
         expect(refresh.initialRebuilt).toBe(true)
         expect(rebuild).toHaveBeenCalledOnce()
       } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  })
+
+  test('rebuilds before startup settles when a new supported source was added', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
+      generateGraph(tempDir)
+      writeFileSync(join(tempDir, 'added.ts'), 'export const added = 2\n', 'utf8')
+      const rebuild = vi.fn(() => true)
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 20,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await refresh.startupSettled
+        expect(refresh.startupComplete?.()).toBe(true)
+        expect(refresh.initialRebuilt).toBe(true)
+        expect(rebuild).toHaveBeenCalledOnce()
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  })
+
+  test('keeps startup unsettled during live lease contention and recovers after release', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      const sourcePath = join(tempDir, 'main.ts')
+      writeFileSync(sourcePath, 'export const value = 1\n', 'utf8')
+      const generated = generateGraph(tempDir)
+      writeFileSync(sourcePath, 'export const value = 2\n', 'utf8')
+      const releaseOwner = tryAcquireRefreshLease(generated.outputDir)
+      expect(releaseOwner).toBeTypeOf('function')
+
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 20,
+        logger: { log() {}, error() {} },
+      })
+      try {
+        expect(refresh.initialRebuilt).toBe(false)
+        expect(refresh.startupComplete?.()).toBe(false)
+        await waitFor(() => readWatcherStateForGraph(generated.graphPath)?.status === 'reconciling')
+
+        releaseOwner?.()
+        await refresh.startupSettled
+        expect(refresh.startupComplete?.()).toBe(true)
+        expect(refresh.initialRebuilt).toBe(true)
+        expect(readWatcherStateForGraph(generated.graphPath)?.status).toBe('idle')
+      } finally {
+        releaseOwner?.()
         refresh.stop()
         await refresh.completed
       }
@@ -253,6 +340,263 @@ describe('background auto-refresh', () => {
       }
     })
   }, 15_000)
+
+  test('covers more than 10,000 files and detects a change beyond the former cap', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      const totalFiles = 10_050
+      for (let index = 0; index < totalFiles; index += 1) {
+        writeFileSync(join(tempDir, `source-${String(index).padStart(5, '0')}.ts`), '', 'utf8')
+      }
+
+      await watch(tempDir, 0, {
+        reconciliationTimeoutMs: 1,
+        logger: { log() {}, error() {} },
+      })
+      expect(readWatcherStateForGraph(join(tempDir, 'out', 'graph.json'))).toMatchObject({
+        status: 'failed',
+        coverage: 'failed',
+      })
+
+      const controller = new AbortController()
+      const reconciliations: WatchReconciliationMetrics[] = []
+      const rebuild = vi.fn(() => {
+        controller.abort()
+        return true
+      })
+      const watcher = watch(tempDir, 0, {
+        signal: controller.signal,
+        pollIntervalMs: 20,
+        maxPollIntervalMs: 100,
+        rebuildCode: rebuild,
+        onReconciliation: (metrics) => reconciliations.push(metrics),
+        logger: { log() {}, error() {} },
+      })
+      const timeout = setTimeout(() => controller.abort(), 15_000)
+
+      writeFileSync(join(tempDir, 'source-10049.ts'), 'export const beyondFormerCap = true\n', 'utf8')
+      await watcher
+      clearTimeout(timeout)
+
+      expect(reconciliations[0]?.fileCount).toBe(totalFiles)
+      expect(reconciliations.some((metrics) => metrics.changedCount > 0 && metrics.fileCount === totalFiles)).toBe(true)
+      expect(rebuild).toHaveBeenCalledOnce()
+    })
+  }, 90_000)
+
+  test('reconciles an edit made during rebuild before returning to idle', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      const sourcePath = join(tempDir, 'main.ts')
+      writeFileSync(sourcePath, 'export const value = 1\n', 'utf8')
+      const controller = new AbortController()
+      let rebuildCount = 0
+      const rebuild = vi.fn(() => {
+        rebuildCount += 1
+        if (rebuildCount === 1) {
+          writeFileSync(sourcePath, 'export const value = 3\n', 'utf8')
+        } else {
+          controller.abort()
+        }
+        return true
+      })
+      const watcher = watch(tempDir, 0, {
+        signal: controller.signal,
+        pollIntervalMs: 20,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+      const timeout = setTimeout(() => controller.abort(), 5_000)
+
+      writeFileSync(sourcePath, 'export const value = 2\n', 'utf8')
+      await watcher
+      clearTimeout(timeout)
+
+      expect(rebuild).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  test('reconciles at MCP startup and refreshes a later supported source addition', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const initialValue = 1\n', 'utf8')
+      const refresh = startGraphAutoRefresh(tempDir, 0.02, {
+        pollIntervalMs: 10,
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await refresh.startupSettled
+        const graphPath = join(tempDir, 'out', 'graph.json')
+        expect(refresh.initialRebuilt).toBe(true)
+        expect(existsSync(graphPath)).toBe(true)
+
+        writeFileSync(join(tempDir, 'added.ts'), 'export function addedDuringSession() { return 2 }\n', 'utf8')
+        await waitFor(() => {
+          const graph = readCanonicalGraphFixture(graphPath)
+          return graph.nodes.some((node) => node.source_file.endsWith('added.ts'))
+        })
+      } finally {
+        refresh.stop()
+        await refresh.completed
+      }
+    })
+  }, 10_000)
+
+  test('triggers a Git-visible rebuild when .gitignore changes', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const visible = true\n', 'utf8')
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+
+      const controller = new AbortController()
+      const rebuild = vi.fn((_watchPath: string, _options?: unknown) => {
+        controller.abort()
+        return true
+      })
+      const watcher = watch(tempDir, 0.02, {
+        signal: controller.signal,
+        pollIntervalMs: 10,
+        respectGitignore: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+      const timeout = setTimeout(() => controller.abort(), 5_000)
+
+      await delay(100)
+      writeFileSync(join(tempDir, '.gitignore'), 'main.ts\n', 'utf8')
+
+      await watcher
+      clearTimeout(timeout)
+
+      expect(rebuild).toHaveBeenCalledOnce()
+      expect(rebuild.mock.calls[0]?.[1]).toMatchObject({ respectGitignore: true })
+    })
+  }, 10_000)
+
+  test('ignores changes to Git-ignored supported sources when respectGitignore is enabled', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, '.gitignore'), 'ignored.ts\n', 'utf8')
+      writeFileSync(join(tempDir, 'main.ts'), 'export const visible = true\n', 'utf8')
+      writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+
+      const controller = new AbortController()
+      const rebuild = vi.fn(() => true)
+      const watcher = watch(tempDir, 0.02, {
+        signal: controller.signal,
+        pollIntervalMs: 10,
+        respectGitignore: true,
+        rebuildCode: rebuild,
+        logger: { log() {}, error() {} },
+      })
+
+      await delay(100)
+      writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = false\n', 'utf8')
+      await delay(250)
+      controller.abort()
+      await watcher
+
+      expect(rebuild).not.toHaveBeenCalled()
+    })
+  }, 10_000)
+
+  test('caches Git visibility between watch polls', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const visible = true\n', 'utf8')
+      const collectGitVisibleFiles = vi.fn(() => [join(tempDir, 'main.ts')])
+
+      vi.resetModules()
+      const actualGitModule = await vi.importActual<typeof import('../../src/shared/git.js')>('../../src/shared/git.js')
+      vi.doMock('../../src/shared/git.js', () => ({ ...actualGitModule, collectGitVisibleFiles }))
+
+      try {
+        const { watch: watchWithMockedGit } = await import('../../src/infrastructure/watch.js')
+        const controller = new AbortController()
+        const watcher = watchWithMockedGit(tempDir, 0.02, {
+          signal: controller.signal,
+          pollIntervalMs: 10,
+          respectGitignore: true,
+          logger: { log() {}, error() {} },
+        })
+
+        await delay(100)
+        controller.abort()
+        await watcher
+
+        expect(collectGitVisibleFiles).toHaveBeenCalledOnce()
+      } finally {
+        vi.doUnmock('../../src/shared/git.js')
+        vi.resetModules()
+      }
+    })
+  })
+
+  test('stops cleanly when the initial Git visibility snapshot fails', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      const collectGitVisibleFiles = vi.fn(() => {
+        throw new Error('Git inspection failed')
+      })
+
+      vi.resetModules()
+      const actualGitModule = await vi.importActual<typeof import('../../src/shared/git.js')>('../../src/shared/git.js')
+      vi.doMock('../../src/shared/git.js', () => ({ ...actualGitModule, collectGitVisibleFiles }))
+
+      try {
+        const { watch: watchWithMockedGit } = await import('../../src/infrastructure/watch.js')
+        const logger = { log: vi.fn(), error: vi.fn() }
+
+        await expect(
+          watchWithMockedGit(tempDir, 0.02, {
+            respectGitignore: true,
+            logger,
+          }),
+        ).resolves.toBeUndefined()
+
+        expect(collectGitVisibleFiles).toHaveBeenCalledOnce()
+        expect(logger.error).toHaveBeenCalledWith('[madar watch] Watch stopped: Git inspection failed')
+      } finally {
+        vi.doUnmock('../../src/shared/git.js')
+        vi.resetModules()
+      }
+    })
+  })
+
+  test('stops cleanly when a later Git visibility snapshot fails', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const visible = true\n', 'utf8')
+      let calls = 0
+      const collectGitVisibleFiles = vi.fn(() => {
+        calls += 1
+        if (calls > 1) {
+          throw new Error('Git inspection failed after startup')
+        }
+        return [join(tempDir, 'main.ts')]
+      })
+
+      vi.resetModules()
+      const actualGitModule = await vi.importActual<typeof import('../../src/shared/git.js')>('../../src/shared/git.js')
+      vi.doMock('../../src/shared/git.js', () => ({ ...actualGitModule, collectGitVisibleFiles }))
+
+      try {
+        const { watch: watchWithMockedGit } = await import('../../src/infrastructure/watch.js')
+        const controller = new AbortController()
+        const logger = { log: vi.fn(), error: vi.fn() }
+        const watcher = watchWithMockedGit(tempDir, 0.02, {
+          signal: controller.signal,
+          pollIntervalMs: 10,
+          respectGitignore: true,
+          logger,
+        })
+        const timeout = setTimeout(() => controller.abort(), 2_000)
+
+        await watcher
+        clearTimeout(timeout)
+
+        expect(collectGitVisibleFiles).toHaveBeenCalledTimes(2)
+        expect(logger.error).toHaveBeenCalledWith('[madar watch] Watch stopped: Git inspection failed after startup')
+      } finally {
+        vi.doUnmock('../../src/shared/git.js')
+        vi.resetModules()
+      }
+    })
+  }, 5_000)
 
   test('stops cleanly after an idle polling reconciliation', async () => {
     await withTempDirAsync(async (tempDir) => {

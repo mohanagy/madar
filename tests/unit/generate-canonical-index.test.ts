@@ -192,10 +192,29 @@ describe('canonical-only generation', () => {
       schema: 'madar.graph',
       version: 1,
       directed: true,
-      metadata: {},
+      metadata: {
+        generation_policy: {
+          version: 2,
+          fingerprint: '0'.repeat(64),
+          settings: {
+            use_spi: true,
+            extraction_mode: 'auto',
+            respect_gitignore: false,
+            follow_symlinks: false,
+            include_documents: true,
+            include_non_code: true,
+            extractor_cache_version: 1,
+            exclusion_rules_fingerprint: '0'.repeat(64),
+            indexing_strict: null,
+          },
+        },
+        requested_extraction_mode: 'auto',
+      },
       nodes: [{ id: 'stale', attributes: { label: 'stalePython', source_file: 'legacy.py' } }],
       edges: [],
     }), 'utf8')
+
+    expect(() => generateGraph(sandbox, { clusterOnly: true })).toThrow('madar generate . --update')
 
     const result = generateGraph(sandbox, { update: true })
     const graph = readCanonicalGraphFixture(result.graphPath)

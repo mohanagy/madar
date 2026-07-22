@@ -285,8 +285,8 @@ function filesystemChangedSourceFiles(
   for (const path of buildFreshness.unsupported_receipt_paths) if (!currentUnsupported.has(path)) changedSourceFiles.add(path)
   for (const path of currentUnsupported) if (!buildFreshness.unsupported_receipt_paths.includes(path)) changedSourceFiles.add(path)
   const currentControls = new Set(candidates.controls)
-  for (const path of currentControls) if (buildFreshness.control_file_fingerprints[path] !== fileContentFingerprint(resolve(indexed.rootPath, path))) changedSourceFiles.add(path)
-  for (const path of Object.keys(buildFreshness.control_file_fingerprints)) if (!currentControls.has(path)) changedSourceFiles.add(path)
+  for (const path of currentControls) if (buildFreshness.control_file_fingerprints[path] !== (existsSync(resolve(indexed.rootPath, path)) ? fileContentFingerprint(resolve(indexed.rootPath, path)) : '')) changedSourceFiles.add(path)
+  for (const path of Object.keys(buildFreshness.control_file_fingerprints)) if (!currentControls.has(path) && !(path === '.madarignore' && buildFreshness.control_file_fingerprints[path] === '')) changedSourceFiles.add(path)
 
   return changedSourceFiles
 }
@@ -318,7 +318,7 @@ function graphRelevantGitChangedFiles(
       relevantFiles.add(sourceFile)
     } else if (exists && !ignored && classifyFile(resolvedSourcePath) !== null) {
       relevantFiles.add(sourceFile)
-    } else if ((storedControls.has(sourceFile) || (exists && !ignored)) && isCanonicalCompilerControlFile(sourceFile)) {
+    } else if (sourceFile === '.madarignore' || ((storedControls.has(sourceFile) || (exists && !ignored)) && isCanonicalCompilerControlFile(sourceFile))) {
       relevantFiles.add(sourceFile)
     } else if (RECOGNIZED_UNSUPPORTED_EXTENSIONS.has(extname(sourceFile).toLowerCase())) {
       const currentlyVisible = exists && !ignored
@@ -364,14 +364,17 @@ function gitChangedSourceFiles(
     if (!fingerprinted) continue
     const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
     const storedFingerprint = storedGitFreshness.dirty_file_fingerprints[sourceFile]
-    if (!existsSync(resolvedSourcePath) || storedFingerprint === undefined) {
+    if (storedFingerprint === undefined) {
       changedFiles.add(sourceFile)
       continue
     }
-    if (fileContentFingerprint(resolvedSourcePath) !== storedFingerprint) {
+    if ((existsSync(resolvedSourcePath) ? fileContentFingerprint(resolvedSourcePath) : '') !== storedFingerprint) {
       changedFiles.add(sourceFile)
     }
   }
+
+  const currentMadarignore = existsSync(resolve(indexed.rootPath, '.madarignore')) ? fileContentFingerprint(resolve(indexed.rootPath, '.madarignore')) : ''
+  if (buildFreshness.control_file_fingerprints['.madarignore'] !== currentMadarignore) changedFiles.add('.madarignore')
 
   return graphRelevantGitChangedFiles(indexed, buildFreshness, [...changedFiles])
 }

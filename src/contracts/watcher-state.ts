@@ -1,3 +1,5 @@
+import { hasExactKeys, isRecord } from '../shared/guards.js'
+
 export const WATCHER_STATE_VERSION = 2 as const
 
 export type WatcherStatus = 'starting' | 'idle' | 'pending' | 'reconciling' | 'failed' | 'stopped'
@@ -26,13 +28,12 @@ export interface WatcherState {
   policy_match: boolean | null
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  return Object.keys(value).sort().join('\0') === [...keys].sort().join('\0')
-}
+const WATCHER_STATE_KEYS = [
+  'version', 'pid', 'started_at', 'updated_at', 'status', 'coverage', 'event_mode', 'reconciliation_count',
+  'last_reconciliation_at', 'last_reconciliation_duration_ms', 'last_reconciliation_file_count',
+  'last_reconciliation_directory_count', 'current_interval_ms', 'next_reconciliation_at', 'pending_since',
+  'failure_reason', 'stored_policy_fingerprint', 'current_policy_fingerprint', 'policy_match',
+] as const
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string'
@@ -45,27 +46,7 @@ function isNullableNonNegativeNumber(value: unknown): value is number | null {
 export function parseWatcherState(value: unknown): WatcherState | null {
   if (
     !isRecord(value)
-    || !hasOnlyKeys(value, [
-      'version',
-      'pid',
-      'started_at',
-      'updated_at',
-      'status',
-      'coverage',
-      'event_mode',
-      'reconciliation_count',
-      'last_reconciliation_at',
-      'last_reconciliation_duration_ms',
-      'last_reconciliation_file_count',
-      'last_reconciliation_directory_count',
-      'current_interval_ms',
-      'next_reconciliation_at',
-      'pending_since',
-      'failure_reason',
-      'stored_policy_fingerprint',
-      'current_policy_fingerprint',
-      'policy_match',
-    ])
+    || !hasExactKeys(value, WATCHER_STATE_KEYS)
     || value.version !== WATCHER_STATE_VERSION
   ) {
     return null

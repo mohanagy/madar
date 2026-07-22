@@ -41,9 +41,12 @@ function optionalGitPath(rootPath: string, args: string[]): string | null {
 
 function allGitIgnorePaths(rootPath: string): string[] | null {
   try {
+    const repositoryRoot = optionalGitPath(rootPath, ['rev-parse', '--show-toplevel'])
+    if (!repositoryRoot) return null
+    const prefix = execFileSync('git', ['-C', rootPath, 'rev-parse', '--show-prefix'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).trim().replaceAll('\\', '/')
     const output = execFileSync(
       'git',
-      ['-C', rootPath, 'ls-files', '--cached', '--others', '-z', '--', '.gitignore', ':(glob)**/.gitignore'],
+      ['-C', rootPath, 'ls-files', '--full-name', '--cached', '--others', '-z', '--', ':(top).gitignore', ':(top,glob)**/.gitignore'],
       {
         encoding: 'utf8',
         maxBuffer: 100 * 1024 * 1024,
@@ -51,9 +54,9 @@ function allGitIgnorePaths(rootPath: string): string[] | null {
         windowsHide: true,
       },
     )
-    return [...new Set(output.split('\0').filter(Boolean).map((repoRelativePath) => {
-      const filePath = resolve(rootPath, repoRelativePath)
-      const localPath = relative(rootPath, filePath)
+    return [...new Set(output.split('\0').filter(Boolean).filter((path) => path.startsWith(prefix) || prefix.startsWith(path.slice(0, -'.gitignore'.length))).map((repoRelativePath) => {
+      const filePath = resolve(repositoryRoot, repoRelativePath)
+      const localPath = relative(repositoryRoot, filePath)
       if (localPath === '..' || localPath.startsWith(`..${sep}`) || isAbsolute(localPath)) {
         throw new Error('Git returned an exclusion control outside the workspace')
       }
@@ -74,7 +77,7 @@ function exclusionControlPaths(rootPath: string, respectGitignore: boolean, gitV
     ?? (gitVisibleFiles ?? []).filter((filePath) => basename(filePath) === '.gitignore')
   for (const filePath of ignoreFiles) {
     if (basename(filePath) === '.gitignore') {
-      controls.push([`gitignore:${relative(rootPath, filePath).replaceAll('\\', '/')}`, resolve(filePath)])
+      controls.push([`gitignore:${resolve(filePath).replaceAll('\\', '/')}`, resolve(filePath)])
     }
   }
 
@@ -152,9 +155,7 @@ export function readGraphGenerationPolicy(graphPath: string): GenerationPolicy |
 
 export function readStoredGenerationPolicy(graphPath: string, manifestPath?: string): GenerationPolicy | null {
   const graphPolicy = readGraphGenerationPolicy(graphPath)
-  if (!manifestPath) {
-    return graphPolicy
-  }
+  if (!manifestPath) return graphPolicy
   const manifestPolicy = loadManifestMetadata(manifestPath).generation_policy ?? null
   return graphPolicy && manifestPolicy && graphPolicy.fingerprint === manifestPolicy.fingerprint
     ? graphPolicy

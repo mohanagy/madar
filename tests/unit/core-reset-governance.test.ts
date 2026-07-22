@@ -173,10 +173,10 @@ describe('core reset governance', () => {
       base_commit: '9a762d0a4e10a0ae210ba3f53bb1d4468367e81e',
       completed_phase_commit: '4dfd48194f2fab00b2cd2271a6f7917909dde9d4',
       production_typescript_files: 139,
-      production_typescript_loc: 69_127,
-      production_loc_added: 900,
-      production_loc_removed: 23_312,
-      production_loc_net: -22_412,
+      production_typescript_loc: 68_954,
+      production_loc_added: 815,
+      production_loc_removed: 23_400,
+      production_loc_net: -22_585,
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)

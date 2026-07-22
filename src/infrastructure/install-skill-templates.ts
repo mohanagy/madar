@@ -27,7 +27,6 @@ const PLATFORM_KIND_BY_INSTALL_PLATFORM: Record<SkillInstallPlatform, PlatformKi
   'trae-cn': 'trae',
   windows: 'windows',
 }
-
 const SKILL_FRONTMATTER = `---
 name: ${SKILL_NAME}
 description: index JavaScript and TypeScript repositories into an evidence-bearing graph for coding agents
@@ -39,19 +38,6 @@ function commonOverview(): string {
 
 Use Madar to build and query a local JavaScript/TypeScript knowledge graph. The published artifacts are ${CODE_SPAN_START}out/graph.json${CODE_SPAN_END}, ${CODE_SPAN_START}out/GRAPH_REPORT.md${CODE_SPAN_END}, and an indexing manifest with explicit unsupported-file receipts.
 
-## Usage
-
-${CODE_BLOCK_START}bash
-madar generate .
-madar generate . --update
-madar generate . --cluster-only
-madar watch .
-madar query "<question>"
-madar path "<source>" "<target>"
-madar explain "<symbol>"
-madar pack "<task or question>" --task explain
-${CODE_BLOCK_END}
-
 Use Madar for local codebase understanding, change planning, review, debugging, and impact analysis. It indexes ${CODE_SPAN_START}.ts${CODE_SPAN_END}, ${CODE_SPAN_START}.tsx${CODE_SPAN_END}, ${CODE_SPAN_START}.js${CODE_SPAN_END}, and ${CODE_SPAN_START}.jsx${CODE_SPAN_END}. Other recognized formats are reported as unsupported instead of being silently indexed by another path.
 
 Treat local MCP servers and hooks as trust boundaries. Enable them only in repositories and agent runtimes you trust.
@@ -59,42 +45,28 @@ Treat local MCP servers and hooks as trust boundaries. Enable them only in repos
 }
 
 function installStep(kind: PlatformKind): string {
-  if (kind === 'windows') {
-    return `## Build the graph
-
-Verify the installed CLI and inspect the current graph from the requested workspace:
-
-${CODE_BLOCK_START}powershell
-madar --help
-$TargetPath = "."
-madar status
-${CODE_BLOCK_END}
-
-Reuse the graph when status reports it fresh. Only when the graph is missing, stale, or has a generation-policy mismatch, rebuild and check again:
-
-${CODE_BLOCK_START}powershell
-madar generate $TargetPath
-madar status
-${CODE_BLOCK_END}
-
-If ${CODE_SPAN_START}madar${CODE_SPAN_END} is not installed but this is a Madar source checkout, build it and use ${CODE_SPAN_START}node dist/src/cli/bin.js${CODE_SPAN_END}. Otherwise stop and report that the CLI is unavailable.`
-  }
+  const windows = kind === 'windows'
+  const codeFence = windows ? 'powershell' : 'bash'
+  const availability = windows
+    ? 'madar --help'
+    : 'command -v node >/dev/null 2>&1 || { echo "Node.js is required"; exit 1; }\nmadar --help'
+  const targetDeclaration = windows ? '$TargetPath = "."' : 'TARGET_PATH="."'
+  const targetReference = windows ? '$TargetPath' : '"$TARGET_PATH"'
 
   return `## Build the graph
 
 Verify the installed CLI and inspect the current graph from the requested workspace:
 
-${CODE_BLOCK_START}bash
-command -v node >/dev/null 2>&1 || { echo "Node.js is required"; exit 1; }
-madar --help
-TARGET_PATH="."
+${CODE_BLOCK_START}${codeFence}
+${availability}
+${targetDeclaration}
 madar status
 ${CODE_BLOCK_END}
 
 Reuse the graph when status reports it fresh. Only when the graph is missing, stale, or has a generation-policy mismatch, rebuild and check again:
 
-${CODE_BLOCK_START}bash
-madar generate "$TARGET_PATH"
+${CODE_BLOCK_START}${codeFence}
+madar generate ${targetReference}
 madar status
 ${CODE_BLOCK_END}
 
@@ -132,8 +104,7 @@ ${renderMarkdownMcpRoutingTable()}
 `
 }
 
-function workflowSection(): string {
-  return `## Workflow
+const WORKFLOW_SECTION = `## Workflow
 
 1. Run ${CODE_SPAN_START}madar status${CODE_SPAN_END}. Reuse a fresh graph; run ${CODE_SPAN_START}madar generate <path>${CODE_SPAN_END} only when the graph is missing, stale, policy-mismatched, or the user explicitly requests a rebuild.
 2. When generation runs, read its summary. Surface indexing failures and unsupported-file receipts; do not describe unsupported scope as indexed.
@@ -143,30 +114,6 @@ function workflowSection(): string {
 
 Do not create a second graph manually, dispatch workers to re-index files, merge assistant-authored JSON, or invent relationships outside Madar's canonical output.
 `
-}
-
-function subcommandSection(kind: PlatformKind): string {
-  const localConfigTarget =
-    kind === 'trae'
-      ? 'AGENTS.md (Trae)'
-      : kind === 'gemini'
-        ? 'GEMINI.md (Gemini CLI)'
-        : kind === 'codex'
-          ? 'AGENTS.md (Codex)'
-          : kind === 'default'
-            ? 'CLAUDE.md / AGENTS.md'
-            : 'AGENTS.md'
-
-  return `## Command semantics
-
-- ${CODE_SPAN_START}madar generate <path>${CODE_SPAN_END} builds the canonical graph.
-- ${CODE_SPAN_START}madar generate <path> --update${CODE_SPAN_END} performs a full rebuild from the current source tree.
-- ${CODE_SPAN_START}madar generate <path> --cluster-only${CODE_SPAN_END} reuses the existing graph and recomputes clustering, analysis, and exports without re-indexing source.
-- ${CODE_SPAN_START}madar watch <path>${CODE_SPAN_END} rebuilds after JavaScript/TypeScript changes, refreshes receipts after recognized unsupported-file changes, and records a refresh flag when an automatic rebuild fails.
-- ${CODE_SPAN_START}madar doctor${CODE_SPAN_END} and ${CODE_SPAN_START}madar status${CODE_SPAN_END} report freshness, watcher state, policy mismatch, safety exclusions, and indexing completeness.
-- The platform installer writes workspace guidance to ${localConfigTarget}.
-`
-}
 
 function honestyRules(): string {
   return `## Honesty rules
@@ -180,42 +127,28 @@ function honestyRules(): string {
 }
 
 function renderMarkdownWithCodeFences(markdown: string): string {
-  const rendered = markdown
+  return markdown
     .replaceAll(CODE_BLOCK_START, '```')
     .replaceAll(CODE_BLOCK_END, '```')
     .replaceAll(CODE_SPAN_START, '`')
     .replaceAll(CODE_SPAN_END, '`')
-
-  if (
-    rendered.includes(CODE_BLOCK_START)
-    || rendered.includes(CODE_BLOCK_END)
-    || rendered.includes(CODE_SPAN_START)
-    || rendered.includes(CODE_SPAN_END)
-  ) {
-    throw new Error('error: built-in skill template rendering left unresolved code markers')
-  }
-
-  return rendered
 }
 
 function buildSkillDocument(kind: PlatformKind): string {
-  return renderMarkdownWithCodeFences([
+  const parts = [
     SKILL_FRONTMATTER,
     commonOverview(),
     codexProfileSection(kind),
     mcpRoutingProfileSection(kind),
     installStep(kind),
-    workflowSection(),
-    subcommandSection(kind),
+    WORKFLOW_SECTION,
     honestyRules(),
-  ].filter(Boolean).join('\n\n').trimEnd() + '\n')
+  ].filter((part) => part.length > 0)
+
+  return renderMarkdownWithCodeFences(parts.join('\n\n').trimEnd() + '\n')
 }
 
 /** Generate a complete built-in `SKILL.md` document for an install platform. */
 export function getBuiltInSkillContent(platform: SkillInstallPlatform): string {
-  const content = buildSkillDocument(PLATFORM_KIND_BY_INSTALL_PLATFORM[platform])
-  if (content.trim().length === 0) {
-    throw new Error(`error: built-in template for ${platform} generated empty content`)
-  }
-  return content
+  return buildSkillDocument(PLATFORM_KIND_BY_INSTALL_PLATFORM[platform])
 }

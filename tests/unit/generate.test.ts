@@ -1,15 +1,22 @@
-import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { syncBuiltinESMExports } from 'node:module'
+import { execFileSync } from 'node:child_process'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import {
-  GenerateUnsupportedCorpusError,
-  generateGraph,
-  type ProgressStep,
-} from '../../src/infrastructure/generate.js'
+import { GenerateUnsupportedCorpusError, generateGraph, type ProgressStep } from '../../src/infrastructure/generate.js'
+import { analyzeImpact, callChains } from '../../src/runtime/impact.js'
+import { loadGraph } from '../../src/runtime/serve.js'
 import { readCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 function writeSource(root: string, path: string, contents: string): void {
@@ -26,15 +33,18 @@ describe('generateGraph canonical pipeline', () => {
   })
 
   afterEach(() => {
-    vi.restoreAllMocks()
     rmSync(root, { recursive: true, force: true })
   })
 
   it('publishes a canonical graph, report, and completeness manifests', () => {
-    writeSource(root, 'src/service.ts', [
-      'export function loadUser(): number { return 1 }',
-      'export function handleRequest(): number { return loadUser() }',
-    ].join('\n'))
+    writeSource(
+      root,
+      'src/service.ts',
+      [
+        'export function loadUser(): number { return 1 }',
+        'export function handleRequest(): number { return loadUser() }',
+      ].join('\n'),
+    )
 
     const result = generateGraph(root)
     const graph = readCanonicalGraphFixture(result.graphPath)
@@ -48,13 +58,13 @@ describe('generateGraph canonical pipeline', () => {
     expect(existsSync(result.reportPath)).toBe(true)
     expect(existsSync(result.indexingManifestPath)).toBe(true)
     expect(existsSync(result.indexingShareSafeManifestPath)).toBe(true)
-    expect(graph.nodes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'handleRequest()', source_file: 'src/service.ts' }),
-      expect.objectContaining({ label: 'loadUser()', source_file: 'src/service.ts' }),
-    ]))
-    expect(graph.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ relation: 'calls' }),
-    ]))
+    expect(graph.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'handleRequest()', source_file: 'src/service.ts' }),
+        expect.objectContaining({ label: 'loadUser()', source_file: 'src/service.ts' }),
+      ]),
+    )
+    expect(graph.edges).toEqual(expect.arrayContaining([expect.objectContaining({ relation: 'calls' })]))
   })
 
   it('runs one canonical indexing phase for a whole generation', () => {
@@ -80,11 +90,193 @@ describe('generateGraph canonical pipeline', () => {
     }
 
     expect(graph.nodes.some((node) => node.source_file === 'src/legacy.py')).toBe(false)
-    expect(manifest.outcomes).toContainEqual(expect.objectContaining({
-      path: 'src/legacy.py',
-      status: 'unsupported',
-      reason: 'unsupported_file_type',
-    }))
+    expect(manifest.outcomes).toContainEqual(
+      expect.objectContaining({
+        path: 'src/legacy.py',
+        status: 'unsupported',
+        reason: 'unsupported_file_type',
+      }),
+    )
+  })
+
+  it('persists local discovery safety metadata and never creates nodes for excluded paths', () => {
+    writeSource(root, 'token.ts', 'export function issueToken(): string { return "opaque" }\n')
+    writeSource(root, 'credentials.json', '{"token":"do-not-read"}\n')
+
+    const result = generateGraph(root)
+    const graph = readCanonicalGraphFixture(result.graphPath) as {
+      discovery_safety?: typeof result.discoverySafety
+      nodes: Array<{ source_file?: string }>
+    }
+
+    expect(result.codeFiles).toBe(1)
+    expect(result.discoverySafety.summary).toMatchObject({ total: 1, sensitive: 1, unreadable: 0 })
+    expect(result.discoveryExclusions).toContainEqual({
+      path: 'credentials.json',
+      kind: 'sensitive',
+      reason: 'secret_config',
+    })
+    expect(graph.discovery_safety).toEqual(result.discoverySafety)
+    expect(graph.nodes.some((node) => node.source_file === 'token.ts')).toBe(true)
+    expect(graph.nodes.some((node) => node.source_file === 'credentials.json')).toBe(false)
+  })
+
+  it('reports safety exclusions when they leave no supported canonical corpus', () => {
+    writeSource(root, 'credentials.json', '{"token":"do-not-read"}\n')
+
+    expect(() => generateGraph(root)).toThrowError(
+      expect.objectContaining({
+        code: 'NO_SUPPORTED_FILES',
+        message: expect.stringContaining('"credentials.json" (secret_config)'),
+        discoverySafety: expect.objectContaining({
+          summary: expect.objectContaining({ total: 1, sensitive: 1, unreadable: 0 }),
+        }),
+      }),
+    )
+  })
+
+  it('excludes Git-ignored files while retaining tracked and visible untracked sources', () => {
+    writeSource(root, '.gitignore', 'ignored.ts\n')
+    writeSource(root, 'tracked.ts', 'export const tracked = true\n')
+    writeSource(root, 'untracked.ts', 'export const untracked = true\n')
+    writeSource(root, 'ignored.ts', 'export const ignored = true\n')
+    execFileSync('git', ['init'], { cwd: root, stdio: 'pipe' })
+    execFileSync('git', ['add', '.gitignore', 'tracked.ts'], { cwd: root, stdio: 'pipe' })
+
+    const result = generateGraph(root, { respectGitignore: true })
+    const graph = readCanonicalGraphFixture(result.graphPath)
+    const sourceFiles = new Set(graph.nodes.map((node) => node.source_file))
+
+    expect(sourceFiles).toContain('tracked.ts')
+    expect(sourceFiles).toContain('untracked.ts')
+    expect(sourceFiles).not.toContain('ignored.ts')
+  })
+
+  it('applies repository Git-ignore rules from a nested generation root', () => {
+    const nestedRoot = join(root, 'workspace')
+    writeSource(root, '.gitignore', 'workspace/ignored.ts\n')
+    writeSource(root, 'workspace/tracked.ts', 'export const tracked = true\n')
+    writeSource(root, 'workspace/untracked.ts', 'export const untracked = true\n')
+    writeSource(root, 'workspace/ignored.ts', 'export const ignored = true\n')
+    execFileSync('git', ['init'], { cwd: root, stdio: 'pipe' })
+    execFileSync('git', ['add', '.gitignore', 'workspace/tracked.ts'], {
+      cwd: root,
+      stdio: 'pipe',
+    })
+
+    const result = generateGraph(nestedRoot, { respectGitignore: true })
+    const graph = readCanonicalGraphFixture(result.graphPath)
+    const sourceFiles = new Set(graph.nodes.map((node) => node.source_file))
+
+    expect(sourceFiles).toContain('tracked.ts')
+    expect(sourceFiles).toContain('untracked.ts')
+    expect(sourceFiles).not.toContain('ignored.ts')
+  })
+
+  it('rejects cluster-only after an ancestor Git-ignore changes for a nested generation root', () => {
+    const nestedRoot = join(root, 'workspace')
+    writeSource(root, '.gitignore', 'workspace/generated/**\n')
+    writeSource(root, 'workspace/main.ts', 'export const value = 1\n')
+    execFileSync('git', ['init'], { cwd: root, stdio: 'pipe' })
+    execFileSync('git', ['add', '.gitignore', 'workspace/main.ts'], { cwd: root, stdio: 'pipe' })
+    generateGraph(nestedRoot, { respectGitignore: true })
+
+    expect(generateGraph(nestedRoot, { clusterOnly: true }).mode).toBe('cluster-only')
+    writeFileSync(join(root, '.gitignore'), 'workspace/generated/**\nworkspace/cache/**\n', 'utf8')
+    expect(() => generateGraph(nestedRoot, { clusterOnly: true })).toThrow('source controls changed')
+  })
+
+  it.runIf(process.platform !== 'win32')('applies Git-ignore rules through a symlinked generation root', () => {
+    writeSource(root, '.gitignore', 'ignored.ts\n')
+    writeSource(root, 'tracked.ts', 'export const tracked = true\n')
+    writeSource(root, 'untracked.ts', 'export const untracked = true\n')
+    writeSource(root, 'ignored.ts', 'export const ignored = true\n')
+    execFileSync('git', ['init'], { cwd: root, stdio: 'pipe' })
+    execFileSync('git', ['add', '.gitignore', 'tracked.ts'], { cwd: root, stdio: 'pipe' })
+    const aliasParent = mkdtempSync(join(tmpdir(), 'madar-generate-alias-'))
+    const aliasedRoot = join(aliasParent, 'workspace')
+    symlinkSync(root, aliasedRoot, 'dir')
+
+    try {
+      const result = generateGraph(aliasedRoot, { respectGitignore: true })
+      const graph = readCanonicalGraphFixture(result.graphPath)
+      const sourceFiles = new Set(graph.nodes.map((node) => node.source_file))
+
+      expect(sourceFiles).toContain('tracked.ts')
+      expect(sourceFiles).toContain('untracked.ts')
+      expect(sourceFiles).not.toContain('ignored.ts')
+      expect(generateGraph(root, { clusterOnly: true }).mode).toBe('cluster-only')
+    } finally {
+      rmSync(aliasParent, { recursive: true, force: true })
+    }
+  })
+
+  it('generates semantic community labels in the report and graph metadata', () => {
+    writeSource(
+      root,
+      'src/infrastructure/install.ts',
+      [
+        'export function claudeInstall(): unknown[] { return ensureArray() }',
+        'export function ensureArray(): unknown[] { return [] }',
+      ].join('\n'),
+    )
+    writeSource(
+      root,
+      'src/pipeline/export.ts',
+      ['export function toHtml(): number { return toSvg() }', 'export function toSvg(): number { return 1 }'].join(
+        '\n',
+      ),
+    )
+
+    const result = generateGraph(root)
+    const report = readFileSync(result.reportPath, 'utf8')
+    const graph = readCanonicalGraphFixture(result.graphPath) as {
+      community_labels?: Record<string, string>
+    }
+
+    expect(report).toContain('Infrastructure Install')
+    expect(report).toContain('Pipeline Export')
+    expect(Object.values(graph.community_labels ?? {})).toEqual(
+      expect.arrayContaining(['Infrastructure Install', 'Pipeline Export']),
+    )
+  })
+
+  it('preserves one-way directed call-chain and impact semantics', () => {
+    writeSource(
+      root,
+      'backend/api.ts',
+      [
+        "import { createSession } from '../shared/auth.js'",
+        'export function loginUser(): string { return createSession() }',
+      ].join('\n'),
+    )
+    writeSource(root, 'shared/auth.ts', 'export function createSession(): string { return "session" }\n')
+
+    const result = generateGraph(root)
+    const graph = loadGraph(result.graphPath)
+    const artifact = readCanonicalGraphFixture(result.graphPath) as { directed?: boolean }
+
+    expect(graph.isDirected()).toBe(true)
+    expect(artifact.directed).toBe(true)
+    expect(callChains(graph, 'loginUser()', 'createSession()')).toEqual(
+      expect.arrayContaining([['loginUser()', 'createSession()']]),
+    )
+    expect(callChains(graph, 'createSession()', 'loginUser()')).toEqual([])
+    expect(analyzeImpact(graph, {}, { label: 'createSession()' }).direct_dependents).toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: 'loginUser()' })]),
+    )
+    expect(analyzeImpact(graph, {}, { label: 'loginUser()' }).direct_dependents).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: 'createSession()' })]),
+    )
+  })
+
+  it('writes the resolved generation root into graph.json', () => {
+    writeSource(root, 'main.ts', 'export function hello(): number { return 1 }\n')
+
+    const result = generateGraph(root)
+    const graph = readCanonicalGraphFixture(result.graphPath) as { root_path?: string }
+
+    expect(graph.root_path).toBe(root)
   })
 
   it('performs update as a full canonical rebuild and removes deleted facts', () => {
@@ -118,7 +310,7 @@ describe('generateGraph canonical pipeline', () => {
     )
   })
 
-  it('rejects cluster-only when canonical sidecars are missing or from another generation', () => {
+  it('rejects cluster-only when canonical policy or indexing sidecars are missing', () => {
     writeSource(root, 'src/main.ts', 'export const current = true\n')
     const generated = generateGraph(root)
     const sourceManifest = join(generated.outputDir, 'manifest.json')
@@ -128,71 +320,22 @@ describe('generateGraph canonical pipeline', () => {
     expect(() => generateGraph(root, { clusterOnly: true })).toThrow('current canonical generation policy')
     writeFileSync(sourceManifest, sourceManifestContents, 'utf8')
 
-    const foreignSourceManifest = JSON.parse(sourceManifestContents) as Record<string, unknown>
-    foreignSourceManifest['/foreign/source.ts'] = 0
-    writeFileSync(sourceManifest, `${JSON.stringify(foreignSourceManifest, null, 2)}\n`, 'utf8')
-    expect(() => generateGraph(root, { clusterOnly: true })).toThrow('same generation')
-    writeFileSync(sourceManifest, sourceManifestContents, 'utf8')
-
-    const indexing = JSON.parse(readFileSync(generated.indexingManifestPath, 'utf8')) as {
-      outcomes: Array<{ path: string }>
-    }
-    indexing.outcomes[0]!.path = 'foreign/source.ts'
-    writeFileSync(generated.indexingManifestPath, `${JSON.stringify(indexing, null, 2)}\n`, 'utf8')
-    expect(() => generateGraph(root, { clusterOnly: true })).toThrow('same generation')
+    const indexingContents = readFileSync(generated.indexingManifestPath, 'utf8')
+    rmSync(generated.indexingManifestPath)
+    expect(() => generateGraph(root, { clusterOnly: true })).toThrow('current indexing manifest')
+    writeFileSync(generated.indexingManifestPath, indexingContents, 'utf8')
   })
 
-  it('preserves published artifacts and retired outputs when staging fails', () => {
-    writeSource(root, 'src/main.ts', 'export const before = true\n')
+  it('rejects cluster-only artifacts copied from another workspace', () => {
+    writeSource(root, 'src/main.ts', 'export const current = true\n')
     const generated = generateGraph(root)
-    const published = [generated.graphPath, generated.reportPath, generated.indexingManifestPath,
-      generated.indexingShareSafeManifestPath, join(generated.outputDir, 'manifest.json')]
-    const before = published.map((path) => readFileSync(path, 'utf8'))
-    for (const retiredPath of ['cache', 'docs']) {
-      mkdirSync(join(generated.outputDir, retiredPath), { recursive: true })
-      writeFileSync(join(generated.outputDir, retiredPath, 'stale.txt'), 'preserve-on-failure', 'utf8')
-    }
-    writeSource(root, 'src/main.ts', 'export const after = true\n')
-
-    vi.spyOn(Date, 'now').mockReturnValue(123)
-    vi.spyOn(Math, 'random').mockReturnValue(0.5)
-    mkdirSync(join(generated.outputDir, `.madar-publication-${process.pid}-123-8`, 'staged', 'graph.json'), {
-      recursive: true,
-    })
-
-    expect(() => generateGraph(root, { update: true })).toThrow()
-    expect(published.map((path) => readFileSync(path, 'utf8'))).toEqual(before)
-    for (const retiredPath of ['cache', 'docs']) {
-      expect(readFileSync(join(generated.outputDir, retiredPath, 'stale.txt'), 'utf8')).toBe('preserve-on-failure')
-    }
-  })
-
-  it('rolls back every touched artifact when publication fails partway through', () => {
-    writeSource(root, 'src/main.ts', 'export const before = true\n')
-    const generated = generateGraph(root)
-    const published = [generated.graphPath, generated.reportPath, generated.indexingManifestPath,
-      generated.indexingShareSafeManifestPath, join(generated.outputDir, 'manifest.json')]
-    const before = published.map((path) => readFileSync(path, 'utf8'))
-    mkdirSync(join(generated.outputDir, 'cache'), { recursive: true })
-    writeFileSync(join(generated.outputDir, 'cache', 'stale.txt'), 'restore-me', 'utf8')
-    writeSource(root, 'src/main.ts', 'export const after = true\n')
-
-    const rename = fs.renameSync
-    vi.spyOn(fs, 'renameSync').mockImplementation((source, target) => {
-      if (String(source).replaceAll('\\', '/').includes('/staged/indexing-manifest.json')
-        && target === generated.indexingManifestPath) throw new Error('injected publication failure')
-      rename(source, target)
-    })
-    syncBuiltinESMExports()
+    const foreignRoot = mkdtempSync(join(tmpdir(), 'madar-generate-foreign-'))
     try {
-      expect(() => generateGraph(root, { update: true })).toThrow('injected publication failure')
+      cpSync(generated.outputDir, join(foreignRoot, 'out'), { recursive: true })
+      expect(() => generateGraph(foreignRoot, { clusterOnly: true })).toThrow(/source workspace.*--update/)
     } finally {
-      vi.restoreAllMocks()
-      syncBuiltinESMExports()
+      rmSync(foreignRoot, { recursive: true, force: true })
     }
-
-    expect(published.map((path) => readFileSync(path, 'utf8'))).toEqual(before)
-    expect(readFileSync(join(generated.outputDir, 'cache', 'stale.txt'), 'utf8')).toBe('restore-me')
   })
 
   it('fails clearly when the corpus has no supported TypeScript or JavaScript', () => {

@@ -13,12 +13,9 @@ import {
 } from '../contracts/indexing.js'
 import { shareSafeIndexingManifest, summarizeIndexingOutcomes } from '../pipeline/indexing-outcomes.js'
 import { writeTextFileAtomically } from '../shared/atomic-file.js'
+import { hasExactKeys, isRecord } from '../shared/guards.js'
 
 export const INDEXING_MANIFEST_FILENAME = 'indexing-manifest.json'
-export const SHARE_SAFE_INDEXING_MANIFEST_FILENAME = 'indexing-manifest.share-safe.json'
-export const FAILED_INDEXING_MANIFEST_FILENAME = 'indexing-manifest.failed.json'
-export const FAILED_SHARE_SAFE_INDEXING_MANIFEST_FILENAME = 'indexing-manifest.failed.share-safe.json'
-
 const UNCERTAIN_STATUSES = new Set<IndexingOutcomeStatus>([
   'indexed_with_warnings',
   'skipped_by_policy',
@@ -34,14 +31,6 @@ const REASON_CODES = new Set<string>(INDEXING_REASON_CODES)
 const ENVIRONMENT_CONFIG_INTENT_PATTERN = /(?:^|[^a-z0-9])\.env(?:[^a-z0-9]|$)|\b(?:config(?:uration)?|credential|deploy(?:ment)?|environment|key|password|runtime\s+variable|secret|settings|token)\b/i
 const HIDDEN_PATH_INTENT_PATTERN = /\b(?:dotfile|hidden\s+(?:file|path)|well-known)\b|(?:^|[\s`'"/])\.(?:claude|codex|github|vscode|well-known|zed)(?:[\s`'"/]|$)/i
 const UNSUPPORTED_ARTIFACT_INTENT_PATTERN = /\b(?:asset|document|image|migration|python|golang|shell|sql|stylesheet)\b|\.(?:css|csv|go|html|java|md|pdf|png|py|rs|sh|sql|svg|vue)\b/i
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  return Object.keys(value).sort().join('\0') === [...keys].sort().join('\0')
-}
 
 function isIndexingOutcome(value: unknown): value is IndexingOutcome {
   return isRecord(value)
@@ -76,7 +65,7 @@ function isIndexDiagnostic(value: unknown): boolean {
 export function parseIndexingManifest(value: unknown): IndexingManifest | null {
   if (
     !isRecord(value)
-    || !hasOnlyKeys(value, ['version', 'generated_at', 'summary', 'outcomes', 'index_diagnostics'])
+    || !hasExactKeys(value, ['version', 'generated_at', 'summary', 'outcomes', 'index_diagnostics'])
     || value.version !== INDEXING_MANIFEST_VERSION
     || typeof value.generated_at !== 'string'
     || !isRecord(value.summary)
@@ -111,27 +100,23 @@ export function readIndexingManifestForGraph(graphPath: string): IndexingManifes
   }
 }
 
-export function writeIndexingManifests(outputDir: string, manifest: IndexingManifest): {
+export function writeIndexingManifests(
+  outputDir: string,
+  manifest: IndexingManifest,
+  failed = false,
+): {
   manifestPath: string
   shareSafeManifestPath: string
 } {
-  const manifestPath = join(outputDir, INDEXING_MANIFEST_FILENAME)
-  const shareSafeManifestPath = join(outputDir, SHARE_SAFE_INDEXING_MANIFEST_FILENAME)
+  const basename = failed ? 'indexing-manifest.failed' : 'indexing-manifest'
+  const manifestPath = join(outputDir, `${basename}.json`)
+  const shareSafeManifestPath = join(outputDir, `${basename}.share-safe.json`)
   writeTextFileAtomically(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
   writeTextFileAtomically(shareSafeManifestPath, `${JSON.stringify(shareSafeIndexingManifest(manifest), null, 2)}\n`)
-  rmSync(join(outputDir, FAILED_INDEXING_MANIFEST_FILENAME), { force: true })
-  rmSync(join(outputDir, FAILED_SHARE_SAFE_INDEXING_MANIFEST_FILENAME), { force: true })
-  return { manifestPath, shareSafeManifestPath }
-}
-
-export function writeFailedIndexingManifests(outputDir: string, manifest: IndexingManifest): {
-  manifestPath: string
-  shareSafeManifestPath: string
-} {
-  const manifestPath = join(outputDir, FAILED_INDEXING_MANIFEST_FILENAME)
-  const shareSafeManifestPath = join(outputDir, FAILED_SHARE_SAFE_INDEXING_MANIFEST_FILENAME)
-  writeTextFileAtomically(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-  writeTextFileAtomically(shareSafeManifestPath, `${JSON.stringify(shareSafeIndexingManifest(manifest), null, 2)}\n`)
+  if (!failed) {
+    rmSync(join(outputDir, 'indexing-manifest.failed.json'), { force: true })
+    rmSync(join(outputDir, 'indexing-manifest.failed.share-safe.json'), { force: true })
+  }
   return { manifestPath, shareSafeManifestPath }
 }
 

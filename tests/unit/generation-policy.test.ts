@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -88,6 +88,54 @@ describe('canonical generation policy contract', () => {
       expect(after).toMatch(/^[a-f0-9]{64}$/)
       expect(after).not.toBe(before)
       expect(after).not.toContain('cache')
+    })
+  })
+
+  test('fingerprints ancestor and nested Git ignores for a scoped root but excludes siblings', () => {
+    withTempDir((tempDir) => {
+      const scopedRoot = join(tempDir, 'packages', 'app')
+      mkdirSync(join(scopedRoot, 'src'), { recursive: true })
+      mkdirSync(join(tempDir, 'packages', 'sibling'), { recursive: true })
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+      writeFileSync(join(tempDir, '.gitignore'), 'root-generated/**\n', 'utf8')
+      writeFileSync(join(tempDir, 'packages', '.gitignore'), 'package-cache/**\n', 'utf8')
+      writeFileSync(join(scopedRoot, 'src', '.gitignore'), 'fixtures/**\n', 'utf8')
+      writeFileSync(join(tempDir, 'packages', 'sibling', '.gitignore'), 'sibling-only/**\n', 'utf8')
+      const before = exclusionRulesFingerprint(scopedRoot, true, null)
+
+      writeFileSync(join(tempDir, '.gitignore'), 'root-generated/**\nroot-cache/**\n', 'utf8')
+      const ancestorChanged = exclusionRulesFingerprint(scopedRoot, true, null)
+      writeFileSync(join(tempDir, '.gitignore'), 'root-generated/**\n', 'utf8')
+      writeFileSync(join(scopedRoot, 'src', '.gitignore'), 'fixtures/**\nsnapshots/**\n', 'utf8')
+      const nestedChanged = exclusionRulesFingerprint(scopedRoot, true, null)
+      writeFileSync(join(scopedRoot, 'src', '.gitignore'), 'fixtures/**\n', 'utf8')
+      writeFileSync(join(tempDir, 'packages', 'sibling', '.gitignore'), 'changed-sibling/**\n', 'utf8')
+
+      expect(ancestorChanged).not.toBe(before)
+      expect(nestedChanged).not.toBe(before)
+      expect(exclusionRulesFingerprint(scopedRoot, true, null)).toBe(before)
+    })
+  })
+
+  test('fingerprints ancestor Git ignores inside a linked worktree', () => {
+    withTempDir((tempDir) => {
+      const primary = join(tempDir, 'primary')
+      const linked = join(tempDir, 'linked')
+      mkdirSync(join(primary, 'packages', 'app'), { recursive: true })
+      execFileSync('git', ['init'], { cwd: primary, stdio: 'pipe' })
+      writeFileSync(join(primary, '.gitignore'), 'generated/**\n', 'utf8')
+      writeFileSync(join(primary, 'packages', 'app', 'main.ts'), 'export const value = 1\n', 'utf8')
+      execFileSync('git', ['add', '.'], { cwd: primary, stdio: 'pipe' })
+      execFileSync('git', ['-c', 'user.name=Madar', '-c', 'user.email=madar@example.com', 'commit', '-m', 'fixture'], { cwd: primary, stdio: 'pipe' })
+      execFileSync('git', ['worktree', 'add', '-b', 'feature/policy', linked], { cwd: primary, stdio: 'pipe' })
+      try {
+        const scopedRoot = join(linked, 'packages', 'app')
+        const before = exclusionRulesFingerprint(scopedRoot, true, null)
+        writeFileSync(join(linked, '.gitignore'), 'generated/**\ncache/**\n', 'utf8')
+        expect(exclusionRulesFingerprint(scopedRoot, true, null)).not.toBe(before)
+      } finally {
+        execFileSync('git', ['worktree', 'remove', '--force', linked], { cwd: primary, stdio: 'pipe' })
+      }
     })
   })
 

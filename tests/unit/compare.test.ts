@@ -158,23 +158,13 @@ function writeGraphFixture(graph: KnowledgeGraph, graphFixtureRoot: string = GRA
 function writeManifestFixture(
   projectRoot: string = PROJECT_FIXTURE_ROOT,
   graphFixtureRoot: string = GRAPH_FIXTURE_ROOT,
-  fileOverrides?: Partial<Record<'code' | 'document' | 'paper' | 'image' | 'audio' | 'video', string[]>>,
+  codePaths?: string[],
 ): string {
   const manifestPath = join(graphFixtureRoot, 'manifest.json')
   const defaultCodePaths = Object.keys(makeProjectFiles())
     .filter((relativePath) => relativePath.endsWith('.ts'))
     .map((relativePath) => join(projectRoot, relativePath))
-  saveManifest(
-    {
-      code: fileOverrides?.code ?? defaultCodePaths,
-      document: fileOverrides?.document ?? [],
-      paper: fileOverrides?.paper ?? [],
-      image: fileOverrides?.image ?? [],
-      audio: fileOverrides?.audio ?? [],
-      video: fileOverrides?.video ?? [],
-    },
-    manifestPath,
-  )
+  saveManifest({ code: codePaths ?? defaultCodePaths }, manifestPath)
   return manifestPath
 }
 
@@ -4404,6 +4394,66 @@ describe('compare runtime', () => {
     expect(firstResult.reports[0]?.paths.output_dir).not.toBe(secondResult.reports[0]?.paths.output_dir)
     expect(existsSync(firstResult.reports[0]!.paths.baseline_prompt)).toBe(true)
     expect(existsSync(secondResult.reports[0]!.paths.baseline_prompt)).toBe(true)
+  })
+
+  it('includes supported manifest-only files in the runtime baseline corpus', () => {
+    const graph = makeGraph()
+    writeProjectFiles()
+    const graphPath = writeGraphFixture(graph)
+    const authPath = join(PROJECT_FIXTURE_ROOT, 'src', 'auth.ts')
+    const manifestOnlyPath = join(PROJECT_FIXTURE_ROOT, 'src', 'manifest-only.ts')
+    writeFileSync(
+      manifestOnlyPath,
+      'export const manifestOnlyBoundary = "included through canonical manifest"\n',
+      'utf8',
+    )
+    writeManifestFixture(PROJECT_FIXTURE_ROOT, GRAPH_FIXTURE_ROOT, [authPath, manifestOnlyPath])
+
+    const result = generateCompareArtifacts({
+      graphPath,
+      question: 'how does login create a session',
+      outputDir: COMPARE_OUTPUT_ROOT,
+      execTemplate: 'claude -p "$(cat {prompt_file})"',
+      baselineMode: 'full',
+      now: new Date('2026-04-24T19:30:00Z'),
+    })
+
+    const baselinePrompt = readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')
+    expect(baselinePrompt).toContain('return new SessionManager().createSession(credentials.userId)')
+    expect(baselinePrompt).toContain('manifestOnlyBoundary = "included through canonical manifest"')
+  })
+
+  it('keeps a present canonical manifest as the baseline file boundary', () => {
+    const graph = makeGraph()
+    graph.addNode('graph_only_source', {
+      label: 'graphOnlyBoundary',
+      source_file: 'src/graph-only.ts',
+      source_location: 'L1',
+      line_number: 1,
+      node_kind: 'variable',
+      file_type: 'code',
+      community: 0,
+    })
+    writeProjectFiles()
+    const graphOnlyPath = join(PROJECT_FIXTURE_ROOT, 'src', 'graph-only.ts')
+    writeFileSync(graphOnlyPath, 'export const graphOnlyBoundary = "exclude when manifest exists"\n', 'utf8')
+    const graphPath = writeGraphFixture(graph)
+    writeManifestFixture(PROJECT_FIXTURE_ROOT, GRAPH_FIXTURE_ROOT, [
+      join(PROJECT_FIXTURE_ROOT, 'src', 'auth.ts'),
+    ])
+
+    const result = generateCompareArtifacts({
+      graphPath,
+      question: 'how does login create a session',
+      outputDir: COMPARE_OUTPUT_ROOT,
+      execTemplate: 'claude -p "$(cat {prompt_file})"',
+      baselineMode: 'full',
+      now: new Date('2026-04-24T19:30:00Z'),
+    })
+
+    const baselinePrompt = readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8')
+    expect(baselinePrompt).toContain('return new SessionManager().createSession(credentials.userId)')
+    expect(baselinePrompt).not.toContain('graphOnlyBoundary = "exclude when manifest exists"')
   })
 
   it('fails when a graph-backed text file is missing from the local runtime corpus', () => {

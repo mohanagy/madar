@@ -157,7 +157,7 @@ export function canonicalFixtureSourceFiles(root = CANONICAL_INDEX_FIXTURE_ROOT)
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name)
       if (entry.isDirectory()) visit(path)
-      else if (['.js', '.jsx', '.ts', '.tsx'].includes(extname(entry.name))) files.push(path)
+      else if (['.js', '.jsx', '.ts', '.tsx'].includes(extname(entry.name))) files.push(path.replaceAll('\\', '/'))
     }
   }
   visit(root)

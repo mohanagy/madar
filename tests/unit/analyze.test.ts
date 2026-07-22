@@ -1,5 +1,7 @@
+import { isCanonicalTypeScriptSourceFile } from '../../src/adapters/typescript/index.js'
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import {
+  _isConceptNode,
   _surpriseScore,
   godNodes,
   graphStructureMetrics,
@@ -119,6 +121,21 @@ describe('analyze', () => {
     }
   })
 
+  it('excludes concept nodes from surprising connections', () => {
+    const graph = makeGraph()
+    graph.addNode('concept_x', { label: 'Abstract Concept', source_file: '' })
+    graph.addEdge('n_transformer', 'concept_x', {
+      relation: 'relates_to',
+      confidence: 'INFERRED',
+      source_file: '',
+      weight: 0.5,
+    })
+
+    const surprises = surprisingConnections(graph, cluster(graph))
+    const labels = surprises.flatMap((surprise) => [surprise.source, surprise.target])
+    expect(labels).not.toContain('Abstract Concept')
+  })
+
   it('uses cross-community bridges for single-source graphs', () => {
     const graph = new KnowledgeGraph()
     for (let index = 0; index < 5; index += 1) {
@@ -152,6 +169,67 @@ describe('analyze', () => {
     const ambiguous = _surpriseScore(graph, 'a', 'b', graph.uniqueEdgeBetween('a', 'b').attributes, nodeCommunity, 'repo1/model.ts', 'repo2/train.ts')
     const extracted = _surpriseScore(graph, 'c', 'd', graph.uniqueEdgeBetween('c', 'd').attributes, nodeCommunity, 'repo1/data.ts', 'repo2/eval.ts')
     expect(ambiguous[0]).toBeGreaterThan(extracted[0])
+  })
+
+  it('scores cross-package canonical edges above same-package edges', () => {
+    const graph = new KnowledgeGraph()
+    for (const [nodeId, label, sourceFile] of [
+      ['a', 'Controller', 'apps/api/controller.ts'],
+      ['b', 'SessionStore', 'packages/auth/session-store.js'],
+      ['c', 'Service', 'apps/api/service.ts'],
+      ['d', 'Repository', 'apps/api/repository.tsx'],
+    ] as const) {
+      graph.addNode(nodeId, { label, source_file: sourceFile, file_type: 'code' })
+    }
+    graph.addEdge('a', 'b', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      weight: 1,
+      source_file: 'apps/api/controller.ts',
+    })
+    graph.addEdge('c', 'd', {
+      relation: 'calls',
+      confidence: 'EXTRACTED',
+      weight: 1,
+      source_file: 'apps/api/service.ts',
+    })
+
+    const nodeCommunity = { a: 0, b: 0, c: 0, d: 0 }
+    const crossPackage = _surpriseScore(
+      graph,
+      'a',
+      'b',
+      graph.uniqueEdgeBetween('a', 'b').attributes,
+      nodeCommunity,
+      'apps/api/controller.ts',
+      'packages/auth/session-store.js',
+    )
+    const samePackage = _surpriseScore(
+      graph,
+      'c',
+      'd',
+      graph.uniqueEdgeBetween('c', 'd').attributes,
+      nodeCommunity,
+      'apps/api/service.ts',
+      'apps/api/repository.tsx',
+    )
+
+    expect(crossPackage[0]).toBeGreaterThan(samePackage[0])
+    expect(crossPackage[1]).toContain('connects across different repos/directories')
+  })
+
+  it('categorizes the canonical JavaScript and TypeScript extensions', () => {
+    expect(['model.ts', 'view.tsx', 'worker.js', 'component.jsx'].every(isCanonicalTypeScriptSourceFile)).toBe(true)
+    expect(['service.py', 'notes.md', 'diagram.png'].some(isCanonicalTypeScriptSourceFile)).toBe(false)
+  })
+
+  it('identifies concept nodes by missing source files', () => {
+    const graph = new KnowledgeGraph()
+    graph.addNode('c1', { source_file: '' })
+    graph.addNode('n1', { source_file: 'model.ts' })
+
+    expect(_isConceptNode(graph, 'c1')).toBe(true)
+    expect(_isConceptNode(graph, 'n1')).toBe(false)
   })
 
   it('measures weakly connected fragmentation signals for workspace parity reporting', () => {

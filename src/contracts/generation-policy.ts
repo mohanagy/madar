@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 
+import { hasExactKeys, isRecord } from '../shared/guards.js'
+
 export const GENERATION_POLICY_VERSION = 3 as const
 export const CANONICAL_INDEX_FORMAT_VERSION = 1 as const
 
@@ -21,14 +23,6 @@ export interface GenerationPolicy {
   version: typeof GENERATION_POLICY_VERSION
   fingerprint: string
   settings: GenerationPolicySettings
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  return Object.keys(value).sort().join('\0') === [...keys].sort().join('\0')
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -57,7 +51,7 @@ export function createGenerationPolicy(settings: GenerationPolicySettings): Gene
 
 function parseStrictThresholds(value: unknown): GenerationPolicyStrictThresholds | null | undefined {
   if (value === null) return null
-  if (!isRecord(value) || !hasOnlyKeys(value, ['max_failed', 'max_unsupported'])) return undefined
+  if (!isRecord(value) || !hasExactKeys(value, ['max_failed', 'max_unsupported'])) return undefined
   if (!isNonNegativeInteger(value.max_failed) || !isNonNegativeInteger(value.max_unsupported)) return undefined
   return { max_failed: value.max_failed, max_unsupported: value.max_unsupported }
 }
@@ -66,16 +60,13 @@ function parseStrictThresholds(value: unknown): GenerationPolicyStrictThresholds
 export function parseGenerationPolicy(value: unknown): GenerationPolicy | null {
   if (
     !isRecord(value)
-    || !hasOnlyKeys(value, ['version', 'fingerprint', 'settings'])
+    || !hasExactKeys(value, ['version', 'fingerprint', 'settings'])
     || value.version !== GENERATION_POLICY_VERSION
     || !isSha256(value.fingerprint)
     || !isRecord(value.settings)
-    || !hasOnlyKeys(value.settings, [
-      'index_format_version',
-      'respect_gitignore',
-      'follow_symlinks',
-      'exclusion_rules_fingerprint',
-      'indexing_strict',
+    || !hasExactKeys(value.settings, [
+      'index_format_version', 'respect_gitignore', 'follow_symlinks',
+      'exclusion_rules_fingerprint', 'indexing_strict',
     ])
   ) {
     return null

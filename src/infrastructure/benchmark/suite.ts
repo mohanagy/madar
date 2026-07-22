@@ -25,6 +25,7 @@ import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } fr
 import { shellEscape } from '../../shared/shell.js'
 import { findPackageRoot } from '../../shared/package-metadata.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
+import { hasOnlyKeys, isRecord } from '../../shared/guards.js'
 
 export type BenchmarkSuiteMode = 'cold' | 'warm' | 'all'
 export type BenchmarkSuiteEntryStatus = 'ready' | 'planned'
@@ -211,14 +212,6 @@ const DEFAULT_EXPECTED_ENVIRONMENT_PATH = resolve('docs/benchmarks/suite/isolati
 
 function readJsonFile(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  return Object.keys(value).every((key) => keys.includes(key))
 }
 
 function normalizeBenchmarkSuiteGitSource(
