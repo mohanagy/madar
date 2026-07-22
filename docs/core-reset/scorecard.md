@@ -2,7 +2,7 @@
 
 > **RFC:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
-> **Status:** accepted; Scope/Baseline, Directed multigraph, Canonical TypeScript index, and the combined legacy/non-code deletion passed; no phase is In progress; Generation and incremental index is Ready only
+> **Status:** accepted; Scope/Baseline, Directed multigraph, Canonical TypeScript index, and the combined legacy/non-code deletion passed; Generation and incremental index is the sole phase In progress through [#592](https://github.com/mohanagy/madar/issues/592)
 
 This is the phase-gate evidence ledger. An issue or PR link is not evidence by itself; each gate needs a reproducible test, receipt, measurement, or external-user record.
 
@@ -16,7 +16,7 @@ This is the phase-gate evidence ledger. An issue or PR link is not evidence by i
 | MCP startup and public surface | 308.235 ms median `tools/list` (passes); 7 tools (fails) | <1,000 ms / <=5 tools | [Baseline receipt](evidence/baseline-v0.32.0.json) |
 | Directed multigraph contract | Directed, reverse edge, and provenance pass; parallel edges, edge IDs, and exact serialization fail; 2 of 3 fixture edges survive | Every invariant passes | [Baseline receipt](evidence/baseline-v0.32.0.json) |
 | Default extraction for supported JS/TS | Auto routes 8 files through SPI and all 8 through legacy augmentation; `.js`, `.jsx`, `.ts`, and `.tsx` symbols are found; node IDs are stable but edge IDs are absent/unstable | One canonical indexer with stable node and edge IDs | [Baseline receipt](evidence/baseline-v0.32.0.json) |
-| Incremental fixture equivalence | Add/change/delete/rename/linked-worktree all equal clean generation; linked-worktree artifact is outside the worktree | Full-rebuild equivalence for every operation | [Baseline receipt](evidence/baseline-v0.32.0.json) |
+| Incremental fixture equivalence | Add/change/delete/rename/linked-worktree all equal clean generation because `--update` performed another full rebuild; this proves graph equality only, not reuse, whole-artifact coherence, or atomic publication | Clean equivalence plus measured warm reuse and graph-last publication | [Baseline receipt](evidence/baseline-v0.32.0.json) and [#592](https://github.com/mohanagy/madar/issues/592) |
 | Untuned strict OpenStatus flow | 2 of 4 in-scope phases covered (50%); partial / `verify_targets`; 9 matched files, 8 snippets, and 3 verification targets | Complete in one call plus <=2 focused reads | [Baseline receipt](evidence/baseline-v0.32.0.json), #565, and #574 |
 | OpenStatus graph build | 224,485.466 ms / 36,310,715-byte graph / 20,137 nodes / 23,452 edges | Report separately and amortize | [Baseline receipt](evidence/baseline-v0.32.0.json) |
 | OpenStatus retrieval | Cold startup plus one retrieve: 79,372.482 ms / 1,522 reported context tokens / 16,324 response bytes. **Warm p95 unknown:** the receipt records one cold run; reproduce with the frozen warm comparator trials. | Warm p95 <500 ms; typical result <=4,000 input tokens | [Baseline receipt](evidence/baseline-v0.32.0.json) and [evaluation contract](../../tools/eval/core-reset/contracts/evaluation-contract.json) |
@@ -34,14 +34,14 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 | Directed multigraph | **Passed** | Parallel types, direction, stable IDs, provenance, and serialization pass | [#582](https://github.com/mohanagy/madar/issues/582), merged [PR #583](https://github.com/mohanagy/madar/pull/583), invariant tests, six green CI jobs, successful CodeRabbit review, and zero unresolved threads |
 | Canonical TypeScript index | **Passed** | Labelled TS/framework gates pass without legacy augmentation | [#585](https://github.com/mohanagy/madar/issues/585), merged [PR #586](https://github.com/mohanagy/madar/pull/586), merge commit `4dfd48194f2fab00b2cd2271a6f7917909dde9d4`, six green CI jobs, [independent review passed](https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350), nine actionable CodeRabbit comments and two review-body nitpicks addressed, and zero unresolved threads; the final CodeRabbit rerun was rate-limited and merged under an explicit owner-approved exception |
 | Legacy extraction plus non-code/other-language ingestion | **Passed** | Delete both manifest-owned paths in one work item while canonical JS/TS fixtures remain green and no package/docs/flag claims unsupported ingestion | [#588](https://github.com/mohanagy/madar/issues/588), merged [PR #590](https://github.com/mohanagy/madar/pull/590), merge commit `d46031eed7b0cf2d8bb7b7b6267a51322d9e2490`, [six-job CI run](https://github.com/mohanagy/madar/actions/runs/29899357806), [independent review](https://github.com/mohanagy/madar/pull/590#issuecomment-5043069972), and zero review threads |
-| Incremental index | **Ready — not In progress** | Add/change/delete/rename output equals clean rebuild | Requires a separately accepted issue and explicit owner activation; that proposal must define and seek approval for cross-artifact publication semantics before implementation |
+| Incremental index | **In progress** | Clean-equivalent mutation behavior, real warm reuse, coherent graph-last publication, predecessor deletion, and accepted source/package/performance budgets pass | [#592](https://github.com/mohanagy/madar/issues/592) accepted from protected base `8886a0299ee30765ce149ca7ad5d1779496b78b5`; exit evidence pending |
 | Evidence-path query | Not started | Held-out correctness and one-call completeness gates pass without repo-specific logic | Pending |
 | Delivery and package | Not started | Thin MCP/CLI, activation, startup, and package budgets pass | Pending |
 | Capability validation | Not started | Native vs Graphify vs Madar blinded gates pass | Pending |
 | External validation | Not started | Activation, retention, and paid-intent gates pass | Pending |
 | Stable release | Not started | Every blocking gate passed; old core absent; migration docs ready | Pending |
 
-Only one technical phase may be `In progress` at a time. No phase is In progress. `legacy-extraction` and its absorbed `non-code-and-other-language-ingest` item are complete. `generation-and-incremental` is Ready only and requires a separately accepted issue plus explicit owner activation before implementation starts.
+Only one technical phase may be `In progress` at a time. `generation-and-incremental` is the single In progress phase through #592 from protected base `8886a0299ee30765ce149ca7ad5d1779496b78b5`. `legacy-extraction` and its absorbed `non-code-and-other-language-ingest` item are complete. Evidence-path query and thin delivery remain proposed and blocked. Activation is not implementation or completion.
 
 ### Directed multigraph phase evidence (passed)
 
@@ -69,7 +69,19 @@ Only one technical phase may be `In progress` at a time. No phase is In progress
 - The full local suite reports 1,907 passed / 2 skipped. V8 coverage is 85.17% statements, 76.97% branches, 90.59% functions, and 85.85% lines; typecheck, build, release verification, registry validation, packed retrieval parity, and high-severity dependency audit also pass.
 - The post-deletion npm package contains 314 files, 592,783 packed bytes, and 2,794,076 unpacked bytes. This improves the baseline but still fails the final `<150` files / `<1,500,000` unpacked-byte package gate; that gate remains open.
 - All six jobs in [CI run 29899357806](https://github.com/mohanagy/madar/actions/runs/29899357806) passed and zero review threads remained. CodeRabbit did not review the final change because reviews are disabled for the `core-reset` base branch; the owner approved an explicit exception backed by a passing [independent strict review](https://github.com/mohanagy/madar/pull/590#issuecomment-5043069972). This record does not represent CodeRabbit as green.
-- Cross-artifact transactional publication was deliberately not added to this deletion phase. Its exact semantics remain successor work and must be defined and accepted with the `generation-and-incremental` proposal rather than backfilled here.
+- Cross-artifact transactional publication was deliberately not added to this deletion phase. #592 now accepts a narrower successor contract: `graph.json` is authoritative and commits last, while diagnostics are derived/non-blocking; no transaction framework or versioned snapshot store is allowed.
+
+### Incremental index phase evidence (active)
+
+- [#592](https://github.com/mohanagy/madar/issues/592) and the [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586) are owner-approved. Protected phase base is `8886a0299ee30765ce149ca7ad5d1779496b78b5`; activation delta is `+0 / -0 / net 0` across 139 production TypeScript files / 68,954 LOC.
+- The active boundary owns 15 predecessor files / 3,839 LOC. It permits at most six replacement production files / 2,200 LOC, requires net production delta `<= -1,500`, and must finish at `<=130` production files / `<=67,454` LOC.
+- Runtime and development dependency additions are both zero. The npm package must finish at `<=296` files / `<=2,700,000` unpacked bytes, with packed bytes no higher than the 592,783-byte phase base.
+- Real incrementality is warm-session and in-memory only. A cold changed process performs and discloses a full reconcile; no persistent AST/fact/dependency cache, versioned store, WAL, journal, rollback manager, or generalized transaction subsystem is permitted.
+- `graph.json` is the sole authoritative artifact and atomic commit marker. Derived diagnostic failure is reported but does not block a valid graph commit; fault-injection, concurrent-update, edit-during-build, and strict-index failure tests remain required.
+- No-op cold median must be `<=20%` of clean generation with zero parsing/clustering/reporting/publication. Warm index-stage median must be `<=50%` of clean, and clean generation itself may regress at most 10% from the protected-base measurement. After at least three warm-ups, at least 20 measured trials must report p50/p95 and environment on a fixed 500+ file fixture and pinned held-out repository.
+- User-visible warm leaf-edit p50 must be `<=75%` and p95 `<=80%` of clean generation on both corpora; no other measured warm mutation may regress more than 10%. Add/change/delete/rename/compiler-control/ignore/recognized-unsupported-file/symlink/worktree outputs must exactly equal clean generation with zero stale facts.
+- Only successfully indexed `.ts`, `.tsx`, `.js`, and `.jsx` inputs determine completeness. A failed supported input is incomplete with exact file/reason; recognized unsupported files and expected policy exclusions are informational; safety exclusions remain separate and are never indexed.
+- Every implementation, deletion, performance, package, CI, review, and completion result remains pending. This section records the accepted gate, not a passing result.
 
 ## Graph gates
 
@@ -77,7 +89,7 @@ Only one technical phase may be `In progress` at a time. No phase is In progress
 - [x] Directed callers/callees and import/export relationships traverse correctly.
 - [x] Node and edge IDs are deterministic across unchanged rebuilds.
 - [x] Evidence locations and provenance survive serialization.
-- [ ] Deleted and renamed files leave no stale nodes or edges. (Deferred to the accepted incremental-equivalence phase.)
+- [ ] Deleted and renamed files leave no stale nodes or edges. (Active under #592; evidence pending.)
 
 ## Index gates
 
@@ -173,3 +185,4 @@ Copy this into a comment on [#577](https://github.com/mohanagy/madar/issues/577)
 | 2026-07-21 | Canonical TypeScript index passed; combined legacy/non-code deletion became Ready with no active phase | Merged PR #586, final source delta, six green CI jobs, nine actionable CodeRabbit comments and two review-body nitpicks addressed, eight actionable remediations confirmed before rate limiting, independent review receipt, explicit owner exception, and zero unresolved threads | #585 and #586 |
 | 2026-07-21 | Combined legacy/non-code deletion accepted and moved to In progress | #588 records the protected base, exact 31-file / 20,951-LOC deletion, four ownership transfers, three dependency removals, five retired flags, source budget, and exit gates | #588 |
 | 2026-07-22 | Combined legacy/non-code deletion passed; Generation and incremental index became Ready with no active phase | Merged PR #590 at `d46031eed7b0cf2d8bb7b7b6267a51322d9e2490`; 31 production files removed; `+815 / -23,400 / net -22,585`; full suite 1,907 passed / 2 skipped; six green CI jobs; independent review; explicit owner-approved CodeRabbit exception; zero review threads; final package gate still failing | #588 and #590 |
+| 2026-07-22 | Generation and incremental index accepted and moved to In progress | #592 records protected base `8886a0299ee30765ce149ca7ad5d1779496b78b5`, warm-only reuse, graph-last publication, exact 15-file deletion, four ownership transfers, source/package/performance budgets, and strict non-goals; implementation evidence remains pending | #592 and #577 amendment |

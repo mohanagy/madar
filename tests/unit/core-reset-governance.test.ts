@@ -20,6 +20,38 @@ import { productionSourceDelta, sourceInventory } from '../../tools/eval/core-re
 
 const read = (path: string): string => readFileSync(resolve(path), 'utf8')
 const git = process.platform === 'win32' ? 'git.exe' : 'git'
+const INCREMENTAL_BASE = '8886a0299ee30765ce149ca7ad5d1779496b78b5'
+const INCREMENTAL_PREDECESSORS = [
+  'src/infrastructure/generate.ts',
+  'src/contracts/generation-policy.ts',
+  'src/infrastructure/generation-policy.ts',
+  'src/contracts/indexing.ts',
+  'src/pipeline/indexing-generation.ts',
+  'src/pipeline/indexing-outcomes.ts',
+  'src/infrastructure/indexing-manifest.ts',
+  'src/pipeline/detect.ts',
+  'src/pipeline/manifest.ts',
+  'src/infrastructure/refresh-lease.ts',
+  'src/contracts/watcher-state.ts',
+  'src/infrastructure/watcher-state.ts',
+  'src/infrastructure/watch.ts',
+  'src/infrastructure/background-auto-refresh.ts',
+  'src/shared/graph-build-freshness.ts',
+] as const
+const INCREMENTAL_TRANSFERS = {
+  'src/core/pipeline/stage.ts': 'evidence-path-query',
+  'src/runtime/freshness.ts': 'evidence-path-query',
+  'src/shared/source-discovery.ts': 'evidence-path-query',
+  'src/infrastructure/doctor.ts': 'thin-delivery',
+} as const
+const INCREMENTAL_REPLACEMENTS = [
+  'src/application/generate-index.ts',
+  'src/application/update-index.ts',
+  'src/domain/index/build-state.ts',
+  'src/adapters/filesystem/source-catalog.ts',
+  'src/adapters/filesystem/index-store.ts',
+  'src/infrastructure/watch-index.ts',
+] as const
 
 function productionTypeScriptFiles(directory = 'src'): string[] {
   return readdirSync(resolve(directory), { withFileTypes: true }).flatMap((entry) => {
@@ -77,9 +109,11 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Passed — directed multigraph')
     expect(roadmap).toContain('## Passed — canonical TypeScript/JavaScript index')
     expect(roadmap).toContain('## Passed — delete legacy extraction and non-code/other-language ingestion')
-    expect(roadmap).toContain('## Ready — generation and incremental index')
+    expect(roadmap).toContain('## In progress — generation and incremental index')
+    expect(roadmap).toContain('issues/592')
     expect(roadmap).toContain('issues/588')
-    expect(roadmap).toContain('No phase is In progress')
+    expect(roadmap).not.toContain('## Ready — generation and incremental index')
+    expect(roadmap).not.toContain('No phase is In progress')
     expect(roadmap).not.toContain('## In progress — canonical TypeScript/JavaScript index')
     expect(roadmap).not.toContain('## In progress — delete legacy extraction and non-code/other-language ingestion')
     expect(roadmap).toContain('## Next')
@@ -93,17 +127,30 @@ describe('core reset governance', () => {
     expect(design).toContain('**Status:** accepted')
     expect(design).toContain('not a permanent V1/V2 split')
     expect(design).toContain('Merging code alone is not completion')
+    expect(design).toContain('issues/592')
+    expect(design).toContain('Real reuse exists only inside a long-lived MCP/watch process')
+    expect(design).toContain('`graph.json` is the sole authoritative index artifact and atomic commit marker')
+    expect(design).toContain('at least 20 measured trials')
+    expect(design).toContain('Clean generation may regress by at most 10%')
+    expect(design).toContain('Only successfully indexed `.ts`, `.tsx`, `.js`, and `.jsx` inputs determine supported-index completeness')
+    expect(design).toContain('There is no generation directory, persistent fact cache, versioned snapshot store')
     expect(scorecard).toContain('**Status:** accepted')
     expect(scorecard).toContain('| Directed multigraph | **Passed**')
     expect(scorecard).toContain('| Canonical TypeScript index | **Passed**')
     expect(scorecard).toContain('| Legacy extraction plus non-code/other-language ingestion | **Passed**')
-    expect(scorecard).toContain('| Incremental index | **Ready — not In progress**')
-    expect(scorecard).toContain('No phase is In progress')
+    expect(scorecard).toContain('| Incremental index | **In progress**')
+    expect(scorecard).toContain('single In progress phase through #592')
+    expect(scorecard).toContain('clean generation itself may regress at most 10%')
+    expect(scorecard).toContain('recognized unsupported files and expected policy exclusions are informational')
+    expect(scorecard).not.toContain('Ready — not In progress')
+    expect(scorecard).not.toContain('No phase is In progress')
     expect(scorecard).toContain('final CodeRabbit rerun was rate-limited')
     expect(scorecard).toContain('owner-approved exception')
     expect(scorecard).not.toContain('CI and review remain pending')
     expect(readme).toContain('docs/roadmap.md')
     expect(contributing).toContain('docs/roadmap.md')
+    expect(contributing).toContain('The accepted Core Reset')
+    expect(contributing).not.toContain('The proposed Core Reset')
   })
 
   it('keeps the removal manifest machine-readable and explicit', () => {
@@ -135,9 +182,44 @@ describe('core reset governance', () => {
         absorbs?: string[]
         absorbed_by?: string
         transferred_sources?: string[]
+        replacement_sources?: string[]
+        preserve?: string[]
         production_file_budget?: { added_max: number; removed_min: number }
         production_loc_budget?: { added_max: number; removed_min: number; net_max: number }
         runtime_dependency_budget?: { added_max: number; removed_min: number }
+        development_dependency_budget?: { added_max: number; removed_min: number }
+        final_source_budget?: { files_max: number; loc_max: number }
+        npm_package_budget?: { files_max: number; unpacked_bytes_max: number; packed_bytes_delta_max: number }
+        performance_budget?: {
+          cold_noop_median_ratio_max: number
+          warm_index_median_ratio_max: number
+          warm_e2e_p50_ratio_max: number
+          warm_e2e_p95_ratio_max: number
+          clean_generation_regression_ratio_max: number
+          measured_trials_min: number
+        }
+        completeness_contract?: {
+          supported_extensions: string[]
+          supported_success_determines_completeness: boolean
+          supported_failure: string
+          recognized_unsupported: string
+          expected_policy_exclusions: string
+          safety_exclusions: string
+        }
+        equivalence_mutations?: string[]
+        publication_contract?: {
+          authoritative_artifact: string
+          commit_marker: string
+          derived_diagnostics_non_blocking: boolean
+          persistent_fact_cache: string
+          versioned_snapshot_store: string
+        }
+        activation?: {
+          issue: string
+          owner_approval: string
+          rfc_amendment: string
+          protected_base: string
+        }
         runtime_dependencies_removed?: string[]
         retired_cli_flags?: string[]
         completion?: {
@@ -178,15 +260,15 @@ describe('core reset governance', () => {
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-22',
       completed_phase: 'legacy-extraction',
-      active_phase: null,
-      ready_phase: 'generation-and-incremental',
-      base_commit: '9a762d0a4e10a0ae210ba3f53bb1d4468367e81e',
+      active_phase: 'generation-and-incremental',
+      ready_phase: null,
+      base_commit: INCREMENTAL_BASE,
       completed_phase_commit: 'd46031eed7b0cf2d8bb7b7b6267a51322d9e2490',
       production_typescript_files: 139,
       production_typescript_loc: 68_954,
-      production_loc_added: 815,
-      production_loc_removed: 23_400,
-      production_loc_net: -22_585,
+      production_loc_added: 0,
+      production_loc_removed: 0,
+      production_loc_net: 0,
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
@@ -293,14 +375,76 @@ describe('core reset governance', () => {
     expect(nonCode).toMatchObject({ status: 'complete', absorbed_by: 'legacy-extraction' })
     const deletionOwners = [legacy, ...(legacy?.absorbs ?? []).map((id) => manifest.items.find((item) => item.id === id))]
     expect(deletionOwners.every(Boolean)).toBe(true)
-    const baseFiles = productionTypeScriptFilesAtCommit(manifest.current.base_commit)
+    const legacyBase = `${legacy!.completion!.commit}^`
+    const baseFiles = productionTypeScriptFilesAtCommit(legacyBase)
     const deletionFiles = baseFiles.filter((file) =>
       deletionOwners.some((item) => (item?.removed_sources ?? []).some((pattern) => manifestGlob(pattern).test(file))),
     )
     expect(new Set(deletionFiles).size).toBe(31)
-    expect(logicalLocAtCommit(manifest.current.base_commit, deletionFiles)).toBe(20_951)
-    expect(manifest.items.filter((item) => item.status === 'in_progress')).toEqual([])
-    expect(manifest.items.find((item) => item.id === 'generation-and-incremental')?.status).toBe('planned')
+    expect(logicalLocAtCommit(legacyBase, deletionFiles)).toBe(20_951)
+    const generation = manifest.items.find((item) => item.id === 'generation-and-incremental')
+    expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id)).toEqual([
+      'generation-and-incremental',
+    ])
+    expect(generation).toMatchObject({
+      status: 'in_progress',
+      sources: [...INCREMENTAL_PREDECESSORS],
+      transferred_sources: Object.keys(INCREMENTAL_TRANSFERS),
+      replacement_sources: [...INCREMENTAL_REPLACEMENTS],
+      production_file_budget: { added_max: 6, removed_min: 15 },
+      production_loc_budget: { added_max: 2_200, removed_min: 3_839, net_max: -1_500 },
+      runtime_dependency_budget: { added_max: 0, removed_min: 0 },
+      development_dependency_budget: { added_max: 0, removed_min: 0 },
+      final_source_budget: { files_max: 130, loc_max: 67_454 },
+      npm_package_budget: { files_max: 296, unpacked_bytes_max: 2_700_000, packed_bytes_delta_max: 0 },
+      performance_budget: {
+        cold_noop_median_ratio_max: 0.20,
+        warm_index_median_ratio_max: 0.50,
+        warm_e2e_p50_ratio_max: 0.75,
+        warm_e2e_p95_ratio_max: 0.80,
+        clean_generation_regression_ratio_max: 0.10,
+        measured_trials_min: 20,
+      },
+      completeness_contract: {
+        supported_extensions: ['.ts', '.tsx', '.js', '.jsx'],
+        supported_success_determines_completeness: true,
+        supported_failure: 'incomplete_with_exact_file_and_reason',
+        recognized_unsupported: 'informational',
+        expected_policy_exclusions: 'informational',
+        safety_exclusions: 'separate_and_never_indexed',
+      },
+      equivalence_mutations: [
+        'no_op',
+        'add',
+        'private_leaf_change',
+        'exported_signature_change',
+        'delete',
+        'rename',
+        'compiler_control',
+        'madarignore',
+        'gitignore',
+        'recognized_unsupported_add_delete_rename',
+        'allowed_and_rejected_symlink',
+        'linked_worktree',
+      ],
+      publication_contract: {
+        authoritative_artifact: 'graph.json',
+        commit_marker: 'graph.json',
+        derived_diagnostics_non_blocking: true,
+        persistent_fact_cache: 'forbidden',
+        versioned_snapshot_store: 'forbidden',
+      },
+      activation: {
+        issue: 'https://github.com/mohanagy/madar/issues/592',
+        owner_approval: 'https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506',
+        rfc_amendment: 'https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586',
+        protected_base: INCREMENTAL_BASE,
+      },
+    })
+    const incrementalBaseFiles = productionTypeScriptFilesAtCommit(INCREMENTAL_BASE)
+    expect(INCREMENTAL_PREDECESSORS.every((path) => incrementalBaseFiles.includes(path))).toBe(true)
+    expect(INCREMENTAL_PREDECESSORS.every((path) => existsSync(resolve(path)))).toBe(true)
+    expect(logicalLocAtCommit(INCREMENTAL_BASE, INCREMENTAL_PREDECESSORS)).toBe(3_839)
     for (const id of ['evidence-path-query', 'thin-delivery']) {
       expect(manifest.items.find((item) => item.id === id)?.status).toBe('proposed')
     }
@@ -379,6 +523,19 @@ describe('core reset governance', () => {
     })
   })
 
+  it('activates generation governance without smuggling in implementation', () => {
+    expect(productionSourceDelta(INCREMENTAL_BASE)).toEqual({ added: 0, removed: 0, net: 0 })
+    const implementationDiff = execFileSync(
+      git,
+      ['diff', '--name-only', INCREMENTAL_BASE, '--', 'src', 'package.json', 'package-lock.json'],
+      { encoding: 'utf8' },
+    ).trim()
+    expect(implementationDiff).toBe('')
+    for (const replacement of INCREMENTAL_REPLACEMENTS) {
+      expect(existsSync(resolve(replacement)), `${replacement} must not exist in the activation-only change`).toBe(false)
+    }
+  })
+
   it('keeps retired exporter flags out of active commands without rewriting frozen v0.32 evidence', () => {
     expect(read('.github/workflows/ci.yml')).not.toContain('--no-html')
     expect(read('.github/ISSUE_TEMPLATE/design_partner_report.yml')).not.toContain('--no-html')
@@ -397,13 +554,17 @@ describe('core reset governance', () => {
         unowned_files: number
         overlapping_files: number
         disposition_changes: number
+        amendment: string
       }
       items: Array<{
         id: string
+        status: string
         absorbs?: string[]
         absorbed_by?: string
         sources?: string[]
         removed_sources?: string[]
+        transferred_sources?: string[]
+        preserve?: string[]
         completion?: { commit: string }
       }>
     }
@@ -432,6 +593,33 @@ describe('core reset governance', () => {
         `${source} must transfer exclusively to legacy-extraction`,
       ).toEqual([])
     }
+    const generation = manifest.items.find((item) => item.id === 'generation-and-incremental')
+    expect(generation?.transferred_sources).toEqual(Object.keys(INCREMENTAL_TRANSFERS))
+    for (const [source, expectedOwner] of Object.entries(INCREMENTAL_TRANSFERS)) {
+      expect(generation?.sources ?? [], `${source} cannot remain owned by generation`).not.toContain(source)
+      expect(
+        manifest.items
+          .filter((item) => (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(source)))
+          .map((item) => item.id),
+        `${source} must have one transferred owner`,
+      ).toEqual([expectedOwner])
+    }
+    const evidencePath = manifest.items.find((item) => item.id === 'evidence-path-query')
+    const thinDelivery = manifest.items.find((item) => item.id === 'thin-delivery')
+    expect(evidencePath?.transferred_sources).toEqual([
+      'src/core/pipeline/stage.ts',
+      'src/runtime/freshness.ts',
+      'src/shared/source-discovery.ts',
+    ])
+    expect(evidencePath?.preserve).toEqual([
+      'SourceDomain',
+      'classifySourceDomain',
+      'isPollutedSourcePath',
+      'private helpers required only by those query-classification exports',
+    ])
+    expect(thinDelivery?.transferred_sources).toEqual(['src/infrastructure/doctor.ts'])
+    expect(evidencePath?.status).toBe('proposed')
+    expect(thinDelivery?.status).toBe('proposed')
     for (const completedId of ['directed-multigraph', 'canonical-typescript-index', 'legacy-extraction']) {
       const completed = manifest.items.find((item) => item.id === completedId)
       expect(completed).toBeDefined()
@@ -474,6 +662,7 @@ describe('core reset governance', () => {
       overlapping_files: 0,
       disposition_changes: 4,
     })
+    expect(manifest.review.amendment).toContain('Approved issue #592 transfers')
   })
 
   it('routes contributors through the reset contract', () => {
@@ -515,11 +704,15 @@ describe('core reset governance', () => {
   })
 
   it('does not retain stale completed-phase language', () => {
-    const governance = `${read('docs/roadmap.md')}\n${read('docs/core-reset/scorecard.md')}`
+    const governance = `${read('docs/roadmap.md')}\n${read('docs/core-reset/scorecard.md')}\n${read('docs/designs/2026-07-19-core-reset.md')}`
     expect(governance).not.toContain('candidate evidence')
     expect(governance).not.toContain('pending PR review')
     expect(governance).not.toContain('Final CI matrix, CodeRabbit, and unresolved-thread evidence remains pending')
     expect(governance).not.toContain('single In progress phase through #588')
     expect(governance).not.toContain('Legacy and non-code deletion contract (in progress)')
+    expect(governance).not.toContain('## Ready — generation and incremental index')
+    expect(governance).not.toContain('Ready — not In progress')
+    expect(governance).not.toContain('No phase is In progress')
+    expect(governance).not.toContain('scope and baseline is the only authorized phase')
   })
 })
