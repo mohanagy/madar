@@ -38,8 +38,10 @@ const EVIDENCE_BASE_TREE = '7ac3c1ef990ee628ca5c9a215ae6388c82dabcd3'
 const EVIDENCE_ISSUE = 'https://github.com/mohanagy/madar/issues/596'
 const EVIDENCE_OWNER_APPROVAL = `${EVIDENCE_ISSUE}#issuecomment-5050888977`
 const EVIDENCE_RFC_AMENDMENT = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198'
+const EVIDENCE_PERFORMANCE_AMENDMENT = `${EVIDENCE_ISSUE}#issuecomment-5051857404`
+const EVIDENCE_PERFORMANCE_RFC_AMENDMENT = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5051857542'
 const EVIDENCE_PERFORMANCE_DESCRIPTOR = 'tools/eval/core-reset/contracts/evidence-path-performance-v1.json'
-const EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256 = '11338a8d40590e682b9fa55abf41b19301bcafe495acd4f89cb8d0552a68e799'
+const EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256 = '076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c'
 const EVIDENCE_PERFORMANCE_RECEIPT = 'docs/core-reset/evidence/evidence-path-performance.json'
 const EVIDENCE_IMPORTER_RECEIPT = 'docs/core-reset/evidence/evidence-path-importer-closure.json'
 const EVIDENCE_IMPORTER_RECEIPT_SHA256 = '6b35797f0625e69708fca3441d12b1aea565275f8bd585f3a0fe56f8958f07b3'
@@ -248,6 +250,9 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## In progress — evidence-path query')
     expect(roadmap).toContain(EVIDENCE_OWNER_APPROVAL)
     expect(roadmap).toContain(EVIDENCE_RFC_AMENDMENT)
+    expect(roadmap).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
+    expect(roadmap).toContain(EVIDENCE_PERFORMANCE_RFC_AMENDMENT)
+    expect(roadmap).toContain('an empty positive result fails')
     expect(roadmap).toContain('54 predecessor files / 29,441 LOC')
     expect(roadmap).toContain('Every implementation, deletion, held-out, performance, package, CI, and review result remains pending')
     expect(roadmap).toContain('issues/592')
@@ -280,6 +285,10 @@ describe('core reset governance', () => {
     expect(design).toContain('## Active amendment — generic evidence-path query')
     expect(design).toContain(EVIDENCE_OWNER_APPROVAL)
     expect(design).toContain(EVIDENCE_RFC_AMENDMENT)
+    expect(design).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
+    expect(design).toContain(EVIDENCE_PERFORMANCE_RFC_AMENDMENT)
+    expect(design).toContain('All five expectations must pass before warmup')
+    expect(design).toContain('empty positive results, missing/extra nodes or edges, reversed/wrong relationship kinds')
     expect(design).toContain('`evidence-path-query` is the sole active phase')
     expect(design).toContain('implementation evidence and does not exist or pass at activation')
     expect(design).not.toContain('## Active amendment — generation and incremental index')
@@ -293,6 +302,9 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Evidence-path query | **In progress**')
     expect(scorecard).toContain(EVIDENCE_OWNER_APPROVAL)
     expect(scorecard).toContain(EVIDENCE_RFC_AMENDMENT)
+    expect(scorecard).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
+    expect(scorecard).toContain(EVIDENCE_PERFORMANCE_RFC_AMENDMENT)
+    expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
     expect(scorecard).toContain('`evidence-path-query` is the single In progress phase')
     expect(scorecard).toContain('No implementation, deletion, held-out, timing, package, dependency, CI, or review gate is reported as passed')
     expect(scorecard).toContain('clean generation stays within the accepted 10% regression limit')
@@ -807,6 +819,12 @@ describe('core reset governance', () => {
           nodes: number
           directed_edges: number
           graph_loaded_before_timer: boolean
+          positive_queries: number
+          missing_queries: number
+          untimed_preflight_invocations_per_query: number
+          preflight_must_pass_before_warmup: boolean
+          every_warmup_and_measured_result_must_match: boolean
+          empty_positive_result: string
           warmups: number
           measured_queries_min: number
           warm_retrieval_p95_ms_max: number
@@ -843,6 +861,8 @@ describe('core reset governance', () => {
           issue: string
           owner_approval: string
           rfc_amendment: string
+          performance_amendment: string
+          performance_rfc_amendment: string
           protected_base: string
           implementation_started?: boolean
         }
@@ -973,6 +993,12 @@ describe('core reset governance', () => {
         nodes: 15_000,
         directed_edges: 30_000,
         graph_loaded_before_timer: true,
+        positive_queries: 4,
+        missing_queries: 1,
+        untimed_preflight_invocations_per_query: 1,
+        preflight_must_pass_before_warmup: true,
+        every_warmup_and_measured_result_must_match: true,
+        empty_positive_result: 'fail',
         warmups: 3,
         measured_queries_min: 20,
         warm_retrieval_p95_ms_max: 500,
@@ -1009,6 +1035,8 @@ describe('core reset governance', () => {
         issue: EVIDENCE_ISSUE,
         owner_approval: EVIDENCE_OWNER_APPROVAL,
         rfc_amendment: EVIDENCE_RFC_AMENDMENT,
+        performance_amendment: EVIDENCE_PERFORMANCE_AMENDMENT,
+        performance_rfc_amendment: EVIDENCE_PERFORMANCE_RFC_AMENDMENT,
         protected_base: EVIDENCE_BASE,
         implementation_started: false,
       },
@@ -1084,8 +1112,25 @@ describe('core reset governance', () => {
         serialization: string
       }
       queries: string[]
+      query_expectations: Array<{
+        query_index: number
+        outcome: 'evidence' | 'missing'
+        node_ids: string[]
+        relationships: Array<{ from_id: string; relation: 'calls' | 'depends_on'; to_id: string }>
+        boundaries: Array<{ kind: 'missing'; subject: string }>
+      }>
       protocol: {
         graph_loaded_before_timer: boolean
+        correctness: {
+          untimed_preflight_invocations_per_query: number
+          preflight_must_pass_before_warmup: boolean
+          every_warmup_and_measured_result_must_match: boolean
+          outcome_match: string
+          node_match: string
+          relationship_match: string
+          boundary_match: string
+          empty_positive_result: string
+        }
         warmup_invocations: number
         measured_invocations: number
         query_schedule: string
@@ -1145,14 +1190,69 @@ describe('core reset governance', () => {
         serialization: 'RFC 8785 JSON Canonicalization Scheme',
       },
       queries: [
-        'Trace flow-007 from route through service to storage.',
-        'How does flow-042 write to and read from shared storage?',
-        'Trace the queue-to-worker boundary in flow-113.',
-        'Trace the public route and serializer path in flow-128.',
+        'Trace flow-007 from route local 00 through service local 01, queue local 02, worker local 03, to storage local 04.',
+        'Trace flow-042 from queue local 02 through its depends_on edge to storage local 39, then the calls edge to route local 40.',
+        'Trace the calls boundary from queue local 52 to worker local 53 in flow-113.',
+        'Trace the wraparound calls edge from storage local 99 to route local 00 in flow-128.',
         'Which evidence path implements flow-999?',
+      ],
+      query_expectations: [
+        {
+          query_index: 0,
+          outcome: 'evidence',
+          node_ids: ['n00700', 'n00701', 'n00702', 'n00703', 'n00704'],
+          relationships: [
+            { from_id: 'n00700', relation: 'calls', to_id: 'n00701' },
+            { from_id: 'n00701', relation: 'calls', to_id: 'n00702' },
+            { from_id: 'n00702', relation: 'calls', to_id: 'n00703' },
+            { from_id: 'n00703', relation: 'calls', to_id: 'n00704' },
+          ],
+          boundaries: [],
+        },
+        {
+          query_index: 1,
+          outcome: 'evidence',
+          node_ids: ['n04202', 'n04239', 'n04240'],
+          relationships: [
+            { from_id: 'n04202', relation: 'depends_on', to_id: 'n04239' },
+            { from_id: 'n04239', relation: 'calls', to_id: 'n04240' },
+          ],
+          boundaries: [],
+        },
+        {
+          query_index: 2,
+          outcome: 'evidence',
+          node_ids: ['n11352', 'n11353'],
+          relationships: [{ from_id: 'n11352', relation: 'calls', to_id: 'n11353' }],
+          boundaries: [],
+        },
+        {
+          query_index: 3,
+          outcome: 'evidence',
+          node_ids: ['n12899', 'n12800'],
+          relationships: [{ from_id: 'n12899', relation: 'calls', to_id: 'n12800' }],
+          boundaries: [],
+        },
+        {
+          query_index: 4,
+          outcome: 'missing',
+          node_ids: [],
+          relationships: [],
+          boundaries: [{ kind: 'missing', subject: 'flow-999' }],
+        },
       ],
       protocol: {
         graph_loaded_before_timer: true,
+        correctness: {
+          untimed_preflight_invocations_per_query: 1,
+          preflight_must_pass_before_warmup: true,
+          every_warmup_and_measured_result_must_match: true,
+          outcome_match: 'exact',
+          node_match: 'exact_set',
+          relationship_match: 'exact_directed_typed_set',
+          boundary_match: 'exact_set',
+          empty_positive_result: 'fail',
+        },
         warmup_invocations: 3,
         measured_invocations: 20,
         query_schedule: 'queries[index modulo 5]',
@@ -1183,6 +1283,47 @@ describe('core reset governance', () => {
       * descriptor.generator.edges.reduce((total, edge) => total + edge.count_per_component, 0),
     ).toBe(descriptor.generator.edge_count)
     expect(descriptor.queries).toHaveLength(5)
+    expect(descriptor.query_expectations.map((entry) => entry.query_index)).toEqual([0, 1, 2, 3, 4])
+    expect(descriptor.query_expectations.filter((entry) => entry.outcome === 'evidence')).toHaveLength(4)
+    expect(descriptor.query_expectations.filter((entry) => entry.outcome === 'missing')).toHaveLength(1)
+
+    const coordinates = (nodeId: string): { component: number; local: number } => {
+      const match = /^n(\d{3})(\d{2})$/.exec(nodeId)
+      if (!match) throw new Error(`invalid performance fixture node id: ${nodeId}`)
+      return { component: Number(match[1]), local: Number(match[2]) }
+    }
+    for (const expectation of descriptor.query_expectations) {
+      expect(expectation.query_index).toBeLessThan(descriptor.queries.length)
+      if (expectation.outcome === 'missing') {
+        expect(expectation).toEqual({
+          query_index: 4,
+          outcome: 'missing',
+          node_ids: [],
+          relationships: [],
+          boundaries: [{ kind: 'missing', subject: 'flow-999' }],
+        })
+        continue
+      }
+
+      expect(expectation.node_ids.length).toBeGreaterThan(0)
+      expect(expectation.relationships.length).toBeGreaterThan(0)
+      expect(expectation.boundaries).toEqual([])
+      const selectedNodes = new Set(expectation.node_ids)
+      for (const nodeId of selectedNodes) {
+        const node = coordinates(nodeId)
+        expect(node.component).toBeLessThan(descriptor.generator.component_count)
+        expect(node.local).toBeLessThan(descriptor.generator.nodes_per_component)
+      }
+      for (const relationship of expectation.relationships) {
+        expect(selectedNodes.has(relationship.from_id)).toBe(true)
+        expect(selectedNodes.has(relationship.to_id)).toBe(true)
+        const from = coordinates(relationship.from_id)
+        const to = coordinates(relationship.to_id)
+        expect(to.component).toBe(from.component)
+        const offset = relationship.relation === 'calls' ? 1 : 37
+        expect(to.local).toBe((from.local + offset) % descriptor.generator.nodes_per_component)
+      }
+    }
     expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(false)
   })
 

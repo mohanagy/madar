@@ -39,14 +39,126 @@
     "serialization": "RFC 8785 JSON Canonicalization Scheme"
   },
   "queries": [
-    "Trace flow-007 from route through service to storage.",
-    "How does flow-042 write to and read from shared storage?",
-    "Trace the queue-to-worker boundary in flow-113.",
-    "Trace the public route and serializer path in flow-128.",
+    "Trace flow-007 from route local 00 through service local 01, queue local 02, worker local 03, to storage local 04.",
+    "Trace flow-042 from queue local 02 through its depends_on edge to storage local 39, then the calls edge to route local 40.",
+    "Trace the calls boundary from queue local 52 to worker local 53 in flow-113.",
+    "Trace the wraparound calls edge from storage local 99 to route local 00 in flow-128.",
     "Which evidence path implements flow-999?"
+  ],
+  "query_expectations": [
+    {
+      "query_index": 0,
+      "outcome": "evidence",
+      "node_ids": [
+        "n00700",
+        "n00701",
+        "n00702",
+        "n00703",
+        "n00704"
+      ],
+      "relationships": [
+        {
+          "from_id": "n00700",
+          "relation": "calls",
+          "to_id": "n00701"
+        },
+        {
+          "from_id": "n00701",
+          "relation": "calls",
+          "to_id": "n00702"
+        },
+        {
+          "from_id": "n00702",
+          "relation": "calls",
+          "to_id": "n00703"
+        },
+        {
+          "from_id": "n00703",
+          "relation": "calls",
+          "to_id": "n00704"
+        }
+      ],
+      "boundaries": []
+    },
+    {
+      "query_index": 1,
+      "outcome": "evidence",
+      "node_ids": [
+        "n04202",
+        "n04239",
+        "n04240"
+      ],
+      "relationships": [
+        {
+          "from_id": "n04202",
+          "relation": "depends_on",
+          "to_id": "n04239"
+        },
+        {
+          "from_id": "n04239",
+          "relation": "calls",
+          "to_id": "n04240"
+        }
+      ],
+      "boundaries": []
+    },
+    {
+      "query_index": 2,
+      "outcome": "evidence",
+      "node_ids": [
+        "n11352",
+        "n11353"
+      ],
+      "relationships": [
+        {
+          "from_id": "n11352",
+          "relation": "calls",
+          "to_id": "n11353"
+        }
+      ],
+      "boundaries": []
+    },
+    {
+      "query_index": 3,
+      "outcome": "evidence",
+      "node_ids": [
+        "n12899",
+        "n12800"
+      ],
+      "relationships": [
+        {
+          "from_id": "n12899",
+          "relation": "calls",
+          "to_id": "n12800"
+        }
+      ],
+      "boundaries": []
+    },
+    {
+      "query_index": 4,
+      "outcome": "missing",
+      "node_ids": [],
+      "relationships": [],
+      "boundaries": [
+        {
+          "kind": "missing",
+          "subject": "flow-999"
+        }
+      ]
+    }
   ],
   "protocol": {
     "graph_loaded_before_timer": true,
+    "correctness": {
+      "untimed_preflight_invocations_per_query": 1,
+      "preflight_must_pass_before_warmup": true,
+      "every_warmup_and_measured_result_must_match": true,
+      "outcome_match": "exact",
+      "node_match": "exact_set",
+      "relationship_match": "exact_directed_typed_set",
+      "boundary_match": "exact_set",
+      "empty_positive_result": "fail"
+    },
     "warmup_invocations": 3,
     "measured_invocations": 20,
     "query_schedule": "queries[index modulo 5]",

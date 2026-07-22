@@ -600,11 +600,17 @@ items:
     performance_contract:
       id: evidence-path-performance-v1
       descriptor: tools/eval/core-reset/contracts/evidence-path-performance-v1.json
-      descriptor_sha256: 11338a8d40590e682b9fa55abf41b19301bcafe495acd4f89cb8d0552a68e799
+      descriptor_sha256: 076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c
       generator: component-ring-with-fixed-skip-v1
       nodes: 15000
       directed_edges: 30000
       graph_loaded_before_timer: true
+      positive_queries: 4
+      missing_queries: 1
+      untimed_preflight_invocations_per_query: 1
+      preflight_must_pass_before_warmup: true
+      every_warmup_and_measured_result_must_match: true
+      empty_positive_result: fail
       warmups: 3
       measured_queries_min: 20
       warm_retrieval_p95_ms_max: 500
@@ -638,6 +644,8 @@ items:
       issue: https://github.com/mohanagy/madar/issues/596
       owner_approval: https://github.com/mohanagy/madar/issues/596#issuecomment-5050888977
       rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198
+      performance_amendment: https://github.com/mohanagy/madar/issues/596#issuecomment-5051857404
+      performance_rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5051857542
       protected_base: bce4f4fb1520a582bfedf5eab9133e9befbc79f7
       implementation_started: false
     notes: 'Accepted in #596 and activated only as a governance contract from protected base bce4f4fb1520a582bfedf5eab9133e9befbc79f7. The current production and package inventory is unchanged and the active phase delta is zero. This phase owns one deterministic TypeScript/JavaScript evidence query, absorbs both obsolete governance/wrapper handles, and deletes the exact importer closure without retaining a compatibility engine. Documenso and Formbricks are blocking held-out flows; OpenStatus remains diagnostic and its Go phases are unsupported. Thin delivery and every later validation/release phase remain blocked. No implementation success is claimed.'

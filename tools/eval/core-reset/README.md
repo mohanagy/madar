@@ -12,7 +12,7 @@ new benchmark product and is not part of the Madar runtime.
 - `contracts/evidence-path-performance-v1.json` pins the synthetic
   evidence-query topology, five queries, measurement order, result caps, and
   reference environment. Its accepted SHA-256 is
-  `11338a8d40590e682b9fa55abf41b19301bcafe495acd4f89cb8d0552a68e799`.
+  `076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c`.
 - `schemas/` validates the contract and baseline receipt in CI.
 - `record-baseline.mjs` records the frozen `@lubab/madar@0.32.0` baseline without changing it. Its legacy CLI arguments are part of that version-pinned receipt protocol, not commands for the current candidate build.
 - The accepted receipt lives under `docs/core-reset/evidence/`; generated raw
@@ -41,14 +41,19 @@ The performance descriptor deterministically generates 150 components of 100
 nodes: exactly 15,000 nodes and 30,000 directed edges. Each node has one
 `calls` edge to `(local + 1) % 100` and one `depends_on` edge to
 `(local + 37) % 100`; IDs, labels, paths, snippets, five queries, order, and RFC
-8785 serialization are fixed. CI validates the descriptor bytes, hash, and
+8785 serialization are fixed. Four positive queries pin exact node and directed,
+typed relationship sets; the fifth pins one explicit `missing` boundary with no
+graph evidence. CI validates the descriptor bytes, hash, expectations, and
 derived graph counts without importing it from production.
 
 The accepted reference environment is Node `v22.9.0`, Darwin `25.3.0` arm64,
 Apple M3 Max, and 51,539,607,552 bytes RAM. A later implementation-evidence
 runner will perform three warm-ups and at least 20 measured queries with the
-graph already loaded. Warm p95 must be below 500 ms, closure-pass count at most
-one, and every sample within the 12-file, 25-snippet, and 4,000-token caps.
+graph already loaded. One untimed invocation per query must satisfy its exact
+expectation before warmup, and every warmup and measured result must keep
+satisfying it; empty positive results fail. Warm p95 must be below 500 ms,
+closure-pass count at most one, and every sample within the 12-file, 25-snippet,
+and 4,000-token caps.
 Measurements from another environment are diagnostic only.
 
 The accepted receipt path is
