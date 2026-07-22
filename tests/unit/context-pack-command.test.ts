@@ -20,9 +20,7 @@ const tempFixtureRoots: string[] = []
 const repoGraphFixturePath = join(process.cwd(), 'out', 'graph.json')
 const repoBackendGraphFixturePath = join(process.cwd(), 'backend', 'out', 'graph.json')
 let createdRepoGraphFixture = false
-let createdRepoGraphFixtureDir = false
 let createdRepoBackendGraphFixture = false
-let createdRepoBackendGraphFixtureDir = false
 
 beforeAll(() => {
   if (existsSync(repoGraphFixturePath)) {
@@ -31,7 +29,6 @@ beforeAll(() => {
     const repoGraphDir = dirname(repoGraphFixturePath)
     if (!existsSync(repoGraphDir)) {
       mkdirSync(repoGraphDir, { recursive: true })
-      createdRepoGraphFixtureDir = true
     }
     writeCanonicalGraphFixture(repoGraphFixturePath, {})
     createdRepoGraphFixture = true
@@ -42,24 +39,18 @@ beforeAll(() => {
   const repoBackendGraphDir = dirname(repoBackendGraphFixturePath)
   if (!existsSync(repoBackendGraphDir)) {
     mkdirSync(repoBackendGraphDir, { recursive: true })
-    createdRepoBackendGraphFixtureDir = true
   }
   writeCanonicalGraphFixture(repoBackendGraphFixturePath, {})
   createdRepoBackendGraphFixture = true
 })
 
 afterAll(() => {
+  // Parallel test files share these output roots, so this suite removes only its fixture files.
   if (createdRepoGraphFixture) {
     rmSync(repoGraphFixturePath, { force: true })
   }
-  if (createdRepoGraphFixtureDir) {
-    rmSync(dirname(repoGraphFixturePath), { recursive: true, force: true })
-  }
   if (createdRepoBackendGraphFixture) {
     rmSync(repoBackendGraphFixturePath, { force: true })
-  }
-  if (createdRepoBackendGraphFixtureDir) {
-    rmSync(dirname(repoBackendGraphFixturePath), { recursive: true, force: true })
   }
 })
 
