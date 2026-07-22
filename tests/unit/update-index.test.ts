@@ -158,7 +158,7 @@ describe('index updates', () => {
     expectUpdateEqualsClean(renamedRoot, renamed)
   })
 
-  it('reconciles compiler controls and ignore policies exactly', () => {
+  it('reconciles compiler controls exactly', () => {
     const compilerRoot = fixture()
     write(compilerRoot, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
     generateIndex(compilerRoot)
@@ -166,20 +166,20 @@ describe('index updates', () => {
     const compiler = updateIndex(compilerRoot)
     expect(compiler.updateReceipt?.fallback_reason).toBe('source_or_policy_changed')
     expectUpdateEqualsClean(compilerRoot, compiler)
+  })
 
-    for (const [initial, next] of [
-      [null, 'leaf.ts\n'],
-      ['leaf.ts\n', 'app.ts\n'],
-      ['# initial\n', null],
-    ] as const) {
-      const root = fixture()
-      if (initial !== null) write(root, '.madarignore', initial)
-      generateIndex(root)
-      if (next === null) rmSync(join(root, '.madarignore'))
-      else write(root, '.madarignore', next)
-      const updated = updateIndex(root)
-      expectUpdateEqualsClean(root, updated)
-    }
+  it.each([
+    { transition: 'addition', initial: null, next: 'leaf.ts\n' },
+    { transition: 'edit', initial: 'leaf.ts\n', next: 'app.ts\n' },
+    { transition: 'deletion', initial: '# initial\n', next: null },
+  ] as const)('reconciles .madarignore $transition exactly', ({ initial, next }) => {
+    const root = fixture()
+    if (initial !== null) write(root, '.madarignore', initial)
+    generateIndex(root)
+    if (next === null) rmSync(join(root, '.madarignore'))
+    else write(root, '.madarignore', next)
+    const updated = updateIndex(root)
+    expectUpdateEqualsClean(root, updated)
   })
 
   it('reconciles when an arbitrary extended compiler config changes module resolution', () => {
