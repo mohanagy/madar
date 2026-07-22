@@ -15,8 +15,8 @@ The core promise is deterministic local context compilation that complements age
 
 ## In progress
 
-- A reproducible benchmark suite that reports **per-repo spread** instead of a single marketing number. See [`docs/benchmarks/suite/`](../docs/benchmarks/suite/README.md).
-- Better evidence for how strict guidance changes exploration behavior in practice. The current evidence is mixed; the counterexample note is in [`docs/benchmarks/2026-05-25-founder-command-center-auth-flow/`](../docs/benchmarks/2026-05-25-founder-command-center-auth-flow/README.md).
+- A reproducible benchmark suite that reports **per-repo spread** instead of a single marketing number. See the [benchmark suite in the source repository](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/suite).
+- Better evidence for how strict guidance changes exploration behavior in practice. The current evidence is mixed; the [counterexample note is in the source repository](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/2026-05-25-founder-command-center-auth-flow).
 
 ## Not yet measured
 
@@ -43,8 +43,8 @@ For broad codebase work, start with the graph-backed first pass, then expand onl
 
 ## How we measure
 
-- Public claims are mapped in [`docs/claims-and-evidence.md`](../docs/claims-and-evidence.md).
-- Benchmark artifacts live under [`docs/benchmarks/`](../docs/benchmarks/).
+- Public claims are mapped in the source repository's [claims and evidence document](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).
+- Benchmark artifacts live in the source repository's [benchmarks directory](https://github.com/mohanagy/madar/tree/main/docs/benchmarks).
 - The benchmark-suite direction is fixed tasks, fixed repos, **per-repo spread**, and no single-number cross-repo headline.
 
-If you want the current public claim surface in one place, start with [`docs/claims-and-evidence.md`](../docs/claims-and-evidence.md).
+If you want the current public claim surface in one place, start with the source repository's [claims and evidence document](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).

@@ -2706,6 +2706,40 @@ describe('stdio runtime', () => {
     }
   }, 10_000)
 
+  it('preserves accepted generation controls when MCP auto-refresh starts without overrides', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-policy-refresh-'))
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' })
+    const generated = generateIndex(root, {
+      respectGitignore: true,
+      followSymlinks: true,
+      indexingStrict: { maxFailed: 0, maxUnsupported: 5 },
+    })
+    const before = readFileSync(generated.graphPath, 'utf8')
+
+    const serverPromise = serveGraphStdio({
+      graphPath: generated.graphPath,
+      autoRefresh: true,
+      workspaceRoot: root,
+      autoRefreshDebounceSeconds: 0,
+      input,
+      output,
+      errorOutput,
+    })
+    try {
+      input.end(`${JSON.stringify({ id: 21, method: 'stats' })}\n`)
+      await serverPromise
+      expect(readFileSync(generated.graphPath, 'utf8')).toBe(before)
+    } finally {
+      input.destroy()
+      await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 10_000)
+
   it('holds one graph request while an auto-refresh event is pending, then answers it', async () => {
     const root = mkdtempSync(join(tmpdir(), 'madar-stdio-pending-refresh-'))
     const input = new PassThrough()

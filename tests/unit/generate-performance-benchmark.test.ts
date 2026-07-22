@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { join, resolve } from 'node:path'
@@ -20,9 +21,27 @@ interface PerformanceHarness {
 }
 
 const harnessPath = resolve('tools/eval/core-reset/incremental-performance.mjs')
+const protectedBaseReceiptPath = resolve(
+  'docs/core-reset/evidence/generation-incremental-protected-base-500.json',
+)
+const stoppedCandidateReceiptPath = resolve(
+  'docs/core-reset/evidence/generation-incremental-stop-500.json',
+)
+const measuredCandidateCommit = '1d3c9b6d264a5c76d212b93da7c63718cbe49b3d'
+const measuredCandidateTree = '6bd1ae5762afaa868d5cf6ce165b061aa290bfda'
 
 async function loadHarness(): Promise<PerformanceHarness> {
   return await import(/* @vite-ignore */ pathToFileURL(harnessPath).href) as PerformanceHarness
+}
+
+function readTypeScriptSources(directory: string): string {
+  return readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => {
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) return [readTypeScriptSources(path)]
+      return entry.isFile() && /\.[cm]?tsx?$/.test(entry.name) ? [readFileSync(path, 'utf8')] : []
+    })
+    .join('\n')
 }
 
 function samples(
@@ -269,11 +288,95 @@ describe('incremental performance evaluation harness', () => {
     })).toThrow(/--trials must be at least 20/)
   })
 
-  it('keeps the evaluator outside production and retains one warm session in the measured path', () => {
-    const source = readFileSync(harnessPath, 'utf8')
-    expect(source).toContain('const updateSession = subject.createUpdateSession(root, warmSeed)')
-    expect(source).toContain('updateSession.update({})')
-    expect(source).toContain("receipt_kind: 'core-reset-incremental-performance'")
-    expect(source).not.toContain("from '../../../src/")
+  it('authenticates the immutable failed checkpoint and its mandatory stop decision', async () => {
+    const harness = await loadHarness()
+    const protectedBaseRaw = readFileSync(protectedBaseReceiptPath, 'utf8')
+    const stoppedCandidateRaw = readFileSync(stoppedCandidateReceiptPath, 'utf8')
+    const protectedBase = JSON.parse(protectedBaseRaw)
+    const stoppedCandidate = JSON.parse(stoppedCandidateRaw)
+
+    for (const receipt of [protectedBase, stoppedCandidate]) {
+      const body = structuredClone(receipt)
+      const claimedChecksum = body.receipt_sha256
+      delete body.receipt_sha256
+      expect(createHash('sha256').update(harness.canonicalJson(body)).digest('hex')).toBe(claimedChecksum)
+    }
+
+    expect(protectedBase).toMatchObject({
+      receipt_kind: 'core-reset-clean-generation-baseline',
+      subject: {
+        head_commit: '8886a0299ee30765ce149ca7ad5d1779496b78b5',
+        worktree_tree_oid: '48e43267adbb9d858c6540cd049b614fa35eee4a',
+        dirty: false,
+      },
+      protocol: { warmups: 3, trials: 20 },
+      receipt_sha256: 'eb664578ddccfcf4961b68496a4201ee665ca6b3bab6c20bc37c87c5dbc7eb8c',
+    })
+    expect(stoppedCandidate).toMatchObject({
+      receipt_kind: 'core-reset-incremental-performance',
+      issue: 592,
+      measured_candidate_commit: measuredCandidateCommit,
+      eligible_for_acceptance: false,
+      subject: {
+        worktree_tree_oid: measuredCandidateTree,
+        dirty: true,
+      },
+      baseline: {
+        receipt_sha256: protectedBase.receipt_sha256,
+        compatible: true,
+      },
+      protocol: { warmups: 3, trials: 20 },
+      gates: {
+        warm_index_p50_ratio: { actual: 0.824, maximum: 0.5, pass: false },
+        warm_refresh_p50_ratio: { actual: 1.047, maximum: 0.75, pass: false },
+        warm_refresh_p95_ratio: { actual: 1.029, maximum: 0.8, pass: false },
+        clean_generation_regression: { ratio: 1.012, pass: true },
+      },
+      stop_condition: {
+        triggered: true,
+        reasons: [
+          'warm_index_p50_ratio_exceeds_0.50',
+          'warm_refresh_p50_ratio_exceeds_0.75',
+          'warm_refresh_p95_ratio_exceeds_0.80',
+        ],
+        held_out: {
+          status: 'intentionally_skipped',
+          reason: expect.stringContaining('fixed 500-file gate already triggered'),
+        },
+      },
+      receipt_sha256: '493a780c7d39977d3fda754ee3d9dc7891091e22aae2f8f2a877e8e7afe39b65',
+    })
+    expect(stoppedCandidate.baseline.receipt_sha256).toBe(protectedBase.receipt_sha256)
+    expect(stoppedCandidate.measurements.warm_leaf_index_stage).toMatchObject({
+      count: 20,
+      parsed_files: { min: 1, max: 1 },
+      reused_files: { min: 499, max: 499 },
+      invalidated_files: { min: 1, max: 1 },
+      dependency_closure_size: { min: 0, max: 0 },
+    })
+    expect(execFileSync('git', ['show', '-s', '--format=%T', measuredCandidateCommit], {
+      encoding: 'utf8',
+    }).trim()).toBe(measuredCandidateTree)
+    expect(protectedBaseRaw).not.toMatch(/\/Users\/|\/tmp\//)
+    expect(stoppedCandidateRaw).not.toMatch(/\/Users\/|\/tmp\//)
+  })
+
+  it('keeps the historical evaluator outside production and removes warm/session APIs from current source', () => {
+    const evaluatorSource = readFileSync(harnessPath, 'utf8')
+    const productionSource = readTypeScriptSources(resolve('src'))
+
+    expect(evaluatorSource).toContain('const updateSession = subject.createUpdateSession(root, warmSeed)')
+    expect(evaluatorSource).toContain("receipt_kind: 'core-reset-incremental-performance'")
+    expect(evaluatorSource).not.toContain("from '../../../src/")
+    for (const removedApi of [
+      'createUpdateIndexSession',
+      'createCanonicalTypeScriptIndexSession',
+      'CanonicalTypeScriptIndexSession',
+      'StagedCanonicalTypeScriptIndexUpdate',
+      'CanonicalTypeScriptIndexUpdateMetrics',
+      'warm_incremental',
+    ]) {
+      expect(productionSource).not.toContain(removedApi)
+    }
   })
 })

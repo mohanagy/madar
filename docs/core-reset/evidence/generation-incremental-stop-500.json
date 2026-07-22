@@ -1,0 +1,1246 @@
+{
+  "baseline": {
+    "clean_generation_p50_ms": 5839.249,
+    "compatible": true,
+    "dist_fingerprint": "2792e7fe9ee3da4685cadca30465bb22b6e296b92fd37f6b93859afe8e9299c2",
+    "head_commit": "8886a0299ee30765ce149ca7ad5d1779496b78b5",
+    "receipt_sha256": "eb664578ddccfcf4961b68496a4201ee665ca6b3bab6c20bc37c87c5dbc7eb8c",
+    "worktree_tree_oid": "48e43267adbb9d858c6540cd049b614fa35eee4a"
+  },
+  "corpus": {
+    "commit": "synthetic-500-v1",
+    "fingerprint": "3ed25dfd4b39025fe84a3991d869bb1936bcd7bce6a349cfd25ca6c1a3c4e16b",
+    "graph_root": ".",
+    "id": "synthetic-500-v1",
+    "kind": "synthetic_fixture",
+    "supported_files": 500
+  },
+  "eligible_for_acceptance": false,
+  "environment": {
+    "architecture": "arm64",
+    "cpu_count": 16,
+    "cpu_model": "Apple M3 Max",
+    "fingerprint": "8e886cb9663698d115f37c239d5e245de4dcce84f4d20483d68d52f39877699f",
+    "node": "v22.9.0",
+    "platform": "darwin",
+    "release": "25.3.0",
+    "total_memory_bytes": 51539607552
+  },
+  "gates": {
+    "clean_generation_regression": {
+      "baseline_compatible": true,
+      "maximum_regression": 0.1,
+      "pass": true,
+      "ratio": 1.012
+    },
+    "cold_noop_p50_ratio": {
+      "actual": 0.032,
+      "maximum": 0.2,
+      "pass": true
+    },
+    "corpus_eligibility": {
+      "kind": "synthetic_fixture",
+      "pass": true,
+      "requirement": "at least 500 supported files",
+      "supported_files": 500
+    },
+    "sample_protocol": {
+      "actual": {
+        "trials": 20,
+        "warmups": 3
+      },
+      "minimum": {
+        "trials": 20,
+        "warmups": 3
+      },
+      "pass": true
+    },
+    "warm_index_p50_ratio": {
+      "actual": 0.824,
+      "maximum": 0.5,
+      "pass": false
+    },
+    "warm_noop_zero_parse": {
+      "pass": true
+    },
+    "warm_private_leaf_scope": {
+      "pass": true
+    },
+    "warm_refresh_p50_ratio": {
+      "actual": 1.047,
+      "maximum": 0.75,
+      "pass": false
+    },
+    "warm_refresh_p95_ratio": {
+      "actual": 1.029,
+      "maximum": 0.8,
+      "pass": false
+    }
+  },
+  "issue": 592,
+  "measurements": {
+    "clean_generation": {
+      "count": 20,
+      "elapsed_ms": {
+        "max": 6165.073,
+        "min": 5684.767,
+        "p50": 5911.978,
+        "p95": 6158.357
+      }
+    },
+    "clean_index_stage": {
+      "count": 20,
+      "elapsed_ms": {
+        "max": 262.903,
+        "min": 235.578,
+        "p50": 242.932,
+        "p95": 257.39
+      }
+    },
+    "cold_noop": {
+      "count": 20,
+      "dependency_closure_size": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "elapsed_ms": {
+        "max": 195.021,
+        "min": 186.976,
+        "p50": 190.631,
+        "p95": 194.735
+      },
+      "invalidated_files": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "parsed_files": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "reused_files": {
+        "max": 500,
+        "min": 500,
+        "p50": 500,
+        "p95": 500
+      }
+    },
+    "warm_leaf_index_stage": {
+      "count": 20,
+      "dependency_closure_size": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "elapsed_ms": {
+        "max": 245.158,
+        "min": 196.503,
+        "p50": 200.281,
+        "p95": 241.745
+      },
+      "invalidated_files": {
+        "max": 1,
+        "min": 1,
+        "p50": 1,
+        "p95": 1
+      },
+      "parsed_files": {
+        "max": 1,
+        "min": 1,
+        "p50": 1,
+        "p95": 1
+      },
+      "reused_files": {
+        "max": 499,
+        "min": 499,
+        "p50": 499,
+        "p95": 499
+      }
+    },
+    "warm_leaf_refresh": {
+      "count": 20,
+      "dependency_closure_size": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "elapsed_ms": {
+        "max": 6355.63,
+        "min": 5892.667,
+        "p50": 6191.637,
+        "p95": 6334.583
+      },
+      "invalidated_files": {
+        "max": 1,
+        "min": 1,
+        "p50": 1,
+        "p95": 1
+      },
+      "parsed_files": {
+        "max": 1,
+        "min": 1,
+        "p50": 1,
+        "p95": 1
+      },
+      "reused_files": {
+        "max": 499,
+        "min": 499,
+        "p50": 499,
+        "p95": 499
+      }
+    },
+    "warm_noop": {
+      "count": 20,
+      "dependency_closure_size": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "elapsed_ms": {
+        "max": 239.726,
+        "min": 187.248,
+        "p50": 207.866,
+        "p95": 232.425
+      },
+      "invalidated_files": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "parsed_files": {
+        "max": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0
+      },
+      "reused_files": {
+        "max": 500,
+        "min": 500,
+        "p50": 500,
+        "p95": 500
+      }
+    }
+  },
+  "protocol": {
+    "clock": "performance.now",
+    "command": [
+      "node",
+      "tools/eval/core-reset/incremental-performance.mjs",
+      "--mode",
+      "candidate",
+      "--dist-root",
+      "<dist-root>",
+      "--subject-worktree",
+      "<subject-worktree>",
+      "--fixture-files",
+      "500",
+      "--warmups",
+      "3",
+      "--trials",
+      "20",
+      "--baseline-receipt",
+      "<baseline-receipt>",
+      "--output",
+      "<output>"
+    ],
+    "configuration": {
+      "fixture_files": 500,
+      "graph_root": ".",
+      "mutation_file": null,
+      "repository_commit": null
+    },
+    "mutation_application_in_timed_window": false,
+    "percentile": "nearest-rank",
+    "persistent_warm_session": true,
+    "trials": 20,
+    "warmups": 3
+  },
+  "receipt_kind": "core-reset-incremental-performance",
+  "samples": {
+    "clean_generation": [
+      {
+        "elapsed_ms": 5877.664,
+        "ordinal": 1
+      },
+      {
+        "elapsed_ms": 6165.073,
+        "ordinal": 2
+      },
+      {
+        "elapsed_ms": 5866.76,
+        "ordinal": 3
+      },
+      {
+        "elapsed_ms": 5897.995,
+        "ordinal": 4
+      },
+      {
+        "elapsed_ms": 6101.191,
+        "ordinal": 5
+      },
+      {
+        "elapsed_ms": 5911.978,
+        "ordinal": 6
+      },
+      {
+        "elapsed_ms": 5875.074,
+        "ordinal": 7
+      },
+      {
+        "elapsed_ms": 5806.215,
+        "ordinal": 8
+      },
+      {
+        "elapsed_ms": 5963.354,
+        "ordinal": 9
+      },
+      {
+        "elapsed_ms": 6006.312,
+        "ordinal": 10
+      },
+      {
+        "elapsed_ms": 5736.711,
+        "ordinal": 11
+      },
+      {
+        "elapsed_ms": 5963.762,
+        "ordinal": 12
+      },
+      {
+        "elapsed_ms": 5780.238,
+        "ordinal": 13
+      },
+      {
+        "elapsed_ms": 6034.093,
+        "ordinal": 14
+      },
+      {
+        "elapsed_ms": 6158.357,
+        "ordinal": 15
+      },
+      {
+        "elapsed_ms": 5728.743,
+        "ordinal": 16
+      },
+      {
+        "elapsed_ms": 6012.467,
+        "ordinal": 17
+      },
+      {
+        "elapsed_ms": 5684.767,
+        "ordinal": 18
+      },
+      {
+        "elapsed_ms": 5945.966,
+        "ordinal": 19
+      },
+      {
+        "elapsed_ms": 6065.701,
+        "ordinal": 20
+      }
+    ],
+    "clean_index_stage": [
+      {
+        "elapsed_ms": 243.508,
+        "ordinal": 1
+      },
+      {
+        "elapsed_ms": 237.793,
+        "ordinal": 2
+      },
+      {
+        "elapsed_ms": 238.212,
+        "ordinal": 3
+      },
+      {
+        "elapsed_ms": 249.488,
+        "ordinal": 4
+      },
+      {
+        "elapsed_ms": 257.39,
+        "ordinal": 5
+      },
+      {
+        "elapsed_ms": 245.47,
+        "ordinal": 6
+      },
+      {
+        "elapsed_ms": 236.648,
+        "ordinal": 7
+      },
+      {
+        "elapsed_ms": 241.856,
+        "ordinal": 8
+      },
+      {
+        "elapsed_ms": 262.903,
+        "ordinal": 9
+      },
+      {
+        "elapsed_ms": 243.4,
+        "ordinal": 10
+      },
+      {
+        "elapsed_ms": 238.19,
+        "ordinal": 11
+      },
+      {
+        "elapsed_ms": 242.932,
+        "ordinal": 12
+      },
+      {
+        "elapsed_ms": 250.646,
+        "ordinal": 13
+      },
+      {
+        "elapsed_ms": 246.367,
+        "ordinal": 14
+      },
+      {
+        "elapsed_ms": 238.511,
+        "ordinal": 15
+      },
+      {
+        "elapsed_ms": 237.501,
+        "ordinal": 16
+      },
+      {
+        "elapsed_ms": 235.578,
+        "ordinal": 17
+      },
+      {
+        "elapsed_ms": 255.625,
+        "ordinal": 18
+      },
+      {
+        "elapsed_ms": 245.185,
+        "ordinal": 19
+      },
+      {
+        "elapsed_ms": 237.197,
+        "ordinal": 20
+      }
+    ],
+    "cold_noop": [
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 195.021,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 1,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 189.054,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 2,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 190.479,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 3,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 193.021,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 4,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 190.631,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 5,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 190.727,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 6,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 193.43,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 7,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 188.512,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 8,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 194.735,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 9,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 188.468,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 10,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 194.014,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 11,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 188.24,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 12,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 193.441,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 13,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 189.071,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 14,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 186.976,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 15,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 193.009,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 16,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 189.979,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 17,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 191.985,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 18,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 189.337,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 19,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 192.579,
+        "invalidated_files": 0,
+        "mode": "cold_noop",
+        "ordinal": 20,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      }
+    ],
+    "warm_leaf_index_stage": [
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 200.281,
+        "invalidated_files": 1,
+        "ordinal": 1,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 197.044,
+        "invalidated_files": 1,
+        "ordinal": 2,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 198.618,
+        "invalidated_files": 1,
+        "ordinal": 3,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 198.763,
+        "invalidated_files": 1,
+        "ordinal": 4,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 221.899,
+        "invalidated_files": 1,
+        "ordinal": 5,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 202.581,
+        "invalidated_files": 1,
+        "ordinal": 6,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 198.327,
+        "invalidated_files": 1,
+        "ordinal": 7,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 197.888,
+        "invalidated_files": 1,
+        "ordinal": 8,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 198.659,
+        "invalidated_files": 1,
+        "ordinal": 9,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 223.826,
+        "invalidated_files": 1,
+        "ordinal": 10,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 199.867,
+        "invalidated_files": 1,
+        "ordinal": 11,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 196.503,
+        "invalidated_files": 1,
+        "ordinal": 12,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 200.217,
+        "invalidated_files": 1,
+        "ordinal": 13,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 228.282,
+        "invalidated_files": 1,
+        "ordinal": 14,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 238.866,
+        "invalidated_files": 1,
+        "ordinal": 15,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 241.745,
+        "invalidated_files": 1,
+        "ordinal": 16,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 218.89,
+        "invalidated_files": 1,
+        "ordinal": 17,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 204.993,
+        "invalidated_files": 1,
+        "ordinal": 18,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 207.401,
+        "invalidated_files": 1,
+        "ordinal": 19,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 245.158,
+        "invalidated_files": 1,
+        "ordinal": 20,
+        "parsed_files": 1,
+        "publication_advanced": false,
+        "reused_files": 499
+      }
+    ],
+    "warm_leaf_refresh": [
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6077.081,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 1,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6326.177,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 2,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6191.637,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 3,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6243.721,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 4,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 5971.23,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 5,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6086.856,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 6,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6355.63,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 7,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6154.63,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 8,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6213.906,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 9,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 5892.667,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 10,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6194.859,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 11,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6334.583,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 12,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6181.751,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 13,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6299.366,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 14,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6105.234,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 15,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6320.228,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 16,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6318.194,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 17,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 5929.913,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 18,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6230.41,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 19,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 6022.303,
+        "invalidated_files": 1,
+        "mode": "warm_incremental",
+        "ordinal": 20,
+        "parsed_files": 1,
+        "publication_advanced": true,
+        "reused_files": 499
+      }
+    ],
+    "warm_noop": [
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 226.962,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 1,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 221.751,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 2,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 207.866,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 3,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 190.094,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 4,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 187.248,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 5,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 225.828,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 6,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 229.183,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 7,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 225.893,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 8,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 232.425,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 9,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 192.313,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 10,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 188.925,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 11,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 189.088,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 12,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 191.454,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 13,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 197.729,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 14,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 187.87,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 15,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 239.726,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 16,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 229.237,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 17,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 226.829,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 18,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 222.86,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 19,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      },
+      {
+        "dependency_closure_size": 0,
+        "elapsed_ms": 189.636,
+        "invalidated_files": 0,
+        "mode": "warm_incremental",
+        "ordinal": 20,
+        "parsed_files": 0,
+        "publication_advanced": false,
+        "reused_files": 500
+      }
+    ]
+  },
+  "schema_version": 2,
+  "stop_condition": {
+    "held_out": {
+      "reason": "The fixed 500-file gate already triggered the mandatory #592 stop condition; held-out timing cannot reverse it.",
+      "status": "intentionally_skipped"
+    },
+    "policy": "Issue #592 requires simplification when the fixed 500-file warm index-stage or end-to-end gate fails.",
+    "reasons": [
+      "warm_index_p50_ratio_exceeds_0.50",
+      "warm_refresh_p50_ratio_exceeds_0.75",
+      "warm_refresh_p95_ratio_exceeds_0.80"
+    ],
+    "triggered": true
+  },
+  "subject": {
+    "dirty": true,
+    "dist_fingerprint": "066cd8779d1a2cf4d723f7ac45e0e22e1f7f98e35b4de7d88657d87992a86eb2",
+    "head_commit": "64c4d240f7561210a8170ea629b7692f3a7ed466",
+    "head_tree_oid": "b7cfed6df830bcc94da109e4aef09232dd065470",
+    "status_sha256": "8fc5ec9e9d76db24758a8d084608643ca64ad000fe84d2726b4eb3477fcd4101",
+    "worktree_tree_oid": "6bd1ae5762afaa868d5cf6ce165b061aa290bfda"
+  },
+  "measured_candidate_commit": "1d3c9b6d264a5c76d212b93da7c63718cbe49b3d",
+  "receipt_sha256": "493a780c7d39977d3fda754ee3d9dc7891091e22aae2f8f2a877e8e7afe39b65"
+}

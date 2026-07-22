@@ -10,7 +10,7 @@ import {
   readMatchingDiagnostics,
   type PublicationStep,
 } from '../../src/adapters/filesystem/index-store.js'
-import { generateIndex } from '../../src/application/generate-index.js'
+import { generateIndex, SourceChangedDuringBuildError } from '../../src/application/generate-index.js'
 import { IndexLeaseContentionError } from '../../src/domain/index/build-state.js'
 
 const roots: string[] = []
@@ -91,6 +91,26 @@ describe('index store publication', () => {
     expect(readMatchingDiagnostics(accepted.graphPath)).toBeNull()
   })
 
+  it('rejects a real source edit at the graph commit boundary', () => {
+    const root = fixture()
+    const accepted = generateIndex(root)
+    const before = graphBytes(root)
+    const source = join(root, 'src', 'main.ts')
+    writeFileSync(source, 'export const value = 2\n', 'utf8')
+
+    expect(() => generateIndex(root, {
+      storeDependencies: {
+        hook(step) {
+          if (step === 'before_graph_commit') writeFileSync(source, 'export const value = 3\n', 'utf8')
+        },
+      },
+    })).toThrow(SourceChangedDuringBuildError)
+
+    expect(graphBytes(root)).toBe(before)
+    expect(loadAcceptedIndex(accepted.graphPath)?.state.build_id).toBe(accepted.buildId)
+    expect(readMatchingDiagnostics(accepted.graphPath)).toBeNull()
+  })
+
   it('reports a post-commit fault without pretending the publication rolled back', () => {
     const root = fixture()
     const first = generateIndex(root)
@@ -136,5 +156,19 @@ describe('index store publication', () => {
     }
     const next = acquireIndexLease(outputDir)
     next()
+  })
+
+  it('serializes cluster-only publication through the same build lease', () => {
+    const root = fixture()
+    const generated = generateIndex(root)
+    const before = graphBytes(root)
+    const release = acquireIndexLease(join(root, 'out'))
+    try {
+      expect(() => generateIndex(root, { clusterOnly: true })).toThrow(IndexLeaseContentionError)
+    } finally {
+      release()
+    }
+    expect(graphBytes(root)).toBe(before)
+    expect(loadAcceptedIndex(generated.graphPath)?.state.build_id).toBe(generated.buildId)
   })
 })

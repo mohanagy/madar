@@ -1,10 +1,11 @@
 import { join, resolve } from 'node:path'
 
+import { buildCanonicalTypeScriptIndex } from '../adapters/typescript/index.js'
 import {
-  createCanonicalTypeScriptIndexSession,
-  type CanonicalTypeScriptIndexSession,
-} from '../adapters/typescript/index.js'
-import { buildSourceCatalog, type SourceCatalog } from '../adapters/filesystem/source-catalog.js'
+  buildSourceCatalog,
+  sourceCatalogStillCurrent,
+  type SourceCatalogOptions,
+} from '../adapters/filesystem/source-catalog.js'
 import { acquireIndexLease, loadAcceptedIndex } from '../adapters/filesystem/index-store.js'
 import {
   buildAndPublishIndex,
@@ -12,30 +13,26 @@ import {
   type GenerateIndexOptions,
   type GenerateIndexResult,
 } from './generate-index.js'
-import { sourceSnapshotsEqual, type SourceSnapshot, type UpdateReceipt } from '../domain/index/build-state.js'
+import { sourceSnapshotsEqual, type IndexBuildState, type UpdateReceipt } from '../domain/index/build-state.js'
 import { buildDiscoverySafetyMetadata, parseDiscoverySafetyMetadata } from '../shared/discovery-safety.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 
 export type UpdateIndexOptions = Omit<GenerateIndexOptions, 'clusterOnly'>
-export interface UpdateIndexSession {
-  update(options?: UpdateIndexOptions): GenerateIndexResult
+
+function catalogOptions(options: UpdateIndexOptions, state: IndexBuildState | null): SourceCatalogOptions {
+  const strict = state?.policy.settings.indexing_strict
+  const followSymlinks = options.followSymlinks ?? state?.policy.settings.follow_symlinks
+  const respectGitignore = options.respectGitignore ?? state?.policy.settings.respect_gitignore
+  const indexingStrict = options.indexingStrict ?? (strict
+    ? { maxFailed: strict.max_failed, maxUnsupported: strict.max_unsupported }
+    : undefined)
+  return {
+    ...(followSymlinks === undefined ? {} : { followSymlinks }),
+    ...(respectGitignore === undefined ? {} : { respectGitignore }),
+    ...(indexingStrict === undefined ? {} : { indexingStrict }),
+  }
 }
-function changedSupportedFiles(previous: SourceSnapshot, current: SourceSnapshot): string[] {
-  const old = new Map(previous.supported.map((entry) => [entry.path, entry.hash]))
-  const next = new Map(current.supported.map((entry) => [entry.path, entry.hash]))
-  return [...new Set([...old.keys(), ...next.keys()])]
-    .filter((path) => old.get(path) !== next.get(path))
-    .sort()
-}
-function controlsChanged(previous: SourceSnapshot, current: SourceSnapshot): boolean {
-  const project = (entries: SourceSnapshot['controls']) => JSON.stringify(entries)
-  return project(previous.controls) !== project(current.controls)
-}
-function catalogStillCurrent(catalog: SourceCatalog, options: UpdateIndexOptions): boolean {
-  const current = buildSourceCatalog(catalog.rootPath, options)
-  return current.policy.fingerprint === catalog.policy.fingerprint
-    && sourceSnapshotsEqual(current.snapshot, catalog.snapshot)
-}
+
 function acceptedResult(
   rootPath: string,
   accepted: NonNullable<ReturnType<typeof loadAcceptedIndex>>,
@@ -73,114 +70,61 @@ function acceptedResult(
   }
 }
 
-export function createUpdateIndexSession(
-  rootPath = '.',
-  seed?: Pick<GenerateIndexResult, 'buildId' | 'indexSession'>,
-): UpdateIndexSession {
-  const root = resolve(rootPath)
-  let canonical: CanonicalTypeScriptIndexSession | null = seed?.indexSession ?? null
-  let acceptedBuildId = seed?.buildId ?? null
-
-  return {
-    update(options = {}) {
-      const outputDir = resolveMadarOutputDirectory(root)
-      const release = acquireIndexLease(outputDir)
-      try {
-        options.onProgress?.({ step: 'detect', message: 'Scanning files...' })
-        const catalog = buildSourceCatalog(root, options)
-        const accepted = loadAcceptedIndex(join(outputDir, 'graph.json'))
-        if (acceptedBuildId !== null && accepted?.state.build_id !== acceptedBuildId) canonical = null
-        acceptedBuildId = accepted?.state.build_id ?? null
-        const unchanged = accepted !== null
-          && accepted.state.policy.fingerprint === catalog.policy.fingerprint
-          && accepted.state.source_root.kind === catalog.sourceRoot.kind
-          && accepted.state.source_root.scope === catalog.sourceRoot.scope
-          && sourceSnapshotsEqual(accepted.state.sources, catalog.snapshot)
-        if (unchanged && accepted) {
-          if (!catalogStillCurrent(catalog, options)) {
-            throw new SourceChangedDuringBuildError()
-          }
-          const receipt: UpdateReceipt = {
-            mode: canonical ? 'warm_incremental' : 'cold_noop',
-            scanned_files: catalog.scannedFiles,
-            parsed_files: 0,
-            reused_files: catalog.snapshot.supported.length,
-            invalidated_files: 0,
-            dependency_closure_size: 0,
-            fallback_reason: null,
-            previous_build_id: accepted.state.build_id,
-            accepted_build_id: accepted.state.build_id,
-            publication_advanced: false,
-          }
-          return acceptedResult(root, accepted, receipt)
-        }
-
-        const coldReconcile = (
-          fallbackReason: 'cold_process' | 'corrupt_warm_state',
-          previousBuildId: string | null,
-        ): GenerateIndexResult => {
-          const nextSession = createCanonicalTypeScriptIndexSession({ root, files: catalog.supportedFiles })
-          const result = buildAndPublishIndex({
-            catalog,
-            canonical: nextSession.result(),
-            mode: 'update',
-            options,
-            updateReceipt: {
-              mode: 'cold_reconcile',
-              scanned_files: catalog.scannedFiles,
-              parsed_files: catalog.snapshot.supported.length,
-              reused_files: 0,
-              invalidated_files: catalog.snapshot.supported.length,
-              dependency_closure_size: catalog.snapshot.supported.length,
-              fallback_reason: fallbackReason,
-              previous_build_id: previousBuildId,
-            },
-            verifyCurrent: () => catalogStillCurrent(catalog, options),
-          })
-          canonical = nextSession
-          acceptedBuildId = result.buildId
-          return { ...result, indexSession: canonical }
-        }
-
-        if (!canonical || !accepted) {
-          return coldReconcile('cold_process', accepted?.state.build_id ?? null)
-        }
-
-        const changed = changedSupportedFiles(accepted.state.sources, catalog.snapshot)
-        const forceFull = controlsChanged(accepted.state.sources, catalog.snapshot)
-          || accepted.state.policy.fingerprint !== catalog.policy.fingerprint
-        let staged: ReturnType<CanonicalTypeScriptIndexSession['stageUpdate']>
-        try {
-          staged = canonical.stageUpdate({ files: catalog.supportedFiles, changedFiles: changed, forceFull })
-        } catch {
-          return coldReconcile('corrupt_warm_state', accepted.state.build_id)
-        }
-        const result = buildAndPublishIndex({
-          catalog,
-          canonical: staged.result,
-          mode: 'update',
-          options,
-          updateReceipt: {
-            mode: 'warm_incremental',
-            scanned_files: catalog.scannedFiles,
-            parsed_files: staged.metrics.parsedFiles,
-            reused_files: staged.metrics.reusedFiles,
-            invalidated_files: staged.metrics.invalidatedFiles,
-            dependency_closure_size: staged.metrics.dependencyClosureSize,
-            fallback_reason: forceFull ? 'compiler_control_changed' : null,
-            previous_build_id: accepted.state.build_id,
-          },
-          verifyCurrent: () => catalogStillCurrent(catalog, options),
-        })
-        staged.commit()
-        acceptedBuildId = result.buildId
-        return { ...result, indexSession: canonical }
-      } finally { release() }
-    },
-  }
-}
-
-/** One-shot updates are cold by definition; long-lived callers retain a session. */
+/**
+ * Scan once, skip an authenticated no-op, otherwise run the one canonical
+ * full reconcile. No compiler, AST, fact, or dependency state survives calls.
+ */
 export function updateIndex(rootPath = '.', options: UpdateIndexOptions = {}): GenerateIndexResult {
-  return createUpdateIndexSession(rootPath).update(options)
+  const root = resolve(rootPath)
+  const outputDir = resolveMadarOutputDirectory(root)
+  const release = acquireIndexLease(outputDir)
+  try {
+    options.onProgress?.({ step: 'detect', message: 'Scanning files...' })
+    const accepted = loadAcceptedIndex(join(outputDir, 'graph.json'))
+    const effectiveCatalogOptions = catalogOptions(options, accepted?.state ?? null)
+    const catalog = buildSourceCatalog(root, effectiveCatalogOptions)
+    const unchanged = accepted !== null
+      && accepted.state.policy.fingerprint === catalog.policy.fingerprint
+      && accepted.state.source_root.kind === catalog.sourceRoot.kind
+      && accepted.state.source_root.scope === catalog.sourceRoot.scope
+      && sourceSnapshotsEqual(accepted.state.sources, catalog.snapshot)
+
+    if (unchanged && accepted) {
+      if (!sourceCatalogStillCurrent(catalog, effectiveCatalogOptions)) throw new SourceChangedDuringBuildError()
+      return acceptedResult(root, accepted, {
+        mode: 'cold_noop',
+        scanned_files: catalog.scannedFiles,
+        parsed_files: 0,
+        reused_files: catalog.snapshot.supported.length,
+        invalidated_files: 0,
+        dependency_closure_size: 0,
+        fallback_reason: null,
+        previous_build_id: accepted.state.build_id,
+        accepted_build_id: accepted.state.build_id,
+        publication_advanced: false,
+      })
+    }
+
+    const supportedFiles = catalog.snapshot.supported.length
+    const canonical = buildCanonicalTypeScriptIndex({ root, files: catalog.supportedFiles })
+    return buildAndPublishIndex({
+      catalog,
+      canonical,
+      mode: 'update',
+      options: { ...options, ...effectiveCatalogOptions },
+      updateReceipt: {
+        mode: 'cold_reconcile',
+        scanned_files: catalog.scannedFiles,
+        parsed_files: supportedFiles,
+        reused_files: 0,
+        invalidated_files: supportedFiles,
+        dependency_closure_size: supportedFiles,
+        fallback_reason: accepted ? 'source_or_policy_changed' : 'cold_process',
+        previous_build_id: accepted?.state.build_id ?? null,
+      },
+      verifyCurrent: () => sourceCatalogStillCurrent(catalog, effectiveCatalogOptions),
+    })
+  } finally {
+    release()
+  }
 }

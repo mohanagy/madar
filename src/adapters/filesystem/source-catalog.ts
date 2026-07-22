@@ -15,6 +15,7 @@ import {
   CANONICAL_INDEX_FORMAT_VERSION,
   createGenerationPolicy,
   createSourceSnapshot,
+  sourceSnapshotsEqual,
   type GenerationPolicy,
   type IndexingOutcome,
   type IndexingStrictThresholds,
@@ -339,6 +340,15 @@ export function buildSourceCatalog(rootPath = '.', options: SourceCatalogOptions
     warning,
     scannedFiles: scanned.scannedFiles,
   }
+}
+
+/** Re-scan through the same catalog contract immediately before publication. */
+export function sourceCatalogStillCurrent(catalog: SourceCatalog, options: SourceCatalogOptions = {}): boolean {
+  const current = buildSourceCatalog(catalog.rootPath, options)
+  return current.policy.fingerprint === catalog.policy.fingerprint
+    && current.sourceRoot.kind === catalog.sourceRoot.kind
+    && current.sourceRoot.scope === catalog.sourceRoot.scope
+    && sourceSnapshotsEqual(current.snapshot, catalog.snapshot)
 }
 
 export function readSourceFileHash(path: string): string | null {

@@ -1,0 +1,156 @@
+{
+  "corpus": {
+    "commit": "synthetic-500-v1",
+    "fingerprint": "3ed25dfd4b39025fe84a3991d869bb1936bcd7bce6a349cfd25ca6c1a3c4e16b",
+    "graph_root": ".",
+    "id": "synthetic-500-v1",
+    "kind": "synthetic_fixture",
+    "supported_files": 500
+  },
+  "environment": {
+    "architecture": "arm64",
+    "cpu_count": 16,
+    "cpu_model": "Apple M3 Max",
+    "fingerprint": "8e886cb9663698d115f37c239d5e245de4dcce84f4d20483d68d52f39877699f",
+    "node": "v22.9.0",
+    "platform": "darwin",
+    "release": "25.3.0",
+    "total_memory_bytes": 51539607552
+  },
+  "measurements": {
+    "clean_generation": {
+      "count": 20,
+      "elapsed_ms": {
+        "max": 6353.799,
+        "min": 5621.643,
+        "p50": 5839.249,
+        "p95": 6335.91
+      }
+    }
+  },
+  "protocol": {
+    "clock": "performance.now",
+    "command": [
+      "node",
+      "tools/eval/core-reset/incremental-performance.mjs",
+      "--mode",
+      "baseline",
+      "--dist-root",
+      "<dist-root>",
+      "--subject-worktree",
+      "<subject-worktree>",
+      "--fixture-files",
+      "500",
+      "--warmups",
+      "3",
+      "--trials",
+      "20",
+      "--output",
+      "<output>"
+    ],
+    "configuration": {
+      "fixture_files": 500,
+      "graph_root": ".",
+      "mutation_file": null,
+      "repository_commit": null
+    },
+    "mutation_application_in_timed_window": false,
+    "percentile": "nearest-rank",
+    "persistent_warm_session": true,
+    "trials": 20,
+    "warmups": 3
+  },
+  "receipt_kind": "core-reset-clean-generation-baseline",
+  "receipt_sha256": "eb664578ddccfcf4961b68496a4201ee665ca6b3bab6c20bc37c87c5dbc7eb8c",
+  "samples": [
+    {
+      "elapsed_ms": 5768.765,
+      "ordinal": 1
+    },
+    {
+      "elapsed_ms": 5973.598,
+      "ordinal": 2
+    },
+    {
+      "elapsed_ms": 5621.643,
+      "ordinal": 3
+    },
+    {
+      "elapsed_ms": 5747.668,
+      "ordinal": 4
+    },
+    {
+      "elapsed_ms": 6005.025,
+      "ordinal": 5
+    },
+    {
+      "elapsed_ms": 5834.859,
+      "ordinal": 6
+    },
+    {
+      "elapsed_ms": 5876.757,
+      "ordinal": 7
+    },
+    {
+      "elapsed_ms": 5657.497,
+      "ordinal": 8
+    },
+    {
+      "elapsed_ms": 5753.167,
+      "ordinal": 9
+    },
+    {
+      "elapsed_ms": 5994.053,
+      "ordinal": 10
+    },
+    {
+      "elapsed_ms": 5787.664,
+      "ordinal": 11
+    },
+    {
+      "elapsed_ms": 5798.042,
+      "ordinal": 12
+    },
+    {
+      "elapsed_ms": 5839.249,
+      "ordinal": 13
+    },
+    {
+      "elapsed_ms": 5787.957,
+      "ordinal": 14
+    },
+    {
+      "elapsed_ms": 6017.853,
+      "ordinal": 15
+    },
+    {
+      "elapsed_ms": 5956.801,
+      "ordinal": 16
+    },
+    {
+      "elapsed_ms": 6231.057,
+      "ordinal": 17
+    },
+    {
+      "elapsed_ms": 6335.91,
+      "ordinal": 18
+    },
+    {
+      "elapsed_ms": 6182.47,
+      "ordinal": 19
+    },
+    {
+      "elapsed_ms": 6353.799,
+      "ordinal": 20
+    }
+  ],
+  "schema_version": 2,
+  "subject": {
+    "dirty": false,
+    "dist_fingerprint": "2792e7fe9ee3da4685cadca30465bb22b6e296b92fd37f6b93859afe8e9299c2",
+    "head_commit": "8886a0299ee30765ce149ca7ad5d1779496b78b5",
+    "head_tree_oid": "48e43267adbb9d858c6540cd049b614fa35eee4a",
+    "status_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "worktree_tree_oid": "48e43267adbb9d858c6540cd049b614fa35eee4a"
+  }
+}

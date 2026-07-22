@@ -3,11 +3,14 @@ import { extname, join, resolve } from 'node:path'
 
 import {
   buildCanonicalTypeScriptIndex,
-  createCanonicalTypeScriptIndexSession,
-  type CanonicalTypeScriptIndexSession,
   type CanonicalTypeScriptIndexResult,
 } from '../adapters/typescript/index.js'
-import { buildSourceCatalog, type SourceCatalog, type SourceCatalogOptions } from '../adapters/filesystem/source-catalog.js'
+import {
+  buildSourceCatalog,
+  sourceCatalogStillCurrent,
+  type SourceCatalog,
+  type SourceCatalogOptions,
+} from '../adapters/filesystem/source-catalog.js'
 import {
   acquireIndexLease,
   INDEX_DIAGNOSTICS_VERSION,
@@ -69,8 +72,6 @@ export interface GenerateIndexResult {
   indexing: IndexingSummary
   buildId: string
   updateReceipt?: UpdateReceipt
-  /** In-process seed used by watch/MCP; never serialized or persisted. */
-  indexSession?: CanonicalTypeScriptIndexSession
 }
 export type GenerateUnsupportedCorpusCode = 'NO_SUPPORTED_FILES' | 'NO_GRAPH_NODES'
 export class GenerateUnsupportedCorpusError extends Error {
@@ -188,6 +189,15 @@ function missingCorpusError(catalog: SourceCatalog, code: GenerateUnsupportedCor
   return new GenerateUnsupportedCorpusError(code, base, catalog.discoverySafety)
 }
 
+function canonicalMatchesCatalog(catalog: SourceCatalog, canonical: CanonicalTypeScriptIndexResult): boolean {
+  if (canonical.files.length !== catalog.snapshot.supported.length) return false
+  const indexed = new Map(canonical.files.map((file) => [
+    file.path.replaceAll('\\', '/').replace(/^\.\//, ''),
+    file.hash,
+  ]))
+  return catalog.snapshot.supported.every((entry) => indexed.get(entry.path) === entry.hash)
+}
+
 function finalizeGraph(graph: KnowledgeGraph, catalog: SourceCatalog, progress?: GenerateIndexOptions['onProgress']) {
   progress?.({ step: 'build', message: `Built graph: ${graph.numberOfNodes()} nodes, ${graph.numberOfEdges()} edges` })
   progress?.({ step: 'cluster', message: 'Clustering communities...' })
@@ -227,6 +237,7 @@ export function buildAndPublishIndex(input: {
     current: 0, total: catalog.supportedFiles.length,
   })
   const canonical = input.canonical ?? buildCanonicalTypeScriptIndex({ root: catalog.rootPath, files: catalog.supportedFiles })
+  if (!canonicalMatchesCatalog(catalog, canonical)) throw new SourceChangedDuringBuildError()
   const canonicalReceipts = canonicalOutcomes(catalog, canonical)
   const outcomes = [
     ...catalog.outcomes.filter((entry) => !(
@@ -284,10 +295,14 @@ export function buildAndPublishIndex(input: {
     outcomes,
     index_diagnostics: canonicalReceipts.diagnostics,
   }
-  if (input.verifyCurrent && !input.verifyCurrent()) throw new SourceChangedDuringBuildError()
   options.onProgress?.({ step: 'export', message: 'Writing outputs...' })
   const publication = publishAcceptedIndex({
     graph, outputDir, report, diagnostics,
+    assertCurrent: () => {
+      if (!canonicalMatchesCatalog(catalog, canonical) || (input.verifyCurrent && !input.verifyCurrent())) {
+        throw new SourceChangedDuringBuildError()
+      }
+    },
     ...(options.storeDependencies ? { dependencies: options.storeDependencies } : {}),
   })
   const notes = [...publication.diagnosticWarnings]
@@ -392,19 +407,24 @@ function generateClusterOnly(rootPath: string, options: GenerateIndexOptions): G
 }
 
 export function generateIndex(rootPath = '.', options: GenerateIndexOptions = {}): GenerateIndexResult {
-  if (options.clusterOnly) return generateClusterOnly(rootPath, options)
   const root = resolve(rootPath)
   const outputDir = resolveMadarOutputDirectory(root)
   const release = acquireIndexLease(outputDir)
   try {
+    if (options.clusterOnly) return generateClusterOnly(root, options)
     options.onProgress?.({ step: 'detect', message: 'Scanning files...' })
     const catalog = buildSourceCatalog(root, options)
     options.onProgress?.({
       step: 'detect',
       message: `Found ${catalog.snapshot.supported.length} supported file(s) (~${catalog.totalWords.toLocaleString()} words)`,
     })
-    const indexSession = createCanonicalTypeScriptIndexSession({ root, files: catalog.supportedFiles })
-    const result = buildAndPublishIndex({ catalog, canonical: indexSession.result(), mode: 'generate', options })
-    return { ...result, indexSession }
+    const canonical = buildCanonicalTypeScriptIndex({ root, files: catalog.supportedFiles })
+    return buildAndPublishIndex({
+      catalog,
+      canonical,
+      mode: 'generate',
+      options,
+      verifyCurrent: () => sourceCatalogStillCurrent(catalog, options),
+    })
   } finally { release() }
 }

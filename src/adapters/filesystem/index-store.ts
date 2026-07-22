@@ -97,6 +97,8 @@ export function publishAcceptedIndex(input: {
   outputDir: string
   report: string
   diagnostics: IndexDiagnostics
+  /** Final source-snapshot assertion, executed at the graph commit boundary. */
+  assertCurrent?: () => void
   dependencies?: Partial<IndexStoreDependencies>
 }): IndexPublicationResult {
   const state = readBuildState(input.graph)
@@ -121,6 +123,7 @@ export function publishAcceptedIndex(input: {
   }, dependencies)
 
   dependencies.hook?.('before_graph_commit')
+  input.assertCurrent?.()
   dependencies.writeGraph(input.graph, graphPath)
   try { dependencies.hook?.('after_graph_commit') } catch (error) {
     warnings.push(`post-commit hook failed after graph publication: ${message(error)}`)

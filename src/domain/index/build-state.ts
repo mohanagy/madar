@@ -98,7 +98,7 @@ export interface IndexBuildState {
     supported_failures: Array<{ path: string; reason: IndexingReasonCode }>
   }
 }
-export type UpdateMode = 'cold_noop' | 'cold_reconcile' | 'warm_incremental'
+export type UpdateMode = 'cold_noop' | 'cold_reconcile'
 export interface UpdateReceipt {
   mode: UpdateMode
   scanned_files: number
@@ -106,7 +106,7 @@ export interface UpdateReceipt {
   reused_files: number
   invalidated_files: number
   dependency_closure_size: number
-  fallback_reason: 'cold_process' | 'compiler_control_changed' | 'corrupt_warm_state' | null
+  fallback_reason: 'cold_process' | 'source_or_policy_changed' | null
   previous_build_id: string | null
   accepted_build_id: string
   publication_advanced: boolean

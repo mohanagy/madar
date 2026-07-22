@@ -181,7 +181,7 @@ export interface ServeGraphStdioOptions {
   input?: Readable
   output?: Writable
   errorOutput?: Writable
-  /** Internal/testing seam for the in-process incremental watcher. */
+  /** Internal/testing seam for the in-process reconciliation watcher. */
   autoRefreshStarter?: typeof startWatchIndex
   /** Internal/testing override for how long graph-backed requests await reconciliation. */
   autoRefreshRequestWaitMs?: number

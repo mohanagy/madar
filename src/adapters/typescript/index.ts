@@ -44,38 +44,6 @@ export interface CanonicalTypeScriptIndexResult {
   diagnostics: IndexDiagnostic[]
 }
 
-export interface CanonicalTypeScriptIndexUpdateMetrics {
-  parsedFiles: number
-  reusedFiles: number
-  invalidatedFiles: number
-  dependencyClosureSize: number
-}
-
-export interface StagedCanonicalTypeScriptIndexUpdate {
-  result: CanonicalTypeScriptIndexResult
-  metrics: CanonicalTypeScriptIndexUpdateMetrics
-  commit(): void
-}
-
-export interface CanonicalTypeScriptIndexSession {
-  result(): CanonicalTypeScriptIndexResult
-  stageUpdate(input: {
-    files: readonly string[]
-    changedFiles: readonly string[]
-    forceFull?: boolean
-  }): StagedCanonicalTypeScriptIndexUpdate
-}
-
-interface CanonicalIndexFacts {
-  root: string
-  files: IndexFile[]
-  symbols: IndexSymbol[]
-  edges: IndexEdge[]
-  diagnostics: IndexDiagnostic[]
-  program: ts.Program | null
-  exportedSurface: Map<string, string>
-}
-
 const EXT_TO_LANG: Record<string, IndexLanguage> = {
   '.ts': 'typescript',
   '.tsx': 'tsx',
@@ -143,148 +111,48 @@ const INDEX_RESOLUTION_CANDIDATES = [
 ] as const
 
 export function buildCanonicalTypeScriptIndex(opts: BuildCanonicalTypeScriptIndexOptions): CanonicalTypeScriptIndexResult {
-  return resultFromFacts(buildCanonicalFacts(opts))
-}
-
-export function createCanonicalTypeScriptIndexSession(
-  opts: BuildCanonicalTypeScriptIndexOptions,
-): CanonicalTypeScriptIndexSession {
-  let accepted = buildCanonicalFacts(opts)
-  return {
-    result: () => resultFromFacts(accepted),
-    stageUpdate: (input) => {
-      const staged = buildCanonicalFacts({ root: opts.root, files: input.files }, accepted, input)
-      return {
-        result: resultFromFacts(staged.facts),
-        metrics: staged.metrics,
-        commit: () => { accepted = staged.facts },
-      }
-    },
-  }
-}
-
-function resultFromFacts(facts: CanonicalIndexFacts): CanonicalTypeScriptIndexResult {
-  return {
-    graph: writeCanonicalGraph(facts.root, facts.files, facts.symbols, facts.edges),
-    files: facts.files.map((file) => ({ ...file })),
-    diagnostics: facts.diagnostics.map((diagnostic) => structuredClone(diagnostic)),
-  }
-}
-
-function buildCanonicalFacts(
-  opts: BuildCanonicalTypeScriptIndexOptions,
-): CanonicalIndexFacts
-function buildCanonicalFacts(
-  opts: BuildCanonicalTypeScriptIndexOptions,
-  previous: CanonicalIndexFacts,
-  change: { files: readonly string[]; changedFiles: readonly string[]; forceFull?: boolean },
-): { facts: CanonicalIndexFacts; metrics: CanonicalTypeScriptIndexUpdateMetrics }
-function buildCanonicalFacts(
-  opts: BuildCanonicalTypeScriptIndexOptions,
-  previous?: CanonicalIndexFacts,
-  change?: { files: readonly string[]; changedFiles: readonly string[]; forceFull?: boolean },
-): CanonicalIndexFacts | { facts: CanonicalIndexFacts; metrics: CanonicalTypeScriptIndexUpdateMetrics } {
   const root = resolve(opts.root)
   if (!existsSync(root) || !statSync(root).isDirectory()) {
     throw new Error(`Canonical TypeScript index root is not a directory: ${root}`)
   }
-  const absPaths = collectCanonicalTypeScriptFiles(root, opts.files)
-  const currentPaths = new Set(absPaths.map((path) => toPosix(relative(root, path))))
-  const priorByPath = new Map(previous?.files.map((file) => [file.path, file]) ?? [])
-  const changed = new Set((change?.changedFiles ?? []).map((path) =>
-    toPosix(isAbsolute(path) ? relative(root, resolve(path)) : path).replace(/^\.\//, '')))
-  const removed = new Set(previous?.files.map((file) => file.path).filter((path) => !currentPaths.has(path)) ?? [])
-  const added = new Set([...currentPaths].filter((path) => !priorByPath.has(path)))
+
   const files: IndexFile[] = []
+  const symbols: IndexSymbol[] = []
+  const symbolById = new Map<string, IndexSymbol>()
+  const edges: IndexEdge[] = []
+  const diagnostics: IndexDiagnostic[] = []
+
+  const absPaths = collectCanonicalTypeScriptFiles(root, opts.files)
+
   const pathToFileId = new CanonicalPathMap<string>()
+  const sourceTextByPath = new CanonicalPathMap<string>()
   for (const abs of absPaths) {
     const ext = extname(abs).toLowerCase()
     const language = EXT_TO_LANG[ext]
     if (!language) continue
     const rel = toPosix(relative(root, abs))
-    const prior = priorByPath.get(rel)
-    const content = !prior || changed.has(rel) ? readFileSync(abs, 'utf8') : null
-    const fileId = prior?.id ?? makeFileId(rel)
+    const content = readFileSync(abs, 'utf8')
+    const fileId = makeFileId(rel)
     pathToFileId.set(abs, fileId)
-    files.push(prior && content === null ? { ...prior } : {
+    sourceTextByPath.set(abs, content)
+    files.push({
       id: fileId,
       path: rel,
       language,
-      loc: countLines(content ?? ''),
-      hash: sha256(content ?? ''),
+      loc: countLines(content),
+      hash: sha256(content),
     })
-  }
-  const compilerDiagnostics: IndexDiagnostic[] = []
-  const compiler = createCanonicalProgram(root, files, pathToFileId, compilerDiagnostics, previous?.program ?? undefined)
-  const exportedSurface = new Map<string, string>()
-  for (const file of files) {
-    if (previous && !changed.has(file.path) && !added.has(file.path)) {
-      exportedSurface.set(file.path, previous.exportedSurface.get(file.path) ?? '')
-      continue
-    }
-    const sourceFile = compiler?.program.getSourceFile(toPosix(join(root, file.path)))
-    exportedSurface.set(file.path, sourceFile ? exportedSurfaceHash(sourceFile) : '')
   }
 
-  const invalidatedPaths = new Set<string>([...changed, ...removed, ...added])
-  if (previous && change?.forceFull) {
-    for (const path of currentPaths) invalidatedPaths.add(path)
-  } else if (previous) {
-    const publicChanges = new Set([...changed].filter((path) =>
-      previous.exportedSurface.get(path) !== exportedSurface.get(path)))
-    for (const path of removed) publicChanges.add(path)
-    for (const path of added) publicChanges.add(path)
-    const reverse = reverseDependencies(previous)
-    if (compiler && added.size > 0) {
-      mergeReverseDependencies(reverse, reverseDependenciesFromProgram(
-        compiler,
-        root,
-        files,
-      ))
-    }
-    const queue = [...publicChanges]
-    while (queue.length > 0) {
-      const dependency = queue.shift()!
-      for (const dependent of reverse.get(dependency) ?? []) {
-        if (invalidatedPaths.has(dependent)) continue
-        invalidatedPaths.add(dependent)
-        queue.push(dependent)
+  const compiler = createCanonicalProgram(root, files, pathToFileId, sourceTextByPath, diagnostics)
+  if (compiler) {
+    for (const file of files) {
+      const sourceFile = compiler.program.getSourceFile(toPosix(join(root, file.path)))
+      if (sourceFile) {
+        visitFile(sourceFile, file, root, pathToFileId, compiler.resolveModule, symbols, symbolById, edges, diagnostics)
       }
     }
-  }
-  const invalidatedFileIds = new Set([
-    ...files.filter((file) => invalidatedPaths.has(file.path)).map((file) => file.id),
-    ...(previous?.files.filter((file) => removed.has(file.path)).map((file) => file.id) ?? []),
-  ])
-  const liveFileIds = new Set(files.map((file) => file.id))
-  const symbols = previous
-    ? previous.symbols.filter((symbol) => liveFileIds.has(symbol.file_id) && !invalidatedFileIds.has(symbol.file_id))
-      .map((symbol) => structuredClone(symbol))
-    : []
-  const symbolById = new Map(symbols.map((symbol) => [symbol.id, symbol]))
-  const edges = previous
-    ? previous.edges.filter((edge) => {
-      const origin = edge.evidence?.file_id
-      return origin !== undefined && liveFileIds.has(origin) && !invalidatedFileIds.has(origin)
-    }).map((edge) => structuredClone(edge))
-    : []
-  const diagnostics = [
-    ...(previous?.diagnostics.filter((diagnostic) => {
-      const origin = diagnostic.evidence?.file_id
-      return origin !== undefined && liveFileIds.has(origin) && !invalidatedFileIds.has(origin)
-    }).map((diagnostic) => structuredClone(diagnostic)) ?? []),
-    ...compilerDiagnostics,
-  ]
-  if (compiler) {
-    const targetFiles = previous ? files.filter((file) => invalidatedFileIds.has(file.id)) : files
-    for (const file of targetFiles) {
-      const sourceFile = compiler.program.getSourceFile(toPosix(join(root, file.path)))
-      if (sourceFile) visitFile(sourceFile, file, root, pathToFileId, compiler.resolveModule, symbols, symbolById, edges, diagnostics)
-    }
-    addTypeCheckerEdges({
-      files, root, pathToFileId, symbols, edges, diagnostics, program: compiler.program,
-      ...(previous ? { targetFileIds: invalidatedFileIds } : {}),
-    })
+    addTypeCheckerEdges({ files, root, pathToFileId, symbols, edges, diagnostics, program: compiler.program })
   }
 
   files.sort((a, b) => compareCodeUnits(a.path, b.path))
@@ -292,104 +160,7 @@ function buildCanonicalFacts(
   edges.sort((a, b) => compareCodeUnits(edgeSortKey(a), edgeSortKey(b)))
   diagnostics.sort((a, b) => compareCodeUnits(diagnosticSortKey(a), diagnosticSortKey(b)))
 
-  const facts = { root, files, symbols, edges, diagnostics, program: compiler?.program ?? null, exportedSurface }
-  if (!previous) return facts
-  const invalidatedCurrent = files.filter((file) => invalidatedFileIds.has(file.id)).length
-  return {
-    facts,
-    metrics: {
-      parsedFiles: invalidatedCurrent,
-      reusedFiles: files.length - invalidatedCurrent,
-      invalidatedFiles: invalidatedCurrent,
-      dependencyClosureSize: Math.max(0, invalidatedCurrent - [...changed].filter((path) => currentPaths.has(path)).length),
-    },
-  }
-}
-
-function reverseDependencies(facts: CanonicalIndexFacts): Map<string, Set<string>> {
-  const pathById = new Map(facts.files.map((file) => [file.id, file.path]))
-  const result = new Map<string, Set<string>>()
-  for (const edge of facts.edges) {
-    if (edge.kind !== 'imports' && edge.kind !== 'reexports') continue
-    const source = pathById.get(edge.from)
-    const target = pathById.get(edge.to)
-    if (!source || !target) continue
-    result.set(target, (result.get(target) ?? new Set()).add(source))
-  }
-  return result
-}
-
-function mergeReverseDependencies(
-  target: Map<string, Set<string>>,
-  source: ReadonlyMap<string, ReadonlySet<string>>,
-): void {
-  for (const [dependency, dependants] of source) {
-    const merged = target.get(dependency) ?? new Set<string>()
-    for (const dependant of dependants) merged.add(dependant)
-    target.set(dependency, merged)
-  }
-}
-
-/**
- * Resolve module references against the next Program so a newly added file can
- * invalidate imports that were unresolved in the previously accepted graph.
- * Walking reused SourceFiles does not re-index their facts; it only defines the
- * reverse-dependency closure for the staged update.
- */
-function reverseDependenciesFromProgram(
-  compiler: CanonicalProgram,
-  root: string,
-  files: readonly IndexFile[],
-): Map<string, Set<string>> {
-  const pathById = new Map(files.map((file) => [file.id, file.path]))
-  const reverse = new Map<string, Set<string>>()
-  for (const file of files) {
-    const sourceFile = compiler.program.getSourceFile(toPosix(join(root, file.path)))
-    if (!sourceFile) continue
-    const record = (specifier: string): void => {
-      const targetId = compiler.resolveModule(specifier, sourceFile.fileName)
-      const targetPath = targetId ? pathById.get(targetId) : undefined
-      if (!targetPath || targetPath === file.path) return
-      const dependants = reverse.get(targetPath) ?? new Set<string>()
-      dependants.add(file.path)
-      reverse.set(targetPath, dependants)
-    }
-    const visit = (node: ts.Node): void => {
-      if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
-        && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) {
-        record(node.moduleSpecifier.text)
-      } else if (ts.isImportEqualsDeclaration(node)
-        && ts.isExternalModuleReference(node.moduleReference)
-        && node.moduleReference.expression
-        && ts.isStringLiteralLike(node.moduleReference.expression)) {
-        record(node.moduleReference.expression.text)
-      } else if (ts.isCallExpression(node)
-        && ts.isIdentifier(node.expression)
-        && node.expression.text === 'require'
-        && node.arguments[0]
-        && ts.isStringLiteralLike(node.arguments[0])) {
-        record(node.arguments[0].text)
-      }
-      ts.forEachChild(node, visit)
-    }
-    visit(sourceFile)
-  }
-  return reverse
-}
-
-function exportedSurfaceHash(sourceFile: ts.SourceFile): string {
-  const parts: string[] = []
-  for (const statement of sourceFile.statements) {
-    const exported = ts.isExportDeclaration(statement) || ts.isExportAssignment(statement)
-      || ts.canHaveModifiers(statement) && (ts.getModifiers(statement)?.some((modifier) =>
-        modifier.kind === ts.SyntaxKind.ExportKeyword || modifier.kind === ts.SyntaxKind.DefaultKeyword) ?? false)
-    const commonJs = statement.getText(sourceFile).includes('module.exports') || statement.getText(sourceFile).includes('exports.')
-    if (!exported && !commonJs) continue
-    if (ts.isFunctionDeclaration(statement) && statement.body && statement.type) {
-      parts.push(sourceFile.text.slice(statement.getStart(sourceFile), statement.body.getStart(sourceFile)))
-    } else parts.push(statement.getText(sourceFile))
-  }
-  return sha256(parts.join('\n'))
+  return { graph: writeCanonicalGraph(root, files, symbols, edges), files, diagnostics }
 }
 
 const confidence = {
@@ -951,6 +722,7 @@ function createIndexCompilerHost(
   root: string,
   compilerOptions: ts.CompilerOptions,
   pathToFileId: Map<string, string>,
+  sourceTextByPath: ReadonlyMap<string, string>,
   compilerOptionsForFile?: (containingFile: string) => ts.CompilerOptions,
 ): ts.CompilerHost {
   const host = ts.createCompilerHost(compilerOptions, true)
@@ -966,11 +738,17 @@ function createIndexCompilerHost(
     || pathToFileId.has(fileName)
 
   host.fileExists = (fileName) => canRead(fileName) && baseFileExists(fileName)
-  host.readFile = (fileName) => canRead(fileName) ? baseReadFile(fileName) : undefined
-  host.getSourceFile = (fileName, languageVersion, onError, shouldCreateNewSourceFile) =>
-    canRead(fileName)
+  host.readFile = (fileName) => {
+    if (!canRead(fileName)) return undefined
+    return sourceTextByPath.get(canonicalPathKey(fileName)) ?? baseReadFile(fileName)
+  }
+  host.getSourceFile = (fileName, languageVersion, onError, shouldCreateNewSourceFile) => {
+    if (!canRead(fileName)) return undefined
+    const captured = sourceTextByPath.get(canonicalPathKey(fileName))
+    return captured === undefined
       ? baseGetSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile)
-      : undefined
+      : ts.createSourceFile(fileName, captured, languageVersion, true)
+  }
 
   // The scanner already supplied the complete source set. Keep referenced
   // projects source-backed so one Program can index their facts without
@@ -1027,14 +805,14 @@ function createCanonicalProgram(
   root: string,
   files: readonly IndexFile[],
   pathToFileId: Map<string, string>,
+  sourceTextByPath: ReadonlyMap<string, string>,
   diagnostics: IndexDiagnostic[],
-  oldProgram?: ts.Program,
 ): CanonicalProgram | null {
   const rootNames = files.map((file) => toPosix(join(root, file.path)))
   if (rootNames.length === 0) return null
   const optionsResolver = createCompilerOptionsResolver(root)
   const options = optionsResolver.defaultOptions
-  const host = createIndexCompilerHost(root, options, pathToFileId, optionsResolver.forContainingFile)
+  const host = createIndexCompilerHost(root, options, pathToFileId, sourceTextByPath, optionsResolver.forContainingFile)
   try {
     const configPath = findProjectConfigWithinRoot(root, root)
     const configPaths = new Set(files.map((file) => findProjectConfigWithinRoot(join(root, file.path), root)))
@@ -1047,7 +825,6 @@ function createCanonicalProgram(
       rootNames,
       options,
       host,
-      ...(oldProgram ? { oldProgram } : {}),
       ...(projectReferences ? { projectReferences } : {}),
     })
     const resolveModule: IndexedModuleResolver = (specifier, containingFile) => {
@@ -1307,11 +1084,10 @@ type TypeCheckerEdgeContext = {
   edges: IndexEdge[]
   diagnostics: IndexDiagnostic[]
   program: ts.Program
-  targetFileIds?: ReadonlySet<string>
 }
 
 function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
-  const { files, root, pathToFileId, symbols, edges, diagnostics, program, targetFileIds } = ctx
+  const { files, root, pathToFileId, symbols, edges, diagnostics, program } = ctx
   const checker = program.getTypeChecker()
   const seenCalls = new Set<string>()
   const seenTypeEdges = new Set<string>()
@@ -1335,7 +1111,6 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
   const workerIndex = collectBullWorkerIndex(program, pathToFileId)
 
   for (const file of files) {
-    if (targetFileIds && !targetFileIds.has(file.id)) continue
     const abs = toPosix(join(root, file.path))
     const sourceFile = program.getSourceFile(abs)
     if (!sourceFile) continue

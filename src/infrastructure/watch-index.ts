@@ -1,11 +1,7 @@
 import { watch as watchFilesystem, type FSWatcher } from 'node:fs'
 import { resolve } from 'node:path'
 
-import {
-  createUpdateIndexSession,
-  type UpdateIndexOptions,
-  type UpdateIndexSession,
-} from '../application/update-index.js'
+import { updateIndex, type UpdateIndexOptions } from '../application/update-index.js'
 import type { GenerateIndexResult } from '../application/generate-index.js'
 import { IndexLeaseContentionError } from '../domain/index/build-state.js'
 
@@ -23,11 +19,12 @@ export type WatchIndexState = 'starting' | 'idle' | 'pending' | 'reconciling' | 
 export interface WatchIndexOptions extends UpdateIndexOptions {
   signal?: AbortSignal
   pollIntervalMs?: number
-  seed?: Pick<GenerateIndexResult, 'buildId' | 'indexSession'>
+  seed?: Pick<GenerateIndexResult, 'buildId'>
   logger?: WatchIndexLogger
   /** Hermetic event-source seam; production uses fs.watch. */
   eventSource?: (root: string, changed: () => void) => { close(): void }
-  updateSession?: UpdateIndexSession
+  /** Hermetic reconciliation seam; production uses the one-shot application use case. */
+  update?: typeof updateIndex
 }
 
 export interface GraphAutoRefreshController {
@@ -59,7 +56,7 @@ export function startWatchIndex(
 ): GraphAutoRefreshController {
   const root = resolve(rootPath)
   const logger = options.logger ?? console
-  const session = options.updateSession ?? createUpdateIndexSession(root, options.seed)
+  const update = options.update ?? updateIndex
   const debounceMs = Math.max(0, Math.round(debounceSeconds * 1_000))
   const pollMs = Math.max(50, options.pollIntervalMs ?? 5 * 60_000)
   let currentState: WatchIndexState = 'starting'
@@ -118,7 +115,7 @@ export function startWatchIndex(
     dirty = false
     queueMicrotask(() => {
       try {
-        const result = session.update(options)
+        const result = update(root, options)
         buildId = result.buildId
         failure = null
         leaseRetryAttempts = 0

@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { generateIndex, type GenerateIndexResult } from '../../src/application/generate-index.js'
-import type { UpdateIndexSession } from '../../src/application/update-index.js'
 import { SourceChangedDuringBuildError } from '../../src/application/generate-index.js'
 import { IndexLeaseContentionError } from '../../src/domain/index/build-state.js'
 import { startWatchIndex } from '../../src/infrastructure/watch-index.js'
@@ -53,7 +52,7 @@ function updateResult(sequence: number): GenerateIndexResult {
     },
     buildId,
     updateReceipt: {
-      mode: 'warm_incremental',
+      mode: sequence === 1 ? 'cold_noop' : 'cold_reconcile',
       scanned_files: 1,
       parsed_files: sequence === 1 ? 0 : 1,
       reused_files: sequence === 1 ? 1 : 0,
@@ -80,9 +79,9 @@ describe('watch index', () => {
   it('coalesces a burst into one following reconciliation', async () => {
     let changed: (() => void) | null = null
     let calls = 0
-    const session: UpdateIndexSession = { update: () => updateResult(++calls) }
+    const update = () => updateResult(++calls)
     const controller = startWatchIndex('.', 0.01, {
-      updateSession: session,
+      update,
       pollIntervalMs: 60_000,
       eventSource: (_root, notify) => {
         changed = notify
@@ -105,15 +104,13 @@ describe('watch index', () => {
   it('schedules exactly one follow-up when an edit arrives during a build', async () => {
     let changed: (() => void) | null = null
     let calls = 0
-    const session: UpdateIndexSession = {
-      update: () => {
-        calls += 1
-        if (calls === 1) changed?.()
-        return updateResult(calls)
-      },
+    const update = () => {
+      calls += 1
+      if (calls === 1) changed?.()
+      return updateResult(calls)
     }
     const controller = startWatchIndex('.', 0, {
-      updateSession: session,
+      update,
       pollIntervalMs: 60_000,
       eventSource: (_root, notify) => {
         changed = notify
@@ -134,21 +131,19 @@ describe('watch index', () => {
     let calls = 0
     let active = 0
     let maximumActive = 0
-    const session: UpdateIndexSession = {
-      update: () => {
-        calls += 1
-        active += 1
-        maximumActive = Math.max(maximumActive, active)
-        try {
-          if (calls === 1) throw new SourceChangedDuringBuildError()
-          return updateResult(calls)
-        } finally {
-          active -= 1
-        }
-      },
+    const update = () => {
+      calls += 1
+      active += 1
+      maximumActive = Math.max(maximumActive, active)
+      try {
+        if (calls === 1) throw new SourceChangedDuringBuildError()
+        return updateResult(calls)
+      } finally {
+        active -= 1
+      }
     }
     const controller = startWatchIndex('.', 0, {
-      updateSession: session,
+      update,
       pollIntervalMs: 60_000,
       eventSource: () => ({ close() {} }),
       logger: { log() {}, error() {} },
@@ -166,15 +161,13 @@ describe('watch index', () => {
   it('recovers from a failed reconciliation on the next event', async () => {
     let changed: (() => void) | null = null
     let calls = 0
-    const session: UpdateIndexSession = {
-      update: () => {
-        calls += 1
-        if (calls === 1) throw new Error('injected failure')
-        return updateResult(calls)
-      },
+    const update = () => {
+      calls += 1
+      if (calls === 1) throw new Error('injected failure')
+      return updateResult(calls)
     }
     const controller = startWatchIndex('.', 0, {
-      updateSession: session,
+      update,
       pollIntervalMs: 60_000,
       eventSource: (_root, notify) => {
         changed = notify
@@ -197,15 +190,13 @@ describe('watch index', () => {
   it('keeps lease contention pending and retries without an external event', async () => {
     let calls = 0
     const errors: string[] = []
-    const session: UpdateIndexSession = {
-      update: () => {
-        calls += 1
-        if (calls === 1) throw new IndexLeaseContentionError('/fixture/out')
-        return updateResult(calls)
-      },
+    const update = () => {
+      calls += 1
+      if (calls === 1) throw new IndexLeaseContentionError('/fixture/out')
+      return updateResult(calls)
     }
     const controller = startWatchIndex('.', 0, {
-      updateSession: session,
+      update,
       pollIntervalMs: 60_000,
       eventSource: () => ({ close() {} }),
       logger: { log() {}, error(message) { errors.push(message ?? '') } },
@@ -228,14 +219,12 @@ describe('watch index', () => {
   it('bounds repeated lease retries before reporting a terminal failure', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] })
     let calls = 0
-    const session: UpdateIndexSession = {
-      update: () => {
-        calls += 1
-        throw new IndexLeaseContentionError('/fixture/out')
-      },
+    const update = (): GenerateIndexResult => {
+      calls += 1
+      throw new IndexLeaseContentionError('/fixture/out')
     }
     const controller = startWatchIndex('.', 0, {
-      updateSession: session,
+      update,
       pollIntervalMs: 1_000_000,
       eventSource: () => ({ close() {} }),
       logger: { log() {}, error() {} },
