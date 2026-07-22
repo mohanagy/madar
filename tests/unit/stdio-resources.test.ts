@@ -14,7 +14,6 @@ function createGraphFixtureRoot(): string {
     {
       nodes: [{ id: 'auth', label: 'AuthService', source_file: 'auth.ts', source_location: '1', file_type: 'code', community: 0 }],
       edges: [],
-      hyperedges: [],
     },
   )
   writeFileSync(join(root, 'GRAPH_REPORT.md'), '# Graph Report\n', 'utf8')

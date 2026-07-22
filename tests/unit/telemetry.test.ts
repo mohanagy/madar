@@ -55,7 +55,6 @@ describe('telemetry', () => {
         version: '0.27.4',
         os: 'darwin',
         nodeMajor: 20,
-        spiEnabled: true,
       }, {
         configRoot,
         cacheRoot,
@@ -72,7 +71,6 @@ describe('telemetry', () => {
         nodeMajor: 20,
         repoSizeBucket: repoSizeBucketFromFileCount(240),
         graphSizeBucket: graphSizeBucketFromNodeCount(1_200),
-        spiEnabled: true,
       }, {
         configRoot,
         cacheRoot,
@@ -110,7 +108,6 @@ describe('telemetry', () => {
             node_major: 20,
             repo_size_bucket: '100-499',
             graph_size_bucket: '1000-4999',
-            spi_enabled: true,
           }),
           expect.objectContaining({
             command: 'context_pack',

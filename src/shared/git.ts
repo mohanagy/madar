@@ -102,7 +102,8 @@ function parseStatusPaths(statusOutput: string): string[] {
     const status = entry.slice(0, 2)
     paths.push(entry.slice(3))
     if (status.includes('R') || status.includes('C')) {
-      index += 1
+      const priorPath = entries[++index]
+      if (priorPath) paths.push(priorPath)
     }
   }
   return paths
@@ -154,7 +155,7 @@ export function diffGitFilesBetweenCommits(projectDir: string, fromSha: string, 
   }
 
   try {
-    const output = gitOutput(repoRoot, ['diff', '--name-only', '-z', '--find-renames=50%', '--no-ext-diff', fromSha, toSha, '--'], false)
+    const output = gitOutput(repoRoot, ['diff', '--name-only', '-z', '--no-renames', '--no-ext-diff', fromSha, toSha, '--'], false)
     return dedupePaths(
       output
         .split('\0')

@@ -11,7 +11,7 @@ import type {
   ContextPackRelationship,
   ContextPackSchemaV1,
 } from '../../src/contracts/context-pack.js'
-import { buildGraph } from '../../src/application/build-graph.js'
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 import { buildHandoffArtifactV1, runHandoffCommand } from '../../src/infrastructure/handoff-command.js'
 import type { MadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
 
@@ -470,7 +470,7 @@ describe('handoff-command', () => {
       ...createPackSchema(root),
       graph_path: 'out/graph.json',
     } satisfies ContextPackSchemaV1<TestPack>
-    const graph = buildGraph([])
+    const graph = createTestGraph({})
     graph.graph.root_path = root
 
     const output = await runHandoffCommand({

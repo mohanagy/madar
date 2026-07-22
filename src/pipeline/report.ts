@@ -172,19 +172,6 @@ export function generate(
     }
   }
 
-  const hyperedges = Array.isArray(graph.graph.hyperedges) ? graph.graph.hyperedges : []
-  if (hyperedges.length > 0) {
-    lines.push('')
-    lines.push('## Hyperedges (group relationships)')
-    for (const hyperedge of hyperedges) {
-      const label = typeof hyperedge.label === 'string' ? hyperedge.label : typeof hyperedge.id === 'string' ? hyperedge.id : 'hyperedge'
-      const nodeLabels = Array.isArray(hyperedge.nodes) ? hyperedge.nodes.map((nodeId: unknown) => escapeMarkdownInline(String(nodeId))).join(', ') : ''
-      const confidence = typeof hyperedge.confidence === 'string' ? hyperedge.confidence : 'INFERRED'
-      const confidenceScore = typeof hyperedge.confidence_score === 'number' ? hyperedge.confidence_score : undefined
-      lines.push(`- **${escapeMarkdownInline(label)}** — ${nodeLabels} [${formatConfidenceTag(confidence, confidenceScore)}]`)
-    }
-  }
-
   lines.push('')
   lines.push('## Communities')
   const nodeCommunity = _nodeCommunityMap(communities)

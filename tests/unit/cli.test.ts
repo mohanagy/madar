@@ -180,21 +180,14 @@ function createDependencies(): CliTestDependencies {
       outputDir: resolve(rootPath, 'out'),
       graphPath: resolve(rootPath, 'out', 'graph.json'),
       reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
-      wikiPath: options.wiki ? resolve(rootPath, 'out', 'wiki') : null,
-      docsPath: null,
       totalFiles: 3,
       codeFiles: 2,
-      nonCodeFiles: 1,
-      extractableFiles: 3,
-      extractedFiles: options.extractionMode !== 'legacy' ? 2 : 3,
+      indexedFiles: 2,
       totalWords: 120,
       nodeCount: 5,
       edgeCount: 4,
       communityCount: 2,
       semanticAnomalyCount: 2,
-      changedFiles: options.update ? 1 : 0,
-      deletedFiles: 0,
-      cache: null,
       warning: null,
       notes: ['test note'],
       discoverySafety: {
@@ -212,6 +205,15 @@ function createDependencies(): CliTestDependencies {
       discoveryExclusions: [
         { path: 'config/credentials.json', kind: 'sensitive', reason: 'secret_config' },
       ],
+      indexingManifestPath: resolve(rootPath, 'out', 'indexing-manifest.json'),
+      indexingShareSafeManifestPath: resolve(rootPath, 'out', 'indexing-manifest.share-safe.json'),
+      indexing: {
+        state: 'complete',
+        candidates: 2,
+        counts: { indexed: 2, indexed_with_warnings: 0, skipped_by_policy: 0, unsupported: 0, failed: 0 },
+        reason_buckets: { indexed: 2 },
+        capability_buckets: { 'builtin:index:typescript': 2 },
+      },
     }),
     watchGraph: async () => {},
     serveGraph: async () => {},
@@ -925,14 +927,10 @@ describe('cli parser', () => {
       followSymlinks: false,
       respectGitignore: false,
       debounceSeconds: 3,
-      wiki: false,
       neo4jPushUri: null,
       neo4jUser: null,
       neo4jPassword: null,
       neo4jDatabase: null,
-      includeDocs: false,
-      docs: false,
-      extractionMode: 'auto',
       strictIndexing: false,
       maxIndexingFailed: 0,
       maxIndexingUnsupported: 0,
@@ -947,7 +945,6 @@ describe('cli parser', () => {
         '--respect-gitignore',
         '--debounce',
         '1.5',
-        '--wiki',
         '--neo4j-push',
         'bolt://localhost:7687',
         '--neo4j-user',
@@ -968,14 +965,10 @@ describe('cli parser', () => {
       followSymlinks: true,
       respectGitignore: true,
       debounceSeconds: 1.5,
-      wiki: true,
       neo4jPushUri: 'bolt://localhost:7687',
       neo4jUser: 'neo4j',
       neo4jPassword: 'secret',
       neo4jDatabase: 'madar',
-      includeDocs: false,
-      docs: false,
-      extractionMode: 'auto',
       strictIndexing: true,
       maxIndexingFailed: 2,
       maxIndexingUnsupported: 3,
@@ -996,11 +989,13 @@ describe('cli parser', () => {
     )
     expect(parseGenerateArgs(['examples/demo-repo'])).toMatchObject({
       path: 'examples/demo-repo',
-      extractionMode: 'auto',
     })
     expect(() => parseGenerateArgs(['examples/demo-repo', '--no-html'])).toThrow(
       'unknown option for generate: --no-html',
     )
+    for (const retiredFlag of ['--legacy', '--spi', '--include-docs', '--docs', '--wiki']) {
+      expect(() => parseGenerateArgs([retiredFlag])).toThrow(`unknown option for generate: ${retiredFlag}`)
+    }
   })
 
   it('parses watch args', () => {
@@ -1258,14 +1253,13 @@ describe('cli main', () => {
     expect(help).toContain('serve [graph.json]')
     expect(help).not.toContain('--directed')
     expect(help).not.toContain('--undirected')
-    expect(help).toContain('--legacy')
-    expect(help).toContain('--spi')
-    expect(help).toContain('default: auto')
+    expect(help).not.toContain('--legacy')
+    expect(help).not.toContain('--spi')
     expect(help).toContain('--respect-gitignore')
     expect(help).toContain('--strict-indexing')
     expect(help).toContain('--max-indexing-failed')
     expect(help).toContain('--max-indexing-unsupported')
-    expect(help).toContain('--wiki')
+    expect(help).not.toContain('--wiki')
     expect(help).not.toContain('--obsidian')
     expect(help).not.toContain('--svg')
     expect(help).not.toContain('--graphml')
@@ -1626,7 +1620,6 @@ describe('cli main', () => {
         version: '0.27.4',
         os: process.platform,
         nodeMajor: expect.any(Number),
-        spiEnabled: true,
       },
       {
         command: 'generate',
@@ -1636,12 +1629,11 @@ describe('cli main', () => {
         nodeMajor: expect.any(Number),
         repoSizeBucket: '1-24',
         graphSizeBucket: '1-99',
-        spiEnabled: true,
       },
     ])
   })
 
-  it('omits SPI telemetry for cluster-only generation because the stored graph owns its extraction mode', async () => {
+  it('records mode-free telemetry for cluster-only generation', async () => {
     const { io, errors } = createIo()
     const dependencies = createDependencies() as CliDependencies & {
       recordTelemetryEvent: (event: unknown) => void
@@ -1663,11 +1655,11 @@ describe('cli main', () => {
       expect.objectContaining({ command: 'generate', stage: 'succeeded' }),
     ])
     for (const event of telemetryEvents) {
-      expect(event).not.toHaveProperty('spiEnabled')
+      expect(event).not.toHaveProperty('extractionMode')
     }
   })
 
-  it('omits SPI telemetry for failed cluster-only generation too', async () => {
+  it('keeps failed cluster-only telemetry mode-free', async () => {
     const { io, errors } = createIo()
     const dependencies = createDependencies() as CliDependencies & {
       recordTelemetryEvent: (event: unknown) => void
@@ -1692,7 +1684,7 @@ describe('cli main', () => {
       expect.objectContaining({ command: 'generate', stage: 'failed' }),
     ])
     for (const event of telemetryEvents) {
-      expect(event).not.toHaveProperty('spiEnabled')
+      expect(event).not.toHaveProperty('extractionMode')
     }
   })
 
@@ -2270,7 +2262,7 @@ describe('cli main', () => {
       const exitCode = await executeCli(['bench:suite', '--exec', 'claude -p "$(cat {prompt_file})"'], io)
 
       expect(exitCode).toBe(2)
-      expect(logs).toEqual(['Warning: bench:suite will execute baseline, madar, and SPI suite prompts. This may consume paid model tokens.'])
+      expect(logs).toEqual(['Warning: bench:suite will execute baseline and madar suite prompts. This may consume paid model tokens.'])
       expect(errors).toEqual(['error: bench:suite requires --yes in non-interactive mode.'])
     } finally {
       Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: stdinTty })

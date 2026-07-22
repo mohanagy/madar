@@ -1,27 +1,35 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
-import { buildGraphFromExtraction } from '../../src/application/build-graph.js'
 import { cluster, cohesionScore, scoreAll } from '../../src/pipeline/cluster.js'
-
-const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 
 function makeGraph(): KnowledgeGraph {
-  return buildGraphFromExtraction(JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')))
+  return createTestGraph({
+    nodes: [
+      ['n_transformer', { label: 'Transformer', file_type: 'code', source_file: 'model.ts' }],
+      ['n_attention', { label: 'MultiHeadAttention', file_type: 'code', source_file: 'attention.ts' }],
+      ['n_layernorm', { label: 'LayerNorm', file_type: 'code', source_file: 'normalization.ts' }],
+      ['n_kernel', { label: 'AttentionKernel', file_type: 'code', source_file: 'kernel.ts' }],
+    ],
+    edges: [
+      ['n_transformer', 'n_attention', { relation: 'contains', confidence: 'EXTRACTED', source_file: 'model.ts' }],
+      ['n_transformer', 'n_layernorm', { relation: 'contains', confidence: 'EXTRACTED', source_file: 'model.ts' }],
+      ['n_attention', 'n_kernel', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'attention.ts' }],
+      ['n_layernorm', 'n_kernel', { relation: 'references', confidence: 'INFERRED', source_file: 'normalization.ts' }],
+    ],
+  })
 }
 
 function makeBridgeGraph(): KnowledgeGraph {
   const graph = new KnowledgeGraph()
   for (let index = 0; index < 5; index += 1) {
-    graph.addNode(`a${index}`, { label: `A${index}`, file_type: 'code', source_file: 'single.py' })
-    graph.addNode(`b${index}`, { label: `B${index}`, file_type: 'code', source_file: 'single.py' })
+    graph.addNode(`a${index}`, { label: `A${index}`, file_type: 'code', source_file: 'single.ts' })
+    graph.addNode(`b${index}`, { label: `B${index}`, file_type: 'code', source_file: 'single.ts' })
   }
   for (let index = 0; index < 4; index += 1) {
-    graph.addEdge(`a${index}`, `a${index + 1}`, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'single.py', weight: 1.0 })
-    graph.addEdge(`b${index}`, `b${index + 1}`, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'single.py', weight: 1.0 })
+    graph.addEdge(`a${index}`, `a${index + 1}`, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'single.ts', weight: 1.0 })
+    graph.addEdge(`b${index}`, `b${index + 1}`, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'single.ts', weight: 1.0 })
   }
-  graph.addEdge('a4', 'b0', { relation: 'references', confidence: 'INFERRED', source_file: 'single.py', weight: 0.5 })
+  graph.addEdge('a4', 'b0', { relation: 'references', confidence: 'INFERRED', source_file: 'single.ts', weight: 0.5 })
   return graph
 }
 
@@ -73,12 +81,12 @@ describe('cluster', () => {
   it('scores complete graphs at 1.0 cohesion', () => {
     const graph = new KnowledgeGraph()
     for (const nodeId of ['0', '1', '2', '3']) {
-      graph.addNode(nodeId, { label: nodeId, file_type: 'code', source_file: 'complete.py' })
+      graph.addNode(nodeId, { label: nodeId, file_type: 'code', source_file: 'complete.ts' })
     }
     const nodeIds = graph.nodeIds()
     for (let sourceIndex = 0; sourceIndex < nodeIds.length; sourceIndex += 1) {
       for (let targetIndex = sourceIndex + 1; targetIndex < nodeIds.length; targetIndex += 1) {
-        graph.addEdge(nodeIds[sourceIndex]!, nodeIds[targetIndex]!, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'complete.py', weight: 1.0 })
+        graph.addEdge(nodeIds[sourceIndex]!, nodeIds[targetIndex]!, { relation: 'calls', confidence: 'EXTRACTED', source_file: 'complete.ts', weight: 1.0 })
       }
     }
     expect(cohesionScore(graph, graph.nodeIds())).toBe(1)
@@ -86,14 +94,14 @@ describe('cluster', () => {
 
   it('scores single-node communities at 1.0 cohesion', () => {
     const graph = new KnowledgeGraph()
-    graph.addNode('a', { label: 'A', file_type: 'code', source_file: 'solo.py' })
+    graph.addNode('a', { label: 'A', file_type: 'code', source_file: 'solo.ts' })
     expect(cohesionScore(graph, ['a'])).toBe(1)
   })
 
   it('scores disconnected communities at 0.0 cohesion', () => {
     const graph = new KnowledgeGraph()
     for (const nodeId of ['a', 'b', 'c']) {
-      graph.addNode(nodeId, { label: nodeId, file_type: 'code', source_file: 'empty.py' })
+      graph.addNode(nodeId, { label: nodeId, file_type: 'code', source_file: 'empty.ts' })
     }
     expect(cohesionScore(graph, ['a', 'b', 'c'])).toBe(0)
   })

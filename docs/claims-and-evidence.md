@@ -61,8 +61,8 @@ Use this as a scope summary, not a benchmark claim. If a future README or sales 
 - Distribution channels should stay framed around shipped local installs first: Claude, Cursor, Copilot, Gemini, Codex, Aider, and OpenCode are current surfaces; the official MCP Registry manifest and release-gated OIDC workflow are prepared to publish the next eligible entry and point it to the same local-first flow, while broader **MCP directories** and registry/listing expansion are later only when **proof/onboarding readiness** is stronger.
 - Any distribution-channel note should keep the **local trust boundary** explicit, distinguish current installers from future listing work, and avoid marketplace-scale adoption claims before stronger conversion proof exists.
 - Do not imply a hosted relay, plugin-store rollout, or source custody requirement when describing future channel work.
-- Any language expansion note should stay behind stronger **TypeScript/Node proof** plus **benchmark or fixture evidence** for the language in question.
-- Public language copy should make **no broad parity claim** across Python, Go, Rust, Java, and TypeScript unless dated evidence exists for that scope.
+- Current public language copy must state that Madar indexes JavaScript and TypeScript only. Other languages are unsupported coverage, not a lower-confidence extractor tier.
+- Any future language expansion requires a new accepted product/architecture decision, repeated user demand, and benchmark or fixture evidence before implementation or public claims.
 - Any design-partner workflow evidence should stay **anonymized**, use **workflow-loop notes** or **synthetic reproductions** when needed, and avoid implying five live partner wins before those receipts exist.
 - Any federation claim should keep the **synthetic federation receipt** boundary explicit, say when the current proof depends on **shared labels**, and avoid turning that into a broad cross-repo benchmark headline.
 - Any new public claim should link back to a dated artifact or to the reproducible suite surface under [`docs/benchmarks/suite/`](./benchmarks/suite/README.md).

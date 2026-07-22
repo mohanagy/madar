@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 
 import type { RuntimeProofObligationKind, RuntimeProofProfile } from '../../contracts/runtime-proof.js'
+import { hasOnlyKeys } from '../../shared/guards.js'
 
 function parseRuntimeProofStringArray(
   profileName: string,
@@ -36,14 +37,14 @@ function parseRuntimeProofProfile(profileName: string, value: unknown): RuntimeP
     throw new Error(`Malformed runtime proof profile "${profileName}": expected an object`)
   }
   const profile = value as Record<string, unknown>
+  if (!hasOnlyKeys(profile, ['prompt', 'strict_runtime_proof', 'obligations'])) {
+    throw new Error(`Malformed runtime proof profile "${profileName}": contains unsupported fields`)
+  }
   if (typeof profile.prompt !== 'string' || profile.prompt.trim().length === 0) {
     throw new Error(`Malformed runtime proof profile "${profileName}": prompt must be a non-empty string`)
   }
   if (typeof profile.strict_runtime_proof !== 'boolean') {
     throw new Error(`Malformed runtime proof profile "${profileName}": strict_runtime_proof must be a boolean`)
-  }
-  if (typeof profile.expected_spi !== 'boolean') {
-    throw new Error(`Malformed runtime proof profile "${profileName}": expected_spi must be a boolean`)
   }
   if (!Array.isArray(profile.obligations) || profile.obligations.length === 0) {
     throw new Error(`Malformed runtime proof profile "${profileName}": obligations must be a non-empty array`)
@@ -52,12 +53,14 @@ function parseRuntimeProofProfile(profileName: string, value: unknown): RuntimeP
   return {
     prompt: profile.prompt.trim(),
     strict_runtime_proof: profile.strict_runtime_proof,
-    expected_spi: profile.expected_spi,
     obligations: profile.obligations.map((obligation, index) => {
       if (obligation === null || typeof obligation !== 'object' || Array.isArray(obligation)) {
         throw new Error(`Malformed runtime proof profile "${profileName}": obligation ${index + 1} must be an object`)
       }
       const entry = obligation as Record<string, unknown>
+      if (!hasOnlyKeys(entry, ['id', 'label', 'kind', 'evidence_terms'])) {
+        throw new Error(`Malformed runtime proof profile "${profileName}": obligation ${index + 1} contains unsupported fields`)
+      }
       if (typeof entry.id !== 'string' || entry.id.trim().length === 0) {
         throw new Error(`Malformed runtime proof profile "${profileName}": obligation ${index + 1} id must be a non-empty string`)
       }

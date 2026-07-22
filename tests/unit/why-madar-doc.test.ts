@@ -109,13 +109,13 @@ describe('public marketing copy honesty', () => {
       )
     })
 
-    it('keeps extraction guidance concise in the README and documents strict modes in deeper docs', () => {
-      expect(lower).toContain('by default, `madar generate .` indexes javascript/typescript once through the canonical compiler-backed path')
-      expect(publicDocs).toContain('--legacy')
-      expect(publicDocs).toContain('--spi')
-      expect(languageMatrix).toContain('Storage-oriented prompts in auto mode')
-      expect(languageMatrix).toContain('Next.js App Router in auto mode')
-      expect(content).not.toContain('## When To Use `--spi`')
+    it('documents one canonical index and removes retired generation modes from public docs', () => {
+      expect(lower).toContain('`madar generate .` has one compiler-backed indexing path for `.js`, `.jsx`, `.ts`, and `.tsx`')
+      for (const retiredFlag of ['--legacy', '--spi', '--include-docs', '--docs', '--wiki']) {
+        expect(publicDocs).not.toContain(retiredFlag)
+      }
+      expect(languageMatrix).toContain('one canonical compiler-backed index for JavaScript and TypeScript repositories')
+      expect(languageMatrix).toContain('Recognized source-like files remain visible as `unsupported` outcomes')
     })
 
     it('documents repeated-turn session reuse in the benchmark methodology docs', () => {
@@ -169,7 +169,7 @@ describe('public marketing copy honesty', () => {
     it('keeps the first-use path ahead of benchmark detail and avoids internal-design overload', () => {
       const wordCount = content.trim().split(/\s+/).length
 
-      expect(wordCount).toBeLessThanOrEqual(1_800)
+      expect(wordCount).toBeLessThanOrEqual(1_850)
       expect(content).toContain('## Try It in 60 Seconds')
       expect(content.indexOf('## Try It in 60 Seconds')).toBeLessThan(content.indexOf('## Evidence and Limits'))
       expect(content.indexOf('madar try')).toBeLessThan(content.indexOf('### Controlled v0.30 evidence'))
@@ -223,10 +223,10 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('docs/claims-and-evidence.md')
     })
 
-    it('keeps Python support claims conservative in the deeper public docs', () => {
-      expect(publicDocs).toContain('FastAPI router composition')
-      expect(publicDocs).toContain('Django URL-conf')
-      expect(languageMatrix.toLowerCase()).toContain('without claiming full framework parity')
+    it('states the JavaScript/TypeScript-only language boundary directly', () => {
+      expect(languageMatrix).toContain('Other source languages and non-code formats do not produce graph nodes or edges')
+      expect(languageMatrix).toContain('Python')
+      expect(languageMatrix).toContain('Go')
     })
   })
 
@@ -244,8 +244,10 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('madar prompt')
     })
 
-    it('mentions the strict SPI comparison path and the compare artifacts users should notice', () => {
-      expect(content).toContain('madar generate examples/sample-workspace --spi')
+    it('documents the canonical comparison path and the compare artifacts users should notice', () => {
+      expect(content).toContain('madar generate examples/sample-workspace')
+      expect(content).not.toContain('--spi')
+      expect(content).not.toContain('--legacy')
       expect(content).toContain('--baseline-mode pack_only')
       expect(content).toContain('report.share-safe.json')
       expect(lower).toContain('execution_slice')
@@ -361,11 +363,13 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('avoid marketplace-scale adoption claims')
     })
 
-    it('keeps language-expansion claims gated on TypeScript/Node proof plus benchmark or fixture evidence', () => {
+    it('keeps language-expansion claims gated on a new decision, demand, and benchmark evidence', () => {
       expect(lower).toContain('language expansion')
-      expect(lower).toContain('typescript/node proof')
+      expect(lower).toContain('indexes javascript and typescript only')
+      expect(lower).toContain('unsupported coverage')
+      expect(lower).toContain('new accepted product/architecture decision')
+      expect(lower).toContain('repeated user demand')
       expect(lower).toContain('benchmark or fixture evidence')
-      expect(lower).toContain('no broad parity claim')
     })
 
     it('keeps design-partner workflow proof framed as anonymized drafts instead of five live partner wins', () => {
@@ -441,24 +445,22 @@ describe('public marketing copy honesty', () => {
 
     it('defines evidence gates before broader language expansion', () => {
       expect(content).toContain('# Language expansion decision')
-      expect(lower).toContain('recommendation: defer')
-      expect(lower).toContain('typescript/node proof')
+      expect(lower).toContain('decision: defer')
+      expect(lower).toContain('javascript/typescript product')
       expect(lower).toContain('evidence gates')
-      expect(lower).toContain('benchmark or fixture evidence')
+      expect(lower).toContain('labelled fixture and held-out benchmark')
+      expect(lower).toContain('write the canonical graph directly')
     })
 
-    it('separates near-term, parked, and out-of-scope language requests clearly', () => {
-      expect(lower).toContain('near-term')
-      expect(lower).toContain('parked')
-      expect(lower).toContain('out of scope')
+    it('states the unsupported boundary and treats reintroduction as a new decision', () => {
+      expect(lower).toContain('javascript/typescript only')
+      expect(lower).toContain('unsupported coverage')
       expect(lower).toContain('python')
       expect(lower).toContain('go')
       expect(lower).toContain('rust')
       expect(lower).toContain('java')
-      expect(lower).toContain('typescript/node framework depth')
-      expect(lower).toContain('no broad parity claim')
-      expect(lower).toContain('claiming broad parity')
-      expect(lower).toContain('without supporting receipts')
+      expect(lower).toContain('new product and architecture decision')
+      expect(lower).toContain('do not imply broad language parity')
     })
   })
 
@@ -505,33 +507,26 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('`enqueues_job`')
       expect(content).toContain('`storage_operation`')
       expect(content).toContain('`runtime_boundary`')
-      expect(content).toContain('FastAPI')
-      expect(content).toContain('Django')
-      expect(content).toContain('router composition')
+      expect(content).toContain('Hono / Fastify / tRPC / Prisma workspaces')
+      expect(content).toContain('source-visible')
     })
 
-    it('describes deeper framework hints conservatively and keeps the generic AST fallback explicit', () => {
-      expect(content).toContain('src/adapters/typescript/**')
-      expect(content).toContain('`src/pipeline/extract.ts` is the isolated legacy companion')
+    it('describes one direct canonical path and conservative framework hints', () => {
+      expect(content).toContain('One scanner-scoped TypeScript compiler program writing directly to the directed graph')
+      expect(content).toContain('There is no language mode, secondary extractor, parser fallback, or generic structural pass')
       expect(content).toContain('Hono')
       expect(content).toContain('Fastify')
       expect(content).toContain('tRPC')
       expect(content).toContain('Prisma')
-      expect(content).toContain('request-flow')
-      expect(content).toContain('storage')
-      expect(content).toContain('runtime-boundary')
-      expect(content).toContain('generic AST structure')
-      expect(content).toContain('source-visible')
-      expect(content).toContain('visible client/server boundaries')
-      expect(content).toContain('source-visible Hono/Fastify route ownership')
-      expect(content).toContain('In default auto mode, Hono, Fastify, tRPC, and Prisma contribute conservative request-flow and storage hints')
+      expect(content).toContain('These are static structural hints, not runtime traces')
+      expect(content).toContain('require focused source verification')
     })
 
-    it('frames non-TS/Node language support as first-pass coverage, not broad parity', () => {
-      expect(content).toContain('TypeScript/Node remains the near-term depth priority')
-      expect(content).toContain('Python and Go are useful first-pass support')
-      expect(content).toContain('broader parity is parked')
-      expect(content).toContain('docs/language-expansion-decision.md')
+    it('frames non-JavaScript/TypeScript inputs as explicit unsupported coverage', () => {
+      expect(content).toContain('Other source languages and non-code formats do not produce graph nodes or edges')
+      expect(content).toContain('Python, Go, Ruby, Rust, Java')
+      expect(content).toContain('remain visible as `unsupported` outcomes')
+      expect(content).toContain('inspect the relevant files directly')
     })
   })
 

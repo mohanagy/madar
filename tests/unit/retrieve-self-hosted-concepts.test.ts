@@ -15,9 +15,9 @@ interface RegressionCase {
 const CASES: RegressionCase[] = [
   {
     name: 'graph generation',
-    question: 'How does graph generation extract source files?',
-    expected: ['src/infrastructure/generate.ts', 'src/pipeline/extract.ts'],
-    relevant: ['src/infrastructure/generate.ts', 'src/pipeline/detect.ts', 'src/pipeline/extract.ts'],
+    question: 'How does graph generation index TypeScript and JavaScript source files?',
+    expected: ['src/infrastructure/generate.ts', 'src/adapters/typescript/index.ts'],
+    relevant: ['src/infrastructure/generate.ts', 'src/pipeline/detect.ts', 'src/adapters/typescript/index.ts'],
   },
   {
     name: 'automatic refresh',

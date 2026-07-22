@@ -10,7 +10,6 @@ export interface RuntimeProofProfileObligation {
 export interface RuntimeProofProfile {
   prompt: string
   strict_runtime_proof: boolean
-  expected_spi: boolean
   obligations: RuntimeProofProfileObligation[]
 }
 

@@ -14,8 +14,6 @@ describe('benchmark suite docs', () => {
     expect(content).toContain('ts-small')
     expect(content).toContain('nestjs-mid')
     expect(content).toContain('ts-monorepo-large')
-    expect(content).toContain('python-service')
-    expect(content).toContain('go-service')
     expect(content).toContain('documenso')
     expect(content).toContain('formbricks')
     expect(content).toContain('dub')
@@ -36,14 +34,17 @@ describe('benchmark suite docs', () => {
     expect(content).toContain('quality-gates.json')
     expect(content).toContain('does not turn a permissions prompt into a fake win')
     expect(content).toContain('--allowedTools mcp__madar__retrieve')
-    expect(content).toContain('`Legacy` means the then-current explicit `--legacy` extractor')
-    expect(content).toContain('`SPI` means the then-current strict SPI/cache implementation')
-    expect(content).toContain('`--spi` now selects the uncached canonical JS/TS index')
-    expect(content).toContain('Normal `madar generate .` uses the canonical JS/TS index')
+    expect(content).toContain('preserve the historical `Legacy` and `SPI` arm labels exactly as recorded')
+    expect(content).toContain('Those labels are not current commands or current benchmark arms')
+    expect(content).toContain('New runs use one canonical JavaScript/TypeScript Madar arm')
+    for (const retiredFlag of ['--legacy', '--spi', '--include-docs', '--docs', '--wiki']) {
+      expect(content).not.toContain(retiredFlag)
+    }
     expect(content).toContain('two attributable Madar calls occurred')
     expect(content).not.toContain('one warm-cache measured trial per row')
     expect(content).toContain('results/2026-05-31T12-00-00/summary.md')
-    expect(content).not.toContain('Python and Go stay visible as planned rows')
+    expect(content).not.toContain('python-service')
+    expect(content).not.toContain('go-service')
   })
 
   it('checks in full share-safe receipts for the latest published bundle', () => {

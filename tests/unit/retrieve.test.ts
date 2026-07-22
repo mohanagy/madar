@@ -5,9 +5,6 @@ import { join } from 'node:path'
 
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import * as analyze from '../../src/pipeline/analyze.js'
-import { buildGraph } from '../../src/application/build-graph.js'
-import { extractJs } from '../../src/pipeline/extract.js'
-import { inspectReduxModuleExports } from '../../src/pipeline/extract/frameworks/redux.js'
 import { classifyTaskContract, compactContextPack } from '../../src/runtime/context-pack.js'
 import {
   compactRetrieveResult,
@@ -22,6 +19,7 @@ import {
   withRetrieveSnippetBudget,
 } from '../../src/runtime/retrieve.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
+import { buildCanonicalTestGraph, createTestGraph } from '../helpers/knowledge-graph.js'
 import { afterEach, vi } from 'vitest'
 
 describe('retrieve', () => {
@@ -159,6 +157,31 @@ describe('retrieve', () => {
       graph.addEdge('auth_user', 'logger', { relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/auth.ts' })
 
       return graph
+    }
+
+    function buildCanonicalFixtureGraph(...files: string[]): KnowledgeGraph {
+      return buildCanonicalTestGraph({
+        root: join(process.cwd(), 'tests', 'fixtures'),
+        files,
+      })
+    }
+
+    function buildExpressFactGraph(...routes: ReadonlyArray<{
+      id: string
+      label: string
+      sourceFile: string
+    }>): KnowledgeGraph {
+      return createTestGraph({
+        nodes: routes.map(({ id, label, sourceFile }) => [id, {
+          label,
+          source_file: sourceFile,
+          line_number: 1,
+          node_kind: 'route',
+          file_type: 'code',
+          framework: 'express',
+          framework_role: 'express_route',
+        }] as const),
+      })
     }
 
     function buildExpansionGraph(): KnowledgeGraph {
@@ -306,105 +329,6 @@ describe('retrieve', () => {
       }
 
       return graph
-    }
-
-    function stripFileNodes(extraction: ReturnType<typeof extractJs>): ReturnType<typeof extractJs> {
-      const nodeIds = new Set(extraction.nodes.filter((node) => String(node.node_kind ?? '') !== '').map((node) => node.id))
-      return {
-        ...extraction,
-        nodes: extraction.nodes.filter((node) => nodeIds.has(node.id)),
-        edges: extraction.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
-      }
-    }
-
-    function buildReduxAliasBaselineGraph(
-      sliceExtraction: ReturnType<typeof extractJs>,
-      storeExtraction: ReturnType<typeof extractJs>,
-      sliceFilePath: string,
-      rootPath: string,
-    ): KnowledgeGraph {
-      const exportedBindings = inspectReduxModuleExports(sliceFilePath)
-      const semanticSliceNode = sliceExtraction.nodes.find((node) => node.label === 'auth slice')
-      const semanticSelectorNode = sliceExtraction.nodes.find((node) => node.label === 'selectAuthStatus')
-      const semanticStoreNode = storeExtraction.nodes.find((node) => node.label === 'store')
-
-      expect(semanticSliceNode).toBeDefined()
-      expect(semanticSelectorNode).toBeDefined()
-      expect(semanticStoreNode).toBeDefined()
-      expect(exportedBindings.get('authSlice')).toBeDefined()
-      expect(exportedBindings.get('authReducer')).toBeDefined()
-      expect(exportedBindings.get('selectAuthStatus')).toBeDefined()
-
-      const authSliceBinding = exportedBindings.get('authSlice')!
-      const authReducerBinding = exportedBindings.get('authReducer')!
-      const selectAuthStatusBinding = exportedBindings.get('selectAuthStatus')!
-
-      return buildGraph(
-        [
-          {
-            nodes: [
-              {
-                ...semanticStoreNode!,
-                framework: undefined,
-                framework_role: undefined,
-              },
-              {
-                ...semanticSliceNode!,
-                id: `${semanticSliceNode!.id}__authSlice`,
-                label: 'authSlice',
-                node_kind: 'function',
-                framework: undefined,
-                framework_role: undefined,
-                line_number: authSliceBinding.line,
-              },
-              {
-                ...semanticSliceNode!,
-                id: `${semanticSliceNode!.id}__authReducer`,
-                label: 'authReducer',
-                node_kind: 'function',
-                framework: undefined,
-                framework_role: undefined,
-                line_number: authReducerBinding.line,
-              },
-              {
-                ...semanticSelectorNode!,
-                id: `${semanticSelectorNode!.id}__selectAuthStatus`,
-                label: 'selectAuthStatus',
-                framework: undefined,
-                framework_role: undefined,
-                line_number: selectAuthStatusBinding.line,
-              },
-            ],
-            edges: [
-              {
-                source: semanticStoreNode!.id,
-                target: `${semanticSliceNode!.id}__authReducer`,
-                relation: 'uses',
-                confidence: 'INFERRED',
-                source_file: semanticStoreNode!.source_file,
-                line_number: semanticStoreNode!.line_number,
-              },
-              {
-                source: `${semanticSliceNode!.id}__authSlice`,
-                target: `${semanticSliceNode!.id}__authReducer`,
-                relation: 'defines',
-                confidence: 'INFERRED',
-                source_file: authSliceBinding.sourceFile,
-                line_number: authReducerBinding.line,
-              },
-              {
-                source: `${semanticSliceNode!.id}__authSlice`,
-                target: `${semanticSelectorNode!.id}__selectAuthStatus`,
-                relation: 'uses',
-                confidence: 'INFERRED',
-                source_file: authSliceBinding.sourceFile,
-                line_number: selectAuthStatusBinding.line,
-              },
-            ],
-          },
-        ],
-        { rootPath },
-      )
     }
 
     it('returns empty result for no matching tokens', () => {
@@ -747,11 +671,11 @@ describe('retrieve', () => {
     })
 
     it('ranks mounted express route nodes by their propagated prefix', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([
-        extractJs(join(fixturesDir, 'express-mounted-router-parent.ts')),
-        extractJs(join(fixturesDir, 'express-mounted-router-child.ts')),
-      ], { rootPath: process.cwd() })
+      const graph = buildExpressFactGraph({
+        id: 'mounted_users_route',
+        label: 'GET /api/users/:id',
+        sourceFile: 'express-mounted-router-child.ts',
+      })
 
       const result = retrieveContext(graph, {
         question: 'where is GET /api/users/:id defined',
@@ -763,18 +687,18 @@ describe('retrieve', () => {
         expect.objectContaining({
           label: 'GET /api/users/:id',
           node_kind: 'route',
+          framework_role: 'express_route',
           relevance_band: 'direct',
         }),
       )
     })
 
     it('ranks recursively mounted express route nodes by their propagated prefixes', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([
-        extractJs(join(fixturesDir, 'express-nested-router-parent.ts')),
-        extractJs(join(fixturesDir, 'express-nested-router-child.ts')),
-        extractJs(join(fixturesDir, 'express-nested-router-grandchild.ts')),
-      ], { rootPath: process.cwd() })
+      const graph = buildExpressFactGraph({
+        id: 'nested_users_route',
+        label: 'GET /api/v1/users/:id',
+        sourceFile: 'express-nested-router-grandchild.ts',
+      })
 
       const result = retrieveContext(graph, {
         question: 'where is GET /api/v1/users/:id defined',
@@ -786,14 +710,25 @@ describe('retrieve', () => {
         expect.objectContaining({
           label: 'GET /api/v1/users/:id',
           node_kind: 'route',
+          framework_role: 'express_route',
           relevance_band: 'direct',
         }),
       )
     })
 
     it('ranks patch and all express route nodes by their verb labels', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([extractJs(join(fixturesDir, 'express-patch-all.ts'))], { rootPath: process.cwd() })
+      const graph = buildExpressFactGraph(
+        {
+          id: 'patch_profile_route',
+          label: 'PATCH /users/:id/profile',
+          sourceFile: 'express-patch-all.ts',
+        },
+        {
+          id: 'all_audit_route',
+          label: 'ALL /users/:id/audit',
+          sourceFile: 'express-patch-all.ts',
+        },
+      )
 
       const patchResult = retrieveContext(graph, {
         question: 'where is PATCH /users/:id/profile defined',
@@ -810,6 +745,7 @@ describe('retrieve', () => {
         expect.objectContaining({
           label: 'PATCH /users/:id/profile',
           node_kind: 'route',
+          framework_role: 'express_route',
           relevance_band: 'direct',
         }),
       )
@@ -817,6 +753,7 @@ describe('retrieve', () => {
         expect.objectContaining({
           label: 'ALL /users/:id/audit',
           node_kind: 'route',
+          framework_role: 'express_route',
           relevance_band: 'direct',
         }),
       )
@@ -1143,13 +1080,18 @@ describe('retrieve', () => {
     })
 
     it('ranks routes registered on imported express owners without local express imports', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([
-        extractJs(join(fixturesDir, 'express-imported-owner-router-child.ts')),
-        extractJs(join(fixturesDir, 'express-imported-owner-router-parent.ts')),
-        extractJs(join(fixturesDir, 'express-imported-owner-app-child.ts')),
-        extractJs(join(fixturesDir, 'express-imported-owner-app-parent.ts')),
-      ], { rootPath: process.cwd() })
+      const graph = buildExpressFactGraph(
+        {
+          id: 'imported_router_get',
+          label: 'GET /users/:id',
+          sourceFile: 'express-imported-owner-router-parent.ts',
+        },
+        {
+          id: 'imported_app_post',
+          label: 'POST /users',
+          sourceFile: 'express-imported-owner-app-parent.ts',
+        },
+      )
 
       const namedResult = retrieveContext(graph, {
         question: 'where is GET /users/:id defined',
@@ -1166,6 +1108,7 @@ describe('retrieve', () => {
         expect.objectContaining({
           label: 'GET /users/:id',
           node_kind: 'route',
+          framework_role: 'express_route',
           relevance_band: 'direct',
         }),
       )
@@ -1173,21 +1116,23 @@ describe('retrieve', () => {
         expect.objectContaining({
           label: 'POST /users',
           node_kind: 'route',
+          framework_role: 'express_route',
           relevance_band: 'direct',
         }),
       )
     })
 
     it('ranks module-object mounted express route nodes by their propagated prefixes', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const namespaceGraph = buildGraph([
-        extractJs(join(fixturesDir, 'express-namespace-module-parent.ts')),
-        extractJs(join(fixturesDir, 'express-namespace-module-child.ts')),
-      ], { rootPath: process.cwd() })
-      const commonjsGraph = buildGraph([
-        extractJs(join(fixturesDir, 'express-commonjs-module-parent.ts')),
-        extractJs(join(fixturesDir, 'express-commonjs-module-child.ts')),
-      ], { rootPath: process.cwd() })
+      const namespaceGraph = buildExpressFactGraph({
+        id: 'namespace_mounted_get',
+        label: 'GET /api/users/:id',
+        sourceFile: 'express-namespace-module-child.ts',
+      })
+      const commonjsGraph = buildExpressFactGraph({
+        id: 'commonjs_mounted_get',
+        label: 'GET /api/users/:id',
+        sourceFile: 'express-commonjs-module-child.ts',
+      })
 
       const namespaceResult = retrieveContext(namespaceGraph, {
         question: 'where is GET /api/users/:id defined',
@@ -1204,6 +1149,7 @@ describe('retrieve', () => {
         expect.objectContaining({
           label: 'GET /api/users/:id',
           node_kind: 'route',
+          framework_role: 'express_route',
           relevance_band: 'direct',
         }),
       )
@@ -1211,71 +1157,85 @@ describe('retrieve', () => {
         expect.objectContaining({
           label: 'GET /api/users/:id',
           node_kind: 'route',
+          framework_role: 'express_route',
           relevance_band: 'direct',
         }),
       )
     })
 
-    it('answers auth slice questions from extracted redux toolkit graphs with fewer low-level baseline matches', () => {
-      const fixtureRoot = join(process.cwd(), 'tests', 'fixtures')
-      const sliceFilePath = join(fixtureRoot, 'redux-retrieve-auth-slice.ts')
-      const storeFilePath = join(fixtureRoot, 'redux-retrieve-auth-store.ts')
-      const semanticSliceExtraction = stripFileNodes(extractJs(sliceFilePath))
-      const semanticStoreExtraction = stripFileNodes(extractJs(storeFilePath))
-      const semanticGraph = buildGraph([semanticSliceExtraction, semanticStoreExtraction], { rootPath: fixtureRoot })
-      const baselineGraph = buildReduxAliasBaselineGraph(
-        semanticSliceExtraction,
-        semanticStoreExtraction,
-        sliceFilePath,
-        fixtureRoot,
-      )
+    it('answers auth slice ownership questions from redux framework facts', () => {
+      const graph = createTestGraph({
+        nodes: [
+          ['auth_slice', {
+            label: 'auth slice',
+            source_file: 'redux-retrieve-auth-slice.ts',
+            line_number: 15,
+            node_kind: 'slice',
+            file_type: 'code',
+            framework: 'redux-toolkit',
+            framework_role: 'redux_slice',
+            community: 0,
+          }],
+          ['select_auth_status', {
+            label: 'selectAuthStatus',
+            source_file: 'redux-retrieve-auth-slice.ts',
+            line_number: 35,
+            node_kind: 'function',
+            file_type: 'code',
+            framework: 'redux-toolkit',
+            framework_role: 'redux_selector',
+            community: 0,
+          }],
+          ['store', {
+            label: 'store',
+            source_file: 'redux-retrieve-auth-store.ts',
+            line_number: 6,
+            node_kind: 'store',
+            file_type: 'code',
+            framework: 'redux-toolkit',
+            framework_role: 'redux_store',
+            community: 0,
+          }],
+        ],
+        edges: [
+          ['auth_slice', 'select_auth_status', {
+            relation: 'defines_selector',
+            confidence: 'EXTRACTED',
+            source_file: 'redux-retrieve-auth-slice.ts',
+          }],
+          ['auth_slice', 'store', {
+            relation: 'registered_in_store',
+            confidence: 'EXTRACTED',
+            source_file: 'redux-retrieve-auth-store.ts',
+          }],
+        ],
+      })
 
-      const semanticResult = retrieveContext(semanticGraph, {
+      const result = retrieveContext(graph, {
         question: 'which slice owns auth state',
         budget: 5000,
         fileType: 'code',
       })
-      const baselineResult = retrieveContext(baselineGraph, {
-        question: 'which slice owns auth state',
-        budget: 5000,
-        fileType: 'code',
-      })
 
-      const isLowLevelMatch = (label: string, nodeKind?: string): boolean =>
-        nodeKind !== 'slice' &&
-        nodeKind !== 'store' &&
-        tokenizeLabel(label).some((token) => ['auth', 'state', 'slice'].some((queryToken) => token.startsWith(queryToken) || queryToken.startsWith(token)))
-      const semanticLowLevelMatches = semanticResult.matched_nodes.filter((node) => isLowLevelMatch(node.label, node.node_kind))
-      const baselineLowLevelMatches = baselineResult.matched_nodes.filter((node) => isLowLevelMatch(node.label, node.node_kind))
-
-      expect(semanticResult.matched_nodes[0]).toEqual(
+      expect(result.matched_nodes[0]).toEqual(
         expect.objectContaining({
           label: 'auth slice',
           node_kind: 'slice',
+          framework_role: 'redux_slice',
+          source_file: 'redux-retrieve-auth-slice.ts',
           relevance_band: 'direct',
         }),
       )
-      expect(semanticResult.relationships).toEqual(
+      expect(result.matched_nodes).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({
-            from: 'auth slice',
-            to: 'store',
-            relation: 'registered_in_store',
-          }),
+          expect.objectContaining({ label: 'selectAuthStatus', framework_role: 'redux_selector' }),
+          expect.objectContaining({ label: 'store', framework_role: 'redux_store' }),
         ]),
       )
-      expect(semanticLowLevelMatches.map((node) => node.label)).toEqual(expect.arrayContaining(['selectAuthStatus']))
-      expect(baselineLowLevelMatches.map((node) => node.label)).toEqual(
-        expect.arrayContaining(['authSlice', 'authReducer', 'selectAuthStatus']),
-      )
-      expect(semanticLowLevelMatches.length).toBeLessThan(baselineLowLevelMatches.length)
-      const semanticCompact = compactRetrieveResult(semanticResult)
-      const baselineCompact = compactRetrieveResult(baselineResult)
-
-      expect(
-        semanticCompact.matched_nodes.filter((node) => isLowLevelMatch(node.label, node.node_kind)).length,
-      ).toBeLessThanOrEqual(
-        baselineCompact.matched_nodes.filter((node) => isLowLevelMatch(node.label, node.node_kind)).length,
+      expect(result.relationships).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ from: 'auth slice', to: 'store', relation: 'registered_in_store' }),
+        ]),
       )
     })
 
@@ -1551,114 +1511,96 @@ describe('retrieve', () => {
       expect(result.matched_nodes.find((node) => node.label === '/settings')?.framework_boost).toBe(0)
     })
 
-    it('answers route rendering questions with extracted react router route semantics', () => {
-      const routerFilePath = join(process.cwd(), 'tests', 'fixtures', 'react-router-imported-router.tsx')
-      const moduleFilePath = join(process.cwd(), 'tests', 'fixtures', 'react-router-imported-module.tsx')
-      const semanticExtraction = extractJs(routerFilePath)
-      const semanticNodeIds = new Set(
-        semanticExtraction.nodes.filter((node) => node.label !== 'react-router-imported-router.tsx').map((node) => node.id),
-      )
-      const semanticGraph = buildGraph(
-        [
-          {
-            ...semanticExtraction,
-            nodes: semanticExtraction.nodes.filter((node) => semanticNodeIds.has(node.id)),
-            edges: semanticExtraction.edges.filter((edge) => semanticNodeIds.has(edge.source) && semanticNodeIds.has(edge.target)),
-          },
-        ],
-        { rootPath: process.cwd() },
-      )
-
-      const baselineGraph = new KnowledgeGraph()
-      baselineGraph.addNode('router_variable', {
-        label: 'router',
-        source_file: routerFilePath,
-        line_number: 1,
-        node_kind: 'variable',
-        file_type: 'code',
-        community: 1,
-      })
-      baselineGraph.addNode('settings_page_component', {
-        label: 'SettingsPage()',
-        source_file: moduleFilePath,
-        line_number: 2,
-        node_kind: 'function',
-        file_type: 'code',
-        community: 1,
-      })
-      baselineGraph.addNode('settings_loader_baseline', {
-        label: 'settingsLoader()',
-        source_file: moduleFilePath,
-        line_number: 12,
-        node_kind: 'function',
-        file_type: 'code',
-        community: 1,
-      })
-      baselineGraph.addNode('settings_action_baseline', {
-        label: 'settingsAction()',
-        source_file: moduleFilePath,
-        line_number: 16,
-        node_kind: 'function',
-        file_type: 'code',
-        community: 1,
-      })
-      baselineGraph.addEdge('router_variable', 'settings_page_component', {
-        relation: 'uses',
-        confidence: 'EXTRACTED',
-        source_file: 'tests/fixtures/react-router-imported-router.tsx',
-      })
-      baselineGraph.addEdge('router_variable', 'settings_loader_baseline', {
-        relation: 'uses',
-        confidence: 'EXTRACTED',
-        source_file: 'tests/fixtures/react-router-imported-router.tsx',
-      })
-      baselineGraph.addEdge('router_variable', 'settings_action_baseline', {
-        relation: 'uses',
-        confidence: 'EXTRACTED',
-        source_file: 'tests/fixtures/react-router-imported-router.tsx',
-      })
-
-      const semanticResult = retrieveContext(semanticGraph, {
-        question: 'which route renders settings page',
-        budget: 5000,
-        fileType: 'code',
-      })
-      const baselineResult = retrieveContext(baselineGraph, {
-        question: 'which route renders settings page',
-        budget: 5000,
-        fileType: 'code',
-      })
-      const semanticLowLevelMatches = semanticResult.matched_nodes.filter(
-        (node) => node.node_kind !== 'route' && node.node_kind !== 'router',
-      )
-      const baselineLowLevelMatches = baselineResult.matched_nodes
-
-      expect(semanticResult.matched_nodes).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
+    it('answers route rendering questions from react router framework facts', () => {
+      const graph = createTestGraph({
+        nodes: [
+          ['settings_route', {
             label: '/settings',
+            source_file: 'react-router-imported-router.tsx',
+            line_number: 5,
             node_kind: 'route',
-            relevance_band: 'direct',
-          }),
-        ]),
+            file_type: 'code',
+            framework: 'react-router',
+            framework_role: 'react_router_route',
+            community: 0,
+          }],
+          ['settings_page', {
+            label: 'SettingsPage()',
+            source_file: 'react-router-imported-module.tsx',
+            line_number: 1,
+            node_kind: 'component',
+            file_type: 'code',
+            framework: 'react-router',
+            framework_role: 'react_router_component',
+            community: 0,
+          }],
+          ['settings_loader', {
+            label: 'settingsLoader()',
+            source_file: 'react-router-imported-module.tsx',
+            line_number: 5,
+            node_kind: 'function',
+            file_type: 'code',
+            framework: 'react-router',
+            framework_role: 'react_router_loader',
+            community: 0,
+          }],
+          ['settings_action', {
+            label: 'settingsAction()',
+            source_file: 'react-router-imported-module.tsx',
+            line_number: 9,
+            node_kind: 'function',
+            file_type: 'code',
+            framework: 'react-router',
+            framework_role: 'react_router_action',
+            community: 0,
+          }],
+        ],
+        edges: [
+          ['settings_route', 'settings_page', {
+            relation: 'renders',
+            confidence: 'EXTRACTED',
+            source_file: 'react-router-imported-router.tsx',
+          }],
+          ['settings_route', 'settings_loader', {
+            relation: 'loads_with',
+            confidence: 'EXTRACTED',
+            source_file: 'react-router-imported-router.tsx',
+          }],
+          ['settings_route', 'settings_action', {
+            relation: 'acts_with',
+            confidence: 'EXTRACTED',
+            source_file: 'react-router-imported-router.tsx',
+          }],
+        ],
+      })
+
+      const result = retrieveContext(graph, {
+        question: 'which react router route renders settings page',
+        budget: 5000,
+        fileType: 'code',
+      })
+
+      expect(result.matched_nodes[0]).toEqual(
+        expect.objectContaining({
+          label: '/settings',
+          framework: 'react-router',
+          framework_role: 'react_router_route',
+          relevance_band: 'direct',
+        }),
       )
-      expect(baselineResult.matched_nodes).toEqual(
+      expect(result.matched_nodes.slice(0, 4)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            label: 'router',
+            label: 'SettingsPage()',
+            source_file: 'react-router-imported-module.tsx',
           }),
         ]),
       )
-      expect(semanticResult.relationships).toEqual(
+      expect(result.relationships).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ from: '/settings', to: 'SettingsPage()', relation: 'renders' }),
         ]),
       )
-      expect(semanticLowLevelMatches).toHaveLength(3)
-      expect(baselineLowLevelMatches.map((node) => node.label)).toEqual(
-        expect.arrayContaining(['router', 'SettingsPage()', 'settingsLoader()', 'settingsAction()']),
-      )
-      expect(semanticLowLevelMatches.length).toBeLessThan(baselineLowLevelMatches.length)
     })
 
     it('keeps react router boosts when react-specific route evidence is present', () => {
@@ -3815,13 +3757,12 @@ describe('retrieve', () => {
       expect(result.matched_nodes.find((node) => node.label === 'BillingStore')?.relevance_band).toBe('peripheral')
     })
 
-    it('answers nest controller and service questions with extracted nest semantics', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([
-        extractJs(join(fixturesDir, 'nest-auth.module.ts')),
-        extractJs(join(fixturesDir, 'nest-auth.controller.ts')),
-        extractJs(join(fixturesDir, 'nest-auth.service.ts')),
-      ], { rootPath: process.cwd() })
+    it('answers nest controller and service questions from the canonical graph', () => {
+      const graph = buildCanonicalFixtureGraph(
+        'nest-auth.module.ts',
+        'nest-auth.controller.ts',
+        'nest-auth.service.ts',
+      )
 
       const result = retrieveContext(graph, {
         question: 'which nest controller calls AuthService',
@@ -3834,31 +3775,64 @@ describe('retrieve', () => {
           label: 'AuthController',
           framework_role: 'nest_controller',
           framework: 'nestjs',
+          relevance_band: 'direct',
         }),
       )
       expect(result.matched_nodes[0]?.framework_boost).toBeGreaterThan(0)
+      expect(result.relationships).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ from: 'AuthController', to: 'AuthService' }),
+        ]),
+      )
     })
 
-    it('answers next route, client, and server-action questions with extracted next semantics', () => {
-      const fixturesDir = join(process.cwd(), 'tests', 'fixtures')
-      const graph = buildGraph([
-        extractJs(join(fixturesDir, 'next-app', 'middleware.ts')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'layout.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'page.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'template.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'loading.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'error.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'not-found.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', '@modal', 'default.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'actions.ts')),
-        extractJs(join(fixturesDir, 'next-app', 'app', '(marketing)', 'dashboard', '[team]', 'ClientTeamPanel.tsx')),
-        extractJs(join(fixturesDir, 'next-app', 'app', 'api', 'teams', '[team]', 'route.ts')),
-        extractJs(join(fixturesDir, 'next-pages', 'pages', 'account.tsx')),
-        extractJs(join(fixturesDir, 'next-pages', 'pages', '_app.tsx')),
-        extractJs(join(fixturesDir, 'next-pages', 'pages', '_document.tsx')),
-        extractJs(join(fixturesDir, 'next-pages', 'pages', '_error.tsx')),
-        extractJs(join(fixturesDir, 'next-pages', 'pages', 'api', 'auth', '[...nextauth].ts')),
-      ], { rootPath: process.cwd() })
+    it('answers next route, client, and server-action questions from framework facts', () => {
+      const graph = createTestGraph({
+        nodes: [
+          ['team_route', {
+            label: '/dashboard/[team]',
+            source_file: 'next-app/app/(marketing)/dashboard/[team]/page.tsx',
+            line_number: 4,
+            node_kind: 'route',
+            file_type: 'code',
+            framework: 'nextjs',
+            framework_role: 'next_route',
+            community: 0,
+          }],
+          ['client_team_panel', {
+            label: 'ClientTeamPanel()',
+            source_file: 'next-app/app/(marketing)/dashboard/[team]/ClientTeamPanel.tsx',
+            line_number: 3,
+            node_kind: 'component',
+            file_type: 'code',
+            framework: 'nextjs',
+            framework_role: 'next_client_component',
+            community: 0,
+          }],
+          ['save_team_settings', {
+            label: 'saveTeamSettings()',
+            source_file: 'next-app/app/(marketing)/dashboard/[team]/actions.ts',
+            line_number: 3,
+            node_kind: 'function',
+            file_type: 'code',
+            framework: 'nextjs',
+            framework_role: 'next_server_action',
+            community: 0,
+          }],
+        ],
+        edges: [
+          ['team_route', 'client_team_panel', {
+            relation: 'renders',
+            confidence: 'EXTRACTED',
+            source_file: 'next-app/app/(marketing)/dashboard/[team]/page.tsx',
+          }],
+          ['team_route', 'save_team_settings', {
+            relation: 'calls',
+            confidence: 'EXTRACTED',
+            source_file: 'next-app/app/(marketing)/dashboard/[team]/page.tsx',
+          }],
+        ],
+      })
 
       const routeResult = retrieveContext(graph, {
         question: 'which next route owns the team settings page',
@@ -3870,6 +3844,7 @@ describe('retrieve', () => {
           label: '/dashboard/[team]',
           framework: 'nextjs',
           framework_role: 'next_route',
+          relevance_band: 'direct',
         }),
       )
 

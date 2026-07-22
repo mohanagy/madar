@@ -5,7 +5,7 @@ import {
   parseWatcherState,
   WATCHER_STATE_VERSION,
   type WatcherEventMode,
-  type WatcherStateV1,
+  type WatcherState,
 } from '../contracts/watcher-state.js'
 
 export const WATCHER_STATE_FILENAME = 'watcher-state.json'
@@ -18,7 +18,7 @@ export function watcherStatePathForGraph(graphPath: string): string {
   return join(dirname(resolve(graphPath)), WATCHER_STATE_FILENAME)
 }
 
-export function createWatcherState(eventMode: WatcherEventMode, intervalMs: number): WatcherStateV1 {
+export function createWatcherState(eventMode: WatcherEventMode, intervalMs: number): WatcherState {
   const now = new Date().toISOString()
   return {
     version: WATCHER_STATE_VERSION,
@@ -40,12 +40,10 @@ export function createWatcherState(eventMode: WatcherEventMode, intervalMs: numb
     stored_policy_fingerprint: null,
     current_policy_fingerprint: null,
     policy_match: null,
-    requested_extraction_mode: null,
-    extraction_strategy_buckets: null,
   }
 }
 
-export function writeWatcherState(outputDir: string, state: WatcherStateV1): void {
+export function writeWatcherState(outputDir: string, state: WatcherState): void {
   const targetPath = watcherStatePath(outputDir)
   mkdirSync(dirname(targetPath), { recursive: true })
   const temporaryPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`
@@ -57,7 +55,7 @@ export function writeWatcherState(outputDir: string, state: WatcherStateV1): voi
   }
 }
 
-export function readWatcherState(path: string): WatcherStateV1 | null {
+export function readWatcherState(path: string): WatcherState | null {
   try {
     return parseWatcherState(JSON.parse(readFileSync(path, 'utf8')))
   } catch {
@@ -65,6 +63,6 @@ export function readWatcherState(path: string): WatcherStateV1 | null {
   }
 }
 
-export function readWatcherStateForGraph(graphPath: string): WatcherStateV1 | null {
+export function readWatcherStateForGraph(graphPath: string): WatcherState | null {
   return readWatcherState(watcherStatePathForGraph(graphPath))
 }

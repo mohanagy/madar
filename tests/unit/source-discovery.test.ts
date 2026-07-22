@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   classifySourceDomain,
   isDiscoveryPathIgnored,
+  isManagedAgentInstructionFile,
   loadMadarignorePatterns,
 } from '../../src/shared/source-discovery.js'
 
@@ -67,5 +68,12 @@ describe('source discovery', () => {
 
     expect(isDiscoveryPathIgnored(file, sandbox, patterns)).toBe(false)
     expect(classifySourceDomain(file, sandbox)).toBe('production')
+  })
+
+  it('recognizes relative managed instruction files under Windows roots', () => {
+    const root = 'D:\\a\\madar\\madar'
+
+    expect(isManagedAgentInstructionFile('AGENTS.md', root)).toBe(true)
+    expect(isManagedAgentInstructionFile(`${root}\\CLAUDE.md`, root)).toBe(true)
   })
 })

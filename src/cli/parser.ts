@@ -1,7 +1,6 @@
 import { dirname, isAbsolute, resolve } from 'node:path'
 
 import type { ContextPackFormat, ContextPackRetrievalStrategy, ContextPackTaskKind } from '../contracts/context-pack.js'
-import type { ExtractionMode } from '../contracts/generation-policy.js'
 import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import { type InstallPlatform, isInstallPlatform, type InstallProfile, isInstallProfile } from '../infrastructure/install.js'
@@ -161,18 +160,13 @@ export interface GenerateCliOptions {
   followSymlinks: boolean
   respectGitignore: boolean
   debounceSeconds: number
-  wiki: boolean
   neo4jPushUri: string | null
   neo4jUser: string | null
   neo4jPassword: string | null
   neo4jDatabase: string | null
-  includeDocs: boolean
-  docs: boolean
   strictIndexing: boolean
   maxIndexingFailed: number
   maxIndexingUnsupported: number
-  /** Auto uses the canonical JS/TS index and the temporary legacy companion elsewhere. */
-  extractionMode: ExtractionMode
 }
 
 export interface WatchCliOptions {
@@ -1686,14 +1680,10 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let followSymlinks = false
   let respectGitignore = false
   let debounceSeconds = 3
-  let wiki = false
   let neo4jPushUri: string | null = null
   let neo4jUser: string | null = null
   let neo4jPassword: string | null = null
   let neo4jDatabase: string | null = null
-  let includeDocs = false
-  let docs = false
-  let extractionMode: ExtractionMode = 'auto'
   let strictIndexing = false
   let maxIndexingFailed = 0
   let maxIndexingUnsupported = 0
@@ -1701,22 +1691,6 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
     if (!argument) {
-      continue
-    }
-
-    if (argument === '--spi') {
-      if (extractionMode === 'legacy') {
-        throw new UsageError('error: --legacy and --spi cannot be used together')
-      }
-      extractionMode = 'spi'
-      continue
-    }
-
-    if (argument === '--legacy') {
-      if (extractionMode === 'spi') {
-        throw new UsageError('error: --legacy and --spi cannot be used together')
-      }
-      extractionMode = 'legacy'
       continue
     }
 
@@ -1756,7 +1730,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--legacy|--spi] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--wiki] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
+          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
         )
       }
       path = argument
@@ -1785,11 +1759,6 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
 
     if (argument === '--respect-gitignore') {
       respectGitignore = true
-      continue
-    }
-
-    if (argument === '--wiki') {
-      wiki = true
       continue
     }
 
@@ -1853,26 +1822,12 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
       continue
     }
 
-    if (argument === '--include-docs') {
-      includeDocs = true
-      continue
-    }
-
-    if (argument === '--docs') {
-      docs = true
-      continue
-    }
-
     throw new UsageError(`error: unknown option for generate: ${argument}`)
   }
 
   if (update && clusterOnly) {
     throw new UsageError('error: --update and --cluster-only cannot be used together')
   }
-  if (clusterOnly && extractionMode !== 'auto') {
-    throw new UsageError('error: --cluster-only cannot be combined with --legacy or --spi; it reuses the existing graph without extraction')
-  }
-
   return {
     path,
     update,
@@ -1881,14 +1836,10 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     followSymlinks,
     respectGitignore,
     debounceSeconds,
-    wiki,
     neo4jPushUri,
     neo4jUser,
     neo4jPassword,
     neo4jDatabase,
-    includeDocs,
-    docs,
-    extractionMode,
     strictIndexing,
     maxIndexingFailed,
     maxIndexingUnsupported,

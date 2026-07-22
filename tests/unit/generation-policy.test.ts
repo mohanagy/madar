@@ -1,14 +1,15 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { describe, expect, test } from 'vitest'
 
 import {
+  CANONICAL_INDEX_FORMAT_VERSION,
   createGenerationPolicy,
+  GENERATION_POLICY_VERSION,
   parseGenerationPolicy,
-  type GenerationPolicyV2,
 } from '../../src/contracts/generation-policy.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import {
@@ -16,7 +17,6 @@ import {
   exclusionRulesFingerprint,
   generationOptionsFromPolicy,
   readStoredGenerationPolicy,
-  resolveExtractionMode,
 } from '../../src/infrastructure/generation-policy.js'
 import { loadManifestMetadata } from '../../src/pipeline/detect.js'
 import { loadGraph } from '../../src/runtime/serve.js'
@@ -30,32 +30,22 @@ function withTempDir<T>(callback: (tempDir: string) => T): T {
   }
 }
 
-describe('generation policy contract', () => {
-  test('defaults programmatic extraction to auto while preserving explicit compatibility settings', () => {
-    expect(resolveExtractionMode({})).toBe('auto')
-    expect(resolveExtractionMode({ useSpi: false })).toBe('legacy')
-    expect(resolveExtractionMode({ useSpi: true })).toBe('spi')
-    expect(resolveExtractionMode({ extractionMode: 'auto', useSpi: false })).toBe('auto')
-    expect(resolveExtractionMode({ extractionMode: 'legacy', useSpi: true })).toBe('legacy')
-  })
-
-  test('has a stable authenticated fingerprint and rejects tampering', () => {
+describe('canonical generation policy contract', () => {
+  test('has a stable authenticated fingerprint and rejects tampering or retired fields', () => {
     const policy = createGenerationPolicy({
-      use_spi: false,
+      index_format_version: CANONICAL_INDEX_FORMAT_VERSION,
       respect_gitignore: false,
       follow_symlinks: false,
-      include_documents: false,
-      include_non_code: true,
-      extractor_cache_version: 68,
       exclusion_rules_fingerprint: 'a'.repeat(64),
       indexing_strict: { max_failed: 0, max_unsupported: 2 },
     })
 
+    expect(policy.version).toBe(GENERATION_POLICY_VERSION)
     expect(createGenerationPolicy(policy.settings)).toEqual(policy)
     expect(parseGenerationPolicy(policy)).toEqual(policy)
     expect(parseGenerationPolicy({
       ...policy,
-      settings: { ...policy.settings, include_documents: true },
+      settings: { ...policy.settings, follow_symlinks: true },
     })).toBeNull()
     expect(parseGenerationPolicy({
       ...policy,
@@ -63,33 +53,24 @@ describe('generation policy contract', () => {
     })).toBeNull()
   })
 
-  test('records the explicit v2 extraction mode and reads v1 policies as strict modes', () => {
-    const legacyV1 = createGenerationPolicy({
-      use_spi: true,
-      respect_gitignore: false,
-      follow_symlinks: false,
-      include_documents: true,
-      include_non_code: true,
-      extractor_cache_version: 68,
-      exclusion_rules_fingerprint: 'b'.repeat(64),
-      indexing_strict: null,
-    })
-    const autoV2 = buildGenerationPolicy('/workspace', {
-      extractionMode: 'auto',
-    }, 68, null)
-    const inferredV2: GenerationPolicyV2 = createGenerationPolicy(autoV2.settings)
+  test('builds and restores only canonical corpus controls', () => {
+    const policy = buildGenerationPolicy('/workspace', {
+      respectGitignore: true,
+      followSymlinks: true,
+      indexingStrict: { maxFailed: 1, maxUnsupported: 2 },
+    }, null)
 
-    expect(legacyV1.version).toBe(1)
-    expect(generationOptionsFromPolicy(legacyV1)).toMatchObject({ extractionMode: 'spi' })
-    expect(autoV2).toMatchObject({
-      version: 2,
-      settings: {
-        extraction_mode: 'auto',
-        use_spi: true,
-      },
+    expect(policy.settings).toMatchObject({
+      index_format_version: CANONICAL_INDEX_FORMAT_VERSION,
+      respect_gitignore: true,
+      follow_symlinks: true,
+      indexing_strict: { max_failed: 1, max_unsupported: 2 },
     })
-    expect(parseGenerationPolicy(autoV2)).toEqual(autoV2)
-    expect(inferredV2).toEqual(autoV2)
+    expect(generationOptionsFromPolicy(policy)).toEqual({
+      respectGitignore: true,
+      followSymlinks: true,
+      indexingStrict: { maxFailed: 1, maxUnsupported: 2 },
+    })
   })
 
   test('fingerprints Madar and Git exclusion controls without persisting their contents', () => {
@@ -110,55 +91,78 @@ describe('generation policy contract', () => {
     })
   })
 
+  test('fingerprints ancestor and nested Git ignores for a scoped root but excludes siblings', () => {
+    withTempDir((tempDir) => {
+      const scopedRoot = join(tempDir, 'packages', 'app')
+      mkdirSync(join(scopedRoot, 'src'), { recursive: true })
+      mkdirSync(join(tempDir, 'packages', 'sibling'), { recursive: true })
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'pipe' })
+      writeFileSync(join(tempDir, '.gitignore'), 'root-generated/**\n', 'utf8')
+      writeFileSync(join(tempDir, 'packages', '.gitignore'), 'package-cache/**\n', 'utf8')
+      writeFileSync(join(scopedRoot, 'src', '.gitignore'), 'fixtures/**\n', 'utf8')
+      writeFileSync(join(tempDir, 'packages', 'sibling', '.gitignore'), 'sibling-only/**\n', 'utf8')
+      const before = exclusionRulesFingerprint(scopedRoot, true, null)
+
+      writeFileSync(join(tempDir, '.gitignore'), 'root-generated/**\nroot-cache/**\n', 'utf8')
+      const ancestorChanged = exclusionRulesFingerprint(scopedRoot, true, null)
+      writeFileSync(join(tempDir, '.gitignore'), 'root-generated/**\n', 'utf8')
+      writeFileSync(join(scopedRoot, 'src', '.gitignore'), 'fixtures/**\nsnapshots/**\n', 'utf8')
+      const nestedChanged = exclusionRulesFingerprint(scopedRoot, true, null)
+      writeFileSync(join(scopedRoot, 'src', '.gitignore'), 'fixtures/**\n', 'utf8')
+      writeFileSync(join(tempDir, 'packages', 'sibling', '.gitignore'), 'changed-sibling/**\n', 'utf8')
+
+      expect(ancestorChanged).not.toBe(before)
+      expect(nestedChanged).not.toBe(before)
+      expect(exclusionRulesFingerprint(scopedRoot, true, null)).toBe(before)
+    })
+  })
+
+  test('fingerprints ancestor Git ignores inside a linked worktree', () => {
+    withTempDir((tempDir) => {
+      const primary = join(tempDir, 'primary')
+      const linked = join(tempDir, 'linked')
+      mkdirSync(join(primary, 'packages', 'app'), { recursive: true })
+      execFileSync('git', ['init'], { cwd: primary, stdio: 'pipe' })
+      writeFileSync(join(primary, '.gitignore'), 'generated/**\n', 'utf8')
+      writeFileSync(join(primary, 'packages', 'app', 'main.ts'), 'export const value = 1\n', 'utf8')
+      execFileSync('git', ['add', '.'], { cwd: primary, stdio: 'pipe' })
+      execFileSync('git', ['-c', 'user.name=Madar', '-c', 'user.email=madar@example.com', 'commit', '-m', 'fixture'], { cwd: primary, stdio: 'pipe' })
+      execFileSync('git', ['worktree', 'add', '-b', 'feature/policy', linked], { cwd: primary, stdio: 'pipe' })
+      try {
+        const scopedRoot = join(linked, 'packages', 'app')
+        const before = exclusionRulesFingerprint(scopedRoot, true, null)
+        writeFileSync(join(linked, '.gitignore'), 'generated/**\ncache/**\n', 'utf8')
+        expect(exclusionRulesFingerprint(scopedRoot, true, null)).not.toBe(before)
+      } finally {
+        execFileSync('git', ['worktree', 'remove', '--force', linked], { cwd: primary, stdio: 'pipe' })
+      }
+    })
+  })
+
   test('publishes the same versioned policy in graph and source manifest', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const value = 1\n', 'utf8')
       const result = generateGraph(tempDir, {
-        extractionMode: 'auto',
-        includeDocs: false,
         indexingStrict: { maxFailed: 1, maxUnsupported: 2 },
       })
       const graphPolicy = parseGenerationPolicy(loadGraph(result.graphPath).graph.generation_policy)
-      const manifestPolicy = loadManifestMetadata(join(result.outputDir, 'manifest.json')).generation_policy
+      const manifestPath = join(result.outputDir, 'manifest.json')
+      const manifestPolicy = loadManifestMetadata(manifestPath).generation_policy
 
       expect(graphPolicy).not.toBeNull()
       expect(manifestPolicy).toEqual(graphPolicy)
       expect(graphPolicy?.settings).toMatchObject({
-        extraction_mode: 'auto',
-        include_documents: false,
+        index_format_version: CANONICAL_INDEX_FORMAT_VERSION,
         indexing_strict: { max_failed: 1, max_unsupported: 2 },
       })
-      expect(graphPolicy?.settings).not.toHaveProperty('directed')
-      expect(loadGraph(result.graphPath).isDirected()).toBe(true)
-      expect(loadGraph(result.graphPath).graph.generation_policy).toEqual(graphPolicy)
-      expect(readStoredGenerationPolicy(result.graphPath, join(result.outputDir, 'manifest.json'))).toEqual(graphPolicy)
+      expect(readStoredGenerationPolicy(result.graphPath, manifestPath)).toEqual(graphPolicy)
 
-      const manifestPath = join(result.outputDir, 'manifest.json')
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { __madar_meta__?: { generation_policy?: unknown } }
-      if (manifest.__madar_meta__) {
-        delete manifest.__madar_meta__.generation_policy
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        __madar_meta__?: { generation_policy?: unknown }
       }
+      if (manifest.__madar_meta__) delete manifest.__madar_meta__.generation_policy
       writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
       expect(readStoredGenerationPolicy(result.graphPath, manifestPath)).toBeNull()
-    })
-  })
-
-  test('forces a full rebuild when corpus policy or exclusion controls change', () => {
-    withTempDir((tempDir) => {
-      writeFileSync(join(tempDir, 'main.ts'), 'export const main = true\n', 'utf8')
-      writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
-      writeFileSync(join(tempDir, '.madarignore'), 'ignored.ts\n', 'utf8')
-      generateGraph(tempDir, { includeDocs: false })
-
-      writeFileSync(join(tempDir, '.madarignore'), '', 'utf8')
-      const exclusionsChanged = generateGraph(tempDir, { update: true, includeDocs: false })
-      expect(exclusionsChanged.notes.join('\n')).toContain('Generation policy changed')
-      expect(exclusionsChanged.extractedFiles).toBe(2)
-
-      writeFileSync(join(tempDir, 'README.md'), '# Included now\n', 'utf8')
-      const documentsChanged = generateGraph(tempDir, { update: true, includeDocs: true })
-      expect(documentsChanged.notes.join('\n')).toContain('Generation policy changed')
-      expect(documentsChanged.extractedFiles).toBe(3)
     })
   })
 })

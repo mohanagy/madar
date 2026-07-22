@@ -171,7 +171,6 @@
   },
   "forbidden": {
     "framework_roles_in_negative_files": true,
-    "legacy_extraction_strategy": true,
     "absolute_source_paths": true,
     "decorator_runtime_calls": [
       { "from_name": "UsersController.list", "relation": "calls", "to_name": "Get()" }

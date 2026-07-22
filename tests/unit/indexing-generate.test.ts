@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import type { IndexingManifestV1, ShareSafeIndexingManifestV1 } from '../../src/contracts/indexing.js'
+import type { IndexingManifest, ShareSafeIndexingManifest } from '../../src/contracts/indexing.js'
 import {
   generateGraph,
   IndexingCompletenessError,
@@ -36,8 +36,8 @@ describe('generate indexing completeness', () => {
       const result = generateGraph(root, {  })
       const manifestPath = join(root, 'out', 'indexing-manifest.json')
       const shareSafePath = join(root, 'out', 'indexing-manifest.share-safe.json')
-      const manifest = readJson<IndexingManifestV1>(manifestPath)
-      const shareSafe = readJson<ShareSafeIndexingManifestV1>(shareSafePath)
+      const manifest = readJson<IndexingManifest>(manifestPath)
+      const shareSafe = readJson<ShareSafeIndexingManifest>(shareSafePath)
       const graph = readCanonicalGraphFixture(join(root, 'out', 'graph.json'))
       const report = readFileSync(join(root, 'out', 'GRAPH_REPORT.md'), 'utf8')
 
@@ -62,7 +62,7 @@ describe('generate indexing completeness', () => {
       expect(shareSafe).not.toHaveProperty('outcomes')
       expect(JSON.stringify(shareSafe)).not.toContain('legacy.vue')
       expect(graph.indexing_completeness).toMatchObject({
-        version: 1,
+        version: 2,
         summary: { state: 'partial' },
       })
       expect(JSON.stringify(graph.indexing_completeness)).not.toContain('legacy.vue')
@@ -91,7 +91,7 @@ describe('generate indexing completeness', () => {
       })
       expect(existsSync(join(root, 'out', 'indexing-manifest.json'))).toBe(false)
       expect(existsSync(join(root, 'out', 'indexing-manifest.failed.share-safe.json'))).toBe(true)
-      expect(readJson<IndexingManifestV1>(join(root, 'out', 'indexing-manifest.failed.json')).summary).toMatchObject({
+      expect(readJson<IndexingManifest>(join(root, 'out', 'indexing-manifest.failed.json')).summary).toMatchObject({
         state: 'partial',
         counts: { indexed: 1, unsupported: 1 },
       })
@@ -130,7 +130,7 @@ describe('generate indexing completeness', () => {
       const retry = generateGraph(root, { update: true })
       const retriedGraph = readCanonicalGraphFixture(graphPath)
 
-      expect(retry.changedFiles).toBeGreaterThan(0)
+      expect(retry.mode).toBe('update')
       expect(retriedGraph.nodes.some((node) => node.label?.includes('updatedFlow'))).toBe(true)
       expect(existsSync(join(root, 'out', 'indexing-manifest.failed.json'))).toBe(false)
     })

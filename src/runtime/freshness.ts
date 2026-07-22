@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
-import { basename, dirname, isAbsolute, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, resolve } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
 
 import { loadGraphArtifact, readGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import { deserializeGraphArtifact } from '../domain/graph/artifact.js'
 import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
-import { classifyFile } from '../pipeline/detect.js'
+import { classifyFile, collectFreshnessCandidatePaths, RECOGNIZED_UNSUPPORTED_EXTENSIONS } from '../pipeline/detect.js'
 import type { RetrieveResult } from './retrieve.js'
 import {
   fileContentFingerprint,
@@ -13,10 +13,10 @@ import {
   normalizeFreshnessSourceFile,
   type GraphBuildFreshnessMetadata,
 } from '../shared/graph-build-freshness.js'
-import { diffGitFilesBetweenCommits, readGitSnapshot } from '../shared/git.js'
+import { collectGitVisibleFiles, diffGitFilesBetweenCommits, readGitSnapshot } from '../shared/git.js'
 import { readPackageVersion } from '../shared/package-metadata.js'
 import { validateGraphPath } from '../shared/security.js'
-import { isDiscoveryPathIgnored, loadMadarignorePatterns } from '../shared/source-discovery.js'
+import { isCanonicalCompilerControlFile, isDiscoveryPathIgnored, isManagedAgentInstructionFile, loadMadarignorePatterns } from '../shared/source-discovery.js'
 
 export interface GraphFreshnessMetadata {
   graphVersion: string
@@ -66,16 +66,6 @@ interface IndexedSourceFiles {
 
 const VERSION_HASH_LENGTH = 12
 const graphVersionCache = new Map<string, { graphVersion: string; contentHash: string }>()
-// Agent instruction files are execution guidance, not repository source
-// evidence. Madar's installers deliberately add or update these files after a
-// graph exists; letting that invalidate the graph forces a large auto-refresh
-// before the first MCP request can answer.
-const AGENT_INSTRUCTION_FILES = new Set(['AGENTS.md', 'CLAUDE.md'])
-
-function isAgentInstructionFile(sourceFile: string): boolean {
-  return AGENT_INSTRUCTION_FILES.has(sourceFile.replaceAll('\\', '/'))
-}
-
 function truncateMtime(mtimeMs: number): number {
   return Math.trunc(mtimeMs)
 }
@@ -253,7 +243,7 @@ function resolveIndexedSourcePath(rootPath: string, sourceFile: string): string 
 function collectMissingSourceFiles(indexed: IndexedSourceFiles): Set<string> {
   const missingSourceFiles = new Set<string>()
   for (const sourceFile of indexed.sourceFiles) {
-    if (isAgentInstructionFile(sourceFile)) {
+    if (isManagedAgentInstructionFile(sourceFile, indexed.rootPath)) {
       continue
     }
     if (!existsSync(resolveIndexedSourcePath(indexed.rootPath, sourceFile))) {
@@ -263,30 +253,7 @@ function collectMissingSourceFiles(indexed: IndexedSourceFiles): Set<string> {
   return missingSourceFiles
 }
 
-function legacyChangedSourceFiles(
-  indexed: IndexedSourceFiles,
-  graphModifiedMs: number,
-): Set<string> {
-  const changedSourceFiles = new Set<string>()
-  for (const sourceFile of indexed.sourceFiles) {
-    if (isAgentInstructionFile(sourceFile)) {
-      continue
-    }
-    const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
-    try {
-      const sourceModifiedMs = truncateMtime(statSync(resolvedSourcePath).mtimeMs)
-      if (sourceModifiedMs > graphModifiedMs) {
-        changedSourceFiles.add(sourceFile)
-      }
-    } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-        continue
-      }
-      throw error
-    }
-  }
-  return changedSourceFiles
-}
+const allRelevantIndexedSourceFiles = (indexed: IndexedSourceFiles): Set<string> => new Set(indexed.sourceFiles.filter((sourceFile) => !isManagedAgentInstructionFile(sourceFile, indexed.rootPath)))
 
 function filesystemChangedSourceFiles(
   indexed: IndexedSourceFiles,
@@ -294,9 +261,11 @@ function filesystemChangedSourceFiles(
 ): Set<string> {
   const storedFingerprints = buildFreshness.filesystem?.file_fingerprints ?? {}
   const changedSourceFiles = new Set<string>()
+  const gitVisibleFiles = buildFreshness.respect_gitignore ? collectGitVisibleFiles(indexed.rootPath) : null
+  const candidates = collectFreshnessCandidatePaths(indexed.rootPath, { followSymlinks: buildFreshness.follow_symlinks, ...(gitVisibleFiles ? { includedFiles: new Set(gitVisibleFiles.map((path) => resolve(path))) } : {}) })
 
   for (const sourceFile of indexed.sourceFiles) {
-    if (isAgentInstructionFile(sourceFile)) {
+    if (isManagedAgentInstructionFile(sourceFile, indexed.rootPath)) {
       continue
     }
     const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
@@ -309,14 +278,28 @@ function filesystemChangedSourceFiles(
     }
   }
 
+  const storedSupported = new Set(buildFreshness.supported_receipt_paths)
+  for (const path of candidates.supported) if (!storedSupported.has(path)) changedSourceFiles.add(path)
+  for (const path of storedSupported) if (!candidates.supported.includes(path)) changedSourceFiles.add(path)
+  const currentUnsupported = new Set(candidates.unsupported)
+  for (const path of buildFreshness.unsupported_receipt_paths) if (!currentUnsupported.has(path)) changedSourceFiles.add(path)
+  for (const path of currentUnsupported) if (!buildFreshness.unsupported_receipt_paths.includes(path)) changedSourceFiles.add(path)
+  const currentControls = new Set(candidates.controls)
+  for (const path of currentControls) if (buildFreshness.control_file_fingerprints[path] !== (existsSync(resolve(indexed.rootPath, path)) ? fileContentFingerprint(resolve(indexed.rootPath, path)) : '')) changedSourceFiles.add(path)
+  for (const path of Object.keys(buildFreshness.control_file_fingerprints)) if (!currentControls.has(path) && !(path === '.madarignore' && buildFreshness.control_file_fingerprints[path] === '')) changedSourceFiles.add(path)
+
   return changedSourceFiles
 }
 
 function graphRelevantGitChangedFiles(
   indexed: IndexedSourceFiles,
+  buildFreshness: GraphBuildFreshnessMetadata,
   changedFiles: readonly string[],
 ): Set<string> {
   const indexedSourceFiles = new Set(indexed.sourceFiles)
+  const storedSupported = new Set(buildFreshness.supported_receipt_paths)
+  const storedUnsupported = new Set(buildFreshness.unsupported_receipt_paths)
+  const storedControls = new Set(Object.keys(buildFreshness.control_file_fingerprints))
   const ignorePatterns = loadMadarignorePatterns(indexed.rootPath)
   const relevantFiles = new Set<string>()
 
@@ -325,23 +308,21 @@ function graphRelevantGitChangedFiles(
     if (sourceFile.length === 0) {
       continue
     }
-    if (isAgentInstructionFile(sourceFile)) {
+    if (isManagedAgentInstructionFile(sourceFile, indexed.rootPath)) {
       continue
     }
-    if (indexedSourceFiles.has(sourceFile)) {
-      relevantFiles.add(sourceFile)
-      continue
-    }
-
     const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
-    if (!existsSync(resolvedSourcePath)) {
-      continue
-    }
-    if (isDiscoveryPathIgnored(resolvedSourcePath, indexed.rootPath, ignorePatterns)) {
-      continue
-    }
-    if (classifyFile(resolvedSourcePath) !== null) {
+    const exists = existsSync(resolvedSourcePath)
+    const ignored = isDiscoveryPathIgnored(resolvedSourcePath, indexed.rootPath, ignorePatterns)
+    if (indexedSourceFiles.has(sourceFile) || storedSupported.has(sourceFile)) {
       relevantFiles.add(sourceFile)
+    } else if (exists && !ignored && classifyFile(resolvedSourcePath) !== null) {
+      relevantFiles.add(sourceFile)
+    } else if (sourceFile === '.madarignore' || ((storedControls.has(sourceFile) || (exists && !ignored)) && isCanonicalCompilerControlFile(sourceFile))) {
+      relevantFiles.add(sourceFile)
+    } else if (RECOGNIZED_UNSUPPORTED_EXTENSIONS.has(extname(sourceFile).toLowerCase())) {
+      const currentlyVisible = exists && !ignored
+      if (storedUnsupported.has(sourceFile) !== currentlyVisible) relevantFiles.add(sourceFile)
     }
   }
 
@@ -379,18 +360,23 @@ function gitChangedSourceFiles(
     if (!currentDirtyFiles.has(sourceFile)) {
       continue
     }
+    const fingerprinted = buildFreshness.supported_receipt_paths.includes(sourceFile) || Object.hasOwn(buildFreshness.control_file_fingerprints, sourceFile)
+    if (!fingerprinted) continue
     const resolvedSourcePath = resolveIndexedSourcePath(indexed.rootPath, sourceFile)
     const storedFingerprint = storedGitFreshness.dirty_file_fingerprints[sourceFile]
-    if (!existsSync(resolvedSourcePath) || storedFingerprint === undefined) {
+    if (storedFingerprint === undefined) {
       changedFiles.add(sourceFile)
       continue
     }
-    if (fileContentFingerprint(resolvedSourcePath) !== storedFingerprint) {
+    if ((existsSync(resolvedSourcePath) ? fileContentFingerprint(resolvedSourcePath) : '') !== storedFingerprint) {
       changedFiles.add(sourceFile)
     }
   }
 
-  return graphRelevantGitChangedFiles(indexed, [...changedFiles])
+  const currentMadarignore = existsSync(resolve(indexed.rootPath, '.madarignore')) ? fileContentFingerprint(resolve(indexed.rootPath, '.madarignore')) : ''
+  if (buildFreshness.control_file_fingerprints['.madarignore'] !== currentMadarignore) changedFiles.add('.madarignore')
+
+  return graphRelevantGitChangedFiles(indexed, buildFreshness, [...changedFiles])
 }
 
 function graphVersionForPath(graphPath: string): { graphVersion: string; mtimeMs: number } {
@@ -455,10 +441,10 @@ export function analyzeGraphContextFreshness(
   const missingSourceFiles = collectMissingSourceFiles(indexed)
   const changedSourceFiles =
     indexed.buildFreshness?.strategy === 'git'
-      ? gitChangedSourceFiles(indexed, indexed.buildFreshness) ?? legacyChangedSourceFiles(indexed, graphFreshness.graphModifiedMs)
+      ? gitChangedSourceFiles(indexed, indexed.buildFreshness) ?? allRelevantIndexedSourceFiles(indexed)
       : indexed.buildFreshness?.strategy === 'filesystem'
         ? filesystemChangedSourceFiles(indexed, indexed.buildFreshness)
-        : legacyChangedSourceFiles(indexed, graphFreshness.graphModifiedMs)
+        : allRelevantIndexedSourceFiles(indexed)
   const changedSourceCount = changedSourceFiles.size
   const missingSourceCount = missingSourceFiles.size
 
@@ -487,8 +473,8 @@ export function analyzeGraphContextFreshness(
     graph_version: graphFreshness.graphVersion,
     graph_modified_ms: graphFreshness.graphModifiedMs,
     graph_modified_at: graphFreshness.graphModifiedAt,
-    generated_ms: indexed.buildFreshness?.generated_ms ?? graphFreshness.graphModifiedMs,
-    generated_at: indexed.buildFreshness?.generated_at ?? new Date(graphFreshness.graphModifiedMs).toISOString(),
+    generated_ms: indexed.buildFreshness?.generated_ms ?? null,
+    generated_at: indexed.buildFreshness?.generated_at ?? null,
     madar_version: readPackageVersion(),
     indexed_file_count: indexed.sourceFiles.length,
     changed_source_count: changedSourceCount,

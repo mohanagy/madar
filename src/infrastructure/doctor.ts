@@ -2,8 +2,8 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
-import type { IndexingManifestV1 } from '../contracts/indexing.js'
-import { watcherStateBlocksGraphReads, type WatcherStateV1 } from '../contracts/watcher-state.js'
+import type { IndexingManifest } from '../contracts/indexing.js'
+import { watcherStateBlocksGraphReads, type WatcherState } from '../contracts/watcher-state.js'
 import {
   CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
   CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH,
@@ -33,7 +33,6 @@ import {
   generationOptionsFromPolicy,
   readGraphGenerationPolicy,
 } from './generation-policy.js'
-import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
 import { loadManifestMetadata } from '../pipeline/detect.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
 import { readWatcherStateForGraph } from './watcher-state.js'
@@ -74,14 +73,14 @@ interface GraphCheck {
   recommendation: string
   discoverySafety: DiscoverySafetySummary | null
   discoveryExclusions: DiscoveryExclusion[]
-  indexingManifest: IndexingManifestV1 | null
+  indexingManifest: IndexingManifest | null
   generationPolicy: {
     storedFingerprint: string | null
     currentFingerprint: string | null
     match: boolean | null
     reason: string
   }
-  watcherState: WatcherStateV1 | null
+  watcherState: WatcherState | null
   watcherLive: boolean
   watcherPolicyMatchesPublished: boolean | null
 }
@@ -358,7 +357,7 @@ function graphRootPath(graphPath: string, fallback: string): string {
     : resolve(fallback)
 }
 
-function watcherProcessIsLive(state: WatcherStateV1 | null): boolean {
+function watcherProcessIsLive(state: WatcherState | null): boolean {
   if (!state || state.status === 'stopped') {
     return false
   }
@@ -397,7 +396,7 @@ function readGenerationPolicyCheck(graphPath: string, projectDir: string): Graph
     const rootPath = graphRootPath(graphPath, projectDir)
     const options = generationOptionsFromPolicy(storedPolicy)
     const gitVisibleFiles = options.respectGitignore ? collectGitVisibleFiles(rootPath) : null
-    const currentPolicy = buildGenerationPolicy(rootPath, options, EXTRACTOR_CACHE_VERSION, gitVisibleFiles)
+    const currentPolicy = buildGenerationPolicy(rootPath, options, gitVisibleFiles)
     const match = storedPolicy.fingerprint === currentPolicy.fingerprint
     return {
       storedFingerprint: storedPolicy.fingerprint,
@@ -705,7 +704,6 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const nextCommands = computeNextCommands(partialReport)
   const indexingRequiresAttention = graph.indexingManifest !== null && (
     graph.indexingManifest.summary.counts.failed > 0
-    || graph.indexingManifest.summary.counts.unsupported > 0
     || graph.indexingManifest.summary.counts.indexed_with_warnings > 0
   )
   const watcherRequiresAttention = graph.watcherState !== null
@@ -759,17 +757,10 @@ function formatGraphLine(graph: GraphCheck): string[] {
   } else {
     const watcher = graph.watcherState
     const liveLabel = watcher.status === 'stopped' ? 'inactive' : graph.watcherLive ? 'live' : 'not live'
-    const strategyReceipt = watcher.extraction_strategy_buckets
-      ? Object.entries(watcher.extraction_strategy_buckets)
-          .sort(([left], [right]) => left.localeCompare(right))
-          .map(([strategy, count]) => `${strategy}=${count}`)
-          .join(', ')
-      : 'unavailable'
     lines.push(
       `- watcher: ${watcher.status} (${liveLabel}; coverage=${watcher.coverage}; mode=${watcher.event_mode}; interval=${watcher.current_interval_ms}ms)`,
       `- watcher last reconciliation: ${watcher.last_reconciliation_at ?? 'never'} (${watcher.last_reconciliation_duration_ms ?? 'unknown'}ms; files=${watcher.last_reconciliation_file_count ?? 'unknown'}; directories=${watcher.last_reconciliation_directory_count ?? 'unknown'})`,
       `- watcher policy: ${watcher.policy_match === null || graph.watcherPolicyMatchesPublished === null ? 'unknown' : watcher.policy_match && graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'} (stored=${watcher.stored_policy_fingerprint?.slice(0, 12) ?? 'none'}; current=${watcher.current_policy_fingerprint?.slice(0, 12) ?? 'none'}; published=${graph.generationPolicy.storedFingerprint?.slice(0, 12) ?? 'none'})`,
-      `- watcher extraction receipt: requested=${watcher.requested_extraction_mode ?? 'unknown'}; strategies=${strategyReceipt}`,
     )
     if (watcher.pending_since) {
       lines.push(`- watcher pending since: ${watcher.pending_since}`)
@@ -808,8 +799,8 @@ function formatGraphLine(graph: GraphCheck): string[] {
         lines.push(`  - ... ${affected.length - 20} more; inspect indexing-manifest.json`)
       }
     }
-    if (graph.indexingManifest.spi_diagnostics.length > 0) {
-      lines.push(`- Index diagnostics: ${graph.indexingManifest.spi_diagnostics.length} (inspect indexing-manifest.json)`)
+    if (graph.indexingManifest.index_diagnostics.length > 0) {
+      lines.push(`- Index diagnostics: ${graph.indexingManifest.index_diagnostics.length} (inspect indexing-manifest.json)`)
     }
   } else {
     lines.push("- indexing completeness: unavailable (regenerate with 'madar generate . --update')")
@@ -874,14 +865,8 @@ export function runStatusCommand(options: DoctorCommandOptions = {}): string {
         .join(', ') || 'none'
     : 'none'
   const watcher = report.graph.watcherState
-  const watcherStrategies = watcher?.extraction_strategy_buckets
-    ? Object.entries(watcher.extraction_strategy_buckets)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([strategy, count]) => `${strategy}=${count}`)
-        .join(',')
-    : 'unavailable'
   const watcherSummary = watcher
-    ? `${watcher.status} (live=${report.graph.watcherLive}, coverage=${watcher.coverage}, mode=${watcher.event_mode}, interval=${watcher.current_interval_ms}ms, requested_extraction=${watcher.requested_extraction_mode ?? 'unknown'}, strategies=${watcherStrategies}, published_policy=${report.graph.watcherPolicyMatchesPublished === null ? 'unknown' : report.graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'}, pending=${watcher.pending_since ?? 'no'}, failure=${watcher.failure_reason ?? 'none'})`
+    ? `${watcher.status} (live=${report.graph.watcherLive}, coverage=${watcher.coverage}, mode=${watcher.event_mode}, interval=${watcher.current_interval_ms}ms, published_policy=${report.graph.watcherPolicyMatchesPublished === null ? 'unknown' : report.graph.watcherPolicyMatchesPublished ? 'match' : 'mismatch'}, pending=${watcher.pending_since ?? 'no'}, failure=${watcher.failure_reason ?? 'none'})`
     : 'inactive'
   const reconciliationSummary = watcher
     ? `${watcher.last_reconciliation_at ?? 'never'} (duration=${watcher.last_reconciliation_duration_ms ?? 'unknown'}ms, files=${watcher.last_reconciliation_file_count ?? 'unknown'}, directories=${watcher.last_reconciliation_directory_count ?? 'unknown'}, next=${watcher.next_reconciliation_at ?? 'none'})`

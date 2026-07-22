@@ -112,14 +112,14 @@ describe('canonical TypeScript index integration contract', () => {
     })
     expect(result.graph.graph.canonical_typescript_index).toBe(true)
     for (const [, attributes] of result.graph.nodeEntries()) {
-      expect(attributes.extraction_strategy).toBe('canonical')
+      expect(attributes).not.toHaveProperty('extraction_strategy')
       expect(String(attributes.source_file)).not.toMatch(/^\//)
       expect(attributes.provenance).toEqual(expect.arrayContaining([
         expect.objectContaining({ capability_id: 'builtin:index:typescript', stage: 'index' }),
       ]))
     }
     for (const [, , attributes] of result.graph.edgeEntries()) {
-      expect(attributes.extraction_strategy).toBe('canonical')
+      expect(attributes).not.toHaveProperty('extraction_strategy')
       expect(attributes.provenance).toEqual(expect.arrayContaining([
         expect.objectContaining({ capability_id: 'builtin:index:typescript', stage: 'index' }),
       ]))

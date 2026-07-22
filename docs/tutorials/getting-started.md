@@ -26,11 +26,7 @@ madar generate examples/sample-workspace
 
 This creates `examples/sample-workspace/out/graph.json`.
 
-Default generation indexes TypeScript and JavaScript once through the canonical compiler-backed path, while retaining the legacy fallback for other supported languages. `--spi` is temporarily the compatibility spelling for strict canonical JS/TS indexing without a language fallback; eligible non-code evidence remains included:
-
-```bash
-madar generate examples/sample-workspace --spi
-```
+Generation indexes `.ts`, `.tsx`, `.js`, and `.jsx` once through the canonical compiler-backed path. Other source languages and non-code files do not enter the graph. Madar records recognized unsupported files in the indexing-completeness receipt instead of silently treating them as indexed evidence.
 
 ## 4. Install one agent profile
 
@@ -119,7 +115,7 @@ On Windows, use `--exec "type {prompt_file}"` for the same smoke check because `
 - **`madar: command not found`**: make sure the global npm install succeeded, or run from a local repo checkout after `npm run build`.
 - **`graph.json` missing**: rerun `madar generate .` before `pack`, `prompt`, or `compare`.
 - **`doctor` or `status` says the install is missing**: rerun your chosen `madar <agent> install` command from the sample workspace root, then rerun the verification commands for Claude, Cursor, Gemini, or Copilot.
-- **Need a strict JS/TS code-extraction diagnostic?** Regenerate with `madar generate . --spi`; eligible non-code evidence remains included. Normal `madar generate .` already includes framework-aware JS/TS hints and retains Go, Python, and other supported legacy languages.
+- **Relevant files are reported as unsupported:** Madar currently indexes JavaScript and TypeScript only. Check `madar status` or the local indexing manifest, then verify unsupported-language or non-code evidence directly with your agent when the task needs it.
 - **`compare` looks noisy**: the `cat {prompt_file}` runner (or `type {prompt_file}` on Windows) is only a local smoke check. Use a real terminal model runner later if you want meaningful answer comparisons.
 - **Need more questions?** Start with `examples/sample-workspace/prompt-examples.json`.
 

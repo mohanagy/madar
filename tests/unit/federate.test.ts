@@ -20,7 +20,6 @@ function createMiniGraph(dir: string, repoName: string, nodes: Array<{ id: strin
   mkdirSync(repoDir, { recursive: true })
 
   const graphData = {
-    schema_version: 1,
     nodes: nodes.map((n) => ({ id: n.id, label: n.label, file_type: 'code', source_file: `${repoName}/src/${n.id}.ts` })),
     edges: edges.map(([source, target]) => ({ source, target, relation: 'calls', confidence: 'EXTRACTED', source_file: `${repoName}/src/${source}.ts` })),
   }

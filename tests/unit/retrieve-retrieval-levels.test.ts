@@ -1,44 +1,85 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildGraph } from '../../src/application/build-graph.js'
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 
 function buildRetrievalLevelGraph() {
-  return buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'auth_service', label: 'AuthService', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L10', node_kind: 'class', community: 0 },
-          { id: 'login_validator', label: 'LoginValidator', file_type: 'code', source_file: '/src/auth/login-validator.ts', source_location: 'L20', node_kind: 'class', community: 0 },
-          { id: 'session_store', label: 'SessionStore', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L30', node_kind: 'class', community: 1 },
-          { id: 'auth_controller', label: 'AuthController', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L40', node_kind: 'class', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
-          { id: 'auth_route', label: 'POST /login', file_type: 'code', source_file: '/src/auth/routes.ts', source_location: 'L50', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },
-          { id: 'auth_config', label: 'AUTH_SECRET', file_type: 'code', source_file: '/src/config/auth.ts', source_location: 'L60', node_kind: 'function', community: 2 },
-          { id: 'auth_test', label: 'AuthServiceSpec', file_type: 'code', source_file: '/tests/auth.service.test.ts', source_location: 'L70', node_kind: 'function', community: 3 },
-          { id: 'billing_exporter', label: 'BillingExporter', file_type: 'code', source_file: '/src/billing/exporter.ts', source_location: 'L80', node_kind: 'class', community: 4 },
-          { id: 'api_client', label: 'ApiClient', file_type: 'code', source_file: '/src/api/client.ts', source_location: 'L90', node_kind: 'class', community: 4 },
-          { id: 'shared_index', label: 'index.ts', file_type: 'code', source_file: '/src/shared/index.ts', source_location: 'L100', node_kind: 'function', community: 5 },
-          { id: 'shared_util', label: 'SharedUtil', file_type: 'code', source_file: '/src/shared/util.ts', source_location: 'L110', node_kind: 'function', community: 5 },
-          { id: 'shared_logger', label: 'SharedLogger', file_type: 'code', source_file: '/src/shared/logger.ts', source_location: 'L120', node_kind: 'class', community: 5 },
-        ],
-        edges: [
-          { source: 'auth_controller', target: 'auth_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
-          { source: 'auth_service', target: 'login_validator', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'auth_service', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'auth_route', target: 'auth_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/auth/routes.ts' },
-          { source: 'auth_service', target: 'auth_config', relation: 'uses_config', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'auth_service', target: 'auth_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'billing_exporter', target: 'auth_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/billing/exporter.ts' },
-          { source: 'api_client', target: 'billing_exporter', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/api/client.ts' },
-          { source: 'auth_service', target: 'shared_index', relation: 'imports_from', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'shared_index', target: 'shared_util', relation: 'exports', confidence: 'EXTRACTED', source_file: '/src/shared/index.ts' },
-          { source: 'shared_index', target: 'shared_logger', relation: 'exports', confidence: 'EXTRACTED', source_file: '/src/shared/index.ts' },
-        ],
-      },
+  return createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['auth_service', {
+                label: 'AuthService', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L10', node_kind: 'class', community: 0
+            }],
+        ['login_validator', {
+                label: 'LoginValidator', file_type: 'code', source_file: '/src/auth/login-validator.ts', source_location: 'L20', node_kind: 'class', community: 0
+            }],
+        ['session_store', {
+                label: 'SessionStore', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L30', node_kind: 'class', community: 1
+            }],
+        ['auth_controller', {
+                label: 'AuthController', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L40', node_kind: 'class', framework: 'nestjs', framework_role: 'nest_controller', community: 0
+            }],
+        ['auth_route', {
+                label: 'POST /login', file_type: 'code', source_file: '/src/auth/routes.ts', source_location: 'L50', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0
+            }],
+        ['auth_config', {
+                label: 'AUTH_SECRET', file_type: 'code', source_file: '/src/config/auth.ts', source_location: 'L60', node_kind: 'function', community: 2
+            }],
+        ['auth_test', {
+                label: 'AuthServiceSpec', file_type: 'code', source_file: '/tests/auth.service.test.ts', source_location: 'L70', node_kind: 'function', community: 3
+            }],
+        ['billing_exporter', {
+                label: 'BillingExporter', file_type: 'code', source_file: '/src/billing/exporter.ts', source_location: 'L80', node_kind: 'class', community: 4
+            }],
+        ['api_client', {
+                label: 'ApiClient', file_type: 'code', source_file: '/src/api/client.ts', source_location: 'L90', node_kind: 'class', community: 4
+            }],
+        ['shared_index', {
+                label: 'index.ts', file_type: 'code', source_file: '/src/shared/index.ts', source_location: 'L100', node_kind: 'function', community: 5
+            }],
+        ['shared_util', {
+                label: 'SharedUtil', file_type: 'code', source_file: '/src/shared/util.ts', source_location: 'L110', node_kind: 'function', community: 5
+            }],
+        ['shared_logger', {
+                label: 'SharedLogger', file_type: 'code', source_file: '/src/shared/logger.ts', source_location: 'L120', node_kind: 'class', community: 5
+            }]
     ],
-      { rootPath: '/' },
-  )
+    edges: [
+        ['auth_controller', 'auth_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts'
+            }],
+        ['auth_service', 'login_validator', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['auth_service', 'session_store', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['auth_route', 'auth_controller', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/auth/routes.ts'
+            }],
+        ['auth_service', 'auth_config', {
+                relation: 'uses_config', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['auth_service', 'auth_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['billing_exporter', 'auth_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/billing/exporter.ts'
+            }],
+        ['api_client', 'billing_exporter', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/api/client.ts'
+            }],
+        ['auth_service', 'shared_index', {
+                relation: 'imports_from', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['shared_index', 'shared_util', {
+                relation: 'exports', confidence: 'EXTRACTED', source_file: '/src/shared/index.ts'
+            }],
+        ['shared_index', 'shared_logger', {
+                relation: 'exports', confidence: 'EXTRACTED', source_file: '/src/shared/index.ts'
+            }]
+    ]
+})
 }
 
 function labelsFor(level: 1 | 2 | 3 | 4): string[] {

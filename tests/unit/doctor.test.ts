@@ -113,19 +113,19 @@ describe('doctor command', () => {
       expect(doctor).toContain('watcher last reconciliation: 2026-07-15T00:00:00.000Z (42ms; files=1; directories=1)')
       expect(doctor).toContain('watcher failure: authoritative scan failed')
       expect(status).toContain('generation-policy mismatch')
-      expect(status).toContain('watcher failed (live=true, coverage=failed, mode=recursive-events, interval=30000ms, requested_extraction=unknown, strategies=unavailable, published_policy=mismatch')
+      expect(status).toContain('watcher failed (live=true, coverage=failed, mode=recursive-events, interval=30000ms, published_policy=mismatch')
       expect(status).toContain('reconciliation 2026-07-15T00:00:00.000Z (duration=42ms, files=1, directories=1')
       expect(status).toContain('madar generate . --update')
     })
   })
 
-  test('shows indexing completeness, affected local paths, and SPI diagnostics in doctor and status', () => {
+  test('shows indexing completeness, affected local paths, and canonical diagnostics in doctor and status', () => {
     withSandbox((sandboxDir) => {
       writeGraph(resolve(sandboxDir, 'out', 'graph.json'), {
         generated_at: new Date().toISOString(),
       })
       writeJson(resolve(sandboxDir, 'out', 'indexing-manifest.json'), {
-        version: 1,
+        version: 2,
         generated_at: new Date().toISOString(),
         summary: {},
         outcomes: [
@@ -134,14 +134,14 @@ describe('doctor command', () => {
             kind: 'file',
             status: 'indexed',
             reason: 'indexed',
-            capability: 'builtin:extract:typescript',
+            capability: 'builtin:index:typescript',
           },
           {
             path: 'src/auth/broken.ts',
             kind: 'file',
             status: 'failed',
-            reason: 'extractor_error',
-            capability: 'builtin:extract:typescript',
+            reason: 'canonical_file_missing',
+            capability: 'builtin:index:typescript',
           },
           {
             path: 'src/legacy.vue',
@@ -151,10 +151,10 @@ describe('doctor command', () => {
             capability: null,
           },
         ],
-        spi_diagnostics: [{
-          id: 'spi.call.program-create-failed',
+        index_diagnostics: [{
+          id: 'typescript.call.program-create-failed',
           level: 'warn',
-          reason: 'spi_diagnostic',
+          reason: 'canonical_diagnostic',
           message: 'local diagnostic detail',
         }],
       })
@@ -163,11 +163,11 @@ describe('doctor command', () => {
       const status = runStatusCommand({ projectDir: sandboxDir, now: Date.now() })
 
       expect(doctor).toContain('indexing completeness: partial (1 indexed, 0 warnings, 0 policy skips, 1 unsupported, 1 failed)')
-      expect(doctor).toContain('"src/auth/broken.ts" (failed; extractor_error; builtin:extract:typescript)')
+      expect(doctor).toContain('"src/auth/broken.ts" (failed; canonical_file_missing; builtin:index:typescript)')
       expect(doctor).toContain('"src/legacy.vue" (unsupported; unsupported_file_type; no capability)')
       expect(doctor).toContain('Index diagnostics: 1')
       expect(status).toContain('indexing partial (indexed=1, warnings=0, skipped=0, unsupported=1, failed=1)')
-      expect(status).toContain('"src/auth/broken.ts"[extractor_error]')
+      expect(status).toContain('"src/auth/broken.ts"[canonical_file_missing]')
       expect(status).toContain('"src/legacy.vue"[unsupported_file_type]')
     })
   })
@@ -223,6 +223,28 @@ describe('doctor command', () => {
     withSandbox((sandboxDir) => {
       const graphPath = resolve(sandboxDir, 'out', 'graph.json')
       writeGraph(graphPath)
+      writeJson(resolve(sandboxDir, 'out', 'indexing-manifest.json'), {
+        version: 2,
+        generated_at: new Date().toISOString(),
+        summary: {},
+        outcomes: [
+          {
+            path: 'src/index.ts',
+            kind: 'file',
+            status: 'indexed',
+            reason: 'indexed',
+            capability: 'builtin:index:typescript',
+          },
+          {
+            path: 'src/template.vue',
+            kind: 'file',
+            status: 'unsupported',
+            reason: 'unsupported_file_type',
+            capability: null,
+          },
+        ],
+        index_diagnostics: [],
+      })
       writeText(resolve(sandboxDir, 'GEMINI.md'), '## madar\n')
       writeText(resolve(sandboxDir, '.cursor', 'rules', 'madar.mdc'), 'rule')
       writeJson(resolve(sandboxDir, '.gemini', 'settings.json'), {
@@ -251,6 +273,7 @@ describe('doctor command', () => {
       })
 
       expect(doctor).toContain('[madar doctor] healthy')
+      expect(doctor).toContain('indexing completeness: partial (1 indexed, 0 warnings, 0 policy skips, 1 unsupported, 0 failed)')
       expect(doctor).toContain('claude: configured')
       expect(doctor).toContain('cursor: configured')
       expect(doctor).toContain('gemini: configured')

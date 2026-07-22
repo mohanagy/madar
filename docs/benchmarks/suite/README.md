@@ -30,9 +30,8 @@ The runner-backed suite now ships in this directory:
 
 Current wiring is still conservative, but it is no longer a single-cell scaffold:
 
-- ready repo shapes: `ts-small`, `nestjs-mid`, `ts-monorepo-large`, `python-service`, `go-service`, `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`
+- ready repo shapes: `ts-small`, `nestjs-mid`, `ts-monorepo-large`, `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`
 - ready task kinds: `explain-runtime`, `implement`, `review`, and `impact`
-- Python and Go now ship as concrete public fixture workspaces under `docs/benchmarks/suite/fixtures/`
 - six git-backed public repos are now prompt-wired as ready rows: `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`
 - fresh July 15 isolated `explain-runtime` receipts are published for `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`; all ran from the same unpacked `@lubab/madar@0.31.0` tarball and none reached a valid performance comparison
 - historical June receipts remain published as real controlled profile-assisted measurements; they demonstrate the observed source-checkout result, but not untuned npm-package behavior
@@ -45,7 +44,7 @@ Current wiring is still conservative, but it is no longer a single-cell scaffold
 
 Current public TypeScript `explain-runtime` receipts (July 15, 2026; packed `0.31.0` artifact; one warm-cache trial per row):
 
-In these packed `0.31.0` receipts, `Legacy` means the then-current explicit `--legacy` extractor and `SPI` means the then-current strict SPI/cache implementation. The current harness retains those arm labels for schema compatibility, but `--spi` now selects the uncached canonical JS/TS index without unsupported-language fallback; new canonical measurements require a new receipt. Normal `madar generate .` uses the canonical JS/TS index plus temporary fallback only for other supported languages.
+These packed `0.31.0` receipts preserve the historical `Legacy` and `SPI` arm labels exactly as recorded. Those labels are not current commands or current benchmark arms. New runs use one canonical JavaScript/TypeScript Madar arm and require a new receipt; the dated bundles below remain unchanged historical evidence.
 
 | Repo | Bundle | Legacy outcome | SPI outcome |
 | --- | --- | --- | --- |
@@ -106,4 +105,4 @@ For isolated public `explain-runtime` reruns, keep the retrieve permission expli
   --yes
 ```
 
-Measured results remain repo/task-specific receipts. Controlled and production-default experiments stay labeled separately. Public claims point back to dated artifact folders plus [`docs/claims-and-evidence.md`](../../claims-and-evidence.md) until the matrix includes more public languages, more prompts, and more independent receipts.
+Measured results remain repo/task-specific receipts. Controlled and production-default experiments stay labeled separately. Public claims point back to dated artifact folders plus [`docs/claims-and-evidence.md`](../../claims-and-evidence.md) until the JavaScript/TypeScript matrix includes more prompts and more independent receipts.

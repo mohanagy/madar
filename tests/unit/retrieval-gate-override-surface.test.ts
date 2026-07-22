@@ -2,25 +2,21 @@ import { describe, expect, it } from 'vitest'
 
 import { parsePackArgs } from '../../src/cli/parser.js'
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
-import { buildGraph } from '../../src/application/build-graph.js'
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 
 function buildSmallGraph(): KnowledgeGraph {
-  return buildGraph([
-    {
-      schema_version: 1,
-      nodes: [
-        {
-          id: 'auth_service',
-          label: 'AuthService',
-          file_type: 'code',
-          source_file: 'src/auth.ts',
-          source_location: 'L1',
-        },
-      ],
-      edges: [],
-    },
-  ])
+  return createTestGraph({
+    nodes: [
+        ['auth_service', {
+                label: 'AuthService',
+                file_type: 'code',
+                source_file: 'src/auth.ts',
+                source_location: 'L1'
+            }]
+    ],
+    edges: []
+})
 }
 
 describe('parsePackArgs --retrieval-level (#75 manual override CLI surface)', () => {

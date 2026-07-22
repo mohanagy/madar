@@ -1,51 +1,104 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildGraph } from '../../src/application/build-graph.js'
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 import { computeContextPackDiagnostics } from '../../src/runtime/context-pack-diagnostics.js'
 import { compactRetrieveResult, contextPackFromRetrieveResult, retrieveContext } from '../../src/runtime/retrieve.js'
 
 function buildProductionPipelineGraph() {
-  return buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'ideas_controller', label: 'IdeasController', file_type: 'code', source_file: '/src/ideas/ideas.controller.ts', source_location: 'L5', node_kind: 'class', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
-          { id: 'ideas_method', label: 'IdeasController.generateFromProblem', file_type: 'code', source_file: '/src/ideas/ideas.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
-          { id: 'ideas_method_duplicate', label: 'IdeasController.generateFromProblem', file_type: 'code', source_file: '/backend/.worktrees/copy/src/ideas/ideas.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 8 },
-          { id: 'ideas_list', label: 'IdeasController.listIdeas', file_type: 'code', source_file: '/src/ideas/ideas.controller.ts', source_location: 'L42', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
-          { id: 'ideas_health', label: 'IdeasController.health', file_type: 'code', source_file: '/src/ideas/ideas.controller.ts', source_location: 'L50', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
-          { id: 'ideas_route', label: 'POST /ideas/generate', file_type: 'code', source_file: '/src/ideas/ideas.routes.ts', source_location: 'L4', node_kind: 'route', framework: 'nestjs', framework_role: 'nest_route', community: 0 },
-          { id: 'ideas_service', label: 'IdeasService', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L5', node_kind: 'class', framework: 'nestjs', framework_role: 'nest_provider', community: 1 },
-          { id: 'ideas_service_method', label: 'IdeasService.generateFromProblem', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L21', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_provider', community: 1 },
-          { id: 'report_orchestrator', label: 'ReportOrchestrator.run', file_type: 'code', source_file: '/src/reporting/report-orchestrator.ts', source_location: 'L9', node_kind: 'method', framework_role: 'orchestrator', community: 2 },
-          { id: 'research_agent', label: 'ResearchAgent.search', file_type: 'code', source_file: '/src/research/research-agent.ts', source_location: 'L11', node_kind: 'method', community: 3 },
-          { id: 'scoring_service', label: 'ScoringService.score', file_type: 'code', source_file: '/src/scoring/scoring.service.ts', source_location: 'L12', node_kind: 'method', community: 4 },
-          { id: 'report_repository', label: 'ReportRepository.save', file_type: 'code', source_file: '/src/persistence/report.repository.ts', source_location: 'L8', node_kind: 'method', framework_role: 'repository', community: 5 },
-          { id: 'runtime_config', label: 'VALIDATION_PROVIDER', file_type: 'code', source_file: '/src/config/runtime.ts', source_location: 'L3', node_kind: 'function', community: 6 },
-          { id: 'ideas_test', label: 'IdeasController.generateFromProblem.spec', file_type: 'code', source_file: '/src/__tests__/ideas.controller.spec.ts', source_location: 'L5', node_kind: 'function', community: 7 },
-          { id: 'html_reporter', label: 'HtmlReporter.render', file_type: 'code', source_file: '/benchmarks/html-reporter.ts', source_location: 'L14', node_kind: 'method', community: 7 },
-          { id: 'report_fixture', label: 'idea-report.fixture', file_type: 'code', source_file: '/fixtures/idea-report.fixture.ts', source_location: 'L2', node_kind: 'function', community: 7 },
-        ],
-        edges: [
-          { source: 'ideas_controller', target: 'ideas_method', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.controller.ts' },
-          { source: 'ideas_controller', target: 'ideas_list', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.controller.ts' },
-          { source: 'ideas_controller', target: 'ideas_health', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.controller.ts' },
-          { source: 'ideas_route', target: 'ideas_method', relation: 'route_handler', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.routes.ts' },
-          { source: 'ideas_controller', target: 'ideas_service', relation: 'injects', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.controller.ts' },
-          { source: 'ideas_method', target: 'ideas_service_method', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.controller.ts' },
-          { source: 'ideas_service_method', target: 'report_orchestrator', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.service.ts' },
-          { source: 'report_orchestrator', target: 'research_agent', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/reporting/report-orchestrator.ts' },
-          { source: 'report_orchestrator', target: 'scoring_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/reporting/report-orchestrator.ts' },
-          { source: 'report_orchestrator', target: 'report_repository', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/reporting/report-orchestrator.ts' },
-          { source: 'ideas_service_method', target: 'runtime_config', relation: 'reads_env', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.service.ts' },
-          { source: 'ideas_service_method', target: 'ideas_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.service.ts' },
-          { source: 'html_reporter', target: 'report_fixture', relation: 'uses', confidence: 'EXTRACTED', source_file: '/benchmarks/html-reporter.ts' },
-        ],
-      },
+  return createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['ideas_controller', {
+                label: 'IdeasController', file_type: 'code', source_file: '/src/ideas/ideas.controller.ts', source_location: 'L5', node_kind: 'class', framework: 'nestjs', framework_role: 'nest_controller', community: 0
+            }],
+        ['ideas_method', {
+                label: 'IdeasController.generateFromProblem', file_type: 'code', source_file: '/src/ideas/ideas.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0
+            }],
+        ['ideas_method_duplicate', {
+                label: 'IdeasController.generateFromProblem', file_type: 'code', source_file: '/backend/.worktrees/copy/src/ideas/ideas.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 8
+            }],
+        ['ideas_list', {
+                label: 'IdeasController.listIdeas', file_type: 'code', source_file: '/src/ideas/ideas.controller.ts', source_location: 'L42', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0
+            }],
+        ['ideas_health', {
+                label: 'IdeasController.health', file_type: 'code', source_file: '/src/ideas/ideas.controller.ts', source_location: 'L50', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0
+            }],
+        ['ideas_route', {
+                label: 'POST /ideas/generate', file_type: 'code', source_file: '/src/ideas/ideas.routes.ts', source_location: 'L4', node_kind: 'route', framework: 'nestjs', framework_role: 'nest_route', community: 0
+            }],
+        ['ideas_service', {
+                label: 'IdeasService', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L5', node_kind: 'class', framework: 'nestjs', framework_role: 'nest_provider', community: 1
+            }],
+        ['ideas_service_method', {
+                label: 'IdeasService.generateFromProblem', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L21', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_provider', community: 1
+            }],
+        ['report_orchestrator', {
+                label: 'ReportOrchestrator.run', file_type: 'code', source_file: '/src/reporting/report-orchestrator.ts', source_location: 'L9', node_kind: 'method', framework_role: 'orchestrator', community: 2
+            }],
+        ['research_agent', {
+                label: 'ResearchAgent.search', file_type: 'code', source_file: '/src/research/research-agent.ts', source_location: 'L11', node_kind: 'method', community: 3
+            }],
+        ['scoring_service', {
+                label: 'ScoringService.score', file_type: 'code', source_file: '/src/scoring/scoring.service.ts', source_location: 'L12', node_kind: 'method', community: 4
+            }],
+        ['report_repository', {
+                label: 'ReportRepository.save', file_type: 'code', source_file: '/src/persistence/report.repository.ts', source_location: 'L8', node_kind: 'method', framework_role: 'repository', community: 5
+            }],
+        ['runtime_config', {
+                label: 'VALIDATION_PROVIDER', file_type: 'code', source_file: '/src/config/runtime.ts', source_location: 'L3', node_kind: 'function', community: 6
+            }],
+        ['ideas_test', {
+                label: 'IdeasController.generateFromProblem.spec', file_type: 'code', source_file: '/src/__tests__/ideas.controller.spec.ts', source_location: 'L5', node_kind: 'function', community: 7
+            }],
+        ['html_reporter', {
+                label: 'HtmlReporter.render', file_type: 'code', source_file: '/benchmarks/html-reporter.ts', source_location: 'L14', node_kind: 'method', community: 7
+            }],
+        ['report_fixture', {
+                label: 'idea-report.fixture', file_type: 'code', source_file: '/fixtures/idea-report.fixture.ts', source_location: 'L2', node_kind: 'function', community: 7
+            }]
     ],
-      { rootPath: '/' },
-  )
+    edges: [
+        ['ideas_controller', 'ideas_method', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.controller.ts'
+            }],
+        ['ideas_controller', 'ideas_list', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.controller.ts'
+            }],
+        ['ideas_controller', 'ideas_health', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.controller.ts'
+            }],
+        ['ideas_route', 'ideas_method', {
+                relation: 'route_handler', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.routes.ts'
+            }],
+        ['ideas_controller', 'ideas_service', {
+                relation: 'injects', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.controller.ts'
+            }],
+        ['ideas_method', 'ideas_service_method', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.controller.ts'
+            }],
+        ['ideas_service_method', 'report_orchestrator', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.service.ts'
+            }],
+        ['report_orchestrator', 'research_agent', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/reporting/report-orchestrator.ts'
+            }],
+        ['report_orchestrator', 'scoring_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/reporting/report-orchestrator.ts'
+            }],
+        ['report_orchestrator', 'report_repository', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/reporting/report-orchestrator.ts'
+            }],
+        ['ideas_service_method', 'runtime_config', {
+                relation: 'reads_env', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.service.ts'
+            }],
+        ['ideas_service_method', 'ideas_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.service.ts'
+            }],
+        ['html_reporter', 'report_fixture', {
+                relation: 'uses', confidence: 'EXTRACTED', source_file: '/benchmarks/html-reporter.ts'
+            }]
+    ]
+})
 }
 
 function retrieve(prompt: string) {
@@ -57,161 +110,328 @@ function retrieve(prompt: string) {
 }
 
 function buildBidirectionalHubGraph() {
-  return buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'route', label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'route', framework: 'nestjs', framework_role: 'nest_route', community: 0 },
-          { id: 'auth_helper', label: 'requireIdeasUserId', file_type: 'code', source_file: '/src/ideas/ideas-authenticated-request.ts', source_location: 'L6', node_kind: 'function', community: 0 },
-          { id: 'create_idea', label: '.createIdea()', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
-          { id: 'start_pipeline', label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
-          { id: 'add_job', label: '.addJob()', file_type: 'code', source_file: '/src/queue/queue-registry.service.ts', source_location: 'L11', node_kind: 'method', framework_role: 'queue', community: 2 },
-          { id: 'process', label: '.process()', file_type: 'code', source_file: '/src/pipeline/orchestrator.worker.ts', source_location: 'L12', node_kind: 'method', framework_role: 'worker', community: 2 },
-          { id: 'search', label: '.search()', file_type: 'code', source_file: '/src/research/research-agent.service.ts', source_location: 'L11', node_kind: 'method', community: 3 },
-          { id: 'score', label: '.score()', file_type: 'code', source_file: '/src/scoring/metrics-scoring.service.ts', source_location: 'L12', node_kind: 'method', community: 3 },
-          { id: 'save', label: '.save()', file_type: 'code', source_file: '/src/persistence/report.repository.ts', source_location: 'L8', node_kind: 'method', framework_role: 'repository', community: 3 },
-          { id: 'call_llm', label: '.callLlm()', file_type: 'code', source_file: '/src/llm/llm-provider-resolver.service.ts', source_location: 'L14', node_kind: 'method', community: 3 },
-          { id: 'resolve_llm', label: '.resolve()', file_type: 'code', source_file: '/src/llm/llm-provider-resolver.service.ts', source_location: 'L8', node_kind: 'method', community: 3 },
-          { id: 'other_controller_a', label: '.exportIdeaToPdf()', file_type: 'code', source_file: '/src/ideas/export.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 4 },
-          { id: 'other_controller_b', label: '.publishIdea()', file_type: 'code', source_file: '/src/ideas/publish.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 4 },
-          { id: 'other_worker', label: '.queueLetsBuild()', file_type: 'code', source_file: '/src/pipeline/lets-build.worker.ts', source_location: 'L22', node_kind: 'method', community: 5 },
-          { id: 'plan_enforcement', label: 'PlanEnforcement', file_type: 'code', source_file: '/src/guards/plan-enforcement.ts', source_location: 'L5', node_kind: 'function', community: 6 },
-        ],
-        edges: [
-          { source: 'route', target: 'auth_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
-          { source: 'route', target: 'create_idea', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
-          { source: 'route', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
-          { source: 'route', target: 'plan_enforcement', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
-          { source: 'start_pipeline', target: 'add_job', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
-          { source: 'add_job', target: 'process', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/queue/queue-registry.service.ts' },
-          { source: 'process', target: 'search', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts' },
-          { source: 'process', target: 'score', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts' },
-          { source: 'process', target: 'save', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts' },
-          { source: 'call_llm', target: 'resolve_llm', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/llm/llm-provider-resolver.service.ts' },
-          { source: 'resolve_llm', target: 'create_idea', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/llm/llm-provider-resolver.service.ts' },
-
-          // Simulate the real GoValidate graph shape where call edges can appear in both directions.
-          { source: 'auth_helper', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas-authenticated-request.ts' },
-          { source: 'create_idea', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.service.ts' },
-          { source: 'start_pipeline', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
-          { source: 'add_job', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/queue/queue-registry.service.ts' },
-
-          { source: 'other_controller_a', target: 'auth_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/export.controller.ts' },
-          { source: 'other_controller_b', target: 'auth_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/publish.controller.ts' },
-          { source: 'other_worker', target: 'add_job', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/lets-build.worker.ts' },
-        ],
-      },
+  return createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['route', {
+                label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'route', framework: 'nestjs', framework_role: 'nest_route', community: 0
+            }],
+        ['auth_helper', {
+                label: 'requireIdeasUserId', file_type: 'code', source_file: '/src/ideas/ideas-authenticated-request.ts', source_location: 'L6', node_kind: 'function', community: 0
+            }],
+        ['create_idea', {
+                label: '.createIdea()', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1
+            }],
+        ['start_pipeline', {
+                label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'nest_provider', community: 1
+            }],
+        ['add_job', {
+                label: '.addJob()', file_type: 'code', source_file: '/src/queue/queue-registry.service.ts', source_location: 'L11', node_kind: 'method', framework_role: 'queue', community: 2
+            }],
+        ['process', {
+                label: '.process()', file_type: 'code', source_file: '/src/pipeline/orchestrator.worker.ts', source_location: 'L12', node_kind: 'method', framework_role: 'worker', community: 2
+            }],
+        ['search', {
+                label: '.search()', file_type: 'code', source_file: '/src/research/research-agent.service.ts', source_location: 'L11', node_kind: 'method', community: 3
+            }],
+        ['score', {
+                label: '.score()', file_type: 'code', source_file: '/src/scoring/metrics-scoring.service.ts', source_location: 'L12', node_kind: 'method', community: 3
+            }],
+        ['save', {
+                label: '.save()', file_type: 'code', source_file: '/src/persistence/report.repository.ts', source_location: 'L8', node_kind: 'method', framework_role: 'repository', community: 3
+            }],
+        ['call_llm', {
+                label: '.callLlm()', file_type: 'code', source_file: '/src/llm/llm-provider-resolver.service.ts', source_location: 'L14', node_kind: 'method', community: 3
+            }],
+        ['resolve_llm', {
+                label: '.resolve()', file_type: 'code', source_file: '/src/llm/llm-provider-resolver.service.ts', source_location: 'L8', node_kind: 'method', community: 3
+            }],
+        ['other_controller_a', {
+                label: '.exportIdeaToPdf()', file_type: 'code', source_file: '/src/ideas/export.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 4
+            }],
+        ['other_controller_b', {
+                label: '.publishIdea()', file_type: 'code', source_file: '/src/ideas/publish.controller.ts', source_location: 'L18', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 4
+            }],
+        ['other_worker', {
+                label: '.queueLetsBuild()', file_type: 'code', source_file: '/src/pipeline/lets-build.worker.ts', source_location: 'L22', node_kind: 'method', community: 5
+            }],
+        ['plan_enforcement', {
+                label: 'PlanEnforcement', file_type: 'code', source_file: '/src/guards/plan-enforcement.ts', source_location: 'L5', node_kind: 'function', community: 6
+            }]
     ],
-      { rootPath: '/' },
-  )
+    edges: [
+        ['route', 'auth_helper', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts'
+            }],
+        ['route', 'create_idea', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts'
+            }],
+        ['route', 'start_pipeline', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts'
+            }],
+        ['route', 'plan_enforcement', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts'
+            }],
+        ['start_pipeline', 'add_job', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts'
+            }],
+        ['add_job', 'process', {
+                relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/queue/queue-registry.service.ts'
+            }],
+        ['process', 'search', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts'
+            }],
+        ['process', 'score', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts'
+            }],
+        ['process', 'save', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts'
+            }],
+        ['call_llm', 'resolve_llm', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/llm/llm-provider-resolver.service.ts'
+            }],
+        ['resolve_llm', 'create_idea', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/llm/llm-provider-resolver.service.ts'
+            }],
+        ['auth_helper', 'route', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas-authenticated-request.ts'
+            }],
+        ['create_idea', 'route', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/ideas.service.ts'
+            }],
+        ['start_pipeline', 'route', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts'
+            }],
+        ['add_job', 'start_pipeline', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/queue/queue-registry.service.ts'
+            }],
+        ['other_controller_a', 'auth_helper', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/export.controller.ts'
+            }],
+        ['other_controller_b', 'auth_helper', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/publish.controller.ts'
+            }],
+        ['other_worker', 'add_job', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/lets-build.worker.ts'
+            }]
+    ]
+})
 }
 
 function buildBroadReportGenerationGraph() {
-  return buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'route', label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 0 },
-          { id: 'create_idea', label: '.createIdea()', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 0 },
-          { id: 'start_pipeline', label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
-          { id: 'add_job', label: '.addJob()', file_type: 'code', source_file: '/src/pipeline/queue-registry.service.ts', source_location: 'L50', node_kind: 'method', framework_role: 'queue', community: 1 },
-          { id: 'title_generation', label: '.generateTitle()', file_type: 'code', source_file: '/src/ideas/title-generation.service.ts', source_location: 'L60', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
-          { id: 'status_endpoint', label: '.getIdeaStatus()', file_type: 'code', source_file: '/src/ideas/idea-status.controller.ts', source_location: 'L70', node_kind: 'method', framework_role: 'nest_route', community: 1 },
-          { id: 'planner', label: '.plan()', file_type: 'code', source_file: '/src/pipeline/planner/planner.service.ts', source_location: 'L80', node_kind: 'method', framework_role: 'worker', community: 2 },
-          { id: 'section_worker', label: '.processSection()', file_type: 'code', source_file: '/src/pipeline/research/section-research.worker.ts', source_location: 'L90', node_kind: 'method', framework_role: 'worker', community: 2 },
-          { id: 'research', label: '.search()', file_type: 'code', source_file: '/src/pipeline/research/research-agent.service.ts', source_location: 'L100', node_kind: 'method', framework_role: 'service', community: 2 },
-          { id: 'assembly', label: '.assembleReport()', file_type: 'code', source_file: '/src/pipeline/assembly/assembly.service.ts', source_location: 'L110', node_kind: 'method', framework_role: 'service', community: 3 },
-          { id: 'scoring', label: '.score()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L120', node_kind: 'method', framework_role: 'service', community: 3 },
-          { id: 'quality_gate', label: '.validateReport()', file_type: 'code', source_file: '/src/pipeline/assembly/report-quality-gate.service.ts', source_location: 'L130', node_kind: 'method', framework_role: 'service', community: 3 },
-          { id: 'renderer', label: '.renderFinalReport()', file_type: 'code', source_file: '/src/pipeline/assembly/deterministic-final-report.renderer.ts', source_location: 'L140', node_kind: 'method', framework_role: 'service', community: 3 },
-          { id: 'persist', label: '.saveStructuredReport()', file_type: 'code', source_file: '/src/pipeline/persistence/db-sync.worker.ts', source_location: 'L150', node_kind: 'method', framework_role: 'repository', community: 4 },
-        ],
-        edges: [
-          { source: 'route', target: 'create_idea', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
-          { source: 'route', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
-          { source: 'route', target: 'title_generation', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
-          { source: 'start_pipeline', target: 'add_job', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
-          { source: 'planner', target: 'section_worker', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/planner/planner.service.ts' },
-          { source: 'section_worker', target: 'research', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/research/section-research.worker.ts' },
-          { source: 'section_worker', target: 'assembly', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/research/section-research.worker.ts' },
-          { source: 'assembly', target: 'scoring', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
-          { source: 'assembly', target: 'quality_gate', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
-          { source: 'assembly', target: 'renderer', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
-          { source: 'assembly', target: 'persist', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
-          { source: 'status_endpoint', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-status.controller.ts' },
-        ],
-      },
+  return createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['route', {
+                label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 0
+            }],
+        ['create_idea', {
+                label: '.createIdea()', file_type: 'code', source_file: '/src/ideas/ideas.service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 0
+            }],
+        ['start_pipeline', {
+                label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'nest_provider', community: 1
+            }],
+        ['add_job', {
+                label: '.addJob()', file_type: 'code', source_file: '/src/pipeline/queue-registry.service.ts', source_location: 'L50', node_kind: 'method', framework_role: 'queue', community: 1
+            }],
+        ['title_generation', {
+                label: '.generateTitle()', file_type: 'code', source_file: '/src/ideas/title-generation.service.ts', source_location: 'L60', node_kind: 'method', framework_role: 'nest_provider', community: 1
+            }],
+        ['status_endpoint', {
+                label: '.getIdeaStatus()', file_type: 'code', source_file: '/src/ideas/idea-status.controller.ts', source_location: 'L70', node_kind: 'method', framework_role: 'nest_route', community: 1
+            }],
+        ['planner', {
+                label: '.plan()', file_type: 'code', source_file: '/src/pipeline/planner/planner.service.ts', source_location: 'L80', node_kind: 'method', framework_role: 'worker', community: 2
+            }],
+        ['section_worker', {
+                label: '.processSection()', file_type: 'code', source_file: '/src/pipeline/research/section-research.worker.ts', source_location: 'L90', node_kind: 'method', framework_role: 'worker', community: 2
+            }],
+        ['research', {
+                label: '.search()', file_type: 'code', source_file: '/src/pipeline/research/research-agent.service.ts', source_location: 'L100', node_kind: 'method', framework_role: 'service', community: 2
+            }],
+        ['assembly', {
+                label: '.assembleReport()', file_type: 'code', source_file: '/src/pipeline/assembly/assembly.service.ts', source_location: 'L110', node_kind: 'method', framework_role: 'service', community: 3
+            }],
+        ['scoring', {
+                label: '.score()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L120', node_kind: 'method', framework_role: 'service', community: 3
+            }],
+        ['quality_gate', {
+                label: '.validateReport()', file_type: 'code', source_file: '/src/pipeline/assembly/report-quality-gate.service.ts', source_location: 'L130', node_kind: 'method', framework_role: 'service', community: 3
+            }],
+        ['renderer', {
+                label: '.renderFinalReport()', file_type: 'code', source_file: '/src/pipeline/assembly/deterministic-final-report.renderer.ts', source_location: 'L140', node_kind: 'method', framework_role: 'service', community: 3
+            }],
+        ['persist', {
+                label: '.saveStructuredReport()', file_type: 'code', source_file: '/src/pipeline/persistence/db-sync.worker.ts', source_location: 'L150', node_kind: 'method', framework_role: 'repository', community: 4
+            }]
     ],
-      { rootPath: '/' },
-  )
+    edges: [
+        ['route', 'create_idea', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts'
+            }],
+        ['route', 'start_pipeline', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts'
+            }],
+        ['route', 'title_generation', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts'
+            }],
+        ['start_pipeline', 'add_job', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts'
+            }],
+        ['planner', 'section_worker', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/planner/planner.service.ts'
+            }],
+        ['section_worker', 'research', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/research/section-research.worker.ts'
+            }],
+        ['section_worker', 'assembly', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/research/section-research.worker.ts'
+            }],
+        ['assembly', 'scoring', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts'
+            }],
+        ['assembly', 'quality_gate', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts'
+            }],
+        ['assembly', 'renderer', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts'
+            }],
+        ['assembly', 'persist', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts'
+            }],
+        ['status_endpoint', 'route', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-status.controller.ts'
+            }]
+    ]
+})
 }
 
 function buildReportGenerationLeafHelperGraph() {
-  return buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'route', label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 0 },
-          { id: 'start_pipeline', label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'service', community: 1 },
-          { id: 'planner', label: '.plan()', file_type: 'code', source_file: '/src/pipeline/planner/planner.service.ts', source_location: 'L50', node_kind: 'method', framework_role: 'worker', community: 1 },
-          { id: 'assembly', label: '.assembleReport()', file_type: 'code', source_file: '/src/pipeline/assembly/assembly.service.ts', source_location: 'L60', node_kind: 'method', framework_role: 'service', community: 2 },
-          { id: 'score_report', label: '.scoreReport()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L70', node_kind: 'method', framework_role: 'service', community: 2 },
-          { id: 'generate_scoring_ledger', label: '.generateScoringLedger()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L80', node_kind: 'method', framework_role: 'service', community: 2 },
-          { id: 'generate_sensitivity_analysis', label: '.generateSensitivityAnalysis()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L90', node_kind: 'method', framework_role: 'service', community: 2 },
-          { id: 'persist', label: '.saveStructuredReport()', file_type: 'code', source_file: '/src/pipeline/persistence/db-sync.worker.ts', source_location: 'L100', node_kind: 'method', framework_role: 'repository', community: 3 },
-          { id: 'title_generation', label: '.generateTitle()', file_type: 'code', source_file: '/src/ideas/title-generation.service.ts', source_location: 'L110', node_kind: 'method', framework_role: 'service', community: 4 },
-        ],
-        edges: [
-          { source: 'route', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
-          { source: 'start_pipeline', target: 'planner', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
-          { source: 'planner', target: 'assembly', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/planner/planner.service.ts' },
-          { source: 'assembly', target: 'score_report', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
-          { source: 'score_report', target: 'generate_scoring_ledger', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts' },
-          { source: 'score_report', target: 'generate_sensitivity_analysis', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts' },
-          { source: 'assembly', target: 'persist', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
-          { source: 'route', target: 'title_generation', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
-        ],
-      },
+  return createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['route', {
+                label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 0
+            }],
+        ['start_pipeline', {
+                label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'service', community: 1
+            }],
+        ['planner', {
+                label: '.plan()', file_type: 'code', source_file: '/src/pipeline/planner/planner.service.ts', source_location: 'L50', node_kind: 'method', framework_role: 'worker', community: 1
+            }],
+        ['assembly', {
+                label: '.assembleReport()', file_type: 'code', source_file: '/src/pipeline/assembly/assembly.service.ts', source_location: 'L60', node_kind: 'method', framework_role: 'service', community: 2
+            }],
+        ['score_report', {
+                label: '.scoreReport()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L70', node_kind: 'method', framework_role: 'service', community: 2
+            }],
+        ['generate_scoring_ledger', {
+                label: '.generateScoringLedger()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L80', node_kind: 'method', framework_role: 'service', community: 2
+            }],
+        ['generate_sensitivity_analysis', {
+                label: '.generateSensitivityAnalysis()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L90', node_kind: 'method', framework_role: 'service', community: 2
+            }],
+        ['persist', {
+                label: '.saveStructuredReport()', file_type: 'code', source_file: '/src/pipeline/persistence/db-sync.worker.ts', source_location: 'L100', node_kind: 'method', framework_role: 'repository', community: 3
+            }],
+        ['title_generation', {
+                label: '.generateTitle()', file_type: 'code', source_file: '/src/ideas/title-generation.service.ts', source_location: 'L110', node_kind: 'method', framework_role: 'service', community: 4
+            }]
     ],
-      { rootPath: '/' },
-  )
+    edges: [
+        ['route', 'start_pipeline', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts'
+            }],
+        ['start_pipeline', 'planner', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts'
+            }],
+        ['planner', 'assembly', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/planner/planner.service.ts'
+            }],
+        ['assembly', 'score_report', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts'
+            }],
+        ['score_report', 'generate_scoring_ledger', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts'
+            }],
+        ['score_report', 'generate_sensitivity_analysis', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts'
+            }],
+        ['assembly', 'persist', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts'
+            }],
+        ['route', 'title_generation', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts'
+            }]
+    ]
+})
 }
 
 function buildReverseFlowReportGenerationGraph() {
-  return buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'route', label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 0 },
-          { id: 'start_pipeline', label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'service', community: 1 },
-          { id: 'add_job', label: '.addJob()', file_type: 'code', source_file: '/src/pipeline/queue-registry.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'queue', community: 1 },
-          { id: 'process', label: '.process()', file_type: 'code', source_file: '/src/pipeline/orchestrator.worker.ts', source_location: 'L50', node_kind: 'method', framework_role: 'worker', community: 2 },
-          { id: 'assemble_report', label: '.assembleReport()', file_type: 'code', source_file: '/src/pipeline/assembly/assembly.service.ts', source_location: 'L60', node_kind: 'method', framework_role: 'service', community: 2 },
-          { id: 'score_metrics', label: '.scoreMetrics()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L70', node_kind: 'method', framework_role: 'service', community: 2 },
-          { id: 'generate_scoring_ledger', label: '.generateScoringLedger()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L80', node_kind: 'method', framework_role: 'service', community: 2 },
-          { id: 'persist', label: '.saveStructuredReport()', file_type: 'code', source_file: '/src/pipeline/persistence/db-sync.worker.ts', source_location: 'L90', node_kind: 'method', framework_role: 'repository', community: 3 },
-          { id: 'status', label: '.getStatusMessage()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L100', node_kind: 'method', framework_role: 'service', community: 4 },
-          { id: 'title_generation', label: '.generateTitle()', file_type: 'code', source_file: '/src/ideas/title-generation.service.ts', source_location: 'L110', node_kind: 'method', framework_role: 'service', community: 4 },
-        ],
-        edges: [
-          { source: 'start_pipeline', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts' },
-          { source: 'add_job', target: 'start_pipeline', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/queue-registry.service.ts' },
-          { source: 'process', target: 'add_job', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts' },
-          { source: 'assemble_report', target: 'process', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts' },
-          { source: 'score_metrics', target: 'assemble_report', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts' },
-          { source: 'generate_scoring_ledger', target: 'score_metrics', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts' },
-          { source: 'persist', target: 'assemble_report', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/persistence/db-sync.worker.ts' },
-          { source: 'status', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts' },
-          { source: 'title_generation', target: 'route', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/title-generation.service.ts' },
-        ],
-      },
+  return createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['route', {
+                label: '.generateFromProblem()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_route', community: 0
+            }],
+        ['start_pipeline', {
+                label: '.startPipeline()', file_type: 'code', source_file: '/src/pipeline/pipeline-trigger.service.ts', source_location: 'L30', node_kind: 'method', framework_role: 'service', community: 1
+            }],
+        ['add_job', {
+                label: '.addJob()', file_type: 'code', source_file: '/src/pipeline/queue-registry.service.ts', source_location: 'L40', node_kind: 'method', framework_role: 'queue', community: 1
+            }],
+        ['process', {
+                label: '.process()', file_type: 'code', source_file: '/src/pipeline/orchestrator.worker.ts', source_location: 'L50', node_kind: 'method', framework_role: 'worker', community: 2
+            }],
+        ['assemble_report', {
+                label: '.assembleReport()', file_type: 'code', source_file: '/src/pipeline/assembly/assembly.service.ts', source_location: 'L60', node_kind: 'method', framework_role: 'service', community: 2
+            }],
+        ['score_metrics', {
+                label: '.scoreMetrics()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L70', node_kind: 'method', framework_role: 'service', community: 2
+            }],
+        ['generate_scoring_ledger', {
+                label: '.generateScoringLedger()', file_type: 'code', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts', source_location: 'L80', node_kind: 'method', framework_role: 'service', community: 2
+            }],
+        ['persist', {
+                label: '.saveStructuredReport()', file_type: 'code', source_file: '/src/pipeline/persistence/db-sync.worker.ts', source_location: 'L90', node_kind: 'method', framework_role: 'repository', community: 3
+            }],
+        ['status', {
+                label: '.getStatusMessage()', file_type: 'code', source_file: '/src/ideas/idea-generation.controller.ts', source_location: 'L100', node_kind: 'method', framework_role: 'service', community: 4
+            }],
+        ['title_generation', {
+                label: '.generateTitle()', file_type: 'code', source_file: '/src/ideas/title-generation.service.ts', source_location: 'L110', node_kind: 'method', framework_role: 'service', community: 4
+            }]
     ],
-      { rootPath: '/' },
-  )
+    edges: [
+        ['start_pipeline', 'route', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/pipeline-trigger.service.ts'
+            }],
+        ['add_job', 'start_pipeline', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/queue-registry.service.ts'
+            }],
+        ['process', 'add_job', {
+                relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/pipeline/orchestrator.worker.ts'
+            }],
+        ['assemble_report', 'process', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/assembly.service.ts'
+            }],
+        ['score_metrics', 'assemble_report', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts'
+            }],
+        ['generate_scoring_ledger', 'score_metrics', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/assembly/metrics-scoring.service.ts'
+            }],
+        ['persist', 'assemble_report', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/pipeline/persistence/db-sync.worker.ts'
+            }],
+        ['status', 'route', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/idea-generation.controller.ts'
+            }],
+        ['title_generation', 'route', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/ideas/title-generation.service.ts'
+            }]
+    ]
+})
 }
 
 describe('retrieveContext production retrieval regressions', () => {

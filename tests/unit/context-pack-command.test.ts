@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import type { ContextPackSelectionDiagnostics } from '../../src/contracts/context-pack.js'
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import { buildAnswerReadyPackSchema, runContextPackCommand, type ContextPackCommandDependencies } from '../../src/infrastructure/context-pack-command.js'
-import { buildGraph } from '../../src/application/build-graph.js'
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 import { assessMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../../src/runtime/retrieve.js'
 import { evaluateQueryEvidenceCoverage } from '../../src/runtime/retrieve/conceptual-fallback.js'
@@ -20,9 +20,7 @@ const tempFixtureRoots: string[] = []
 const repoGraphFixturePath = join(process.cwd(), 'out', 'graph.json')
 const repoBackendGraphFixturePath = join(process.cwd(), 'backend', 'out', 'graph.json')
 let createdRepoGraphFixture = false
-let createdRepoGraphFixtureDir = false
 let createdRepoBackendGraphFixture = false
-let createdRepoBackendGraphFixtureDir = false
 
 beforeAll(() => {
   if (existsSync(repoGraphFixturePath)) {
@@ -31,7 +29,6 @@ beforeAll(() => {
     const repoGraphDir = dirname(repoGraphFixturePath)
     if (!existsSync(repoGraphDir)) {
       mkdirSync(repoGraphDir, { recursive: true })
-      createdRepoGraphFixtureDir = true
     }
     writeCanonicalGraphFixture(repoGraphFixturePath, {})
     createdRepoGraphFixture = true
@@ -42,24 +39,18 @@ beforeAll(() => {
   const repoBackendGraphDir = dirname(repoBackendGraphFixturePath)
   if (!existsSync(repoBackendGraphDir)) {
     mkdirSync(repoBackendGraphDir, { recursive: true })
-    createdRepoBackendGraphFixtureDir = true
   }
   writeCanonicalGraphFixture(repoBackendGraphFixturePath, {})
   createdRepoBackendGraphFixture = true
 })
 
 afterAll(() => {
+  // Parallel test files share these output roots, so this suite removes only its fixture files.
   if (createdRepoGraphFixture) {
     rmSync(repoGraphFixturePath, { force: true })
   }
-  if (createdRepoGraphFixtureDir) {
-    rmSync(dirname(repoGraphFixturePath), { recursive: true, force: true })
-  }
   if (createdRepoBackendGraphFixture) {
     rmSync(repoBackendGraphFixturePath, { force: true })
-  }
-  if (createdRepoBackendGraphFixtureDir) {
-    rmSync(dirname(repoBackendGraphFixturePath), { recursive: true, force: true })
   }
 })
 
@@ -73,33 +64,58 @@ afterEach(() => {
 })
 
 function buildRuntimeGenerationGraph() {
-  return buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'auth_route', label: 'POST /login', file_type: 'code', source_file: '/src/auth/routes.ts', source_location: 'L10', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },
-          { id: 'auth_controller', label: 'AuthController.login', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
-          { id: 'auth_service', label: 'AuthService.login', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L30', node_kind: 'method', community: 0 },
-          { id: 'queue_registry', label: 'QueueRegistry.addJob', file_type: 'code', source_file: '/src/queue/registry.ts', source_location: 'L40', node_kind: 'method', community: 1 },
-          { id: 'auth_worker', label: 'AuthWorker.process', file_type: 'code', source_file: '/src/auth/worker.ts', source_location: 'L50', node_kind: 'method', framework_role: 'worker', community: 1 },
-          { id: 'session_store', label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L60', node_kind: 'method', community: 1 },
-          { id: 'audit_publisher', label: 'AuditPublisher.publishLogin', file_type: 'code', source_file: '/src/auth/audit.ts', source_location: 'L70', node_kind: 'method', community: 2 },
-          { id: 'auth_test', label: 'AuthService.login.spec', file_type: 'code', source_file: '/tests/auth.service.spec.ts', source_location: 'L80', node_kind: 'function', community: 2 },
-        ],
-        edges: [
-          { source: 'auth_route', target: 'auth_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/auth/routes.ts' },
-          { source: 'auth_controller', target: 'auth_service', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts' },
-          { source: 'auth_service', target: 'queue_registry', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'auth_service', target: 'audit_publisher', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-          { source: 'queue_registry', target: 'auth_worker', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/queue/registry.ts' },
-          { source: 'auth_worker', target: 'session_store', relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/worker.ts' },
-          { source: 'auth_service', target: 'auth_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts' },
-        ],
-      },
+  return createTestGraph({
+    metadata: { root_path: '/' },
+    nodes: [
+        ['auth_route', {
+                label: 'POST /login', file_type: 'code', source_file: '/src/auth/routes.ts', source_location: 'L10', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0
+            }],
+        ['auth_controller', {
+                label: 'AuthController.login', file_type: 'code', source_file: '/src/auth/controller.ts', source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0
+            }],
+        ['auth_service', {
+                label: 'AuthService.login', file_type: 'code', source_file: '/src/auth/service.ts', source_location: 'L30', node_kind: 'method', community: 0
+            }],
+        ['queue_registry', {
+                label: 'QueueRegistry.addJob', file_type: 'code', source_file: '/src/queue/registry.ts', source_location: 'L40', node_kind: 'method', community: 1
+            }],
+        ['auth_worker', {
+                label: 'AuthWorker.process', file_type: 'code', source_file: '/src/auth/worker.ts', source_location: 'L50', node_kind: 'method', framework_role: 'worker', community: 1
+            }],
+        ['session_store', {
+                label: 'SessionStore.createSession', file_type: 'code', source_file: '/src/session/store.ts', source_location: 'L60', node_kind: 'method', community: 1
+            }],
+        ['audit_publisher', {
+                label: 'AuditPublisher.publishLogin', file_type: 'code', source_file: '/src/auth/audit.ts', source_location: 'L70', node_kind: 'method', community: 2
+            }],
+        ['auth_test', {
+                label: 'AuthService.login.spec', file_type: 'code', source_file: '/tests/auth.service.spec.ts', source_location: 'L80', node_kind: 'function', community: 2
+            }]
     ],
-    { rootPath: '/' },
-  )
+    edges: [
+        ['auth_route', 'auth_controller', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: '/src/auth/routes.ts'
+            }],
+        ['auth_controller', 'auth_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/controller.ts'
+            }],
+        ['auth_service', 'queue_registry', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['auth_service', 'audit_publisher', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }],
+        ['queue_registry', 'auth_worker', {
+                relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: '/src/queue/registry.ts'
+            }],
+        ['auth_worker', 'session_store', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: '/src/auth/worker.ts'
+            }],
+        ['auth_service', 'auth_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: '/src/auth/service.ts'
+            }]
+    ]
+})
 }
 
 function buildImplementationPackGraph() {
@@ -114,43 +130,88 @@ function buildImplementationPackGraph() {
       'test:run': 'vitest run',
     },
   }))
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'pack_parser', label: 'parsePackArgs', file_type: 'code', source_file: `${root}/src/cli/parser.ts`, source_location: 'L416', node_kind: 'function', community: 0 },
-          { id: 'pack_command', label: 'runContextPackCommand', file_type: 'code', source_file: `${root}/src/infrastructure/context-pack-command.ts`, source_location: 'L224', node_kind: 'function', community: 0 },
-          { id: 'retrieve_context', label: 'retrieveContext', file_type: 'code', source_file: `${root}/src/runtime/retrieve.ts`, source_location: 'L3601', node_kind: 'function', community: 1 },
-          { id: 'task_planner', label: 'buildTaskContextPlan', file_type: 'code', source_file: `${root}/src/runtime/task-context-planner.ts`, source_location: 'L151', node_kind: 'function', community: 1 },
-          { id: 'gate', label: 'classifyRetrievalLevel', file_type: 'code', source_file: `${root}/src/runtime/retrieval-gate.ts`, source_location: 'L1', node_kind: 'function', community: 1 },
-          { id: 'contract', label: 'ContextPackTaskKind', file_type: 'code', source_file: `${root}/src/contracts/context-pack.ts`, source_location: 'L13', community: 2 },
-          { id: 'mcp_surface', label: 'context_pack', file_type: 'code', source_file: `${root}/src/runtime/stdio/definitions.ts`, source_location: 'L239', node_kind: 'function', community: 2 },
-          { id: 'pack_test', label: 'context-pack-command.test', file_type: 'code', source_file: `${root}/tests/unit/context-pack-command.test.ts`, source_location: 'L1', node_kind: 'function', community: 3 },
-          { id: 'retrieve_test', label: 'retrieve-slice-v1.test', file_type: 'code', source_file: `${root}/tests/unit/retrieve-slice-v1.test.ts`, source_location: 'L1', node_kind: 'function', community: 3 },
-          { id: 'pack_e2e_test', label: 'context-pack.e2e', file_type: 'code', source_file: `${root}/tests/e2e/context-pack.e2e.test.ts`, source_location: 'L1', node_kind: 'function', community: 3 },
-          { id: 'gate_test', label: 'retrieval-gate.test', file_type: 'code', source_file: `${root}/tests/unit/retrieval-gate.test.ts`, source_location: 'L1', node_kind: 'function', community: 3 },
-          { id: 'prompt_pattern', label: 'runContextPromptCommand', file_type: 'code', source_file: `${root}/src/infrastructure/context-prompt-command.ts`, source_location: 'L1', node_kind: 'function', community: 4 },
-          { id: 'review_template_pattern', label: 'renderReviewTemplate', file_type: 'code', source_file: `${root}/src/infrastructure/review-template.ts`, source_location: 'L10', node_kind: 'function', community: 4 },
-        ],
-        edges: [
-          { source: 'pack_parser', target: 'pack_command', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/cli/parser.ts` },
-          { source: 'pack_command', target: 'retrieve_context', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
-          { source: 'pack_command', target: 'task_planner', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
-          { source: 'pack_command', target: 'contract', relation: 'depends_on', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
-          { source: 'pack_command', target: 'mcp_surface', relation: 'depends_on', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
-          { source: 'retrieve_context', target: 'gate', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/retrieve.ts` },
-          { source: 'retrieve_context', target: 'retrieve_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/retrieve.ts` },
-          { source: 'retrieve_context', target: 'gate_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/retrieve.ts` },
-          { source: 'pack_command', target: 'pack_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
-          { source: 'mcp_surface', target: 'pack_e2e_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/stdio/definitions.ts` },
-          { source: 'pack_command', target: 'prompt_pattern', relation: 'related_to', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
-          { source: 'pack_command', target: 'review_template_pattern', relation: 'related_to', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['pack_parser', {
+                label: 'parsePackArgs', file_type: 'code', source_file: `${root}/src/cli/parser.ts`, source_location: 'L416', node_kind: 'function', community: 0
+            }],
+        ['pack_command', {
+                label: 'runContextPackCommand', file_type: 'code', source_file: `${root}/src/infrastructure/context-pack-command.ts`, source_location: 'L224', node_kind: 'function', community: 0
+            }],
+        ['retrieve_context', {
+                label: 'retrieveContext', file_type: 'code', source_file: `${root}/src/runtime/retrieve.ts`, source_location: 'L3601', node_kind: 'function', community: 1
+            }],
+        ['task_planner', {
+                label: 'buildTaskContextPlan', file_type: 'code', source_file: `${root}/src/runtime/task-context-planner.ts`, source_location: 'L151', node_kind: 'function', community: 1
+            }],
+        ['gate', {
+                label: 'classifyRetrievalLevel', file_type: 'code', source_file: `${root}/src/runtime/retrieval-gate.ts`, source_location: 'L1', node_kind: 'function', community: 1
+            }],
+        ['contract', {
+                label: 'ContextPackTaskKind', file_type: 'code', source_file: `${root}/src/contracts/context-pack.ts`, source_location: 'L13', community: 2
+            }],
+        ['mcp_surface', {
+                label: 'context_pack', file_type: 'code', source_file: `${root}/src/runtime/stdio/definitions.ts`, source_location: 'L239', node_kind: 'function', community: 2
+            }],
+        ['pack_test', {
+                label: 'context-pack-command.test', file_type: 'code', source_file: `${root}/tests/unit/context-pack-command.test.ts`, source_location: 'L1', node_kind: 'function', community: 3
+            }],
+        ['retrieve_test', {
+                label: 'retrieve-slice-v1.test', file_type: 'code', source_file: `${root}/tests/unit/retrieve-slice-v1.test.ts`, source_location: 'L1', node_kind: 'function', community: 3
+            }],
+        ['pack_e2e_test', {
+                label: 'context-pack.e2e', file_type: 'code', source_file: `${root}/tests/e2e/context-pack.e2e.test.ts`, source_location: 'L1', node_kind: 'function', community: 3
+            }],
+        ['gate_test', {
+                label: 'retrieval-gate.test', file_type: 'code', source_file: `${root}/tests/unit/retrieval-gate.test.ts`, source_location: 'L1', node_kind: 'function', community: 3
+            }],
+        ['prompt_pattern', {
+                label: 'runContextPromptCommand', file_type: 'code', source_file: `${root}/src/infrastructure/context-prompt-command.ts`, source_location: 'L1', node_kind: 'function', community: 4
+            }],
+        ['review_template_pattern', {
+                label: 'renderReviewTemplate', file_type: 'code', source_file: `${root}/src/infrastructure/review-template.ts`, source_location: 'L10', node_kind: 'function', community: 4
+            }]
     ],
-    { rootPath: root },
-  )
+    edges: [
+        ['pack_parser', 'pack_command', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/cli/parser.ts`
+            }],
+        ['pack_command', 'retrieve_context', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts`
+            }],
+        ['pack_command', 'task_planner', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts`
+            }],
+        ['pack_command', 'contract', {
+                relation: 'depends_on', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts`
+            }],
+        ['pack_command', 'mcp_surface', {
+                relation: 'depends_on', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts`
+            }],
+        ['retrieve_context', 'gate', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/retrieve.ts`
+            }],
+        ['retrieve_context', 'retrieve_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/retrieve.ts`
+            }],
+        ['retrieve_context', 'gate_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/retrieve.ts`
+            }],
+        ['pack_command', 'pack_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts`
+            }],
+        ['mcp_surface', 'pack_e2e_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/runtime/stdio/definitions.ts`
+            }],
+        ['pack_command', 'prompt_pattern', {
+                relation: 'related_to', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts`
+            }],
+        ['pack_command', 'review_template_pattern', {
+                relation: 'related_to', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts`
+            }]
+    ]
+})
   return graph
 }
 
@@ -166,25 +227,34 @@ function buildImplementationPackDistractorGraph() {
       'test:run': 'vitest run',
     },
   }))
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'pack_command', label: 'runContextPackCommand', file_type: 'code', source_file: `${root}/src/infrastructure/context-pack-command.ts`, source_location: 'L224', node_kind: 'function', community: 0 },
-          { id: 'pack_helper', label: 'buildContextPackHelper', file_type: 'code', source_file: `${root}/src/infrastructure/context-pack-helper.ts`, source_location: 'L18', node_kind: 'function', community: 0 },
-          { id: 'pack_contract', label: 'ContextPackTaskKind', file_type: 'code', source_file: `${root}/src/contracts/context-pack.ts`, source_location: 'L13', community: 1 },
-          { id: 'pack_test', label: 'context-pack-command.test', file_type: 'code', source_file: `${root}/tests/unit/context-pack-command.test.ts`, source_location: 'L1', node_kind: 'function', community: 2 },
-        ],
-        edges: [
-          { source: 'pack_command', target: 'pack_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
-          { source: 'pack_command', target: 'pack_contract', relation: 'depends_on', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
-          { source: 'pack_command', target: 'pack_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts` },
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['pack_command', {
+                label: 'runContextPackCommand', file_type: 'code', source_file: `${root}/src/infrastructure/context-pack-command.ts`, source_location: 'L224', node_kind: 'function', community: 0
+            }],
+        ['pack_helper', {
+                label: 'buildContextPackHelper', file_type: 'code', source_file: `${root}/src/infrastructure/context-pack-helper.ts`, source_location: 'L18', node_kind: 'function', community: 0
+            }],
+        ['pack_contract', {
+                label: 'ContextPackTaskKind', file_type: 'code', source_file: `${root}/src/contracts/context-pack.ts`, source_location: 'L13', community: 1
+            }],
+        ['pack_test', {
+                label: 'context-pack-command.test', file_type: 'code', source_file: `${root}/tests/unit/context-pack-command.test.ts`, source_location: 'L1', node_kind: 'function', community: 2
+            }]
     ],
-    { rootPath: root },
-  )
+    edges: [
+        ['pack_command', 'pack_helper', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts`
+            }],
+        ['pack_command', 'pack_contract', {
+                relation: 'depends_on', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts`
+            }],
+        ['pack_command', 'pack_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/infrastructure/context-pack-command.ts`
+            }]
+    ]
+})
   return graph
 }
 

@@ -6,13 +6,12 @@ interface FixtureNode {
   source: string
   community: number
   role?: string
-  fileType?: 'code' | 'document'
 }
 
 const NODES: FixtureNode[] = [
   { id: 'generate_command', label: 'runGenerateCommand', source: '/src/infrastructure/generate.ts', community: 0 },
   { id: 'detect_sources', label: 'detectProjectFiles', source: '/src/pipeline/detect.ts', community: 0 },
-  { id: 'extract_sources', label: 'extractSourceFiles', source: '/src/pipeline/extract.ts', community: 0 },
+  { id: 'index_sources', label: 'buildCanonicalTypeScriptIndex', source: '/src/adapters/typescript/index.ts', community: 0 },
   { id: 'generation_bridge', label: 'GenerationPipeline.run', source: '/src/infrastructure/generate.ts', community: 0 },
   { id: 'generation_distractor', label: 'GraphGenerationSummary', source: '/src/pipeline/report.ts', community: 9 },
 
@@ -44,7 +43,7 @@ const NODES: FixtureNode[] = [
 const EDGES: Array<[string, string, string]> = [
   ['generation_bridge', 'generate_command', 'coordinates'],
   ['generation_bridge', 'detect_sources', 'coordinates'],
-  ['generation_bridge', 'extract_sources', 'coordinates'],
+  ['generation_bridge', 'index_sources', 'coordinates'],
   ['watch_reconcile', 'watch_graph', 'coordinates'],
   ['watch_reconcile', 'watch_edits', 'coordinates'],
   ['watch_reconcile', 'watch_state', 'writes_state'],
@@ -63,7 +62,7 @@ export function buildMadarSelfRetrievalFixture(): KnowledgeGraph {
   const graph = new KnowledgeGraph()
   graph.graph.root_path = '/'
   graph.graph.community_labels = {
-    0: 'Graph generation and source extraction',
+    0: 'Graph generation and canonical indexing',
     1: 'Automatic graph refresh while agents edit',
     2: 'Evidence quality and confidence decisions',
     3: 'Install profiles and MCP tool availability',
@@ -75,7 +74,7 @@ export function buildMadarSelfRetrievalFixture(): KnowledgeGraph {
       label: node.label,
       source_file: node.source,
       source_location: 'L1-L4',
-      file_type: node.fileType ?? 'code',
+      file_type: 'code',
       node_kind: 'function',
       community: node.community,
       snippet: `export function ${node.id}() { return '${node.label}' }`,

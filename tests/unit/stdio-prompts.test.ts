@@ -25,7 +25,6 @@ function createGraphFixtureRoot(): string {
         { source: 'auth', target: 'client', relation: 'calls', confidence: 'EXTRACTED', source_file: 'auth.ts' },
         { source: 'client', target: 'transport', relation: 'uses', confidence: 'EXTRACTED', source_file: 'client.ts' },
       ],
-      hyperedges: [],
     },
   )
   return root

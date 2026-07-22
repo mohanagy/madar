@@ -25,6 +25,7 @@ import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } fr
 import { shellEscape } from '../../shared/shell.js'
 import { findPackageRoot } from '../../shared/package-metadata.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
+import { hasOnlyKeys, isRecord } from '../../shared/guards.js'
 
 export type BenchmarkSuiteMode = 'cold' | 'warm' | 'all'
 export type BenchmarkSuiteEntryStatus = 'ready' | 'planned'
@@ -53,7 +54,6 @@ export interface BenchmarkSuiteRepo {
   language: string
   shape: string
   status: BenchmarkSuiteEntryStatus
-  supportsSpi: boolean
 }
 
 export interface BenchmarkSuiteTask {
@@ -114,11 +114,6 @@ interface BenchmarkSuiteWorkflowOutcomeSummary {
   evidence: string[]
 }
 
-interface BenchmarkSuiteWorkflowOutcomeArms {
-  legacy: BenchmarkSuiteWorkflowOutcomeSummary | null
-  spi_madar: BenchmarkSuiteWorkflowOutcomeSummary | null
-}
-
 interface BenchmarkSuiteBenchmarkOutcomeCounts {
   full_win: number
   partial_win: number
@@ -129,11 +124,6 @@ interface BenchmarkSuiteBenchmarkOutcomeCounts {
 interface BenchmarkSuiteBenchmarkOutcomeSummary {
   counts: BenchmarkSuiteBenchmarkOutcomeCounts
   evidence: string[]
-}
-
-interface BenchmarkSuiteBenchmarkOutcomeArms {
-  legacy: BenchmarkSuiteBenchmarkOutcomeSummary | null
-  spi_madar: BenchmarkSuiteBenchmarkOutcomeSummary | null
 }
 
 interface BenchmarkSuiteCellPlan {
@@ -147,8 +137,7 @@ interface BenchmarkSuiteCellPlan {
 
 interface PreparedBenchmarkRepo {
   sourceRoot: string
-  legacyGraphPath: string
-  spiGraphPath: string | null
+  graphPath: string
 }
 
 export interface BenchmarkSuiteSummaryCell {
@@ -163,17 +152,15 @@ export interface BenchmarkSuiteSummaryCell {
   isolation: boolean | null
   baseline: BenchmarkSuiteArmMetricsSummary
   madar: BenchmarkSuiteArmMetricsSummary
-  spi_madar: BenchmarkSuiteArmMetricsSummary | null
-  benchmark_outcomes: BenchmarkSuiteBenchmarkOutcomeArms | null
-  workflow_outcomes: BenchmarkSuiteWorkflowOutcomeArms | null
+  benchmark_outcomes: BenchmarkSuiteBenchmarkOutcomeSummary | null
+  workflow_outcomes: BenchmarkSuiteWorkflowOutcomeSummary | null
   artifacts: {
-    legacy_share_safe_reports: string[]
-    spi_share_safe_reports: string[]
+    share_safe_reports: string[]
   }
 }
 
 export interface BenchmarkSuiteSummary {
-  schema_version: 1
+  schema_version: 2
   started_at: string
   completed_at: string
   output_root: string
@@ -225,10 +212,6 @@ const DEFAULT_EXPECTED_ENVIRONMENT_PATH = resolve('docs/benchmarks/suite/isolati
 
 function readJsonFile(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function normalizeBenchmarkSuiteGitSource(
@@ -308,6 +291,9 @@ function parseBenchmarkSuiteRepoSource(
   }
 
   if (repo.source.kind === 'path') {
+    if (!hasOnlyKeys(repo.source, ['kind', 'path'])) {
+      throw new Error(`Benchmark suite repo ${repoId} path source contains unsupported fields`)
+    }
     if (typeof repo.source.path !== 'string' || repo.source.path.trim().length === 0) {
       throw new Error(`Benchmark suite repo ${repoId} source.path is missing`)
     }
@@ -318,6 +304,9 @@ function parseBenchmarkSuiteRepoSource(
   }
 
   if (repo.source.kind === 'git') {
+    if (!hasOnlyKeys(repo.source, ['kind', 'url', 'ref'])) {
+      throw new Error(`Benchmark suite repo ${repoId} git source contains unsupported fields`)
+    }
     if (typeof repo.source.url !== 'string' || repo.source.url.trim().length === 0) {
       throw new Error(`Benchmark suite repo ${repoId} source.url is missing`)
     }
@@ -344,6 +333,9 @@ export function loadBenchmarkSuiteRepos(path = DEFAULT_REPOS_PATH): BenchmarkSui
       throw new Error(`Benchmark suite repo manifest entry ${index + 1} must be an object`)
     }
     const repo = entry as Record<string, unknown>
+    if (!hasOnlyKeys(repo, ['id', 'name', 'path', 'source', 'graphRoot', 'description', 'size', 'language', 'shape', 'status'])) {
+      throw new Error(`Benchmark suite repo manifest entry ${index + 1} contains unsupported fields`)
+    }
     if (typeof repo.id !== 'string' || repo.id.trim().length === 0) {
       throw new Error(`Benchmark suite repo manifest entry ${index + 1} is missing id`)
     }
@@ -353,9 +345,6 @@ export function loadBenchmarkSuiteRepos(path = DEFAULT_REPOS_PATH): BenchmarkSui
     }
     if (repo.status !== 'ready' && repo.status !== 'planned') {
       throw new Error(`Benchmark suite repo ${repo.id} status must be "ready" or "planned"`)
-    }
-    if (typeof repo.supportsSpi !== 'boolean') {
-      throw new Error(`Benchmark suite repo ${repo.id} is missing supportsSpi`)
     }
     const source = parseBenchmarkSuiteRepoSource(repo, String(repo.id))
 
@@ -370,7 +359,6 @@ export function loadBenchmarkSuiteRepos(path = DEFAULT_REPOS_PATH): BenchmarkSui
       language: typeof repo.language === 'string' ? repo.language : 'unknown',
       shape: typeof repo.shape === 'string' ? repo.shape : 'unknown',
       status: repo.status,
-      supportsSpi: repo.supportsSpi,
     })
   })
 }
@@ -386,6 +374,9 @@ export function loadBenchmarkSuiteTasks(path = DEFAULT_TASKS_PATH): BenchmarkSui
       throw new Error(`Benchmark suite task manifest entry ${index + 1} must be an object`)
     }
     const task = entry as Record<string, unknown>
+    if (!hasOnlyKeys(task, ['id', 'name', 'description', 'status', 'prompts'])) {
+      throw new Error(`Benchmark suite task manifest entry ${index + 1} contains unsupported fields`)
+    }
     if (typeof task.id !== 'string' || task.id.trim().length === 0) {
       throw new Error(`Benchmark suite task manifest entry ${index + 1} is missing id`)
     }
@@ -650,10 +641,9 @@ function prepareBenchmarkWorkspace(
   sourceRoot: string,
   runGenerateGraph: (rootPath?: string, options?: GenerateGraphOptions) => GenerateGraphResult,
   scratchRoot: string,
-  kind: 'legacy' | 'spi',
   graphRoot?: string,
 ): string {
-  const workspaceRoot = join(scratchRoot, kind)
+  const workspaceRoot = join(scratchRoot, 'canonical')
   copyWorkspace(sourceRoot, workspaceRoot)
   const graphWorkspaceRoot = graphRoot ? resolve(workspaceRoot, graphRoot) : workspaceRoot
   if (!existsSync(graphWorkspaceRoot)) {
@@ -663,9 +653,7 @@ function prepareBenchmarkWorkspace(
     resetBenchmarkWorkspaceConfig(workspaceRoot)
   }
   ensureBenchmarkWorkspaceInstall(graphWorkspaceRoot)
-  return runGenerateGraph(graphWorkspaceRoot, {
-    extractionMode: kind === 'spi' ? 'spi' : 'legacy',
-  }).graphPath
+  return runGenerateGraph(graphWorkspaceRoot, {}).graphPath
 }
 
 function median(values: number[]): number | null {
@@ -844,20 +832,6 @@ function summarizeBenchmarkOutcomeArm(
   }
 }
 
-function summarizeBenchmarkOutcomes(
-  legacyReports: readonly NativeAgentCompareReport[],
-  spiReports: readonly NativeAgentCompareReport[],
-): BenchmarkSuiteBenchmarkOutcomeArms | null {
-  const legacy = summarizeBenchmarkOutcomeArm(legacyReports)
-  const spiMadar = summarizeBenchmarkOutcomeArm(spiReports)
-  return legacy || spiMadar
-    ? {
-        legacy,
-        spi_madar: spiMadar,
-      }
-    : null
-}
-
 function isCompletedArm(summary: BenchmarkSuiteArmMetricsSummary): boolean {
   return summary.input_tokens !== null
 }
@@ -865,7 +839,6 @@ function isCompletedArm(summary: BenchmarkSuiteArmMetricsSummary): boolean {
 function summarizeCellStatus(
   baseline: BenchmarkSuiteArmMetricsSummary,
   madar: BenchmarkSuiteArmMetricsSummary,
-  spiMadar: BenchmarkSuiteArmMetricsSummary | null,
   planned: boolean,
   skipped: boolean,
 ): BenchmarkSuiteSummaryCell['status'] {
@@ -877,8 +850,7 @@ function summarizeCellStatus(
   }
   const baselineDone = isCompletedArm(baseline)
   const madarDone = isCompletedArm(madar)
-  const spiDone = spiMadar === null || isCompletedArm(spiMadar)
-  if (baselineDone && madarDone && spiDone) {
+  if (baselineDone && madarDone) {
     return 'completed'
   }
   return 'partial'
@@ -902,19 +874,8 @@ function formatSingleBenchmarkOutcome(summary: BenchmarkSuiteBenchmarkOutcomeSum
   return summary.evidence.length > 0 ? `${parts.join(', ')} (${summary.evidence.join('; ')})` : parts.join(', ')
 }
 
-function formatBenchmarkOutcomes(summary: BenchmarkSuiteBenchmarkOutcomeArms | null): string {
-  if (summary === null) {
-    return '—'
-  }
-
-  const parts: string[] = []
-  if (summary.legacy) {
-    parts.push(`legacy: ${formatSingleBenchmarkOutcome(summary.legacy)}`)
-  }
-  if (summary.spi_madar) {
-    parts.push(`SPI: ${formatSingleBenchmarkOutcome(summary.spi_madar)}`)
-  }
-  return parts.length > 0 ? parts.join('; ') : '—'
+function formatBenchmarkOutcomes(summary: BenchmarkSuiteBenchmarkOutcomeSummary | null): string {
+  return summary ? formatSingleBenchmarkOutcome(summary) : '—'
 }
 
 function formatCellRow(cell: BenchmarkSuiteSummaryCell): string {
@@ -928,22 +889,16 @@ function formatCellRow(cell: BenchmarkSuiteSummaryCell): string {
     reason,
     formatMetric(cell.baseline.input_tokens),
     formatMetric(cell.madar.input_tokens),
-    formatMetric(cell.spi_madar?.input_tokens ?? null),
     formatMetric(cell.baseline.total_tool_calls),
     formatMetric(cell.madar.total_tool_calls),
-    formatMetric(cell.spi_madar?.total_tool_calls ?? null),
     formatMetric(cell.baseline.read_calls),
     formatMetric(cell.madar.read_calls),
-    formatMetric(cell.spi_madar?.read_calls ?? null),
     formatMetric(cell.baseline.glob_grep_calls),
     formatMetric(cell.madar.glob_grep_calls),
-    formatMetric(cell.spi_madar?.glob_grep_calls ?? null),
     formatMetric(cell.baseline.wall_clock_ms),
     formatMetric(cell.madar.wall_clock_ms),
-    formatMetric(cell.spi_madar?.wall_clock_ms ?? null),
     formatMetric(cell.baseline.cost_usd, 2),
     formatMetric(cell.madar.cost_usd, 2),
-    formatMetric(cell.spi_madar?.cost_usd ?? null, 2),
     formatWorkflowOutcomes(cell.workflow_outcomes),
   ].join(' | ')
 }
@@ -971,18 +926,8 @@ function formatSingleWorkflowOutcomes(summary: BenchmarkSuiteWorkflowOutcomeSumm
   return parts.length > 0 ? parts.join('; ') : '—'
 }
 
-function formatWorkflowOutcomes(summary: BenchmarkSuiteWorkflowOutcomeArms | null): string {
-  if (summary === null) {
-    return '—'
-  }
-  const parts: string[] = []
-  if (summary.legacy) {
-    parts.push(`legacy: ${formatSingleWorkflowOutcomes(summary.legacy)}`)
-  }
-  if (summary.spi_madar) {
-    parts.push(`SPI: ${formatSingleWorkflowOutcomes(summary.spi_madar)}`)
-  }
-  return parts.length > 0 ? parts.join('; ') : '—'
+function formatWorkflowOutcomes(summary: BenchmarkSuiteWorkflowOutcomeSummary | null): string {
+  return summary ? formatSingleWorkflowOutcomes(summary) : '—'
 }
 
 function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): string {
@@ -1013,8 +958,8 @@ function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): st
       }
       lines.push(`### ${mode === 'cold' ? 'Cold cache' : 'Warm cache'}`)
       lines.push('')
-      lines.push('| Repo | Status | Benchmark outcomes | Isolation | Reason | Baseline input tokens | Madar input tokens | SPI Madar input tokens | Baseline tool calls | Madar tool calls | SPI Madar tool calls | Baseline Read | Madar Read | SPI Madar Read | Baseline Glob/Grep | Madar Glob/Grep | SPI Madar Glob/Grep | Baseline wall-clock (ms) | Madar wall-clock (ms) | SPI Madar wall-clock (ms) | Baseline cost (USD) | Madar cost (USD) | SPI Madar cost (USD) | Workflow outcomes |')
-      lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+      lines.push('| Repo | Status | Benchmark outcomes | Isolation | Reason | Baseline input tokens | Madar input tokens | Baseline tool calls | Madar tool calls | Baseline Read | Madar Read | Baseline Glob/Grep | Madar Glob/Grep | Baseline wall-clock (ms) | Madar wall-clock (ms) | Baseline cost (USD) | Madar cost (USD) | Workflow outcomes |')
+      lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
       for (const cell of modeCells) {
         lines.push(`| ${formatCellRow(cell)} |`)
       }
@@ -1050,7 +995,12 @@ function dryRunText(plans: readonly BenchmarkSuiteCellPlan[]): string {
   if (plans.length === 0) {
     return 'No suite cells matched the selected filters.'
   }
-  return plans.map((plan) => `[${plan.status}] ${plan.repo.id} / ${plan.task.id} / ${plan.mode}-cache`).join('\n')
+  return plans
+    .map((plan) => [
+      `[${plan.status}] ${plan.repo.id} / ${plan.task.id} / ${plan.mode}-cache`,
+      plan.reason ? ` — ${plan.reason}` : '',
+    ].join(''))
+    .join('\n')
 }
 
 async function maybePrimeWarmCache(
@@ -1158,17 +1108,11 @@ export async function runBenchmarkSuite(
       try {
         const sourceRoot = materializeBenchmarkRepoSource(repo, scratchRoot)
 
-        const legacyResultGraphPath = prepareBenchmarkWorkspace(sourceRoot, runGenerateGraph, scratchRoot, 'legacy', repo.graphRoot)
-
-        let spiGraphPath: string | null = null
-        if (repo.supportsSpi) {
-          spiGraphPath = prepareBenchmarkWorkspace(sourceRoot, runGenerateGraph, scratchRoot, 'spi', repo.graphRoot)
-        }
+        const graphPath = prepareBenchmarkWorkspace(sourceRoot, runGenerateGraph, scratchRoot, repo.graphRoot)
 
         preparedRepos.set(repo.id, {
           sourceRoot,
-          legacyGraphPath: legacyResultGraphPath,
-          spiGraphPath,
+          graphPath,
         })
       } catch (error) {
         skippedRepos.set(repo.id, formatRepoPreparationFailure(error))
@@ -1189,12 +1133,10 @@ export async function runBenchmarkSuite(
           isolation: null,
           baseline: summarizeArmMetrics([], 'baseline'),
           madar: summarizeArmMetrics([], 'madar'),
-          spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
           benchmark_outcomes: null,
           workflow_outcomes: null,
           artifacts: {
-            legacy_share_safe_reports: [],
-            spi_share_safe_reports: [],
+            share_safe_reports: [],
           },
         })
         continue
@@ -1214,12 +1156,10 @@ export async function runBenchmarkSuite(
           isolation: null,
           baseline: summarizeArmMetrics([], 'baseline'),
           madar: summarizeArmMetrics([], 'madar'),
-          spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
           benchmark_outcomes: null,
           workflow_outcomes: null,
           artifacts: {
-            legacy_share_safe_reports: [],
-            spi_share_safe_reports: [],
+            share_safe_reports: [],
           },
         })
         continue
@@ -1231,7 +1171,7 @@ export async function runBenchmarkSuite(
       }
 
       if (isolation && expectedEnvironment !== null) {
-        const workspaceRoot = dirname(dirname(prepared.legacyGraphPath))
+        const workspaceRoot = dirname(dirname(prepared.graphPath))
         const liveEnvironment = await getBenchmarkEnvironment({ projectRoot: workspaceRoot })
         const driftReasons = findEnvironmentDrift(expectedEnvironment, liveEnvironment, { isolation })
         if (driftReasons.length > 0) {
@@ -1247,22 +1187,18 @@ export async function runBenchmarkSuite(
             isolation,
             baseline: summarizeArmMetrics([], 'baseline'),
             madar: summarizeArmMetrics([], 'madar'),
-            spi_madar: plan.repo.supportsSpi ? summarizeArmMetrics([], 'madar') : null,
             benchmark_outcomes: null,
             workflow_outcomes: null,
             artifacts: {
-              legacy_share_safe_reports: [],
-              spi_share_safe_reports: [],
+              share_safe_reports: [],
             },
           })
           continue
         }
       }
 
-      const legacyReports: NativeAgentCompareReport[] = []
-      const spiReports: NativeAgentCompareReport[] = []
-      const copiedLegacyArtifacts: string[] = []
-      const copiedSpiArtifacts: string[] = []
+      const reports: NativeAgentCompareReport[] = []
+      const copiedArtifacts: string[] = []
 
       for (let trial = 1; trial <= options.trials; trial += 1) {
         const trialLabel = `trial-${String(trial).padStart(3, '0')}`
@@ -1272,62 +1208,34 @@ export async function runBenchmarkSuite(
         if (coldScratchRoot) {
           scratchRoots.push(coldScratchRoot)
         }
-        const legacyGraphPath = coldScratchRoot
-          ? prepareBenchmarkWorkspace(prepared.sourceRoot, runGenerateGraph, coldScratchRoot, 'legacy', plan.repo.graphRoot)
-          : prepared.legacyGraphPath
+        const graphPath = coldScratchRoot
+          ? prepareBenchmarkWorkspace(prepared.sourceRoot, runGenerateGraph, coldScratchRoot, plan.repo.graphRoot)
+          : prepared.graphPath
         const taskKind = suiteTaskKind(plan.task.id)
-        const legacyInput = {
-          graphPath: legacyGraphPath,
+        const compareInput = {
+          graphPath,
           question: plan.prompt,
           ...(tasksPath ? { questionsPath: tasksPath } : {}),
-          outputDir: join(stagingRoot, plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'legacy', trialLabel),
-          execTemplate: execTemplateForWorkspace(options.execTemplate, dirname(dirname(legacyGraphPath))),
+          outputDir: join(stagingRoot, plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'canonical', trialLabel),
+          execTemplate: execTemplateForWorkspace(options.execTemplate, dirname(dirname(graphPath))),
           ...(taskKind ? { task: taskKind } : {}),
           baselineMode: 'native_agent' as const,
         }
-        await maybePrimeWarmCache(plan.mode, runCompare, legacyInput)
-        const legacyResult = await runCompare(legacyInput)
-        const legacyReport = legacyResult.reports[0]
-        if (legacyReport) {
-          legacyReports.push(legacyReport)
-          copiedLegacyArtifacts.push(copyReportArtifacts(
-            legacyReport,
-            join(outputRoot, 'raw', plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'legacy', trialLabel),
+        await maybePrimeWarmCache(plan.mode, runCompare, compareInput)
+        const compareResult = await runCompare(compareInput)
+        const report = compareResult.reports[0]
+        if (report) {
+          reports.push(report)
+          copiedArtifacts.push(copyReportArtifacts(
+            report,
+            join(outputRoot, 'raw', plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'canonical', trialLabel),
           ))
-        }
-
-        const spiGraphPath = prepared.spiGraphPath
-          ? coldScratchRoot
-            ? prepareBenchmarkWorkspace(prepared.sourceRoot, runGenerateGraph, coldScratchRoot, 'spi', plan.repo.graphRoot)
-            : prepared.spiGraphPath
-          : null
-        if (spiGraphPath) {
-          const spiInput = {
-            graphPath: spiGraphPath,
-            question: plan.prompt,
-            ...(tasksPath ? { questionsPath: tasksPath } : {}),
-            outputDir: join(stagingRoot, plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'spi', trialLabel),
-            execTemplate: execTemplateForWorkspace(options.execTemplate, dirname(dirname(spiGraphPath))),
-            ...(taskKind ? { task: taskKind } : {}),
-            baselineMode: 'native_agent' as const,
-          }
-          await maybePrimeWarmCache(plan.mode, runCompare, spiInput)
-          const spiResult = await runCompare(spiInput)
-          const spiReport = spiResult.reports[0]
-          if (spiReport) {
-            spiReports.push(spiReport)
-            copiedSpiArtifacts.push(copyReportArtifacts(
-              spiReport,
-              join(outputRoot, 'raw', plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'spi', trialLabel),
-            ))
-          }
         }
       }
 
-      const baseline = summarizeArmMetrics(legacyReports, 'baseline')
-      const madar = summarizeArmMetrics(legacyReports, 'madar')
-      const spiMadar = prepared.spiGraphPath ? summarizeArmMetrics(spiReports, 'madar') : null
-      const cellIsolation = summarizeIsolation([...legacyReports, ...spiReports])
+      const baseline = summarizeArmMetrics(reports, 'baseline')
+      const madar = summarizeArmMetrics(reports, 'madar')
+      const cellIsolation = summarizeIsolation(reports)
       summaryCells.push({
         repoId: plan.repo.id,
         repoName: plan.repo.name,
@@ -1335,26 +1243,15 @@ export async function runBenchmarkSuite(
         taskName: plan.task.name,
         mode: plan.mode,
         prompt: plan.prompt,
-        status: summarizeCellStatus(baseline, madar, spiMadar, false, false),
+        status: summarizeCellStatus(baseline, madar, false, false),
         reason: null,
         isolation: cellIsolation,
         baseline,
         madar,
-        spi_madar: spiMadar,
-        benchmark_outcomes: summarizeBenchmarkOutcomes(legacyReports, spiReports),
-        workflow_outcomes: (() => {
-          const legacyWorkflowOutcomes = summarizeWorkflowOutcomes(legacyReports)
-          const spiWorkflowOutcomes = summarizeWorkflowOutcomes(spiReports)
-          return legacyWorkflowOutcomes || spiWorkflowOutcomes
-            ? {
-                legacy: legacyWorkflowOutcomes,
-                spi_madar: spiWorkflowOutcomes,
-              }
-            : null
-        })(),
+        benchmark_outcomes: summarizeBenchmarkOutcomeArm(reports),
+        workflow_outcomes: summarizeWorkflowOutcomes(reports),
         artifacts: {
-          legacy_share_safe_reports: stringifyArtifacts(copiedLegacyArtifacts),
-          spi_share_safe_reports: stringifyArtifacts(copiedSpiArtifacts),
+          share_safe_reports: stringifyArtifacts(copiedArtifacts),
         },
       })
     }
@@ -1367,7 +1264,7 @@ export async function runBenchmarkSuite(
 
   const completedAt = now()
   const summary: BenchmarkSuiteSummary = {
-    schema_version: 1,
+    schema_version: 2,
     started_at: startedAt.toISOString(),
     completed_at: completedAt.toISOString(),
     output_root: portablePath(outputRoot),

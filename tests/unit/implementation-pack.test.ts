@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { buildGraph } from '../../src/application/build-graph.js'
+import { createTestGraph } from '../helpers/knowledge-graph.js'
 import { buildImplementationPackGuidance } from '../../src/runtime/implementation-pack.js'
 
 const tempFixtureRoots: string[] = []
@@ -28,23 +28,28 @@ function buildQuotedTestPathGraph(testFilePath: string) {
     },
   }))
 
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'route', label: 'POST /quote', file_type: 'code', source_file: `${root}/src/quote-route.ts`, source_location: 'L10', node_kind: 'route', community: 0 },
-          { id: 'service', label: 'QuoteService.run', file_type: 'code', source_file: `${root}/src/quote-service.ts`, source_location: 'L20', node_kind: 'method', community: 0 },
-          { id: 'test', label: 'QuoteService.run.spec', file_type: 'code', source_file: `${root}/${testFilePath}`, source_location: 'L1', node_kind: 'function', community: 1 },
-        ],
-        edges: [
-          { source: 'route', target: 'service', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/quote-route.ts` },
-          { source: 'service', target: 'test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/quote-service.ts` },
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['route', {
+                label: 'POST /quote', file_type: 'code', source_file: `${root}/src/quote-route.ts`, source_location: 'L10', node_kind: 'route', community: 0
+            }],
+        ['service', {
+                label: 'QuoteService.run', file_type: 'code', source_file: `${root}/src/quote-service.ts`, source_location: 'L20', node_kind: 'method', community: 0
+            }],
+        ['test', {
+                label: 'QuoteService.run.spec', file_type: 'code', source_file: `${root}/${testFilePath}`, source_location: 'L1', node_kind: 'function', community: 1
+            }]
     ],
-    { rootPath: root },
-  )
+    edges: [
+        ['route', 'service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/quote-route.ts`
+            }],
+        ['service', 'test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/quote-service.ts`
+            }]
+    ]
+})
   return graph
 }
 
@@ -61,34 +66,61 @@ function buildWorkflowCenterGraph() {
     },
   }))
 
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'invoice_route', label: 'POST /invoices/generate', file_type: 'code', source_file: `${root}/src/http/invoice-routes.ts`, source_location: 'L10', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0 },
-          { id: 'invoice_controller', label: 'InvoiceController.generate', file_type: 'code', source_file: `${root}/src/invoices/controller.ts`, source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0 },
-          { id: 'invoice_service', label: 'InvoiceGenerationService.generateInvoice', file_type: 'code', source_file: `${root}/src/invoices/generation-service.ts`, source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
-          { id: 'invoice_retry_helper', label: 'retryWhenInvoiceGenerationFails', file_type: 'code', source_file: `${root}/src/invoices/retry-helper.ts`, source_location: 'L12', node_kind: 'function', community: 1 },
-          { id: 'invoice_queue', label: 'InvoiceJobQueue.enqueueRetry', file_type: 'code', source_file: `${root}/src/invoices/queue.ts`, source_location: 'L18', node_kind: 'method', community: 2 },
-          { id: 'invoice_repository', label: 'InvoiceRepository.saveRetryRecord', file_type: 'code', source_file: `${root}/src/invoices/repository.ts`, source_location: 'L16', node_kind: 'method', community: 2 },
-          { id: 'invoice_presenter', label: 'formatInvoiceFailureNotice', file_type: 'code', source_file: `${root}/src/invoices/presenter.ts`, source_location: 'L8', node_kind: 'function', community: 3 },
-          { id: 'invoice_service_test', label: 'InvoiceGenerationService.generateInvoice.spec', file_type: 'code', source_file: `${root}/tests/unit/invoice-generation-service.test.ts`, source_location: 'L1', node_kind: 'function', community: 4 },
-        ],
-        edges: [
-          { source: 'invoice_route', target: 'invoice_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: `${root}/src/http/invoice-routes.ts` },
-          { source: 'invoice_controller', target: 'invoice_service', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/controller.ts` },
-          { source: 'invoice_service', target: 'invoice_retry_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/generation-service.ts` },
-          { source: 'invoice_service', target: 'invoice_queue', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/generation-service.ts` },
-          { source: 'invoice_service', target: 'invoice_repository', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/generation-service.ts` },
-          { source: 'invoice_service', target: 'invoice_presenter', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/generation-service.ts` },
-          { source: 'invoice_service', target: 'invoice_service_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/generation-service.ts` },
-          { source: 'invoice_queue', target: 'invoice_repository', relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/queue.ts` },
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['invoice_route', {
+                label: 'POST /invoices/generate', file_type: 'code', source_file: `${root}/src/http/invoice-routes.ts`, source_location: 'L10', node_kind: 'route', framework: 'express', framework_role: 'express_route', community: 0
+            }],
+        ['invoice_controller', {
+                label: 'InvoiceController.generate', file_type: 'code', source_file: `${root}/src/invoices/controller.ts`, source_location: 'L20', node_kind: 'method', framework: 'nestjs', framework_role: 'nest_controller', community: 0
+            }],
+        ['invoice_service', {
+                label: 'InvoiceGenerationService.generateInvoice', file_type: 'code', source_file: `${root}/src/invoices/generation-service.ts`, source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1
+            }],
+        ['invoice_retry_helper', {
+                label: 'retryWhenInvoiceGenerationFails', file_type: 'code', source_file: `${root}/src/invoices/retry-helper.ts`, source_location: 'L12', node_kind: 'function', community: 1
+            }],
+        ['invoice_queue', {
+                label: 'InvoiceJobQueue.enqueueRetry', file_type: 'code', source_file: `${root}/src/invoices/queue.ts`, source_location: 'L18', node_kind: 'method', community: 2
+            }],
+        ['invoice_repository', {
+                label: 'InvoiceRepository.saveRetryRecord', file_type: 'code', source_file: `${root}/src/invoices/repository.ts`, source_location: 'L16', node_kind: 'method', community: 2
+            }],
+        ['invoice_presenter', {
+                label: 'formatInvoiceFailureNotice', file_type: 'code', source_file: `${root}/src/invoices/presenter.ts`, source_location: 'L8', node_kind: 'function', community: 3
+            }],
+        ['invoice_service_test', {
+                label: 'InvoiceGenerationService.generateInvoice.spec', file_type: 'code', source_file: `${root}/tests/unit/invoice-generation-service.test.ts`, source_location: 'L1', node_kind: 'function', community: 4
+            }]
     ],
-    { rootPath: root },
-  )
+    edges: [
+        ['invoice_route', 'invoice_controller', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: `${root}/src/http/invoice-routes.ts`
+            }],
+        ['invoice_controller', 'invoice_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/controller.ts`
+            }],
+        ['invoice_service', 'invoice_retry_helper', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/generation-service.ts`
+            }],
+        ['invoice_service', 'invoice_queue', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/generation-service.ts`
+            }],
+        ['invoice_service', 'invoice_repository', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/generation-service.ts`
+            }],
+        ['invoice_service', 'invoice_presenter', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/generation-service.ts`
+            }],
+        ['invoice_service', 'invoice_service_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/generation-service.ts`
+            }],
+        ['invoice_queue', 'invoice_repository', {
+                relation: 'enqueues_job', confidence: 'EXTRACTED', source_file: `${root}/src/invoices/queue.ts`
+            }]
+    ]
+})
   return graph
 }
 
@@ -105,31 +137,52 @@ function buildLikelyTargetsGraph() {
     },
   }))
 
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'login_route', label: 'POST /login', file_type: 'code', source_file: `${root}/src/http/login-routes.ts`, source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0 },
-          { id: 'login_controller', label: 'LoginController.submit', file_type: 'code', source_file: `${root}/src/auth/login-controller.ts`, source_location: 'L20', node_kind: 'method', framework_role: 'nest_controller', community: 0 },
-          { id: 'login_service', label: 'LoginService.validate', file_type: 'code', source_file: `${root}/src/auth/login-service.ts`, source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
-          { id: 'login_repository', label: 'LoginAuditRepository.saveAttempt', file_type: 'code', source_file: `${root}/src/auth/login-audit-repository.ts`, source_location: 'L40', node_kind: 'method', community: 1 },
-          { id: 'login_helper', label: 'normalizeLoginPayload', file_type: 'code', source_file: `${root}/src/auth/login-helper.ts`, source_location: 'L18', node_kind: 'function', community: 1 },
-          { id: 'login_unit_test', label: 'LoginService.validate.spec', file_type: 'code', source_file: `${root}/tests/unit/login-service.test.ts`, source_location: 'L1', node_kind: 'function', community: 2 },
-          { id: 'login_e2e_test', label: 'login flow e2e', file_type: 'code', source_file: `${root}/tests/e2e/login-flow.test.ts`, source_location: 'L1', node_kind: 'function', community: 2 },
-        ],
-        edges: [
-          { source: 'login_route', target: 'login_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: `${root}/src/http/login-routes.ts` },
-          { source: 'login_controller', target: 'login_service', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-controller.ts` },
-          { source: 'login_service', target: 'login_repository', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-service.ts` },
-          { source: 'login_service', target: 'login_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-service.ts` },
-          { source: 'login_service', target: 'login_unit_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-service.ts` },
-          { source: 'login_route', target: 'login_e2e_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/http/login-routes.ts` },
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['login_route', {
+                label: 'POST /login', file_type: 'code', source_file: `${root}/src/http/login-routes.ts`, source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0
+            }],
+        ['login_controller', {
+                label: 'LoginController.submit', file_type: 'code', source_file: `${root}/src/auth/login-controller.ts`, source_location: 'L20', node_kind: 'method', framework_role: 'nest_controller', community: 0
+            }],
+        ['login_service', {
+                label: 'LoginService.validate', file_type: 'code', source_file: `${root}/src/auth/login-service.ts`, source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1
+            }],
+        ['login_repository', {
+                label: 'LoginAuditRepository.saveAttempt', file_type: 'code', source_file: `${root}/src/auth/login-audit-repository.ts`, source_location: 'L40', node_kind: 'method', community: 1
+            }],
+        ['login_helper', {
+                label: 'normalizeLoginPayload', file_type: 'code', source_file: `${root}/src/auth/login-helper.ts`, source_location: 'L18', node_kind: 'function', community: 1
+            }],
+        ['login_unit_test', {
+                label: 'LoginService.validate.spec', file_type: 'code', source_file: `${root}/tests/unit/login-service.test.ts`, source_location: 'L1', node_kind: 'function', community: 2
+            }],
+        ['login_e2e_test', {
+                label: 'login flow e2e', file_type: 'code', source_file: `${root}/tests/e2e/login-flow.test.ts`, source_location: 'L1', node_kind: 'function', community: 2
+            }]
     ],
-    { rootPath: root },
-  )
+    edges: [
+        ['login_route', 'login_controller', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: `${root}/src/http/login-routes.ts`
+            }],
+        ['login_controller', 'login_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-controller.ts`
+            }],
+        ['login_service', 'login_repository', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-service.ts`
+            }],
+        ['login_service', 'login_helper', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-service.ts`
+            }],
+        ['login_service', 'login_unit_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/auth/login-service.ts`
+            }],
+        ['login_route', 'login_e2e_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/http/login-routes.ts`
+            }]
+    ]
+})
   return graph
 }
 
@@ -146,31 +199,52 @@ function buildIndirectSeedExpansionGraph() {
     },
   }))
 
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'task_route', label: 'POST /tasks/apply', file_type: 'code', source_file: `${root}/src/http/task-routes.ts`, source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0 },
-          { id: 'task_controller', label: 'TaskController.handle', file_type: 'code', source_file: `${root}/src/core/task-controller.ts`, source_location: 'L20', node_kind: 'method', framework_role: 'nest_controller', community: 0 },
-          { id: 'workflow_runner', label: 'WorkflowRunner.run', file_type: 'code', source_file: `${root}/src/core/workflow-runner.ts`, source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
-          { id: 'retry_helper', label: 'normalizePaymentAgingRetryWindow', file_type: 'code', source_file: `${root}/src/core/payment-aging-helper.ts`, source_location: 'L40', node_kind: 'function', community: 1 },
-          { id: 'retry_store', label: 'RetryLedger.store', file_type: 'code', source_file: `${root}/src/core/retry-ledger.ts`, source_location: 'L50', node_kind: 'method', community: 2 },
-          { id: 'retry_contract', label: 'RetryWindowConfig', file_type: 'code', source_file: `${root}/src/contracts/retry-window.ts`, line_number: 60, community: 3 },
-          { id: 'workflow_runner_test', label: 'WorkflowRunner.run.spec', file_type: 'code', source_file: `${root}/tests/unit/workflow-runner.test.ts`, source_location: 'L1', node_kind: 'function', community: 4 },
-        ],
-        edges: [
-          { source: 'task_route', target: 'task_controller', relation: 'controller_route', confidence: 'EXTRACTED', source_file: `${root}/src/http/task-routes.ts` },
-          { source: 'task_controller', target: 'workflow_runner', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/core/task-controller.ts` },
-          { source: 'workflow_runner', target: 'retry_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/core/workflow-runner.ts` },
-          { source: 'workflow_runner', target: 'retry_store', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/core/workflow-runner.ts` },
-          { source: 'workflow_runner', target: 'retry_contract', relation: 'depends_on', confidence: 'EXTRACTED', source_file: `${root}/src/core/workflow-runner.ts` },
-          { source: 'workflow_runner', target: 'workflow_runner_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/core/workflow-runner.ts` },
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['task_route', {
+                label: 'POST /tasks/apply', file_type: 'code', source_file: `${root}/src/http/task-routes.ts`, source_location: 'L10', node_kind: 'route', framework_role: 'express_route', community: 0
+            }],
+        ['task_controller', {
+                label: 'TaskController.handle', file_type: 'code', source_file: `${root}/src/core/task-controller.ts`, source_location: 'L20', node_kind: 'method', framework_role: 'nest_controller', community: 0
+            }],
+        ['workflow_runner', {
+                label: 'WorkflowRunner.run', file_type: 'code', source_file: `${root}/src/core/workflow-runner.ts`, source_location: 'L30', node_kind: 'method', framework_role: 'nest_provider', community: 1
+            }],
+        ['retry_helper', {
+                label: 'normalizePaymentAgingRetryWindow', file_type: 'code', source_file: `${root}/src/core/payment-aging-helper.ts`, source_location: 'L40', node_kind: 'function', community: 1
+            }],
+        ['retry_store', {
+                label: 'RetryLedger.store', file_type: 'code', source_file: `${root}/src/core/retry-ledger.ts`, source_location: 'L50', node_kind: 'method', community: 2
+            }],
+        ['retry_contract', {
+                label: 'RetryWindowConfig', file_type: 'code', source_file: `${root}/src/contracts/retry-window.ts`, line_number: 60, community: 3
+            }],
+        ['workflow_runner_test', {
+                label: 'WorkflowRunner.run.spec', file_type: 'code', source_file: `${root}/tests/unit/workflow-runner.test.ts`, source_location: 'L1', node_kind: 'function', community: 4
+            }]
     ],
-    { rootPath: root },
-  )
+    edges: [
+        ['task_route', 'task_controller', {
+                relation: 'controller_route', confidence: 'EXTRACTED', source_file: `${root}/src/http/task-routes.ts`
+            }],
+        ['task_controller', 'workflow_runner', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/core/task-controller.ts`
+            }],
+        ['workflow_runner', 'retry_helper', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/core/workflow-runner.ts`
+            }],
+        ['workflow_runner', 'retry_store', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/core/workflow-runner.ts`
+            }],
+        ['workflow_runner', 'retry_contract', {
+                relation: 'depends_on', confidence: 'EXTRACTED', source_file: `${root}/src/core/workflow-runner.ts`
+            }],
+        ['workflow_runner', 'workflow_runner_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/core/workflow-runner.ts`
+            }]
+    ]
+})
   return graph
 }
 
@@ -187,36 +261,67 @@ function buildFrameworkWorkflowOwnerGraph() {
     },
   }))
 
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'app_shell', label: 'createApp', file_type: 'code', source_file: `${root}/src/http/app.ts`, source_location: 'L5', node_kind: 'function', community: 0 },
-          { id: 'users_route', label: 'GET /users/:userId', file_type: 'code', source_file: `${root}/src/users/router.ts`, source_location: 'L14', node_kind: 'route', framework_role: 'hono_route', community: 0 },
-          { id: 'users_route_flow', label: 'enforceOwnedUserRequestFlow', file_type: 'code', source_file: `${root}/src/users/router.ts`, source_location: 'L7', node_kind: 'function', community: 0 },
-          { id: 'users_service_file', label: 'service.ts', file_type: 'code', source_file: `${root}/src/users/service.ts`, source_location: 'L1', community: 1 },
-          { id: 'users_service_class', label: 'UserService', file_type: 'code', source_file: `${root}/src/users/service.ts`, source_location: 'L2', node_kind: 'class', community: 1 },
-          { id: 'users_service_ctor', label: '.constructor()', file_type: 'code', source_file: `${root}/src/users/service.ts`, source_location: 'L4', node_kind: 'method', community: 1 },
-          { id: 'users_service', label: 'UserService.loadProfile', file_type: 'code', source_file: `${root}/src/users/service.ts`, source_location: 'L6', node_kind: 'method', community: 1 },
-          { id: 'users_repository', label: 'UserRepository.findOwnedUser', file_type: 'code', source_file: `${root}/src/users/repository.ts`, source_location: 'L20', node_kind: 'method', community: 2 },
-          { id: 'users_prisma', label: 'prisma.user.findFirst', file_type: 'code', source_file: `${root}/src/users/repository.ts`, source_location: 'L21', community: 2 },
-        ],
-        edges: [
-          { source: 'app_shell', target: 'users_route', relation: 'imports_from', confidence: 'EXTRACTED', source_file: `${root}/src/http/app.ts` },
-          { source: 'users_route', target: 'users_route_flow', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/router.ts` },
-          { source: 'users_route_flow', target: 'users_service_file', relation: 'imports_from', confidence: 'EXTRACTED', source_file: `${root}/src/users/router.ts` },
-          { source: 'users_service_file', target: 'users_service_class', relation: 'exports', confidence: 'EXTRACTED', source_file: `${root}/src/users/service.ts` },
-          { source: 'users_service_class', target: 'users_service_ctor', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/service.ts` },
-          { source: 'users_service_class', target: 'users_service', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/service.ts` },
-          { source: 'users_route_flow', target: 'users_service', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/router.ts` },
-          { source: 'users_service', target: 'users_repository', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/service.ts` },
-          { source: 'users_repository', target: 'users_prisma', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/repository.ts` },
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['app_shell', {
+                label: 'createApp', file_type: 'code', source_file: `${root}/src/http/app.ts`, source_location: 'L5', node_kind: 'function', community: 0
+            }],
+        ['users_route', {
+                label: 'GET /users/:userId', file_type: 'code', source_file: `${root}/src/users/router.ts`, source_location: 'L14', node_kind: 'route', framework_role: 'hono_route', community: 0
+            }],
+        ['users_route_flow', {
+                label: 'enforceOwnedUserRequestFlow', file_type: 'code', source_file: `${root}/src/users/router.ts`, source_location: 'L7', node_kind: 'function', community: 0
+            }],
+        ['users_service_file', {
+                label: 'service.ts', file_type: 'code', source_file: `${root}/src/users/service.ts`, source_location: 'L1', community: 1
+            }],
+        ['users_service_class', {
+                label: 'UserService', file_type: 'code', source_file: `${root}/src/users/service.ts`, source_location: 'L2', node_kind: 'class', community: 1
+            }],
+        ['users_service_ctor', {
+                label: '.constructor()', file_type: 'code', source_file: `${root}/src/users/service.ts`, source_location: 'L4', node_kind: 'method', community: 1
+            }],
+        ['users_service', {
+                label: 'UserService.loadProfile', file_type: 'code', source_file: `${root}/src/users/service.ts`, source_location: 'L6', node_kind: 'method', community: 1
+            }],
+        ['users_repository', {
+                label: 'UserRepository.findOwnedUser', file_type: 'code', source_file: `${root}/src/users/repository.ts`, source_location: 'L20', node_kind: 'method', community: 2
+            }],
+        ['users_prisma', {
+                label: 'prisma.user.findFirst', file_type: 'code', source_file: `${root}/src/users/repository.ts`, source_location: 'L21', community: 2
+            }]
     ],
-    { rootPath: root },
-  )
+    edges: [
+        ['app_shell', 'users_route', {
+                relation: 'imports_from', confidence: 'EXTRACTED', source_file: `${root}/src/http/app.ts`
+            }],
+        ['users_route', 'users_route_flow', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/router.ts`
+            }],
+        ['users_route_flow', 'users_service_file', {
+                relation: 'imports_from', confidence: 'EXTRACTED', source_file: `${root}/src/users/router.ts`
+            }],
+        ['users_service_file', 'users_service_class', {
+                relation: 'exports', confidence: 'EXTRACTED', source_file: `${root}/src/users/service.ts`
+            }],
+        ['users_service_class', 'users_service_ctor', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/service.ts`
+            }],
+        ['users_service_class', 'users_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/service.ts`
+            }],
+        ['users_route_flow', 'users_service', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/router.ts`
+            }],
+        ['users_service', 'users_repository', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/service.ts`
+            }],
+        ['users_repository', 'users_prisma', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/users/repository.ts`
+            }]
+    ]
+})
   return graph
 }
 
@@ -233,30 +338,49 @@ function buildServerActionPreferenceGraph() {
     },
   }))
 
-  const graph = buildGraph(
-    [
-      {
-        schema_version: 1,
-        nodes: [
-          { id: 'dashboard_page', label: 'page /dashboard', file_type: 'code', source_file: `${root}/app/dashboard/page.tsx`, source_location: 'L1', node_kind: 'route', framework_role: 'nextjs_page', community: 0 },
-          { id: 'dashboard_shell', label: 'DashboardPage()', file_type: 'code', source_file: `${root}/app/dashboard/page.tsx`, source_location: 'L4', node_kind: 'function', community: 0 },
-          { id: 'dashboard_action_file', label: 'actions.ts', file_type: 'code', source_file: `${root}/app/dashboard/actions.ts`, source_location: 'L1', community: 1 },
-          { id: 'dashboard_action', label: 'persistDashboardOwnerFilter()', file_type: 'code', source_file: `${root}/app/dashboard/actions.ts`, source_location: 'L15', node_kind: 'function', community: 1 },
-          { id: 'dashboard_prisma', label: 'prisma.dashboardFilter.upsert', file_type: 'code', source_file: `${root}/app/dashboard/actions.ts`, source_location: 'L19', community: 1 },
-          { id: 'dashboard_client', label: 'DashboardClient()', file_type: 'code', source_file: `${root}/components/dashboard-client.tsx`, source_location: 'L7', node_kind: 'function', community: 2 },
-        ],
-        edges: [
-          { source: 'dashboard_page', target: 'dashboard_shell', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx` },
-          { source: 'dashboard_shell', target: 'dashboard_action_file', relation: 'imports_from', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx` },
-          { source: 'dashboard_shell', target: 'dashboard_client', relation: 'imports_from', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx` },
-          { source: 'dashboard_shell', target: 'dashboard_action', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx` },
-          { source: 'dashboard_action_file', target: 'dashboard_action', relation: 'exports', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/actions.ts` },
-          { source: 'dashboard_action', target: 'dashboard_prisma', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/actions.ts` },
-        ],
-      },
+  const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['dashboard_page', {
+                label: 'page /dashboard', file_type: 'code', source_file: `${root}/app/dashboard/page.tsx`, source_location: 'L1', node_kind: 'route', framework_role: 'nextjs_page', community: 0
+            }],
+        ['dashboard_shell', {
+                label: 'DashboardPage()', file_type: 'code', source_file: `${root}/app/dashboard/page.tsx`, source_location: 'L4', node_kind: 'function', community: 0
+            }],
+        ['dashboard_action_file', {
+                label: 'actions.ts', file_type: 'code', source_file: `${root}/app/dashboard/actions.ts`, source_location: 'L1', community: 1
+            }],
+        ['dashboard_action', {
+                label: 'persistDashboardOwnerFilter()', file_type: 'code', source_file: `${root}/app/dashboard/actions.ts`, source_location: 'L15', node_kind: 'function', community: 1
+            }],
+        ['dashboard_prisma', {
+                label: 'prisma.dashboardFilter.upsert', file_type: 'code', source_file: `${root}/app/dashboard/actions.ts`, source_location: 'L19', community: 1
+            }],
+        ['dashboard_client', {
+                label: 'DashboardClient()', file_type: 'code', source_file: `${root}/components/dashboard-client.tsx`, source_location: 'L7', node_kind: 'function', community: 2
+            }]
     ],
-    { rootPath: root },
-  )
+    edges: [
+        ['dashboard_page', 'dashboard_shell', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx`
+            }],
+        ['dashboard_shell', 'dashboard_action_file', {
+                relation: 'imports_from', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx`
+            }],
+        ['dashboard_shell', 'dashboard_client', {
+                relation: 'imports_from', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx`
+            }],
+        ['dashboard_shell', 'dashboard_action', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/page.tsx`
+            }],
+        ['dashboard_action_file', 'dashboard_action', {
+                relation: 'exports', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/actions.ts`
+            }],
+        ['dashboard_action', 'dashboard_prisma', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/app/dashboard/actions.ts`
+            }]
+    ]
+})
   return graph
 }
 
@@ -376,19 +500,18 @@ describe('buildImplementationPackGuidance workflow-center scoring (#295)', () =>
       },
     }))
 
-    const graph = buildGraph(
-      [
-        {
-          schema_version: 1,
-          nodes: [
-            { id: 'workflow_owner', label: 'InvoiceWorkflow.run', file_type: 'code', source_file: `${root}/src/invoices/billing.ts`, source_location: 'L10', node_kind: 'function', community: 1 },
-            { id: 'workflow_helper', label: 'formatInvoiceRetryMessage', file_type: 'code', source_file: `${root}/src/invoices/billing.ts`, source_location: 'L30', node_kind: 'function', community: 1 },
-          ],
-          edges: [],
-        },
-      ],
-      { rootPath: root },
-    )
+    const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['workflow_owner', {
+                label: 'InvoiceWorkflow.run', file_type: 'code', source_file: `${root}/src/invoices/billing.ts`, source_location: 'L10', node_kind: 'function', community: 1
+            }],
+        ['workflow_helper', {
+                label: 'formatInvoiceRetryMessage', file_type: 'code', source_file: `${root}/src/invoices/billing.ts`, source_location: 'L30', node_kind: 'function', community: 1
+            }]
+    ],
+    edges: []
+})
 
     const retrieval = {
       question: 'update invoice retry workflow',
@@ -1043,21 +1166,22 @@ describe('buildImplementationPackGuidance likely edit/test targets (#296)', () =
       },
     }))
 
-    const graph = buildGraph(
-      [
-        {
-          schema_version: 1,
-          nodes: [
-            { id: 'billing_service', label: 'BillingService.retry', file_type: 'code', source_file: `${root}/src/billing/service.ts`, source_location: 'L10', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
-            { id: 'billing_helper', label: 'formatRetryWindow', file_type: 'code', source_file: `${root}/src/billing/helper.ts`, source_location: 'L20', node_kind: 'function', community: 1 },
-          ],
-          edges: [
-            { source: 'billing_service', target: 'billing_helper', relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/billing/service.ts` },
-          ],
-        },
-      ],
-      { rootPath: root },
-    )
+    const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['billing_service', {
+                label: 'BillingService.retry', file_type: 'code', source_file: `${root}/src/billing/service.ts`, source_location: 'L10', node_kind: 'method', framework_role: 'nest_provider', community: 1
+            }],
+        ['billing_helper', {
+                label: 'formatRetryWindow', file_type: 'code', source_file: `${root}/src/billing/helper.ts`, source_location: 'L20', node_kind: 'function', community: 1
+            }]
+    ],
+    edges: [
+        ['billing_service', 'billing_helper', {
+                relation: 'calls', confidence: 'EXTRACTED', source_file: `${root}/src/billing/service.ts`
+            }]
+    ]
+})
 
     const retrieval = {
       question: 'adjust retry window logic',
@@ -1118,21 +1242,22 @@ describe('buildImplementationPackGuidance likely edit/test targets (#296)', () =
       },
     }))
 
-    const graph = buildGraph(
-      [
-        {
-          schema_version: 1,
-          nodes: [
-            { id: 'profile_service', label: 'ProfileService.update', file_type: 'code', source_file: `${root}/src/profile/service.ts`, source_location: 'L10', node_kind: 'method', framework_role: 'nest_provider', community: 1 },
-            { id: 'profile_service_test', label: 'ProfileService.update.spec', file_type: 'code', source_file: `${root}/tests/unit/profile-service.test.ts`, source_location: 'L1', node_kind: 'function', community: 2 },
-          ],
-          edges: [
-            { source: 'profile_service', target: 'profile_service_test', relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/profile/service.ts` },
-          ],
-        },
-      ],
-      { rootPath: root },
-    )
+    const graph = createTestGraph({
+    metadata: { root_path: root },
+    nodes: [
+        ['profile_service', {
+                label: 'ProfileService.update', file_type: 'code', source_file: `${root}/src/profile/service.ts`, source_location: 'L10', node_kind: 'method', framework_role: 'nest_provider', community: 1
+            }],
+        ['profile_service_test', {
+                label: 'ProfileService.update.spec', file_type: 'code', source_file: `${root}/tests/unit/profile-service.test.ts`, source_location: 'L1', node_kind: 'function', community: 2
+            }]
+    ],
+    edges: [
+        ['profile_service', 'profile_service_test', {
+                relation: 'covered_by', confidence: 'EXTRACTED', source_file: `${root}/src/profile/service.ts`
+            }]
+    ]
+})
 
     const retrieval = {
       question: 'change profile update validation',

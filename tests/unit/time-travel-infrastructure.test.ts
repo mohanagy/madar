@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { EXTRACTOR_CACHE_VERSION } from '../../src/pipeline/extract.js'
+import { CANONICAL_INDEX_FORMAT_VERSION } from '../../src/contracts/generation-policy.js'
 import { compareRefs, loadOrBuildSnapshot, type CompareRefsDependencies, type SnapshotDependencies } from '../../src/infrastructure/time-travel.js'
 import type { TimeTravelResult } from '../../src/runtime/time-travel.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
@@ -50,7 +50,6 @@ function writeGraphArtifacts(root: string, relativeDir: string, schemaVersion = 
   const reportPath = join(outputDir, 'GRAPH_REPORT.md')
   writeCanonicalGraphFixture(graphPath, {
     schema_version: schemaVersion,
-    extractor_version: EXTRACTOR_CACHE_VERSION,
     nodes: [],
     edges: [],
   })
@@ -63,14 +62,13 @@ function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2)
   mkdirSync(snapshotDir, { recursive: true })
   writeCanonicalGraphFixture(join(snapshotDir, 'graph.json'), {
     schema_version: schemaVersion,
-    extractor_version: EXTRACTOR_CACHE_VERSION,
     nodes: [],
     edges: [],
   })
   writeFileSync(join(snapshotDir, 'GRAPH_REPORT.md'), '# cached report\n')
   writeFileSync(join(snapshotDir, 'metadata.json'), JSON.stringify({
     commitSha,
-    extractorVersion: EXTRACTOR_CACHE_VERSION,
+    indexFormatVersion: CANONICAL_INDEX_FORMAT_VERSION,
     schemaVersion,
   }))
 }
@@ -82,7 +80,6 @@ function createSnapshotDependencies(rootDir: string): SnapshotDependencies & {
     removeWorktree: ReturnType<typeof vi.fn>
   }
   generateGraph: ReturnType<typeof vi.fn>
-  loadGraphExtractorVersion: ReturnType<typeof vi.fn>
 } {
   const git = {
     resolveRef: vi.fn(async (ref: string) => {
@@ -101,13 +98,10 @@ function createSnapshotDependencies(rootDir: string): SnapshotDependencies & {
     }
   })
 
-  const loadGraphExtractorVersion = vi.fn(() => EXTRACTOR_CACHE_VERSION)
-
   return {
     rootDir,
     git,
     generateGraph,
-    loadGraphExtractorVersion,
   }
 }
 

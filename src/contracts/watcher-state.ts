@@ -1,13 +1,12 @@
-import type { ExtractionMode } from './generation-policy.js'
-import type { ExtractionStrategy } from './indexing.js'
+import { hasExactKeys, isRecord } from '../shared/guards.js'
 
-export const WATCHER_STATE_VERSION = 1 as const
+export const WATCHER_STATE_VERSION = 2 as const
 
 export type WatcherStatus = 'starting' | 'idle' | 'pending' | 'reconciling' | 'failed' | 'stopped'
 export type WatcherCoverage = 'unknown' | 'complete' | 'failed'
 export type WatcherEventMode = 'recursive-events' | 'polling'
 
-export interface WatcherStateV1 {
+export interface WatcherState {
   version: typeof WATCHER_STATE_VERSION
   pid: number
   started_at: string
@@ -27,14 +26,14 @@ export interface WatcherStateV1 {
   stored_policy_fingerprint: string | null
   current_policy_fingerprint: string | null
   policy_match: boolean | null
-  /** Persisted for observability; old watcher-state files omit these fields. */
-  requested_extraction_mode?: ExtractionMode | null
-  extraction_strategy_buckets?: Partial<Record<ExtractionStrategy, number>> | null
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
+const WATCHER_STATE_KEYS = [
+  'version', 'pid', 'started_at', 'updated_at', 'status', 'coverage', 'event_mode', 'reconciliation_count',
+  'last_reconciliation_at', 'last_reconciliation_duration_ms', 'last_reconciliation_file_count',
+  'last_reconciliation_directory_count', 'current_interval_ms', 'next_reconciliation_at', 'pending_since',
+  'failure_reason', 'stored_policy_fingerprint', 'current_policy_fingerprint', 'policy_match',
+] as const
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string'
@@ -44,34 +43,12 @@ function isNullableNonNegativeNumber(value: unknown): value is number | null {
   return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0)
 }
 
-function isNullableExtractionMode(value: unknown): value is ExtractionMode | null {
-  return value === null || value === 'auto' || value === 'legacy' || value === 'spi'
-}
-
-function isExtractionStrategyBuckets(value: unknown): value is Partial<Record<ExtractionStrategy, number>> | null {
-  if (value === null) {
-    return true
-  }
-  if (!isRecord(value)) {
-    return false
-  }
-  const allowed = new Set<ExtractionStrategy>([
-    'canonical',
-    'spi',
-    'legacy',
-    'legacy_fallback',
-    'non_code',
-    'not_extracted',
-  ])
-  return Object.entries(value).every(([strategy, count]) =>
-    allowed.has(strategy as ExtractionStrategy)
-    && typeof count === 'number'
-    && Number.isSafeInteger(count)
-    && count >= 0)
-}
-
-export function parseWatcherState(value: unknown): WatcherStateV1 | null {
-  if (!isRecord(value) || value.version !== WATCHER_STATE_VERSION) {
+export function parseWatcherState(value: unknown): WatcherState | null {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(value, WATCHER_STATE_KEYS)
+    || value.version !== WATCHER_STATE_VERSION
+  ) {
     return null
   }
   const statuses: WatcherStatus[] = ['starting', 'idle', 'pending', 'reconciling', 'failed', 'stopped']
@@ -96,16 +73,14 @@ export function parseWatcherState(value: unknown): WatcherStateV1 | null {
     || !isNullableString(value.stored_policy_fingerprint)
     || !isNullableString(value.current_policy_fingerprint)
     || (value.policy_match !== null && typeof value.policy_match !== 'boolean')
-    || (value.requested_extraction_mode !== undefined && !isNullableExtractionMode(value.requested_extraction_mode))
-    || (value.extraction_strategy_buckets !== undefined && !isExtractionStrategyBuckets(value.extraction_strategy_buckets))
   ) {
     return null
   }
 
-  return value as unknown as WatcherStateV1
+  return value as unknown as WatcherState
 }
 
-export function watcherStateBlocksGraphReads(state: WatcherStateV1): boolean {
+export function watcherStateBlocksGraphReads(state: WatcherState): boolean {
   return state.status === 'starting'
     || state.status === 'pending'
     || state.status === 'reconciling'

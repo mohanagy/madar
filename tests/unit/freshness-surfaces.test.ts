@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { GRAPH_ARTIFACT_VERSION } from '../../src/domain/graph/artifact.js'
 import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
 import { runContextPromptCommand } from '../../src/infrastructure/context-prompt-command.js'
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
@@ -12,7 +13,8 @@ import { generateGraph } from '../../src/infrastructure/generate.js'
 import { runHandoffCommand } from '../../src/infrastructure/handoff-command.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
-import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
+import { fileContentFingerprint } from '../../src/shared/graph-build-freshness.js'
+import { rewriteCanonicalGraphFixture, writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 const sandboxRoots: string[] = []
 const PACKAGE_VERSION = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string }
@@ -35,6 +37,19 @@ interface GitFreshnessFixture {
   paymentPath: string
   routesPath: string
   sourceTime: Date
+}
+
+interface UnsupportedReceiptFreshnessFixture {
+  root: string
+  graphPath: string
+  sourcePath: string
+  unsupportedPath: string
+}
+
+interface MadarignoreFreshnessFixture {
+  root: string
+  graphPath: string
+  ignorePath: string
 }
 
 type AnalyzeGraphContextFreshness = (
@@ -109,11 +124,33 @@ function createFreshnessFixture(state: FixtureState): FreshnessFixture {
       'utf8',
     )
   }
+  const indexedFiles: Array<readonly [string, string]> = [
+    ['src/auth.ts', authPath],
+    ['src/session.ts', sessionPath],
+    ['src/payment.ts', paymentPath],
+    ...(state === 'shared_modified' ? [['src/routes.ts', routesPath] as const] : []),
+  ]
 
   writeCanonicalGraphFixture(
     graphPath,
     {
       root_path: root,
+      graph_build_freshness: {
+        format_version: 4,
+        strategy: 'filesystem',
+        generated_at: graphTime.toISOString(),
+        generated_ms: graphTime.getTime(),
+        supported_receipt_paths: indexedFiles.map(([sourceFile]) => sourceFile),
+        unsupported_receipt_paths: [],
+        control_file_fingerprints: {},
+        follow_symlinks: false,
+        respect_gitignore: false,
+        filesystem: {
+          file_fingerprints: Object.fromEntries(
+            indexedFiles.map(([sourceFile, filePath]) => [sourceFile, fileContentFingerprint(filePath)]),
+          ),
+        },
+      },
       community_labels: {
         '0': 'Auth runtime',
       },
@@ -175,7 +212,6 @@ function createFreshnessFixture(state: FixtureState): FreshnessFixture {
           source_file: 'src/auth.ts',
         },
       ],
-      hyperedges: [],
     },
   )
 
@@ -188,10 +224,12 @@ function createFreshnessFixture(state: FixtureState): FreshnessFixture {
   utimesSync(graphPath, graphTime, graphTime)
 
   if (state === 'modified') {
+    writeFileSync(authPath, readFileSync(authPath, 'utf8').replace('return issueSession()', 'return issueSession().trim()'), 'utf8')
     utimesSync(authPath, modifiedTime, modifiedTime)
   }
 
   if (state === 'unrelated_modified') {
+    writeFileSync(paymentPath, readFileSync(paymentPath, 'utf8').replace('return "charged"', 'return "charged-again"'), 'utf8')
     utimesSync(paymentPath, modifiedTime, modifiedTime)
   }
 
@@ -200,6 +238,7 @@ function createFreshnessFixture(state: FixtureState): FreshnessFixture {
   }
 
   if (state === 'shared_modified') {
+    writeFileSync(routesPath, readFileSync(routesPath, 'utf8').replace('return AuthService()', 'return AuthService() + "-changed"'), 'utf8')
     utimesSync(routesPath, modifiedTime, modifiedTime)
   }
 
@@ -302,7 +341,7 @@ function createGitFreshnessFixture(options: {
     )
   }
 
-  const result = generateGraph(root)
+  const result = generateGraph(root, { respectGitignore: true })
 
   return {
     root,
@@ -313,6 +352,40 @@ function createGitFreshnessFixture(options: {
     routesPath,
     sourceTime,
   }
+}
+
+function createUnsupportedReceiptFreshnessFixture(includeUnsupported: boolean): UnsupportedReceiptFreshnessFixture {
+  const root = mkdtempSync(join(tmpdir(), 'madar-unsupported-receipt-freshness-'))
+  sandboxRoots.push(root)
+  const sourcePath = join(root, 'src', 'auth.ts')
+  const unsupportedPath = join(root, 'docs', 'notes.md')
+  mkdirSync(dirname(sourcePath), { recursive: true })
+  mkdirSync(dirname(unsupportedPath), { recursive: true })
+  writeFileSync(sourcePath, 'export function authenticate(): boolean { return true }\n', 'utf8')
+  if (includeUnsupported) {
+    writeFileSync(unsupportedPath, '# Notes\n', 'utf8')
+  }
+  const generated = generateGraph(root)
+  return { root, graphPath: generated.graphPath, sourcePath, unsupportedPath }
+}
+
+function createMadarignoreFreshnessFixture(initial: 'absent' | 'clean' | 'dirty' | 'dirty-deleted', ignoreMadarignore = false): MadarignoreFreshnessFixture {
+  const root = mkdtempSync(join(tmpdir(), 'madar-ignore-freshness-'))
+  sandboxRoots.push(root)
+  const sourcePath = join(root, 'src', 'main.ts')
+  const ignorePath = join(root, '.madarignore')
+  mkdirSync(dirname(sourcePath), { recursive: true })
+  writeFileSync(sourcePath, 'export const main = true\n', 'utf8')
+  if (initial !== 'absent') writeFileSync(ignorePath, '# committed\n', 'utf8')
+  if (ignoreMadarignore) writeFileSync(join(root, '.gitignore'), '.madarignore\n', 'utf8')
+  git(root, ['init'])
+  git(root, ['config', 'user.email', 'madar@example.com'])
+  git(root, ['config', 'user.name', 'Madar Tests'])
+  git(root, ['add', '.'])
+  git(root, ['commit', '-m', 'initial'])
+  if (initial === 'dirty') writeFileSync(ignorePath, '# dirty at build\n', 'utf8')
+  if (initial === 'dirty-deleted') rmSync(ignorePath)
+  return { root, graphPath: generateGraph(root, { respectGitignore: true }).graphPath, ignorePath }
 }
 
 async function withFullToolProfile<T>(run: () => Promise<T>): Promise<T> {
@@ -349,7 +422,11 @@ describe('freshness surfaces', () => {
     utimesSync(fixture.graphPath, times.atime, times.mtime)
     expect(graphFreshnessMetadata(fixture.graphPath).graphVersion).not.toBe(first.graphVersion)
 
-    writeFileSync(fixture.graphPath, rewritten.replace('"version": 1', '"version": 0'), 'utf8')
+    writeFileSync(
+      fixture.graphPath,
+      rewritten.replace(`"version": ${GRAPH_ARTIFACT_VERSION}`, '"version": 0'),
+      'utf8',
+    )
     utimesSync(fixture.graphPath, times.atime, times.mtime)
     expect(() => graphFreshnessMetadata(fixture.graphPath)).toThrow(/madar generate \. --update/)
   })
@@ -387,7 +464,7 @@ describe('freshness surfaces', () => {
       status: 'stale',
       graph_path: expect.stringMatching(OUT_GRAPH_PATH_PATTERN),
       indexed_file_count: 3,
-      changed_source_count: 0,
+      changed_source_count: 1,
       missing_source_count: 1,
       recommendation: expect.stringContaining('madar generate .'),
     }))
@@ -400,6 +477,156 @@ describe('freshness surfaces', () => {
       changed_source_count: 0,
       missing_source_count: 0,
       recommendation: expect.stringContaining('madar generate .'),
+    }))
+  })
+
+  it.each([
+    {
+      operation: 'add',
+      includeUnsupported: false,
+      mutate: (fixture: UnsupportedReceiptFreshnessFixture) => {
+        writeFileSync(fixture.unsupportedPath, '# Added notes\n', 'utf8')
+      },
+      changedCount: 1,
+    },
+    {
+      operation: 'delete',
+      includeUnsupported: true,
+      mutate: (fixture: UnsupportedReceiptFreshnessFixture) => {
+        rmSync(fixture.unsupportedPath)
+      },
+      changedCount: 1,
+    },
+    {
+      operation: 'rename',
+      includeUnsupported: true,
+      mutate: (fixture: UnsupportedReceiptFreshnessFixture) => {
+        renameSync(fixture.unsupportedPath, join(dirname(fixture.unsupportedPath), 'renamed.md'))
+      },
+      changedCount: 2,
+    },
+  ])('marks unsupported receipt path $operation as global drift while selected source stays fresh', async ({
+    includeUnsupported,
+    mutate,
+    changedCount,
+  }) => {
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
+    const fixture = createUnsupportedReceiptFreshnessFixture(includeUnsupported)
+
+    mutate(fixture)
+
+    expect(analyzeGraphContextFreshness!(fixture.graphPath, undefined, {
+      selected_source_files: [fixture.sourcePath],
+    })).toEqual(expect.objectContaining({
+      status: 'partially_stale',
+      selected_context_status: 'fresh',
+      changed_source_count: changedCount,
+      changed_selected_context_count: 0,
+      changed_outside_selected_context_count: changedCount,
+    }))
+  })
+
+  it('keeps freshness when only unsupported-file content changes at the same path', async () => {
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
+    const fixture = createUnsupportedReceiptFreshnessFixture(true)
+
+    writeFileSync(fixture.unsupportedPath, '# Changed without path drift\n', 'utf8')
+
+    expect(analyzeGraphContextFreshness!(fixture.graphPath, undefined, {
+      selected_source_files: [fixture.sourcePath],
+    })).toEqual(expect.objectContaining({
+      status: 'fresh',
+      selected_context_status: 'fresh',
+      changed_source_count: 0,
+      changed_selected_context_count: 0,
+      changed_outside_selected_context_count: 0,
+    }))
+  })
+
+  it('detects added and renamed supported files without Git', async () => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const added = createUnsupportedReceiptFreshnessFixture(false)
+    writeFileSync(join(dirname(added.sourcePath), 'added.ts'), 'export const added = true\n', 'utf8')
+    expect(analyze(added.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+
+    const renamed = createUnsupportedReceiptFreshnessFixture(false)
+    renameSync(renamed.sourcePath, join(dirname(renamed.sourcePath), 'renamed.ts'))
+    expect(analyze(renamed.graphPath)).toEqual(expect.objectContaining({ status: 'stale', changed_source_count: 2, missing_source_count: 1 }))
+  })
+
+  it.each(['package.json', 'config/tsconfig.app.json', 'config/jsconfig.web.json'])('invalidates freshness when visible compiler control %s changes', async (relativePath) => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createUnsupportedReceiptFreshnessFixture(false)
+    const controlPath = join(fixture.root, relativePath)
+    mkdirSync(dirname(controlPath), { recursive: true })
+    writeFileSync(controlPath, '{}\n', 'utf8')
+    const generated = generateGraph(fixture.root)
+    writeFileSync(controlPath, '{"compilerOptions":{"strict":true}}\n', 'utf8')
+
+    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+  })
+
+  it('ignores compiler controls excluded by discovery policy', async () => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createUnsupportedReceiptFreshnessFixture(false)
+    const controlPath = join(fixture.root, 'ignored', 'tsconfig.app.json')
+    mkdirSync(dirname(controlPath), { recursive: true })
+    writeFileSync(join(fixture.root, '.madarignore'), 'ignored/**\n', 'utf8')
+    writeFileSync(controlPath, '{}\n', 'utf8')
+    const generated = generateGraph(fixture.root)
+    writeFileSync(controlPath, '{"compilerOptions":{"strict":true}}\n', 'utf8')
+
+    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'fresh', changed_source_count: 0 }))
+  })
+
+  it.each(['absent', 'clean'] as const)('invalidates Git freshness when .madarignore changes from %s', async (initial) => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createMadarignoreFreshnessFixture(initial)
+    writeFileSync(fixture.ignorePath, 'src/**\n', 'utf8')
+
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+  })
+
+  it('invalidates Git freshness when .madarignore is deleted', async () => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createMadarignoreFreshnessFixture('clean')
+    rmSync(fixture.ignorePath)
+
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+  })
+
+  it('tracks .madarignore even when Git ignores the control file itself', async () => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createMadarignoreFreshnessFixture('absent', true)
+    writeFileSync(fixture.ignorePath, 'src/**\n', 'utf8')
+
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+  })
+
+  it.each(['dirty', 'dirty-deleted'] as const)('uses the dirty-at-build .madarignore state as the Git freshness baseline: %s', async (initial) => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createMadarignoreFreshnessFixture(initial)
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'fresh', changed_source_count: 0 }))
+
+    if (initial === 'dirty') writeFileSync(fixture.ignorePath, 'src/**\n', 'utf8')
+    else writeFileSync(fixture.ignorePath, '# restored\n', 'utf8')
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+  })
+
+  it('fails closed when graph freshness metadata uses the retired v3 contract', async () => {
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
+    const fixture = createUnsupportedReceiptFreshnessFixture(true)
+    rewriteCanonicalGraphFixture(fixture.graphPath, {
+      mapMetadata: (metadata) => {
+        const freshness = metadata.graph_build_freshness as Record<string, unknown>
+        return { ...metadata, graph_build_freshness: { ...freshness, format_version: 3 } }
+      },
+    })
+
+    expect(analyzeGraphContextFreshness!(fixture.graphPath)).toEqual(expect.objectContaining({
+      status: 'partially_stale',
+      generated_at: null,
+      changed_source_count: 1,
     }))
   })
 
@@ -465,6 +692,30 @@ describe('freshness surfaces', () => {
     expect(analyzeGraphContextFreshness!(fixture.graphPath)).toEqual(expect.objectContaining({
       status: 'fresh',
       changed_source_count: 0,
+      missing_source_count: 0,
+    }))
+  })
+
+  it('tracks changes to Git-ignored sources when generation does not respect Git ignore rules', async () => {
+    const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
+    const root = mkdtempSync(join(tmpdir(), 'madar-ignored-source-freshness-'))
+    sandboxRoots.push(root)
+    const sourcePath = join(root, 'ignored.ts')
+
+    writeFileSync(join(root, '.gitignore'), 'ignored.ts\n', 'utf8')
+    git(root, ['init'])
+    git(root, ['config', 'user.email', 'madar@example.com'])
+    git(root, ['config', 'user.name', 'Madar Tests'])
+    git(root, ['add', '.gitignore'])
+    git(root, ['commit', '-m', 'initial'])
+    writeFileSync(sourcePath, 'export const ignored = 1\n', 'utf8')
+
+    const generated = generateGraph(root)
+    writeFileSync(sourcePath, 'export const ignored = 2\n', 'utf8')
+
+    expect(analyzeGraphContextFreshness!(generated.graphPath)).toEqual(expect.objectContaining({
+      status: 'partially_stale',
+      changed_source_count: 1,
       missing_source_count: 0,
     }))
   })
@@ -547,6 +798,51 @@ describe('freshness surfaces', () => {
       changed_selected_context_count: 1,
       changed_outside_selected_context_count: 0,
     }))
+  })
+
+  it('detects Git deletion of a supported receipt even when its graph node is absent', async () => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createGitFreshnessFixture()
+    const emptyPath = join(fixture.root, 'src', 'empty.ts')
+    writeFileSync(emptyPath, '', 'utf8')
+    git(fixture.root, ['add', 'src/empty.ts'])
+    git(fixture.root, ['commit', '-m', 'add empty source'])
+    const generated = generateGraph(fixture.root)
+    rewriteCanonicalGraphFixture(generated.graphPath, { filterNode: (_id, attributes) => attributes.source_file !== 'src/empty.ts' })
+    rmSync(emptyPath)
+
+    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1, missing_source_count: 0 }))
+  })
+
+  it.each([
+    ['compiler control', 'package.json', 'package.lock', '{}\n'],
+    ['unsupported receipt', 'notes.md', 'notes.log', '# Notes\n'],
+  ])('detects Git rename removing a %s before and after commit', async (_kind, from, to, contents) => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createGitFreshnessFixture()
+    writeFileSync(join(fixture.root, from), contents, 'utf8')
+    git(fixture.root, ['add', from])
+    git(fixture.root, ['commit', '-m', `add ${from}`])
+    const generated = generateGraph(fixture.root)
+    renameSync(join(fixture.root, from), join(fixture.root, to))
+
+    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    git(fixture.root, ['add', '-A'])
+    git(fixture.root, ['commit', '-m', `rename ${from}`])
+    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+  })
+
+  it('keeps Git freshness when only unsupported-file content changes', async () => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createGitFreshnessFixture()
+    const unsupportedPath = join(fixture.root, 'notes.md')
+    writeFileSync(unsupportedPath, '# Initial\n', 'utf8')
+    git(fixture.root, ['add', 'notes.md'])
+    git(fixture.root, ['commit', '-m', 'add notes receipt'])
+    const generated = generateGraph(fixture.root)
+    writeFileSync(unsupportedPath, '# Content-only change\n', 'utf8')
+
+    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'fresh', changed_source_count: 0 }))
   })
 
   it('exposes graph freshness in pack, prompt, handoff, and MCP context_pack outputs', async () => {

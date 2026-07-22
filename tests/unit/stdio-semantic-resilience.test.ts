@@ -46,7 +46,6 @@ function writeGraphFixture(root: string): string {
         },
       ],
       edges: [],
-      hyperedges: [],
     },
   )
   return graphPath

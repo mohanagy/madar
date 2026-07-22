@@ -68,22 +68,25 @@ function createDependencies(overrides: Partial<TryCommandDependencies> = {}): Tr
       outputDir: resolve(rootPath, 'out'),
       graphPath: resolve(rootPath, 'out', 'graph.json'),
       reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
-      wikiPath: null,
-      docsPath: null,
       totalFiles: 12,
       codeFiles: 12,
-      nonCodeFiles: 0,
-      extractableFiles: 12,
-      extractedFiles: 12,
+      indexedFiles: 12,
       totalWords: 1000,
       nodeCount: 12,
       edgeCount: 11,
       communityCount: 3,
-      changedFiles: 0,
-      deletedFiles: 0,
-      cache: null,
+      semanticAnomalyCount: 0,
       warning: null,
       notes: [],
+      discoverySafety: { version: 1, summary: { total: 0, sensitive: 0, unreadable: 0, reasons: {} }, exclusions: [] },
+      discoveryExclusions: [],
+      indexingManifestPath: resolve(rootPath, 'out', 'indexing-manifest.json'),
+      indexingShareSafeManifestPath: resolve(rootPath, 'out', 'indexing-manifest.share-safe.json'),
+      indexing: {
+        state: 'complete', candidates: 12,
+        counts: { indexed: 12, indexed_with_warnings: 0, skipped_by_policy: 0, unsupported: 0, failed: 0 },
+        reason_buckets: { indexed: 12 }, capability_buckets: { 'builtin:index:typescript': 12 },
+      },
     })),
     runContextPack: vi.fn().mockResolvedValue('text pack'),
     analyzeFreshness: vi.fn().mockImplementation((graphPath: string) => createFreshness('fresh', graphPath)),
@@ -136,7 +139,7 @@ describe('runTryCommand', () => {
 
       await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-      expect(dependencies.generateGraph).toHaveBeenCalledWith(workspace, { extractionMode: 'auto' })
+      expect(dependencies.generateGraph).toHaveBeenCalledWith(workspace, {})
       expect(dependencies.runContextPack).toHaveBeenCalledWith({
         options: {
           prompt: 'how does auth work?',
@@ -168,20 +171,14 @@ describe('runTryCommand', () => {
           outputDir: resolve(resolvedRoot, 'out'),
           graphPath: resolve(resolvedRoot, 'out', 'graph.json'),
           reportPath: resolve(resolvedRoot, 'out', 'GRAPH_REPORT.md'),
-          wikiPath: null,
-          docsPath: null,
           totalFiles: 12,
           codeFiles: 12,
-          nonCodeFiles: 0,
-          extractableFiles: 12,
-          extractedFiles: 12,
+          indexedFiles: 12,
           totalWords: 1000,
           nodeCount: 12,
           edgeCount: 11,
           communityCount: 3,
-          changedFiles: 0,
-          deletedFiles: 0,
-          cache: null,
+          semanticAnomalyCount: 0,
           warning: null,
           notes: [],
         }
@@ -190,8 +187,8 @@ describe('runTryCommand', () => {
 
     const output = await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(1, workspace, { extractionMode: 'auto' })
-    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(2, sampleWorkspace, { extractionMode: 'auto' })
+    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(1, workspace, {})
+    expect(dependencies.generateGraph).toHaveBeenNthCalledWith(2, sampleWorkspace, {})
     expect(dependencies.runContextPack).toHaveBeenCalledWith({
       options: {
         prompt: 'how does auth work?',
@@ -221,7 +218,7 @@ describe('runTryCommand', () => {
 
     const output = await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-    expect(dependencies.generateGraph).toHaveBeenCalledWith(sampleWorkspace, { extractionMode: 'auto' })
+    expect(dependencies.generateGraph).toHaveBeenCalledWith(sampleWorkspace, {})
     expect(dependencies.runContextPack).toHaveBeenCalledWith({
       options: {
         prompt: 'how does auth work?',

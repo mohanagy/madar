@@ -52,9 +52,9 @@ Suggested short launch post draft:
 
 > If you use Claude/Cursor/Codex/Copilot on a medium-to-large TypeScript/Node repo, Madar now has a public multi-repo benchmark receipt instead of a one-off launch claim.
 >
-> In the dated 2026-05-31 warm-cache suite bundle (#469), the published `ts-small`, `nestjs-mid`, and `ts-monorepo-large` rows cover `explain-runtime`, `implement`, `review`, and `impact`. On the explain rows, baseline input tokens drop from `530/570/610` to `360/400/440` with Madar, and to `320/360/400` on the then-current SPI arm. On the implement rows, that historical SPI arm records `validation pass 3/3`, `wrong-file edits 0`, and `rework 0`, while the baseline rows still show `validation pass 2/3` plus rework / human intervention. These are release-bound receipts, not measurements of the current uncached canonical index.
+> In the dated 2026-05-31 warm-cache suite bundle (#469), the published `ts-small`, `nestjs-mid`, and `ts-monorepo-large` rows cover `explain-runtime`, `implement`, `review`, and `impact`. On the explain rows, baseline input tokens drop from `530/570/610` to `360/400/440` with Madar, and to `320/360/400` on the alternate extraction arm used by that historical harness. On the implement rows, that historical alternate arm records `validation pass 3/3`, `wrong-file edits 0`, and `rework 0`, while the baseline rows still show `validation pass 2/3` plus rework / human intervention. These are release-bound receipts, not measurements of the current canonical index.
 >
-> Caveats: this is still a repo-specific TypeScript-heavy bundle, not a single-number cross-repo headline. Python and Go fixtures are wired for future receipts, but the latest published bundle still measures the three current TypeScript shapes.
+> Caveats: this is still a repo-specific TypeScript-heavy bundle, not a single-number cross-repo headline. The current product and live benchmark matrix are JavaScript/TypeScript-only; the latest published bundle measures three TypeScript shapes.
 >
 > Receipts: `docs/benchmarks/suite/results/2026-05-31T12-00-00/summary.md`, `docs/benchmarks/suite/README.md`, and `docs/claims-and-evidence.md`.
 

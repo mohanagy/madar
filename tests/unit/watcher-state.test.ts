@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
 
-import { watcherStateBlocksGraphReads, type WatcherStateV1 } from '../../src/contracts/watcher-state.js'
+import { watcherStateBlocksGraphReads, type WatcherState } from '../../src/contracts/watcher-state.js'
 import { createWatcherState } from '../../src/infrastructure/watcher-state.js'
 
-function readableState(): WatcherStateV1 {
+function readableState(): WatcherState {
   const state = createWatcherState('recursive-events', 30_000)
   state.status = 'idle'
   state.coverage = 'complete'
@@ -25,4 +25,3 @@ describe('watcher graph-read gate', () => {
     expect(watcherStateBlocksGraphReads(readableState())).toBe(false)
   })
 })
-

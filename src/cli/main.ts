@@ -220,7 +220,7 @@ function compareWarningMessage(options: CompareCliOptions): string {
 
 const REVIEW_COMPARE_WARNING_MESSAGE = 'review-compare will execute verbose and compact pr_impact prompts for the current git diff. This may consume paid model tokens.'
 const BENCHMARK_WARNING_MESSAGE = 'benchmark will execute the benchmark/eval runner. This may consume paid model tokens.'
-const BENCH_SUITE_WARNING_MESSAGE = 'bench:suite will execute baseline, madar, and SPI suite prompts. This may consume paid model tokens.'
+const BENCH_SUITE_WARNING_MESSAGE = 'bench:suite will execute baseline and madar suite prompts. This may consume paid model tokens.'
 const EVAL_WARNING_MESSAGE = 'eval will execute the benchmark/eval runner. This may consume paid model tokens.'
 
 const DEFAULT_DEPENDENCIES: CliDependencies = {
@@ -360,7 +360,7 @@ function messageFromError(error: unknown): string {
 
 function formatProgress(progress: ProgressStep): string {
   const prefix = `[madar ${progress.step}]`
-  if (progress.step === 'extract' && progress.current !== undefined && progress.total !== undefined && progress.total > 0) {
+  if (progress.step === 'index' && progress.current !== undefined && progress.total !== undefined && progress.total > 0) {
     return `${prefix} ${progress.message} (${progress.current}/${progress.total})`
   }
   return `${prefix} ${progress.message}`
@@ -460,28 +460,22 @@ export function formatHelp(binaryName = 'madar'): string {
     '',
     'Commands:',
     '  generate [path]       build graph artifacts for a folder (default .)',
-    '    --update             rebuild incrementally from the manifest, re-extracting changed files only',
-    '    --cluster-only       re-cluster an existing graph.json without re-extraction',
+    '    --update             rebuild graph artifacts from the current source tree',
+    '    --cluster-only       re-cluster an existing graph.json without re-indexing source',
     '    --watch              keep watching after the initial build',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
-    '    --legacy             use only the built-in legacy extractor',
-    '    --spi                compatibility spelling for canonical JS/TS only (no language fallback)',
-    '                         default: auto — canonical JS/TS, legacy fallback for other languages',
     '    --strict-indexing    fail when any candidate is failed or unsupported',
     '    --max-indexing-failed N       permit N failed candidates (enables strict mode)',
     '    --max-indexing-unsupported N  permit N unsupported candidates (enables strict mode)',
     '    --debounce S         watch debounce seconds (default 3)',
-    '    --include-docs       include .md/.txt/.rst document files (excluded by default)',
-    '    --docs               generate module documentation in out/docs/',
-    '    --wiki               also export a crawlable wiki to out/wiki',
     '    --neo4j-push URI     also push the generated graph directly to Neo4j',
     '    --neo4j-user USER    Neo4j username (defaults to NEO4J_USER or neo4j)',
     '    --neo4j-password PW  Neo4j password (or set NEO4J_PASSWORD/.env)',
     '    --neo4j-database DB  Neo4j database (defaults to NEO4J_DATABASE or neo4j)',
     '  federate <g1> <g2>... merge graphs from multiple repos into one',
     '    --output DIR         output directory (default out-federated)',
-    '  watch [path]          build once, then watch for code/doc changes',
+    '  watch [path]          build once, then watch for JavaScript/TypeScript changes',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --debounce S         watch debounce seconds (default 3)',
@@ -501,7 +495,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --graph <path>        path to graph.json (default out/graph.json)',
     '    --rank-by MODE        rank matches by relevance or degree (default relevance)',
     '    --community ID        limit traversal to one community id',
-    '    --file-type TYPE      limit traversal to one file type (for example code or document)',
+    '    --file-type TYPE      limit traversal to one file type (for example code)',
     '  pack "<prompt>"       compile a task-aware context pack / execution brief',
     '    --budget N            cap context pack assembly at N tokens (default 3000)',
     '    --task KIND          explain|implement|review|impact (default infer from prompt; fallback explain)',
@@ -626,16 +620,11 @@ function isGenerateLikeArgument(argument: string): boolean {
     argument === '--watch' ||
     argument === '--follow-symlinks' ||
     argument === '--respect-gitignore' ||
-    argument === '--legacy' ||
-    argument === '--spi' ||
-    argument === '--wiki' ||
     argument === '--neo4j-push' ||
     argument === '--neo4j-user' ||
     argument === '--neo4j-password' ||
     argument === '--neo4j-database' ||
     argument === '--debounce' ||
-    argument === '--include-docs' ||
-    argument === '--docs' ||
     argument === '--strict-indexing' ||
     argument === '--max-indexing-failed' ||
     argument === '--max-indexing-unsupported' ||
@@ -662,12 +651,6 @@ function isImplicitGenerateCommand(argument: string): boolean {
 }
 
 function formatGenerateSummary(result: GenerateGraphResult): string {
-  const extractionStrategySummary = result.indexing?.extraction_strategy_buckets
-    ? Object.entries(result.indexing.extraction_strategy_buckets)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([strategy, count]) => `${strategy}=${count}`)
-        .join(', ')
-    : null
   const indexingLines = result.indexing
     ? [
         `- Indexing: ${result.indexing.state.toUpperCase()} (${result.indexing.counts.indexed} indexed, ${result.indexing.counts.indexed_with_warnings} warnings, ${result.indexing.counts.skipped_by_policy} policy skips, ${result.indexing.counts.unsupported} unsupported, ${result.indexing.counts.failed} failed)`,
@@ -677,10 +660,7 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
   const lines = [
     `[madar generate] ${result.mode} completed for ${result.rootPath}`,
     `- Corpus: ${result.totalFiles} file(s) · ~${result.totalWords.toLocaleString()} words`,
-    ...(result.extractionMode
-      ? [`- Extraction mode: ${result.extractionMode}${extractionStrategySummary ? ` (${extractionStrategySummary})` : ''}`]
-      : []),
-    `- Extracted: ${result.codeFiles} code file(s)` + (result.nonCodeFiles > 0 ? ` (+${result.nonCodeFiles} non-code detected)` : ''),
+    `- Indexed: ${result.indexedFiles}/${result.codeFiles} JavaScript/TypeScript file(s)`,
     `- Graph: ${result.nodeCount} nodes · ${result.edgeCount} edges · ${result.communityCount} communities`,
     ...indexingLines,
     ...(typeof result.semanticAnomalyCount === 'number' ? [`- Semantic anomalies: ${result.semanticAnomalyCount} high-signal item(s)`] : []),
@@ -698,18 +678,6 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
     if (exclusionCount > 20) {
       lines.push(`  - ... ${exclusionCount - 20} more; inspect graph.json discovery_safety.exclusions`)
     }
-  }
-
-  if (result.wikiPath) {
-    lines.push(`- Wiki: ${result.wikiPath}`)
-  }
-
-  if (result.docsPath) {
-    lines.push(`- Docs: ${result.docsPath}`)
-  }
-
-  if (result.changedFiles > 0 || result.deletedFiles > 0) {
-    lines.push(`- Incremental: ${result.changedFiles} changed · ${result.deletedFiles} deleted`)
   }
 
   if (result.warning) {
@@ -1009,31 +977,22 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'generate' || (command !== undefined && !isAgentPlatform(command) && isImplicitGenerateCommand(command))) {
       const generateArgs = command === 'generate' ? args : [command, ...args]
       const options = parseGenerateArgs(generateArgs)
-      const spiTelemetry = options.clusterOnly
-        ? {}
-        : { spiEnabled: options.extractionMode !== 'legacy' }
       failureTelemetry = (failureBucket) => ({
         command: 'generate',
         stage: 'failed',
         ...telemetryBase(dependencies),
         failureBucket,
-        ...spiTelemetry,
       })
       emitTelemetry(io, dependencies, () => ({
         command: 'generate',
         stage: 'started',
         ...telemetryBase(dependencies),
-        ...spiTelemetry,
       }))
       const result = dependencies.generateGraph(options.path, {
         update: options.update,
         clusterOnly: options.clusterOnly,
         followSymlinks: options.followSymlinks,
         respectGitignore: options.respectGitignore,
-        wiki: options.wiki,
-        includeDocs: options.includeDocs,
-        docs: options.docs,
-        ...(options.clusterOnly ? {} : { extractionMode: options.extractionMode }),
         ...(options.strictIndexing
           ? {
               indexingStrict: {
@@ -1064,7 +1023,6 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         ...telemetryBase(dependencies),
         repoSizeBucket: repoSizeBucketFromFileCount(result.totalFiles),
         graphSizeBucket: graphSizeBucketFromNodeCount(result.nodeCount),
-        ...spiTelemetry,
       }))
       if (options.watch) {
         await dependencies.watchGraph(options.path, options.debounceSeconds, {
@@ -1087,7 +1045,6 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'watch') {
       const options = parseWatchArgs(args)
       const result = dependencies.generateGraph(options.path, {
-        extractionMode: 'auto',
         followSymlinks: options.followSymlinks,
         respectGitignore: options.respectGitignore,
         onProgress: (step) => io.log(formatProgress(step)),

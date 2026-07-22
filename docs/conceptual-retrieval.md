@@ -19,7 +19,6 @@ The deterministic fallback derives terms from the graph that was already built f
 - source paths and module names;
 - exported symbol labels;
 - graph community labels;
-- document headings when documents were indexed;
 - framework roles and metadata.
 
 It also normalizes common change-lifecycle language—such as edit, update, freshness, reconciliation, refresh, synchronization, and watching—before matching those concepts against repository-local terms. This is a fixed domain-neutral language family, not a mapping to Madar files or symbols.

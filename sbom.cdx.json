@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:184d19a4-cdcf-4d54-bdb2-7948c1d2c353",
+  "serialNumber": "urn:uuid:e2a14876-ac4a-4fe0-acd4-a5eccd174675",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-16T05:07:00.859Z",
+    "timestamp": "2026-07-22T03:55:06.507Z",
     "lifecycles": [
       {
         "phase": "build"
@@ -19,14 +19,14 @@
       }
     ],
     "component": {
-      "bom-ref": "@lubab/madar@0.31.2",
+      "bom-ref": "@lubab/madar@0.32.0",
       "type": "library",
       "name": "@lubab/madar",
-      "version": "0.31.2",
+      "version": "0.32.0",
       "scope": "required",
       "author": "mohanagy",
       "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
-      "purl": "pkg:npm/%40lubab/madar@0.31.2",
+      "purl": "pkg:npm/%40lubab/madar@0.32.0",
       "properties": [],
       "externalReferences": [
         {
@@ -1001,34 +1001,6 @@
       ]
     },
     {
-      "bom-ref": "@vscode/tree-sitter-wasm@0.3.1",
-      "type": "library",
-      "name": "@vscode/tree-sitter-wasm",
-      "version": "0.3.1",
-      "scope": "required",
-      "author": "Visual Studio Code Team",
-      "description": "Pre-built WASM files for Tree-Sitter and Tree-Sitter languages that VS Code uses",
-      "purl": "pkg:npm/%40vscode/tree-sitter-wasm@0.3.1",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/Microsoft/vscode-tree-sitter-wasm.git"
-        },
-        {
-          "type": "issue-tracker",
-          "url": "https://github.com/Microsoft/vscode-tree-sitter-wasm/issues"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ]
-    },
-    {
       "bom-ref": "ajv@8.20.0",
       "type": "library",
       "name": "ajv",
@@ -1534,14 +1506,14 @@
       ]
     },
     {
-      "bom-ref": "fast-uri@3.1.2",
+      "bom-ref": "fast-uri@3.1.4",
       "type": "library",
       "name": "fast-uri",
-      "version": "3.1.2",
+      "version": "3.1.4",
       "scope": "required",
       "author": "Vincent Le Goff <vince.legoff@gmail.com> (https://github.com/zekth)",
       "description": "Dependency-free RFC 3986 URI toolbox",
-      "purl": "pkg:npm/fast-uri@3.1.2",
+      "purl": "pkg:npm/fast-uri@3.1.4",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -1551,7 +1523,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.2.tgz"
+          "url": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.4.tgz"
         },
         {
           "type": "vcs",
@@ -1569,7 +1541,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "ad58dfec0ac6dcb4e4f854ba630f355750cbb999756d16cdadebfa4e677ff516aba1e791449840b7b8e0ffa605c5bbc04175026af4a86613cf8faa0ec7ee4a8d"
+          "content": "f099db910e23b83caf62ce26805190aa0e32098b450ed52d9a9d90210ab5d5965ee42150e7072a9b5aea0e0021fd074cc92b819cfccc5222543591b937f02243"
         }
       ],
       "licenses": [
@@ -1607,44 +1579,6 @@
         {
           "type": "issue-tracker",
           "url": "https://github.com/thecodrr/fdir/issues"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ]
-    },
-    {
-      "bom-ref": "fflate@0.8.3",
-      "type": "library",
-      "name": "fflate",
-      "version": "0.8.3",
-      "scope": "required",
-      "author": "Arjun Barrett <arjunbarrett@gmail.com>",
-      "description": "High performance (de)compression in an 8kB package",
-      "purl": "pkg:npm/fflate@0.8.3",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/fflate/-/fflate-0.8.3.tgz"
-        },
-        {
-          "type": "website",
-          "url": "https://101arrowz.github.io/fflate"
-        },
-        {
-          "type": "issue-tracker",
-          "url": "https://github.com/101arrowz/fflate/issues"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "b5b64db89acbc06529df3b2106d772e16f8e47166e221f1ae629722044030b9ad8d5fdd4db424caf2d0b977581cd4e7c1192ac12e2455e16f9830bfc0ac3ef80"
         }
       ],
       "licenses": [
@@ -3223,40 +3157,6 @@
       ]
     },
     {
-      "bom-ref": "web-tree-sitter@0.26.11",
-      "type": "library",
-      "name": "web-tree-sitter",
-      "version": "0.26.11",
-      "scope": "required",
-      "author": "Max Brunsfeld",
-      "description": "Tree-sitter bindings for the web",
-      "purl": "pkg:npm/web-tree-sitter@0.26.11",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/web-tree-sitter/-/web-tree-sitter-0.26.11.tgz"
-        },
-        {
-          "type": "vcs",
-          "url": "git+https://github.com/tree-sitter/tree-sitter.git"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "4390e6dd84c85d25ee1fa1715fa46ecd7d90c297380cf1a260c53ced683967c3884ad89016251ec78ccc0dcd2f053c3bf04a6169825a727709821087cdb669b6"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ]
-    },
-    {
       "bom-ref": "why-is-node-running@2.3.0",
       "type": "library",
       "name": "why-is-node-running",
@@ -3292,24 +3192,61 @@
           }
         }
       ]
+    },
+    {
+      "bom-ref": "yaml@2.9.0",
+      "type": "library",
+      "name": "yaml",
+      "version": "2.9.0",
+      "scope": "required",
+      "author": "Eemeli Aro <eemeli@gmail.com>",
+      "description": "JavaScript parser and stringifier for YAML",
+      "purl": "pkg:npm/yaml@2.9.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/yaml/-/yaml-2.9.0.tgz"
+        },
+        {
+          "type": "website",
+          "url": "https://eemeli.org/yaml/"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d80be1357de66fccdde99cbb20d4ed4a9975175e475ba5a7aa3d2cad696428b729625fe03083098b2b86ab629e236605c543e376507edcb735d2c78c2ed2f870"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "ISC"
+          }
+        }
+      ]
     }
   ],
   "dependencies": [
     {
-      "ref": "@lubab/madar@0.31.2",
+      "ref": "@lubab/madar@0.32.0",
       "dependsOn": [
-        "@vscode/tree-sitter-wasm@0.3.1",
-        "fflate@0.8.3",
         "gpt-tokenizer@3.4.0",
         "neo4j-driver@6.2.0",
         "typescript@6.0.3",
-        "web-tree-sitter@0.26.11",
         "@types/node@26.1.1",
         "@vitest/coverage-v8@4.1.10",
         "ajv@8.20.0",
         "ajv-formats@3.0.1",
         "vite@8.1.4",
-        "vitest@4.1.10"
+        "vitest@4.1.10",
+        "yaml@2.9.0"
       ]
     },
     {
@@ -3458,14 +3395,10 @@
       ]
     },
     {
-      "ref": "@vscode/tree-sitter-wasm@0.3.1",
-      "dependsOn": []
-    },
-    {
       "ref": "ajv@8.20.0",
       "dependsOn": [
         "fast-deep-equal@3.1.3",
-        "fast-uri@3.1.2",
+        "fast-uri@3.1.4",
         "json-schema-traverse@1.0.0",
         "require-from-string@2.0.2"
       ]
@@ -3530,15 +3463,11 @@
       "dependsOn": []
     },
     {
-      "ref": "fast-uri@3.1.2",
+      "ref": "fast-uri@3.1.4",
       "dependsOn": []
     },
     {
       "ref": "fdir@6.5.0",
-      "dependsOn": []
-    },
-    {
-      "ref": "fflate@0.8.3",
       "dependsOn": []
     },
     {
@@ -3789,15 +3718,15 @@
       ]
     },
     {
-      "ref": "web-tree-sitter@0.26.11",
-      "dependsOn": []
-    },
-    {
       "ref": "why-is-node-running@2.3.0",
       "dependsOn": [
         "siginfo@2.0.0",
         "stackback@0.0.2"
       ]
+    },
+    {
+      "ref": "yaml@2.9.0",
+      "dependsOn": []
     }
   ]
 }

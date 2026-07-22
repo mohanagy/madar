@@ -1,13 +1,14 @@
-import { accessSync, constants, Dirent, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { accessSync, constants, Dirent, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 
 import type { IndexingOutcome } from '../contracts/indexing.js'
 import { parseGenerationPolicy, type GenerationPolicy } from '../contracts/generation-policy.js'
-import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { writeTextFileAtomically } from '../shared/atomic-file.js'
 import {
   isDiscoveryPathIgnored,
+  isCanonicalCompilerControlFile,
   isIgnoredByPatterns,
+  isManagedAgentInstructionFile,
   loadMadarignorePatterns,
 } from '../shared/source-discovery.js'
 import {
@@ -20,11 +21,6 @@ import {
 
 export const FileType = {
   CODE: 'code',
-  DOCUMENT: 'document',
-  PAPER: 'paper',
-  IMAGE: 'image',
-  AUDIO: 'audio',
-  VIDEO: 'video',
 } as const
 
 export type FileTypeValue = (typeof FileType)[keyof typeof FileType]
@@ -46,48 +42,15 @@ export interface DetectResult {
   exclusions: DiscoveryExclusion[]
   indexing_outcomes?: IndexingOutcome[]
   madarignore_patterns: number
+  compiler_control_paths: string[]
 }
 
-export const CODE_EXTENSIONS = new Set([
-  '.py',
-  '.ts',
-  '.js',
-  '.jsx',
-  '.tsx',
-  '.go',
-  '.rs',
-  '.java',
-  '.cpp',
-  '.cc',
-  '.cxx',
-  '.c',
-  '.h',
-  '.hpp',
-  '.rb',
-  '.swift',
-  '.kt',
-  '.kts',
-  '.cs',
-  '.scala',
-  '.php',
-  '.lua',
-  '.toc',
-  '.zig',
-  '.ps1',
-  '.ex',
-  '.exs',
-  '.m',
-  '.mm',
-  '.jl',
-])
-export const DOC_EXTENSIONS = new Set(['.md', '.txt', '.rst'])
-export const PAPER_EXTENSIONS = new Set(['.pdf'])
-export const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'])
-export const AUDIO_EXTENSIONS = new Set(['.aac', '.flac', '.m4a', '.mp3', '.ogg', '.opus', '.wav'])
-export const VIDEO_EXTENSIONS = new Set(['.avi', '.m4v', '.mkv', '.mov', '.mp4', '.webm'])
-export const OFFICE_EXTENSIONS = new Set(['.docx', '.xlsx'])
-export const UNSUPPORTED_SOURCE_EXTENSIONS = new Set([
-  '.bash', '.clj', '.cljs', '.dart', '.elm', '.fs', '.fsx', '.groovy', '.hs', '.r', '.sh', '.sol', '.sql', '.svelte', '.vue',
+export const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx'])
+
+export const RECOGNIZED_UNSUPPORTED_EXTENSIONS = new Set([
+  '.py', '.go', '.rs', '.java', '.cpp', '.cc', '.cxx', '.c', '.h', '.hpp', '.rb', '.swift', '.kt', '.kts',
+  '.cs', '.scala', '.php', '.lua', '.toc', '.zig', '.ps1', '.ex', '.exs', '.m', '.mm', '.jl', '.bash', '.clj', '.cljs', '.dart', '.elm', '.fs', '.fsx', '.groovy', '.hs', '.r', '.sh', '.sol', '.sql', '.svelte', '.vue',
+  '.md', '.mdx', '.txt', '.rst', '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.aac', '.flac', '.m4a', '.mp3', '.ogg', '.opus', '.wav', '.avi', '.m4v', '.mkv', '.mov', '.mp4', '.webm', '.docx', '.xlsx',
 ])
 
 const CORPUS_WARN_THRESHOLD = 50_000
@@ -106,24 +69,6 @@ export interface ManifestSnapshot {
   failedPaths: string[]
 }
 
-const PAPER_SIGNALS = [
-  /\barxiv\b/i,
-  /\bdoi\s*:/i,
-  /\babstract\b/i,
-  /\bproceedings\b/i,
-  /\bjournal\b/i,
-  /\bpreprint\b/i,
-  /\\cite\{/,
-  /\[\d+\]/,
-  /\[\n\d+\n\]/,
-  /eq\.\s*\d+|equation\s+\d+/i,
-  /\d{4}\.\d{4,5}/,
-  /\bwe propose\b/i,
-  /\bliterature\b/i,
-]
-const PAPER_SIGNAL_THRESHOLD = 3
-
-const ASSET_DIR_MARKERS = ['.imageset', '.xcassets', '.appiconset', '.colorset', '.launchimage']
 const SKIP_DIRS = new Set([
   'venv',
   '.venv',
@@ -151,14 +96,7 @@ function isNoiseFile(name: string): boolean {
 
 function isPotentialIndexingCandidate(path: string): boolean {
   const extension = extname(path).toLowerCase()
-  return CODE_EXTENSIONS.has(extension)
-    || DOC_EXTENSIONS.has(extension)
-    || PAPER_EXTENSIONS.has(extension)
-    || IMAGE_EXTENSIONS.has(extension)
-    || AUDIO_EXTENSIONS.has(extension)
-    || VIDEO_EXTENSIONS.has(extension)
-    || OFFICE_EXTENSIONS.has(extension)
-    || UNSUPPORTED_SOURCE_EXTENSIONS.has(extension)
+  return CODE_EXTENSIONS.has(extension) || RECOGNIZED_UNSUPPORTED_EXTENSIONS.has(extension)
 }
 
 function toPosixPath(path: string): string {
@@ -175,52 +113,12 @@ function sensitiveReasonForFile(path: string, root: string) {
   })
 }
 
-export function _looksLikePaper(path: string): boolean {
-  try {
-    const text = readFileSync(path, 'utf8').slice(0, 3_000)
-    const hits = PAPER_SIGNALS.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0)
-    return hits >= PAPER_SIGNAL_THRESHOLD
-  } catch {
-    return false
-  }
-}
-
 export function classifyFile(path: string): FileTypeValue | null {
-  const extension = extname(path).toLowerCase()
-  if (CODE_EXTENSIONS.has(extension)) {
-    return FileType.CODE
-  }
-  if (PAPER_EXTENSIONS.has(extension)) {
-    const pathParts = toPosixPath(path).split('/')
-    if (pathParts.some((part) => ASSET_DIR_MARKERS.some((marker) => part.endsWith(marker)))) {
-      return null
-    }
-    return FileType.PAPER
-  }
-  if (IMAGE_EXTENSIONS.has(extension)) {
-    return FileType.IMAGE
-  }
-  if (AUDIO_EXTENSIONS.has(extension)) {
-    return FileType.AUDIO
-  }
-  if (VIDEO_EXTENSIONS.has(extension)) {
-    return FileType.VIDEO
-  }
-  if (DOC_EXTENSIONS.has(extension)) {
-    return _looksLikePaper(path) ? FileType.PAPER : FileType.DOCUMENT
-  }
-  if (OFFICE_EXTENSIONS.has(extension)) {
-    return FileType.DOCUMENT
-  }
-  return null
+  return CODE_EXTENSIONS.has(extname(path).toLowerCase()) ? FileType.CODE : null
 }
 
 function countWordsOrNull(path: string): number | null {
   try {
-    const extension = extname(path).toLowerCase()
-    if (IMAGE_EXTENSIONS.has(extension) || PAPER_EXTENSIONS.has(extension) || AUDIO_EXTENSIONS.has(extension) || VIDEO_EXTENSIONS.has(extension)) {
-      return 0
-    }
     return readFileSync(path, 'utf8').split(/\s+/).filter(Boolean).length
   } catch {
     return null
@@ -556,22 +454,15 @@ function indexingOutcomeFromDiscoveryExclusion(root: string, exclusion: Discover
   }
 }
 
-export function detect(root: string, options: DetectOptions = {}): DetectResult {
+function discoverCandidates(root: string, options: DetectOptions) {
   const followSymlinks = options.followSymlinks ?? false
   const ignorePatterns = _loadMadarignore(root)
-  const files: Record<FileTypeValue, string[]> = {
-    [FileType.CODE]: [],
-    [FileType.DOCUMENT]: [],
-    [FileType.PAPER]: [],
-    [FileType.IMAGE]: [],
-    [FileType.AUDIO]: [],
-    [FileType.VIDEO]: [],
-  }
-
-  let totalWords = 0
   const collected = collectFiles(root, followSymlinks, ignorePatterns)
   const exclusions: DiscoveryExclusion[] = [...collected.exclusions]
   const indexingOutcomes: IndexingOutcome[] = [...collected.indexingOutcomes]
+  const codeFiles: string[] = []
+  const unsupportedReceiptPaths: string[] = []
+  const compilerControlPaths: string[] = []
 
   for (const filePath of collected.files) {
     if (options.includedFiles && !options.includedFiles.has(resolve(filePath))) {
@@ -586,6 +477,9 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
       }
       continue
     }
+    if (isManagedAgentInstructionFile(filePath, root)) {
+      continue
+    }
     const sensitiveReason = sensitiveReasonForFile(filePath, root)
     if (sensitiveReason) {
       exclusions.push({
@@ -596,20 +490,63 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
       continue
     }
 
-    const fileType = classifyFile(filePath)
-    if (!fileType) {
-      if (isPotentialIndexingCandidate(filePath)) {
-        indexingOutcomes.push({
-          path: localDiscoveryPath(root, filePath),
-          kind: 'file',
-          status: 'unsupported',
-          reason: 'unsupported_file_type',
-          capability: null,
-        })
-      }
+    if (classifyFile(filePath)) {
+      codeFiles.push(filePath)
       continue
     }
+    if (isCanonicalCompilerControlFile(filePath)) {
+      compilerControlPaths.push(localDiscoveryPath(root, filePath))
+      continue
+    }
+    if (RECOGNIZED_UNSUPPORTED_EXTENSIONS.has(extname(filePath).toLowerCase())) {
+      const receiptPath = localDiscoveryPath(root, filePath)
+      unsupportedReceiptPaths.push(receiptPath)
+      indexingOutcomes.push({
+        path: receiptPath,
+        kind: 'file',
+        status: 'unsupported',
+        reason: 'unsupported_file_type',
+        capability: null,
+      })
+    }
+  }
 
+  return {
+    codeFiles,
+    unsupportedReceiptPaths: [...new Set(unsupportedReceiptPaths)].sort(),
+    compilerControlPaths: [...new Set(compilerControlPaths)].sort(),
+    exclusions,
+    indexingOutcomes,
+    madarignorePatternCount: ignorePatterns.length,
+  }
+}
+
+export function collectFreshnessCandidatePaths(root: string, options: DetectOptions = {}) {
+  if (!existsSync(resolve(root))) {
+    throw new Error(`Workspace root not found: ${resolve(root)}`)
+  }
+  const found = discoverCandidates(root, options)
+  return {
+    supported: found.codeFiles.map((path) => localDiscoveryPath(root, path)),
+    unsupported: found.unsupportedReceiptPaths,
+    controls: [...new Set([
+      ...found.compilerControlPaths,
+      ...(existsSync(resolve(root, '.madarignore')) ? ['.madarignore'] : []),
+    ])].sort(),
+  }
+}
+
+export function detect(root: string, options: DetectOptions = {}): DetectResult {
+  const files: Record<FileTypeValue, string[]> = {
+    [FileType.CODE]: [],
+  }
+
+  let totalWords = 0
+  const discovered = discoverCandidates(root, options)
+  const exclusions: DiscoveryExclusion[] = [...discovered.exclusions]
+  const indexingOutcomes: IndexingOutcome[] = [...discovered.indexingOutcomes]
+
+  for (const filePath of discovered.codeFiles) {
     try {
       accessSync(filePath, constants.R_OK)
     } catch {
@@ -631,7 +568,7 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
       continue
     }
 
-    files[fileType].push(filePath)
+    files[FileType.CODE].push(filePath)
     totalWords += wordCount
   }
 
@@ -656,11 +593,12 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
     skipped_sensitive: exclusions.filter((entry) => entry.kind === 'sensitive').map((entry) => entry.path),
     exclusions,
     indexing_outcomes: indexingOutcomes,
-    madarignore_patterns: ignorePatterns.length,
+    madarignore_patterns: discovered.madarignorePatternCount,
+    compiler_control_paths: discovered.compilerControlPaths,
   }
 }
 
-function loadManifestDocument(manifestPath: string): Record<string, unknown> {
+export function loadManifestDocument(manifestPath: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(readFileSync(validateManifestPath(manifestPath), 'utf8')) as unknown
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -707,7 +645,7 @@ export function createManifestSnapshot(
       try {
         const modifiedAt = statSync(filePath).mtimeMs
         if (Number.isFinite(modifiedAt)) {
-          manifest[filePath] = sidecarAwareFileFingerprint(filePath, modifiedAt)
+          manifest[filePath] = Math.round(modifiedAt)
         }
       } catch {
         failedPaths.push(filePath)
@@ -745,84 +683,4 @@ export function saveManifest(
   const snapshot = createManifestSnapshot(files, metadata)
   writeManifestSnapshot(snapshot, manifestPath)
   return snapshot.failedPaths
-}
-
-export function detectIncremental(
-  root: string,
-  manifestPath: string = DEFAULT_MANIFEST_PATH,
-  options: DetectOptions = {},
-): DetectResult & {
-  incremental: true
-  new_files: Record<FileTypeValue, string[]>
-  unchanged_files: Record<FileTypeValue, string[]>
-  new_total: number
-  deleted_files: string[]
-} {
-  const full = detect(root, options)
-  const manifest = loadManifest(manifestPath)
-
-  if (Object.keys(manifest).length === 0) {
-    return {
-      ...full,
-      incremental: true,
-      new_files: full.files,
-      unchanged_files: {
-        [FileType.CODE]: [],
-        [FileType.DOCUMENT]: [],
-        [FileType.PAPER]: [],
-        [FileType.IMAGE]: [],
-        [FileType.AUDIO]: [],
-        [FileType.VIDEO]: [],
-      },
-      new_total: full.total_files,
-      deleted_files: [],
-    }
-  }
-
-  const newFiles: Record<FileTypeValue, string[]> = {
-    [FileType.CODE]: [],
-    [FileType.DOCUMENT]: [],
-    [FileType.PAPER]: [],
-    [FileType.IMAGE]: [],
-    [FileType.AUDIO]: [],
-    [FileType.VIDEO]: [],
-  }
-  const unchangedFiles: Record<FileTypeValue, string[]> = {
-    [FileType.CODE]: [],
-    [FileType.DOCUMENT]: [],
-    [FileType.PAPER]: [],
-    [FileType.IMAGE]: [],
-    [FileType.AUDIO]: [],
-    [FileType.VIDEO]: [],
-  }
-
-  for (const [fileType, fileList] of Object.entries(full.files) as Array<[FileTypeValue, string[]]>) {
-    for (const filePath of fileList) {
-      let currentFingerprint = 0
-      try {
-        currentFingerprint = sidecarAwareFileFingerprint(filePath, statSync(filePath).mtimeMs)
-      } catch {
-        currentFingerprint = 0
-      }
-
-      const storedFingerprint = manifest[filePath]
-      if (storedFingerprint === undefined || currentFingerprint !== storedFingerprint) {
-        newFiles[fileType].push(filePath)
-      } else {
-        unchangedFiles[fileType].push(filePath)
-      }
-    }
-  }
-
-  const currentFiles = new Set(Object.values(full.files).flat())
-  const deletedFiles = Object.keys(manifest).filter((filePath) => !currentFiles.has(filePath))
-
-  return {
-    ...full,
-    incremental: true,
-    new_files: newFiles,
-    unchanged_files: unchangedFiles,
-    new_total: Object.values(newFiles).reduce((count, fileList) => count + fileList.length, 0),
-    deleted_files: deletedFiles,
-  }
 }

@@ -19,7 +19,6 @@
   "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
   "exclude": [
     "tests/fixtures/canonical-index/**/*",
-    "tests/fixtures/pack-quality/**/workspace/**/*",
-    "tests/fixtures/spi/nest-di-runtime-calls-realistic/**/*"
+    "tests/fixtures/pack-quality/**/workspace/**/*"
   ]
 }

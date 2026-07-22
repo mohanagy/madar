@@ -33,7 +33,6 @@ function createGraphFixtureRoot(): string {
         },
       ],
       edges: [],
-      hyperedges: [],
     },
   )
   return root

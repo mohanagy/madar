@@ -176,7 +176,7 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
     surprises,
     anomalies,
     {
-      files: { code: [], document: [], paper: [], image: [], audio: [], video: [] },
+      files: { code: [] },
       total_files: 0,
       total_words: 0,
       needs_graph: true,

@@ -13,7 +13,7 @@ import type {
   MadarEvidenceStrengthLevel,
   MadarVerificationTarget,
 } from '../contracts/context-recovery.js'
-import type { IndexingManifestV1, IndexingReasonCode } from '../contracts/indexing.js'
+import type { IndexingManifest, IndexingReasonCode } from '../contracts/indexing.js'
 import {
   readIndexingManifestForGraph,
   relevantIndexingUncertainty,
@@ -561,7 +561,7 @@ export function assessMadarResponseEvidence(input: {
   expandable?: readonly ContextPackExpandableRef[] | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
-  indexingManifest?: IndexingManifestV1 | null | undefined
+  indexingManifest?: IndexingManifest | null | undefined
   missingPhases?: readonly ContextPackExecutionPhase[] | undefined
   question?: string | undefined
   recovery?: ContextPackRecoveryPlan | undefined
@@ -824,7 +824,7 @@ export function buildMadarResponseEvidence(input: {
   expandable?: readonly ContextPackExpandableRef[] | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
-  indexingManifest?: IndexingManifestV1 | null | undefined
+  indexingManifest?: IndexingManifest | null | undefined
   question?: string | undefined
   recovery?: ContextPackRecoveryPlan | undefined
   score?: number | undefined

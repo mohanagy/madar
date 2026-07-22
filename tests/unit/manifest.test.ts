@@ -7,6 +7,5 @@ describe('manifest re-exports', () => {
   test('re-exports detect manifest helpers', () => {
     expect(manifestModule.saveManifest).toBe(detectModule.saveManifest)
     expect(manifestModule.loadManifest).toBe(detectModule.loadManifest)
-    expect(manifestModule.detectIncremental).toBe(detectModule.detectIncremental)
   })
 })
