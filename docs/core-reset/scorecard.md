@@ -2,7 +2,7 @@
 
 > **RFC:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
-> **Status:** accepted; Scope/Baseline, Directed multigraph, and Canonical TypeScript index passed; the combined legacy/non-code deletion is the single In progress phase through #588
+> **Status:** accepted; Scope/Baseline, Directed multigraph, Canonical TypeScript index, and the combined legacy/non-code deletion passed; no phase is In progress; Generation and incremental index is Ready only
 
 This is the phase-gate evidence ledger. An issue or PR link is not evidence by itself; each gate needs a reproducible test, receipt, measurement, or external-user record.
 
@@ -33,15 +33,15 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 | Scope and baseline | **Passed** | Baseline script/receipt committed; held-out evaluation contract frozen; removal manifest reviewed | [#580](https://github.com/mohanagy/madar/issues/580), [receipt](evidence/baseline-v0.32.0.json), and [manifest](removal-manifest.yml) |
 | Directed multigraph | **Passed** | Parallel types, direction, stable IDs, provenance, and serialization pass | [#582](https://github.com/mohanagy/madar/issues/582), merged [PR #583](https://github.com/mohanagy/madar/pull/583), invariant tests, six green CI jobs, successful CodeRabbit review, and zero unresolved threads |
 | Canonical TypeScript index | **Passed** | Labelled TS/framework gates pass without legacy augmentation | [#585](https://github.com/mohanagy/madar/issues/585), merged [PR #586](https://github.com/mohanagy/madar/pull/586), merge commit `4dfd48194f2fab00b2cd2271a6f7917909dde9d4`, six green CI jobs, [independent review passed](https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350), nine actionable CodeRabbit comments and two review-body nitpicks addressed, and zero unresolved threads; the final CodeRabbit rerun was rate-limited and merged under an explicit owner-approved exception |
-| Legacy extraction plus non-code/other-language ingestion | **In progress** | Delete both manifest-owned paths in one work item while canonical JS/TS fixtures remain green and no package/docs/flag claims unsupported ingestion | [#588](https://github.com/mohanagy/madar/issues/588), protected base `9a762d0a4e10a0ae210ba3f53bb1d4468367e81e`, and the accepted deletion/budget/verification contract |
-| Incremental index | Not started | Add/change/delete/rename output equals clean rebuild | Pending |
+| Legacy extraction plus non-code/other-language ingestion | **Passed** | Delete both manifest-owned paths in one work item while canonical JS/TS fixtures remain green and no package/docs/flag claims unsupported ingestion | [#588](https://github.com/mohanagy/madar/issues/588), merged [PR #590](https://github.com/mohanagy/madar/pull/590), merge commit `d46031eed7b0cf2d8bb7b7b6267a51322d9e2490`, [six-job CI run](https://github.com/mohanagy/madar/actions/runs/29899357806), [independent review](https://github.com/mohanagy/madar/pull/590#issuecomment-5043069972), and zero review threads |
+| Incremental index | **Ready — not In progress** | Add/change/delete/rename output equals clean rebuild | Requires a separately accepted issue and explicit owner activation; that proposal must define and seek approval for cross-artifact publication semantics before implementation |
 | Evidence-path query | Not started | Held-out correctness and one-call completeness gates pass without repo-specific logic | Pending |
 | Delivery and package | Not started | Thin MCP/CLI, activation, startup, and package budgets pass | Pending |
 | Capability validation | Not started | Native vs Graphify vs Madar blinded gates pass | Pending |
 | External validation | Not started | Activation, retention, and paid-intent gates pass | Pending |
 | Stable release | Not started | Every blocking gate passed; old core absent; migration docs ready | Pending |
 
-Only one technical phase may be `In progress` at a time. `legacy-extraction` is the scalar active handle for #588 and absorbs `non-code-and-other-language-ingest`; all later phases remain blocked.
+Only one technical phase may be `In progress` at a time. No phase is In progress. `legacy-extraction` and its absorbed `non-code-and-other-language-ingest` item are complete. `generation-and-incremental` is Ready only and requires a separately accepted issue plus explicit owner activation before implementation starts.
 
 ### Directed multigraph phase evidence (passed)
 
@@ -61,13 +61,15 @@ Only one technical phase may be `In progress` at a time. `legacy-extraction` is 
 - Local verification passes 188 test files / 2,525 tests (2 skipped). V8 coverage is 84.62% statements, 75.99% branches, 91.50% functions, and 85.04% lines; typecheck, build, release hygiene, registry validation, packed retrieval parity, package isolation, and high-severity dependency audit also pass.
 - PR #586 was squash-merged at `4dfd48194f2fab00b2cd2271a6f7917909dde9d4` after all six CI matrix jobs passed and every review thread was resolved. All nine actionable CodeRabbit comments and both review-body nitpicks were addressed; eight of the nine actionable remediations were confirmed by CodeRabbit before its final rerun was rate-limited. An [independent adversarial review passed](https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350), and the owner explicitly approved merging under that review-automation exception. This record does not claim that the final CodeRabbit rerun passed.
 
-### Legacy and non-code deletion contract (in progress)
+### Legacy and non-code deletion evidence (passed)
 
-- Owner-approved [#588](https://github.com/mohanagy/madar/issues/588) starts from protected `core-reset` commit `9a762d0a4e10a0ae210ba3f53bb1d4468367e81e` at 170 production TypeScript files / 91,539 LOC.
-- One scalar `legacy-extraction` phase absorbs the distinct `non-code-and-other-language-ingest` ownership group. No second deletion phase or later replacement phase is active.
-- The contract deletes 27 directly owned files plus four guaranteed orphans transferred from earlier ownership: `src/application/build-graph.ts`, `src/core/provenance/ingest.ts`, `src/infrastructure/cache.ts`, and `src/infrastructure/capabilities.ts`.
-- The accepted budget is at most one new production file / 900 added LOC, at least 31 deleted production files / 20,951 removed LOC, net at most `-20,000` LOC, zero runtime dependencies added, and three removed.
-- `--legacy`, `--spi`, `--include-docs`, `--docs`, and `--wiki` must disappear. The only surviving index path is canonical TypeScript/JavaScript generation into the directed multigraph; old mixed-mode artifacts require regeneration rather than a compatibility layer.
+- [PR #590](https://github.com/mohanagy/madar/pull/590) was squash-merged into protected `core-reset` at `d46031eed7b0cf2d8bb7b7b6267a51322d9e2490` from final PR head `0d5aab99b9aeaf01a17830bacafd6e8027ded72f`. It completes [#588](https://github.com/mohanagy/madar/issues/588) and both removal-manifest ownership IDs.
+- The phase removed 31 production files. Final protected-branch inventory is 139 production TypeScript files / 68,954 LOC; delta from protected base `9a762d0a4e10a0ae210ba3f53bb1d4468367e81e` is `+815 / -23,400 / net -22,585`, satisfying the accepted deletion and source budgets.
+- The legacy and non-code engines, their three runtime dependencies, and `--legacy`, `--spi`, `--include-docs`, `--docs`, and `--wiki` are absent. Canonical TypeScript/JavaScript generation is the only supported index path, and predecessor artifacts fail closed with regeneration guidance.
+- The full local suite reports 1,907 passed / 2 skipped. V8 coverage is 85.17% statements, 76.97% branches, 90.59% functions, and 85.85% lines; typecheck, build, release verification, registry validation, packed retrieval parity, and high-severity dependency audit also pass.
+- The post-deletion npm package contains 314 files, 592,783 packed bytes, and 2,794,076 unpacked bytes. This improves the baseline but still fails the final `<150` files / `<1,500,000` unpacked-byte package gate; that gate remains open.
+- All six jobs in [CI run 29899357806](https://github.com/mohanagy/madar/actions/runs/29899357806) passed and zero review threads remained. CodeRabbit did not review the final change because reviews are disabled for the `core-reset` base branch; the owner approved an explicit exception backed by a passing [independent strict review](https://github.com/mohanagy/madar/pull/590#issuecomment-5043069972). This record does not represent CodeRabbit as green.
+- Cross-artifact transactional publication was deliberately not added to this deletion phase. Its exact semantics remain successor work and must be defined and accepted with the `generation-and-incremental` proposal rather than backfilled here.
 
 ## Graph gates
 
@@ -105,11 +107,11 @@ Labelled fixtures cover ESM, CJS, barrel exports, aliases, TypeScript paths, pro
 - [ ] No unused-local or unused-parameter diagnostics.
 - [ ] No dependency cycles or architecture-boundary violations.
 - [ ] Production cannot import `tools/eval`.
-- [ ] npm package is <150 files and <1.5 MB unpacked.
+- [ ] npm package is <150 files and <1.5 MB unpacked. (Current post-deletion package: 314 files / 2,794,076 unpacked bytes; still failing.)
 - [ ] `madar --version` is <100 ms and <80 MB RSS.
 - [ ] MCP handshake and tool listing is <1 second cold.
 - [ ] Warm retrieval p95 is <500 ms on an approximately 15,000-node graph.
-- [x] At the current completed phase head, all six CI jobs passed and all review threads were resolved; the rate-limited final CodeRabbit rerun is recorded as an owner-approved exception backed by an independent review, not as a successful CodeRabbit check.
+- [x] At the current completed phase head, all six CI jobs passed and zero review threads remained; CodeRabbit skipped review because reviews are disabled for the `core-reset` base branch, and the owner-approved exception is backed by an independent strict review rather than represented as a completed CodeRabbit review.
 
 ## Business gates
 
@@ -170,3 +172,4 @@ Copy this into a comment on [#577](https://github.com/mohanagy/madar/issues/577)
 | 2026-07-21 | Canonical TypeScript index accepted and moved to In progress | Exact predecessor inventory, source budget, labelled fixture gates, and protected base recorded | #585 |
 | 2026-07-21 | Canonical TypeScript index passed; combined legacy/non-code deletion became Ready with no active phase | Merged PR #586, final source delta, six green CI jobs, nine actionable CodeRabbit comments and two review-body nitpicks addressed, eight actionable remediations confirmed before rate limiting, independent review receipt, explicit owner exception, and zero unresolved threads | #585 and #586 |
 | 2026-07-21 | Combined legacy/non-code deletion accepted and moved to In progress | #588 records the protected base, exact 31-file / 20,951-LOC deletion, four ownership transfers, three dependency removals, five retired flags, source budget, and exit gates | #588 |
+| 2026-07-22 | Combined legacy/non-code deletion passed; Generation and incremental index became Ready with no active phase | Merged PR #590 at `d46031eed7b0cf2d8bb7b7b6267a51322d9e2490`; 31 production files removed; `+815 / -23,400 / net -22,585`; full suite 1,907 passed / 2 skipped; six green CI jobs; independent review; explicit owner-approved CodeRabbit exception; zero review threads; final package gate still failing | #588 and #590 |

@@ -25,11 +25,11 @@ review:
 
 current:
   updated_at: 2026-07-22
-  completed_phase: canonical-typescript-index
-  active_phase: legacy-extraction
-  ready_phase: null
+  completed_phase: legacy-extraction
+  active_phase: null
+  ready_phase: generation-and-incremental
   base_commit: 9a762d0a4e10a0ae210ba3f53bb1d4468367e81e
-  completed_phase_commit: 4dfd48194f2fab00b2cd2271a6f7917909dde9d4
+  completed_phase_commit: d46031eed7b0cf2d8bb7b7b6267a51322d9e2490
   production_typescript_files: 139
   production_typescript_loc: 68954
   production_loc_added: 815
@@ -160,8 +160,8 @@ items:
 
   - id: legacy-extraction
     disposition: delete
-    status: in_progress
-    sources:
+    status: complete
+    removed_sources:
       - src/application/build-graph.ts
       - src/core/provenance/ingest.ts
       - src/infrastructure/cache.ts
@@ -212,13 +212,35 @@ items:
       - --include-docs
       - --docs
       - --wiki
-    notes: 'Accepted in #588 and active from protected base 9a762d0a4e10a0ae210ba3f53bb1d4468367e81e. This scalar handle owns one combined deletion of 31 production files, including the non-code-and-other-language-ingest item and four transferred extraction orphans; every later phase remains blocked.'
+    notes: 'Completed by #588 and PR #590 from protected base 9a762d0a4e10a0ae210ba3f53bb1d4468367e81e. This scalar handle completed one combined deletion of 31 production files, including the non-code-and-other-language-ingest item and four transferred extraction orphans. CodeRabbit skipped the actual review because reviews are disabled for the core-reset base; the owner-approved exception is backed by the independent exact-head review recorded below.'
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/588
+      pull_request: https://github.com/mohanagy/madar/pull/590
+      commit: d46031eed7b0cf2d8bb7b7b6267a51322d9e2490
+      production_files_added: 0
+      production_files_removed: 31
+      production_typescript_files: 139
+      production_typescript_loc: 68954
+      production_loc_added: 815
+      production_loc_removed: 23400
+      production_loc_net: -22585
+      dependencies_added: 0
+      dependencies_removed: 3
+      npm_files: 314
+      npm_packed_bytes: 592783
+      npm_unpacked_bytes: 2794076
+      ci_matrix_jobs_passed: 6
+      ci_run: https://github.com/mohanagy/madar/actions/runs/29899357806
+      coderabbit: skipped_base_owner_exception
+      independent_review: passed
+      independent_review_receipt: https://github.com/mohanagy/madar/pull/590#issuecomment-5043069972
+      unresolved_review_threads: 0
     exit_gate: Canonical TypeScript fixtures pass and no production import references the legacy engine.
 
   - id: non-code-and-other-language-ingest
     disposition: delete
-    status: planned
-    sources:
+    status: complete
+    removed_sources:
       - src/pipeline/docs.ts
       - src/pipeline/wiki.ts
       - src/shared/binary-ingest-sidecar.ts
@@ -227,12 +249,12 @@ items:
       - src/pipeline/extract/python-rationale.ts
       - src/pipeline/extract/go-cross-file.ts
     absorbed_by: legacy-extraction
-    notes: 'These non-TypeScript handlers retain distinct file ownership but are absorbed by active issue #588 under the single legacy-extraction phase handle; splitting them would preserve a temporary companion path.'
+    notes: 'Completed by #588 and PR #590 under the legacy-extraction completion receipt. These non-TypeScript handlers retained distinct manifest ownership while being deleted by the single combined phase, so no temporary companion path survived.'
     exit_gate: Package, docs, flags, dependencies, and tests no longer claim unsupported ingestion.
 
   - id: generation-and-incremental
     disposition: rebuild
-    status: proposed
+    status: planned
     sources:
       - src/infrastructure/generate.ts
       - src/infrastructure/generation-policy.ts
@@ -254,6 +276,7 @@ items:
       - src/shared/graph-build-freshness.ts
       - src/shared/source-discovery.ts
     destination: src/application/generate-index.ts, src/application/update-index.ts, and focused adapters
+    notes: 'Ready after the combined legacy and non-code deletion passed. This phase is planned, not In progress; implementation requires a separately accepted work-item contract and explicit owner activation, while retrieval and delivery remain blocked.'
     remove_when: Add, change, delete, rename, worktree, and full-rebuild equivalence tests pass.
     exit_gate: madar generate uses one engine and incremental output equals a clean rebuild.
 
