@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583), the Canonical TypeScript/JavaScript index passed through [#585](https://github.com/mohanagy/madar/issues/585) and [PR #586](https://github.com/mohanagy/madar/pull/586), and the combined deletion of legacy extraction and non-code/other-language ingestion passed through [#588](https://github.com/mohanagy/madar/issues/588) and [PR #590](https://github.com/mohanagy/madar/pull/590). No phase is In progress. Generation and incremental index is Ready only; it requires a separately accepted issue and explicit owner activation.
+The RFC is **accepted**. Scope and baseline has passed with a [committed evidence receipt](core-reset/evidence/baseline-v0.32.0.json), Directed multigraph passed through [#582](https://github.com/mohanagy/madar/issues/582) and [PR #583](https://github.com/mohanagy/madar/pull/583), the Canonical TypeScript/JavaScript index passed through [#585](https://github.com/mohanagy/madar/issues/585) and [PR #586](https://github.com/mohanagy/madar/pull/586), and the combined deletion of legacy extraction and non-code/other-language ingestion passed through [#588](https://github.com/mohanagy/madar/issues/588) and [PR #590](https://github.com/mohanagy/madar/pull/590). [#592](https://github.com/mohanagy/madar/issues/592) is accepted; Generation and incremental index is the sole In progress phase from protected base `8886a0299ee30765ce149ca7ad5d1779496b78b5`.
 
 ## Passed — directed multigraph
 
@@ -38,21 +38,26 @@ PR #590 was squash-merged into protected `core-reset` at `d46031eed7b0cf2d8bb7b7
 
 The resulting npm package has 314 files, 592,783 packed bytes, and 2,794,076 unpacked bytes. It is materially smaller than baseline but still fails the final `<150` files / `<1,500,000` unpacked-byte package gate; deletion completion does not claim otherwise.
 
-## Ready — generation and incremental index
+## In progress — generation and incremental index
 
-`generation-and-incremental` is the next dependency-ordered phase, but Ready is not active. No phase is In progress. Work may start only after a separate implementation issue records the exact predecessor deletion, source budget, acceptance tests, and non-goals, and the owner explicitly activates it.
+The owner accepted the exact contract in [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and amended [RFC #577](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586). `generation-and-incremental` is the only active phase. Evidence-path query and thin delivery remain blocked.
 
-Its accepted exit gate includes full-rebuild-equivalent add/change/delete/rename/worktree behavior. Cross-artifact transactional publication was intentionally left out of PR #590; the successor proposal must define its exact artifact boundary and seek approval before implementation, and the deletion phase must not be represented as having delivered it.
+The phase deletes 15 predecessor files / 3,839 LOC, transfers three mixed query files to `evidence-path-query` and `doctor.ts` to `thin-delivery`, and permits at most six focused replacements / 2,200 production LOC. It must finish net `<= -1,500` LOC at `<=130` production files / `<=67,454` LOC, add no runtime or development dependency, and reduce the npm package to `<=296` files / `<=2,700,000` unpacked bytes without increasing packed bytes.
+
+Real incrementality is warm-session and memory-only. A cold no-op parses and publishes nothing; a cold changed process performs and discloses a full canonical reconcile. `graph.json` is the sole authoritative artifact and commits last. Diagnostic sidecars are derived/non-blocking. No disk fact cache, versioned snapshot store, WAL, journal, or transaction framework may be added.
+
+Clean-equivalent add/change/delete/rename/control/ignore/recognized-unsupported-file/symlink/worktree behavior, zero stale facts, publication fault/concurrency safety, and real reuse are mandatory. Only successful `.ts/.tsx/.js/.jsx` indexing determines completeness; supported failures are incomplete, unsupported files are informational, and safety exclusions remain separate. Warm index-stage median must be at most 50% of clean, clean generation may regress at most 10%, and user-visible warm leaf-edit p50/p95 must be at most 75%/80% of clean across at least 20 measured trials on both the fixed fixture and a pinned held-out repository. If those gates fail, the phase simplifies to one honest full reconcile instead of keeping unused incremental code.
+
+Governance activation is not implementation evidence. All deletion, correctness, performance, package, CI, review, and completion gates remain pending.
 
 ## Next — dependency-ordered replacement
 
-Only one technical phase may be active at a time. With the deletion complete and no phase active, the remaining order is:
+Only one technical phase may be active at a time. After the active generation/incremental phase passes, the remaining order is:
 
-1. Full-rebuild-equivalent incremental refresh.
-2. Generic evidence-path retrieval and deletion of the context/governance stack.
-3. Thin MCP, CLI, Claude Code, and Codex delivery.
-4. Move evaluation tooling outside runtime and reduce the npm package.
-5. Publish a beta under npm tag `next` for external validation.
+1. Generic evidence-path retrieval and deletion of the context/governance stack.
+2. Thin MCP, CLI, Claude Code, and Codex delivery.
+3. Move evaluation tooling outside runtime and reduce the npm package.
+4. Publish a beta under npm tag `next` for external validation.
 
 Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
 

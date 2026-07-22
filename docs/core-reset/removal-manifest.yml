@@ -21,20 +21,20 @@ review:
   unowned_files: 0
   overlapping_files: 0
   disposition_changes: 4
-  amendment: Source lists remain complete and de-overlapped. Issue #588 amends four guaranteed extraction orphans from prior keep/rebuild ownership to the active delete contract because no surviving path uses them after legacy extraction is removed.
+  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Approved issue #592 transfers stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery before generation-and-incremental activation; all four remain rebuild-owned, so disposition_changes stays 4.'
 
 current:
   updated_at: 2026-07-22
   completed_phase: legacy-extraction
-  active_phase: null
-  ready_phase: generation-and-incremental
-  base_commit: 9a762d0a4e10a0ae210ba3f53bb1d4468367e81e
+  active_phase: generation-and-incremental
+  ready_phase: null
+  base_commit: 8886a0299ee30765ce149ca7ad5d1779496b78b5
   completed_phase_commit: d46031eed7b0cf2d8bb7b7b6267a51322d9e2490
   production_typescript_files: 139
   production_typescript_loc: 68954
-  production_loc_added: 815
-  production_loc_removed: 23400
-  production_loc_net: -22585
+  production_loc_added: 0
+  production_loc_removed: 0
+  production_loc_net: 0
 
 targets:
   production_typescript_files_max: 80
@@ -254,31 +254,101 @@ items:
 
   - id: generation-and-incremental
     disposition: rebuild
-    status: planned
+    status: in_progress
     sources:
       - src/infrastructure/generate.ts
-      - src/infrastructure/generation-policy.ts
-      - src/infrastructure/indexing-manifest.ts
-      - src/infrastructure/doctor.ts
-      - src/infrastructure/refresh-lease.ts
-      - src/infrastructure/watcher-state.ts
       - src/contracts/generation-policy.ts
+      - src/infrastructure/generation-policy.ts
       - src/contracts/indexing.ts
-      - src/contracts/watcher-state.ts
-      - src/core/pipeline/stage.ts
-      - src/pipeline/detect.ts
-      - src/pipeline/manifest.ts
       - src/pipeline/indexing-generation.ts
       - src/pipeline/indexing-outcomes.ts
+      - src/infrastructure/indexing-manifest.ts
+      - src/pipeline/detect.ts
+      - src/pipeline/manifest.ts
+      - src/infrastructure/refresh-lease.ts
+      - src/contracts/watcher-state.ts
+      - src/infrastructure/watcher-state.ts
       - src/infrastructure/watch.ts
       - src/infrastructure/background-auto-refresh.ts
-      - src/runtime/freshness.ts
       - src/shared/graph-build-freshness.ts
+    transferred_sources:
+      - src/core/pipeline/stage.ts
+      - src/runtime/freshness.ts
       - src/shared/source-discovery.ts
-    destination: src/application/generate-index.ts, src/application/update-index.ts, and focused adapters
-    notes: 'Ready after the combined legacy and non-code deletion passed. This phase is planned, not In progress; implementation requires a separately accepted work-item contract and explicit owner activation, while retrieval and delivery remain blocked.'
-    remove_when: Add, change, delete, rename, worktree, and full-rebuild equivalence tests pass.
-    exit_gate: madar generate uses one engine and incremental output equals a clean rebuild.
+      - src/infrastructure/doctor.ts
+    replacement_sources:
+      - src/application/generate-index.ts
+      - src/application/update-index.ts
+      - src/domain/index/build-state.ts
+      - src/adapters/filesystem/source-catalog.ts
+      - src/adapters/filesystem/index-store.ts
+      - src/infrastructure/watch-index.ts
+    destination: one source catalog, canonical TypeScript index session, directed multigraph, and authoritative graph.json
+    production_file_budget:
+      added_max: 6
+      removed_min: 15
+    production_loc_budget:
+      added_max: 2200
+      removed_min: 3839
+      net_max: -1500
+    runtime_dependency_budget:
+      added_max: 0
+      removed_min: 0
+    development_dependency_budget:
+      added_max: 0
+      removed_min: 0
+    final_source_budget:
+      files_max: 130
+      loc_max: 67454
+    npm_package_budget:
+      files_max: 296
+      unpacked_bytes_max: 2700000
+      packed_bytes_delta_max: 0
+    performance_budget:
+      cold_noop_median_ratio_max: 0.20
+      warm_index_median_ratio_max: 0.50
+      warm_e2e_p50_ratio_max: 0.75
+      warm_e2e_p95_ratio_max: 0.80
+      clean_generation_regression_ratio_max: 0.10
+      measured_trials_min: 20
+    completeness_contract:
+      supported_extensions:
+        - .ts
+        - .tsx
+        - .js
+        - .jsx
+      supported_success_determines_completeness: true
+      supported_failure: incomplete_with_exact_file_and_reason
+      recognized_unsupported: informational
+      expected_policy_exclusions: informational
+      safety_exclusions: separate_and_never_indexed
+    equivalence_mutations:
+      - no_op
+      - add
+      - private_leaf_change
+      - exported_signature_change
+      - delete
+      - rename
+      - compiler_control
+      - madarignore
+      - gitignore
+      - recognized_unsupported_add_delete_rename
+      - allowed_and_rejected_symlink
+      - linked_worktree
+    publication_contract:
+      authoritative_artifact: graph.json
+      commit_marker: graph.json
+      derived_diagnostics_non_blocking: true
+      persistent_fact_cache: forbidden
+      versioned_snapshot_store: forbidden
+    activation:
+      issue: https://github.com/mohanagy/madar/issues/592
+      owner_approval: https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506
+      rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586
+      protected_base: 8886a0299ee30765ce149ca7ad5d1779496b78b5
+    notes: 'Approved in #592 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5. Real incrementality is warm-session and memory-only; a cold changed process performs and discloses a full canonical reconcile. graph.json is the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. No disk fact cache, versioned snapshot store, WAL, journal, rollback manager, or generalized transaction subsystem is allowed. Evidence-path query and thin delivery remain blocked.'
+    remove_when: Add, change, delete, rename, compiler-control, ignore-policy, recognized-unsupported-file, symlink, and linked-worktree updates equal clean generation; supported-JS/TS completeness semantics, warm reuse, and end-to-end performance pass; graph-last failure/concurrency gates pass; all 15 predecessors are absent; and accepted source/package budgets pass.
+    exit_gate: One source catalog and warm in-memory index session publish clean-equivalent graph.json state materially faster, with honest cold reconciliation, zero stale facts, no mixed authoritative generation, and no predecessor or persistent-cache path.
 
   - id: evidence-path-query
     disposition: rebuild
@@ -289,6 +359,18 @@ items:
       - src/runtime/context-pack.ts
       - src/runtime/routing-debug.ts
       - src/runtime/value-per-token.ts
+      - src/core/pipeline/stage.ts
+      - src/runtime/freshness.ts
+      - src/shared/source-discovery.ts
+    transferred_sources:
+      - src/core/pipeline/stage.ts
+      - src/runtime/freshness.ts
+      - src/shared/source-discovery.ts
+    preserve:
+      - SourceDomain
+      - classifySourceDomain
+      - isPollutedSourcePath
+      - private helpers required only by those query-classification exports
     destination: src/domain/query/** and src/application/retrieve-context.ts
     remove_when: Held-out one-call correctness and efficiency gates pass.
     exit_gate: Generic anchor, traversal, ranking, and evidence slicing need no repository-specific rules.
@@ -337,6 +419,9 @@ items:
       - src/shared/env.ts
       - src/shared/package-metadata.ts
       - src/shared/shell.ts
+      - src/infrastructure/doctor.ts
+    transferred_sources:
+      - src/infrastructure/doctor.ts
     destination: src/adapters/cli/** and src/adapters/mcp/**
     remove_when: Startup, MCP contract, Claude, Codex, uninstall, and worktree activation tests pass.
     exit_gate: No more than five MCP tools and the accepted narrow CLI ship with lazy loading.
