@@ -4,13 +4,15 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { readSourceFileHash } from '../adapters/filesystem/source-catalog.js'
+import { CANONICAL_TYPESCRIPT_EXTENSIONS } from '../adapters/typescript/index.js'
 import type { ContextPackExecutionPhase, ContextPackRoutingDebug, ContextPackTaskKind, ImplementationPackGuidance } from '../contracts/context-pack.js'
 import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
+import { readBuildState } from '../domain/index/build-state.js'
 import type { ContextSessionDiagnostics, ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
 import { buildAnswerReadyPackSchema, buildExplainPackPayloadCore } from './context-pack-command.js'
 import { CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH, isMadarProjectHook } from './install.js'
-import { CODE_EXTENSIONS, MANIFEST_METADATA_KEY } from '../pipeline/detect.js'
 import { loadBenchmarkQuestions } from './benchmark/questions.js'
 import {
   benchmarkIsolationEnabled,
@@ -2147,31 +2149,11 @@ function normalizeSuggestedGraphScopeForReport(
   )
 }
 
-function loadGraphBackedManifestFingerprints(graphPath: string): Map<string, number> {
-  const manifestPath = join(dirname(resolve(graphPath)), 'manifest.json')
-  if (!existsSync(manifestPath)) {
-    return new Map()
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown
-  } catch {
-    throw new Error(`Compare baseline manifest is invalid: ${manifestPath}`)
-  }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`Compare baseline manifest is invalid: ${manifestPath}`)
-  }
-
-  const manifestEntries = Object.entries(parsed as Record<string, unknown>).filter(([key]) => key !== MANIFEST_METADATA_KEY)
-  for (const [, fingerprint] of manifestEntries) {
-    if (typeof fingerprint !== 'number' || !Number.isFinite(fingerprint)) {
-      throw new Error(`Compare baseline manifest is invalid: ${manifestPath}`)
-    }
-  }
-
-  return new Map(manifestEntries.map(([filePath, fingerprint]) => [resolve(filePath), fingerprint as number]))
+function loadGraphBackedManifestFingerprints(graphPath: string): Map<string, string> {
+  const graph = loadGraphArtifact(graphPath)
+  const state = readBuildState(graph)
+  if (!state) return new Map()
+  return new Map(state.sources.supported.map((entry) => [resolve(state.source_root.root_path, entry.path), entry.hash]))
 }
 
 function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
@@ -2180,7 +2162,7 @@ function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
 }
 
 function isReadableCorpusPath(filePath: string): boolean {
-  return CODE_EXTENSIONS.has(extname(filePath).toLowerCase())
+  return CANONICAL_TYPESCRIPT_EXTENSIONS.has(extname(filePath).toLowerCase())
 }
 
 function collectGraphBackedCorpusFiles(graph: KnowledgeGraph, projectRoot: string): string[] {
@@ -2190,7 +2172,7 @@ function collectGraphBackedCorpusFiles(graph: KnowledgeGraph, projectRoot: strin
     .map((sourceFile) => resolve(projectRoot, sourceFile))
 }
 
-function collectBaselineCorpusFiles(graph: KnowledgeGraph, projectRoot: string, manifestFingerprints: ReadonlyMap<string, number>): string[] {
+function collectBaselineCorpusFiles(graph: KnowledgeGraph, projectRoot: string, manifestFingerprints: ReadonlyMap<string, string>): string[] {
   if (manifestFingerprints.size > 0) {
     return [...manifestFingerprints.keys()]
   }
@@ -2599,7 +2581,7 @@ function addBaselineCorpusFile(
   files: Map<string, string>,
   candidatePath: string,
   realProjectRoot: string,
-  manifestFingerprints: ReadonlyMap<string, number>,
+  manifestFingerprints: ReadonlyMap<string, string>,
 ): void {
   const expectsTextContent = isReadableCorpusPath(candidatePath)
   const expectedFingerprint = manifestFingerprints.get(resolve(candidatePath))
@@ -2622,8 +2604,7 @@ function addBaselineCorpusFile(
   }
 
   if (expectedFingerprint !== undefined) {
-    const modifiedAt = statSync(candidatePath).mtimeMs
-    if (Math.round(modifiedAt) !== expectedFingerprint) {
+    if (readSourceFileHash(candidatePath) !== expectedFingerprint) {
       throw new Error(`Compare baseline graph-backed file is out of sync with the saved graph snapshot: ${candidatePath}`)
     }
   }
@@ -2642,7 +2623,7 @@ function addBaselineCorpusFile(
 }
 
 function readBaselineCorpusFile(filePath: string): string | null {
-  if (!CODE_EXTENSIONS.has(extname(filePath).toLowerCase()) || statSync(filePath).size > MAX_TEXT_BYTES) {
+  if (!CANONICAL_TYPESCRIPT_EXTENSIONS.has(extname(filePath).toLowerCase()) || statSync(filePath).size > MAX_TEXT_BYTES) {
     return null
   }
   return readFileSync(filePath, 'utf8').trimEnd()

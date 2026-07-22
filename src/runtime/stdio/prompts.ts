@@ -1,4 +1,4 @@
-import { existsSync, statSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 
 import { godNodes, suggestQuestions } from '../../pipeline/analyze.js'
 import { buildCommunityLabels } from '../../pipeline/community-naming.js'
@@ -6,6 +6,7 @@ import { MCP_PROMPTS, type McpPromptDefinition } from './definitions.js'
 import { communitiesFromGraph, loadGraph } from '../serve.js'
 import { validateGraphPath } from '../../shared/security.js'
 import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
+import { fileIdentity } from '../../shared/atomic-file.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -39,15 +40,19 @@ interface PromptHelpers {
   maxCompletionValues: number
 }
 
-const promptContextCache = new Map<string, { mtimeMs: number; size: number; context: PromptContext }>()
+const promptContextCache = new Map<string, { identity: string; context: PromptContext }>()
 
 function formatCount(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`
 }
 
-export function readStoredCommunityLabels(graphPath: string): Record<number, string> {
+export function readStoredCommunityLabels(graphPath: string, graph?: ReturnType<typeof loadGraph>): Record<number, string> {
   const safeGraphPath = validateGraphPath(graphPath)
-  const rawLabels = loadGraph(safeGraphPath).graph.community_labels
+  return storedCommunityLabels(graph ?? loadGraph(safeGraphPath))
+}
+
+function storedCommunityLabels(graph: ReturnType<typeof loadGraph>): Record<number, string> {
+  const rawLabels = graph.graph.community_labels
   if (!rawLabels || typeof rawLabels !== 'object' || Array.isArray(rawLabels)) {
     return {}
   }
@@ -79,15 +84,12 @@ function nodeCommunityMap(communities: ReturnType<typeof communitiesFromGraph>):
 
 function loadPromptContext(graphPath: string): PromptContext {
   const safeGraphPath = validateGraphPath(graphPath)
-  const currentGraphStat = statSync(safeGraphPath)
+  const identity = fileIdentity(safeGraphPath)
   const cached = promptContextCache.get(safeGraphPath)
-  if (cached && cached.mtimeMs === currentGraphStat.mtimeMs && cached.size === currentGraphStat.size) {
-    return cached.context
-  }
-
+  if (cached?.identity === identity) return cached.context
   const graph = loadGraph(safeGraphPath)
   const communities = communitiesFromGraph(graph)
-  const storedLabels = readStoredCommunityLabels(safeGraphPath)
+  const storedLabels = storedCommunityLabels(graph)
   const communityLabels = {
     ...buildCommunityLabels(graph, communities),
     ...storedLabels,
@@ -116,11 +118,7 @@ function loadPromptContext(graphPath: string): PromptContext {
       .filter((question): question is string => Boolean(question)),
   }
 
-  promptContextCache.set(safeGraphPath, {
-    mtimeMs: currentGraphStat.mtimeMs,
-    size: currentGraphStat.size,
-    context,
-  })
+  promptContextCache.set(safeGraphPath, { identity, context })
   return context
 }
 

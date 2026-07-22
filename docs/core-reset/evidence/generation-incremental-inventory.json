@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "issue": "https://github.com/mohanagy/madar/issues/592",
+  "protected_base": "8886a0299ee30765ce149ca7ad5d1779496b78b5",
+  "implementation_commit": "1be24dc45a5f07c352c74fc374feb95a9440df8e",
+  "production": {
+    "typescript_files": 130,
+    "typescript_loc": 66418,
+    "loc_added": 2190,
+    "loc_removed": 4726,
+    "loc_net": -2536,
+    "predecessor_files_removed": 15,
+    "predecessor_loc_removed": 3839,
+    "replacement_files": 6,
+    "replacement_loc": 1484,
+    "runtime_dependencies_added": 0,
+    "development_dependencies_added": 0
+  },
+  "package": {
+    "command": "npm pack --dry-run --json",
+    "name": "@lubab/madar",
+    "version": "0.32.0",
+    "files": 276,
+    "packed_bytes": 572143,
+    "unpacked_bytes": 2699851,
+    "shasum": "93b79f9d81f193af3c3d6e45159eae56fc9523a9",
+    "integrity": "sha512-7BNI5MBA92VWPpY0/CzZ2feSYRc+kCUcUw5IIpLdg2rqRCtEANIMgmkBFXI0L7NufrpbVTc7xfBr6rWRtNijmg=="
+  },
+  "budgets": {
+    "production_files_pass": true,
+    "production_loc_pass": true,
+    "production_delta_pass": true,
+    "replacement_surface_pass": true,
+    "package_files_pass": true,
+    "package_unpacked_bytes_pass": true,
+    "package_packed_bytes_pass": true,
+    "dependency_additions_pass": true
+  }
+}

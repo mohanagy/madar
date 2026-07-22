@@ -1,7 +1,7 @@
-import { statSync } from 'node:fs'
 import { basename, dirname, extname, relative, sep } from 'node:path'
 
 import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { fileIdentity } from './atomic-file.js'
 
 export type DiscoveryExclusionKind = 'sensitive' | 'unreadable'
 
@@ -91,22 +91,9 @@ const CREDENTIAL_STORE_DIRECTORY_NAMES = new Set([
   '.ssh',
 ])
 const GENERIC_RELEVANCE_TOKENS = new Set([
-  'app',
-  'apps',
-  'code',
-  'config',
-  'data',
-  'file',
-  'files',
-  'lib',
-  'libs',
-  'package',
-  'packages',
-  'project',
-  'repo',
-  'src',
-  'test',
-  'tests',
+  'and', 'app', 'apps', 'code', 'config', 'data', 'does', 'file', 'files', 'flow', 'from', 'how', 'into',
+  'lib', 'libs', 'package', 'packages', 'path', 'project', 'repo', 'repository', 'src', 'test', 'tests',
+  'the', 'this', 'through', 'what', 'where', 'with',
 ])
 const RELEVANCE_TOKEN_ALIASES: Readonly<Record<string, string>> = {
   authentication: 'auth',
@@ -130,13 +117,12 @@ const ENVIRONMENT_CONFIG_INTENT_PATTERN = /(?:^|[^a-z0-9])\.env(?:[^a-z0-9]|$)|\
 const MAX_STORED_EXCLUSIONS = 10_000
 const MAX_METADATA_CACHE_ENTRIES = 16
 const discoveryMetadataCache = new Map<string, {
-  mtimeMs: number
-  size: number
+  identity: string
   value: DiscoverySafetyMetadata | null
 }>()
 
 function toPosixPath(path: string): string {
-  return path.split(sep).join('/')
+  return path.replaceAll('\\', '/').split(sep).join('/')
 }
 
 export function localDiscoveryPath(root: string, path: string): string {
@@ -209,7 +195,6 @@ export function sensitiveArtifactReason(
 }
 
 export function summarizeDiscoveryExclusions(exclusions: readonly DiscoveryExclusion[]): DiscoverySafetySummary {
-  const reasons: DiscoverySafetySummary['reasons'] = {}
   let sensitive = 0
   let unreadable = 0
 
@@ -219,14 +204,13 @@ export function summarizeDiscoveryExclusions(exclusions: readonly DiscoveryExclu
     } else {
       unreadable += 1
     }
-    reasons[exclusion.reason] = (reasons[exclusion.reason] ?? 0) + 1
   }
 
   return {
     total: exclusions.length,
     sensitive,
     unreadable,
-    reasons,
+    reasons: reasonBuckets(exclusions),
   }
 }
 
@@ -289,18 +273,18 @@ export function parseDiscoverySafetyMetadata(value: unknown): DiscoverySafetyMet
 }
 
 export function readDiscoverySafetyMetadata(graphPath: string): DiscoverySafetyMetadata | null {
-  let stats: ReturnType<typeof statSync>
+  let identity: string
   try {
-    stats = statSync(graphPath)
+    identity = fileIdentity(graphPath)
   } catch {
     return null
   }
   const cached = discoveryMetadataCache.get(graphPath)
-  if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
+  if (cached?.identity === identity) {
     return cached.value
   }
   const value = parseDiscoverySafetyMetadata(loadGraphArtifact(graphPath).graph.discovery_safety)
-  discoveryMetadataCache.set(graphPath, { mtimeMs: stats.mtimeMs, size: stats.size, value })
+  discoveryMetadataCache.set(graphPath, { identity, value })
   while (discoveryMetadataCache.size > MAX_METADATA_CACHE_ENTRIES) {
     const oldestKey = discoveryMetadataCache.keys().next().value as string | undefined
     if (!oldestKey) break
@@ -309,7 +293,7 @@ export function readDiscoverySafetyMetadata(graphPath: string): DiscoverySafetyM
   return value
 }
 
-function relevanceTokens(value: string): Set<string> {
+export function relevanceTokens(value: string): Set<string> {
   return new Set(
     value
       .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -320,7 +304,7 @@ function relevanceTokens(value: string): Set<string> {
   )
 }
 
-function tokenSetsIntersect(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+export function tokenSetsIntersect(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
   for (const token of left) {
     if (right.has(token)) {
       return true
@@ -330,7 +314,7 @@ function tokenSetsIntersect(left: ReadonlySet<string>, right: ReadonlySet<string
 }
 
 function normalizedDirectory(path: string): string {
-  return toPosixPath(dirname(path)).replace(/^\.\//, '').replace(/^\/$/, '')
+  return dirname(toPosixPath(path)).replace(/^\.\//, '').replace(/^\/$/, '')
 }
 
 function directoryScopeSpecificEnough(path: string): boolean {
@@ -352,22 +336,42 @@ function sharesOwnerDirectory(exclusionPath: string, ownerPaths: readonly string
   })
 }
 
+export function reasonBuckets<Reason extends string>(
+  entries: readonly { reason: Reason }[],
+): Partial<Record<Reason, number>> {
+  const reasons: Partial<Record<Reason, number>> = {}
+  for (const entry of entries) reasons[entry.reason] = (reasons[entry.reason] ?? 0) + 1
+  return reasons
+}
+
+export function relevantPathEntries<Entry extends { path: string }>(
+  entries: readonly Entry[],
+  input: { question?: string; coveredWorkflowOwners?: readonly string[] },
+  relevanceText: (entry: Entry) => string = (entry) => entry.path,
+): Entry[] {
+  const questionTokens = relevanceTokens(input.question ?? '')
+  const ownerPaths = (input.coveredWorkflowOwners ?? []).map(toPosixPath)
+  const ownerTokens = relevanceTokens(ownerPaths.join(' '))
+  return entries.filter((entry) => {
+    const entryTokens = relevanceTokens(relevanceText(entry))
+    return tokenSetsIntersect(entryTokens, questionTokens)
+      || tokenSetsIntersect(entryTokens, ownerTokens)
+      || sharesOwnerDirectory(entry.path, ownerPaths)
+  })
+}
+
 export function relevantDiscoveryExclusions(
   metadata: DiscoverySafetyMetadata,
   input: { question?: string; coveredWorkflowOwners?: readonly string[] },
 ): RelevantDiscoveryExclusions {
-  const questionTokens = relevanceTokens(input.question ?? '')
-  const ownerPaths = (input.coveredWorkflowOwners ?? []).map(toPosixPath)
-  const ownerTokens = relevanceTokens(ownerPaths.join(' '))
-  const relevantEntries = metadata.exclusions.filter((exclusion) => {
-    if (exclusion.reason === 'environment_file' && !ENVIRONMENT_CONFIG_INTENT_PATTERN.test(input.question ?? '')) {
-      return false
-    }
-    const exclusionTokens = relevanceTokens(`${exclusion.path} ${exclusion.reason}`)
-    return tokenSetsIntersect(exclusionTokens, questionTokens)
-      || tokenSetsIntersect(exclusionTokens, ownerTokens)
-      || sharesOwnerDirectory(exclusion.path, ownerPaths)
-  })
+  const candidates = metadata.exclusions.filter((exclusion) => (
+    exclusion.reason !== 'environment_file' || ENVIRONMENT_CONFIG_INTENT_PATTERN.test(input.question ?? '')
+  ))
+  const relevantEntries = relevantPathEntries(
+    candidates,
+    input,
+    (exclusion) => `${exclusion.path} ${exclusion.reason}`,
+  )
   const relevantSummary = summarizeDiscoveryExclusions(relevantEntries)
 
   return {

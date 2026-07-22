@@ -1,11 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { CANONICAL_INDEX_FORMAT_VERSION } from '../../src/contracts/generation-policy.js'
+import { CANONICAL_INDEX_FORMAT_VERSION } from '../../src/domain/index/build-state.js'
+import { generateIndex } from '../../src/application/generate-index.js'
 import { compareRefs, loadOrBuildSnapshot, type CompareRefsDependencies, type SnapshotDependencies } from '../../src/infrastructure/time-travel.js'
 import type { TimeTravelResult } from '../../src/runtime/time-travel.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
@@ -43,25 +45,38 @@ function createTestRoot(name: string): string {
   return root
 }
 
-function writeGraphArtifacts(root: string, relativeDir: string, schemaVersion = 2): { graphPath: string; reportPath: string } {
-  const outputDir = join(root, relativeDir, 'out')
-  mkdirSync(outputDir, { recursive: true })
-  const graphPath = join(outputDir, 'graph.json')
-  const reportPath = join(outputDir, 'GRAPH_REPORT.md')
-  writeCanonicalGraphFixture(graphPath, {
-    schema_version: schemaVersion,
-    nodes: [],
-    edges: [],
-  })
-  writeFileSync(reportPath, '# report\n')
-  return { graphPath, reportPath }
+function writeGraphArtifacts(root: string, relativeDir: string): { graphPath: string; reportPath: string } {
+  const sourceRoot = join(root, relativeDir)
+  mkdirSync(sourceRoot, { recursive: true })
+  writeFileSync(join(sourceRoot, 'main.ts'), 'export const snapshot = true\n')
+  const generated = generateIndex(sourceRoot)
+  return { graphPath: generated.graphPath, reportPath: generated.reportPath }
 }
 
-function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2): void {
+function writeCachedSnapshot(root: string, commitSha: string): void {
+  const snapshotDir = join(root, 'out', 'time-travel', 'snapshots', commitSha)
+  const stagingDir = join(root, `.snapshot-source-${commitSha}`)
+  const generated = writeGraphArtifacts(stagingDir, '.')
+  mkdirSync(snapshotDir, { recursive: true })
+  const graphPath = join(snapshotDir, 'graph.json')
+  copyFileSync(generated.graphPath, graphPath)
+  copyFileSync(generated.reportPath, join(snapshotDir, 'GRAPH_REPORT.md'))
+  const schemaVersion = 2
+  writeFileSync(join(snapshotDir, 'metadata.json'), JSON.stringify({
+    commitSha,
+    indexFormatVersion: CANONICAL_INDEX_FORMAT_VERSION,
+    schemaVersion,
+    graphSha256: createHash('sha256').update(readFileSync(graphPath)).digest('hex'),
+  }))
+  rmSync(stagingDir, { recursive: true, force: true })
+}
+
+function writeLegacyCachedSnapshot(root: string, commitSha: string): void {
   const snapshotDir = join(root, 'out', 'time-travel', 'snapshots', commitSha)
   mkdirSync(snapshotDir, { recursive: true })
-  writeCanonicalGraphFixture(join(snapshotDir, 'graph.json'), {
-    schema_version: schemaVersion,
+  const graphPath = join(snapshotDir, 'graph.json')
+  writeCanonicalGraphFixture(graphPath, {
+    schema_version: 2,
     nodes: [],
     edges: [],
   })
@@ -69,7 +84,8 @@ function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2)
   writeFileSync(join(snapshotDir, 'metadata.json'), JSON.stringify({
     commitSha,
     indexFormatVersion: CANONICAL_INDEX_FORMAT_VERSION,
-    schemaVersion,
+    schemaVersion: 2,
+    graphSha256: createHash('sha256').update(readFileSync(graphPath)).digest('hex'),
   }))
 }
 
@@ -123,6 +139,34 @@ describe('time travel infrastructure', () => {
     expect(result.fromCache).toBe(true)
     expect(deps.generateGraph).not.toHaveBeenCalled()
     expect(deps.git.createDetachedWorktree).not.toHaveBeenCalled()
+  })
+
+  it('rebuilds a snapshot whose graph bytes no longer match its cache receipt', async () => {
+    const rootDir = createTestRoot('cache-tampered')
+    writeCachedSnapshot(rootDir, 'cached-sha')
+    const graphPath = join(rootDir, 'out', 'time-travel', 'snapshots', 'cached-sha', 'graph.json')
+    writeCanonicalGraphFixture(graphPath, {
+      schema_version: 2,
+      nodes: [{ id: 'tampered', label: 'Tampered', source_file: 'tampered.ts', file_type: 'code' }],
+      edges: [],
+    })
+    const deps = createSnapshotDependencies(rootDir)
+
+    const result = await loadOrBuildSnapshot({ ref: 'main', refresh: false }, deps)
+
+    expect(result.fromCache).toBe(false)
+    expect(deps.generateGraph).toHaveBeenCalledTimes(1)
+  })
+
+  it('rebuilds a historical cached graph without an authenticated index build state', async () => {
+    const rootDir = createTestRoot('cache-legacy')
+    writeLegacyCachedSnapshot(rootDir, 'cached-sha')
+    const deps = createSnapshotDependencies(rootDir)
+
+    const result = await loadOrBuildSnapshot({ ref: 'main', refresh: false }, deps)
+
+    expect(result.fromCache).toBe(false)
+    expect(deps.generateGraph).toHaveBeenCalledTimes(1)
   })
 
   it('materializes a ref and builds a snapshot on cache miss', async () => {
@@ -215,6 +259,7 @@ describe('time travel infrastructure', () => {
 
     expect(deps.generateGraph).toHaveBeenCalledTimes(2)
     expect(deps.git.createDetachedWorktree).toHaveBeenCalledTimes(2)
+    expect(new Set(deps.git.createDetachedWorktree.mock.calls.map(([path]) => path)).size).toBe(2)
     expect(firstResult.fromCache).toBe(false)
     expect(refreshedResult.fromCache).toBe(false)
   })

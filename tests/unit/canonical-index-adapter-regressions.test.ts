@@ -6,7 +6,6 @@ import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { buildCanonicalTypeScriptIndex } from '../../src/adapters/typescript/index.js'
-import { canonicalTypeScriptIndexingOutcomes } from '../../src/pipeline/indexing-generation.js'
 
 const sandboxes: string[] = []
 
@@ -115,11 +114,6 @@ describe('canonical TypeScript adapter regressions', () => {
     ]))
 
     if (!file) throw new Error('expected indexed fixture file')
-    result.diagnostics = [{ id: 'canonical-index.test.info', level: 'info', message: 'informational', evidence: { file_id: file.id } }]
-    const receipt = canonicalTypeScriptIndexingOutcomes({ rootPath: root, codeFiles: [source], result })
-    expect(receipt.outcomes[0]).toMatchObject({ status: 'indexed', reason: 'indexed' })
-    expect(receipt.outcomes[0]?.diagnostics).toBeUndefined()
-    expect(receipt.diagnostics).toEqual([expect.objectContaining({ id: 'canonical-index.test.info', level: 'info' })])
   })
 
   it('keeps overloaded Nest routes and Bull job edges on coalesced method symbols', () => {

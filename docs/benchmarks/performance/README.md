@@ -1,74 +1,113 @@
-# Performance benchmark plan for `generate`, `update`, and `cluster-only`
+# Incremental experiment: mandatory stop
 
-> **Tracking issue:** [#178](https://github.com/mohanagy/madar/issues/178)
+> Tracking issue: [#592](https://github.com/mohanagy/madar/issues/592)
 
-This benchmark is a **measurement harness**, not a performance gate. Its job is to keep graph-generation regressions visible with a tiny reproducible fixture in CI and a repeatable manual flow for larger local repositories.
+The fixed 500-file experiment failed its required performance gates. That result
+triggered the issue's mandatory simplification rule: current production keeps
+the canonical full-reconciliation path and does not expose the experimental
+warm/session APIs.
 
-## What the benchmark covers
+The development-only evaluator at
+[`tools/eval/core-reset/incremental-performance.mjs`](../../../tools/eval/core-reset/incremental-performance.mjs)
+is excluded from the npm package. Its `baseline` and `candidate` modes audit or
+reproduce the stopped warm-session checkpoint. Its `shipping` mode measures
+the current cold-no-op/full-reconcile path from a clean exact-commit worktree;
+it does not invoke or claim the removed session API.
 
-The synthetic harness runs four variants on isolated fixture copies:
+## Immutable evidence
 
-1. `generate` — generation through the canonical TypeScript/JavaScript index
-2. `update-noop` — a full canonical `generate --update` with no source changes
-3. `update-changed` — a full canonical `generate --update` after mutating one code file
-4. `cluster-only` — `generate --cluster-only` after a baseline graph already exists
+| Receipt | Authenticated subject | SHA-256 |
+| --- | --- | --- |
+| [Protected base](../../core-reset/evidence/generation-incremental-protected-base-500.json) | commit `8886a0299ee30765ce149ca7ad5d1779496b78b5`, tree `48e43267adbb9d858c6540cd049b614fa35eee4a` | `eb664578ddccfcf4961b68496a4201ee665ca6b3bab6c20bc37c87c5dbc7eb8c` |
+| [Stopped candidate](../../core-reset/evidence/generation-incremental-stop-500.json) | checkpoint commit `1d3c9b6d264a5c76d212b93da7c63718cbe49b3d`, tree `6bd1ae5762afaa868d5cf6ce165b061aa290bfda` | `493a780c7d39977d3fda754ee3d9dc7891091e22aae2f8f2a877e8e7afe39b65` |
 
-`--update` is intentionally measured as a full rebuild in this phase. The benchmark does not claim per-file incremental extraction or cache-hit behavior.
+The candidate was measured while that exact tree was a dirty worktree over
+HEAD `64c4d240f7561210a8170ea629b7692f3a7ed466`. After the measurement and its
+source/distribution postcheck passed, the exact measured tree was committed as
+`1d3c9b6d264a5c76d212b93da7c63718cbe49b3d`. Git reports that checkpoint's
+tree as `6bd1ae5762afaa868d5cf6ce165b061aa290bfda`, matching the receipt.
 
-## Metrics tracked
+Both receipts use sorted canonical JSON for their SHA-256 identity. They include
+the raw 20-trial samples, three warmups, nearest-rank p50/p95, corpus and
+environment fingerprints, exact Git identities, compiled-distribution
+fingerprints, commands, and update-scope counts. No timestamp or local absolute
+path participates.
 
-Every variant records the same structured fields in `<variant>.json` and `summary.json`:
+## Decisive 500-file result
 
-- wall-clock time (`wall_clock_ms`)
-- supported and unsupported indexing counts from the canonical completeness receipt
-- graph size (`node_count`, `edge_count`, `graph_size_bytes`)
-- output size (`output_size_bytes`)
+The deterministic corpus contains exactly 500 supported TypeScript files. Its
+private leaf mutation does not change an exported surface.
 
-The benchmark reads these from structured `GenerateGraphResult` fields where possible instead of scraping human-readable terminal notes.
+| Gate | Observed | Required | Result |
+| --- | ---: | ---: | --- |
+| Clean generation p50 regression | `1.012×` | at most `1.10×` protected base | pass |
+| Cold no-op p50 / clean p50 | `0.032×` | at most `0.20×` | pass |
+| Warm no-op scope | 0 parsed, 500 reused, 0 invalidated | zero parse/invalidation/publication | pass |
+| Private-leaf scope | 1 parsed, 499 reused, 1 invalidated, closure 0 | exactly that scope | pass |
+| Warm index-stage p50 / clean index-stage p50 | `0.824×` | at most `0.50×` | **fail** |
+| Warm refresh p50 / clean generation p50 | `1.047×` | at most `0.75×` | **fail** |
+| Warm refresh p95 / clean generation p95 | `1.029×` | at most `0.80×` | **fail** |
 
-## CI-safe synthetic benchmark
+Correct invalidation scope therefore did not produce an acceptable end-to-end
+speedup. The candidate receipt has `eligible_for_acceptance: false`,
+`stop_condition.triggered: true`, and records all three failed ratios.
 
-Run the checked-in fixture benchmark from the repo root after building:
+The held-out repository run was **intentionally skipped**. Issue #592 makes the
+fixed 500-file failure decisive, so held-out timing cannot reverse the stop
+decision. This is recorded directly in
+`stop_condition.held_out.status: "intentionally_skipped"`.
+
+## Current production contract
+
+Current source is deliberately simpler:
+
+- unchanged updates may return without parsing or publishing;
+- any detected source change uses the full canonical reconcile;
+- no update-session, canonical TypeScript session, per-file AST/fact cache, or
+  `warm_incremental` production API remains.
+
+The focused performance-evidence test authenticates both receipt checksums,
+verifies that checkpoint commit `1d3c9b6…` resolves to the measured tree,
+requires the failed gates and explicit held-out skip, and scans current
+production source for the removed warm/session API names. It does not execute
+the evaluator against the current build.
+
+## Reproducing the historical timing experiment
+
+Reproduction requires separate detached worktrees for the protected base and
+the stopped checkpoint. It creates a new machine-specific receipt; it does not
+change the immutable evidence above.
 
 ```bash
-npm run build
-node docs/benchmarks/performance/run.mjs
+git worktree add --detach /tmp/madar-592-base \
+  8886a0299ee30765ce149ca7ad5d1779496b78b5
+git worktree add --detach /tmp/madar-592-checkpoint \
+  1d3c9b6d264a5c76d212b93da7c63718cbe49b3d
+
+(cd /tmp/madar-592-base && npm ci && npm run clean && npm run build)
+(cd /tmp/madar-592-checkpoint && npm ci && npm run clean && npm run build)
+
+cd /tmp/madar-592-checkpoint
+node tools/eval/core-reset/incremental-performance.mjs \
+  --mode baseline \
+  --dist-root /tmp/madar-592-base/dist/src \
+  --subject-worktree /tmp/madar-592-base \
+  --fixture-files 500 \
+  --warmups 3 \
+  --trials 20 \
+  --output /tmp/madar-592-baseline.json
+
+node tools/eval/core-reset/incremental-performance.mjs \
+  --mode candidate \
+  --dist-root ./dist/src \
+  --subject-worktree . \
+  --fixture-files 500 \
+  --warmups 3 \
+  --trials 20 \
+  --baseline-receipt /tmp/madar-592-baseline.json \
+  --output /tmp/madar-592-candidate.json
 ```
 
-Artifacts land under `docs/benchmarks/performance/results/<timestamp>/`:
-
-1. one JSON file per variant
-2. `summary.json` with the full matrix
-3. the copied per-variant workspaces used for the run
-
-This fixture is intentionally small. It is for **schema and path coverage**, not for proving absolute throughput on real repositories.
-
-## Manual large-repo benchmark flow
-
-For a local large repository, point the same harness at another workspace:
-
-```bash
-npm run build
-MADAR_PERF_FIXTURE=/absolute/path/to/repo \
-MADAR_PERF_RESULTS_DIR=/absolute/path/to/output-dir \
-node docs/benchmarks/performance/run.mjs
-```
-
-Use the synthetic fixture in CI, and use the local-repo run when you want realistic wall-clock measurements for:
-
-- initial `generate`
-- full canonical `update` after a narrow change
-- `cluster-only` refresh cost
-- canonical full-build cost
-
-## Interpreting results
-
-- Supported counts cover `.ts`, `.tsx`, `.js`, and `.jsx`. Recognized files outside that scope remain unsupported and contribute no graph facts.
-- `update-noop` still rebuilds the canonical graph. Only `cluster-only` skips source indexing.
-- Compare `graph_size_bytes` and `output_size_bytes` together: the graph file can stay flat while the total output directory still grows.
-
-## Non-goals
-
-- Do not turn this into a strict perf threshold in CI.
-- Do not claim broad performance wins from the synthetic fixture alone.
-- Do not optimize generation paths without a before/after measurement from this harness or a real local workspace run.
+Exit status `0` means all encoded gates passed, `2` means a valid receipt
+was written but at least one gate failed, and `1` means the measurement was
+invalid. The authoritative checked-in candidate result exited with status `2`.

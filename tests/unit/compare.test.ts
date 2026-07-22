@@ -3,7 +3,15 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 import { vi } from 'vitest'
 
+import { loadGraphArtifact, writeGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
+import { buildSourceCatalog, readSourceFileHash } from '../../src/adapters/filesystem/source-catalog.js'
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
+import {
+  attachBuildState,
+  createSourceSnapshot,
+  INDEX_BUILD_STATE_VERSION,
+  INDEX_ENGINE_ID,
+} from '../../src/domain/index/build-state.js'
 import {
   assessBenchmarkReadinessFromRetrieveResult,
   buildBaselinePromptPack,
@@ -22,7 +30,6 @@ import {
 import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
 import { claudeInstall } from '../../src/infrastructure/install.js'
 import { parsePromptRunnerOutput } from '../../src/infrastructure/prompt-runner.js'
-import { saveManifest } from '../../src/pipeline/manifest.js'
 import * as retrieveRuntime from '../../src/runtime/retrieve.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
@@ -155,17 +162,52 @@ function writeGraphFixture(graph: KnowledgeGraph, graphFixtureRoot: string = GRA
   return graphPath
 }
 
-function writeManifestFixture(
+function writeBuildStateFixture(
   projectRoot: string = PROJECT_FIXTURE_ROOT,
   graphFixtureRoot: string = GRAPH_FIXTURE_ROOT,
   codePaths?: string[],
 ): string {
-  const manifestPath = join(graphFixtureRoot, 'manifest.json')
+  const graphPath = join(graphFixtureRoot, 'graph.json')
   const defaultCodePaths = Object.keys(makeProjectFiles())
     .filter((relativePath) => relativePath.endsWith('.ts'))
     .map((relativePath) => join(projectRoot, relativePath))
-  saveManifest({ code: codePaths ?? defaultCodePaths }, manifestPath)
-  return manifestPath
+  const supported = (codePaths ?? defaultCodePaths).map((path) => ({
+    path: relative(projectRoot, path).replaceAll('\\', '/'),
+    hash: readSourceFileHash(path) ?? '',
+  })).sort((left, right) => left.path.localeCompare(right.path))
+  const catalog = buildSourceCatalog(projectRoot)
+  const graph = loadGraphArtifact(graphPath)
+  attachBuildState(graph, {
+    version: INDEX_BUILD_STATE_VERSION,
+    engine_id: INDEX_ENGINE_ID,
+    policy: catalog.policy,
+    sources: createSourceSnapshot({ supported, controls: catalog.snapshot.controls, unsupported: [] }),
+    source_root: catalog.sourceRoot,
+    corpus: {
+      supported_files: supported.length,
+      unsupported_files: 0,
+      total_words: catalog.totalWords,
+      warning: catalog.warning,
+    },
+    completeness: {
+      summary: {
+        state: 'complete',
+        candidates: supported.length,
+        counts: {
+          indexed: supported.length,
+          indexed_with_warnings: 0,
+          skipped_by_policy: 0,
+          unsupported: 0,
+          failed: 0,
+        },
+        reason_buckets: { indexed: supported.length },
+        capability_buckets: { 'builtin:index:typescript': supported.length },
+      },
+      supported_failures: [],
+    },
+  })
+  writeGraphArtifact(graph, graphPath)
+  return graphPath
 }
 
 function makeClaudeStructuredCompareStdout(options: {
@@ -4407,7 +4449,7 @@ describe('compare runtime', () => {
       'export const manifestOnlyBoundary = "included through canonical manifest"\n',
       'utf8',
     )
-    writeManifestFixture(PROJECT_FIXTURE_ROOT, GRAPH_FIXTURE_ROOT, [authPath, manifestOnlyPath])
+    writeBuildStateFixture(PROJECT_FIXTURE_ROOT, GRAPH_FIXTURE_ROOT, [authPath, manifestOnlyPath])
 
     const result = generateCompareArtifacts({
       graphPath,
@@ -4438,7 +4480,7 @@ describe('compare runtime', () => {
     const graphOnlyPath = join(PROJECT_FIXTURE_ROOT, 'src', 'graph-only.ts')
     writeFileSync(graphOnlyPath, 'export const graphOnlyBoundary = "exclude when manifest exists"\n', 'utf8')
     const graphPath = writeGraphFixture(graph)
-    writeManifestFixture(PROJECT_FIXTURE_ROOT, GRAPH_FIXTURE_ROOT, [
+    writeBuildStateFixture(PROJECT_FIXTURE_ROOT, GRAPH_FIXTURE_ROOT, [
       join(PROJECT_FIXTURE_ROOT, 'src', 'auth.ts'),
     ])
 
@@ -4478,7 +4520,7 @@ describe('compare runtime', () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
-    writeManifestFixture()
+    writeBuildStateFixture()
     const driftedPath = join(PROJECT_FIXTURE_ROOT, 'src', 'auth.ts')
     writeFileSync(driftedPath, 'export const drifted = true\n', 'utf8')
     utimesSync(driftedPath, new Date('2026-04-24T19:30:01Z'), new Date('2026-04-24T19:30:01Z'))
@@ -4495,22 +4537,22 @@ describe('compare runtime', () => {
     ).toThrow(/out of sync|graph-backed file/i)
   })
 
-  it('fails when an adjacent manifest exists but is invalid', () => {
+  it('ignores an invalid retired manifest beside an accepted graph', () => {
     const graph = makeGraph()
     writeProjectFiles()
     const graphPath = writeGraphFixture(graph)
     writeFileSync(join(GRAPH_FIXTURE_ROOT, 'manifest.json'), '{not valid json', 'utf8')
 
-    expect(() =>
-      generateCompareArtifacts({
-        graphPath,
-        question: 'how does login create a session',
-        outputDir: COMPARE_OUTPUT_ROOT,
-        execTemplate: 'claude -p "$(cat {prompt_file})"',
-        baselineMode: 'full',
-        now: new Date('2026-04-24T19:30:00Z'),
-      }),
-    ).toThrow(/manifest/i)
+    const result = generateCompareArtifacts({
+      graphPath,
+      question: 'how does login create a session',
+      outputDir: COMPARE_OUTPUT_ROOT,
+      execTemplate: 'claude -p "$(cat {prompt_file})"',
+      baselineMode: 'full',
+      now: new Date('2026-04-24T19:30:00Z'),
+    })
+    expect(readFileSync(result.reports[0]!.paths.baseline_prompt, 'utf8'))
+      .toContain('return new SessionManager().createSession(credentials.userId)')
   })
 
   it('skips oversized graph-backed text files instead of aborting compare generation', () => {

@@ -1,15 +1,17 @@
 import { execFileSync } from 'node:child_process'
+import { createHash, randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
-import { CANONICAL_INDEX_FORMAT_VERSION } from '../contracts/generation-policy.js'
+import { loadGraphArtifact, parseGraphArtifact, readGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { loadAcceptedIndex, readMatchingReport } from '../adapters/filesystem/index-store.js'
+import { generateIndex, type GenerateIndexOptions, type GenerateIndexResult } from '../application/generate-index.js'
+import { CANONICAL_INDEX_FORMAT_VERSION } from '../domain/index/build-state.js'
 import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 import { compareTimeTravelGraphs, type CompareTimeTravelGraphsOptions, type TimeTravelResult } from '../runtime/time-travel.js'
 import { validateGraphOutputPath } from '../shared/security.js'
 import { resolveMadarOutputDirectory, resolveMadarWorkspace } from '../shared/workspace.js'
-import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -19,6 +21,7 @@ interface SnapshotMetadata {
   commitSha: string
   indexFormatVersion: number | null
   schemaVersion: number | null
+  graphSha256: string | null
 }
 
 export interface SnapshotRequest {
@@ -43,7 +46,7 @@ export interface SnapshotGitDependencies {
 export interface SnapshotDependencies {
   rootDir?: string
   git?: SnapshotGitDependencies
-  generateGraph?: (rootPath: string, options: GenerateGraphOptions) => MaybePromise<GenerateGraphResult | Pick<GenerateGraphResult, 'graphPath' | 'reportPath'>>
+  generateGraph?: (rootPath: string, options: GenerateIndexOptions) => MaybePromise<GenerateIndexResult | Pick<GenerateIndexResult, 'graphPath' | 'reportPath'>>
 }
 
 export interface CompareRefsInput extends Omit<CompareTimeTravelGraphsOptions, 'fromRef' | 'toRef'> {
@@ -88,21 +91,10 @@ function snapshotBaseDir(rootDir: string): string {
   return validateGraphOutputPath(join(outDir, 'time-travel', 'snapshots'), outDir)
 }
 
-function snapshotDir(rootDir: string, commitSha: string): string {
-  return validateGraphOutputPath(join(snapshotBaseDir(rootDir), commitSha), resolveMadarOutputDirectory(rootDir))
-}
-
-function snapshotGraphPath(rootDir: string, commitSha: string): string {
-  return join(snapshotDir(rootDir, commitSha), 'graph.json')
-}
-
-function snapshotReportPath(rootDir: string, commitSha: string): string {
-  return join(snapshotDir(rootDir, commitSha), 'GRAPH_REPORT.md')
-}
-
-function snapshotMetadataPath(rootDir: string, commitSha: string): string {
-  return join(snapshotDir(rootDir, commitSha), 'metadata.json')
-}
+const snapshotDir = (rootDir: string, commitSha: string): string => validateGraphOutputPath(join(snapshotBaseDir(rootDir), commitSha), resolveMadarOutputDirectory(rootDir))
+const snapshotGraphPath = (rootDir: string, commitSha: string): string => join(snapshotDir(rootDir, commitSha), 'graph.json')
+const snapshotReportPath = (rootDir: string, commitSha: string): string => join(snapshotDir(rootDir, commitSha), 'GRAPH_REPORT.md')
+const snapshotMetadataPath = (rootDir: string, commitSha: string): string => join(snapshotDir(rootDir, commitSha), 'metadata.json')
 
 function worktreeRootDir(): string {
   // Linked-worktree artifacts live below the shared Git directory. Git cannot
@@ -114,12 +106,10 @@ function worktreeRootDir(): string {
 }
 
 function worktreePath(commitSha: string): string {
-  return join(worktreeRootDir(), `${commitSha}-${process.pid}-${Date.now()}`)
+  return join(worktreeRootDir(), `${commitSha}-${randomUUID()}`)
 }
 
-function snapshotBuildKey(rootDir: string, commitSha: string, refresh: boolean): string {
-  return `${rootDir}:${commitSha}:${refresh ? 'refresh' : 'reuse'}`
-}
+const snapshotBuildKey = (rootDir: string, commitSha: string, refresh: boolean): string => `${rootDir}:${commitSha}:${refresh ? 'refresh' : 'reuse'}`
 
 function snapshotTempDir(rootDir: string, commitSha: string): string {
   return validateGraphOutputPath(
@@ -128,9 +118,13 @@ function snapshotTempDir(rootDir: string, commitSha: string): string {
   )
 }
 
-function readGraphSchemaVersion(graphPath: string): number | null {
-  const schemaVersion = loadGraphArtifact(graphPath).graph.schema_version
-  return typeof schemaVersion === 'number' && Number.isFinite(schemaVersion) ? schemaVersion : null
+function readGraphReceipt(graphPath: string): { schemaVersion: number | null; graphSha256: string } {
+  const artifact = readGraphArtifact(graphPath)
+  const schemaVersion = parseGraphArtifact(artifact).graph.schema_version
+  return {
+    schemaVersion: typeof schemaVersion === 'number' && Number.isFinite(schemaVersion) ? schemaVersion : null,
+    graphSha256: createHash('sha256').update(artifact).digest('hex'),
+  }
 }
 
 function readSnapshotMetadata(rootDir: string, commitSha: string): SnapshotMetadata | null {
@@ -140,6 +134,9 @@ function readSnapshotMetadata(rootDir: string, commitSha: string): SnapshotMetad
       commitSha: typeof parsed.commitSha === 'string' ? parsed.commitSha : '',
       indexFormatVersion: typeof parsed.indexFormatVersion === 'number' && Number.isFinite(parsed.indexFormatVersion) ? parsed.indexFormatVersion : null,
       schemaVersion: typeof parsed.schemaVersion === 'number' && Number.isFinite(parsed.schemaVersion) ? parsed.schemaVersion : null,
+      graphSha256: typeof parsed.graphSha256 === 'string' && /^[a-f0-9]{64}$/.test(parsed.graphSha256)
+        ? parsed.graphSha256
+        : null,
     }
   } catch {
     return null
@@ -151,7 +148,13 @@ function canReuseSnapshot(rootDir: string, commitSha: string): boolean {
   if (!existsSync(graphPath)) {
     return false
   }
-  const graphSchemaVersion = readGraphSchemaVersion(graphPath)
+  // Metadata authenticates the cached bytes, while the accepted-index check
+  // rejects historical canonical graphs that predate the Core v2 build state.
+  if (loadAcceptedIndex(graphPath) === null) {
+    return false
+  }
+  let graphReceipt: ReturnType<typeof readGraphReceipt>
+  try { graphReceipt = readGraphReceipt(graphPath) } catch { return false }
   const metadata = readSnapshotMetadata(rootDir, commitSha)
   if (!metadata) {
     return false
@@ -161,11 +164,12 @@ function canReuseSnapshot(rootDir: string, commitSha: string): boolean {
     metadata.commitSha === commitSha
     && metadata.indexFormatVersion === CANONICAL_INDEX_FORMAT_VERSION
     && metadata.schemaVersion !== null
-    && metadata.schemaVersion === graphSchemaVersion
+    && metadata.schemaVersion === graphReceipt.schemaVersion
+    && metadata.graphSha256 === graphReceipt.graphSha256
   )
 }
 
-function persistSnapshot(rootDir: string, ref: string, commitSha: string, generated: Pick<GenerateGraphResult, 'graphPath' | 'reportPath'>): TimeTravelSnapshot {
+function persistSnapshot(rootDir: string, ref: string, commitSha: string, generated: Pick<GenerateIndexResult, 'graphPath' | 'reportPath'>): TimeTravelSnapshot {
   const destinationDir = snapshotDir(rootDir, commitSha)
   const tempDir = snapshotTempDir(rootDir, commitSha)
   mkdirSync(tempDir, { recursive: true })
@@ -179,16 +183,18 @@ function persistSnapshot(rootDir: string, ref: string, commitSha: string, genera
   try {
     copyFileSync(generated.graphPath, tempGraphPath)
 
-    if (generated.reportPath && existsSync(generated.reportPath)) {
+    if (generated.reportPath && readMatchingReport(generated.graphPath) !== null) {
       copyFileSync(generated.reportPath, tempReportPath)
     } else {
       rmSync(tempReportPath, { force: true })
     }
 
+    const graphReceipt = readGraphReceipt(tempGraphPath)
     writeFileSync(tempMetadataPath, JSON.stringify({
       commitSha,
       indexFormatVersion: CANONICAL_INDEX_FORMAT_VERSION,
-      schemaVersion: readGraphSchemaVersion(tempGraphPath),
+      schemaVersion: graphReceipt.schemaVersion,
+      graphSha256: graphReceipt.graphSha256,
     }))
 
     rmSync(destinationDir, { recursive: true, force: true })
@@ -209,11 +215,12 @@ function persistSnapshot(rootDir: string, ref: string, commitSha: string, genera
 
 function cachedSnapshot(rootDir: string, ref: string, commitSha: string): TimeTravelSnapshot {
   const reportPath = snapshotReportPath(rootDir, commitSha)
+  const graphPath = snapshotGraphPath(rootDir, commitSha)
   return {
     ref,
     commitSha,
-    graphPath: snapshotGraphPath(rootDir, commitSha),
-    reportPath: existsSync(reportPath) ? reportPath : null,
+    graphPath,
+    reportPath: existsSync(reportPath) && readMatchingReport(graphPath) !== null ? reportPath : null,
     fromCache: true,
   }
 }
@@ -285,7 +292,7 @@ function resolvedSnapshotDependencies(dependencies: SnapshotDependencies): Requi
       ...defaultGitDependencies(rootDir),
       ...(dependencies.git ?? {}),
     },
-    generateGraph: dependencies.generateGraph ?? generateGraph,
+    generateGraph: dependencies.generateGraph ?? generateIndex,
   }
 }
 

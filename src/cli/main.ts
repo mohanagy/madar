@@ -15,7 +15,8 @@ import { runTryCommand } from '../infrastructure/try-command.js'
 import { saveQueryResult } from '../infrastructure/save-query-result.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { federate } from '../pipeline/federate.js'
-import { generateGraph, type GenerateGraphResult, type ProgressStep } from '../infrastructure/generate.js'
+import { generateIndex, type GenerateIndexResult, type ProgressStep } from '../application/generate-index.js'
+import { updateIndex } from '../application/update-index.js'
 import { install as installHooks, status as hookStatus, uninstall as uninstallHooks } from '../infrastructure/hooks.js'
 import {
   agentsInstall,
@@ -35,7 +36,7 @@ import {
   uninstallSkill,
 } from '../infrastructure/install.js'
 import { pushGraphToNeo4j } from '../infrastructure/neo4j.js'
-import { watch as watchGraph } from '../infrastructure/watch.js'
+import { watchIndex } from '../infrastructure/watch-index.js'
 import { serveGraph } from '../runtime/http-server.js'
 import { diffGraphs } from '../runtime/diff.js'
 import { buildGraphSummary, type GraphSummary } from '../runtime/graph-summary.js'
@@ -190,8 +191,9 @@ export interface CliDependencies {
   installCopilotMcp: typeof installCopilotMcp
   uninstallCopilotMcp: typeof uninstallCopilotMcp
   pushGraphToNeo4j: typeof pushGraphToNeo4j
-  generateGraph: typeof generateGraph
-  watchGraph: typeof watchGraph
+  generateGraph: typeof generateIndex
+  updateIndex: typeof updateIndex
+  watchGraph: typeof watchIndex
   serveGraph: typeof serveGraph
   serveGraphStdio: typeof serveGraphStdio
   claudeInstall: typeof claudeInstall
@@ -329,8 +331,9 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   installCopilotMcp,
   uninstallCopilotMcp,
   pushGraphToNeo4j,
-  generateGraph,
-  watchGraph,
+  generateGraph: generateIndex,
+  updateIndex,
+  watchGraph: watchIndex,
   serveGraph,
   serveGraphStdio,
   claudeInstall,
@@ -460,9 +463,9 @@ export function formatHelp(binaryName = 'madar'): string {
     '',
     'Commands:',
     '  generate [path]       build graph artifacts for a folder (default .)',
-    '    --update             rebuild graph artifacts from the current source tree',
+    '    --update             reuse an unchanged graph; cold changed runs reconcile fully',
     '    --cluster-only       re-cluster an existing graph.json without re-indexing source',
-    '    --watch              keep watching after the initial build',
+    '    --watch              watch for changes; unchanged runs skip work, changed runs reconcile fully',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --strict-indexing    fail when any candidate is failed or unsupported',
@@ -475,7 +478,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --neo4j-database DB  Neo4j database (defaults to NEO4J_DATABASE or neo4j)',
     '  federate <g1> <g2>... merge graphs from multiple repos into one',
     '    --output DIR         output directory (default out-federated)',
-    '  watch [path]          build once, then watch for JavaScript/TypeScript changes',
+    '  watch [path]          watch JavaScript/TypeScript changes and reconcile the index',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --debounce S         watch debounce seconds (default 3)',
@@ -486,7 +489,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --http               explicit alias for HTTP transport',
     '    --stdio              serve graph query methods over stdio (JSON lines)',
     '    --mcp                alias for --stdio for installer/runtime parity',
-    '    --auto-refresh       reconcile and watch the active workspace while serving over stdio',
+    '    --auto-refresh       watch changes and reconcile the index while serving over stdio',
     '  summary [graph.json]  print a compact deterministic graph summary as JSON',
     '  try "<question>" [path] one-command local first proof before agent install',
     '  query "<question>"     traverse graph.json for a question',
@@ -650,31 +653,38 @@ function isImplicitGenerateCommand(argument: string): boolean {
   return existsSync(argument)
 }
 
-function formatGenerateSummary(result: GenerateGraphResult): string {
+function formatGenerateSummary(result: GenerateIndexResult): string {
   const indexingLines = result.indexing
     ? [
         `- Indexing: ${result.indexing.state.toUpperCase()} (${result.indexing.counts.indexed} indexed, ${result.indexing.counts.indexed_with_warnings} warnings, ${result.indexing.counts.skipped_by_policy} policy skips, ${result.indexing.counts.unsupported} unsupported, ${result.indexing.counts.failed} failed)`,
-        ...(result.indexingManifestPath ? [`- Indexing manifest: ${result.indexingManifestPath}`] : []),
+        ...(result.indexingManifestPath ? [`- Derived indexing diagnostics: ${result.indexingManifestPath}`] : []),
       ]
     : []
   const lines = [
     `[madar generate] ${result.mode} completed for ${result.rootPath}`,
     `- Corpus: ${result.totalFiles} file(s) · ~${result.totalWords.toLocaleString()} words`,
-    `- Indexed: ${result.indexedFiles}/${result.codeFiles} JavaScript/TypeScript file(s)`,
+    `- Indexed: ${result.indexedFiles}/${result.totalFiles} JavaScript/TypeScript file(s)`,
     `- Graph: ${result.nodeCount} nodes · ${result.edgeCount} edges · ${result.communityCount} communities`,
     ...indexingLines,
     ...(typeof result.semanticAnomalyCount === 'number' ? [`- Semantic anomalies: ${result.semanticAnomalyCount} high-signal item(s)`] : []),
     `- Outputs: ${result.graphPath}, ${result.reportPath}`,
   ]
+  if (result.updateReceipt) {
+    const receipt = result.updateReceipt
+    lines.push(
+      `- Update: mode=${receipt.mode}, scanned=${receipt.scanned_files}, parsed=${receipt.parsed_files}, reused=${receipt.reused_files}, invalidated=${receipt.invalidated_files}, closure=${receipt.dependency_closure_size}`,
+      `- Publication: fallback=${receipt.fallback_reason ?? 'none'}, previous=${receipt.previous_build_id ?? 'none'}, accepted=${receipt.accepted_build_id}, advanced=${receipt.publication_advanced}`,
+    )
+  }
 
   if (result.discoverySafety && result.discoverySafety.summary.total > 0) {
     lines.push(
       `- Safety exclusions: ${result.discoverySafety.summary.total} (${result.discoverySafety.summary.sensitive} sensitive, ${result.discoverySafety.summary.unreadable} unreadable)`,
     )
-    for (const exclusion of (result.discoveryExclusions ?? result.discoverySafety.exclusions).slice(0, 20)) {
+    for (const exclusion of result.discoverySafety.exclusions.slice(0, 20)) {
       lines.push(`  - ${JSON.stringify(exclusion.path)} (${exclusion.reason})`)
     }
-    const exclusionCount = (result.discoveryExclusions ?? result.discoverySafety.exclusions).length
+    const exclusionCount = result.discoverySafety.exclusions.length
     if (exclusionCount > 20) {
       lines.push(`  - ... ${exclusionCount - 20} more; inspect graph.json discovery_safety.exclusions`)
     }
@@ -988,11 +998,11 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         stage: 'started',
         ...telemetryBase(dependencies),
       }))
-      const result = dependencies.generateGraph(options.path, {
-        update: options.update,
+      const generate = options.update ? dependencies.updateIndex : dependencies.generateGraph
+      const result = generate(options.path, {
         clusterOnly: options.clusterOnly,
-        followSymlinks: options.followSymlinks,
-        respectGitignore: options.respectGitignore,
+        ...(options.followSymlinks === undefined ? {} : { followSymlinks: options.followSymlinks }),
+        ...(options.respectGitignore === undefined ? {} : { respectGitignore: options.respectGitignore }),
         ...(options.strictIndexing
           ? {
               indexingStrict: {
@@ -1026,8 +1036,8 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       }))
       if (options.watch) {
         await dependencies.watchGraph(options.path, options.debounceSeconds, {
-          followSymlinks: options.followSymlinks,
-          respectGitignore: options.respectGitignore,
+          ...(options.followSymlinks === undefined ? {} : { followSymlinks: options.followSymlinks }),
+          ...(options.respectGitignore === undefined ? {} : { respectGitignore: options.respectGitignore }),
           ...(options.strictIndexing
             ? {
                 indexingStrict: {
@@ -1037,6 +1047,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
               }
             : {}),
           logger: io,
+          seed: result,
         })
       }
       return 0
@@ -1054,6 +1065,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         followSymlinks: options.followSymlinks,
         respectGitignore: options.respectGitignore,
         logger: io,
+        seed: result,
       })
       return 0
     }

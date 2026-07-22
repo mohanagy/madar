@@ -1,25 +1,70 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { GRAPH_ARTIFACT_VERSION } from '../../src/domain/graph/artifact.js'
+import { loadGraphArtifact, writeGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
+import { buildSourceCatalog, readSourceFileHash } from '../../src/adapters/filesystem/source-catalog.js'
+import { deserializeGraphArtifact, GRAPH_ARTIFACT_REGENERATE_MESSAGE, GRAPH_ARTIFACT_VERSION } from '../../src/domain/graph/artifact.js'
+import {
+  attachBuildState,
+  createGenerationPolicy,
+  INDEX_BUILD_STATE_VERSION,
+  INDEX_ENGINE_ID,
+  readBuildState,
+} from '../../src/domain/index/build-state.js'
 import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
 import { runContextPromptCommand } from '../../src/infrastructure/context-prompt-command.js'
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
-import { generateGraph } from '../../src/infrastructure/generate.js'
+import { generateIndex as generateGraph } from '../../src/application/generate-index.js'
 import { runHandoffCommand } from '../../src/infrastructure/handoff-command.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
-import { fileContentFingerprint } from '../../src/shared/graph-build-freshness.js'
 import { rewriteCanonicalGraphFixture, writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 const sandboxRoots: string[] = []
 const PACKAGE_VERSION = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string }
 const OUT_GRAPH_PATH_PATTERN = /[\\/]out[\\/]graph\.json$/
 const OUT_MISSING_GRAPH_PATH_PATTERN = /[\\/]out[\\/]missing\.json$/
+const fileContentFingerprint = (path: string): string => readSourceFileHash(path) ?? ''
+
+function authenticateGraphFixture(graphPath: string, root: string): void {
+  const catalog = buildSourceCatalog(root)
+  const graph = deserializeGraphArtifact(readFileSync(graphPath, 'utf8'))
+  const indexed = catalog.snapshot.supported.length
+  attachBuildState(graph, {
+    version: INDEX_BUILD_STATE_VERSION,
+    engine_id: INDEX_ENGINE_ID,
+    policy: catalog.policy,
+    sources: catalog.snapshot,
+    source_root: catalog.sourceRoot,
+    corpus: {
+      supported_files: indexed,
+      unsupported_files: catalog.snapshot.unsupported.length,
+      total_words: catalog.totalWords,
+      warning: catalog.warning,
+    },
+    completeness: {
+      summary: {
+        state: 'complete',
+        candidates: indexed,
+        counts: {
+          indexed,
+          indexed_with_warnings: 0,
+          skipped_by_policy: 0,
+          unsupported: catalog.snapshot.unsupported.length,
+          failed: 0,
+        },
+        reason_buckets: { indexed },
+        capability_buckets: { 'builtin:index:typescript': indexed },
+      },
+      supported_failures: [],
+    },
+  })
+  writeGraphArtifact(graph, graphPath)
+}
 
 type FixtureState = 'fresh' | 'modified' | 'unrelated_modified' | 'deleted' | 'shared_modified'
 
@@ -214,6 +259,7 @@ function createFreshnessFixture(state: FixtureState): FreshnessFixture {
       ],
     },
   )
+  authenticateGraphFixture(graphPath, root)
 
   utimesSync(authPath, sourceTime, sourceTime)
   utimesSync(sessionPath, sourceTime, sourceTime)
@@ -422,11 +468,9 @@ describe('freshness surfaces', () => {
     utimesSync(fixture.graphPath, times.atime, times.mtime)
     expect(graphFreshnessMetadata(fixture.graphPath).graphVersion).not.toBe(first.graphVersion)
 
-    writeFileSync(
-      fixture.graphPath,
-      rewritten.replace(`"version": ${GRAPH_ARTIFACT_VERSION}`, '"version": 0'),
-      'utf8',
-    )
+    const invalidArtifact = JSON.parse(rewritten) as Record<string, unknown>
+    invalidArtifact.version = 0
+    writeFileSync(fixture.graphPath, JSON.stringify(invalidArtifact), 'utf8')
     utimesSync(fixture.graphPath, times.atime, times.mtime)
     expect(() => graphFreshnessMetadata(fixture.graphPath)).toThrow(/madar generate \. --update/)
   })
@@ -554,7 +598,36 @@ describe('freshness surfaces', () => {
     expect(analyze(renamed.graphPath)).toEqual(expect.objectContaining({ status: 'stale', changed_source_count: 2, missing_source_count: 1 }))
   })
 
-  it.each(['package.json', 'config/tsconfig.app.json', 'config/jsconfig.web.json'])('invalidates freshness when visible compiler control %s changes', async (relativePath) => {
+  it('reports safety-inventory drift instead of calling the graph fresh', async () => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createUnsupportedReceiptFreshnessFixture(false)
+    writeFileSync(join(fixture.root, '.env'), 'TOKEN=secret\n', 'utf8')
+
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({
+      status: 'partially_stale',
+      changed_source_count: 1,
+    }))
+  })
+
+  it('reports a copied graph stale when its accepted source root points elsewhere', async () => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createUnsupportedReceiptFreshnessFixture(false)
+    const container = mkdtempSync(join(tmpdir(), 'madar-copied-freshness-'))
+    sandboxRoots.push(container)
+    const copied = join(container, 'copied')
+    cpSync(fixture.root, copied, { recursive: true })
+
+    expect(analyze(join(copied, 'out', 'graph.json'), undefined, {
+      selected_source_files: ['src/auth.ts'],
+    })).toEqual(expect.objectContaining({
+      status: 'possibly_stale',
+      selected_context_status: 'possibly_stale',
+      changed_source_count: 2,
+      changed_selected_context_count: 1,
+    }))
+  })
+
+  it.each(['package.json', 'config/tsconfig.app.json', 'config/jsconfig.web.json'])('invalidates selected context when visible compiler control %s changes', async (relativePath) => {
     const analyze = await loadAnalyzeGraphContextFreshness()
     const fixture = createUnsupportedReceiptFreshnessFixture(false)
     const controlPath = join(fixture.root, relativePath)
@@ -563,10 +636,64 @@ describe('freshness surfaces', () => {
     const generated = generateGraph(fixture.root)
     writeFileSync(controlPath, '{"compilerOptions":{"strict":true}}\n', 'utf8')
 
-    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    expect(analyze(generated.graphPath, undefined, {
+      selected_source_files: [fixture.sourcePath],
+    })).toEqual(expect.objectContaining({
+      status: 'possibly_stale',
+      selected_context_status: 'possibly_stale',
+      changed_source_count: 2,
+      changed_selected_context_count: 1,
+      changed_outside_selected_context_count: 1,
+    }))
   })
 
-  it('ignores compiler controls excluded by discovery policy', async () => {
+  it.each(['.madarignore', '.gitignore'])('invalidates selected context when generation control %s changes', async (relativePath) => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createUnsupportedReceiptFreshnessFixture(false)
+    const controlPath = join(fixture.root, relativePath)
+    writeFileSync(controlPath, '# initial\n', 'utf8')
+    const generated = generateGraph(fixture.root)
+    writeFileSync(controlPath, '# changed\n', 'utf8')
+
+    expect(analyze(generated.graphPath, undefined, {
+      selected_source_files: [fixture.sourcePath],
+    })).toEqual(expect.objectContaining({
+      status: 'possibly_stale',
+      selected_context_status: 'possibly_stale',
+      changed_source_count: 2,
+      changed_selected_context_count: 1,
+      changed_outside_selected_context_count: 1,
+    }))
+  })
+
+  it('invalidates selected context when the generation policy fingerprint changes', async () => {
+    const analyze = await loadAnalyzeGraphContextFreshness()
+    const fixture = createUnsupportedReceiptFreshnessFixture(false)
+    const graph = loadGraphArtifact(fixture.graphPath)
+    const state = readBuildState(graph)
+    expect(state).not.toBeNull()
+    const { build_id: _buildId, ...stateWithoutBuildId } = state!
+    attachBuildState(graph, {
+      ...stateWithoutBuildId,
+      policy: createGenerationPolicy({
+        ...state!.policy.settings,
+        exclusion_rules_fingerprint: '0'.repeat(64),
+      }),
+    })
+    writeGraphArtifact(graph, fixture.graphPath)
+
+    expect(analyze(fixture.graphPath, undefined, {
+      selected_source_files: [fixture.sourcePath],
+    })).toEqual(expect.objectContaining({
+      status: 'possibly_stale',
+      selected_context_status: 'possibly_stale',
+      changed_source_count: 2,
+      changed_selected_context_count: 1,
+      changed_outside_selected_context_count: 1,
+    }))
+  })
+
+  it('tracks compiler controls even when their source directory is ignored', async () => {
     const analyze = await loadAnalyzeGraphContextFreshness()
     const fixture = createUnsupportedReceiptFreshnessFixture(false)
     const controlPath = join(fixture.root, 'ignored', 'tsconfig.app.json')
@@ -576,7 +703,15 @@ describe('freshness surfaces', () => {
     const generated = generateGraph(fixture.root)
     writeFileSync(controlPath, '{"compilerOptions":{"strict":true}}\n', 'utf8')
 
-    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'fresh', changed_source_count: 0 }))
+    expect(analyze(generated.graphPath, undefined, {
+      selected_source_files: [fixture.sourcePath],
+    })).toEqual(expect.objectContaining({
+      status: 'possibly_stale',
+      selected_context_status: 'possibly_stale',
+      changed_source_count: 2,
+      changed_selected_context_count: 1,
+      changed_outside_selected_context_count: 1,
+    }))
   })
 
   it.each(['absent', 'clean'] as const)('invalidates Git freshness when .madarignore changes from %s', async (initial) => {
@@ -584,7 +719,7 @@ describe('freshness surfaces', () => {
     const fixture = createMadarignoreFreshnessFixture(initial)
     writeFileSync(fixture.ignorePath, 'src/**\n', 'utf8')
 
-    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 2 }))
   })
 
   it('invalidates Git freshness when .madarignore is deleted', async () => {
@@ -592,7 +727,7 @@ describe('freshness surfaces', () => {
     const fixture = createMadarignoreFreshnessFixture('clean')
     rmSync(fixture.ignorePath)
 
-    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 2 }))
   })
 
   it('tracks .madarignore even when Git ignores the control file itself', async () => {
@@ -600,7 +735,10 @@ describe('freshness surfaces', () => {
     const fixture = createMadarignoreFreshnessFixture('absent', true)
     writeFileSync(fixture.ignorePath, 'src/**\n', 'utf8')
 
-    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({
+      status: 'partially_stale',
+      changed_source_count: 2,
+    }))
   })
 
   it.each(['dirty', 'dirty-deleted'] as const)('uses the dirty-at-build .madarignore state as the Git freshness baseline: %s', async (initial) => {
@@ -610,10 +748,13 @@ describe('freshness surfaces', () => {
 
     if (initial === 'dirty') writeFileSync(fixture.ignorePath, 'src/**\n', 'utf8')
     else writeFileSync(fixture.ignorePath, '# restored\n', 'utf8')
-    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    expect(analyze(fixture.graphPath)).toEqual(expect.objectContaining({
+      status: 'partially_stale',
+      changed_source_count: 2,
+    }))
   })
 
-  it('fails closed when graph freshness metadata uses the retired v3 contract', async () => {
+  it('fails closed when authenticated graph metadata is tampered', async () => {
     const analyzeGraphContextFreshness = await loadAnalyzeGraphContextFreshness()
     const fixture = createUnsupportedReceiptFreshnessFixture(true)
     rewriteCanonicalGraphFixture(fixture.graphPath, {
@@ -623,11 +764,7 @@ describe('freshness surfaces', () => {
       },
     })
 
-    expect(analyzeGraphContextFreshness!(fixture.graphPath)).toEqual(expect.objectContaining({
-      status: 'partially_stale',
-      generated_at: null,
-      changed_source_count: 1,
-    }))
+    expect(() => analyzeGraphContextFreshness!(fixture.graphPath)).toThrow(GRAPH_ARTIFACT_REGENERATE_MESSAGE)
   })
 
   it('tracks selected-context drift from git dirty files even when source mtimes stay older than the graph', async () => {
@@ -809,15 +946,20 @@ describe('freshness surfaces', () => {
     git(fixture.root, ['commit', '-m', 'add empty source'])
     const generated = generateGraph(fixture.root)
     rewriteCanonicalGraphFixture(generated.graphPath, { filterNode: (_id, attributes) => attributes.source_file !== 'src/empty.ts' })
+    authenticateGraphFixture(generated.graphPath, fixture.root)
     rmSync(emptyPath)
 
-    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1, missing_source_count: 0 }))
+    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({
+      status: 'stale',
+      changed_source_count: 1,
+      missing_source_count: 1,
+    }))
   })
 
   it.each([
-    ['compiler control', 'package.json', 'package.lock', '{}\n'],
-    ['unsupported receipt', 'notes.md', 'notes.log', '# Notes\n'],
-  ])('detects Git rename removing a %s before and after commit', async (_kind, from, to, contents) => {
+    ['compiler control', 'package.json', 'package.lock', '{}\n', 5],
+    ['unsupported receipt', 'notes.md', 'notes.log', '# Notes\n', 2],
+  ])('detects Git rename removing a %s before and after commit', async (_kind, from, to, contents, changedCount) => {
     const analyze = await loadAnalyzeGraphContextFreshness()
     const fixture = createGitFreshnessFixture()
     writeFileSync(join(fixture.root, from), contents, 'utf8')
@@ -826,10 +968,10 @@ describe('freshness surfaces', () => {
     const generated = generateGraph(fixture.root)
     renameSync(join(fixture.root, from), join(fixture.root, to))
 
-    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: changedCount }))
     git(fixture.root, ['add', '-A'])
     git(fixture.root, ['commit', '-m', `rename ${from}`])
-    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: 1 }))
+    expect(analyze(generated.graphPath)).toEqual(expect.objectContaining({ status: 'partially_stale', changed_source_count: changedCount }))
   })
 
   it('keeps Git freshness when only unsupported-file content changes', async () => {

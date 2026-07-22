@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, test, vi } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
-import { generateGraph } from '../../src/infrastructure/generate.js'
+import { generateIndex as generateGraph } from '../../src/application/generate-index.js'
 import { loadBenchmarkQuestions, runBenchmark, printBenchmark, querySubgraphTokens, type BenchmarkQuestionInput } from '../../src/infrastructure/benchmark.js'
 import { corpusTokensFromWords } from '../../src/infrastructure/benchmark/corpus.js'
 import { evaluateRetrievalQuality, formatQualityReport } from '../../src/infrastructure/benchmark/quality.js'
@@ -392,7 +392,7 @@ describe('runBenchmark', () => {
       }
 
       expect(generation.totalFiles).toBe(5)
-      expect(generation.codeFiles).toBe(5)
+      expect(generation.totalFiles).toBe(5)
       expect(generation.indexing?.counts.unsupported).toBe(1)
       expect(benchmark.structure_signals).toEqual({
         total_nodes: 5,
@@ -489,7 +489,7 @@ describe('runBenchmark', () => {
       const qualityReport = formatQualityReport(quality)
 
       expect(generation.totalFiles).toBeGreaterThanOrEqual(10)
-      expect(generation.codeFiles).toBeGreaterThanOrEqual(10)
+      expect(generation.totalFiles).toBeGreaterThanOrEqual(10)
       expect(questions.length).toBe(5)
       expect(
         expectedDemoQuestions.flatMap((question) => question.expected_labels ?? []).every((label) => graphLabels.has(label)),
@@ -500,7 +500,7 @@ describe('runBenchmark', () => {
       }
 
       expect(benchmark.question_count).toBe(questions.length)
-      expect(benchmark.corpus_source).toBe('manifest')
+      expect(benchmark.corpus_source).toBe('graph')
       expect(benchmark.corpus_words).toBe(generation.totalWords)
       expect(benchmark.corpus_tokens).toBe(corpusTokensFromWords(generation.totalWords))
       expect(benchmark.matched_question_count).toBe(questions.length)
@@ -528,7 +528,7 @@ describe('runBenchmark', () => {
         })),
       )
       expect(quality.total_questions).toBe(questions.length)
-      expect(quality.corpus_source).toBe('manifest')
+      expect(quality.corpus_source).toBe('graph')
       expect(quality.corpus_tokens).toBe(corpusTokensFromWords(generation.totalWords))
       expect(quality.questions_with_hits).toBe(questions.length)
       expect(quality.avg_recall).toBeGreaterThanOrEqual(0.9)
@@ -797,7 +797,7 @@ describe('printBenchmark', () => {
     printBenchmark({
       corpus_tokens: 1000,
       corpus_words: 750,
-      corpus_source: 'manifest',
+      corpus_source: 'graph',
       nodes: 5,
       edges: 4,
       structure_signals: {
@@ -885,7 +885,7 @@ describe('printBenchmark', () => {
     printBenchmark({
       corpus_tokens: 1000,
       corpus_words: 750,
-      corpus_source: 'manifest',
+      corpus_source: 'graph',
       nodes: 5,
       edges: 4,
       structure_signals: null,
@@ -943,7 +943,7 @@ describe('printBenchmark', () => {
     printBenchmark({
       corpus_tokens: 1000,
       corpus_words: 750,
-      corpus_source: 'manifest',
+      corpus_source: 'graph',
       nodes: 5,
       edges: 4,
       structure_signals: null,
@@ -1004,7 +1004,7 @@ describe('printBenchmark', () => {
     printBenchmark({
       corpus_tokens: 1000,
       corpus_words: 750,
-      corpus_source: 'manifest',
+      corpus_source: 'graph',
       nodes: 5,
       edges: 4,
       structure_signals: null,
@@ -1064,7 +1064,7 @@ describe('printBenchmark', () => {
     printBenchmark({
       corpus_tokens: 1000,
       corpus_words: 750,
-      corpus_source: 'manifest',
+      corpus_source: 'graph',
       nodes: 5,
       edges: 4,
       structure_signals: {

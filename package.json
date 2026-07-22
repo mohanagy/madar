@@ -11,7 +11,8 @@
     "type": "module",
     "files": [
         "dist/",
-        "examples/",
+        "examples/sample-workspace/",
+        "examples/why-madar.md",
         "CHANGELOG.md",
         "README.md",
         "LICENSE"

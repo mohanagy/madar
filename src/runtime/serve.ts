@@ -5,7 +5,7 @@ import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import type { Communities } from '../pipeline/cluster.js'
 import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import { isRecord } from '../shared/guards.js'
-import { sanitizeLabel, validateGraphPath } from '../shared/security.js'
+import { sanitizeLabel } from '../shared/security.js'
 import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
 
 const MAX_TRAVERSAL_DEPTH = 6
@@ -110,10 +110,6 @@ function describeQueryFilters(filters?: QueryFilters): string | null {
   ]
 
   return parts.length > 0 ? parts.join(', ') : null
-}
-
-function readGraphArtifactRecord(graphPath: string): Record<string, unknown> {
-  return loadGraphArtifact(graphPath).graph
 }
 
 function storedCommunityLabels(rawLabels: unknown): Record<number, string> {
@@ -537,19 +533,18 @@ export function graphStats(graph: KnowledgeGraph, communities: Communities = com
   ].join('\n')
 }
 
-export function semanticAnomaliesSummary(graphPath: string, topN = 5): string {
+export function semanticAnomaliesSummary(source: string | KnowledgeGraph, topN = 5): string {
   if (topN <= 0) {
     throw new Error('topN must be positive')
   }
 
-  const safeGraphPath = validateGraphPath(graphPath)
-  const artifactRecord = readGraphArtifactRecord(safeGraphPath)
+  const graph = typeof source === 'string' ? loadGraph(source) : source
+  const artifactRecord = graph.graph
   const stored = storedSemanticAnomalies(artifactRecord.semantic_anomalies, topN)
   const anomalies =
     stored.length > 0
       ? stored
       : (() => {
-          const graph = loadGraph(safeGraphPath)
           const communities = communitiesFromGraph(graph)
           const communityLabels = {
             ...buildCommunityLabels(graph, communities),

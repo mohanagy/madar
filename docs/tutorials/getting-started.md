@@ -24,9 +24,17 @@ This builds or reuses `examples/sample-workspace/out/graph.json`, prints one hum
 madar generate examples/sample-workspace
 ```
 
-This creates `examples/sample-workspace/out/graph.json`.
+This creates the authoritative `examples/sample-workspace/out/graph.json`. Madar also attempts to write `GRAPH_REPORT.md` and local/share-safe indexing diagnostics beside it. Those files help humans inspect the build, but `graph.json` remains the accepted index if a derived diagnostic cannot be written.
 
-Generation indexes `.ts`, `.tsx`, `.js`, and `.jsx` once through the canonical compiler-backed path. Other source languages and non-code files do not enter the graph. Madar records recognized unsupported files in the indexing-completeness receipt instead of silently treating them as indexed evidence.
+Generation indexes `.ts`, `.tsx`, `.js`, and `.jsx` once through the canonical compiler-backed path. Other source languages and non-code files do not enter the graph. Madar records recognized unsupported files as informational outcomes; they do not reduce completeness for supported JavaScript/TypeScript files.
+
+If this workspace already has a graph from an older Madar release, replace its predecessor metadata once, then restart or reconnect the agent's MCP process:
+
+```bash
+madar generate . --update
+```
+
+That command accepts an unchanged current graph without parsing or publishing and fully reconciles a changed or predecessor graph. Watch and MCP auto-refresh use the same rule: unchanged checks are no-ops, while every changed update performs a full canonical reconcile without an AST or per-file fact cache.
 
 ## 4. Install one agent profile
 
@@ -100,7 +108,7 @@ On Windows, use `--exec "type {prompt_file}"` for the same smoke check because `
 ## Expected output
 
 - `try` should print one human-readable local result plus a recommended install command
-- `generate` should write `examples/sample-workspace/out/graph.json`
+- `generate` should write the authoritative `examples/sample-workspace/out/graph.json`; derived reports and diagnostics may appear beside it
 - `claude install` should register the local Madar integration for the sample workspace
 - `doctor` should confirm the graph path plus install wiring for Claude, Cursor, Gemini, or Copilot
 - `status` should print the next recommended commands for this sample workspace when you use one of those reported agents
@@ -115,7 +123,7 @@ On Windows, use `--exec "type {prompt_file}"` for the same smoke check because `
 - **`madar: command not found`**: make sure the global npm install succeeded, or run from a local repo checkout after `npm run build`.
 - **`graph.json` missing**: rerun `madar generate .` before `pack`, `prompt`, or `compare`.
 - **`doctor` or `status` says the install is missing**: rerun your chosen `madar <agent> install` command from the sample workspace root, then rerun the verification commands for Claude, Cursor, Gemini, or Copilot.
-- **Relevant files are reported as unsupported:** Madar currently indexes JavaScript and TypeScript only. Check `madar status` or the local indexing manifest, then verify unsupported-language or non-code evidence directly with your agent when the task needs it.
+- **Relevant files are reported as unsupported:** Madar currently indexes JavaScript and TypeScript only. Unsupported outcomes are informational and do not make supported-index completeness partial. Verify unsupported-language or non-code evidence directly with your agent when the task needs it.
 - **`compare` looks noisy**: the `cat {prompt_file}` runner (or `type {prompt_file}` on Windows) is only a local smoke check. Use a real terminal model runner later if you want meaningful answer comparisons.
 - **Need more questions?** Start with `examples/sample-workspace/prompt-examples.json`.
 

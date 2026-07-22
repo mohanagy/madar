@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import * as generateModule from '../../src/infrastructure/generate.js'
+import * as generateModule from '../../src/application/generate-index.js'
 import { listPackQualityFixtures, runPackQualityFixture } from './helpers/pack-quality.js'
 
 const tempFixtureNames: string[] = []
@@ -48,7 +48,7 @@ describe('pack-quality helper', () => {
   })
 
   it('generates every fixture through the canonical path', async () => {
-    const generateSpy = vi.spyOn(generateModule, 'generateGraph')
+    const generateSpy = vi.spyOn(generateModule, 'generateIndex')
 
     await runPackQualityFixture('framework-request-flow-owner')
 

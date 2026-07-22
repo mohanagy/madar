@@ -16,14 +16,27 @@ const CASES: RegressionCase[] = [
   {
     name: 'graph generation',
     question: 'How does graph generation index TypeScript and JavaScript source files?',
-    expected: ['src/infrastructure/generate.ts', 'src/adapters/typescript/index.ts'],
-    relevant: ['src/infrastructure/generate.ts', 'src/pipeline/detect.ts', 'src/adapters/typescript/index.ts'],
+    expected: ['src/application/generate-index.ts', 'src/adapters/filesystem/source-catalog.ts'],
+    relevant: [
+      'src/application/generate-index.ts',
+      'src/adapters/filesystem/source-catalog.ts',
+      'src/adapters/typescript/index.ts',
+      'src/domain/index/build-state.ts',
+      'src/adapters/filesystem/index-store.ts',
+    ],
   },
   {
     name: 'automatic refresh',
     question: 'How is the graph kept updated while an agent edits?',
-    expected: ['src/infrastructure/watch.ts'],
-    relevant: ['src/infrastructure/watch.ts', 'src/infrastructure/watcher-state.ts'],
+    expected: ['src/infrastructure/watch-index.ts', 'src/application/update-index.ts'],
+    relevant: [
+      'src/infrastructure/watch-index.ts',
+      'src/application/update-index.ts',
+      'src/adapters/filesystem/source-catalog.ts',
+      'src/domain/index/build-state.ts',
+      'src/adapters/filesystem/index-store.ts',
+      'src/application/generate-index.ts',
+    ],
   },
   {
     name: 'confidence scoring',

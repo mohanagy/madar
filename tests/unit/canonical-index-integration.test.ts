@@ -1,4 +1,13 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { extname, join, resolve } from 'node:path'
 
@@ -71,6 +80,31 @@ describe('canonical TypeScript index integration contract', () => {
     expect(result.graph.nodeEntries()).not.toEqual(expect.arrayContaining([
       expect.arrayContaining([expect.any(String), expect.objectContaining({ source_file: 'core/contracts.ts' })]),
     ]))
+  })
+
+  it('does not read imported program source outside the indexed root', () => {
+    const repository = mkdtempSync(join(tmpdir(), 'madar-canonical-boundary-'))
+    sandboxes.push(repository)
+    const root = join(repository, 'packages/app')
+    const entry = join(root, 'main.ts')
+    const sibling = join(repository, 'packages/shared/value.ts')
+    mkdirSync(root, { recursive: true })
+    mkdirSync(join(repository, 'packages/shared'), { recursive: true })
+    writeFileSync(entry, "import { value } from '../shared/value.js'\nexport const result = value\n")
+    writeFileSync(sibling, 'export const value = 1\n')
+
+    const readFileSpy = vi.spyOn(ts.sys, 'readFile')
+    const first = buildCanonicalTypeScriptIndex({ root, files: [entry] })
+    const compilerReads = readFileSpy.mock.calls.map(([path]) => resolve(String(path)).replaceAll('\\', '/'))
+    readFileSpy.mockRestore()
+    writeFileSync(sibling, 'this is invalid TypeScript }\n')
+    const second = buildCanonicalTypeScriptIndex({ root, files: [entry] })
+
+    expect(first.files.map((file) => file.path)).toEqual(['main.ts'])
+    expect(compilerReads).not.toContain(resolve(sibling).replaceAll('\\', '/'))
+    expect(second.graph.nodeEntries()).toEqual(first.graph.nodeEntries())
+    expect(second.graph.edgeEntries()).toEqual(first.graph.edgeEntries())
+    expect(second.diagnostics).toEqual(first.diagnostics)
   })
 
   it('indexes source-backed project references without requiring declaration outputs', () => {

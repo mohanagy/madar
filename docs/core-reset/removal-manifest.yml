@@ -30,11 +30,15 @@ current:
   ready_phase: null
   base_commit: 8886a0299ee30765ce149ca7ad5d1779496b78b5
   completed_phase_commit: d46031eed7b0cf2d8bb7b7b6267a51322d9e2490
-  production_typescript_files: 139
-  production_typescript_loc: 68954
-  production_loc_added: 0
-  production_loc_removed: 0
-  production_loc_net: 0
+  implementation_commit: 1be24dc45a5f07c352c74fc374feb95a9440df8e
+  production_typescript_files: 130
+  production_typescript_loc: 66418
+  production_loc_added: 2190
+  production_loc_removed: 4726
+  production_loc_net: -2536
+  npm_files: 276
+  npm_packed_bytes: 572143
+  npm_unpacked_bytes: 2699851
 
 targets:
   production_typescript_files_max: 80
@@ -256,6 +260,12 @@ items:
     disposition: rebuild
     status: in_progress
     sources:
+      - src/application/generate-index.ts
+      - src/application/update-index.ts
+      - src/adapters/filesystem/source-catalog.ts
+      - src/adapters/filesystem/index-store.ts
+      - src/infrastructure/watch-index.ts
+    removed_sources:
       - src/infrastructure/generate.ts
       - src/contracts/generation-policy.ts
       - src/infrastructure/generation-policy.ts
@@ -283,7 +293,7 @@ items:
       - src/adapters/filesystem/source-catalog.ts
       - src/adapters/filesystem/index-store.ts
       - src/infrastructure/watch-index.ts
-    destination: one source catalog, canonical TypeScript index session, directed multigraph, and authoritative graph.json
+    destination: one source catalog, one full canonical TypeScript reconcile, directed multigraph, and authoritative graph.json
     production_file_budget:
       added_max: 6
       removed_min: 15
@@ -306,11 +316,17 @@ items:
       packed_bytes_delta_max: 0
     performance_budget:
       cold_noop_median_ratio_max: 0.20
-      warm_index_median_ratio_max: 0.50
-      warm_e2e_p50_ratio_max: 0.75
-      warm_e2e_p95_ratio_max: 0.80
       clean_generation_regression_ratio_max: 0.10
       measured_trials_min: 20
+    stopped_incremental_gate:
+      candidate_checkpoint: 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d
+      candidate_worktree_tree: 6bd1ae5762afaa868d5cf6ce165b061aa290bfda
+      fixed_fixture_supported_files: 500
+      warm_index_p50_ratio: 0.824
+      warm_refresh_p50_ratio: 1.047
+      warm_refresh_p95_ratio: 1.029
+      heldout: intentionally_skipped_after_fixed_gate_stop
+      failed_path: deleted
     completeness_contract:
       supported_extensions:
         - .ts
@@ -346,9 +362,20 @@ items:
       owner_approval: https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506
       rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586
       protected_base: 8886a0299ee30765ce149ca7ad5d1779496b78b5
-    notes: 'Approved in #592 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5. Real incrementality is warm-session and memory-only; a cold changed process performs and discloses a full canonical reconcile. graph.json is the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. No disk fact cache, versioned snapshot store, WAL, journal, rollback manager, or generalized transaction subsystem is allowed. Evidence-path query and thin delivery remain blocked.'
-    remove_when: Add, change, delete, rename, compiler-control, ignore-policy, recognized-unsupported-file, symlink, and linked-worktree updates equal clean generation; supported-JS/TS completeness semantics, warm reuse, and end-to-end performance pass; graph-last failure/concurrency gates pass; all 15 predecessors are absent; and accepted source/package budgets pass.
-    exit_gate: One source catalog and warm in-memory index session publish clean-equivalent graph.json state materially faster, with honest cold reconciliation, zero stale facts, no mixed authoritative generation, and no predecessor or persistent-cache path.
+    implementation:
+      commit: 1be24dc45a5f07c352c74fc374feb95a9440df8e
+      mode: cold_noop_or_full_canonical_reconcile
+      in_memory_session_cache: absent
+      disk_session_cache: absent
+      failed_incremental_path: deleted
+      evidence_receipts:
+        - docs/core-reset/evidence/generation-incremental-protected-base-500.json
+        - docs/core-reset/evidence/generation-incremental-stop-500.json
+        - docs/core-reset/evidence/generation-full-reconcile-500.json
+        - docs/core-reset/evidence/generation-incremental-inventory.json
+    notes: 'Approved in #592 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5, then narrowed by the recorded stop amendment. The fixed 500-file gate failed at candidate checkpoint 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d / worktree tree 6bd1ae5762afaa868d5cf6ce165b061aa290bfda: warm index p50 ratio 0.824, refresh p50 1.047, and refresh p95 1.029. Held-out timing was intentionally skipped because it could not reverse the mandatory stop. The failed incremental path was deleted. Exact runtime commit 1be24dc45a5f07c352c74fc374feb95a9440df8e ships cold no-op plus one full canonical reconcile for every changed source state, with neither an in-memory nor disk session cache. Its compatible 500-file receipt passes cold no-op at 0.067 of clean generation, zero parse/invalidation/publication, and clean regression at 1.045. build-state.ts is one of the six permitted replacements but remains owned by the completed canonical-typescript-index domain pattern, so no fifth ownership transfer is created. graph.json remains the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. Evidence-path query and thin delivery remain blocked, and phase completion awaits CI, PR, and merge evidence.'
+    remove_when: Add, change, delete, rename, compiler-control, ignore-policy, recognized-unsupported-file, symlink, and linked-worktree updates equal clean generation through the one full-reconcile path; supported-JS/TS completeness, cold no-op, graph-last failure/concurrency, source/package, CI, and review gates pass; all 15 predecessors and the failed incremental path remain absent.
+    exit_gate: One source catalog publishes a clean-equivalent graph.json through cold no-op or full canonical reconciliation, with zero stale facts, no mixed authoritative generation, no predecessor path, and no in-memory or disk session cache.
 
   - id: evidence-path-query
     disposition: rebuild

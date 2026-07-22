@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os'
 import { join, relative, resolve, sep } from 'node:path'
 
 import { runContextPackCommand } from '../../../src/infrastructure/context-pack-command.js'
-import { generateGraph, type GenerateGraphResult } from '../../../src/infrastructure/generate.js'
+import {
+  generateIndex as generateGraph,
+  type GenerateIndexResult as GenerateGraphResult,
+} from '../../../src/application/generate-index.js'
 
 import { normalizeAssertionPath } from './platform.js'
 

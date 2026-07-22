@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { join, resolve } from 'node:path'
@@ -7,10 +8,18 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
+import { buildSourceCatalog } from '../../src/adapters/filesystem/source-catalog.js'
+import { authenticateReportForGraph } from '../../src/adapters/filesystem/index-store.js'
+import { generateIndex } from '../../src/application/generate-index.js'
+import {
+  attachBuildState,
+  INDEX_BUILD_STATE_VERSION,
+  INDEX_ENGINE_ID,
+} from '../../src/domain/index/build-state.js'
+import { deserializeGraphArtifact, serializeGraphArtifact } from '../../src/domain/graph/artifact.js'
+import type { GraphAutoRefreshController, WatchIndexState } from '../../src/infrastructure/watch-index.js'
 import { handleStdioRequest, serveGraphStdio } from '../../src/runtime/stdio-server.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
-import { fileContentFingerprint } from '../../src/shared/graph-build-freshness.js'
-import { readWatcherStateForGraph, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
 import { appendCanonicalGraphNode, readCanonicalGraphFixture, writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
 
 const GRAPH_REGENERATION_INSTRUCTION = 'Run `madar generate . --update` to regenerate it.'
@@ -33,26 +42,6 @@ function createGraphFixtureRoot(): string {
   writeFileSync(join(root, 'auth.ts'), 'export function AuthService() {\n  return new HttpClient()\n}\n', 'utf8')
   writeFileSync(join(root, 'client.ts'), 'export class HttpClient {\n  request() {\n    return new Transport()\n  }\n}\n', 'utf8')
   writeFileSync(join(root, 'transport.ts'), 'export class Transport {}\n', 'utf8')
-  const generatedMs = Date.now()
-  const graphBuildFreshness = {
-    format_version: 4,
-    strategy: 'filesystem',
-    generated_at: new Date(generatedMs).toISOString(),
-    generated_ms: generatedMs,
-    supported_receipt_paths: ['auth.ts', 'client.ts', 'transport.ts'],
-    unsupported_receipt_paths: [],
-    control_file_fingerprints: {},
-    follow_symlinks: false,
-    respect_gitignore: false,
-    filesystem: {
-      file_fingerprints: Object.fromEntries(
-        ['auth.ts', 'client.ts', 'transport.ts'].map((sourceFile) => [
-          sourceFile,
-          fileContentFingerprint(join(root, sourceFile)),
-        ]),
-      ),
-    },
-  } as const
   writeCanonicalGraphFixture(
     join(root, 'baseline.graph.json'),
     {
@@ -67,7 +56,6 @@ function createGraphFixtureRoot(): string {
     join(root, 'graph.json'),
     {
       root_path: root,
-      graph_build_freshness: graphBuildFreshness,
       community_labels: {
         '0': 'Auth Services',
         '1': 'Transport Layer',
@@ -94,7 +82,66 @@ function createGraphFixtureRoot(): string {
     },
   )
   writeFileSync(join(root, 'GRAPH_REPORT.md'), '# Graph Report\n\n- AuthService calls HttpClient\n', 'utf8')
+  const catalog = buildSourceCatalog(root)
+  const graph = deserializeGraphArtifact(readFileSync(join(root, 'graph.json'), 'utf8'))
+  const skipped = catalog.outcomes.filter((entry) => entry.status === 'skipped_by_policy').length
+  attachBuildState(graph, {
+    version: INDEX_BUILD_STATE_VERSION,
+    engine_id: INDEX_ENGINE_ID,
+    policy: catalog.policy,
+    sources: catalog.snapshot,
+    source_root: catalog.sourceRoot,
+    corpus: {
+      supported_files: catalog.snapshot.supported.length,
+      unsupported_files: catalog.snapshot.unsupported.length,
+      total_words: catalog.totalWords,
+      warning: catalog.warning,
+    },
+    completeness: {
+      summary: {
+        state: 'complete',
+        candidates: catalog.scannedFiles,
+        counts: {
+          indexed: catalog.snapshot.supported.length,
+          indexed_with_warnings: 0,
+          skipped_by_policy: skipped,
+          unsupported: catalog.snapshot.unsupported.length,
+          failed: 0,
+        },
+        reason_buckets: {},
+        capability_buckets: {},
+      },
+      supported_failures: [],
+    },
+  })
+  writeFileSync(join(root, 'graph.json'), serializeGraphArtifact(graph), 'utf8')
+  writeFileSync(
+    join(root, 'GRAPH_REPORT.md'),
+    authenticateReportForGraph('# Graph Report\n\n- AuthService calls HttpClient\n', graph),
+    'utf8',
+  )
   return root
+}
+
+function controllableAutoRefresh(buildId: string, initialState: WatchIndexState) {
+  let state = initialState
+  let failure: string | null = null
+  let acceptedBuildId = buildId
+  const controller: GraphAutoRefreshController = {
+    startupComplete: () => state !== 'starting',
+    failureReason: () => failure,
+    state: () => state,
+    acceptedBuildId: () => acceptedBuildId,
+    startupSettled: Promise.resolve(),
+    stop() { state = 'stopped' },
+    completed: Promise.resolve(),
+  }
+  return {
+    controller,
+    setState(next: WatchIndexState) { state = next },
+    setFailure(next: string | null) { failure = next },
+    setAcceptedBuildId(next: string) { acceptedBuildId = next },
+  }
 }
 
 function createTimeTravelResult(view: 'summary' | 'risk' | 'drift' | 'timeline' = 'summary') {
@@ -281,6 +328,11 @@ describe('stdio runtime', () => {
         method: 'resources/read',
         params: { uri: 'madar://artifact/GRAPH_REPORT.md' },
       }))
+      const graphResourceRead = await Promise.resolve(handleStdioRequest(graphPath, {
+        id: 10,
+        method: 'resources/read',
+        params: { uri: 'madar://artifact/graph.json' },
+      }))
       const communityPrompt = await Promise.resolve(handleStdioRequest(graphPath, {
         id: 8,
         method: 'prompts/get',
@@ -368,11 +420,18 @@ describe('stdio runtime', () => {
       expect((promptGet?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('How does auth reach transport?')
       expect((promptGet?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('Top communities:')
       expect((promptGet?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('Auth Services')
-      expect((resourceRead?.result as { contents: Array<{ text: string }> }).contents[0]?.text).toContain('# Graph Report')
-      expect((resourceRead?.result as { contents: Array<{ annotations?: Record<string, unknown> }> }).contents[0]?.annotations?.graph_version).toMatch(/^[a-f0-9]{12}$/)
-      expect((resourceRead?.result as { contents: Array<{ annotations?: Record<string, unknown> }> }).contents[0]?.annotations?.resource_modified_ms).toEqual(
+      const reportContent = (resourceRead?.result as { contents: Array<{ text: string; annotations?: Record<string, unknown> }> }).contents[0]!
+      const expectedGraphVersion = createHash('sha256').update(readFileSync(graphPath, 'utf8')).digest('hex').slice(0, 12)
+      const graphContent = (graphResourceRead?.result as { contents: Array<{ text: string; annotations?: Record<string, unknown> }> }).contents[0]!
+      expect(reportContent.text).toContain('# Graph Report')
+      expect(reportContent.annotations?.graph_version).toBe(expectedGraphVersion)
+      expect(reportContent.text.match(/madar-graph-sha256: ([a-f0-9]{64})/)?.[1]?.slice(0, 12)).toBe(expectedGraphVersion)
+      expect(reportContent.annotations?.resource_bytes).toBe(Buffer.byteLength(reportContent.text))
+      expect(reportContent.annotations?.resource_modified_ms).toEqual(
         expect.any(Number),
       )
+      expect(createHash('sha256').update(graphContent.text).digest('hex').slice(0, 12)).toBe(graphContent.annotations?.graph_version)
+      expect(graphContent.annotations?.resource_bytes).toBe(Buffer.byteLength(graphContent.text))
       expect((communityPrompt?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('Auth Services')
       expect((communityPrompt?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('AuthService')
       expect((communityPrompt?.result as { messages: Array<{ content: { text: string } }> }).messages[0]?.content.text).toContain('HttpClient')
@@ -2603,6 +2662,34 @@ describe('stdio runtime', () => {
     }
   })
 
+  it.runIf(process.platform !== 'win32')('reloads after an equal-size atomic replacement with preserved mtime', () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'graph.json')
+      const fixedTime = new Date('2026-01-01T00:00:00.000Z')
+      utimesSync(graphPath, fixedTime, fixedTime)
+      const beforeBytes = readFileSync(graphPath, 'utf8')
+      const beforeStat = statSync(graphPath)
+      const replacementBytes = beforeBytes.replaceAll('AuthService', 'Replacement')
+      expect(Buffer.byteLength(replacementBytes)).toBe(Buffer.byteLength(beforeBytes))
+
+      const before = handleStdioRequest(graphPath, { id: 1, method: 'node', params: { label: 'AuthService' } })
+      const temporary = join(root, 'replacement.graph.json')
+      writeFileSync(temporary, replacementBytes, 'utf8')
+      utimesSync(temporary, fixedTime, fixedTime)
+      renameSync(temporary, graphPath)
+
+      const after = handleStdioRequest(graphPath, { id: 2, method: 'node', params: { label: 'Replacement' } })
+
+      expect((before as { result: string }).result).toContain('Node: AuthService')
+      expect((after as { result: string }).result).toContain('Node: Replacement')
+      expect(statSync(graphPath).size).toBe(beforeStat.size)
+      expect(statSync(graphPath).mtimeMs).toBe(beforeStat.mtimeMs)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('refreshes an active stdio session after an agent changes its workspace', async () => {
     const root = mkdtempSync(join(tmpdir(), 'madar-stdio-auto-refresh-'))
     const graphPath = join(root, 'out', 'graph.json')
@@ -2666,9 +2753,42 @@ describe('stdio runtime', () => {
     }
   }, 10_000)
 
+  it('preserves accepted generation controls when MCP auto-refresh starts without overrides', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-policy-refresh-'))
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const errorOutput = new PassThrough()
+    writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' })
+    const generated = generateIndex(root, {
+      respectGitignore: true,
+      followSymlinks: true,
+      indexingStrict: { maxFailed: 0, maxUnsupported: 5 },
+    })
+    const before = readFileSync(generated.graphPath, 'utf8')
+
+    const serverPromise = serveGraphStdio({
+      graphPath: generated.graphPath,
+      autoRefresh: true,
+      workspaceRoot: root,
+      autoRefreshDebounceSeconds: 0,
+      input,
+      output,
+      errorOutput,
+    })
+    try {
+      input.end(`${JSON.stringify({ id: 21, method: 'stats' })}\n`)
+      await serverPromise
+      expect(readFileSync(generated.graphPath, 'utf8')).toBe(before)
+    } finally {
+      input.destroy()
+      await serverPromise.catch(() => {})
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 10_000)
+
   it('holds one graph request while an auto-refresh event is pending, then answers it', async () => {
     const root = mkdtempSync(join(tmpdir(), 'madar-stdio-pending-refresh-'))
-    const graphPath = join(root, 'out', 'graph.json')
     const input = new PassThrough()
     const output = new PassThrough()
     const errorOutput = new PassThrough()
@@ -2678,33 +2798,25 @@ describe('stdio runtime', () => {
     })
 
     writeFileSync(join(root, 'initial.ts'), 'export const initialValue = 1\n', 'utf8')
+    const generated = generateIndex(root)
+    const refresh = controllableAutoRefresh(generated.buildId, 'pending')
     const serverPromise = serveGraphStdio({
-      graphPath,
+      graphPath: generated.graphPath,
       autoRefresh: true,
       workspaceRoot: root,
-      autoRefreshDebounceSeconds: 0.5,
       autoRefreshRequestWaitMs: 2_500,
+      autoRefreshStarter: () => refresh.controller,
       input,
       output,
       errorOutput,
     })
 
     try {
-      await waitFor(() => existsSync(graphPath) && readWatcherStateForGraph(graphPath)?.status === 'idle')
-      writeFileSync(join(root, 'added.ts'), 'export const addedDuringSession = 2\n', 'utf8')
-      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'pending')
-
       input.write(`${JSON.stringify({ id: 31, method: 'stats' })}\n`)
       await delay(50)
       expect(outputText).not.toContain('"id":31')
 
-      await waitFor(() => {
-        if (readWatcherStateForGraph(graphPath)?.status !== 'idle') {
-          return false
-        }
-        const graph = readCanonicalGraphFixture(graphPath)
-        return graph.nodes.some((node) => node.source_file.endsWith('added.ts'))
-      })
+      refresh.setState('idle')
       await waitFor(() => outputText.includes('"id":31'))
       input.end(`${JSON.stringify({ id: 32, method: 'stats' })}\n`)
       await serverPromise
@@ -2728,9 +2840,8 @@ describe('stdio runtime', () => {
     }
   }, 10_000)
 
-  it('refuses failed, incomplete, reconciling, and policy-mismatched auto-refresh states', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-watcher-gates-'))
-    const graphPath = join(root, 'out', 'graph.json')
+  it('gates graph reads on controller state and the authenticated accepted build', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-controller-gates-'))
     const input = new PassThrough()
     const output = new PassThrough()
     const errorOutput = new PassThrough()
@@ -2739,48 +2850,44 @@ describe('stdio runtime', () => {
       outputText += chunk.toString('utf8')
     })
     writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    const generated = generateIndex(root)
+    const refresh = controllableAutoRefresh(generated.buildId, 'failed')
+    refresh.setFailure('scan failed')
     const serverPromise = serveGraphStdio({
-      graphPath,
+      graphPath: generated.graphPath,
       autoRefresh: true,
       workspaceRoot: root,
       autoRefreshRequestWaitMs: 0,
+      autoRefreshStarter: () => refresh.controller,
       input,
       output,
       errorOutput,
     })
 
     try {
-      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
-      const idle = readWatcherStateForGraph(graphPath)
-      if (!idle) {
-        throw new Error('Expected auto-refresh watcher state')
-      }
-      const cases = [
-        { id: 41, state: { ...idle, status: 'failed' as const, coverage: 'failed' as const, failure_reason: 'scan failed' } },
-        { id: 42, state: { ...idle, coverage: 'unknown' as const } },
-        { id: 43, state: { ...idle, status: 'reconciling' as const } },
-        { id: 44, state: { ...idle, policy_match: false } },
-      ]
+      input.write(`${JSON.stringify({ id: 41, method: 'stats' })}\n`)
+      await waitFor(() => outputText.includes('"id":41'))
 
-      for (const testCase of cases) {
-        writeWatcherState(join(root, 'out'), testCase.state)
-        input.write(`${JSON.stringify({ id: testCase.id, method: 'stats' })}\n`)
-        await waitFor(() => outputText.includes(`"id":${testCase.id}`))
-      }
+      refresh.setFailure(null)
+      refresh.setState('reconciling')
+      input.write(`${JSON.stringify({ id: 43, method: 'stats' })}\n`)
+      await waitFor(() => outputText.includes('"id":43'))
 
-      const manifestPath = join(root, 'out', 'manifest.json')
-      const originalManifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { __madar_meta__?: { generation_policy?: unknown } }
-      const mismatchedManifest = JSON.parse(JSON.stringify(originalManifest)) as { __madar_meta__?: { generation_policy?: unknown } }
-      if (mismatchedManifest.__madar_meta__) {
-        delete mismatchedManifest.__madar_meta__.generation_policy
-      }
-      writeWatcherState(join(root, 'out'), idle)
-      writeFileSync(manifestPath, `${JSON.stringify(mismatchedManifest, null, 2)}\n`, 'utf8')
-      input.write(`${JSON.stringify({ id: 46, method: 'stats' })}\n`)
-      await waitFor(() => outputText.includes('"id":46'))
+      refresh.setState('idle')
+      refresh.setAcceptedBuildId('0'.repeat(64))
+      input.write(`${JSON.stringify({ id: 44, method: 'stats' })}\n`)
+      await waitFor(() => outputText.includes('"id":44'))
 
-      writeFileSync(manifestPath, `${JSON.stringify(originalManifest, null, 2)}\n`, 'utf8')
-      input.end(`${JSON.stringify({ id: 45, method: 'stats' })}\n`)
+      refresh.setAcceptedBuildId(generated.buildId)
+      input.write(`${JSON.stringify({ id: 45, method: 'stats' })}\n`)
+      await waitFor(() => outputText.includes('"id":45'))
+
+      const corrupted = JSON.parse(readFileSync(generated.graphPath, 'utf8')) as {
+        metadata: Record<string, unknown>
+      }
+      corrupted.metadata.test_corruption = true
+      writeFileSync(generated.graphPath, `${JSON.stringify(corrupted)}\n`, 'utf8')
+      input.end(`${JSON.stringify({ id: 46, method: 'stats' })}\n`)
       await serverPromise
 
       const responses = outputText
@@ -2792,7 +2899,7 @@ describe('stdio runtime', () => {
           result?: string
           error?: { message?: string; data?: Record<string, unknown> }
         }>
-      for (const id of [41, 42, 44, 46]) {
+      for (const id of [41, 44, 46]) {
         expect(responses.find((response) => response.id === id)?.error?.message).toContain(
           'auto-refresh cannot guarantee a fresh graph',
         )
@@ -2818,10 +2925,8 @@ describe('stdio runtime', () => {
     }
   }, 10_000)
 
-  it('keeps MCP control requests responsive while another process holds the refresh lease', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-refresh-lease-'))
-    const graphPath = join(root, 'out', 'graph.json')
-    const lockPath = join(root, 'out', '.madar-refresh.lock')
+  it('keeps MCP control requests responsive while the in-process controller reconciles', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-stdio-reconciling-control-'))
     const input = new PassThrough()
     const output = new PassThrough()
     const errorOutput = new PassThrough()
@@ -2830,29 +2935,25 @@ describe('stdio runtime', () => {
       outputText += chunk.toString('utf8')
     })
     writeFileSync(join(root, 'main.ts'), 'export const value = 1\n', 'utf8')
+    const generated = generateIndex(root)
+    const refresh = controllableAutoRefresh(generated.buildId, 'reconciling')
     const serverPromise = serveGraphStdio({
-      graphPath,
+      graphPath: generated.graphPath,
       autoRefresh: true,
       workspaceRoot: root,
-      autoRefreshDebounceSeconds: 0.02,
       autoRefreshRequestWaitMs: 2_500,
+      autoRefreshStarter: () => refresh.controller,
       input,
       output,
       errorOutput,
     })
 
     try {
-      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
-      writeFileSync(lockPath, `${process.pid} external-test-lease ${new Date().toISOString()}\n`, 'utf8')
-      writeFileSync(join(root, 'main.ts'), 'export const value = 2\n', 'utf8')
-      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'reconciling')
-
       input.write(`${JSON.stringify({ id: 52, method: 'stats' })}\n`)
       input.write(`${JSON.stringify({ id: 51, method: 'ping' })}\n`)
       await waitFor(() => outputText.includes('"id":51'), 1_000)
       expect(outputText).not.toContain('"id":52')
-      rmSync(lockPath, { force: true })
-      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
+      refresh.setState('idle')
       await waitFor(() => outputText.includes('"id":52'), 1_000)
       input.end(`${JSON.stringify({ id: 53, method: 'stats' })}\n`)
       await serverPromise
@@ -2879,7 +2980,6 @@ describe('stdio runtime', () => {
       expect(responses.find((response) => response.id === 52)?.error).toBeUndefined()
       expect(responses.find((response) => response.id === 53)?.result).toEqual(expect.any(String))
     } finally {
-      rmSync(lockPath, { force: true })
       input.destroy()
       await serverPromise.catch(() => {})
       rmSync(root, { recursive: true, force: true })

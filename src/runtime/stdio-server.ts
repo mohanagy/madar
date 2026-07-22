@@ -1,16 +1,12 @@
 import { createInterface } from 'node:readline'
-import { realpathSync, statSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
-import { startGraphAutoRefreshInBackground } from '../infrastructure/background-auto-refresh.js'
-import type { GraphAutoRefreshController } from '../infrastructure/watch.js'
-import { readWatcherStateForGraph } from '../infrastructure/watcher-state.js'
-import { readStoredGenerationPolicy } from '../infrastructure/generation-policy.js'
-import { watcherStateBlocksGraphReads } from '../contracts/watcher-state.js'
+import { startWatchIndex, updateIndexInWorker, type GraphAutoRefreshController } from '../infrastructure/watch-index.js'
 import { diffGraphs } from './diff.js'
 import { buildGraphSummary } from './graph-summary.js'
 import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isToolEnabledInProfile, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
@@ -51,6 +47,8 @@ import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.
 import { resolveGraphSourceRoot } from '../shared/graph-source-root.js'
 import { resolveMadarWorkspace } from '../shared/workspace.js'
 import { GRAPH_ARTIFACT_REGENERATE_MESSAGE } from '../domain/graph/artifact.js'
+import { readBuildState } from '../domain/index/build-state.js'
+import { readGraphArtifactReceipt, type GraphArtifactReceipt } from '../adapters/filesystem/graph-artifact.js'
 
 const JSONRPC_PARSE_ERROR = -32700
 const JSONRPC_INVALID_REQUEST = -32600
@@ -71,7 +69,8 @@ const MAX_STDIO_DIFF_ITEMS = 100
 const MAX_RESOURCE_SUBSCRIPTIONS = 16
 const MAX_CONTEXT_PROMPT_SESSIONS = 256
 const MAX_CONTEXT_PACK_CACHE_ENTRIES = 256
-const graphCache = new Map<string, { mtimeMs: number; size: number; graph: ReturnType<typeof loadGraph> }>()
+const graphCache = new Map<string, GraphArtifactReceipt>()
+const graphBuildStateCache = new WeakMap<ReturnType<typeof loadGraph>, ReturnType<typeof readBuildState>>()
 const MAX_COMPLETION_VALUES = 25
 const MAX_LOG_NOTIFICATION_CHARS = 10_000
 const DEFAULT_AUTO_REFRESH_REQUEST_WAIT_MS = 25_000
@@ -183,8 +182,8 @@ export interface ServeGraphStdioOptions {
   input?: Readable
   output?: Writable
   errorOutput?: Writable
-  /** Internal/testing seam for the production background auto-refresh launcher. */
-  autoRefreshStarter?: typeof startGraphAutoRefreshInBackground
+  /** Internal/testing seam for the in-process reconciliation watcher. */
+  autoRefreshStarter?: typeof startWatchIndex
   /** Internal/testing override for how long graph-backed requests await reconciliation. */
   autoRefreshRequestWaitMs?: number
   logger?: {
@@ -201,10 +200,17 @@ function sameFilesystemPath(left: string, right: string): boolean {
   }
 }
 
+function cachedBuildState(graph: ReturnType<typeof loadGraph>): ReturnType<typeof readBuildState> {
+  if (graphBuildStateCache.has(graph)) return graphBuildStateCache.get(graph) ?? null
+  const state = readBuildState(graph)
+  graphBuildStateCache.set(graph, state)
+  return state
+}
+
 function graphRootPath(graphPath: string): string | null {
   try {
-    const graph = loadGraph(validateGraphPath(graphPath))
-    const rootPath = graph.graph.root_path
+    const graph = loadGraphCached(graphPath)
+    const rootPath = cachedBuildState(graph)?.source_root.root_path ?? graph.graph.root_path
     return typeof rootPath === 'string' && rootPath.trim().length > 0 ? rootPath.trim() : null
   } catch {
     return null
@@ -215,52 +221,54 @@ function autoRefreshGraphReadiness(
   controller: GraphAutoRefreshController,
   graphPath: string,
 ): { ready: boolean; detail: string; state: string; retryable: boolean; retryAfterMs?: number } {
-  const startupComplete = controller.startupComplete?.() ?? true
-  const backgroundFailure = controller.failureReason?.() ?? null
-  const watcherState = readWatcherStateForGraph(graphPath)
-  const publishedPolicy = readStoredGenerationPolicy(
-    graphPath,
-    join(dirname(graphPath), 'manifest.json'),
-  )
-  const watcherMatchesPublishedPolicy = watcherState !== null
-    && publishedPolicy !== null
-    && watcherState.stored_policy_fingerprint === publishedPolicy.fingerprint
-  const ready = startupComplete
-    && backgroundFailure === null
-    && watcherState !== null
-    && watcherState.status === 'idle'
-    && !watcherStateBlocksGraphReads(watcherState)
-    && watcherMatchesPublishedPolicy
-  const state = watcherState?.status ?? (startupComplete ? 'unavailable' : 'starting')
-  const retryable = !ready
-    && backgroundFailure === null
-    && (
-      !startupComplete
-      || watcherState?.status === 'starting'
-      || watcherState?.status === 'pending'
-      || watcherState?.status === 'reconciling'
-    )
-
-  if (watcherState) {
+  const startupComplete = controller.startupComplete()
+  const backgroundFailure = controller.failureReason()
+  const state = controller.state()
+  const acceptedBuildId = controller.acceptedBuildId()
+  const retryable = backgroundFailure === null
+    && (!startupComplete || state === 'starting' || state === 'pending' || state === 'reconciling')
+  if (retryable) {
     return {
-      ready,
+      ready: false,
       state,
-      retryable,
-      ...(retryable ? { retryAfterMs: 1_000 } : {}),
-      detail: `status=${watcherState.status}, coverage=${watcherState.coverage}, policy=${watcherState.policy_match === null ? 'unknown' : watcherState.policy_match ? 'match' : 'mismatch'}, published_policy=${watcherMatchesPublishedPolicy ? 'match' : 'mismatch'}${watcherState.failure_reason ? `, failure=${watcherState.failure_reason}` : ''}${backgroundFailure ? `, background_failure=${backgroundFailure}` : ''}`,
+      retryable: true,
+      retryAfterMs: 1_000,
+      detail: `status=${state}, accepted_build=${acceptedBuildId?.slice(0, 12) ?? 'pending'}`,
+    }
+  }
+  if (backgroundFailure !== null || state !== 'idle') {
+    return {
+      ready: false,
+      state,
+      retryable: false,
+      detail: `status=${state}, accepted_build=${acceptedBuildId?.slice(0, 12) ?? 'unavailable'}${backgroundFailure ? `, failure=${backgroundFailure}` : ''}`,
     }
   }
 
+  let publishedBuildId: string | null = null
+  let artifactFailure: string | null = null
+  try {
+    const graph = loadGraphCached(graphPath)
+    const buildState = cachedBuildState(graph)
+    if (buildState) publishedBuildId = buildState.build_id
+    else artifactFailure = 'published graph has no authenticated index build state'
+  } catch {
+    artifactFailure = 'published graph cannot be loaded or authenticated'
+  }
+  const acceptedGraphMatches = acceptedBuildId !== null && publishedBuildId === acceptedBuildId
+
   return {
-    ready,
+    ready: acceptedGraphMatches,
     state,
-    retryable,
-    ...(retryable ? { retryAfterMs: 1_000 } : {}),
-    detail: backgroundFailure
-      ? `background startup failed: ${backgroundFailure}`
-      : startupComplete
-        ? 'watcher state is unavailable'
-        : 'background reconciliation is starting',
+    retryable: false,
+    detail: [
+      `status=${state}`,
+      `accepted_build=${acceptedBuildId?.slice(0, 12) ?? 'pending'}`,
+      `published_build=${publishedBuildId?.slice(0, 12) ?? 'unavailable'}`,
+      `publication=${acceptedGraphMatches ? 'match' : 'mismatch'}`,
+      ...(artifactFailure ? [`artifact_failure=${artifactFailure}`] : []),
+      ...(backgroundFailure ? [`failure=${backgroundFailure}`] : []),
+    ].join(', '),
   }
 }
 
@@ -687,16 +695,15 @@ function errorToolResult(text: string): { content: Array<{ type: 'text'; text: s
 }
 
 function loadGraphCached(graphPath: string): ReturnType<typeof loadGraph> {
-  const safeGraphPath = validateGraphPath(graphPath)
-  const currentGraphStat = statSync(safeGraphPath)
-  const cached = graphCache.get(safeGraphPath)
-  if (cached && cached.mtimeMs === currentGraphStat.mtimeMs && cached.size === currentGraphStat.size) {
-    return cached.graph
-  }
+  return loadGraphReceiptCached(graphPath).graph
+}
 
-  const graph = loadGraph(safeGraphPath)
-  graphCache.set(safeGraphPath, { mtimeMs: currentGraphStat.mtimeMs, size: currentGraphStat.size, graph })
-  return graph
+function loadGraphReceiptCached(graphPath: string): GraphArtifactReceipt {
+  const safeGraphPath = validateGraphPath(graphPath)
+  const cached = graphCache.get(safeGraphPath)
+  const receipt = readGraphArtifactReceipt(safeGraphPath, cached)
+  graphCache.set(safeGraphPath, receipt)
+  return receipt
 }
 
 function sanitizePromptValue(value: string | null, fallback: string): string {
@@ -943,6 +950,7 @@ export function handleStdioRequest(
           numberParamAlias,
           recordParam,
           loadGraphCached,
+          loadGraphReceiptCached,
           queryOptionsFromParams,
           handleGraphDiff,
           compareRefs: async (input) => {
@@ -1050,7 +1058,7 @@ export function handleStdioRequest(
       case 'diff':
         return handleGraphDiff(id, graphPath, params)
       case 'anomalies':
-        return ok(id, semanticAnomaliesSummary(graphPath, numberParamAlias(params, ['top_n', 'topN'], { min: 1, max: 100 }) ?? 5))
+        return ok(id, semanticAnomaliesSummary(loadGraphCached(graphPath), numberParamAlias(params, ['top_n', 'topN'], { min: 1, max: 100 }) ?? 5))
       case 'node': {
         const graph = loadGraphCached(graphPath)
         const label = stringParam(params, 'label')
@@ -1131,10 +1139,11 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
       )
     }
 
-    const startAutoRefresh = options.autoRefreshStarter ?? startGraphAutoRefreshInBackground
+    const startAutoRefresh = options.autoRefreshStarter ?? startWatchIndex
     autoRefresh = startAutoRefresh(workspace.rootPath, options.autoRefreshDebounceSeconds ?? 1, {
-      // The MCP server needs graph.json; avoid regenerating the browser view on
-      // every coalesced agent edit.
+      update: updateIndexInWorker,
+      // stdout is reserved for JSON-RPC; watcher progress stays silent unless
+      // a reconciliation fails.
       logger: {
         log() {},
         error(message) {

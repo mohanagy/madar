@@ -5,7 +5,8 @@ import { join, relative, resolve, sep } from 'node:path'
 
 import { describe, expect, test } from 'vitest'
 
-import { generateGraph } from '../../src/infrastructure/generate.js'
+import { generateIndex as generateGraph } from '../../src/application/generate-index.js'
+import { updateIndex } from '../../src/application/update-index.js'
 import { validateGraphOutputPath } from '../../src/shared/security.js'
 import { resolveMadarWorkspace, resolveWorkspaceGraphPath, resolveWorkspaceOutputPath } from '../../src/shared/workspace.js'
 import { readCanonicalGraphFixture } from '../helpers/graph-artifact.js'
@@ -85,7 +86,7 @@ describe('worktree artifact routing', () => {
       expect(graph.nodes?.some((node) => node.source_file?.endsWith('feature.ts'))).toBe(true)
 
       writeFileSync(join(linked, 'feature.ts'), 'export function worktreeOnlyFeature() { return 3 }\n', 'utf8')
-      const update = generateGraph(linked, { update: true })
+      const update = updateIndex(linked)
       expect(update.outputDir).toBe(linkedWorkspace.outputDir)
 
     } finally {

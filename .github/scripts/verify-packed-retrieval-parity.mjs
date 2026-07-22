@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
+import { PassThrough } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { gunzipSync } from 'node:zlib'
 
@@ -185,15 +186,20 @@ try {
   const packedServerPath = join(packedRoot, 'dist', 'src', 'runtime', 'stdio-server.js')
   const checkoutMetadataPath = join(repositoryRoot, 'dist', 'src', 'shared', 'package-metadata.js')
   const packedMetadataPath = join(packedRoot, 'dist', 'src', 'shared', 'package-metadata.js')
-  for (const path of [checkoutServerPath, packedServerPath, checkoutMetadataPath, packedMetadataPath]) {
+  const packedWatcherPath = join(packedRoot, 'dist', 'src', 'infrastructure', 'watch-index.js')
+  const packedStorePath = join(packedRoot, 'dist', 'src', 'adapters', 'filesystem', 'index-store.js')
+  const packedUpdatePath = join(packedRoot, 'dist', 'src', 'application', 'update-index.js')
+  for (const path of [checkoutServerPath, packedServerPath, checkoutMetadataPath, packedMetadataPath, packedWatcherPath, packedStorePath, packedUpdatePath]) {
     if (!existsSync(path)) throw new Error(`Missing parity runtime module: ${path}`)
   }
 
-  const [checkoutServer, packedServer, checkoutMetadata, packedMetadata] = await Promise.all([
+  const [checkoutServer, packedServer, checkoutMetadata, packedMetadata, packedWatcher, packedStore] = await Promise.all([
     import(`${pathToFileURL(checkoutServerPath).href}?parity=checkout`),
     import(`${pathToFileURL(packedServerPath).href}?parity=packed`),
     import(`${pathToFileURL(checkoutMetadataPath).href}?parity=checkout`),
     import(`${pathToFileURL(packedMetadataPath).href}?parity=packed`),
+    import(`${pathToFileURL(packedWatcherPath).href}?parity=packed`),
+    import(`${pathToFileURL(packedStorePath).href}?parity=packed`),
   ])
   const checkoutVersion = checkoutMetadata.readPackageVersion(repositoryRoot)
   const packedVersion = packedMetadata.readPackageVersion(packedRoot)
@@ -227,6 +233,70 @@ try {
     writeFileSync(join(tempRoot, 'packed-response.json'), JSON.stringify(normalizedPacked, null, 2))
     throw new Error(`Packed retrieval differs from checkout retrieval; inspect ${tempRoot}`)
   }
+
+  const workerRoot = join(tempRoot, 'worker-workspace')
+  mkdirSync(workerRoot, { recursive: true })
+  writeFileSync(join(workerRoot, 'main.ts'), 'export const workerValue = 1\n')
+  const workerResult = await packedWatcher.updateIndexInWorker(workerRoot)
+  if (workerResult.updateReceipt?.mode !== 'cold_reconcile' || !existsSync(workerResult.graphPath)) {
+    throw new Error('Packed MCP index worker did not publish a canonical graph')
+  }
+
+  writeFileSync(join(workerRoot, 'main.ts'), 'export const workerValue = 2\n')
+  const beforeContention = readFileSync(workerResult.graphPath, 'utf8')
+  const releaseCompetingLease = packedStore.acquireIndexLease(join(workerRoot, 'out'))
+  const childScript = `import { updateIndex } from ${JSON.stringify(pathToFileURL(packedUpdatePath).href)}; try { const result = updateIndex(${JSON.stringify(workerRoot)}); console.log(JSON.stringify({ mode: result.updateReceipt?.mode, buildId: result.buildId })) } catch (error) { console.log(JSON.stringify({ error: error?.name })) }`
+  const runChild = () => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '--eval', childScript], { encoding: 'utf8' }).trim())
+  const contended = runChild()
+  if (contended.error !== 'IndexLeaseContentionError' || readFileSync(workerResult.graphPath, 'utf8') !== beforeContention) {
+    throw new Error('Packed cross-process lease did not preserve the accepted graph under contention')
+  }
+  releaseCompetingLease()
+  const reconciled = runChild()
+  if (reconciled.mode !== 'cold_reconcile' || typeof reconciled.buildId !== 'string') {
+    throw new Error('Packed cross-process lease did not permit one coherent successor')
+  }
+
+  const responsiveRoot = join(tempRoot, 'responsive-workspace')
+  mkdirSync(responsiveRoot, { recursive: true })
+  for (let index = 0; index < 300; index += 1) {
+    writeFileSync(join(responsiveRoot, `file-${index}.ts`), `export const value${index} = ${index}\n`)
+  }
+  const responsiveGraph = await packedWatcher.updateIndexInWorker(responsiveRoot)
+  writeFileSync(join(responsiveRoot, 'file-0.ts'), 'export const value0 = 999\n')
+  const input = new PassThrough(), output = new PassThrough(), errorOutput = new PassThrough()
+  let responseText = ''
+  output.on('data', (chunk) => { responseText += chunk.toString('utf8') })
+  const serverPromise = packedServer.serveGraphStdio({
+    graphPath: responsiveGraph.graphPath, workspaceRoot: responsiveRoot, autoRefresh: true,
+    autoRefreshDebounceSeconds: 0, autoRefreshRequestWaitMs: 30_000, input, output, errorOutput,
+  })
+  input.write(`${JSON.stringify({ id: 701, method: 'stats' })}\n`)
+  input.write(`${JSON.stringify({ id: 702, method: 'ping' })}\n`)
+  const pingDeadline = Date.now() + 5_000
+  while (!responseText.includes('"id":702') && Date.now() < pingDeadline) await new Promise((done) => setTimeout(done, 10))
+  if (!responseText.includes('"id":702') || responseText.includes('"id":701')) {
+    throw new Error('Packed MCP stdio did not remain responsive during a worker reconcile')
+  }
+  input.end()
+  await serverPromise
+
+  const crashRoot = join(tempRoot, 'crash-workspace')
+  mkdirSync(crashRoot, { recursive: true })
+  writeFileSync(join(crashRoot, 'main.ts'), 'export const crashValue = 1\n')
+  writeFileSync(packedUpdatePath, [
+    "import { join } from 'node:path'",
+    "import { acquireIndexLease } from '../adapters/filesystem/index-store.js'",
+    'export function updateIndex(rootPath = \'.\', options = {}) {',
+    '  acquireIndexLease(join(rootPath, \'out\'), {}, options.leaseOwnerToken)',
+    '  process.exit(17)',
+    '}',
+  ].join('\n'))
+  let workerExited = false
+  try { await packedWatcher.updateIndexInWorker(crashRoot) } catch { workerExited = true }
+  if (!workerExited) throw new Error('Injected packed worker exit unexpectedly succeeded')
+  const releaseAfterCrash = packedStore.acquireIndexLease(join(crashRoot, 'out'))
+  releaseAfterCrash()
 
   console.log(`Packed retrieval parity passed for @lubab/madar ${checkoutVersion}.`)
   console.log(`Artifact runtime: ${relative(tempRoot, packedServerPath)}`)

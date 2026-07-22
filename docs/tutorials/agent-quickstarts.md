@@ -11,6 +11,8 @@ madar generate .
 
 That trial flow is the shared baseline for every quickstart below.
 
+After upgrading an existing workspace from an older graph format, run `madar generate . --update` once and restart or reconnect the agent's MCP session. The command reuses an unchanged current graph without parsing, but fully reconciles changed or predecessor artifacts. MCP auto-refresh applies the same rule during a live session; it keeps no AST, per-file fact, or dependency cache and does not rely on a persistent watcher-state file.
+
 ## Claude Code
 
 - Install: `madar claude install [--profile core\|full\|strict]`
@@ -109,7 +111,7 @@ This installs the Madar-owned AGENTS.md section, a task-applicable `UserPromptSu
 Common failure modes:
 
 - If `madar status` marks Codex as partial, inspect `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and this workspace's block in `~/.codex/config.toml`, then rerun the install.
-- If Codex reports that the Madar MCP client timed out, rerun `madar codex install` and confirm its workspace block contains `startup_timeout_sec = 180` and `tool_timeout_sec = 60`. Then run `madar doctor` and `madar status`; if reconciliation remains failed, run `madar generate . --update`.
+- If Codex reports that the Madar MCP client timed out, rerun `madar codex install` and confirm its workspace block contains `startup_timeout_sec = 180` and `tool_timeout_sec = 60`. Then run `madar doctor` and `madar status`; for a terminal reconciliation failure, stop the MCP process, run `madar generate . --update`, and restart Codex.
 - If Codex ignores the guidance, confirm `AGENTS.md` still contains the Madar-owned rules and that the project hook is trusted in `/hooks`.
 - `madar codex uninstall` removes only the Madar-owned AGENTS section, hook, script, and marked TOML block; unrelated hooks and TOML configuration remain.
 

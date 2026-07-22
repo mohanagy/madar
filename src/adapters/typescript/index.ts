@@ -10,7 +10,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import ts from 'typescript'
 
 import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
-import { CANONICAL_INDEX_FORMAT_VERSION } from '../../contracts/generation-policy.js'
+import { CANONICAL_INDEX_FORMAT_VERSION } from '../../domain/index/build-state.js'
 import type {
   IndexDiagnostic,
   IndexEdge,
@@ -125,6 +125,7 @@ export function buildCanonicalTypeScriptIndex(opts: BuildCanonicalTypeScriptInde
   const absPaths = collectCanonicalTypeScriptFiles(root, opts.files)
 
   const pathToFileId = new CanonicalPathMap<string>()
+  const sourceTextByPath = new CanonicalPathMap<string>()
   for (const abs of absPaths) {
     const ext = extname(abs).toLowerCase()
     const language = EXT_TO_LANG[ext]
@@ -133,6 +134,7 @@ export function buildCanonicalTypeScriptIndex(opts: BuildCanonicalTypeScriptInde
     const content = readFileSync(abs, 'utf8')
     const fileId = makeFileId(rel)
     pathToFileId.set(abs, fileId)
+    sourceTextByPath.set(abs, content)
     files.push({
       id: fileId,
       path: rel,
@@ -142,11 +144,13 @@ export function buildCanonicalTypeScriptIndex(opts: BuildCanonicalTypeScriptInde
     })
   }
 
-  const compiler = createCanonicalProgram(root, files, pathToFileId, diagnostics)
+  const compiler = createCanonicalProgram(root, files, pathToFileId, sourceTextByPath, diagnostics)
   if (compiler) {
     for (const file of files) {
       const sourceFile = compiler.program.getSourceFile(toPosix(join(root, file.path)))
-      if (sourceFile) visitFile(sourceFile, file, root, pathToFileId, compiler.resolveModule, symbols, symbolById, edges, diagnostics)
+      if (sourceFile) {
+        visitFile(sourceFile, file, root, pathToFileId, compiler.resolveModule, symbols, symbolById, edges, diagnostics)
+      }
     }
     addTypeCheckerEdges({ files, root, pathToFileId, symbols, edges, diagnostics, program: compiler.program })
   }
@@ -718,6 +722,7 @@ function createIndexCompilerHost(
   root: string,
   compilerOptions: ts.CompilerOptions,
   pathToFileId: Map<string, string>,
+  sourceTextByPath: ReadonlyMap<string, string>,
   compilerOptionsForFile?: (containingFile: string) => ts.CompilerOptions,
 ): ts.CompilerHost {
   const host = ts.createCompilerHost(compilerOptions, true)
@@ -726,18 +731,23 @@ function createIndexCompilerHost(
   const baseGetSourceFile = host.getSourceFile.bind(host)
   const baseResolveModuleNames = host.resolveModuleNames?.bind(host)
   const canRead = (fileName: string): boolean =>
-    !isSameOrNestedPath(fileName, root)
-    || isDeclarationFilePath(fileName)
+    isDeclarationFilePath(fileName)
     || isCompilerMetadataPath(fileName)
     || !isProgramSourcePath(fileName)
     || pathToFileId.has(fileName)
 
   host.fileExists = (fileName) => canRead(fileName) && baseFileExists(fileName)
-  host.readFile = (fileName) => canRead(fileName) ? baseReadFile(fileName) : undefined
-  host.getSourceFile = (fileName, languageVersion, onError, shouldCreateNewSourceFile) =>
-    canRead(fileName)
+  host.readFile = (fileName) => {
+    if (!canRead(fileName)) return undefined
+    return sourceTextByPath.get(canonicalPathKey(fileName)) ?? baseReadFile(fileName)
+  }
+  host.getSourceFile = (fileName, languageVersion, onError, shouldCreateNewSourceFile) => {
+    if (!canRead(fileName)) return undefined
+    const captured = sourceTextByPath.get(canonicalPathKey(fileName))
+    return captured === undefined
       ? baseGetSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile)
-      : undefined
+      : ts.createSourceFile(fileName, captured, languageVersion, true)
+  }
 
   // The scanner already supplied the complete source set. Keep referenced
   // projects source-backed so one Program can index their facts without
@@ -794,13 +804,14 @@ function createCanonicalProgram(
   root: string,
   files: readonly IndexFile[],
   pathToFileId: Map<string, string>,
+  sourceTextByPath: ReadonlyMap<string, string>,
   diagnostics: IndexDiagnostic[],
 ): CanonicalProgram | null {
   const rootNames = files.map((file) => toPosix(join(root, file.path)))
   if (rootNames.length === 0) return null
   const optionsResolver = createCompilerOptionsResolver(root)
   const options = optionsResolver.defaultOptions
-  const host = createIndexCompilerHost(root, options, pathToFileId, optionsResolver.forContainingFile)
+  const host = createIndexCompilerHost(root, options, pathToFileId, sourceTextByPath, optionsResolver.forContainingFile)
   try {
     const configPath = findProjectConfigWithinRoot(root, root)
     const configPaths = new Set(files.map((file) => findProjectConfigWithinRoot(join(root, file.path), root)))

@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
+import { compareCodeUnits } from '../domain/graph/canonical-json.js'
+
 export function findGitRoot(path: string): string | null {
   let current = resolve(path)
   while (true) {
@@ -110,7 +112,7 @@ function parseStatusPaths(statusOutput: string): string[] {
 }
 
 function dedupePaths(paths: Iterable<string>): string[] {
-  return [...new Set([...paths].filter((path) => path.length > 0))].sort((left, right) => left.localeCompare(right))
+  return [...new Set([...paths].filter((path) => path.length > 0))].sort(compareCodeUnits)
 }
 
 export interface GitSnapshot {

@@ -13,15 +13,20 @@ import type {
   MadarEvidenceStrengthLevel,
   MadarVerificationTarget,
 } from '../contracts/context-recovery.js'
-import type { IndexingManifest, IndexingReasonCode } from '../contracts/indexing.js'
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import {
-  readIndexingManifestForGraph,
-  relevantIndexingUncertainty,
-} from '../infrastructure/indexing-manifest.js'
-import { readGraphSourceRoot } from '../shared/graph-source-root.js'
+  readBuildState,
+  type IndexBuildState,
+  type IndexingReasonCode,
+} from '../domain/index/build-state.js'
+import type { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
+import { readGraphSourceRoot, resolveGraphSourceRoot } from '../shared/graph-source-root.js'
 import {
+  parseDiscoverySafetyMetadata,
   readDiscoverySafetyMetadata,
+  reasonBuckets,
   relevantDiscoveryExclusions,
+  relevantPathEntries,
   type DiscoveryExclusionReason,
   type DiscoverySafetyMetadata,
 } from '../shared/discovery-safety.js'
@@ -54,7 +59,7 @@ export interface MadarResponseEvidence {
     reasons: Partial<Record<DiscoveryExclusionReason, number>>
     relevant_reasons: Partial<Record<DiscoveryExclusionReason, number>>
   }
-  /** Share-safe aggregate. Local paths remain only in indexing-manifest.json. */
+  /** Share-safe aggregate. Exact supported-failure paths remain only in graph.json. */
   indexing_completeness?: {
     state: 'complete' | 'partial' | 'failed'
     total_uncertain: number
@@ -378,6 +383,30 @@ function normalizeSourcePath(path: string): string {
   return path.replaceAll('\\', '/').replace(/^\.?\//, '')
 }
 
+function readIndexBuildStateForGraph(graphPath: string): IndexBuildState | null {
+  try {
+    return readBuildState(loadGraphArtifact(graphPath))
+  } catch {
+    return null
+  }
+}
+
+function relevantSupportedIndexingUncertainty(
+  state: IndexBuildState,
+  input: { question?: string; coveredWorkflowOwners?: readonly string[] } = {},
+) {
+  const failures = state.completeness.supported_failures
+  const relevant = relevantPathEntries(failures, input)
+  return {
+    total: failures.length,
+    relevant: relevant.length,
+    state: state.completeness.summary.state,
+    reasons: reasonBuckets(failures),
+    relevant_reasons: reasonBuckets(relevant),
+    has_relevant_failures: relevant.length > 0,
+  }
+}
+
 function confidenceCapForScore(confidence: MadarResponsePackConfidence): number {
   switch (confidence) {
     case 'high':
@@ -404,6 +433,7 @@ function moreRestrictiveConfidence(
 function scopeQualityAssessment(
   graphPath: string | undefined,
   coveredWorkflowOwners: readonly string[],
+  graph?: KnowledgeGraph,
 ): {
   confidenceCap: MadarResponsePackConfidence
   reason: string
@@ -449,7 +479,9 @@ function scopeQualityAssessment(
   }
 
   const expectedGraphPath = `${candidateScopes[0]}/out/graph.json`
-  const normalizedSourceRoot = normalizeSourcePath(readGraphSourceRoot(graphPath))
+  const normalizedSourceRoot = normalizeSourcePath(
+    graph ? resolveGraphSourceRoot(graphPath, graph) : readGraphSourceRoot(graphPath),
+  )
   const sourceRootMatchesScope = normalizedSourceRoot === candidateScopes[0]
     || normalizedSourceRoot.endsWith(`/${candidateScopes[0]}`)
   if (normalizedGraphPath === expectedGraphPath || normalizedGraphPath.endsWith(`/${expectedGraphPath}`) || sourceRootMatchesScope) {
@@ -561,7 +593,10 @@ export function assessMadarResponseEvidence(input: {
   expandable?: readonly ContextPackExpandableRef[] | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
-  indexingManifest?: IndexingManifest | null | undefined
+  graph?: KnowledgeGraph | undefined
+  indexBuildState?: IndexBuildState | null | undefined
+  /** @deprecated Derived manifests are deliberately ignored as evidence authority. */
+  indexingManifest?: unknown
   missingPhases?: readonly ContextPackExecutionPhase[] | undefined
   question?: string | undefined
   recovery?: ContextPackRecoveryPlan | undefined
@@ -614,7 +649,7 @@ export function assessMadarResponseEvidence(input: {
   let sourceVerificationBlocked = false
 
   if (runtimeGeneration) {
-    const scopeQuality = scopeQualityAssessment(input.graphPath, coveredWorkflowOwners)
+    const scopeQuality = scopeQualityAssessment(input.graphPath, coveredWorkflowOwners, input.graph)
     confidenceCap = moreRestrictiveConfidence(confidenceCap, scopeQuality.confidenceCap)
     confidenceReasons.push(scopeQuality.reason)
     if (scopeQuality.confidenceCap !== 'high') {
@@ -687,6 +722,8 @@ export function assessMadarResponseEvidence(input: {
 
   const discoverySafety = input.discoverySafety !== undefined
     ? input.discoverySafety
+    : input.graph
+      ? parseDiscoverySafetyMetadata(input.graph.graph.discovery_safety)
     : input.graphPath
       ? readDiscoverySafetyMetadata(input.graphPath)
       : null
@@ -722,13 +759,15 @@ export function assessMadarResponseEvidence(input: {
     )
   }
 
-  const indexingManifest = input.indexingManifest !== undefined
-    ? input.indexingManifest
+  const indexBuildState = input.indexBuildState !== undefined
+    ? input.indexBuildState
+    : input.graph
+      ? readBuildState(input.graph)
     : input.graphPath
-      ? readIndexingManifestForGraph(input.graphPath)
+      ? readIndexBuildStateForGraph(input.graphPath)
       : null
-  const indexingUncertainty = indexingManifest
-    ? relevantIndexingUncertainty(indexingManifest, {
+  const indexingUncertainty = indexBuildState
+    ? relevantSupportedIndexingUncertainty(indexBuildState, {
         ...(input.question ? { question: input.question } : {}),
         coveredWorkflowOwners,
       })
@@ -824,7 +863,10 @@ export function buildMadarResponseEvidence(input: {
   expandable?: readonly ContextPackExpandableRef[] | undefined
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
-  indexingManifest?: IndexingManifest | null | undefined
+  graph?: KnowledgeGraph | undefined
+  indexBuildState?: IndexBuildState | null | undefined
+  /** @deprecated Derived manifests are deliberately ignored as evidence authority. */
+  indexingManifest?: unknown
   question?: string | undefined
   recovery?: ContextPackRecoveryPlan | undefined
   score?: number | undefined

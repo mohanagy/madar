@@ -1,41 +1,47 @@
 # Indexing completeness
 
-A valid `graph.json` proves that Madar produced a readable graph artifact. It does **not** prove that every relevant source file was indexed.
+A readable `graph.json` is not enough by itself: Madar authenticates the graph's embedded index-build state before treating it as accepted. That state records the build id, source snapshot, generation policy, source-root identity, corpus counts, completeness summary, and exact supported-file failures.
 
-Madar writes a separate, versioned completeness receipt for each generation:
+`graph.json` is the authoritative completeness surface. Madar also attempts to write these derived diagnostics beside it:
 
-- `indexing-manifest.json` is local-only and contains the schema-v2 `summary`, terminal `outcomes`, and source-safe `index_diagnostics` produced by the canonical JavaScript/TypeScript index.
-- `indexing-manifest.share-safe.json` contains aggregate counts, reason buckets, and diagnostic counts. It omits paths, per-file outcomes, and diagnostic messages.
+- `indexing-manifest.json` contains the summary, terminal per-path outcomes, and canonical index diagnostics for local inspection.
+- `indexing-manifest.share-safe.json` contains aggregate summary and diagnostic counts without paths, per-file outcomes, or messages.
 
-In a linked Git worktree these files live beside the external worktree-specific graph, not inside the checkout. `madar generate`, `madar doctor`, and `madar status` print the resolved local location or the relevant counts.
+Derived diagnostics are optional. Their absence or write failure does not block graph publication, and a manifest is used only when its build id matches the accepted graph. In a linked Git worktree, the graph and diagnostics live in that worktree's isolated external artifact directory rather than inside the checkout.
 
-## What counts as an indexed file
+## What counts as supported completeness
 
-An indexed file is a discovered `.ts`, `.tsx`, `.js`, or `.jsx` candidate for which the canonical compiler-backed index produced usable graph evidence. Publishing an unchanged already-current graph is whole-artifact reuse; Madar does not cache or merge per-file extraction fragments.
+The supported product scope is discovered `.ts`, `.tsx`, `.js`, and `.jsx` files. A supported file is indexed when the canonical compiler-backed index produces usable graph evidence for it.
 
-Each supported candidate, plus each recognized source-like file that Madar can report as unsupported, receives one terminal outcome outside Madar's hard-ignored artifact trees:
+Each discovered path can have one terminal outcome:
 
-| Outcome | Meaning |
-| --- | --- |
-| `indexed` | Canonical indexing completed without a reported warning. |
-| `indexed_with_warnings` | Usable canonical evidence was produced, but an index diagnostic may reduce coverage. |
-| `skipped_by_policy` | Madar deliberately did not read the path, for example because it was sensitive, hidden, ignored, excluded by Git policy, or disabled by an option. |
-| `unsupported` | Madar recognized the file as source-like, but it is outside the current JavaScript/TypeScript product scope and contributes no graph facts. |
-| `failed` | Discovery, stat, or canonical indexing failed for a supported candidate. |
+| Outcome | Meaning | Default effect on supported completeness |
+| --- | --- | --- |
+| `indexed` | Canonical indexing completed without a reported warning. | Successful. |
+| `indexed_with_warnings` | Usable canonical evidence was produced with diagnostics. | Successful; warnings remain visible. |
+| `failed` | A supported candidate could not be read or indexed into usable evidence. | Can make completeness partial or failed. |
+| `unsupported` | A recognized source-like or non-code file is outside the JavaScript/TypeScript product scope and contributes no graph facts. | Informational. |
+| `skipped_by_policy` | Madar deliberately omitted a path because of ignore, exclusion, sensitivity, or traversal policy. | Informational; safety exclusions are also reported separately. |
 
-An unreadable or deliberately untraversed directory can have a directory outcome because Madar cannot safely claim individual file knowledge below it. Generated artifacts and dependency trees that Madar hard-ignores, such as `.git/`, `node_modules/`, and `out/`, are outside the candidate set and are not enumerated merely to inflate policy counts.
+Hard-ignored generated artifacts and dependency trees such as `.git/`, `node_modules/`, and `out/` remain outside the supported candidate set. They are not enumerated merely to increase policy counts.
 
-The aggregate state is:
+The embedded aggregate state is based only on supported indexing failures:
 
-- `complete` when every candidate is `indexed`;
-- `partial` when usable evidence exists but at least one candidate has a warning, policy exclusion, unsupported capability, or failure;
-- `failed` when failed or unsupported candidates exist and no candidate produced usable indexed evidence.
+- `complete` when no supported file failed, including when unsupported files or policy skips exist;
+- `partial` when some supported files produced evidence and at least one supported file failed;
+- `failed` when every supported file failed.
 
-Policy exclusions are often intentional. They still make coverage partial because an answer must not silently assume those paths were inspected.
+This is a scoped claim: `complete` means the canonical index successfully handled its supported JavaScript/TypeScript candidates. It does not claim coverage for another language, intentionally excluded source, dynamic runtime behavior, or semantic perfection.
+
+## Unchanged reuse and changed reconciliation
+
+An unchanged CLI, watch, or MCP update accepts the existing authenticated graph after scanning the source catalog. It parses zero files and does not republish.
+
+Every changed source, compiler-control, or policy update performs the same full canonical reconcile. Madar does not keep an AST, per-file extraction fact, dependency closure, or compiler session in memory or on disk.
 
 ## Local audit and share-safe output
 
-The local manifest is the authoritative audit surface when you need to see affected paths:
+Use the graph-backed command surfaces for the accepted build and the optional manifest when you need per-path diagnostics:
 
 ```bash
 madar generate .
@@ -43,28 +49,26 @@ madar doctor
 madar status
 ```
 
-Reason buckets and `index_diagnostics` counts are stable machine-readable fields. Diagnostic messages remain local because compiler errors can contain source paths or source-derived text. The share-safe manifest retains the category and count without retaining that content.
+Canonical diagnostic messages remain local because they can contain source paths or source-derived text. The share-safe diagnostic file retains only aggregate categories and counts. If a derived file is missing or stale, the graph's embedded completeness remains authoritative.
 
-Graph metadata and agent-facing evidence receive aggregate completeness only. They do not copy local outcome paths into shareable graph summaries or context-pack evidence.
+## Strict publication thresholds
 
-## Strict generation
-
-Strict mode fails generation when configured `failed` or `unsupported` counts are exceeded. A failed run writes `indexing-manifest.failed.json` and `indexing-manifest.failed.share-safe.json` before returning the error so CI and humans can inspect the exact reason. It does not replace the canonical manifest associated with the last successfully published graph, and a later successful run removes the failed-attempt files.
+Default completeness keeps unsupported files and policy skips informational. Strict mode is an explicit additional publication policy: it can reject a candidate build when configured `failed` or `unsupported` counts exceed their thresholds.
 
 ```bash
-# Fail on any failed or unsupported candidate.
+# Reject any failed or unsupported outcome.
 madar generate . --strict-indexing
 
-# Permit up to one failure and three unsupported candidates.
+# Permit up to one failed and three unsupported outcomes.
 madar generate . \
   --max-indexing-failed 1 \
   --max-indexing-unsupported 3
 ```
 
-Supplying either threshold enables strict mode. Defaults are zero. Policy skips and indexed-with-warning outcomes remain visible but do not currently trigger the strict threshold.
+Supplying either threshold enables strict mode; unspecified allowances default to zero. A rejected candidate does not advance `graph.json`. Madar does not publish failed-attempt manifests as an alternate authority.
 
 ## Effect on retrieval confidence
 
-Madar compares uncertain local outcomes with the question and the workflow-owner paths selected for an answer. Relevant failures cap confidence more aggressively than warnings, policy skips, or unsupported files. Unrelated incomplete paths remain reported in aggregate but do not automatically lower an otherwise contained answer.
+Agent-facing evidence reads completeness from the accepted graph. Relevant supported failures can lower coverage and answerability. Unsupported inventory, policy skips, and safety exclusions remain explicit context signals, but they do not automatically make an otherwise complete JavaScript/TypeScript index partial.
 
-This is a containment signal, not proof that static analysis saw runtime-only behavior. A `complete` manifest means Madar accounted for its candidate set; it does not guarantee semantic perfection, dynamic runtime coverage, or a correct answer.
+Completeness is still static evidence, not a runtime trace or a guarantee that every possible answer is present. When the task depends on unsupported or excluded evidence, the agent should state that limitation and verify the relevant source through an appropriate tool.

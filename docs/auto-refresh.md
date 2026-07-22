@@ -1,45 +1,61 @@
 # Auto-refresh and generation policy
 
-Installed MCP profiles run `madar serve --stdio --auto-refresh`. The stdio transport becomes available immediately while automatic refresh runs in a background worker. Before that worker starts, Madar publishes a `starting` watcher state so graph-backed requests cannot read an unvalidated graph. The worker starts a recursive filesystem listener and takes an authoritative source snapshot. When the existing graph has matching generation policy, complete indexing outcomes, fresh source fingerprints, no added or deleted candidates, and no newer control files, Madar publishes it as usable without rebuilding it. Root-level `AGENTS.md` and `CLAUDE.md` files managed by an agent installer are execution guidance, not graph evidence, so their installation or later edits do not force a refresh. Any uncertainty or detected source change keeps the existing rebuild-and-reconcile path.
+Installed MCP profiles run `madar serve --stdio --auto-refresh`. The stdio transport starts immediately, while a process-local controller reconciles the active workspace before graph-backed requests become available. `madar watch` uses the same reconciliation controller.
 
-Filesystem events provide low-latency invalidation; they are not the correctness boundary. Madar also performs full reconciliations on an adaptive schedule. Idle intervals back off from 30 seconds to at most 5 minutes when recursive events are available. Platforms without recursive events use adaptive polling from 1 second to at most 30 seconds. The lower-level `pollIntervalMs` option is an internal/test override rather than a CLI setting.
+Madar does not retain an AST, per-file extraction facts, dependency closures, or a compiler session in memory or on disk. It also does not persist a watcher owner or watcher-health record. The running process holds only coordination and readiness state. A short-lived exclusive build lock prevents two processes from publishing the same workspace at once; it is released when that build attempt finishes.
 
-There is no file-count cutoff. A reconciliation scans every supported candidate and relevant control file. If a directory cannot be read, a followed symlink cannot be inspected, or the scan exceeds its 2-minute safety bound, watcher coverage becomes `failed`; Madar does not silently answer from the possibly stale graph.
+## Unchanged no-op and changed reconcile behavior
+
+Each reconciliation scans one source catalog containing supported files, compiler/control inputs, recognized unsupported files, and policy outcomes.
+
+| Caller | State | Behavior |
+| --- | --- | --- |
+| `madar generate . --update` | Accepted source snapshot unchanged | Scan only; parse zero files and do not republish. |
+| `madar generate . --update` | Source or controls changed | Fully reconcile the supported JavaScript/TypeScript index. |
+| `madar watch` or MCP auto-refresh | Source snapshot unchanged | Parse zero files and do not republish. |
+| `madar watch` or MCP auto-refresh | Source, compiler controls, or policy changed | Fully reconcile the same canonical index. |
+
+A newly started MCP process can accept an unchanged current graph without parsing it. Every later changed update performs a full reconcile; repeated changes do not enable a partial-update path.
+
+Filesystem events provide low-latency triggers. A five-minute polling pass is a backstop for missed or unavailable recursive events. Both paths run the same source-catalog comparison; the event stream is never treated as the source of truth. If files change during a build, that candidate build is rejected and the controller reconciles again before returning to `idle`.
 
 ## Generation-policy preservation
 
-Every generated `graph.json` and `manifest.json` contains the same versioned `generation_policy` and SHA-256 fingerprint. The policy covers:
+The authoritative `graph.json` embeds a versioned generation policy and SHA-256 fingerprint covering:
 
 - the canonical JavaScript/TypeScript index format;
-- Git-ignore enforcement and the active Git/Madar exclusion controls;
+- Git-ignore and Madar exclusion controls;
 - symlink traversal; and
-- strict indexing thresholds.
+- explicit strict-indexing thresholds.
 
-Automatic refresh reconstructs those inputs from the stored policy. A source change, an explicit policy override, or a change to `.madarignore`, applicable `.gitignore` files, `.git/info/exclude`, or `core.excludesFile` forces one full canonical rebuild. Refresh does not reuse per-file extraction fragments or preserve an extraction-mode choice.
+The graph also embeds the accepted source snapshot and source-root identity. Changes to compiler controls such as `tsconfig.json` or `jsconfig.json`, exclusion controls such as `.madarignore` and applicable Git ignore files, symlink policy, or strict thresholds force a full reconcile.
 
-Graphs created by a predecessor mixed-mode pipeline do not satisfy the canonical generation policy. Regenerate once before relying on auto-refresh:
+Root-level `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` files managed by agent installers are execution guidance rather than graph evidence, so editing them does not invalidate the code index.
+
+## Readiness and publication
+
+The controller's `starting`, `pending`, `reconciling`, `idle`, `failed`, and `stopped` states exist only in the running process. There is no authoritative `watcher-state.json`.
+
+Graph-backed MCP requests remain fail-closed until the controller is `idle` and its accepted build id matches the authenticated build id in `graph.json`. Initialization, ping, and list/discovery requests remain responsive during reconciliation. A graph request can wait for a bounded interval; if reconciliation is still active, Madar returns `madar_graph_not_ready` with `retryable: true`, `retry_after_ms: 1000`, and `suggested_action: "retry_same_request"`. A terminal failure returns `retryable: false` and `suggested_action: "repair_graph"`.
+
+Publication writes derived outputs first and commits `graph.json` last:
+
+1. `GRAPH_REPORT.md` is attempted.
+2. `indexing-manifest.json` and `indexing-manifest.share-safe.json` are attempted.
+3. The authenticated `graph.json` is atomically committed.
+
+The report and manifests are best-effort diagnostics. Their write failure is reported as a warning but does not block an otherwise valid graph. Consumers ignore derived diagnostics that are absent, unreadable, or carry a different build id. The graph is the sole authoritative index artifact and commit marker.
+
+## Upgrading existing workspaces
+
+Graphs from the predecessor generation/watch design do not contain the current authenticated build state. Regenerate once, then restart or reconnect the agent's MCP session:
 
 ```bash
 madar generate . --update
 ```
 
-## Watcher health
-
-The local `watcher-state.json` beside `graph.json` is written atomically and includes:
-
-- `status`: `starting`, `idle`, `pending`, `reconciling`, `failed`, or `stopped`;
-- coverage and event mode;
-- last reconciliation time, duration, file/directory counts, and next interval;
-- pending/failure details; and
-- stored/current policy fingerprints and match state; and
-- aggregate canonical indexing completeness.
-
-`madar doctor` and `madar status` render those fields. During an auto-refresh MCP session, graph-backed prompts, resources, completions, and tool calls remain fail-closed until the watcher is `idle` with matching published policy. A request that arrives while the graph is transiently `starting`, `pending`, or `reconciling` waits for readiness for up to 25 seconds by default. If reconciliation finishes, that same request completes against the ready graph; the agent does not need to issue it again. If the bounded wait expires, Madar returns `madar_graph_not_ready` with `retryable: true`, the measured `waited_ms`, `retry_after_ms: 1000`, and `suggested_action: "retry_same_request"`. Terminal `failed`, incomplete, and policy-mismatched states return immediately with `retryable: false` and `suggested_action: "repair_graph"`; inspect `madar status`, then run `madar generate . --update` when repair is required.
-
-MCP initialization, ping, and list/discovery requests remain responsive while a graph-backed request is waiting during `starting` and `reconciling`. This lets an agent connect and inspect capabilities without waiting for a cold large-repository build while preserving the same freshness boundary for every graph answer.
-
-The refresh lease serializes multiple MCP processes that target the same workspace. If the recorded owner process is dead, Madar reclaims the lease immediately. If another live process owns it, auto-refresh remains in a retryable reconciliation state and waits with bounded backoff until the lease is released or the server shuts down; contention does not permanently fail the watcher. Graph, source-manifest, indexing-manifest, report, and watcher-state publications use same-filesystem atomic renames. A post-build reconciliation detects edits made while generation was running and queues another rebuild before the state can return to `idle`.
+Old `manifest.json`, `watcher-state.json`, failed-attempt manifests, and persistent extraction caches are retired outputs. Madar does not load them through a compatibility adapter.
 
 ## Linked worktrees
 
-Auto-refresh watches the source worktree selected when the MCP server starts. In a linked worktree, `graph.json`, manifests, and `watcher-state.json` live together in that worktree's isolated external Madar artifact directory under the repository's shared Git data. Reconnect the MCP server after switching to a different worktree.
+Auto-refresh watches the worktree selected when the MCP server starts. Each linked worktree has an isolated external artifact directory under the repository's shared Git data, containing its authoritative `graph.json` and any derived diagnostics. Reconnect the MCP server after switching worktrees so the process-local session follows the new source root.

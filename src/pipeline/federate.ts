@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 
 import { loadGraphArtifact, writeGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import { authenticateReportForGraph } from '../adapters/filesystem/index-store.js'
 import { KnowledgeGraph, normalizeGraphPathIdentity } from '../domain/graph/directed-multigraph.js'
 import { cluster, scoreAll } from './cluster.js'
 import { buildCommunityLabels } from './community-naming.js'
@@ -192,8 +193,8 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
 
   Object.assign(federatedGraph.graph, { community_labels: communityLabels, semantic_anomalies: anomalies })
   for (const [communityId, nodeIds] of Object.entries(communities)) for (const nodeId of nodeIds) federatedGraph.replaceNodeAttributes(nodeId, { ...federatedGraph.nodeAttributes(nodeId), community: Number(communityId) })
+  writeTextFileAtomically(reportPath, authenticateReportForGraph(report, federatedGraph))
   writeGraphArtifact(federatedGraph, graphPath)
-  writeTextFileAtomically(reportPath, `${report}\n`)
 
   return {
     graphPath,
