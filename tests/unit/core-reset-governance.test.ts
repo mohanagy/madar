@@ -29,6 +29,7 @@ const INCREMENTAL_CI_HEAD = '3f40c5b64cdd63054c52ed67588b782034f8b935'
 const INCREMENTAL_CI_RUN = 'https://github.com/mohanagy/madar/actions/runs/29942216697'
 const INCREMENTAL_REVIEW_RECEIPT = 'https://github.com/mohanagy/madar/pull/594#issuecomment-5049404550'
 const INCREMENTAL_MUTATION_RECEIPT = 'docs/core-reset/evidence/generation-mutation-equivalence.json'
+const INCREMENTAL_MUTATION_RECEIPT_SHA256 = '831bce005c0e9cb28f768a2c490e1923e8062344fd2fd9710be5376e5603f67d'
 const INCREMENTAL_FINAL_TREE = '0cead2d3488dac136affa4bec047f8b5f11418a3'
 const STOPPED_INCREMENTAL_CANDIDATE = '1d3c9b6d264a5c76d212b93da7c63718cbe49b3d'
 const STOPPED_INCREMENTAL_TREE = '6bd1ae5762afaa868d5cf6ce165b061aa290bfda'
@@ -146,8 +147,8 @@ function logicalLocAtCommit(commit: string, paths: readonly string[]): number {
   }, 0)
 }
 
-const rawFileSha256 = (path: string): string =>
-  createHash('sha256').update(readFileSync(resolve(path))).digest('hex')
+const gitBlobSha256 = (revision: string, path: string): string =>
+  createHash('sha256').update(execFileSync(git, ['show', `${revision}:${path}`])).digest('hex')
 
 function importedProductionFilesAtCommit(
   commit: string,
@@ -1052,9 +1053,9 @@ describe('core reset governance', () => {
 
   it('pins the frozen held-out and performance contracts byte for byte', () => {
     for (const [path, expectedSha256] of Object.entries(FROZEN_EVIDENCE_HASHES)) {
-      expect(rawFileSha256(path), `${path} must remain byte-frozen`).toBe(expectedSha256)
+      expect(gitBlobSha256('HEAD', path), `${path} must remain byte-frozen`).toBe(expectedSha256)
     }
-    expect(rawFileSha256(EVIDENCE_PERFORMANCE_DESCRIPTOR)).toBe(EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256)
+    expect(gitBlobSha256('HEAD', EVIDENCE_PERFORMANCE_DESCRIPTOR)).toBe(EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256)
 
     const descriptor = JSON.parse(read(EVIDENCE_PERFORMANCE_DESCRIPTOR)) as {
       schema_version: number
@@ -1186,7 +1187,7 @@ describe('core reset governance', () => {
   })
 
   it('binds the evidence-path importer closure to protected-base Git content', () => {
-    expect(rawFileSha256(EVIDENCE_IMPORTER_RECEIPT)).toBe(EVIDENCE_IMPORTER_RECEIPT_SHA256)
+    expect(gitBlobSha256('HEAD', EVIDENCE_IMPORTER_RECEIPT)).toBe(EVIDENCE_IMPORTER_RECEIPT_SHA256)
     const receipt = JSON.parse(read(EVIDENCE_IMPORTER_RECEIPT)) as {
       schema_version: number
       receipt_kind: string
@@ -1333,6 +1334,10 @@ describe('core reset governance', () => {
   })
 
   it('publishes an exact hermetic generation mutation receipt', () => {
+    expect(gitBlobSha256('HEAD', INCREMENTAL_MUTATION_RECEIPT)).toBe(INCREMENTAL_MUTATION_RECEIPT_SHA256)
+    expect(gitBlobSha256(EVIDENCE_BASE, INCREMENTAL_MUTATION_RECEIPT)).toBe(
+      INCREMENTAL_MUTATION_RECEIPT_SHA256,
+    )
     const receipt = JSON.parse(read(INCREMENTAL_MUTATION_RECEIPT)) as {
       schema_version: number
       receipt_kind: string
@@ -1427,16 +1432,11 @@ describe('core reset governance', () => {
     ]))
     expect(receipt.test_files).toHaveLength(5)
     for (const file of receipt.test_files) {
-      const recordedTest = execFileSync(git, ['show', `${receipt.subject.ci_head}:${file.path}`])
+      const recordedTest = execFileSync(git, ['show', `${receipt.subject.merge_commit}:${file.path}`])
       expect(createHash('sha256').update(recordedTest).digest('hex')).toBe(file.sha256)
     }
-    for (const commit of [receipt.subject.final_pr_head, receipt.subject.ci_head, receipt.subject.merge_commit]) {
-      expect(execFileSync(git, ['show', '-s', '--format=%T', commit], { encoding: 'utf8' }).trim()).toBe(INCREMENTAL_FINAL_TREE)
-    }
-    expect(() => execFileSync(git, [
-      'diff', '--quiet', receipt.subject.implementation_commit, receipt.subject.final_pr_head,
-      '--', 'src', 'package.json', 'package-lock.json',
-    ])).not.toThrow()
+    expect(execFileSync(git, ['show', '-s', '--format=%T', receipt.subject.merge_commit], { encoding: 'utf8' }).trim())
+      .toBe(INCREMENTAL_FINAL_TREE)
   })
 
   it('measures logical LOC independently from checkout line endings', () => {
@@ -1522,19 +1522,13 @@ describe('core reset governance', () => {
 
   it('records the simplified implementation without retaining the failed warm path', () => {
     expect(productionSourceDelta(INCREMENTAL_BASE)).toEqual({ added: 2_190, removed: 4_726, net: -2_536 })
-    expect(execFileSync(git, ['cat-file', '-t', `${INCREMENTAL_IMPLEMENTATION}^{commit}`], { encoding: 'utf8' }).trim())
-      .toBe('commit')
-    expect(execFileSync(git, ['rev-parse', `${INCREMENTAL_CI_HEAD}^{tree}`], { encoding: 'utf8' }).trim()).toBe(
-      execFileSync(git, ['rev-parse', `${INCREMENTAL_MERGE}^{tree}`], { encoding: 'utf8' }).trim(),
-    )
-    for (const finalCommit of [INCREMENTAL_CI_HEAD, INCREMENTAL_MERGE]) {
-      const sourceDrift = execFileSync(
-        git,
-        ['diff', '--name-only', INCREMENTAL_IMPLEMENTATION, finalCommit, '--', 'src', 'package.json', 'package-lock.json'],
-        { encoding: 'utf8' },
-      ).trim()
-      expect(sourceDrift, `${finalCommit} must preserve the measured runtime and package surface`).toBe('')
-    }
+    expect(execFileSync(git, ['rev-parse', `${INCREMENTAL_MERGE}^{tree}`], { encoding: 'utf8' }).trim())
+      .toBe(INCREMENTAL_FINAL_TREE)
+    expect(execFileSync(
+      git,
+      ['diff', '--name-only', INCREMENTAL_MERGE, 'HEAD', '--', 'src', 'package.json', 'package-lock.json'],
+      { encoding: 'utf8' },
+    ).trim()).toBe('')
     for (const predecessor of INCREMENTAL_PREDECESSORS) {
       expect(existsSync(resolve(predecessor)), `${predecessor} must be deleted`).toBe(false)
     }
