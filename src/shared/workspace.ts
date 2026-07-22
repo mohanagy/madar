@@ -21,7 +21,7 @@ export interface MadarWorkspace {
 function canonicalPath(path: string): string {
   const resolved = resolve(path)
   try {
-    return realpathSync(resolved)
+    return realpathSync.native(resolved)
   } catch {
     return resolved
   }

@@ -183,10 +183,10 @@ function sourceRootIdentity(root: string): SourceRootIdentity {
     kind: workspace.isLinkedWorktree ? 'linked_worktree' : worktreeRoot ? 'primary_worktree' : 'directory',
     root_path: workspace.rootPath,
     worktree_root: worktreeRoot,
-    scope: worktreeRoot ? normalize(relative(realpathSync(worktreeRoot), realpathSync(workspace.rootPath))) || '.' : '.',
+    scope: worktreeRoot ? normalize(relative(canonicalPath(worktreeRoot), canonicalPath(workspace.rootPath))) || '.' : '.',
   }
 }
-function canonicalPath(path: string): string { try { return realpathSync(path) } catch { return resolve(path) } }
+function canonicalPath(path: string): string { try { return realpathSync.native(path) } catch { return resolve(path) } }
 export function sourceRootIdentitiesEqual(left: SourceRootIdentity, right: SourceRootIdentity): boolean {
   const sameWorktree = left.worktree_root === null || right.worktree_root === null
     ? left.worktree_root === right.worktree_root
@@ -217,7 +217,7 @@ function scanTree(root: string, options: SourceCatalogOptions, gitVisible: Reado
   const visited = new Set<string>()
   let scannedFiles = 0
   let totalWords = 0
-  const rootReal = realpathSync(root)
+  const rootReal = realpathSync.native(root)
   const unreadable = (path: string, kind: 'file' | 'directory', reason: 'unreadable_path' | 'unreadable_directory') => {
     exclusions.push({ path, kind: 'unreadable', reason })
     outcomes.push({
@@ -229,7 +229,7 @@ function scanTree(root: string, options: SourceCatalogOptions, gitVisible: Reado
   const skip = (path: string, kind: 'file' | 'directory', reason: IndexingOutcome['reason']) => outcomes.push(outcome(path, kind, 'skipped_by_policy', reason))
   const visit = (directory: string, followedSymlink = false, gitVisibilityAnchor: string | null = null): void => {
     let directoryReal: string
-    try { directoryReal = realpathSync(directory) } catch {
+    try { directoryReal = realpathSync.native(directory) } catch {
       unreadable(localDiscoveryPath(root, directory), 'directory', 'unreadable_directory')
       return
     }
@@ -264,7 +264,7 @@ function scanTree(root: string, options: SourceCatalogOptions, gitVisible: Reado
       if (stats.isSymbolicLink()) {
         if (!options.followSymlinks) { skip(local, 'file', 'symlink_disabled'); continue }
         let target
-        try { target = realpathSync(path) } catch {
+        try { target = realpathSync.native(path) } catch {
           unreadable(local, 'file', 'unreadable_path')
           continue
         }

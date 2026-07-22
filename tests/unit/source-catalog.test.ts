@@ -188,7 +188,7 @@ describe('source catalog', () => {
 
     const catalog = buildWithObservedReads(root)
 
-    expect(readFile.mock.calls.filter(([path]) => String(path).endsWith('/src/main.ts'))).toHaveLength(1)
+    expect(readFile.mock.calls.filter(([path]) => String(path).endsWith(join('src', 'main.ts')))).toHaveLength(1)
     expect(catalog.totalWords).toBe(10)
     expect(catalog.snapshot.supported[0]?.hash).toBe(
       createHash('sha256').update(nodeFs.readFileSync(sourcePath)).digest('hex'),
