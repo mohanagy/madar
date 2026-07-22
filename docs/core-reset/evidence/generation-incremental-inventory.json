@@ -2,12 +2,12 @@
   "schema_version": 1,
   "issue": "https://github.com/mohanagy/madar/issues/592",
   "protected_base": "8886a0299ee30765ce149ca7ad5d1779496b78b5",
-  "implementation_commit": "151f08ed1ca4db4f15dbe96d87f03d7226d4f3e2",
+  "implementation_commit": "1be24dc45a5f07c352c74fc374feb95a9440df8e",
   "production": {
     "typescript_files": 130,
     "typescript_loc": 66418,
-    "loc_added": 2189,
-    "loc_removed": 4725,
+    "loc_added": 2190,
+    "loc_removed": 4726,
     "loc_net": -2536,
     "predecessor_files_removed": 15,
     "predecessor_loc_removed": 3839,
@@ -21,10 +21,10 @@
     "name": "@lubab/madar",
     "version": "0.32.0",
     "files": 276,
-    "packed_bytes": 572142,
-    "unpacked_bytes": 2699814,
-    "shasum": "78957a04db589c8555100ea3c461b94ca3adc510",
-    "integrity": "sha512-0k2QI/KUN9Bmfk/47bVl0sabxPhvOrfiR17/ZELpVPiBe0hnv8OD3sX8sY5/m+0MCiROlOBROYuLcPXEPEILwg=="
+    "packed_bytes": 572143,
+    "unpacked_bytes": 2699851,
+    "shasum": "93b79f9d81f193af3c3d6e45159eae56fc9523a9",
+    "integrity": "sha512-7BNI5MBA92VWPpY0/CzZ2feSYRc+kCUcUw5IIpLdg2rqRCtEANIMgmkBFXI0L7NufrpbVTc7xfBr6rWRtNijmg=="
   },
   "budgets": {
     "production_files_pass": true,

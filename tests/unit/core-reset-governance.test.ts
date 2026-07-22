@@ -21,7 +21,7 @@ import { productionSourceDelta, sourceInventory } from '../../tools/eval/core-re
 const read = (path: string): string => readFileSync(resolve(path), 'utf8')
 const git = process.platform === 'win32' ? 'git.exe' : 'git'
 const INCREMENTAL_BASE = '8886a0299ee30765ce149ca7ad5d1779496b78b5'
-const INCREMENTAL_IMPLEMENTATION = '151f08ed1ca4db4f15dbe96d87f03d7226d4f3e2'
+const INCREMENTAL_IMPLEMENTATION = '1be24dc45a5f07c352c74fc374feb95a9440df8e'
 const STOPPED_INCREMENTAL_CANDIDATE = '1d3c9b6d264a5c76d212b93da7c63718cbe49b3d'
 const STOPPED_INCREMENTAL_TREE = '6bd1ae5762afaa868d5cf6ce165b061aa290bfda'
 const INCREMENTAL_PREDECESSORS = [
@@ -296,12 +296,12 @@ describe('core reset governance', () => {
       implementation_commit: INCREMENTAL_IMPLEMENTATION,
       production_typescript_files: 130,
       production_typescript_loc: 66_418,
-      production_loc_added: 2_189,
-      production_loc_removed: 4_725,
+      production_loc_added: 2_190,
+      production_loc_removed: 4_726,
       production_loc_net: -2_536,
       npm_files: 276,
-      npm_packed_bytes: 572_142,
-      npm_unpacked_bytes: 2_699_814,
+      npm_packed_bytes: 572_143,
+      npm_unpacked_bytes: 2_699_851,
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
@@ -583,13 +583,13 @@ describe('core reset governance', () => {
     expect(current).toMatchObject({
       implementation_commit: INCREMENTAL_IMPLEMENTATION,
       npm_files: 276,
-      npm_packed_bytes: 572_142,
-      npm_unpacked_bytes: 2_699_814,
+      npm_packed_bytes: 572_143,
+      npm_unpacked_bytes: 2_699_851,
     })
   })
 
   it('records the simplified implementation without retaining the failed warm path', () => {
-    expect(productionSourceDelta(INCREMENTAL_BASE)).toEqual({ added: 2_189, removed: 4_725, net: -2_536 })
+    expect(productionSourceDelta(INCREMENTAL_BASE)).toEqual({ added: 2_190, removed: 4_726, net: -2_536 })
     expect(execFileSync(git, ['cat-file', '-t', `${INCREMENTAL_IMPLEMENTATION}^{commit}`], { encoding: 'utf8' }).trim())
       .toBe('commit')
     const sourceDrift = execFileSync(
@@ -649,8 +649,8 @@ describe('core reset governance', () => {
       production: {
         typescript_files: 130,
         typescript_loc: 66_418,
-        loc_added: 2_189,
-        loc_removed: 4_725,
+        loc_added: 2_190,
+        loc_removed: 4_726,
         loc_net: -2_536,
         predecessor_files_removed: 15,
         predecessor_loc_removed: 3_839,
@@ -664,10 +664,10 @@ describe('core reset governance', () => {
         name: '@lubab/madar',
         version: '0.32.0',
         files: 276,
-        packed_bytes: 572_142,
-        unpacked_bytes: 2_699_814,
-        shasum: '78957a04db589c8555100ea3c461b94ca3adc510',
-        integrity: 'sha512-0k2QI/KUN9Bmfk/47bVl0sabxPhvOrfiR17/ZELpVPiBe0hnv8OD3sX8sY5/m+0MCiROlOBROYuLcPXEPEILwg==',
+        packed_bytes: 572_143,
+        unpacked_bytes: 2_699_851,
+        shasum: '93b79f9d81f193af3c3d6e45159eae56fc9523a9',
+        integrity: 'sha512-7BNI5MBA92VWPpY0/CzZ2feSYRc+kCUcUw5IIpLdg2rqRCtEANIMgmkBFXI0L7NufrpbVTc7xfBr6rWRtNijmg==',
       },
       budgets: {
         production_files_pass: true,
@@ -698,12 +698,12 @@ describe('core reset governance', () => {
     }
     expect(shipping).toMatchObject({
       eligible_for_acceptance: true,
-      receipt_sha256: 'a2a46f9580478dc7318f1e064d60d5de874657b7758f8e7fb12f26793b468f38',
+      receipt_sha256: '4b64f83dabcab80a3e60e35ada275c4852c32e549a0586c905d6f375534836b4',
       subject: {
         head_commit: INCREMENTAL_IMPLEMENTATION,
         dirty: false,
-        head_tree_oid: 'b76855f51f08f8884423dc1234d616ad1122b24e',
-        worktree_tree_oid: 'b76855f51f08f8884423dc1234d616ad1122b24e',
+        head_tree_oid: '3d8ad953b47a06e211e54958c8c8d194d5a2d999',
+        worktree_tree_oid: '3d8ad953b47a06e211e54958c8c8d194d5a2d999',
       },
       environment: { node: 'v22.9.0' },
       protocol: {
@@ -716,9 +716,9 @@ describe('core reset governance', () => {
         subject_identity: { pass: true },
         sample_protocol: { pass: true },
         corpus_eligibility: { pass: true },
-        cold_noop_p50_ratio: { actual: 0.065, pass: true },
+        cold_noop_p50_ratio: { actual: 0.067, pass: true },
         cold_noop_zero_parse: { pass: true },
-        clean_generation_regression: { baseline_compatible: true, ratio: 1.08, pass: true },
+        clean_generation_regression: { baseline_compatible: true, ratio: 1.045, pass: true },
       },
     })
   })

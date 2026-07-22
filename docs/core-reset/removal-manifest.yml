@@ -30,15 +30,15 @@ current:
   ready_phase: null
   base_commit: 8886a0299ee30765ce149ca7ad5d1779496b78b5
   completed_phase_commit: d46031eed7b0cf2d8bb7b7b6267a51322d9e2490
-  implementation_commit: 151f08ed1ca4db4f15dbe96d87f03d7226d4f3e2
+  implementation_commit: 1be24dc45a5f07c352c74fc374feb95a9440df8e
   production_typescript_files: 130
   production_typescript_loc: 66418
-  production_loc_added: 2189
-  production_loc_removed: 4725
+  production_loc_added: 2190
+  production_loc_removed: 4726
   production_loc_net: -2536
   npm_files: 276
-  npm_packed_bytes: 572142
-  npm_unpacked_bytes: 2699814
+  npm_packed_bytes: 572143
+  npm_unpacked_bytes: 2699851
 
 targets:
   production_typescript_files_max: 80
@@ -363,7 +363,7 @@ items:
       rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586
       protected_base: 8886a0299ee30765ce149ca7ad5d1779496b78b5
     implementation:
-      commit: 151f08ed1ca4db4f15dbe96d87f03d7226d4f3e2
+      commit: 1be24dc45a5f07c352c74fc374feb95a9440df8e
       mode: cold_noop_or_full_canonical_reconcile
       in_memory_session_cache: absent
       disk_session_cache: absent
@@ -373,7 +373,7 @@ items:
         - docs/core-reset/evidence/generation-incremental-stop-500.json
         - docs/core-reset/evidence/generation-full-reconcile-500.json
         - docs/core-reset/evidence/generation-incremental-inventory.json
-    notes: 'Approved in #592 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5, then narrowed by the recorded stop amendment. The fixed 500-file gate failed at candidate checkpoint 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d / worktree tree 6bd1ae5762afaa868d5cf6ce165b061aa290bfda: warm index p50 ratio 0.824, refresh p50 1.047, and refresh p95 1.029. Held-out timing was intentionally skipped because it could not reverse the mandatory stop. The failed incremental path was deleted. Exact runtime commit 151f08ed1ca4db4f15dbe96d87f03d7226d4f3e2 ships cold no-op plus one full canonical reconcile for every changed source state, with neither an in-memory nor disk session cache. Its compatible 500-file receipt passes cold no-op at 0.065 of clean generation, zero parse/invalidation/publication, and clean regression at 1.08. build-state.ts is one of the six permitted replacements but remains owned by the completed canonical-typescript-index domain pattern, so no fifth ownership transfer is created. graph.json remains the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. Evidence-path query and thin delivery remain blocked, and phase completion awaits CI, PR, and merge evidence.'
+    notes: 'Approved in #592 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5, then narrowed by the recorded stop amendment. The fixed 500-file gate failed at candidate checkpoint 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d / worktree tree 6bd1ae5762afaa868d5cf6ce165b061aa290bfda: warm index p50 ratio 0.824, refresh p50 1.047, and refresh p95 1.029. Held-out timing was intentionally skipped because it could not reverse the mandatory stop. The failed incremental path was deleted. Exact runtime commit 1be24dc45a5f07c352c74fc374feb95a9440df8e ships cold no-op plus one full canonical reconcile for every changed source state, with neither an in-memory nor disk session cache. Its compatible 500-file receipt passes cold no-op at 0.067 of clean generation, zero parse/invalidation/publication, and clean regression at 1.045. build-state.ts is one of the six permitted replacements but remains owned by the completed canonical-typescript-index domain pattern, so no fifth ownership transfer is created. graph.json remains the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. Evidence-path query and thin delivery remain blocked, and phase completion awaits CI, PR, and merge evidence.'
     remove_when: Add, change, delete, rename, compiler-control, ignore-policy, recognized-unsupported-file, symlink, and linked-worktree updates equal clean generation through the one full-reconcile path; supported-JS/TS completeness, cold no-op, graph-last failure/concurrency, source/package, CI, and review gates pass; all 15 predecessors and the failed incremental path remain absent.
     exit_gate: One source catalog publishes a clean-equivalent graph.json through cold no-op or full canonical reconciliation, with zero stale facts, no mixed authoritative generation, no predecessor path, and no in-memory or disk session cache.
 
