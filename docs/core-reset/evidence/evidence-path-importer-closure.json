@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "core-reset-evidence-path-importer-closure",
+  "issue": "https://github.com/mohanagy/madar/issues/596",
+  "subject": {
+    "commit": "bce4f4fb1520a582bfedf5eab9133e9befbc79f7",
+    "tree": "7ac3c1ef990ee628ca5c9a215ae6388c82dabcd3"
+  },
+  "method": {
+    "source_inventory": "git ls-tree at the protected commit",
+    "logical_loc": "LF count plus a final non-LF line",
+    "imports": "TypeScript AST static import, re-export, dynamic import, import-equals, and require scan with repository-relative .js-to-.ts resolution",
+    "scope": "direct imports into the 45 mandatory query, governance, wrapper, and semantic predecessors, followed by the importer-only transitive deletion closure"
+  },
+  "production": {
+    "predecessor_files": 54,
+    "predecessor_loc": 29441,
+    "categories": [
+      {
+        "id": "query",
+        "files": 11,
+        "loc": 12535,
+        "paths": [
+          "src/core/pipeline/stage.ts",
+          "src/runtime/context-pack.ts",
+          "src/runtime/freshness.ts",
+          "src/runtime/retrieve.ts",
+          "src/runtime/retrieve/conceptual-fallback.ts",
+          "src/runtime/retrieve/expansion.ts",
+          "src/runtime/retrieve/pipeline.ts",
+          "src/runtime/retrieve/slicing.ts",
+          "src/runtime/routing-debug.ts",
+          "src/runtime/value-per-token.ts",
+          "src/shared/source-discovery.ts"
+        ]
+      },
+      {
+        "id": "context-governance-stack",
+        "files": 26,
+        "loc": 6538,
+        "paths": [
+          "src/contracts/context-inventory.ts",
+          "src/contracts/context-pack-diagnostics.ts",
+          "src/contracts/context-pack.ts",
+          "src/contracts/context-recovery.ts",
+          "src/contracts/context-session.ts",
+          "src/contracts/handoff.ts",
+          "src/contracts/retrieval-gate.ts",
+          "src/contracts/retrieval-plan.ts",
+          "src/contracts/runtime-proof.ts",
+          "src/contracts/task-applicability.ts",
+          "src/contracts/task-context-plan.ts",
+          "src/contracts/task-intent.ts",
+          "src/runtime/context-inventory.ts",
+          "src/runtime/context-pack-delta.ts",
+          "src/runtime/context-pack-diagnostics.ts",
+          "src/runtime/context-pack-governance.ts",
+          "src/runtime/context-pack-recovery.ts",
+          "src/runtime/context-pack-resolution.ts",
+          "src/runtime/context-pack-target.ts",
+          "src/runtime/context-session.ts",
+          "src/runtime/mcp-response-evidence.ts",
+          "src/runtime/retrieval-gate.ts",
+          "src/runtime/task-applicability.ts",
+          "src/runtime/task-context-planner.ts",
+          "src/runtime/task-evidence-recipes.ts",
+          "src/runtime/task-intent.ts"
+        ]
+      },
+      {
+        "id": "derived-product-wrappers",
+        "files": 7,
+        "loc": 4064,
+        "paths": [
+          "src/runtime/feature-map.ts",
+          "src/runtime/impact.ts",
+          "src/runtime/implementation-checklist.ts",
+          "src/runtime/implementation-pack.ts",
+          "src/runtime/pr-impact.ts",
+          "src/runtime/relevant-files.ts",
+          "src/runtime/risk-map.ts"
+        ]
+      },
+      {
+        "id": "semantic",
+        "files": 1,
+        "loc": 368,
+        "paths": [
+          "src/runtime/semantic.ts"
+        ]
+      },
+      {
+        "id": "importer-only-surfaces",
+        "files": 9,
+        "loc": 5936,
+        "paths": [
+          "src/infrastructure/context-pack-command.ts",
+          "src/infrastructure/context-prompt-command.ts",
+          "src/infrastructure/context-prompt.ts",
+          "src/infrastructure/handoff-command.ts",
+          "src/infrastructure/proof-report.ts",
+          "src/infrastructure/review-compare.ts",
+          "src/infrastructure/time-travel.ts",
+          "src/runtime/http-server.ts",
+          "src/runtime/time-travel.ts"
+        ]
+      }
+    ]
+  },
+  "ownership": {
+    "absorbed_handles": [
+      "context-governance-stack",
+      "derived-product-wrappers"
+    ],
+    "transfers": [
+      { "path": "src/core/pipeline/stage.ts", "from": "generation-and-incremental", "to": "evidence-path-query" },
+      { "path": "src/runtime/freshness.ts", "from": "generation-and-incremental", "to": "evidence-path-query" },
+      { "path": "src/shared/source-discovery.ts", "from": "generation-and-incremental", "to": "evidence-path-query" },
+      { "path": "src/runtime/semantic.ts", "from": "non-core-graph-products", "to": "evidence-path-query" },
+      { "path": "src/runtime/http-server.ts", "from": "non-core-graph-products", "to": "evidence-path-query" },
+      { "path": "src/infrastructure/time-travel.ts", "from": "non-core-graph-products", "to": "evidence-path-query" },
+      { "path": "src/runtime/time-travel.ts", "from": "non-core-graph-products", "to": "evidence-path-query" },
+      { "path": "src/infrastructure/context-pack-command.ts", "from": "activation-and-extra-integrations", "to": "evidence-path-query" },
+      { "path": "src/infrastructure/context-prompt-command.ts", "from": "activation-and-extra-integrations", "to": "evidence-path-query" },
+      { "path": "src/infrastructure/context-prompt.ts", "from": "activation-and-extra-integrations", "to": "evidence-path-query" },
+      { "path": "src/infrastructure/handoff-command.ts", "from": "activation-and-extra-integrations", "to": "evidence-path-query" },
+      { "path": "src/infrastructure/proof-report.ts", "from": "evaluation-tooling", "to": "evidence-path-query" },
+      { "path": "src/infrastructure/review-compare.ts", "from": "evaluation-tooling", "to": "evidence-path-query" }
+    ],
+    "disposition_changes_from_baseline": 6,
+    "new_disposition_changes": [
+      { "path": "src/infrastructure/proof-report.ts", "from": "move", "to": "delete" },
+      { "path": "src/infrastructure/review-compare.ts", "from": "move", "to": "delete" }
+    ]
+  },
+  "importer_closure": {
+    "edge_encoding": "sorted unique UTF-8 rows of importer + NUL + target + LF, including a final LF",
+    "all_edge_count": 209,
+    "all_edge_sha256": "81cea60597f514970d1f30015de70ba66bbf49a0cc4ef921bcfe7588609bbbe8",
+    "internal_deleted_importer_count": 42,
+    "internal_edge_count": 146,
+    "internal_edge_sha256": "4e4ee17990fdeaba0ca8fc4985b791a30499057bd530eb3b95e6870c9e98c85d",
+    "surviving_direct_importer_count": 15,
+    "surviving_edge_count": 63,
+    "surviving_edge_sha256": "2ff971232ddf5942db1d8ce0b90c484d6f7945577766d92920c5aedc8c7e3a59",
+    "surviving_direct_importers": [
+      { "path": "src/cli/main.ts", "targets": ["src/infrastructure/context-pack-command.ts", "src/infrastructure/context-prompt-command.ts", "src/infrastructure/handoff-command.ts", "src/infrastructure/proof-report.ts", "src/infrastructure/review-compare.ts", "src/infrastructure/time-travel.ts", "src/runtime/http-server.ts", "src/runtime/time-travel.ts"] },
+      { "path": "src/cli/parser.ts", "targets": ["src/contracts/context-pack.ts"] },
+      { "path": "src/infrastructure/benchmark.ts", "targets": ["src/contracts/context-session.ts"] },
+      { "path": "src/infrastructure/benchmark/quality.ts", "targets": ["src/runtime/retrieve.ts"] },
+      { "path": "src/infrastructure/benchmark/questions.ts", "targets": ["src/contracts/context-session.ts"] },
+      { "path": "src/infrastructure/benchmark/runner.ts", "targets": ["src/contracts/context-session.ts", "src/runtime/retrieve.ts"] },
+      { "path": "src/infrastructure/benchmark/runtime-proof.ts", "targets": ["src/contracts/runtime-proof.ts"] },
+      { "path": "src/infrastructure/benchmark/suite.ts", "targets": ["src/contracts/context-pack.ts"] },
+      { "path": "src/infrastructure/compare.ts", "targets": ["src/contracts/context-pack.ts", "src/contracts/context-session.ts", "src/contracts/runtime-proof.ts", "src/infrastructure/context-pack-command.ts", "src/infrastructure/context-prompt.ts", "src/runtime/implementation-pack.ts", "src/runtime/retrieval-gate.ts", "src/runtime/retrieve.ts", "src/runtime/routing-debug.ts"] },
+      { "path": "src/infrastructure/doctor.ts", "targets": ["src/runtime/freshness.ts", "src/runtime/semantic.ts"] },
+      { "path": "src/infrastructure/install.ts", "targets": ["src/runtime/task-applicability.ts"] },
+      { "path": "src/infrastructure/try-command.ts", "targets": ["src/infrastructure/context-pack-command.ts", "src/runtime/freshness.ts"] },
+      { "path": "src/runtime/stdio-server.ts", "targets": ["src/contracts/context-session.ts", "src/infrastructure/time-travel.ts", "src/runtime/semantic.ts"] },
+      { "path": "src/runtime/stdio/resources.ts", "targets": ["src/runtime/freshness.ts"] },
+      { "path": "src/runtime/stdio/tools.ts", "targets": ["src/contracts/context-pack.ts", "src/contracts/context-session.ts", "src/contracts/retrieval-gate.ts", "src/contracts/retrieval-plan.ts", "src/contracts/task-context-plan.ts", "src/infrastructure/context-pack-command.ts", "src/infrastructure/time-travel.ts", "src/runtime/context-pack-delta.ts", "src/runtime/context-pack-diagnostics.ts", "src/runtime/context-pack-governance.ts", "src/runtime/context-pack-resolution.ts", "src/runtime/context-pack-target.ts", "src/runtime/context-pack.ts", "src/runtime/feature-map.ts", "src/runtime/freshness.ts", "src/runtime/impact.ts", "src/runtime/implementation-checklist.ts", "src/runtime/implementation-pack.ts", "src/runtime/mcp-response-evidence.ts", "src/runtime/pr-impact.ts", "src/runtime/relevant-files.ts", "src/runtime/retrieval-gate.ts", "src/runtime/retrieve.ts", "src/runtime/retrieve/conceptual-fallback.ts", "src/runtime/retrieve/pipeline.ts", "src/runtime/risk-map.ts", "src/runtime/task-context-planner.ts", "src/runtime/task-intent.ts", "src/runtime/time-travel.ts"] }
+    ],
+    "surface_only": [
+      { "path": "src/runtime/stdio/definitions.ts", "reason": "declares the retired MCP schemas without importing a predecessor" }
+    ],
+    "explicit_surviving_callsite_scope": [
+      { "path": "src/cli/main.ts", "action": "remove deleted commands and route the surviving query command to retrieve-context" },
+      { "path": "src/cli/parser.ts", "action": "remove obsolete query/governance flags and keep only the new query input contract" },
+      { "path": "src/runtime/stdio-server.ts", "action": "remove semantic/session imports and expose the new query use case" },
+      { "path": "src/runtime/stdio/definitions.ts", "action": "remove obsolete MCP definitions and define the new query input contract" },
+      { "path": "src/runtime/stdio/resources.ts", "action": "remove freshness coupling and use authoritative index status only where required" },
+      { "path": "src/runtime/stdio/tools.ts", "action": "replace the old query/governance/wrapper engine with retrieve-context" },
+      { "path": "src/infrastructure/doctor.ts", "action": "remove semantic/freshness query coupling without adding a compatibility engine" },
+      { "path": "src/infrastructure/install.ts", "action": "remove task-applicability coupling without redesigning delivery" },
+      { "path": "src/infrastructure/benchmark.ts", "action": "mechanically rewire evaluation caller only" },
+      { "path": "src/infrastructure/benchmark/quality.ts", "action": "mechanically rewire evaluation caller only" },
+      { "path": "src/infrastructure/benchmark/questions.ts", "action": "mechanically rewire evaluation caller only" },
+      { "path": "src/infrastructure/benchmark/runner.ts", "action": "mechanically rewire evaluation caller only" },
+      { "path": "src/infrastructure/benchmark/runtime-proof.ts", "action": "mechanically rewire evaluation caller only" },
+      { "path": "src/infrastructure/benchmark/suite.ts", "action": "mechanically rewire evaluation caller only" },
+      { "path": "src/infrastructure/compare.ts", "action": "mechanically rewire evaluation caller only" },
+      { "path": "src/infrastructure/try-command.ts", "action": "mechanically rewire evaluation caller only" }
+    ],
+    "unexpected_direct_importers": []
+  },
+  "replacement": {
+    "production_files_max": 7,
+    "production_loc_added_max": 3500,
+    "paths": [
+      "src/domain/query/types.ts",
+      "src/domain/query/source-domain.ts",
+      "src/domain/query/rank.ts",
+      "src/domain/query/traverse.ts",
+      "src/domain/query/slice.ts",
+      "src/domain/query/index-status.ts",
+      "src/application/retrieve-context.ts"
+    ],
+    "optional_peer_metadata_removed": "@huggingface/transformers"
+  },
+  "activation_state": "contract_only_implementation_not_started"
+}

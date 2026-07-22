@@ -3,7 +3,7 @@
 > **Tracking issue:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
 > **Project:** [Madar Roadmap](https://github.com/users/mohanagy/projects/8)
-> **Status:** accepted — phases through `generation-and-incremental` are complete; no phase is active; `evidence-path-query` is Ready but requires a separately accepted work-item contract before activation
+> **Status:** accepted — phases through `generation-and-incremental` are complete; `evidence-path-query` is the sole active phase through [#596](https://github.com/mohanagy/madar/issues/596); thin delivery and every later phase remain blocked
 
 ## Decision
 
@@ -148,7 +148,7 @@ The phase owned and removed exactly 15 predecessor files / 3,839 LOC recorded in
 - `src/adapters/filesystem/index-store.ts`
 - `src/infrastructure/watch-index.ts`
 
-`src/core/pipeline/stage.ts`, `src/runtime/freshness.ts`, and `src/shared/source-discovery.ts` transferred to `evidence-path-query`; `src/infrastructure/doctor.ts` transferred to `thin-delivery`. Evidence-path query is Ready but not active; thin delivery remains proposed and blocked. Neither recipient behavior was redesigned by the completed generation phase.
+`src/core/pipeline/stage.ts`, `src/runtime/freshness.ts`, and `src/shared/source-discovery.ts` transferred to `evidence-path-query`; `src/infrastructure/doctor.ts` transferred to `thin-delivery`. Evidence-path query is now active under its separately accepted contract, while thin delivery remains proposed and blocked. Neither recipient behavior was redesigned by the completed generation phase.
 
 The implementation finished at 130 production files / 66,418 production LOC, with net production delta `-2,536`, no new runtime or development dependency, and 276 npm files / 2,699,851 unpacked bytes; packed bytes decreased from the protected-base package.
 
@@ -161,6 +161,62 @@ Add/change/delete/rename, compiler-control, ignore-policy, recognized-unsupporte
 Cold no-op median must be at most 20% of clean generation, and clean generation may regress by at most 10% from the protected-base measurement. The fixed 500-file experiment used three warm-ups and 20 measured trials. Candidate checkpoint `1d3c9b6d264a5c76d212b93da7c63718cbe49b3d`, worktree tree `6bd1ae5762afaa868d5cf6ce165b061aa290bfda`, measured warm index p50 ratio `0.824` against `<=0.50`, refresh p50 ratio `1.047` against `<=0.75`, and refresh p95 ratio `1.029` against `<=0.80`. The [receipt](../core-reset/evidence/generation-incremental-stop-500.json) is explicitly ineligible for acceptance.
 
 That result triggered the accepted stop condition. Held-out timing was intentionally skipped because it could not reverse a fixed-gate failure. The failed incremental path was deleted, and the implementation simplified to cold no-op plus one honest full canonical reconcile. The stopped warm ratios are historical decision evidence, not continuing acceptance gates. The phase does not keep unused incremental code or add a cache/transaction framework.
+
+## Active amendment — generic evidence-path query
+
+The repository owner approved the exact phase contract in [#596](https://github.com/mohanagy/madar/issues/596#issuecomment-5050888977), the linked [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198), and the later [performance-contract correction](https://github.com/mohanagy/madar/issues/596#issuecomment-5051857404) with its [RFC record](https://github.com/mohanagy/madar/issues/577#issuecomment-5051857542) on 2026-07-23. This authorizes one deletion-led implementation from protected base `bce4f4fb1520a582bfedf5eab9133e9befbc79f7`. Activation changes no production source or package metadata: the phase begins at 130 production TypeScript files / 66,418 LOC and 276 npm files / 2,699,851 unpacked bytes with `+0 / -0 / net 0` production LOC.
+
+### Supported scope and result contract
+
+Core Reset retrieval supports `.ts`, `.tsx`, `.js`, and `.jsx`. It does not restore Go, Python, non-code, or mixed-language indexing. The frozen OpenStatus question is a diagnostic scope guard: its Go checker and Tinybird phases must be reported as unsupported, every required TypeScript/JavaScript phase must be directly evidenced, and the result must not claim a complete mixed-language trace.
+
+The replacement has one deterministic path:
+
+1. exact path and symbol anchors plus generic lexical anchors;
+2. deterministic candidate ranking and diversity;
+3. at most one typed directional traversal or closure pass;
+4. the smallest budgeted evidence selection;
+5. explicit missing, disconnected, unsupported, stale, unavailable, or truncated boundaries.
+
+Every returned node, relationship, file, range, and snippet must exist in the authoritative `graph.json` with the same direction and relationship kind. Disconnected handoffs are boundaries, not invented edges. Identical question plus identical graph bytes must produce byte-identical output. No global confidence score, task classifier, retrieval level, execution-phase taxonomy, planner, recursive recovery, context session/delta, resolution mode, hidden second query, model call, semantic/rerank branch, repository-specific claim generator, facade, or V1/V2 fallback may survive.
+
+### Deletion, ownership, and budget
+
+The active boundary deletes 54 predecessor production files / 29,441 LOC. It absorbs `context-governance-stack` and `derived-product-wrappers`, and transfers ten additional deletion-owned files from `non-core-graph-products`, `activation-and-extra-integrations`, and `evaluation-tooling`. The existing transfers of `stage.ts`, `freshness.ts`, and `source-discovery.ts` remain query-owned. `SourceDomain`, `classifySourceDomain()`, `isPollutedSourcePath()`, and only their necessary private helpers move to the new query domain with parity tests; the old module cannot remain as a facade.
+
+At most these seven production files / 3,500 LOC may be added:
+
+- `src/domain/query/types.ts`
+- `src/domain/query/source-domain.ts`
+- `src/domain/query/rank.ts`
+- `src/domain/query/traverse.ts`
+- `src/domain/query/slice.ts`
+- `src/domain/query/index-status.ts`
+- `src/application/retrieve-context.ts`
+
+The phase must remove at least 54 production files / 29,441 LOC, finish with net production delta at most `-25,900`, and remain at or below 83 production files / 40,500 LOC. Runtime and development dependency additions are zero. The optional `@huggingface/transformers` peer and metadata are removed. The phase package must contain at most 210 files / 2,200,000 unpacked bytes, and packed bytes must decrease.
+
+Surviving CLI, MCP, installer, and development-only evaluation callers may only remove obsolete imports and invoke the new application use case; they cannot retain a compatibility engine. Thin delivery continues to own its surviving files and remains blocked.
+
+### Frozen correctness and one-call gates
+
+The blocking gate is `core-reset-held-out-v1`, pinned by `tools/eval/core-reset/contracts/evaluation-contract.json` at SHA-256 `3a3272df5c294ab0e3a4f2ace815fbd120941a432f85a616b9624f420de86b3b`. `documenso-document-send` is bound to commit `4ee789ea378d12c85daacf7dceda80b4dec80652` and phases recipient creation, document send, signing completion, and notification delivery. `formbricks-survey-response` is bound to commit `415bd9828ba150f7944fe10422acdbaf3089c707` and phases request handling, response persistence, and event tracking.
+
+Each blocking prompt receives exactly one evaluator `retrieve` invocation and no hidden second query. All required phases need direct snippet-bearing evidence; verification targets do not count as coverage. The result must contain zero incorrect load-bearing paths or relationships, at least 70% selected-file precision, no more than two unrelated files, no more than 12 unique files and 25 snippets, and at most 4,000 serialized tokens.
+
+The diagnostic `openstatus-574-strict-one-call` is pinned to commit `295e5a72f52c172d326aa950e81043e72a4f20c0`. It requires direct TypeScript evidence for incident mutation, notification delivery, public HTML, and JSON feeds, explicitly marks checker detection and Tinybird persistence unsupported, excludes unrelated PNG/test/UI noise, and never claims full mixed-language completeness. Expected paths, repository identifiers, grading data, and scoring terms remain under `tools/eval/**`; production cannot import or embed them.
+
+### Frozen performance gate
+
+The development-only descriptor `tools/eval/core-reset/contracts/evidence-path-performance-v1.json`, SHA-256 `076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c`, deterministically generates exactly 15,000 nodes and 30,000 directed edges across 150 fixed components, with four positive queries that pin exact node and directed/typed relationship sets, one query that pins an exact missing boundary, and RFC 8785 serialization. The reference environment is Node `v22.9.0`, Darwin `25.3.0` arm64, Apple M3 Max, and 51,539,607,552 bytes RAM; measurements from other environments are diagnostic only.
+
+With the graph parsed and loaded before timing, the accepted runner first performs one untimed correctness invocation per query. All five expectations must pass before warmup, and every warmup and measured result must remain correct; empty positive results, missing/extra nodes or edges, reversed/wrong relationship kinds, or an absent/extra boundary fail the gate. The runner then performs three warm-ups and at least 20 measured queries. Warm retrieval p95 must be below 500 ms, closure-pass count at most one, and every sample within the file, snippet, and token caps. The accepted receipt will live at `docs/core-reset/evidence/evidence-path-performance.json`; it is implementation evidence and does not exist or pass at activation.
+
+### Pending evidence and stop conditions
+
+Every implementation, deletion, held-out, performance, source, package, dependency, CI, and review result remains pending. Activation proves only that the contract is accepted. Thin delivery, native/Graphify/provider-token comparison, three Claude and three Codex trials, blinded human scoring, external validation, and release work remain blocked.
+
+Stop and amend #577 before continuing if implementation requires a predecessor or facade, repository-specific tuning, global top-k inflation, another planner/recovery/confidence/session/mode, a second internal query or model call, invented relationships, a new dependency, a source/package budget failure, Go/non-code ingestion, graph/index/generation redesign, or a release.
 
 ## Public surface target
 
@@ -237,8 +293,8 @@ The detailed scorecard is [`docs/core-reset/scorecard.md`](../core-reset/scoreca
 
 ## Existing open issues
 
-- [#565](https://github.com/mohanagy/madar/issues/565) remains an acceptance failure and held-out retrieval input.
-- [#574](https://github.com/mohanagy/madar/issues/574) contributes the required retrieval outcome, but must not add another layer to the old stack.
+- [#565](https://github.com/mohanagy/madar/issues/565) remains the real acceptance failure; its Go prefix is diagnostic/unsupported, while supported-scope TypeScript acceptance and later Claude/Codex/human trials remain open.
+- [#574](https://github.com/mohanagy/madar/issues/574) is superseded by the generic, scope-correct replacement in [#596](https://github.com/mohanagy/madar/issues/596), not implemented as another patch.
 - [#571](https://github.com/mohanagy/madar/issues/571) is superseded if extraction modes are removed.
 - [#567](https://github.com/mohanagy/madar/issues/567) is folded into thin Codex delivery and remains a beta activation blocker.
 
@@ -266,7 +322,7 @@ Any change to the product job, non-goals, architecture boundary, compatibility p
 
 ## Acceptance
 
-The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.com/mohanagy/madar/issues/577) after the governance review passed. Scope/baseline, directed-multigraph, canonical-index, legacy/non-code deletion, and generation/reconciliation phases later passed their gates. On 2026-07-22 the owner accepted [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the linked RFC amendment, then approved the recorded stop amendment after its fixed incremental gate failed. PR #594 completed that narrowed contract. No phase is active; Evidence-path query is Ready but still requires its own accepted contract and explicit activation.
+The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.com/mohanagy/madar/issues/577) after the governance review passed. Scope/baseline, directed-multigraph, canonical-index, legacy/non-code deletion, and generation/reconciliation phases later passed their gates. On 2026-07-22 the owner accepted [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the linked RFC amendment, then approved the recorded stop amendment after its fixed incremental gate failed. PR #594 completed that narrowed contract. On 2026-07-23 the owner accepted [#596](https://github.com/mohanagy/madar/issues/596#issuecomment-5050888977) and the linked [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198). Evidence-path query is now the sole active phase; thin delivery and every later phase remain blocked.
 
 ## Decision log
 
@@ -277,3 +333,5 @@ The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.co
 | 2026-07-22 | Accepted amendment | The owner approved [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586): a bounded warm in-memory experiment, honest cold reconciliation, one authoritative graph artifact, graph-last publication, four ownership transfers, strict deletion/size/performance gates, and no persistent cache or transaction subsystem. The following stop amendment supersedes the experiment. |
 | 2026-07-22 | Stop amendment and runtime proof | The fixed 500-file gate failed at candidate `1d3c9b6` / tree `6bd1ae` with ratios `0.824`, `1.047`, and `1.029`. Held-out timing was intentionally skipped and the failed path was deleted. Exact runtime `1be24dc` ships only cold no-op plus full canonical reconciliation with no session cache and passes the compatible shipping receipt at cold-noop ratio `0.067`, zero parse/invalidation/publication, and clean regression `1.045`. |
 | 2026-07-22 | Generation and reconciliation complete | PR #594 was squash-merged at `b56966c06c0ae1b04c252f297036f332fa1b384c` after all six CI jobs, coverage, package, performance, independent-review, and zero-thread gates passed. No phase is active; Evidence-path query is Ready but not activated. |
+| 2026-07-23 | Accepted amendment | The owner approved [#596](https://github.com/mohanagy/madar/issues/596#issuecomment-5050888977) and the [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198): one generic deterministic evidence-path query, exact 54-file deletion, seven-file replacement ceiling, scope-correct held-outs, pinned performance contract, and no planner/confidence/recovery/fallback subsystem. Evidence-path query is the sole active phase; implementation evidence is pending. |
+| 2026-07-23 | Performance-contract correction | Independent review found that latency/output maxima alone could false-green an empty retriever. The owner approved the [corrected contract](https://github.com/mohanagy/madar/issues/596#issuecomment-5051857404) and [RFC record](https://github.com/mohanagy/madar/issues/577#issuecomment-5051857542): four exact positive evidence paths, one exact missing boundary, preflight before warmup, and correctness on every measured result. Implementation evidence remains pending. |

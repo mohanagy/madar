@@ -22,12 +22,13 @@ interface PerformanceHarness {
 }
 
 const harnessPath = resolve('tools/eval/core-reset/incremental-performance.mjs')
-const protectedBaseReceiptPath = resolve(
-  'docs/core-reset/evidence/generation-incremental-protected-base-500.json',
-)
-const stoppedCandidateReceiptPath = resolve(
-  'docs/core-reset/evidence/generation-incremental-stop-500.json',
-)
+const protectedBaseReceipt = 'docs/core-reset/evidence/generation-incremental-protected-base-500.json'
+const protectedBaseReceiptPath = resolve(protectedBaseReceipt)
+const protectedBaseReceiptSha256 = '3c9658cc668f203210dc4d313ff0eecd823cd2407e97dd6376627b1f88f67ca2'
+const stoppedCandidateReceipt = 'docs/core-reset/evidence/generation-incremental-stop-500.json'
+const stoppedCandidateReceiptPath = resolve(stoppedCandidateReceipt)
+const stoppedCandidateReceiptSha256 = '3a7df803cb5d01016954ea38e4c14f4b476d9d92bcca08fffffa57c2690f2ae4'
+const shippedMergeCommit = 'b56966c06c0ae1b04c252f297036f332fa1b384c'
 const measuredCandidateCommit = '1d3c9b6d264a5c76d212b93da7c63718cbe49b3d'
 const measuredCandidateTree = '6bd1ae5762afaa868d5cf6ce165b061aa290bfda'
 
@@ -356,6 +357,16 @@ describe('incremental performance evaluation harness', () => {
     const protectedBase = JSON.parse(protectedBaseRaw)
     const stoppedCandidate = JSON.parse(stoppedCandidateRaw)
 
+    for (const [receiptPath, expectedSha256] of [
+      [protectedBaseReceipt, protectedBaseReceiptSha256],
+      [stoppedCandidateReceipt, stoppedCandidateReceiptSha256],
+    ] as const) {
+      expect(createHash('sha256').update(execFileSync(
+        'git',
+        ['show', `${shippedMergeCommit}:${receiptPath}`],
+      )).digest('hex')).toBe(expectedSha256)
+    }
+
     for (const receipt of [protectedBase, stoppedCandidate]) {
       const body = structuredClone(receipt)
       const claimedChecksum = body.receipt_sha256
@@ -415,9 +426,6 @@ describe('incremental performance evaluation harness', () => {
       invalidated_files: { min: 1, max: 1 },
       dependency_closure_size: { min: 0, max: 0 },
     })
-    expect(execFileSync('git', ['show', '-s', '--format=%T', measuredCandidateCommit], {
-      encoding: 'utf8',
-    }).trim()).toBe(measuredCandidateTree)
     expect(protectedBaseRaw).not.toMatch(/\/Users\/|\/tmp\//)
     expect(stoppedCandidateRaw).not.toMatch(/\/Users\/|\/tmp\//)
   })

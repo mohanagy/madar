@@ -10,8 +10,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, posix, resolve } from 'node:path'
 
+import ts from 'typescript'
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
 
@@ -28,9 +29,52 @@ const INCREMENTAL_CI_HEAD = '3f40c5b64cdd63054c52ed67588b782034f8b935'
 const INCREMENTAL_CI_RUN = 'https://github.com/mohanagy/madar/actions/runs/29942216697'
 const INCREMENTAL_REVIEW_RECEIPT = 'https://github.com/mohanagy/madar/pull/594#issuecomment-5049404550'
 const INCREMENTAL_MUTATION_RECEIPT = 'docs/core-reset/evidence/generation-mutation-equivalence.json'
+const INCREMENTAL_MUTATION_RECEIPT_SHA256 = '831bce005c0e9cb28f768a2c490e1923e8062344fd2fd9710be5376e5603f67d'
 const INCREMENTAL_FINAL_TREE = '0cead2d3488dac136affa4bec047f8b5f11418a3'
 const STOPPED_INCREMENTAL_CANDIDATE = '1d3c9b6d264a5c76d212b93da7c63718cbe49b3d'
 const STOPPED_INCREMENTAL_TREE = '6bd1ae5762afaa868d5cf6ce165b061aa290bfda'
+const EVIDENCE_BASE = 'bce4f4fb1520a582bfedf5eab9133e9befbc79f7'
+const EVIDENCE_BASE_TREE = '7ac3c1ef990ee628ca5c9a215ae6388c82dabcd3'
+const EVIDENCE_ISSUE = 'https://github.com/mohanagy/madar/issues/596'
+const EVIDENCE_OWNER_APPROVAL = `${EVIDENCE_ISSUE}#issuecomment-5050888977`
+const EVIDENCE_RFC_AMENDMENT = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198'
+const EVIDENCE_PERFORMANCE_AMENDMENT = `${EVIDENCE_ISSUE}#issuecomment-5051857404`
+const EVIDENCE_PERFORMANCE_RFC_AMENDMENT = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5051857542'
+const EVIDENCE_PERFORMANCE_DESCRIPTOR = 'tools/eval/core-reset/contracts/evidence-path-performance-v1.json'
+const EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256 = '076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c'
+const EVIDENCE_PERFORMANCE_RECEIPT = 'docs/core-reset/evidence/evidence-path-performance.json'
+const EVIDENCE_IMPORTER_RECEIPT = 'docs/core-reset/evidence/evidence-path-importer-closure.json'
+const EVIDENCE_IMPORTER_RECEIPT_SHA256 = '6b35797f0625e69708fca3441d12b1aea565275f8bd585f3a0fe56f8958f07b3'
+const FROZEN_EVIDENCE_HASHES = {
+  'tools/eval/core-reset/contracts/evaluation-contract.json': '3a3272df5c294ab0e3a4f2ace815fbd120941a432f85a616b9624f420de86b3b',
+  'tools/eval/core-reset/schemas/evaluation-contract.schema.json': '34ca0bfc94c117eb79a5ec5d701af1c8fa0335a3a1c41cf44cf016952a48c889',
+  'docs/core-reset/evidence/baseline-v0.32.0.json': 'c2b96e75e64934de998bb5c7087cb604b680cd8fd2aa5c6d1f74cd9f1a0c6516',
+  'tools/eval/core-reset/schemas/baseline-receipt.schema.json': '04eeb47a14da18ec90c6e687bbd557d44a3fe5ac493d8d6946f4b3fc4f7f6a59',
+} as const
+const EVIDENCE_TRANSFERS = [
+  'src/core/pipeline/stage.ts',
+  'src/runtime/freshness.ts',
+  'src/shared/source-discovery.ts',
+  'src/runtime/semantic.ts',
+  'src/runtime/http-server.ts',
+  'src/infrastructure/time-travel.ts',
+  'src/runtime/time-travel.ts',
+  'src/infrastructure/context-pack-command.ts',
+  'src/infrastructure/context-prompt-command.ts',
+  'src/infrastructure/context-prompt.ts',
+  'src/infrastructure/handoff-command.ts',
+  'src/infrastructure/proof-report.ts',
+  'src/infrastructure/review-compare.ts',
+] as const
+const EVIDENCE_REPLACEMENTS = [
+  'src/domain/query/types.ts',
+  'src/domain/query/source-domain.ts',
+  'src/domain/query/rank.ts',
+  'src/domain/query/traverse.ts',
+  'src/domain/query/slice.ts',
+  'src/domain/query/index-status.ts',
+  'src/application/retrieve-context.ts',
+] as const
 const INCREMENTAL_PREDECESSORS = [
   'src/infrastructure/generate.ts',
   'src/contracts/generation-policy.ts',
@@ -105,6 +149,86 @@ function logicalLocAtCommit(commit: string, paths: readonly string[]): number {
   }, 0)
 }
 
+const gitBlobSha256 = (revision: string, path: string): string =>
+  createHash('sha256').update(execFileSync(git, ['show', `${revision}:${path}`])).digest('hex')
+
+function importedProductionFilesAtCommit(
+  commit: string,
+  importer: string,
+  productionFiles: ReadonlySet<string>,
+): string[] {
+  const source = execFileSync(git, ['show', `${commit}:${importer}`], { encoding: 'utf8' })
+  const sourceFile = ts.createSourceFile(importer, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const moduleSpecifiers = new Set<string>()
+
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+      && node.moduleSpecifier
+      && ts.isStringLiteralLike(node.moduleSpecifier)
+    ) {
+      moduleSpecifiers.add(node.moduleSpecifier.text)
+    }
+    if (
+      ts.isImportEqualsDeclaration(node)
+      && ts.isExternalModuleReference(node.moduleReference)
+      && node.moduleReference.expression
+      && ts.isStringLiteralLike(node.moduleReference.expression)
+    ) {
+      moduleSpecifiers.add(node.moduleReference.expression.text)
+    }
+    const argument = ts.isCallExpression(node) ? node.arguments[0] : undefined
+    if (
+      ts.isCallExpression(node)
+      && node.arguments.length === 1
+      && argument
+      && ts.isStringLiteralLike(argument)
+      && (
+        node.expression.kind === ts.SyntaxKind.ImportKeyword
+        || (ts.isIdentifier(node.expression) && node.expression.text === 'require')
+      )
+    ) {
+      moduleSpecifiers.add(argument.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+
+  return [...moduleSpecifiers].flatMap((specifier) => {
+    if (!specifier.startsWith('.')) return []
+    const unresolved = posix.normalize(posix.join(posix.dirname(importer), specifier))
+    const candidates = [
+      unresolved,
+      unresolved.replace(/\.(?:cjs|js|jsx|mjs)$/, '.ts'),
+      `${unresolved}.ts`,
+      `${unresolved}/index.ts`,
+    ]
+    return candidates.find((candidate) => productionFiles.has(candidate)) ?? []
+  }).filter((target, index, targets) => targets.indexOf(target) === index).sort()
+}
+
+function deletionImportEdgesAtCommit(commit: string, deletionFiles: ReadonlySet<string>): {
+  all: string[]
+  internal: string[]
+  surviving: string[]
+} {
+  const productionFiles = productionTypeScriptFilesAtCommit(commit)
+  const productionFileSet = new Set(productionFiles)
+  const all = productionFiles.flatMap((importer) =>
+    importedProductionFilesAtCommit(commit, importer, productionFileSet)
+      .filter((target) => deletionFiles.has(target))
+      .map((target) => `${importer}\0${target}`),
+  ).filter((edge, index, edges) => edges.indexOf(edge) === index).sort()
+  return {
+    all,
+    internal: all.filter((edge) => deletionFiles.has(edge.slice(0, edge.indexOf('\0')))),
+    surviving: all.filter((edge) => !deletionFiles.has(edge.slice(0, edge.indexOf('\0')))),
+  }
+}
+
+const edgeListSha256 = (edges: readonly string[]): string =>
+  createHash('sha256').update(`${edges.join('\n')}\n`).digest('hex')
+
 describe('core reset governance', () => {
   it('keeps one linked roadmap and RFC contract', () => {
     const roadmap = read('docs/roadmap.md')
@@ -123,11 +247,18 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Passed — canonical TypeScript/JavaScript index')
     expect(roadmap).toContain('## Passed — delete legacy extraction and non-code/other-language ingestion')
     expect(roadmap).toContain('## Passed — generation and reconciliation')
-    expect(roadmap).toContain('## Ready — evidence-path query')
+    expect(roadmap).toContain('## In progress — evidence-path query')
+    expect(roadmap).toContain(EVIDENCE_OWNER_APPROVAL)
+    expect(roadmap).toContain(EVIDENCE_RFC_AMENDMENT)
+    expect(roadmap).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
+    expect(roadmap).toContain(EVIDENCE_PERFORMANCE_RFC_AMENDMENT)
+    expect(roadmap).toContain('an empty positive result fails')
+    expect(roadmap).toContain('54 predecessor files / 29,441 LOC')
+    expect(roadmap).toContain('Every implementation, deletion, held-out, performance, package, CI, and review result remains pending')
     expect(roadmap).toContain('issues/592')
     expect(roadmap).toContain('issues/588')
     expect(roadmap).not.toContain('## Ready — generation and incremental index')
-    expect(roadmap).toContain('No phase is In progress')
+    expect(roadmap).not.toContain('## Ready — evidence-path query')
     expect(roadmap).not.toContain('## In progress — generation and incremental index')
     expect(roadmap).not.toContain('## In progress — canonical TypeScript/JavaScript index')
     expect(roadmap).not.toContain('## In progress — delete legacy extraction and non-code/other-language ingestion')
@@ -151,8 +282,15 @@ describe('core reset governance', () => {
     expect(design).toContain('Only successfully indexed `.ts`, `.tsx`, `.js`, and `.jsx` inputs determine supported-index completeness')
     expect(design).toContain('There is no generation directory, persistent fact cache, versioned snapshot store')
     expect(design).toContain('## Completed amendment — generation and reconciliation')
-    expect(design).toContain('No phase is active')
-    expect(design).not.toContain('sole active phase')
+    expect(design).toContain('## Active amendment — generic evidence-path query')
+    expect(design).toContain(EVIDENCE_OWNER_APPROVAL)
+    expect(design).toContain(EVIDENCE_RFC_AMENDMENT)
+    expect(design).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
+    expect(design).toContain(EVIDENCE_PERFORMANCE_RFC_AMENDMENT)
+    expect(design).toContain('All five expectations must pass before warmup')
+    expect(design).toContain('empty positive results, missing/extra nodes or edges, reversed/wrong relationship kinds')
+    expect(design).toContain('`evidence-path-query` is the sole active phase')
+    expect(design).toContain('implementation evidence and does not exist or pass at activation')
     expect(design).not.toContain('## Active amendment — generation and incremental index')
     expect(design).not.toContain('the phase remains active')
     expect(design).not.toContain('completion evidence remains open')
@@ -161,8 +299,14 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Canonical TypeScript index | **Passed**')
     expect(scorecard).toContain('| Legacy extraction plus non-code/other-language ingestion | **Passed**')
     expect(scorecard).toContain('| Generation and reconciliation | **Passed**')
-    expect(scorecard).toContain('| Evidence-path query | **Ready — not In progress**')
-    expect(scorecard).toContain('No phase is In progress')
+    expect(scorecard).toContain('| Evidence-path query | **In progress**')
+    expect(scorecard).toContain(EVIDENCE_OWNER_APPROVAL)
+    expect(scorecard).toContain(EVIDENCE_RFC_AMENDMENT)
+    expect(scorecard).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
+    expect(scorecard).toContain(EVIDENCE_PERFORMANCE_RFC_AMENDMENT)
+    expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
+    expect(scorecard).toContain('`evidence-path-query` is the single In progress phase')
+    expect(scorecard).toContain('No implementation, deletion, held-out, timing, package, dependency, CI, or review gate is reported as passed')
     expect(scorecard).toContain('clean generation stays within the accepted 10% regression limit')
     expect(scorecard).toContain('recognized unsupported files and expected policy exclusions are informational')
     expect(scorecard).toContain('The fixed 500-file experiment stopped the incremental design')
@@ -194,7 +338,6 @@ describe('core reset governance', () => {
         ready_phase: string | null
         base_commit: string
         completed_phase_commit: string
-        implementation_commit: string
         production_typescript_files: number
         production_typescript_loc: number
         production_loc_added: number
@@ -318,18 +461,17 @@ describe('core reset governance', () => {
     expect(manifest.schema_version).toBe(1)
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-22',
+      updated_at: '2026-07-23',
       completed_phase: 'generation-and-incremental',
-      active_phase: null,
-      ready_phase: 'evidence-path-query',
-      base_commit: INCREMENTAL_BASE,
+      active_phase: 'evidence-path-query',
+      ready_phase: null,
+      base_commit: EVIDENCE_BASE,
       completed_phase_commit: INCREMENTAL_MERGE,
-      implementation_commit: INCREMENTAL_IMPLEMENTATION,
       production_typescript_files: 130,
       production_typescript_loc: 66_418,
-      production_loc_added: 2_190,
-      production_loc_removed: 4_726,
-      production_loc_net: -2_536,
+      production_loc_added: 0,
+      production_loc_removed: 0,
+      production_loc_net: 0,
       npm_files: 276,
       npm_packed_bytes: 572_143,
       npm_unpacked_bytes: 2_699_851,
@@ -447,7 +589,8 @@ describe('core reset governance', () => {
     expect(new Set(deletionFiles).size).toBe(31)
     expect(logicalLocAtCommit(legacyBase, deletionFiles)).toBe(20_951)
     const generation = manifest.items.find((item) => item.id === 'generation-and-incremental')
-    expect(manifest.items.filter((item) => item.status === 'in_progress')).toEqual([])
+    expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
+      .toEqual(['evidence-path-query'])
     expect(generation).toMatchObject({
       status: 'complete',
       sources: INCREMENTAL_OWNED_REPLACEMENTS,
@@ -568,11 +711,774 @@ describe('core reset governance', () => {
     expect(INCREMENTAL_PREDECESSORS.every((path) => !existsSync(resolve(path)))).toBe(true)
     expect(INCREMENTAL_REPLACEMENTS.every((path) => existsSync(resolve(path)))).toBe(true)
     expect(logicalLocAtCommit(INCREMENTAL_BASE, INCREMENTAL_PREDECESSORS)).toBe(3_839)
-    expect(manifest.items.find((item) => item.id === 'evidence-path-query')?.status).toBe('planned')
+    expect(manifest.items.find((item) => item.id === 'evidence-path-query')?.status).toBe('in_progress')
     expect(manifest.items.find((item) => item.id === 'thin-delivery')?.status).toBe('proposed')
   })
 
+  it('freezes the accepted evidence-path activation without claiming implementation', () => {
+    const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
+      review: { disposition_changes: number; amendment: string }
+      current: {
+        completed_phase: string
+        active_phase: string | null
+        ready_phase: string | null
+        base_commit: string
+        completed_phase_commit: string
+        production_typescript_files: number
+        production_typescript_loc: number
+        production_loc_added: number
+        production_loc_removed: number
+        production_loc_net: number
+        npm_files: number
+        npm_packed_bytes: number
+        npm_unpacked_bytes: number
+      }
+      items: Array<{
+        id: string
+        disposition: string
+        status: string
+        sources?: string[]
+        absorbs?: string[]
+        absorbed_by?: string
+        blocked_by?: string
+        transferred_sources?: string[]
+        replacement_sources?: string[]
+        predecessor_contract?: {
+          files: number
+          production_loc: number
+          transferred_sources: number
+          absorbed_handles: number
+        }
+        production_file_budget?: { added_max: number; removed_min: number }
+        production_loc_budget?: { added_max: number; removed_min: number; net_max: number }
+        runtime_dependency_budget?: { added_max: number }
+        development_dependency_budget?: { added_max: number }
+        optional_peer_metadata_to_remove?: string[]
+        final_source_budget?: { files_max: number; loc_max: number }
+        npm_package_budget?: {
+          files_max: number
+          unpacked_bytes_max: number
+          packed_bytes_delta_max: number
+        }
+        deterministic_query_contract?: {
+          graph_backed_evidence_only: boolean
+          preserve_typed_directional_relationships: boolean
+          disconnected_boundaries_explicit: boolean
+          missing_and_unsupported_boundaries_explicit: boolean
+          stale_unavailable_corrupt_and_truncated_boundaries_explicit: boolean
+          duplicate_evidence_forbidden: boolean
+          identical_question_and_graph_bytes_are_byte_deterministic: boolean
+          closure_pass_max: number
+          global_confidence_score: string
+          planner_or_recursive_recovery: string
+          hidden_second_query_or_model_call: string
+          repository_specific_rules: string
+        }
+        heldout_contract?: {
+          id: string
+          contract: string
+          contract_sha256: string
+          contract_schema: string
+          contract_schema_sha256: string
+          baseline_receipt: string
+          baseline_receipt_sha256: string
+          baseline_receipt_schema: string
+          baseline_receipt_schema_sha256: string
+          blocking_repositories: Array<{
+            question: string
+            repository: string
+            commit: string
+            tree_path_sha256: string
+            graph_root: string
+            required_phases: string[]
+          }>
+          diagnostic_scope_guard: {
+            question: string
+            repository: string
+            commit: string
+            tree_path_sha256: string
+            graph_root: string
+            required_typescript_phases: string[]
+            unsupported_phases: string[]
+          }
+          query_invocations_max: number
+          required_phase_coverage: number
+          verification_targets_cover_blocking_phases: boolean
+          selected_file_precision_min: number
+          unrelated_files_max: number
+          selected_files_max: number
+          snippets_max: number
+          serialized_tokens_max: number
+          incorrect_load_bearing_paths_max: number
+        }
+        performance_contract?: {
+          id: string
+          descriptor: string
+          descriptor_sha256: string
+          generator: string
+          nodes: number
+          directed_edges: number
+          graph_loaded_before_timer: boolean
+          positive_queries: number
+          missing_queries: number
+          untimed_preflight_invocations_per_query: number
+          preflight_must_pass_before_warmup: boolean
+          every_warmup_and_measured_result_must_match: boolean
+          empty_positive_result: string
+          warmups: number
+          measured_queries_min: number
+          warm_retrieval_p95_ms_max: number
+          closure_pass_max: number
+          reference_environment: {
+            node: string
+            platform: string
+            release: string
+            arch: string
+            cpu: string
+            memory_bytes: number
+          }
+          receipt: string
+          runner: string
+        }
+        importer_closure_contract?: {
+          receipt: string
+          receipt_sha256: string
+          subject_commit: string
+          subject_tree: string
+          predecessor_files: number
+          predecessor_loc: number
+          all_edges: number
+          internal_deleted_importers: number
+          internal_edges: number
+          surviving_direct_importers: number
+          surviving_edges: number
+          transfers: number
+          surface_only_callers: number
+          unexpected_direct_importers: number
+          activation_state: string
+        }
+        activation?: {
+          issue: string
+          owner_approval: string
+          rfc_amendment: string
+          performance_amendment: string
+          performance_rfc_amendment: string
+          protected_base: string
+          implementation_started?: boolean
+        }
+      }>
+    }
+
+    expect(execFileSync(git, ['rev-parse', `${EVIDENCE_BASE}^{tree}`], { encoding: 'utf8' }).trim())
+      .toBe(EVIDENCE_BASE_TREE)
+    expect(manifest.current).toEqual({
+      updated_at: '2026-07-23',
+      completed_phase: 'generation-and-incremental',
+      active_phase: 'evidence-path-query',
+      ready_phase: null,
+      base_commit: EVIDENCE_BASE,
+      completed_phase_commit: INCREMENTAL_MERGE,
+      production_typescript_files: 130,
+      production_typescript_loc: 66_418,
+      production_loc_added: 0,
+      production_loc_removed: 0,
+      production_loc_net: 0,
+      npm_files: 276,
+      npm_packed_bytes: 572_143,
+      npm_unpacked_bytes: 2_699_851,
+    })
+    expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
+      .toEqual(['evidence-path-query'])
+
+    const evidence = manifest.items.find((item) => item.id === 'evidence-path-query')
+    expect(evidence).toMatchObject({
+      disposition: 'rebuild',
+      status: 'in_progress',
+      absorbs: ['context-governance-stack', 'derived-product-wrappers'],
+      transferred_sources: [...EVIDENCE_TRANSFERS],
+      replacement_sources: [...EVIDENCE_REPLACEMENTS],
+      predecessor_contract: {
+        files: 54,
+        production_loc: 29_441,
+        transferred_sources: 13,
+        absorbed_handles: 2,
+      },
+      production_file_budget: { added_max: 7, removed_min: 54 },
+      production_loc_budget: { added_max: 3_500, removed_min: 29_441, net_max: -25_900 },
+      runtime_dependency_budget: { added_max: 0 },
+      development_dependency_budget: { added_max: 0 },
+      optional_peer_metadata_to_remove: ['@huggingface/transformers'],
+      final_source_budget: { files_max: 83, loc_max: 40_500 },
+      npm_package_budget: {
+        files_max: 210,
+        unpacked_bytes_max: 2_200_000,
+        packed_bytes_delta_max: -1,
+      },
+      deterministic_query_contract: {
+        graph_backed_evidence_only: true,
+        preserve_typed_directional_relationships: true,
+        disconnected_boundaries_explicit: true,
+        missing_and_unsupported_boundaries_explicit: true,
+        stale_unavailable_corrupt_and_truncated_boundaries_explicit: true,
+        duplicate_evidence_forbidden: true,
+        identical_question_and_graph_bytes_are_byte_deterministic: true,
+        closure_pass_max: 1,
+        global_confidence_score: 'forbidden',
+        planner_or_recursive_recovery: 'forbidden',
+        hidden_second_query_or_model_call: 'forbidden',
+        repository_specific_rules: 'forbidden',
+      },
+      heldout_contract: {
+        id: 'core-reset-held-out-v1',
+        contract: 'tools/eval/core-reset/contracts/evaluation-contract.json',
+        contract_sha256: FROZEN_EVIDENCE_HASHES['tools/eval/core-reset/contracts/evaluation-contract.json'],
+        contract_schema: 'tools/eval/core-reset/schemas/evaluation-contract.schema.json',
+        contract_schema_sha256: FROZEN_EVIDENCE_HASHES['tools/eval/core-reset/schemas/evaluation-contract.schema.json'],
+        baseline_receipt: 'docs/core-reset/evidence/baseline-v0.32.0.json',
+        baseline_receipt_sha256: FROZEN_EVIDENCE_HASHES['docs/core-reset/evidence/baseline-v0.32.0.json'],
+        baseline_receipt_schema: 'tools/eval/core-reset/schemas/baseline-receipt.schema.json',
+        baseline_receipt_schema_sha256: FROZEN_EVIDENCE_HASHES['tools/eval/core-reset/schemas/baseline-receipt.schema.json'],
+        blocking_repositories: [
+          {
+            question: 'documenso-document-send',
+            repository: 'documenso',
+            commit: '4ee789ea378d12c85daacf7dceda80b4dec80652',
+            tree_path_sha256: '48728969cb89adeb6567f030a41fdf380e6c523473a04d3a264a4f4970b95709',
+            graph_root: 'packages/lib',
+            required_phases: [
+              'recipient_creation',
+              'document_send',
+              'signing_completion',
+              'notification_delivery',
+            ],
+          },
+          {
+            question: 'formbricks-survey-response',
+            repository: 'formbricks',
+            commit: '415bd9828ba150f7944fe10422acdbaf3089c707',
+            tree_path_sha256: 'd50418a92fd6dae8d07ad09e4aaecbefb53c5ed29c85e374d41320e0669a7572',
+            graph_root: 'apps/web',
+            required_phases: ['request_handling', 'response_persistence', 'event_tracking'],
+          },
+        ],
+        diagnostic_scope_guard: {
+          question: 'openstatus-574-strict-one-call',
+          repository: 'openstatus',
+          commit: '295e5a72f52c172d326aa950e81043e72a4f20c0',
+          tree_path_sha256: '9ccb1f1dce50c03ea67703953c124cb6026ee978a97be4f358d7276c20e764f4',
+          graph_root: '.',
+          required_typescript_phases: [
+            'incident_mutation',
+            'notification_delivery',
+            'public_html',
+            'json_feeds',
+          ],
+          unsupported_phases: ['checker_detection', 'tinybird_persistence'],
+        },
+        query_invocations_max: 1,
+        required_phase_coverage: 1,
+        verification_targets_cover_blocking_phases: false,
+        selected_file_precision_min: 0.70,
+        unrelated_files_max: 2,
+        selected_files_max: 12,
+        snippets_max: 25,
+        serialized_tokens_max: 4_000,
+        incorrect_load_bearing_paths_max: 0,
+      },
+      performance_contract: {
+        id: 'evidence-path-performance-v1',
+        descriptor: EVIDENCE_PERFORMANCE_DESCRIPTOR,
+        descriptor_sha256: EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256,
+        generator: 'component-ring-with-fixed-skip-v1',
+        nodes: 15_000,
+        directed_edges: 30_000,
+        graph_loaded_before_timer: true,
+        positive_queries: 4,
+        missing_queries: 1,
+        untimed_preflight_invocations_per_query: 1,
+        preflight_must_pass_before_warmup: true,
+        every_warmup_and_measured_result_must_match: true,
+        empty_positive_result: 'fail',
+        warmups: 3,
+        measured_queries_min: 20,
+        warm_retrieval_p95_ms_max: 500,
+        closure_pass_max: 1,
+        reference_environment: {
+          node: 'v22.9.0',
+          platform: 'darwin',
+          release: '25.3.0',
+          arch: 'arm64',
+          cpu: 'Apple M3 Max',
+          memory_bytes: 51_539_607_552,
+        },
+        receipt: EVIDENCE_PERFORMANCE_RECEIPT,
+        runner: `node tools/eval/core-reset/evidence-path-performance.mjs --contract ${EVIDENCE_PERFORMANCE_DESCRIPTOR} --receipt ${EVIDENCE_PERFORMANCE_RECEIPT}`,
+      },
+      importer_closure_contract: {
+        receipt: EVIDENCE_IMPORTER_RECEIPT,
+        receipt_sha256: EVIDENCE_IMPORTER_RECEIPT_SHA256,
+        subject_commit: EVIDENCE_BASE,
+        subject_tree: EVIDENCE_BASE_TREE,
+        predecessor_files: 54,
+        predecessor_loc: 29_441,
+        all_edges: 209,
+        internal_deleted_importers: 42,
+        internal_edges: 146,
+        surviving_direct_importers: 15,
+        surviving_edges: 63,
+        transfers: 13,
+        surface_only_callers: 1,
+        unexpected_direct_importers: 0,
+        activation_state: 'contract_only_implementation_not_started',
+      },
+      activation: {
+        issue: EVIDENCE_ISSUE,
+        owner_approval: EVIDENCE_OWNER_APPROVAL,
+        rfc_amendment: EVIDENCE_RFC_AMENDMENT,
+        performance_amendment: EVIDENCE_PERFORMANCE_AMENDMENT,
+        performance_rfc_amendment: EVIDENCE_PERFORMANCE_RFC_AMENDMENT,
+        protected_base: EVIDENCE_BASE,
+        implementation_started: false,
+      },
+    })
+
+    const absorbed = (evidence?.absorbs ?? []).map((id) => manifest.items.find((item) => item.id === id))
+    expect(absorbed).toHaveLength(2)
+    expect(absorbed.every(Boolean)).toBe(true)
+    expect(absorbed.map((item) => ({ id: item?.id, status: item?.status, absorbed_by: item?.absorbed_by })))
+      .toEqual([
+        { id: 'context-governance-stack', status: 'planned', absorbed_by: 'evidence-path-query' },
+        { id: 'derived-product-wrappers', status: 'planned', absorbed_by: 'evidence-path-query' },
+      ])
+    expect(manifest.items.find((item) => item.id === 'thin-delivery')).toMatchObject({
+      status: 'proposed',
+      blocked_by: 'evidence-path-query',
+    })
+
+    const evidenceOwners = [evidence, ...absorbed].filter((item): item is NonNullable<typeof item> => item !== undefined)
+    const baseFiles = productionTypeScriptFilesAtCommit(EVIDENCE_BASE)
+    const predecessors = baseFiles.filter((file) => evidenceOwners.some((item) =>
+      (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(file))))
+    expect(predecessors).toHaveLength(54)
+    expect(logicalLocAtCommit(EVIDENCE_BASE, predecessors)).toBe(29_441)
+    for (const predecessor of predecessors) {
+      expect(evidenceOwners.filter((item) =>
+        (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(predecessor))))
+        .toHaveLength(1)
+    }
+    expect(EVIDENCE_REPLACEMENTS.every((path) => !baseFiles.includes(path))).toBe(true)
+    expect(EVIDENCE_REPLACEMENTS.every((path) => !existsSync(resolve(path)))).toBe(true)
+    expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(false)
+    expect(productionSourceDelta(EVIDENCE_BASE)).toEqual({ added: 0, removed: 0, net: 0 })
+    expect(execFileSync(
+      git,
+      ['diff', '--name-only', EVIDENCE_BASE, 'HEAD', '--', 'src', 'package.json', 'package-lock.json'],
+      { encoding: 'utf8' },
+    ).trim()).toBe('')
+    expect(manifest.review).toMatchObject({ disposition_changes: 6 })
+    expect(manifest.review.amendment).toContain('proof-report.ts plus review-compare.ts from move to delete')
+  })
+
+  it('pins the frozen held-out and performance contracts byte for byte', () => {
+    for (const [path, expectedSha256] of Object.entries(FROZEN_EVIDENCE_HASHES)) {
+      expect(gitBlobSha256('HEAD', path), `${path} must remain byte-frozen`).toBe(expectedSha256)
+    }
+    expect(gitBlobSha256('HEAD', EVIDENCE_PERFORMANCE_DESCRIPTOR)).toBe(EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256)
+
+    const descriptor = JSON.parse(read(EVIDENCE_PERFORMANCE_DESCRIPTOR)) as {
+      schema_version: number
+      fixture_id: string
+      generator: {
+        algorithm: string
+        seed: string
+        component_count: number
+        nodes_per_component: number
+        node_count: number
+        edge_count: number
+        node_id: string
+        node_label: string
+        source_file: string
+        source_domain: string
+        phases: string[]
+        phase_rule: string
+        line_number_rule: string
+        snippet_rule: string
+        edges: Array<{
+          count_per_component: number
+          from: string
+          to: string
+          relation_rule: string
+        }>
+        serialization: string
+      }
+      queries: string[]
+      query_expectations: Array<{
+        query_index: number
+        outcome: 'evidence' | 'missing'
+        node_ids: string[]
+        relationships: Array<{ from_id: string; relation: 'calls' | 'depends_on'; to_id: string }>
+        boundaries: Array<{ kind: 'missing'; subject: string }>
+      }>
+      protocol: {
+        graph_loaded_before_timer: boolean
+        correctness: {
+          untimed_preflight_invocations_per_query: number
+          preflight_must_pass_before_warmup: boolean
+          every_warmup_and_measured_result_must_match: boolean
+          outcome_match: string
+          node_match: string
+          relationship_match: string
+          boundary_match: string
+          empty_positive_result: string
+        }
+        warmup_invocations: number
+        measured_invocations: number
+        query_schedule: string
+        clock: string
+        percentile: string
+        process_model: string
+        closure_pass_max: number
+        selected_file_max: number
+        snippet_max: number
+        serialized_token_max: number
+        p95_ms_max: number
+      }
+      reference_environment: {
+        node: string
+        platform: string
+        release: string
+        arch: string
+        cpu: string
+        memory_bytes: number
+      }
+      runner: string
+      receipt: string
+    }
+
+    expect(descriptor).toMatchObject({
+      schema_version: 1,
+      fixture_id: 'evidence-path-performance-v1',
+      generator: {
+        algorithm: 'component-ring-with-fixed-skip-v1',
+        seed: 'sha256-counter-v1:evidence-path-performance-v1',
+        component_count: 150,
+        nodes_per_component: 100,
+        node_count: 15_000,
+        edge_count: 30_000,
+        node_id: 'n plus zero-padded global index width 5',
+        node_label: 'flow plus zero-padded component width 3 plus phase plus zero-padded local index width 2',
+        source_file: 'src/fixture/flow-{component}/node-{local}.ts',
+        source_domain: 'production',
+        phases: ['route', 'service', 'queue', 'worker', 'storage'],
+        phase_rule: 'phases[local_index modulo 5]',
+        line_number_rule: 'local_index plus 1',
+        snippet_rule: "export function {label}() { return '{component}:{phase}:{local}'; }",
+        edges: [
+          {
+            count_per_component: 100,
+            from: 'local_index',
+            to: '(local_index + 1) modulo 100',
+            relation_rule: 'calls',
+          },
+          {
+            count_per_component: 100,
+            from: 'local_index',
+            to: '(local_index + 37) modulo 100',
+            relation_rule: 'depends_on',
+          },
+        ],
+        serialization: 'RFC 8785 JSON Canonicalization Scheme',
+      },
+      queries: [
+        'Trace flow-007 from route local 00 through service local 01, queue local 02, worker local 03, to storage local 04.',
+        'Trace flow-042 from queue local 02 through its depends_on edge to storage local 39, then the calls edge to route local 40.',
+        'Trace the calls boundary from queue local 52 to worker local 53 in flow-113.',
+        'Trace the wraparound calls edge from storage local 99 to route local 00 in flow-128.',
+        'Which evidence path implements flow-999?',
+      ],
+      query_expectations: [
+        {
+          query_index: 0,
+          outcome: 'evidence',
+          node_ids: ['n00700', 'n00701', 'n00702', 'n00703', 'n00704'],
+          relationships: [
+            { from_id: 'n00700', relation: 'calls', to_id: 'n00701' },
+            { from_id: 'n00701', relation: 'calls', to_id: 'n00702' },
+            { from_id: 'n00702', relation: 'calls', to_id: 'n00703' },
+            { from_id: 'n00703', relation: 'calls', to_id: 'n00704' },
+          ],
+          boundaries: [],
+        },
+        {
+          query_index: 1,
+          outcome: 'evidence',
+          node_ids: ['n04202', 'n04239', 'n04240'],
+          relationships: [
+            { from_id: 'n04202', relation: 'depends_on', to_id: 'n04239' },
+            { from_id: 'n04239', relation: 'calls', to_id: 'n04240' },
+          ],
+          boundaries: [],
+        },
+        {
+          query_index: 2,
+          outcome: 'evidence',
+          node_ids: ['n11352', 'n11353'],
+          relationships: [{ from_id: 'n11352', relation: 'calls', to_id: 'n11353' }],
+          boundaries: [],
+        },
+        {
+          query_index: 3,
+          outcome: 'evidence',
+          node_ids: ['n12899', 'n12800'],
+          relationships: [{ from_id: 'n12899', relation: 'calls', to_id: 'n12800' }],
+          boundaries: [],
+        },
+        {
+          query_index: 4,
+          outcome: 'missing',
+          node_ids: [],
+          relationships: [],
+          boundaries: [{ kind: 'missing', subject: 'flow-999' }],
+        },
+      ],
+      protocol: {
+        graph_loaded_before_timer: true,
+        correctness: {
+          untimed_preflight_invocations_per_query: 1,
+          preflight_must_pass_before_warmup: true,
+          every_warmup_and_measured_result_must_match: true,
+          outcome_match: 'exact',
+          node_match: 'exact_set',
+          relationship_match: 'exact_directed_typed_set',
+          boundary_match: 'exact_set',
+          empty_positive_result: 'fail',
+        },
+        warmup_invocations: 3,
+        measured_invocations: 20,
+        query_schedule: 'queries[index modulo 5]',
+        clock: 'node:perf_hooks performance.now',
+        percentile: 'nearest-rank p95 over the 20 elapsed_ms samples',
+        process_model: 'one Node process; one parsed graph reused by all invocations',
+        closure_pass_max: 1,
+        selected_file_max: 12,
+        snippet_max: 25,
+        serialized_token_max: 4_000,
+        p95_ms_max: 500,
+      },
+      reference_environment: {
+        node: 'v22.9.0',
+        platform: 'darwin',
+        release: '25.3.0',
+        arch: 'arm64',
+        cpu: 'Apple M3 Max',
+        memory_bytes: 51_539_607_552,
+      },
+      runner: `node tools/eval/core-reset/evidence-path-performance.mjs --contract ${EVIDENCE_PERFORMANCE_DESCRIPTOR} --receipt ${EVIDENCE_PERFORMANCE_RECEIPT}`,
+      receipt: EVIDENCE_PERFORMANCE_RECEIPT,
+    })
+    expect(descriptor.generator.component_count * descriptor.generator.nodes_per_component)
+      .toBe(descriptor.generator.node_count)
+    expect(
+      descriptor.generator.component_count
+      * descriptor.generator.edges.reduce((total, edge) => total + edge.count_per_component, 0),
+    ).toBe(descriptor.generator.edge_count)
+    expect(descriptor.queries).toHaveLength(5)
+    expect(descriptor.query_expectations.map((entry) => entry.query_index)).toEqual([0, 1, 2, 3, 4])
+    expect(descriptor.query_expectations.filter((entry) => entry.outcome === 'evidence')).toHaveLength(4)
+    expect(descriptor.query_expectations.filter((entry) => entry.outcome === 'missing')).toHaveLength(1)
+
+    const coordinates = (nodeId: string): { component: number; local: number } => {
+      const match = /^n(\d{3})(\d{2})$/.exec(nodeId)
+      if (!match) throw new Error(`invalid performance fixture node id: ${nodeId}`)
+      return { component: Number(match[1]), local: Number(match[2]) }
+    }
+    for (const expectation of descriptor.query_expectations) {
+      expect(expectation.query_index).toBeLessThan(descriptor.queries.length)
+      if (expectation.outcome === 'missing') {
+        expect(expectation).toEqual({
+          query_index: 4,
+          outcome: 'missing',
+          node_ids: [],
+          relationships: [],
+          boundaries: [{ kind: 'missing', subject: 'flow-999' }],
+        })
+        continue
+      }
+
+      expect(expectation.node_ids.length).toBeGreaterThan(0)
+      expect(expectation.relationships.length).toBeGreaterThan(0)
+      expect(expectation.boundaries).toEqual([])
+      const selectedNodes = new Set(expectation.node_ids)
+      for (const nodeId of selectedNodes) {
+        const node = coordinates(nodeId)
+        expect(node.component).toBeLessThan(descriptor.generator.component_count)
+        expect(node.local).toBeLessThan(descriptor.generator.nodes_per_component)
+      }
+      for (const relationship of expectation.relationships) {
+        expect(selectedNodes.has(relationship.from_id)).toBe(true)
+        expect(selectedNodes.has(relationship.to_id)).toBe(true)
+        const from = coordinates(relationship.from_id)
+        const to = coordinates(relationship.to_id)
+        expect(to.component).toBe(from.component)
+        const offset = relationship.relation === 'calls' ? 1 : 37
+        expect(to.local).toBe((from.local + offset) % descriptor.generator.nodes_per_component)
+      }
+    }
+    expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(false)
+  })
+
+  it('binds the evidence-path importer closure to protected-base Git content', () => {
+    expect(gitBlobSha256('HEAD', EVIDENCE_IMPORTER_RECEIPT)).toBe(EVIDENCE_IMPORTER_RECEIPT_SHA256)
+    const receipt = JSON.parse(read(EVIDENCE_IMPORTER_RECEIPT)) as {
+      schema_version: number
+      receipt_kind: string
+      issue: string
+      subject: { commit: string; tree: string }
+      method: { source_inventory: string; logical_loc: string; imports: string; scope: string }
+      production: {
+        predecessor_files: number
+        predecessor_loc: number
+        categories: Array<{ id: string; files: number; loc: number; paths: string[] }>
+      }
+      ownership: {
+        absorbed_handles: string[]
+        transfers: Array<{ path: string; from: string; to: string }>
+        disposition_changes_from_baseline: number
+        new_disposition_changes: Array<{ path: string; from: string; to: string }>
+      }
+      importer_closure: {
+        edge_encoding: string
+        all_edge_count: number
+        all_edge_sha256: string
+        internal_deleted_importer_count: number
+        internal_edge_count: number
+        internal_edge_sha256: string
+        surviving_direct_importer_count: number
+        surviving_edge_count: number
+        surviving_edge_sha256: string
+        surviving_direct_importers: Array<{ path: string; targets: string[] }>
+        surface_only: Array<{ path: string; reason: string }>
+        explicit_surviving_callsite_scope: Array<{ path: string; action: string }>
+        unexpected_direct_importers: string[]
+      }
+      replacement: {
+        production_files_max: number
+        production_loc_added_max: number
+        paths: string[]
+        optional_peer_metadata_removed: string
+      }
+      activation_state: string
+    }
+
+    expect(receipt).toMatchObject({
+      schema_version: 1,
+      receipt_kind: 'core-reset-evidence-path-importer-closure',
+      issue: EVIDENCE_ISSUE,
+      subject: { commit: EVIDENCE_BASE, tree: EVIDENCE_BASE_TREE },
+      method: {
+        source_inventory: 'git ls-tree at the protected commit',
+        logical_loc: 'LF count plus a final non-LF line',
+        imports: 'TypeScript AST static import, re-export, dynamic import, import-equals, and require scan with repository-relative .js-to-.ts resolution',
+      },
+      production: { predecessor_files: 54, predecessor_loc: 29_441 },
+      ownership: {
+        absorbed_handles: ['context-governance-stack', 'derived-product-wrappers'],
+        disposition_changes_from_baseline: 6,
+        new_disposition_changes: [
+          { path: 'src/infrastructure/proof-report.ts', from: 'move', to: 'delete' },
+          { path: 'src/infrastructure/review-compare.ts', from: 'move', to: 'delete' },
+        ],
+      },
+      importer_closure: {
+        edge_encoding: 'sorted unique UTF-8 rows of importer + NUL + target + LF, including a final LF',
+        all_edge_count: 209,
+        all_edge_sha256: '81cea60597f514970d1f30015de70ba66bbf49a0cc4ef921bcfe7588609bbbe8',
+        internal_deleted_importer_count: 42,
+        internal_edge_count: 146,
+        internal_edge_sha256: '4e4ee17990fdeaba0ca8fc4985b791a30499057bd530eb3b95e6870c9e98c85d',
+        surviving_direct_importer_count: 15,
+        surviving_edge_count: 63,
+        surviving_edge_sha256: '2ff971232ddf5942db1d8ce0b90c484d6f7945577766d92920c5aedc8c7e3a59',
+        surface_only: [{
+          path: 'src/runtime/stdio/definitions.ts',
+          reason: 'declares the retired MCP schemas without importing a predecessor',
+        }],
+        unexpected_direct_importers: [],
+      },
+      replacement: {
+        production_files_max: 7,
+        production_loc_added_max: 3_500,
+        paths: [...EVIDENCE_REPLACEMENTS],
+        optional_peer_metadata_removed: '@huggingface/transformers',
+      },
+      activation_state: 'contract_only_implementation_not_started',
+    })
+
+    const categories = receipt.production.categories
+    expect(categories.map(({ id, files, loc }) => ({ id, files, loc }))).toEqual([
+      { id: 'query', files: 11, loc: 12_535 },
+      { id: 'context-governance-stack', files: 26, loc: 6_538 },
+      { id: 'derived-product-wrappers', files: 7, loc: 4_064 },
+      { id: 'semantic', files: 1, loc: 368 },
+      { id: 'importer-only-surfaces', files: 9, loc: 5_936 },
+    ])
+    const deletionFiles = categories.flatMap((category) => category.paths)
+    expect(new Set(deletionFiles).size).toBe(54)
+    expect(logicalLocAtCommit(EVIDENCE_BASE, deletionFiles)).toBe(29_441)
+    for (const category of categories) {
+      expect(category.paths).toHaveLength(category.files)
+      expect(logicalLocAtCommit(EVIDENCE_BASE, category.paths)).toBe(category.loc)
+    }
+
+    const deletionFileSet = new Set(deletionFiles)
+    const edges = deletionImportEdgesAtCommit(EVIDENCE_BASE, deletionFileSet)
+    expect(edges).toMatchObject({
+      all: expect.arrayContaining(['src/runtime/retrieve.ts\0src/runtime/semantic.ts']),
+    })
+    expect({
+      all_edge_count: edges.all.length,
+      all_edge_sha256: edgeListSha256(edges.all),
+      internal_deleted_importer_count: new Set(edges.internal.map((edge) => edge.slice(0, edge.indexOf('\0')))).size,
+      internal_edge_count: edges.internal.length,
+      internal_edge_sha256: edgeListSha256(edges.internal),
+      surviving_direct_importer_count: new Set(edges.surviving.map((edge) => edge.slice(0, edge.indexOf('\0')))).size,
+      surviving_edge_count: edges.surviving.length,
+      surviving_edge_sha256: edgeListSha256(edges.surviving),
+    }).toEqual({
+      all_edge_count: receipt.importer_closure.all_edge_count,
+      all_edge_sha256: receipt.importer_closure.all_edge_sha256,
+      internal_deleted_importer_count: receipt.importer_closure.internal_deleted_importer_count,
+      internal_edge_count: receipt.importer_closure.internal_edge_count,
+      internal_edge_sha256: receipt.importer_closure.internal_edge_sha256,
+      surviving_direct_importer_count: receipt.importer_closure.surviving_direct_importer_count,
+      surviving_edge_count: receipt.importer_closure.surviving_edge_count,
+      surviving_edge_sha256: receipt.importer_closure.surviving_edge_sha256,
+    })
+
+    const observedSurvivingImporters = [...new Set(edges.surviving.map((edge) => edge.slice(0, edge.indexOf('\0'))))]
+      .sort()
+      .map((path) => ({
+        path,
+        targets: edges.surviving
+          .filter((edge) => edge.startsWith(`${path}\0`))
+          .map((edge) => edge.slice(edge.indexOf('\0') + 1)),
+      }))
+    expect(receipt.importer_closure.surviving_direct_importers).toEqual(observedSurvivingImporters)
+    expect(receipt.ownership.transfers.map((transfer) => transfer.path)).toEqual([...EVIDENCE_TRANSFERS])
+    expect(receipt.ownership.transfers.every((transfer) => transfer.to === 'evidence-path-query')).toBe(true)
+    expect(receipt.importer_closure.explicit_surviving_callsite_scope.map((entry) => entry.path).sort())
+      .toEqual([
+        ...observedSurvivingImporters.map((entry) => entry.path),
+        'src/runtime/stdio/definitions.ts',
+      ].sort())
+    expect(EVIDENCE_REPLACEMENTS.every((path) => !existsSync(resolve(path)))).toBe(true)
+  })
+
   it('publishes an exact hermetic generation mutation receipt', () => {
+    expect(gitBlobSha256('HEAD', INCREMENTAL_MUTATION_RECEIPT)).toBe(INCREMENTAL_MUTATION_RECEIPT_SHA256)
+    expect(gitBlobSha256(EVIDENCE_BASE, INCREMENTAL_MUTATION_RECEIPT)).toBe(
+      INCREMENTAL_MUTATION_RECEIPT_SHA256,
+    )
     const receipt = JSON.parse(read(INCREMENTAL_MUTATION_RECEIPT)) as {
       schema_version: number
       receipt_kind: string
@@ -667,16 +1573,11 @@ describe('core reset governance', () => {
     ]))
     expect(receipt.test_files).toHaveLength(5)
     for (const file of receipt.test_files) {
-      const recordedTest = execFileSync(git, ['show', `${receipt.subject.ci_head}:${file.path}`])
+      const recordedTest = execFileSync(git, ['show', `${receipt.subject.merge_commit}:${file.path}`])
       expect(createHash('sha256').update(recordedTest).digest('hex')).toBe(file.sha256)
     }
-    for (const commit of [receipt.subject.final_pr_head, receipt.subject.ci_head, receipt.subject.merge_commit]) {
-      expect(execFileSync(git, ['show', '-s', '--format=%T', commit], { encoding: 'utf8' }).trim()).toBe(INCREMENTAL_FINAL_TREE)
-    }
-    expect(() => execFileSync(git, [
-      'diff', '--quiet', receipt.subject.implementation_commit, receipt.subject.final_pr_head,
-      '--', 'src', 'package.json', 'package-lock.json',
-    ])).not.toThrow()
+    expect(execFileSync(git, ['show', '-s', '--format=%T', receipt.subject.merge_commit], { encoding: 'utf8' }).trim())
+      .toBe(INCREMENTAL_FINAL_TREE)
   })
 
   it('measures logical LOC independently from checkout line endings', () => {
@@ -707,7 +1608,6 @@ describe('core reset governance', () => {
         completed_phase: string
         active_phase: string | null
         base_commit: string
-        implementation_commit: string
         production_typescript_files: number
         production_typescript_loc: number
         production_loc_added: number
@@ -755,7 +1655,6 @@ describe('core reset governance', () => {
       production_loc_net: current.production_loc_net,
     })
     expect(current).toMatchObject({
-      implementation_commit: INCREMENTAL_IMPLEMENTATION,
       npm_files: 276,
       npm_packed_bytes: 572_143,
       npm_unpacked_bytes: 2_699_851,
@@ -764,19 +1663,13 @@ describe('core reset governance', () => {
 
   it('records the simplified implementation without retaining the failed warm path', () => {
     expect(productionSourceDelta(INCREMENTAL_BASE)).toEqual({ added: 2_190, removed: 4_726, net: -2_536 })
-    expect(execFileSync(git, ['cat-file', '-t', `${INCREMENTAL_IMPLEMENTATION}^{commit}`], { encoding: 'utf8' }).trim())
-      .toBe('commit')
-    expect(execFileSync(git, ['rev-parse', `${INCREMENTAL_CI_HEAD}^{tree}`], { encoding: 'utf8' }).trim()).toBe(
-      execFileSync(git, ['rev-parse', `${INCREMENTAL_MERGE}^{tree}`], { encoding: 'utf8' }).trim(),
-    )
-    for (const finalCommit of [INCREMENTAL_CI_HEAD, INCREMENTAL_MERGE]) {
-      const sourceDrift = execFileSync(
-        git,
-        ['diff', '--name-only', INCREMENTAL_IMPLEMENTATION, finalCommit, '--', 'src', 'package.json', 'package-lock.json'],
-        { encoding: 'utf8' },
-      ).trim()
-      expect(sourceDrift, `${finalCommit} must preserve the measured runtime and package surface`).toBe('')
-    }
+    expect(execFileSync(git, ['rev-parse', `${INCREMENTAL_MERGE}^{tree}`], { encoding: 'utf8' }).trim())
+      .toBe(INCREMENTAL_FINAL_TREE)
+    expect(execFileSync(
+      git,
+      ['diff', '--name-only', INCREMENTAL_MERGE, 'HEAD', '--', 'src', 'package.json', 'package-lock.json'],
+      { encoding: 'utf8' },
+    ).trim()).toBe('')
     for (const predecessor of INCREMENTAL_PREDECESSORS) {
       expect(existsSync(resolve(predecessor)), `${predecessor} must be deleted`).toBe(false)
     }
@@ -972,11 +1865,7 @@ describe('core reset governance', () => {
     }
     const evidencePath = manifest.items.find((item) => item.id === 'evidence-path-query')
     const thinDelivery = manifest.items.find((item) => item.id === 'thin-delivery')
-    expect(evidencePath?.transferred_sources).toEqual([
-      'src/core/pipeline/stage.ts',
-      'src/runtime/freshness.ts',
-      'src/shared/source-discovery.ts',
-    ])
+    expect(evidencePath?.transferred_sources).toEqual([...EVIDENCE_TRANSFERS])
     expect(evidencePath?.preserve).toEqual([
       'SourceDomain',
       'classifySourceDomain',
@@ -984,7 +1873,7 @@ describe('core reset governance', () => {
       'private helpers required only by those query-classification exports',
     ])
     expect(thinDelivery?.transferred_sources).toEqual(['src/infrastructure/doctor.ts'])
-    expect(evidencePath?.status).toBe('planned')
+    expect(evidencePath?.status).toBe('in_progress')
     expect(thinDelivery?.status).toBe('proposed')
     for (const completedId of [
       'directed-multigraph',
@@ -1031,9 +1920,10 @@ describe('core reset governance', () => {
       files_with_one_owner: 181,
       unowned_files: 0,
       overlapping_files: 0,
-      disposition_changes: 4,
+      disposition_changes: 6,
     })
-    expect(manifest.review.amendment).toContain('Approved issue #592 transfers')
+    expect(manifest.review.amendment).toContain('Approved issue #596 absorbs')
+    expect(manifest.review.amendment).toContain('proof-report.ts plus review-compare.ts from move to delete')
   })
 
   it('routes contributors through the reset contract', () => {
@@ -1082,8 +1972,8 @@ describe('core reset governance', () => {
     expect(governance).not.toContain('single In progress phase through #588')
     expect(governance).not.toContain('Legacy and non-code deletion contract (in progress)')
     expect(governance).not.toContain('## Ready — generation and incremental index')
-    expect(governance).toContain('Ready — not In progress')
-    expect(governance).toContain('No phase is In progress')
+    expect(governance).toContain('Evidence-path query is the sole technical phase In progress')
+    expect(governance).toContain('## In progress — evidence-path query')
     expect(governance).not.toContain('## In progress — generation and incremental index')
     expect(governance).not.toContain('single In progress phase through #592')
     expect(governance).not.toContain('phase completion awaits')
