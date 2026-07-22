@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -22,6 +23,12 @@ const read = (path: string): string => readFileSync(resolve(path), 'utf8')
 const git = process.platform === 'win32' ? 'git.exe' : 'git'
 const INCREMENTAL_BASE = '8886a0299ee30765ce149ca7ad5d1779496b78b5'
 const INCREMENTAL_IMPLEMENTATION = '1be24dc45a5f07c352c74fc374feb95a9440df8e'
+const INCREMENTAL_MERGE = 'b56966c06c0ae1b04c252f297036f332fa1b384c'
+const INCREMENTAL_CI_HEAD = '3f40c5b64cdd63054c52ed67588b782034f8b935'
+const INCREMENTAL_CI_RUN = 'https://github.com/mohanagy/madar/actions/runs/29942216697'
+const INCREMENTAL_REVIEW_RECEIPT = 'https://github.com/mohanagy/madar/pull/594#issuecomment-5049404550'
+const INCREMENTAL_MUTATION_RECEIPT = 'docs/core-reset/evidence/generation-mutation-equivalence.json'
+const INCREMENTAL_FINAL_TREE = '0cead2d3488dac136affa4bec047f8b5f11418a3'
 const STOPPED_INCREMENTAL_CANDIDATE = '1d3c9b6d264a5c76d212b93da7c63718cbe49b3d'
 const STOPPED_INCREMENTAL_TREE = '6bd1ae5762afaa868d5cf6ce165b061aa290bfda'
 const INCREMENTAL_PREDECESSORS = [
@@ -115,14 +122,15 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Passed — directed multigraph')
     expect(roadmap).toContain('## Passed — canonical TypeScript/JavaScript index')
     expect(roadmap).toContain('## Passed — delete legacy extraction and non-code/other-language ingestion')
-    expect(roadmap).toContain('## In progress — generation and incremental index')
+    expect(roadmap).toContain('## Passed — generation and reconciliation')
+    expect(roadmap).toContain('## Ready — evidence-path query')
     expect(roadmap).toContain('issues/592')
     expect(roadmap).toContain('issues/588')
     expect(roadmap).not.toContain('## Ready — generation and incremental index')
-    expect(roadmap).not.toContain('No phase is In progress')
+    expect(roadmap).toContain('No phase is In progress')
+    expect(roadmap).not.toContain('## In progress — generation and incremental index')
     expect(roadmap).not.toContain('## In progress — canonical TypeScript/JavaScript index')
     expect(roadmap).not.toContain('## In progress — delete legacy extraction and non-code/other-language ingestion')
-    expect(roadmap).toContain('## Next')
     expect(roadmap).toContain('## Later')
     expect(roadmap).toContain('accepted Core Reset')
     expect(roadmap).not.toContain('currently **proposed**')
@@ -142,18 +150,26 @@ describe('core reset governance', () => {
     expect(design).toContain('The failed incremental path was deleted')
     expect(design).toContain('Only successfully indexed `.ts`, `.tsx`, `.js`, and `.jsx` inputs determine supported-index completeness')
     expect(design).toContain('There is no generation directory, persistent fact cache, versioned snapshot store')
+    expect(design).toContain('## Completed amendment — generation and reconciliation')
+    expect(design).toContain('No phase is active')
+    expect(design).not.toContain('sole active phase')
+    expect(design).not.toContain('## Active amendment — generation and incremental index')
+    expect(design).not.toContain('the phase remains active')
+    expect(design).not.toContain('completion evidence remains open')
     expect(scorecard).toContain('**Status:** accepted')
     expect(scorecard).toContain('| Directed multigraph | **Passed**')
     expect(scorecard).toContain('| Canonical TypeScript index | **Passed**')
     expect(scorecard).toContain('| Legacy extraction plus non-code/other-language ingestion | **Passed**')
-    expect(scorecard).toContain('| Generation and reconciliation | **In progress**')
-    expect(scorecard).toContain('single In progress phase through #592')
-    expect(scorecard).toContain('clean generation may regress at most 10%')
+    expect(scorecard).toContain('| Generation and reconciliation | **Passed**')
+    expect(scorecard).toContain('| Evidence-path query | **Ready — not In progress**')
+    expect(scorecard).toContain('No phase is In progress')
+    expect(scorecard).toContain('clean generation stays within the accepted 10% regression limit')
     expect(scorecard).toContain('recognized unsupported files and expected policy exclusions are informational')
     expect(scorecard).toContain('The fixed 500-file experiment stopped the incremental design')
     expect(scorecard).toContain('There is no in-memory or disk session cache')
-    expect(scorecard).not.toContain('Ready — not In progress')
-    expect(scorecard).not.toContain('No phase is In progress')
+    expect(scorecard).not.toContain('single In progress phase through #592')
+    expect(scorecard).not.toContain('phase stays **In progress**')
+    expect(scorecard).not.toContain('phase completion awaits')
     expect(scorecard).toContain('final CodeRabbit rerun was rate-limited')
     expect(scorecard).toContain('owner-approved exception')
     expect(scorecard).not.toContain('CI and review remain pending')
@@ -255,6 +271,10 @@ describe('core reset governance', () => {
           issue: string
           pull_request: string
           commit: string
+          implementation_commit?: string
+          final_pr_head?: string
+          ci_head?: string
+          outcome?: string
           production_files_added?: number
           production_files_removed?: number
           production_typescript_files: number
@@ -262,18 +282,29 @@ describe('core reset governance', () => {
           production_loc_added: number
           production_loc_removed: number
           production_loc_net: number
+          replacement_loc?: number
           dependencies_added: number
           dependencies_removed?: number
+          runtime_dependencies_added?: number
+          development_dependencies_added?: number
           npm_files?: number
           npm_packed_bytes?: number
           npm_unpacked_bytes?: number
           ci_matrix_jobs_passed: number
           ci_run?: string
+          test_files_passed?: number
+          tests_passed?: number
+          tests_skipped?: number
+          coverage_statements_percent?: number
+          coverage_branches_percent?: number
+          coverage_functions_percent?: number
+          coverage_lines_percent?: number
           coderabbit: string
           coderabbit_findings_addressed?: number
           coderabbit_findings_confirmed?: number
           coderabbit_review_body_nitpicks_addressed?: number
           independent_review?: string
+          independent_reviews_passed?: number
           independent_review_receipt?: string
           unresolved_review_threads: number
         }
@@ -288,11 +319,11 @@ describe('core reset governance', () => {
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-22',
-      completed_phase: 'legacy-extraction',
-      active_phase: 'generation-and-incremental',
-      ready_phase: null,
+      completed_phase: 'generation-and-incremental',
+      active_phase: null,
+      ready_phase: 'evidence-path-query',
       base_commit: INCREMENTAL_BASE,
-      completed_phase_commit: 'd46031eed7b0cf2d8bb7b7b6267a51322d9e2490',
+      completed_phase_commit: INCREMENTAL_MERGE,
       implementation_commit: INCREMENTAL_IMPLEMENTATION,
       production_typescript_files: 130,
       production_typescript_loc: 66_418,
@@ -416,11 +447,9 @@ describe('core reset governance', () => {
     expect(new Set(deletionFiles).size).toBe(31)
     expect(logicalLocAtCommit(legacyBase, deletionFiles)).toBe(20_951)
     const generation = manifest.items.find((item) => item.id === 'generation-and-incremental')
-    expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id)).toEqual([
-      'generation-and-incremental',
-    ])
+    expect(manifest.items.filter((item) => item.status === 'in_progress')).toEqual([])
     expect(generation).toMatchObject({
-      status: 'in_progress',
+      status: 'complete',
       sources: INCREMENTAL_OWNED_REPLACEMENTS,
       removed_sources: [...INCREMENTAL_PREDECESSORS],
       transferred_sources: Object.keys(INCREMENTAL_TRANSFERS),
@@ -492,7 +521,46 @@ describe('core reset governance', () => {
           'docs/core-reset/evidence/generation-incremental-stop-500.json',
           'docs/core-reset/evidence/generation-full-reconcile-500.json',
           'docs/core-reset/evidence/generation-incremental-inventory.json',
+          INCREMENTAL_MUTATION_RECEIPT,
         ],
+      },
+      completion: {
+        issue: 'https://github.com/mohanagy/madar/issues/592',
+        pull_request: 'https://github.com/mohanagy/madar/pull/594',
+        commit: INCREMENTAL_MERGE,
+        implementation_commit: INCREMENTAL_IMPLEMENTATION,
+        final_pr_head: INCREMENTAL_CI_HEAD,
+        ci_head: INCREMENTAL_CI_HEAD,
+        outcome: 'cold_noop_or_full_canonical_reconcile_after_incremental_stop',
+        production_files_added: 6,
+        production_files_removed: 15,
+        production_typescript_files: 130,
+        production_typescript_loc: 66_418,
+        production_loc_added: 2_190,
+        production_loc_removed: 4_726,
+        production_loc_net: -2_536,
+        replacement_loc: 1_484,
+        dependencies_added: 0,
+        dependencies_removed: 0,
+        runtime_dependencies_added: 0,
+        development_dependencies_added: 0,
+        npm_files: 276,
+        npm_packed_bytes: 572_143,
+        npm_unpacked_bytes: 2_699_851,
+        ci_matrix_jobs_passed: 6,
+        ci_run: INCREMENTAL_CI_RUN,
+        test_files_passed: 156,
+        tests_passed: 1_885,
+        tests_skipped: 2,
+        coverage_statements_percent: 84.44,
+        coverage_branches_percent: 76.64,
+        coverage_functions_percent: 89.57,
+        coverage_lines_percent: 85.34,
+        coderabbit: 'skipped_base_owner_exception',
+        independent_review: 'passed',
+        independent_reviews_passed: 3,
+        independent_review_receipt: INCREMENTAL_REVIEW_RECEIPT,
+        unresolved_review_threads: 0,
       },
     })
     const incrementalBaseFiles = productionTypeScriptFilesAtCommit(INCREMENTAL_BASE)
@@ -500,9 +568,115 @@ describe('core reset governance', () => {
     expect(INCREMENTAL_PREDECESSORS.every((path) => !existsSync(resolve(path)))).toBe(true)
     expect(INCREMENTAL_REPLACEMENTS.every((path) => existsSync(resolve(path)))).toBe(true)
     expect(logicalLocAtCommit(INCREMENTAL_BASE, INCREMENTAL_PREDECESSORS)).toBe(3_839)
-    for (const id of ['evidence-path-query', 'thin-delivery']) {
-      expect(manifest.items.find((item) => item.id === id)?.status).toBe('proposed')
+    expect(manifest.items.find((item) => item.id === 'evidence-path-query')?.status).toBe('planned')
+    expect(manifest.items.find((item) => item.id === 'thin-delivery')?.status).toBe('proposed')
+  })
+
+  it('publishes an exact hermetic generation mutation receipt', () => {
+    const receipt = JSON.parse(read(INCREMENTAL_MUTATION_RECEIPT)) as {
+      schema_version: number
+      receipt_kind: string
+      status: string
+      issue: string
+      pull_request: string
+      subject: {
+        protected_base: string
+        implementation_commit: string
+        final_pr_head: string
+        ci_head: string
+        merge_commit: string
+        final_and_merge_tree: string
+        runtime_source_or_package_drift_after_implementation: boolean
+      }
+      verification: {
+        command: string
+        test_files_passed: number
+        tests_passed: number
+        tests_failed: number
+        ci_run: string
+        ci_matrix_jobs_passed: number
+      }
+      test_files: Array<{ path: string; sha256: string }>
+      mutation_cases: string[]
+      publication_and_concurrency_cases: string[]
+      equivalence_contract: {
+        update_equals_clean_generation: boolean
+        authoritative_graph_bytes_equal: boolean
+        derived_diagnostics_equal_except_generated_at: boolean
+        deterministic_build_id_equal: boolean
+        zero_stale_nodes_or_edges_after_delete_or_rename: boolean
+        graph_commits_last: boolean
+        maximum_concurrent_builders: number
+      }
     }
+
+    expect(receipt).toMatchObject({
+      schema_version: 1,
+      receipt_kind: 'core-reset-generation-mutation-equivalence',
+      status: 'passed',
+      issue: 'https://github.com/mohanagy/madar/issues/592',
+      pull_request: 'https://github.com/mohanagy/madar/pull/594',
+      subject: {
+        protected_base: INCREMENTAL_BASE,
+        implementation_commit: INCREMENTAL_IMPLEMENTATION,
+        final_pr_head: INCREMENTAL_CI_HEAD,
+        ci_head: INCREMENTAL_CI_HEAD,
+        merge_commit: INCREMENTAL_MERGE,
+        final_and_merge_tree: INCREMENTAL_FINAL_TREE,
+        runtime_source_or_package_drift_after_implementation: false,
+      },
+      verification: {
+        test_files_passed: 5,
+        tests_passed: 92,
+        tests_failed: 0,
+        ci_run: INCREMENTAL_CI_RUN,
+        ci_matrix_jobs_passed: 6,
+      },
+      equivalence_contract: {
+        update_equals_clean_generation: true,
+        authoritative_graph_bytes_equal: true,
+        derived_diagnostics_equal_except_generated_at: true,
+        deterministic_build_id_equal: true,
+        zero_stale_nodes_or_edges_after_delete_or_rename: true,
+        graph_commits_last: true,
+        maximum_concurrent_builders: 1,
+      },
+    })
+    expect(receipt.verification.command).toContain('tests/unit/update-index.test.ts')
+    expect(receipt.mutation_cases).toEqual(expect.arrayContaining([
+      'cold_no_op',
+      'add_and_import',
+      'private_leaf_change',
+      'exported_signature_change',
+      'delete_with_zero_stale_facts',
+      'rename_with_zero_stale_facts',
+      'compiler_control_change',
+      'madarignore_add_change_delete',
+      'gitignore_respected_and_ignored',
+      'recognized_unsupported_add_delete_rename',
+      'allowed_symlink_add_retarget_delete',
+      'linked_worktree_isolation',
+    ]))
+    expect(receipt.publication_and_concurrency_cases).toEqual(expect.arrayContaining([
+      'first_graph_commit_failure',
+      'replacement_graph_commit_failure',
+      'derived_diagnostic_failure',
+      'source_edit_at_commit_boundary',
+      'edit_during_build_follow_up',
+      'concurrent_controller_serialization',
+    ]))
+    expect(receipt.test_files).toHaveLength(5)
+    for (const file of receipt.test_files) {
+      const recordedTest = execFileSync(git, ['show', `${receipt.subject.ci_head}:${file.path}`])
+      expect(createHash('sha256').update(recordedTest).digest('hex')).toBe(file.sha256)
+    }
+    for (const commit of [receipt.subject.final_pr_head, receipt.subject.ci_head, receipt.subject.merge_commit]) {
+      expect(execFileSync(git, ['show', '-s', '--format=%T', commit], { encoding: 'utf8' }).trim()).toBe(INCREMENTAL_FINAL_TREE)
+    }
+    expect(() => execFileSync(git, [
+      'diff', '--quiet', receipt.subject.implementation_commit, receipt.subject.final_pr_head,
+      '--', 'src', 'package.json', 'package-lock.json',
+    ])).not.toThrow()
   })
 
   it('measures logical LOC independently from checkout line endings', () => {
@@ -592,12 +766,17 @@ describe('core reset governance', () => {
     expect(productionSourceDelta(INCREMENTAL_BASE)).toEqual({ added: 2_190, removed: 4_726, net: -2_536 })
     expect(execFileSync(git, ['cat-file', '-t', `${INCREMENTAL_IMPLEMENTATION}^{commit}`], { encoding: 'utf8' }).trim())
       .toBe('commit')
-    const sourceDrift = execFileSync(
-      git,
-      ['diff', '--name-only', INCREMENTAL_IMPLEMENTATION, '--', 'src', 'package.json', 'package-lock.json'],
-      { encoding: 'utf8' },
-    ).trim()
-    expect(sourceDrift).toBe('')
+    expect(execFileSync(git, ['rev-parse', `${INCREMENTAL_CI_HEAD}^{tree}`], { encoding: 'utf8' }).trim()).toBe(
+      execFileSync(git, ['rev-parse', `${INCREMENTAL_MERGE}^{tree}`], { encoding: 'utf8' }).trim(),
+    )
+    for (const finalCommit of [INCREMENTAL_CI_HEAD, INCREMENTAL_MERGE]) {
+      const sourceDrift = execFileSync(
+        git,
+        ['diff', '--name-only', INCREMENTAL_IMPLEMENTATION, finalCommit, '--', 'src', 'package.json', 'package-lock.json'],
+        { encoding: 'utf8' },
+      ).trim()
+      expect(sourceDrift, `${finalCommit} must preserve the measured runtime and package surface`).toBe('')
+    }
     for (const predecessor of INCREMENTAL_PREDECESSORS) {
       expect(existsSync(resolve(predecessor)), `${predecessor} must be deleted`).toBe(false)
     }
@@ -805,9 +984,14 @@ describe('core reset governance', () => {
       'private helpers required only by those query-classification exports',
     ])
     expect(thinDelivery?.transferred_sources).toEqual(['src/infrastructure/doctor.ts'])
-    expect(evidencePath?.status).toBe('proposed')
+    expect(evidencePath?.status).toBe('planned')
     expect(thinDelivery?.status).toBe('proposed')
-    for (const completedId of ['directed-multigraph', 'canonical-typescript-index', 'legacy-extraction']) {
+    for (const completedId of [
+      'directed-multigraph',
+      'canonical-typescript-index',
+      'legacy-extraction',
+      'generation-and-incremental',
+    ]) {
       const completed = manifest.items.find((item) => item.id === completedId)
       expect(completed).toBeDefined()
       expect(completed?.completion?.commit).toBeDefined()
@@ -898,8 +1082,12 @@ describe('core reset governance', () => {
     expect(governance).not.toContain('single In progress phase through #588')
     expect(governance).not.toContain('Legacy and non-code deletion contract (in progress)')
     expect(governance).not.toContain('## Ready — generation and incremental index')
-    expect(governance).not.toContain('Ready — not In progress')
-    expect(governance).not.toContain('No phase is In progress')
+    expect(governance).toContain('Ready — not In progress')
+    expect(governance).toContain('No phase is In progress')
+    expect(governance).not.toContain('## In progress — generation and incremental index')
+    expect(governance).not.toContain('single In progress phase through #592')
+    expect(governance).not.toContain('phase completion awaits')
+    expect(governance).not.toContain('completion evidence remains open')
     expect(governance).not.toContain('scope and baseline is the only authorized phase')
   })
 })
