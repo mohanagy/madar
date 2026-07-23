@@ -1795,8 +1795,11 @@ function defaultCompilerOptions(): ts.CompilerOptions {
 }
 
 const INDEX_COMPILER_OVERRIDES = {
+  composite: false,
+  incremental: false,
   noEmit: true,
   skipLibCheck: true,
+  types: [],
   ignoreDeprecations: '6.0',
 } satisfies ts.CompilerOptions
 

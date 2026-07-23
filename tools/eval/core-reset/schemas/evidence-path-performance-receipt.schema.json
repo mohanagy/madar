@@ -1,0 +1,586 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mohanagy/madar/tools/eval/core-reset/schemas/evidence-path-performance-receipt.schema.json",
+  "title": "Madar Core Reset evidence-path performance receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_kind",
+    "generated_at",
+    "share_safe",
+    "issue",
+    "benchmark_passed",
+    "eligible_for_acceptance",
+    "command",
+    "contract",
+    "evaluator",
+    "subject",
+    "environment",
+    "fixture",
+    "protocol",
+    "correctness",
+    "measurements",
+    "gates",
+    "failures",
+    "receipt_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "receipt_kind": {
+      "const": "core-reset-evidence-path-performance"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "share_safe": {
+      "const": true
+    },
+    "issue": {
+      "const": 596
+    },
+    "benchmark_passed": {
+      "type": "boolean"
+    },
+    "eligible_for_acceptance": {
+      "type": "boolean"
+    },
+    "command": {
+      "const": "node tools/eval/core-reset/evidence-path-performance.mjs --contract tools/eval/core-reset/contracts/evidence-path-performance-v2.json --receipt docs/core-reset/evidence/evidence-path-performance.json"
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "fixture_id",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "tools/eval/core-reset/contracts/evidence-path-performance-v2.json"
+        },
+        "fixture_id": {
+          "const": "evidence-path-performance-v2"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "evaluator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "schema_path",
+        "schema_sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "tools/eval/core-reset/evidence-path-performance.mjs"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "schema_path": {
+          "const": "tools/eval/core-reset/schemas/evidence-path-performance-receipt.schema.json"
+        },
+        "schema_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "head_commit",
+        "head_tree_oid",
+        "worktree_dirty",
+        "build_source",
+        "install_command",
+        "clean_command",
+        "build_command",
+        "build_completed_before_graph_load",
+        "source_files",
+        "source_tree_sha256",
+        "build_control_files",
+        "build_controls_sha256",
+        "dist_sha256"
+      ],
+      "properties": {
+        "head_commit": {
+          "$ref": "#/$defs/git_oid"
+        },
+        "head_tree_oid": {
+          "$ref": "#/$defs/git_oid"
+        },
+        "worktree_dirty": {
+          "const": false
+        },
+        "build_source": {
+          "const": "detached_standalone_exact_head_clone"
+        },
+        "install_command": {
+          "const": "node <resolved-npm-cli> ci --offline --ignore-scripts --no-audit --no-fund --userconfig=<isolated-empty-user-config> --globalconfig=<isolated-empty-global-config>"
+        },
+        "clean_command": {
+          "const": "node --eval 'import { rmSync } from \"node:fs\"; rmSync(\"dist\", { recursive: true, force: true })'"
+        },
+        "build_command": {
+          "const": "node node_modules/typescript/bin/tsc -p tsconfig.build.json"
+        },
+        "build_completed_before_graph_load": {
+          "const": true
+        },
+        "source_files": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_tree_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "build_control_files": {
+          "const": [
+            "package.json",
+            "package-lock.json",
+            "tsconfig.json",
+            "tsconfig.build.json"
+          ]
+        },
+        "build_controls_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "dist_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "platform",
+        "release",
+        "arch",
+        "cpu",
+        "memory_bytes",
+        "reference",
+        "reference_match"
+      ],
+      "properties": {
+        "node": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "release": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reference": {
+          "$ref": "#/$defs/environment_identity"
+        },
+        "reference_match": {
+          "type": "boolean"
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "seed",
+        "component_count",
+        "nodes_per_component",
+        "node_count",
+        "edge_count",
+        "authenticated_source_files",
+        "structural_file_nodes",
+        "ranged_file_nodes",
+        "file_node_snippets",
+        "graph_serialization",
+        "graph_sha256",
+        "graph_root_normalization",
+        "source_manifest_sha256",
+        "source_manifest_encoding"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "component-ring-structural-imports-v3"
+        },
+        "seed": {
+          "const": "sha256-counter-v3:evidence-path-performance-v2"
+        },
+        "component_count": {
+          "const": 150
+        },
+        "nodes_per_component": {
+          "const": 100
+        },
+        "node_count": {
+          "const": 15000
+        },
+        "edge_count": {
+          "const": 30000
+        },
+        "authenticated_source_files": {
+          "const": 15000
+        },
+        "structural_file_nodes": {
+          "const": 15000
+        },
+        "ranged_file_nodes": {
+          "const": 0
+        },
+        "file_node_snippets": {
+          "const": 0
+        },
+        "graph_serialization": {
+          "const": "RFC 8785 JSON Canonicalization Scheme"
+        },
+        "graph_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "graph_root_normalization": {
+          "const": "<fixture-root>"
+        },
+        "source_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_manifest_encoding": {
+          "const": "sorted path NUL sha256 NUL byte-length LF"
+        }
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "graph_loaded_before_timer",
+        "graph_serialized_before_timer",
+        "graph_deserialized_before_timer",
+        "query_index_inspected_before_timer",
+        "validation_outside_timed_window",
+        "query_schedule",
+        "clock",
+        "percentile",
+        "process_model"
+      ],
+      "properties": {
+        "graph_loaded_before_timer": {
+          "const": true
+        },
+        "graph_serialized_before_timer": {
+          "const": true
+        },
+        "graph_deserialized_before_timer": {
+          "const": true
+        },
+        "query_index_inspected_before_timer": {
+          "const": true
+        },
+        "validation_outside_timed_window": {
+          "const": true
+        },
+        "query_schedule": {
+          "const": "queries[index modulo 5]"
+        },
+        "clock": {
+          "const": "node:perf_hooks performance.now"
+        },
+        "percentile": {
+          "const": "nearest-rank p95 over the 20 elapsed_ms samples"
+        },
+        "process_model": {
+          "const": "one Node process; one parsed graph inspected into one ready query index reused by all invocations"
+        }
+      }
+    },
+    "correctness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preflight",
+        "warmups"
+      ],
+      "properties": {
+        "preflight": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/result_check"
+          }
+        },
+        "warmups": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/invocation_check"
+          }
+        }
+      }
+    },
+    "measurements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "samples",
+        "p95_ms",
+        "target_ms",
+        "percentile_method"
+      ],
+      "properties": {
+        "samples": {
+          "type": "array",
+          "minItems": 20,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/measured_check"
+          }
+        },
+        "p95_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "target_ms": {
+          "const": 500
+        },
+        "percentile_method": {
+          "const": "nearest-rank"
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_environment",
+        "warm_retrieval_p95"
+      ],
+      "properties": {
+        "reference_environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pass"
+          ],
+          "properties": {
+            "pass": {
+              "type": "boolean"
+            }
+          }
+        },
+        "warm_retrieval_p95": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "actual_ms",
+            "maximum_ms",
+            "comparison",
+            "pass"
+          ],
+          "properties": {
+            "actual_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "maximum_ms": {
+              "const": 500
+            },
+            "comparison": {
+              "const": "strictly_less_than"
+            },
+            "pass": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "failures": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "reference_environment",
+          "warm_retrieval_p95"
+        ]
+      }
+    },
+    "receipt_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "git_oid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "environment_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "platform",
+        "release",
+        "arch",
+        "cpu",
+        "memory_bytes"
+      ],
+      "properties": {
+        "node": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "release": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "result_check": {
+      "type": "object",
+      "required": [
+        "query_index",
+        "outcome",
+        "nodes",
+        "relationships",
+        "boundaries",
+        "selected_files",
+        "snippets",
+        "closure_passes",
+        "serialized_tokens",
+        "passed"
+      ],
+      "properties": {
+        "query_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "outcome": {
+          "enum": [
+            "evidence",
+            "missing"
+          ]
+        },
+        "nodes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relationships": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "boundaries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selected_files": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12
+        },
+        "snippets": {
+          "const": 0
+        },
+        "closure_passes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "serialized_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4000
+        },
+        "passed": {
+          "const": true
+        }
+      }
+    },
+    "invocation_check": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/result_check"
+        },
+        {
+          "type": "object",
+          "required": [
+            "invocation"
+          ],
+          "properties": {
+            "invocation": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "measured_check": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/invocation_check"
+        },
+        {
+          "type": "object",
+          "required": [
+            "elapsed_ms"
+          ],
+          "properties": {
+            "elapsed_ms": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    }
+  }
+}

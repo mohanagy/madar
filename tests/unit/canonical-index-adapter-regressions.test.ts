@@ -116,6 +116,51 @@ describe('canonical TypeScript adapter regressions', () => {
     if (!file) throw new Error('expected indexed fixture file')
   })
 
+  it('ignores build output and external ambient type settings while preserving indexed declarations', () => {
+    const root = sandbox()
+    write(root, 'tsconfig.json', JSON.stringify({
+      compilerOptions: {
+        composite: true,
+        incremental: true,
+        noEmit: true,
+        types: ['missing-external-ambient-package'],
+      },
+    }))
+    const declarations = write(
+      root,
+      'src/local.d.ts',
+      'export interface LocalRequest { id: string }\n',
+    )
+    const source = write(
+      root,
+      'src/handler.ts',
+      'import type { LocalRequest } from "./local.js"\nexport function handle(request: LocalRequest) { return request.id }\n',
+    )
+
+    const result = buildCanonicalTypeScriptIndex({
+      root,
+      files: [declarations, source],
+    })
+    const qualifiedNames = result.graph
+      .nodeEntries()
+      .map(([, attributes]) => attributes.qualified_name)
+    const nodes = new Map(result.graph.nodeEntries())
+    const imports = result.graph
+      .edgeEntries()
+      .filter(([, , attributes]) => attributes.relation === 'imports_from')
+      .map(([from, to, attributes]) => [
+        nodes.get(from)?.source_file,
+        nodes.get(to)?.source_file,
+        attributes.is_type_only,
+      ])
+
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.level === 'error')).toEqual([])
+    expect(qualifiedNames).toEqual(
+      expect.arrayContaining(['LocalRequest', 'handle']),
+    )
+    expect(imports).toContainEqual(['src/handler.ts', 'src/local.d.ts', true])
+  })
+
   it('keeps overloaded Nest routes and Bull job edges on coalesced method symbols', () => {
     const root = sandbox()
     write(root, 'tsconfig.json', '{ "compilerOptions": { "experimentalDecorators": true } }')

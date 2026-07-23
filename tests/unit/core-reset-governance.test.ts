@@ -18,7 +18,9 @@ import { describe, expect, it } from 'vitest'
 
 // Development-only JavaScript is deliberately outside the production TypeScript build.
 // @ts-expect-error -- the isolated evaluator does not ship declarations in the npm package
-import { productionSourceDelta, sourceInventory } from '../../tools/eval/core-reset/record-baseline.mjs'
+import * as isolationSupport from '../../tools/eval/core-reset/isolation-support.mjs'
+
+const { packageContentLeaks, productionSourceDelta, sourceInventory } = isolationSupport
 
 const read = (path: string): string => readFileSync(resolve(path), 'utf8')
 const git = process.platform === 'win32' ? 'git.exe' : 'git'
@@ -44,14 +46,70 @@ const EVIDENCE_SOURCE_AMENDMENT = `${EVIDENCE_ISSUE}#issuecomment-5052210144`
 const EVIDENCE_SOURCE_RFC_AMENDMENT = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5052210334'
 const EVIDENCE_SOURCE_OWNER_APPROVAL = `${EVIDENCE_ISSUE}#issuecomment-5054853667`
 const EVIDENCE_SOURCE_RFC_APPROVAL = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5054853815'
-const EVIDENCE_PERFORMANCE_DESCRIPTOR = 'tools/eval/core-reset/contracts/evidence-path-performance-v1.json'
-const EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256 = '076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c'
+const EVIDENCE_V2_PROPOSAL = `${EVIDENCE_ISSUE}#issuecomment-5056946202`
+const EVIDENCE_V2_OWNER_APPROVAL = `${EVIDENCE_ISSUE}#issuecomment-5058567870`
+const EVIDENCE_V2_RFC_PROPOSAL = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5056947999'
+const EVIDENCE_V2_RFC_APPROVAL = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5058568992'
+const EVIDENCE_GENERATION_PREREQUISITE = 'https://github.com/mohanagy/madar/issues/599'
+const EVIDENCE_GENERATION_OWNER_APPROVAL =
+  `${EVIDENCE_GENERATION_PREREQUISITE}#issuecomment-5060766685`
+const EVIDENCE_GENERATION_RFC_APPROVAL =
+  'https://github.com/mohanagy/madar/issues/577#issuecomment-5060766863'
+const EVIDENCE_HELDOUT_EVALUATOR = 'tools/eval/core-reset/evidence-path-held-out.mjs'
+const EVIDENCE_HELDOUT_RECEIPT_SCHEMA =
+  'tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json'
+const EVIDENCE_HELDOUT_RECEIPT = 'docs/core-reset/evidence/evidence-path-held-out.json'
+const EVIDENCE_PERFORMANCE_DESCRIPTOR = 'tools/eval/core-reset/contracts/evidence-path-performance-v2.json'
+const EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256 = '4ddba368f5ef17dc059bd8d41c0549e38d6a5ded42e9448ae31aefd0e35506e4'
+const EVIDENCE_PERFORMANCE_EVALUATOR = 'tools/eval/core-reset/evidence-path-performance.mjs'
+const EVIDENCE_PERFORMANCE_EVALUATOR_SHA256 = '6029ab84baa42eeed7abd7df98a8d570f001ddbc349c7a2aee1a28f3ec96893f'
+const EVIDENCE_PERFORMANCE_RECEIPT_SCHEMA =
+  'tools/eval/core-reset/schemas/evidence-path-performance-receipt.schema.json'
+const EVIDENCE_PERFORMANCE_RECEIPT_SCHEMA_SHA256 =
+  '6c178889c9e2a7b27318145ac49645e3fdb6ea1a907990fff7215d2c32225ce6'
 const EVIDENCE_PERFORMANCE_RECEIPT = 'docs/core-reset/evidence/evidence-path-performance.json'
 const EVIDENCE_IMPORTER_RECEIPT = 'docs/core-reset/evidence/evidence-path-importer-closure.json'
 const EVIDENCE_IMPORTER_RECEIPT_SHA256 = '6b35797f0625e69708fca3441d12b1aea565275f8bd585f3a0fe56f8958f07b3'
+type EvidencePerformanceRelationship = {
+  from_id: string
+  relation: 'imports_from'
+  to_id: string
+}
+type EvidencePerformanceExpectation = {
+  query_index: number
+  outcome: 'evidence' | 'missing'
+  node_ids: string[]
+  relationships: EvidencePerformanceRelationship[]
+  boundaries: Array<{ kind: string; subject: string }>
+}
+type EvidencePerformanceDescriptor = {
+  schema_version: number
+  fixture_id: string
+  generator: {
+    component_count: number
+    nodes_per_component: number
+    node_count: number
+    edge_count: number
+    edges: Array<{
+      count_per_component: number
+      from: string
+      to: string
+      relation_rule: 'imports_from'
+    }>
+    [key: string]: unknown
+  }
+  protocol: Record<string, unknown>
+  queries: string[]
+  query_expectations: EvidencePerformanceExpectation[]
+  runner: string
+  receipt: string
+}
 const FROZEN_EVIDENCE_HASHES = {
-  'tools/eval/core-reset/contracts/evaluation-contract.json': '3a3272df5c294ab0e3a4f2ace815fbd120941a432f85a616b9624f420de86b3b',
-  'tools/eval/core-reset/schemas/evaluation-contract.schema.json': '34ca0bfc94c117eb79a5ec5d701af1c8fa0335a3a1c41cf44cf016952a48c889',
+  'tools/eval/core-reset/contracts/evaluation-contract.json': 'cb4d96913e64ba0849b62d8a554406030f9fbb896b25bb83e75e1a2654791be0',
+  'tools/eval/core-reset/schemas/evaluation-contract.schema.json': '581acc2332cbe9015e0bd1c7da4db84e9c3d5c73cedcb21fd7427a67bf56e615',
+  'tools/eval/core-reset/evidence-path-held-out.mjs': '08c9a0c85ba80309bcb7208c1f57ee4426758387622dc0d388e95b4296cd169a',
+  'tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json':
+    '2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714',
   'docs/core-reset/evidence/baseline-v0.32.0.json': 'c2b96e75e64934de998bb5c7087cb604b680cd8fd2aa5c6d1f74cd9f1a0c6516',
   'tools/eval/core-reset/schemas/baseline-receipt.schema.json': '04eeb47a14da18ec90c6e687bbd557d44a3fe5ac493d8d6946f4b3fc4f7f6a59',
 } as const
@@ -151,6 +209,37 @@ function logicalLocAtCommit(commit: string, paths: readonly string[]): number {
     const lineFeeds = source.match(/\n/g)?.length ?? 0
     return total + lineFeeds + (source.length > 0 && !source.endsWith('\n') ? 1 : 0)
   }, 0)
+}
+
+function productionSourceDeltaBetween(
+  baselineCommit: string,
+  targetCommit: string,
+): { added: number; removed: number; net: number } {
+  const delta = execFileSync(
+    git,
+    [
+      'diff',
+      '--ignore-cr-at-eol',
+      '--no-ext-diff',
+      '--no-renames',
+      '--numstat',
+      baselineCommit,
+      targetCommit,
+      '--',
+      'src',
+    ],
+    { encoding: 'utf8' },
+  ).trim().split('\n').filter(Boolean).reduce(
+    (total, line) => {
+      const [added = '0', removed = '0'] = line.split('\t')
+      return {
+        added: total.added + Number(added),
+        removed: total.removed + Number(removed),
+      }
+    },
+    { added: 0, removed: 0 },
+  )
+  return { ...delta, net: delta.added - delta.removed }
 }
 
 const gitBlobSha256 = (revision: string, path: string): string =>
@@ -260,10 +349,20 @@ describe('core reset governance', () => {
     expect(roadmap).toContain(EVIDENCE_SOURCE_RFC_AMENDMENT)
     expect(roadmap).toContain(EVIDENCE_SOURCE_OWNER_APPROVAL)
     expect(roadmap).toContain(EVIDENCE_SOURCE_RFC_APPROVAL)
+    expect(roadmap).toContain(EVIDENCE_V2_PROPOSAL)
+    expect(roadmap).toContain(EVIDENCE_V2_OWNER_APPROVAL)
+    expect(roadmap).toContain(EVIDENCE_V2_RFC_PROPOSAL)
+    expect(roadmap).toContain(EVIDENCE_V2_RFC_APPROVAL)
+    expect(roadmap).toContain(EVIDENCE_GENERATION_PREREQUISITE)
+    expect(roadmap).toContain(EVIDENCE_GENERATION_OWNER_APPROVAL)
+    expect(roadmap).toContain(EVIDENCE_GENERATION_RFC_APPROVAL)
+    expect(roadmap).toContain('A file node or unrelated tiny symbol in the correct file cannot cover a phase')
     expect(roadmap).toContain('normalized retrieve request, canonical graph bytes, and identical authenticated source snapshot')
     expect(roadmap).toContain('an empty positive result fails')
     expect(roadmap).toContain('54 predecessor files / 29,441 LOC')
-    expect(roadmap).toContain('Every implementation, deletion, held-out, performance, package, CI, and review result remains pending')
+    expect(roadmap).toContain(
+      'Every query implementation, deletion, held-out, performance, CI, and review result remains pending',
+    )
     expect(roadmap).toContain('issues/592')
     expect(roadmap).toContain('issues/588')
     expect(roadmap).not.toContain('## Ready — generation and incremental index')
@@ -300,8 +399,15 @@ describe('core reset governance', () => {
     expect(design).toContain(EVIDENCE_SOURCE_RFC_AMENDMENT)
     expect(design).toContain(EVIDENCE_SOURCE_OWNER_APPROVAL)
     expect(design).toContain(EVIDENCE_SOURCE_RFC_APPROVAL)
-    expect(design).toContain('Implementation remains paused until this governance correction merges')
-    expect(design).toContain('SHA-256 of the complete UTF-8 source equals the graph hash')
+    expect(design).toContain(EVIDENCE_V2_PROPOSAL)
+    expect(design).toContain(EVIDENCE_V2_OWNER_APPROVAL)
+    expect(design).toContain(EVIDENCE_V2_RFC_PROPOSAL)
+    expect(design).toContain(EVIDENCE_V2_RFC_APPROVAL)
+    expect(design).toContain(EVIDENCE_GENERATION_PREREQUISITE)
+    expect(design).toContain(EVIDENCE_GENERATION_OWNER_APPROVAL)
+    expect(design).toContain(EVIDENCE_GENERATION_RFC_APPROVAL)
+    expect(design).toContain('The deletion-led query implementation remains paused until this correction merges')
+    expect(design).toContain('The complete UTF-8 source must hash to the canonical file-node `content_hash`')
     expect(design).toContain('Identical normalized request plus identical canonical graph bytes plus the identical authenticated source snapshot')
     expect(design).toContain('All five expectations must pass before warmup')
     expect(design).toContain('empty positive results, missing/extra nodes or edges, reversed/wrong relationship kinds')
@@ -325,11 +431,20 @@ describe('core reset governance', () => {
     expect(scorecard).toContain(EVIDENCE_SOURCE_AMENDMENT)
     expect(scorecard).toContain(EVIDENCE_SOURCE_OWNER_APPROVAL)
     expect(scorecard).toContain(EVIDENCE_SOURCE_RFC_APPROVAL)
-    expect(scorecard).toContain('complete UTF-8 SHA-256 equals the canonical file-node `content_hash`')
+    expect(scorecard).toContain(EVIDENCE_V2_PROPOSAL)
+    expect(scorecard).toContain(EVIDENCE_V2_OWNER_APPROVAL)
+    expect(scorecard).toContain(EVIDENCE_V2_RFC_PROPOSAL)
+    expect(scorecard).toContain(EVIDENCE_V2_RFC_APPROVAL)
+    expect(scorecard).toContain(EVIDENCE_GENERATION_PREREQUISITE)
+    expect(scorecard).toContain(EVIDENCE_GENERATION_OWNER_APPROVAL)
+    expect(scorecard).toContain(EVIDENCE_GENERATION_RFC_APPROVAL)
+    expect(scorecard).toContain('only an authenticated canonical symbol declaration may provide a snippet or cover a phase')
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
     expect(scorecard).toContain('`evidence-path-query` is the single In progress phase')
-    expect(scorecard).toContain('No implementation, deletion, held-out, timing, package, dependency, CI, or review gate is reported as passed')
+    expect(scorecard).toContain(
+      'No query implementation, deletion, held-out, timing, dependency, CI, or review gate is reported as passed',
+    )
     expect(scorecard).toContain('clean generation stays within the accepted 10% regression limit')
     expect(scorecard).toContain('recognized unsupported files and expected policy exclusions are informational')
     expect(scorecard).toContain('The fixed 500-file experiment stopped the incremental design')
@@ -493,13 +608,13 @@ describe('core reset governance', () => {
       base_commit: EVIDENCE_BASE,
       completed_phase_commit: INCREMENTAL_MERGE,
       production_typescript_files: 130,
-      production_typescript_loc: 66_418,
-      production_loc_added: 0,
+      production_typescript_loc: 66_421,
+      production_loc_added: 3,
       production_loc_removed: 0,
-      production_loc_net: 0,
+      production_loc_net: 3,
       npm_files: 276,
-      npm_packed_bytes: 572_143,
-      npm_unpacked_bytes: 2_699_851,
+      npm_packed_bytes: 572_171,
+      npm_unpacked_bytes: 2_699_912,
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
@@ -788,6 +903,27 @@ describe('core reset governance', () => {
         deterministic_query_contract?: {
           graph_authoritative_for_selection_and_graph_facts: boolean
           preserve_typed_directional_relationships: boolean
+          structural_file_nodes: {
+            allowed: boolean
+            node_kind: string
+            allowed_relationships: string[]
+            relationship_endpoints: {
+              imports_from: string
+              contains: string
+            }
+            range: string
+            snippet: string
+            phase_coverage: string
+            count_toward_selected_files_and_precision: boolean
+          }
+          symbol_declarations: {
+            definition_range: string
+            declaration_range: string
+            coordinates: string
+            snippet: string
+            full_file_sha256: string
+            non_contiguous_or_synthesized_excerpt: string
+          }
           disconnected_boundaries_explicit: boolean
           missing_and_unsupported_boundaries_explicit: boolean
           stale_unavailable_corrupt_and_truncated_boundaries_explicit: boolean
@@ -811,6 +947,21 @@ describe('core reset governance', () => {
           hidden_second_query_or_model_call: string
           repository_specific_rules: string
         }
+        cross_phase_amendment?: {
+          purpose: string
+          index_format_after_implementation: string
+          graph_artifact_envelope: string
+          old_index_policy: string
+          authorized_existing_source_modifications: Array<{
+            path: string
+            owner: string
+            purpose: string
+          }>
+          ownership: string
+          replacement_source_count_change: number
+          budget_accounting: string
+          compatibility_engine: string
+        }
         retrieve_input_contract?: {
           allowed_keys: string[]
           additional_properties: string
@@ -830,10 +981,59 @@ describe('core reset governance', () => {
           contract_sha256: string
           contract_schema: string
           contract_schema_sha256: string
-          baseline_receipt: string
-          baseline_receipt_sha256: string
-          baseline_receipt_schema: string
-          baseline_receipt_schema_sha256: string
+          evaluator: string
+          evaluator_sha256: string
+          receipt_schema: string
+          receipt_schema_sha256: string
+          receipt: string
+          runner: string
+          execution_protocol: {
+            acceptance_platform: string
+            os_boundary: string
+            candidate_runtime: string
+            generation_source: string
+            workspace_config_source: string
+            graph_generation_process: string
+            retrieval_process: string
+            candidate_access: string
+            response_handoff: string
+            anti_tuning_gate: string
+          }
+          generation_prerequisite: {
+            issue: string
+            owner_approval: string
+            rfc_approval: string
+            workspace_config_view: string
+            workspace_config_mapping: string
+            package_manager: string
+            network: string
+            external_dependencies: string
+            repository_specific_rules: string
+            compiler_normalization: {
+              external_ambient_types: string
+              composite: boolean
+              incremental: boolean
+            }
+            publication_gate: string
+          }
+          supersedes: string
+          historical_baseline: {
+            receipt: string
+            receipt_sha256: string
+            receipt_schema: string
+            receipt_schema_sha256: string
+            contract_id: string
+            contract_ordered_json_sha256: string
+            disposition: string
+          }
+          evidence_semantics: {
+            structural_file_nodes: string
+            structural_file_phase_coverage: string
+            symbol_phase_evidence: string
+            right_file_wrong_symbol: string
+            absent_runtime_user_or_async_handoff: string
+            invented_reversed_or_projected_edge: string
+          }
           blocking_repositories: Array<{
             question: string
             repository: string
@@ -841,6 +1041,8 @@ describe('core reset governance', () => {
             tree_path_sha256: string
             graph_root: string
             required_phases: string[]
+            required_connected_handoffs: number
+            required_disconnected_handoffs: number
           }>
           diagnostic_scope_guard: {
             question: string
@@ -854,6 +1056,9 @@ describe('core reset governance', () => {
           query_invocations_max: number
           required_phase_coverage: number
           direct_phase_evidence_requires_authenticated_excerpt: boolean
+          direct_phase_evidence_requires_exact_owner_fixture: boolean
+          structural_file_nodes_cover_phases: boolean
+          required_handoff_coverage: number
           verification_targets_cover_blocking_phases: boolean
           selected_file_precision_min: number
           unrelated_files_max: number
@@ -866,10 +1071,16 @@ describe('core reset governance', () => {
           id: string
           descriptor: string
           descriptor_sha256: string
+          evaluator: string
+          evaluator_sha256: string
+          receipt_schema: string
+          receipt_schema_sha256: string
           generator: string
           nodes: number
           directed_edges: number
+          candidate_runtime_source: string
           graph_loaded_before_timer: boolean
+          query_index_inspected_before_timer: boolean
           positive_queries: number
           missing_queries: number
           untimed_preflight_invocations_per_query: number
@@ -918,6 +1129,13 @@ describe('core reset governance', () => {
           authenticated_source_rfc_amendment: string
           authenticated_source_owner_approval: string
           authenticated_source_rfc_approval: string
+          heldout_v2_proposal: string
+          heldout_v2_owner_approval: string
+          heldout_v2_rfc_proposal: string
+          heldout_v2_rfc_approval: string
+          generation_prerequisite: string
+          generation_prerequisite_owner_approval: string
+          generation_prerequisite_rfc_approval: string
           protected_base: string
           implementation_started?: boolean
         }
@@ -934,13 +1152,13 @@ describe('core reset governance', () => {
       base_commit: EVIDENCE_BASE,
       completed_phase_commit: INCREMENTAL_MERGE,
       production_typescript_files: 130,
-      production_typescript_loc: 66_418,
-      production_loc_added: 0,
+      production_typescript_loc: 66_421,
+      production_loc_added: 3,
       production_loc_removed: 0,
-      production_loc_net: 0,
+      production_loc_net: 3,
       npm_files: 276,
-      npm_packed_bytes: 572_143,
-      npm_unpacked_bytes: 2_699_851,
+      npm_packed_bytes: 572_171,
+      npm_unpacked_bytes: 2_699_912,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual(['evidence-path-query'])
@@ -972,6 +1190,27 @@ describe('core reset governance', () => {
       deterministic_query_contract: {
         graph_authoritative_for_selection_and_graph_facts: true,
         preserve_typed_directional_relationships: true,
+        structural_file_nodes: {
+          allowed: true,
+          node_kind: 'file',
+          allowed_relationships: ['imports_from', 'contains'],
+          relationship_endpoints: {
+            imports_from: 'file_to_file',
+            contains: 'file_to_symbol',
+          },
+          range: 'forbidden',
+          snippet: 'forbidden',
+          phase_coverage: 'forbidden',
+          count_toward_selected_files_and_precision: true,
+        },
+        symbol_declarations: {
+          definition_range: 'complete_ast_definition',
+          declaration_range: 'canonical_signature_or_declaration_prefix',
+          coordinates: 'one_based_utf16_end_exclusive',
+          snippet: 'exact_authenticated_declaration_range',
+          full_file_sha256: 'required',
+          non_contiguous_or_synthesized_excerpt: 'forbidden',
+        },
         disconnected_boundaries_explicit: true,
         missing_and_unsupported_boundaries_explicit: true,
         stale_unavailable_corrupt_and_truncated_boundaries_explicit: true,
@@ -981,8 +1220,8 @@ describe('core reset governance', () => {
           graph_fields_required: [
             'node',
             'source_file',
-            'line_number',
-            'end_line_number',
+            'definition_range',
+            'declaration_range',
             'provenance',
             'canonical_file_node.content_hash',
           ],
@@ -990,7 +1229,7 @@ describe('core reset governance', () => {
           source_path_must_remain_beneath_root: true,
           hash_algorithm: 'sha256_complete_utf8_source',
           hash_must_equal: 'canonical_file_node.content_hash',
-          excerpt: 'exact_graph_range_text_only',
+          excerpt: 'exact_declaration_range_text_only',
           unauthenticated_or_synthesized_snippet: 'forbidden',
           missing_unreadable_or_escape: 'unavailable_without_snippet',
           hash_mismatch_or_invalid_range: 'stale_without_snippet',
@@ -1006,6 +1245,33 @@ describe('core reset governance', () => {
         hidden_second_query_or_model_call: 'forbidden',
         repository_specific_rules: 'forbidden',
       },
+      cross_phase_amendment: {
+        purpose:
+          'Add canonical declaration ranges and normalize non-graph compiler settings in the existing TypeScript index without creating a second index, compatibility format, or ownership overlap.',
+        index_format_after_implementation: 'v3',
+        graph_artifact_envelope: 'v2_unchanged',
+        old_index_policy: 'regeneration_required_no_fallback',
+        authorized_existing_source_modifications: [
+          {
+            path: 'src/domain/index/model.ts',
+            owner: 'canonical-typescript-index',
+            purpose: 'canonical definition_range and declaration_range facts',
+          },
+          {
+            path: 'src/adapters/typescript/index.ts',
+            owner: 'canonical-typescript-index',
+            purpose: 'deterministic AST declaration ranges plus build/dependency-only compiler normalization',
+          },
+          {
+            path: 'src/domain/index/build-state.ts',
+            owner: 'canonical-typescript-index',
+            purpose: 'bind the canonical index format and engine version',
+          },
+        ],
+        ownership: 'remains_exclusively_canonical-typescript-index',
+        replacement_source_count_change: 0,
+        compatibility_engine: 'forbidden',
+      },
       retrieve_input_contract: {
         allowed_keys: ['question', 'budget'],
         additional_properties: 'forbidden',
@@ -1020,15 +1286,65 @@ describe('core reset governance', () => {
         compatibility_types_or_engine: 'forbidden',
       },
       heldout_contract: {
-        id: 'core-reset-held-out-v1',
+        id: 'core-reset-held-out-v2',
         contract: 'tools/eval/core-reset/contracts/evaluation-contract.json',
         contract_sha256: FROZEN_EVIDENCE_HASHES['tools/eval/core-reset/contracts/evaluation-contract.json'],
         contract_schema: 'tools/eval/core-reset/schemas/evaluation-contract.schema.json',
         contract_schema_sha256: FROZEN_EVIDENCE_HASHES['tools/eval/core-reset/schemas/evaluation-contract.schema.json'],
-        baseline_receipt: 'docs/core-reset/evidence/baseline-v0.32.0.json',
-        baseline_receipt_sha256: FROZEN_EVIDENCE_HASHES['docs/core-reset/evidence/baseline-v0.32.0.json'],
-        baseline_receipt_schema: 'tools/eval/core-reset/schemas/baseline-receipt.schema.json',
-        baseline_receipt_schema_sha256: FROZEN_EVIDENCE_HASHES['tools/eval/core-reset/schemas/baseline-receipt.schema.json'],
+        evaluator: EVIDENCE_HELDOUT_EVALUATOR,
+        evaluator_sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_HELDOUT_EVALUATOR],
+        receipt_schema: EVIDENCE_HELDOUT_RECEIPT_SCHEMA,
+        receipt_schema_sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_HELDOUT_RECEIPT_SCHEMA],
+        receipt: EVIDENCE_HELDOUT_RECEIPT,
+        runner:
+          'node tools/eval/core-reset/evidence-path-held-out.mjs --repository openstatus=<path> --repository documenso=<path> --repository formbricks=<path>',
+        execution_protocol: {
+          acceptance_platform: 'darwin_reference_only',
+          os_boundary: 'sandbox_exec_network_fork_non_runtime_exec_and_evaluator_checkout_denial',
+          candidate_runtime: 'detached_exact_head_clean_build_npm_pack_exact_lock_offline',
+          generation_source: 'pinned_git_archive_without_vcs_metadata',
+          workspace_config_source: 'exact_tracked_local_workspace_packages_no_package_manager',
+          graph_generation_process: 'one_contained_process_per_repository',
+          retrieval_process: 'fresh_contained_process_per_question',
+          candidate_access: 'node_permission_fs_allowlist_and_child_process_denial',
+          response_handoff: 'fsync_sha256_before_hidden_grading',
+          anti_tuning_gate: 'literal_marker_scan_plus_independent_review_required',
+        },
+        generation_prerequisite: {
+          issue: EVIDENCE_GENERATION_PREREQUISITE,
+          owner_approval: EVIDENCE_GENERATION_OWNER_APPROVAL,
+          rfc_approval: EVIDENCE_GENERATION_RFC_APPROVAL,
+          workspace_config_view: 'exact_tracked_local_packages_referenced_by_compiler_extends',
+          workspace_config_mapping: 'sorted_count_and_sha256',
+          package_manager: 'forbidden',
+          network: 'forbidden',
+          external_dependencies: 'forbidden',
+          repository_specific_rules: 'forbidden',
+          compiler_normalization: {
+            external_ambient_types: 'disabled',
+            composite: false,
+            incremental: false,
+          },
+          publication_gate: 'unchanged_fail_closed',
+        },
+        supersedes: 'core-reset-held-out-v1',
+        historical_baseline: {
+          receipt: 'docs/core-reset/evidence/baseline-v0.32.0.json',
+          receipt_sha256: FROZEN_EVIDENCE_HASHES['docs/core-reset/evidence/baseline-v0.32.0.json'],
+          receipt_schema: 'tools/eval/core-reset/schemas/baseline-receipt.schema.json',
+          receipt_schema_sha256: FROZEN_EVIDENCE_HASHES['tools/eval/core-reset/schemas/baseline-receipt.schema.json'],
+          contract_id: 'core-reset-held-out-v1',
+          contract_ordered_json_sha256: '20c7f4f03a1a35182b4148a71e4293b3ef932d73be61d8d85db1f81e8fb795fc',
+          disposition: 'historical_baseline_only_not_v2_held_out_evidence',
+        },
+        evidence_semantics: {
+          structural_file_nodes: 'exact_directed_imports_from_and_contains_only',
+          structural_file_phase_coverage: 'forbidden',
+          symbol_phase_evidence: 'exact_owner_fixture_with_authenticated_declaration',
+          right_file_wrong_symbol: 'fail',
+          absent_runtime_user_or_async_handoff: 'disconnected',
+          invented_reversed_or_projected_edge: 'forbidden',
+        },
         blocking_repositories: [
           {
             question: 'documenso-document-send',
@@ -1040,8 +1356,11 @@ describe('core reset governance', () => {
               'recipient_creation',
               'document_send',
               'signing_completion',
+              'seal_execution',
               'notification_delivery',
             ],
+            required_connected_handoffs: 0,
+            required_disconnected_handoffs: 4,
           },
           {
             question: 'formbricks-survey-response',
@@ -1049,7 +1368,15 @@ describe('core reset governance', () => {
             commit: '415bd9828ba150f7944fe10422acdbaf3089c707',
             tree_path_sha256: 'd50418a92fd6dae8d07ad09e4aaecbefb53c5ed29c85e374d41320e0669a7572',
             graph_root: 'apps/web',
-            required_phases: ['request_handling', 'response_persistence', 'event_tracking'],
+            required_phases: [
+              'request_handling',
+              'response_persistence',
+              'event_enqueue',
+              'worker_binding',
+              'event_tracking',
+            ],
+            required_connected_handoffs: 2,
+            required_disconnected_handoffs: 2,
           },
         ],
         diagnostic_scope_guard: {
@@ -1069,6 +1396,9 @@ describe('core reset governance', () => {
         query_invocations_max: 1,
         required_phase_coverage: 1,
         direct_phase_evidence_requires_authenticated_excerpt: true,
+        direct_phase_evidence_requires_exact_owner_fixture: true,
+        structural_file_nodes_cover_phases: false,
+        required_handoff_coverage: 1,
         verification_targets_cover_blocking_phases: false,
         selected_file_precision_min: 0.70,
         unrelated_files_max: 2,
@@ -1078,13 +1408,19 @@ describe('core reset governance', () => {
         incorrect_load_bearing_paths_max: 0,
       },
       performance_contract: {
-        id: 'evidence-path-performance-v1',
+        id: 'evidence-path-performance-v2',
         descriptor: EVIDENCE_PERFORMANCE_DESCRIPTOR,
         descriptor_sha256: EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256,
-        generator: 'component-ring-with-fixed-skip-v1',
+        evaluator: EVIDENCE_PERFORMANCE_EVALUATOR,
+        evaluator_sha256: EVIDENCE_PERFORMANCE_EVALUATOR_SHA256,
+        receipt_schema: EVIDENCE_PERFORMANCE_RECEIPT_SCHEMA,
+        receipt_schema_sha256: EVIDENCE_PERFORMANCE_RECEIPT_SCHEMA_SHA256,
+        generator: 'component-ring-structural-imports-v3',
         nodes: 15_000,
         directed_edges: 30_000,
+        candidate_runtime_source: 'detached_standalone_exact_head_clone',
         graph_loaded_before_timer: true,
+        query_index_inspected_before_timer: true,
         positive_queries: 4,
         missing_queries: 1,
         untimed_preflight_invocations_per_query: 1,
@@ -1133,6 +1469,13 @@ describe('core reset governance', () => {
         authenticated_source_rfc_amendment: EVIDENCE_SOURCE_RFC_AMENDMENT,
         authenticated_source_owner_approval: EVIDENCE_SOURCE_OWNER_APPROVAL,
         authenticated_source_rfc_approval: EVIDENCE_SOURCE_RFC_APPROVAL,
+        heldout_v2_proposal: EVIDENCE_V2_PROPOSAL,
+        heldout_v2_owner_approval: EVIDENCE_V2_OWNER_APPROVAL,
+        heldout_v2_rfc_proposal: EVIDENCE_V2_RFC_PROPOSAL,
+        heldout_v2_rfc_approval: EVIDENCE_V2_RFC_APPROVAL,
+        generation_prerequisite: EVIDENCE_GENERATION_PREREQUISITE,
+        generation_prerequisite_owner_approval: EVIDENCE_GENERATION_OWNER_APPROVAL,
+        generation_prerequisite_rfc_approval: EVIDENCE_GENERATION_RFC_APPROVAL,
         protected_base: EVIDENCE_BASE,
         implementation_started: false,
       },
@@ -1155,6 +1498,8 @@ describe('core reset governance', () => {
       'preserve_typed_directional_relationships',
       'repository_specific_rules',
       'stale_unavailable_corrupt_and_truncated_boundaries_explicit',
+      'structural_file_nodes',
+      'symbol_declarations',
     ].sort())
     expect(Object.keys(evidence?.deterministic_query_contract?.authenticated_source_excerpt ?? {}).sort()).toEqual([
       'excerpt',
@@ -1209,178 +1554,73 @@ describe('core reset governance', () => {
     expect(EVIDENCE_REPLACEMENTS.every((path) => !baseFiles.includes(path))).toBe(true)
     expect(EVIDENCE_REPLACEMENTS.every((path) => !existsSync(resolve(path)))).toBe(true)
     expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(false)
-    expect(productionSourceDelta(EVIDENCE_BASE)).toEqual({ added: 0, removed: 0, net: 0 })
+    expect(productionSourceDelta(EVIDENCE_BASE)).toEqual({ added: 3, removed: 0, net: 3 })
     expect(execFileSync(
       git,
-      ['diff', '--name-only', EVIDENCE_BASE, 'HEAD', '--', 'src', 'package.json', 'package-lock.json'],
+      ['diff', '--name-only', EVIDENCE_BASE, '--', 'src', 'package.json', 'package-lock.json'],
       { encoding: 'utf8' },
-    ).trim()).toBe('')
+    ).trim()).toBe('src/adapters/typescript/index.ts')
+    expect(execFileSync(
+      git,
+      ['diff', '--numstat', EVIDENCE_BASE, '--', 'src', 'package.json', 'package-lock.json'],
+      { encoding: 'utf8' },
+    ).trim()).toBe('3\t0\tsrc/adapters/typescript/index.ts')
     expect(manifest.review).toMatchObject({ disposition_changes: 6 })
     expect(manifest.review.amendment).toContain('proof-report.ts plus review-compare.ts from move to delete')
   })
 
   it('pins the frozen held-out and performance contracts byte for byte', () => {
     for (const [path, expectedSha256] of Object.entries(FROZEN_EVIDENCE_HASHES)) {
-      expect(gitBlobSha256('HEAD', path), `${path} must remain byte-frozen`).toBe(expectedSha256)
+      expect(
+        createHash('sha256').update(readFileSync(resolve(path))).digest('hex'),
+        `${path} must remain byte-frozen`,
+      ).toBe(expectedSha256)
     }
-    expect(gitBlobSha256('HEAD', EVIDENCE_PERFORMANCE_DESCRIPTOR)).toBe(EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256)
+    expect(
+      createHash('sha256').update(readFileSync(resolve(EVIDENCE_PERFORMANCE_DESCRIPTOR))).digest('hex'),
+    ).toBe(EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256)
+    expect(
+      createHash('sha256').update(readFileSync(resolve(EVIDENCE_PERFORMANCE_EVALUATOR))).digest('hex'),
+    ).toBe(EVIDENCE_PERFORMANCE_EVALUATOR_SHA256)
+    expect(
+      createHash('sha256').update(readFileSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT_SCHEMA))).digest('hex'),
+    ).toBe(EVIDENCE_PERFORMANCE_RECEIPT_SCHEMA_SHA256)
 
-    const descriptor = JSON.parse(read(EVIDENCE_PERFORMANCE_DESCRIPTOR)) as {
-      schema_version: number
-      fixture_id: string
-      generator: {
-        algorithm: string
-        seed: string
-        component_count: number
-        nodes_per_component: number
-        node_count: number
-        edge_count: number
-        node_id: string
-        node_label: string
-        source_file: string
-        source_domain: string
-        phases: string[]
-        phase_rule: string
-        line_number_rule: string
-        snippet_rule: string
-        edges: Array<{
-          count_per_component: number
-          from: string
-          to: string
-          relation_rule: string
-        }>
-        serialization: string
-      }
-      queries: string[]
-      query_expectations: Array<{
-        query_index: number
-        outcome: 'evidence' | 'missing'
-        node_ids: string[]
-        relationships: Array<{ from_id: string; relation: 'calls' | 'depends_on'; to_id: string }>
-        boundaries: Array<{ kind: 'missing'; subject: string }>
-      }>
-      protocol: {
-        graph_loaded_before_timer: boolean
-        correctness: {
-          untimed_preflight_invocations_per_query: number
-          preflight_must_pass_before_warmup: boolean
-          every_warmup_and_measured_result_must_match: boolean
-          outcome_match: string
-          node_match: string
-          relationship_match: string
-          boundary_match: string
-          empty_positive_result: string
-        }
-        warmup_invocations: number
-        measured_invocations: number
-        query_schedule: string
-        clock: string
-        percentile: string
-        process_model: string
-        closure_pass_max: number
-        selected_file_max: number
-        snippet_max: number
-        serialized_token_max: number
-        p95_ms_max: number
-      }
-      reference_environment: {
-        node: string
-        platform: string
-        release: string
-        arch: string
-        cpu: string
-        memory_bytes: number
-      }
-      runner: string
-      receipt: string
-    }
-
+    const descriptor = JSON.parse(read(EVIDENCE_PERFORMANCE_DESCRIPTOR)) as EvidencePerformanceDescriptor
     expect(descriptor).toMatchObject({
-      schema_version: 1,
-      fixture_id: 'evidence-path-performance-v1',
+      schema_version: 2,
+      fixture_id: 'evidence-path-performance-v2',
       generator: {
-        algorithm: 'component-ring-with-fixed-skip-v1',
-        seed: 'sha256-counter-v1:evidence-path-performance-v1',
+        algorithm: 'component-ring-structural-imports-v3',
+        seed: 'sha256-counter-v3:evidence-path-performance-v2',
         component_count: 150,
         nodes_per_component: 100,
         node_count: 15_000,
         edge_count: 30_000,
-        node_id: 'n plus zero-padded global index width 5',
-        node_label: 'flow plus zero-padded component width 3 plus phase plus zero-padded local index width 2',
+        node_kind: 'file',
         source_file: 'src/fixture/flow-{component}/node-{local}.ts',
         source_domain: 'production',
-        phases: ['route', 'service', 'queue', 'worker', 'storage'],
-        phase_rule: 'phases[local_index modulo 5]',
-        line_number_rule: 'local_index plus 1',
-        snippet_rule: "export function {label}() { return '{component}:{phase}:{local}'; }",
+        source_text_use: 'full-file SHA256 authentication only',
+        structural_file_evidence: {
+          range: 'omitted',
+          snippet: 'omitted',
+          permitted_relations: ['imports_from'],
+        },
         edges: [
           {
             count_per_component: 100,
             from: 'local_index',
             to: '(local_index + 1) modulo 100',
-            relation_rule: 'calls',
+            relation_rule: 'imports_from',
           },
           {
             count_per_component: 100,
             from: 'local_index',
             to: '(local_index + 37) modulo 100',
-            relation_rule: 'depends_on',
+            relation_rule: 'imports_from',
           },
         ],
-        serialization: 'RFC 8785 JSON Canonicalization Scheme',
       },
-      queries: [
-        'Trace flow-007 from route local 00 through service local 01, queue local 02, worker local 03, to storage local 04.',
-        'Trace flow-042 from queue local 02 through its depends_on edge to storage local 39, then the calls edge to route local 40.',
-        'Trace the calls boundary from queue local 52 to worker local 53 in flow-113.',
-        'Trace the wraparound calls edge from storage local 99 to route local 00 in flow-128.',
-        'Which evidence path implements flow-999?',
-      ],
-      query_expectations: [
-        {
-          query_index: 0,
-          outcome: 'evidence',
-          node_ids: ['n00700', 'n00701', 'n00702', 'n00703', 'n00704'],
-          relationships: [
-            { from_id: 'n00700', relation: 'calls', to_id: 'n00701' },
-            { from_id: 'n00701', relation: 'calls', to_id: 'n00702' },
-            { from_id: 'n00702', relation: 'calls', to_id: 'n00703' },
-            { from_id: 'n00703', relation: 'calls', to_id: 'n00704' },
-          ],
-          boundaries: [],
-        },
-        {
-          query_index: 1,
-          outcome: 'evidence',
-          node_ids: ['n04202', 'n04239', 'n04240'],
-          relationships: [
-            { from_id: 'n04202', relation: 'depends_on', to_id: 'n04239' },
-            { from_id: 'n04239', relation: 'calls', to_id: 'n04240' },
-          ],
-          boundaries: [],
-        },
-        {
-          query_index: 2,
-          outcome: 'evidence',
-          node_ids: ['n11352', 'n11353'],
-          relationships: [{ from_id: 'n11352', relation: 'calls', to_id: 'n11353' }],
-          boundaries: [],
-        },
-        {
-          query_index: 3,
-          outcome: 'evidence',
-          node_ids: ['n12899', 'n12800'],
-          relationships: [{ from_id: 'n12899', relation: 'calls', to_id: 'n12800' }],
-          boundaries: [],
-        },
-        {
-          query_index: 4,
-          outcome: 'missing',
-          node_ids: [],
-          relationships: [],
-          boundaries: [{ kind: 'missing', subject: 'flow-999' }],
-        },
-      ],
       protocol: {
         graph_loaded_before_timer: true,
         correctness: {
@@ -1392,30 +1632,22 @@ describe('core reset governance', () => {
           relationship_match: 'exact_directed_typed_set',
           boundary_match: 'exact_set',
           empty_positive_result: 'fail',
+          structural_file_range: 'must_be_omitted',
+          structural_file_snippet: 'must_be_omitted',
+          full_file_hash: 'must_match_authenticated_source',
         },
         warmup_invocations: 3,
         measured_invocations: 20,
-        query_schedule: 'queries[index modulo 5]',
-        clock: 'node:perf_hooks performance.now',
-        percentile: 'nearest-rank p95 over the 20 elapsed_ms samples',
-        process_model: 'one Node process; one parsed graph reused by all invocations',
         closure_pass_max: 1,
         selected_file_max: 12,
-        snippet_max: 25,
         serialized_token_max: 4_000,
         p95_ms_max: 500,
-      },
-      reference_environment: {
-        node: 'v22.9.0',
-        platform: 'darwin',
-        release: '25.3.0',
-        arch: 'arm64',
-        cpu: 'Apple M3 Max',
-        memory_bytes: 51_539_607_552,
       },
       runner: `node tools/eval/core-reset/evidence-path-performance.mjs --contract ${EVIDENCE_PERFORMANCE_DESCRIPTOR} --receipt ${EVIDENCE_PERFORMANCE_RECEIPT}`,
       receipt: EVIDENCE_PERFORMANCE_RECEIPT,
     })
+    expect(descriptor.generator).not.toHaveProperty('line_number_rule')
+    expect(descriptor.generator).not.toHaveProperty('snippet_rule')
     expect(descriptor.generator.component_count * descriptor.generator.nodes_per_component)
       .toBe(descriptor.generator.node_count)
     expect(
@@ -1460,11 +1692,33 @@ describe('core reset governance', () => {
         const from = coordinates(relationship.from_id)
         const to = coordinates(relationship.to_id)
         expect(to.component).toBe(from.component)
-        const offset = relationship.relation === 'calls' ? 1 : 37
-        expect(to.local).toBe((from.local + offset) % descriptor.generator.nodes_per_component)
+        expect(relationship.relation).toBe('imports_from')
+        const observedOffset =
+          (to.local - from.local + descriptor.generator.nodes_per_component)
+          % descriptor.generator.nodes_per_component
+        expect([1, 37]).toContain(observedOffset)
       }
     }
+    expect(existsSync(resolve(EVIDENCE_HELDOUT_RECEIPT))).toBe(false)
     expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(false)
+  })
+
+  it('detects load-bearing evaluation data hidden in published text files', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-package-leak-'))
+    try {
+      writeFileSync(join(root, 'README.md'), 'public docs plus hidden-owner-sha\n', 'utf8')
+      writeFileSync(join(root, 'runtime.js'), 'export const value = true\n', 'utf8')
+
+      expect(
+        packageContentLeaks(
+          ['README.md', 'runtime.js'],
+          new Set(['hidden-owner-sha']),
+          root,
+        ),
+      ).toEqual(['README.md: hidden-owner-sha'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('binds the evidence-path importer closure to protected-base Git content', () => {
@@ -1774,13 +2028,13 @@ describe('core reset governance', () => {
     expect(budget).toBeDefined()
     expect(inventory.filesystemViolations).toEqual([])
     expect(delta.added).toBeLessThanOrEqual(budget!.added_max)
-    const isActivationOnly = current.active_phase !== null
+    const isApprovedPrerequisiteOnly = current.active_phase !== null
       && phase?.status === 'in_progress'
-      && delta.added === 0
+      && delta.added === 3
       && delta.removed === 0
-      && delta.net === 0
+      && delta.net === 3
     const meetsExitBudget = delta.removed >= budget!.removed_min && delta.net <= budget!.net_max
-    expect(isActivationOnly || meetsExitBudget).toBe(true)
+    expect(isApprovedPrerequisiteOnly || meetsExitBudget).toBe(true)
     expect({
       production_typescript_files: inventory.files,
       production_typescript_loc: inventory.loc,
@@ -1796,20 +2050,26 @@ describe('core reset governance', () => {
     })
     expect(current).toMatchObject({
       npm_files: 276,
-      npm_packed_bytes: 572_143,
-      npm_unpacked_bytes: 2_699_851,
+      npm_packed_bytes: 572_171,
+      npm_unpacked_bytes: 2_699_912,
     })
   })
 
   it('records the simplified implementation without retaining the failed warm path', () => {
-    expect(productionSourceDelta(INCREMENTAL_BASE)).toEqual({ added: 2_190, removed: 4_726, net: -2_536 })
+    expect(productionSourceDeltaBetween(INCREMENTAL_BASE, INCREMENTAL_MERGE))
+      .toEqual({ added: 2_190, removed: 4_726, net: -2_536 })
     expect(execFileSync(git, ['rev-parse', `${INCREMENTAL_MERGE}^{tree}`], { encoding: 'utf8' }).trim())
       .toBe(INCREMENTAL_FINAL_TREE)
     expect(execFileSync(
       git,
-      ['diff', '--name-only', INCREMENTAL_MERGE, 'HEAD', '--', 'src', 'package.json', 'package-lock.json'],
+      ['diff', '--name-only', INCREMENTAL_MERGE, '--', 'src', 'package.json', 'package-lock.json'],
       { encoding: 'utf8' },
-    ).trim()).toBe('')
+    ).trim()).toBe('src/adapters/typescript/index.ts')
+    expect(execFileSync(
+      git,
+      ['diff', '--numstat', INCREMENTAL_MERGE, '--', 'src', 'package.json', 'package-lock.json'],
+      { encoding: 'utf8' },
+    ).trim()).toBe('3\t0\tsrc/adapters/typescript/index.ts')
     for (const predecessor of INCREMENTAL_PREDECESSORS) {
       expect(existsSync(resolve(predecessor)), `${predecessor} must be deleted`).toBe(false)
     }
@@ -1938,7 +2198,6 @@ describe('core reset governance', () => {
   it('keeps retired exporter flags out of active commands without rewriting frozen v0.32 evidence', () => {
     expect(read('.github/workflows/ci.yml')).not.toContain('--no-html')
     expect(read('.github/ISSUE_TEMPLATE/design_partner_report.yml')).not.toContain('--no-html')
-    expect(read('tools/eval/core-reset/record-baseline.mjs')).toContain("'--no-html'")
     expect(read('tools/eval/core-reset/contracts/evaluation-contract.json')).toContain('"--no-html"')
     expect(read('docs/core-reset/evidence/baseline-v0.32.0.json')).toContain('"--no-html"')
   })

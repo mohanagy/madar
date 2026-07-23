@@ -1,17 +1,27 @@
 {
-  "schema_version": 1,
-  "fixture_id": "evidence-path-performance-v1",
+  "schema_version": 2,
+  "fixture_id": "evidence-path-performance-v2",
   "generator": {
-    "algorithm": "component-ring-with-fixed-skip-v1",
-    "seed": "sha256-counter-v1:evidence-path-performance-v1",
+    "algorithm": "component-ring-structural-imports-v3",
+    "seed": "sha256-counter-v3:evidence-path-performance-v2",
     "component_count": 150,
     "nodes_per_component": 100,
     "node_count": 15000,
     "edge_count": 30000,
     "node_id": "n plus zero-padded global index width 5",
     "node_label": "flow plus zero-padded component width 3 plus phase plus zero-padded local index width 2",
+    "node_kind": "file",
     "source_file": "src/fixture/flow-{component}/node-{local}.ts",
     "source_domain": "production",
+    "source_text_rule": "export {}; // authenticated synthetic source {component}:{phase}:{local}",
+    "source_text_use": "full-file SHA256 authentication only",
+    "structural_file_evidence": {
+      "range": "omitted",
+      "snippet": "omitted",
+      "permitted_relations": [
+        "imports_from"
+      ]
+    },
     "phases": [
       "route",
       "service",
@@ -20,29 +30,27 @@
       "storage"
     ],
     "phase_rule": "phases[local_index modulo 5]",
-    "line_number_rule": "local_index plus 1",
-    "snippet_rule": "export function {label}() { return '{component}:{phase}:{local}'; }",
     "edges": [
       {
         "count_per_component": 100,
         "from": "local_index",
         "to": "(local_index + 1) modulo 100",
-        "relation_rule": "calls"
+        "relation_rule": "imports_from"
       },
       {
         "count_per_component": 100,
         "from": "local_index",
         "to": "(local_index + 37) modulo 100",
-        "relation_rule": "depends_on"
+        "relation_rule": "imports_from"
       }
     ],
     "serialization": "RFC 8785 JSON Canonicalization Scheme"
   },
   "queries": [
-    "Trace flow-007 from route local 00 through service local 01, queue local 02, worker local 03, to storage local 04.",
-    "Trace flow-042 from queue local 02 through its depends_on edge to storage local 39, then the calls edge to route local 40.",
-    "Trace the calls boundary from queue local 52 to worker local 53 in flow-113.",
-    "Trace the wraparound calls edge from storage local 99 to route local 00 in flow-128.",
+    "Trace flow-007 from route local 00 through imports_from edges to service local 01, queue local 02, worker local 03, and storage local 04.",
+    "Trace flow-042 from queue local 02 through its offset-37 imports_from edge to storage local 39, then the offset-1 imports_from edge to route local 40.",
+    "Trace the imports_from boundary from queue local 52 to worker local 53 in flow-113.",
+    "Trace the wraparound imports_from edge from storage local 99 to route local 00 in flow-128.",
     "Which evidence path implements flow-999?"
   ],
   "query_expectations": [
@@ -59,22 +67,22 @@
       "relationships": [
         {
           "from_id": "n00700",
-          "relation": "calls",
+          "relation": "imports_from",
           "to_id": "n00701"
         },
         {
           "from_id": "n00701",
-          "relation": "calls",
+          "relation": "imports_from",
           "to_id": "n00702"
         },
         {
           "from_id": "n00702",
-          "relation": "calls",
+          "relation": "imports_from",
           "to_id": "n00703"
         },
         {
           "from_id": "n00703",
-          "relation": "calls",
+          "relation": "imports_from",
           "to_id": "n00704"
         }
       ],
@@ -91,12 +99,12 @@
       "relationships": [
         {
           "from_id": "n04202",
-          "relation": "depends_on",
+          "relation": "imports_from",
           "to_id": "n04239"
         },
         {
           "from_id": "n04239",
-          "relation": "calls",
+          "relation": "imports_from",
           "to_id": "n04240"
         }
       ],
@@ -112,7 +120,7 @@
       "relationships": [
         {
           "from_id": "n11352",
-          "relation": "calls",
+          "relation": "imports_from",
           "to_id": "n11353"
         }
       ],
@@ -128,7 +136,7 @@
       "relationships": [
         {
           "from_id": "n12899",
-          "relation": "calls",
+          "relation": "imports_from",
           "to_id": "n12800"
         }
       ],
@@ -149,6 +157,7 @@
   ],
   "protocol": {
     "graph_loaded_before_timer": true,
+    "query_index_inspected_before_timer": true,
     "correctness": {
       "untimed_preflight_invocations_per_query": 1,
       "preflight_must_pass_before_warmup": true,
@@ -157,17 +166,19 @@
       "node_match": "exact_set",
       "relationship_match": "exact_directed_typed_set",
       "boundary_match": "exact_set",
-      "empty_positive_result": "fail"
+      "empty_positive_result": "fail",
+      "structural_file_range": "must_be_omitted",
+      "structural_file_snippet": "must_be_omitted",
+      "full_file_hash": "must_match_authenticated_source"
     },
     "warmup_invocations": 3,
     "measured_invocations": 20,
     "query_schedule": "queries[index modulo 5]",
     "clock": "node:perf_hooks performance.now",
     "percentile": "nearest-rank p95 over the 20 elapsed_ms samples",
-    "process_model": "one Node process; one parsed graph reused by all invocations",
+    "process_model": "one Node process; one parsed graph inspected into one ready query index reused by all invocations",
     "closure_pass_max": 1,
     "selected_file_max": 12,
-    "snippet_max": 25,
     "serialized_token_max": 4000,
     "p95_ms_max": 500
   },
@@ -179,6 +190,6 @@
     "cpu": "Apple M3 Max",
     "memory_bytes": 51539607552
   },
-  "runner": "node tools/eval/core-reset/evidence-path-performance.mjs --contract tools/eval/core-reset/contracts/evidence-path-performance-v1.json --receipt docs/core-reset/evidence/evidence-path-performance.json",
+  "runner": "node tools/eval/core-reset/evidence-path-performance.mjs --contract tools/eval/core-reset/contracts/evidence-path-performance-v2.json --receipt docs/core-reset/evidence/evidence-path-performance.json",
   "receipt": "docs/core-reset/evidence/evidence-path-performance.json"
 }

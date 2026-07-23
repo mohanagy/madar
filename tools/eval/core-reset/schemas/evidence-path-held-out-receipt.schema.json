@@ -1,0 +1,725 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mohanagy/madar/tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json",
+  "title": "Madar Core Reset v2 evidence-path held-out receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_kind",
+    "generated_at",
+    "share_safe",
+    "issue",
+    "benchmark_passed",
+    "eligible_for_acceptance",
+    "contract",
+    "evaluator",
+    "candidate_build",
+    "subject",
+    "environment",
+    "protocol",
+    "thresholds",
+    "repositories",
+    "questions",
+    "diagnostic",
+    "gates",
+    "failures",
+    "receipt_sha256"
+  ],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "receipt_kind": { "const": "core-reset-evidence-path-held-out" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "share_safe": { "const": true },
+    "issue": { "const": 596 },
+    "benchmark_passed": { "type": "boolean" },
+    "eligible_for_acceptance": { "type": "boolean" },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "contract_id", "sha256"],
+      "properties": {
+        "path": {
+          "const": "tools/eval/core-reset/contracts/evaluation-contract.json"
+        },
+        "contract_id": { "const": "core-reset-held-out-v2" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "evaluator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "schema_path", "schema_sha256"],
+      "properties": {
+        "path": {
+          "const": "tools/eval/core-reset/evidence-path-held-out.mjs"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "schema_path": {
+          "const": "tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json"
+        },
+        "schema_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "candidate_build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commands",
+        "performed_before_runtime_load",
+        "build_source",
+        "node_executable_sha256",
+        "npm_cli_sha256",
+        "typescript_cli_sha256",
+        "git_executable",
+        "git_executable_sha256",
+        "tar_executable",
+        "tar_executable_sha256",
+        "git_configuration",
+        "head_commit",
+        "head_tree_oid",
+        "head_tree_paths_sha256",
+        "worktree_clean_before",
+        "worktree_clean_after",
+        "build_dependency_files",
+        "build_dependency_tree_sha256",
+        "package_sha256",
+        "package_bytes",
+        "package_lock_sha256",
+        "dependency_files",
+        "dependency_tree_sha256",
+        "dist_files",
+        "dist_tree_sha256"
+      ],
+      "properties": {
+        "commands": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        },
+        "performed_before_runtime_load": { "const": true },
+        "build_source": {
+          "const": "detached_standalone_exact_head_clone"
+        },
+        "node_executable_sha256": { "$ref": "#/$defs/sha256" },
+        "npm_cli_sha256": { "$ref": "#/$defs/sha256" },
+        "typescript_cli_sha256": { "$ref": "#/$defs/sha256" },
+        "git_executable": { "const": "/usr/bin/git" },
+        "git_executable_sha256": { "$ref": "#/$defs/sha256" },
+        "tar_executable": { "const": "/usr/bin/bsdtar" },
+        "tar_executable_sha256": { "$ref": "#/$defs/sha256" },
+        "git_configuration": {
+          "const": [
+            "core.hooksPath=/dev/null",
+            "core.fsmonitor=false",
+            "core.untrackedCache=false",
+            "protocol.ext.allow=never",
+            "protocol.ssh.allow=never",
+            "protocol.http.allow=never",
+            "protocol.https.allow=never",
+            "protocol.file.allow=always",
+            "fetch.fsckObjects=true",
+            "transfer.fsckObjects=true",
+            "submodule.recurse=false"
+          ]
+        },
+        "head_commit": { "$ref": "#/$defs/git_oid" },
+        "head_tree_oid": { "$ref": "#/$defs/git_oid" },
+        "head_tree_paths_sha256": { "$ref": "#/$defs/sha256" },
+        "worktree_clean_before": { "const": true },
+        "worktree_clean_after": { "const": true },
+        "build_dependency_files": { "type": "integer", "minimum": 1 },
+        "build_dependency_tree_sha256": { "$ref": "#/$defs/sha256" },
+        "package_sha256": { "$ref": "#/$defs/sha256" },
+        "package_bytes": { "type": "integer", "minimum": 1 },
+        "package_lock_sha256": { "$ref": "#/$defs/sha256" },
+        "dependency_files": { "type": "integer", "minimum": 1 },
+        "dependency_tree_sha256": { "$ref": "#/$defs/sha256" },
+        "dist_files": { "type": "integer", "minimum": 1 },
+        "dist_tree_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["head_commit", "head_tree_oid", "worktree_dirty"],
+      "properties": {
+        "head_commit": { "$ref": "#/$defs/git_oid" },
+        "head_tree_oid": { "$ref": "#/$defs/git_oid" },
+        "worktree_dirty": { "type": "boolean" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "platform",
+        "release",
+        "arch",
+        "node_options",
+        "node_path",
+        "process_exec_argv"
+      ],
+      "properties": {
+        "node": { "type": "string", "minLength": 1 },
+        "platform": { "type": "string", "minLength": 1 },
+        "release": { "type": "string", "minLength": 1 },
+        "arch": { "type": "string", "minLength": 1 },
+        "node_options": { "const": "absent" },
+        "node_path": { "const": "absent" },
+        "process_exec_argv": { "const": [] }
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_generate_command",
+        "candidate_runtime_source",
+        "candidate_dependency_install",
+        "workspace_config_source",
+        "containment_policy_id",
+        "response_handoff",
+        "isolated_plan_process_loaded_contract_before_retrieval",
+        "hidden_fixtures_loaded_in_evaluator_after_response_persistence",
+        "execution_plan_isolated_from_hidden_fixtures",
+        "grading_contract_loaded_sequence",
+        "grading_contract_loaded_at",
+        "selected_questions",
+        "excluded_diagnostic_questions"
+      ],
+      "properties": {
+        "candidate_generate_command": {
+          "const": ["node", "dist/src/cli/bin.js", "generate", "."]
+        },
+        "candidate_runtime_source": {
+          "const": "exact_head_npm_packed_artifact"
+        },
+        "candidate_dependency_install": {
+          "const": "exact_lock_offline_production_only"
+        },
+        "workspace_config_source": {
+          "const": "exact_tracked_local_workspace_packages_no_package_manager"
+        },
+        "containment_policy_id": {
+          "const": "darwin-sandbox-exec-node-permissions-v1"
+        },
+        "response_handoff": {
+          "const": "fsync_sha256_before_hidden_grading"
+        },
+        "isolated_plan_process_loaded_contract_before_retrieval": {
+          "const": true
+        },
+        "hidden_fixtures_loaded_in_evaluator_after_response_persistence": {
+          "const": true
+        },
+        "execution_plan_isolated_from_hidden_fixtures": { "const": true },
+        "grading_contract_loaded_sequence": { "const": 4 },
+        "grading_contract_loaded_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "selected_questions": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "openstatus-574-strict-one-call",
+              "documenso-document-send",
+              "formbricks-survey-response"
+            ]
+          }
+        },
+        "excluded_diagnostic_questions": {
+          "const": ["openstatus-565-runtime-flow"]
+        }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_in_scope_phase_coverage",
+        "selected_file_precision_min",
+        "unrelated_files_max",
+        "selected_files_max",
+        "snippets_max",
+        "serialized_tokens_max",
+        "reported_closure_passes_max"
+      ],
+      "properties": {
+        "required_in_scope_phase_coverage": { "const": 1 },
+        "selected_file_precision_min": { "const": 0.7 },
+        "unrelated_files_max": { "const": 2 },
+        "selected_files_max": { "const": 12 },
+        "snippets_max": { "const": 25 },
+        "serialized_tokens_max": { "const": 4000 },
+        "reported_closure_passes_max": { "const": 1 }
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/repository_result" }
+    },
+    "questions": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/question_result" }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["affects_blocking_gate", "passed", "question_ids"],
+      "properties": {
+        "affects_blocking_gate": { "const": false },
+        "passed": { "type": "boolean" },
+        "question_ids": {
+          "const": ["openstatus-574-strict-one-call"]
+        }
+      }
+    },
+    "gates": { "$ref": "#/$defs/benchmark_gates" },
+    "failures": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "contract_identity",
+          "candidate_runtime_built_from_subject",
+          "candidate_process_isolation_and_containment",
+          "immutable_response_handoff",
+          "grading_order",
+          "standalone_pinned_repositories",
+          "one_retrieve_per_question",
+          "blocking_questions"
+        ]
+      }
+    },
+    "receipt_sha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "git_oid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "safe_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*\\\\).+$"
+    },
+    "benchmark_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_identity",
+        "candidate_runtime_built_from_subject",
+        "candidate_process_isolation_and_containment",
+        "immutable_response_handoff",
+        "grading_order",
+        "standalone_pinned_repositories",
+        "one_retrieve_per_question",
+        "blocking_questions"
+      ],
+      "properties": {
+        "contract_identity": { "type": "boolean" },
+        "candidate_runtime_built_from_subject": { "type": "boolean" },
+        "candidate_process_isolation_and_containment": { "type": "boolean" },
+        "immutable_response_handoff": { "type": "boolean" },
+        "grading_order": { "type": "boolean" },
+        "standalone_pinned_repositories": { "type": "boolean" },
+        "one_retrieve_per_question": { "type": "boolean" },
+        "blocking_questions": { "type": "boolean" }
+      }
+    },
+    "repository_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_id",
+        "commit",
+        "tree_paths_sha256",
+        "graph_root",
+        "checkout_clean",
+        "build"
+      ],
+      "properties": {
+        "repository_id": {
+          "enum": ["openstatus", "documenso", "formbricks"]
+        },
+        "commit": { "$ref": "#/$defs/git_oid" },
+        "tree_paths_sha256": { "$ref": "#/$defs/sha256" },
+        "graph_root": { "type": "string", "minLength": 1 },
+        "checkout_clean": { "const": true },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source_snapshot_files",
+            "source_snapshot_tree_sha256",
+            "workspace_config_packages",
+            "workspace_config_mapping_sha256",
+            "elapsed_ms",
+            "artifact_sha256",
+            "artifact_bytes",
+            "nodes",
+            "directed_edges",
+            "generated_output_absent_before_retrieve"
+          ],
+          "properties": {
+            "source_snapshot_files": { "type": "integer", "minimum": 1 },
+            "source_snapshot_tree_sha256": { "$ref": "#/$defs/sha256" },
+            "workspace_config_packages": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "workspace_config_mapping_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "elapsed_ms": { "type": "number", "minimum": 0 },
+            "artifact_sha256": { "$ref": "#/$defs/sha256" },
+            "artifact_bytes": { "type": "integer", "minimum": 1 },
+            "nodes": { "type": "integer", "minimum": 1 },
+            "directed_edges": { "type": "integer", "minimum": 0 },
+            "generated_output_absent_before_retrieve": { "const": true }
+          }
+        }
+      }
+    },
+    "required_phase_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scope",
+        "accepted_owner_ids",
+        "minimum_owner_matches",
+        "authenticated_owner_ids",
+        "covered"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "scope": { "const": "required" },
+        "accepted_owner_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "minimum_owner_matches": { "type": "integer", "minimum": 1 },
+        "authenticated_owner_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "covered": { "type": "boolean" }
+      }
+    },
+    "unsupported_phase_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scope",
+        "boundary_subjects",
+        "minimum_boundary_matches",
+        "unsupported_boundary_subjects",
+        "covered"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "scope": { "const": "unsupported_language" },
+        "boundary_subjects": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/safe_path" }
+        },
+        "minimum_boundary_matches": { "type": "integer", "minimum": 1 },
+        "unsupported_boundary_subjects": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/safe_path" }
+        },
+        "covered": { "type": "boolean" }
+      }
+    },
+    "phase_result": {
+      "oneOf": [
+        { "$ref": "#/$defs/required_phase_result" },
+        { "$ref": "#/$defs/unsupported_phase_result" }
+      ]
+    },
+    "handoff_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from_owner_id",
+        "to_owner_id",
+        "expectation",
+        "expected_subject",
+        "authoritative_forward_path_relationship_ids",
+        "authoritative_reverse_path_relationship_ids",
+        "selected_forward_path_relationship_ids",
+        "selected_reverse_path_relationship_ids",
+        "selected_structural_support_path_relationship_ids",
+        "matched",
+        "violations"
+      ],
+      "properties": {
+        "from_owner_id": { "type": "string", "minLength": 1 },
+        "to_owner_id": { "type": "string", "minLength": 1 },
+        "expectation": { "enum": ["connected", "disconnected"] },
+        "expected_subject": {
+          "anyOf": [
+            { "type": "string", "minLength": 5 },
+            { "type": "null" }
+          ]
+        },
+        "authoritative_forward_path_relationship_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "authoritative_reverse_path_relationship_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "selected_forward_path_relationship_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "selected_reverse_path_relationship_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "selected_structural_support_path_relationship_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "matched": { "type": "boolean" },
+        "violations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "from_owner_missing",
+              "to_owner_missing",
+              "required_disconnected_boundary_missing",
+              "reversed_disconnected_boundary",
+              "authoritative_forward_path_contradicts_disconnected",
+              "authoritative_reverse_path_contradicts_directional_handoff",
+              "selected_forward_path_missing",
+              "selected_reverse_only_path",
+              "connected_handoff_reported_disconnected"
+            ]
+          }
+        }
+      }
+    },
+    "question_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome_evidence",
+        "required_phase_coverage",
+        "unsupported_phases_reported",
+        "authenticated_owner_sets",
+        "owner_order",
+        "required_handoffs",
+        "selected_file_precision",
+        "unrelated_files",
+        "selected_files",
+        "snippets",
+        "serialized_tokens",
+        "reported_closure_passes",
+        "not_truncated",
+        "graph_fact_integrity"
+      ],
+      "properties": {
+        "outcome_evidence": { "type": "boolean" },
+        "required_phase_coverage": { "type": "boolean" },
+        "unsupported_phases_reported": { "type": "boolean" },
+        "authenticated_owner_sets": { "type": "boolean" },
+        "owner_order": { "type": "boolean" },
+        "required_handoffs": { "type": "boolean" },
+        "selected_file_precision": { "type": "boolean" },
+        "unrelated_files": { "type": "boolean" },
+        "selected_files": { "type": "boolean" },
+        "snippets": { "type": "boolean" },
+        "serialized_tokens": { "type": "boolean" },
+        "reported_closure_passes": { "type": "boolean" },
+        "not_truncated": { "type": "boolean" },
+        "graph_fact_integrity": { "type": "boolean" }
+      }
+    },
+    "question_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "question_id",
+        "repository_id",
+        "gate_role",
+        "comparison_role",
+        "response",
+        "phases",
+        "handoffs",
+        "authenticated_owner_ids",
+        "owner_order_valid",
+        "required_phase_coverage",
+        "unsupported_phases_reported",
+        "selected_files",
+        "relevant_selected_files",
+        "unrelated_files",
+        "selected_file_precision",
+        "independent_metric_failures",
+        "metrics",
+        "gates",
+        "passed"
+      ],
+      "properties": {
+        "question_id": {
+          "enum": [
+            "openstatus-574-strict-one-call",
+            "documenso-document-send",
+            "formbricks-survey-response"
+          ]
+        },
+        "repository_id": {
+          "enum": ["openstatus", "documenso", "formbricks"]
+        },
+        "gate_role": { "enum": ["blocking", "scope_guard"] },
+        "comparison_role": { "enum": ["included", "diagnostic_only"] },
+        "response": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "bytes",
+            "child_pid",
+            "process_state_probe",
+            "retrieve_invocations",
+            "persisted_sequence",
+            "persisted_before_grading",
+            "persisted_bytes_verified"
+          ],
+          "properties": {
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "bytes": { "type": "integer", "minimum": 1 },
+            "child_pid": { "type": "integer", "minimum": 1 },
+            "process_state_probe": { "const": 1 },
+            "retrieve_invocations": { "const": 1 },
+            "persisted_sequence": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            "persisted_before_grading": { "const": true },
+            "persisted_bytes_verified": { "const": true }
+          }
+        },
+        "phases": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/phase_result" }
+        },
+        "handoffs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/handoff_result" }
+        },
+        "authenticated_owner_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "owner_order_valid": { "type": "boolean" },
+        "required_phase_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "unsupported_phases_reported": { "type": "boolean" },
+        "selected_files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/safe_path" }
+        },
+        "relevant_selected_files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/safe_path" }
+        },
+        "unrelated_files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/safe_path" }
+        },
+        "selected_file_precision": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "independent_metric_failures": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "selected_files_metric_mismatch",
+              "snippets_metric_mismatch",
+              "serialized_tokens_metric_mismatch",
+              "reported_closure_passes_invalid"
+            ]
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "authenticated_symbol_declarations",
+            "structural_files",
+            "result_selected_files",
+            "snippets",
+            "reported_closure_passes",
+            "serialized_tokens",
+            "truncated"
+          ],
+          "properties": {
+            "authenticated_symbol_declarations": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "structural_files": { "type": "integer", "minimum": 0 },
+            "result_selected_files": { "type": "integer", "minimum": 0 },
+            "snippets": { "type": "integer", "minimum": 0 },
+            "reported_closure_passes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "serialized_tokens": { "type": "integer", "minimum": 0 },
+            "truncated": { "type": "boolean" }
+          }
+        },
+        "gates": { "$ref": "#/$defs/question_gates" },
+        "passed": { "type": "boolean" }
+      }
+    }
+  }
+}
