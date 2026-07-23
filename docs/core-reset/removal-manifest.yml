@@ -532,18 +532,56 @@ items:
       unpacked_bytes_max: 2200000
       packed_bytes_delta_max: -1
     deterministic_query_contract:
-      graph_backed_evidence_only: true
+      graph_authoritative_for_selection_and_graph_facts: true
       preserve_typed_directional_relationships: true
       disconnected_boundaries_explicit: true
       missing_and_unsupported_boundaries_explicit: true
       stale_unavailable_corrupt_and_truncated_boundaries_explicit: true
       duplicate_evidence_forbidden: true
-      identical_question_and_graph_bytes_are_byte_deterministic: true
+      authenticated_source_excerpt:
+        source_layer: application
+        graph_fields_required:
+          - node
+          - source_file
+          - line_number
+          - end_line_number
+          - provenance
+          - canonical_file_node.content_hash
+        source_root: graph_root
+        source_path_must_remain_beneath_root: true
+        hash_algorithm: sha256_complete_utf8_source
+        hash_must_equal: canonical_file_node.content_hash
+        excerpt: exact_graph_range_text_only
+        unauthenticated_or_synthesized_snippet: forbidden
+        missing_unreadable_or_escape: unavailable_without_snippet
+        hash_mismatch_or_invalid_range: stale_without_snippet
+      determinism_inputs:
+        - normalized_retrieve_request
+        - canonical_graph_bytes
+        - authenticated_source_snapshot
       closure_pass_max: 1
       global_confidence_score: forbidden
       planner_or_recursive_recovery: forbidden
       hidden_second_query_or_model_call: forbidden
       repository_specific_rules: forbidden
+    retrieve_input_contract:
+      allowed_keys:
+        - question
+        - budget
+      additional_properties: forbidden
+      question: required
+      budget: optional_and_part_of_normalized_request
+      forbidden_legacy_controls:
+        - semantic
+        - rerank
+        - strategy
+        - session
+        - mode
+    surviving_caller_contract:
+      compare_legacy_response_branches: delete
+      installer_applicability_hook_generation: delete
+      heldout_and_performance_runners: development_only
+      compatibility_types_or_engine: forbidden
     heldout_contract:
       id: core-reset-held-out-v1
       contract: tools/eval/core-reset/contracts/evaluation-contract.json
@@ -590,6 +628,7 @@ items:
           - tinybird_persistence
       query_invocations_max: 1
       required_phase_coverage: 1.0
+      direct_phase_evidence_requires_authenticated_excerpt: true
       verification_targets_cover_blocking_phases: false
       selected_file_precision_min: 0.70
       unrelated_files_max: 2
@@ -646,11 +685,15 @@ items:
       rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198
       performance_amendment: https://github.com/mohanagy/madar/issues/596#issuecomment-5051857404
       performance_rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5051857542
+      authenticated_source_amendment: https://github.com/mohanagy/madar/issues/596#issuecomment-5052210144
+      authenticated_source_rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5052210334
+      authenticated_source_owner_approval: https://github.com/mohanagy/madar/issues/596#issuecomment-5054853667
+      authenticated_source_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5054853815
       protected_base: bce4f4fb1520a582bfedf5eab9133e9befbc79f7
       implementation_started: false
-    notes: 'Accepted in #596 and activated only as a governance contract from protected base bce4f4fb1520a582bfedf5eab9133e9befbc79f7. The current production and package inventory is unchanged and the active phase delta is zero. This phase owns one deterministic TypeScript/JavaScript evidence query, absorbs both obsolete governance/wrapper handles, and deletes the exact importer closure without retaining a compatibility engine. Documenso and Formbricks are blocking held-out flows; OpenStatus remains diagnostic and its Go phases are unsupported. Thin delivery and every later validation/release phase remain blocked. No implementation success is claimed.'
+    notes: 'Accepted in #596 and activated only as a governance contract from protected base bce4f4fb1520a582bfedf5eab9133e9befbc79f7. The current production and package inventory is unchanged and the active phase delta is zero. The owner-approved stop-condition correction keeps graph.json authoritative for selection and graph facts while permitting only exact source excerpts whose complete UTF-8 hash matches the canonical file-node content_hash. Missing, unreadable, escaped, mismatched, or invalid source yields a stale/unavailable boundary and no snippet. This phase owns one deterministic TypeScript/JavaScript evidence query, absorbs both obsolete governance/wrapper handles, and deletes the exact importer closure without retaining a compatibility engine. Documenso and Formbricks are blocking held-out flows; OpenStatus remains diagnostic and its Go phases are unsupported. Thin delivery and every later validation/release phase remain blocked. No implementation success is claimed.'
     remove_when: The deterministic query and held-out one-call gates pass; the fixed loaded-graph performance receipt passes; all 54 predecessors, obsolete tests/docs/flags/exports, and optional semantic peer metadata are absent; all surviving callers use retrieve-context without a compatibility engine; and the accepted source, package, dependency, CI, review, and zero-thread gates pass.
-    exit_gate: One deterministic generic TypeScript/JavaScript evidence query returns graph-backed causal evidence or exact missing/unsupported boundaries within the accepted caps, without repository-specific rules, hidden fallback, predecessor path, or global confidence/governance stack.
+    exit_gate: One deterministic generic TypeScript/JavaScript evidence query returns graph-backed causal evidence with exact graph-authenticated source excerpts, or stable missing/unsupported/stale/unavailable/corrupt boundaries with no unauthenticated snippet, within the accepted caps and without repository-specific rules, hidden fallback, predecessor path, or global confidence/governance stack.
 
   - id: context-governance-stack
     disposition: delete

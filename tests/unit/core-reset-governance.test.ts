@@ -40,6 +40,10 @@ const EVIDENCE_OWNER_APPROVAL = `${EVIDENCE_ISSUE}#issuecomment-5050888977`
 const EVIDENCE_RFC_AMENDMENT = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198'
 const EVIDENCE_PERFORMANCE_AMENDMENT = `${EVIDENCE_ISSUE}#issuecomment-5051857404`
 const EVIDENCE_PERFORMANCE_RFC_AMENDMENT = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5051857542'
+const EVIDENCE_SOURCE_AMENDMENT = `${EVIDENCE_ISSUE}#issuecomment-5052210144`
+const EVIDENCE_SOURCE_RFC_AMENDMENT = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5052210334'
+const EVIDENCE_SOURCE_OWNER_APPROVAL = `${EVIDENCE_ISSUE}#issuecomment-5054853667`
+const EVIDENCE_SOURCE_RFC_APPROVAL = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5054853815'
 const EVIDENCE_PERFORMANCE_DESCRIPTOR = 'tools/eval/core-reset/contracts/evidence-path-performance-v1.json'
 const EVIDENCE_PERFORMANCE_DESCRIPTOR_SHA256 = '076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c'
 const EVIDENCE_PERFORMANCE_RECEIPT = 'docs/core-reset/evidence/evidence-path-performance.json'
@@ -252,6 +256,11 @@ describe('core reset governance', () => {
     expect(roadmap).toContain(EVIDENCE_RFC_AMENDMENT)
     expect(roadmap).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
     expect(roadmap).toContain(EVIDENCE_PERFORMANCE_RFC_AMENDMENT)
+    expect(roadmap).toContain(EVIDENCE_SOURCE_AMENDMENT)
+    expect(roadmap).toContain(EVIDENCE_SOURCE_RFC_AMENDMENT)
+    expect(roadmap).toContain(EVIDENCE_SOURCE_OWNER_APPROVAL)
+    expect(roadmap).toContain(EVIDENCE_SOURCE_RFC_APPROVAL)
+    expect(roadmap).toContain('normalized retrieve request, canonical graph bytes, and identical authenticated source snapshot')
     expect(roadmap).toContain('an empty positive result fails')
     expect(roadmap).toContain('54 predecessor files / 29,441 LOC')
     expect(roadmap).toContain('Every implementation, deletion, held-out, performance, package, CI, and review result remains pending')
@@ -287,6 +296,13 @@ describe('core reset governance', () => {
     expect(design).toContain(EVIDENCE_RFC_AMENDMENT)
     expect(design).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
     expect(design).toContain(EVIDENCE_PERFORMANCE_RFC_AMENDMENT)
+    expect(design).toContain(EVIDENCE_SOURCE_AMENDMENT)
+    expect(design).toContain(EVIDENCE_SOURCE_RFC_AMENDMENT)
+    expect(design).toContain(EVIDENCE_SOURCE_OWNER_APPROVAL)
+    expect(design).toContain(EVIDENCE_SOURCE_RFC_APPROVAL)
+    expect(design).toContain('Implementation remains paused until this governance correction merges')
+    expect(design).toContain('SHA-256 of the complete UTF-8 source equals the graph hash')
+    expect(design).toContain('Identical normalized request plus identical canonical graph bytes plus the identical authenticated source snapshot')
     expect(design).toContain('All five expectations must pass before warmup')
     expect(design).toContain('empty positive results, missing/extra nodes or edges, reversed/wrong relationship kinds')
     expect(design).toContain('`evidence-path-query` is the sole active phase')
@@ -294,6 +310,8 @@ describe('core reset governance', () => {
     expect(design).not.toContain('## Active amendment — generation and incremental index')
     expect(design).not.toContain('the phase remains active')
     expect(design).not.toContain('completion evidence remains open')
+    expect(design).not.toContain('Every returned node, relationship, file, range, and snippet must exist in the authoritative `graph.json`')
+    expect(design).not.toContain('Identical question plus identical graph bytes must produce byte-identical output')
     expect(scorecard).toContain('**Status:** accepted')
     expect(scorecard).toContain('| Directed multigraph | **Passed**')
     expect(scorecard).toContain('| Canonical TypeScript index | **Passed**')
@@ -304,6 +322,11 @@ describe('core reset governance', () => {
     expect(scorecard).toContain(EVIDENCE_RFC_AMENDMENT)
     expect(scorecard).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
     expect(scorecard).toContain(EVIDENCE_PERFORMANCE_RFC_AMENDMENT)
+    expect(scorecard).toContain(EVIDENCE_SOURCE_AMENDMENT)
+    expect(scorecard).toContain(EVIDENCE_SOURCE_OWNER_APPROVAL)
+    expect(scorecard).toContain(EVIDENCE_SOURCE_RFC_APPROVAL)
+    expect(scorecard).toContain('complete UTF-8 SHA-256 equals the canonical file-node `content_hash`')
+    expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
     expect(scorecard).toContain('`evidence-path-query` is the single In progress phase')
     expect(scorecard).toContain('No implementation, deletion, held-out, timing, package, dependency, CI, or review gate is reported as passed')
@@ -314,6 +337,8 @@ describe('core reset governance', () => {
     expect(scorecard).not.toContain('single In progress phase through #592')
     expect(scorecard).not.toContain('phase stays **In progress**')
     expect(scorecard).not.toContain('phase completion awaits')
+    expect(scorecard).not.toContain('Every returned node, edge, snippet, range, and direction must exist in `graph.json`')
+    expect(scorecard).not.toContain('identical question plus identical graph bytes must produce byte-identical output')
     expect(scorecard).toContain('final CodeRabbit rerun was rate-limited')
     expect(scorecard).toContain('owner-approved exception')
     expect(scorecard).not.toContain('CI and review remain pending')
@@ -761,18 +786,43 @@ describe('core reset governance', () => {
           packed_bytes_delta_max: number
         }
         deterministic_query_contract?: {
-          graph_backed_evidence_only: boolean
+          graph_authoritative_for_selection_and_graph_facts: boolean
           preserve_typed_directional_relationships: boolean
           disconnected_boundaries_explicit: boolean
           missing_and_unsupported_boundaries_explicit: boolean
           stale_unavailable_corrupt_and_truncated_boundaries_explicit: boolean
           duplicate_evidence_forbidden: boolean
-          identical_question_and_graph_bytes_are_byte_deterministic: boolean
+          authenticated_source_excerpt: {
+            source_layer: string
+            source_root: string
+            graph_fields_required: string[]
+            source_path_must_remain_beneath_root: boolean
+            hash_algorithm: string
+            hash_must_equal: string
+            excerpt: string
+            unauthenticated_or_synthesized_snippet: string
+            missing_unreadable_or_escape: string
+            hash_mismatch_or_invalid_range: string
+          }
+          determinism_inputs: string[]
           closure_pass_max: number
           global_confidence_score: string
           planner_or_recursive_recovery: string
           hidden_second_query_or_model_call: string
           repository_specific_rules: string
+        }
+        retrieve_input_contract?: {
+          allowed_keys: string[]
+          additional_properties: string
+          question: string
+          budget: string
+          forbidden_legacy_controls: string[]
+        }
+        surviving_caller_contract?: {
+          compare_legacy_response_branches: string
+          installer_applicability_hook_generation: string
+          heldout_and_performance_runners: string
+          compatibility_types_or_engine: string
         }
         heldout_contract?: {
           id: string
@@ -803,6 +853,7 @@ describe('core reset governance', () => {
           }
           query_invocations_max: number
           required_phase_coverage: number
+          direct_phase_evidence_requires_authenticated_excerpt: boolean
           verification_targets_cover_blocking_phases: boolean
           selected_file_precision_min: number
           unrelated_files_max: number
@@ -863,6 +914,10 @@ describe('core reset governance', () => {
           rfc_amendment: string
           performance_amendment: string
           performance_rfc_amendment: string
+          authenticated_source_amendment: string
+          authenticated_source_rfc_amendment: string
+          authenticated_source_owner_approval: string
+          authenticated_source_rfc_approval: string
           protected_base: string
           implementation_started?: boolean
         }
@@ -915,18 +970,54 @@ describe('core reset governance', () => {
         packed_bytes_delta_max: -1,
       },
       deterministic_query_contract: {
-        graph_backed_evidence_only: true,
+        graph_authoritative_for_selection_and_graph_facts: true,
         preserve_typed_directional_relationships: true,
         disconnected_boundaries_explicit: true,
         missing_and_unsupported_boundaries_explicit: true,
         stale_unavailable_corrupt_and_truncated_boundaries_explicit: true,
         duplicate_evidence_forbidden: true,
-        identical_question_and_graph_bytes_are_byte_deterministic: true,
+        authenticated_source_excerpt: {
+          source_layer: 'application',
+          graph_fields_required: [
+            'node',
+            'source_file',
+            'line_number',
+            'end_line_number',
+            'provenance',
+            'canonical_file_node.content_hash',
+          ],
+          source_root: 'graph_root',
+          source_path_must_remain_beneath_root: true,
+          hash_algorithm: 'sha256_complete_utf8_source',
+          hash_must_equal: 'canonical_file_node.content_hash',
+          excerpt: 'exact_graph_range_text_only',
+          unauthenticated_or_synthesized_snippet: 'forbidden',
+          missing_unreadable_or_escape: 'unavailable_without_snippet',
+          hash_mismatch_or_invalid_range: 'stale_without_snippet',
+        },
+        determinism_inputs: [
+          'normalized_retrieve_request',
+          'canonical_graph_bytes',
+          'authenticated_source_snapshot',
+        ],
         closure_pass_max: 1,
         global_confidence_score: 'forbidden',
         planner_or_recursive_recovery: 'forbidden',
         hidden_second_query_or_model_call: 'forbidden',
         repository_specific_rules: 'forbidden',
+      },
+      retrieve_input_contract: {
+        allowed_keys: ['question', 'budget'],
+        additional_properties: 'forbidden',
+        question: 'required',
+        budget: 'optional_and_part_of_normalized_request',
+        forbidden_legacy_controls: ['semantic', 'rerank', 'strategy', 'session', 'mode'],
+      },
+      surviving_caller_contract: {
+        compare_legacy_response_branches: 'delete',
+        installer_applicability_hook_generation: 'delete',
+        heldout_and_performance_runners: 'development_only',
+        compatibility_types_or_engine: 'forbidden',
       },
       heldout_contract: {
         id: 'core-reset-held-out-v1',
@@ -977,6 +1068,7 @@ describe('core reset governance', () => {
         },
         query_invocations_max: 1,
         required_phase_coverage: 1,
+        direct_phase_evidence_requires_authenticated_excerpt: true,
         verification_targets_cover_blocking_phases: false,
         selected_file_precision_min: 0.70,
         unrelated_files_max: 2,
@@ -1037,10 +1129,58 @@ describe('core reset governance', () => {
         rfc_amendment: EVIDENCE_RFC_AMENDMENT,
         performance_amendment: EVIDENCE_PERFORMANCE_AMENDMENT,
         performance_rfc_amendment: EVIDENCE_PERFORMANCE_RFC_AMENDMENT,
+        authenticated_source_amendment: EVIDENCE_SOURCE_AMENDMENT,
+        authenticated_source_rfc_amendment: EVIDENCE_SOURCE_RFC_AMENDMENT,
+        authenticated_source_owner_approval: EVIDENCE_SOURCE_OWNER_APPROVAL,
+        authenticated_source_rfc_approval: EVIDENCE_SOURCE_RFC_APPROVAL,
         protected_base: EVIDENCE_BASE,
         implementation_started: false,
       },
     })
+    expect(evidence?.deterministic_query_contract)
+      .not.toHaveProperty('identical_question_and_graph_bytes_are_byte_deterministic')
+    expect(evidence?.deterministic_query_contract)
+      .not.toHaveProperty('graph_backed_evidence_only')
+    expect(Object.keys(evidence?.deterministic_query_contract ?? {}).sort()).toEqual([
+      'authenticated_source_excerpt',
+      'closure_pass_max',
+      'determinism_inputs',
+      'disconnected_boundaries_explicit',
+      'duplicate_evidence_forbidden',
+      'global_confidence_score',
+      'graph_authoritative_for_selection_and_graph_facts',
+      'hidden_second_query_or_model_call',
+      'missing_and_unsupported_boundaries_explicit',
+      'planner_or_recursive_recovery',
+      'preserve_typed_directional_relationships',
+      'repository_specific_rules',
+      'stale_unavailable_corrupt_and_truncated_boundaries_explicit',
+    ].sort())
+    expect(Object.keys(evidence?.deterministic_query_contract?.authenticated_source_excerpt ?? {}).sort()).toEqual([
+      'excerpt',
+      'graph_fields_required',
+      'hash_algorithm',
+      'hash_mismatch_or_invalid_range',
+      'hash_must_equal',
+      'missing_unreadable_or_escape',
+      'source_layer',
+      'source_path_must_remain_beneath_root',
+      'source_root',
+      'unauthenticated_or_synthesized_snippet',
+    ].sort())
+    expect(Object.keys(evidence?.retrieve_input_contract ?? {}).sort()).toEqual([
+      'additional_properties',
+      'allowed_keys',
+      'budget',
+      'forbidden_legacy_controls',
+      'question',
+    ].sort())
+    expect(Object.keys(evidence?.surviving_caller_contract ?? {}).sort()).toEqual([
+      'compare_legacy_response_branches',
+      'compatibility_types_or_engine',
+      'heldout_and_performance_runners',
+      'installer_applicability_hook_generation',
+    ].sort())
 
     const absorbed = (evidence?.absorbs ?? []).map((id) => manifest.items.find((item) => item.id === id))
     expect(absorbed).toHaveLength(2)
