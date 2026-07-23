@@ -5,7 +5,7 @@
 ## What exists today
 
 - Claude Code, Cursor, GitHub Copilot CLI, and Gemini CLI already have first-party install flows for local MCP or paired home-skill guidance.
-- Codex CLI, Aider, and OpenCode already have context-pack-first install flows tied to repo-local instructions, hooks, or plugin wiring.
+- Codex CLI, Aider, and OpenCode already have one-retrieve install guidance tied to repo-local instructions, hooks, or plugin wiring.
 - The compatibility guide already distinguishes dedicated project installs from home-skill installs and tells users how to verify each path.
 - A versioned MCP Registry manifest and OIDC publishing workflow now exist for the local server package; each public entry is published only after its matching npm release is live and points back to the same local-first runtime flow.
 

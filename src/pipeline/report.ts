@@ -7,7 +7,7 @@ import {
   workspaceBridges,
   type SemanticAnomaly,
 } from './analyze.js'
-import { cohesionScore, type Communities } from './cluster.js'
+import { scoreAll, type Communities } from './cluster.js'
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US').format(value)
@@ -61,6 +61,9 @@ export function generate(
   root: string,
   suggestedQuestions: Array<{ type: string; question: string | null; why: string }> = [],
 ): string {
+  const entityCommunities = Object.fromEntries(Object.entries(communities)
+    .map(([communityId, nodeIds]) => [communityId, nodeIds.filter((nodeId) => isAnalysisEntityNode(graph, nodeId))]))
+  const entityCohesion = scoreAll(graph, entityCommunities)
   const confidences = graph.edgeEntries().map(([, , attributes]) => String(attributes.confidence ?? 'EXTRACTED'))
   const totalEdges = confidences.length || 1
   const extractedPercent = Math.round((confidences.filter((confidence) => confidence === 'EXTRACTED').length / totalEdges) * 100)
@@ -177,8 +180,8 @@ export function generate(
   const nodeCommunity = _nodeCommunityMap(communities)
   for (const [communityId, nodeIds] of Object.entries(communities)) {
     const label = escapeMarkdownInline(communityLabels[Number(communityId)] ?? `Community ${communityId}`)
-    const realNodes = nodeIds.filter((nodeId) => isAnalysisEntityNode(graph, nodeId))
-    const score = realNodes.length > 0 ? cohesionScore(graph, realNodes) : null
+    const realNodes = entityCommunities[Number(communityId)] ?? []
+    const score = realNodes.length > 0 ? entityCohesion[Number(communityId)] : null
     const display = realNodes.slice(0, 8).map((nodeId) => escapeMarkdownInline(String(graph.nodeAttributes(nodeId).label ?? nodeId)))
     const suffix = realNodes.length > 8 ? ` (+${realNodes.length - 8} more)` : ''
     lines.push('')

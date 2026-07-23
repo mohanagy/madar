@@ -1,5 +1,5 @@
 {
-  "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos with task-aware local context packs.",
+  "description": "Authenticated local evidence paths for JavaScript and TypeScript coding agents over one MCP retrieve call.",
   "topics": [
     "ai-coding-agents",
     "claude-code",

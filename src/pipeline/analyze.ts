@@ -1,6 +1,6 @@
 import { canonicalJsonString } from '../domain/graph/canonical-json.js'
 import { KnowledgeGraph, type GraphAttributes } from '../domain/graph/directed-multigraph.js'
-import { cluster, cohesionScore, type Communities } from './cluster.js'
+import { cluster, scoreAll, type Communities } from './cluster.js'
 
 export interface GodNode {
   id: string
@@ -294,13 +294,14 @@ function lowCohesionCommunities(
   graph: KnowledgeGraph,
   communities: Communities,
 ): Array<{ communityId: number; nodeIds: string[]; cohesion: number }> {
+  const cohesion = scoreAll(graph, communities)
   return Object.entries(communities)
     .map(([communityIdRaw, nodeIds]) => {
       const analysisNodes = analysisCommunityNodeIds(graph, nodeIds)
       return {
         communityId: Number(communityIdRaw),
         nodeIds: analysisNodes,
-        cohesion: cohesionScore(graph, analysisNodes),
+        cohesion: cohesion[Number(communityIdRaw)] ?? 0,
       }
     })
     .filter(({ nodeIds, cohesion }) => nodeIds.length >= LOW_COHESION_MIN_NODES && cohesion < LOW_COHESION_THRESHOLD)

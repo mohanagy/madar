@@ -1,5 +1,7 @@
 import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
-import { retrieveContext, type RetrieveResult } from '../../runtime/retrieve.js'
+import { retrieveContext } from '../../application/retrieve-context.js'
+import { inspectQueryIndex } from '../../domain/query/index-status.js'
+import type { RetrieveContextResult } from '../../domain/query/types.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './corpus.js'
 import { normalizeBenchmarkQuestion, normalizeExpectedLabel, type BenchmarkQuestionSpec } from './questions.js'
 import { type PromptRunnerUsage } from '../prompt-runner.js'
@@ -169,8 +171,15 @@ interface QualityQuestionRunMetadata {
   artifacts: BenchmarkPromptArtifacts | null
 }
 
-function qualityRetrieveContext(graph: KnowledgeGraph, question: string, budget: number, graphPath?: string): RetrieveResult {
-  return graphPath ? retrieveBenchmarkContext(graph, graphPath, question, budget) : retrieveContext(graph, { question, budget })
+function qualityRetrieveContext(
+  graph: KnowledgeGraph,
+  question: string,
+  budget: number,
+  graphPath?: string,
+): RetrieveContextResult {
+  return graphPath
+    ? retrieveBenchmarkContext(graph, graphPath, question, budget)
+    : retrieveContext(inspectQueryIndex(graph), { question, budget })
 }
 
 function questionBucket(question: string): string {
@@ -190,7 +199,11 @@ function questionBucket(question: string): string {
   return 'general'
 }
 
-function buildQualityResult(gold: GoldQuestion, result: RetrieveResult, metadata: QualityQuestionRunMetadata): QualityResult {
+function buildQualityResult(
+  gold: GoldQuestion,
+  result: RetrieveContextResult,
+  metadata: QualityQuestionRunMetadata,
+): QualityResult {
   const expectedLabels = gold.expected_labels
   const normalizedExpectedLabels = expectedLabels.map((label) => normalizeExpectedLabel(label))
   const returnedLabels = result.matched_nodes.map((node) => normalizeExpectedLabel(node.label))
@@ -252,7 +265,7 @@ function buildQualityResult(gold: GoldQuestion, result: RetrieveResult, metadata
 function evaluateQuestion(graph: KnowledgeGraph, gold: GoldQuestion, budget: number, graphPath?: string): QualityResult {
   const result = qualityRetrieveContext(graph, gold.question, budget, graphPath)
   return buildQualityResult(gold, result, {
-    tokens_used: result.token_count,
+    tokens_used: result.metrics.serialized_tokens,
     total_tokens: null,
     prompt_tokens_estimated: null,
     prompt_token_source: null,

@@ -69,7 +69,6 @@ function canonicalOutcomes(catalog: SourceCatalog, result: CanonicalTypeScriptIn
   const pathById = new Map(result.files.map((file) => [file.id, local(file.path)]))
   const fileByPath = new Map(result.files.map((file) => [local(file.path), file]))
   const byFileId = new Map<string, IndexingDiagnostic[]>()
-  const global: IndexingDiagnostic[] = []
   const diagnostics = result.diagnostics.map((diagnostic): IndexDiagnosticReceipt => {
     const fileId = diagnostic.evidence?.file_id
     const path = fileId ? pathById.get(fileId) : undefined
@@ -78,9 +77,8 @@ function canonicalOutcomes(catalog: SourceCatalog, result: CanonicalTypeScriptIn
       level: diagnostic.level === 'warn' ? 'warning' : diagnostic.level,
       message: diagnostic.message,
     }
-    if (diagnostic.level !== 'info') {
-      if (fileId && path) byFileId.set(fileId, [...(byFileId.get(fileId) ?? []), projected])
-      else global.push(projected)
+    if (diagnostic.level !== 'info' && fileId && path) {
+      byFileId.set(fileId, [...(byFileId.get(fileId) ?? []), projected])
     }
     return {
       id: diagnostic.id,
@@ -96,7 +94,7 @@ function canonicalOutcomes(catalog: SourceCatalog, result: CanonicalTypeScriptIn
       path: entry.path, kind: 'file', status: 'failed', reason: 'canonical_file_missing',
       capability: supportedCapability(entry.path),
     }
-    const fileDiagnostics = [...(byFileId.get(file.id) ?? []), ...global]
+    const fileDiagnostics = byFileId.get(file.id) ?? []
     const failed = fileDiagnostics.some((diagnostic) => diagnostic.level === 'error')
     return {
       path: entry.path,

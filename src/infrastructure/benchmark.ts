@@ -1,6 +1,5 @@
 import { QUERY_TOKEN_ESTIMATOR, loadGraph } from '../runtime/serve.js'
 import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
-import type { ContextSessionState } from '../contracts/context-session.js'
 import { graphStructureMetrics, type GraphStructureMetrics } from '../pipeline/analyze.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './benchmark/corpus.js'
 import {
@@ -10,7 +9,7 @@ import {
 } from './benchmark/runner.js'
 import {
   evaluateBenchmarkQuestion,
-  querySubgraphTokens,
+  queryEvidenceTokens,
   type BenchmarkMissingExpectedLabels,
   type BenchmarkQuestionInput,
   type BenchmarkQuestionResult,
@@ -24,7 +23,7 @@ import {
 } from './benchmark/usage.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 
-export { loadBenchmarkQuestions, querySubgraphTokens, type BenchmarkQuestionInput } from './benchmark/questions.js'
+export { loadBenchmarkQuestions, queryEvidenceTokens, type BenchmarkQuestionInput } from './benchmark/questions.js'
 
 export const SAMPLE_QUESTIONS = [
   'how does authentication work',
@@ -55,7 +54,7 @@ export interface BenchmarkSuccessResult {
   effective_reduction_ratio?: number
   provider_proof?: {
     input_tokens_basis: 'provider_reported' | 'mixed' | 'estimated'
-    effective_tokens_basis: 'provider_cache_read_tokens' | 'provider_input_minus_zero_cache' | 'mixed' | 'session_reuse_estimate'
+    effective_tokens_basis: 'provider_cache_read_tokens' | 'provider_input_minus_zero_cache' | 'mixed' | 'local_estimate'
     total_tokens_basis: 'provider_reported' | 'mixed' | 'not_available'
     usage_runs: number
     total_runs: number
@@ -144,7 +143,7 @@ function finalizeBenchmarkResult(
             : 'mixed',
       effective_tokens_basis:
         usageRuns === 0
-          ? 'session_reuse_estimate'
+          ? 'local_estimate'
           : usageRuns === perQuestion.length && cacheReportedRuns === perQuestion.length
             ? 'provider_cache_read_tokens'
             : usageRuns === perQuestion.length && cacheReportedRuns === 0
@@ -177,7 +176,7 @@ function benchmarkProviderProofSummary(result: BenchmarkSuccessResult): string {
           : 'mixed',
     effective_tokens_basis:
       usageRuns === 0
-        ? 'session_reuse_estimate'
+        ? 'local_estimate'
         : usageRuns === result.per_question.length && cacheReportedRuns === result.per_question.length
           ? 'provider_cache_read_tokens'
           : usageRuns === result.per_question.length && cacheReportedRuns === 0
@@ -201,7 +200,7 @@ function benchmarkProviderProofSummary(result: BenchmarkSuccessResult): string {
       : 'Provider'
 
   if (proof.input_tokens_basis === 'estimated') {
-    return `local ${QUERY_TOKEN_ESTIMATOR.model} estimate + session reuse accounting`
+    return `local ${QUERY_TOKEN_ESTIMATOR.model} estimate of the serialized evidence result`
   }
 
   if (
@@ -236,7 +235,6 @@ async function runRunnerBackedBenchmark(
   }
 
   const perQuestion: BenchmarkQuestionResult[] = []
-  let sessionState: ContextSessionState | undefined
   for (const evaluation of evaluations) {
     const run = await runBenchmarkPrompt({
       graphPath,
@@ -246,16 +244,13 @@ async function runRunnerBackedBenchmark(
       ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
       ...(options.now !== undefined ? { now: options.now } : {}),
       ...(options.retrievalBudget !== undefined ? { retrievalBudget: options.retrievalBudget } : {}),
-      ...(sessionState ? { session: sessionState } : {}),
       ...(options.runner !== undefined ? { runner: options.runner } : {}),
     })
-    sessionState = run.session_state
     perQuestion.push({
       ...evaluation,
       query_tokens: run.query_tokens,
       effective_query_tokens: run.effective_query_tokens,
       reused_context_tokens: run.reused_context_tokens,
-      session_diagnostics: run.session_diagnostics,
       total_tokens: run.total_tokens,
       prompt_tokens_estimated: run.prompt_tokens_estimated,
       prompt_token_source: run.prompt_token_source,
@@ -303,7 +298,13 @@ export function runBenchmark(
   let expectedLabelCount = 0
   let matchedExpectedLabelCount = 0
   for (const question of benchmarkQuestions) {
-    const evaluation = evaluateBenchmarkQuestion(graph, question, baseline.tokens)
+    const evaluation = evaluateBenchmarkQuestion(
+      graph,
+      resolvedGraphPath,
+      question,
+      baseline.tokens,
+      options.retrievalBudget,
+    )
     expectedLabelCount += evaluation.expected_label_count
     matchedExpectedLabelCount += evaluation.matched_expected_label_count
     if (evaluation.missing_expected_labels) {

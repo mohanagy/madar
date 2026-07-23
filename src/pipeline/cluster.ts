@@ -312,5 +312,24 @@ export function cohesionScore(graph: KnowledgeGraph, communityNodes: string[]): 
 }
 
 export function scoreAll(graph: KnowledgeGraph, communities: Communities): Record<number, number> {
-  return Object.fromEntries(Object.entries(communities).map(([communityId, nodeIds]) => [Number(communityId), cohesionScore(graph, nodeIds)]))
+  const communityByNode = new Map<string, number>()
+  const internalEdges = new Map<number, Set<string>>()
+  for (const [communityId, nodeIds] of Object.entries(communities)) {
+    const id = Number(communityId)
+    internalEdges.set(id, new Set())
+    for (const nodeId of nodeIds) communityByNode.set(nodeId, id)
+  }
+  for (const [source, target] of graph.edgeEntries()) {
+    const communityId = communityByNode.get(source)
+    if (communityId !== undefined && communityId === communityByNode.get(target)) {
+      internalEdges.get(communityId)?.add(edgeKey(source, target))
+    }
+  }
+  return Object.fromEntries(Object.entries(communities).map(([communityId, nodeIds]) => {
+    const id = Number(communityId)
+    if (nodeIds.length <= 1) return [id, 1]
+    const possibleEdges = (nodeIds.length * (nodeIds.length - 1)) / 2
+    const actualEdges = internalEdges.get(id)?.size ?? 0
+    return [id, Math.round((actualEdges / possibleEdges) * 100) / 100]
+  }))
 }

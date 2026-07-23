@@ -1,50 +1,32 @@
-# Why madar?
+# Why Madar
 
-Madar is for the moment when a structural graph already tells you what exists, but the agent still needs **what runs for this task** — the smaller execution slice or structural subset worth reading first.
+Large repositories make coding agents spend early turns rediscovering routes, services, jobs, persistence, and tests. Madar gives the agent a smaller authenticated starting path.
 
-Near-term primary ICP: teams using AI coding agents on medium-to-large TypeScript/Node repos where broad exploration creates cost, latency, privacy, or wrong-file-edit risk.
+## What it does
 
-The core promise is deterministic local context compilation that complements agents and IDE indexing rather than trying to be another generic codebase index.
-
-## Demonstrated today
-
-- Local graph artifacts plus task-aware packs for explain, review, impact, and implementation work.
-- Static `execution_slice` output for runtime questions, explicitly labeled as a hypothesis rather than a live trace.
-- Share-safe benchmark and compare artifacts that can be reviewed without exposing workstation paths.
-- Deterministic install guidance that pushes supported agents toward graph-first or context-pack-first passes.
-
-## In progress
-
-- A reproducible benchmark suite that reports **per-repo spread** instead of a single marketing number. See the [benchmark suite in the source repository](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/suite).
-- Better evidence for how strict guidance changes exploration behavior in practice. The current evidence is mixed; the [counterexample note is in the source repository](https://github.com/mohanagy/madar/tree/main/docs/benchmarks/2026-05-25-founder-command-center-auth-flow).
-
-## Not yet measured
-
-- Fewer wrong-file edits on real implementation tasks.
-- A universal turns / latency / exploration win that holds across repos.
-- A single-number cross-repo benchmark headline.
-
-## What Madar does not do today
-
-- It does not force the agent to stop exploring.
-- It does not replace targeted file reads, tests, or review.
-- It does not turn static analysis into live runtime tracing.
-
-## How to use it
-
-```bash
+```text
 madar generate .
-madar claude install   # or cursor, copilot, gemini, codex, aider, opencode
-madar pack "how does auth work?" --task explain
-madar prompt "how does auth work?" --provider claude
+madar <agent> install
+retrieve(question, budget?)
 ```
 
-For broad codebase work, start with the graph-backed first pass, then expand only when the pack or graph diagnostics say evidence is missing.
+For one repository question, Madar ranks graph anchors, follows one bounded directed closure, verifies source bytes against the canonical graph, and returns exact excerpts plus relationships.
 
-## How we measure
+The same call can return explicit missing, disconnected, unsupported, stale, unavailable, corrupt, or truncated boundaries. That is more useful than hiding an incomplete path behind a confidence label.
 
-- Public claims are mapped in the source repository's [claims and evidence document](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).
-- Benchmark artifacts live in the source repository's [benchmarks directory](https://github.com/mohanagy/madar/tree/main/docs/benchmarks).
-- The benchmark-suite direction is fixed tasks, fixed repos, **per-repo spread**, and no single-number cross-repo headline.
+## What it does not do
 
-If you want the current public claim surface in one place, start with the source repository's [claims and evidence document](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md).
+Madar does not:
+
+- run the application
+- observe production state
+- review a pull request by itself
+- scan for vulnerabilities
+- support load-bearing non-JavaScript/TypeScript code
+- guarantee a complete answer for every repository
+
+## Evidence
+
+Historical benchmark receipts show what earlier recorded workflows achieved, including controlled experiments that used task-specific assistance. They remain valid receipts for those versions but are not current universal performance claims.
+
+Core Reset uses pinned held-out repositories, exact-source grading, deterministic performance gates, and package/deletion budgets before making new claims. See [`docs/core-reset/scorecard.md`](../docs/core-reset/scorecard.md).

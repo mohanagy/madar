@@ -13,13 +13,6 @@ interface PackageManifest {
   version?: string
 }
 
-interface RegistryEnvironmentVariable {
-  name?: string
-  description?: string
-  default?: string
-  choices?: string[]
-}
-
 interface RegistryPackageArgument {
   type?: string
   value?: string
@@ -40,7 +33,7 @@ interface RegistryPackage {
     type?: string
   }
   packageArguments?: RegistryPackageArgument[]
-  environmentVariables?: RegistryEnvironmentVariable[]
+  environmentVariables?: unknown[]
 }
 
 interface RegistryManifest {
@@ -121,14 +114,14 @@ describe('MCP Registry metadata', () => {
     const registryManifest = loadRegistryManifest()
     const npmPackage = registryManifest.packages?.[0]
     const graphPathArgument = npmPackage?.packageArguments?.find((entry) => entry.valueHint === 'graph_path')
-    const toolProfile = npmPackage?.environmentVariables?.find((entry) => entry.name === 'MADAR_TOOL_PROFILE')
     const publisherNotes = registryManifest._meta?.['io.modelcontextprotocol.registry/publisher-provided']
 
     expect(registryManifest.$schema).toContain('static.modelcontextprotocol.io/schemas/')
     expect(registryManifest.name).toBe('io.github.mohanagy/madar')
     expect(packageManifest.mcpName).toBe(registryManifest.name)
-    expect(registryManifest.description?.toLowerCase()).toContain('task-aware')
-    expect(registryManifest.description?.toLowerCase()).toContain('typescript/node')
+    expect(registryManifest.description?.toLowerCase()).toContain('authenticated')
+    expect(registryManifest.description?.toLowerCase()).toContain('javascript')
+    expect(registryManifest.description?.toLowerCase()).toContain('typescript')
     expect(registryManifest.description?.toLowerCase()).toContain('local')
     expect(registryManifest.repository).toEqual({
       id: '1207912024',
@@ -150,14 +143,10 @@ describe('MCP Registry metadata', () => {
       '--auto-refresh',
     ])
     expect(graphPathArgument).toBeUndefined()
-    expect(toolProfile).toMatchObject({
-      name: 'MADAR_TOOL_PROFILE',
-      default: 'core',
-    })
-    expect(toolProfile?.choices).toEqual(expect.arrayContaining(['core', 'strict', 'full']))
-    expect(toolProfile?.description).toContain('strict bounded context_pack/context_expand')
+    expect(npmPackage).not.toHaveProperty('environmentVariables')
     expect(publisherNotes?.source).toBe('docs/mcp-registry/server.json')
     expect(publisherNotes?.notes).toContain('When an MCP host launches')
+    expect(publisherNotes?.notes).toContain('one `retrieve(question, budget?)` tool')
     expect(publisherNotes?.notes).toContain('Madar is the renamed continuation of `graphify-ts`')
     expect(publisherNotes?.notes).toContain('`madar serve --stdio --auto-refresh`')
     expect(publisherNotes?.notes).toContain('`@lubab/madar`')
@@ -217,7 +206,7 @@ describe('MCP Registry metadata', () => {
     expect(reference).toContain('docs/mcp-registry/server.json')
     expect(reference).toContain('npm run registry:validate')
     expect(reference).toContain('The official MCP Registry hosts metadata, not Madar code or your local graph artifact.')
-    expect(reference).toContain('`npx @lubab/madar serve --stdio --auto-refresh`')
+    expect(reference).toContain('npx @lubab/madar serve --stdio --auto-refresh')
     expect(reference).toContain('Private registry usage stays out of scope for the public Madar listing')
     expect(reference).toContain('If you still discover older `graphify-ts` links or listings, Madar is the current project name.')
     expect(reference).toContain('`https://github.com/mohanagy/madar`')

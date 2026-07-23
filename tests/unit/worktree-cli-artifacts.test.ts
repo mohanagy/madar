@@ -1,26 +1,29 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { describe, expect, test } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { parseCompareArgs, parseProofReportArgs, parseReviewCompareArgs } from '../../src/cli/parser.js'
-import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
-import { runProofReportCommand } from '../../src/infrastructure/proof-report.js'
+import { claudeInstall } from '../../src/infrastructure/install.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
-import { writeCanonicalGraphFixtureFromGraph } from '../helpers/graph-artifact.js'
 
 function git(directory: string, args: string[]): void {
   execFileSync('git', args, { cwd: directory, stdio: 'pipe' })
 }
 
-describe('linked-worktree CLI artifact routing', () => {
-  test('derives compare, review, and proof artifacts from the external graph directory', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'madar-worktree-cli-'))
+describe('linked-worktree install surface', () => {
+  it('keeps graph state external and installs worktree-safe retrieve markers', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'madar-worktree-install-'))
     const primary = join(tempDir, 'primary')
     const linked = join(tempDir, 'linked')
-    const originalCwd = process.cwd()
 
     try {
       execFileSync('git', ['init', primary], { stdio: 'pipe' })
@@ -29,69 +32,50 @@ describe('linked-worktree CLI artifact routing', () => {
       writeFileSync(join(primary, 'main.ts'), 'export const value = 1\n', 'utf8')
       git(primary, ['add', '.'])
       git(primary, ['commit', '-m', 'initial'])
-      git(primary, ['worktree', 'add', '-b', 'feature/cli-artifacts', linked])
+      git(primary, ['worktree', 'add', '-b', 'feature/retrieve', linked])
 
       const workspace = resolveMadarWorkspace(linked)
+      expect(workspace.graphPath.startsWith(linked)).toBe(false)
       mkdirSync(dirname(workspace.graphPath), { recursive: true })
-      const graph = new KnowledgeGraph()
-      graph.graph.root_path = linked
-      graph.addNode('entry', {
-        label: 'value',
-        source_file: 'main.ts',
-        source_location: 'L1',
-        node_kind: 'variable',
-        file_type: 'code',
-      })
-      writeCanonicalGraphFixtureFromGraph(graph, { 0: ['entry'] }, workspace.graphPath)
+      writeFileSync(workspace.graphPath, '{}\n', 'utf8')
 
-      process.chdir(linked)
+      const message = claudeInstall(linked)
+      const instructions = readFileSync(join(linked, 'CLAUDE.md'), 'utf8')
+      const mcp = JSON.parse(readFileSync(join(linked, '.mcp.json'), 'utf8')) as {
+        mcpServers?: {
+          madar?: {
+            command?: string
+            args?: string[]
+            env?: Record<string, string>
+          }
+        }
+      }
+      const hook = readFileSync(
+        join(linked, '.claude', 'madar-user-prompt-submit.cjs'),
+        'utf8',
+      )
 
-      expect(parseCompareArgs([
-        'where is value defined?',
-        '--exec',
-        'claude -p "$(cat {prompt_file})"',
-      ])).toMatchObject({
-        graphPath: workspace.graphPath,
-        outputDir: join(workspace.outputDir, 'compare'),
+      expect(message).toContain('call Madar retrieve')
+      expect(instructions).toContain('## madar')
+      expect(instructions).toContain('`retrieve` MCP tool exactly once')
+      expect(mcp.mcpServers?.madar).toEqual({
+        command: 'madar',
+        args: ['serve', '--stdio', '--auto-refresh'],
       })
-      expect(parseReviewCompareArgs([
-        '--exec',
-        'claude -p "$(cat {prompt_file})"',
-      ])).toMatchObject({
-        graphPath: workspace.graphPath,
-        outputDir: join(workspace.outputDir, 'review-compare'),
-      })
-      expect(parseProofReportArgs([])).toEqual({
-        graphPath: workspace.graphPath,
-        outputDir: join(workspace.outputDir, 'proof-report'),
-        compareDir: join(workspace.outputDir, 'compare'),
-        packPath: null,
-      })
-      expect(parseProofReportArgs([
-        '--output-dir', 'out/proof-report/custom',
-        '--compare-dir', 'out/compare/custom',
-        '--pack', 'out/proof-inputs/context-pack.json',
-      ])).toEqual({
-        graphPath: workspace.graphPath,
-        outputDir: join(workspace.outputDir, 'proof-report', 'custom'),
-        compareDir: join(workspace.outputDir, 'compare', 'custom'),
-        packPath: join(workspace.outputDir, 'proof-inputs', 'context-pack.json'),
-      })
-
-      const proof = runProofReportCommand({ graphPath: 'out/graph.json' })
-      expect(proof.outputPath).toBe(join(workspace.outputDir, 'proof-report', 'proof-report.md'))
-      expect(existsSync(proof.outputPath)).toBe(true)
+      expect(mcp.mcpServers?.madar?.env).toBeUndefined()
+      expect(hook).toContain('madar managed Claude UserPromptSubmit hook')
+      expect(hook).toContain('`retrieve` tool exactly once')
+      expect(hook).not.toContain(workspace.graphPath)
       expect(existsSync(join(linked, 'out'))).toBe(false)
     } finally {
-      process.chdir(originalCwd)
       if (existsSync(primary)) {
         try {
           git(primary, ['worktree', 'remove', '--force', linked])
         } catch {
-          // Temp cleanup below handles partially-created worktrees too.
+          // Recursive cleanup below handles a partially-created worktree.
         }
       }
       rmSync(tempDir, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 })

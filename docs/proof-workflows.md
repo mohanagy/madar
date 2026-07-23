@@ -1,35 +1,25 @@
 # Proof workflows
 
-`madar` now has three distinct proof surfaces. They answer different questions, and they are meant to be used together rather than treated as one benchmark.
+Proof work must distinguish retrieval correctness from model quality and end-to-end agent behavior.
 
-## 1. Reproducible local proof from this repo
+## Retrieval correctness
 
-This repo ships a checked-in demo workspace plus a labeled question set under `examples/demo-repo/`.
+Use the checked-in question set:
 
 ```bash
-npm install
 npm run build
 node dist/src/cli/bin.js generate examples/demo-repo
-node dist/src/cli/bin.js benchmark examples/demo-repo/out/graph.json --questions examples/demo-repo/benchmark-questions.json \
-  --exec 'cat {prompt_file} | claude -p' \
-  --yes
-node dist/src/cli/bin.js eval examples/demo-repo/out/graph.json --questions examples/demo-repo/benchmark-questions.json \
+node dist/src/cli/bin.js eval examples/demo-repo/out/graph.json \
+  --questions examples/demo-repo/benchmark-questions.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
 ```
 
-Expected signals on the checked-in demo:
+`eval` checks graph-backed evidence against labeled expectations. The external runner may spend paid model tokens.
 
-- `benchmark`: `Question coverage: 5/5 matched`, `Expected evidence: 17/17 labels found`, about `1.7x` fewer tokens per query
-- `eval`: `Recall: 100.0%`, `MRR: 1.000`, `Snippet coverage: 100.0%`, about `2.7x` fewer tokens at query time
+## Same-question comparison
 
-This is still the most reproducible question-set proof path because the corpus, labels, and expected signals are checked in here. It now runs through your configured terminal runner, so use `--yes` for CI/non-interactive runs and expect model-token usage unless your runner is purely local.
-
-Runner-backed `benchmark` executions (`--exec ...`) keep the per-run prompt/answer files and full `report.json` as local artifacts. That path also writes a companion `report.share-safe.json` with stable placeholders, preserving the per-run usage/proof fields plus sanitized artifact paths for sharing without exposing real local paths. The benchmark-wide coverage/evidence totals still live in the aggregate benchmark result and terminal summary rather than inside each per-run share-safe file. Treat that share-safe report as publishing evidence, not as a guarantee that every possible project detail has been fully redacted.
-
-## 2. Same-question, same-model A/B proof
-
-`compare` is the real showcase path. It builds one baseline prompt and one graph-guided prompt for the same question, runs both through your own terminal model command, and saves the artifact bundle.
+`compare` runs one baseline and one Madar evidence arm for the same question and external model command:
 
 ```bash
 node dist/src/cli/bin.js compare "How does login create a session?" \
@@ -38,125 +28,38 @@ node dist/src/cli/bin.js compare "How does login create a session?" \
   --yes
 ```
 
-If you want to isolate the context-compiler claim without MCP/tool-call behavior, switch to `--baseline-mode pack_only`. That mode compares one bounded raw-context baseline prompt against one compiled madar pack built from the same explain-pack payload core as `madar pack --task explain`, and persists the compact pack audit fields (`token_count`, matched nodes, relationships, coverage, selection diagnostics, and runtime-generation explain-pack `execution_slice` details when present) in `report.json`. Those `execution_slice` details are a static runtime-path hypothesis from graph evidence, not a live trace. Their nested `phase_coverage` is also static and prompt-scoped, which is why broader report-generation prompts can show planner/research/report-builder/scoring/renderer/persistence phases without claiming runtime tracing.
+Madar's arm uses the same `retrieve` implementation as MCP and `madar query`; comparison does not introduce another retrieval engine.
 
-For runtime-generation prompts, those compact explain packs also preserve NestJS/BullMQ-style enqueue-to-worker handoffs through `enqueues_job` semantic edges from the canonical JavaScript/TypeScript index. This first pass is intentionally conservative: it applies when job names are literal and the queue receiver is statically recognizable, including WorkerHost-style BullMQ processors with a queue-scoped `process()` handler. When it matches, queue-backed worker routes survive slice selection without pretending the producer directly calls the worker.
+Reports are local artifacts. A share-safe report redacts known workstation paths and credentials, but it remains a best-effort artifact that must be reviewed before publication.
 
-If you switch to `--baseline-mode native_agent`, prefer a structured Anthropic runner such as `cat {prompt_file} | claude -p --output-format json --verbose`. Plain-text Claude runs still save paired answers, but the report cannot compute Anthropic-billed reductions without the trailing JSON usage block. Claude runs without `--verbose` can report provider token usage, but they cannot prove MCP-call attribution because the assistant/tool transcript is missing; those reports surface `trace_status: missing_verbose_trace`. Multi-question native-agent runs also emit suite-level comparable-question wins/losses for input tokens, turns, and latency, plus mean/median input-token reduction, comparable-question denominators when some runs are excluded from the aggregate, and best/worst prompt outcomes in the terminal summary. When the `--questions` file sits beside a `quality-gates.json`, the same summary also rolls up deterministic answer-quality pass/fail counts from the saved `*-answer.txt` artifacts; treat those substring gates as a smoke test, not a full semantic grader, and keep the manual-review notes.
+On Windows, external runner templates execute through `cmd.exe`; use a command compatible with that shell.
 
-For long-running or flaky provider runs, `native_agent` also accepts `--per-arm-timeout <seconds>` and `--heartbeat-interval-ms <ms>`. Those controls let `compare` fail fast on stuck baseline/Madar arms, print periodic stderr progress lines while an arm is still running, and persist a `run-state.json` breadcrumb in the output directory when a timeout happens.
+## Core Reset acceptance
 
-Gemini-safe installed-CLI invocation:
+The release-gating proof is frozen in the Core Reset design and receipts:
 
-```bash
-madar compare "How does auth work?" \
-  --exec 'cat {prompt_file} | gemini -p "" --output-format json' \
-  --yes
-```
+- exact predecessor-deletion closure
+- production file and line budgets
+- pinned Documenso, Formbricks, and OpenStatus held-out cases
+- independent source/hash/provenance grading
+- 15,000-node, 30,000-edge p95 performance fixture
+- package file-count and packed-byte gates
 
-What gets saved under `out/compare/<timestamp>/`:
+See [`docs/core-reset/scorecard.md`](./core-reset/scorecard.md). Do not replace a frozen evaluator with a friendlier ad hoc demo.
 
-- `baseline-prompt.txt`
-- `madar-prompt.txt`
-- `baseline-answer.txt`
-- `madar-answer.txt`
-- `run-state.json` (written when a timeout occurs)
-- `report.json`
-- `report.share-safe.json`
+## Agent activation
 
-When Gemini emits structured JSON with `usageMetadata`, `compare` captures real reported input and total tokens in `report.json` and the terminal summary. If the runner only returns answer text or malformed JSON, `compare` falls back to labeled local `cl100k_base` prompt estimates instead.
+Retrieval quality and agent adoption are separate:
 
-`report.json` keeps the real local artifact paths. `report.share-safe.json` preserves the compare metrics with stable placeholders for sharing, including sanitized placeholder paths to the prompt/answer artifacts; only the prompt and answer file contents remain local. That makes the companion report safe to publish for path hygiene, but it still does not promise perfect redaction of every possible project detail.
+1. verify the installed host actually called `retrieve`
+2. preserve the exact question and returned result
+3. check whether the agent used authenticated evidence
+4. record broad fallback reads separately
+5. mark performance ineligible when attribution or answer gates fail
 
-Recent report versions also add a **provider/runtime proof** block so you can see whether a reduction is backed by provider-reported input/cache/total-token numbers or by local estimate + session-reuse accounting. Use this when you need customer-facing proof or your own apples-to-apples answer comparison.
+## Honest interpretation
 
-Like runner-backed `benchmark` and `eval`, `compare` can spend paid model tokens. The difference is that `compare` saves paired answers, while `benchmark` and `eval` score a labeled question set.
-
-## 3. PR-review proof on a real diff
-
-`review-compare` is the proof path for review mode. It compares the **verbose** and **compact** `pr_impact` prompts for the current git diff, saves both payload-backed prompts, and can optionally run both through your own model runner.
-
-```bash
-madar review-compare out/graph.json \
-  --exec 'cat {prompt_file} | claude -p' \
-  --yes
-```
-
-What gets saved under `out/review-compare/<timestamp>/`:
-
-- `verbose-prompt.txt`
-- `compact-prompt.txt`
-- `verbose-answer.txt`
-- `compact-answer.txt`
-- `report.json`
-- `report.share-safe.json`
-
-Use this when the question is not "madar vs. naive baseline", but "did compact review mode make the PR-review prompt materially smaller while keeping the same review surface shape?" The report includes prompt-token deltas, payload-token deltas, run statuses, elapsed times for both modes, and a provider/runtime proof block that makes it explicit when review-compare is using local estimate + session-reuse accounting rather than provider-billed usage.
-
-As with `compare` and `benchmark`, the prompt and answer file contents stay local, while `report.share-safe.json` keeps the review metrics plus sanitized placeholder paths to those artifacts so you can share evidence without publishing your exact local artifact paths.
-
-### Review/security-agent evaluation workflow
-
-Use this path when the question is not just "did Madar shrink the prompt?", but "how should a review or security agent consume bounded diff evidence, and how do we compare that workflow across tools?"
-
-1. Generate the graph locally and run `madar review-compare out/graph.json --exec ... --yes` (or capture the compact `pr_impact` payload for the current diff).
-2. Keep the local `report.json` for the full artifact bundle, and share `report.share-safe.json` when you need to hand a sanitized receipt to another system or attach evidence to a PR discussion.
-3. Run the same diff through CodeRabbit, Qodo, Codex Security, or another review/security agent and compare overlap, misses, and human follow-up against the Madar-backed receipt.
-4. Record the outcome as workflow evidence: what risks were surfaced, what needed more repo reads, and whether the compact evidence changed review/security-agent behavior.
-
-This review/security-agent evaluation workflow does not prove that Madar itself is the reviewer or that it finds more security issues than CodeRabbit, Qodo, or Codex Security. It proves whether Madar's bounded evidence surfaces make those review/security workflows easier to evaluate, reproduce, and share safely.
-
-## 4. Production and multi-repo proof
-
-For real systems, the strongest proof is usually:
-
-1. Generate one graph per repo.
-2. Federate them.
-3. Point your agent at the federated graph.
-4. Ask a cross-repo question or run `compare` against that federated graph.
-
-```bash
-madar generate frontend
-madar generate backend
-madar generate shared
-
-madar federate \
-  frontend/out/graph.json \
-  backend/out/graph.json \
-  shared/out/graph.json \
-  --output federated-out
-
-madar serve federated-out/graph.json --stdio
-```
-
-The smallest checked-in version of that story now lives under [`docs/benchmarks/2026-06-01-federation-flagship/`](docs/benchmarks/2026-06-01-federation-flagship/README.md). It is a **synthetic federation receipt** built around a **frontend/backend/shared** fixture, and it exists because federation can be an **enterprise differentiator** when teams need one auditable local graph across multiple repos. The current receipt is intentionally explicit that cross-repo links come from **shared labels**, so it is a reproducible workflow note rather than a broad cross-repo benchmark headline.
-
-What this proves that a single-repo demo cannot:
-
-- cross-repo type and symbol stitching
-- blast-radius analysis across repo boundaries
-- one MCP surface for frontend + backend + shared code
-- a realistic privacy-preserving workflow for internal systems
-
-## 5. Design-partner workflow loop notes
-
-When you do not yet have a publishable live customer receipt, the next-best public artifact is a set of **design-partner workflow loop notes** that stays explicit about what is anonymized.
-
-- Keep those notes **anonymized**.
-- Use **synthetic reproductions** or partner-approved summaries.
-- Exclude sensitive source, full prompts, and customer details.
-- Publish only the share-safe workflow evidence shape plus the outcome summary.
-
-The first public draft bundle lives under [`docs/benchmarks/2026-06-01-design-partner-workflow-loops/`](docs/benchmarks/2026-06-01-design-partner-workflow-loops/README.md). It is useful because it makes the workflow-proof target concrete, but it does **not** mean Madar already has five live design partners or a universal workflow win claim.
-
-## Which proof to use
-
-| Question | Best command |
-|---|---|
-| "Does the graph improve retrieval quality on a labeled set?" | `eval` |
-| "Does the graph reduce prompt size while keeping expected evidence?" | `benchmark` |
-| "Will my actual model answer better with madar than with a naive baseline, and optionally capture provider-reported usage + proof metadata?" | `compare` |
-| "Did compact review mode actually shrink the real PR-review prompt on my current diff?" | `review-compare` |
-| "Can this work across frontend/backend/shared repos?" | `federate` + `serve --stdio` |
-
-For the narrative production benchmark and the GoValidate numbers, see [`examples/why-madar.md`](../examples/why-madar.md). For the exact JavaScript/TypeScript scope and unsupported-file behavior, see [`language-capability-matrix.md`](./language-capability-matrix.md).
+- A single good row is a case study, not a universal win.
+- A failed activation row says the integration failed to engage, not that retrieval was slower.
+- A partial evidence result must keep its boundary.
+- Historical receipts remain valid for their named version and setup even when current commands differ.

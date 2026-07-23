@@ -67,7 +67,7 @@ const registryManifestSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['registryType', 'registryBaseUrl', 'identifier', 'version', 'runtimeHint', 'transport', 'packageArguments', 'environmentVariables'],
+        required: ['registryType', 'registryBaseUrl', 'identifier', 'version', 'runtimeHint', 'transport', 'packageArguments'],
         properties: {
           registryType: {
             const: 'npm',
@@ -132,33 +132,6 @@ const registryManifestSchema = {
               ],
             },
           },
-          environmentVariables: {
-            type: 'array',
-            minItems: 1,
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['name', 'description', 'default', 'choices'],
-              properties: {
-                name: {
-                  type: 'string',
-                },
-                description: {
-                  type: 'string',
-                },
-                default: {
-                  type: 'string',
-                },
-                choices: {
-                  type: 'array',
-                  minItems: 1,
-                  items: {
-                    type: 'string',
-                  },
-                },
-              },
-            },
-          },
         },
       },
     },
@@ -213,10 +186,11 @@ function main() {
   const graphPathArgument = packageArguments.find((entry) => entry.valueHint === 'graph_path')
   assert.equal(graphPathArgument, undefined, 'server.json must not pin the MCP server to a static graph_path argument')
 
-  const toolProfile = (npmPackage.environmentVariables ?? []).find((entry) => entry.name === 'MADAR_TOOL_PROFILE')
-  assert.ok(toolProfile, 'server.json must describe the MADAR_TOOL_PROFILE environment variable')
-  assert.equal(toolProfile.default, 'core', 'MADAR_TOOL_PROFILE should default to core')
-  assert.deepEqual(toolProfile.choices, ['core', 'strict', 'full'], 'MADAR_TOOL_PROFILE choices must match the supported MCP tool profiles')
+  assert.equal(
+    Object.hasOwn(npmPackage, 'environmentVariables'),
+    false,
+    'server.json must not publish retired MCP tool-profile variables',
+  )
 
   console.log(`Validated ${REGISTRY_MANIFEST_PATH} against the pinned MCP Registry manifest rules.`)
 }

@@ -41,6 +41,6 @@ describe('design partner program docs', () => {
     expect(template).toContain('Do not include source paths')
     expect(template).toContain('Do not include source code')
 
-    expect(gettingStarted).toContain('docs/design-partners.md')
+    expect(gettingStarted).toContain('../design-partners.md')
   })
 })

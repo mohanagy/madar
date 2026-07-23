@@ -121,5 +121,8 @@ describe('cluster', () => {
     const communities = cluster(graph)
     const scores = scoreAll(graph, communities)
     expect(new Set(Object.keys(scores))).toEqual(new Set(Object.keys(communities)))
+    for (const [communityId, nodes] of Object.entries(communities)) {
+      expect(scores[Number(communityId)]).toBe(cohesionScore(graph, nodes))
+    }
   })
 })

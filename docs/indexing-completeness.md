@@ -67,8 +67,10 @@ madar generate . \
 
 Supplying either threshold enables strict mode; unspecified allowances default to zero. A rejected candidate does not advance `graph.json`. Madar does not publish failed-attempt manifests as an alternate authority.
 
-## Effect on retrieval confidence
+## Effect on retrieval
 
-Agent-facing evidence reads completeness from the accepted graph. Relevant supported failures can lower coverage and answerability. Unsupported inventory, policy skips, and safety exclusions remain explicit context signals, but they do not automatically make an otherwise complete JavaScript/TypeScript index partial.
+`retrieve` authenticates the accepted graph's embedded completeness before ranking any evidence. If the supported JavaScript/TypeScript index is not `complete`, retrieval returns an `unavailable` outcome with a `canonical TypeScript index incomplete` boundary and no graph evidence. It does not calculate confidence or answerability scores.
 
-Completeness is still static evidence, not a runtime trace or a guarantee that every possible answer is present. When the task depends on unsupported or excluded evidence, the agent should state that limitation and verify the relevant source through an appropriate tool.
+For an accepted complete index, a recognized unsupported source that matches the question can appear as an `unsupported` boundary beside useful JavaScript/TypeScript evidence. Policy skips and safety exclusions remain visible in the indexing diagnostics; they are not converted into confidence signals.
+
+Completeness is still static evidence, not a runtime trace or a guarantee that every possible answer is present. When a returned boundary identifies unsupported or otherwise unavailable evidence, the agent should state that limitation and perform only the focused verification needed to continue.

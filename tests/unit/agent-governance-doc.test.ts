@@ -1,24 +1,18 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-describe('agent governance docs', () => {
-  it('documents source-safe governance receipts for pack surfaces', () => {
-    const doc = readFileSync(join(process.cwd(), 'docs', 'agent-governance.md'), 'utf8')
+describe('agent governance documentation', () => {
+  it('requires one retrieve call, authenticated evidence, and explicit boundaries', () => {
+    const doc = readFileSync(resolve('docs/agent-governance.md'), 'utf8')
 
-    expect(doc).toContain('source-safe governance receipt')
-    expect(doc).toContain('madar pack --format json')
-    expect(doc).toContain('context_pack')
-    expect(doc).toContain('graph_version')
-    expect(doc).toContain('cache_status')
-    expect(doc).toContain('delta_session_hash')
-    expect(doc).toContain('does **not** include')
-    expect(doc).toContain('confidence_reasons')
-    expect(doc).toContain('covered_workflow_owners')
-    expect(doc).toContain('source_file')
-    expect(doc).toContain('answerability')
-    expect(doc).toContain('recovery summary')
-    expect(doc).toContain('never recovery prompts')
+    expect(doc).toContain('call `retrieve` once')
+    expect(doc).toContain('authenticated nodes')
+    expect(doc).toContain('directed relationships')
+    expect(doc).toContain('state every returned evidence boundary')
+    expect(doc).toContain('guidance, not enforcement')
+    expect(doc).not.toContain('context_pack')
+    expect(doc).not.toContain('pack_confidence')
   })
 })

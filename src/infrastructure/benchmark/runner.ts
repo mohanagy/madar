@@ -2,15 +2,18 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
+import { countTokens } from 'gpt-tokenizer/encoding/cl100k_base'
+
+import { retrieveContext } from '../../application/retrieve-context.js'
+import { serializeRetrieveContextResult } from '../../application/retrieve-context.js'
 import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
-import type { ContextSessionDiagnostics, ContextSessionState } from '../../contracts/context-session.js'
-import { type RetrieveResult, retrieveContext } from '../../runtime/retrieve.js'
-import { QUERY_TOKEN_ESTIMATOR } from '../../runtime/serve.js'
+import { inspectQueryIndex } from '../../domain/query/index-status.js'
+import type { RetrieveContextResult } from '../../domain/query/types.js'
 import { toShareSafeArtifactPath } from '../../shared/share-safe-artifacts.js'
 import { readGraphSourceRoot } from '../../shared/graph-source-root.js'
 import { resolveShellCommand } from '../../shared/shell.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
-import { buildMadarPromptPack, expandCompareExecTemplate } from '../compare.js'
+import { expandCompareExecTemplate } from '../compare.js'
 import { parsePromptRunnerOutput, type PromptRunnerUsage } from '../prompt-runner.js'
 
 const DEFAULT_RETRIEVAL_BUDGET = 3_000
@@ -51,8 +54,7 @@ export interface RunBenchmarkPromptOptions {
   outputDir?: string
   now?: Date
   retrievalBudget?: number
-  retrieval?: RetrieveResult
-  session?: ContextSessionState
+  retrieval?: RetrieveContextResult
   runner?: (execution: BenchmarkPromptExecution) => Promise<BenchmarkPromptRunnerResult>
 }
 
@@ -61,14 +63,12 @@ export interface BenchmarkPromptRun {
   query_tokens: number
   effective_query_tokens: number
   reused_context_tokens: number
-  session_diagnostics: ContextSessionDiagnostics
   total_tokens: number | null
   prompt_token_source: BenchmarkPromptTokenSource
   usage: PromptRunnerUsage | null
   answer_text: string | null
   elapsed_ms: number
   artifacts: BenchmarkPromptArtifacts
-  session_state: ContextSessionState
 }
 
 function timestampDirectoryName(date: Date): string {
@@ -161,12 +161,17 @@ function benchmarkPromptTokenSource(usage: PromptRunnerUsage | null): BenchmarkP
   return usage.provider === 'claude' ? 'claude_reported_input' : 'gemini_reported_input'
 }
 
-export function retrieveBenchmarkContext(graph: KnowledgeGraph, graphPath: string, question: string, budget: number): RetrieveResult {
+export function retrieveBenchmarkContext(
+  graph: KnowledgeGraph,
+  graphPath: string,
+  question: string,
+  budget: number,
+): RetrieveContextResult {
   const projectRoot = realpathSync(inferProjectRootFromGraphPath(graphPath))
   const originalCwd = process.cwd()
   try {
     process.chdir(projectRoot)
-    return retrieveContext(graph, { question, budget })
+    return retrieveContext(inspectQueryIndex(graph), { question, budget })
   } finally {
     process.chdir(originalCwd)
   }
@@ -183,19 +188,22 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
       options.question,
       options.retrievalBudget ?? DEFAULT_RETRIEVAL_BUDGET,
   )
-  const promptPack = buildMadarPromptPack({
-    graphPath: options.graphPath,
-    question: options.question,
-    retrieval,
-    ...(options.session ? { session: options.session } : {}),
-  })
+  const prompt = [
+    'Answer the question using only the authenticated Madar evidence below.',
+    'Cite exact files and symbols. Treat boundaries as explicit uncertainty.',
+    '',
+    `Question: ${options.question}`,
+    '',
+    serializeRetrieveContextResult(retrieval),
+  ].join('\n')
+  const promptTokens = countTokens(prompt)
   const artifacts: BenchmarkPromptArtifacts = {
     prompt: join(outputRoot, 'madar-prompt.txt'),
     answer: join(outputRoot, 'madar-answer.txt'),
     report: join(outputRoot, 'report.json'),
     share_safe_report: join(outputRoot, 'report.share-safe.json'),
   }
-  writeFileSync(artifacts.prompt, promptPack.session_payload, 'utf8')
+  writeFileSync(artifacts.prompt, prompt, 'utf8')
 
   const command = expandCompareExecTemplate(options.execTemplate, {
     promptFile: artifacts.prompt,
@@ -220,28 +228,19 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
 
   const usage = parsedOutput.usage
   const run: BenchmarkPromptRun = {
-    prompt_tokens_estimated: promptPack.session_payload_token_count,
-    query_tokens: usage?.input_total_tokens ?? promptPack.session_payload_token_count,
+    prompt_tokens_estimated: promptTokens,
+    query_tokens: usage?.input_total_tokens ?? promptTokens,
     effective_query_tokens:
       usage?.input_total_tokens !== undefined
         ? usage.input_total_tokens - usage.cache_read_input_tokens
-        : promptPack.effective_token_count,
-    reused_context_tokens: usage?.cache_read_input_tokens ?? promptPack.reused_context_tokens,
-    session_diagnostics: {
-      ...promptPack.session_diagnostics,
-      reused_context_tokens: usage?.cache_read_input_tokens ?? promptPack.reused_context_tokens,
-      effective_token_count:
-        usage?.input_total_tokens !== undefined
-          ? usage.input_total_tokens - usage.cache_read_input_tokens
-          : promptPack.effective_token_count,
-    },
+        : promptTokens,
+    reused_context_tokens: usage?.cache_read_input_tokens ?? 0,
     total_tokens: usage?.total_tokens ?? null,
     prompt_token_source: benchmarkPromptTokenSource(usage),
     usage,
     answer_text: parsedOutput.answerText,
     elapsed_ms: execution.elapsedMs,
     artifacts,
-    session_state: promptPack.session_state,
   }
 
   const localReportArtifacts = {
@@ -255,12 +254,15 @@ export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Pr
     query_tokens: run.query_tokens,
     effective_query_tokens: run.effective_query_tokens,
     reused_context_tokens: run.reused_context_tokens,
-    session_diagnostics: run.session_diagnostics,
     total_tokens: run.total_tokens,
     prompt_token_source: run.prompt_token_source,
     usage: run.usage,
     elapsed_ms: run.elapsed_ms,
-    prompt_token_estimator: QUERY_TOKEN_ESTIMATOR,
+    prompt_token_estimator: {
+      source: 'serialized_madar_retrieve_result',
+      model: 'cl100k_base',
+      exact: true,
+    },
     artifacts: localReportArtifacts,
   }
   const shareSafeRoots = {

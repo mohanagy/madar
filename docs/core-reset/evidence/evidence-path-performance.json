@@ -1,0 +1,521 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "core-reset-evidence-path-performance",
+  "generated_at": "2026-07-23T07:03:42.265Z",
+  "share_safe": true,
+  "issue": 596,
+  "benchmark_passed": true,
+  "eligible_for_acceptance": false,
+  "command": "node tools/eval/core-reset/evidence-path-performance.mjs --contract tools/eval/core-reset/contracts/evidence-path-performance-v1.json --receipt docs/core-reset/evidence/evidence-path-performance.json",
+  "contract": {
+    "path": "tools/eval/core-reset/contracts/evidence-path-performance-v1.json",
+    "fixture_id": "evidence-path-performance-v1",
+    "sha256": "076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c"
+  },
+  "evaluator": {
+    "path": "tools/eval/core-reset/evidence-path-performance.mjs",
+    "sha256": "177af197c5c871a65ed0b0ab4c2b5e9fab50832fddcf4e969e1fb1d11fe4a9e9",
+    "schema_path": "tools/eval/core-reset/schemas/evidence-path-performance-receipt.schema.json",
+    "schema_sha256": "88641fcb8fc1e934263f3b2485b43dccda9777b2e458448fab1d5e93b4388a9f"
+  },
+  "subject": {
+    "head_commit": "d776b82147b5c65939fba19391dbc8ee7f3bb118",
+    "head_tree_oid": "bda5bb29be5c0092403bb48856082c1c917d6ed1",
+    "worktree_dirty": true,
+    "dist_sha256": "d91df4b6efcc1917b67564cea80e7a24e7836683d4013ffc76c5a5bc96f0290d"
+  },
+  "environment": {
+    "node": "v22.9.0",
+    "platform": "darwin",
+    "release": "25.3.0",
+    "arch": "arm64",
+    "cpu": "Apple M3 Max",
+    "memory_bytes": 51539607552,
+    "reference": {
+      "node": "v22.9.0",
+      "platform": "darwin",
+      "release": "25.3.0",
+      "arch": "arm64",
+      "cpu": "Apple M3 Max",
+      "memory_bytes": 51539607552
+    },
+    "reference_match": true
+  },
+  "fixture": {
+    "algorithm": "component-ring-with-fixed-skip-v1",
+    "seed": "sha256-counter-v1:evidence-path-performance-v1",
+    "component_count": 150,
+    "nodes_per_component": 100,
+    "node_count": 15000,
+    "edge_count": 30000,
+    "authenticated_source_files": 15000,
+    "graph_serialization": "RFC 8785 JSON Canonicalization Scheme",
+    "graph_sha256": "7f37629e6fc2a6d58a0871345c5dd2991a383011837fc3b22fea99ae669a87f0",
+    "graph_root_normalization": "<fixture-root>",
+    "source_manifest_sha256": "52ddb881fbaf583c135c60b0f58bded651bb04056426343a8fa5828b10b87e3d",
+    "source_manifest_encoding": "sorted path NUL sha256 NUL byte-length LF"
+  },
+  "protocol": {
+    "graph_loaded_before_timer": true,
+    "graph_serialized_before_timer": true,
+    "graph_deserialized_before_timer": true,
+    "validation_outside_timed_window": true,
+    "query_schedule": "queries[index modulo 5]",
+    "clock": "node:perf_hooks performance.now",
+    "percentile": "nearest-rank p95 over the 20 elapsed_ms samples",
+    "process_model": "one Node process; one parsed graph reused by all invocations"
+  },
+  "correctness": {
+    "preflight": [
+      {
+        "query_index": 0,
+        "outcome": "evidence",
+        "nodes": 5,
+        "relationships": 4,
+        "boundaries": 0,
+        "selected_files": 5,
+        "snippets": 5,
+        "closure_passes": 1,
+        "serialized_tokens": 1182,
+        "passed": true
+      },
+      {
+        "query_index": 1,
+        "outcome": "evidence",
+        "nodes": 3,
+        "relationships": 2,
+        "boundaries": 0,
+        "selected_files": 3,
+        "snippets": 3,
+        "closure_passes": 1,
+        "serialized_tokens": 701,
+        "passed": true
+      },
+      {
+        "query_index": 2,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 443,
+        "passed": true
+      },
+      {
+        "query_index": 3,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 449,
+        "passed": true
+      },
+      {
+        "query_index": 4,
+        "outcome": "missing",
+        "nodes": 0,
+        "relationships": 0,
+        "boundaries": 1,
+        "selected_files": 0,
+        "snippets": 0,
+        "closure_passes": 0,
+        "serialized_tokens": 64,
+        "passed": true
+      }
+    ],
+    "warmups": [
+      {
+        "invocation": 0,
+        "query_index": 0,
+        "outcome": "evidence",
+        "nodes": 5,
+        "relationships": 4,
+        "boundaries": 0,
+        "selected_files": 5,
+        "snippets": 5,
+        "closure_passes": 1,
+        "serialized_tokens": 1182,
+        "passed": true
+      },
+      {
+        "invocation": 1,
+        "query_index": 1,
+        "outcome": "evidence",
+        "nodes": 3,
+        "relationships": 2,
+        "boundaries": 0,
+        "selected_files": 3,
+        "snippets": 3,
+        "closure_passes": 1,
+        "serialized_tokens": 701,
+        "passed": true
+      },
+      {
+        "invocation": 2,
+        "query_index": 2,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 443,
+        "passed": true
+      }
+    ]
+  },
+  "measurements": {
+    "samples": [
+      {
+        "invocation": 0,
+        "elapsed_ms": 231.721,
+        "query_index": 0,
+        "outcome": "evidence",
+        "nodes": 5,
+        "relationships": 4,
+        "boundaries": 0,
+        "selected_files": 5,
+        "snippets": 5,
+        "closure_passes": 1,
+        "serialized_tokens": 1182,
+        "passed": true
+      },
+      {
+        "invocation": 1,
+        "elapsed_ms": 233.051,
+        "query_index": 1,
+        "outcome": "evidence",
+        "nodes": 3,
+        "relationships": 2,
+        "boundaries": 0,
+        "selected_files": 3,
+        "snippets": 3,
+        "closure_passes": 1,
+        "serialized_tokens": 701,
+        "passed": true
+      },
+      {
+        "invocation": 2,
+        "elapsed_ms": 235.257,
+        "query_index": 2,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 443,
+        "passed": true
+      },
+      {
+        "invocation": 3,
+        "elapsed_ms": 234.781,
+        "query_index": 3,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 449,
+        "passed": true
+      },
+      {
+        "invocation": 4,
+        "elapsed_ms": 234.845,
+        "query_index": 4,
+        "outcome": "missing",
+        "nodes": 0,
+        "relationships": 0,
+        "boundaries": 1,
+        "selected_files": 0,
+        "snippets": 0,
+        "closure_passes": 0,
+        "serialized_tokens": 64,
+        "passed": true
+      },
+      {
+        "invocation": 5,
+        "elapsed_ms": 262.238,
+        "query_index": 0,
+        "outcome": "evidence",
+        "nodes": 5,
+        "relationships": 4,
+        "boundaries": 0,
+        "selected_files": 5,
+        "snippets": 5,
+        "closure_passes": 1,
+        "serialized_tokens": 1182,
+        "passed": true
+      },
+      {
+        "invocation": 6,
+        "elapsed_ms": 267.493,
+        "query_index": 1,
+        "outcome": "evidence",
+        "nodes": 3,
+        "relationships": 2,
+        "boundaries": 0,
+        "selected_files": 3,
+        "snippets": 3,
+        "closure_passes": 1,
+        "serialized_tokens": 701,
+        "passed": true
+      },
+      {
+        "invocation": 7,
+        "elapsed_ms": 263.019,
+        "query_index": 2,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 443,
+        "passed": true
+      },
+      {
+        "invocation": 8,
+        "elapsed_ms": 248.255,
+        "query_index": 3,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 449,
+        "passed": true
+      },
+      {
+        "invocation": 9,
+        "elapsed_ms": 234.405,
+        "query_index": 4,
+        "outcome": "missing",
+        "nodes": 0,
+        "relationships": 0,
+        "boundaries": 1,
+        "selected_files": 0,
+        "snippets": 0,
+        "closure_passes": 0,
+        "serialized_tokens": 64,
+        "passed": true
+      },
+      {
+        "invocation": 10,
+        "elapsed_ms": 233.856,
+        "query_index": 0,
+        "outcome": "evidence",
+        "nodes": 5,
+        "relationships": 4,
+        "boundaries": 0,
+        "selected_files": 5,
+        "snippets": 5,
+        "closure_passes": 1,
+        "serialized_tokens": 1182,
+        "passed": true
+      },
+      {
+        "invocation": 11,
+        "elapsed_ms": 234.736,
+        "query_index": 1,
+        "outcome": "evidence",
+        "nodes": 3,
+        "relationships": 2,
+        "boundaries": 0,
+        "selected_files": 3,
+        "snippets": 3,
+        "closure_passes": 1,
+        "serialized_tokens": 701,
+        "passed": true
+      },
+      {
+        "invocation": 12,
+        "elapsed_ms": 226.879,
+        "query_index": 2,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 443,
+        "passed": true
+      },
+      {
+        "invocation": 13,
+        "elapsed_ms": 234.651,
+        "query_index": 3,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 449,
+        "passed": true
+      },
+      {
+        "invocation": 14,
+        "elapsed_ms": 218.932,
+        "query_index": 4,
+        "outcome": "missing",
+        "nodes": 0,
+        "relationships": 0,
+        "boundaries": 1,
+        "selected_files": 0,
+        "snippets": 0,
+        "closure_passes": 0,
+        "serialized_tokens": 64,
+        "passed": true
+      },
+      {
+        "invocation": 15,
+        "elapsed_ms": 242.795,
+        "query_index": 0,
+        "outcome": "evidence",
+        "nodes": 5,
+        "relationships": 4,
+        "boundaries": 0,
+        "selected_files": 5,
+        "snippets": 5,
+        "closure_passes": 1,
+        "serialized_tokens": 1182,
+        "passed": true
+      },
+      {
+        "invocation": 16,
+        "elapsed_ms": 267.647,
+        "query_index": 1,
+        "outcome": "evidence",
+        "nodes": 3,
+        "relationships": 2,
+        "boundaries": 0,
+        "selected_files": 3,
+        "snippets": 3,
+        "closure_passes": 1,
+        "serialized_tokens": 701,
+        "passed": true
+      },
+      {
+        "invocation": 17,
+        "elapsed_ms": 230.803,
+        "query_index": 2,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 443,
+        "passed": true
+      },
+      {
+        "invocation": 18,
+        "elapsed_ms": 231.989,
+        "query_index": 3,
+        "outcome": "evidence",
+        "nodes": 2,
+        "relationships": 1,
+        "boundaries": 0,
+        "selected_files": 2,
+        "snippets": 2,
+        "closure_passes": 1,
+        "serialized_tokens": 449,
+        "passed": true
+      },
+      {
+        "invocation": 19,
+        "elapsed_ms": 222.895,
+        "query_index": 4,
+        "outcome": "missing",
+        "nodes": 0,
+        "relationships": 0,
+        "boundaries": 1,
+        "selected_files": 0,
+        "snippets": 0,
+        "closure_passes": 0,
+        "serialized_tokens": 64,
+        "passed": true
+      }
+    ],
+    "p95_ms": 267.493,
+    "target_ms": 500,
+    "percentile_method": "nearest-rank"
+  },
+  "gates": {
+    "descriptor_identity": {
+      "actual_sha256": "076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c",
+      "expected_sha256": "076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c",
+      "pass": true
+    },
+    "subject_identity": {
+      "head_commit": "d776b82147b5c65939fba19391dbc8ee7f3bb118",
+      "clean": false,
+      "dist_sha256": "d91df4b6efcc1917b67564cea80e7a24e7836683d4013ffc76c5a5bc96f0290d",
+      "pass": false
+    },
+    "reference_environment": {
+      "pass": true
+    },
+    "fixture_cardinality": {
+      "nodes": 15000,
+      "directed_edges": 30000,
+      "authenticated_source_files": 15000,
+      "expected": {
+        "nodes": 15000,
+        "directed_edges": 30000,
+        "authenticated_source_files": 15000
+      },
+      "pass": true
+    },
+    "correctness": {
+      "preflight_passed": true,
+      "warmups_passed": true,
+      "measured_passed": true,
+      "pass": true
+    },
+    "protocol": {
+      "preflight_invocations": 5,
+      "warmup_invocations": 3,
+      "measured_invocations": 20,
+      "expected": {
+        "preflight_invocations": 5,
+        "warmup_invocations": 3,
+        "measured_invocations": 20
+      },
+      "pass": true
+    },
+    "caps": {
+      "closure_pass_max": 1,
+      "selected_file_max": 12,
+      "snippet_max": 25,
+      "serialized_token_max": 4000,
+      "pass": true
+    },
+    "warm_retrieval_p95": {
+      "actual_ms": 267.493,
+      "maximum_ms": 500,
+      "comparison": "strictly_less_than",
+      "pass": true
+    }
+  },
+  "failures": [
+    "subject_identity"
+  ],
+  "receipt_sha256": "1a17d8c7bb3588b5331ce38990660c88a944b9ea4f1763c0b414f1a1028c4e22"
+}

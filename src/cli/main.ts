@@ -1,19 +1,17 @@
 import { existsSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
+import {
+  retrieveContext,
+  serializeRetrieveContextResult,
+} from '../application/retrieve-context.js'
+import { inspectQueryIndex } from '../domain/query/index-status.js'
 import { loadBenchmarkQuestions, type BenchmarkResult, printBenchmark, runBenchmark } from '../infrastructure/benchmark.js'
 import { runBenchmarkSuite } from '../infrastructure/benchmark/suite.js'
 import { evaluateRetrievalQuality, formatQualityReport } from '../infrastructure/benchmark/quality.js'
-import { BenchmarkReadinessError, NativeAgentInstallRequiredError, runCompareCommand } from '../infrastructure/compare.js'
-import { runContextPackCommand } from '../infrastructure/context-pack-command.js'
-import { runHandoffCommand } from '../infrastructure/handoff-command.js'
-import { runContextPromptCommand } from '../infrastructure/context-prompt-command.js'
+import { runCompareCommand } from '../infrastructure/compare.js'
 import { buildDoctorReport, runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
-import { runProofReportCommand, type ProofReportResult } from '../infrastructure/proof-report.js'
-import { runReviewCompareCommand } from '../infrastructure/review-compare.js'
-import { runTryCommand } from '../infrastructure/try-command.js'
-import { saveQueryResult } from '../infrastructure/save-query-result.js'
-import { compareRefs } from '../infrastructure/time-travel.js'
 import { federate } from '../pipeline/federate.js'
 import { generateIndex, type GenerateIndexResult, type ProgressStep } from '../application/generate-index.js'
 import { updateIndex } from '../application/update-index.js'
@@ -37,12 +35,9 @@ import {
 } from '../infrastructure/install.js'
 import { pushGraphToNeo4j } from '../infrastructure/neo4j.js'
 import { watchIndex } from '../infrastructure/watch-index.js'
-import { serveGraph } from '../runtime/http-server.js'
 import { diffGraphs } from '../runtime/diff.js'
 import { buildGraphSummary, type GraphSummary } from '../runtime/graph-summary.js'
 import { serveGraphStdio } from '../runtime/stdio-server.js'
-import { getNeighbors, getNode, loadGraph, queryGraph, shortestPath } from '../runtime/serve.js'
-import { formatTimeTravelResult } from '../runtime/time-travel.js'
 import { findPackageRoot, readPackageName, readPackageVersion } from '../shared/package-metadata.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import {
@@ -67,34 +62,17 @@ import {
   type BenchmarkCliOptions,
   parseCompareArgs,
   parseDoctorArgs,
-  parseHandoffArgs,
-  parsePackArgs,
   parseDiffArgs,
-  parseExplainArgs,
   parseGenerateArgs,
   parseHookArgs,
   parseInstallArgs,
-  parsePathArgs,
   parsePlatformActionArgs,
-  parseProofReportArgs,
-  parsePromptArgs,
   parseQueryArgs,
-  parseReviewCompareArgs,
-  parseSaveResultArgs,
   parseSummaryArgs,
   parseServeArgs,
   parseTelemetryArgs,
-  parseTimeTravelArgs,
-  parseTryArgs,
-  type TryCliOptions,
-  type HandoffCliOptions,
-  type PackCliOptions,
-  type ProofReportCliOptions,
-  type PromptCliOptions,
   parseWatchArgs,
   type CompareCliOptions,
-  type ReviewCompareCliOptions,
-  type TimeTravelCliOptions,
   UsageError,
 } from './parser.js'
 
@@ -105,12 +83,6 @@ export interface CliIO {
 
 export interface CompareCommandContext {
   options: CompareCliOptions
-  io: CliIO
-  confirm(message: string): Promise<boolean>
-}
-
-export interface ReviewCompareCommandContext {
-  options: ReviewCompareCliOptions
   io: CliIO
   confirm(message: string): Promise<boolean>
 }
@@ -130,50 +102,14 @@ export interface EvalCommandContext {
   io: CliIO
 }
 
-export interface TimeTravelCommandContext {
-  options: TimeTravelCliOptions
-  io: CliIO
-}
-
-export interface ContextPackCommandContext {
-  options: PackCliOptions
-  io: CliIO
-}
-
-export interface TryCommandContext {
-  options: TryCliOptions
-  io: CliIO
-}
-
-export interface HandoffCommandContext {
-  options: HandoffCliOptions
-  io: CliIO
-}
-
-export interface ContextPromptCommandContext {
-  options: PromptCliOptions
-  io: CliIO
-}
-
-export interface ProofReportCommandContext {
-  options: ProofReportCliOptions
-}
-
 export interface CliDependencies {
-  loadGraph: typeof loadGraph
-  queryGraph: typeof queryGraph
-  saveQueryResult: typeof saveQueryResult
+  loadGraph: typeof loadGraphArtifact
+  inspectQueryIndex: typeof inspectQueryIndex
+  retrieveContext: typeof retrieveContext
   runBenchmark: (context: BenchmarkCommandContext) => Promise<BenchmarkResult> | BenchmarkResult
   runBenchSuite: (context: BenchSuiteCommandContext) => Promise<string | void> | string | void
   runEval: (context: EvalCommandContext) => Promise<string | void> | string | void
   runCompare: (context: CompareCommandContext) => Promise<string | void> | string | void
-  runReviewCompare: (context: ReviewCompareCommandContext) => Promise<string | void> | string | void
-  runTimeTravel: (context: TimeTravelCommandContext) => Promise<string | void> | string | void
-  runContextPack: (context: ContextPackCommandContext) => Promise<string | void> | string | void
-  runTry: (context: TryCommandContext) => Promise<string | void> | string | void
-  runHandoff: (context: HandoffCommandContext) => Promise<string | void> | string | void
-  runContextPrompt: (context: ContextPromptCommandContext) => Promise<string | void> | string | void
-  runProofReport: (options: ProofReportCliOptions) => ProofReportResult
   runDoctor: (graphPath: string) => string
   runStatus: (graphPath: string) => string
   runGraphSummary?: (graphPath: string) => Promise<GraphSummary> | GraphSummary
@@ -194,7 +130,6 @@ export interface CliDependencies {
   generateGraph: typeof generateIndex
   updateIndex: typeof updateIndex
   watchGraph: typeof watchIndex
-  serveGraph: typeof serveGraph
   serveGraphStdio: typeof serveGraphStdio
   claudeInstall: typeof claudeInstall
   claudeUninstall: typeof claudeUninstall
@@ -212,23 +147,16 @@ export interface CliDependencies {
   recordTelemetryEvent?: (event: TelemetryEventInput) => void
 }
 
-const COMPARE_WARNING_MESSAGE = 'compare will execute a baseline prompt and a madar prompt for each question. This may consume paid model tokens.'
-function compareWarningMessage(options: CompareCliOptions): string {
-  if (options.task === 'implement' && options.baselineMode === 'native_agent') {
-    return `${COMPARE_WARNING_MESSAGE} For --task implement with --baseline-mode native_agent, it will also run local validation commands derived from package.json scripts after each arm with a ${options.validationTimeoutSeconds}s timeout.`
-  }
-  return COMPARE_WARNING_MESSAGE
-}
+const COMPARE_WARNING_MESSAGE = 'compare will execute one baseline prompt and one madar prompt. This may consume paid model tokens.'
 
-const REVIEW_COMPARE_WARNING_MESSAGE = 'review-compare will execute verbose and compact pr_impact prompts for the current git diff. This may consume paid model tokens.'
 const BENCHMARK_WARNING_MESSAGE = 'benchmark will execute the benchmark/eval runner. This may consume paid model tokens.'
 const BENCH_SUITE_WARNING_MESSAGE = 'bench:suite will execute baseline and madar suite prompts. This may consume paid model tokens.'
 const EVAL_WARNING_MESSAGE = 'eval will execute the benchmark/eval runner. This may consume paid model tokens.'
 
 const DEFAULT_DEPENDENCIES: CliDependencies = {
-  loadGraph,
-  queryGraph,
-  saveQueryResult,
+  loadGraph: loadGraphArtifact,
+  inspectQueryIndex,
+  retrieveContext,
   runBenchmark: ({ options }) => {
     const questions = options.questionsPath ? loadBenchmarkQuestions(options.questionsPath) : undefined
     return runBenchmark(options.graphPath, undefined, questions, { execTemplate: options.execTemplate })
@@ -238,7 +166,7 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
     return result.text
   },
   runEval: async ({ options }) => {
-    const graph = loadGraph(options.graphPath)
+    const graph = loadGraphArtifact(options.graphPath)
     const questions = options.questionsPath ? loadBenchmarkQuestions(options.questionsPath) : undefined
     const report = await evaluateRetrievalQuality(graph, questions, 3000, {
       graphPath: options.graphPath,
@@ -247,62 +175,17 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
     return formatQualityReport(report)
   },
   runCompare: async ({ options }) => {
-    try {
-      return await runCompareCommand({
-        graphPath: options.graphPath,
-        question: options.question,
-        questionsPath: options.questionsPath,
-        outputDir: options.outputDir,
-        execTemplate: options.execTemplate,
-        baselineMode: options.baselineMode,
-        perArmTimeoutSeconds: options.perArmTimeoutSeconds,
-        validationTimeoutSeconds: options.validationTimeoutSeconds,
-        heartbeatIntervalMs: options.heartbeatIntervalMs,
-        strictMadarFirst: options.strictMadarFirst,
-        strictBenchmarkReadiness: options.strictBenchmarkReadiness,
-        allowNoInstall: options.allowNoInstall,
-        limit: options.limit,
-        ...(options.why ? { why: true } : {}),
-      })
-    } catch (error) {
-      if (error instanceof NativeAgentInstallRequiredError) {
-        throw new UsageError(error.message)
-      }
-      if (error instanceof BenchmarkReadinessError) {
-        throw new UsageError(error.message)
-      }
-      throw error
-    }
-  },
-  runReviewCompare: async ({ options }) => {
-    return await runReviewCompareCommand({
+    return await runCompareCommand({
       graphPath: options.graphPath,
-      execTemplate: options.execTemplate,
+      question: options.question,
       outputDir: options.outputDir,
-      ...(options.baseBranch !== null ? { baseBranch: options.baseBranch } : {}),
-      ...(options.budget !== null ? { budget: options.budget } : {}),
+      execTemplate: options.execTemplate,
+      perArmTimeoutSeconds: options.perArmTimeoutSeconds,
     })
   },
-  runTimeTravel: async ({ options }) => {
-    const result = await compareRefs(options)
-    return options.json ? JSON.stringify(result, null, 2) : formatTimeTravelResult(result)
-  },
-  runContextPack: async ({ options }) => {
-    return await runContextPackCommand(options)
-  },
-  runTry: async ({ options, io }) => {
-    return await runTryCommand(options, io)
-  },
-  runHandoff: async ({ options }) => {
-    return await runHandoffCommand(options)
-  },
-  runContextPrompt: async ({ options }) => {
-    return await runContextPromptCommand(options)
-  },
-  runProofReport: (options) => runProofReportCommand(options),
   runDoctor: (graphPath) => runDoctorCommand({ graphPath }),
   runStatus: (graphPath) => runStatusCommand({ graphPath }),
-  runGraphSummary: (graphPath) => buildGraphSummary(loadGraph(graphPath)),
+  runGraphSummary: (graphPath) => buildGraphSummary(loadGraphArtifact(graphPath)),
   confirm: async (message) => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       throw new UsageError('error: compare requires --yes in non-interactive mode.')
@@ -334,14 +217,13 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   generateGraph: generateIndex,
   updateIndex,
   watchGraph: watchIndex,
-  serveGraph,
   serveGraphStdio,
   claudeInstall,
   claudeUninstall,
   agentsInstall,
   agentsUninstall,
   notifyUpdate: async () => await getUpdateNotification({
-  packageName: readPackageName(findPackageRoot()),
+    packageName: readPackageName(findPackageRoot()),
     currentVersion: readPackageVersion(findPackageRoot()),
   }),
   readInstalledVersion: () => readPackageVersion(findPackageRoot()),
@@ -408,17 +290,11 @@ function telemetryBase(dependencies: CliDependencies) {
 
 function classifyTelemetryFailure(error: unknown): TelemetryFailureBucket {
   const message = messageFromError(error).toLowerCase()
-  if (message.includes('context_pack requires') || message.includes('invalid params')) {
+  if (message.includes('invalid params')) {
     return 'invalid_params'
   }
   if (message.includes('graph file not found') || message.includes('out/graph.json not found') || message.includes('graph.json not found')) {
     return 'missing_graph'
-  }
-  if (message.includes('require_fresh_graph') || message.includes('non-fresh graph')) {
-    return 'stale_graph'
-  }
-  if (message.includes('require_fresh_context') || message.includes('stale selected context')) {
-    return 'stale_context'
   }
   if (message.includes('unsupported corpus')) {
     return 'unsupported_corpus'
@@ -462,154 +338,57 @@ export function formatHelp(binaryName = 'madar'): string {
     'Run with --help or -h to see this message, or --version / -v to print the installed version.',
     '',
     'Commands:',
-    '  generate [path]       build graph artifacts for a folder (default .)',
-    '    --update             reuse an unchanged graph; cold changed runs reconcile fully',
-    '    --cluster-only       re-cluster an existing graph.json without re-indexing source',
-    '    --watch              watch for changes; unchanged runs skip work, changed runs reconcile fully',
+    '  generate [path]       build canonical graph artifacts for a folder (default .)',
+    '    --update             reuse an unchanged graph; reconcile changed source',
+    '    --cluster-only       re-cluster an existing graph without re-indexing source',
+    '    --watch              keep the graph reconciled after generation',
     '    --follow-symlinks    include in-root symlink targets',
-    '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
+    '    --respect-gitignore  exclude files ignored by Git',
     '    --strict-indexing    fail when any candidate is failed or unsupported',
     '    --max-indexing-failed N       permit N failed candidates (enables strict mode)',
     '    --max-indexing-unsupported N  permit N unsupported candidates (enables strict mode)',
     '    --debounce S         watch debounce seconds (default 3)',
-    '    --neo4j-push URI     also push the generated graph directly to Neo4j',
-    '    --neo4j-user USER    Neo4j username (defaults to NEO4J_USER or neo4j)',
-    '    --neo4j-password PW  Neo4j password (or set NEO4J_PASSWORD/.env)',
-    '    --neo4j-database DB  Neo4j database (defaults to NEO4J_DATABASE or neo4j)',
-    '  federate <g1> <g2>... merge graphs from multiple repos into one',
+    '    --no-html            accepted as a no-op; Core Reset emits no HTML graph',
+    '    --neo4j-push URI     also push the generated graph to Neo4j',
+    '    --neo4j-user USER    Neo4j username',
+    '    --neo4j-password PW  Neo4j password',
+    '    --neo4j-database DB  Neo4j database',
+    '  watch [path]          generate and keep the canonical graph reconciled',
+    '  serve [graph.json]    serve the single retrieve tool over MCP stdio',
+    '    --stdio / --mcp      explicit stdio aliases',
+    '    --auto-refresh       reconcile the graph while serving',
+    '  query "<question>"     retrieve authenticated evidence as canonical JSON',
+    '    --budget N            positive requested budget (effective cap 4000)',
+    '    --graph PATH          graph artifact (default out/graph.json)',
+    '  diff <baseline.json>  compare two canonical graph snapshots',
+    '    --graph PATH          current graph (default out/graph.json)',
+    '    --limit N             maximum items per section (default 10)',
+    '  summary [graph.json]  print a deterministic graph summary as JSON',
+    '  federate <g1> <g2>... merge canonical graphs into one',
     '    --output DIR         output directory (default out-federated)',
-    '  watch [path]          watch JavaScript/TypeScript changes and reconcile the index',
-    '    --follow-symlinks    include in-root symlink targets',
-    '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
-    '    --debounce S         watch debounce seconds (default 3)',
-    '  serve [graph.json]    serve graph artifacts over HTTP or stdio',
-    '    --host H             host interface (default 127.0.0.1)',
-    '    --port N             port (default 4173; use 0 for a random port)',
-    '    --transport MODE     choose http or stdio explicitly',
-    '    --http               explicit alias for HTTP transport',
-    '    --stdio              serve graph query methods over stdio (JSON lines)',
-    '    --mcp                alias for --stdio for installer/runtime parity',
-    '    --auto-refresh       watch changes and reconcile the index while serving over stdio',
-    '  summary [graph.json]  print a compact deterministic graph summary as JSON',
-    '  try "<question>" [path] one-command local first proof before agent install',
-    '  query "<question>"     traverse graph.json for a question',
-    '    --dfs                 use depth-first instead of breadth-first',
-    '    --budget N            cap output at N tokens (default 2000)',
-    '    --graph <path>        path to graph.json (default out/graph.json)',
-    '    --rank-by MODE        rank matches by relevance or degree (default relevance)',
-    '    --community ID        limit traversal to one community id',
-    '    --file-type TYPE      limit traversal to one file type (for example code)',
-    '  pack "<prompt>"       compile a task-aware context pack / execution brief',
-    '    --budget N            cap context pack assembly at N tokens (default 3000)',
-    '    --task KIND          explain|implement|review|impact (default infer from prompt; fallback explain)',
-    '    --graph <path>       path to graph.json (default out/graph.json)',
-    '    --require-fresh-graph  refuse non-fresh graph context instead of only warning',
-    '    --require-fresh-context refuse selected context that may be stale',
-    '    --format MODE       json|text|markdown|claude|copilot (default json)',
-    '    --why               include retrieval-routing debug metadata in the pack output',
-    '  handoff "<prompt>"    emit a portable remote-agent handoff artifact',
-    '    --budget N            cap handoff assembly at N tokens (default 3000)',
-    '    --task KIND          explain|implement|review|impact (default explain)',
-    '    --graph <path>       path to graph.json (default out/graph.json)',
-    '    --consumer NAME      generic|codex|cursor|copilot (default generic)',
-    '    --require-fresh-graph  refuse non-fresh graph context instead of only warning',
-    '    --require-fresh-context refuse selected context that may be stale',
-    '    --allow-snippets     include raw snippets and mark the artifact non-share-safe',
-    '  prompt "<prompt>"     compile a provider-ready prompt payload',
-    '    --provider NAME      claude|gemini',
-    '    --graph <path>       path to graph.json (default out/graph.json)',
-    '    --require-fresh-graph  refuse non-fresh graph context instead of only warning',
-    '    --require-fresh-context refuse selected context that may be stale',
-    '  diff <baseline-graph.json> compare a baseline graph.json to the current graph snapshot',
-    '    --graph <path>        path to the current graph.json (default out/graph.json)',
-    '    --limit N             maximum items to show per change section (default 10)',
-    '  path <source> <target> find the shortest path between two concepts',
-    '    --graph <path>        path to graph.json (default out/graph.json)',
-    '    --max-hops N          maximum allowed hops before reporting overflow (default 8)',
-    '  explain <label>        explain one node and its neighborhood from graph evidence',
-    '    --graph <path>        path to graph.json (default out/graph.json)',
-    '    --relation REL        optional relation filter for neighbors',
-    '  save-result            save a Q&A result to out/memory/',
-    '    --question Q          the question asked',
-    '    --answer A            the answer to save',
-    '    --type T              query type: query|path_query|explain (default query)',
-    '    --nodes N1 N2 ...     source node labels cited in the answer',
-    '    --memory-dir DIR      memory directory (default out/memory)',
-    '  benchmark [graph.json] measure token reduction, question coverage, and structure signals through the benchmark/eval runner. This may consume paid model tokens.',
-    '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
-    '    --questions PATH      load benchmark/eval questions from a JSON file',
-    '    --yes                 skip confirmation before running the paid benchmark/eval prompts',
-    '  bench:suite           run the reproducible benchmark matrix and write results under docs/benchmarks/suite/results/',
-    '    --exec TEMPLATE       required unless --dry-run; supports {prompt_file}, {question}, {mode}, and {output_file}',
-    '    --repo ID             limit the suite to one repo id from docs/benchmarks/suite/repos.json',
-    '    --task ID             limit the suite to one task id from docs/benchmarks/suite/tasks.json',
-    '    --repos-manifest PATH use an alternate repository manifest',
-    '    --tasks-manifest PATH use an alternate task manifest and its sibling grader files',
-    '    --mode MODE           cold | warm | all (default all)',
-    '    --trials N            measured trials per runnable cell (default 3)',
-    '    --output-dir DIR      suite results directory (default docs/benchmarks/suite/results)',
-    '    --dry-run             list planned and runnable suite cells without executing prompts',
-    '    --yes                 skip confirmation before running the paid suite prompts',
-    '  eval [graph.json]      measure retrieval quality: recall, MRR, and snippet coverage through the benchmark/eval runner. This may consume paid model tokens.',
-    '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
-    '    --questions PATH      load benchmark/eval questions from a JSON file',
-    '    --yes                 skip confirmation before running the paid benchmark/eval prompts',
-    '  compare [question]    run a real baseline vs madar prompt comparison',
-    '    --graph <path>        path to graph.json (default out/graph.json)',
-    '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
-    '    --questions PATH      load questions from a JSON file instead of a positional question',
-    '    --output-dir DIR      compare output directory (default out/compare)',
-    '    --task TASK           explain | implement (default explain; implement currently requires --baseline-mode native_agent)',
-    '    --baseline-mode MODE  full | bounded | pack_only | native_agent (default full; pack_only compares one bounded raw-context prompt against one compiled madar pack; native_agent runs --exec twice, uses Anthropic JSON usage when available, and otherwise saves answer-only artifacts)',
-    '      For Claude MCP attribution in native_agent mode, include --verbose with --output-format json',
-    '    --per-arm-timeout S   per-arm timeout seconds for native_agent runs (default 600)',
-    '    --validation-timeout S  timeout seconds for implement validation commands run after native_agent compare arms (default 120)',
-    '    --heartbeat-interval-ms N  stderr heartbeat interval for native_agent runs (default 30000; 0 disables)',
-    '    --strict-madar-first  treat pre-Madar broad exploration as degraded/non-winning in native_agent mode',
-    '    --strict / --strict-benchmark-readiness  fail native_agent compare before runner spend when benchmark readiness is degraded or not_ready',
-    '    --allow-no-install    allow native_agent compare without a verified Madar install and mark the run invalid',
-    '    --yes                 skip confirmation before running the paid prompt comparison',
-    '    --limit N             cap processed prompts/questions for the comparison run',
-    '    --why                 include retrieval-routing debug metadata in the compare summary and reports',
-    '  review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff',
-    '    --exec TEMPLATE       required command template; supports {prompt_file}, {mode}, and {output_file}',
-    '    --output-dir DIR      review compare output directory (default out/review-compare)',
-    '    --base-branch BRANCH  override the PR base branch used for diff selection',
-    '    --budget N            override the pr_impact review bundle token budget',
-    '    --yes                 skip confirmation before running the paid review comparison',
-    '  time-travel <from> <to> compare two refs using on-demand cached graph snapshots',
-    '    --view MODE          summary|risk|drift|timeline (default summary)',
-    '    --json               emit machine-readable JSON',
-    '    --refresh            rebuild snapshots instead of using cache',
-    '    --limit N            cap view items (default 10)',
-    '  doctor [graph.json]   check graph freshness, agent config, and MCP wiring',
-    '    --graph <path>      path to graph.json to validate (default out/graph.json)',
-    '  status [graph.json]   compact readiness summary with next commands',
-    '    --graph <path>      path to graph.json to validate (default out/graph.json)',
-    '  proof-report [graph.json]  generate a local markdown proof report from graph, pack, and compare evidence',
-    '    --output-dir DIR      proof report output directory (default out/proof-report)',
-    '    --compare-dir DIR     compare receipt directory (default out/compare)',
-    '    --pack PATH           optional saved context-pack JSON for pack-quality evidence',
-    '  install [platform|--platform P] install the platform skill or local madar config',
-    '    platforms            claude|windows|gemini|cursor|codex|opencode|aider|claw|droid|trae|trae-cn|copilot',
-    '    If you update madar, re-run your platform install command to refresh local agent rules:',
-    '    madar install <platform>',
-    '  hook <action>          manage git hooks for madar rebuild reminders',
-    '    install              install post-commit and post-checkout hooks',
-    '    uninstall            remove madar hook sections',
-    '    status               show whether madar hooks are installed',
-    '  telemetry <enable|disable|status|clear|report [spool.json ...]> manage opt-in source-safe local telemetry',
-    '  aider <install|uninstall>   manage local AGENTS.md rules',
-    '  claude <install|uninstall> [--profile core|full|strict]  manage local CLAUDE.md madar rules',
-    '  cursor <install|uninstall> [--profile core|full|strict]  manage local Cursor madar rules',
-    '  gemini <install|uninstall> [--profile core|full|strict]  manage local GEMINI.md rules and Gemini CLI hook config',
-    '  copilot <install|uninstall> [--profile core|full|strict] install or remove the GitHub Copilot skill',
-    '  codex <install|uninstall>   manage local AGENTS.md + Codex hook/MCP rules',
-    '  opencode <install|uninstall> manage local AGENTS.md + OpenCode plugin/MCP rules',
-    '  claw <install|uninstall>    manage local AGENTS.md rules',
-    '  droid <install|uninstall>   manage local AGENTS.md rules',
-    '  trae <install|uninstall>    manage local AGENTS.md rules',
-    '  trae-cn <install|uninstall> manage local AGENTS.md rules',
+    '  benchmark [graph.json] run benchmark questions through the configured model runner',
+    '    --exec TEMPLATE      required prompt-runner command template',
+    '    --questions PATH     alternate benchmark questions',
+    '    --yes                skip paid-run confirmation',
+    '  bench:suite           run the reproducible benchmark matrix',
+    '  eval [graph.json]      measure retrieval quality through the benchmark runner',
+    '  compare [question]    run baseline vs Madar evidence comparison',
+    '  doctor [graph.json]   diagnose graph and agent wiring',
+    '  status [graph.json]   print compact graph and agent readiness',
+    '  install [platform]    install a platform skill or local Madar config',
+    '  hook <action>         install, uninstall, or inspect rebuild-reminder hooks',
+    '  telemetry <action>    enable, disable, inspect, clear, or report local telemetry',
+    '  aider <install|uninstall>',
+    '  claude <install|uninstall>',
+    '  cursor <install|uninstall>',
+    '  gemini <install|uninstall>',
+    '  copilot <install|uninstall>',
+    '  codex <install|uninstall>',
+    '  opencode <install|uninstall>',
+    '  claw <install|uninstall>',
+    '  droid <install|uninstall>',
+    '  trae <install|uninstall>',
+    '  trae-cn <install|uninstall>',
     '',
     `Tip: '${binaryName} . --update' is treated like '${binaryName} generate . --update'.`,
     '',
@@ -709,15 +488,6 @@ function formatGenerateSummary(result: GenerateIndexResult): string {
   return lines.join('\n')
 }
 
-function formatExplainSummary(graph: ReturnType<typeof loadGraph>, label: string, relation = ''): string {
-  const nodeDetails = getNode(graph, label)
-  if (nodeDetails.startsWith('No node matching')) {
-    return nodeDetails
-  }
-
-  return `${nodeDetails}\n\n${getNeighbors(graph, label, relation)}`
-}
-
 function handleAgentCommand(command: AgentPlatform, args: string[], io: CliIO, dependencies: CliDependencies): number {
   const options = parsePlatformActionArgs(command, args)
   if (options.action === 'install') {
@@ -794,7 +564,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         failureBucket,
       })
       const confirm = async (message: string) => await dependencies.confirm(message)
-      const warningMessage = compareWarningMessage(options)
+      const warningMessage = COMPARE_WARNING_MESSAGE
       if (!options.yes) {
         io.log(`Warning: ${warningMessage}`)
         if (!(await confirm(warningMessage))) {
@@ -819,38 +589,6 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       return 0
     }
 
-    if (command === 'review-compare') {
-      const options = parseReviewCompareArgs(args)
-      const confirm = async (message: string) => await dependencies.confirm(message)
-      if (!(await confirmPaidCommand(
-        'review-compare',
-        REVIEW_COMPARE_WARNING_MESSAGE,
-        'Review compare cancelled.',
-        options.yes,
-        io,
-        dependencies,
-      ))) {
-        return 1
-      }
-      const output = await dependencies.runReviewCompare({
-        options,
-        io,
-        confirm,
-      })
-      if (output !== undefined) {
-        io.log(output)
-      }
-      return 0
-    }
-
-    if (command === 'time-travel') {
-      const options = parseTimeTravelArgs(args)
-      const output = await dependencies.runTimeTravel({ options, io })
-      if (output !== undefined) {
-        io.log(output)
-      }
-      return 0
-    }
 
     if (command === 'doctor') {
       const options = parseDoctorArgs(args, 'doctor')
@@ -888,77 +626,11 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       return 0
     }
 
-    if (command === 'proof-report') {
-      const options = parseProofReportArgs(args)
-      const result = dependencies.runProofReport(options)
-      io.log(`Saved to ${result.outputPath}`)
-      return 0
-    }
-
     if (command === 'summary') {
       const options = parseSummaryArgs(args)
-      const runGraphSummary = dependencies.runGraphSummary ?? ((graphPath: string) => buildGraphSummary(dependencies.loadGraph(graphPath)))
+      const runGraphSummary = dependencies.runGraphSummary
+        ?? ((graphPath: string) => buildGraphSummary(dependencies.loadGraph(graphPath)))
       io.log(JSON.stringify(await runGraphSummary(options.graphPath), null, 2))
-      return 0
-    }
-
-    if (command === 'try') {
-      const options = parseTryArgs(args)
-      const output = await dependencies.runTry({ options, io })
-      if (output !== undefined) {
-        io.log(output)
-      }
-      return 0
-    }
-
-    if (command === 'pack') {
-      const options = parsePackArgs(args)
-      failureTelemetry = (failureBucket) => ({
-        command: 'pack',
-        stage: 'failed',
-        ...telemetryBase(dependencies),
-        failureBucket,
-      })
-      const output = await dependencies.runContextPack({ options, io })
-      if (output !== undefined) {
-        io.log(output)
-      }
-      emitTelemetry(io, dependencies, () => ({
-        command: 'pack',
-        stage: 'succeeded',
-        ...telemetryBase(dependencies),
-        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
-      }))
-      return 0
-    }
-
-    if (command === 'handoff') {
-      const options = parseHandoffArgs(args)
-      const output = await dependencies.runHandoff({ options, io })
-      if (output !== undefined) {
-        io.log(output)
-      }
-      return 0
-    }
-
-    if (command === 'prompt') {
-      const options = parsePromptArgs(args)
-      failureTelemetry = (failureBucket) => ({
-        command: 'prompt',
-        stage: 'failed',
-        ...telemetryBase(dependencies),
-        failureBucket,
-      })
-      const output = await dependencies.runContextPrompt({ options, io })
-      if (output !== undefined) {
-        io.log(output)
-      }
-      emitTelemetry(io, dependencies, () => ({
-        command: 'prompt',
-        stage: 'succeeded',
-        ...telemetryBase(dependencies),
-        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
-      }))
       return 0
     }
 
@@ -977,14 +649,21 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         return 0
       }
       if (options.action === 'report') {
-        io.log((dependencies.readTelemetryReport ?? ((spoolPaths?: string[]) => readTelemetryReport({}, spoolPaths)))(options.spoolPaths))
+        io.log((dependencies.readTelemetryReport
+          ?? ((spoolPaths?: string[]) => readTelemetryReport({}, spoolPaths)))(
+          options.spoolPaths,
+        ))
         return 0
       }
-      io.log((dependencies.readTelemetryStatus ?? (() => formatTelemetryStatus(getTelemetryStatus())))())
+      io.log((dependencies.readTelemetryStatus
+        ?? (() => formatTelemetryStatus(getTelemetryStatus())))())
       return 0
     }
 
-    if (command === 'generate' || (command !== undefined && !isAgentPlatform(command) && isImplicitGenerateCommand(command))) {
+    if (command === 'generate'
+      || (command !== undefined
+        && !isAgentPlatform(command)
+        && isImplicitGenerateCommand(command))) {
       const generateArgs = command === 'generate' ? args : [command, ...args]
       const options = parseGenerateArgs(generateArgs)
       failureTelemetry = (failureBucket) => ({
@@ -998,11 +677,17 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         stage: 'started',
         ...telemetryBase(dependencies),
       }))
-      const generate = options.update ? dependencies.updateIndex : dependencies.generateGraph
+      const generate = options.update
+        ? dependencies.updateIndex
+        : dependencies.generateGraph
       const result = generate(options.path, {
         clusterOnly: options.clusterOnly,
-        ...(options.followSymlinks === undefined ? {} : { followSymlinks: options.followSymlinks }),
-        ...(options.respectGitignore === undefined ? {} : { respectGitignore: options.respectGitignore }),
+        ...(options.followSymlinks === undefined
+          ? {}
+          : { followSymlinks: options.followSymlinks }),
+        ...(options.respectGitignore === undefined
+          ? {}
+          : { respectGitignore: options.respectGitignore }),
         ...(options.strictIndexing
           ? {
               indexingStrict: {
@@ -1024,7 +709,9 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
           database: options.neo4jDatabase,
           projectRoot: result.rootPath,
         })
-        io.log(`[madar neo4j] Pushed ${pushResult.nodes} nodes and ${pushResult.edges} edges to ${pushResult.uri} (database ${pushResult.database})`)
+        io.log(
+          `[madar neo4j] Pushed ${pushResult.nodes} nodes and ${pushResult.edges} edges to ${pushResult.uri} (database ${pushResult.database})`,
+        )
       }
 
       emitTelemetry(io, dependencies, () => ({
@@ -1036,8 +723,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       }))
       if (options.watch) {
         await dependencies.watchGraph(options.path, options.debounceSeconds, {
-          ...(options.followSymlinks === undefined ? {} : { followSymlinks: options.followSymlinks }),
-          ...(options.respectGitignore === undefined ? {} : { respectGitignore: options.respectGitignore }),
+          ...(options.followSymlinks === undefined
+            ? {}
+            : { followSymlinks: options.followSymlinks }),
+          ...(options.respectGitignore === undefined
+            ? {}
+            : { respectGitignore: options.respectGitignore }),
           ...(options.strictIndexing
             ? {
                 indexingStrict: {
@@ -1052,7 +743,6 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       }
       return 0
     }
-
     if (command === 'watch') {
       const options = parseWatchArgs(args)
       const result = dependencies.generateGraph(options.path, {
@@ -1109,19 +799,11 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'serve') {
       const options = parseServeArgs(args)
       const graphPath = resolveWorkspaceGraphPath(options.graphPath)
-      if (options.transport === 'stdio') {
-        await dependencies.serveGraphStdio({
-          graphPath,
-          ...(options.autoRefresh ? { autoRefresh: true, workspaceRoot: process.cwd() } : {}),
-          logger: io,
-        })
-        return 0
-      }
-
-      await dependencies.serveGraph({
+      await dependencies.serveGraphStdio({
         graphPath,
-        host: options.host,
-        port: options.port,
+        ...(options.autoRefresh
+          ? { autoRefresh: true, workspaceRoot: process.cwd() }
+          : {}),
         logger: io,
       })
       return 0
@@ -1130,18 +812,14 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'query') {
       const options = parseQueryArgs(args)
       const graph = dependencies.loadGraph(options.graphPath)
-      const filters = {
-        ...(options.community !== null ? { community: options.community } : {}),
-        ...(options.fileType ? { fileType: options.fileType } : {}),
-      }
-      io.log(
-        dependencies.queryGraph(graph, options.question, {
-          mode: options.mode,
-          tokenBudget: options.tokenBudget,
-          rankBy: options.rankBy,
-          ...(Object.keys(filters).length > 0 ? { filters } : {}),
-        }),
+      const result = dependencies.retrieveContext(
+        dependencies.inspectQueryIndex(graph),
+        {
+          question: options.question,
+          ...(options.budget === undefined ? {} : { budget: options.budget }),
+        },
       )
+      io.log(serializeRetrieveContextResult(result))
       return 0
     }
 
@@ -1150,30 +828,6 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       const baselineGraph = dependencies.loadGraph(options.baselineGraphPath)
       const graph = dependencies.loadGraph(options.graphPath)
       io.log(diffGraphs(baselineGraph, graph, { limit: options.limit }))
-      return 0
-    }
-
-    if (command === 'path') {
-      const options = parsePathArgs(args)
-      const graph = dependencies.loadGraph(options.graphPath)
-      io.log(shortestPath(graph, options.source, options.target, options.maxHops))
-      return 0
-    }
-
-    if (command === 'explain') {
-      const options = parseExplainArgs(args)
-      const graph = dependencies.loadGraph(options.graphPath)
-      io.log(formatExplainSummary(graph, options.label, options.relation))
-      return 0
-    }
-
-    if (command === 'save-result') {
-      const options = parseSaveResultArgs(args)
-      const outputPath = dependencies.saveQueryResult(options.question, options.answer, options.memoryDir, {
-        queryType: options.queryType,
-        sourceNodes: options.sourceNodes,
-      })
-      io.log(`Saved to ${outputPath}`)
       return 0
     }
 
@@ -1279,7 +933,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         }))
       }
       io.log(options.action === 'install'
-        ? dependencies.claudeInstall('.', options.profile ? { profile: options.profile } : {})
+        ? dependencies.claudeInstall('.')
         : dependencies.claudeUninstall('.'))
       if (options.action === 'install') {
         emitTelemetry(io, dependencies, () => ({
@@ -1313,7 +967,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         }))
       }
       io.log(options.action === 'install'
-        ? dependencies.cursorInstall('.', options.profile ? { profile: options.profile } : {})
+        ? dependencies.cursorInstall('.')
         : dependencies.cursorUninstall('.'))
       if (options.action === 'install') {
         emitTelemetry(io, dependencies, () => ({
@@ -1346,7 +1000,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
           agentTarget: 'gemini',
         }))
       }
-      io.log(options.action === 'install' ? dependencies.geminiInstall('.', options.profile ? { profile: options.profile } : {}) : dependencies.geminiUninstall('.'))
+      io.log(options.action === 'install' ? dependencies.geminiInstall('.') : dependencies.geminiUninstall('.'))
       if (options.action === 'install') {
         emitTelemetry(io, dependencies, () => ({
           command: 'install',
@@ -1376,7 +1030,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         }))
         warnWhenWorkspaceGraphIsMissing(io)
         io.log(dependencies.installSkill('copilot'))
-        io.log(dependencies.installCopilotMcp('.', options.profile ? { profile: options.profile } : {}))
+        io.log(dependencies.installCopilotMcp('.'))
         emitTelemetry(io, dependencies, () => ({
           command: 'install',
           stage: 'succeeded',

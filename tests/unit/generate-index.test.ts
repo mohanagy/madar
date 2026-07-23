@@ -105,6 +105,27 @@ describe('generate index', () => {
     expect(() => readFileSync(join(root, 'out', 'graph.json'), 'utf8')).toThrow()
   })
 
+  it('records an unscoped config diagnostic without failing every indexed file', () => {
+    const root = sandbox()
+    write(root, 'src/service.ts', 'export const service = true\n')
+    write(root, 'tsconfig.json', '{"extends":"@missing/tsconfig/base.json"}\n')
+
+    const result = generateIndex(root)
+    const diagnostics = readMatchingDiagnostics(result.graphPath)
+
+    expect(result.indexing).toMatchObject({
+      state: 'complete',
+      counts: { indexed: 1, indexed_with_warnings: 0, failed: 0 },
+    })
+    expect(diagnostics?.index_diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        level: 'error',
+        reason: 'canonical_diagnostic',
+        message: expect.stringContaining('not found'),
+      }),
+    ]))
+  })
+
   it.runIf(process.platform !== 'win32')('rejects a broken supported symlink without publishing or replacing a graph', () => {
     const firstRoot = sandbox()
     write(firstRoot, 'ok.ts', 'export const ok = true\n')

@@ -60,10 +60,6 @@ function loadLanguageCapabilityMatrix(): string {
   return readFileSync(join(process.cwd(), 'docs', 'language-capability-matrix.md'), 'utf8')
 }
 
-function loadContextPacksDoc(): string {
-  return readFileSync(join(process.cwd(), 'docs', 'concepts', 'context-packs.md'), 'utf8')
-}
-
 function normalizeVersionRange(range: string | undefined): string {
   return (range ?? '').replace(/^[\^~]/, '')
 }
@@ -160,49 +156,41 @@ describe('package metadata', () => {
     expect(loadChangelog()).toContain(`## [${manifest.version}]`)
   })
 
-  it('positions package metadata around outcome-first task-aware local packs instead of generic graph marketing', () => {
+  it('positions public metadata around authenticated local evidence instead of generic graph marketing', () => {
     const manifest = loadPackageManifest()
     const readme = loadReadme().toLowerCase()
-    const contextPacks = loadContextPacksDoc().toLowerCase()
+    const repoMetadata = readFileSync(join(process.cwd(), '.github', 'repo-metadata.json'), 'utf8').toLowerCase()
     const keywords = manifest.keywords ?? []
 
-    expect(manifest.description?.toLowerCase()).toContain('stop')
-    expect(manifest.description?.toLowerCase()).toContain('typescript/node')
-    expect(manifest.description?.toLowerCase()).toContain('task-aware')
-    expect(manifest.description?.toLowerCase()).toContain('what runs for this task')
-    expect(manifest.description?.toLowerCase()).toContain('local')
+    expect(manifest.description?.toLowerCase()).toContain('authenticated evidence path')
+    expect(manifest.description?.toLowerCase()).toContain('typescript')
+    expect(manifest.description?.toLowerCase()).toContain('javascript')
     expect(manifest.description?.toLowerCase()).not.toContain('context plane')
     expect(manifest.description?.toLowerCase()).not.toContain('context compiler')
-    expect(keywords).toEqual(expect.arrayContaining(['nodejs', 'code-review', 'impact-analysis']))
+    expect(keywords).toEqual(expect.arrayContaining(['nodejs', 'evidence', 'retrieval']))
+    expect(keywords).not.toEqual(expect.arrayContaining(['code-review', 'impact-analysis', 'pr-review', 'context']))
     expect(keywords).not.toContain('context-plane')
     expect(keywords).not.toContain('context-compiler')
     expect(readme).toContain('claude code')
     expect(readme).toContain('cursor')
     expect(readme).toContain('codex')
     expect(readme).toContain('copilot')
-    expect(readme).toContain('repo context it needs before it starts searching')
-    expect(readme).toContain('local graph')
-    expect(readme).toContain('task-aware context pack')
-    expect(contextPacks).toContain('deterministic local context compilation')
+    expect(readme).toContain('authenticated repository evidence')
+    expect(readme).toContain('authenticated local graph')
+    expect(readme).toContain('retrieve(question, budget?)')
+    expect(repoMetadata).toContain('authenticated local evidence paths')
     expect(readme).not.toContain('context plane')
     expect(readme).not.toContain('context compiler')
   })
 
-  it('keeps the command surface aligned with pack/prompt automation and MCP docs', () => {
+  it('keeps the command surface aligned with the one-query MCP docs', () => {
     const readme = loadReadme()
     const examples = readFileSync(join(process.cwd(), 'examples', 'mcp-tool-examples.md'), 'utf8')
 
-    expect(readme).toContain('madar pack')
-    expect(readme).toContain('madar prompt')
-    expect(examples).toContain('context_pack')
-    expect(examples).toContain('context_prompt')
-  })
-
-  it('documents broad runtime-generation pack compaction in the context-pack docs', () => {
-    const contextPacks = readFileSync(join(process.cwd(), 'docs', 'concepts', 'context-packs.md'), 'utf8').toLowerCase()
-
-    expect(contextPacks).toContain('runtime-generation prompts stay compact')
-    expect(contextPacks).toContain('shared-hub fan-out')
+    expect(readme).toContain('madar query')
+    expect(readme).toContain('retrieve(question, budget?)')
+    expect(examples).toContain('"name": "retrieve"')
+    expect(examples).not.toContain('context_pack')
   })
 
   it('avoids circular maintainer guidance in the contributing guide', () => {
@@ -257,8 +245,8 @@ describe('package metadata', () => {
     expect(devDependencies.vite).toMatch(/^[~^]?8\./)
     expect(dependencies['@xenova/transformers']).toBeUndefined()
     expect(dependencies['@huggingface/transformers']).toBeUndefined()
-    expect(typeof peerDependencies['@huggingface/transformers']).toBe('string')
-    expect(peerDependenciesMeta['@huggingface/transformers']).toEqual({ optional: true })
+    expect(peerDependencies['@huggingface/transformers']).toBeUndefined()
+    expect(peerDependenciesMeta['@huggingface/transformers']).toBeUndefined()
   })
 
   it('caps vitest worker parallelism to keep the full suite stable on shared machines', () => {
