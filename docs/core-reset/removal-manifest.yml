@@ -670,6 +670,18 @@ items:
       receipt_schema: tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json
       receipt_schema_sha256: 2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714
       receipt: docs/core-reset/evidence/evidence-path-held-out.json
+      result:
+        status: passed
+        receipt_file_sha256: 81b64d2346ab1bf5b6dbbceff97dbeaade31d1fdb0c9c131a846ef1ab2f63f95
+        receipt_payload_sha256: 683eb6509147bfda5a440ba12403d26d32f77ddd5ec731fa2b88eab1a898db6f
+        subject_commit: 082ea20a0988462ebaf00137d7a2e4b72632a6fc
+        subject_tree_oid: a42c276dcba58c3aa8e72ee426562e7f910e06ed
+        eligible_for_acceptance: true
+        blocking_questions_passed: 2
+        blocking_questions_total: 2
+        diagnostic_questions_passed: 0
+        diagnostic_questions_total: 1
+        diagnostic_is_blocking: false
       runner: node tools/eval/core-reset/evidence-path-held-out.mjs --repository openstatus=<path> --repository documenso=<path> --repository formbricks=<path>
       execution_protocol:
         acceptance_platform: darwin_reference_only

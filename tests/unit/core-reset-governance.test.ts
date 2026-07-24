@@ -144,6 +144,8 @@ const FROZEN_EVIDENCE_HASHES = {
   'tools/eval/core-reset/evidence-path-held-out.mjs': 'a41a51cbe1853f524e3e05cc91b31016382778f980dbb67ef06f910925892841',
   'tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json':
     '2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714',
+  'docs/core-reset/evidence/evidence-path-held-out.json':
+    '81b64d2346ab1bf5b6dbbceff97dbeaade31d1fdb0c9c131a846ef1ab2f63f95',
   'docs/core-reset/evidence/baseline-v0.32.0.json': 'c2b96e75e64934de998bb5c7087cb604b680cd8fd2aa5c6d1f74cd9f1a0c6516',
   'tools/eval/core-reset/schemas/baseline-receipt.schema.json': '04eeb47a14da18ec90c6e687bbd557d44a3fe5ac493d8d6946f4b3fc4f7f6a59',
 } as const
@@ -414,10 +416,8 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('normalized retrieve request, canonical graph bytes, and identical authenticated source snapshot')
     expect(roadmap).toContain('an empty positive result fails')
     expect(roadmap).toContain('63-file / 33,031-LOC deletion contract with 22 ownership transfers')
-    expect(roadmap).toContain(
-      'Implementation and deletion are underway; held-out-v2',
-    )
-    expect(roadmap).toContain('performance receipt, final source/package inventory, dependency audit, CI, and review remain pending')
+    expect(roadmap).toContain('passes held-out-v2')
+    expect(roadmap).toContain('performance receipt, final package inventory, dependency audit, CI, and review remain pending')
     expect(roadmap).toContain('issues/592')
     expect(roadmap).toContain('issues/588')
     expect(roadmap).not.toContain('## Ready — generation and incremental index')
@@ -519,9 +519,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
     expect(scorecard).toContain('`evidence-path-query` is the single In progress phase')
-    expect(scorecard).toContain(
-      'Query implementation and deletion are in progress; no held-out, timing, final source/package, dependency, CI, or review gate is reported as passed',
-    )
+    expect(scorecard).toContain('passes held-out-v2')
     expect(scorecard).toContain('clean generation stays within the accepted 10% regression limit')
     expect(scorecard).toContain('recognized unsupported files and expected policy exclusions are informational')
     expect(scorecard).toContain('The fixed 500-file experiment stopped the incremental design')
@@ -1060,6 +1058,19 @@ describe('core reset governance', () => {
           receipt_schema: string
           receipt_schema_sha256: string
           receipt: string
+          result: {
+            status: string
+            receipt_file_sha256: string
+            receipt_payload_sha256: string
+            subject_commit: string
+            subject_tree_oid: string
+            eligible_for_acceptance: boolean
+            blocking_questions_passed: number
+            blocking_questions_total: number
+            diagnostic_questions_passed: number
+            diagnostic_questions_total: number
+            diagnostic_is_blocking: boolean
+          }
           runner: string
           execution_protocol: {
             acceptance_platform: string
@@ -1383,6 +1394,19 @@ describe('core reset governance', () => {
         receipt_schema: EVIDENCE_HELDOUT_RECEIPT_SCHEMA,
         receipt_schema_sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_HELDOUT_RECEIPT_SCHEMA],
         receipt: EVIDENCE_HELDOUT_RECEIPT,
+        result: {
+          status: 'passed',
+          receipt_file_sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_HELDOUT_RECEIPT],
+          receipt_payload_sha256: '683eb6509147bfda5a440ba12403d26d32f77ddd5ec731fa2b88eab1a898db6f',
+          subject_commit: '082ea20a0988462ebaf00137d7a2e4b72632a6fc',
+          subject_tree_oid: 'a42c276dcba58c3aa8e72ee426562e7f910e06ed',
+          eligible_for_acceptance: true,
+          blocking_questions_passed: 2,
+          blocking_questions_total: 2,
+          diagnostic_questions_passed: 0,
+          diagnostic_questions_total: 1,
+          diagnostic_is_blocking: false,
+        },
         runner:
           'node tools/eval/core-reset/evidence-path-held-out.mjs --repository openstatus=<path> --repository documenso=<path> --repository formbricks=<path>',
         execution_protocol: {
@@ -1798,7 +1822,68 @@ describe('core reset governance', () => {
         expect([1, 37]).toContain(observedOffset)
       }
     }
-    expect(existsSync(resolve(EVIDENCE_HELDOUT_RECEIPT))).toBe(false)
+    expect(existsSync(resolve(EVIDENCE_HELDOUT_RECEIPT))).toBe(true)
+    const heldoutReceipt = JSON.parse(read(EVIDENCE_HELDOUT_RECEIPT)) as {
+      receipt_sha256: string
+      benchmark_passed: boolean
+      eligible_for_acceptance: boolean
+      subject: { head_commit: string; head_tree_oid: string; worktree_dirty: boolean }
+      evaluator: { sha256: string }
+      gates: Record<string, boolean>
+      failures: unknown[]
+      questions: Array<{
+        question_id: string
+        gate_role: string
+        passed: boolean
+        required_phase_coverage: number
+        selected_file_precision: number
+        unrelated_files: string[]
+        handoffs: Array<{ matched: boolean }>
+      }>
+    }
+    expect(heldoutReceipt).toMatchObject({
+      receipt_sha256: '683eb6509147bfda5a440ba12403d26d32f77ddd5ec731fa2b88eab1a898db6f',
+      benchmark_passed: true,
+      eligible_for_acceptance: true,
+      subject: {
+        head_commit: '082ea20a0988462ebaf00137d7a2e4b72632a6fc',
+        head_tree_oid: 'a42c276dcba58c3aa8e72ee426562e7f910e06ed',
+        worktree_dirty: false,
+      },
+      evaluator: { sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_HELDOUT_EVALUATOR] },
+      failures: [],
+    })
+    expect(Object.values(heldoutReceipt.gates).every(Boolean)).toBe(true)
+    expect(heldoutReceipt.questions.filter((question) => question.gate_role === 'blocking').map(
+      (question) => ({
+        id: question.question_id,
+        passed: question.passed,
+        coverage: question.required_phase_coverage,
+        precision: question.selected_file_precision,
+        unrelated: question.unrelated_files.length,
+        handoffs: question.handoffs.every((handoff) => handoff.matched),
+      }),
+    )).toEqual([
+      {
+        id: 'documenso-document-send',
+        passed: true,
+        coverage: 1,
+        precision: 1,
+        unrelated: 0,
+        handoffs: true,
+      },
+      {
+        id: 'formbricks-survey-response',
+        passed: true,
+        coverage: 1,
+        precision: 1,
+        unrelated: 0,
+        handoffs: true,
+      },
+    ])
+    expect(heldoutReceipt.questions.find(
+      (question) => question.question_id === 'openstatus-574-strict-one-call',
+    )?.passed).toBe(false)
     expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(false)
   })
 
