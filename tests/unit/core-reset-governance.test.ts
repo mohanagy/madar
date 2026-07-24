@@ -104,7 +104,7 @@ const EVIDENCE_PERFORMANCE_RECEIPT_SCHEMA_SHA256 =
 const EVIDENCE_PERFORMANCE_RECEIPT = 'docs/core-reset/evidence/evidence-path-performance.json'
 const EVIDENCE_INVENTORY_RECEIPT = 'docs/core-reset/evidence/evidence-path-inventory.json'
 const EVIDENCE_INVENTORY_RECEIPT_SHA256 =
-  'afacc3b91176bd2768827e56c84438aad8885e61f34226fdb8fbf0bbc4a7e3a8'
+  '9c1c3a268426e6005f62996d4385ca2625f183e744924fed2ab6c489a10b0568'
 const EVIDENCE_IMPORTER_RECEIPT = 'docs/core-reset/evidence/evidence-path-importer-closure.json'
 const EVIDENCE_IMPORTER_RECEIPT_SHA256 = '466d48749f2502b5c91dab44cc62ef7a9d91c6b53226ca09ce7846b5dc5be334'
 type EvidencePerformanceRelationship = {
@@ -148,9 +148,9 @@ const FROZEN_EVIDENCE_HASHES = {
   'tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json':
     '2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714',
   'docs/core-reset/evidence/evidence-path-held-out.json':
-    '45abbca5cd9326e8ba7e03fc97206802944f9ac16c002de72b8925d6e2edb9bd',
+    'b944f9911731a333e84327a52d17eee03c7df100e23ab113dbb8082eb3b65fd2',
   'docs/core-reset/evidence/evidence-path-performance.json':
-    'd816ae74b246f1d0190e437df2e34a3c32fbd81a943c498e4d31d490816788ed',
+    '1f5234efcab88b5896eb7b0380cb5224d9f628b0c63bc8d1257589c8d2812dc2',
   'docs/core-reset/evidence/evidence-path-inventory.json':
     EVIDENCE_INVENTORY_RECEIPT_SHA256,
   'docs/core-reset/evidence/baseline-v0.32.0.json': 'c2b96e75e64934de998bb5c7087cb604b680cd8fd2aa5c6d1f74cd9f1a0c6516',
@@ -710,8 +710,8 @@ describe('core reset governance', () => {
       base_commit: EVIDENCE_BASE,
       completed_phase_commit: INCREMENTAL_MERGE,
       npm_files: 162,
-      npm_packed_bytes: 231_304,
-      npm_unpacked_bytes: 982_903,
+      npm_packed_bytes: 231_545,
+      npm_unpacked_bytes: 984_312,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'exact_implementation_source_and_package',
     })
@@ -1285,8 +1285,8 @@ describe('core reset governance', () => {
       base_commit: EVIDENCE_BASE,
       completed_phase_commit: INCREMENTAL_MERGE,
       npm_files: 162,
-      npm_packed_bytes: 231_304,
-      npm_unpacked_bytes: 982_903,
+      npm_packed_bytes: 231_545,
+      npm_unpacked_bytes: 984_312,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'exact_implementation_source_and_package',
     })
@@ -1321,8 +1321,8 @@ describe('core reset governance', () => {
       implementation_inventory: {
         receipt: EVIDENCE_INVENTORY_RECEIPT,
         receipt_sha256: EVIDENCE_INVENTORY_RECEIPT_SHA256,
-        subject_commit: '37ab665118743cb834bfa34e3764bb52e6dbaff4',
-        subject_tree_oid: '3b22d9972f058de53134bc72b162743e44505e76',
+        subject_commit: '052f816ccca2d356cbdc30b8aa588510ea516b5e',
+        subject_tree_oid: 'daeb18bde0adb74ee527f7890eae1557f253ee5b',
         production_typescript_files: 73,
         production_typescript_loc: 21_687,
         production_loc_added: 3_500,
@@ -1332,9 +1332,9 @@ describe('core reset governance', () => {
         development_dependencies_added: 0,
         optional_peer_metadata_removed: true,
         npm_files: 162,
-        npm_packed_bytes: 231_304,
-        npm_unpacked_bytes: 982_903,
-        npm_packed_bytes_delta: -340_867,
+        npm_packed_bytes: 231_545,
+        npm_unpacked_bytes: 984_312,
+        npm_packed_bytes_delta: -340_626,
         all_phase_budgets_pass: true,
       },
       deterministic_query_contract: {
@@ -1449,9 +1449,9 @@ describe('core reset governance', () => {
         result: {
           status: 'passed',
           receipt_file_sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_HELDOUT_RECEIPT],
-          receipt_payload_sha256: '53ca425294de9f64d221977a294eb19e916ad9b0cae7a75b5706492fc115083a',
-          subject_commit: '37ab665118743cb834bfa34e3764bb52e6dbaff4',
-          subject_tree_oid: '3b22d9972f058de53134bc72b162743e44505e76',
+          receipt_payload_sha256: '34e932d3e83d0f47463e9adabc861adf9868d4398a63454e9dd2b8fc3c8c6c2c',
+          subject_commit: '052f816ccca2d356cbdc30b8aa588510ea516b5e',
+          subject_tree_oid: 'daeb18bde0adb74ee527f7890eae1557f253ee5b',
           eligible_for_acceptance: true,
           blocking_questions_passed: 2,
           blocking_questions_total: 2,
@@ -1607,10 +1607,10 @@ describe('core reset governance', () => {
         result: {
           status: 'passed',
           receipt_file_sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_PERFORMANCE_RECEIPT],
-          receipt_payload_sha256: '5efa42833796f4039e9f899839fdccc8d65b9a6ad58f0af7609fd2e37a91fadb',
-          subject_commit: '37ab665118743cb834bfa34e3764bb52e6dbaff4',
-          subject_tree_oid: '3b22d9972f058de53134bc72b162743e44505e76',
-          p95_ms: 280.156,
+          receipt_payload_sha256: 'bf726cddc932ef1d926833c007974d9af0269ce36f3e9f138f1bd33ecfc696d6',
+          subject_commit: '052f816ccca2d356cbdc30b8aa588510ea516b5e',
+          subject_tree_oid: 'daeb18bde0adb74ee527f7890eae1557f253ee5b',
+          p95_ms: 288.523,
           eligible_for_acceptance: true,
         },
         runner: `node tools/eval/core-reset/evidence-path-performance.mjs --contract ${EVIDENCE_PERFORMANCE_DESCRIPTOR} --receipt ${EVIDENCE_PERFORMANCE_RECEIPT}`,
@@ -1903,12 +1903,12 @@ describe('core reset governance', () => {
       }>
     }
     expect(heldoutReceipt).toMatchObject({
-      receipt_sha256: '53ca425294de9f64d221977a294eb19e916ad9b0cae7a75b5706492fc115083a',
+      receipt_sha256: '34e932d3e83d0f47463e9adabc861adf9868d4398a63454e9dd2b8fc3c8c6c2c',
       benchmark_passed: true,
       eligible_for_acceptance: true,
       subject: {
-        head_commit: '37ab665118743cb834bfa34e3764bb52e6dbaff4',
-        head_tree_oid: '3b22d9972f058de53134bc72b162743e44505e76',
+        head_commit: '052f816ccca2d356cbdc30b8aa588510ea516b5e',
+        head_tree_oid: 'daeb18bde0adb74ee527f7890eae1557f253ee5b',
         worktree_dirty: false,
       },
       evaluator: { sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_HELDOUT_EVALUATOR] },
@@ -1947,23 +1947,23 @@ describe('core reset governance', () => {
     )?.passed).toBe(false)
     const performanceReceipt = JSON.parse(read(EVIDENCE_PERFORMANCE_RECEIPT))
     expect(performanceReceipt).toMatchObject({
-      receipt_sha256: '5efa42833796f4039e9f899839fdccc8d65b9a6ad58f0af7609fd2e37a91fadb',
+      receipt_sha256: 'bf726cddc932ef1d926833c007974d9af0269ce36f3e9f138f1bd33ecfc696d6',
       benchmark_passed: true,
       eligible_for_acceptance: true,
       subject: {
-        head_commit: '37ab665118743cb834bfa34e3764bb52e6dbaff4',
-        head_tree_oid: '3b22d9972f058de53134bc72b162743e44505e76',
+        head_commit: '052f816ccca2d356cbdc30b8aa588510ea516b5e',
+        head_tree_oid: 'daeb18bde0adb74ee527f7890eae1557f253ee5b',
         worktree_dirty: false,
       },
-      measurements: { p95_ms: 280.156, target_ms: 500 },
+      measurements: { p95_ms: 288.523, target_ms: 500 },
       failures: [],
     })
     expect(JSON.parse(read(EVIDENCE_INVENTORY_RECEIPT))).toEqual({
       schema_version: 1,
       issue: EVIDENCE_ISSUE,
       protected_base: EVIDENCE_BASE,
-      implementation_commit: '37ab665118743cb834bfa34e3764bb52e6dbaff4',
-      implementation_tree: '3b22d9972f058de53134bc72b162743e44505e76',
+      implementation_commit: '052f816ccca2d356cbdc30b8aa588510ea516b5e',
+      implementation_tree: 'daeb18bde0adb74ee527f7890eae1557f253ee5b',
       production: {
         typescript_files: 73,
         typescript_loc: 21_687,
@@ -1983,12 +1983,12 @@ describe('core reset governance', () => {
         name: '@lubab/madar',
         version: '0.32.0',
         files: 162,
-        packed_bytes: 231_304,
+        packed_bytes: 231_545,
         protected_base_packed_bytes: 572_171,
-        packed_bytes_delta: -340_867,
-        unpacked_bytes: 982_903,
-        shasum: 'ef3e089e793dfdd92881852cf0709ab5cf423808',
-        integrity: 'sha512-oRUEU6qg8v36zs5FNRuz7Ja2GweJz01Kf0vP9GlLc6i8ZQHPFLdEoEV3xHEOOOjklutjZIqpZsU3GZuJh8WKIg==',
+        packed_bytes_delta: -340_626,
+        unpacked_bytes: 984_312,
+        shasum: 'e6d3d54cd31006cbb8e237260ced1925a684da44',
+        integrity: 'sha512-Q+3mqxL9zgeLep7olzjpS+gTDUJTbCrggbdnwhOAKQFhX45DbdaKwNDkvl6JaV0WVAT1B/gr1GNx7O0yEfSCzw==',
       },
       budgets: {
         production_files_pass: true,
