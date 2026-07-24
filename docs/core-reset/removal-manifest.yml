@@ -666,7 +666,7 @@ items:
       contract_schema: tools/eval/core-reset/schemas/evaluation-contract.schema.json
       contract_schema_sha256: 581acc2332cbe9015e0bd1c7da4db84e9c3d5c73cedcb21fd7427a67bf56e615
       evaluator: tools/eval/core-reset/evidence-path-held-out.mjs
-      evaluator_sha256: 9f9265ca9c964b1e972b9d907336bc9c795464885b9ea0327342e25e8992374c
+      evaluator_sha256: a41a51cbe1853f524e3e05cc91b31016382778f980dbb67ef06f910925892841
       receipt_schema: tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json
       receipt_schema_sha256: 2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714
       receipt: docs/core-reset/evidence/evidence-path-held-out.json
@@ -680,6 +680,7 @@ items:
         graph_generation_process: one_contained_process_per_repository
         retrieval_process: fresh_contained_process_per_question
         candidate_access: node_permission_fs_allowlist_and_child_process_denial
+        filesystem_argv_canonicalization: explicitly_declared_indexes_only
         response_handoff: fsync_sha256_before_hidden_grading
         anti_tuning_gate: literal_marker_scan_plus_independent_review_required
       generation_prerequisite:
@@ -847,6 +848,10 @@ items:
       obligation_coverage_rfc_proposal: https://github.com/mohanagy/madar/issues/577#issuecomment-5064592884
       obligation_coverage_owner_approval: https://github.com/mohanagy/madar/issues/596#issuecomment-5065202635
       obligation_coverage_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5065202781
+      darwin_path_proposal: https://github.com/mohanagy/madar/issues/596#issuecomment-5066594490
+      darwin_path_rfc_proposal: https://github.com/mohanagy/madar/issues/577#issuecomment-5066600460
+      darwin_path_owner_approval: https://github.com/mohanagy/madar/issues/596#issuecomment-5066655931
+      darwin_path_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5066657672
       protected_base: bce4f4fb1520a582bfedf5eab9133e9befbc79f7
       implementation_started: true
     notes: 'Accepted in #596, amended by #599, and now implementing one combined 63-file / 33,031-LOC deletion from protected base bce4f4fb1520a582bfedf5eab9133e9befbc79f7. The combined contract transfers 22 sources and changes serve.ts from rebuild to delete; stdio/prompts.ts is approved supplemental finalizer importer/public-surface cleanup outside the 63-file floor. Held-out-v2 still requires exact authenticated declaration owners and honest disconnected boundaries. The immutable v0.32.0 receipt remains historical v1 evidence only. No held-out, performance, source/package, dependency, CI, review, or release success is claimed; the performance receipt must remain absent until a clean exact-head v2 run produces it.'

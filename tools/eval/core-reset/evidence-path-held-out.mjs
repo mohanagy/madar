@@ -1308,6 +1308,7 @@ function darwinSandboxProfile(writePaths) {
 export function runContainedNode({
   entryPath,
   args = [],
+  pathArgIndexes = [],
   cwd,
   env,
   readPaths,
@@ -1329,13 +1330,17 @@ export function runContainedNode({
   const canonicalEntryPath = canonicalPath(entryPath)
   const canonicalReadPaths = [...new Set(readPaths.map(canonicalPath))]
   const canonicalWritePaths = [...new Set(writePaths.map(canonicalPath))]
+  const canonicalArgIndexes = new Set(pathArgIndexes)
+  const canonicalArgs = args.map((argument, index) =>
+    canonicalArgIndexes.has(index) ? canonicalPath(argument) : argument,
+  )
   const nodeArguments = [
     "--no-warnings",
     "--experimental-permission",
     ...canonicalReadPaths.map((path) => `--allow-fs-read=${path}`),
     ...canonicalWritePaths.map((path) => `--allow-fs-write=${path}`),
     canonicalEntryPath,
-    ...args,
+    ...canonicalArgs,
   ]
   const sandboxBinary = "/usr/bin/sandbox-exec"
   assert(
@@ -1374,6 +1379,7 @@ export function runIsolatedRetrieveChild({
   const child = runContainedNode({
     entryPath,
     args: [runtimeRoot, graphPath, requestPath],
+    pathArgIndexes: [0, 1, 2],
     cwd: stateRoot,
     env: controlledEnvironment({
       HOME: stateRoot,

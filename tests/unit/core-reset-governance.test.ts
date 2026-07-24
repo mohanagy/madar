@@ -81,6 +81,14 @@ const EVIDENCE_OBLIGATION_OWNER_APPROVAL =
   'https://github.com/mohanagy/madar/issues/596#issuecomment-5065202635'
 const EVIDENCE_OBLIGATION_RFC_APPROVAL =
   'https://github.com/mohanagy/madar/issues/577#issuecomment-5065202781'
+const EVIDENCE_DARWIN_PATH_PROPOSAL =
+  'https://github.com/mohanagy/madar/issues/596#issuecomment-5066594490'
+const EVIDENCE_DARWIN_PATH_RFC_PROPOSAL =
+  'https://github.com/mohanagy/madar/issues/577#issuecomment-5066600460'
+const EVIDENCE_DARWIN_PATH_OWNER_APPROVAL =
+  'https://github.com/mohanagy/madar/issues/596#issuecomment-5066655931'
+const EVIDENCE_DARWIN_PATH_RFC_APPROVAL =
+  'https://github.com/mohanagy/madar/issues/577#issuecomment-5066657672'
 const EVIDENCE_HELDOUT_EVALUATOR = 'tools/eval/core-reset/evidence-path-held-out.mjs'
 const EVIDENCE_HELDOUT_RECEIPT_SCHEMA =
   'tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json'
@@ -133,7 +141,7 @@ type EvidencePerformanceDescriptor = {
 const FROZEN_EVIDENCE_HASHES = {
   'tools/eval/core-reset/contracts/evaluation-contract.json': 'c22819a9e24e53f7b11a69c06511a8dc0c2cba8841868d8d9bb734575290bba9',
   'tools/eval/core-reset/schemas/evaluation-contract.schema.json': '581acc2332cbe9015e0bd1c7da4db84e9c3d5c73cedcb21fd7427a67bf56e615',
-  'tools/eval/core-reset/evidence-path-held-out.mjs': '9f9265ca9c964b1e972b9d907336bc9c795464885b9ea0327342e25e8992374c',
+  'tools/eval/core-reset/evidence-path-held-out.mjs': 'a41a51cbe1853f524e3e05cc91b31016382778f980dbb67ef06f910925892841',
   'tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json':
     '2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714',
   'docs/core-reset/evidence/baseline-v0.32.0.json': 'c2b96e75e64934de998bb5c7087cb604b680cd8fd2aa5c6d1f74cd9f1a0c6516',
@@ -398,6 +406,10 @@ describe('core reset governance', () => {
     expect(roadmap).toContain(EVIDENCE_OBLIGATION_RFC_PROPOSAL)
     expect(roadmap).toContain(EVIDENCE_OBLIGATION_OWNER_APPROVAL)
     expect(roadmap).toContain(EVIDENCE_OBLIGATION_RFC_APPROVAL)
+    expect(roadmap).toContain(EVIDENCE_DARWIN_PATH_PROPOSAL)
+    expect(roadmap).toContain(EVIDENCE_DARWIN_PATH_RFC_PROPOSAL)
+    expect(roadmap).toContain(EVIDENCE_DARWIN_PATH_OWNER_APPROVAL)
+    expect(roadmap).toContain(EVIDENCE_DARWIN_PATH_RFC_APPROVAL)
     expect(roadmap).toContain('A file node or unrelated tiny symbol in the correct file cannot cover a phase')
     expect(roadmap).toContain('normalized retrieve request, canonical graph bytes, and identical authenticated source snapshot')
     expect(roadmap).toContain('an empty positive result fails')
@@ -456,6 +468,10 @@ describe('core reset governance', () => {
     expect(design).toContain(EVIDENCE_OBLIGATION_RFC_PROPOSAL)
     expect(design).toContain(EVIDENCE_OBLIGATION_OWNER_APPROVAL)
     expect(design).toContain(EVIDENCE_OBLIGATION_RFC_APPROVAL)
+    expect(design).toContain(EVIDENCE_DARWIN_PATH_PROPOSAL)
+    expect(design).toContain(EVIDENCE_DARWIN_PATH_RFC_PROPOSAL)
+    expect(design).toContain(EVIDENCE_DARWIN_PATH_OWNER_APPROVAL)
+    expect(design).toContain(EVIDENCE_DARWIN_PATH_RFC_APPROVAL)
     expect(design).toContain('The deletion-led query implementation is now in progress')
     expect(design).toContain('The complete UTF-8 source must hash to the canonical file-node `content_hash`')
     expect(design).toContain('Identical normalized request plus identical canonical graph bytes plus the identical authenticated source snapshot')
@@ -495,6 +511,10 @@ describe('core reset governance', () => {
     expect(scorecard).toContain(EVIDENCE_OBLIGATION_RFC_PROPOSAL)
     expect(scorecard).toContain(EVIDENCE_OBLIGATION_OWNER_APPROVAL)
     expect(scorecard).toContain(EVIDENCE_OBLIGATION_RFC_APPROVAL)
+    expect(scorecard).toContain(EVIDENCE_DARWIN_PATH_PROPOSAL)
+    expect(scorecard).toContain(EVIDENCE_DARWIN_PATH_RFC_PROPOSAL)
+    expect(scorecard).toContain(EVIDENCE_DARWIN_PATH_OWNER_APPROVAL)
+    expect(scorecard).toContain(EVIDENCE_DARWIN_PATH_RFC_APPROVAL)
     expect(scorecard).toContain('only an authenticated canonical symbol declaration may provide a snippet or cover a phase')
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
@@ -1050,6 +1070,7 @@ describe('core reset governance', () => {
             graph_generation_process: string
             retrieval_process: string
             candidate_access: string
+            filesystem_argv_canonicalization: string
             response_handoff: string
             anti_tuning_gate: string
           }
@@ -1203,6 +1224,10 @@ describe('core reset governance', () => {
           obligation_coverage_rfc_proposal: string
           obligation_coverage_owner_approval: string
           obligation_coverage_rfc_approval: string
+          darwin_path_proposal: string
+          darwin_path_rfc_proposal: string
+          darwin_path_owner_approval: string
+          darwin_path_rfc_approval: string
           protected_base: string
           implementation_started?: boolean
         }
@@ -1369,6 +1394,7 @@ describe('core reset governance', () => {
           graph_generation_process: 'one_contained_process_per_repository',
           retrieval_process: 'fresh_contained_process_per_question',
           candidate_access: 'node_permission_fs_allowlist_and_child_process_denial',
+          filesystem_argv_canonicalization: 'explicitly_declared_indexes_only',
           response_handoff: 'fsync_sha256_before_hidden_grading',
           anti_tuning_gate: 'literal_marker_scan_plus_independent_review_required',
         },
@@ -1552,6 +1578,10 @@ describe('core reset governance', () => {
         obligation_coverage_rfc_proposal: EVIDENCE_OBLIGATION_RFC_PROPOSAL,
         obligation_coverage_owner_approval: EVIDENCE_OBLIGATION_OWNER_APPROVAL,
         obligation_coverage_rfc_approval: EVIDENCE_OBLIGATION_RFC_APPROVAL,
+        darwin_path_proposal: EVIDENCE_DARWIN_PATH_PROPOSAL,
+        darwin_path_rfc_proposal: EVIDENCE_DARWIN_PATH_RFC_PROPOSAL,
+        darwin_path_owner_approval: EVIDENCE_DARWIN_PATH_OWNER_APPROVAL,
+        darwin_path_rfc_approval: EVIDENCE_DARWIN_PATH_RFC_APPROVAL,
         protected_base: EVIDENCE_BASE,
         implementation_started: true,
       },

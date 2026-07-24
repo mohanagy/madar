@@ -926,6 +926,40 @@ process.stdout.write(JSON.stringify({ pid: process.pid, probe: globalThis[key] }
   )
 
   it.skipIf(process.platform !== "darwin")(
+    "canonicalizes contained filesystem arguments across macOS path aliases",
+    () => {
+      const root = mkdtempSync(join(tmpdir(), "madar-held-out-path-alias-"))
+      try {
+        const entryPath = join(root, "read-path.mjs")
+        const inputPath = join(root, "input.txt")
+        writeFileSync(
+          entryPath,
+          `import { readFileSync } from "node:fs"
+process.stdout.write(readFileSync(process.argv[2], "utf8"))
+`,
+        )
+        writeFileSync(inputPath, "canonical")
+        const output = runContainedNode({
+          entryPath,
+          args: [inputPath],
+          pathArgIndexes: [0],
+          cwd: root,
+          env: {
+            PATH: process.env.PATH,
+            HOME: root,
+            TMPDIR: root,
+          },
+          readPaths: [root],
+          profilePath: join(root, "path-alias.sb"),
+        })
+        expect(output.stdout).toBe("canonical")
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it.skipIf(process.platform !== "darwin")(
     "enforces the Darwin generation boundary: no evaluator read, child process, or network",
     () => {
       const root = mkdtempSync(join(tmpdir(), "madar-held-out-sandbox-"))
