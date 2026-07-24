@@ -271,7 +271,14 @@ try {
     graphPath: responsiveGraph.graphPath, workspaceRoot: responsiveRoot, autoRefresh: true,
     autoRefreshDebounceSeconds: 0, autoRefreshRequestWaitMs: 30_000, input, output, errorOutput,
   })
-  input.write(`${JSON.stringify({ id: 701, method: 'stats' })}\n`)
+  input.write(`${JSON.stringify({
+    id: 701,
+    method: 'tools/call',
+    params: {
+      name: 'retrieve',
+      arguments: { question: 'What is value0?' },
+    },
+  })}\n`)
   input.write(`${JSON.stringify({ id: 702, method: 'ping' })}\n`)
   const pingDeadline = Date.now() + 5_000
   while (!responseText.includes('"id":702') && Date.now() < pingDeadline) await new Promise((done) => setTimeout(done, 10))

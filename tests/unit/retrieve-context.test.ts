@@ -414,7 +414,7 @@ describe('retrieve context', () => {
     expect(result.matched_nodes.map((node) => node.label)).toContain('forward()')
   })
 
-  it('does not rank interfaces as implementations unless their kind is requested', () => {
+  it('ranks interfaces only for explicit kind or definition intent', () => {
     const root = sandbox('interface-ranking')
     write(root, 'src/auth.ts', [
       'export interface AuthFlow {',
@@ -432,6 +432,70 @@ describe('retrieve context', () => {
     expect(ordinary.matched_nodes.map((node) => node.node_kind)).not.toContain('interface')
     const requested = retrieveContext(index, { question: 'Which interface defines AuthFlow?' })
     expect(requested.matched_nodes.map((node) => node.node_kind)).toContain('interface')
+    const definition = retrieveContext(index, { question: 'Where is AuthFlow defined?' })
+    expect(definition.matched_nodes.map((node) => node.label)).toEqual(['AuthFlow'])
+  })
+
+  it('keeps downstream branches but excludes low-signal callers after query terms are covered', () => {
+    const root = sandbox('directed-query-frontier')
+    write(root, 'src/app.ts', [
+      "import { sendInvoiceReceipt } from './billing.js'",
+      'export function runDemoScenario(): void {',
+      '  sendInvoiceReceipt()',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'src/billing.ts', [
+      "import { sendReceiptEmail } from './notifications.js'",
+      'export function sendInvoiceReceipt(): void {',
+      '  sendReceiptEmail()',
+      '}',
+      'export function collectInvoiceBatch(): number {',
+      '  return 4',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'src/monthly.ts', [
+      "import { collectInvoiceBatch } from './billing.js'",
+      "import { buildMonthlyRevenueReport } from './reports.js'",
+      'export function runMonthlyCloseJob(): number {',
+      '  return collectInvoiceBatch() + buildMonthlyRevenueReport()',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'src/notifications.ts', [
+      'export function sendReceiptEmail(): void {}',
+      '',
+    ].join('\n'))
+    write(root, 'src/reports.ts', [
+      'export function buildMonthlyRevenueReport(): number {',
+      '  return 1200',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
+
+    const result = retrieveContext(readyIndex(root), {
+      question: 'Which module sends invoice receipt emails?',
+    })
+
+    expect(result.matched_nodes.map((node) => node.label)).toEqual([
+      'sendInvoiceReceipt()',
+      'sendReceiptEmail()',
+    ])
+    expect(result.relationships).toHaveLength(1)
+    expect(result.boundaries).toEqual([])
+
+    const fanout = retrieveContext(readyIndex(root), {
+      question: 'What runs the monthly billing close?',
+    })
+    expect(fanout.matched_nodes.map((node) => node.label)).toEqual([
+      'runMonthlyCloseJob()',
+      'buildMonthlyRevenueReport()',
+      'collectInvoiceBatch()',
+    ])
+    expect(fanout.relationships).toHaveLength(2)
+    expect(fanout.boundaries).toEqual([])
   })
 
   it('normalizes derivational suffixes without a domain vocabulary', () => {

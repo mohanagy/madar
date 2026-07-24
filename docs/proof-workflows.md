@@ -10,7 +10,7 @@ Use the checked-in question set:
 npm run build
 node dist/src/cli/bin.js generate examples/demo-repo
 node dist/src/cli/bin.js eval examples/demo-repo/out/graph.json \
-  --questions examples/demo-repo/benchmark-questions.json \
+  --questions examples/demo-repo/benchmark-questions.v3.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
 ```

@@ -134,7 +134,6 @@ function stringAttribute(attributes: GraphAttributes, key: string): string {
   const value = attributes[key]
   return typeof value === 'string' ? value : ''
 }
-
 function field(value: string, weight: number): RankField | null {
   const tokens = lexicalTokens(value)
   return tokens.length === 0 ? null : {
@@ -143,7 +142,6 @@ function field(value: string, weight: number): RankField | null {
     weight,
   }
 }
-
 function selectableGraphNode(
   attributes: GraphAttributes, sourceFile: string, index: ReadyQueryIndex,
 ): boolean {
@@ -310,13 +308,11 @@ function queryVocabulary(question: string, relationKinds: readonly string[]): Qu
     constraints: scopes.filter((scope) => scope.restrictsCandidates),
   }
 }
-
 function rarityWeight(corpus: RankCorpus, token: string): number {
   const documents = Math.max(1, corpus.fileTermWeights.size)
   const frequency = corpus.documentFrequency.get(token) ?? 0
   return Math.max(1, Math.round((1 + Math.log2((documents + 1) / (frequency + 1))) * 64))
 }
-
 function matchesScope(node: RankCorpusNode, scope: ExplicitScope): boolean {
   return scope.tokens.every((token) => node.tokens.has(token))
     && node.fields.some((candidate) => candidate.compact.includes(scope.compact))
@@ -328,7 +324,6 @@ function domainAdjustment(domain: SourceDomain): number {
   if (domain === 'test') return -250
   return -500
 }
-
 function scoreNode(
   corpus: RankCorpus, node: RankCorpusNode, vocabulary: QueryVocabulary,
 ): RankedQueryNode | null {
@@ -362,7 +357,9 @@ function scoreNode(
       else if (matchesScope(node, scope)) score += 1_000_000
     }
   }
-
+  if (exactLabelMatch(node, vocabulary)) score += 2_000_000
+  if (['interface', 'type-alias'].includes(node.nodeKind)
+    && vocabulary.terms.some((term) => term === 'defin' || term === 'declar')) score += 1_000_000
   const localContext = contextualTerms.filter((token) => node.outgoingIds.some((id) => {
     const neighbor = corpus.nodeById.get(id)
     return neighbor?.sourceFile === node.sourceFile && tokenSetMatches(neighbor.tokens, token)
@@ -371,7 +368,6 @@ function scoreNode(
     Math.max(last, vocabulary.positions.get(token) ?? 0), 0)
   return { id: node.id, attributes: node.attributes, score, matchedTerms, firstMatch }
 }
-
 function scoreRepresentative(
   corpus: RankCorpus, node: RankCorpusNode, ranked: RankedQueryNode,
 ): number {
@@ -392,7 +388,6 @@ function compareScoredNodes(left: ScoredNode, right: ScoredNode): number {
     || compareCodeUnits(left.node.sourceFile, right.node.sourceFile)
     || compareCodeUnits(left.node.id, right.node.id)
 }
-
 function exactLabelMatch(node: RankCorpusNode, vocabulary: QueryVocabulary): boolean {
   const label = stringAttribute(node.attributes, 'label')
   return meaningfulTokens(label).length > 0 && vocabulary.question.includes(label)
@@ -416,7 +411,8 @@ function scoredNodes(corpus: RankCorpus, vocabulary: QueryVocabulary): ScoredNod
     const implementation = node.nodeKind === 'file' || declarationPrefix
     const kindTokens = new Set(lexicalTokens(node.nodeKind))
     const requestedKind = vocabulary.terms.some((term) => kindTokens.has(term))
-    if ((!implementation || ['interface', 'type-alias'].includes(node.nodeKind)) && !requestedKind
+    if ((!implementation || ['interface', 'type-alias'].includes(node.nodeKind)) && !requestedKind && !(
+      ['interface', 'type-alias'].includes(node.nodeKind) && vocabulary.terms.some((term) => term === 'defin' || term === 'declar'))
       && !vocabulary.scopes.some((scope) => matchesScope(node, scope))
       && !exactLabelMatch(node, vocabulary)) return []
     const ranked = scoreNode(corpus, node, vocabulary)
@@ -484,7 +480,6 @@ function unsupportedCandidates(
     || left.firstMatch - right.firstMatch
     || compareCodeUnits(left.path, right.path))
 }
-
 function selectUnsupportedBoundaries(candidates: readonly UnsupportedCandidate[]): EvidenceBoundary[] {
   const selected: UnsupportedCandidate[] = []
   const covered = new Set<string>()
@@ -616,7 +611,10 @@ function compareOwnerFits(left: OwnerFit, right: OwnerFit): number {
   }
   return compareScoredNodes(left.candidate, right.candidate)
 }
-
+function hasEvidenceEdge(index: ReadyQueryIndex, from: string, to: string): boolean {
+  return index.graph.edgesBetween(from, to).some(({ attributes }) =>
+    EVIDENCE_RELATIONS.some((relation) => attributes.relation === relation))
+}
 function rankDiverseAnchors(
   index: ReadyQueryIndex, corpus: RankCorpus,
   scored: readonly ScoredNode[], vocabulary: QueryVocabulary,
@@ -664,14 +662,12 @@ function rankDiverseAnchors(
       if (tokenSetMatches(candidate.node.tokens, term)) coveredTerms.add(term)
     }
   }
-  const connected = (candidate: ScoredNode): number => selected.some(({ node }) =>
-    index.graph.hasEdge(node.id, candidate.node.id)
-    || index.graph.hasEdge(candidate.node.id, node.id)) ? 1 : 0
+  const connected = (candidate: ScoredNode): number => selected.some(({ node }) => hasEvidenceEdge(index, node.id, candidate.node.id)) ? 1 : 0
   const coverage = (candidate: ScoredNode): number => candidate.ranked.matchedTerms
     .filter((term) => tokenSetMatches(candidate.node.tokens, term) && !coveredTerms.has(term))
     .reduce((total, term) => total + rarityWeight(corpus, term), 0)
   const successorContext = (node: RankCorpusNode): number => vocabulary.terms
-    .filter((term) => node.outgoingIds.some((id) => {
+    .filter((term) => tokenSetMatches(node.tokens, term) || node.outgoingIds.some((id) => {
       const target = corpus.nodeById.get(id)
       return !!target && tokenSetMatches(target.tokens, term)
     }))
@@ -682,18 +678,22 @@ function rankDiverseAnchors(
     const seed = route ?? scored[0]
     if (seed) {
       add(seed)
-      const target = seed.node.outgoingIds.map((id) => corpus.nodeById.get(id))
+      const targets = seed.node.outgoingIds.map((id) => corpus.nodeById.get(id))
         .filter((node): node is RankCorpusNode =>
           !!node?.selectable && node.sourceFile !== seed.node.sourceFile)
         .sort((left, right) =>
           successorContext(right) - successorContext(left)
           || right.outgoingDegree - left.outgoingDegree
-          || compareCodeUnits(left.id, right.id))[0]
-      if (target) {
+          || compareCodeUnits(left.id, right.id))
+      const relevantTargets = targets.filter((target) => successorContext(target) > 0)
+      for (const target of relevantTargets.length > 0 ? relevantTargets : targets.slice(0, 1)) {
+        if (selected.length >= MAX_RANKED_ANCHORS
+          || (!selectedFiles.has(target.sourceFile) && selectedFiles.size >= MAX_RETRIEVE_FILES)) break
         add(scored.find(({ node }) => node.id === target.id) ?? {
-          node: target, representativeScore: 0, ranked: {
+          node: target, representativeScore: successorContext(target), ranked: {
             id: target.id, attributes: target.attributes, score: 0,
-            matchedTerms: [], firstMatch: seed.ranked.firstMatch,
+            matchedTerms: vocabulary.terms.filter((term) => tokenSetMatches(target.tokens, term)),
+            firstMatch: seed.ranked.firstMatch,
           },
         })
       }
@@ -707,22 +707,23 @@ function rankDiverseAnchors(
       + coverage(candidate) * FIELD_WEIGHTS.label
       + candidate.node.outgoingDegree * FIELD_WEIGHTS.sourceFile * 64
     eligible.sort((left, right) => {
-      return (vocabulary.constraints.length > 0
+      return coverage(right) - coverage(left)
+        || (vocabulary.constraints.length > 0
         ? priority(right) - priority(left)
         : right.representativeScore - left.representativeScore)
         || connected(right) - connected(left)
         || compareScoredNodes(left, right)
     })
     const next = eligible[0]!
+    if (vocabulary.constraints.length === 0 && coverage(next) === 0 && connected(next) === 0) break
     if (vocabulary.constraints.length > 0 && selected.length > 0
       && !selectedFiles.has(next.node.sourceFile) && coverage(next) === 0) break
     if (next.representativeScore < scoreFloor) break
     add(next)
   }
-
   const rootsOf = (candidates: readonly ScoredNode[]): ScoredNode[] => candidates
     .filter((candidate) => !candidates.some((other) =>
-      other !== candidate && index.graph.hasEdge(other.node.id, candidate.node.id)))
+      other !== candidate && hasEvidenceEdge(index, other.node.id, candidate.node.id)))
   const ordered: ScoredNode[] = []
   const remaining = [...selected]
   while (remaining.length > 0) {
@@ -730,7 +731,7 @@ function rankDiverseAnchors(
     const next = [...(roots.length > 0 ? roots : remaining)].sort((left, right) => {
       const leads = (candidate: ScoredNode): number =>
         remaining.some((other) => other !== candidate
-          && index.graph.hasEdge(candidate.node.id, other.node.id)) ? 1 : 0
+          && hasEvidenceEdge(index, candidate.node.id, other.node.id)) ? 1 : 0
       return entry(right) - entry(left) || left.ranked.firstMatch - right.ranked.firstMatch
         || leads(right) - leads(left)
         || compareScoredNodes(left, right)
@@ -740,7 +741,6 @@ function rankDiverseAnchors(
   }
   return ordered.map(({ ranked }) => ranked)
 }
-
 function uniqueBoundaries(boundaries: readonly EvidenceBoundary[]): EvidenceBoundary[] {
   const byIdentity = new Map(boundaries.map((boundary) => [
     `${boundary.kind}\u0000${boundary.subject}`,

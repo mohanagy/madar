@@ -7,13 +7,11 @@ import type {
 
 interface TraversalState { sourceIndex: number; nodeId: string }
 interface PathPredecessor { nodeId: string; edge: QueryPathEdge }
-
 function normalizedRelationTerms(value: string): string[] {
   const normalized = value.toLowerCase()
   return [normalized, ...normalized.split(/[^a-z0-9]+/u)]
     .filter((term, index, terms) => term.length > 0 && terms.indexOf(term) === index)
 }
-
 function queryMentionsRelation(relation: string, queryTerms: ReadonlySet<string>): boolean {
   const terms = normalizedRelationTerms(relation)
   return queryTerms.has(terms[0]!)
@@ -171,8 +169,10 @@ export function traverseEvidencePaths(
       const coveredByAdjacentPaths = targetIndex > 0
         && anchors.slice(sourceIndex, sourceIndex + targetIndex + 1).every((_, offset) =>
           paths[sourceIndex + offset]!.has(anchors[sourceIndex + offset + 1]!.id))
+      const coveredByCommonPredecessor = sources.slice(0, sourceIndex).some((_, earlier) =>
+        paths[earlier]!.has(search.source.id) && paths[earlier]!.has(target.id))
       if (coveredByAdjacentPaths) continue
-      if (!path && targetIndex === 0) {
+      if (!path && targetIndex === 0 && !coveredByCommonPredecessor) {
         boundaries.push({
           kind: 'disconnected',
           subject: `${search.source.id} -> ${target.id}`,

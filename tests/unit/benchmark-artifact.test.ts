@@ -290,6 +290,31 @@ describe('shared GoValidate benchmark suite README', () => {
   })
 })
 
+describe('demo benchmark contract versions', () => {
+  const legacyPath = resolve('examples', 'demo-repo', 'benchmark-questions.json')
+  const coreResetPath = resolve('examples', 'demo-repo', 'benchmark-questions.v3.json')
+  const legacy = JSON.parse(readFileSync(legacyPath, 'utf8')) as Array<{
+    question: string
+    expected_labels: string[]
+  }>
+  const coreReset = JSON.parse(readFileSync(coreResetPath, 'utf8')) as typeof legacy
+
+  it('preserves historical gold while the Core Reset contract grades the same questions', () => {
+    expect(coreReset.map(({ question }) => question))
+      .toEqual(legacy.map(({ question }) => question))
+    expect(coreReset.map(({ expected_labels }) => expected_labels))
+      .not.toEqual(legacy.map(({ expected_labels }) => expected_labels))
+  })
+
+  it('uses the versioned declaration contract in CI and rejects token claims from the tiny fixture', () => {
+    const workflow = readFileSync(resolve('.github', 'workflows', 'ci.yml'), 'utf8')
+    const readme = readFileSync(resolve('examples', 'demo-repo', 'README.md'), 'utf8')
+    expect(workflow).toContain('--questions examples/demo-repo/benchmark-questions.v3.json')
+    expect(readme).toContain('preserves the historical mixed container/file-label gold')
+    expect(readme).toContain('not evidence that Madar reduces tokens')
+  })
+})
+
 describe('hosted benchmark stylesheet', () => {
   const styles = readFileSync(BENCHMARK_STYLESHEET, 'utf8')
 
