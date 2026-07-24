@@ -14,9 +14,8 @@ Try it locally:
 
 ```bash
 madar generate examples/sample-workspace
-madar pack "how does password reset request enqueue the reset email" \
-  --graph examples/sample-workspace/out/graph.json \
-  --task explain
+madar query "how does password reset request enqueue the reset email" \
+  --graph examples/sample-workspace/out/graph.json
 ```
 
 Prompt examples live in [`prompt-examples.json`](./prompt-examples.json).

@@ -1,136 +1,42 @@
-interface RoutingRow {
-  promptType: string
-  markdownTarget: string
-  plainPromptType?: string
-  plainTarget: string
+interface RoutingCopy {
+  lead: string
+  fallback: string
 }
 
-const MCP_ROUTING_ROWS: RoutingRow[] = [
-  {
-    promptType: '"how does X work" / explain runtime / flow',
-    markdownTarget: '`retrieve`',
-    plainPromptType: '"how does X work?" / explain runtime / flow',
-    plainTarget: 'retrieve',
-  },
-  {
-    promptType: '"what breaks if I change X" / impact analysis',
-    markdownTarget: '`impact`',
-    plainPromptType: '"what breaks if I change X?" / impact analysis',
-    plainTarget: 'impact',
-  },
-  {
-    promptType: '"which files should I open first"',
-    markdownTarget: '`retrieve`',
-    plainPromptType: '"which files should I open first?"',
-    plainTarget: 'retrieve',
-  },
-  {
-    promptType: '"give me a repo overview"',
-    markdownTarget: '`graph_summary`',
-    plainPromptType: '"give me a repo overview?"',
-    plainTarget: 'graph_summary',
-  },
-  {
-    promptType: '"what parts are involved in feature X"',
-    markdownTarget: '`retrieve`',
-    plainTarget: 'retrieve',
-  },
-  {
-    promptType: '"what\'s risky to edit in X"',
-    markdownTarget: '`impact`',
-    plainTarget: 'impact',
-  },
-  {
-    promptType: '"give me a build/edit checklist"',
-    markdownTarget: '`retrieve`',
-    plainTarget: 'retrieve',
-  },
-  {
-    promptType: 'general retrieval / list of nodes',
-    markdownTarget: '`retrieve`',
-    plainTarget: 'retrieve',
-  },
-]
-
-const CODEX_ROUTING_ROWS: RoutingRow[] = [
-  {
-    promptType: '"how does X work" / explain runtime / flow',
-    markdownTarget: '`madar pack "<task or question>" --task explain`',
-    plainPromptType: '"how does X work?" / explain runtime / flow',
-    plainTarget: 'madar pack "<task or question>" --task explain',
-  },
-  {
-    promptType: '"what breaks if I change X" / impact analysis',
-    markdownTarget: '`madar pack "<task or question>" --task impact`',
-    plainPromptType: '"what breaks if I change X?" / impact analysis',
-    plainTarget: 'madar pack "<task or question>" --task impact',
-  },
-  {
-    promptType: '"which files should I open first"',
-    markdownTarget: '`retrieve` when MCP graph tools are available; otherwise `madar pack "<task or question>" --task explain`',
-    plainPromptType: '"which files should I open first?"',
-    plainTarget: 'retrieve when MCP graph tools are available; otherwise madar pack "<task or question>" --task explain',
-  },
-  {
-    promptType: '"give me a repo overview"',
-    markdownTarget: '`graph_summary` when MCP graph tools are available; otherwise `madar pack "<task or question>" --task explain`',
-    plainPromptType: '"give me a repo overview?"',
-    plainTarget: 'graph_summary when MCP graph tools are available; otherwise madar pack "<task or question>" --task explain',
-  },
-]
-
-function renderMarkdownTable(lead: string, rows: RoutingRow[], toolSearchSentence: string): string {
-  const lines = [
-    lead,
-    '',
-    '| Prompt type | First tool |',
-    '| --- | --- |',
-    ...rows.map((row) => `| ${row.promptType} | ${row.markdownTarget} |`),
-    '',
-    'Treat `evidence.answerability.state` as authoritative; `evidence.pack_confidence` is compatibility-only.',
-    'For `verify_targets`, inspect only the listed verification targets. Restart broad search only for `insufficient` with `broad_search_fallback: allowed`.',
-    toolSearchSentence,
-  ]
-  return lines.join('\n')
+const ROUTING_COPY: RoutingCopy = {
+  lead:
+    'For a repository question, call the Madar `retrieve` tool exactly once with the user question unchanged before broad file search.',
+  fallback:
+    'Use authenticated evidence when it is returned; otherwise report the explicit boundary and continue with only focused verification.',
 }
 
-function renderPlainGuide(
-  lead: string,
-  rows: RoutingRow[],
-  toolSearchSentence: string,
-): string {
-  const rules = rows.map((row) => `${row.plainTarget} for ${row.plainPromptType ?? row.promptType}`).join('; ')
-  return `${lead}: ${rules}. Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only. For verify_targets, inspect only the listed verification targets. Restart broad search only for insufficient with broad_search_fallback allowed. ${toolSearchSentence}`
+function plain(value: string): string {
+  return value.replaceAll('`', '')
 }
 
 export function renderMarkdownMcpRoutingTable(): string {
-  return renderMarkdownTable(
-    'For each codebase question, use the specific Madar MCP tool below first:',
-    MCP_ROUTING_ROWS,
-    'Do not run ToolSearch before calling a Madar tool — the tool names above are stable. Pick the one that matches and call it directly.',
-  )
+  return `${ROUTING_COPY.lead}
+
+| Prompt type | First tool |
+| --- | --- |
+| Any JavaScript or TypeScript repository question | \`retrieve\` |
+
+${ROUTING_COPY.fallback}`
 }
 
 export function renderPlainMcpRoutingGuide(): string {
-  return renderPlainGuide(
-    'For each codebase question, call the matching Madar MCP tool directly first',
-    MCP_ROUTING_ROWS,
-    'Do not run ToolSearch before calling a Madar tool — the tool names above are stable. Pick the one that matches and call it directly.',
-  )
+  return `${plain(ROUTING_COPY.lead)} ${ROUTING_COPY.fallback}`
 }
 
 export function renderMarkdownCodexRoutingTable(): string {
-  return renderMarkdownTable(
-    'For each codebase question, start with the specific Madar command below first:',
-    CODEX_ROUTING_ROWS,
-    'Do not run ToolSearch before calling a Madar command or graph tool — pick the matching command first, then refine with MCP graph tools only when they are available and still needed.',
-  )
+  return `${ROUTING_COPY.lead.replace(
+    'call the Madar `retrieve` tool',
+    'call the Madar `retrieve` MCP tool, or run `madar query "<question>"` when MCP is unavailable,',
+  )}
+
+${ROUTING_COPY.fallback}`
 }
 
 export function renderPlainCodexRoutingGuide(): string {
-  return renderPlainGuide(
-    'For each codebase question, start with the specific Madar command below first',
-    CODEX_ROUTING_ROWS,
-    'Do not run ToolSearch before calling a Madar command or graph tool — pick the matching command first, then refine with MCP graph tools only when they are available and still needed.',
-  )
+  return plain(renderMarkdownCodexRoutingTable())
 }

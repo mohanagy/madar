@@ -1,7 +1,5 @@
-import { QUERY_TOKEN_ESTIMATOR, loadGraph } from '../runtime/serve.js'
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
-import type { ContextSessionState } from '../contracts/context-session.js'
-import { graphStructureMetrics, type GraphStructureMetrics } from '../pipeline/analyze.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './benchmark/corpus.js'
 import {
   runBenchmarkPrompt,
@@ -10,7 +8,6 @@ import {
 } from './benchmark/runner.js'
 import {
   evaluateBenchmarkQuestion,
-  querySubgraphTokens,
   type BenchmarkMissingExpectedLabels,
   type BenchmarkQuestionInput,
   type BenchmarkQuestionResult,
@@ -19,12 +16,13 @@ import {
   averageInputTokenLabel,
   averageReportedTotalTokens,
   promptTokenSourceSuffix,
+  QUERY_TOKEN_ESTIMATOR,
   usageCaptureSummary,
   usageProviderLabel,
 } from './benchmark/usage.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 
-export { loadBenchmarkQuestions, querySubgraphTokens, type BenchmarkQuestionInput } from './benchmark/questions.js'
+export { loadBenchmarkQuestions, queryEvidenceTokens, type BenchmarkQuestionInput } from './benchmark/questions.js'
 
 export const SAMPLE_QUESTIONS = [
   'how does authentication work',
@@ -40,7 +38,6 @@ export interface BenchmarkSuccessResult {
   corpus_source: CorpusBaselineSource
   nodes: number
   edges: number
-  structure_signals: GraphStructureMetrics | null
   question_count: number
   matched_question_count: number
   unmatched_questions: string[]
@@ -55,7 +52,7 @@ export interface BenchmarkSuccessResult {
   effective_reduction_ratio?: number
   provider_proof?: {
     input_tokens_basis: 'provider_reported' | 'mixed' | 'estimated'
-    effective_tokens_basis: 'provider_cache_read_tokens' | 'provider_input_minus_zero_cache' | 'mixed' | 'session_reuse_estimate'
+    effective_tokens_basis: 'provider_cache_read_tokens' | 'provider_input_minus_zero_cache' | 'mixed' | 'local_estimate'
     total_tokens_basis: 'provider_reported' | 'mixed' | 'not_available'
     usage_runs: number
     total_runs: number
@@ -79,11 +76,7 @@ export interface BenchmarkRunOptions {
 }
 
 function loadBenchmarkGraph(graphPath: string): KnowledgeGraph {
-  return loadGraph(graphPath)
-}
-
-function hasStructureSignalProvenance(graph: KnowledgeGraph): boolean {
-  return graph.nodeEntries().every(([, attributes]) => String(attributes.source_file ?? '').length > 0)
+  return loadGraphArtifact(graphPath)
 }
 
 function averageQueryTokens(perQuestion: readonly BenchmarkQuestionResult[]): number {
@@ -102,7 +95,6 @@ function averageReusedContextTokens(perQuestion: readonly BenchmarkQuestionResul
 
 function finalizeBenchmarkResult(
   graph: KnowledgeGraph,
-  structureSignals: GraphStructureMetrics | null,
   baseline: ReturnType<typeof resolveCorpusBaseline>,
   benchmarkQuestions: readonly BenchmarkQuestionInput[],
   unmatchedQuestions: string[],
@@ -122,7 +114,6 @@ function finalizeBenchmarkResult(
     corpus_source: baseline.source,
     nodes: graph.numberOfNodes(),
     edges: graph.numberOfEdges(),
-    structure_signals: structureSignals,
     question_count: benchmarkQuestions.length,
     matched_question_count: perQuestion.length,
     unmatched_questions: unmatchedQuestions,
@@ -144,7 +135,7 @@ function finalizeBenchmarkResult(
             : 'mixed',
       effective_tokens_basis:
         usageRuns === 0
-          ? 'session_reuse_estimate'
+          ? 'local_estimate'
           : usageRuns === perQuestion.length && cacheReportedRuns === perQuestion.length
             ? 'provider_cache_read_tokens'
             : usageRuns === perQuestion.length && cacheReportedRuns === 0
@@ -177,7 +168,7 @@ function benchmarkProviderProofSummary(result: BenchmarkSuccessResult): string {
           : 'mixed',
     effective_tokens_basis:
       usageRuns === 0
-        ? 'session_reuse_estimate'
+        ? 'local_estimate'
         : usageRuns === result.per_question.length && cacheReportedRuns === result.per_question.length
           ? 'provider_cache_read_tokens'
           : usageRuns === result.per_question.length && cacheReportedRuns === 0
@@ -201,7 +192,7 @@ function benchmarkProviderProofSummary(result: BenchmarkSuccessResult): string {
       : 'Provider'
 
   if (proof.input_tokens_basis === 'estimated') {
-    return `local ${QUERY_TOKEN_ESTIMATOR.model} estimate + session reuse accounting`
+    return `local ${QUERY_TOKEN_ESTIMATOR.model} estimate of the serialized evidence result`
   }
 
   if (
@@ -236,7 +227,6 @@ async function runRunnerBackedBenchmark(
   }
 
   const perQuestion: BenchmarkQuestionResult[] = []
-  let sessionState: ContextSessionState | undefined
   for (const evaluation of evaluations) {
     const run = await runBenchmarkPrompt({
       graphPath,
@@ -246,16 +236,13 @@ async function runRunnerBackedBenchmark(
       ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
       ...(options.now !== undefined ? { now: options.now } : {}),
       ...(options.retrievalBudget !== undefined ? { retrievalBudget: options.retrievalBudget } : {}),
-      ...(sessionState ? { session: sessionState } : {}),
       ...(options.runner !== undefined ? { runner: options.runner } : {}),
     })
-    sessionState = run.session_state
     perQuestion.push({
       ...evaluation,
       query_tokens: run.query_tokens,
       effective_query_tokens: run.effective_query_tokens,
       reused_context_tokens: run.reused_context_tokens,
-      session_diagnostics: run.session_diagnostics,
       total_tokens: run.total_tokens,
       prompt_tokens_estimated: run.prompt_tokens_estimated,
       prompt_token_source: run.prompt_token_source,
@@ -285,7 +272,6 @@ export function runBenchmark(
 ): BenchmarkResult | Promise<BenchmarkResult> {
   const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
   const graph = loadBenchmarkGraph(resolvedGraphPath)
-  const structureSignals = hasStructureSignalProvenance(graph) ? graphStructureMetrics(graph) : null
   const baseline = resolveCorpusBaseline(graph.numberOfNodes(), { graphPath: resolvedGraphPath, corpusWords })
   const benchmarkQuestions = questions ?? SAMPLE_QUESTIONS
   const usesSampleQuestions = questions === undefined
@@ -303,7 +289,13 @@ export function runBenchmark(
   let expectedLabelCount = 0
   let matchedExpectedLabelCount = 0
   for (const question of benchmarkQuestions) {
-    const evaluation = evaluateBenchmarkQuestion(graph, question, baseline.tokens)
+    const evaluation = evaluateBenchmarkQuestion(
+      graph,
+      resolvedGraphPath,
+      question,
+      baseline.tokens,
+      options.retrievalBudget,
+    )
     expectedLabelCount += evaluation.expected_label_count
     matchedExpectedLabelCount += evaluation.matched_expected_label_count
     if (evaluation.missing_expected_labels) {
@@ -327,7 +319,6 @@ export function runBenchmark(
   if (!options.execTemplate) {
     return finalizeBenchmarkResult(
       graph,
-      structureSignals,
       baseline,
       benchmarkQuestions,
       unmatchedQuestions,
@@ -342,7 +333,6 @@ export function runBenchmark(
     .then((perQuestion) =>
       finalizeBenchmarkResult(
         graph,
-        structureSignals,
         baseline,
         benchmarkQuestions,
         unmatchedQuestions,
@@ -377,25 +367,6 @@ export function printBenchmark(result: BenchmarkResult): void {
     for (const missing of result.missing_expected_labels) {
       console.log(`    Missing evidence for ${missing.question}: ${missing.labels.join(', ')}`)
     }
-  }
-  if (result.structure_signals) {
-    console.log('  Structure signals:')
-    console.log(
-      `    entity basis: ${result.structure_signals.total_nodes.toLocaleString()} nodes, ${result.structure_signals.total_edges.toLocaleString()} edges`,
-    )
-    console.log(
-      `    components: ${result.structure_signals.weakly_connected_components.toLocaleString()} weakly connected, ${result.structure_signals.singleton_components.toLocaleString()} singleton, ${result.structure_signals.isolated_nodes.toLocaleString()} isolated`,
-    )
-    console.log(
-      `    largest component: ${result.structure_signals.largest_component_nodes.toLocaleString()} nodes (${Math.round(result.structure_signals.largest_component_ratio * 100)}% of entity graph)`,
-    )
-    console.log(
-      result.structure_signals.low_cohesion_communities > 0
-        ? `    low cohesion: ${result.structure_signals.low_cohesion_communities.toLocaleString()} communities, largest ${result.structure_signals.largest_low_cohesion_community_nodes.toLocaleString()} nodes (cohesion ${result.structure_signals.largest_low_cohesion_community_score})`
-        : '    low cohesion: 0 communities, none on the entity basis',
-    )
-  } else {
-    console.log('  Structure signals: unavailable for graph artifacts without source_file provenance')
   }
   console.log(`  ${averageInputTokenLabel(result.per_question)}: ~${result.avg_query_tokens.toLocaleString()}`)
   if (

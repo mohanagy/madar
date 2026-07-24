@@ -4,42 +4,33 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('telemetry documentation', () => {
-  it('documents the opt-in controls in the README', () => {
+  it('keeps telemetry opt-in and source-safe without retired product telemetry', () => {
     const readme = readFileSync(resolve('README.md'), 'utf8')
-
-    expect(readme).toContain('docs/telemetry.md')
-    expect(readme).toContain('Telemetry is disabled unless you explicitly enable it')
-  })
-
-  it('documents collected and excluded telemetry fields explicitly', () => {
     const doc = readFileSync(resolve('docs/telemetry.md'), 'utf8')
 
-    expect(doc).toContain('command')
-    expect(doc).toContain('stage')
-    expect(doc).toContain('version')
-    expect(doc).toContain('os')
-    expect(doc).toContain('node_major')
-    expect(doc).toContain('graph_size_bucket')
-    expect(doc).toContain('repo_size_bucket')
-    expect(doc).not.toContain('spi_enabled')
-    expect(doc).not.toContain('extraction_mode')
-    expect(doc).not.toContain('--spi')
-    expect(doc).toContain('failure_bucket')
-    expect(doc).toContain('status_bucket')
-    expect(doc).toContain('initial_answerability_bucket')
-    expect(doc).toContain('final_answerability_bucket')
-    expect(doc).toContain('recovery_attempts_bucket')
-    expect(doc).toContain('recovery_improvement_bucket')
-    expect(doc).toContain('broad_search_fallback_bucket')
+    expect(readme).toContain('Telemetry is disabled unless you explicitly enable it')
+    for (const field of [
+      'command',
+      'stage',
+      'version',
+      'os',
+      'node_major',
+      'graph_size_bucket',
+      'repo_size_bucket',
+      'failure_bucket',
+      'status_bucket',
+    ]) {
+      expect(doc).toContain(field)
+    }
     expect(doc).toContain('madar telemetry clear')
     expect(doc).toContain('madar telemetry report')
-    expect(doc).toContain('`madar compare` (`succeeded`, `failed`)')
-    expect(doc).toContain('`madar doctor` and `madar status` (`succeeded`, `failed`, plus `status_bucket`)')
-    expect(doc).toContain('prompt text')
+    expect(doc).toContain('question or prompt text')
     expect(doc).toContain('answer text')
     expect(doc).toContain('source paths')
     expect(doc).toContain('source content')
     expect(doc).toContain('DO_NOT_TRACK=1')
     expect(doc).toContain('MADAR_DISABLE_TELEMETRY=1')
+    expect(doc).not.toContain('context_pack')
+    expect(doc).not.toContain('answerability_bucket')
   })
 })

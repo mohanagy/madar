@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs'
 
 import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
-import type { ContextSessionDiagnostics } from '../../contracts/context-session.js'
-import { bfs, estimateQueryTokens, queryGraph, scoreNodes } from '../../runtime/serve.js'
 
 import { type PromptRunnerUsage } from '../prompt-runner.js'
-import { type BenchmarkPromptArtifacts, type BenchmarkPromptTokenSource } from './runner.js'
+import {
+  type BenchmarkPromptArtifacts,
+  type BenchmarkPromptTokenSource,
+} from './runner.js'
+import { retrieveBenchmarkContext } from './runtime-proof.js'
 
 export interface BenchmarkQuestionResult {
   id?: string
@@ -14,7 +16,6 @@ export interface BenchmarkQuestionResult {
   query_tokens: number
   effective_query_tokens?: number
   reused_context_tokens?: number
-  session_diagnostics?: ContextSessionDiagnostics
   reduction: number
   expected_labels: string[]
   matched_expected_labels: string[]
@@ -108,39 +109,39 @@ export function loadBenchmarkQuestions(questionsPath: string): BenchmarkQuestion
   })
 }
 
-function querySubgraphMatch(graph: KnowledgeGraph, question: string, depth = 2): { queryTokens: number; labels: Set<string> } | null {
-  const terms = question
-    .split(/\s+/)
-    .map((term) => term.toLowerCase())
-    .filter((term) => term.length > 2)
-  const startNodes = scoreNodes(graph, terms).slice(0, 5).map(([, nodeId]) => nodeId)
-  if (startNodes.length === 0) {
-    return null
+function queryEvidenceMatch(
+  graph: KnowledgeGraph,
+  graphPath: string,
+  question: string,
+  budget = 4_000,
+): { queryTokens: number; labels: Set<string> } | null {
+  const result = retrieveBenchmarkContext(graph, graphPath, question, budget)
+  if (result.outcome !== 'evidence' || result.matched_nodes.length === 0) return null
+  return {
+    queryTokens: result.metrics.serialized_tokens,
+    labels: new Set(result.matched_nodes.map((node) => normalizeExpectedLabel(node.label))),
   }
-
-  const output = queryGraph(graph, question, { depth })
-  if (output.startsWith('No matching nodes found')) {
-    return null
-  }
-
-  const traversal = bfs(graph, startNodes, depth, undefined, 'incident')
-  const labels = new Set(
-    [...traversal.visited]
-      .filter((nodeId) => graph.hasNode(nodeId))
-      .map((nodeId) => normalizeExpectedLabel(String(graph.nodeAttributes(nodeId).label ?? nodeId))),
-  )
-
-  return { queryTokens: estimateQueryTokens(output), labels }
 }
 
-export function querySubgraphTokens(graph: KnowledgeGraph, question: string, depth = 2): number {
-  return querySubgraphMatch(graph, question, depth)?.queryTokens ?? 0
+export function queryEvidenceTokens(
+  graph: KnowledgeGraph,
+  graphPath: string,
+  question: string,
+  budget = 4_000,
+): number {
+  return queryEvidenceMatch(graph, graphPath, question, budget)?.queryTokens ?? 0
 }
 
-export function evaluateBenchmarkQuestion(graph: KnowledgeGraph, question: BenchmarkQuestionInput, corpusTokens: number, depth = 2): BenchmarkQuestionEvaluation {
+export function evaluateBenchmarkQuestion(
+  graph: KnowledgeGraph,
+  graphPath: string,
+  question: BenchmarkQuestionInput,
+  corpusTokens: number,
+  budget = 4_000,
+): BenchmarkQuestionEvaluation {
   const questionSpec = normalizeBenchmarkQuestion(question)
   const expectedLabels = questionSpec.expected_labels ?? []
-  const match = querySubgraphMatch(graph, questionSpec.question, depth)
+  const match = queryEvidenceMatch(graph, graphPath, questionSpec.question, budget)
   if (!match) {
     return {
       question: questionSpec.question,

@@ -2,7 +2,7 @@
     "name": "@lubab/madar",
     "version": "0.32.0",
     "mcpName": "io.github.mohanagy/madar",
-    "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
+    "description": "Give AI coding agents a small, authenticated evidence path through large TypeScript and JavaScript repositories.",
     "license": "MIT",
     "author": "mohanagy",
     "bin": {
@@ -25,17 +25,15 @@
         "code-intelligence",
         "codebase",
         "codex",
-        "context",
-        "code-review",
+        "evidence",
+        "retrieval",
         "coding-agents",
         "copilot",
         "cursor",
-        "impact-analysis",
         "graphrag",
         "knowledge-graph",
         "mcp",
         "nodejs",
-        "pr-review",
         "static-analysis",
         "typescript"
     ],
@@ -82,13 +80,5 @@
         "gpt-tokenizer": "^3.4.0",
         "neo4j-driver": "^6.0.1",
         "typescript": "^6.0.3"
-    },
-    "peerDependencies": {
-        "@huggingface/transformers": "^4.2.0"
-    },
-    "peerDependenciesMeta": {
-        "@huggingface/transformers": {
-            "optional": true
-        }
     }
 }

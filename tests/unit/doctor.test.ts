@@ -1,645 +1,111 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-
-import { describe, expect, test } from 'vitest'
-
-import { agentsInstall, claudeInstall, isMadarCodexMcpConfig, resolveCodexMcpConfigPath } from '../../src/infrastructure/install.js'
-import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
+import { describe, expect, it } from 'vitest'
 import { generateIndex } from '../../src/application/generate-index.js'
+import { buildDoctorReport, runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
 
-const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
-
-function withSandbox(run: (sandboxDir: string) => void): void {
-  const sandboxDir = mkdtempSync(join(tmpdir(), 'madar-doctor-'))
+function inWorkspace(run: (workspace: string) => void): void {
+  const workspace = mkdtempSync(join(tmpdir(), 'madar-doctor-'))
   try {
-    run(sandboxDir)
+    run(workspace)
   } finally {
-    rmSync(sandboxDir, { recursive: true, force: true })
+    rmSync(workspace, { recursive: true, force: true })
   }
-}
-
-function withOpenCodePackageRoot(run: (packageRoot: string) => void): void {
-  withSandbox((packageRoot) => {
-    writeJson(resolve(packageRoot, 'package.json'), {
-      name: 'madar-test',
-      bin: {
-        madar: PACKAGE_CLI_RELATIVE_PATH,
-      },
-    })
-    writeText(resolve(packageRoot, PACKAGE_CLI_RELATIVE_PATH), '#!/usr/bin/env node\n')
-    run(packageRoot)
-  })
 }
 
 function writeJson(path: string, value: unknown): void {
-  mkdirSync(dirname(path), { recursive: true })
+  mkdirSync(join(path, '..'), { recursive: true })
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
-function writeText(path: string, content: string): void {
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, content, 'utf8')
-}
-
-function writeGraph(path: string): ReturnType<typeof generateIndex> {
-  const rootPath = resolve(dirname(path), '..')
-  const sourcePath = resolve(rootPath, 'main.ts')
-  if (!existsSync(sourcePath)) {
-    writeText(sourcePath, 'export const value = 1\n')
-  }
-  return generateIndex(rootPath)
-}
-
-function managedCodexMcpBlockForWorkspace(content: string, projectDir: string): { serverName: string; start: number; end: number } {
-  const expectedCwd = `cwd = ${JSON.stringify(resolve(projectDir))}`
-  const matcher = /^# >>> madar managed mcp: (madar_[a-f0-9]{12}) >>>$/gm
-
-  for (const match of content.matchAll(matcher)) {
-    const serverName = match[1]
-    const start = match.index
-    if (!serverName || start === undefined) {
-      continue
-    }
-
-    const endMarker = `# <<< madar managed mcp: ${serverName} <<<`
-    const endMarkerIndex = content.indexOf(endMarker, start)
-    if (endMarkerIndex === -1) {
-      continue
-    }
-    const end = endMarkerIndex + endMarker.length
-    if (content.slice(start, end).includes(expectedCwd)) {
-      return { serverName, start, end }
-    }
-  }
-
-  throw new Error(`Missing managed Codex MCP block for ${projectDir}`)
-}
-
-function writeMcpServer(path: string, serversKey: 'mcpServers' | 'servers', graphPath?: string): void {
-  writeJson(path, {
-    [serversKey]: {
-      madar: {
-        command: 'npx',
-        args: graphPath
-          ? ['--yes', '@lubab/madar', 'serve', '--stdio', graphPath]
-          : ['--yes', '@lubab/madar', 'serve', '--stdio', '--auto-refresh'],
-      },
-    },
-  })
-}
-
 describe('doctor command', () => {
-  test('shows an accepted build and generation-policy mismatch when corpus controls change', () => {
-    withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'main.ts'), 'export const value = 1\n')
-      const generated = generateIndex(sandboxDir)
-      writeText(resolve(sandboxDir, '.madarignore'), 'new-exclusion/**\n')
+  it('reports a missing graph without requiring optional agents', () => {
+    inWorkspace((workspace) => {
+      const report = buildDoctorReport({ projectDir: workspace })
+      const output = runDoctorCommand({ projectDir: workspace })
 
-      const doctor = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
-      const status = runStatusCommand({ projectDir: sandboxDir, now: Date.now() })
-
-      expect(doctor).toContain('generation policy: mismatch')
-      expect(doctor).toContain(`authoritative index: accepted (build ${generated.buildId})`)
-      expect(doctor).toContain(`derived diagnostics: current (build ${generated.buildId})`)
-      expect(status).toContain('generation-policy mismatch')
-      expect(status).toContain(`build accepted (${generated.buildId})`)
-      expect(status).toContain('madar generate . --update')
-    })
-  })
-
-  test('shows authoritative completeness, informational unsupported paths, and canonical diagnostics', () => {
-    withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'src', 'index.ts'), "import { missing } from './missing.js'\nexport const value = missing\n")
-      writeText(resolve(sandboxDir, 'src', 'legacy.vue'), '<template />\n')
-      const generated = generateIndex(sandboxDir)
-
-      const doctor = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
-      const status = runStatusCommand({ projectDir: sandboxDir, now: Date.now() })
-
-      expect(doctor).toContain(`authoritative index: accepted (build ${generated.buildId})`)
-      expect(doctor).toContain('indexing completeness: complete (1 indexed, 0 warnings, 0 policy skips, 1 unsupported, 0 failed)')
-      expect(doctor).toContain('"src/legacy.vue" (unsupported; unsupported_file_type; no capability)')
-      expect(doctor).toContain('Index diagnostics: 1')
-      expect(status).toContain('indexing complete (indexed=1, warnings=0, skipped=0, unsupported=1, failed=0)')
-      expect(status).toContain('"src/legacy.vue"[unsupported_file_type]')
-    })
-  })
-
-  test('shows local safety exclusion counts, reasons, and escaped paths in doctor and status', () => {
-    withSandbox((sandboxDir) => {
-      writeText(resolve(sandboxDir, 'main.ts'), 'export const value = 1\n')
-      writeText(resolve(sandboxDir, 'config', 'credentials.json'), '{"token":"secret"}\n')
-      generateIndex(sandboxDir)
-
-      const doctor = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
-      const status = runStatusCommand({ projectDir: sandboxDir, now: Date.now() })
-
-      expect(doctor).toContain('safety exclusions: 1 (1 sensitive, 0 unreadable)')
-      expect(doctor).toContain('"config/credentials.json" (secret_config)')
-      expect(status).toContain('safety 1 (sensitive=1, unreadable=0)')
-      expect(status).toContain('"config/credentials.json"[secret_config]')
-    })
-  })
-
-  test('reports missing graph and suggests setup commands', () => {
-    withSandbox((sandboxDir) => {
-      const output = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(output).toContain('[madar doctor] attention needed')
-      expect(output).toContain('graph: missing')
+      expect(report.graph).toEqual(expect.objectContaining({
+        exists: false,
+        indexState: 'missing',
+        buildState: null,
+      }))
+      expect(report.healthy).toBe(false)
+      expect(output).toContain('query index: missing')
       expect(output).toContain('madar generate .')
-      expect(output).toContain('madar claude install')
-      expect(output).toContain('madar cursor install')
-      expect(output).toContain('madar gemini install')
-      expect(output).toContain('madar copilot install')
+      expect(output).not.toContain('madar claude install')
     })
   })
 
-  test('reports healthy status from an accepted graph even when derived diagnostics mismatch', () => {
-    withSandbox((sandboxDir) => {
-      const graphPath = resolve(sandboxDir, 'out', 'graph.json')
-      writeText(resolve(sandboxDir, 'src', 'index.ts'), 'export const value = 1\n')
-      writeText(resolve(sandboxDir, 'src', 'template.vue'), '<template />\n')
-      const generated = generateIndex(sandboxDir)
-      const diagnostics = JSON.parse(readFileSync(generated.indexingManifestPath, 'utf8')) as { build_id: string }
-      diagnostics.build_id = '0'.repeat(64)
-      writeJson(generated.indexingManifestPath, diagnostics)
-      writeText(resolve(sandboxDir, 'GEMINI.md'), '## madar\n')
-      writeText(resolve(sandboxDir, '.cursor', 'rules', 'madar.mdc'), 'rule')
-      writeJson(resolve(sandboxDir, '.gemini', 'settings.json'), {
+  it('reports authenticated canonical index and build-state readiness', () => {
+    inWorkspace((workspace) => {
+      writeFileSync(join(workspace, 'main.ts'), 'export const canonicalValue = 1\n')
+      const generated = generateIndex(workspace)
+      const report = buildDoctorReport({ projectDir: workspace })
+      const doctor = runDoctorCommand({ projectDir: workspace })
+      const status = runStatusCommand({ projectDir: workspace })
+
+      expect(report.graph.indexState).toBe('ready')
+      expect(report.graph.buildState?.build_id).toBe(generated.buildId)
+      expect(report.healthy).toBe(true)
+      expect(doctor).toContain('query index: ready')
+      expect(doctor).toContain(`build: authenticated (${generated.buildId})`)
+      expect(status).toContain('index ready')
+      expect(status).toContain(`build ${generated.buildId}`)
+      expect(status).not.toContain('freshness')
+      expect(status).not.toContain('semantic')
+    })
+  })
+
+  it('reports corrupt graph bytes as an explicit index boundary', () => {
+    inWorkspace((workspace) => {
+      writeFileSync(join(workspace, 'main.ts'), 'export const value = 1\n')
+      const generated = generateIndex(workspace)
+      writeFileSync(generated.graphPath, '{"invalid":true}\n')
+      const report = buildDoctorReport({ projectDir: workspace })
+
+      expect(report.graph.indexState).toBe('corrupt')
+      expect(report.graph.buildState).toBeNull()
+      expect(report.healthy).toBe(false)
+    })
+  })
+
+  it('reports retired hooks and MCP profile settings as stale installation state', () => {
+    inWorkspace((workspace) => {
+      writeFileSync(join(workspace, 'main.ts'), 'export const canonicalValue = 1\n')
+      generateIndex(workspace)
+      writeFileSync(join(workspace, 'CLAUDE.md'), '## madar\nretrieve\n')
+      writeJson(join(workspace, '.claude', 'settings.json'), {
         hooks: {
-          BeforeTool: [{ matcher: 'read_file', hooks: [{ type: 'command', command: 'out' }] }],
+          PreToolUse: [{
+            name: 'madar',
+            source: 'madar',
+            matcher: 'Glob|Grep|Bash|Agent|Read',
+            hooks: [{ type: 'command', command: 'old-profile-hook' }],
+          }],
         },
+      })
+      writeJson(join(workspace, '.mcp.json'), {
         mcpServers: {
           madar: {
             command: 'madar',
             args: ['serve', '--stdio', '--auto-refresh'],
-            env: { MADAR_TOOL_PROFILE: 'core' },
-          },
-        },
-      })
-      writeMcpServer(resolve(sandboxDir, '.cursor', 'mcp.json'), 'mcpServers')
-      writeMcpServer(resolve(sandboxDir, '.vscode', 'mcp.json'), 'servers')
-      claudeInstall(sandboxDir)
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-      const status = runStatusCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('[madar doctor] healthy')
-      expect(doctor).toContain(`authoritative index: accepted (build ${generated.buildId})`)
-      expect(doctor).toContain('derived diagnostics: unavailable or mismatched (optional; accepted graph remains authoritative)')
-      expect(doctor).toContain('indexing completeness: complete (1 indexed, 0 warnings, 0 policy skips, 1 unsupported, 0 failed)')
-      expect(doctor).toContain('claude: configured')
-      expect(doctor).toContain('cursor: configured')
-      expect(doctor).toContain('gemini: configured')
-      expect(doctor).toContain('copilot: configured')
-      expect(doctor).toContain('next commands: none')
-
-      expect(status).toContain('[madar status] healthy')
-      expect(status).toContain('diagnostics unavailable-or-mismatched (optional)')
-      expect(status).toContain('next none')
-    })
-  })
-
-  test('recognizes the current Claude UserPromptSubmit hook as configured', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      claudeInstall(sandboxDir)
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('claude: configured')
-      expect(doctor).toContain('rules=yes, hook=yes, mcp=ok')
-    })
-  })
-
-  test('recognizes an exact legacy Claude prompt hook script during upgrade', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      claudeInstall(sandboxDir)
-      const scriptPath = resolve(sandboxDir, '.claude', 'madar-user-prompt-submit.cjs')
-      writeText(
-        scriptPath,
-        readFileSync(scriptPath, 'utf8').replace('// madar managed Claude UserPromptSubmit hook\n', ''),
-      )
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('claude: configured')
-      expect(doctor).toContain('rules=yes, hook=yes, mcp=ok')
-    })
-  })
-
-  test('reports Claude as partial when its managed prompt hook script is missing', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      claudeInstall(sandboxDir)
-      rmSync(resolve(sandboxDir, '.claude', 'madar-user-prompt-submit.cjs'), { force: true })
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('claude: partial')
-      expect(doctor).toContain('rules=yes, hook=no, mcp=ok')
-    })
-  })
-
-  test('reports Claude as partial when its managed prompt hook script is corrupted', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      claudeInstall(sandboxDir)
-      writeText(resolve(sandboxDir, '.claude', 'madar-user-prompt-submit.cjs'), 'console.log("corrupted")\n')
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('claude: partial')
-      expect(doctor).toContain('rules=yes, hook=no, mcp=ok')
-    })
-  })
-
-  test('reports Claude as partial when its managed hook identity has the wrong command', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      claudeInstall(sandboxDir)
-      writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
-        hooks: {
-          UserPromptSubmit: [{
-            name: 'madar',
-            source: 'madar',
-            hooks: [{ type: 'command', command: 'node .claude/not-madar.cjs' }],
-          }],
-        },
-      })
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('claude: partial')
-      expect(doctor).toContain('rules=yes, hook=no, mcp=ok')
-    })
-  })
-
-  test('does not treat an arbitrary PreToolUse out reference as a Madar Claude hook', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
-      writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
-        hooks: {
-          PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'echo out' }] }],
-        },
-      })
-      writeMcpServer(resolve(sandboxDir, '.mcp.json'), 'mcpServers')
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('claude: partial')
-      expect(doctor).toContain('rules=yes, hook=no, mcp=ok')
-    })
-  })
-
-  test('flags stale mcp path and recommends reinstall', () => {
-    withSandbox((sandboxDir) => {
-      const graphPath = resolve(sandboxDir, 'out', 'graph.json')
-      const wrongGraphPath = resolve(sandboxDir, 'out', 'old-graph.json')
-      writeGraph(graphPath)
-      writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
-      writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
-        hooks: {
-          PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'out' }] }],
-        },
-      })
-      writeMcpServer(resolve(sandboxDir, '.mcp.json'), 'mcpServers', wrongGraphPath)
-
-      const output = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(output).toContain('claude: partial')
-      expect(output).toContain('.mcp.json')
-      expect(output).toContain('stale')
-      expect(output).toContain('madar claude install')
-    })
-  })
-
-  test('does not treat unrelated checkout hooks as configured', () => {
-    withSandbox((sandboxDir) => {
-      const graphPath = resolve(sandboxDir, 'out', 'graph.json')
-      writeGraph(graphPath)
-      writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
-      writeText(resolve(sandboxDir, 'GEMINI.md'), '## madar\n')
-      writeJson(resolve(sandboxDir, '.claude', 'settings.json'), {
-        hooks: {
-          PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'echo checkout complete' }] }],
-        },
-      })
-      writeJson(resolve(sandboxDir, '.gemini', 'settings.json'), {
-        hooks: {
-          BeforeTool: [{ matcher: 'read_file', hooks: [{ type: 'command', command: 'echo linked checkout ready' }] }],
-        },
-      })
-
-      const output = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(output).toContain('claude: partial')
-      expect(output).toContain('gemini: partial')
-      expect(output).toContain('madar claude install')
-      expect(output).toContain('madar gemini install')
-    })
-  })
-
-  test('reports codex as configured when AGENTS.md, the managed prompt hook, and MCP config are wired', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      agentsInstall(sandboxDir, 'codex')
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-      const status = runStatusCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('codex: configured')
-      expect(doctor).toContain('instructions=yes')
-      expect(doctor).toContain('hook=yes')
-      expect(doctor).toContain('mcp=yes')
-      expect(status).toContain('codex:configured')
-    })
-  })
-
-  test('flags the pre-#550 Codex core marker until reinstall migrates it to strict', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      agentsInstall(sandboxDir, 'codex')
-      const configPath = resolveCodexMcpConfigPath()
-      const config = readFileSync(configPath, 'utf8')
-      const managedBlock = managedCodexMcpBlockForWorkspace(config, sandboxDir)
-      writeText(
-        configPath,
-        `${config.slice(0, managedBlock.start)}${config.slice(managedBlock.start, managedBlock.end).replace('MADAR_TOOL_PROFILE = "strict"', 'MADAR_TOOL_PROFILE = "core"')}${config.slice(managedBlock.end)}`,
-      )
-      expect(isMadarCodexMcpConfig(readFileSync(configPath, 'utf8'), sandboxDir)).toBe(false)
-
-      const doctor = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
-
-      expect(doctor).toContain('codex: partial')
-      expect(doctor).toContain('mcp=no')
-      expect(doctor).toContain('madar codex install')
-    })
-  })
-
-  test('reports an incomplete Codex profile as partial and recommends reinstall', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      agentsInstall(sandboxDir, 'codex')
-      rmSync(resolve(sandboxDir, '.codex', 'madar-user-prompt-submit.cjs'), { force: true })
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-      const status = runStatusCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('codex: partial')
-      expect(doctor).toContain('instructions=yes')
-      expect(doctor).toContain('hook=no')
-      expect(doctor).toContain('mcp=yes')
-      expect(doctor).toContain('madar codex install')
-      expect(status).toContain('codex:partial')
-    })
-  })
-
-  test('reports a marker-prefixed but stale Codex prompt script as partial', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      agentsInstall(sandboxDir, 'codex')
-      writeText(
-        resolve(sandboxDir, '.codex', 'madar-user-prompt-submit.cjs'),
-        '// madar managed Codex UserPromptSubmit hook\nconsole.log("stale")\n',
-      )
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('codex: partial')
-      expect(doctor).toContain('instructions=yes')
-      expect(doctor).toContain('hook=no')
-      expect(doctor).toContain('mcp=yes')
-      expect(doctor).toContain('madar codex install')
-    })
-  })
-
-  test('reports a managed Codex MCP block with a later user conflict as partial', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      agentsInstall(sandboxDir, 'codex')
-      const configPath = resolveCodexMcpConfigPath()
-      const config = readFileSync(configPath, 'utf8')
-      const { serverName } = managedCodexMcpBlockForWorkspace(config, sandboxDir)
-      writeText(
-        configPath,
-        `${config}\n[mcp_servers.${serverName}]\ncommand = "custom-madar"\n`,
-      )
-      expect(isMadarCodexMcpConfig(readFileSync(configPath, 'utf8'), sandboxDir)).toBe(false)
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-      const status = runStatusCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('codex: partial')
-      expect(doctor).toContain('instructions=yes')
-      expect(doctor).toContain('hook=yes')
-      expect(doctor).toContain('mcp=no')
-      expect(doctor).toContain('madar codex install')
-      expect(status).toContain('codex:partial')
-    })
-  })
-
-  test('reports duplicate, stale, or legacy managed Codex hooks as partial', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      agentsInstall(sandboxDir, 'codex')
-      const hooksPath = resolve(sandboxDir, '.codex', 'hooks.json')
-      const hooksConfig = JSON.parse(readFileSync(hooksPath, 'utf8')) as {
-        hooks?: {
-          UserPromptSubmit?: Array<Record<string, unknown>>
-          PreToolUse?: Array<Record<string, unknown>>
-        }
-      }
-      hooksConfig.hooks?.UserPromptSubmit?.push({
-        name: 'madar',
-        source: 'madar',
-        hooks: [{ type: 'command', command: 'echo stale-madar-prompt-hook' }],
-      })
-      hooksConfig.hooks ??= {}
-      hooksConfig.hooks.PreToolUse = [{
-        name: 'madar',
-        source: 'madar',
-        matcher: 'Bash',
-        hooks: [{ type: 'command', command: 'echo legacy-madar-pre-tool-hook' }],
-      }]
-      writeText(hooksPath, `${JSON.stringify(hooksConfig, null, 2)}\n`)
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-      const status = runStatusCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('codex: partial')
-      expect(doctor).toContain('instructions=yes')
-      expect(doctor).toContain('hook=no')
-      expect(doctor).toContain('mcp=yes')
-      expect(doctor).toContain('madar codex install')
-      expect(status).toContain('codex:partial')
-    })
-  })
-
-  test('reports a managed Codex prompt hook with an extra command as partial', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      agentsInstall(sandboxDir, 'codex')
-      const hooksPath = resolve(sandboxDir, '.codex', 'hooks.json')
-      const hooksConfig = JSON.parse(readFileSync(hooksPath, 'utf8')) as {
-        hooks?: {
-          UserPromptSubmit?: Array<{ source?: string, hooks?: Array<Record<string, unknown>> }>
-        }
-      }
-      const managedHook = hooksConfig.hooks?.UserPromptSubmit?.find((hook) => hook.source === 'madar')
-      managedHook?.hooks?.push({ type: 'command', command: 'echo extra-untrusted-command' })
-      writeText(hooksPath, `${JSON.stringify(hooksConfig, null, 2)}\n`)
-
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-
-      expect(doctor).toContain('codex: partial')
-      expect(doctor).toContain('instructions=yes')
-      expect(doctor).toContain('hook=no')
-      expect(doctor).toContain('mcp=yes')
-      expect(doctor).toContain('madar codex install')
-    })
-  })
-
-  test('reports OpenCode as configured when the AGENTS profile, plugin, and MCP entry are wired', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      withOpenCodePackageRoot((packageRoot) => {
-        agentsInstall(sandboxDir, 'opencode', { packageRoot })
-
-        const doctor = runDoctorCommand({
-          projectDir: sandboxDir,
-          now: Date.now(),
-        })
-        const status = runStatusCommand({
-          projectDir: sandboxDir,
-          now: Date.now(),
-        })
-
-        expect(doctor).toContain('opencode: configured')
-        expect(doctor).toContain('instructions=yes')
-        expect(doctor).toContain('plugin=yes')
-        expect(doctor).toContain('mcp=yes')
-        expect(status).toContain('opencode:configured')
-      })
-    })
-  })
-
-  test('ignores unrelated OpenCode config files that do not contain Madar wiring', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      writeJson(resolve(sandboxDir, 'opencode.json'), {
-        mcp: {
-          other: {
-            type: 'local',
-            command: ['echo', 'hi'],
+            env: { MADAR_TOOL_PROFILE: 'strict' },
           },
         },
       })
 
-      const doctor = runDoctorCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
-      const status = runStatusCommand({
-        projectDir: sandboxDir,
-        now: Date.now(),
-      })
+      const report = buildDoctorReport({ projectDir: workspace })
+      const claude = report.agents.find((agent) => agent.label === 'claude')
+      const mcp = report.mcpChecks.find((check) => check.label === 'claude')
 
-      expect(doctor).not.toContain('opencode:')
-      expect(doctor).not.toContain('madar opencode install')
-      expect(status).not.toContain('opencode:')
-    })
-  })
-
-  test('flags stale OpenCode AGENTS guidance and recommends reinstall', () => {
-    withSandbox((sandboxDir) => {
-      writeGraph(resolve(sandboxDir, 'out', 'graph.json'))
-      withOpenCodePackageRoot((packageRoot) => {
-        agentsInstall(sandboxDir, 'opencode', { packageRoot })
-        writeText(resolve(sandboxDir, 'AGENTS.md'), '## madar\n\nOld guidance.\n')
-
-        const doctor = runDoctorCommand({
-          projectDir: sandboxDir,
-          now: Date.now(),
-        })
-        const status = runStatusCommand({
-          projectDir: sandboxDir,
-          now: Date.now(),
-        })
-
-        expect(doctor).toContain('opencode: partial')
-        expect(doctor).toContain('instructions=no')
-        expect(doctor).toContain('plugin=yes')
-        expect(doctor).toContain('madar opencode install')
-        expect(status).toContain('opencode:partial')
-      })
+      expect(claude?.status).toBe('partial')
+      expect(mcp).toEqual(expect.objectContaining({
+        status: 'stale',
+        reason: expect.stringContaining('retired MADAR_TOOL_PROFILE'),
+      }))
+      expect(report.nextCommands).toContain('madar claude install')
+      expect(report.healthy).toBe(false)
     })
   })
 })

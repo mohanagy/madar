@@ -1,0 +1,22 @@
+[
+  {
+    "question": "how does password policy login create a tenant session",
+    "expected_labels": ["PasswordPolicy", ".loginWithPassword()", ".allows()", ".createSession()"]
+  },
+  {
+    "question": "which module sends invoice receipt emails",
+    "expected_labels": [".sendInvoiceReceipt()", ".sendReceiptEmail()"]
+  },
+  {
+    "question": "what runs the monthly billing close",
+    "expected_labels": ["runMonthlyCloseJob()", ".collectOutstandingInvoices()", ".buildMonthlyRevenueReport()"]
+  },
+  {
+    "question": "how is the monthly revenue report built",
+    "expected_labels": [".buildMonthlyRevenueReport()"]
+  },
+  {
+    "question": "where is tenant context defined for billing and auth",
+    "expected_labels": ["TenantContext"]
+  }
+]

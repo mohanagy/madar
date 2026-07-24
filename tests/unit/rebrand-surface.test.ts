@@ -1,5 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -8,16 +7,13 @@ import { formatHelp } from '../../src/cli/main.js'
 import {
   parseCompareArgs,
   parseDoctorArgs,
-  parsePackArgs,
-  parsePromptArgs,
   parseQueryArgs,
-  parseReviewCompareArgs,
-  parseSaveResultArgs,
   parseServeArgs,
-  parseSummaryArgs,
 } from '../../src/cli/parser.js'
-import { saveQueryResult } from '../../src/infrastructure/save-query-result.js'
-import { resolveMadarOutputDirectory } from '../../src/shared/workspace.js'
+import {
+  resolveMadarOutputDirectory,
+  resolveWorkspaceGraphPath,
+} from '../../src/shared/workspace.js'
 
 function readText(path: string): string {
   return readFileSync(resolve(path), 'utf8')
@@ -65,47 +61,34 @@ describe('rebrand surface', () => {
     expect(JSON.stringify(manifest)).not.toContain(LEGACY_BRAND)
   })
 
-  it('uses madar and out in help text and parser defaults', () => {
+  it('uses madar and out in surviving command defaults', () => {
     const help = formatHelp()
 
     expect(help).toContain('Usage: madar <command>')
     expect(help).toContain('default out/graph.json')
-    expect(help).toContain('default out/compare')
-    expect(help).toContain('default out/review-compare')
-    expect(help).toContain('default out/memory')
+    expect(help).toContain('query "<question>"')
+    expect(help).toContain('compare [question]')
+    expect(help).toContain('doctor [graph.json]')
+    expect(help).toContain('serve [graph.json]')
+    expect(help).not.toContain('summary [graph.json]')
+    expect(help).not.toContain('diff [graph.json]')
+    expect(help).not.toContain('federate [graph.json]')
+    expect(help).not.toContain('--cluster-only')
     expect(help).not.toContain('add <url>')
     expect(help).not.toContain(LEGACY_BRAND)
     expect(help).not.toContain(LEGACY_OUT_DIR)
 
     expect(parseQueryArgs(['how does auth work']).graphPath).toBe('out/graph.json')
-    expect(parsePackArgs(['how does auth work']).graphPath).toBe('out/graph.json')
-    expect(parsePromptArgs(['how does auth work', '--provider', 'claude']).graphPath).toBe('out/graph.json')
-    expect(parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"']).outputDir).toBe(
-      join(resolveMadarOutputDirectory(), 'compare'),
-    )
-    expect(parseReviewCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"']).outputDir).toBe(
-      join(resolveMadarOutputDirectory(), 'review-compare'),
-    )
-    expect(parseSaveResultArgs(['--question', 'Q', '--answer', 'A']).memoryDir).toBe(
-      join(resolveMadarOutputDirectory(), 'memory'),
-    )
+    expect(parseCompareArgs([
+      'how does login work',
+      '--exec',
+      'claude -p "$(cat {prompt_file})"',
+    ])).toMatchObject({
+      graphPath: resolveWorkspaceGraphPath('out/graph.json'),
+      outputDir: join(resolveMadarOutputDirectory(), 'compare'),
+    })
     expect(parseDoctorArgs([]).graphPath).toBe('out/graph.json')
-    expect(parseSummaryArgs([]).graphPath).toBe('out/graph.json')
     expect(parseServeArgs([]).graphPath).toBe('out/graph.json')
-  })
-
-  it('writes madar as the saved result contributor', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'madar-save-result-'))
-
-    try {
-      const outputPath = saveQueryResult('How?', 'Like this.', join(tempDir, 'memory'))
-      const content = readFileSync(outputPath, 'utf8')
-
-      expect(content).toContain('contributor: "madar"')
-      expect(content).not.toContain(LEGACY_BRAND)
-    } finally {
-      rmSync(tempDir, { recursive: true, force: true })
-    }
   })
 
   it('documents the canonical Madar rename path for users arriving from legacy links', () => {

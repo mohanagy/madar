@@ -1,17 +1,14 @@
-import { closeSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { readGraphArtifactReceipt } from '../../src/adapters/filesystem/graph-artifact.js'
 import {
   acquireIndexLease,
   acceptedIndexArtifactsComplete,
   loadAcceptedIndex,
   readMatchingDiagnostics,
-  readMatchingReport,
-  readMatchingReportReceipt,
   releaseIndexLeaseOwner,
   type PublicationStep,
 } from '../../src/adapters/filesystem/index-store.js'
@@ -40,8 +37,6 @@ afterEach(() => {
 
 describe('index store publication', () => {
   it.each<PublicationStep>([
-    'before_report',
-    'after_report',
     'before_diagnostics',
     'after_diagnostics',
     'before_cleanup',
@@ -97,58 +92,10 @@ describe('index store publication', () => {
     expect(readMatchingDiagnostics(accepted.graphPath)).toBeNull()
   })
 
-  it('ignores a stale report when replacement report publication fails', () => {
-    const root = fixture()
-    const first = generateIndex(root)
-    expect(readMatchingReport(first.graphPath)).toContain(first.buildId)
-    writeFileSync(join(root, 'src', 'main.ts'), 'export const value = 2\n', 'utf8')
-
-    const next = generateIndex(root, {
-      storeDependencies: {
-        hook(step) {
-          if (step === 'before_report') throw new Error('report unavailable')
-        },
-      },
-    })
-
-    expect(next.buildId).not.toBe(first.buildId)
-    expect(loadAcceptedIndex(next.graphPath)?.state.build_id).toBe(next.buildId)
-    expect(readMatchingReport(next.graphPath)).toBeNull()
-  })
-
-  it('returns report text and its exact authenticated graph receipt together', () => {
-    const generated = generateIndex(fixture())
-    const receipt = readMatchingReportReceipt(generated.graphPath)
-
-    expect(receipt).toMatchObject({ buildId: generated.buildId })
-    expect(receipt?.report).toBe(readMatchingReport(generated.graphPath))
-    expect(receipt?.graphSha256).toMatch(/^[a-f0-9]{64}$/)
-    expect(receipt?.graphModifiedMs).toBe(Math.trunc(statSync(generated.graphPath).mtimeMs))
-    expect(receipt?.reportModifiedMs).toBe(Math.trunc(statSync(generated.reportPath).mtimeMs))
-  })
-
-  it('rejects an oversized authenticated graph report before reading it', () => {
-    const generated = generateIndex(fixture())
-    truncateSync(generated.reportPath, 5_000_001)
-
-    expect(readMatchingReportReceipt(generated.graphPath)).toBeNull()
-  })
-
-  it('binds a report read to a caller-supplied graph publication', () => {
-    const root = fixture()
-    const first = generateIndex(root)
-    const firstReceipt = readGraphArtifactReceipt(first.graphPath)
-    writeFileSync(join(root, 'src', 'main.ts'), 'export const value = 2\n')
-    const next = generateIndex(root)
-
-    expect(readMatchingReportReceipt(next.graphPath, firstReceipt)).toBeNull()
-    expect(readMatchingReportReceipt(next.graphPath)?.buildId).toBe(next.buildId)
-  })
-
   it('repairs missing or mismatched derived artifacts before allowing a cold no-op', () => {
     const root = fixture()
     const generated = generateIndex(root)
-    rmSync(generated.reportPath)
+    rmSync(generated.indexingManifestPath)
     expect(acceptedIndexArtifactsComplete(generated.graphPath)).toBe(false)
 
     const repaired = updateIndex(root)
@@ -160,7 +107,7 @@ describe('index store publication', () => {
       publication_advanced: true,
     })
     expect(acceptedIndexArtifactsComplete(repaired.graphPath)).toBe(true)
-    expect(readMatchingReport(repaired.graphPath)).toContain(repaired.buildId)
+    expect(readMatchingDiagnostics(repaired.graphPath)).toMatchObject({ build_id: repaired.buildId })
 
     const noop = updateIndex(root)
     expect(noop.updateReceipt).toMatchObject({ mode: 'cold_noop', publication_advanced: false })
@@ -189,6 +136,17 @@ describe('index store publication', () => {
       expect(acceptedIndexArtifactsComplete(generated.graphPath)).toBe(true)
     },
   )
+
+  it('removes a stale legacy graph report after canonical publication', () => {
+    const root = fixture()
+    const reportPath = join(root, 'out', 'GRAPH_REPORT.md')
+    mkdirSync(dirname(reportPath), { recursive: true })
+    writeFileSync(reportPath, '# stale report\n', 'utf8')
+
+    generateIndex(root)
+
+    expect(existsSync(reportPath)).toBe(false)
+  })
 
   it('rejects a real source edit at the graph commit boundary', () => {
     const root = fixture()
@@ -359,17 +317,4 @@ describe('index store publication', () => {
     }
   })
 
-  it('serializes cluster-only publication through the same build lease', () => {
-    const root = fixture()
-    const generated = generateIndex(root)
-    const before = graphBytes(root)
-    const release = acquireIndexLease(join(root, 'out'))
-    try {
-      expect(() => generateIndex(root, { clusterOnly: true })).toThrow(IndexLeaseContentionError)
-    } finally {
-      release()
-    }
-    expect(graphBytes(root)).toBe(before)
-    expect(loadAcceptedIndex(generated.graphPath)?.state.build_id).toBe(generated.buildId)
-  })
 })

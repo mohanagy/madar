@@ -6,15 +6,21 @@ new benchmark product and is not part of the Madar runtime.
 
 ## What is frozen
 
-- `contracts/evaluation-contract.json` pins the repositories, questions,
-  expected evidence paths, comparator protocols, measurements, human rubric,
-  and anti-tuning rules.
-- `contracts/evidence-path-performance-v1.json` pins the synthetic
+- `contracts/evaluation-contract.json` is the active
+  `core-reset-held-out-v2` contract. It pins the repositories, operation-specific
+  questions, independently reviewed owner declarations, required disconnected
+  boundaries, comparator protocols, measurements, human rubric, and anti-tuning
+  rules.
+- `contracts/evidence-path-performance-v2.json` pins the synthetic
   evidence-query topology, five queries, measurement order, result caps, and
-  reference environment. Its accepted SHA-256 is
-  `076e655e7b8ab01cc94c4c95c32b13d70f888c02948ff4eb7c1acebb4427953c`.
-- `schemas/` validates the contract and baseline receipt in CI.
-- `record-baseline.mjs` records the frozen `@lubab/madar@0.32.0` baseline without changing it. Its legacy CLI arguments are part of that version-pinned receipt protocol, not commands for the current candidate build.
+  reference environment. V2 forbids ranges and full-file snippets on structural
+  file nodes. Its frozen SHA-256 is
+  `4ddba368f5ef17dc059bd8d41c0549e38d6a5ded42e9448ae31aefd0e35506e4`.
+- `schemas/` validates the active contract and the immutable historical receipt
+  shape in CI.
+- `docs/core-reset/evidence/baseline-v0.32.0.json` is immutable historical
+  `core-reset-held-out-v1` characterization evidence. It is bound by hash in v2
+  but is not a v2 held-out result and is never silently regraded.
 - The accepted receipt lives under `docs/core-reset/evidence/`; generated raw
   outputs and external repository contents are never committed.
 
@@ -34,104 +40,120 @@ Documenso and Formbricks as blocking one-call TypeScript/JavaScript gates. The
 OpenStatus question remains diagnostic only: incident mutation, notification
 delivery, public HTML, and JSON feeds require direct TypeScript evidence, while
 the Go checker and Tinybird phases must be reported as unsupported. None of
-these repository identifiers, expected paths, phase labels, or scoring terms
+these repository identifiers, owner fixtures, paths, phase labels, or scoring terms
 may enter production source or query output.
 
+The active implementation also carries the owner-approved combined finalizer
+deletion from [#599](https://github.com/mohanagy/madar/issues/599#issuecomment-5062879476),
+[#596](https://github.com/mohanagy/madar/issues/596#issuecomment-5062879444),
+and the [RFC](https://github.com/mohanagy/madar/issues/577#issuecomment-5062879430).
+It combines the original 54 files / 29,441 LOC with nine finalizers / 3,590 LOC
+into one 63-file / 33,031-LOC predecessor floor and 22 transfers.
+`src/runtime/stdio/prompts.ts` is approved supplemental importer cleanup outside
+that floor. Implementation is in progress; no evaluator result is accepted yet.
+
+Held-out v2 grades a phase only when the result contains an authenticated
+`symbol_declaration` matching a hidden accepted graph identity, source path,
+kind, full-file SHA-256, canonical declaration range, and declaration hash. A
+`structural_file` node has no range or snippet, counts toward file/precision
+limits, may support only exact directed `imports_from` and `contains` traversal,
+and can never cover a phase. A tiny unrelated symbol in the expected file also
+cannot cover a phase. Where the canonical graph lacks a real runtime, user, or
+asynchronous transition, the result must report the required `disconnected`
+boundary rather than invent, reverse, or project an edge.
+
 The performance descriptor deterministically generates 150 components of 100
-nodes: exactly 15,000 nodes and 30,000 directed edges. Each node has one
-`calls` edge to `(local + 1) % 100` and one `depends_on` edge to
-`(local + 37) % 100`; IDs, labels, paths, snippets, five queries, order, and RFC
+nodes: exactly 15,000 nodes and 30,000 directed edges. Each structural file node has
+two valid file-to-file `imports_from` edges: one to `(local + 1) % 100` and one
+to `(local + 37) % 100`; IDs, labels, paths, five queries, order, and RFC
 8785 serialization are fixed. Four positive queries pin exact node and directed,
 typed relationship sets; the fifth pins one explicit `missing` boundary with no
 graph evidence. CI validates the descriptor bytes, hash, expectations, and
 derived graph counts without importing it from production.
 
 The accepted reference environment is Node `v22.9.0`, Darwin `25.3.0` arm64,
-Apple M3 Max, and 51,539,607,552 bytes RAM. A later implementation-evidence
-runner will perform three warm-ups and at least 20 measured queries with the
-graph already loaded. One untimed invocation per query must satisfy its exact
+Apple M3 Max, and 51,539,607,552 bytes RAM. Before loading the candidate, the
+performance runner rejects inherited Node preload paths, verifies every `src`
+path and byte against `HEAD`, creates a detached standalone clone of that exact
+commit and tree, restores the exact lockfile dependencies there, and runs a
+clean build outside the timer. It never replaces the developer checkout's
+`node_modules` or build output. The runner then serializes and deserializes the
+graph, inspects it through the shipping canonical query-index boundary, and
+performs three warm-ups and at least 20 measured queries with that ready query
+index already loaded. One untimed invocation per query must satisfy its exact
 expectation before warmup, and every warmup and measured result must keep
 satisfying it; empty positive results fail. Warm p95 must be below 500 ms,
-closure-pass count at most one, and every sample within the 12-file, 25-snippet,
-and 4,000-token caps.
+closure-pass count at most one, and every sample within the 12-file and
+4,000-token caps while the structural fixture returns exactly zero snippets.
 Measurements from another environment are diagnostic only.
 
 The accepted receipt path is
-`docs/core-reset/evidence/evidence-path-performance.json`. The runner and its
+`docs/core-reset/evidence/evidence-path-performance.json`. It must remain absent
+until a clean exact-head v2 run writes an eligible result. The runner and its
 receipt are implementation evidence: activation does not create the receipt or
-claim that the timing gate passed. This descriptor and every Core Reset receipt
-remain development-only and excluded from `dist` and npm.
+claim that the timing gate passed. This is a public, fixed workload—not an
+independent adversarial correctness proof. A performance-eligible receipt cannot
+qualify the phase unless the separately contained held-out-v2 correctness gate
+also passes, the exact-literal leak scan is clean, and independent adversarial
+review passes. This descriptor and
+every Core Reset receipt remain development-only and excluded from `dist` and
+npm.
 
 The canonical default SPI fixture covers exactly `.js`, `.jsx`, `.ts`, and
 `.tsx`. The extensions `.mjs`, `.cjs`, `.mts`, and `.cts` are not part of this
 frozen canonical SPI set; supporting them through another extraction path must
 not be reported as canonical SPI coverage in this baseline.
 
-## Verify the held-out repositories
+## Run the held-out evaluator
 
-The expected evidence paths are bound to immutable Git objects, not trusted
-because they appear in this file. Before recording or running trials, supply all
-three local checkouts to the offline preflight:
+Run the evaluator with all three pinned checkouts:
 
 ```text
-node tools/eval/core-reset/verify-held-out-repositories.mjs --repository openstatus=/path/to/openstatus --repository documenso=/path/to/documenso --repository formbricks=/path/to/formbricks
+node tools/eval/core-reset/evidence-path-held-out.mjs --repository openstatus=/path/to/openstatus --repository documenso=/path/to/documenso --repository formbricks=/path/to/formbricks
 ```
 
-The verifier performs no fetch, pull, or clone. For every repository it checks
-that the pinned commit exists locally, recomputes the SHA-256 of the sorted
-`git ls-tree -r -t --full-tree --name-only` path list, verifies `graph_root`,
-and resolves every `verified_evidence_paths` entry as a blob with `git cat-file`.
-The working checkout may be on another commit because only the pinned local Git
-objects are read.
+An acceptance-eligible held-out run is Darwin-reference-only because it requires
+the frozen `/usr/bin/sandbox-exec` boundary. Other platforms cannot emit an
+eligible receipt. The accepted receipt path is
+`docs/core-reset/evidence/evidence-path-held-out.json`.
 
-## Reproduce
+The runner clean-builds and packs exact `HEAD`, installs its exact production
+lock offline, and keeps evaluation files outside that runtime. Graph generation
+uses the packed CLI against a VCS-free pinned Git archive. When a tracked
+compiler config extends another tracked local workspace package, the runner
+copies only that exact package into a temporary `node_modules` view, attests
+the copied bytes, records the sorted mapping count and SHA-256, and removes the
+view immediately after generation. It never runs a package manager, resolves
+an external dependency, uses the network, or applies repository-specific
+rules. Canonical indexing disables automatic external ambient type discovery
+and neutralizes composite/incremental build-output behavior; explicit imports
+and scanner-owned declarations remain indexed. Darwin sandboxing denies
+network, process forks, non-runtime executable access, and reads from the
+evaluator checkout; Node's permission model denies child-process use and
+enforces the explicit filesystem allowlist. Each question runs in a fresh
+contained candidate process with only its packed runtime, one graph, one source
+root, and one sanitized request readable. The evaluator durably writes, fsyncs,
+and hashes every raw response before its parent process loads the hidden owner
+fixtures, declaration hashes, phase rubric, or handoff expectations. The
+receipt records the candidate-reported closure count explicitly; selected
+files, snippets, serialized tokens, graph facts, owner declarations, and
+handoffs are independently recomputed from the frozen graph and source bytes.
+Acceptance additionally requires a clean exact-literal leak scan over
+production and packed content plus independent adversarial review. The scan is
+a leak detector, not a proof that repository-specific tuning is absent.
 
-From a clean checkout of the evidence commit whose `src/**` tree matches the
-pinned v0.32.0 baseline:
+## Historical V1 evidence
 
-```text
-npm ci
-npm run build
-node tools/eval/core-reset/record-baseline.mjs --output ./baseline.local.json --retrieval-repository /path/to/openstatus
-npx vitest run tests/unit/core-reset-baseline.test.ts
-```
+The v0.32.0 receipt is retained only as immutable characterization evidence.
+There is no active V1 recorder or V1 semantic-validation path. CI validates the
+receipt's historical schema, exact byte hash, ordered-contract hash, and the
+explicit v2 amendment binding; it never promotes or regrades that receipt as v2
+held-out evidence.
 
-An accepted receipt must come from a clean evidence checkout. `--allow-dirty`
-is only for local diagnosis while developing the measurement tooling; a
-receipt produced with it is not eligible for acceptance or CI evidence.
-
-The OpenStatus argument may be omitted only with `--allow-dirty`, which marks
-the output as diagnostic and ineligible for acceptance. An accepted receipt
-requires measured retrieval from a supplied local OpenStatus checkout. When
-the argument is present, the recorder verifies that the local repository contains the frozen
-commit, creates a clean temporary checkout at that commit, verifies the sorted
-Git tree-path SHA-256, and generates the graph with the exact packed Madar
-artifact used by the MCP probe. It never uses an existing graph or silently
-clones from the network.
-
-```text
---retrieval-repository /path/to/openstatus
-```
-
-The packed artifact hash, complete resolved dependency lock and its hash, graph
-hash, clean source commit, graph freshness metadata, and tree-path hash are
-stored in the receipt. Dependency installation is setup cost and is recorded
-separately from CLI, MCP, graph-build, and retrieval timing. Measurement child
-processes clear ambient Node/Madar flags, disable system/global Git config, use
-LF checkouts, fix locale/timezone, and use the public npm registry; the policy
-is recorded in the receipt. Machine-specific timing is expected to differ; the
-receipt always records the environment and raw samples. Unknown values are kept
-as `unknown` with a reproducible reason rather than replaced by zero.
-
-CLI startup records both the unmodified subject command and the actual measured
-command. The latter preloads a tiny exit hook that writes
-`process.resourceUsage().maxRSS`; elapsed time and RSS therefore include the
-probe's own overhead, and the receipt carries that caveat explicitly.
-
-The baseline receipt is characterization evidence for the frozen Madar
-implementation. Cross-arm clean-index time, incremental-refresh time, peak RSS,
+Current evidence is produced only by the v2 held-out and performance evaluators
+described above. Cross-arm clean-index time, incremental-refresh time, peak RSS,
 and artifact-size distributions belong to the later comparative trial runner;
-they are deliberately not invented or inferred by the baseline recorder.
+they are not inferred from the historical receipt.
 
 ## Comparative protocol
 
@@ -232,6 +254,8 @@ from the package. Production code must never import this directory.
 
 Expected evidence is grading input only. It is loaded after an answer is saved,
 never embedded in a graph, prompt, MCP response, or production ranking rule.
-CI scans production source for imports and literal held-out repository markers,
-and validates the accepted receipt with both JSON Schema and derived semantic
-invariants.
+CI scans production source and packed bytes for exact load-bearing evaluation
+markers. That scan is a leak detector, not a complete anti-tuning proof;
+independent adversarial review remains mandatory. Active v2 receipts are
+validated with JSON Schema and independently recomputed derived invariants. The
+historical v1 receipt is authenticated by its immutable byte/hash binding only.

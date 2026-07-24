@@ -1,53 +1,59 @@
 # MCP security threat model
 
-This document records the current Madar threat model for local MCP/server execution, installed hooks/plugins/profiles, and share-safe artifacts. It is intentionally practical: the goal is to state what we trust, what we do not trust, and which mitigations/tests currently exist in the repository.
+Madar is local-first, but a local MCP server still belongs to the agent's trust boundary.
 
-## Trust boundary
+## Boundary
 
-Madar is local-first, but local-first is not automatically safe.
+The trusted path includes:
 
-The relevant trust boundary is:
+1. the local repository
+2. the accepted `out/graph.json`
+3. the Madar process serving one `retrieve` tool
+4. the local agent host, hooks, plugins, and instruction files
+5. any result or diagnostic artifact shared outside the machine
 
-1. the local repository and generated `out/` artifacts
-2. the local agent runtime that calls Madar over MCP/stdin or consumes installed AGENTS/hook/plugin guidance
-3. any share-safe artifact that leaves the machine
-
-An MCP install, plugin, hook, or AGENTS profile can still influence what the agent reads, which tools it calls, and what local paths or prompts it sees. Only enable Madar for repositories and local agent runtimes you trust.
+Only enable Madar in repositories and agent runtimes you trust.
 
 ## Primary threats
 
-Primary threats include prompt injection, path traversal, tool poisoning, share-safe artifact leakage, and accidental secret exposure.
-
-- **Prompt injection** from repository content, copied docs, benchmark prompts, or external text that tries to override Madar guidance or widen agent behavior.
-- **Path traversal / local-file boundary escape** when user-supplied graph or output paths attempt to read or write outside the allowed `out/` subtree.
-- **Tool poisoning / dangerous defaults** when installed MCP/hook/profile guidance encourages unnecessarily broad exploration or broader-than-needed tool surfaces.
-- **Share-safe artifact leakage** when compare/review receipts preserve secrets, workstation paths, or tokenized URLs that should be redacted before sharing.
-- **Accidental secret exposure** when local corpus content, stderr, prompt payloads, or URLs include bearer tokens, API keys, passwords, signed URLs, or other credentials.
-- **Supply-chain drift** when maintainers publish new versions without preserving an SBOM/provenance trail for the shipped package.
+- repository prompt injection that tries to override agent behavior
+- path traversal or symlink escape outside the graph workspace
+- stale source presented as current evidence
+- malformed graph provenance or source ranges
+- overly broad tool surfaces
+- accidental secrets in source, stderr, URLs, or shared artifacts
+- dependency or release provenance drift
 
 ## Current mitigations
 
-- `src/shared/security.ts` enforces local-file boundaries for graph input/output paths and blocks unsafe URL fetch targets such as `file://`, localhost, and cloud metadata hosts.
-- `src/shared/share-safe-artifacts.ts` rewrites workstation paths to `<project-root>` / `<artifact-root>` and redacts credential-like environment values, bearer/basic auth headers, URL userinfo, and secret-bearing query parameters before share-safe receipts are written.
-- Source discovery uses an artifact-aware secret policy: private keys, environment files, credential stores, and non-source secret configs are excluded before extraction, while normal security-related source code remains indexable. Local `graph.json` records each safety exclusion and its reason; generate/doctor/status show the escaped local paths. Share-safe evidence exposes only counts and reason buckets. Relevant exclusions or unreadable paths lower answer confidence so missing evidence is not presented as complete.
-- Install guidance pushes least-privilege behavior instead of broad exploration. For supported MCP installers, prefer `--profile strict` for the two-tool surface: `context_pack` plus one bounded `context_expand` path for a listed verification target. The expansion result is terminal so it cannot advertise an unusable follow-on handle. Codex and OpenCode install the same strict MCP surface; Aider remains CLI context-pack-first because its installer does not add an MCP server.
-- Strict limits Madar's server-owned methods, prompts, resources, and expansion grants. It cannot prevent an agent host from exposing native filesystem or shell tools, nor can it reliably identify a new user turn from MCP traffic alone; treat its exact-once rule as signed guidance and verify it from the captured agent trace when making an activation claim.
-- Public docs keep `out/GRAPH_REPORT.md` as a fallback-only read when pack/graph tools are unavailable, stale, or insufficient.
+- The MCP server exposes exactly one tool: `retrieve(question, budget?)`.
+- Input rejects additional properties and limits the effective output budget.
+- Exact excerpts are returned only after local source bytes match the SHA-256 hash recorded by the canonical file node.
+- Source paths must resolve beneath the accepted graph root.
+- Missing, unsupported, stale, unavailable, corrupt, disconnected, and truncated evidence is reported explicitly.
+- Retrieval is capped at 12 files, 25 snippets, one directional closure pass, and 4,000 serialized tokens.
+- Known sensitive path classes such as private keys, `.env*`, and credential stores are excluded before indexing.
+- MCP resources expose only the authenticated canonical graph.
+- Agent installers write one-retrieve guidance and remove obsolete broader Madar configurations when they own them.
 
-## Least privilege guidance
+Madar cannot prevent an agent host from exposing its own filesystem, shell, network, or model-provider tools. Installed hooks provide guidance, not enforcement.
 
-This section captures the least privilege guidance for day-to-day installs and sharing decisions.
+## Least privilege
 
-- Prefer `--profile strict` over broader MCP surfaces unless the task genuinely needs the additional tools.
-- Only install Madar into repos you trust enough to let a local agent inspect via MCP, hook, plugin, or AGENTS profile.
-- Re-run `madar doctor` / `madar status` after install so the local wiring is explicit before broader prompts.
-- Treat share-safe artifacts as best-effort redacted receipts. Review them before sharing outside the trusted workspace.
+- Install Madar only in trusted repositories.
+- Inspect generated instruction, hook, plugin, and MCP files.
+- Use `madar doctor` and `madar status` to verify on-disk wiring.
+- Verify live hook trust and MCP activation inside the agent host.
+- Treat returned source as potentially sensitive even though it is authenticated.
+- Review every artifact before sharing it outside the trusted workspace.
 
-## Supply-chain expectations
+## Supply chain
 
-Release work should preserve both dependency inventory and provenance signals:
+Release work should preserve dependency inventory and provenance signals:
 
-- generate an SBOM during release with `npm sbom --sbom-format cyclonedx > sbom.cdx.json`
-- publish with `npm publish --access public --provenance` when the release environment supports npm provenance attestations
+```bash
+npm sbom --sbom-format cyclonedx > sbom.cdx.json
+npm publish --access public --provenance
+```
 
-These steps are part of the release checklist in [`docs/release.md`](../release.md).
+See [`docs/release.md`](../release.md) for the release checklist.

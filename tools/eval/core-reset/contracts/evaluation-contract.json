@@ -1,8 +1,58 @@
 {
-  "schema_version": 1,
-  "contract_id": "core-reset-held-out-v1",
-  "frozen_at": "2026-07-19",
+  "schema_version": 2,
+  "contract_id": "core-reset-held-out-v2",
+  "frozen_at": "2026-07-23",
   "status": "frozen",
+  "amendment": {
+    "supersedes_contract_id": "core-reset-held-out-v1",
+    "reason": "The v1 held-out contract was not executable as written: path-only phase grading accepted unrelated symbols, the five Documenso owner definitions exceeded the whole-result token cap, and real user or asynchronous handoffs had no directed owner-to-owner path in the pinned graph.",
+    "proposal": "https://github.com/mohanagy/madar/issues/596#issuecomment-5056946202",
+    "owner_approval": "https://github.com/mohanagy/madar/issues/596#issuecomment-5058567870",
+    "rfc_proposal": "https://github.com/mohanagy/madar/issues/577#issuecomment-5056947999",
+    "rfc_approval": "https://github.com/mohanagy/madar/issues/577#issuecomment-5058568992",
+    "historical_baseline_binding": {
+      "receipt": "docs/core-reset/evidence/baseline-v0.32.0.json",
+      "receipt_sha256": "c2b96e75e64934de998bb5c7087cb604b680cd8fd2aa5c6d1f74cd9f1a0c6516",
+      "contract_id": "core-reset-held-out-v1",
+      "contract_ordered_json_sha256": "20c7f4f03a1a35182b4148a71e4293b3ef932d73be61d8d85db1f81e8fb795fc",
+      "disposition": "historical_baseline_only_not_v2_held_out_evidence"
+    }
+  },
+  "evidence_semantics": {
+    "structural_file_nodes": {
+      "allowed": true,
+      "node_kind": "file",
+      "allowed_relationships": ["imports_from", "contains"],
+      "relationship_endpoints": {
+        "imports_from": "file_to_file",
+        "contains": "file_to_symbol"
+      },
+      "range": "forbidden",
+      "snippet": "forbidden",
+      "phase_coverage": "forbidden"
+    },
+    "symbol_declarations": {
+      "definition_range": "complete_ast_definition",
+      "declaration_range": "canonical_signature_or_declaration_prefix",
+      "coordinates": "one_based_utf16_end_exclusive",
+      "snippet": "exact_authenticated_declaration_range",
+      "full_file_sha256": "required",
+      "non_contiguous_or_synthesized_excerpt": "forbidden"
+    },
+    "phase_grading": {
+      "match": "exact_owner_fixture",
+      "required_identity": ["repository_id", "source_file", "source_sha256", "symbol", "node_kind", "declaration_range", "declaration_sha256"],
+      "accepted_equivalents": "contract_allowlist_only",
+      "right_file_wrong_symbol": "fail",
+      "right_symbol_wrong_file": "fail",
+      "file_node_only": "fail",
+      "owner_order": "required_phase_and_owner_order"
+    },
+    "boundaries": {
+      "absent_runtime_user_or_async_handoff": "disconnected",
+      "invented_reversed_or_projected_edge": "forbidden"
+    }
+  },
   "product_scope": {
     "scope_statement": "Madar Core V2 indexes and retrieves TypeScript and JavaScript source. Go is intentionally outside the product scope and must be reported as unsupported rather than treated as a required retrieval capability.",
     "supported_languages": ["typescript", "javascript"],
@@ -95,6 +145,268 @@
       "role": "blocking"
     }
   ],
+  "owner_fixtures": [
+    {
+      "id": "documenso.set-document-recipients",
+      "repository_id": "documenso",
+      "source_file": "packages/lib/server-only/recipient/set-document-recipients.ts",
+      "source_sha256": "a9cb77f94f2b73752d4cd1494759871bc48808bfa339a62947c2e8490564600a",
+      "symbol": "setDocumentRecipients",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 36, "column": 14 },
+        "end": { "line": 42, "column": 37 }
+      },
+      "declaration_sha256": "de7d3b7d8fd172af3b117e06e7fb2f774e08e6b1ba595561932ac4d8e779ab6a"
+    },
+    {
+      "id": "documenso.send-document",
+      "repository_id": "documenso",
+      "source_file": "packages/lib/server-only/document/send-document.ts",
+      "source_sha256": "23ee0425a4716857f9b71bcbf3095249a5a4e95bc8aad7c3d98ce471d4778fc5",
+      "symbol": "sendDocument",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 53, "column": 14 },
+        "end": { "line": 53, "column": 112 }
+      },
+      "declaration_sha256": "f0e88ca707705c581b8312143a5fdd669f7e8eddaf8fc23147c069a11ed494eb"
+    },
+    {
+      "id": "documenso.complete-document-with-token",
+      "repository_id": "documenso",
+      "source_file": "packages/lib/server-only/document/complete-document-with-token.ts",
+      "source_sha256": "85d35d476e803be11242acd88d0ef69bf2ac24740f1fb676362f2d36e674acdb",
+      "symbol": "completeDocumentWithToken",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 54, "column": 14 },
+        "end": { "line": 62, "column": 41 }
+      },
+      "declaration_sha256": "8172fe96bfe6615ab0f35ed732ea28c1d226f300f355c46d7d42699ec44b4c56"
+    },
+    {
+      "id": "documenso.seal-document-run",
+      "repository_id": "documenso",
+      "source_file": "packages/lib/jobs/definitions/internal/seal-document.handler.ts",
+      "source_sha256": "2cd32063dbf723ded126778a5602be25f6e066ab1169cee3070fe9c7d83d0050",
+      "symbol": "run",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 37, "column": 14 },
+        "end": { "line": 37, "column": 102 }
+      },
+      "declaration_sha256": "e2e3a4fb7a601df91e5bd860b4dbc5a02050281c31286b944823d1bbfe919bc5"
+    },
+    {
+      "id": "documenso.send-completed-emails-run",
+      "repository_id": "documenso",
+      "source_file": "packages/lib/jobs/definitions/emails/send-document-completed-emails.handler.ts",
+      "source_sha256": "e18e1276b3ec9a498d7bb358294a6c939bd99eea5738acab1d98e8a17b8535d9",
+      "symbol": "run",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 23, "column": 14 },
+        "end": { "line": 23, "column": 117 }
+      },
+      "declaration_sha256": "dbc5a0040b0ca095c70c1593c2e700517ecc1cdc68360ead954cb292f3ea6348"
+    },
+    {
+      "id": "formbricks.v2-response-post",
+      "repository_id": "formbricks",
+      "source_file": "apps/web/app/api/v2/client/[workspaceId]/responses/route.ts",
+      "source_sha256": "d3f30320aed91bfa0188fd72eb33c17587e3bd24644a6be3d2ab6a384479bb32",
+      "symbol": "POST",
+      "node_kind": "route",
+      "declaration_range": {
+        "start": { "line": 201, "column": 14 },
+        "end": { "line": 201, "column": 86 }
+      },
+      "declaration_sha256": "52cd91bc46b6d93d6a1cbd789facfe96bc2d8cb4678863779b788b4ff5df87d7"
+    },
+    {
+      "id": "formbricks.create-response",
+      "repository_id": "formbricks",
+      "source_file": "apps/web/app/api/v2/client/[workspaceId]/responses/lib/response.ts",
+      "source_sha256": "62f5fae4b88d1b9681e4605663e6c9460badc8e5db2c9d5f3bee312896afe17a",
+      "symbol": "createResponse",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 68, "column": 14 },
+        "end": { "line": 71, "column": 26 }
+      },
+      "declaration_sha256": "5783a9fc86221e025e364a77bed26df27db6599da2cc950f17fd6b5a69353d63"
+    },
+    {
+      "id": "formbricks.send-to-pipeline",
+      "repository_id": "formbricks",
+      "source_file": "apps/web/app/lib/pipelines.ts",
+      "source_sha256": "63478adeebb6bec38bbd2bc36265860bf353c1b24087d96bdd713edd974aedc7",
+      "symbol": "sendToPipeline",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 5, "column": 14 },
+        "end": { "line": 5, "column": 87 }
+      },
+      "declaration_sha256": "8ddeb3e855271ac3891ab3ad93d74c834fab75be0268be70cb51e30272eef18d"
+    },
+    {
+      "id": "formbricks.register-jobs-worker",
+      "repository_id": "formbricks",
+      "source_file": "apps/web/instrumentation-jobs.ts",
+      "source_sha256": "a0963dbe6af3b9af84892a0ef1a0aeadd84f1eaef8d4ccf0b292b4e0913e42d9",
+      "symbol": "registerJobsWorker",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 150, "column": 14 },
+        "end": { "line": 150, "column": 82 }
+      },
+      "declaration_sha256": "0810d37ee0a23cd24cc114902f13d8e4d28cdc076a8bb2c5e9887b693e176217"
+    },
+    {
+      "id": "formbricks.process-response-pipeline-job",
+      "repository_id": "formbricks",
+      "source_file": "apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts",
+      "source_sha256": "690e5e3143c94c917430110b434de30232cb819df4538b343fac00ba7b58195f",
+      "symbol": "processResponsePipelineJob",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 756, "column": 14 },
+        "end": { "line": 756, "column": 106 }
+      },
+      "declaration_sha256": "9036707f2614bcc50abf3de45bf89e073d2aad9a15be7c3d8075bff42c17aebe"
+    },
+    {
+      "id": "openstatus.resolve-incident",
+      "repository_id": "openstatus",
+      "source_file": "apps/workflows/src/checker/index.ts",
+      "source_sha256": "be16a9b291b9ee2b4f601a649341d6304989422ca666e5af3488ee6ec8e5099b",
+      "symbol": "resolveIncident",
+      "node_kind": "function",
+      "declaration_range": {
+        "start": { "line": 53, "column": 1 },
+        "end": { "line": 56, "column": 4 }
+      },
+      "declaration_sha256": "97270189ed4a3bb19703a5c865c375d8c3d169c5ee4afc8679d258338ff59734"
+    },
+    {
+      "id": "openstatus.trigger-notifications",
+      "repository_id": "openstatus",
+      "source_file": "apps/workflows/src/checker/alerting.ts",
+      "source_sha256": "f810197725716bd9282f96663f50128086dba00d913b7d75d0eea5121e24df27",
+      "symbol": "triggerNotifications",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 17, "column": 14 },
+        "end": { "line": 35, "column": 64 }
+      },
+      "declaration_sha256": "7a540190a3f304c39fce9c460cc7317c3856f4d44772533348639f9409143d0a"
+    },
+    {
+      "id": "openstatus.insert-notification-trigger",
+      "repository_id": "openstatus",
+      "source_file": "apps/workflows/src/checker/alerting.ts",
+      "source_sha256": "f810197725716bd9282f96663f50128086dba00d913b7d75d0eea5121e24df27",
+      "symbol": "insertNotificationTrigger",
+      "node_kind": "constant",
+      "declaration_range": {
+        "start": { "line": 257, "column": 7 },
+        "end": { "line": 265, "column": 7 }
+      },
+      "declaration_sha256": "a57d6c20f150115e78f054a95b0239c648a776b535a5b3cf57dfc814758ac1e6"
+    },
+    {
+      "id": "openstatus.page-indicator",
+      "repository_id": "openstatus",
+      "source_file": "apps/status-page/src/content/status-vocab.ts",
+      "source_sha256": "554b3c7703a075d6b13670412acc9ebefeedfc550a52ce01582e4cf1777c68e8",
+      "symbol": "pageIndicator",
+      "node_kind": "function",
+      "declaration_range": {
+        "start": { "line": 37, "column": 1 },
+        "end": { "line": 40, "column": 3 }
+      },
+      "declaration_sha256": "7a65a11d8db2f43e89b6bbf640673938443c9d1fa9f781b96ca0bd4d713c7af6"
+    },
+    {
+      "id": "openstatus.public-client",
+      "repository_id": "openstatus",
+      "source_file": "apps/status-page/src/app/(status-page)/[domain]/[locale]/(public)/client.tsx",
+      "source_sha256": "1ae8e4f1b9e9ad5f5f7290999ef74cec4ad217c779d30d76f0253f7b3f1a5ef7",
+      "symbol": "Client",
+      "node_kind": "component",
+      "declaration_range": {
+        "start": { "line": 58, "column": 1 },
+        "end": { "line": 58, "column": 26 }
+      },
+      "declaration_sha256": "a120e772f6c1fe31ef8948b904ee2d7183b3679842bf4a39b125d379d4d84530"
+    },
+    {
+      "id": "openstatus.status-json-get",
+      "repository_id": "openstatus",
+      "source_file": "apps/status-page/src/app/api/status/[[...path]]/route.ts",
+      "source_sha256": "c3d97b74f9e068b124241d60b5352483cdb54532a2cdeed6184be48d4358915c",
+      "symbol": "GET",
+      "node_kind": "route",
+      "declaration_range": {
+        "start": { "line": 34, "column": 1 },
+        "end": { "line": 37, "column": 3 }
+      },
+      "declaration_sha256": "d17f79d752fdbafe833186369c3545dee413d64b09aec35017915246b93cbe9e"
+    },
+    {
+      "id": "openstatus.to-status",
+      "repository_id": "openstatus",
+      "source_file": "apps/status-page/src/content/status-json.ts",
+      "source_sha256": "69fe38f3ce60079b04fe0117af6e02eedfb21f20ab84afc9781f0ac822061ed0",
+      "symbol": "toStatus",
+      "node_kind": "function",
+      "declaration_range": {
+        "start": { "line": 43, "column": 1 },
+        "end": { "line": 43, "column": 55 }
+      },
+      "declaration_sha256": "bfe8670b7178f084dd9a8f5a6a0991c1d8060e8517507baa8849fe89820b2498"
+    },
+    {
+      "id": "openstatus.to-unresolved-incidents",
+      "repository_id": "openstatus",
+      "source_file": "apps/status-page/src/content/status-json.ts",
+      "source_sha256": "69fe38f3ce60079b04fe0117af6e02eedfb21f20ab84afc9781f0ac822061ed0",
+      "symbol": "toUnresolvedIncidents",
+      "node_kind": "function",
+      "declaration_range": {
+        "start": { "line": 106, "column": 1 },
+        "end": { "line": 106, "column": 68 }
+      },
+      "declaration_sha256": "7ddc44ea7c3934fe012a4188267d543e54d5268cf7ed996c57e859d79f725e25"
+    },
+    {
+      "id": "openstatus.get-status-page-content",
+      "repository_id": "openstatus",
+      "source_file": "packages/services/src/page/get-content.ts",
+      "source_sha256": "ac0385f4d50accd5d6b83eacfe7adcc80655143fd886caa5770de9785bd573c3",
+      "symbol": "getStatusPageContent",
+      "node_kind": "function",
+      "declaration_range": {
+        "start": { "line": 57, "column": 1 },
+        "end": { "line": 60, "column": 32 }
+      },
+      "declaration_sha256": "49d443a373412c12198de7439ce6635b6a6b3da335eae709cdc6fa570bfe504d"
+    },
+    {
+      "id": "openstatus.compute-overall-status",
+      "repository_id": "openstatus",
+      "source_file": "apps/server/src/routes/rpc/handlers/status-page/index.ts",
+      "source_sha256": "10619030d83d0de10f09773a33c9d227c36869600ea962775c69aa672059feb9",
+      "symbol": "computeOverallStatus",
+      "node_kind": "function",
+      "declaration_range": {
+        "start": { "line": 360, "column": 1 },
+        "end": { "line": 364, "column": 3 }
+      },
+      "declaration_sha256": "5930ae881c2aaa3fb2c30634f8b9b855184440522213ea945ae3f1d448f80ac2"
+    }
+  ],
   "questions": [
     {
       "id": "openstatus-565-runtime-flow",
@@ -108,63 +420,63 @@
           "id": "checker_detection",
           "label": "Go checker detects the failed HTTP check",
           "scope": "unsupported_language",
-          "path_match": "exact",
-          "expected_evidence_paths": ["apps/checker/handlers/checker.go"],
-          "minimum_path_matches": 1
+          "boundary_kind": "unsupported",
+          "boundary_subjects": ["apps/checker/handlers/checker.go"],
+          "minimum_boundary_matches": 1
         },
         {
           "id": "failure_transport",
           "label": "Go checker schedules the workflows status update",
           "scope": "unsupported_language",
-          "path_match": "exact",
-          "expected_evidence_paths": ["apps/checker/checker/update.go"],
-          "minimum_path_matches": 1
+          "boundary_kind": "unsupported",
+          "boundary_subjects": ["apps/checker/checker/update.go"],
+          "minimum_boundary_matches": 1
         },
         {
           "id": "incident_state",
-          "label": "TypeScript workflow creates or resolves the incident",
+          "label": "TypeScript workflow auto-resolves incident state",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": ["apps/workflows/src/checker/index.ts"],
-          "minimum_path_matches": 1
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["openstatus.resolve-incident"],
+          "minimum_owner_matches": 1
         },
         {
           "id": "notification_dispatch",
           "label": "Notification delivery and deduplication",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": [
-            "apps/workflows/src/checker/alerting.ts",
-            "apps/workflows/src/checker/utils.ts",
-            "packages/db/src/schema/notifications/notification.ts"
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": [
+            "openstatus.trigger-notifications",
+            "openstatus.insert-notification-trigger"
           ],
-          "minimum_path_matches": 2
+          "minimum_owner_matches": 2
         },
         {
           "id": "public_status",
           "label": "Public status-page aggregation and rendering",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": [
-            "packages/api/src/router/statusPage.ts",
-            "apps/status-page/src/app/(status-page)/[domain]/[locale]/(public)/client.tsx",
-            "apps/status-page/src/content/status-json.ts"
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": [
+            "openstatus.page-indicator",
+            "openstatus.public-client",
+            "openstatus.to-status"
           ],
-          "minimum_path_matches": 2
+          "minimum_owner_matches": 3
         },
         {
           "id": "status_inconsistency",
           "label": "Distinct status computations or inconsistent outputs",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": [
-            "apps/status-page/src/content/status-json.ts",
-            "packages/services/src/page/get-content.ts",
-            "apps/server/src/routes/rpc/handlers/status-page/index.ts"
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": [
+            "openstatus.to-status",
+            "openstatus.get-status-page-content",
+            "openstatus.compute-overall-status"
           ],
-          "minimum_path_matches": 2
+          "minimum_owner_matches": 2
         }
-      ]
+      ],
+      "required_handoffs": []
     },
     {
       "id": "openstatus-574-strict-one-call",
@@ -178,150 +490,207 @@
           "id": "checker_detection",
           "label": "Go checker detects failure",
           "scope": "unsupported_language",
-          "path_match": "exact",
-          "expected_evidence_paths": ["apps/checker/handlers/checker.go"],
-          "minimum_path_matches": 1
+          "boundary_kind": "unsupported",
+          "boundary_subjects": ["apps/checker/handlers/checker.go"],
+          "minimum_boundary_matches": 1
         },
         {
           "id": "tinybird_persistence",
           "label": "Go checker persists the raw result to Tinybird",
           "scope": "unsupported_language",
-          "path_match": "exact",
-          "expected_evidence_paths": [
+          "boundary_kind": "unsupported",
+          "boundary_subjects": [
             "apps/checker/handlers/checker.go",
             "apps/checker/pkg/tinybird/client.go"
           ],
-          "minimum_path_matches": 2
+          "minimum_boundary_matches": 2
         },
         {
           "id": "incident_mutation",
           "label": "TypeScript workflow mutates incident state",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": ["apps/workflows/src/checker/index.ts"],
-          "minimum_path_matches": 1
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["openstatus.resolve-incident"],
+          "minimum_owner_matches": 1
         },
         {
           "id": "notification_delivery",
           "label": "Notification delivery and deduplication",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": [
-            "apps/workflows/src/checker/alerting.ts",
-            "apps/workflows/src/checker/utils.ts",
-            "packages/db/src/schema/notifications/notification.ts"
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": [
+            "openstatus.trigger-notifications",
+            "openstatus.insert-notification-trigger"
           ],
-          "minimum_path_matches": 2
+          "minimum_owner_matches": 2
         },
         {
           "id": "public_html",
           "label": "Public status-page HTML derives and renders status",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": [
-            "packages/api/src/router/statusPage.ts",
-            "apps/status-page/src/content/status-vocab.ts",
-            "apps/status-page/src/app/(status-page)/[domain]/[locale]/(public)/client.tsx"
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": [
+            "openstatus.page-indicator",
+            "openstatus.public-client"
           ],
-          "minimum_path_matches": 2
+          "minimum_owner_matches": 2
         },
         {
           "id": "json_feeds",
           "label": "JSON feeds serialize status and incidents",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": [
-            "apps/status-page/src/app/api/status/[[...path]]/route.ts",
-            "apps/status-page/src/content/status-json.ts",
-            "apps/status-page/src/content/status-vocab.ts"
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": [
+            "openstatus.status-json-get",
+            "openstatus.to-status",
+            "openstatus.to-unresolved-incidents"
           ],
-          "minimum_path_matches": 2
+          "minimum_owner_matches": 3
         }
-      ]
+      ],
+      "required_handoffs": []
     },
     {
       "id": "documenso-document-send",
       "repository_id": "documenso",
-      "prompt": "Trace the Documenso document lifecycle from recipient creation through send, signing completion and sealing, and notification delivery. Cite the exact files and symbols for every phase, preserve the causal order, and state any missing evidence.",
+      "prompt": "For an existing draft Documenso document, trace the specific operation that replaces its assigned recipients, sends the initial signing request, handles the final recipient's token-based completion, runs the asynchronous seal job, and then sends the post-seal document-completed emails. Cite the implementation-owning symbols and exact files in operation order. Use only graph-backed directed relationships; where a runtime or job handoff is absent, report it as disconnected rather than inventing an edge.",
       "source_issues": [],
       "gate_role": "blocking",
       "comparison_role": "included",
       "required_phases": [
         {
           "id": "recipient_creation",
-          "label": "Recipient creation before send",
+          "label": "Replace the assigned recipients on the existing draft",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": ["packages/lib/server-only/recipient/set-document-recipients.ts"],
-          "minimum_path_matches": 1
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["documenso.set-document-recipients"],
+          "minimum_owner_matches": 1
         },
         {
           "id": "document_send",
-          "label": "Document send after recipients exist",
+          "label": "Send the initial signing request",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": ["packages/lib/server-only/document/send-document.ts"],
-          "minimum_path_matches": 1
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["documenso.send-document"],
+          "minimum_owner_matches": 1
         },
         {
           "id": "signing_completion",
-          "label": "Signing completion and document sealing",
+          "label": "Complete the final recipient by token",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": [
-            "packages/lib/server-only/document/complete-document-with-token.ts",
-            "packages/lib/jobs/definitions/internal/seal-document.handler.ts"
-          ],
-          "minimum_path_matches": 2
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["documenso.complete-document-with-token"],
+          "minimum_owner_matches": 1
+        },
+        {
+          "id": "seal_execution",
+          "label": "Run the asynchronous seal job",
+          "scope": "required",
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["documenso.seal-document-run"],
+          "minimum_owner_matches": 1
         },
         {
           "id": "notification_delivery",
-          "label": "Recipient notification delivery",
+          "label": "Send post-seal document-completed emails",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": [
-            "packages/lib/jobs/definitions/emails/send-document-completed-emails.handler.ts",
-            "packages/lib/jobs/definitions/emails/send-recipient-signed-email.handler.ts"
-          ],
-          "minimum_path_matches": 1
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["documenso.send-completed-emails-run"],
+          "minimum_owner_matches": 1
+        }
+      ],
+      "required_handoffs": [
+        {
+          "from_owner_id": "documenso.set-document-recipients",
+          "to_owner_id": "documenso.send-document",
+          "expectation": "disconnected"
+        },
+        {
+          "from_owner_id": "documenso.send-document",
+          "to_owner_id": "documenso.complete-document-with-token",
+          "expectation": "disconnected"
+        },
+        {
+          "from_owner_id": "documenso.complete-document-with-token",
+          "to_owner_id": "documenso.seal-document-run",
+          "expectation": "disconnected"
+        },
+        {
+          "from_owner_id": "documenso.seal-document-run",
+          "to_owner_id": "documenso.send-completed-emails-run",
+          "expectation": "disconnected"
         }
       ]
     },
     {
       "id": "formbricks-survey-response",
       "repository_id": "formbricks",
-      "prompt": "How does Formbricks process a survey response from request handling through persistence and analytics or event tracking? Cite the exact files and symbols for every phase, and state any missing evidence.",
+      "prompt": "Trace creation of a new survey response through the public v2 client POST endpoint: request validation, the actual Prisma response create, enqueueing responseCreated and responseFinished when applicable, binding the background worker, and dispatching the response-created and response-finished side effects. Cite the implementation-owning symbols and exact files. Use only graph-backed directed relationships and report any queue, runtime, or callback handoff absent from the graph as disconnected.",
       "source_issues": [],
       "gate_role": "blocking",
       "comparison_role": "included",
       "required_phases": [
         {
           "id": "request_handling",
-          "label": "Survey response request handling and validation",
+          "label": "Public v2 response POST handling and validation",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": ["apps/web/app/api/v2/client/[workspaceId]/responses/route.ts"],
-          "minimum_path_matches": 1
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["formbricks.v2-response-post"],
+          "minimum_owner_matches": 1
         },
         {
           "id": "response_persistence",
-          "label": "Response persistence",
+          "label": "Actual Prisma response creation",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": ["apps/web/app/api/v2/client/[workspaceId]/responses/lib/response.ts"],
-          "minimum_path_matches": 1
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["formbricks.create-response"],
+          "minimum_owner_matches": 1
+        },
+        {
+          "id": "event_enqueue",
+          "label": "Enqueue responseCreated and responseFinished pipeline work",
+          "scope": "required",
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["formbricks.send-to-pipeline"],
+          "minimum_owner_matches": 1
+        },
+        {
+          "id": "worker_binding",
+          "label": "Bind the response-pipeline background worker",
+          "scope": "required",
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["formbricks.register-jobs-worker"],
+          "minimum_owner_matches": 1
         },
         {
           "id": "event_tracking",
-          "label": "Analytics or response-event pipeline",
+          "label": "Dispatch response-created and response-finished side effects",
           "scope": "required",
-          "path_match": "exact",
-          "expected_evidence_paths": [
-            "apps/web/app/lib/pipelines.ts",
-            "apps/web/instrumentation-jobs.ts",
-            "apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts"
-          ],
-          "minimum_path_matches": 2
+          "evidence_match": "exact_owner_fixture",
+          "accepted_owner_ids": ["formbricks.process-response-pipeline-job"],
+          "minimum_owner_matches": 1
+        }
+      ],
+      "required_handoffs": [
+        {
+          "from_owner_id": "formbricks.v2-response-post",
+          "to_owner_id": "formbricks.create-response",
+          "expectation": "disconnected"
+        },
+        {
+          "from_owner_id": "formbricks.v2-response-post",
+          "to_owner_id": "formbricks.send-to-pipeline",
+          "expectation": "connected"
+        },
+        {
+          "from_owner_id": "formbricks.send-to-pipeline",
+          "to_owner_id": "formbricks.register-jobs-worker",
+          "expectation": "disconnected"
+        },
+        {
+          "from_owner_id": "formbricks.register-jobs-worker",
+          "to_owner_id": "formbricks.process-response-pipeline-job",
+          "expectation": "disconnected"
         }
       ]
     }
@@ -334,10 +703,10 @@
         "For each graph-arm pair, run the cold build with the pair-local empty HOME/XDG/config/cache/temp policy, externalize only the exact graph artifact, delete and verify absence of every comparator-generated repository path, and expose that artifact only to the MCP process. Raw tools must never read, list, search, or shell-access generated graph reports, manifests, visualizations, or caches.",
         "For every answer trial, create fresh empty HOME, XDG_CONFIG_HOME, XDG_CACHE_HOME, XDG_DATA_HOME, and tool-config directories. Supply only the recorded provider credential through the harness; do not copy user/global agent rules, hooks, skills, MCP settings, history, prior transcripts, Madar checkout files, or evaluation-contract files into the trial environment.",
         "Enforce tool-level filesystem containment during the measured answer: resolve every repository-tool path, working directory, symlink target, and shell-read-only operand to a realpath under the pinned graph_root or reject the call. The sole external read exception is the arm's exact captured graph artifact realpath, accessible only to its graph MCP server and never to raw repository tools.",
-        "Give every arm the exact product_scope.scope_statement before the frozen prompt. Do not disclose expected evidence paths, phase labels, rubric terms, or prior results.",
+        "Give every arm the exact product_scope.scope_statement before the frozen prompt. Do not disclose owner fixtures, declaration ranges or hashes, required handoffs, phase labels, rubric terms, or prior results.",
         "Use the same provider, immutable model identifier, reasoning setting, system instructions, non-graph tool names, non-graph tool descriptions, non-graph JSON Schemas, non-graph tool behavior, tool-call budget, timeout, and machine class for every comparative arm. Only the arm-specific graph tool surface may differ, and its complete schema is captured.",
         "Start a new agent process and conversation for every trial; never expose the Madar checkout, any contract content beyond the explicitly allowed product scope statement and frozen prompt, expected paths, or prior results to the agent.",
-        "Save the transcript and final answer before loading expected evidence or the human rubric.",
+        "Persist and hash the transcript, graph response, and final answer before loading owner fixtures, handoff expectations, or the human rubric.",
         "Normalize every selected, returned, read, and cited path from every arm to repository-root-relative form by prefixing graph_root when needed; grade exact paths only in that coordinate system."
       ],
       "allowed_repository_tools": ["read", "search", "list", "shell-read-only"],
@@ -402,7 +771,7 @@
     }
   },
   "trial_design": {
-    "randomization_seed": "core-reset-held-out-v1-20260719",
+    "randomization_seed": "core-reset-held-out-v2-20260723",
     "cold_definition": "For one graph-arm pair, create a fresh standalone disposable clone at the frozen commit (never a linked Git worktree) plus new empty pair-local HOME, XDG_CONFIG_HOME, XDG_CACHE_HOME, XDG_DATA_HOME, tool-config, temp, and comparator-cache directories outside the dependency-install directories; delete and verify absence of every declared repository output/cache root; build exactly once with the block's already-resolved dependency environment; move only the exact graph artifact to a harness-owned path outside graph_root; delete and verify absence of all generated repository outputs before starting the cold answer in a new agent process and conversation. Dependency installation is setup, not a cold build.",
     "warm_definition": "For the same graph-arm pair and trial ordinal, run the warm answer immediately after its cold answer in a new agent process, conversation, provider context, and empty answer-trial HOME/XDG/config set, reusing only the byte-for-byte external graph artifact from the cold build without rebuild, refresh, mutation, or access to the destroyed build HOME/cache/output directories.",
     "graphify_build": {
@@ -656,8 +1025,8 @@
       }
     },
     "metric_definitions": {
-      "selected_file": "A unique repository-root-relative file whose content or snippet is delivered to the agent by any raw or graph tool before the final answer; filenames mentioned without content do not count.",
-      "relevant_file": "A selected file listed in an in-scope required phase's frozen expected_evidence_paths for that question.",
+      "selected_file": "A unique repository-root-relative file represented by a selected structural file node, an authenticated declaration excerpt, relationship provenance, or raw file content delivered before the final answer; a filename mentioned without one of those evidence forms does not count.",
+      "relevant_file": "A selected file belonging to an accepted owner fixture for an in-scope required phase or an authenticated structural file on a selected authoritative path supporting a declared connected handoff.",
       "selected_file_precision": "relevant unique selected files divided by all unique selected files; zero when no file is selected.",
       "unrelated_file": "A selected file that is not a relevant_file under the frozen contract.",
       "incorrect_load_bearing_claim": "A factual claim needed for a required handoff or conclusion that both reviewers mark contradicted by the pinned source, or that the adjudicator marks contradicted after disagreement.",

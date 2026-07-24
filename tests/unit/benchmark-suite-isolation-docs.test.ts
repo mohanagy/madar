@@ -29,8 +29,8 @@ describe('benchmark suite isolation docs', () => {
     }
   }
   const runIsolated = readFileSync(resolve('docs/benchmarks/suite/isolation/run-isolated.sh'), 'utf8')
-  const retrieveRuntime = readFileSync(resolve('src/runtime/retrieve.ts'), 'utf8')
-  const slicingRuntime = readFileSync(resolve('src/runtime/retrieve/slicing.ts'), 'utf8')
+  const retrieveRuntime = readFileSync(resolve('src/application/retrieve-context.ts'), 'utf8')
+  const slicingRuntime = readFileSync(resolve('src/domain/query/slice.ts'), 'utf8')
   const stdioTools = readFileSync(resolve('src/runtime/stdio/tools.ts'), 'utf8')
   const benchmarkCompare = readFileSync(resolve('src/infrastructure/compare.ts'), 'utf8')
 
@@ -107,6 +107,14 @@ describe('benchmark suite isolation docs', () => {
     expect(parityScript).toContain('Packed retrieval parity passed')
     expect(parityScript).toContain('checkoutServer.handleStdioRequest')
     expect(parityScript).toContain('packedServer.handleStdioRequest')
+    expect(parityScript).toContain(
+      'await createParityGraph(tempRoot, packedWatcher.updateIndexInWorker)',
+    )
+    expect(parityScript).toContain(
+      "successfulRetrieve(retrieveResponse, 'Queued packed runtime', ['value0'])",
+    )
+    expect(parityScript).not.toContain("retrieval_strategy: 'slice-v1'")
+    expect(parityScript).not.toContain('verbose: true')
     expect(parityScript).toContain('Packed artifact unexpectedly contains checkout-only docs')
     expect(workflow).toContain('npm run verify:pack-parity')
   })
@@ -116,8 +124,8 @@ describe('benchmark suite isolation docs', () => {
     expect(slicingRuntime).not.toContain('runtimeProofProfile')
     expect(stdioTools).not.toContain('runtime-proof.json')
     expect(stdioTools).not.toContain('loadBenchmarkRuntimeProofProfiles')
-    expect(benchmarkCompare).toContain('loadBenchmarkRuntimeProofProfiles')
-    expect(benchmarkCompare).toContain('missingRuntimeProofCitations')
+    expect(benchmarkCompare).not.toContain('loadBenchmarkRuntimeProofProfiles')
+    expect(benchmarkCompare).not.toContain('missingRuntimeProofCitations')
   })
 
   it.skipIf(process.platform === 'win32')('fails fast when the default Claude profile is logged in but the isolated profile is not', () => {

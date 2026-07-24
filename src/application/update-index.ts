@@ -12,7 +12,7 @@ import {
 } from './generate-index.js'
 import { sourceSnapshotsEqual, type IndexBuildState } from '../domain/index/build-state.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
-export type UpdateIndexOptions = Omit<GenerateIndexOptions, 'clusterOnly'> & { leaseOwnerToken?: string }
+export type UpdateIndexOptions = GenerateIndexOptions & { leaseOwnerToken?: string }
 function catalogOptions(options: UpdateIndexOptions, state: IndexBuildState | null): SourceCatalogOptions {
   const strict = state?.policy.settings.indexing_strict
   const indexingStrict = options.indexingStrict ?? (strict ? { maxFailed: strict.max_failed, maxUnsupported: strict.max_unsupported } : undefined)
@@ -40,7 +40,7 @@ export function updateIndex(rootPath = '.', options: UpdateIndexOptions = {}): G
       if (!sourceCatalogStillCurrent(catalog, effectiveCatalogOptions)) throw new SourceChangedDuringBuildError()
       return indexResultFromState({
         mode: 'update', rootPath: root, graph: accepted.graph, state: accepted.state,
-        notes: ['Source snapshot is unchanged; parsing, analysis, and publication were skipped.'],
+        notes: ['Source snapshot is unchanged; parsing, indexing, and publication were skipped.'],
         updateReceipt: {
           mode: 'cold_noop', scanned_files: catalog.scannedFiles, parsed_files: 0,
           reused_files: catalog.snapshot.supported.length, invalidated_files: 0, dependency_closure_size: 0,

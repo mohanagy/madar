@@ -1,9 +1,8 @@
-import { dirname, isAbsolute, resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 
-import type { ContextPackFormat, ContextPackRetrievalStrategy, ContextPackTaskKind } from '../contracts/context-pack.js'
 import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
-import { type InstallPlatform, isInstallPlatform, type InstallProfile, isInstallProfile } from '../infrastructure/install.js'
+import { type InstallPlatform, isInstallPlatform } from '../infrastructure/install.js'
 
 export class UsageError extends Error {
   constructor(message: string) {
@@ -12,87 +11,15 @@ export class UsageError extends Error {
   }
 }
 
-export type QueryRankBy = 'relevance' | 'degree'
-
 export interface QueryCliOptions {
   question: string
-  mode: 'bfs' | 'dfs'
-  tokenBudget: number
   graphPath: string
-  rankBy: QueryRankBy
-  community: number | null
-  fileType: string | null
-}
-
-export interface PackCliOptions {
-  prompt: string
-  budget: number
-  task: ContextPackTaskKind
-  taskExplicit?: boolean
-  graphPath: string
-  requireFreshGraph?: boolean
-  requireFreshContext?: boolean
-  format?: ContextPackFormat
-  why?: boolean
-  verbose?: boolean
-  /** #75 manual override for the retrieval gate. When set (0-5), the gate
-   *  emits a decision with reason 'manual override' at the supplied level
-   *  instead of running its heuristic classifier on the prompt. */
-  retrievalLevel?: 0 | 1 | 2 | 3 | 4 | 5
-  retrievalStrategy?: ContextPackRetrievalStrategy
+  budget?: number
 }
 
 export interface TryCliOptions {
-  prompt: string
-  path: string
-}
-
-export interface HandoffCliOptions {
-  prompt: string
-  budget: number
-  task: ContextPackTaskKind
-  graphPath: string
-  consumer: 'generic' | 'codex' | 'cursor' | 'copilot'
-  requireFreshGraph?: boolean
-  requireFreshContext?: boolean
-  allowSnippets?: boolean
-}
-
-export type PromptCliProvider = 'claude' | 'gemini'
-
-export interface PromptCliOptions {
-  prompt: string
-  provider: PromptCliProvider
-  graphPath: string
-  requireFreshGraph?: boolean
-  requireFreshContext?: boolean
-}
-
-export interface PathCliOptions {
-  source: string
-  target: string
-  graphPath: string
-  maxHops: number
-}
-
-export interface DiffCliOptions {
-  baselineGraphPath: string
-  graphPath: string
-  limit: number
-}
-
-export interface ExplainCliOptions {
-  label: string
-  graphPath: string
-  relation: string
-}
-
-export interface SaveResultCliOptions {
   question: string
-  answer: string
-  queryType: string
-  sourceNodes: string[]
-  memoryDir: string
+  path: string
 }
 
 export interface BenchmarkCliOptions {
@@ -116,46 +43,17 @@ export interface BenchSuiteCliOptions {
 }
 
 export interface CompareCliOptions {
-  question: string | null
+  question: string
   graphPath: string
   execTemplate: string
-  questionsPath: string | null
   outputDir: string
-  task: 'explain' | 'implement'
-  baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent'
   perArmTimeoutSeconds: number
-  validationTimeoutSeconds: number
-  heartbeatIntervalMs: number
-  strictMadarFirst: boolean
-  strictBenchmarkReadiness: boolean
-  allowNoInstall: boolean
   yes: boolean
-  limit: number | null
-  why?: boolean
-}
-
-export interface ReviewCompareCliOptions {
-  graphPath: string
-  execTemplate: string
-  outputDir: string
-  baseBranch: string | null
-  budget: number | null
-  yes: boolean
-}
-
-export interface TimeTravelCliOptions {
-  fromRef: string
-  toRef: string
-  view: 'summary' | 'risk' | 'drift' | 'timeline'
-  json: boolean
-  refresh: boolean
-  limit: number
 }
 
 export interface GenerateCliOptions {
   path: string
   update: boolean
-  clusterOnly: boolean
   watch: boolean
   followSymlinks?: true
   respectGitignore?: true
@@ -178,25 +76,11 @@ export interface WatchCliOptions {
 
 export interface ServeCliOptions {
   graphPath: string
-  host: string
-  port: number
-  transport: 'http' | 'stdio'
   autoRefresh: boolean
 }
 
 export interface DoctorCliOptions {
   graphPath: string
-}
-
-export interface SummaryCliOptions {
-  graphPath: string
-}
-
-export interface ProofReportCliOptions {
-  graphPath: string
-  outputDir: string
-  compareDir: string
-  packPath: string | null
 }
 
 export interface HookCliOptions {
@@ -211,24 +95,15 @@ export type TelemetryCliOptions =
   | { action: 'enable' | 'disable' | 'status' | 'clear' }
   | { action: 'report'; spoolPaths: string[] }
 
-const COMPARE_USAGE = 'Usage: madar compare [question] --exec TEMPLATE [--graph path] [--questions PATH] [--output-dir DIR] [--task TASK] [--baseline-mode MODE] [--per-arm-timeout S] [--validation-timeout S] [--heartbeat-interval-ms N] [--strict-madar-first] [--strict] [--allow-no-install] [--yes] [--limit N] [--why]'
+const COMPARE_USAGE = 'Usage: madar compare <question> --exec TEMPLATE [--graph path] [--output-dir DIR] [--per-arm-timeout S] [--yes]'
 export const INSTALL_USAGE = 'Usage: madar install [platform|--platform P]'
 
 export interface PlatformActionCliOptions {
   action: 'install' | 'uninstall'
-  profile?: InstallProfile
 }
 
-const PROFILE_AWARE_PLATFORM_COMMANDS = new Set(['claude', 'cursor', 'copilot', 'gemini'])
-
-const MAX_CLI_SOURCE_NODES = 50
 const MAX_CLI_LABEL_LENGTH = 512
 const MAX_CLI_PATH_LENGTH = 4_096
-const MAX_QUESTION_LENGTH = 2_000
-const MAX_ANSWER_LENGTH = 100_000
-const MAX_PATH_HOPS = 20
-const MAX_TOKEN_BUDGET = 100_000
-const MAX_PORT = 65_535
 
 function requireNonEmptyValue(flag: string, value: string | undefined): string {
   if (value === undefined || value.trim().length === 0) {
@@ -247,7 +122,7 @@ function requireOptionValue(flag: string, value: string | undefined): string {
 
 function parsePositiveInteger(flag: string, value: string): number {
   const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new UsageError(`error: ${flag} must be a positive integer`)
   }
   return parsed
@@ -277,79 +152,6 @@ function parseNonNegativeNumber(flag: string, value: string): number {
   return parsed
 }
 
-function parsePort(flag: string, value: string): number {
-  const parsed = Number.parseInt(value, 10)
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > MAX_PORT) {
-    throw new UsageError(`error: ${flag} must be between 0 and ${MAX_PORT}`)
-  }
-  return parsed
-}
-
-function parseServeTransport(flag: string, value: string): 'http' | 'stdio' {
-  const normalized = value.trim().toLowerCase()
-  if (normalized !== 'http' && normalized !== 'stdio') {
-    throw new UsageError(`error: ${flag} must be one of http, stdio`)
-  }
-
-  return normalized
-}
-
-function parseBudget(value: string): number {
-  const parsed = parsePositiveInteger('--budget', value)
-  if (parsed > MAX_TOKEN_BUDGET) {
-    throw new UsageError(`error: --budget must be <= ${MAX_TOKEN_BUDGET}`)
-  }
-  return parsed
-}
-
-function parseQueryRankBy(value: string): QueryRankBy {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'relevance' || normalized === 'degree') {
-    return normalized
-  }
-  throw new UsageError('error: --rank-by must be one of relevance, degree')
-}
-
-function parseCompareBaselineMode(value: string): 'full' | 'bounded' | 'pack_only' | 'native_agent' {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'full' || normalized === 'bounded' || normalized === 'pack_only' || normalized === 'native_agent') {
-    return normalized
-  }
-  throw new UsageError('error: --baseline-mode must be one of full, bounded, pack_only, native_agent')
-}
-
-function parseTimeTravelView(value: string): 'summary' | 'risk' | 'drift' | 'timeline' {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'summary' || normalized === 'risk' || normalized === 'drift' || normalized === 'timeline') {
-    return normalized
-  }
-  throw new UsageError('error: --view must be one of summary, risk, drift, timeline')
-}
-
-function parseContextPackTask(value: string): ContextPackTaskKind {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'explain' || normalized === 'implement' || normalized === 'review' || normalized === 'impact') {
-    return normalized
-  }
-  throw new UsageError('error: --task must be one of explain, implement, review, impact')
-}
-
-function parseCompareTask(value: string): 'explain' | 'implement' {
-  const task = parseContextPackTask(value)
-  if (task === 'explain' || task === 'implement') {
-    return task
-  }
-  throw new UsageError('error: compare --task must be one of explain, implement')
-}
-
-function parsePromptProvider(value: string): PromptCliProvider {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'claude' || normalized === 'gemini') {
-    return normalized
-  }
-  throw new UsageError('error: --provider must be one of claude, gemini')
-}
-
 function validateCliText(field: string, value: string): string {
   if (value.length > MAX_CLI_LABEL_LENGTH) {
     throw new UsageError(`error: ${field} exceeds maximum length of ${MAX_CLI_LABEL_LENGTH} characters`)
@@ -357,37 +159,18 @@ function validateCliText(field: string, value: string): string {
   return value
 }
 
-function validateCliQuestionText(field: string, value: string): string {
-  if (value.length > MAX_QUESTION_LENGTH) {
-    throw new UsageError(`error: ${field} exceeds maximum length of ${MAX_QUESTION_LENGTH} characters`)
-  }
-  return value
-}
-
-function validateReviewCompareOutputDir(outputDir: string): string {
-  return isAbsolute(outputDir) ? resolve(outputDir) : validateGraphOutputPath(outputDir)
-}
-
 function parseValidatedGraphPath(flag: string, value: string | undefined): string {
   return validateGraphPath(requireOptionValue(flag, value))
-}
-
-function parseGraphPathArgument(flag: string, value: string | undefined): string {
-  return validateCliText(flag, requireOptionValue(flag, value))
 }
 
 export function parseQueryArgs(args: string[]): QueryCliOptions {
   const question = args[0]?.trim()
   if (!question) {
-    throw new UsageError('Usage: madar query "<question>" [--dfs] [--budget N] [--graph path] [--rank-by MODE] [--community ID] [--file-type TYPE]')
+    throw new UsageError('Usage: madar query "<question>" [--budget N] [--graph path]')
   }
 
-  let mode: 'bfs' | 'dfs' = 'bfs'
-  let tokenBudget = 2000
   let graphPath = 'out/graph.json'
-  let rankBy: QueryRankBy = 'relevance'
-  let community: number | null = null
-  let fileType: string | null = null
+  let budget: number | undefined
 
   for (let index = 1; index < args.length; index += 1) {
     const argument = args[index]
@@ -395,685 +178,62 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
       continue
     }
 
-    if (argument === '--dfs') {
-      mode = 'dfs'
-      continue
-    }
-
     if (argument === '--budget') {
-      tokenBudget = parseBudget(requireNonEmptyValue('--budget', args[index + 1]))
+      budget = parsePositiveDecimalInteger(
+        '--budget',
+        requireOptionValue('--budget', args[index + 1]),
+      )
       index += 1
       continue
     }
 
     if (argument.startsWith('--budget=')) {
       const [, value] = argument.split('=', 2)
-      tokenBudget = parseBudget(requireNonEmptyValue('--budget', value))
+      budget = parsePositiveDecimalInteger(
+        '--budget',
+        requireOptionValue('--budget', value),
+      )
       continue
     }
 
     if (argument === '--graph') {
-      graphPath = requireNonEmptyValue('--graph', args[index + 1])
+      graphPath = parseValidatedGraphPath('--graph', args[index + 1])
       index += 1
       continue
     }
 
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
-      graphPath = requireNonEmptyValue('--graph', value)
-      continue
-    }
-
-    if (argument === '--rank-by') {
-      rankBy = parseQueryRankBy(requireNonEmptyValue('--rank-by', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--rank-by=')) {
-      const [, value] = argument.split('=', 2)
-      rankBy = parseQueryRankBy(requireNonEmptyValue('--rank-by', value))
-      continue
-    }
-
-    if (argument === '--community') {
-      community = parseNonNegativeInteger('--community', requireNonEmptyValue('--community', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--community=')) {
-      const [, value] = argument.split('=', 2)
-      community = parseNonNegativeInteger('--community', requireNonEmptyValue('--community', value))
-      continue
-    }
-
-    if (argument === '--file-type') {
-      fileType = validateCliText('--file-type', requireNonEmptyValue('--file-type', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--file-type=')) {
-      const [, value] = argument.split('=', 2)
-      fileType = validateCliText('--file-type', requireNonEmptyValue('--file-type', value))
+      graphPath = parseValidatedGraphPath('--graph', value)
       continue
     }
 
     throw new UsageError(`error: unknown option for query: ${argument}`)
   }
 
-  return { question, mode, tokenBudget, graphPath, rankBy, community, fileType }
-}
-
-export function parsePackArgs(args: string[]): PackCliOptions {
-  const usage = 'Usage: madar pack "<prompt>" [--budget N] [--task KIND] [--graph path] [--format json|text|markdown|claude|copilot] [--verbose] [--retrieval-level 0-5] [--retrieval-strategy default|slice-v1] [--require-fresh-graph] [--require-fresh-context]'
-  const prompt = args[0]?.trim()
-  if (!prompt) {
-    throw new UsageError(usage)
-  }
-
-  let budget = 3000
-  let task: ContextPackTaskKind = 'explain'
-  let taskExplicit = false
-  let graphPath = 'out/graph.json'
-  let format: PackCliOptions['format'] | undefined
-  let why = false
-  let verbose = false
-  let requireFreshGraph = false
-  let requireFreshContext = false
-  let retrievalLevel: PackCliOptions['retrievalLevel'] | undefined
-  let retrievalStrategy: PackCliOptions['retrievalStrategy'] | undefined
-
-  const normalizedPrompt = validateCliQuestionText('prompt', prompt)
-
-  for (let index = 1; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (!argument.startsWith('--')) {
-      throw new UsageError(usage)
-    }
-
-    if (argument === '--budget') {
-      budget = parseBudget(requireOptionValue('--budget', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--budget=')) {
-      const [, value] = argument.split('=', 2)
-      budget = parseBudget(requireOptionValue('--budget', value))
-      continue
-    }
-
-    if (argument === '--task') {
-      task = parseContextPackTask(requireOptionValue('--task', args[index + 1]))
-      taskExplicit = true
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--task=')) {
-      const [, value] = argument.split('=', 2)
-      task = parseContextPackTask(requireOptionValue('--task', value))
-      taskExplicit = true
-      continue
-    }
-
-    if (argument === '--graph') {
-      graphPath = parseValidatedGraphPath('--graph', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--graph=')) {
-      const [, value] = argument.split('=', 2)
-      graphPath = parseValidatedGraphPath('--graph', value)
-      continue
-    }
-
-    if (argument === '--format') {
-      format = parseContextPackFormat(requireOptionValue('--format', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--format=')) {
-      const [, value] = argument.split('=', 2)
-      format = parseContextPackFormat(requireOptionValue('--format', value))
-      continue
-    }
-
-    if (argument === '--retrieval-level') {
-      retrievalLevel = parseRetrievalLevel(requireOptionValue('--retrieval-level', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--retrieval-level=')) {
-      const [, value] = argument.split('=', 2)
-      retrievalLevel = parseRetrievalLevel(requireOptionValue('--retrieval-level', value))
-      continue
-    }
-
-    if (argument === '--retrieval-strategy') {
-      retrievalStrategy = parseRetrievalStrategy(requireOptionValue('--retrieval-strategy', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--retrieval-strategy=')) {
-      const [, value] = argument.split('=', 2)
-      retrievalStrategy = parseRetrievalStrategy(requireOptionValue('--retrieval-strategy', value))
-      continue
-    }
-
-    if (argument === '--why') {
-      why = true
-      continue
-    }
-
-    if (argument === '--require-fresh-graph') {
-      requireFreshGraph = true
-      continue
-    }
-
-    if (argument === '--require-fresh-context') {
-      requireFreshContext = true
-      continue
-    }
-
-    if (argument === '--verbose') {
-      verbose = true
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for pack: ${argument}`)
-  }
-
   return {
-    prompt: normalizedPrompt,
-    budget,
-    task,
-    ...(taskExplicit ? { taskExplicit: true } : {}),
+    question,
     graphPath,
-    ...(requireFreshGraph ? { requireFreshGraph: true } : {}),
-    ...(requireFreshContext ? { requireFreshContext: true } : {}),
-    ...(format ? { format } : {}),
-    ...(why ? { why: true } : {}),
-    ...(verbose ? { verbose: true } : {}),
-    ...(retrievalLevel !== undefined ? { retrievalLevel } : {}),
-    ...(retrievalStrategy !== undefined ? { retrievalStrategy } : {}),
+    ...(budget === undefined ? {} : { budget }),
   }
 }
 
 export function parseTryArgs(args: string[]): TryCliOptions {
   const usage = 'Usage: madar try "<question>" [path]'
-  const prompt = args[0]?.trim()
-  if (!prompt) {
+  const question = args[0]?.trim()
+  if (!question) {
     throw new UsageError(usage)
   }
 
-  let path = '.'
-  for (let index = 1; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (argument.startsWith('--')) {
-      throw new UsageError(`error: unknown option for try: ${argument}`)
-    }
-
-    if (path !== '.') {
-      throw new UsageError(usage)
-    }
-
-    path = argument
+  const path = args[1] ?? '.'
+  if (args.length > 2 || path.startsWith('--')) {
+    throw new UsageError(usage)
   }
-
   if (path.length > MAX_CLI_PATH_LENGTH) {
     throw new UsageError(`error: path exceeds maximum length of ${MAX_CLI_PATH_LENGTH} characters`)
   }
 
-  return {
-    prompt: validateCliQuestionText('question', prompt),
-    path,
-  }
-}
-
-export function parseHandoffArgs(args: string[]): HandoffCliOptions {
-  const usage = 'Usage: madar handoff "<prompt>" [--budget N] [--task KIND] [--graph path] [--consumer generic|codex|cursor|copilot] [--allow-snippets] [--require-fresh-graph] [--require-fresh-context]'
-  const prompt = args[0]?.trim()
-  if (!prompt) {
-    throw new UsageError(usage)
-  }
-
-  let budget = 3000
-  let task: ContextPackTaskKind = 'explain'
-  let graphPath = 'out/graph.json'
-  let consumer: HandoffCliOptions['consumer'] = 'generic'
-  let allowSnippets = false
-  let requireFreshGraph = false
-  let requireFreshContext = false
-
-  const normalizedPrompt = validateCliQuestionText('prompt', prompt)
-
-  for (let index = 1; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (!argument.startsWith('--')) {
-      throw new UsageError(usage)
-    }
-
-    if (argument === '--budget') {
-      budget = parseBudget(requireOptionValue('--budget', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--budget=')) {
-      const [, value] = argument.split('=', 2)
-      budget = parseBudget(requireOptionValue('--budget', value))
-      continue
-    }
-
-    if (argument === '--task') {
-      task = parseContextPackTask(requireOptionValue('--task', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--task=')) {
-      const [, value] = argument.split('=', 2)
-      task = parseContextPackTask(requireOptionValue('--task', value))
-      continue
-    }
-
-    if (argument === '--graph') {
-      graphPath = parseGraphPathArgument('--graph', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--graph=')) {
-      const [, value] = argument.split('=', 2)
-      graphPath = parseGraphPathArgument('--graph', value)
-      continue
-    }
-
-    if (argument === '--consumer') {
-      consumer = parseHandoffConsumer(requireOptionValue('--consumer', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--consumer=')) {
-      const [, value] = argument.split('=', 2)
-      consumer = parseHandoffConsumer(requireOptionValue('--consumer', value))
-      continue
-    }
-
-    if (argument === '--allow-snippets') {
-      allowSnippets = true
-      continue
-    }
-
-    if (argument === '--require-fresh-graph') {
-      requireFreshGraph = true
-      continue
-    }
-
-    if (argument === '--require-fresh-context') {
-      requireFreshContext = true
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for handoff: ${argument}`)
-  }
-
-  return {
-    prompt: normalizedPrompt,
-    budget,
-    task,
-    graphPath,
-    consumer,
-    ...(requireFreshGraph ? { requireFreshGraph: true } : {}),
-    ...(requireFreshContext ? { requireFreshContext: true } : {}),
-    ...(allowSnippets ? { allowSnippets: true } : {}),
-  }
-}
-
-function parseContextPackFormat(value: string): PackCliOptions['format'] {
-  const normalized = value.trim().toLowerCase()
-  if (
-    normalized === 'json'
-    || normalized === 'text'
-    || normalized === 'markdown'
-    || normalized === 'claude'
-    || normalized === 'copilot'
-  ) {
-    return normalized as PackCliOptions['format']
-  }
-  throw new UsageError('error: --format must be one of json, text, markdown, claude, copilot')
-}
-
-function parseHandoffConsumer(value: string): HandoffCliOptions['consumer'] {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'generic' || normalized === 'codex' || normalized === 'cursor' || normalized === 'copilot') {
-    return normalized as HandoffCliOptions['consumer']
-  }
-  throw new UsageError('error: --consumer must be one of generic, codex, cursor, copilot')
-}
-
-function parseRetrievalLevel(value: string): PackCliOptions['retrievalLevel'] {
-  const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 5) {
-    throw new UsageError(`error: --retrieval-level must be an integer between 0 and 5 (got ${JSON.stringify(value)})`)
-  }
-  return parsed as PackCliOptions['retrievalLevel']
-}
-
-function parseRetrievalStrategy(value: string): PackCliOptions['retrievalStrategy'] {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'default' || normalized === 'slice-v1') {
-    return normalized
-  }
-  throw new UsageError(`error: --retrieval-strategy must be one of default, slice-v1 (got ${JSON.stringify(value)})`)
-}
-
-export function parsePromptArgs(args: string[]): PromptCliOptions {
-  const usage = 'Usage: madar prompt "<prompt>" --provider NAME [--graph path] [--require-fresh-graph] [--require-fresh-context]'
-  const prompt = args[0]?.trim()
-  if (!prompt) {
-    throw new UsageError(usage)
-  }
-
-  let provider: PromptCliProvider | null = null
-  let graphPath = 'out/graph.json'
-  let requireFreshGraph = false
-  let requireFreshContext = false
-
-  const normalizedPrompt = validateCliQuestionText('prompt', prompt)
-
-  for (let index = 1; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (!argument.startsWith('--')) {
-      throw new UsageError(usage)
-    }
-
-    if (argument === '--provider') {
-      provider = parsePromptProvider(requireOptionValue('--provider', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--provider=')) {
-      const [, value] = argument.split('=', 2)
-      provider = parsePromptProvider(requireOptionValue('--provider', value))
-      continue
-    }
-
-    if (argument === '--graph') {
-      graphPath = parseValidatedGraphPath('--graph', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--graph=')) {
-      const [, value] = argument.split('=', 2)
-      graphPath = parseValidatedGraphPath('--graph', value)
-      continue
-    }
-
-    if (argument === '--require-fresh-graph') {
-      requireFreshGraph = true
-      continue
-    }
-
-    if (argument === '--require-fresh-context') {
-      requireFreshContext = true
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for prompt: ${argument}`)
-  }
-
-  if (provider === null) {
-    throw new UsageError('error: --provider is required')
-  }
-
-  return {
-    prompt: normalizedPrompt,
-    provider,
-    graphPath,
-    ...(requireFreshGraph ? { requireFreshGraph: true } : {}),
-    ...(requireFreshContext ? { requireFreshContext: true } : {}),
-  }
-}
-
-export function parsePathArgs(args: string[]): PathCliOptions {
-  const source = args[0]?.trim()
-  const target = args[1]?.trim()
-  if (!source || !target) {
-    throw new UsageError('Usage: madar path <source> <target> [--graph path] [--max-hops N]')
-  }
-
-  let graphPath = 'out/graph.json'
-  let maxHops = 8
-  const normalizedSource = validateCliText('source', source)
-  const normalizedTarget = validateCliText('target', target)
-
-  for (let index = 2; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (argument === '--graph') {
-      graphPath = requireNonEmptyValue('--graph', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--graph=')) {
-      const [, value] = argument.split('=', 2)
-      graphPath = requireNonEmptyValue('--graph', value)
-      continue
-    }
-
-    if (argument === '--max-hops') {
-      maxHops = parsePositiveInteger('--max-hops', requireNonEmptyValue('--max-hops', args[index + 1]))
-      index += 1
-    } else if (argument.startsWith('--max-hops=')) {
-      const [, value] = argument.split('=', 2)
-      maxHops = parsePositiveInteger('--max-hops', requireNonEmptyValue('--max-hops', value))
-    } else {
-      throw new UsageError(`error: unknown option for path: ${argument}`)
-    }
-
-    if (maxHops > MAX_PATH_HOPS) {
-      throw new UsageError(`error: --max-hops must be <= ${MAX_PATH_HOPS}`)
-    }
-  }
-
-  return { source: normalizedSource, target: normalizedTarget, graphPath, maxHops }
-}
-
-export function parseDiffArgs(args: string[]): DiffCliOptions {
-  const baselineGraphPath = args[0]?.trim()
-  if (!baselineGraphPath) {
-    throw new UsageError('Usage: madar diff <baseline-graph.json> [--graph path] [--limit N]')
-  }
-  if (baselineGraphPath.length > MAX_CLI_PATH_LENGTH) {
-    throw new UsageError(`error: baseline graph path exceeds maximum length of ${MAX_CLI_PATH_LENGTH} characters`)
-  }
-
-  let graphPath = 'out/graph.json'
-  let limit = 10
-
-  for (let index = 1; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (argument === '--graph') {
-      graphPath = requireNonEmptyValue('--graph', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--graph=')) {
-      const [, value] = argument.split('=', 2)
-      graphPath = requireNonEmptyValue('--graph', value)
-      continue
-    }
-
-    if (argument === '--limit') {
-      limit = parsePositiveDecimalInteger('--limit', requireNonEmptyValue('--limit', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--limit=')) {
-      const [, value] = argument.split('=', 2)
-      limit = parsePositiveDecimalInteger('--limit', requireNonEmptyValue('--limit', value))
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for diff: ${argument}`)
-  }
-
-  return { baselineGraphPath, graphPath, limit }
-}
-
-export function parseExplainArgs(args: string[]): ExplainCliOptions {
-  const label = args[0]?.trim()
-  if (!label) {
-    throw new UsageError('Usage: madar explain <label> [--graph path] [--relation REL]')
-  }
-
-  let graphPath = 'out/graph.json'
-  let relation = ''
-  const normalizedLabel = validateCliText('label', label)
-
-  for (let index = 1; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (argument === '--graph') {
-      graphPath = requireNonEmptyValue('--graph', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--graph=')) {
-      const [, value] = argument.split('=', 2)
-      graphPath = requireNonEmptyValue('--graph', value)
-      continue
-    }
-
-    if (argument === '--relation') {
-      relation = validateCliText('--relation', requireNonEmptyValue('--relation', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--relation=')) {
-      const [, value] = argument.split('=', 2)
-      relation = validateCliText('--relation', requireNonEmptyValue('--relation', value))
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for explain: ${argument}`)
-  }
-
-  return { label: normalizedLabel, graphPath, relation }
-}
-
-export function parseSaveResultArgs(args: string[]): SaveResultCliOptions {
-  let question = ''
-  let answer = ''
-  let queryType = 'query'
-  let memoryDir = 'out/memory'
-  const sourceNodes: string[] = []
-
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (argument === '--question') {
-      question = requireNonEmptyValue('--question', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument === '--answer') {
-      answer = requireNonEmptyValue('--answer', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument === '--type') {
-      queryType = requireNonEmptyValue('--type', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument === '--memory-dir') {
-      memoryDir = requireNonEmptyValue('--memory-dir', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument === '--nodes') {
-      let cursor = index + 1
-      while (cursor < args.length && !String(args[cursor]).startsWith('--')) {
-        const value = args[cursor]?.trim()
-        if (value) {
-          if (sourceNodes.length >= MAX_CLI_SOURCE_NODES) {
-            throw new UsageError(`error: --nodes is limited to ${MAX_CLI_SOURCE_NODES} items`)
-          }
-          sourceNodes.push(value)
-        }
-        cursor += 1
-      }
-      index = cursor - 1
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for save-result: ${argument}`)
-  }
-
-  if (question.trim().length === 0 || answer.trim().length === 0) {
-    throw new UsageError('Usage: madar save-result --question Q --answer A [--type T] [--nodes N1 N2 ...] [--memory-dir DIR]')
-  }
-
-  if (question.length > MAX_QUESTION_LENGTH) {
-    throw new UsageError(`error: --question exceeds maximum length of ${MAX_QUESTION_LENGTH} characters`)
-  }
-  if (answer.length > MAX_ANSWER_LENGTH) {
-    throw new UsageError(`error: --answer exceeds maximum length of ${MAX_ANSWER_LENGTH} characters`)
-  }
-
-  memoryDir = validateGraphOutputPath(memoryDir)
-
-  return { question, answer, queryType, sourceNodes, memoryDir }
+  return { question, path }
 }
 
 export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): BenchmarkCliOptions {
@@ -1281,19 +441,9 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
   let question: string | null = null
   let graphPath = 'out/graph.json'
   let execTemplate = ''
-  let questionsPath: string | null = null
   let outputDir = 'out/compare'
-  let task: 'explain' | 'implement' = 'explain'
-  let baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent' = 'full'
   let perArmTimeoutSeconds = 600
-  let validationTimeoutSeconds = 120
-  let heartbeatIntervalMs = 30000
-  let strictMadarFirst = false
-  let strictBenchmarkReadiness = false
-  let allowNoInstall = false
   let yes = false
-  let limit: number | null = null
-  let why = false
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -1337,18 +487,6 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
       continue
     }
 
-    if (argument === '--questions') {
-      questionsPath = requireOptionValue('--questions', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--questions=')) {
-      const [, value] = argument.split('=', 2)
-      questionsPath = requireOptionValue('--questions', value)
-      continue
-    }
-
     if (argument === '--output-dir') {
       outputDir = requireOptionValue('--output-dir', args[index + 1])
       index += 1
@@ -1358,30 +496,6 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     if (argument.startsWith('--output-dir=')) {
       const [, value] = argument.split('=', 2)
       outputDir = requireOptionValue('--output-dir', value)
-      continue
-    }
-
-    if (argument === '--task') {
-      task = parseCompareTask(requireOptionValue('--task', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--task=')) {
-      const [, value] = argument.split('=', 2)
-      task = parseCompareTask(requireOptionValue('--task', value))
-      continue
-    }
-
-    if (argument === '--baseline-mode') {
-      baselineMode = parseCompareBaselineMode(requireOptionValue('--baseline-mode', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--baseline-mode=')) {
-      const [, value] = argument.split('=', 2)
-      baselineMode = parseCompareBaselineMode(requireOptionValue('--baseline-mode', value))
       continue
     }
 
@@ -1397,75 +511,15 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
       continue
     }
 
-    if (argument === '--validation-timeout') {
-      validationTimeoutSeconds = parsePositiveDecimalInteger('--validation-timeout', requireOptionValue('--validation-timeout', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--validation-timeout=')) {
-      const [, value] = argument.split('=', 2)
-      validationTimeoutSeconds = parsePositiveDecimalInteger('--validation-timeout', requireOptionValue('--validation-timeout', value))
-      continue
-    }
-
-    if (argument === '--heartbeat-interval-ms') {
-      heartbeatIntervalMs = parseNonNegativeInteger('--heartbeat-interval-ms', requireOptionValue('--heartbeat-interval-ms', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--heartbeat-interval-ms=')) {
-      const [, value] = argument.split('=', 2)
-      heartbeatIntervalMs = parseNonNegativeInteger('--heartbeat-interval-ms', requireOptionValue('--heartbeat-interval-ms', value))
-      continue
-    }
-
     if (argument === '--yes') {
       yes = true
-      continue
-    }
-
-    if (argument === '--strict-madar-first') {
-      strictMadarFirst = true
-      continue
-    }
-
-    if (argument === '--strict' || argument === '--strict-benchmark-readiness') {
-      strictBenchmarkReadiness = true
-      continue
-    }
-
-    if (argument === '--allow-no-install') {
-      allowNoInstall = true
-      continue
-    }
-
-    if (argument === '--limit') {
-      limit = parsePositiveDecimalInteger('--limit', requireOptionValue('--limit', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--limit=')) {
-      const [, value] = argument.split('=', 2)
-      limit = parsePositiveDecimalInteger('--limit', requireOptionValue('--limit', value))
-      continue
-    }
-
-    if (argument === '--why') {
-      why = true
       continue
     }
 
     throw new UsageError(`error: unknown option for compare: ${argument}`)
   }
 
-  if (question !== null && questionsPath !== null) {
-    throw new UsageError('error: compare accepts either a positional question or --questions, but not both')
-  }
-
-  if (question === null && questionsPath === null) {
+  if (question === null) {
     throw new UsageError(COMPARE_USAGE)
   }
 
@@ -1486,196 +540,15 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     question,
     graphPath: resolvedGraphPath,
     execTemplate,
-    questionsPath,
     outputDir,
-    task,
-    baselineMode,
     perArmTimeoutSeconds,
-    validationTimeoutSeconds,
-    heartbeatIntervalMs,
-    strictMadarFirst,
-    strictBenchmarkReadiness,
-    allowNoInstall,
-    yes,
-    limit,
-    ...(why ? { why: true } : {}),
-  }
-}
-
-export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions {
-  const usage = 'Usage: madar review-compare [graph.json] --exec TEMPLATE [--output-dir DIR] [--base-branch BRANCH] [--budget N] [--yes]'
-  let graphPath = 'out/graph.json'
-  let execTemplate = ''
-  let outputDir = 'out/review-compare'
-  let baseBranch: string | null = null
-  let budget: number | null = null
-  let yes = false
-
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (!argument.startsWith('--')) {
-      if (graphPath !== 'out/graph.json') {
-        throw new UsageError(usage)
-      }
-      graphPath = requireNonEmptyValue('graph path', argument)
-      continue
-    }
-
-    if (argument === '--exec') {
-      execTemplate = requireOptionValue('--exec', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--exec=')) {
-      const [, value] = argument.split('=', 2)
-      execTemplate = requireOptionValue('--exec', value)
-      continue
-    }
-
-    if (argument === '--output-dir') {
-      outputDir = requireOptionValue('--output-dir', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--output-dir=')) {
-      const [, value] = argument.split('=', 2)
-      outputDir = requireOptionValue('--output-dir', value)
-      continue
-    }
-
-    if (argument === '--base-branch') {
-      baseBranch = validateCliText('--base-branch', requireOptionValue('--base-branch', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--base-branch=')) {
-      const [, value] = argument.split('=', 2)
-      baseBranch = validateCliText('--base-branch', requireOptionValue('--base-branch', value))
-      continue
-    }
-
-    if (argument === '--budget') {
-      budget = parseBudget(requireOptionValue('--budget', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--budget=')) {
-      const [, value] = argument.split('=', 2)
-      budget = parseBudget(requireOptionValue('--budget', value))
-      continue
-    }
-
-    if (argument === '--yes') {
-      yes = true
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for review-compare: ${argument}`)
-  }
-
-  if (execTemplate.length === 0) {
-    throw new UsageError('error: --exec is required')
-  }
-
-  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
-  const graphArtifactDir = dirname(resolve(resolvedGraphPath))
-  const resolvedOutputDir = outputDir === 'out/review-compare'
-    ? validateGraphOutputPath(resolve(graphArtifactDir, 'review-compare'), graphArtifactDir)
-    : validateReviewCompareOutputDir(outputDir)
-
-  return {
-    graphPath: resolvedGraphPath,
-    execTemplate,
-    outputDir: resolvedOutputDir,
-    baseBranch,
-    budget,
     yes,
   }
-}
-
-export function parseTimeTravelArgs(args: string[]): TimeTravelCliOptions {
-  const usage = 'Usage: madar time-travel <from> <to> [--view MODE] [--json] [--refresh] [--limit N]'
-  let fromRef: string | null = null
-  let toRef: string | null = null
-  let view: 'summary' | 'risk' | 'drift' | 'timeline' = 'summary'
-  let json = false
-  let refresh = false
-  let limit = 10
-
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (!argument.startsWith('--')) {
-      if (fromRef === null) {
-        fromRef = argument.trim()
-        continue
-      }
-      if (toRef === null) {
-        toRef = argument.trim()
-        continue
-      }
-      throw new UsageError(usage)
-    }
-
-    if (argument === '--view') {
-      view = parseTimeTravelView(requireOptionValue('--view', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--view=')) {
-      const [, value] = argument.split('=', 2)
-      view = parseTimeTravelView(requireOptionValue('--view', value))
-      continue
-    }
-
-    if (argument === '--json') {
-      json = true
-      continue
-    }
-
-    if (argument === '--refresh') {
-      refresh = true
-      continue
-    }
-
-    if (argument === '--limit') {
-      limit = parsePositiveDecimalInteger('--limit', requireOptionValue('--limit', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--limit=')) {
-      const [, value] = argument.split('=', 2)
-      limit = parsePositiveDecimalInteger('--limit', requireOptionValue('--limit', value))
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for time-travel: ${argument}`)
-  }
-
-  if (fromRef === null || fromRef.length === 0 || toRef === null || toRef.length === 0) {
-    throw new UsageError(usage)
-  }
-
-  return { fromRef, toRef, view, json, refresh, limit }
 }
 
 export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let path = '.'
   let update = false
-  let clusterOnly = false
   let watch = false
   let followSymlinks: true | undefined
   let respectGitignore: true | undefined
@@ -1730,7 +603,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
+          'Usage: madar generate [path] [--update] [--watch] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
         )
       }
       path = argument
@@ -1739,11 +612,6 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
 
     if (argument === '--update') {
       update = true
-      continue
-    }
-
-    if (argument === '--cluster-only') {
-      clusterOnly = true
       continue
     }
 
@@ -1825,13 +693,9 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     throw new UsageError(`error: unknown option for generate: ${argument}`)
   }
 
-  if (update && clusterOnly) {
-    throw new UsageError('error: --update and --cluster-only cannot be used together')
-  }
   return {
     path,
     update,
-    clusterOnly,
     watch,
     ...(followSymlinks ? { followSymlinks } : {}),
     ...(respectGitignore ? { respectGitignore } : {}),
@@ -1896,9 +760,6 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 
 export function parseServeArgs(args: string[]): ServeCliOptions {
   let graphPath = 'out/graph.json'
-  let host = '127.0.0.1'
-  let port = 4173
-  let transport: 'http' | 'stdio' = 'http'
   let autoRefresh = false
 
   for (let index = 0; index < args.length; index += 1) {
@@ -1909,19 +770,15 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
 
     if (!argument.startsWith('--')) {
       if (graphPath !== 'out/graph.json') {
-        throw new UsageError('Usage: madar serve [graph.json] [--host H] [--port N] [--transport http|stdio] [--http|--stdio|--mcp] [--auto-refresh]')
+        throw new UsageError(
+          'Usage: madar serve [graph.json] [--stdio|--mcp] [--auto-refresh]',
+        )
       }
-      graphPath = argument
-      continue
-    }
-
-    if (argument === '--http') {
-      transport = 'http'
+      graphPath = validateGraphPath(argument)
       continue
     }
 
     if (argument === '--stdio' || argument === '--mcp') {
-      transport = 'stdio'
       continue
     }
 
@@ -1930,46 +787,10 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
       continue
     }
 
-    if (argument === '--transport') {
-      transport = parseServeTransport('--transport', requireNonEmptyValue('--transport', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--transport=')) {
-      const [, value] = argument.split('=', 2)
-      transport = parseServeTransport('--transport', requireNonEmptyValue('--transport', value))
-      continue
-    }
-
-    if (argument === '--host') {
-      host = requireNonEmptyValue('--host', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--host=')) {
-      const [, value] = argument.split('=', 2)
-      host = requireNonEmptyValue('--host', value)
-      continue
-    }
-
-    if (argument === '--port') {
-      port = parsePort('--port', requireNonEmptyValue('--port', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--port=')) {
-      const [, value] = argument.split('=', 2)
-      port = parsePort('--port', requireNonEmptyValue('--port', value))
-      continue
-    }
-
     throw new UsageError(`error: unknown option for serve: ${argument}`)
   }
 
-  return { graphPath, host, port, transport, autoRefresh }
+  return { graphPath, autoRefresh }
 }
 
 export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status' = 'doctor'): DoctorCliOptions {
@@ -2006,112 +827,6 @@ export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status'
   }
 
   return { graphPath }
-}
-
-export function parseSummaryArgs(args: string[]): SummaryCliOptions {
-  const usage = 'Usage: madar summary [graph.json]'
-  let graphPath = 'out/graph.json'
-
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (argument === '--graph') {
-      graphPath = requireOptionValue('--graph', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--graph=')) {
-      const [, value] = argument.split('=', 2)
-      graphPath = requireOptionValue('--graph', value)
-      continue
-    }
-
-    if (argument.startsWith('--')) {
-      throw new UsageError(`error: unknown option for summary: ${argument}`)
-    }
-
-    if (graphPath !== 'out/graph.json') {
-      throw new UsageError(usage)
-    }
-
-    graphPath = argument
-  }
-
-  return { graphPath }
-}
-
-export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
-  const usage = 'Usage: madar proof-report [graph.json] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]'
-  let graphPath = 'out/graph.json'
-  let outputDir: string | null = null
-  let compareDir: string | null = null
-  let packPath: string | null = null
-
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (argument === '--output-dir') {
-      outputDir = validateGraphOutputPath(requireOptionValue('--output-dir', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--output-dir=')) {
-      const [, value] = argument.split('=', 2)
-      outputDir = validateGraphOutputPath(requireOptionValue('--output-dir', value))
-      continue
-    }
-
-    if (argument === '--compare-dir') {
-      compareDir = validateGraphOutputPath(requireOptionValue('--compare-dir', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--compare-dir=')) {
-      const [, value] = argument.split('=', 2)
-      compareDir = validateGraphOutputPath(requireOptionValue('--compare-dir', value))
-      continue
-    }
-
-    if (argument === '--pack') {
-      packPath = validateGraphOutputPath(requireOptionValue('--pack', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--pack=')) {
-      const [, value] = argument.split('=', 2)
-      packPath = validateGraphOutputPath(requireOptionValue('--pack', value))
-      continue
-    }
-
-    if (argument.startsWith('--')) {
-      throw new UsageError(`error: unknown option for proof-report: ${argument}`)
-    }
-
-    if (graphPath !== 'out/graph.json') {
-      throw new UsageError(usage)
-    }
-
-    graphPath = argument
-  }
-
-  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
-  const graphBase = dirname(resolve(resolvedGraphPath))
-  return {
-    graphPath: resolvedGraphPath,
-    outputDir: outputDir ?? validateGraphOutputPath(resolve(graphBase, 'proof-report'), graphBase),
-    compareDir: compareDir ?? validateGraphOutputPath(resolve(graphBase, 'compare'), graphBase),
-    packPath,
-  }
 }
 
 export function parseHookArgs(args: string[]): HookCliOptions {
@@ -2196,53 +911,10 @@ export function parseInstallArgs(args: string[], defaultPlatform: InstallPlatfor
 
 export function parsePlatformActionArgs(command: string, args: string[]): PlatformActionCliOptions {
   const action = args[0]
-  const profileAware = PROFILE_AWARE_PLATFORM_COMMANDS.has(command)
-  const usage = profileAware
-    ? `Usage: madar ${command} <install|uninstall> [--profile core|full|strict]`
-    : `Usage: madar ${command} <install|uninstall>`
+  const usage = `Usage: madar ${command} <install|uninstall>`
   if (action !== 'install' && action !== 'uninstall') {
     throw new UsageError(usage)
   }
-
-  if (action === 'uninstall') {
-    if (args.length === 1) {
-      return { action }
-    }
-    throw new UsageError(usage)
-  }
-
-  let profile: InstallProfile | undefined
-  for (let index = 1; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-    if (!profileAware) {
-      throw new UsageError(usage)
-    }
-
-    if (argument === '--profile') {
-      const value = requireNonEmptyValue('--profile', args[index + 1])
-      if (!isInstallProfile(value)) {
-        throw new UsageError('error: --profile must be one of core, full, strict')
-      }
-      profile = value
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--profile=')) {
-      const [, value] = argument.split('=', 2)
-      const normalizedValue = requireNonEmptyValue('--profile', value)
-      if (!isInstallProfile(normalizedValue)) {
-        throw new UsageError('error: --profile must be one of core, full, strict')
-      }
-      profile = normalizedValue
-      continue
-    }
-
-    throw new UsageError(usage)
-  }
-
-  return profile ? { action, profile } : { action }
+  if (args.length !== 1) throw new UsageError(usage)
+  return { action }
 }

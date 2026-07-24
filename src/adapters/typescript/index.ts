@@ -213,6 +213,10 @@ function writeCanonicalGraph(
       source_location: location,
       line_number: symbol.range.start.line,
       end_line_number: symbol.range.end.line,
+      ...(symbol.declaration_range ? {
+        definition_range: symbol.range,
+        declaration_range: symbol.declaration_range,
+      } : {}),
       language: file.language,
       exported: symbol.exported,
       layer: 'semantic',
@@ -436,7 +440,14 @@ function emitSymbol(args: EmitSymbolArgs): IndexSymbol {
   const id = makeSymbolId(file.id, kind, name)
   const existing = symbolById.get(id)
   if (existing) {
-    existing.range = mergeRanges(existing.range, rangeOf(node, sourceFile))
+    const range = rangeOf(node, sourceFile)
+    const declarationRange = declarationRangeOf(node, sourceFile)
+    const hasBody = comparePosition(range.end, declarationRange.end) !== 0
+    const existingHasBody = comparePosition(existing.range.end, (existing.declaration_range ?? existing.range).end) !== 0
+    if (hasBody && !existingHasBody) {
+      existing.range = range
+      existing.declaration_range = declarationRange
+    }
     existing.exported ||= exported
     mergeExportAliases(existing, exportAliases)
     const declaration = edges.find((edge) => edge.kind === 'declares' && edge.to === id)
@@ -449,8 +460,11 @@ function emitSymbol(args: EmitSymbolArgs): IndexSymbol {
     name,
     kind,
     range: rangeOf(node, sourceFile),
+    declaration_range: declarationRangeOf(node, sourceFile),
     exported,
-    ...(exportAliases.length > 0 ? { framework_metadata: { export_aliases: [...exportAliases].sort(compareCodeUnits) } } : {}),
+    ...(exportAliases.length > 0 ? { framework_metadata: {
+      export_aliases: [...exportAliases].sort(compareCodeUnits),
+    } } : {}),
   }
   symbols.push(symbol)
   symbolById.set(symbol.id, symbol)
@@ -644,12 +658,6 @@ function mergeExportAliases(symbol: IndexSymbol, aliases: readonly string[]): vo
   }
 }
 
-function mergeRanges(left: IndexRange, right: IndexRange): IndexRange {
-  const start = comparePosition(left.start, right.start) <= 0 ? left.start : right.start
-  const end = comparePosition(left.end, right.end) >= 0 ? left.end : right.end
-  return { start: { ...start }, end: { ...end } }
-}
-
 function comparePosition(left: IndexRange['start'], right: IndexRange['start']): number {
   return left.line - right.line || left.column - right.column
 }
@@ -719,7 +727,6 @@ function resolveRelativeImportAbsolute(
 }
 
 function createIndexCompilerHost(
-  root: string,
   compilerOptions: ts.CompilerOptions,
   pathToFileId: Map<string, string>,
   sourceTextByPath: ReadonlyMap<string, string>,
@@ -811,7 +818,7 @@ function createCanonicalProgram(
   if (rootNames.length === 0) return null
   const optionsResolver = createCompilerOptionsResolver(root)
   const options = optionsResolver.defaultOptions
-  const host = createIndexCompilerHost(root, options, pathToFileId, sourceTextByPath, optionsResolver.forContainingFile)
+  const host = createIndexCompilerHost(options, pathToFileId, sourceTextByPath, optionsResolver.forContainingFile)
   try {
     const configPath = findProjectConfigWithinRoot(root, root)
     const configPaths = new Set(files.map((file) => findProjectConfigWithinRoot(join(root, file.path), root)))
@@ -995,6 +1002,32 @@ function expandJsToTsVariants(spec: string): string[] {
 function rangeOf(node: ts.Node, sourceFile: ts.SourceFile): IndexRange {
   const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
   const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd())
+  return {
+    start: { line: start.line + 1, column: start.character + 1 },
+    end: { line: end.line + 1, column: end.character + 1 },
+  }
+}
+
+function declarationRangeOf(node: ts.Node, sourceFile: ts.SourceFile): IndexRange {
+  const callable = ts.isVariableDeclaration(node)
+    && node.initializer
+    && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+    ? node.initializer
+    : ts.isFunctionLike(node) ? node : null
+  const body = (callable as (ts.Node & { body?: ts.ConciseBody }) | null)?.body
+  const container = ts.isVariableDeclaration(node) && node.initializer
+    && (ts.isClassExpression(node.initializer) || ts.isFunctionExpression(node.initializer))
+    ? node.initializer : node
+  let moduleBody = ts.isModuleDeclaration(container) ? container.body : undefined
+  while (moduleBody && ts.isModuleDeclaration(moduleBody)) moduleBody = moduleBody.body
+  const brace = body ?? (
+    (ts.isClassDeclaration(container) || ts.isClassExpression(container)
+      || ts.isInterfaceDeclaration(container) || ts.isEnumDeclaration(container))
+      ? container.getChildren(sourceFile).find((child) => child.kind === ts.SyntaxKind.OpenBraceToken)
+      : moduleBody)
+  if (!brace) return rangeOf(node, sourceFile)
+  const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+  const end = sourceFile.getLineAndCharacterOfPosition(brace.getStart(sourceFile))
   return {
     start: { line: start.line + 1, column: start.character + 1 },
     end: { line: end.line + 1, column: end.character + 1 },
@@ -1795,8 +1828,11 @@ function defaultCompilerOptions(): ts.CompilerOptions {
 }
 
 const INDEX_COMPILER_OVERRIDES = {
+  composite: false,
+  incremental: false,
   noEmit: true,
   skipLibCheck: true,
+  types: [],
   ignoreDeprecations: '6.0',
 } satisfies ts.CompilerOptions
 

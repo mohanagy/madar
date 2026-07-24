@@ -1,46 +1,31 @@
-# Install compatibility guide
+# Agent compatibility
 
-This guide is the user-facing install matrix for the current CLI contract. It focuses on the commands users actually run, the files each path writes, how to verify the result, and the most important behavior or limitation to know before choosing a surface.
+All MCP-capable integrations expose one tool: `retrieve(question, budget?)`. There are no tool profiles.
 
-If you want one copy/paste walkthrough per main agent target, use the [agent quickstarts](https://github.com/mohanagy/madar/blob/next/docs/tutorials/agent-quickstarts.md) after you pick a row from this matrix.
+## Project-local installers
 
-## Dedicated project install commands
+| Agent | Command | Managed files | Live MCP | Verification |
+| --- | --- | --- | --- | --- |
+| Claude Code | `madar claude install` | `CLAUDE.md`, `.claude/settings.json`, `.claude/madar-user-prompt-submit.cjs`, `.mcp.json` | Yes | `madar doctor`, then `/mcp` |
+| Cursor | `madar cursor install` | `.cursor/rules/madar.mdc`, `.cursor/mcp.json` | Yes | `madar doctor`, then inspect MCP settings |
+| GitHub Copilot CLI | `madar copilot install` | home skill, `.vscode/mcp.json` | Yes | `madar doctor`, then inspect MCP settings |
+| Gemini CLI | `madar gemini install` | home skill, `GEMINI.md`, `.gemini/settings.json` | Yes | `madar doctor`, then inspect MCP settings |
+| Codex CLI | `madar codex install` | `AGENTS.md`, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, marked block in `~/.codex/config.toml` | Yes | `madar status`, `/hooks`, `/mcp` or `codex mcp list` |
+| OpenCode | `madar opencode install` | `AGENTS.md`, `.opencode/plugins/madar.js`, `opencode.json` or `opencode.jsonc` | Yes | `madar doctor`, then inspect MCP settings |
+| Aider | `madar aider install` | `AGENTS.md` | No | inspect `AGENTS.md`; use `madar query` |
+| Claw | `madar claw install` | `AGENTS.md` | No | inspect `AGENTS.md`; use `madar query` |
+| Factory Droid | `madar droid install` | `AGENTS.md` | No | inspect `AGENTS.md`; use `madar query` |
+| Trae | `madar trae install` | `AGENTS.md` | No | inspect `AGENTS.md`; use `madar query` |
+| Trae CN | `madar trae-cn install` | `AGENTS.md` | No | inspect `AGENTS.md`; use `madar query` |
 
-These commands write repo-local instructions, hooks, rules, MCP config, or plugins for the current checkout. Some of them also install a matching home skill when that is part of the current dedicated flow.
+Prompt hooks and instruction files provide guidance, not enforcement. `doctor` and `status` inspect on-disk state; they cannot prove that a running host trusted a hook or activated a server.
 
-| Agent | Command | Generated files/config | Verify | Surface | Profile behavior | Known limitation |
-|---|---|---|---|---|---|---|
-| Claude Code | `madar claude install [--profile core\|full\|strict]` | `CLAUDE.md`, `.claude/settings.json`, `.mcp.json` | `madar doctor` / `madar status` | MCP tools, prompts, and resources via the selected tool profile. | `core`, `full`, and `strict`; strict exposes only `context_pack` and `context_expand` for one bounded context-pack-first pass. | The `UserPromptSubmit` hook only injects guidance for local code tasks. |
-| Cursor | `madar cursor install [--profile core\|full\|strict]` | `.cursor/rules/madar.mdc`, `.cursor/mcp.json` | `madar doctor` / `madar status` | MCP tools, prompts, and resources via the selected tool profile. | `core`, `full`, and `strict`; strict exposes only `context_pack` and `context_expand` for one bounded context-pack-first pass. | Cursor has no separate prompt hook; the rule file plus MCP config are the managed surface. |
-| Gemini CLI | `madar gemini install [--profile core\|full\|strict]` | `~/.gemini/skills/madar/SKILL.md`, `GEMINI.md`, `.gemini/settings.json` hook and MCP entry | `madar doctor` / `madar status` for `.gemini/settings.json`, then inspect the installed home skill for slash-command availability. | Home skill, local instructions, and an installed MCP server using the selected tool profile. | `core`, `full`, and `strict`; strict exposes only `context_pack` and `context_expand` for one bounded context-pack-first pass. | Use `madar prompt --provider gemini` when you need a one-shot export instead of live MCP. |
-| GitHub Copilot CLI | `madar copilot install [--profile core\|full\|strict]` | `~/.copilot/skills/madar/SKILL.md`, `.vscode/mcp.json` | `madar doctor` / `madar status` for `.vscode/mcp.json`, then inspect the installed home skill for slash-command availability. | Home skill plus MCP tools, prompts, and resources via the selected tool profile. | `core`, `full`, and `strict`; strict exposes only `context_pack` and `context_expand` for one bounded context-pack-first pass. | The repo-local verifier checks the MCP wiring; the home skill is a separate install surface. |
-| Aider | `madar aider install` | `AGENTS.md` | `madar doctor` / `madar status` | Installed instructions only; use `madar pack` or `madar prompt` for portable context. | Context-pack-first profile only. | Aider has no PreToolUse-style hook equivalent. |
-| Codex CLI | `madar codex install` | `AGENTS.md`, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, plus this workspace's marker-owned block in `~/.codex/config.toml` | `madar doctor` / `madar status` | Installed instructions, a task-applicable `UserPromptSubmit` hook, and a workspace-scoped MCP entry Codex CLI loads. | Context-pack-first guidance with the strict MCP surface. | `madar doctor` / `madar status` validate on-disk wiring only, not Codex live hook trust or MCP activation. |
-| OpenCode | `madar opencode install` | `AGENTS.md`, `.opencode/plugins/madar.js`, `opencode.json` or `opencode.jsonc` | `madar doctor` / `madar status` | Installed instructions, plugin wiring, and a local MCP entry for the Madar server. | Context-pack-first guidance with the strict MCP surface. | Verification expects the Madar-owned plugin and `mcp.madar` entry to stay intact. |
-| Claw | `madar claw install` | `AGENTS.md` | Inspect the generated `AGENTS.md` profile. | Installed instructions only; use `madar pack` or `madar prompt` for portable context. | Context-pack-first profile only. | There is no repo-local MCP or doctor/status integration for Claw. |
-| Factory Droid | `madar droid install` | `AGENTS.md` | Inspect the generated `AGENTS.md` profile. | Installed instructions only; use `madar pack` or `madar prompt` for portable context. | Context-pack-first profile only. | There is no repo-local MCP or doctor/status integration for Factory Droid. |
-| Trae | `madar trae install` | `AGENTS.md` | Inspect the generated `AGENTS.md` profile. | Installed instructions only; use `madar pack` or `madar prompt` for portable context. | Context-pack-first profile only. | There is no repo-local MCP or doctor/status integration for Trae. |
-| Trae CN | `madar trae-cn install` | `AGENTS.md` | Inspect the generated `AGENTS.md` profile. | Installed instructions only; use `madar pack` or `madar prompt` for portable context. | Context-pack-first profile only. | There is no repo-local MCP or doctor/status integration for Trae CN. |
+## Home-skill aliases
 
-## `madar install --platform ...` compatibility
+`madar install --platform <name>` installs a bundled home skill for supported platforms. It does not replace the project-local installer above. Use the dedicated project command when you want repository instructions, hooks, or MCP wiring.
 
-`madar install` is the cross-platform entrypoint. Some platforms install a bundled home skill, `cursor` is an alias to the repo-local installer above, and `gemini` reuses the dedicated Gemini flow (home skill plus project files).
+## Worktrees
 
-Every home-skill install writes `SKILL.md` plus a sibling `.madar_version` marker.
+Run the installer from the linked worktree where the agent will operate. Madar resolves that worktree's graph through the MCP process working directory and keeps generated artifacts isolated from sibling worktrees.
 
-| Platform | Command | Generated files/config | Verify | Surface | Profile behavior | Known limitation |
-|---|---|---|---|---|---|---|
-| Claude Code skill install | `madar install --platform claude` | `~/.claude/skills/madar/SKILL.md`, `~/.claude/CLAUDE.md` | Inspect `SKILL.md` and the sibling `.madar_version` marker. | Bundled home skill only. | Home skill install; no repo-local MCP wiring is added. | Use `madar claude install` inside each repo for `CLAUDE.md`, hooks, and `.mcp.json`. |
-| Gemini CLI alias install | `madar install --platform gemini` | `~/.gemini/skills/madar/SKILL.md`, `GEMINI.md`, `.gemini/settings.json` | `madar doctor` / `madar status` for `.gemini/settings.json`, then inspect the installed home skill for slash-command availability. | Alias for the dedicated Gemini installer, including its home skill and project-local files. | Uses the dedicated Gemini installer with its default profile; `madar install` does not accept `--profile`. | Use `madar gemini install --profile ...` when you need to choose `core`, `full`, or `strict` explicitly. |
-| Cursor alias install | `madar install --platform cursor` | `.cursor/rules/madar.mdc`, `.cursor/mcp.json` | `madar doctor` / `madar status` | Alias for the project-local Cursor installer. | Uses the dedicated Cursor installer with its default profile; `madar install` does not accept `--profile`. | Use `madar cursor install --profile ...` when you need to choose `core`, `full`, or `strict` explicitly. |
-| GitHub Copilot CLI skill install | `madar install --platform copilot` | `~/.copilot/skills/madar/SKILL.md` | Inspect `SKILL.md` and the sibling `.madar_version` marker. | Bundled home skill only. | Home skill install; no repo-local `.vscode/mcp.json` wiring is added. | Use `madar copilot install` when you also want the repo-local MCP config. |
-| Aider skill install | `madar install --platform aider` | `~/.aider/madar/SKILL.md` | Inspect `SKILL.md` and the sibling `.madar_version` marker. | Bundled home skill only. | Home skill guidance only; no repo-local AGENTS.md changes are made. | Use `madar aider install` inside a repo when you want the project-local AGENTS profile. |
-| Codex CLI skill install | `madar install --platform codex` | `~/.agents/skills/madar/SKILL.md` | Inspect `SKILL.md` and the sibling `.madar_version` marker. | Bundled home skill only. | Home skill guidance only; no repo-local AGENTS.md, hook, or MCP changes are made. | Use `madar codex install` inside a repo when you want the project-local AGENTS profile, `UserPromptSubmit` hook, and MCP entry. |
-| OpenCode skill install | `madar install --platform opencode` | `~/.config/opencode/skills/madar/SKILL.md` | Inspect `SKILL.md` and the sibling `.madar_version` marker. | Bundled home skill only. | Home skill guidance only; no repo-local plugin or MCP entry is added. | Use `madar opencode install` inside a repo when you want the project-local plugin and `mcp.madar` entry. |
-| Claw skill install | `madar install --platform claw` | `~/.claw/skills/madar/SKILL.md` | Inspect `SKILL.md` and the sibling `.madar_version` marker. | Bundled home skill only. | Sequential-workflow skill guidance only. | There is no repo-local MCP or doctor/status integration for Claw. |
-| Factory Droid skill install | `madar install --platform droid` | `~/.factory/skills/madar/SKILL.md` | Inspect `SKILL.md` and the sibling `.madar_version` marker. | Bundled home skill only. | Factory Droid skill guidance only. | There is no repo-local MCP or doctor/status integration for Factory Droid. |
-| Trae skill install | `madar install --platform trae` | `~/.trae/skills/madar/SKILL.md` | Inspect `SKILL.md` and the sibling `.madar_version` marker. | Bundled home skill only. | Trae skill guidance only. | There is no repo-local MCP or doctor/status integration for Trae. |
-| Trae CN skill install | `madar install --platform trae-cn` | `~/.trae-cn/skills/madar/SKILL.md` | Inspect `SKILL.md` and the sibling `.madar_version` marker. | Bundled home skill only. | Trae CN skill guidance only. | There is no repo-local MCP or doctor/status integration for Trae CN. |
-| Windows skill install | `madar install --platform windows` | `~/.claude/skills/madar/SKILL.md` | Inspect `SKILL.md` and the sibling `.madar_version` marker. | Bundled home skill only. | Windows terminal guidance only; it targets the Claude-style home skill directory. | There is no separate repo-local MCP wiring for the Windows skill install path. |
-
-For Codex, `madar codex install` owns only the Madar AGENTS.md section, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and this workspace's marked MCP block in `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`). The block has a unique server name, pins `cwd` to the workspace, and sets startup and tool-call timeouts. The `UserPromptSubmit` hook provides model-visible guidance only for local code tasks; it is guidance, not enforcement. Enable it only in a trusted repository. Restart or start a new Codex session, use `/hooks` to review and trust the project hook, then use `/mcp` or `codex mcp list` to confirm the MCP server. `madar doctor` and `madar status` validate on-disk wiring only, not live Codex trust or activation. `madar codex uninstall` removes only Madar-owned content and preserves user hooks, user config, and other workspace registrations.
+For Codex, the installer owns only the marked workspace block in `~/.codex/config.toml` or `$CODEX_HOME/config.toml`. Reinstalling or uninstalling preserves other workspace registrations and user-managed configuration.

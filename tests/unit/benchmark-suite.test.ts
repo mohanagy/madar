@@ -4,7 +4,7 @@ import { join, resolve, sep } from 'node:path'
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
-import type { NativeAgentCompareReport, NativeAgentCompareResult } from '../../src/infrastructure/compare.js'
+import type { NativeAgentCompareReport } from '../../src/infrastructure/compare.js'
 import type { GenerateIndexResult } from '../../src/application/generate-index.js'
 import {
   loadBenchmarkSuiteRepos,
@@ -60,14 +60,11 @@ function generateResult(rootPath: string): GenerateIndexResult {
     rootPath,
     outputDir,
     graphPath,
-    reportPath: join(outputDir, 'GRAPH_REPORT.md'),
     totalFiles: 1,
     indexedFiles: 1,
     totalWords: 10,
     nodeCount: 1,
     edgeCount: 0,
-    communityCount: 1,
-    semanticAnomalyCount: 0,
     warning: null,
     notes: [],
     discoverySafety: {
@@ -87,27 +84,16 @@ function generateResult(rootPath: string): GenerateIndexResult {
   }
 }
 
-function succeededRun(resultPath: string, inputTokens: number): NativeAgentCompareReport['baseline'] {
+function succeededRun(inputTokens: number): NativeAgentCompareReport['baseline'] {
   return {
     kind: 'succeeded',
-    model: 'claude-sonnet',
-    usage: {
-      input_tokens: inputTokens,
-      cache_creation_input_tokens: 0,
-      cache_read_input_tokens: 0,
-      output_tokens: 50,
-    },
-    total_input_tokens_anthropic_exact: inputTokens,
-    uncached_input_tokens_anthropic_exact: inputTokens,
-    cached_input_tokens_anthropic_exact: 0,
+    total_input_tokens: inputTokens,
     total_cost_usd: inputTokens / 1_000,
-    num_turns: 2,
     duration_ms: inputTokens * 10,
-    result_path: resultPath,
   }
 }
 
-function compareResult(input: { question: string; graphPath: string; outputDir: string }): NativeAgentCompareResult {
+function compareResult(input: { question: string; graphPath: string; outputDir: string }) {
   mkdirSync(input.outputDir, { recursive: true })
   const baselineAnswer = join(input.outputDir, 'baseline-answer.txt')
   const madarAnswer = join(input.outputDir, 'madar-answer.txt')
@@ -122,79 +108,29 @@ function compareResult(input: { question: string; graphPath: string; outputDir: 
   writeFileSync(madarPrompt, `${input.question}\n`, 'utf8')
   writeFileSync(reportPath, `${JSON.stringify({
     graph_path: input.graphPath,
-    baseline: { result_path: baselineAnswer },
-    madar: { result_path: madarAnswer },
+    paths: { baseline_answer: baselineAnswer, madar_answer: madarAnswer },
   }, null, 2)}\n`, 'utf8')
   writeFileSync(shareSafeReportPath, `${JSON.stringify({
     graph_path: '<project-root>/out/graph.json',
-    baseline: { result_path: '<artifact-root>/baseline-answer.txt' },
-    madar: { result_path: '<artifact-root>/madar-answer.txt' },
+    paths: {
+      baseline_answer: '<artifact-root>/baseline-answer.txt',
+      madar_answer: '<artifact-root>/madar-answer.txt',
+    },
   }, null, 2)}\n`, 'utf8')
 
   const report = {
-    baseline_mode: 'native_agent',
-    task: 'explain',
     question: input.question,
     graph_path: input.graphPath,
-    isolation: false,
-    environment: {
-      claude_code_version: 'test',
-      host_os: 'test',
-      node_version: process.version,
-      mcp_servers_active: ['madar'],
-      mcp_server_count: 1,
-      skills_loaded: [],
-      skills_loaded_count: 0,
-      plugins_active: [],
-      user_claude_md_hash: 'sha256:test',
-      project_claude_md_hash: null,
-      parent_claude_md_hashes: [],
-      hooks_active: { user_prompt_submit: [], pre_tool_use: [], post_tool_use: [] },
-    },
-    environment_contamination: {
-      skills_activated_during_run: [],
-      skills_conflicting_with_madar_rules: [],
-      calls_to_other_mcps: {},
-      subagent_dispatches_detected: 0,
-      skill_alignment_score: 1,
-    },
-    exec_command: { command: null, placeholders: ['{prompt_file}'], redacted: true },
-    baseline: succeededRun(baselineAnswer, 300),
-    madar: succeededRun(madarAnswer, 200),
-    install_verified: true,
-    measurement_validity: 'valid',
-    trace_status: 'trace_available',
-    madar_mcp_call_count: 1,
+    baseline: succeededRun(300),
+    madar: succeededRun(200),
+    attribution_status: 'verified',
     tool_call_counts: {
-      baseline: { total: 5, Read: 2, Bash: 0, Glob: 1, Grep: 1, ToolSearch: 0, other: {} },
-      madar: { total: 3, Read: 1, Bash: 0, Glob: 0, Grep: 1, ToolSearch: 0, other: {} },
-    },
-    reductions: {
-      input_tokens: 1.5,
-      uncached_input_tokens: 1.5,
-      cache_creation_input_tokens: null,
-      num_turns: 1,
-      duration_ms: 1.5,
-      cost_usd: 1.5,
-    },
-    token_regression: false,
-    token_regression_reasons: [],
-    prompt_token_source: { baseline: 'anthropic_provider_reported', madar: 'anthropic_provider_reported' },
-    started_at: '2026-07-22T00:00:00.000Z',
-    completed_at: '2026-07-22T00:00:01.000Z',
-    paths: {
-      output_dir: input.outputDir,
-      report: reportPath,
-      share_safe_report: shareSafeReportPath,
-      baseline_answer: baselineAnswer,
-      madar_answer: madarAnswer,
-      baseline_prompt: baselinePrompt,
-      madar_prompt: madarPrompt,
-      prompt_file: madarPrompt,
+      baseline: { total: 5, read: 2, search: 2 },
+      madar: { total: 3, read: 1, search: 1 },
     },
   } as NativeAgentCompareReport
 
-  return { graph_path: input.graphPath, output_root: input.outputDir, reports: [report] }
+  return { output_root: input.outputDir, report }
 }
 
 function readyRepo(overrides: Partial<BenchmarkSuiteRepo> = {}): BenchmarkSuiteRepo {
@@ -374,9 +310,46 @@ describe('canonical benchmark planning', () => {
     const publishedReportPath = resolve(process.cwd(), shareSafePath!.replace(/report\.share-safe\.json$/, 'report.json'))
     expect(JSON.parse(readFileSync(publishedReportPath, 'utf8'))).toEqual({
       graph_path: '<project-root>/out/graph.json',
-      baseline: { result_path: '<artifact-root>/baseline-answer.txt' },
-      madar: { result_path: '<artifact-root>/madar-answer.txt' },
+      paths: {
+        baseline_answer: '<artifact-root>/baseline-answer.txt',
+        madar_answer: '<artifact-root>/madar-answer.txt',
+      },
     })
+  })
+
+  it('fails closed when strict Madar attribution is not verified', async () => {
+    const root = tempRoot()
+    const repoPath = createFixtureRepo(join(root, 'repo'))
+    const result = await runBenchmarkSuite({
+      repo: 'typescript-service',
+      task: 'explain-runtime',
+      mode: 'cold',
+      trials: 1,
+      outputDir: join(root, 'results'),
+      execTemplate: 'mock-runner',
+      dryRun: false,
+      yes: true,
+    }, {
+      repos: [readyRepo({ source: { kind: 'path', path: repoPath } })],
+      tasks: [readyTask()],
+      generateGraph: (rootPath = '.') => generateResult(rootPath),
+      executeNativeAgentCompare: async (input) => {
+        const comparison = compareResult({
+          question: input.question,
+          graphPath: input.graphPath,
+          outputDir: input.outputDir,
+        })
+        comparison.report.attribution_status = 'violated'
+        return comparison
+      },
+    })
+
+    expect(result.summary?.cells[0]).toEqual(expect.objectContaining({
+      status: 'partial',
+      reason: 'One or more trials failed strict Madar attribution',
+      baseline: expect.objectContaining({ input_tokens: null }),
+      madar: expect.objectContaining({ input_tokens: null }),
+    }))
   })
 
   it('generates and compares a repository from its configured graph root', async () => {
@@ -593,7 +566,7 @@ describe('canonical benchmark planning', () => {
           mcpServers?: { madar?: { command?: string; env?: Record<string, string> } }
         }
         expect(config.mcpServers?.madar?.command).toBe('madar')
-        expect(config.mcpServers?.madar?.env).toEqual(expect.objectContaining({ MADAR_TOOL_PROFILE: 'core' }))
+        expect(config.mcpServers?.madar?.env).not.toHaveProperty('MADAR_TOOL_PROFILE')
         expect(config.mcpServers?.madar?.env?.PATH ?? config.mcpServers?.madar?.env?.Path).toContain(join(rootPath, '.claude', 'bin'))
         return generateResult(rootPath)
       },

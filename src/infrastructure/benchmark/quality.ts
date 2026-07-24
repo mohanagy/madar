@@ -1,16 +1,18 @@
 import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
-import { retrieveContext, type RetrieveResult } from '../../runtime/retrieve.js'
+import { retrieveContext } from '../../application/retrieve-context.js'
+import { inspectQueryIndex } from '../../domain/query/index-status.js'
+import type { RetrieveContextResult } from '../../domain/query/types.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './corpus.js'
 import { normalizeBenchmarkQuestion, normalizeExpectedLabel, type BenchmarkQuestionSpec } from './questions.js'
 import { type PromptRunnerUsage } from '../prompt-runner.js'
 import {
-  retrieveBenchmarkContext,
   runBenchmarkPrompt,
   type BenchmarkPromptArtifacts,
   type BenchmarkPromptExecution,
   type BenchmarkPromptRunnerResult,
   type BenchmarkPromptTokenSource,
 } from './runner.js'
+import { retrieveBenchmarkContext } from './runtime-proof.js'
 import {
   averageInputTokenLabel,
   averageReportedTotalTokens,
@@ -92,24 +94,24 @@ export interface QualityOptions {
  */
 export const GOLD_QUESTIONS: GoldQuestion[] = [
   {
-    question: 'how does louvain clustering work',
-    expected_labels: ['cluster', 'louvainpass'],
+    question: 'how does the retrieve application rank query anchors',
+    expected_labels: ['retrievecontext', 'rankqueryanchors'],
   },
   {
     question: 'how does the retrieve MCP tool find relevant nodes',
-    expected_labels: ['retrievecontext', 'scorenode'],
+    expected_labels: ['handletoolcall', 'retrievecontext'],
   },
   {
     question: 'retrieveContext',
     expected_labels: ['retrievecontext'],
   },
   {
-    question: 'how does retrieveContext build community labels',
-    expected_labels: ['retrievecontext', 'buildcommunitylabels'],
+    question: 'how does retrieval traverse directed evidence paths',
+    expected_labels: ['traverseevidencepaths'],
   },
   {
-    question: 'scoreNode',
-    expected_labels: ['scorenode'],
+    question: 'how does retrieval fit evidence into the result budget',
+    expected_labels: ['sliceevidence'],
   },
   {
     question: 'how does canonical TypeScript indexing build graph nodes',
@@ -120,24 +122,24 @@ export const GOLD_QUESTIONS: GoldQuestion[] = [
     expected_labels: ['parsegenerateargs', 'parsequeryargs'],
   },
   {
-    question: 'how does impact analysis compute blast radius',
-    expected_labels: ['analyzeimpact', 'impactresult'],
+    question: 'how does generation build and publish the canonical index',
+    expected_labels: ['generateindex', 'buildandpublishindex'],
   },
   {
     question: 'how does the claude install command configure hooks and MCP',
     expected_labels: ['claudeinstall', 'installmcpserver'],
   },
   {
-    question: 'how does community naming assign labels to clusters',
-    expected_labels: ['buildcommunitylabels'],
+    question: 'how does Madar validate a graph before querying it',
+    expected_labels: ['inspectqueryindex'],
   },
   {
     question: 'how does graph generation discover the current source files',
-    expected_labels: ['generategraph', 'detect'],
+    expected_labels: ['generateindex'],
   },
   {
-    question: 'how does the graph report get generated',
-    expected_labels: ['generate', 'reportts'],
+    question: 'how is the canonical graph artifact loaded',
+    expected_labels: ['loadgraphartifact', 'readgraphartifactreceipt'],
   },
 ]
 
@@ -169,8 +171,15 @@ interface QualityQuestionRunMetadata {
   artifacts: BenchmarkPromptArtifacts | null
 }
 
-function qualityRetrieveContext(graph: KnowledgeGraph, question: string, budget: number, graphPath?: string): RetrieveResult {
-  return graphPath ? retrieveBenchmarkContext(graph, graphPath, question, budget) : retrieveContext(graph, { question, budget })
+function qualityRetrieveContext(
+  graph: KnowledgeGraph,
+  question: string,
+  budget: number,
+  graphPath?: string,
+): RetrieveContextResult {
+  return graphPath
+    ? retrieveBenchmarkContext(graph, graphPath, question, budget)
+    : retrieveContext(inspectQueryIndex(graph), { question, budget })
 }
 
 function questionBucket(question: string): string {
@@ -190,7 +199,11 @@ function questionBucket(question: string): string {
   return 'general'
 }
 
-function buildQualityResult(gold: GoldQuestion, result: RetrieveResult, metadata: QualityQuestionRunMetadata): QualityResult {
+function buildQualityResult(
+  gold: GoldQuestion,
+  result: RetrieveContextResult,
+  metadata: QualityQuestionRunMetadata,
+): QualityResult {
   const expectedLabels = gold.expected_labels
   const normalizedExpectedLabels = expectedLabels.map((label) => normalizeExpectedLabel(label))
   const returnedLabels = result.matched_nodes.map((node) => normalizeExpectedLabel(node.label))
@@ -252,7 +265,7 @@ function buildQualityResult(gold: GoldQuestion, result: RetrieveResult, metadata
 function evaluateQuestion(graph: KnowledgeGraph, gold: GoldQuestion, budget: number, graphPath?: string): QualityResult {
   const result = qualityRetrieveContext(graph, gold.question, budget, graphPath)
   return buildQualityResult(gold, result, {
-    tokens_used: result.token_count,
+    tokens_used: result.metrics.serialized_tokens,
     total_tokens: null,
     prompt_tokens_estimated: null,
     prompt_token_source: null,

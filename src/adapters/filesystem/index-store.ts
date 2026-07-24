@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { readBoundedUtf8, readGraphArtifactReceipt, writeGraphArtifact, type GraphArtifactReceipt } from './graph-artifact.js'
+import { readGraphArtifactReceipt, writeGraphArtifact, type GraphArtifactReceipt } from './graph-artifact.js'
 import {
   INDEXING_OUTCOME_STATUSES, INDEXING_REASON_CODES, IndexLeaseContentionError, readBuildState,
   type IndexBuildState, type IndexDiagnosticReceipt, type IndexingOutcome, type IndexingSummary,
@@ -12,22 +12,18 @@ import { writeTextFileAtomically } from '../../shared/atomic-file.js'
 import { hasOnlyKeys, isRecord } from '../../shared/guards.js'
 import { validateGraphPath } from '../../shared/security.js'
 export const INDEX_DIAGNOSTICS_VERSION = 1 as const
-const REPORT_GRAPH_SHA256 = /^<!-- madar-graph-sha256: ([a-f0-9]{64}) -->$/m
-const REPORT_BUILD_ID = /^<!-- madar-build-id: ([a-f0-9]{64}) -->$/m
-const REPORT_AUTHENTICATION_HEADER = /^(?:<!-- madar-(?:graph-sha256|build-id): [a-f0-9]{64} -->\n)+/
-const MAX_REPORT_BYTES = 5_000_000
 const LOCK_STALE_MS = 5 * 60_000
 const RETIRED_OUTPUTS = [
   'manifest.json', 'watcher-state.json', 'indexing-manifest.failed.json',
   'indexing-manifest.failed.share-safe.json', 'cache', 'docs', 'wiki', 'graph.html',
-  'graph-pages', 'graph.svg', 'graph.graphml', 'cypher.txt', 'obsidian',
+  'graph-pages', 'graph.svg', 'graph.graphml', 'cypher.txt', 'obsidian', 'GRAPH_REPORT.md',
 ] as const
 export interface IndexDiagnostics {
   version: typeof INDEX_DIAGNOSTICS_VERSION; build_id: string; graph_sha256: string; generated_at: string
   summary: IndexingSummary; outcomes: IndexingOutcome[]; index_diagnostics: IndexDiagnosticReceipt[]
 }
 export type PublicationStep =
-  | 'before_report' | 'after_report' | 'before_diagnostics' | 'after_diagnostics'
+  | 'before_diagnostics' | 'after_diagnostics'
   | 'before_graph_commit' | 'after_graph_commit' | 'before_cleanup' | 'after_cleanup'
 export interface IndexStoreDependencies {
   writeText(path: string, contents: string): void; writeGraph(graph: KnowledgeGraph, path: string): void
@@ -48,15 +44,6 @@ const DEFAULT_LEASE_DEPENDENCIES: IndexLeaseDependencies = {
 }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error) }
 function sha256(value: string): string { return createHash('sha256').update(value).digest('hex') }
-function authenticatedReport(report: string, graphSha256: string, buildId: string | null): string {
-  const body = report.replace(REPORT_AUTHENTICATION_HEADER, '').replace(/^\n+/, '').replace(/\n*$/, '')
-  const headers = [`<!-- madar-graph-sha256: ${graphSha256} -->`, ...(buildId ? [`<!-- madar-build-id: ${buildId} -->`] : [])]
-  return `${headers.join('\n')}\n${body}\n`
-}
-export function authenticateReportForGraph(report: string, graph: KnowledgeGraph): string {
-  const artifact = serializeGraphArtifact(graph)
-  return authenticatedReport(report, sha256(artifact), readBuildState(graph)?.build_id ?? null)
-}
 function shareSafeDiagnostics(value: IndexDiagnostics) {
   const levels = { info: 0, warn: 0, error: 0 }
   for (const diagnostic of value.index_diagnostics) levels[diagnostic.level] += 1
@@ -75,14 +62,13 @@ function attemptDerivedWrite(warnings: string[], label: string, before: Publicat
   } catch (error) { warnings.push(`${label} unavailable: ${message(error)}`) }
 }
 export function publishAcceptedIndex(input: {
-  graph: KnowledgeGraph; outputDir: string; report: string; diagnostics: IndexDiagnosticsInput
+  graph: KnowledgeGraph; outputDir: string; diagnostics: IndexDiagnosticsInput
   assertCurrent?: () => void; dependencies?: Partial<IndexStoreDependencies>
 }) {
   const state = readBuildState(input.graph)
   if (!state || state.build_id !== input.diagnostics.build_id) throw new Error('Refusing to publish an unauthenticated or mismatched index build')
   const outputDir = resolve(input.outputDir)
   const graphPath = join(outputDir, 'graph.json')
-  const reportPath = join(outputDir, 'GRAPH_REPORT.md')
   const diagnosticsPath = join(outputDir, 'indexing-manifest.json')
   const shareSafeDiagnosticsPath = join(outputDir, 'indexing-manifest.share-safe.json')
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...input.dependencies }
@@ -91,9 +77,6 @@ export function publishAcceptedIndex(input: {
   if (input.diagnostics.graph_sha256 && input.diagnostics.graph_sha256 !== graphSha256) throw new Error('Refusing to publish diagnostics for different graph bytes')
   const diagnostics: IndexDiagnostics = { ...input.diagnostics, graph_sha256: graphSha256 }
   mkdirSync(outputDir, { recursive: true })
-  attemptDerivedWrite(warnings, 'graph report', 'before_report', 'after_report', () => {
-    dependencies.writeText(reportPath, authenticatedReport(input.report, graphSha256, state.build_id))
-  }, dependencies)
   attemptDerivedWrite(warnings, 'index diagnostics', 'before_diagnostics', 'after_diagnostics', () => {
     dependencies.writeText(diagnosticsPath, `${JSON.stringify(diagnostics, null, 2)}\n`)
     dependencies.writeText(shareSafeDiagnosticsPath, `${JSON.stringify(shareSafeDiagnostics(diagnostics), null, 2)}\n`)
@@ -105,15 +88,12 @@ export function publishAcceptedIndex(input: {
   attemptDerivedWrite(warnings, 'retired output cleanup', 'before_cleanup', 'after_cleanup', () => {
     for (const name of RETIRED_OUTPUTS) dependencies.remove(join(outputDir, name))
   }, dependencies)
-  return { graphPath, reportPath, diagnosticsPath, diagnosticWarnings: warnings }
+  return { graphPath, diagnosticsPath, diagnosticWarnings: warnings }
 }
 type GraphReceipt = { graph: KnowledgeGraph; state: IndexBuildState | null; graphSha256: string; graphModifiedMs: number }
 type AcceptedIndex = GraphReceipt & { state: IndexBuildState }
 type BoundArtifact = Pick<IndexDiagnostics, 'version' | 'build_id' | 'graph_sha256'>
 type ArtifactParser<T extends BoundArtifact> = (value: unknown) => T | null
-export type MatchingReportReceipt = {
-  report: string; reportModifiedMs: number; graphSha256: string; graphModifiedMs: number; buildId: string | null
-}
 const SHA256 = /^[a-f0-9]{64}$/
 function shape(value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> | null {
   return isRecord(value) && required.every((key) => Object.hasOwn(value, key))
@@ -192,31 +172,9 @@ function readMatchingJson<T extends BoundArtifact>(graphPath: string, receipt: G
   } catch { return null }
 }
 export function readMatchingDiagnostics(graphPath: string): IndexDiagnostics | null { return readMatchingJson(graphPath, loadAcceptedIndex(graphPath), 'indexing-manifest.json', parseDiagnostics) }
-function matchingReport(graphPath: string, receipt: GraphReceipt | null): MatchingReportReceipt | null {
-  if (!receipt) return null
-  try {
-    const descriptor = openSync(join(dirname(graphPath), 'GRAPH_REPORT.md'), 'r')
-    let report: string; let reportModifiedMs: number
-    try {
-      const stats = fstatSync(descriptor)
-      if (stats.size > MAX_REPORT_BYTES) return null
-      report = readBoundedUtf8(descriptor, MAX_REPORT_BYTES, 'Graph report too large')
-      reportModifiedMs = Math.trunc(stats.mtimeMs)
-    } finally { closeSync(descriptor) }
-    const buildId = receipt.state?.build_id ?? null
-    return report.match(REPORT_GRAPH_SHA256)?.[1] === receipt.graphSha256
-      && (!buildId || report.match(REPORT_BUILD_ID)?.[1] === buildId)
-      ? { report, reportModifiedMs, graphSha256: receipt.graphSha256, graphModifiedMs: receipt.graphModifiedMs, buildId } : null
-  } catch { return null }
-}
-export function readMatchingReportReceipt(graphPath: string, graphReceipt?: GraphArtifactReceipt): MatchingReportReceipt | null {
-  return matchingReport(graphPath, loadGraphReceipt(graphPath, graphReceipt))
-}
-export function readMatchingReport(graphPath: string): string | null { return readMatchingReportReceipt(graphPath)?.report ?? null }
 export function acceptedIndexArtifactsComplete(graphPath: string): boolean {
   const receipt = loadGraphReceipt(graphPath)
-  return matchingReport(graphPath, receipt) !== null
-    && readMatchingJson(graphPath, receipt, 'indexing-manifest.json', parseDiagnostics) !== null
+  return readMatchingJson(graphPath, receipt, 'indexing-manifest.json', parseDiagnostics) !== null
     && readMatchingJson(graphPath, receipt, 'indexing-manifest.share-safe.json', parseShareSafeDiagnostics) !== null
 }
 function processAlive(pid: number): boolean { try { process.kill(pid, 0); return true } catch { return false } }

@@ -5,13 +5,9 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'no
 import { tmpdir } from 'node:os'
 
 import { generateIndex, type GenerateIndexOptions, type GenerateIndexResult } from '../../application/generate-index.js'
-import type { ContextPackTaskKind } from '../../contracts/context-pack.js'
 import {
   executeNativeAgentCompare,
-  inspectClaudeNativeAgentInstall,
   type NativeAgentCompareReport,
-  type NativeAgentCompareResult,
-  type NativeAgentWorkflowOutcome,
 } from '../compare.js'
 import { claudeInstall } from '../install.js'
 import { copyWorkspaceForBenchmark } from '../../shared/workspace-copy.js'
@@ -93,39 +89,6 @@ interface BenchmarkSuiteArmMetricsSummary {
   cost_usd: BenchmarkSuiteMetricStats | null
 }
 
-interface BenchmarkSuitePassFailSummary {
-  passed: number
-  failed: number
-  n: number
-}
-
-interface BenchmarkSuiteYesNoSummary {
-  yes: number
-  no: number
-  n: number
-}
-
-interface BenchmarkSuiteWorkflowOutcomeSummary {
-  wrong_file_edits: BenchmarkSuiteMetricStats | null
-  validation_passed: BenchmarkSuitePassFailSummary | null
-  review_time_seconds: BenchmarkSuiteMetricStats | null
-  rework_loops: BenchmarkSuiteMetricStats | null
-  human_intervention_required: BenchmarkSuiteYesNoSummary | null
-  evidence: string[]
-}
-
-interface BenchmarkSuiteBenchmarkOutcomeCounts {
-  full_win: number
-  partial_win: number
-  regression: number
-  not_measured: number
-}
-
-interface BenchmarkSuiteBenchmarkOutcomeSummary {
-  counts: BenchmarkSuiteBenchmarkOutcomeCounts
-  evidence: string[]
-}
-
 interface BenchmarkSuiteCellPlan {
   repo: BenchmarkSuiteRepo
   task: BenchmarkSuiteTask
@@ -152,8 +115,6 @@ export interface BenchmarkSuiteSummaryCell {
   isolation: boolean | null
   baseline: BenchmarkSuiteArmMetricsSummary
   madar: BenchmarkSuiteArmMetricsSummary
-  benchmark_outcomes: BenchmarkSuiteBenchmarkOutcomeSummary | null
-  workflow_outcomes: BenchmarkSuiteWorkflowOutcomeSummary | null
   artifacts: {
     share_safe_reports: string[]
   }
@@ -200,9 +161,7 @@ export interface BenchmarkSuiteDependencies {
   captureBenchmarkEnvironment?: (
     options: { projectRoot: string },
   ) => Promise<BenchmarkEnvironment>
-  executeNativeAgentCompare?: (
-    input: Parameters<typeof executeNativeAgentCompare>[0],
-  ) => Promise<NativeAgentCompareResult>
+  executeNativeAgentCompare?: typeof executeNativeAgentCompare
   expectedEnvironment?: BenchmarkExpectedEnvironment | null
 }
 
@@ -462,22 +421,6 @@ function planCell(repo: BenchmarkSuiteRepo, task: BenchmarkSuiteTask, mode: 'col
   return { repo, task, mode, prompt, status: 'ready', reason: null }
 }
 
-function suiteTaskKind(taskId: string): ContextPackTaskKind | null {
-  if (taskId === 'explain-runtime' || taskId === 'explain-auth') {
-    return 'explain'
-  }
-  if (taskId === 'implement') {
-    return 'implement'
-  }
-  if (taskId === 'review') {
-    return 'review'
-  }
-  if (taskId === 'impact') {
-    return 'impact'
-  }
-  return null
-}
-
 function portablePath(path: string): string {
   return relative(process.cwd(), path) || '.'
 }
@@ -616,18 +559,6 @@ function ensureBenchmarkWorkspaceInstall(workspaceRoot: string): void {
   resetBenchmarkWorkspaceConfig(workspaceRoot)
   claudeInstall(workspaceRoot)
   pinBenchmarkWorkspaceClaudeCommandPath(workspaceRoot)
-  const installCheck = inspectClaudeNativeAgentInstall(workspaceRoot)
-  if (installCheck.verified) {
-    return
-  }
-  throw new Error(
-    [
-      `Benchmark suite could not provision a Madar install inside ${portablePath(workspaceRoot)}:`,
-      ...installCheck.artifacts
-        .filter((artifact) => !artifact.ok)
-        .map((artifact) => `  x ${artifact.detail}`),
-    ].join('\n'),
-  )
 }
 
 function execTemplateForWorkspace(execTemplate: string, workspaceRoot: string): string {
@@ -719,116 +650,12 @@ function summarizeArmMetrics(
 ): BenchmarkSuiteArmMetricsSummary {
   const select = arm === 'baseline' ? baselineMetric : madarMetric
   return {
-    input_tokens: summarizeValues(collectNumbers(reports, (report) => select(report, (candidate) => candidate[arm].kind === 'succeeded' ? candidate[arm].total_input_tokens_anthropic_exact : null))),
+    input_tokens: summarizeValues(collectNumbers(reports, (report) => select(report, (candidate) => candidate[arm].kind === 'succeeded' ? candidate[arm].total_input_tokens : null))),
     total_tool_calls: summarizeValues(collectNumbers(reports, (report) => report.tool_call_counts ? report.tool_call_counts[arm].total : null)),
-    read_calls: summarizeValues(collectNumbers(reports, (report) => report.tool_call_counts ? report.tool_call_counts[arm].Read : null)),
-    glob_grep_calls: summarizeValues(collectNumbers(reports, (report) => report.tool_call_counts ? report.tool_call_counts[arm].Glob + report.tool_call_counts[arm].Grep : null)),
+    read_calls: summarizeValues(collectNumbers(reports, (report) => report.tool_call_counts ? report.tool_call_counts[arm].read : null)),
+    glob_grep_calls: summarizeValues(collectNumbers(reports, (report) => report.tool_call_counts ? report.tool_call_counts[arm].search : null)),
     wall_clock_ms: summarizeValues(collectNumbers(reports, (report) => select(report, (candidate) => candidate[arm].kind === 'succeeded' ? candidate[arm].duration_ms : null))),
     cost_usd: summarizeValues(collectNumbers(reports, (report) => select(report, (candidate) => candidate[arm].kind === 'succeeded' ? candidate[arm].total_cost_usd : null))),
-  }
-}
-
-function summarizePassFail(values: boolean[]): BenchmarkSuitePassFailSummary | null {
-  if (values.length === 0) {
-    return null
-  }
-  const passed = values.filter(Boolean).length
-  return {
-    passed,
-    failed: values.length - passed,
-    n: values.length,
-  }
-}
-
-function summarizeYesNo(values: boolean[]): BenchmarkSuiteYesNoSummary | null {
-  if (values.length === 0) {
-    return null
-  }
-  const yes = values.filter(Boolean).length
-  return {
-    yes,
-    no: values.length - yes,
-    n: values.length,
-  }
-}
-
-function collectWorkflowOutcomes(reports: readonly NativeAgentCompareReport[]): NativeAgentWorkflowOutcome[] {
-  return reports.flatMap((report) => report.workflow_outcome ? [report.workflow_outcome] : [])
-}
-
-function collectWorkflowBooleans(
-  outcomes: readonly NativeAgentWorkflowOutcome[],
-  selector: (outcome: NativeAgentWorkflowOutcome) => boolean | null | undefined,
-): boolean[] {
-  return outcomes.flatMap((outcome) => {
-    const value = selector(outcome)
-    return typeof value === 'boolean' ? [value] : []
-  })
-}
-
-function summarizeWorkflowOutcomes(
-  reports: readonly NativeAgentCompareReport[],
-): BenchmarkSuiteWorkflowOutcomeSummary | null {
-  const outcomes = collectWorkflowOutcomes(reports)
-  if (outcomes.length === 0) {
-    return null
-  }
-
-  const summary: BenchmarkSuiteWorkflowOutcomeSummary = {
-    wrong_file_edits: summarizeValues(collectNumbers(outcomes, (outcome) => outcome.wrong_file_edits ?? null)),
-    validation_passed: summarizePassFail(collectWorkflowBooleans(outcomes, (outcome) => outcome.validation_passed)),
-    review_time_seconds: summarizeValues(collectNumbers(outcomes, (outcome) => outcome.review_time_seconds ?? null)),
-    rework_loops: summarizeValues(collectNumbers(outcomes, (outcome) => outcome.rework_loops ?? null)),
-    human_intervention_required: summarizeYesNo(collectWorkflowBooleans(outcomes, (outcome) => outcome.human_intervention_required)),
-    evidence: [...new Set(outcomes.flatMap((outcome) => outcome.evidence ?? []).map((entry) => entry.trim()).filter((entry) => entry.length > 0))],
-  }
-
-  return (
-    summary.wrong_file_edits !== null
-    || summary.validation_passed !== null
-    || summary.review_time_seconds !== null
-    || summary.rework_loops !== null
-    || summary.human_intervention_required !== null
-    || summary.evidence.length > 0
-  )
-    ? summary
-    : null
-}
-
-const BENCHMARK_OUTCOME_KEYS = ['full_win', 'partial_win', 'regression', 'not_measured'] as const
-
-function emptyBenchmarkOutcomeCounts(): BenchmarkSuiteBenchmarkOutcomeCounts {
-  return {
-    full_win: 0,
-    partial_win: 0,
-    regression: 0,
-    not_measured: 0,
-  }
-}
-
-function summarizeBenchmarkOutcomeArm(
-  reports: readonly NativeAgentCompareReport[],
-): BenchmarkSuiteBenchmarkOutcomeSummary | null {
-  const countedReports = reports.flatMap((report) => report.benchmark_outcome ? [report.benchmark_outcome] : [])
-  if (countedReports.length === 0) {
-    return null
-  }
-
-  const counts = emptyBenchmarkOutcomeCounts()
-  const evidence = new Set<string>()
-  for (const outcome of countedReports) {
-    counts[outcome.outcome] += 1
-    for (const entry of outcome.evidence) {
-      const normalized = entry.trim()
-      if (normalized.length > 0) {
-        evidence.add(normalized)
-      }
-    }
-  }
-
-  return {
-    counts,
-    evidence: [...evidence],
   }
 }
 
@@ -839,21 +666,13 @@ function isCompletedArm(summary: BenchmarkSuiteArmMetricsSummary): boolean {
 function summarizeCellStatus(
   baseline: BenchmarkSuiteArmMetricsSummary,
   madar: BenchmarkSuiteArmMetricsSummary,
-  planned: boolean,
-  skipped: boolean,
+  attributionVerified: boolean,
 ): BenchmarkSuiteSummaryCell['status'] {
-  if (planned) {
-    return 'planned'
-  }
-  if (skipped) {
-    return 'skipped'
-  }
-  const baselineDone = isCompletedArm(baseline)
-  const madarDone = isCompletedArm(madar)
-  if (baselineDone && madarDone) {
-    return 'completed'
-  }
-  return 'partial'
+  return attributionVerified &&
+    isCompletedArm(baseline) &&
+    isCompletedArm(madar)
+    ? 'completed'
+    : 'partial'
 }
 
 function formatMetric(stats: BenchmarkSuiteMetricStats | null, digits = 0): string {
@@ -864,27 +683,12 @@ function formatMetric(stats: BenchmarkSuiteMetricStats | null, digits = 0): stri
   return `${formatter(stats.median)} (${formatter(stats.min)}-${formatter(stats.max)}, n=${stats.n})`
 }
 
-function formatSingleBenchmarkOutcome(summary: BenchmarkSuiteBenchmarkOutcomeSummary): string {
-  const parts = BENCHMARK_OUTCOME_KEYS
-    .filter((key) => summary.counts[key] > 0)
-    .map((key) => summary.counts[key] === 1 ? key : `${key} x${summary.counts[key]}`)
-  if (parts.length === 0) {
-    return '—'
-  }
-  return summary.evidence.length > 0 ? `${parts.join(', ')} (${summary.evidence.join('; ')})` : parts.join(', ')
-}
-
-function formatBenchmarkOutcomes(summary: BenchmarkSuiteBenchmarkOutcomeSummary | null): string {
-  return summary ? formatSingleBenchmarkOutcome(summary) : '—'
-}
-
 function formatCellRow(cell: BenchmarkSuiteSummaryCell): string {
   const statusLabel = cell.status === 'skipped' ? 'skipped' : cell.status
   const reason = cell.reason ?? '—'
   return [
     cell.repoId,
     statusLabel,
-    formatBenchmarkOutcomes(cell.benchmark_outcomes),
     cell.isolation === null ? '—' : String(cell.isolation),
     reason,
     formatMetric(cell.baseline.input_tokens),
@@ -899,35 +703,7 @@ function formatCellRow(cell: BenchmarkSuiteSummaryCell): string {
     formatMetric(cell.madar.wall_clock_ms),
     formatMetric(cell.baseline.cost_usd, 2),
     formatMetric(cell.madar.cost_usd, 2),
-    formatWorkflowOutcomes(cell.workflow_outcomes),
   ].join(' | ')
-}
-
-function formatSingleWorkflowOutcomes(summary: BenchmarkSuiteWorkflowOutcomeSummary): string {
-  const parts: string[] = []
-  if (summary.validation_passed) {
-    parts.push(`validation pass ${summary.validation_passed.passed}/${summary.validation_passed.n}`)
-  }
-  if (summary.wrong_file_edits) {
-    parts.push(`wrong-file edits ${formatMetric(summary.wrong_file_edits)}`)
-  }
-  if (summary.review_time_seconds) {
-    parts.push(`review time (s) ${formatMetric(summary.review_time_seconds)}`)
-  }
-  if (summary.rework_loops) {
-    parts.push(`rework ${formatMetric(summary.rework_loops)}`)
-  }
-  if (summary.human_intervention_required) {
-    parts.push(`human intervention ${summary.human_intervention_required.yes}/${summary.human_intervention_required.n}`)
-  }
-  if (parts.length === 0 && summary.evidence.length > 0) {
-    parts.push(summary.evidence.join(', '))
-  }
-  return parts.length > 0 ? parts.join('; ') : '—'
-}
-
-function formatWorkflowOutcomes(summary: BenchmarkSuiteWorkflowOutcomeSummary | null): string {
-  return summary ? formatSingleWorkflowOutcomes(summary) : '—'
 }
 
 function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): string {
@@ -958,8 +734,8 @@ function formatBenchmarkSuiteSummaryMarkdown(summary: BenchmarkSuiteSummary): st
       }
       lines.push(`### ${mode === 'cold' ? 'Cold cache' : 'Warm cache'}`)
       lines.push('')
-      lines.push('| Repo | Status | Benchmark outcomes | Isolation | Reason | Baseline input tokens | Madar input tokens | Baseline tool calls | Madar tool calls | Baseline Read | Madar Read | Baseline Glob/Grep | Madar Glob/Grep | Baseline wall-clock (ms) | Madar wall-clock (ms) | Baseline cost (USD) | Madar cost (USD) | Workflow outcomes |')
-      lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+      lines.push('| Repo | Status | Isolation | Reason | Baseline input tokens | Madar input tokens | Baseline tool calls | Madar tool calls | Baseline Read | Madar Read | Baseline Glob/Grep | Madar Glob/Grep | Baseline wall-clock (ms) | Madar wall-clock (ms) | Baseline cost (USD) | Madar cost (USD) |')
+      lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
       for (const cell of modeCells) {
         lines.push(`| ${formatCellRow(cell)} |`)
       }
@@ -1033,21 +809,14 @@ function loadExpectedEnvironment(path = DEFAULT_EXPECTED_ENVIRONMENT_PATH): Benc
   return readJsonFile(path) as BenchmarkExpectedEnvironment
 }
 
-function summarizeIsolation(reports: readonly NativeAgentCompareReport[]): boolean | null {
-  if (reports.length === 0) {
-    return null
-  }
-  return reports.every((report) => report.isolation)
-}
-
 function copyReportArtifacts(
-  report: NativeAgentCompareReport,
+  sourceRoot: string,
   destinationParent: string,
 ): string {
   const copiedRoot = destinationParent
   mkdirSync(copiedRoot, { recursive: true })
-  for (const entry of readdirSync(report.paths.output_dir)) {
-    cpSync(join(report.paths.output_dir, entry), join(copiedRoot, entry), { recursive: true })
+  for (const entry of readdirSync(sourceRoot)) {
+    cpSync(join(sourceRoot, entry), join(copiedRoot, entry), { recursive: true })
   }
   const copiedShareSafeReport = join(copiedRoot, 'report.share-safe.json')
   if (!existsSync(copiedShareSafeReport)) {
@@ -1133,8 +902,6 @@ export async function runBenchmarkSuite(
           isolation: null,
           baseline: summarizeArmMetrics([], 'baseline'),
           madar: summarizeArmMetrics([], 'madar'),
-          benchmark_outcomes: null,
-          workflow_outcomes: null,
           artifacts: {
             share_safe_reports: [],
           },
@@ -1156,8 +923,6 @@ export async function runBenchmarkSuite(
           isolation: null,
           baseline: summarizeArmMetrics([], 'baseline'),
           madar: summarizeArmMetrics([], 'madar'),
-          benchmark_outcomes: null,
-          workflow_outcomes: null,
           artifacts: {
             share_safe_reports: [],
           },
@@ -1187,8 +952,6 @@ export async function runBenchmarkSuite(
             isolation,
             baseline: summarizeArmMetrics([], 'baseline'),
             madar: summarizeArmMetrics([], 'madar'),
-            benchmark_outcomes: null,
-            workflow_outcomes: null,
             artifacts: {
               share_safe_reports: [],
             },
@@ -1211,31 +974,28 @@ export async function runBenchmarkSuite(
         const graphPath = coldScratchRoot
           ? prepareBenchmarkWorkspace(prepared.sourceRoot, runGenerateGraph, coldScratchRoot, plan.repo.graphRoot)
           : prepared.graphPath
-        const taskKind = suiteTaskKind(plan.task.id)
         const compareInput = {
           graphPath,
           question: plan.prompt,
-          ...(tasksPath ? { questionsPath: tasksPath } : {}),
           outputDir: join(stagingRoot, plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'canonical', trialLabel),
           execTemplate: execTemplateForWorkspace(options.execTemplate, dirname(dirname(graphPath))),
-          ...(taskKind ? { task: taskKind } : {}),
-          baselineMode: 'native_agent' as const,
         }
         await maybePrimeWarmCache(plan.mode, runCompare, compareInput)
         const compareResult = await runCompare(compareInput)
-        const report = compareResult.reports[0]
-        if (report) {
-          reports.push(report)
-          copiedArtifacts.push(copyReportArtifacts(
-            report,
-            join(outputRoot, 'raw', plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'canonical', trialLabel),
-          ))
-        }
+        reports.push(compareResult.report)
+        copiedArtifacts.push(copyReportArtifacts(
+          compareResult.output_root,
+          join(outputRoot, 'raw', plan.repo.id, plan.task.id, `${plan.mode}-cache`, 'canonical', trialLabel),
+        ))
       }
 
-      const baseline = summarizeArmMetrics(reports, 'baseline')
-      const madar = summarizeArmMetrics(reports, 'madar')
-      const cellIsolation = summarizeIsolation(reports)
+      const verifiedReports = reports.filter(
+        (report) => report.attribution_status === 'verified',
+      )
+      const allAttributionsVerified =
+        verifiedReports.length === reports.length && reports.length > 0
+      const baseline = summarizeArmMetrics(verifiedReports, 'baseline')
+      const madar = summarizeArmMetrics(verifiedReports, 'madar')
       summaryCells.push({
         repoId: plan.repo.id,
         repoName: plan.repo.name,
@@ -1243,13 +1003,17 @@ export async function runBenchmarkSuite(
         taskName: plan.task.name,
         mode: plan.mode,
         prompt: plan.prompt,
-        status: summarizeCellStatus(baseline, madar, false, false),
-        reason: null,
-        isolation: cellIsolation,
+        status: summarizeCellStatus(
+          baseline,
+          madar,
+          allAttributionsVerified,
+        ),
+        reason: allAttributionsVerified
+          ? null
+          : 'One or more trials failed strict Madar attribution',
+        isolation,
         baseline,
         madar,
-        benchmark_outcomes: summarizeBenchmarkOutcomeArm(reports),
-        workflow_outcomes: summarizeWorkflowOutcomes(reports),
         artifacts: {
           share_safe_reports: stringifyArtifacts(copiedArtifacts),
         },

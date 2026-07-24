@@ -1,6 +1,11 @@
-import { QUERY_TOKEN_ESTIMATOR } from '../../runtime/serve.js'
 import { type PromptRunnerUsage } from '../prompt-runner.js'
 import { type BenchmarkPromptTokenSource } from './runner.js'
+
+export const QUERY_TOKEN_ESTIMATOR = {
+  source: 'local_tokenizer',
+  model: 'cl100k_base',
+  exact: false,
+} as const
 
 export interface PromptUsageSummaryEntry {
   usage?: PromptRunnerUsage | null
