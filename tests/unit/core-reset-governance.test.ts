@@ -145,7 +145,7 @@ const FROZEN_EVIDENCE_HASHES = {
   'tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json':
     '2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714',
   'docs/core-reset/evidence/evidence-path-held-out.json':
-    '984de29854f798e9d7e1e96a04c64d7c0260d64ddb0047269fd083ee9c5e9aeb',
+    '84e317a4595a44c15cd3fc7026cb5e49bfe7feb94f0ad8f0d8c752e2283eb74b',
   'docs/core-reset/evidence/evidence-path-performance.json':
     'a1b068f2c1dd86eaeffd37ddd0b8a578f02748e4613898f4b8548d47cd6ee205',
   'docs/core-reset/evidence/baseline-v0.32.0.json': 'c2b96e75e64934de998bb5c7087cb604b680cd8fd2aa5c6d1f74cd9f1a0c6516',
@@ -1400,9 +1400,9 @@ describe('core reset governance', () => {
         result: {
           status: 'passed',
           receipt_file_sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_HELDOUT_RECEIPT],
-          receipt_payload_sha256: 'c960f29fef27af7811ab5e5a160a1082aae0411dbe487ba72d15094254319a26',
-          subject_commit: '707b2bbb7d2c147f3832dd667a8599a8c906e941',
-          subject_tree_oid: 'dee9e014e807cb562c18e2572c2be567db4fc310',
+          receipt_payload_sha256: '6a01552125c7956417e9c38ebcc2abe9b3945d904b42c7d2d556e3d0c4ee9399',
+          subject_commit: '0a0ccb33693df3f50f7c3a2a08e54e9c4a518c25',
+          subject_tree_oid: '4c6c0fb34151da4c861e54873c33dd3f64d65160',
           eligible_for_acceptance: true,
           blocking_questions_passed: 2,
           blocking_questions_total: 2,
@@ -1854,12 +1854,12 @@ describe('core reset governance', () => {
       }>
     }
     expect(heldoutReceipt).toMatchObject({
-      receipt_sha256: 'c960f29fef27af7811ab5e5a160a1082aae0411dbe487ba72d15094254319a26',
+      receipt_sha256: '6a01552125c7956417e9c38ebcc2abe9b3945d904b42c7d2d556e3d0c4ee9399',
       benchmark_passed: true,
       eligible_for_acceptance: true,
       subject: {
-        head_commit: '707b2bbb7d2c147f3832dd667a8599a8c906e941',
-        head_tree_oid: 'dee9e014e807cb562c18e2572c2be567db4fc310',
+        head_commit: '0a0ccb33693df3f50f7c3a2a08e54e9c4a518c25',
+        head_tree_oid: '4c6c0fb34151da4c861e54873c33dd3f64d65160',
         worktree_dirty: false,
       },
       evaluator: { sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_HELDOUT_EVALUATOR] },

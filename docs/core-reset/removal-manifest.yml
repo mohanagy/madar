@@ -672,10 +672,10 @@ items:
       receipt: docs/core-reset/evidence/evidence-path-held-out.json
       result:
         status: passed
-        receipt_file_sha256: 984de29854f798e9d7e1e96a04c64d7c0260d64ddb0047269fd083ee9c5e9aeb
-        receipt_payload_sha256: c960f29fef27af7811ab5e5a160a1082aae0411dbe487ba72d15094254319a26
-        subject_commit: 707b2bbb7d2c147f3832dd667a8599a8c906e941
-        subject_tree_oid: dee9e014e807cb562c18e2572c2be567db4fc310
+        receipt_file_sha256: 84e317a4595a44c15cd3fc7026cb5e49bfe7feb94f0ad8f0d8c752e2283eb74b
+        receipt_payload_sha256: 6a01552125c7956417e9c38ebcc2abe9b3945d904b42c7d2d556e3d0c4ee9399
+        subject_commit: 0a0ccb33693df3f50f7c3a2a08e54e9c4a518c25
+        subject_tree_oid: 4c6c0fb34151da4c861e54873c33dd3f64d65160
         eligible_for_acceptance: true
         blocking_questions_passed: 2
         blocking_questions_total: 2

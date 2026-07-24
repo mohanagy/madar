@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "receipt_kind": "core-reset-evidence-path-held-out",
-  "generated_at": "2026-07-24T06:39:11.974Z",
+  "generated_at": "2026-07-24T06:58:36.516Z",
   "share_safe": true,
   "issue": 596,
   "benchmark_passed": true,
@@ -87,24 +87,24 @@
       "transfer.fsckObjects=true",
       "submodule.recurse=false"
     ],
-    "head_commit": "707b2bbb7d2c147f3832dd667a8599a8c906e941",
-    "head_tree_oid": "dee9e014e807cb562c18e2572c2be567db4fc310",
-    "head_tree_paths_sha256": "b01c85d20707be7cd9a58b9bb12d80b6785af1b8b17285f28f67be15031b38d1",
+    "head_commit": "0a0ccb33693df3f50f7c3a2a08e54e9c4a518c25",
+    "head_tree_oid": "4c6c0fb34151da4c861e54873c33dd3f64d65160",
+    "head_tree_paths_sha256": "e734182b91e883ab5bdf4f5caa48837076bc7635f1a4ac85304d3c90679f7846",
     "worktree_clean_before": true,
     "worktree_clean_after": true,
     "build_dependency_files": 6098,
     "build_dependency_tree_sha256": "94318e684946737512c51e4716763af072e838d421b33ebca45537819cae45be",
-    "package_sha256": "e22618a1d8575f1007e4b93f18b560fd9e18a2a9ea41bebb4eab1fb9123d2908",
-    "package_bytes": 231231,
+    "package_sha256": "f90aa0304759cbdc52adb9247d1bd58a496ee064c5fcc8d88a41281d1352dc63",
+    "package_bytes": 231253,
     "package_lock_sha256": "8a6d2375e56572e5c990abd578a71654372402c8a20e12c2141305daa5f9b58d",
     "dependency_files": 4076,
     "dependency_tree_sha256": "8ed24d016323fbc879d3d473d71fb529c2b8d791f2133fcc27e6be1f0a31ab62",
     "dist_files": 146,
-    "dist_tree_sha256": "6e47e34daf9f7840cc421efed6f4a02424973657d62c0857efccfe6890f73b67"
+    "dist_tree_sha256": "7ac89fff0d4ec18f8c9700609ebf4295ad8f6a526d1bb803671720beb6dc8365"
   },
   "subject": {
-    "head_commit": "707b2bbb7d2c147f3832dd667a8599a8c906e941",
-    "head_tree_oid": "dee9e014e807cb562c18e2572c2be567db4fc310",
+    "head_commit": "0a0ccb33693df3f50f7c3a2a08e54e9c4a518c25",
+    "head_tree_oid": "4c6c0fb34151da4c861e54873c33dd3f64d65160",
     "worktree_dirty": false
   },
   "environment": {
@@ -132,7 +132,7 @@
     "hidden_fixtures_loaded_in_evaluator_after_response_persistence": true,
     "execution_plan_isolated_from_hidden_fixtures": true,
     "grading_contract_loaded_sequence": 4,
-    "grading_contract_loaded_at": "2026-07-24T06:39:11.687Z",
+    "grading_contract_loaded_at": "2026-07-24T06:58:36.113Z",
     "selected_questions": [
       "openstatus-574-strict-one-call",
       "documenso-document-send",
@@ -163,8 +163,8 @@
         "source_snapshot_tree_sha256": "5c9fcaa8871030cf2235fc6389fd62e5813191c2662df986557accdccd3c76a1",
         "workspace_config_packages": 1,
         "workspace_config_mapping_sha256": "aee50cabfb95e7a09054a3579c60971468b58a27b2bfac2d68f896b45f00528f",
-        "elapsed_ms": 21895.17,
-        "artifact_sha256": "b8ebe7453422306b3aa0674200b9908d2a96a19342e154f0cc960b2f815579a1",
+        "elapsed_ms": 20772.567,
+        "artifact_sha256": "fa953ce43d9cf5caa4d2eabcc462deb95866c8e6942a5c09aaa33c1f241f475d",
         "artifact_bytes": 54866819,
         "nodes": 15620,
         "directed_edges": 37031,
@@ -182,8 +182,8 @@
         "source_snapshot_tree_sha256": "980ca9ce5017e973c254546b8004dfc055e8a97139dd8097f619cb0b53e62e68",
         "workspace_config_packages": 1,
         "workspace_config_mapping_sha256": "115059e14512baa0265146f9f91e27d587e5a51b3347eee6f8651bef3cd2815b",
-        "elapsed_ms": 5428.65,
-        "artifact_sha256": "f37b8fb93770b784d41eeef500d9161ceed3967e74d999d58b6c4b944b2e5fac",
+        "elapsed_ms": 5371.788,
+        "artifact_sha256": "6372ce6620373f1683d96fb09973a8493f6415723e1e55146205f6a6364540fc",
         "artifact_bytes": 13335616,
         "nodes": 3862,
         "directed_edges": 9132,
@@ -201,8 +201,8 @@
         "source_snapshot_tree_sha256": "4fbcd53c6c9459039c76284ade02210e9414725a0ec28a25a800c0c719feb2e2",
         "workspace_config_packages": 1,
         "workspace_config_mapping_sha256": "68cab01ff4126d8bdadcb030627319eecc953dcd4aa70beb936045df5266f919",
-        "elapsed_ms": 29453.829,
-        "artifact_sha256": "390f6d20f32ad977ba8e0036d1286d56e17ed2356aceef20fa4f2bcf3f441d8f",
+        "elapsed_ms": 30465.479,
+        "artifact_sha256": "e745bed54f41de8e273930c9267d9eed169fa749d2955ac3607d56577abbb0bd",
         "artifact_bytes": 55210982,
         "nodes": 14401,
         "directed_edges": 37709,
@@ -219,7 +219,7 @@
       "response": {
         "sha256": "104187737ba6824c7c956b531da552390eee9dfb6fcebf60ce6ff0139c49eafc",
         "bytes": 3880,
-        "child_pid": 84115,
+        "child_pid": 77791,
         "process_state_probe": 1,
         "retrieve_invocations": 1,
         "persisted_sequence": 1,
@@ -353,7 +353,7 @@
       "response": {
         "sha256": "831227fe9bf0e93e3553cb104dfc06aaa05c859e70de755f740c1c4a85e9c645",
         "bytes": 5262,
-        "child_pid": 84198,
+        "child_pid": 78064,
         "process_state_probe": 1,
         "retrieve_invocations": 1,
         "persisted_sequence": 2,
@@ -538,7 +538,7 @@
       "response": {
         "sha256": "5d6e422a3445f36500f5f447c089e6795b4682510a505e1f5bafe8987924b02e",
         "bytes": 5497,
-        "child_pid": 84518,
+        "child_pid": 78491,
         "process_state_probe": 1,
         "retrieve_invocations": 1,
         "persisted_sequence": 3,
@@ -738,5 +738,5 @@
     "blocking_questions": true
   },
   "failures": [],
-  "receipt_sha256": "c960f29fef27af7811ab5e5a160a1082aae0411dbe487ba72d15094254319a26"
+  "receipt_sha256": "6a01552125c7956417e9c38ebcc2abe9b3945d904b42c7d2d556e3d0c4ee9399"
 }
