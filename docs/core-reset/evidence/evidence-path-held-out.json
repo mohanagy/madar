@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "receipt_kind": "core-reset-evidence-path-held-out",
-  "generated_at": "2026-07-24T16:17:52.679Z",
+  "generated_at": "2026-07-24T20:22:15.879Z",
   "share_safe": true,
   "issue": 596,
   "benchmark_passed": true,
@@ -13,7 +13,7 @@
   },
   "evaluator": {
     "path": "tools/eval/core-reset/evidence-path-held-out.mjs",
-    "sha256": "a41a51cbe1853f524e3e05cc91b31016382778f980dbb67ef06f910925892841",
+    "sha256": "b7211c7e56360921a6b8e681ac84b21a1f13963f78a925589ea8611ee25bab97",
     "schema_path": "tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json",
     "schema_sha256": "2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714"
   },
@@ -87,24 +87,24 @@
       "transfer.fsckObjects=true",
       "submodule.recurse=false"
     ],
-    "head_commit": "052f816ccca2d356cbdc30b8aa588510ea516b5e",
-    "head_tree_oid": "daeb18bde0adb74ee527f7890eae1557f253ee5b",
+    "head_commit": "29aba7ebffe14d6a70bde78df1490bf4cded64a4",
+    "head_tree_oid": "277649ed917fc134e9808a995ce8c84f22258acb",
     "head_tree_paths_sha256": "e3208a5d8e4dd80f83d3c053d7a79a98b9cfc6177d5a79bf332d56eaf5df9f48",
     "worktree_clean_before": true,
     "worktree_clean_after": true,
     "build_dependency_files": 6098,
-    "build_dependency_tree_sha256": "94318e684946737512c51e4716763af072e838d421b33ebca45537819cae45be",
-    "package_sha256": "1596573513a0e42579d354cfe66c65d5ac7302661e530370b94b7ec668aa6f3f",
-    "package_bytes": 231545,
-    "package_lock_sha256": "8a6d2375e56572e5c990abd578a71654372402c8a20e12c2141305daa5f9b58d",
+    "build_dependency_tree_sha256": "9150d1f2d36392a46ea61fa42564d6ed14c7b4acc0d2a87ec3a67c9fd0b8759b",
+    "package_sha256": "59843af17736c5d6ff5bf4499d6509eaf69605f70b57c08be4e1716758e25528",
+    "package_bytes": 231524,
+    "package_lock_sha256": "d22ed275e75c70d73a6077631b9a08641bdf6b30504729376842f628e272bb4a",
     "dependency_files": 4076,
     "dependency_tree_sha256": "8ed24d016323fbc879d3d473d71fb529c2b8d791f2133fcc27e6be1f0a31ab62",
     "dist_files": 146,
-    "dist_tree_sha256": "e7646e8917c7fc1f66d3a7f757af4d9aac36f7a5dd43fa4c7ca5722e047cadae"
+    "dist_tree_sha256": "ed136748dd991b23bb52488cb9194b45a621717844789b9f3e4df39b659601d7"
   },
   "subject": {
-    "head_commit": "052f816ccca2d356cbdc30b8aa588510ea516b5e",
-    "head_tree_oid": "daeb18bde0adb74ee527f7890eae1557f253ee5b",
+    "head_commit": "29aba7ebffe14d6a70bde78df1490bf4cded64a4",
+    "head_tree_oid": "277649ed917fc134e9808a995ce8c84f22258acb",
     "worktree_dirty": false
   },
   "environment": {
@@ -132,7 +132,7 @@
     "hidden_fixtures_loaded_in_evaluator_after_response_persistence": true,
     "execution_plan_isolated_from_hidden_fixtures": true,
     "grading_contract_loaded_sequence": 4,
-    "grading_contract_loaded_at": "2026-07-24T16:17:52.276Z",
+    "grading_contract_loaded_at": "2026-07-24T20:22:15.485Z",
     "selected_questions": [
       "openstatus-574-strict-one-call",
       "documenso-document-send",
@@ -163,8 +163,8 @@
         "source_snapshot_tree_sha256": "5c9fcaa8871030cf2235fc6389fd62e5813191c2662df986557accdccd3c76a1",
         "workspace_config_packages": 1,
         "workspace_config_mapping_sha256": "aee50cabfb95e7a09054a3579c60971468b58a27b2bfac2d68f896b45f00528f",
-        "elapsed_ms": 21601.645,
-        "artifact_sha256": "73f041acc6f3554448a04238141f6bed4da19c59d09f2282ca4320caccebc9ab",
+        "elapsed_ms": 22677.975,
+        "artifact_sha256": "f9b5eb664e14e6e2d719638f398073b03c13cd7663637fe4a9b274d2d3ed3b7a",
         "artifact_bytes": 54866819,
         "nodes": 15620,
         "directed_edges": 37031,
@@ -182,8 +182,8 @@
         "source_snapshot_tree_sha256": "980ca9ce5017e973c254546b8004dfc055e8a97139dd8097f619cb0b53e62e68",
         "workspace_config_packages": 1,
         "workspace_config_mapping_sha256": "115059e14512baa0265146f9f91e27d587e5a51b3347eee6f8651bef3cd2815b",
-        "elapsed_ms": 5550.043,
-        "artifact_sha256": "d970bb1c62d5f8814e21d56f2820e213e5af3ec6c1d310460d406df174561397",
+        "elapsed_ms": 5677.267,
+        "artifact_sha256": "44e4c21e11d5bdfbbc9c4e776b857b8699783c85c9f0d07dd5e3b0851db73dcd",
         "artifact_bytes": 13335616,
         "nodes": 3862,
         "directed_edges": 9132,
@@ -201,8 +201,8 @@
         "source_snapshot_tree_sha256": "4fbcd53c6c9459039c76284ade02210e9414725a0ec28a25a800c0c719feb2e2",
         "workspace_config_packages": 1,
         "workspace_config_mapping_sha256": "68cab01ff4126d8bdadcb030627319eecc953dcd4aa70beb936045df5266f919",
-        "elapsed_ms": 29471.935,
-        "artifact_sha256": "615aa2db321b5e8818427c88d8e8a97163e394992db695b63d3e399005ee582d",
+        "elapsed_ms": 29815.714,
+        "artifact_sha256": "b5d25a7a397a349fab08777c229692a476a51ed669bc59e2180f281e56eb7122",
         "artifact_bytes": 55210982,
         "nodes": 14401,
         "directed_edges": 37709,
@@ -219,7 +219,7 @@
       "response": {
         "sha256": "104187737ba6824c7c956b531da552390eee9dfb6fcebf60ce6ff0139c49eafc",
         "bytes": 3880,
-        "child_pid": 92238,
+        "child_pid": 52781,
         "process_state_probe": 1,
         "retrieve_invocations": 1,
         "persisted_sequence": 1,
@@ -353,7 +353,7 @@
       "response": {
         "sha256": "831227fe9bf0e93e3553cb104dfc06aaa05c859e70de755f740c1c4a85e9c645",
         "bytes": 5262,
-        "child_pid": 92430,
+        "child_pid": 53341,
         "process_state_probe": 1,
         "retrieve_invocations": 1,
         "persisted_sequence": 2,
@@ -538,7 +538,7 @@
       "response": {
         "sha256": "5d6e422a3445f36500f5f447c089e6795b4682510a505e1f5bafe8987924b02e",
         "bytes": 5497,
-        "child_pid": 92494,
+        "child_pid": 53344,
         "process_state_probe": 1,
         "retrieve_invocations": 1,
         "persisted_sequence": 3,
@@ -738,5 +738,5 @@
     "blocking_questions": true
   },
   "failures": [],
-  "receipt_sha256": "34e932d3e83d0f47463e9adabc861adf9868d4398a63454e9dd2b8fc3c8c6c2c"
+  "receipt_sha256": "f07cac4200b77ed9d74a5792e72b032c471c84337ef71709b8c0e96312ae2693"
 }

@@ -36,8 +36,8 @@ current:
   production_loc_removed: 48231
   production_loc_net: -44731
   npm_files: 162
-  npm_packed_bytes: 231545
-  npm_unpacked_bytes: 984312
+  npm_packed_bytes: 231524
+  npm_unpacked_bytes: 984434
   measurement_state: source_and_package_exact
   snapshot_scope: exact_implementation_source_and_package
 
@@ -571,9 +571,9 @@ items:
       packed_bytes_delta_max: -1
     implementation_inventory:
       receipt: docs/core-reset/evidence/evidence-path-inventory.json
-      receipt_sha256: 9c1c3a268426e6005f62996d4385ca2625f183e744924fed2ab6c489a10b0568
-      subject_commit: 052f816ccca2d356cbdc30b8aa588510ea516b5e
-      subject_tree_oid: daeb18bde0adb74ee527f7890eae1557f253ee5b
+      receipt_sha256: c027cd1bd79cafdaa65a3f96ec6c359e57e5f567666c6eb25f28bab7014466e4
+      subject_commit: 29aba7ebffe14d6a70bde78df1490bf4cded64a4
+      subject_tree_oid: 277649ed917fc134e9808a995ce8c84f22258acb
       production_typescript_files: 73
       production_typescript_loc: 21687
       production_loc_added: 3500
@@ -583,9 +583,9 @@ items:
       development_dependencies_added: 0
       optional_peer_metadata_removed: true
       npm_files: 162
-      npm_packed_bytes: 231545
-      npm_unpacked_bytes: 984312
-      npm_packed_bytes_delta: -340626
+      npm_packed_bytes: 231524
+      npm_unpacked_bytes: 984434
+      npm_packed_bytes_delta: -340647
       all_phase_budgets_pass: true
     deterministic_query_contract:
       graph_authoritative_for_selection_and_graph_facts: true
@@ -690,10 +690,10 @@ items:
       receipt: docs/core-reset/evidence/evidence-path-held-out.json
       result:
         status: passed
-        receipt_file_sha256: b944f9911731a333e84327a52d17eee03c7df100e23ab113dbb8082eb3b65fd2
-        receipt_payload_sha256: 34e932d3e83d0f47463e9adabc861adf9868d4398a63454e9dd2b8fc3c8c6c2c
-        subject_commit: 052f816ccca2d356cbdc30b8aa588510ea516b5e
-        subject_tree_oid: daeb18bde0adb74ee527f7890eae1557f253ee5b
+        receipt_file_sha256: ebc2755d8406e4433ff5cb76792b7031ea4b95a54120d95b301ab1ac888e2390
+        receipt_payload_sha256: f07cac4200b77ed9d74a5792e72b032c471c84337ef71709b8c0e96312ae2693
+        subject_commit: 29aba7ebffe14d6a70bde78df1490bf4cded64a4
+        subject_tree_oid: 277649ed917fc134e9808a995ce8c84f22258acb
         eligible_for_acceptance: true
         blocking_questions_passed: 2
         blocking_questions_total: 2
@@ -832,11 +832,11 @@ items:
       receipt: docs/core-reset/evidence/evidence-path-performance.json
       result:
         status: passed
-        receipt_file_sha256: 1f5234efcab88b5896eb7b0380cb5224d9f628b0c63bc8d1257589c8d2812dc2
-        receipt_payload_sha256: bf726cddc932ef1d926833c007974d9af0269ce36f3e9f138f1bd33ecfc696d6
-        subject_commit: 052f816ccca2d356cbdc30b8aa588510ea516b5e
-        subject_tree_oid: daeb18bde0adb74ee527f7890eae1557f253ee5b
-        p95_ms: 288.523
+        receipt_file_sha256: 7adc3734ef4ad462bd36c7c0ed944de1686fdc02b540cc453f232017c0e578e7
+        receipt_payload_sha256: 384df2ba175bd2df2c1cdbed855c2aefd53b16abff7fbae5ff5fad82a668e77e
+        subject_commit: 29aba7ebffe14d6a70bde78df1490bf4cded64a4
+        subject_tree_oid: 277649ed917fc134e9808a995ce8c84f22258acb
+        p95_ms: 279.28
         eligible_for_acceptance: true
       runner: node tools/eval/core-reset/evidence-path-performance.mjs --contract tools/eval/core-reset/contracts/evidence-path-performance-v2.json --receipt docs/core-reset/evidence/evidence-path-performance.json
     importer_closure_contract:

@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "receipt_kind": "core-reset-evidence-path-performance",
-  "generated_at": "2026-07-24T16:14:46.874Z",
+  "generated_at": "2026-07-24T20:22:51.621Z",
   "share_safe": true,
   "issue": 596,
   "benchmark_passed": true,
@@ -19,8 +19,8 @@
     "schema_sha256": "6c178889c9e2a7b27318145ac49645e3fdb6ea1a907990fff7215d2c32225ce6"
   },
   "subject": {
-    "head_commit": "052f816ccca2d356cbdc30b8aa588510ea516b5e",
-    "head_tree_oid": "daeb18bde0adb74ee527f7890eae1557f253ee5b",
+    "head_commit": "29aba7ebffe14d6a70bde78df1490bf4cded64a4",
+    "head_tree_oid": "277649ed917fc134e9808a995ce8c84f22258acb",
     "worktree_dirty": false,
     "build_source": "detached_standalone_exact_head_clone",
     "install_command": "node <resolved-npm-cli> ci --offline --ignore-scripts --no-audit --no-fund --userconfig=<isolated-empty-user-config> --globalconfig=<isolated-empty-global-config>",
@@ -28,15 +28,15 @@
     "build_command": "node node_modules/typescript/bin/tsc -p tsconfig.build.json",
     "build_completed_before_graph_load": true,
     "source_files": 73,
-    "source_tree_sha256": "5412b0ac355b8b8b930df3ad11777341fd42022b0d64def3cef6712f6e24b475",
+    "source_tree_sha256": "3635ee3c300aa512576323e413c01172ce6796f3bb3b0f0d75d9d037a670ed22",
     "build_control_files": [
       "package.json",
       "package-lock.json",
       "tsconfig.json",
       "tsconfig.build.json"
     ],
-    "build_controls_sha256": "ec23ac745ade69c197396af48ffcb800909688b6330072551643e1ebef4a3a20",
-    "dist_sha256": "d07231bdbd09dde83fcee48ac79d42d5b75ffe48d2acaa11956d9a1d4bdea780"
+    "build_controls_sha256": "8b8acada478f5153ac0281eda300c7b52cf96fe2bc24546c110e96da08d47ebb",
+    "dist_sha256": "d8e2e9308d77796c75d898fe3eedbbb6ff7e8f25350e9967b9738a7c7b6398d4"
   },
   "environment": {
     "node": "v22.9.0",
@@ -192,7 +192,7 @@
     "samples": [
       {
         "invocation": 0,
-        "elapsed_ms": 256.862,
+        "elapsed_ms": 239.189,
         "query_index": 0,
         "outcome": "evidence",
         "nodes": 5,
@@ -206,7 +206,7 @@
       },
       {
         "invocation": 1,
-        "elapsed_ms": 258.055,
+        "elapsed_ms": 254.087,
         "query_index": 1,
         "outcome": "evidence",
         "nodes": 3,
@@ -220,7 +220,7 @@
       },
       {
         "invocation": 2,
-        "elapsed_ms": 259.321,
+        "elapsed_ms": 241.624,
         "query_index": 2,
         "outcome": "evidence",
         "nodes": 2,
@@ -234,7 +234,7 @@
       },
       {
         "invocation": 3,
-        "elapsed_ms": 266.003,
+        "elapsed_ms": 248.574,
         "query_index": 3,
         "outcome": "evidence",
         "nodes": 2,
@@ -248,7 +248,7 @@
       },
       {
         "invocation": 4,
-        "elapsed_ms": 267.908,
+        "elapsed_ms": 265.765,
         "query_index": 4,
         "outcome": "missing",
         "nodes": 0,
@@ -262,7 +262,7 @@
       },
       {
         "invocation": 5,
-        "elapsed_ms": 288.523,
+        "elapsed_ms": 282.848,
         "query_index": 0,
         "outcome": "evidence",
         "nodes": 5,
@@ -276,7 +276,7 @@
       },
       {
         "invocation": 6,
-        "elapsed_ms": 302.512,
+        "elapsed_ms": 247.508,
         "query_index": 1,
         "outcome": "evidence",
         "nodes": 3,
@@ -290,7 +290,7 @@
       },
       {
         "invocation": 7,
-        "elapsed_ms": 247.119,
+        "elapsed_ms": 241.37,
         "query_index": 2,
         "outcome": "evidence",
         "nodes": 2,
@@ -304,7 +304,7 @@
       },
       {
         "invocation": 8,
-        "elapsed_ms": 244.678,
+        "elapsed_ms": 226.083,
         "query_index": 3,
         "outcome": "evidence",
         "nodes": 2,
@@ -318,7 +318,7 @@
       },
       {
         "invocation": 9,
-        "elapsed_ms": 237.564,
+        "elapsed_ms": 224.748,
         "query_index": 4,
         "outcome": "missing",
         "nodes": 0,
@@ -332,7 +332,7 @@
       },
       {
         "invocation": 10,
-        "elapsed_ms": 252.506,
+        "elapsed_ms": 244.01,
         "query_index": 0,
         "outcome": "evidence",
         "nodes": 5,
@@ -346,7 +346,7 @@
       },
       {
         "invocation": 11,
-        "elapsed_ms": 260.62,
+        "elapsed_ms": 248.281,
         "query_index": 1,
         "outcome": "evidence",
         "nodes": 3,
@@ -360,7 +360,7 @@
       },
       {
         "invocation": 12,
-        "elapsed_ms": 248.168,
+        "elapsed_ms": 233.414,
         "query_index": 2,
         "outcome": "evidence",
         "nodes": 2,
@@ -374,7 +374,7 @@
       },
       {
         "invocation": 13,
-        "elapsed_ms": 253.519,
+        "elapsed_ms": 236.857,
         "query_index": 3,
         "outcome": "evidence",
         "nodes": 2,
@@ -388,7 +388,7 @@
       },
       {
         "invocation": 14,
-        "elapsed_ms": 247.699,
+        "elapsed_ms": 228.231,
         "query_index": 4,
         "outcome": "missing",
         "nodes": 0,
@@ -402,7 +402,7 @@
       },
       {
         "invocation": 15,
-        "elapsed_ms": 263.094,
+        "elapsed_ms": 243.359,
         "query_index": 0,
         "outcome": "evidence",
         "nodes": 5,
@@ -416,7 +416,7 @@
       },
       {
         "invocation": 16,
-        "elapsed_ms": 283.191,
+        "elapsed_ms": 279.28,
         "query_index": 1,
         "outcome": "evidence",
         "nodes": 3,
@@ -430,7 +430,7 @@
       },
       {
         "invocation": 17,
-        "elapsed_ms": 244.745,
+        "elapsed_ms": 270.762,
         "query_index": 2,
         "outcome": "evidence",
         "nodes": 2,
@@ -444,7 +444,7 @@
       },
       {
         "invocation": 18,
-        "elapsed_ms": 243.103,
+        "elapsed_ms": 251.191,
         "query_index": 3,
         "outcome": "evidence",
         "nodes": 2,
@@ -458,7 +458,7 @@
       },
       {
         "invocation": 19,
-        "elapsed_ms": 236.079,
+        "elapsed_ms": 253.65,
         "query_index": 4,
         "outcome": "missing",
         "nodes": 0,
@@ -473,19 +473,19 @@
     ],
     "target_ms": 500,
     "percentile_method": "nearest-rank",
-    "p95_ms": 288.523
+    "p95_ms": 279.28
   },
   "gates": {
     "reference_environment": {
       "pass": true
     },
     "warm_retrieval_p95": {
-      "actual_ms": 288.523,
+      "actual_ms": 279.28,
       "maximum_ms": 500,
       "comparison": "strictly_less_than",
       "pass": true
     }
   },
   "failures": [],
-  "receipt_sha256": "bf726cddc932ef1d926833c007974d9af0269ce36f3e9f138f1bd33ecfc696d6"
+  "receipt_sha256": "384df2ba175bd2df2c1cdbed855c2aefd53b16abff7fbae5ff5fad82a668e77e"
 }
