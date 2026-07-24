@@ -102,6 +102,9 @@ const EVIDENCE_PERFORMANCE_RECEIPT_SCHEMA =
 const EVIDENCE_PERFORMANCE_RECEIPT_SCHEMA_SHA256 =
   '6c178889c9e2a7b27318145ac49645e3fdb6ea1a907990fff7215d2c32225ce6'
 const EVIDENCE_PERFORMANCE_RECEIPT = 'docs/core-reset/evidence/evidence-path-performance.json'
+const EVIDENCE_INVENTORY_RECEIPT = 'docs/core-reset/evidence/evidence-path-inventory.json'
+const EVIDENCE_INVENTORY_RECEIPT_SHA256 =
+  '9a1655b06c761e5d239a189a705f66b7be7840b164b18f54af0ca19c24f1f2ee'
 const EVIDENCE_IMPORTER_RECEIPT = 'docs/core-reset/evidence/evidence-path-importer-closure.json'
 const EVIDENCE_IMPORTER_RECEIPT_SHA256 = '466d48749f2502b5c91dab44cc62ef7a9d91c6b53226ca09ce7846b5dc5be334'
 type EvidencePerformanceRelationship = {
@@ -148,6 +151,8 @@ const FROZEN_EVIDENCE_HASHES = {
     '84e317a4595a44c15cd3fc7026cb5e49bfe7feb94f0ad8f0d8c752e2283eb74b',
   'docs/core-reset/evidence/evidence-path-performance.json':
     'a1b068f2c1dd86eaeffd37ddd0b8a578f02748e4613898f4b8548d47cd6ee205',
+  'docs/core-reset/evidence/evidence-path-inventory.json':
+    EVIDENCE_INVENTORY_RECEIPT_SHA256,
   'docs/core-reset/evidence/baseline-v0.32.0.json': 'c2b96e75e64934de998bb5c7087cb604b680cd8fd2aa5c6d1f74cd9f1a0c6516',
   'tools/eval/core-reset/schemas/baseline-receipt.schema.json': '04eeb47a14da18ec90c6e687bbd557d44a3fe5ac493d8d6946f4b3fc4f7f6a59',
 } as const
@@ -420,7 +425,7 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('63-file / 33,031-LOC deletion contract with 22 ownership transfers')
     expect(roadmap).toContain('passes held-out-v2')
     expect(roadmap).toContain('passes the [frozen loaded-graph performance gate]')
-    expect(roadmap).toContain('Final package inventory, dependency, CI, and review gates are not yet passed')
+    expect(roadmap).toContain('CI and review gates are not yet passed')
     expect(roadmap).toContain('issues/592')
     expect(roadmap).toContain('issues/588')
     expect(roadmap).not.toContain('## Ready — generation and incremental index')
@@ -581,6 +586,25 @@ describe('core reset governance', () => {
         development_dependency_budget?: { added_max: number; removed_min: number }
         final_source_budget?: { files_max: number; loc_max: number }
         npm_package_budget?: { files_max: number; unpacked_bytes_max: number; packed_bytes_delta_max: number }
+        implementation_inventory?: {
+          receipt: string
+          receipt_sha256: string
+          subject_commit: string
+          subject_tree_oid: string
+          production_typescript_files: number
+          production_typescript_loc: number
+          production_loc_added: number
+          production_loc_removed: number
+          production_loc_net: number
+          runtime_dependencies_added: number
+          development_dependencies_added: number
+          optional_peer_metadata_removed: boolean
+          npm_files: number
+          npm_packed_bytes: number
+          npm_unpacked_bytes: number
+          npm_packed_bytes_delta: number
+          all_phase_budgets_pass: boolean
+        }
         performance_budget?: {
           cold_noop_median_ratio_max: number
           clean_generation_regression_ratio_max: number
@@ -685,8 +709,11 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: EVIDENCE_BASE,
       completed_phase_commit: INCREMENTAL_MERGE,
-      measurement_state: 'source_exact_package_pending',
-      snapshot_scope: 'exact_implementation_source_with_last_approved_prerequisite_package',
+      npm_files: 162,
+      npm_packed_bytes: 231_253,
+      npm_unpacked_bytes: 982_570,
+      measurement_state: 'source_and_package_exact',
+      snapshot_scope: 'exact_implementation_source_and_package',
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
@@ -1257,8 +1284,11 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: EVIDENCE_BASE,
       completed_phase_commit: INCREMENTAL_MERGE,
-      measurement_state: 'source_exact_package_pending',
-      snapshot_scope: 'exact_implementation_source_with_last_approved_prerequisite_package',
+      npm_files: 162,
+      npm_packed_bytes: 231_253,
+      npm_unpacked_bytes: 982_570,
+      measurement_state: 'source_and_package_exact',
+      snapshot_scope: 'exact_implementation_source_and_package',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual(['evidence-path-query'])
@@ -1287,6 +1317,25 @@ describe('core reset governance', () => {
         files_max: 210,
         unpacked_bytes_max: 2_200_000,
         packed_bytes_delta_max: -1,
+      },
+      implementation_inventory: {
+        receipt: EVIDENCE_INVENTORY_RECEIPT,
+        receipt_sha256: EVIDENCE_INVENTORY_RECEIPT_SHA256,
+        subject_commit: '8bf056533721f4935ef85d7336aeace098c5744c',
+        subject_tree_oid: '4b50fff0c85efd33b398b383d87fc09e64a921ea',
+        production_typescript_files: 73,
+        production_typescript_loc: 21_681,
+        production_loc_added: 3_494,
+        production_loc_removed: 48_231,
+        production_loc_net: -44_737,
+        runtime_dependencies_added: 0,
+        development_dependencies_added: 0,
+        optional_peer_metadata_removed: true,
+        npm_files: 162,
+        npm_packed_bytes: 231_253,
+        npm_unpacked_bytes: 982_570,
+        npm_packed_bytes_delta: -340_918,
+        all_phase_budgets_pass: true,
       },
       deterministic_query_contract: {
         graph_authoritative_for_selection_and_graph_facts: true,
@@ -1908,6 +1957,50 @@ describe('core reset governance', () => {
       },
       measurements: { p95_ms: 262.612, target_ms: 500 },
       failures: [],
+    })
+    expect(JSON.parse(read(EVIDENCE_INVENTORY_RECEIPT))).toEqual({
+      schema_version: 1,
+      issue: EVIDENCE_ISSUE,
+      protected_base: EVIDENCE_BASE,
+      implementation_commit: '8bf056533721f4935ef85d7336aeace098c5744c',
+      implementation_tree: '4b50fff0c85efd33b398b383d87fc09e64a921ea',
+      production: {
+        typescript_files: 73,
+        typescript_loc: 21_681,
+        loc_added: 3_494,
+        loc_removed: 48_231,
+        loc_net: -44_737,
+        predecessor_files_removed: 63,
+        replacement_files: 7,
+      },
+      dependencies: {
+        runtime_added: 0,
+        development_added: 0,
+        optional_peer_metadata_removed: ['@huggingface/transformers'],
+      },
+      package: {
+        command: 'npm pack --dry-run --json',
+        name: '@lubab/madar',
+        version: '0.32.0',
+        files: 162,
+        packed_bytes: 231_253,
+        protected_base_packed_bytes: 572_171,
+        packed_bytes_delta: -340_918,
+        unpacked_bytes: 982_570,
+        shasum: 'fffb0f62c49f9689d38a647845ce785e30230296',
+        integrity: 'sha512-FLpVId7uldiZdrZk8jhYHkXHh5GoG8aq9x+a/ZZZ/nJajI5I/RhrJMVgffl8Tel035QbtqH0MmWWOcB6lo0L8A==',
+      },
+      budgets: {
+        production_files_pass: true,
+        production_loc_pass: true,
+        production_delta_pass: true,
+        replacement_surface_pass: true,
+        package_files_pass: true,
+        package_unpacked_bytes_pass: true,
+        package_packed_bytes_pass: true,
+        dependency_additions_pass: true,
+        optional_peer_metadata_removed_pass: true,
+      },
     })
   })
 
