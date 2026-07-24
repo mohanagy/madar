@@ -168,6 +168,10 @@ export function traverseEvidencePaths(
   for (const [sourceIndex, search] of sources.entries()) {
     for (const [targetIndex, target] of search.targets.entries()) {
       const path = paths[sourceIndex]!.get(target.id)
+      const coveredByAdjacentPaths = targetIndex > 0
+        && anchors.slice(sourceIndex, sourceIndex + targetIndex + 1).every((_, offset) =>
+          paths[sourceIndex + offset]!.has(anchors[sourceIndex + offset + 1]!.id))
+      if (coveredByAdjacentPaths) continue
       if (!path && targetIndex === 0) {
         boundaries.push({
           kind: 'disconnected',

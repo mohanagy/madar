@@ -284,7 +284,8 @@ function queryVocabulary(question: string, relationKinds: readonly string[]): Qu
       terms.push(token)
     }
   }
-  for (const { term, position } of relationTerms(task, relationKinds)) {
+  const relations = relationTerms(task, relationKinds)
+  for (const { term, position } of relations) {
     if (!positions.has(term)) {
       positions.set(term, position)
       terms.push(term)
@@ -295,7 +296,8 @@ function queryVocabulary(question: string, relationKinds: readonly string[]): Qu
   const segments = task.split(/[,;:]+/u).map((segment) => segment.trim())
     .filter((segment) => segment.length > 0)
   const topic = meaningfulTokens(segments[0] ?? '')
-  const obligationSegments = firstDelimiter === ',' ? segments.slice(1) : segments
+  const obligationSegments = relations.length > 0 ? [task]
+    : firstDelimiter === ',' ? segments.slice(1) : segments
   const obligations = obligationSegments.map((text): QueryObligation => {
     const segment = meaningfulTokens(text)
     const action = text.replace(/^(?:and\s+then|and)\s+/iu, '')

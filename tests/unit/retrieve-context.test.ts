@@ -221,6 +221,130 @@ describe('retrieve context', () => {
     expect(serializeRetrieveContextResult(second)).toBe(serializeRetrieveContextResult(first))
   })
 
+  it('keeps ordered evidence in the first comma-delimited obligation', () => {
+    const fixture = flowFixture()
+    const result = retrieveContext(fixture.index, {
+      question:
+        'Trace flow-001 from entry local 00 through calls to process local 01, then storage local 02.',
+    })
+
+    expect(result.matched_nodes.map((node) => node.source_file).sort()).toEqual([
+      'src/flow-001/entry-local-00.ts',
+      'src/flow-001/process-local-01.ts',
+      'src/flow-001/storage-local-02.js',
+    ])
+    expect(result.relationships.map((relationship) => relationship.relation))
+      .toEqual(['calls', 'calls'])
+    expect(result.boundaries).toEqual([])
+  })
+
+  it('omits an alternate non-adjacent path when adjacent anchors form a complete chain', () => {
+    const root = sandbox('adjacent-chain')
+    write(root, 'src/start.ts', [
+      "import { alternateAnchor } from './alternate.js'",
+      "import { middleAnchor } from './middle.js'",
+      '',
+      'export function startAnchor(value: string): string {',
+      '  alternateAnchor(value)',
+      '  return middleAnchor(value)',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'src/alternate.ts', [
+      "import { finishAnchor } from './finish.js'",
+      '',
+      'export function alternateAnchor(value: string): string {',
+      '  return finishAnchor(value)',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'src/middle.ts', [
+      "import { finishAnchor } from './finish.js'",
+      '',
+      'export function middleAnchor(value: string): string {',
+      '  return finishAnchor(value)',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'src/finish.ts', [
+      'export function finishAnchor(value: string): string {',
+      '  return value',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
+
+    const result = retrieveContext(readyIndex(root), {
+      question: 'Trace `startAnchor` through `middleAnchor` to `finishAnchor`.',
+    })
+
+    expect(result.matched_nodes.map((node) => node.label).sort()).toEqual([
+      'finishAnchor()',
+      'middleAnchor()',
+      'startAnchor()',
+    ])
+    const nodesById = new Map(result.matched_nodes.map((node) => [node.node_id, node]))
+    expect(result.relationships.map((relationship) => ({
+      from: nodesById.get(relationship.from_id)?.label,
+      relation: relationship.relation,
+      to: nodesById.get(relationship.to_id)?.label,
+    }))).toEqual(expect.arrayContaining([
+      { from: 'startAnchor()', relation: 'calls', to: 'middleAnchor()' },
+      { from: 'middleAnchor()', relation: 'calls', to: 'finishAnchor()' },
+    ]))
+    expect(result.relationships).toHaveLength(2)
+    expect(result.boundaries).toEqual([])
+  })
+
+  it('keeps a non-adjacent path when an adjacent anchor handoff is disconnected', () => {
+    const root = sandbox('non-adjacent-handoff')
+    write(root, 'src/start.ts', [
+      "import { finishAnchor } from './finish.js'",
+      '',
+      'export function startAnchor(value: string): string {',
+      '  return finishAnchor(value)',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'src/middle.ts', [
+      "import { finishAnchor } from './finish.js'",
+      '',
+      'export function middleAnchor(value: string): string {',
+      '  return finishAnchor(value)',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'src/finish.ts', [
+      'export function finishAnchor(value: string): string {',
+      '  return value',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
+
+    const result = retrieveContext(readyIndex(root), {
+      question: 'Trace `startAnchor` through `middleAnchor` to `finishAnchor`.',
+    })
+
+    expect(result.matched_nodes.map((node) => node.label).sort()).toEqual([
+      'finishAnchor()',
+      'middleAnchor()',
+      'startAnchor()',
+    ])
+    const nodesById = new Map(result.matched_nodes.map((node) => [node.node_id, node]))
+    expect(result.relationships.map((relationship) => ({
+      from: nodesById.get(relationship.from_id)?.label,
+      relation: relationship.relation,
+      to: nodesById.get(relationship.to_id)?.label,
+    }))).toEqual(expect.arrayContaining([
+      { from: 'startAnchor()', relation: 'calls', to: 'finishAnchor()' },
+      { from: 'middleAnchor()', relation: 'calls', to: 'finishAnchor()' },
+    ]))
+    expect(result.relationships).toHaveLength(2)
+    expect(result.boundaries.filter((boundary) => boundary.kind === 'disconnected'))
+      .toHaveLength(1)
+  })
+
   it('returns a directed evidence path for a broad natural flow question', () => {
     const fixture = authFlowFixture()
 
