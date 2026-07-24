@@ -11,6 +11,7 @@ import { MAX_RETRIEVE_FILES, MAX_RETRIEVE_SNIPPETS } from './types.js'
 
 const MAX_RANKED_ANCHORS = MAX_RETRIEVE_SNIPPETS
 const MAX_UNSUPPORTED_BOUNDARIES = 4
+const EVIDENCE_RELATIONS = ['calls', 'contains', 'enqueues_job', 'imports_from'] as const
 const FIELD_WEIGHTS = {
   label: 12, qualifiedName: 12, sourceFile: 7,
   framework: 5, metadata: 5, nodeKind: 3,
@@ -44,7 +45,6 @@ interface RankCorpusNode {
 interface RankCorpus {
   nodes: readonly RankCorpusNode[]; documentFrequency: ReadonlyMap<string, number>
   nodeById: ReadonlyMap<string, RankCorpusNode>; fileTermWeights: ReadonlyMap<string, ReadonlyMap<string, number>>
-  relationKinds: readonly string[]
 }
 interface QueryObligation {
   terms: readonly string[]; localTerms: ReadonlySet<string>; coordinated: boolean
@@ -114,7 +114,8 @@ function termsMatch(left: string, right: string): boolean {
 }
 
 function tokenSetMatches(tokens: ReadonlySet<string>, term: string): boolean {
-  return [...tokens].some((token) => termsMatch(token, term))
+  for (const token of tokens) if (termsMatch(token, term)) return true
+  return false
 }
 
 function scalarMetadataValues(value: unknown, depth = 0): string[] {
@@ -163,6 +164,7 @@ function buildCorpus(index: ReadyQueryIndex): RankCorpus {
   for (const [id, attributes] of index.graph.nodeEntries()) {
     const sourceFile = stringAttribute(attributes, 'source_file')
     if (sourceFile && isPollutedSourcePath(sourceFile, index.root_path)) continue
+    const nodeKind = stringAttribute(attributes, 'node_kind')
 
     const metadata = scalarMetadataValues(attributes.framework_metadata).join(' ')
     const ownFields = [
@@ -181,10 +183,10 @@ function buildCorpus(index: ReadyQueryIndex): RankCorpus {
     ].filter((entry): entry is RankField => entry !== null)
     const tokens = new Set(rankFields.flatMap((entry) => [...entry.tokens]))
     const successors = index.graph.successors(id)
-    const outgoingIds = successors.filter((targetId) =>
+    const outgoingIds = nodeKind === 'file' ? [] : successors.filter((targetId) =>
       index.graph.edgesBetween(id, targetId).some(({ attributes: edge }) =>
         edge.relation === 'calls' || edge.relation === 'enqueues_job'))
-    const incomingIds = index.graph.predecessors(id).filter((sourceId) =>
+    const incomingIds = nodeKind === 'file' ? [] : index.graph.predecessors(id).filter((sourceId) =>
       index.graph.edgesBetween(sourceId, id).some(({ attributes: edge }) =>
         edge.relation === 'calls' || edge.relation === 'enqueues_job'))
     nodes.push({
@@ -196,7 +198,7 @@ function buildCorpus(index: ReadyQueryIndex): RankCorpus {
       pathTokens: new Set(lexicalTokens(sourceFile)),
       sourceFile,
       sourceDomain: sourceDomainOf(attributes.source_domain, sourceFile, index.root_path),
-      nodeKind: stringAttribute(attributes, 'node_kind'),
+      nodeKind,
       incomingIds,
       outgoingIds,
       outgoingDegree: successors.length,
@@ -223,12 +225,8 @@ function buildCorpus(index: ReadyQueryIndex): RankCorpus {
       documentFrequency.set(token, (documentFrequency.get(token) ?? 0) + 1)
     }
   }
-  const relationKinds = [...new Set(index.graph.edgeEntries()
-    .map(([, , attributes]) => attributes.relation)
-    .filter((relation): relation is string => typeof relation === 'string' && relation.length > 0))]
-    .sort(compareCodeUnits)
   return { nodes, nodeById: new Map(nodes.map((node) => [node.id, node])),
-    documentFrequency, fileTermWeights, relationKinds }
+    documentFrequency, fileTermWeights }
 }
 
 function explicitScopes(question: string): ExplicitScope[] {
@@ -403,6 +401,8 @@ function scoredNodes(corpus: RankCorpus, vocabulary: QueryVocabulary): ScoredNod
   const structural = vocabulary.terms.includes('imports_from')
   const candidates = corpus.nodes.flatMap((node) => {
     if (!node.selectable) return []
+    if (vocabulary.constraints.length > 0
+      && !vocabulary.constraints.some((scope) => matchesScope(node, scope))) return []
     if (node.nodeKind === 'file' && !structural
       && !vocabulary.constraints.some((scope) =>
         scope.subject.includes('/') && matchesScope(node, scope))) return []
@@ -748,7 +748,7 @@ export function rankQueryAnchors(
   index: ReadyQueryIndex, request: NormalizedRetrieveRequest,
 ): RankQueryResult {
   const corpus = buildCorpus(index)
-  const vocabulary = queryVocabulary(request.question, corpus.relationKinds)
+  const vocabulary = queryVocabulary(request.question, EVIDENCE_RELATIONS)
   const activeScope = (scope: ExplicitScope): boolean => !scope.restrictsCandidates
     || scope.subject.includes('/') || corpus.nodes.some((node) => {
       const prefix = scope.tokens.filter((token) => !/^\d+$/.test(token))
