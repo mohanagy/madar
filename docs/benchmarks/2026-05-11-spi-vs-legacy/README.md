@@ -67,21 +67,23 @@ Selected framework roles stay explicit in the analysis output:
 
 Diagnostics also become more useful at higher levels on this fixture. For example, `trpc-mutations` carries `undersized_retrieval` / `orphan_nodes` warnings at level 1, but level 4 clears them.
 
-## How to reproduce
+## Historical reproduction
 
 ```bash
-# from repo root
+git worktree add /tmp/madar-spi-vs-legacy debf9ba602fa04766528e5f184aca578442ee8d4
+cd /tmp/madar-spi-vs-legacy
+npm ci
 bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
 ```
 
-The runner now produces:
+The pinned historical runner produces:
 
 1. `legacy.json`, `spi-cold.json`, `spi-warm.json`
 2. `spi-cold.analysis.json` — strategy comparison + retrieval-level sweep
 3. `summary.json` — top-level aggregate report
 4. `edge_count` in each variant JSON
 
-### Optional: point the runner at another local repo
+### Optional historical workspace override
 
 If you have a local backend-only or monorepo workspace, you can reuse the same runner without committing private paths:
 
@@ -91,22 +93,11 @@ MADAR_BENCH_PROMPTS=docs/benchmarks/2026-05-11-spi-vs-legacy/prompts.json \
 bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
 ```
 
-For a fully manual flow:
-
-```bash
-npm run build
-node dist/src/cli/bin.js generate /absolute/path/to/repo
-node dist/src/cli/bin.js generate /absolute/path/to/repo --spi
-node docs/benchmarks/2026-05-11-spi-vs-legacy/probe.mjs \
-  /absolute/path/to/repo/out/graph.json \
-  docs/benchmarks/2026-05-11-spi-vs-legacy/prompts.json
-```
-
-If GoValidate is available locally, use the template above for both the backend-only checkout and the monorepo checkout. This repo does **not** commit any private-path defaults or fake results for those runs.
+Run these commands only inside the pinned checkout above. Current Core Reset builds intentionally do not provide the retired retrieval levels, packing strategies, or report finalizer that this harness measures.
 
 ### Real-workspace matrix runner
 
-You can benchmark two local workspaces side by side without committing private paths or artifacts:
+The pinned checkout can benchmark two local workspaces side by side without committing private paths or artifacts:
 
 ```bash
 MADAR_BENCH_BACKEND=/absolute/path/to/backend \
@@ -138,7 +129,7 @@ The aggregate summary keeps objective metrics separate from qualitative notes an
 
 - `fixture/` — synthetic TypeScript workspace covering Express, Hono, tRPC, Prisma, and utility code
 - `prompts.json` — benchmark prompts
-- `run.sh` — runner (`MADAR_BENCH_FIXTURE` / `MADAR_BENCH_PROMPTS` overrides supported)
-- `probe.mjs` — strategy comparison + retrieval-level sweep
+- `run.sh` — archived runner for the pinned commit (`MADAR_BENCH_FIXTURE` / `MADAR_BENCH_PROMPTS` overrides supported)
+- `probe.mjs` — archived strategy comparison + retrieval-level sweep for the pinned commit
 - `summarize.mjs` — aggregate summary builder
 - `results/<timestamp>/` — measured run artifacts

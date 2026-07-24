@@ -1,13 +1,11 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import { countTokens } from 'gpt-tokenizer/encoding/cl100k_base'
 
-import { retrieveContext } from '../../application/retrieve-context.js'
 import { serializeRetrieveContextResult } from '../../application/retrieve-context.js'
 import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
-import { inspectQueryIndex } from '../../domain/query/index-status.js'
 import type { RetrieveContextResult } from '../../domain/query/types.js'
 import { toShareSafeArtifactPath } from '../../shared/share-safe-artifacts.js'
 import { readGraphSourceRoot } from '../../shared/graph-source-root.js'
@@ -15,6 +13,7 @@ import { resolveShellCommand } from '../../shared/shell.js'
 import { validateGraphOutputPath } from '../../shared/security.js'
 import { expandCompareExecTemplate } from '../compare.js'
 import { parsePromptRunnerOutput, type PromptRunnerUsage } from '../prompt-runner.js'
+import { retrieveBenchmarkContext } from './runtime-proof.js'
 
 const DEFAULT_RETRIEVAL_BUDGET = 3_000
 const PROMPT_FILE_COMMAND_SUBSTITUTION_PATTERNS = [
@@ -159,22 +158,6 @@ function benchmarkPromptTokenSource(usage: PromptRunnerUsage | null): BenchmarkP
   }
 
   return usage.provider === 'claude' ? 'claude_reported_input' : 'gemini_reported_input'
-}
-
-export function retrieveBenchmarkContext(
-  graph: KnowledgeGraph,
-  graphPath: string,
-  question: string,
-  budget: number,
-): RetrieveContextResult {
-  const projectRoot = realpathSync(inferProjectRootFromGraphPath(graphPath))
-  const originalCwd = process.cwd()
-  try {
-    process.chdir(projectRoot)
-    return retrieveContext(inspectQueryIndex(graph), { question, budget })
-  } finally {
-    process.chdir(originalCwd)
-  }
 }
 
 export async function runBenchmarkPrompt(options: RunBenchmarkPromptOptions): Promise<BenchmarkPromptRun> {

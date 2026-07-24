@@ -70,6 +70,19 @@ export function classifySourceDomain(path: string, root?: string): SourceDomain 
   return /\.[A-Za-z0-9]+$/i.test(normalized) ? 'production' : 'unknown'
 }
 
+export function sourceDomainOf(
+  value: unknown,
+  path: string,
+  root?: string,
+): SourceDomain {
+  return typeof value === 'string' && [
+    'production', 'test', 'benchmark', 'fixture', 'generated', 'docs', 'config',
+    'build_artifact', 'unknown',
+  ].includes(value)
+    ? value as SourceDomain
+    : classifySourceDomain(path, root)
+}
+
 export function isPollutedSourcePath(path: string, root?: string): boolean {
   return isHardIgnored(workspacePath(path, root))
 }

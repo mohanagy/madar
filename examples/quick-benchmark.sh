@@ -33,10 +33,10 @@ echo "Step 2: Running token reduction benchmark..."
 madar benchmark out/graph.json --exec "$MADAR_RUNNER" --yes
 echo ""
 
-# Show key stats
-echo "Step 3: Graph summary..."
+# Show graph readiness
+echo "Step 3: Graph status..."
 echo ""
-head -20 out/GRAPH_REPORT.md
+madar status out/graph.json
 echo ""
 
 # Set up MCP for your agent

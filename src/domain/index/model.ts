@@ -109,6 +109,7 @@ export type IndexSymbol = {
   name: string
   kind: IndexSymbolKind
   range: IndexRange
+  declaration_range?: IndexRange
   exported: boolean
   framework_role?: IndexFrameworkRole
   framework_metadata?: IndexFrameworkMetadata

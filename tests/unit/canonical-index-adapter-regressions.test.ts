@@ -72,7 +72,7 @@ describe('canonical TypeScript adapter regressions', () => {
     expect(facts.filter((fact) => fact.label === 'convert()')).toHaveLength(1)
     expect(facts.filter((fact) => fact.label === '.get()')).toHaveLength(1)
     expect(facts.filter((fact) => fact.label === 'Shape')).toHaveLength(1)
-    expect(facts.find((fact) => fact.label === 'convert()')).toMatchObject({ line_number: 1, end_line_number: 3 })
+    expect(facts.find((fact) => fact.label === 'convert()')).toMatchObject({ line_number: 3, end_line_number: 3 })
     expect(boxMemberRelations).toEqual(expect.arrayContaining(['contains', 'method']))
   })
 

@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,7 +18,7 @@ import {
   parseAnthropicResultEvent,
   type NativeAgentRunner,
 } from '../../src/infrastructure/compare.js'
-import { writeCanonicalGraphFixture } from '../helpers/graph-artifact.js'
+import { generateIndex } from '../../src/application/generate-index.js'
 
 const roots: string[] = []
 const originalCwd = process.cwd()
@@ -32,16 +33,15 @@ afterEach(() => {
 function fixture(): { graphPath: string; root: string } {
   const root = mkdtempSync(join(tmpdir(), 'madar-compare-'))
   roots.push(root)
-  const output = join(root, 'out')
-  mkdirSync(output, { recursive: true })
-  const graphPath = join(output, 'graph.json')
-  writeCanonicalGraphFixture(graphPath, {
-    root_path: root,
-    nodes: [],
-    edges: [],
-  })
+  const source = join(root, 'src')
+  mkdirSync(source, { recursive: true })
+  writeFileSync(
+    join(source, 'compare-fixture.ts'),
+    'export function compareFixture(): string { return "ready" }\n',
+    'utf8',
+  )
   process.chdir(root)
-  return { graphPath, root }
+  return { graphPath: generateIndex(root).graphPath, root }
 }
 
 function resultEvent(inputTokens: number, result = 'answer'): Record<string, unknown> {

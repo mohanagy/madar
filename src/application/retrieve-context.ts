@@ -6,34 +6,22 @@ import { TextDecoder } from 'node:util'
 import { canonicalJsonString } from '../domain/graph/canonical-json.js'
 import type { GraphAttributes } from '../domain/graph/directed-multigraph.js'
 import { type QueryIndex, type ReadyQueryIndex } from '../domain/query/index-status.js'
+import type { IndexRange } from '../domain/index/model.js'
 import { rankQueryAnchors } from '../domain/query/rank.js'
-import { classifySourceDomain, type SourceDomain } from '../domain/query/source-domain.js'
 import { sliceEvidence } from '../domain/query/slice.js'
 import { traverseEvidencePaths } from '../domain/query/traverse.js'
 import {
-  normalizeRetrieveRequest,
-  type EvidenceBoundary,
-  type EvidenceNode,
-  type EvidenceRelationship,
-  type NormalizedRetrieveRequest,
-  type QueryPathEdge,
-  type RetrieveContextResult,
-  type RetrieveOutcome,
+  normalizeRetrieveRequest, type EvidenceBoundary, type EvidenceNode,
+  type EvidenceRelationship, type NormalizedRetrieveRequest, type QueryPathEdge,
+  type RetrieveContextResult, type RetrieveOutcome,
 } from '../domain/query/types.js'
 
-type AuthenticatedSource =
-  | { state: 'ready'; text: string }
+type AuthenticatedSource = { state: 'ready'; text: string }
   | { state: 'stale' | 'unavailable'; subject: string }
-
-type AuthenticatedNode =
-  | { state: 'ready'; node: EvidenceNode }
+type AuthenticatedNode = { state: 'ready'; node: EvidenceNode }
   | { state: 'corrupt' | 'stale' | 'unavailable'; subject: string }
 
-const utf8 = new TextDecoder('utf-8', { fatal: true })
-const SOURCE_DOMAINS = new Set<SourceDomain>([
-  'production', 'test', 'benchmark', 'fixture', 'generated', 'docs', 'config',
-  'build_artifact', 'unknown',
-])
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 
 function isPositiveLine(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
@@ -44,89 +32,79 @@ function stringFact(attributes: GraphAttributes, key: string): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-function sourceDomainFact(attributes: GraphAttributes, sourceFile: string, root: string): SourceDomain {
-  const value = attributes.source_domain
-  return typeof value === 'string' && SOURCE_DOMAINS.has(value as SourceDomain)
-    ? value as SourceDomain
-    : classifySourceDomain(sourceFile, root)
-}
-
 function sourceIsBeneathRoot(root: string, source: string): boolean {
   const path = relative(root, source)
   return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path)
 }
 
 function readAuthenticatedSource(
-  index: ReadyQueryIndex,
-  sourceFile: string,
-  cache: Map<string, AuthenticatedSource>,
+  index: ReadyQueryIndex, sourceFile: string, cache: Map<string, AuthenticatedSource>,
 ): AuthenticatedSource {
   const cached = cache.get(sourceFile)
   if (cached) return cached
-
-  const expectedHash = index.file_hashes.get(sourceFile)
-  if (!expectedHash) {
-    const result = { state: 'stale', subject: sourceFile } as const
+  const remember = (result: AuthenticatedSource): AuthenticatedSource => {
     cache.set(sourceFile, result)
     return result
   }
+
+  const expectedHash = index.file_hashes.get(sourceFile)
+  if (!expectedHash) return remember({ state: 'stale', subject: sourceFile })
 
   try {
     const root = realpathSync(index.root_path)
     const candidate = realpathSync(resolve(root, sourceFile))
     if (isAbsolute(sourceFile) || !sourceIsBeneathRoot(root, candidate)) {
-      const result = { state: 'unavailable', subject: sourceFile } as const
-      cache.set(sourceFile, result)
-      return result
+      return remember({ state: 'unavailable', subject: sourceFile })
     }
     const bytes = readFileSync(candidate)
     const text = utf8.decode(bytes)
     const hash = createHash('sha256').update(bytes).digest('hex')
-    const result: AuthenticatedSource = hash === expectedHash
+    return remember(hash === expectedHash
       ? { state: 'ready', text }
-      : { state: 'stale', subject: sourceFile }
-    cache.set(sourceFile, result)
-    return result
+      : { state: 'stale', subject: sourceFile })
   } catch {
-    const result = { state: 'unavailable', subject: sourceFile } as const
-    cache.set(sourceFile, result)
-    return result
+    return remember({ state: 'unavailable', subject: sourceFile })
   }
 }
 
-interface SourceLine {
-  start: number
-  end: number
-}
-
-function sourceLines(text: string): SourceLine[] {
-  const lines: SourceLine[] = []
-  let start = 0
+function offsetOf(text: string, position: IndexRange['start']): number | null {
+  if (!Number.isSafeInteger(position.line) || position.line < 1
+    || !Number.isSafeInteger(position.column) || position.column < 1) return null
+  const starts = [0], ends: number[] = []
   for (let index = 0; index < text.length; index += 1) {
-    const character = text.charCodeAt(index)
-    if (character !== 10 && character !== 13 && character !== 0x2028 && character !== 0x2029) {
-      continue
-    }
-    lines.push({ start, end: index })
-    if (character === 13 && text.charCodeAt(index + 1) === 10) index += 1
-    start = index + 1
+    const code = text.charCodeAt(index)
+    if (![10, 13, 0x2028, 0x2029].includes(code)) continue
+    ends.push(index)
+    if (code === 13 && text.charCodeAt(index + 1) === 10) index += 1
+    starts.push(index + 1)
   }
-  lines.push({ start, end: text.length })
-  return lines
+  ends.push(text.length)
+  const start = starts[position.line - 1], end = ends[position.line - 1]
+  if (start === undefined || end === undefined) return null
+  const offset = start + position.column - 1
+  return offset <= end ? offset : null
 }
 
-function exactLineRange(text: string, startLine: number, endLine: number): string | null {
-  const lines = sourceLines(text)
-  const start = lines[startLine - 1]
-  const end = lines[endLine - 1]
-  if (!start || !end || endLine < startLine) return null
-  return text.slice(start.start, end.end)
+function validRange(value: unknown): value is IndexRange {
+  if (!value || typeof value !== 'object') return false
+  const range = value as IndexRange
+  return offsetPosition(range.start) <= offsetPosition(range.end)
+}
+
+function offsetPosition(position: IndexRange['start'] | undefined): number {
+  return position && Number.isSafeInteger(position.line) && position.line > 0
+    && Number.isSafeInteger(position.column) && position.column > 0
+    ? position.line * 0x1_0000_0000 + position.column
+    : Number.NaN
+}
+
+function exactRange(text: string, range: IndexRange): string | null {
+  const start = offsetOf(text, range.start), end = offsetOf(text, range.end)
+  return start === null || end === null || end < start ? null : text.slice(start, end)
 }
 
 function authenticateNode(
-  index: ReadyQueryIndex,
-  nodeId: string,
-  sourceCache: Map<string, AuthenticatedSource>,
+  index: ReadyQueryIndex, nodeId: string, sourceCache: Map<string, AuthenticatedSource>,
 ): AuthenticatedNode {
   if (!index.graph.hasNode(nodeId)) return { state: 'corrupt', subject: nodeId }
   const attributes = index.graph.nodeAttributes(nodeId)
@@ -134,36 +112,53 @@ function authenticateNode(
   const nodeKind = stringFact(attributes, 'node_kind')
   const sourceFile = stringFact(attributes, 'source_file')
   const sourceLocation = stringFact(attributes, 'source_location')
-  const startLine = attributes.line_number
-  const endLine = attributes.end_line_number
   const provenance = attributes.provenance
   const contentHash = sourceFile ? index.file_hashes.get(sourceFile) : undefined
 
-  if (!label || !nodeKind || !sourceFile || !sourceLocation
-    || !isPositiveLine(startLine) || !isPositiveLine(endLine)
+  if (!label || !nodeKind || !sourceFile
     || !Array.isArray(provenance) || provenance.length === 0 || !contentHash) {
     return { state: 'corrupt', subject: nodeId }
   }
 
   const source = readAuthenticatedSource(index, sourceFile, sourceCache)
   if (source.state !== 'ready') return source
-  const snippet = exactLineRange(source.text, startLine, endLine)
-  if (snippet === null) return { state: 'stale', subject: sourceFile }
+  const sourceDomain = stringFact(attributes, 'source_domain')
+  const common = {
+    node_id: nodeId, label, source_file: sourceFile, provenance,
+    content_hash: contentHash,
+    ...(sourceDomain ? { source_domain: sourceDomain } : {}),
+  }
+  if (nodeKind === 'file') {
+    return { state: 'ready', node: { ...common, evidence_kind: 'structural_file', node_kind: 'file' } }
+  }
+
+  const startLine = attributes.line_number
+  const endLine = attributes.end_line_number
+  const definitionRange = attributes.definition_range
+  const declarationRange = attributes.declaration_range
+  if (!sourceLocation || !isPositiveLine(startLine) || !isPositiveLine(endLine)
+    ) return { state: 'corrupt', subject: nodeId }
+  if (!validRange(definitionRange) || !validRange(declarationRange)
+    || offsetPosition(declarationRange.start) < offsetPosition(definitionRange.start)
+    || offsetPosition(declarationRange.end) > offsetPosition(definitionRange.end)) {
+    return { state: 'stale', subject: sourceFile }
+  }
+  const expectedLocation = definitionRange.end.line > definitionRange.start.line
+    ? `L${definitionRange.start.line}-L${definitionRange.end.line}`
+    : `L${definitionRange.start.line}`
+  if (startLine !== definitionRange.start.line || endLine !== definitionRange.end.line
+    || sourceLocation !== expectedLocation) return { state: 'stale', subject: sourceFile }
+  const snippet = exactRange(source.text, declarationRange)
+  if (snippet === null || exactRange(source.text, definitionRange) === null) {
+    return { state: 'stale', subject: sourceFile }
+  }
 
   return {
     state: 'ready',
     node: {
-      node_id: nodeId,
-      label,
-      node_kind: nodeKind,
-      source_file: sourceFile,
-      source_location: sourceLocation,
-      line_number: startLine,
-      end_line_number: endLine,
-      source_domain: sourceDomainFact(attributes, sourceFile, index.root_path),
-      provenance,
-      content_hash: contentHash,
-      snippet,
+      ...common, evidence_kind: 'symbol_declaration', node_kind: nodeKind,
+      source_location: sourceLocation, line_number: startLine, end_line_number: endLine,
+      definition_range: definitionRange, declaration_range: declarationRange, snippet,
     },
   }
 }
@@ -197,27 +192,18 @@ function boundary(kind: EvidenceBoundary['kind'], subject: string): EvidenceBoun
 }
 
 function emptyResult(
-  request: NormalizedRetrieveRequest,
-  outcome: RetrieveOutcome,
-  boundaries: EvidenceBoundary[],
+  request: NormalizedRetrieveRequest, outcome: RetrieveOutcome, boundaries: EvidenceBoundary[],
 ): RetrieveContextResult {
   return sliceEvidence({
-    request,
-    outcome,
+    request, outcome,
     matchedNodes: [],
     relationships: [],
-    boundaries,
-    priorityNodeIds: [],
-    closurePasses: 0,
+    boundaries, priorityNodeIds: [], closurePasses: 0,
   })
 }
 
-export function normalizeRetrieveContextRequest(input: unknown): NormalizedRetrieveRequest {
-  return normalizeRetrieveRequest(input)
-}
-
 export function retrieveContext(index: QueryIndex, input: unknown): RetrieveContextResult {
-  const request = normalizeRetrieveContextRequest(input)
+  const request = normalizeRetrieveRequest(input)
   if (index.state !== 'ready') {
     return emptyResult(request, index.state, [boundary(index.state, index.subject)])
   }
@@ -232,7 +218,7 @@ export function retrieveContext(index: QueryIndex, input: unknown): RetrieveCont
 
   const traversal = traverseEvidencePaths(index, ranking)
   const sourceCache = new Map<string, AuthenticatedSource>()
-  const matchedNodes: EvidenceNode[] = []
+  let matchedNodes: EvidenceNode[] = []
   const boundaries = [...ranking.boundaries, ...traversal.boundaries]
 
   for (const nodeId of traversal.nodeIds) {
@@ -252,6 +238,12 @@ export function retrieveContext(index: QueryIndex, input: unknown): RetrieveCont
     if (relationship) relationships.push(relationship)
     else boundaries.push(boundary('corrupt', edge.id))
   }
+  const related = new Set(relationships.flatMap((edge) => [edge.from_id, edge.to_id]))
+  const orphanFiles = matchedNodes.filter((node) =>
+    node.evidence_kind === 'structural_file' && !related.has(node.node_id))
+  for (const node of orphanFiles) boundaries.push(boundary('unavailable', node.source_file))
+  const orphanIds = new Set(orphanFiles.map((node) => node.node_id))
+  matchedNodes = matchedNodes.filter((node) => !orphanIds.has(node.node_id))
 
   return sliceEvidence({
     request,
@@ -259,7 +251,7 @@ export function retrieveContext(index: QueryIndex, input: unknown): RetrieveCont
     matchedNodes,
     relationships,
     boundaries,
-    priorityNodeIds: ranking.anchors.map((anchor) => anchor.id),
+    priorityNodeIds: traversal.nodeIds,
     closurePasses: traversal.closurePasses,
   })
 }

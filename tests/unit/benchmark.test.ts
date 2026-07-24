@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { generateIndex } from '../../src/application/generate-index.js'
+import { loadGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
 import {
   loadBenchmarkQuestions,
   printBenchmark,
@@ -12,7 +13,6 @@ import {
   runBenchmark,
 } from '../../src/infrastructure/benchmark.js'
 import { evaluateBenchmarkQuestion } from '../../src/infrastructure/benchmark/questions.js'
-import { loadGraph } from '../../src/runtime/serve.js'
 
 const sandboxes: string[] = []
 
@@ -54,7 +54,7 @@ afterEach(() => {
 describe('Core Reset benchmark caller', () => {
   it('measures the serialized authenticated evidence result', () => {
     const { graphPath } = workspace()
-    const graph = loadGraph(graphPath)
+    const graph = loadGraphArtifact(graphPath)
     const question = 'How does process order call persist order?'
 
     expect(queryEvidenceTokens(graph, graphPath, question)).toBeGreaterThan(0)

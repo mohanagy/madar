@@ -5,11 +5,11 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { generateIndex } from '../../src/application/generate-index.js'
+import { loadGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
 import {
   evaluateRetrievalQuality,
   formatQualityReport,
 } from '../../src/infrastructure/benchmark/quality.js'
-import { loadGraph } from '../../src/runtime/serve.js'
 
 const sandboxes: string[] = []
 
@@ -49,7 +49,7 @@ describe('Core Reset retrieval quality evaluator', () => {
   it('grades only authenticated nodes returned by the one query', () => {
     const { graphPath } = qualityWorkspace()
     const report = evaluateRetrievalQuality(
-      loadGraph(graphPath),
+      loadGraphArtifact(graphPath),
       [{
         question: 'How does handle request publish event?',
         expected_labels: ['handleRequest()', 'publishEvent()'],
@@ -72,7 +72,7 @@ describe('Core Reset retrieval quality evaluator', () => {
   it('does not credit substring or missing evidence', () => {
     const { graphPath } = qualityWorkspace()
     const report = evaluateRetrievalQuality(
-      loadGraph(graphPath),
+      loadGraphArtifact(graphPath),
       [{ question: 'publish event', expected_labels: ['publish'] }],
       3_000,
       { graphPath },
@@ -84,7 +84,7 @@ describe('Core Reset retrieval quality evaluator', () => {
   it('skips unlabeled questions and renders a compact report', () => {
     const { graphPath } = qualityWorkspace()
     const report = evaluateRetrievalQuality(
-      loadGraph(graphPath),
+      loadGraphArtifact(graphPath),
       [
         { question: 'handle request', expected_labels: ['handleRequest()'] },
         { question: 'unlabeled evaluation prompt' },

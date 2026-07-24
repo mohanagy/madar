@@ -2,7 +2,6 @@ import {
   readGraphArtifactReceipt,
   type GraphArtifactReceipt,
 } from '../../adapters/filesystem/graph-artifact.js'
-import { readMatchingReportReceipt } from '../../adapters/filesystem/index-store.js'
 import { inspectQueryIndex } from '../../domain/query/index-status.js'
 import { validateGraphPath } from '../../shared/security.js'
 import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
@@ -69,7 +68,6 @@ function internalResourcesForGraph(
   const graphReceipt = acceptedGraphReceipt(graphPath, knownReceipt)
   if (!graphReceipt) return []
 
-  const reportReceipt = readMatchingReportReceipt(graphReceipt.graphPath, graphReceipt)
   return [
     {
       uri: resourceUri('graph.json'),
@@ -79,16 +77,6 @@ function internalResourcesForGraph(
       mimeType: 'application/json',
       text: graphReceipt.artifact,
     },
-    ...(reportReceipt
-      ? [{
-          uri: resourceUri('GRAPH_REPORT.md'),
-          name: 'GRAPH_REPORT.md',
-          title: 'Graph Report',
-          description: 'A derived report authenticated against the current canonical graph.',
-          mimeType: 'text/markdown',
-          text: reportReceipt.report,
-        }]
-      : []),
   ]
 }
 

@@ -173,14 +173,16 @@ describe('MCP stdio delivery surface', () => {
     })
     expect(result.matched_nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({
+        evidence_kind: 'symbol_declaration',
         label: 'routeEntry()',
         source_file: 'route.ts',
-        snippet: expect.stringContaining('return storeValue(value)'),
+        snippet: 'export function routeEntry(value: string): string ',
       }),
       expect.objectContaining({
+        evidence_kind: 'symbol_declaration',
         label: 'storeValue()',
         source_file: 'store.ts',
-        snippet: expect.stringContaining('return value.trim()'),
+        snippet: 'export function storeValue(value: string): string ',
       }),
     ]))
     expect(result.relationships).toEqual(expect.arrayContaining([

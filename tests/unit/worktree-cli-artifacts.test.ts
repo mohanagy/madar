@@ -64,7 +64,7 @@ describe('linked-worktree install surface', () => {
       })
       expect(mcp.mcpServers?.madar?.env).toBeUndefined()
       expect(hook).toContain('madar managed Claude UserPromptSubmit hook')
-      expect(hook).toContain('`retrieve` tool exactly once')
+      expect(hook).toContain('call the Madar retrieve tool exactly once')
       expect(hook).not.toContain(workspace.graphPath)
       expect(existsSync(join(linked, 'out'))).toBe(false)
     } finally {

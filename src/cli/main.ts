@@ -12,7 +12,7 @@ import { runBenchmarkSuite } from '../infrastructure/benchmark/suite.js'
 import { evaluateRetrievalQuality, formatQualityReport } from '../infrastructure/benchmark/quality.js'
 import { runCompareCommand } from '../infrastructure/compare.js'
 import { buildDoctorReport, runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
-import { federate } from '../pipeline/federate.js'
+import { runTryCommand } from '../infrastructure/try-command.js'
 import { generateIndex, type GenerateIndexResult, type ProgressStep } from '../application/generate-index.js'
 import { updateIndex } from '../application/update-index.js'
 import { install as installHooks, status as hookStatus, uninstall as uninstallHooks } from '../infrastructure/hooks.js'
@@ -35,8 +35,6 @@ import {
 } from '../infrastructure/install.js'
 import { pushGraphToNeo4j } from '../infrastructure/neo4j.js'
 import { watchIndex } from '../infrastructure/watch-index.js'
-import { diffGraphs } from '../runtime/diff.js'
-import { buildGraphSummary, type GraphSummary } from '../runtime/graph-summary.js'
 import { serveGraphStdio } from '../runtime/stdio-server.js'
 import { findPackageRoot, readPackageName, readPackageVersion } from '../shared/package-metadata.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
@@ -62,17 +60,17 @@ import {
   type BenchmarkCliOptions,
   parseCompareArgs,
   parseDoctorArgs,
-  parseDiffArgs,
   parseGenerateArgs,
   parseHookArgs,
   parseInstallArgs,
   parsePlatformActionArgs,
   parseQueryArgs,
-  parseSummaryArgs,
   parseServeArgs,
   parseTelemetryArgs,
+  parseTryArgs,
   parseWatchArgs,
   type CompareCliOptions,
+  type TryCliOptions,
   UsageError,
 } from './parser.js'
 
@@ -102,6 +100,10 @@ export interface EvalCommandContext {
   io: CliIO
 }
 
+export interface TryCommandContext {
+  options: TryCliOptions
+}
+
 export interface CliDependencies {
   loadGraph: typeof loadGraphArtifact
   inspectQueryIndex: typeof inspectQueryIndex
@@ -110,9 +112,9 @@ export interface CliDependencies {
   runBenchSuite: (context: BenchSuiteCommandContext) => Promise<string | void> | string | void
   runEval: (context: EvalCommandContext) => Promise<string | void> | string | void
   runCompare: (context: CompareCommandContext) => Promise<string | void> | string | void
+  runTry: (context: TryCommandContext) => Promise<string | void> | string | void
   runDoctor: (graphPath: string) => string
   runStatus: (graphPath: string) => string
-  runGraphSummary?: (graphPath: string) => Promise<GraphSummary> | GraphSummary
   confirm: (message: string) => Promise<boolean>
   printBenchmark: (result: BenchmarkResult) => void
   installHooks: typeof installHooks
@@ -183,9 +185,9 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
       perArmTimeoutSeconds: options.perArmTimeoutSeconds,
     })
   },
+  runTry: ({ options }) => runTryCommand(options),
   runDoctor: (graphPath) => runDoctorCommand({ graphPath }),
   runStatus: (graphPath) => runStatusCommand({ graphPath }),
-  runGraphSummary: (graphPath) => buildGraphSummary(loadGraphArtifact(graphPath)),
   confirm: async (message) => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       throw new UsageError('error: compare requires --yes in non-interactive mode.')
@@ -273,11 +275,11 @@ function emitTelemetry(io: CliIO, dependencies: CliDependencies, buildEvent: () 
 }
 
 function repoSizeBucketForGraph(dependencies: CliDependencies, graphPath: string) {
-  return repoSizeBucketFromFileCount(buildGraphSummary(dependencies.loadGraph(graphPath)).file_count)
-}
-
-function graphSizeBucketForGraph(dependencies: CliDependencies, graphPath: string) {
-  return graphSizeBucketFromNodeCount(buildGraphSummary(dependencies.loadGraph(graphPath)).node_count)
+  const graph = dependencies.loadGraph(graphPath)
+  const files = new Set(graph.nodeEntries()
+    .map(([, attributes]) => String(attributes.source_file ?? '').trim())
+    .filter((sourceFile) => sourceFile.length > 0))
+  return repoSizeBucketFromFileCount(files.size)
 }
 
 function telemetryBase(dependencies: CliDependencies) {
@@ -340,7 +342,6 @@ export function formatHelp(binaryName = 'madar'): string {
     'Commands:',
     '  generate [path]       build canonical graph artifacts for a folder (default .)',
     '    --update             reuse an unchanged graph; reconcile changed source',
-    '    --cluster-only       re-cluster an existing graph without re-indexing source',
     '    --watch              keep the graph reconciled after generation',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git',
@@ -348,7 +349,6 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --max-indexing-failed N       permit N failed candidates (enables strict mode)',
     '    --max-indexing-unsupported N  permit N unsupported candidates (enables strict mode)',
     '    --debounce S         watch debounce seconds (default 3)',
-    '    --no-html            accepted as a no-op; Core Reset emits no HTML graph',
     '    --neo4j-push URI     also push the generated graph to Neo4j',
     '    --neo4j-user USER    Neo4j username',
     '    --neo4j-password PW  Neo4j password',
@@ -360,12 +360,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '  query "<question>"     retrieve authenticated evidence as canonical JSON',
     '    --budget N            positive requested budget (effective cap 4000)',
     '    --graph PATH          graph artifact (default out/graph.json)',
-    '  diff <baseline.json>  compare two canonical graph snapshots',
-    '    --graph PATH          current graph (default out/graph.json)',
-    '    --limit N             maximum items per section (default 10)',
-    '  summary [graph.json]  print a deterministic graph summary as JSON',
-    '  federate <g1> <g2>... merge canonical graphs into one',
-    '    --output DIR         output directory (default out-federated)',
+    '  try "<question>" [path] build a local graph and run the same evidence query',
     '  benchmark [graph.json] run benchmark questions through the configured model runner',
     '    --exec TEMPLATE      required prompt-runner command template',
     '    --questions PATH     alternate benchmark questions',
@@ -398,7 +393,6 @@ export function formatHelp(binaryName = 'madar'): string {
 function isGenerateLikeArgument(argument: string): boolean {
   return (
     argument === '--update' ||
-    argument === '--cluster-only' ||
     argument === '--watch' ||
     argument === '--follow-symlinks' ||
     argument === '--respect-gitignore' ||
@@ -443,10 +437,9 @@ function formatGenerateSummary(result: GenerateIndexResult): string {
     `[madar generate] ${result.mode} completed for ${result.rootPath}`,
     `- Corpus: ${result.totalFiles} file(s) · ~${result.totalWords.toLocaleString()} words`,
     `- Indexed: ${result.indexedFiles}/${result.totalFiles} JavaScript/TypeScript file(s)`,
-    `- Graph: ${result.nodeCount} nodes · ${result.edgeCount} edges · ${result.communityCount} communities`,
+    `- Graph: ${result.nodeCount} nodes · ${result.edgeCount} edges`,
     ...indexingLines,
-    ...(typeof result.semanticAnomalyCount === 'number' ? [`- Semantic anomalies: ${result.semanticAnomalyCount} high-signal item(s)`] : []),
-    `- Outputs: ${result.graphPath}, ${result.reportPath}`,
+    `- Output: ${result.graphPath}`,
   ]
   if (result.updateReceipt) {
     const receipt = result.updateReceipt
@@ -626,14 +619,6 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       return 0
     }
 
-    if (command === 'summary') {
-      const options = parseSummaryArgs(args)
-      const runGraphSummary = dependencies.runGraphSummary
-        ?? ((graphPath: string) => buildGraphSummary(dependencies.loadGraph(graphPath)))
-      io.log(JSON.stringify(await runGraphSummary(options.graphPath), null, 2))
-      return 0
-    }
-
     if (command === 'telemetry') {
       const options = parseTelemetryArgs(args)
       if (options.action === 'enable') {
@@ -681,7 +666,6 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         ? dependencies.updateIndex
         : dependencies.generateGraph
       const result = generate(options.path, {
-        clusterOnly: options.clusterOnly,
         ...(options.followSymlinks === undefined
           ? {}
           : { followSymlinks: options.followSymlinks }),
@@ -760,42 +744,6 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       return 0
     }
 
-    if (command === 'federate') {
-      if (args.length === 0) {
-        throw new UsageError('Usage: madar federate <graph1.json> <graph2.json> ... [--output DIR]')
-      }
-
-      const graphPaths: string[] = []
-      let outputDir: string | undefined
-
-      for (let index = 0; index < args.length; index += 1) {
-        const argument = args[index]
-        if (!argument) {
-          continue
-        }
-        if (argument === '--output' || argument === '--output-dir') {
-          outputDir = args[index + 1]
-          index += 1
-          continue
-        }
-        if (argument.startsWith('--output=') || argument.startsWith('--output-dir=')) {
-          const [, value] = argument.split('=', 2)
-          outputDir = value
-          continue
-        }
-        graphPaths.push(argument)
-      }
-
-      const result = federate(graphPaths, { outputDir })
-      io.log([
-        `[madar federate] merged ${result.repos.length} repos: ${result.repos.join(', ')}`,
-        `- Graph: ${result.totalNodes} nodes · ${result.totalEdges} edges · ${result.communityCount} communities`,
-        `- Cross-repo edges: ${result.crossRepoEdges} inferred connections`,
-        `- Outputs: ${result.graphPath}, ${result.reportPath}`,
-      ].join('\n'))
-      return 0
-    }
-
     if (command === 'serve') {
       const options = parseServeArgs(args)
       const graphPath = resolveWorkspaceGraphPath(options.graphPath)
@@ -823,11 +771,11 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       return 0
     }
 
-    if (command === 'diff') {
-      const options = parseDiffArgs(args)
-      const baselineGraph = dependencies.loadGraph(options.baselineGraphPath)
-      const graph = dependencies.loadGraph(options.graphPath)
-      io.log(diffGraphs(baselineGraph, graph, { limit: options.limit }))
+    if (command === 'try') {
+      const output = await dependencies.runTry({ options: parseTryArgs(args) })
+      if (output !== undefined) {
+        io.log(output)
+      }
       return 0
     }
 

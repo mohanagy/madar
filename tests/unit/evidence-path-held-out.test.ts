@@ -29,6 +29,7 @@ const {
   auditPersistedResult,
   createNpmConfigPair,
   directoryTreeAttestation,
+  executeGenerationBarrier,
   exactUtf16Range,
   generateCommand,
   gradeQuestionEvidence,
@@ -531,6 +532,81 @@ function grade(
 }
 
 describe("evidence-path held-out v2 evaluator", () => {
+  it("finishes every repository generation before starting retrieval", () => {
+    const repositories = [
+      { id: "openstatus" },
+      { id: "documenso" },
+      { id: "formbricks" },
+    ]
+    const questions = repositories.map((repository) => ({
+      id: `${repository.id}-question`,
+      repository_id: repository.id,
+    }))
+    const events: string[] = []
+
+    const contexts = executeGenerationBarrier({
+      repositories,
+      questions,
+      generateRepository(repository: JsonObject) {
+        events.push(`generate:${repository.id}`)
+        return { graph: repository.id }
+      },
+      retrieveQuestion({
+        repository,
+        question,
+        context,
+      }: {
+        repository: JsonObject
+        question: JsonObject
+        context: JsonObject
+      }) {
+        expect(context.graph).toBe(repository.id)
+        events.push(`retrieve:${question.id}`)
+      },
+    })
+
+    expect([...contexts.keys()]).toEqual([
+      "openstatus",
+      "documenso",
+      "formbricks",
+    ])
+    expect(events).toEqual([
+      "generate:openstatus",
+      "generate:documenso",
+      "generate:formbricks",
+      "retrieve:openstatus-question",
+      "retrieve:documenso-question",
+      "retrieve:formbricks-question",
+    ])
+  })
+
+  it("starts no retrieval when any repository generation fails", () => {
+    const events: string[] = []
+    expect(() =>
+      executeGenerationBarrier({
+        repositories: [
+          { id: "openstatus" },
+          { id: "documenso" },
+          { id: "formbricks" },
+        ],
+        questions: [
+          { id: "openstatus-question", repository_id: "openstatus" },
+        ],
+        generateRepository(repository: JsonObject) {
+          events.push(`generate:${repository.id}`)
+          if (repository.id === "documenso") {
+            throw new Error("generation failed")
+          }
+          return { graph: repository.id }
+        },
+        retrieveQuestion() {
+          events.push("retrieve")
+        },
+      }),
+    ).toThrow("generation failed")
+    expect(events).toEqual(["generate:openstatus", "generate:documenso"])
+  })
+
   it("uses distinct empty npm user and global config files", () => {
     const root = mkdtempSync(join(tmpdir(), "madar-held-out-npm-config-"))
     try {

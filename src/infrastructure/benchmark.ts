@@ -1,6 +1,5 @@
-import { QUERY_TOKEN_ESTIMATOR, loadGraph } from '../runtime/serve.js'
+import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
 import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
-import { graphStructureMetrics, type GraphStructureMetrics } from '../pipeline/analyze.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './benchmark/corpus.js'
 import {
   runBenchmarkPrompt,
@@ -9,7 +8,6 @@ import {
 } from './benchmark/runner.js'
 import {
   evaluateBenchmarkQuestion,
-  queryEvidenceTokens,
   type BenchmarkMissingExpectedLabels,
   type BenchmarkQuestionInput,
   type BenchmarkQuestionResult,
@@ -18,6 +16,7 @@ import {
   averageInputTokenLabel,
   averageReportedTotalTokens,
   promptTokenSourceSuffix,
+  QUERY_TOKEN_ESTIMATOR,
   usageCaptureSummary,
   usageProviderLabel,
 } from './benchmark/usage.js'
@@ -39,7 +38,6 @@ export interface BenchmarkSuccessResult {
   corpus_source: CorpusBaselineSource
   nodes: number
   edges: number
-  structure_signals: GraphStructureMetrics | null
   question_count: number
   matched_question_count: number
   unmatched_questions: string[]
@@ -78,11 +76,7 @@ export interface BenchmarkRunOptions {
 }
 
 function loadBenchmarkGraph(graphPath: string): KnowledgeGraph {
-  return loadGraph(graphPath)
-}
-
-function hasStructureSignalProvenance(graph: KnowledgeGraph): boolean {
-  return graph.nodeEntries().every(([, attributes]) => String(attributes.source_file ?? '').length > 0)
+  return loadGraphArtifact(graphPath)
 }
 
 function averageQueryTokens(perQuestion: readonly BenchmarkQuestionResult[]): number {
@@ -101,7 +95,6 @@ function averageReusedContextTokens(perQuestion: readonly BenchmarkQuestionResul
 
 function finalizeBenchmarkResult(
   graph: KnowledgeGraph,
-  structureSignals: GraphStructureMetrics | null,
   baseline: ReturnType<typeof resolveCorpusBaseline>,
   benchmarkQuestions: readonly BenchmarkQuestionInput[],
   unmatchedQuestions: string[],
@@ -121,7 +114,6 @@ function finalizeBenchmarkResult(
     corpus_source: baseline.source,
     nodes: graph.numberOfNodes(),
     edges: graph.numberOfEdges(),
-    structure_signals: structureSignals,
     question_count: benchmarkQuestions.length,
     matched_question_count: perQuestion.length,
     unmatched_questions: unmatchedQuestions,
@@ -280,7 +272,6 @@ export function runBenchmark(
 ): BenchmarkResult | Promise<BenchmarkResult> {
   const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
   const graph = loadBenchmarkGraph(resolvedGraphPath)
-  const structureSignals = hasStructureSignalProvenance(graph) ? graphStructureMetrics(graph) : null
   const baseline = resolveCorpusBaseline(graph.numberOfNodes(), { graphPath: resolvedGraphPath, corpusWords })
   const benchmarkQuestions = questions ?? SAMPLE_QUESTIONS
   const usesSampleQuestions = questions === undefined
@@ -328,7 +319,6 @@ export function runBenchmark(
   if (!options.execTemplate) {
     return finalizeBenchmarkResult(
       graph,
-      structureSignals,
       baseline,
       benchmarkQuestions,
       unmatchedQuestions,
@@ -343,7 +333,6 @@ export function runBenchmark(
     .then((perQuestion) =>
       finalizeBenchmarkResult(
         graph,
-        structureSignals,
         baseline,
         benchmarkQuestions,
         unmatchedQuestions,
@@ -378,25 +367,6 @@ export function printBenchmark(result: BenchmarkResult): void {
     for (const missing of result.missing_expected_labels) {
       console.log(`    Missing evidence for ${missing.question}: ${missing.labels.join(', ')}`)
     }
-  }
-  if (result.structure_signals) {
-    console.log('  Structure signals:')
-    console.log(
-      `    entity basis: ${result.structure_signals.total_nodes.toLocaleString()} nodes, ${result.structure_signals.total_edges.toLocaleString()} edges`,
-    )
-    console.log(
-      `    components: ${result.structure_signals.weakly_connected_components.toLocaleString()} weakly connected, ${result.structure_signals.singleton_components.toLocaleString()} singleton, ${result.structure_signals.isolated_nodes.toLocaleString()} isolated`,
-    )
-    console.log(
-      `    largest component: ${result.structure_signals.largest_component_nodes.toLocaleString()} nodes (${Math.round(result.structure_signals.largest_component_ratio * 100)}% of entity graph)`,
-    )
-    console.log(
-      result.structure_signals.low_cohesion_communities > 0
-        ? `    low cohesion: ${result.structure_signals.low_cohesion_communities.toLocaleString()} communities, largest ${result.structure_signals.largest_low_cohesion_community_nodes.toLocaleString()} nodes (cohesion ${result.structure_signals.largest_low_cohesion_community_score})`
-        : '    low cohesion: 0 communities, none on the entity basis',
-    )
-  } else {
-    console.log('  Structure signals: unavailable for graph artifacts without source_file provenance')
   }
   console.log(`  ${averageInputTokenLabel(result.per_question)}: ~${result.avg_query_tokens.toLocaleString()}`)
   if (

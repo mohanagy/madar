@@ -3,32 +3,22 @@ import {
   type GraphAttributes,
   type GraphEdge,
 } from '../graph/directed-multigraph.js'
-import { readBuildState, type SourceSnapshotEntry } from '../index/build-state.js'
+import { CANONICAL_INDEX_FORMAT_VERSION, readBuildState, type SourceSnapshotEntry } from '../index/build-state.js'
 
 export interface QueryGraph {
-  readonly graph: Readonly<GraphAttributes>
-  hasNode(id: string): boolean
-  hasEdge(source: string, target: string): boolean
+  hasNode(id: string): boolean; hasEdge(source: string, target: string): boolean
   nodeEntries(): Array<[string, GraphAttributes]>
   edgeEntries(): Array<[string, string, GraphAttributes, string]>
-  successors(id: string): string[]
-  edgesBetween(source: string, target: string): GraphEdge[]
-  nodeAttributes(id: string): GraphAttributes
+  predecessors(id: string): string[]; successors(id: string): string[]
+  edgesBetween(source: string, target: string): GraphEdge[]; nodeAttributes(id: string): GraphAttributes
 }
 
 export interface ReadyQueryIndex {
-  state: 'ready'
-  graph: QueryGraph
-  root_path: string
-  build_id: string
-  file_hashes: ReadonlyMap<string, string>
-  unsupported_sources: readonly SourceSnapshotEntry[]
+  state: 'ready'; graph: QueryGraph; root_path: string
+  file_hashes: ReadonlyMap<string, string>; unsupported_sources: readonly SourceSnapshotEntry[]
 }
 
-export interface FailedQueryIndex {
-  state: 'unavailable' | 'corrupt'
-  subject: string
-}
+export interface FailedQueryIndex { state: 'unavailable' | 'corrupt'; subject: string }
 
 export type QueryIndex = ReadyQueryIndex | FailedQueryIndex
 
@@ -41,7 +31,10 @@ function immutableMap(entries: Iterable<readonly [string, string]>): ReadonlyMap
     entries() { return values.entries() },
     keys() { return values.keys() },
     values() { return values.values() },
-    forEach(callback: (value: string, key: string, map: ReadonlyMap<string, string>) => void, thisArg?: unknown) {
+    forEach(
+      callback: (value: string, key: string, map: ReadonlyMap<string, string>) => void,
+      thisArg?: unknown,
+    ) {
       values.forEach((value, key) => callback.call(thisArg, value, key, this))
     },
     [Symbol.iterator]() { return values[Symbol.iterator]() },
@@ -59,23 +52,19 @@ function graphSnapshot(source: KnowledgeGraph): KnowledgeGraph {
 }
 
 function immutableQueryGraph(snapshot: KnowledgeGraph): QueryGraph {
-  const metadata = Object.freeze({ ...snapshot.graph })
   return Object.freeze({
-    graph: metadata,
     hasNode: (id: string) => snapshot.hasNode(id),
     hasEdge: (source: string, target: string) => snapshot.hasEdge(source, target),
     nodeEntries: () => snapshot.nodeEntries(),
     edgeEntries: () => snapshot.edgeEntries(),
+    predecessors: (id: string) => snapshot.predecessors(id),
     successors: (id: string) => snapshot.successors(id),
     edgesBetween: (source: string, target: string) => snapshot.edgesBetween(source, target),
     nodeAttributes: (id: string) => snapshot.nodeAttributes(id),
   })
 }
 
-export function failedQueryIndex(
-  state: FailedQueryIndex['state'],
-  subject: string,
-): FailedQueryIndex {
+export function failedQueryIndex(state: FailedQueryIndex['state'], subject: string): FailedQueryIndex {
   return { state, subject }
 }
 
@@ -89,6 +78,7 @@ export function inspectQueryIndex(graph: KnowledgeGraph): QueryIndex {
   const build = readBuildState(snapshot)
   const root = snapshot.graph.root_path
   if (!build || snapshot.graph.canonical_typescript_index !== true
+    || snapshot.graph.schema_version !== CANONICAL_INDEX_FORMAT_VERSION
     || typeof root !== 'string' || root.trim().length === 0
     || build.source_root.root_path !== root) {
     return failedQueryIndex('corrupt', 'canonical TypeScript index metadata')
@@ -107,22 +97,19 @@ export function inspectQueryIndex(graph: KnowledgeGraph): QueryIndex {
       || !/^[a-f0-9]{64}$/.test(contentHash)) {
       return failedQueryIndex('corrupt', 'canonical file-node hash')
     }
-    const existing = hashes.get(sourceFile)
-    if (existing !== undefined && existing !== contentHash) {
+    if (hashes.has(sourceFile)) {
       return failedQueryIndex('corrupt', sourceFile)
     }
     hashes.set(sourceFile, contentHash)
   }
 
-  if (build.sources.supported.some((source) => hashes.get(source.path) !== source.hash)) {
+  if (hashes.size !== build.sources.supported.length
+    || build.sources.supported.some((source) => hashes.get(source.path) !== source.hash)) {
     return failedQueryIndex('corrupt', 'canonical file-node coverage')
   }
 
   return Object.freeze({
-    state: 'ready',
-    graph: immutableQueryGraph(snapshot),
-    root_path: root,
-    build_id: build.build_id,
+    state: 'ready', graph: immutableQueryGraph(snapshot), root_path: root,
     file_hashes: immutableMap(hashes),
     unsupported_sources: Object.freeze(build.sources.unsupported.map((source) => Object.freeze({ ...source }))),
   })

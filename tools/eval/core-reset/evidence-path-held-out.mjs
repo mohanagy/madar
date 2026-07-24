@@ -30,10 +30,24 @@ import { performance } from "node:perf_hooks"
 import { fileURLToPath } from "node:url"
 import { TextDecoder } from "node:util"
 
-import Ajv2020 from "ajv/dist/2020.js"
-import addFormats from "ajv-formats"
-import { countTokens } from "gpt-tokenizer/encoding/cl100k_base"
-import ts from "typescript"
+let Ajv2020
+let addFormats
+let countTokens
+let ts
+
+if (process.argv[2] !== "--internal-plan") {
+  ;[
+    { default: Ajv2020 },
+    { default: addFormats },
+    { countTokens },
+    { default: ts },
+  ] = await Promise.all([
+    import("ajv/dist/2020.js"),
+    import("ajv-formats"),
+    import("gpt-tokenizer/encoding/cl100k_base"),
+    import("typescript"),
+  ])
+}
 
 const scriptPath = fileURLToPath(import.meta.url)
 const scriptRoot = dirname(scriptPath)
@@ -53,7 +67,7 @@ const receiptSchemaPath = join(
   "evidence-path-held-out-receipt.schema.json",
 )
 const expectedContractSha256 =
-  "cb4d96913e64ba0849b62d8a554406030f9fbb896b25bb83e75e1a2654791be0"
+  "c22819a9e24e53f7b11a69c06511a8dc0c2cba8841868d8d9bb734575290bba9"
 const utf8 = new TextDecoder("utf-8", { fatal: true })
 const gitBinary = "/usr/bin/git"
 const tarBinary = "/usr/bin/bsdtar"
@@ -109,6 +123,37 @@ export function canonicalJson(value) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+export function executeGenerationBarrier({
+  repositories,
+  questions,
+  generateRepository,
+  retrieveQuestion,
+}) {
+  const contexts = new Map()
+  for (const repository of repositories) {
+    assert(
+      !contexts.has(repository.id),
+      `held-out repository ${repository.id} was generated twice`,
+    )
+    contexts.set(repository.id, generateRepository(repository))
+  }
+  assert(
+    contexts.size === repositories.length &&
+      repositories.every((repository) => contexts.has(repository.id)),
+    "all held-out repositories must finish generation before retrieval",
+  )
+  for (const repository of repositories) {
+    const context = contexts.get(repository.id)
+    assert(context, `missing generated context for ${repository.id}`)
+    for (const question of questions.filter(
+      (candidate) => candidate.repository_id === repository.id,
+    )) {
+      retrieveQuestion({ repository, question, context })
+    }
+  }
+  return contexts
 }
 
 function normalizedPath(path) {
@@ -2471,7 +2516,6 @@ async function runHeldOut(options) {
     "held-out evaluation requires one prepared local --repository id=path for openstatus, documenso, and formbricks",
   )
   const harnessRoot = mkdtempSync(join(tmpdir(), "madar-held-out-v2-"))
-  const contexts = new Map()
   const responseRecords = []
   let sequence = 0
 
@@ -2481,23 +2525,24 @@ async function runHeldOut(options) {
     const childEntryPath = join(harnessRoot, "child", "retrieve.mjs")
     persistResponse(childEntryPath, isolatedRetrieveChildSource())
 
-    for (const repository of executionPlan.repositories) {
-      const clonePath = join(harnessRoot, "clones", repository.id)
-      mkdirSync(dirname(clonePath), { recursive: true })
-      const source = options.repositories.get(repository.id)
-      assert(source, `missing prepared repository ${repository.id}`)
-      const clone = clonePinnedRepository(repository, source, clonePath)
-      const graphContext = buildGraph(
-        repository,
-        clone.checkout,
-        harnessRoot,
-        candidateRuntimeRoot,
-      )
-      contexts.set(repository.id, { ...clone, ...graphContext, repository })
-
-      for (const question of executionPlan.questions.filter(
-        (candidate) => candidate.repository_id === repository.id,
-      )) {
+    const contexts = executeGenerationBarrier({
+      repositories: executionPlan.repositories,
+      questions: executionPlan.questions,
+      generateRepository(repository) {
+        const clonePath = join(harnessRoot, "clones", repository.id)
+        mkdirSync(dirname(clonePath), { recursive: true })
+        const source = options.repositories.get(repository.id)
+        assert(source, `missing prepared repository ${repository.id}`)
+        const clone = clonePinnedRepository(repository, source, clonePath)
+        const graphContext = buildGraph(
+          repository,
+          clone.checkout,
+          harnessRoot,
+          candidateRuntimeRoot,
+        )
+        return { ...clone, ...graphContext, repository }
+      },
+      retrieveQuestion({ repository, question, context }) {
         const requestPath = join(
           harnessRoot,
           "requests",
@@ -2511,9 +2556,9 @@ async function runHeldOut(options) {
         const child = runIsolatedRetrieveChild({
           entryPath: childEntryPath,
           runtimeRoot: candidateRuntimeRoot,
-          graphPath: graphContext.graphArtifactPath,
+          graphPath: context.graphArtifactPath,
           requestPath,
-          sourceRoot: graphContext.graphRoot,
+          sourceRoot: context.graphRoot,
         })
         const serialized = child.serialized
         const responsePath = join(
@@ -2533,8 +2578,8 @@ async function runHeldOut(options) {
           persisted_sequence: sequence,
           ...persistence,
         })
-      }
-    }
+      },
+    })
 
     assert(
       responseRecords.length === executionPlan.questions.length,

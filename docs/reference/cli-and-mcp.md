@@ -42,7 +42,7 @@ Example:
 }
 ```
 
-MCP also exposes authenticated `graph.json` and, when available, its matching `GRAPH_REPORT.md` as resources. Those artifacts are not alternate query tools.
+MCP also exposes authenticated `graph.json` as a read-only resource. The artifact is not an alternate query tool.
 
 ## Result outcomes
 
@@ -96,7 +96,6 @@ Generation uses one canonical compiler-backed JavaScript/TypeScript index. `--up
 Useful diagnostics:
 
 ```bash
-madar summary [graph.json]
 madar doctor [graph.json]
 madar status [graph.json]
 ```
@@ -115,12 +114,10 @@ With `--auto-refresh`, the server resolves the graph from its working directory,
 These commands support graph maintenance and evaluation. They do not create alternate retrieval products:
 
 ```bash
-madar diff <baseline.json> [--graph path] [--limit N]
 madar compare [question] --exec TEMPLATE [--yes]
 madar benchmark [graph.json] --exec TEMPLATE --yes
 madar eval [graph.json] --exec TEMPLATE --yes
 madar bench:suite ...
-madar federate ...
 madar telemetry <enable|disable|status|clear|report>
 madar hook <install|uninstall|status>
 madar install [platform]

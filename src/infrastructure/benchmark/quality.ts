@@ -6,13 +6,13 @@ import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } fr
 import { normalizeBenchmarkQuestion, normalizeExpectedLabel, type BenchmarkQuestionSpec } from './questions.js'
 import { type PromptRunnerUsage } from '../prompt-runner.js'
 import {
-  retrieveBenchmarkContext,
   runBenchmarkPrompt,
   type BenchmarkPromptArtifacts,
   type BenchmarkPromptExecution,
   type BenchmarkPromptRunnerResult,
   type BenchmarkPromptTokenSource,
 } from './runner.js'
+import { retrieveBenchmarkContext } from './runtime-proof.js'
 import {
   averageInputTokenLabel,
   averageReportedTotalTokens,
@@ -94,24 +94,24 @@ export interface QualityOptions {
  */
 export const GOLD_QUESTIONS: GoldQuestion[] = [
   {
-    question: 'how does louvain clustering work',
-    expected_labels: ['cluster', 'louvainpass'],
+    question: 'how does the retrieve application rank query anchors',
+    expected_labels: ['retrievecontext', 'rankqueryanchors'],
   },
   {
     question: 'how does the retrieve MCP tool find relevant nodes',
-    expected_labels: ['retrievecontext', 'scorenode'],
+    expected_labels: ['handletoolcall', 'retrievecontext'],
   },
   {
     question: 'retrieveContext',
     expected_labels: ['retrievecontext'],
   },
   {
-    question: 'how does retrieveContext build community labels',
-    expected_labels: ['retrievecontext', 'buildcommunitylabels'],
+    question: 'how does retrieval traverse directed evidence paths',
+    expected_labels: ['traverseevidencepaths'],
   },
   {
-    question: 'scoreNode',
-    expected_labels: ['scorenode'],
+    question: 'how does retrieval fit evidence into the result budget',
+    expected_labels: ['sliceevidence'],
   },
   {
     question: 'how does canonical TypeScript indexing build graph nodes',
@@ -122,24 +122,24 @@ export const GOLD_QUESTIONS: GoldQuestion[] = [
     expected_labels: ['parsegenerateargs', 'parsequeryargs'],
   },
   {
-    question: 'how does impact analysis compute blast radius',
-    expected_labels: ['analyzeimpact', 'impactresult'],
+    question: 'how does generation build and publish the canonical index',
+    expected_labels: ['generateindex', 'buildandpublishindex'],
   },
   {
     question: 'how does the claude install command configure hooks and MCP',
     expected_labels: ['claudeinstall', 'installmcpserver'],
   },
   {
-    question: 'how does community naming assign labels to clusters',
-    expected_labels: ['buildcommunitylabels'],
+    question: 'how does Madar validate a graph before querying it',
+    expected_labels: ['inspectqueryindex'],
   },
   {
     question: 'how does graph generation discover the current source files',
-    expected_labels: ['generategraph', 'detect'],
+    expected_labels: ['generateindex'],
   },
   {
-    question: 'how does the graph report get generated',
-    expected_labels: ['generate', 'reportts'],
+    question: 'how is the canonical graph artifact loaded',
+    expected_labels: ['loadgraphartifact', 'readgraphartifactreceipt'],
   },
 ]
 

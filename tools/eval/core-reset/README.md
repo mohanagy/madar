@@ -43,6 +43,15 @@ the Go checker and Tinybird phases must be reported as unsupported. None of
 these repository identifiers, owner fixtures, paths, phase labels, or scoring terms
 may enter production source or query output.
 
+The active implementation also carries the owner-approved combined finalizer
+deletion from [#599](https://github.com/mohanagy/madar/issues/599#issuecomment-5062879476),
+[#596](https://github.com/mohanagy/madar/issues/596#issuecomment-5062879444),
+and the [RFC](https://github.com/mohanagy/madar/issues/577#issuecomment-5062879430).
+It combines the original 54 files / 29,441 LOC with nine finalizers / 3,590 LOC
+into one 63-file / 33,031-LOC predecessor floor and 22 transfers.
+`src/runtime/stdio/prompts.ts` is approved supplemental importer cleanup outside
+that floor. Implementation is in progress; no evaluator result is accepted yet.
+
 Held-out v2 grades a phase only when the result contains an authenticated
 `symbol_declaration` matching a hidden accepted graph identity, source path,
 kind, full-file SHA-256, canonical declaration range, and declaration hash. A
@@ -79,7 +88,8 @@ closure-pass count at most one, and every sample within the 12-file and
 Measurements from another environment are diagnostic only.
 
 The accepted receipt path is
-`docs/core-reset/evidence/evidence-path-performance.json`. The runner and its
+`docs/core-reset/evidence/evidence-path-performance.json`. It must remain absent
+until a clean exact-head v2 run writes an eligible result. The runner and its
 receipt are implementation evidence: activation does not create the receipt or
 claim that the timing gate passed. This is a public, fixed workload—not an
 independent adversarial correctness proof. A performance-eligible receipt cannot

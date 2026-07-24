@@ -17,10 +17,9 @@ export interface QueryCliOptions {
   budget?: number
 }
 
-export interface DiffCliOptions {
-  baselineGraphPath: string
-  graphPath: string
-  limit: number
+export interface TryCliOptions {
+  question: string
+  path: string
 }
 
 export interface BenchmarkCliOptions {
@@ -55,7 +54,6 @@ export interface CompareCliOptions {
 export interface GenerateCliOptions {
   path: string
   update: boolean
-  clusterOnly: boolean
   watch: boolean
   followSymlinks?: true
   respectGitignore?: true
@@ -82,10 +80,6 @@ export interface ServeCliOptions {
 }
 
 export interface DoctorCliOptions {
-  graphPath: string
-}
-
-export interface SummaryCliOptions {
   graphPath: string
 }
 
@@ -169,10 +163,6 @@ function parseValidatedGraphPath(flag: string, value: string | undefined): strin
   return validateGraphPath(requireOptionValue(flag, value))
 }
 
-function parseGraphPathArgument(flag: string, value: string | undefined): string {
-  return validateCliText(flag, requireOptionValue(flag, value))
-}
-
 export function parseQueryArgs(args: string[]): QueryCliOptions {
   const question = args[0]?.trim()
   if (!question) {
@@ -228,52 +218,22 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
   }
 }
 
-export function parseDiffArgs(args: string[]): DiffCliOptions {
-  const baselineGraphPath = args[0]?.trim()
-  if (!baselineGraphPath) {
-    throw new UsageError('Usage: madar diff <baseline-graph.json> [--graph path] [--limit N]')
-  }
-  if (baselineGraphPath.length > MAX_CLI_PATH_LENGTH) {
-    throw new UsageError(`error: baseline graph path exceeds maximum length of ${MAX_CLI_PATH_LENGTH} characters`)
+export function parseTryArgs(args: string[]): TryCliOptions {
+  const usage = 'Usage: madar try "<question>" [path]'
+  const question = args[0]?.trim()
+  if (!question) {
+    throw new UsageError(usage)
   }
 
-  let graphPath = 'out/graph.json'
-  let limit = 10
-
-  for (let index = 1; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (argument === '--graph') {
-      graphPath = requireNonEmptyValue('--graph', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--graph=')) {
-      const [, value] = argument.split('=', 2)
-      graphPath = requireNonEmptyValue('--graph', value)
-      continue
-    }
-
-    if (argument === '--limit') {
-      limit = parsePositiveDecimalInteger('--limit', requireNonEmptyValue('--limit', args[index + 1]))
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--limit=')) {
-      const [, value] = argument.split('=', 2)
-      limit = parsePositiveDecimalInteger('--limit', requireNonEmptyValue('--limit', value))
-      continue
-    }
-
-    throw new UsageError(`error: unknown option for diff: ${argument}`)
+  const path = args[1] ?? '.'
+  if (args.length > 2 || path.startsWith('--')) {
+    throw new UsageError(usage)
+  }
+  if (path.length > MAX_CLI_PATH_LENGTH) {
+    throw new UsageError(`error: path exceeds maximum length of ${MAX_CLI_PATH_LENGTH} characters`)
   }
 
-  return { baselineGraphPath, graphPath, limit }
+  return { question, path }
 }
 
 export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): BenchmarkCliOptions {
@@ -589,7 +549,6 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
 export function parseGenerateArgs(args: string[]): GenerateCliOptions {
   let path = '.'
   let update = false
-  let clusterOnly = false
   let watch = false
   let followSymlinks: true | undefined
   let respectGitignore: true | undefined
@@ -644,7 +603,7 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     if (!argument.startsWith('--')) {
       if (path !== '.') {
         throw new UsageError(
-          'Usage: madar generate [path] [--update] [--cluster-only] [--watch] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
+          'Usage: madar generate [path] [--update] [--watch] [--follow-symlinks] [--respect-gitignore] [--debounce S] [--neo4j-push URI] [--neo4j-user USER] [--neo4j-password PW] [--neo4j-database DB] [--strict-indexing] [--max-indexing-failed N] [--max-indexing-unsupported N]',
         )
       }
       path = argument
@@ -653,11 +612,6 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
 
     if (argument === '--update') {
       update = true
-      continue
-    }
-
-    if (argument === '--cluster-only') {
-      clusterOnly = true
       continue
     }
 
@@ -673,12 +627,6 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
 
     if (argument === '--respect-gitignore') {
       respectGitignore = true
-      continue
-    }
-
-    if (argument === '--no-html') {
-      // The Core Reset generator no longer has an HTML export phase. Retain
-      // this protocol flag as an explicit no-op for pinned evaluation scripts.
       continue
     }
 
@@ -745,13 +693,9 @@ export function parseGenerateArgs(args: string[]): GenerateCliOptions {
     throw new UsageError(`error: unknown option for generate: ${argument}`)
   }
 
-  if (update && clusterOnly) {
-    throw new UsageError('error: --update and --cluster-only cannot be used together')
-  }
   return {
     path,
     update,
-    clusterOnly,
     watch,
     ...(followSymlinks ? { followSymlinks } : {}),
     ...(respectGitignore ? { respectGitignore } : {}),
@@ -880,42 +824,6 @@ export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status'
     }
 
     throw new UsageError(`error: unknown option for ${commandName}: ${argument}`)
-  }
-
-  return { graphPath }
-}
-
-export function parseSummaryArgs(args: string[]): SummaryCliOptions {
-  const usage = 'Usage: madar summary [graph.json]'
-  let graphPath = 'out/graph.json'
-
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index]
-    if (!argument) {
-      continue
-    }
-
-    if (argument === '--graph') {
-      graphPath = requireOptionValue('--graph', args[index + 1])
-      index += 1
-      continue
-    }
-
-    if (argument.startsWith('--graph=')) {
-      const [, value] = argument.split('=', 2)
-      graphPath = requireOptionValue('--graph', value)
-      continue
-    }
-
-    if (argument.startsWith('--')) {
-      throw new UsageError(`error: unknown option for summary: ${argument}`)
-    }
-
-    if (graphPath !== 'out/graph.json') {
-      throw new UsageError(usage)
-    }
-
-    graphPath = argument
   }
 
   return { graphPath }

@@ -187,17 +187,12 @@ describe('retrieve context', () => {
       node.source_file,
       node.snippet,
     ]))).toEqual({
-      'src/flow-001/entry-local-00.ts': [
-        'export function entryLocal00(value: string): string {',
-        '  return processLocal01(value)',
-        '}',
-      ].join('\n'),
-      'src/flow-001/process-local-01.ts': [
-        'export function processLocal01(value: string): string {',
-        '  return storageLocal02(value.trim())',
-        '}',
-      ].join('\n'),
-      'src/flow-001/storage-local-02.js': fixture.source['src/flow-001/storage-local-02.js'],
+      'src/flow-001/entry-local-00.ts':
+        'export function entryLocal00(value: string): string ',
+      'src/flow-001/process-local-01.ts':
+        'export function processLocal01(value: string): string ',
+      'src/flow-001/storage-local-02.js':
+        'export function storageLocal02(value) ',
     })
 
     const nodesById = new Map(first.matched_nodes.map((node) => [node.node_id, node]))
@@ -245,6 +240,74 @@ describe('retrieve context', () => {
     ])
     expect(result.boundaries).toEqual([])
     expect(result.metrics.closure_passes).toBe(1)
+  })
+
+  it('uses bounded successor context to recover a zero-overlap route branch', () => {
+    const root = sandbox('route-fanout')
+    write(root, 'src/entry.ts', [
+      "import { distractAlpha } from './noise/alpha.js'",
+      "import { distractBeta } from './noise/beta.js'",
+      "import { forward } from './worker/forward.js'",
+      '',
+      'export function handleSignal(): string {',
+      '  distractAlpha()',
+      '  distractBeta()',
+      '  return forward()',
+      '}',
+      '',
+    ].join('\n'))
+    for (const name of ['alpha', 'beta']) {
+      write(root, `src/noise/${name}.ts`, [
+        `import { ${name}One, ${name}Two, ${name}Three } from './${name}-helpers.js'`,
+        `export function distract${name[0]!.toUpperCase()}${name.slice(1)}(): string {`,
+        `  return ${name}One() + ${name}Two() + ${name}Three()`,
+        '}',
+        '',
+      ].join('\n'))
+      write(root, `src/noise/${name}-helpers.ts`, [
+        `export const ${name}One = () => '1'`,
+        `export const ${name}Two = () => '2'`,
+        `export const ${name}Three = () => '3'`,
+        '',
+      ].join('\n'))
+    }
+    write(root, 'src/worker/forward.ts', [
+      "import { getBackgroundProducer } from './producer.js'",
+      'export function forward(): string {',
+      '  return getBackgroundProducer()',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'src/worker/producer.ts',
+      'export declare function getBackgroundProducer(): string\n')
+    write(root, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
+
+    const result = retrieveContext(readyIndex(root), {
+      question: 'Trace signal handling toward the background producer.',
+    })
+
+    expect(result.outcome).toBe('evidence')
+    expect(result.matched_nodes.map((node) => node.label)).toContain('forward()')
+  })
+
+  it('does not rank interfaces as implementations unless their kind is requested', () => {
+    const root = sandbox('interface-ranking')
+    write(root, 'src/auth.ts', [
+      'export interface AuthFlow {',
+      '  ready: boolean',
+      '}',
+      'export function authFlow(): boolean {',
+      '  return true',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
+    const index = readyIndex(root)
+
+    const ordinary = retrieveContext(index, { question: 'Trace the auth flow.' })
+    expect(ordinary.matched_nodes.map((node) => node.node_kind)).not.toContain('interface')
+    const requested = retrieveContext(index, { question: 'Which interface defines AuthFlow?' })
+    expect(requested.matched_nodes.map((node) => node.node_kind)).toContain('interface')
   })
 
   it('normalizes derivational suffixes without a domain vocabulary', () => {
@@ -623,8 +686,8 @@ describe('retrieve context', () => {
     })
   })
 
-  it('reports a bounded traversal as truncated instead of disconnected', () => {
-    const root = sandbox('bounded-traversal')
+  it('follows a finite directed evidence path beyond eight hops', () => {
+    const root = sandbox('complete-traversal')
     for (let index = 0; index < 10; index += 1) {
       const ordinal = String(index).padStart(2, '0')
       const next = String(index + 1).padStart(2, '0')
@@ -639,14 +702,18 @@ describe('retrieve context', () => {
     write(root, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
 
     const result = retrieveContext(readyIndex(root), {
-      question: 'Trace flow-030 node local 00 to node local 09.',
+      question: 'Trace `nodeLocal00` to `nodeLocal09`.',
     })
 
     expect(result.outcome).toBe('evidence')
-    expect(result.relationships).toEqual([])
-    expect(result.boundaries).toEqual([
-      expect.objectContaining({ kind: 'truncated' }),
-    ])
+    expect(result.relationships).toHaveLength(9)
+    expect(result.relationships.every((edge) => edge.relation === 'calls')).toBe(true)
+    expect(result.matched_nodes.map((node) => node.label)).toEqual(expect.arrayContaining([
+      'nodeLocal00()',
+      'nodeLocal09()',
+    ]))
+    expect(result.boundaries).toEqual([])
+    expect(result.metrics.truncated).toBe(false)
   })
 
   it('preserves every direct phase anchor when a causal path exceeds the file cap', () => {
@@ -704,8 +771,13 @@ describe('retrieve context', () => {
     })
 
     expect(result.outcome).toBe('evidence')
-    expect(result.matched_nodes).toHaveLength(2)
-    expect(result.matched_nodes.every((node) => node.snippet === source.trimEnd())).toBe(true)
+    const symbols = result.matched_nodes.filter((node) =>
+      node.evidence_kind === 'symbol_declaration')
+    expect(symbols).toHaveLength(2)
+    expect(symbols.every((node) =>
+      node.snippet === 'export function handle(): string ')).toBe(true)
+    expect(result.matched_nodes.filter((node) =>
+      node.evidence_kind === 'structural_file')).toHaveLength(2)
   })
 
   it('reports recognized unsupported sources without claiming graph evidence', () => {
@@ -750,33 +822,33 @@ describe('retrieve context', () => {
     const fixture = flowFixture()
     write(
       fixture.root,
-      'src/flow-001/entry-local-00.ts',
-      'export function entryLocal00(): string { return "changed" }\n',
+      'src/flow-001/storage-local-02.js',
+      'export function storageLocal02() { return "changed" }\n',
     )
 
     const result = retrieveContext(fixture.index, {
-      question: structuredQuestion('flow-001', ['entry local 00']),
+      question: 'Explain `storageLocal02`.',
     })
 
     expect(result.outcome).toBe('stale')
     expect(result.matched_nodes).toEqual([])
     expect(result.boundaries).toEqual([
-      { kind: 'stale', subject: 'src/flow-001/entry-local-00.ts' },
+      { kind: 'stale', subject: 'src/flow-001/storage-local-02.js' },
     ])
   })
 
   it('reports unavailable excerpts when an authenticated source disappears', () => {
     const fixture = flowFixture()
-    unlinkSync(join(fixture.root, 'src/flow-001/entry-local-00.ts'))
+    unlinkSync(join(fixture.root, 'src/flow-001/storage-local-02.js'))
 
     const result = retrieveContext(fixture.index, {
-      question: structuredQuestion('flow-001', ['entry local 00']),
+      question: 'Explain `storageLocal02`.',
     })
 
     expect(result.outcome).toBe('unavailable')
     expect(result.matched_nodes).toEqual([])
     expect(result.boundaries).toEqual([
-      { kind: 'unavailable', subject: 'src/flow-001/entry-local-00.ts' },
+      { kind: 'unavailable', subject: 'src/flow-001/storage-local-02.js' },
     ])
   })
 
@@ -790,8 +862,8 @@ describe('retrieve context', () => {
       '',
     ].join('\n'))
     const entry = fixture.graph.nodeEntries().find(([, attributes]) =>
-      attributes.qualified_name === 'entryLocal00')
-    if (!entry) throw new Error('Canonical fixture did not index entryLocal00')
+      attributes.qualified_name === 'storageLocal02')
+    if (!entry) throw new Error('Canonical fixture did not index storageLocal02')
     const [nodeId, attributes] = entry
     fixture.graph.replaceNodeAttributes(nodeId, {
       ...attributes,
@@ -812,7 +884,7 @@ describe('retrieve context', () => {
     }
 
     const result = retrieveContext(escapedIndex, {
-      question: structuredQuestion('flow-003', ['escape local 00']),
+      question: 'Explain `escapeLocal00`.',
     })
 
     expect(result.outcome).toBe('unavailable')
@@ -839,6 +911,11 @@ describe('retrieve context', () => {
     graph.replaceNodeAttributes(entry[0], {
       ...entry[1],
       end_line_number: 999,
+      source_location: 'L1-L999',
+      definition_range: {
+        ...(entry[1].definition_range as { start: { line: number; column: number } }),
+        end: { line: 999, column: 1 },
+      },
     })
 
     const result = retrieveContext({ ...indexed.index, graph }, {
@@ -880,11 +957,15 @@ describe('retrieve context', () => {
       source_file: 'src/lines.ts',
       line_number: 2,
       end_line_number: 4,
-      snippet: [
-        'export function lineTarget(): number {',
-        '  return 1',
-        '}',
-      ].join(terminator),
+      definition_range: {
+        start: { line: 2, column: 1 },
+        end: { line: 4, column: 2 },
+      },
+      declaration_range: {
+        start: { line: 2, column: 1 },
+        end: { line: 2, column: 38 },
+      },
+      snippet: 'export function lineTarget(): number ',
     })
   })
 
@@ -1002,12 +1083,21 @@ describe('retrieve context', () => {
   it('keeps fitting priority evidence ahead of verbose diagnostics under budget', () => {
     const node = {
       node_id: 'priority',
+      evidence_kind: 'symbol_declaration' as const,
       label: 'priority()',
       node_kind: 'function',
       source_file: 'src/priority.ts',
       source_location: 'L1',
       line_number: 1,
       end_line_number: 1,
+      definition_range: {
+        start: { line: 1, column: 1 },
+        end: { line: 1, column: 30 },
+      },
+      declaration_range: {
+        start: { line: 1, column: 1 },
+        end: { line: 1, column: 30 },
+      },
       source_domain: 'production',
       provenance: [{}],
       content_hash: 'a'.repeat(64),
@@ -1031,6 +1121,64 @@ describe('retrieve context', () => {
     expect(result.matched_nodes).toEqual([node])
     expect(result.metrics.serialized_tokens).toBeLessThanOrEqual(400)
     expect(result.metrics.truncated).toBe(true)
+  })
+
+  it('prunes a structural file when the token budget drops its relationship', () => {
+    const structural = {
+      node_id: 'file',
+      evidence_kind: 'structural_file' as const,
+      label: 'priority.ts',
+      node_kind: 'file' as const,
+      source_file: 'src/priority.ts',
+      source_domain: 'production',
+      provenance: [{}],
+      content_hash: 'b'.repeat(64),
+    }
+    const result = sliceEvidence({
+      request: { question: 'priority', budget: 256 },
+      outcome: 'evidence',
+      matchedNodes: [structural, {
+        node_id: 'symbol',
+        evidence_kind: 'symbol_declaration',
+        label: 'priority()',
+        node_kind: 'function',
+        source_file: 'src/priority.ts',
+        source_location: 'L1',
+        line_number: 1,
+        end_line_number: 1,
+        definition_range: {
+          start: { line: 1, column: 1 },
+          end: { line: 1, column: 30 },
+        },
+        declaration_range: {
+          start: { line: 1, column: 1 },
+          end: { line: 1, column: 30 },
+        },
+        source_domain: 'production',
+        provenance: [{}],
+        content_hash: 'b'.repeat(64),
+        snippet: 'export function priority() {}',
+      }],
+      relationships: [{
+        id: 'contains',
+        from_id: 'file',
+        to_id: 'symbol',
+        relation: 'contains',
+        source_file: 'src/priority.ts',
+        source_location: 'L1',
+        provenance: [{ detail: 'x'.repeat(2_000) }],
+      }],
+      boundaries: [],
+      priorityNodeIds: ['file'],
+      closurePasses: 1,
+    })
+
+    expect(result.matched_nodes).not.toContainEqual(expect.objectContaining({
+      evidence_kind: 'structural_file',
+    }))
+    const ids = new Set(result.matched_nodes.map((entry) => entry.node_id))
+    expect(result.relationships.every((edge) =>
+      ids.has(edge.from_id) && ids.has(edge.to_id))).toBe(true)
   })
 
   it('does not share mutable truncation facts between identical requests', () => {

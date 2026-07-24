@@ -4,10 +4,10 @@ import { canonicalJsonString, canonicalJsonValue, compareCodeUnits } from '../gr
 import type { KnowledgeGraph } from '../graph/directed-multigraph.js'
 import { hasExactKeys, isRecord } from '../../shared/guards.js'
 
-export const CANONICAL_INDEX_FORMAT_VERSION = 2 as const
+export const CANONICAL_INDEX_FORMAT_VERSION = 3 as const
 export const GENERATION_POLICY_VERSION = 4 as const
-export const INDEX_BUILD_STATE_VERSION = 2 as const
-export const INDEX_ENGINE_ID = 'madar-typescript-index-v2' as const
+export const INDEX_BUILD_STATE_VERSION = 3 as const
+export const INDEX_ENGINE_ID = 'madar-typescript-index-v3' as const
 export const INDEXING_OUTCOME_STATUSES = [
   'indexed', 'indexed_with_warnings', 'skipped_by_policy', 'unsupported', 'failed',
 ] as const
@@ -204,6 +204,8 @@ export function attachBuildState(graph: KnowledgeGraph, state: Omit<IndexBuildSt
   return accepted
 }
 export function readBuildState(graph: KnowledgeGraph): IndexBuildState | null {
+  if (graph.graph.canonical_typescript_index !== true
+    || graph.graph.schema_version !== CANONICAL_INDEX_FORMAT_VERSION) return null
   const value = exactRecord(graph.graph.index_build, ['version', 'engine_id', 'build_id', 'policy', 'sources', 'source_root', 'corpus', 'completeness'])
   if (!value || value.version !== INDEX_BUILD_STATE_VERSION || value.engine_id !== INDEX_ENGINE_ID
     || !isSha256(value.build_id)) return null

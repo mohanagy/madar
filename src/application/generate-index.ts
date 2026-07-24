@@ -1,10 +1,9 @@
-import { existsSync, realpathSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { buildCanonicalTypeScriptIndex, type CanonicalTypeScriptIndexResult } from '../adapters/typescript/index.js'
 import { buildSourceCatalog, sourceCatalogStillCurrent, type SourceCatalog, type SourceCatalogOptions } from '../adapters/filesystem/source-catalog.js'
 import {
-  acquireIndexLease, INDEX_DIAGNOSTICS_VERSION, loadAcceptedIndex, publishAcceptedIndex,
-  readMatchingDiagnostics, type IndexDiagnosticsInput, type IndexStoreDependencies,
+  acquireIndexLease, INDEX_DIAGNOSTICS_VERSION, publishAcceptedIndex,
+  type IndexDiagnosticsInput, type IndexStoreDependencies,
 } from '../adapters/filesystem/index-store.js'
 import {
   attachBuildState, INDEX_BUILD_STATE_VERSION, INDEX_ENGINE_ID, type IndexBuildState,
@@ -13,24 +12,18 @@ import {
 } from '../domain/index/build-state.js'
 import { compareCodeUnits } from '../domain/graph/canonical-json.js'
 import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
-import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../pipeline/analyze.js'
-import { cluster, scoreAll } from '../pipeline/cluster.js'
-import { buildCommunityLabels } from '../pipeline/community-naming.js'
-import { generate as generateReport } from '../pipeline/report.js'
 import { buildDiscoverySafetyMetadata, parseDiscoverySafetyMetadata, type DiscoverySafetyMetadata } from '../shared/discovery-safety.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 export type ProgressStep =
   | { step: 'detect'; message: string }
   | { step: 'index'; message: string; current?: number; total?: number }
   | { step: 'build'; message: string }
-  | { step: 'cluster'; message: string }
-  | { step: 'analyze'; message: string }
   | { step: 'export'; message: string }
 export interface GenerateIndexOptions extends SourceCatalogOptions {
-  clusterOnly?: boolean; onProgress?: (progress: ProgressStep) => void
+  onProgress?: (progress: ProgressStep) => void
   storeDependencies?: Partial<IndexStoreDependencies>
 }
-type GenerateIndexMode = 'generate' | 'update' | 'cluster-only'
+type GenerateIndexMode = 'generate' | 'update'
 export type GenerateUnsupportedCorpusCode = 'NO_SUPPORTED_FILES' | 'NO_GRAPH_NODES'
 export class GenerateUnsupportedCorpusError extends Error {
   constructor(
@@ -146,51 +139,22 @@ function canonicalMatchesCatalog(catalog: SourceCatalog, canonical: CanonicalTyp
     [file.path.replaceAll('\\', '/').replace(/^\.\//, ''), file.hash]))
   return catalog.snapshot.supported.every((entry) => indexed.get(entry.path) === entry.hash)
 }
-function finalizeGraph(graph: KnowledgeGraph, rootPath: string, progress?: GenerateIndexOptions['onProgress']) {
-  progress?.({ step: 'build', message: `Built graph: ${graph.numberOfNodes()} nodes, ${graph.numberOfEdges()} edges` })
-  progress?.({ step: 'cluster', message: 'Clustering communities...' })
-  const communities = cluster(graph)
-  const cohesion = scoreAll(graph, communities)
-  const labels = buildCommunityLabels(graph, communities, { rootPath })
-  progress?.({ step: 'cluster', message: `Found ${Object.keys(communities).length} communities` })
-  progress?.({ step: 'analyze', message: 'Analyzing structure...' })
-  const godNodeList = godNodes(graph)
-  const surprises = surprisingConnections(graph, communities)
-  const anomalies = semanticAnomalies(graph, communities, labels)
-  const questions = suggestQuestions(graph, communities, labels)
-  graph.graph.community_labels = labels
-  graph.graph.semantic_anomalies = anomalies
-  for (const [nodeId, attributes] of graph.nodeEntries()) graph.replaceNodeAttributes(nodeId, { ...attributes, community: -1 })
-  for (const [communityId, nodeIds] of Object.entries(communities)) {
-    for (const nodeId of nodeIds) {
-      if (graph.hasNode(nodeId)) graph.replaceNodeAttributes(nodeId, { ...graph.nodeAttributes(nodeId), community: Number(communityId) })
-    }
-  }
-  return { communities, cohesion, labels, godNodeList, surprises, anomalies, questions }
-}
 export function indexResultFromState(input: {
   mode: GenerateIndexMode; rootPath: string; graph: KnowledgeGraph
   state: IndexBuildState; notes: string[]; updateReceipt?: UpdateReceipt
 }) {
   const outputDir = resolveMadarOutputDirectory(input.rootPath)
-  const communities = new Set(input.graph.nodeEntries()
-    .map(([, attributes]) => attributes.community)
-    .filter((value): value is number => typeof value === 'number' && value >= 0))
-  const anomalies = Array.isArray(input.graph.graph.semantic_anomalies) ? input.graph.graph.semantic_anomalies.length : 0
   return {
     mode: input.mode,
     rootPath: input.rootPath,
     outputDir,
     graphPath: join(outputDir, 'graph.json'),
-    reportPath: join(outputDir, 'GRAPH_REPORT.md'),
     totalFiles: input.state.corpus.supported_files,
     indexedFiles: input.state.completeness.summary.counts.indexed
       + input.state.completeness.summary.counts.indexed_with_warnings,
     totalWords: input.state.corpus.total_words,
     nodeCount: input.graph.numberOfNodes(),
     edgeCount: input.graph.numberOfEdges(),
-    communityCount: communities.size,
-    semanticAnomalyCount: anomalies,
     warning: input.state.corpus.warning,
     notes: input.notes,
     discoverySafety: parseDiscoverySafetyMetadata(input.graph.graph.discovery_safety) ?? buildDiscoverySafetyMetadata([]),
@@ -209,26 +173,16 @@ function finalizeAndPublishIndex(input: {
   updateReceipt?: Omit<UpdateReceipt, 'accepted_build_id' | 'publication_advanced'>
   assertCurrent?: () => void
 }): GenerateIndexResult {
-  const finalized = finalizeGraph(input.graph, input.rootPath, input.options.onProgress)
+  input.options.onProgress?.({
+    step: 'build',
+    message: `Built graph: ${input.graph.numberOfNodes()} nodes, ${input.graph.numberOfEdges()} edges`,
+  })
   const { build_id: _previousBuildId, ...nextState } = input.state
   const state = attachBuildState(input.graph, nextState)
-  const discoverySafety = parseDiscoverySafetyMetadata(input.graph.graph.discovery_safety)
-    ?? buildDiscoverySafetyMetadata([])
-  const report = generateReport(
-    input.graph, finalized.communities, finalized.cohesion, finalized.labels, finalized.godNodeList,
-    finalized.surprises, finalized.anomalies, {
-      total_files: state.corpus.supported_files,
-      total_words: state.corpus.total_words,
-      warning: state.corpus.warning,
-      discovery_safety: discoverySafety.summary,
-      indexing_completeness: state.completeness.summary,
-    }, { input: 0, output: 0 }, input.rootPath, finalized.questions,
-  )
   input.options.onProgress?.({ step: 'export', message: 'Writing outputs...' })
   const publication = publishAcceptedIndex({
     graph: input.graph,
     outputDir: resolveMadarOutputDirectory(input.rootPath),
-    report,
     diagnostics: input.diagnostics(state),
     ...(input.assertCurrent ? { assertCurrent: input.assertCurrent } : {}),
     ...(input.options.storeDependencies ? { dependencies: input.options.storeDependencies } : {}),
@@ -317,34 +271,11 @@ export function buildAndPublishIndex(input: {
     ...(input.updateReceipt ? { updateReceipt: input.updateReceipt } : {}),
   })
 }
-function generateClusterOnly(root: string, options: GenerateIndexOptions): GenerateIndexResult {
-  const graphPath = join(resolveMadarOutputDirectory(root), 'graph.json')
-  const accepted = loadAcceptedIndex(graphPath)
-  if (!accepted) throw new Error('--cluster-only requires a current authoritative graph. Run `madar generate .` first.')
-  const storedRoot = accepted.state.source_root.root_path
-  if (!existsSync(storedRoot) || realpathSync(storedRoot) !== realpathSync(root)) {
-    throw new Error('--cluster-only graph belongs to a different source workspace.')
-  }
-  if (options.indexingStrict) throw new Error('--cluster-only cannot change indexing thresholds.')
-  const matchingDiagnostics = readMatchingDiagnostics(graphPath)
-  if (!matchingDiagnostics) throw new Error('--cluster-only requires matching index diagnostics. Run `madar generate . --update` to repair them first.')
-  const { graph_sha256: _previousGraphSha256, ...diagnostics } = matchingDiagnostics
-  return finalizeAndPublishIndex({
-    graph: accepted.graph, rootPath: root, mode: 'cluster-only', options,
-    state: accepted.state,
-    diagnostics: (state) => ({ ...diagnostics, build_id: state.build_id }),
-    notes: (warnings) => [
-      'Re-clustered the accepted graph without scanning or indexing source files.',
-      ...warnings,
-    ],
-  })
-}
 export function generateIndex(rootPath = '.', options: GenerateIndexOptions = {}): GenerateIndexResult {
   const root = resolve(rootPath)
   const outputDir = resolveMadarOutputDirectory(root)
   const release = acquireIndexLease(outputDir)
   try {
-    if (options.clusterOnly) return generateClusterOnly(root, options)
     options.onProgress?.({ step: 'detect', message: 'Scanning files...' })
     const catalog = buildSourceCatalog(root, options)
     options.onProgress?.({

@@ -37,7 +37,7 @@ function graphBytes(root: string): string {
 
 function artifactBytes(root: string): Record<string, string> {
   return Object.fromEntries([
-    'graph.json', 'GRAPH_REPORT.md', 'indexing-manifest.json', 'indexing-manifest.share-safe.json',
+    'graph.json', 'indexing-manifest.json', 'indexing-manifest.share-safe.json',
   ].map((name) => [name, readFileSync(join(root, 'out', name), 'utf8')]))
 }
 
@@ -53,13 +53,11 @@ function expectUpdateEqualsClean(
   options: Parameters<typeof generateIndex>[1] = {},
 ): void {
   const updateGraph = readFileSync(updated.graphPath, 'utf8')
-  const updateReport = readFileSync(updated.reportPath, 'utf8')
   const updateDiagnostics = normalizedDiagnostics(updated.indexingManifestPath)
   const updateShareSafe = normalizedDiagnostics(join(updated.outputDir, 'indexing-manifest.share-safe.json'))
   rmSync(updated.outputDir, { recursive: true, force: true })
   const clean = generateIndex(root, options)
   expect(readFileSync(clean.graphPath, 'utf8')).toBe(updateGraph)
-  expect(readFileSync(clean.reportPath, 'utf8')).toBe(updateReport)
   expect(normalizedDiagnostics(clean.indexingManifestPath)).toEqual(updateDiagnostics)
   expect(normalizedDiagnostics(join(clean.outputDir, 'indexing-manifest.share-safe.json'))).toEqual(updateShareSafe)
   expect(clean.buildId).toBe(updated.buildId)

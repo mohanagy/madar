@@ -33,10 +33,10 @@ describe('stored graph artifact guard', () => {
     expect(() => loadGraphArtifact(graphPath)).toThrow(GRAPH_ARTIFACT_REGENERATE_MESSAGE)
   })
 
-  it('preserves intentionally non-canonical and federated graphs', () => {
-    const graph = parseGraphArtifact(serializeGraphArtifact(new KnowledgeGraph({ federated_repos: ['web', 'api'] })))
+  it('preserves intentionally non-canonical graph metadata', () => {
+    const graph = parseGraphArtifact(serializeGraphArtifact(new KnowledgeGraph({ fixture_tags: ['web', 'api'] })))
 
-    expect(graph.graph.federated_repos).toEqual(['web', 'api'])
+    expect(graph.graph.fixture_tags).toEqual(['web', 'api'])
   })
 
   it('caches one immutable receipt and reloads after atomic replacement', () => {
@@ -44,8 +44,8 @@ describe('stored graph artifact guard', () => {
     const graphPath = join(root, 'graph.json')
     const replacementPath = join(root, 'replacement.json')
     roots.push(root)
-    const firstArtifact = serializeGraphArtifact(new KnowledgeGraph({ federated_repos: ['web'] }))
-    const nextArtifact = serializeGraphArtifact(new KnowledgeGraph({ federated_repos: ['api'] }))
+    const firstArtifact = serializeGraphArtifact(new KnowledgeGraph({ fixture_tags: ['web'] }))
+    const nextArtifact = serializeGraphArtifact(new KnowledgeGraph({ fixture_tags: ['api'] }))
     writeFileSync(graphPath, firstArtifact)
 
     const first = readGraphArtifactReceipt(graphPath)
@@ -59,7 +59,7 @@ describe('stored graph artifact guard', () => {
     expect(next).not.toBe(first)
     expect(next.identity).not.toBe(first.identity)
     expect(next.graphSha256).toBe(createHash('sha256').update(nextArtifact).digest('hex'))
-    expect(next.graph.graph.federated_repos).toEqual(['api'])
+    expect(next.graph.graph.fixture_tags).toEqual(['api'])
   })
 
   it('caps descriptor reads before decoding text', () => {

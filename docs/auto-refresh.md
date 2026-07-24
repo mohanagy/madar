@@ -40,11 +40,10 @@ Graph-backed MCP requests remain fail-closed until the controller is `idle` and 
 
 Publication writes derived outputs first and commits `graph.json` last:
 
-1. `GRAPH_REPORT.md` is attempted.
-2. `indexing-manifest.json` and `indexing-manifest.share-safe.json` are attempted.
-3. The authenticated `graph.json` is atomically committed.
+1. `indexing-manifest.json` and `indexing-manifest.share-safe.json` are attempted.
+2. The authenticated `graph.json` is atomically committed.
 
-The report and manifests are best-effort diagnostics. Their write failure is reported as a warning but does not block an otherwise valid graph. Consumers ignore derived diagnostics that are absent, unreadable, or carry a different build id. The graph is the sole authoritative index artifact and commit marker.
+The manifests are best-effort diagnostics. Their write failure is reported as a warning but does not block an otherwise valid graph. Consumers ignore derived diagnostics that are absent, unreadable, or carry a different build id. The graph is the sole authoritative index artifact and commit marker.
 
 ## Upgrading existing workspaces
 

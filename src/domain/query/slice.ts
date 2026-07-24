@@ -2,41 +2,21 @@ import { countTokens } from 'gpt-tokenizer/encoding/cl100k_base'
 
 import { canonicalJsonString, compareCodeUnits } from '../graph/canonical-json.js'
 import {
-  MAX_RETRIEVE_FILES,
-  MAX_RETRIEVE_SNIPPETS,
-  RETRIEVE_RESULT_SCHEMA,
-  RETRIEVE_RESULT_VERSION,
-  type EvidenceBoundary,
-  type EvidenceNode,
-  type EvidenceRelationship,
-  type NormalizedRetrieveRequest,
-  type RetrieveContextResult,
-  type RetrieveOutcome,
+  MAX_RETRIEVE_FILES, MAX_RETRIEVE_SNIPPETS,
+  RETRIEVE_RESULT_SCHEMA, RETRIEVE_RESULT_VERSION,
+  type EvidenceBoundary, type EvidenceNode, type EvidenceRelationship,
+  type NormalizedRetrieveRequest, type RetrieveContextResult, type RetrieveOutcome,
 } from './types.js'
 
 export interface SliceEvidenceInput {
-  request: NormalizedRetrieveRequest
-  outcome: RetrieveOutcome
-  matchedNodes: readonly EvidenceNode[]
-  relationships: readonly EvidenceRelationship[]
-  boundaries: readonly EvidenceBoundary[]
-  priorityNodeIds: readonly string[]
-  closurePasses: 0 | 1
+  request: NormalizedRetrieveRequest; outcome: RetrieveOutcome
+  matchedNodes: readonly EvidenceNode[]; relationships: readonly EvidenceRelationship[]
+  boundaries: readonly EvidenceBoundary[]; priorityNodeIds: readonly string[]; closurePasses: 0 | 1
 }
 
 function truncatedBoundary(): EvidenceBoundary {
-  return {
-    kind: 'truncated',
-    subject: 'retrieve',
-    detail: 'Some graph facts were omitted to satisfy the file, snippet, or token limit.',
-  }
-}
-
-function compareNodes(left: EvidenceNode, right: EvidenceNode): number {
-  return compareCodeUnits(left.source_file, right.source_file)
-    || left.line_number - right.line_number
-    || left.end_line_number - right.end_line_number
-    || compareCodeUnits(left.node_id, right.node_id)
+  return { kind: 'truncated', subject: 'retrieve',
+    detail: 'Some graph facts were omitted to satisfy the file, snippet, or token limit.' }
 }
 
 function compareRelationships(left: EvidenceRelationship, right: EvidenceRelationship): number {
@@ -70,15 +50,6 @@ function deduplicateByIdentity<T>(
   return [...facts.values()].map(({ value }) => value)
 }
 
-function deduplicateNodes(nodes: readonly EvidenceNode[]): EvidenceNode[] {
-  return deduplicateByIdentity(nodes, (node) => node.node_id, 'node').sort(compareNodes)
-}
-
-function deduplicateRelationships(relationships: readonly EvidenceRelationship[]): EvidenceRelationship[] {
-  return deduplicateByIdentity(relationships, (relationship) => relationship.id, 'relationship')
-    .sort(compareRelationships)
-}
-
 function deduplicateBoundaries(boundaries: readonly EvidenceBoundary[]): EvidenceBoundary[] {
   return deduplicateByIdentity(
     boundaries,
@@ -87,22 +58,12 @@ function deduplicateBoundaries(boundaries: readonly EvidenceBoundary[]): Evidenc
   ).sort(compareBoundaries)
 }
 
-function selectedFiles(
-  nodes: readonly EvidenceNode[],
-  relationships: readonly EvidenceRelationship[],
-): Set<string> {
-  const files = new Set(nodes.map((node) => node.source_file))
-  for (const relationship of relationships) {
-    if (relationship.source_file !== undefined) files.add(relationship.source_file)
-  }
-  return files
-}
-
-function snippetCount(nodes: readonly EvidenceNode[]): number {
-  return nodes.reduce(
-    (count, node) => count + (node.snippet !== undefined && node.snippet.length > 0 ? 1 : 0),
-    0,
-  )
+function pruneStructuralOrphans(
+  nodes: readonly EvidenceNode[], relationships: readonly EvidenceRelationship[],
+): EvidenceNode[] {
+  const related = new Set(relationships.flatMap((edge) => [edge.from_id, edge.to_id]))
+  return nodes.filter((node) =>
+    node.evidence_kind !== 'structural_file' || related.has(node.node_id))
 }
 
 function resultWithTokenCount(
@@ -111,92 +72,64 @@ function resultWithTokenCount(
   relationships: readonly EvidenceRelationship[],
   boundaries: readonly EvidenceBoundary[],
 ): RetrieveContextResult {
-  const sortedNodes = [...nodes].sort(compareNodes)
   const sortedRelationships = [...relationships].sort(compareRelationships)
+  const sortedNodes = pruneStructuralOrphans(nodes, sortedRelationships)
   const sortedBoundaries = [...boundaries].sort(compareBoundaries)
-  const files = selectedFiles(sortedNodes, sortedRelationships).size
-  const snippets = snippetCount(sortedNodes)
+  const files = new Set([
+    ...sortedNodes.map((node) => node.source_file),
+    ...sortedRelationships.flatMap((edge) => edge.source_file ? [edge.source_file] : []),
+  ]).size
+  const snippets = sortedNodes.filter((node) => node.snippet && node.snippet.length > 0).length
   const truncated = sortedBoundaries.some((boundary) => boundary.kind === 'truncated')
+  const result = (serializedTokens: number): RetrieveContextResult => ({
+    schema: RETRIEVE_RESULT_SCHEMA,
+    version: RETRIEVE_RESULT_VERSION,
+    outcome: sortedNodes.length === 0 && input.outcome === 'evidence' ? 'missing' : input.outcome,
+    matched_nodes: sortedNodes,
+    relationships: sortedRelationships,
+    boundaries: sortedBoundaries,
+    metrics: {
+      selected_files: files,
+      snippets,
+      closure_passes: input.closurePasses,
+      serialized_tokens: serializedTokens,
+      truncated,
+    },
+  })
 
   let serializedTokens = 0
-  let result: RetrieveContextResult
   for (let pass = 0; pass < 16; pass += 1) {
-    result = {
-      schema: RETRIEVE_RESULT_SCHEMA,
-      version: RETRIEVE_RESULT_VERSION,
-      outcome: input.outcome,
-      matched_nodes: sortedNodes,
-      relationships: sortedRelationships,
-      boundaries: sortedBoundaries,
-      metrics: {
-        selected_files: files,
-        snippets,
-        closure_passes: input.closurePasses,
-        serialized_tokens: serializedTokens,
-        truncated,
-      },
-    }
-    const observed = countTokens(canonicalJsonString(result))
-    if (observed === serializedTokens) return result
+    const candidate = result(serializedTokens)
+    const observed = countTokens(canonicalJsonString(candidate))
+    if (observed === serializedTokens) return candidate
     serializedTokens = observed
   }
 
-  // Tokenizing the decimal metric normally converges in two passes. Searching
-  // the small valid result range makes the fixed point explicit and stable
-  // across tokenizer updates instead of returning an approximate count.
   for (let candidate = 0; candidate <= 10_000; candidate += 1) {
-    result = {
-      schema: RETRIEVE_RESULT_SCHEMA,
-      version: RETRIEVE_RESULT_VERSION,
-      outcome: input.outcome,
-      matched_nodes: sortedNodes,
-      relationships: sortedRelationships,
-      boundaries: sortedBoundaries,
-      metrics: {
-        selected_files: files,
-        snippets,
-        closure_passes: input.closurePasses,
-        serialized_tokens: candidate,
-        truncated,
-      },
-    }
-    if (countTokens(canonicalJsonString(result)) === candidate) return result
+    const fixedPoint = result(candidate)
+    if (countTokens(canonicalJsonString(fixedPoint)) === candidate) return fixedPoint
   }
 
   throw new Error('Unable to stabilize retrieve serialized token count')
-}
-
-function withTruncatedBoundary(boundaries: readonly EvidenceBoundary[]): EvidenceBoundary[] {
-  return boundaries.some((boundary) => boundary.kind === 'truncated')
-    ? [...boundaries]
-    : deduplicateBoundaries([...boundaries, truncatedBoundary()])
-}
-
-function withinBudget(result: RetrieveContextResult, budget: number): boolean {
-  return result.metrics.serialized_tokens <= budget
 }
 
 function capGraphFacts(
   nodes: readonly EvidenceNode[],
   relationships: readonly EvidenceRelationship[],
   priorityNodeIds: readonly string[],
-): {
-  nodes: EvidenceNode[]
-  relationships: EvidenceRelationship[]
-  omitted: boolean
-} {
+): { nodes: EvidenceNode[]; relationships: EvidenceRelationship[]; omitted: boolean } {
   const retainedNodes: EvidenceNode[] = []
   const files = new Set<string>()
   let snippets = 0
   let omitted = false
   const nodesById = new Map(nodes.map((node) => [node.node_id, node]))
-  const priorityIds = [...new Set(priorityNodeIds)]
+  const priorityIds = new Set(priorityNodeIds)
   const prioritized = [
-    ...priorityIds.flatMap((nodeId) => {
+    ...[...priorityIds].flatMap((nodeId) => {
       const node = nodesById.get(nodeId)
       return node ? [node] : []
     }),
-    ...nodes.filter((node) => !priorityIds.includes(node.node_id)),
+    ...nodes.filter((node) => !priorityIds.has(node.node_id)),
   ]
 
   for (const node of prioritized) {
@@ -228,31 +161,33 @@ function capGraphFacts(
     if (sourceFile !== undefined) files.add(sourceFile)
   }
 
+  const prunedNodes = pruneStructuralOrphans(retainedNodes, retainedRelationships)
   return {
-    nodes: retainedNodes,
+    nodes: prunedNodes,
     relationships: retainedRelationships,
-    omitted,
+    omitted: omitted || prunedNodes.length !== retainedNodes.length,
   }
 }
 
-/**
- * Select whole evidence records under the public output limits. Snippets,
- * nodes, relationships, and boundaries are never text-truncated or partially
- * serialized; an omitted fact is represented by one explicit boundary.
- */
+/** Select whole evidence records; represent every omitted fact with an explicit boundary. */
 export function sliceEvidence(input: SliceEvidenceInput): RetrieveContextResult {
-  const nodes = deduplicateNodes(input.matchedNodes)
-  const relationships = deduplicateRelationships(input.relationships)
+  const nodes = deduplicateByIdentity(input.matchedNodes, (node) => node.node_id, 'node')
+  const relationships = deduplicateByIdentity(
+    input.relationships, (relationship) => relationship.id, 'relationship',
+  ).sort(compareRelationships)
   const boundaries = deduplicateBoundaries(input.boundaries)
   const capped = capGraphFacts(nodes, relationships, input.priorityNodeIds)
-  const cappedBoundaries = capped.omitted ? withTruncatedBoundary(boundaries) : boundaries
+  const cappedBoundaries = capped.omitted
+    && !boundaries.some((boundary) => boundary.kind === 'truncated')
+    ? deduplicateBoundaries([...boundaries, truncatedBoundary()])
+    : boundaries
   const cappedResult = resultWithTokenCount(
     input,
     capped.nodes,
     capped.relationships,
     cappedBoundaries,
   )
-  if (withinBudget(cappedResult, input.request.budget)) return cappedResult
+  if (cappedResult.metrics.serialized_tokens <= input.request.budget) return cappedResult
 
   const retainedBoundaries: EvidenceBoundary[] = [truncatedBoundary()]
   const retainedNodes: EvidenceNode[] = []
@@ -261,30 +196,35 @@ export function sliceEvidence(input: SliceEvidenceInput): RetrieveContextResult 
   const nodesById = new Map(capped.nodes.map((node) => [node.node_id, node]))
   const retainedNodeIds = new Set<string>()
   const retainedRelationshipIds = new Set<string>()
+  const fits = (
+    nodes: readonly EvidenceNode[],
+    relationships: readonly EvidenceRelationship[],
+    boundaries: readonly EvidenceBoundary[] = retainedBoundaries,
+  ): boolean =>
+    resultWithTokenCount(input, nodes, relationships, boundaries).metrics.serialized_tokens
+      <= input.request.budget
+  const tryNode = (node: EvidenceNode): boolean => {
+    if (!fits([...retainedNodes, node], retainedRelationships)) return false
+    retainedNodes.push(node)
+    retainedNodeIds.add(node.node_id)
+    return true
+  }
   const tryRelationship = (relationship: EvidenceRelationship, includeEndpoints: boolean): boolean => {
     const endpointIds = [...new Set([relationship.from_id, relationship.to_id])]
+    if (!includeEndpoints && endpointIds.some((nodeId) => !retainedNodeIds.has(nodeId))) {
+      return false
+    }
     const missingNodes = includeEndpoints
       ? endpointIds
         .filter((nodeId) => !retainedNodeIds.has(nodeId))
         .map((nodeId) => nodesById.get(nodeId))
       : []
     if (missingNodes.some((node) => node === undefined)) return false
-    if (endpointIds.some((nodeId) =>
-      !retainedNodeIds.has(nodeId) && !missingNodes.some((node) => node?.node_id === nodeId))) {
-      return false
-    }
     const candidateNodes = [
       ...retainedNodes,
       ...missingNodes.filter((node): node is EvidenceNode => node !== undefined),
     ]
-    const candidateRelationships = [...retainedRelationships, relationship]
-    const candidate = resultWithTokenCount(
-      input,
-      candidateNodes,
-      candidateRelationships,
-      retainedBoundaries,
-    )
-    if (!withinBudget(candidate, input.request.budget)) return false
+    if (!fits(candidateNodes, [...retainedRelationships, relationship])) return false
     for (const node of missingNodes) {
       if (node === undefined) continue
       retainedNodes.push(node)
@@ -295,73 +235,33 @@ export function sliceEvidence(input: SliceEvidenceInput): RetrieveContextResult 
     return true
   }
 
-  // Preserve directly ranked query phases before intermediates. A file or
-  // token cap may truncate the connecting path, but must not silently replace
-  // an explicit phase with a lexicographically earlier intermediate.
   const priorityIds = new Set(input.priorityNodeIds)
   for (const nodeId of input.priorityNodeIds) {
     const node = nodesById.get(nodeId)
     if (!node || retainedNodeIds.has(nodeId)) continue
-    const candidate = resultWithTokenCount(
-      input,
-      [...retainedNodes, node],
-      retainedRelationships,
-      retainedBoundaries,
-    )
-    if (withinBudget(candidate, input.request.budget)) {
-      retainedNodes.push(node)
-      retainedNodeIds.add(node.node_id)
-    }
+    tryNode(node)
   }
 
-  // Prefer complete causal facts next: an edge enters the result together with
-  // any endpoints it still needs, before unrelated standalone nodes consume
-  // space.
   for (const relationship of capped.relationships) tryRelationship(relationship, true)
 
   for (const node of capped.nodes) {
     if (retainedNodeIds.has(node.node_id) || priorityIds.has(node.node_id)) continue
-    const candidateNodes = [...retainedNodes, node]
-    const candidate = resultWithTokenCount(
-      input,
-      candidateNodes,
-      retainedRelationships,
-      retainedBoundaries,
-    )
-    if (withinBudget(candidate, input.request.budget)) {
-      retainedNodes.push(node)
-      retainedNodeIds.add(node.node_id)
-    }
+    tryNode(node)
   }
 
-  // A relationship whose full bundle did not fit may fit after another causal
-  // bundle or standalone selection retained both of its endpoints.
   for (const relationship of capped.relationships) {
     if (!retainedRelationshipIds.has(relationship.id)) tryRelationship(relationship, false)
   }
 
-  // Diagnostics explain omissions, but they must not evict the authenticated
-  // phase evidence the query was asked to return. Add as many complete
-  // boundaries as the remaining budget permits after causal facts.
   for (const boundary of boundaries.filter((candidate) => candidate.kind !== 'truncated')) {
     const candidateBoundaries = deduplicateBoundaries([...retainedBoundaries, boundary])
-    const candidate = resultWithTokenCount(
-      input,
-      retainedNodes,
-      retainedRelationships,
-      candidateBoundaries,
-    )
-    if (withinBudget(candidate, input.request.budget)) {
+    if (fits(retainedNodes, retainedRelationships, candidateBoundaries)) {
       retainedBoundaries.splice(0, retainedBoundaries.length, ...candidateBoundaries)
     }
   }
 
-  const finalInput = retainedNodes.length === 0 && input.outcome === 'evidence'
-    ? { outcome: 'missing' as const, closurePasses: input.closurePasses }
-    : input
-
   return resultWithTokenCount(
-    finalInput,
+    input,
     retainedNodes,
     retainedRelationships,
     retainedBoundaries,

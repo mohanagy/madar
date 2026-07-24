@@ -9,7 +9,12 @@ import {
   executeCli,
   formatHelp,
 } from '../../src/cli/main.js'
-import { parseQueryArgs, UsageError } from '../../src/cli/parser.js'
+import {
+  parseGenerateArgs,
+  parseQueryArgs,
+  parseTryArgs,
+  UsageError,
+} from '../../src/cli/parser.js'
 import type { RetrieveContextResult } from '../../src/domain/query/types.js'
 
 const RESULT: RetrieveContextResult = {
@@ -108,6 +113,26 @@ describe('query CLI parser', () => {
   })
 })
 
+describe('try CLI parser', () => {
+  it('accepts only a question and optional workspace path', () => {
+    expect(parseTryArgs(['where is auth?'])).toEqual({
+      question: 'where is auth?',
+      path: '.',
+    })
+    expect(parseTryArgs([' where is auth? ', 'packages/api'])).toEqual({
+      question: 'where is auth?',
+      path: 'packages/api',
+    })
+    expect(() => parseTryArgs([])).toThrow(UsageError)
+    expect(() => parseTryArgs(['question', '--legacy'])).toThrow(
+      'Usage: madar try',
+    )
+    expect(() => parseTryArgs(['question', 'one', 'two'])).toThrow(
+      'Usage: madar try',
+    )
+  })
+})
+
 describe('CLI delivery surface', () => {
   it('documents query as the canonical evidence command', () => {
     const help = formatHelp()
@@ -115,6 +140,7 @@ describe('CLI delivery surface', () => {
     expect(help).toContain('query "<question>"')
     expect(help).toContain('--budget N')
     expect(help).toContain('--graph PATH')
+    expect(help).toContain('try "<question>" [path]')
     expect(help).toContain('serve the single retrieve tool over MCP stdio')
     for (const removed of [
       '  pack ',
@@ -123,9 +149,39 @@ describe('CLI delivery surface', () => {
       '  proof-report ',
       '  review-compare ',
       '  time-travel ',
+      '  diff ',
+      '  summary ',
+      '  federate ',
+      '--cluster-only',
+      '--no-html',
     ]) {
       expect(help).not.toContain(removed)
     }
+    expect(() => parseGenerateArgs(['.', '--no-html'])).toThrow(
+      'unknown option for generate: --no-html',
+    )
+  })
+
+  it('routes try to its one evidence-query caller', async () => {
+    const { io, logs } = createIo()
+    const runTry = vi.fn(() => '{"schema":"madar.retrieve"}')
+
+    await expect(
+      executeCli(
+        ['try', 'where is auth?', 'packages/api'],
+        io,
+        createDependencies({ runTry }),
+      ),
+    ).resolves.toBe(0)
+
+    expect(runTry).toHaveBeenCalledOnce()
+    expect(runTry).toHaveBeenCalledWith({
+      options: {
+        question: 'where is auth?',
+        path: 'packages/api',
+      },
+    })
+    expect(logs).toContain('{"schema":"madar.retrieve"}')
   })
 
   it('passes only question and optional budget into the query core', async () => {

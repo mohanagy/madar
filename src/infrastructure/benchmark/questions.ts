@@ -4,10 +4,10 @@ import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
 
 import { type PromptRunnerUsage } from '../prompt-runner.js'
 import {
-  retrieveBenchmarkContext,
   type BenchmarkPromptArtifacts,
   type BenchmarkPromptTokenSource,
 } from './runner.js'
+import { retrieveBenchmarkContext } from './runtime-proof.js'
 
 export interface BenchmarkQuestionResult {
   id?: string

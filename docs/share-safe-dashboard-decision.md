@@ -1,14 +1,13 @@
 # Share-safe dashboard decision
 
-**Recommendation: defer.** Madar already has a strong local proof bundle: the canonical `graph.json`, `GRAPH_REPORT.md`, and `report.share-safe.json`. A hosted dashboard may become useful later, but it should not outrun the current local-first proof surface or introduce a cloud indexing assumption.
+**Recommendation: defer.** Madar already has a local proof boundary: the canonical `graph.json` plus share-safe evaluation receipts. A hosted dashboard may become useful later, but it should not outrun the current local-first proof surface or introduce a cloud indexing assumption.
 
 ## What exists today
 
 - `madar serve` gives local query and inspection endpoints over the canonical graph artifact.
-- `GRAPH_REPORT.md` gives a local narrative summary that can be read directly or served locally.
 - `report.share-safe.json` gives a sanitized artifact for sharing benchmark or compare receipts without exposing workstation paths.
 
-That means the current default path is already: generate locally, inspect `GRAPH_REPORT.md` or query `graph.json` through `madar serve`, and share only the receipt layer when someone else needs evidence.
+That means the current default path is already: generate and query locally, and share only the receipt layer when someone else needs evidence.
 
 ## Option comparison
 
@@ -32,19 +31,19 @@ That means the current default path is already: generate locally, inspect `GRAPH
 
 ## Why defer instead of build now
 
-1. The current local report and query path already covers single-run review well enough for the near term.
+1. The current local graph query path already covers single-run review well enough for the near term.
 2. The open gap is proof depth and repeated user demand, not UI chrome.
 3. A hosted dashboard would need artifact lifecycle, auth, sharing, and policy work that the repo cannot yet justify with measured demand.
 
 ## Revisit only if demand becomes explicit
 
-Re-open the build discussion only when there is **explicit customer demand** for reviewing many share-safe artifacts together and the local report/query path is clearly insufficient.
+Re-open the build discussion only when there is **explicit customer demand** for reviewing many share-safe artifacts together and the local query path is clearly insufficient.
 
 Good revisit signals:
 
 - repeated design-partner asks for cross-run artifact review or sharing;
 - stable share-safe schemas that can be aggregated without weakening redaction assumptions;
-- a clear buyer need that cannot be met by `madar serve`, `GRAPH_REPORT.md`, and `report.share-safe.json`.
+- a clear buyer need that cannot be met by local graph queries and share-safe receipts.
 
 ## Decision boundary
 

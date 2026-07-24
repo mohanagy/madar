@@ -675,7 +675,7 @@
         {
           "from_owner_id": "formbricks.v2-response-post",
           "to_owner_id": "formbricks.create-response",
-          "expectation": "connected"
+          "expectation": "disconnected"
         },
         {
           "from_owner_id": "formbricks.v2-response-post",

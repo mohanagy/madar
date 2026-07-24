@@ -11,7 +11,6 @@ import {
   acquireIndexLease,
   loadAcceptedIndex,
   readMatchingDiagnostics,
-  readMatchingReport,
 } from '../../src/adapters/filesystem/index-store.js'
 import { IndexLeaseContentionError } from '../../src/domain/index/build-state.js'
 import { startWatchIndex } from '../../src/infrastructure/watch-index.js'
@@ -38,14 +37,11 @@ function updateResult(sequence: number): GenerateIndexResult {
     rootPath: '/fixture',
     outputDir: '/fixture/out',
     graphPath: '/fixture/out/graph.json',
-    reportPath: '/fixture/out/GRAPH_REPORT.md',
     totalFiles: 1,
     indexedFiles: 1,
     totalWords: 3,
     nodeCount: 1,
     edgeCount: 0,
-    communityCount: 1,
-    semanticAnomalyCount: 0,
     warning: null,
     notes: [],
     discoverySafety: { version: 1, summary: { total: 0, sensitive: 0, unreadable: 0, reasons: {} }, exclusions: [] },
@@ -369,7 +365,6 @@ describe('watch index', () => {
     expect(first.acceptedBuildId()).toBe(accepted?.state.build_id)
     expect(second.acceptedBuildId()).toBe(accepted?.state.build_id)
     expect(readMatchingDiagnostics(generated.graphPath)?.build_id).toBe(accepted?.state.build_id)
-    expect(readMatchingReport(generated.graphPath)).toContain(accepted?.state.build_id)
     first.stop()
     second.stop()
     await Promise.all([first.completed, second.completed])

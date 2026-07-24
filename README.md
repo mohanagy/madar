@@ -15,6 +15,10 @@ The result is a small set of exact source excerpts and directed relationships, o
 [![local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#local-by-design)
 [![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/madar/blob/main/LICENSE)
 
+## What's new
+
+Read the full notes in the [0.32.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0320---2026-07-19).
+
 ## Start in three steps
 
 Install Madar with Node.js 20 or newer:
@@ -96,7 +100,7 @@ JavaScript / TypeScript repository
 
 `madar generate .` uses one canonical compiler-backed path for `.js`, `.jsx`, `.ts`, and `.tsx`. Other source languages and non-code formats produce no graph facts and are reported as unsupported when they matter to a question.
 
-`graph.json` is authoritative. `GRAPH_REPORT.md` and the indexing manifest are derived diagnostics.
+`graph.json` is authoritative. The indexing manifest is a derived diagnostic.
 
 Use `madar generate . --update` after repository changes, `madar watch .` for a long-running local watcher, or install an MCP integration that starts `madar serve --stdio --auto-refresh`.
 
@@ -146,6 +150,7 @@ Core Reset acceptance uses pinned held-out repositories, exact-source grading, a
 | Indexing coverage | [Indexing completeness](https://github.com/mohanagy/madar/blob/main/docs/indexing-completeness.md) |
 | Privacy and MCP trust | [Threat model](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md) |
 | Evidence and benchmarks | [Claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) |
+| Product roadmap | [Roadmap](https://github.com/mohanagy/madar/blob/main/docs/roadmap.md) |
 | Release history | [Changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md) |
 
 ## Contributing

@@ -20,13 +20,12 @@ function createGraphFixtureRoot(): string {
 }
 
 describe('stdio authenticated resources', () => {
-  it('lists and reads the accepted graph and matching report', () => {
+  it('lists and reads only the accepted graph', () => {
     const root = createGraphFixtureRoot()
     try {
       const graphPath = join(root, 'out', 'graph.json')
       expect(resourcesForGraph(graphPath).map((resource) => resource.name)).toEqual([
         'graph.json',
-        'GRAPH_REPORT.md',
       ])
 
       const response = handleStdioRequest(graphPath, {
@@ -47,7 +46,7 @@ describe('stdio authenticated resources', () => {
     }
   })
 
-  it('does not expose a report from a different graph build', () => {
+  it('does not expose a retired report artifact', () => {
     const root = createGraphFixtureRoot()
     try {
       const graphPath = join(root, 'out', 'graph.json')
@@ -60,6 +59,17 @@ describe('stdio authenticated resources', () => {
       expect(resourcesForGraph(graphPath).map((resource) => resource.name)).toEqual([
         'graph.json',
       ])
+
+      const response = handleStdioRequest(graphPath, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'resources/read',
+        params: { uri: 'madar://artifact/GRAPH_REPORT.md' },
+      })
+      expect(response?.error).toMatchObject({
+        code: -32602,
+        message: 'Unknown resource: madar://artifact/GRAPH_REPORT.md',
+      })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

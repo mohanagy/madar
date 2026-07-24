@@ -9,7 +9,6 @@ import {
   parseDoctorArgs,
   parseQueryArgs,
   parseServeArgs,
-  parseSummaryArgs,
 } from '../../src/cli/parser.js'
 import {
   resolveMadarOutputDirectory,
@@ -70,8 +69,11 @@ describe('rebrand surface', () => {
     expect(help).toContain('query "<question>"')
     expect(help).toContain('compare [question]')
     expect(help).toContain('doctor [graph.json]')
-    expect(help).toContain('summary [graph.json]')
     expect(help).toContain('serve [graph.json]')
+    expect(help).not.toContain('summary [graph.json]')
+    expect(help).not.toContain('diff [graph.json]')
+    expect(help).not.toContain('federate [graph.json]')
+    expect(help).not.toContain('--cluster-only')
     expect(help).not.toContain('add <url>')
     expect(help).not.toContain(LEGACY_BRAND)
     expect(help).not.toContain(LEGACY_OUT_DIR)
@@ -86,7 +88,6 @@ describe('rebrand surface', () => {
       outputDir: join(resolveMadarOutputDirectory(), 'compare'),
     })
     expect(parseDoctorArgs([]).graphPath).toBe('out/graph.json')
-    expect(parseSummaryArgs([]).graphPath).toBe('out/graph.json')
     expect(parseServeArgs([]).graphPath).toBe('out/graph.json')
   })
 

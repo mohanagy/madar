@@ -121,7 +121,6 @@ function graphRootPath(graphPath: string): string | null {
   try {
     const graph = loadGraphReceiptCached(graphPath).graph
     const rootPath = readBuildState(graph)?.source_root.root_path
-      ?? graph.graph.root_path
     return typeof rootPath === 'string' && rootPath.trim().length > 0
       ? rootPath.trim()
       : null

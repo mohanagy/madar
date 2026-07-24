@@ -3,6 +3,7 @@ import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, open
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { getBuiltInSkillContent } from './install-skill-templates.js'
+import { renderPlainMcpRoutingGuide } from './install-routing-guidance.js'
 import {
   findPackageRoot as resolvePackageRoot,
   readPackageVersion as resolvePackageVersion,
@@ -222,7 +223,7 @@ export function isCurrentMadarCodexPromptHook(hook: unknown, expectedCommand: st
 }
 
 const RETRIEVE_FIRST_MESSAGE =
-  'This project has a Madar knowledge graph. For a repository question, call the Madar `retrieve` tool exactly once with the user question unchanged before broad file search. Use authenticated excerpts and relationships when the outcome is `evidence`; otherwise report the returned boundary and use only focused verification needed to continue.'
+  `This project has a Madar knowledge graph. ${renderPlainMcpRoutingGuide()}`
 
 function codexPromptHook(): Record<string, unknown> {
   return withManagedHookIdentity({

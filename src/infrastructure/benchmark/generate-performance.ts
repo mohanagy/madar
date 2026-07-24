@@ -8,7 +8,6 @@ export type GeneratePerformanceVariantName =
   | 'generate'
   | 'update-noop'
   | 'update-changed'
-  | 'cluster-only'
 
 export interface GeneratePerformanceVariantSummary {
   mode: GenerateIndexResult['mode']
@@ -185,15 +184,6 @@ export function runGeneratePerformanceBenchmark(options: RunGeneratePerformanceB
     workDir,
     'update-changed',
     { update: true },
-  )
-
-  const clusterOnlyWorkspace = prepareWorkspace(fixtureRoot, workDir, 'cluster-only')
-  generateIndex(clusterOnlyWorkspace, {})
-  variants['cluster-only'] = runPreparedVariant(
-    clusterOnlyWorkspace,
-    workDir,
-    'cluster-only',
-    { clusterOnly: true },
   )
 
   const summary: GeneratePerformanceBenchmarkSummary = {
