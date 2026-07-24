@@ -37,6 +37,13 @@ const STOPPED_INCREMENTAL_CANDIDATE = '1d3c9b6d264a5c76d212b93da7c63718cbe49b3d'
 const STOPPED_INCREMENTAL_TREE = '6bd1ae5762afaa868d5cf6ce165b061aa290bfda'
 const EVIDENCE_BASE = 'bce4f4fb1520a582bfedf5eab9133e9befbc79f7'
 const EVIDENCE_BASE_TREE = '7ac3c1ef990ee628ca5c9a215ae6388c82dabcd3'
+const EVIDENCE_IMPLEMENTATION = '29aba7ebffe14d6a70bde78df1490bf4cded64a4'
+const EVIDENCE_MERGE = '596d286cdf4bb53670a6d8c27b2cec5f86137739'
+const EVIDENCE_FINAL_HEAD = 'a0ef9003b9bb71a8defb3463ee131e677b32fecc'
+const EVIDENCE_FINAL_TREE = '146aaaaffd94404cf3b544f3613a26472886de0c'
+const EVIDENCE_CI_RUN = 'https://github.com/mohanagy/madar/actions/runs/30124465700'
+const EVIDENCE_REVIEW_RECEIPT =
+  'https://github.com/mohanagy/madar/pull/600#issuecomment-5074482136'
 const EVIDENCE_ISSUE = 'https://github.com/mohanagy/madar/issues/596'
 const EVIDENCE_OWNER_APPROVAL = `${EVIDENCE_ISSUE}#issuecomment-5050888977`
 const EVIDENCE_RFC_AMENDMENT = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198'
@@ -400,7 +407,7 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Passed — canonical TypeScript/JavaScript index')
     expect(roadmap).toContain('## Passed — delete legacy extraction and non-code/other-language ingestion')
     expect(roadmap).toContain('## Passed — generation and reconciliation')
-    expect(roadmap).toContain('## In progress — evidence-path query')
+    expect(roadmap).toContain('## Passed — evidence-path query')
     expect(roadmap).toContain(EVIDENCE_OWNER_APPROVAL)
     expect(roadmap).toContain(EVIDENCE_RFC_AMENDMENT)
     expect(roadmap).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
@@ -433,7 +440,9 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('63-file / 33,031-LOC deletion contract with 22 ownership transfers')
     expect(roadmap).toContain('passes held-out-v2')
     expect(roadmap).toContain('passes the [frozen loaded-graph performance gate]')
-    expect(roadmap).toContain('CI and review gates are not yet passed')
+    expect(roadmap).toContain(EVIDENCE_MERGE)
+    expect(roadmap).toContain(EVIDENCE_CI_RUN)
+    expect(roadmap).toContain(EVIDENCE_REVIEW_RECEIPT)
     expect(roadmap).toContain('issues/592')
     expect(roadmap).toContain('issues/588')
     expect(roadmap).not.toContain('## Ready — generation and incremental index')
@@ -461,7 +470,7 @@ describe('core reset governance', () => {
     expect(design).toContain('Only successfully indexed `.ts`, `.tsx`, `.js`, and `.jsx` inputs determine supported-index completeness')
     expect(design).toContain('There is no generation directory, persistent fact cache, versioned snapshot store')
     expect(design).toContain('## Completed amendment — generation and reconciliation')
-    expect(design).toContain('## Active amendment — generic evidence-path query')
+    expect(design).toContain('## Completed amendment — generic evidence-path query')
     expect(design).toContain(EVIDENCE_OWNER_APPROVAL)
     expect(design).toContain(EVIDENCE_RFC_AMENDMENT)
     expect(design).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
@@ -488,13 +497,16 @@ describe('core reset governance', () => {
     expect(design).toContain(EVIDENCE_DARWIN_PATH_RFC_PROPOSAL)
     expect(design).toContain(EVIDENCE_DARWIN_PATH_OWNER_APPROVAL)
     expect(design).toContain(EVIDENCE_DARWIN_PATH_RFC_APPROVAL)
-    expect(design).toContain('The deletion-led query implementation is now in progress')
+    expect(design).toContain('The completed deletion-led query finishes')
     expect(design).toContain('The complete UTF-8 source must hash to the canonical file-node `content_hash`')
     expect(design).toContain('Identical normalized request plus identical canonical graph bytes plus the identical authenticated source snapshot')
     expect(design).toContain('All five expectations must pass before warmup')
     expect(design).toContain('empty positive results, missing/extra nodes or edges, reversed/wrong relationship kinds')
-    expect(design).toContain('`evidence-path-query` is the sole active phase')
-    expect(design).toContain('implementation evidence and does not exist or pass at activation')
+    expect(design).toContain('No technical phase is active')
+    expect(design).toContain('The accepted receipt lives at')
+    expect(design).toContain(EVIDENCE_MERGE)
+    expect(design).toContain(EVIDENCE_CI_RUN)
+    expect(design).toContain(EVIDENCE_REVIEW_RECEIPT)
     expect(design).not.toContain('## Active amendment — generation and incremental index')
     expect(design).not.toContain('the phase remains active')
     expect(design).not.toContain('completion evidence remains open')
@@ -505,7 +517,8 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Canonical TypeScript index | **Passed**')
     expect(scorecard).toContain('| Legacy extraction plus non-code/other-language ingestion | **Passed**')
     expect(scorecard).toContain('| Generation and reconciliation | **Passed**')
-    expect(scorecard).toContain('| Evidence-path query | **In progress**')
+    expect(scorecard).toContain('| Evidence-path query | **Passed**')
+    expect(scorecard).toContain('| Delivery and package | **Ready**')
     expect(scorecard).toContain(EVIDENCE_OWNER_APPROVAL)
     expect(scorecard).toContain(EVIDENCE_RFC_AMENDMENT)
     expect(scorecard).toContain(EVIDENCE_PERFORMANCE_AMENDMENT)
@@ -534,7 +547,10 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('only an authenticated canonical symbol declaration may provide a snippet or cover a phase')
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
-    expect(scorecard).toContain('`evidence-path-query` is the single In progress phase')
+    expect(scorecard).toContain('No technical phase is active')
+    expect(scorecard).toContain(EVIDENCE_MERGE)
+    expect(scorecard).toContain(EVIDENCE_CI_RUN)
+    expect(scorecard).toContain(EVIDENCE_REVIEW_RECEIPT)
     expect(scorecard).toContain('passes held-out-v2')
     expect(scorecard).toContain('clean generation stays within the accepted 10% regression limit')
     expect(scorecard).toContain('recognized unsupported files and expected policy exclusions are informational')
@@ -662,10 +678,12 @@ describe('core reset governance', () => {
         retired_cli_flags?: string[]
         completion?: {
           issue: string
+          absorbed_issue?: string
           pull_request: string
           commit: string
           implementation_commit?: string
           final_pr_head?: string
+          final_pr_tree?: string
           ci_head?: string
           outcome?: string
           production_files_added?: number
@@ -680,9 +698,13 @@ describe('core reset governance', () => {
           dependencies_removed?: number
           runtime_dependencies_added?: number
           development_dependencies_added?: number
+          optional_peer_metadata_removed?: boolean
           npm_files?: number
           npm_packed_bytes?: number
           npm_unpacked_bytes?: number
+          npm_shasum?: string
+          npm_integrity?: string
+          npm_artifact_sha256?: string
           ci_matrix_jobs_passed: number
           ci_run?: string
           test_files_passed?: number
@@ -711,12 +733,12 @@ describe('core reset governance', () => {
     expect(manifest.schema_version).toBe(1)
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-24',
-      completed_phase: 'generation-and-incremental',
-      active_phase: 'evidence-path-query',
-      ready_phase: null,
+      updated_at: '2026-07-25',
+      completed_phase: 'evidence-path-query',
+      active_phase: null,
+      ready_phase: 'thin-delivery',
       base_commit: EVIDENCE_BASE,
-      completed_phase_commit: INCREMENTAL_MERGE,
+      completed_phase_commit: EVIDENCE_MERGE,
       npm_files: 162,
       npm_packed_bytes: 231_524,
       npm_unpacked_bytes: 984_434,
@@ -732,7 +754,7 @@ describe('core reset governance', () => {
     for (const item of manifest.items) {
       expect(item.id.trim().length).toBeGreaterThan(0)
       expect(['keep', 'rebuild', 'move', 'delete', 'defer']).toContain(item.disposition)
-      expect(['proposed', 'planned', 'in_progress', 'complete', 'approved_exception']).toContain(item.status)
+      expect(['proposed', 'planned', 'ready', 'in_progress', 'complete', 'approved_exception']).toContain(item.status)
       expect(item.exit_gate.trim().length).toBeGreaterThan(0)
       for (const source of item.sources ?? []) {
         expect(source.trim()).toMatch(/^(?:\.github|docs|examples|src|tests|tools)\//)
@@ -837,7 +859,7 @@ describe('core reset governance', () => {
     expect(logicalLocAtCommit(legacyBase, deletionFiles)).toBe(20_951)
     const generation = manifest.items.find((item) => item.id === 'generation-and-incremental')
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['evidence-path-query'])
+      .toEqual([])
     expect(generation).toMatchObject({
       status: 'complete',
       sources: INCREMENTAL_OWNED_REPLACEMENTS,
@@ -958,11 +980,11 @@ describe('core reset governance', () => {
     expect(INCREMENTAL_PREDECESSORS.every((path) => !existsSync(resolve(path)))).toBe(true)
     expect(INCREMENTAL_REPLACEMENTS.every((path) => existsSync(resolve(path)))).toBe(true)
     expect(logicalLocAtCommit(INCREMENTAL_BASE, INCREMENTAL_PREDECESSORS)).toBe(3_839)
-    expect(manifest.items.find((item) => item.id === 'evidence-path-query')?.status).toBe('in_progress')
-    expect(manifest.items.find((item) => item.id === 'thin-delivery')?.status).toBe('proposed')
+    expect(manifest.items.find((item) => item.id === 'evidence-path-query')?.status).toBe('complete')
+    expect(manifest.items.find((item) => item.id === 'thin-delivery')?.status).toBe('ready')
   })
 
-  it('freezes the approved combined evidence-path implementation contract without claiming acceptance', () => {
+  it('freezes the completed combined evidence-path implementation contract and receipt', () => {
     const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
       review: { disposition_changes: number; amendment: string }
       current: {
@@ -1284,18 +1306,62 @@ describe('core reset governance', () => {
           protected_base: string
           implementation_started?: boolean
         }
+        completion?: {
+          issue: string
+          absorbed_issue: string
+          pull_request: string
+          commit: string
+          implementation_commit: string
+          final_pr_head: string
+          final_pr_tree: string
+          ci_head: string
+          outcome: string
+          production_files_added: number
+          production_files_removed: number
+          production_typescript_files: number
+          production_typescript_loc: number
+          production_loc_added: number
+          production_loc_removed: number
+          production_loc_net: number
+          replacement_loc: number
+          dependencies_added: number
+          dependencies_removed: number
+          runtime_dependencies_added: number
+          development_dependencies_added: number
+          optional_peer_metadata_removed: boolean
+          npm_files: number
+          npm_packed_bytes: number
+          npm_unpacked_bytes: number
+          npm_shasum: string
+          npm_integrity: string
+          npm_artifact_sha256: string
+          ci_matrix_jobs_passed: number
+          ci_run: string
+          test_files_passed: number
+          tests_passed: number
+          tests_skipped: number
+          coverage_statements_percent: number
+          coverage_branches_percent: number
+          coverage_functions_percent: number
+          coverage_lines_percent: number
+          coderabbit: string
+          independent_review: string
+          independent_reviews_passed: number
+          independent_review_receipt: string
+          unresolved_review_threads: number
+        }
       }>
     }
 
     expect(execFileSync(git, ['rev-parse', `${EVIDENCE_BASE}^{tree}`], { encoding: 'utf8' }).trim())
       .toBe(EVIDENCE_BASE_TREE)
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-24',
-      completed_phase: 'generation-and-incremental',
-      active_phase: 'evidence-path-query',
-      ready_phase: null,
+      updated_at: '2026-07-25',
+      completed_phase: 'evidence-path-query',
+      active_phase: null,
+      ready_phase: 'thin-delivery',
       base_commit: EVIDENCE_BASE,
-      completed_phase_commit: INCREMENTAL_MERGE,
+      completed_phase_commit: EVIDENCE_MERGE,
       npm_files: 162,
       npm_packed_bytes: 231_524,
       npm_unpacked_bytes: 984_434,
@@ -1303,12 +1369,12 @@ describe('core reset governance', () => {
       snapshot_scope: 'exact_implementation_source_and_package',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['evidence-path-query'])
+      .toEqual([])
 
     const evidence = manifest.items.find((item) => item.id === 'evidence-path-query')
     expect(evidence).toMatchObject({
       disposition: 'rebuild',
-      status: 'in_progress',
+      status: 'complete',
       absorbs: ['context-governance-stack', 'derived-product-wrappers'],
       transferred_sources: [...EVIDENCE_TRANSFERS],
       supplemental_cleanup_sources: ['src/runtime/stdio/prompts.ts'],
@@ -1333,7 +1399,7 @@ describe('core reset governance', () => {
       implementation_inventory: {
         receipt: EVIDENCE_INVENTORY_RECEIPT,
         receipt_sha256: EVIDENCE_INVENTORY_RECEIPT_SHA256,
-        subject_commit: '29aba7ebffe14d6a70bde78df1490bf4cded64a4',
+        subject_commit: EVIDENCE_IMPLEMENTATION,
         subject_tree_oid: '277649ed917fc134e9808a995ce8c84f22258acb',
         production_typescript_files: 73,
         production_typescript_loc: 21_687,
@@ -1686,6 +1752,51 @@ describe('core reset governance', () => {
         protected_base: EVIDENCE_BASE,
         implementation_started: true,
       },
+      completion: {
+        issue: EVIDENCE_ISSUE,
+        absorbed_issue: EVIDENCE_GENERATION_PREREQUISITE,
+        pull_request: 'https://github.com/mohanagy/madar/pull/600',
+        commit: EVIDENCE_MERGE,
+        implementation_commit: EVIDENCE_IMPLEMENTATION,
+        final_pr_head: EVIDENCE_FINAL_HEAD,
+        final_pr_tree: EVIDENCE_FINAL_TREE,
+        ci_head: EVIDENCE_FINAL_HEAD,
+        outcome: 'deterministic_graph_authenticated_evidence_path',
+        production_files_added: 7,
+        production_files_removed: 64,
+        production_typescript_files: 73,
+        production_typescript_loc: 21_687,
+        production_loc_added: 3_500,
+        production_loc_removed: 48_231,
+        production_loc_net: -44_731,
+        replacement_loc: 1_812,
+        dependencies_added: 0,
+        dependencies_removed: 1,
+        runtime_dependencies_added: 0,
+        development_dependencies_added: 0,
+        optional_peer_metadata_removed: true,
+        npm_files: 162,
+        npm_packed_bytes: 231_524,
+        npm_unpacked_bytes: 984_434,
+        npm_shasum: '736304da55902eb36dd414bc618794102c7fa747',
+        npm_integrity:
+          'sha512-bx6t7+gHxtvk2cmbkbrf/Zi4fmFPZEhhxXV40GHq2+u02NW57B2hZZxWRrYMXxN8UvZptVLibZZ/GirTbcMjXg==',
+        npm_artifact_sha256: '59843af17736c5d6ff5bf4499d6509eaf69605f70b57c08be4e1716758e25528',
+        ci_matrix_jobs_passed: 6,
+        ci_run: EVIDENCE_CI_RUN,
+        test_files_passed: 81,
+        tests_passed: 740,
+        tests_skipped: 3,
+        coverage_statements_percent: 81.38,
+        coverage_branches_percent: 71.79,
+        coverage_functions_percent: 87.83,
+        coverage_lines_percent: 83.56,
+        coderabbit: 'skipped_base_owner_exception',
+        independent_review: 'passed',
+        independent_reviews_passed: 1,
+        independent_review_receipt: EVIDENCE_REVIEW_RECEIPT,
+        unresolved_review_threads: 0,
+      },
     })
     expect(evidence?.deterministic_query_contract)
       .not.toHaveProperty('identical_question_and_graph_bytes_are_byte_deterministic')
@@ -1739,13 +1850,13 @@ describe('core reset governance', () => {
     expect(absorbed.every(Boolean)).toBe(true)
     expect(absorbed.map((item) => ({ id: item?.id, status: item?.status, absorbed_by: item?.absorbed_by })))
       .toEqual([
-        { id: 'context-governance-stack', status: 'planned', absorbed_by: 'evidence-path-query' },
-        { id: 'derived-product-wrappers', status: 'planned', absorbed_by: 'evidence-path-query' },
+        { id: 'context-governance-stack', status: 'complete', absorbed_by: 'evidence-path-query' },
+        { id: 'derived-product-wrappers', status: 'complete', absorbed_by: 'evidence-path-query' },
       ])
     expect(manifest.items.find((item) => item.id === 'thin-delivery')).toMatchObject({
-      status: 'proposed',
-      blocked_by: 'evidence-path-query',
+      status: 'ready',
     })
+    expect(manifest.items.find((item) => item.id === 'thin-delivery')).not.toHaveProperty('blocked_by')
 
     const evidenceOwners = [evidence, ...absorbed].filter((item): item is NonNullable<typeof item> => item !== undefined)
     const baseFiles = productionTypeScriptFilesAtCommit(EVIDENCE_BASE)
@@ -1760,6 +1871,7 @@ describe('core reset governance', () => {
     }
     expect(EVIDENCE_REPLACEMENTS.every((path) => !baseFiles.includes(path))).toBe(true)
     expect(EVIDENCE_REPLACEMENTS.every((path) => existsSync(resolve(path)))).toBe(true)
+    expect(logicalLocAtCommit(EVIDENCE_IMPLEMENTATION, EVIDENCE_REPLACEMENTS)).toBe(1_812)
     expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(true)
     const implementationDelta = productionSourceDelta(EVIDENCE_BASE)
     expect(implementationDelta.added).toBeLessThanOrEqual(3_500)
@@ -2568,6 +2680,7 @@ describe('core reset governance', () => {
         absorbed_by?: string
         sources?: string[]
         removed_sources?: string[]
+        supplemental_cleanup_sources?: string[]
         transferred_sources?: string[]
         preserve?: string[]
         completion?: { commit: string }
@@ -2621,13 +2734,14 @@ describe('core reset governance', () => {
       'src/infrastructure/doctor.ts',
       'src/runtime/serve.ts',
     ])
-    expect(evidencePath?.status).toBe('in_progress')
-    expect(thinDelivery?.status).toBe('proposed')
+    expect(evidencePath?.status).toBe('complete')
+    expect(thinDelivery?.status).toBe('ready')
     for (const completedId of [
       'directed-multigraph',
       'canonical-typescript-index',
       'legacy-extraction',
       'generation-and-incremental',
+      'evidence-path-query',
     ]) {
       const completed = manifest.items.find((item) => item.id === completedId)
       expect(completed).toBeDefined()
@@ -2635,7 +2749,10 @@ describe('core reset governance', () => {
       const completedOwnerIds = new Set([completedId, ...(completed?.absorbs ?? [])])
       const completedOwners = manifest.items.filter((item) => completedOwnerIds.has(item.id))
       expect(completedOwners).toHaveLength(completedOwnerIds.size)
-      const removedSources = completedOwners.flatMap((item) => item.removed_sources ?? [])
+      const removedSources = completedOwners.flatMap((item) => [
+        ...(item.removed_sources ?? []),
+        ...(item.supplemental_cleanup_sources ?? []),
+      ])
       const deletedFiles = deletedProductionFiles(completed!.completion!.commit)
       const deletedPredecessors = deletedFiles.filter((path) =>
         removedSources.some((pattern) => manifestGlob(pattern).test(path)))
@@ -2720,8 +2837,10 @@ describe('core reset governance', () => {
     expect(governance).not.toContain('single In progress phase through #588')
     expect(governance).not.toContain('Legacy and non-code deletion contract (in progress)')
     expect(governance).not.toContain('## Ready — generation and incremental index')
-    expect(governance).toContain('Evidence-path query is the sole technical phase In progress')
-    expect(governance).toContain('## In progress — evidence-path query')
+    expect(governance).toContain('## Passed — evidence-path query')
+    expect(governance).toContain('No technical phase is active')
+    expect(governance).not.toContain('Evidence-path query is the sole technical phase In progress')
+    expect(governance).not.toContain('## In progress — evidence-path query')
     expect(governance).not.toContain('## In progress — generation and incremental index')
     expect(governance).not.toContain('single In progress phase through #592')
     expect(governance).not.toContain('phase completion awaits')

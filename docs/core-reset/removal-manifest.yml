@@ -24,12 +24,12 @@ review:
   amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combine the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changes from rebuild to delete, raising disposition_changes from 4 to 7. The protected-base importer receipt records the combined closure with zero unexpected direct importers, while stdio/prompts.ts is separately approved importer/public-surface cleanup outside the 63-file predecessor floor. Held-out-v2, authenticated-source, and source-only-generation controls remain unchanged.'
 
 current:
-  updated_at: 2026-07-24
-  completed_phase: generation-and-incremental
-  active_phase: evidence-path-query
-  ready_phase: null
+  updated_at: 2026-07-25
+  completed_phase: evidence-path-query
+  active_phase: null
+  ready_phase: thin-delivery
   base_commit: bce4f4fb1520a582bfedf5eab9133e9befbc79f7
-  completed_phase_commit: b56966c06c0ae1b04c252f297036f332fa1b384c
+  completed_phase_commit: 596d286cdf4bb53670a6d8c27b2cec5f86137739
   production_typescript_files: 73
   production_typescript_loc: 21687
   production_loc_added: 3500
@@ -412,13 +412,13 @@ items:
       independent_reviews_passed: 3
       independent_review_receipt: https://github.com/mohanagy/madar/pull/594#issuecomment-5049404550
       unresolved_review_threads: 0
-    notes: 'Completed by #592 and PR #594 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5 after the recorded stop amendment. The fixed 500-file gate failed at candidate checkpoint 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d / worktree tree 6bd1ae5762afaa868d5cf6ce165b061aa290bfda: warm index p50 ratio 0.824, refresh p50 1.047, and refresh p95 1.029. Held-out timing was intentionally skipped because it could not reverse the mandatory stop. The failed incremental path was deleted. Exact runtime commit 1be24dc45a5f07c352c74fc374feb95a9440df8e ships cold no-op plus one full canonical reconcile for every changed source state, with neither an in-memory nor disk session cache. Its compatible 500-file receipt passes cold no-op at 0.067 of clean generation, zero parse/invalidation/publication, and clean regression at 1.045. build-state.ts is one of the six permitted replacements but remains owned by the completed canonical-typescript-index domain pattern, so no fifth ownership transfer is created. graph.json remains the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. All six exact-head CI jobs passed, three independent P0/P1 audits found no blocker, CodeRabbit explicitly skipped review for the non-default base under the owner-approved exception, and zero review threads remained. Evidence-path query is now the sole active phase under #596; thin delivery remains blocked.'
+    notes: 'Completed by #592 and PR #594 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5 after the recorded stop amendment. The fixed 500-file gate failed at candidate checkpoint 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d / worktree tree 6bd1ae5762afaa868d5cf6ce165b061aa290bfda: warm index p50 ratio 0.824, refresh p50 1.047, and refresh p95 1.029. Held-out timing was intentionally skipped because it could not reverse the mandatory stop. The failed incremental path was deleted. Exact runtime commit 1be24dc45a5f07c352c74fc374feb95a9440df8e ships cold no-op plus one full canonical reconcile for every changed source state, with neither an in-memory nor disk session cache. Its compatible 500-file receipt passes cold no-op at 0.067 of clean generation, zero parse/invalidation/publication, and clean regression at 1.045. build-state.ts is one of the six permitted replacements but remains owned by the completed canonical-typescript-index domain pattern, so no fifth ownership transfer is created. graph.json remains the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. All six exact-head CI jobs passed, three independent P0/P1 audits found no blocker, CodeRabbit explicitly skipped review for the non-default base under the owner-approved exception, and zero review threads remained. Evidence-path query later completed through PR #600; thin delivery is now Ready but not active.'
     remove_when: Add, change, delete, rename, compiler-control, ignore-policy, recognized-unsupported-file, symlink, and linked-worktree updates equal clean generation through the one full-reconcile path; supported-JS/TS completeness, cold no-op, graph-last failure/concurrency, source/package, CI, and review gates pass; all 15 predecessors and the failed incremental path remain absent.
     exit_gate: One source catalog publishes a clean-equivalent graph.json through cold no-op or full canonical reconciliation, with zero stale facts, no mixed authoritative generation, no predecessor path, and no in-memory or disk session cache.
 
   - id: evidence-path-query
     disposition: rebuild
-    status: in_progress
+    status: complete
     sources:
       - src/runtime/retrieve.ts
       - src/runtime/retrieve/**
@@ -896,13 +896,56 @@ items:
       portability_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5072487113
       protected_base: bce4f4fb1520a582bfedf5eab9133e9befbc79f7
       implementation_started: true
-    notes: 'Accepted in #596, amended by #599, and now implementing one combined 63-file / 33,031-LOC deletion from protected base bce4f4fb1520a582bfedf5eab9133e9befbc79f7. The combined contract transfers 22 sources and changes serve.ts from rebuild to delete; stdio/prompts.ts is approved supplemental finalizer importer/public-surface cleanup outside the 63-file floor. Held-out-v2 still requires exact authenticated declaration owners and honest disconnected boundaries. The immutable v0.32.0 receipt remains historical v1 evidence only. Held-out-v2, loaded-graph performance, source/package, and dependency gates pass; CI, review, and release success remain unclaimed.'
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/596
+      absorbed_issue: https://github.com/mohanagy/madar/issues/599
+      pull_request: https://github.com/mohanagy/madar/pull/600
+      commit: 596d286cdf4bb53670a6d8c27b2cec5f86137739
+      implementation_commit: 29aba7ebffe14d6a70bde78df1490bf4cded64a4
+      final_pr_head: a0ef9003b9bb71a8defb3463ee131e677b32fecc
+      final_pr_tree: 146aaaaffd94404cf3b544f3613a26472886de0c
+      ci_head: a0ef9003b9bb71a8defb3463ee131e677b32fecc
+      outcome: deterministic_graph_authenticated_evidence_path
+      production_files_added: 7
+      production_files_removed: 64
+      production_typescript_files: 73
+      production_typescript_loc: 21687
+      production_loc_added: 3500
+      production_loc_removed: 48231
+      production_loc_net: -44731
+      replacement_loc: 1812
+      dependencies_added: 0
+      dependencies_removed: 1
+      runtime_dependencies_added: 0
+      development_dependencies_added: 0
+      optional_peer_metadata_removed: true
+      npm_files: 162
+      npm_packed_bytes: 231524
+      npm_unpacked_bytes: 984434
+      npm_shasum: 736304da55902eb36dd414bc618794102c7fa747
+      npm_integrity: 'sha512-bx6t7+gHxtvk2cmbkbrf/Zi4fmFPZEhhxXV40GHq2+u02NW57B2hZZxWRrYMXxN8UvZptVLibZZ/GirTbcMjXg=='
+      npm_artifact_sha256: 59843af17736c5d6ff5bf4499d6509eaf69605f70b57c08be4e1716758e25528
+      ci_matrix_jobs_passed: 6
+      ci_run: https://github.com/mohanagy/madar/actions/runs/30124465700
+      test_files_passed: 81
+      tests_passed: 740
+      tests_skipped: 3
+      coverage_statements_percent: 81.38
+      coverage_branches_percent: 71.79
+      coverage_functions_percent: 87.83
+      coverage_lines_percent: 83.56
+      coderabbit: skipped_base_owner_exception
+      independent_review: passed
+      independent_reviews_passed: 1
+      independent_review_receipt: https://github.com/mohanagy/madar/pull/600#issuecomment-5074482136
+      unresolved_review_threads: 0
+    notes: 'Completed by #596 and absorbed prerequisite #599 through PR #600. Exact runtime 29aba7ebffe14d6a70bde78df1490bf4cded64a4 deletes the 63 contracted predecessors plus supplemental src/runtime/stdio/prompts.ts, for 64 actual production-file deletions, and adds exactly seven replacements containing 1,812 logical LOC. Held-out-v2 passes both blocking repositories with full phase coverage and precision, zero unrelated files, and every required handoff; OpenStatus remains an honest failing non-blocking diagnostic. Loaded-graph p95 is 279.28 ms against the strict <500 ms gate. The phase finishes at 73 production files / 21,687 LOC, +3,500 production LOC in total / -48,231 / net -44,731, zero runtime/development dependency additions, one removed optional peer declaration, and 162 npm files / 984,434 unpacked bytes. Final PR head a0ef9003b9bb71a8defb3463ee131e677b32fecc passed all six CI jobs and independent exact-head review with zero review threads; CodeRabbit skipped the non-default base under the owner-approved exception and is not represented as having reviewed. This proves the narrow query only: Thin Delivery is Ready but not active, while comparator, agent-behavior, external-validation, and release gates remain open.'
     remove_when: The deterministic query and held-out one-call gates pass; the fixed loaded-graph performance receipt passes; all 63 predecessors, the approved stdio/prompts.ts supplemental cleanup, obsolete tests/docs/flags/exports, and optional semantic peer metadata are absent; all surviving callers use retrieve-context without a compatibility engine; and the accepted source, package, dependency, CI, review, and zero-thread gates pass.
     exit_gate: One deterministic generic TypeScript/JavaScript evidence query returns graph-backed causal evidence with exact graph-authenticated source excerpts, or stable missing/unsupported/stale/unavailable/corrupt boundaries with no unauthenticated snippet, within the accepted caps and without repository-specific rules, hidden fallback, predecessor path, or global confidence/governance stack.
 
   - id: context-governance-stack
     disposition: delete
-    status: planned
+    status: complete
     sources:
       - src/contracts/context-*
       - src/contracts/retrieval-*
@@ -916,12 +959,12 @@ items:
       - src/runtime/retrieval-gate.ts
       - src/runtime/mcp-response-evidence.ts
     absorbed_by: evidence-path-query
-    notes: 'Absorbed by active issue #596 under the single evidence-path-query handle. These 26 files remain separately listed for exact ownership while their predecessor behavior is deleted rather than wrapped.'
+    notes: 'Completed as an absorbed ownership handle under #596 and PR #600. These 26 predecessor files were deleted rather than wrapped.'
     exit_gate: Query results state exact evidence and missing targets without the superseded governance layers.
 
   - id: derived-product-wrappers
     disposition: delete
-    status: planned
+    status: complete
     sources:
       - src/runtime/feature-map.ts
       - src/runtime/risk-map.ts
@@ -931,16 +974,18 @@ items:
       - src/runtime/pr-impact.ts
       - src/runtime/impact.ts
     absorbed_by: evidence-path-query
-    notes: 'Absorbed by active issue #596 under the single evidence-path-query handle. These seven derived products are deleted with their governance/query predecessor and do not survive as public compatibility wrappers.'
+    notes: 'Completed as an absorbed ownership handle under #596 and PR #600. These seven derived products were deleted with their governance/query predecessor and do not survive as public compatibility wrappers.'
     exit_gate: Public MCP and CLI no longer expose or document these wrappers.
 
   - id: thin-delivery
     disposition: rebuild
-    status: proposed
+    status: ready
     sources:
       - src/cli/**
       - src/runtime/stdio-server.ts
-      - src/runtime/stdio/**
+      - src/runtime/stdio/definitions.ts
+      - src/runtime/stdio/resources.ts
+      - src/runtime/stdio/tools.ts
       - src/infrastructure/install.ts
       - src/shared/env.ts
       - src/shared/package-metadata.ts
@@ -949,8 +994,8 @@ items:
     transferred_sources:
       - src/infrastructure/doctor.ts
       - src/runtime/serve.ts
-    blocked_by: evidence-path-query
     destination: src/adapters/cli/** and src/adapters/mcp/**
+    notes: 'Ready after Evidence-path query closure. No implementation is active until a bounded Thin Delivery issue is accepted and the owner explicitly approves activation.'
     remove_when: Startup, MCP contract, Claude, Codex, uninstall, and worktree activation tests pass.
     exit_gate: No more than five MCP tools and the accepted narrow CLI ship with lazy loading.
 
