@@ -107,7 +107,7 @@ Use `madar query "<question>" --budget 2000` when you want to inspect the exact 
 
 ## Expected result behavior
 
-- `outcome: "evidence"` means Madar returned at least one authenticated excerpt.
+- `outcome: "evidence"` means at least one authenticated graph node survived; structural file evidence may have no excerpt.
 - `outcome: "missing"` means the graph has no support for the question.
 - `outcome: "unsupported"` means a required source is outside the JavaScript/TypeScript index.
 - `outcome: "stale"` means source bytes or ranges no longer match the graph.

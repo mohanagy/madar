@@ -1,4 +1,4 @@
-import { MAX_RETRIEVE_BUDGET } from '../../domain/query/types.js'
+import { MAX_RETRIEVE_BUDGET, MAX_RETRIEVE_QUESTION_LENGTH } from '../../domain/query/types.js'
 
 export interface McpToolDefinition {
   name: string
@@ -24,6 +24,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
         question: {
           type: 'string',
           minLength: 1,
+          maxLength: MAX_RETRIEVE_QUESTION_LENGTH,
           description: 'The codebase question to answer from authenticated graph evidence.',
         },
         budget: {

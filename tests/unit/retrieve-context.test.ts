@@ -1301,11 +1301,8 @@ describe('retrieve context', () => {
       ]
     }).join('\n'))
     write(snippetRoot, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
-    const snippetQuestion = structuredQuestion(
-      'flow-010',
-      phases.map((phase, index) =>
-        `${phase} local ${String(index).padStart(2, '0')}`),
-    )
+    const snippetQuestion = `Trace flow-010 from ${phases.map((phase, index) =>
+      `${phase} local ${String(index).padStart(2, '0')}`).join(' -> ')}.`
     const snippetResult = retrieveContext(readyIndex(snippetRoot), {
       question: snippetQuestion,
     })
@@ -1480,7 +1477,9 @@ describe('retrieve context', () => {
       semantic: true,
     })).toThrow('retrieve accepts only question and optional budget')
     expect(() => retrieveContext(fixture.index, { budget: 4000 }))
-      .toThrow('retrieve question must be a non-empty string')
+      .toThrow('retrieve question must be between 1 and 512 characters')
+    expect(() => retrieveContext(fixture.index, { question: 'x'.repeat(513) }))
+      .toThrow('retrieve question must be between 1 and 512 characters')
     expect(retrieveContext(fixture.index, { question: 'trace entry', budget: 1 }).metrics.serialized_tokens)
       .toBeLessThanOrEqual(256)
     expect(retrieveContext(fixture.index, { question: 'trace entry', budget: 20_000 }).metrics.serialized_tokens)

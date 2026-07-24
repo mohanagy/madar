@@ -21,6 +21,7 @@ describe('MCP schema surface', () => {
         question: expect.objectContaining({
           type: 'string',
           minLength: 1,
+          maxLength: 512,
         }),
         budget: expect.objectContaining({
           type: 'integer',

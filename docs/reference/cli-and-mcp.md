@@ -48,7 +48,7 @@ MCP also exposes authenticated `graph.json` as a read-only resource. The artifac
 
 `outcome` is one of:
 
-- `evidence` — at least one authenticated source excerpt was returned
+- `evidence` — at least one authenticated graph node survived; structural file evidence may have no excerpt
 - `missing` — the graph has no support for the question
 - `unsupported` — required source is outside the JavaScript/TypeScript index
 - `stale` — source bytes or ranges no longer match the accepted graph

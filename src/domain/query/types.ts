@@ -1,14 +1,13 @@
 import type { GraphAttributes } from '../graph/directed-multigraph.js'
 import type { IndexRange } from '../index/model.js'
-
 export const RETRIEVE_RESULT_SCHEMA = 'madar.retrieve' as const
 export const RETRIEVE_RESULT_VERSION = 1 as const
 export const DEFAULT_RETRIEVE_BUDGET = 4000
 export const MIN_RETRIEVE_BUDGET = 256
 export const MAX_RETRIEVE_BUDGET = 4000
+export const MAX_RETRIEVE_QUESTION_LENGTH = 512
 export const MAX_RETRIEVE_FILES = 12
 export const MAX_RETRIEVE_SNIPPETS = 25
-
 export interface NormalizedRetrieveRequest { question: string; budget: number }
 export type EvidenceBoundaryKind =
   | 'missing' | 'disconnected' | 'unsupported' | 'stale'
@@ -68,15 +67,16 @@ export function normalizeRetrieveRequest(value: unknown): NormalizedRetrieveRequ
   if (Object.keys(request).some((key) => key !== 'budget' && key !== 'question')) {
     throw new TypeError('retrieve accepts only question and optional budget')
   }
-  if (typeof request.question !== 'string' || request.question.trim().length === 0) {
-    throw new TypeError('retrieve question must be a non-empty string')
+  const question = typeof request.question === 'string' ? request.question.trim() : ''
+  if (question.length === 0 || question.length > MAX_RETRIEVE_QUESTION_LENGTH) {
+    throw new TypeError(`retrieve question must be between 1 and ${MAX_RETRIEVE_QUESTION_LENGTH} characters`)
   }
   const budget = request.budget
   if (budget !== undefined && (typeof budget !== 'number'
     || !Number.isSafeInteger(budget) || budget <= 0)) {
     throw new TypeError('retrieve budget must be a positive integer')
   }
-  return { question: request.question.trim(), budget: Math.max(
+  return { question, budget: Math.max(
     MIN_RETRIEVE_BUDGET,
     Math.min(budget ?? DEFAULT_RETRIEVE_BUDGET, MAX_RETRIEVE_BUDGET),
   ) }

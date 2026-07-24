@@ -33,7 +33,7 @@ Only enable Madar in repositories and agent runtimes you trust.
 - Missing, unsupported, stale, unavailable, corrupt, disconnected, and truncated evidence is reported explicitly.
 - Retrieval is capped at 12 files, 25 snippets, one directional closure pass, and 4,000 serialized tokens.
 - Known sensitive path classes such as private keys, `.env*`, and credential stores are excluded before indexing.
-- MCP resources expose only the authenticated canonical graph and its matching derived report.
+- MCP resources expose only the authenticated canonical graph.
 - Agent installers write one-retrieve guidance and remove obsolete broader Madar configurations when they own them.
 
 Madar cannot prevent an agent host from exposing its own filesystem, shell, network, or model-provider tools. Installed hooks provide guidance, not enforcement.

@@ -157,7 +157,7 @@ describe('MCP stdio delivery surface', () => {
       additionalProperties: false,
       required: ['question'],
       properties: {
-        question: { type: 'string', minLength: 1 },
+        question: { type: 'string', minLength: 1, maxLength: 512 },
         budget: { type: 'integer', minimum: 1 },
       },
     })
@@ -242,6 +242,13 @@ describe('MCP stdio delivery surface', () => {
     })).error).toEqual({
       code: -32602,
       message: 'retrieve budget must be a positive integer',
+    })
+
+    expect(responseFor(toolCall(7, 'retrieve', {
+      question: 'x'.repeat(513),
+    })).error).toEqual({
+      code: -32602,
+      message: 'retrieve question must be between 1 and 512 characters',
     })
   })
 

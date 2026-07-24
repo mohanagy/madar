@@ -169,7 +169,6 @@ function capGraphFacts(
   }
 }
 
-/** Select whole evidence records; represent every omitted fact with an explicit boundary. */
 export function sliceEvidence(input: SliceEvidenceInput): RetrieveContextResult {
   const nodes = deduplicateByIdentity(input.matchedNodes, (node) => node.node_id, 'node')
   const relationships = deduplicateByIdentity(

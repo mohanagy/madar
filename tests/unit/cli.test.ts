@@ -31,7 +31,10 @@ import {
   parseWatchArgs,
   UsageError,
 } from '../../src/cli/parser.js'
-import type { RetrieveContextResult } from '../../src/domain/query/types.js'
+import {
+  normalizeRetrieveRequest,
+  type RetrieveContextResult,
+} from '../../src/domain/query/types.js'
 import {
   resolveMadarOutputDirectory,
   resolveWorkspaceGraphPath,
@@ -908,6 +911,25 @@ describe('CLI help, version, and update notices', () => {
 })
 
 describe('CLI evidence and diagnostics routing', () => {
+  it('rejects oversized questions at the shared boundary before ranking', async () => {
+    const { io, errors } = createIo()
+    const dependencies = createDependencies({
+      retrieveContext: vi.fn((_index, request) => {
+        normalizeRetrieveRequest(request)
+        return RESULT
+      }),
+    })
+
+    await expect(executeCli(
+      ['query', 'x'.repeat(513)],
+      io,
+      dependencies,
+    )).resolves.toBe(1)
+    expect(errors).toEqual([
+      'error: retrieve question must be between 1 and 512 characters',
+    ])
+  })
+
   it('passes only question and optional budget into the query core', async () => {
     const { io, logs } = createIo()
     const dependencies = createDependencies()
