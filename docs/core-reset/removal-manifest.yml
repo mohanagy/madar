@@ -31,10 +31,10 @@ current:
   base_commit: bce4f4fb1520a582bfedf5eab9133e9befbc79f7
   completed_phase_commit: b56966c06c0ae1b04c252f297036f332fa1b384c
   production_typescript_files: 73
-  production_typescript_loc: 21675
-  production_loc_added: 3488
+  production_typescript_loc: 21681
+  production_loc_added: 3494
   production_loc_removed: 48231
-  production_loc_net: -44743
+  production_loc_net: -44737
   npm_files: 276
   npm_packed_bytes: 572171
   npm_unpacked_bytes: 2699912
@@ -672,10 +672,10 @@ items:
       receipt: docs/core-reset/evidence/evidence-path-held-out.json
       result:
         status: passed
-        receipt_file_sha256: 81b64d2346ab1bf5b6dbbceff97dbeaade31d1fdb0c9c131a846ef1ab2f63f95
-        receipt_payload_sha256: 683eb6509147bfda5a440ba12403d26d32f77ddd5ec731fa2b88eab1a898db6f
-        subject_commit: 082ea20a0988462ebaf00137d7a2e4b72632a6fc
-        subject_tree_oid: a42c276dcba58c3aa8e72ee426562e7f910e06ed
+        receipt_file_sha256: 984de29854f798e9d7e1e96a04c64d7c0260d64ddb0047269fd083ee9c5e9aeb
+        receipt_payload_sha256: c960f29fef27af7811ab5e5a160a1082aae0411dbe487ba72d15094254319a26
+        subject_commit: 707b2bbb7d2c147f3832dd667a8599a8c906e941
+        subject_tree_oid: dee9e014e807cb562c18e2572c2be567db4fc310
         eligible_for_acceptance: true
         blocking_questions_passed: 2
         blocking_questions_total: 2
