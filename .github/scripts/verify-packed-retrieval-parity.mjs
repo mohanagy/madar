@@ -104,38 +104,61 @@ function extractNpmTarball(tarballPath, destination) {
   }
 }
 
-function createParityGraph(root) {
+async function createParityGraph(root, updateIndexInWorker) {
   const sourceRoot = join(root, 'workspace')
-  const graphPath = join(sourceRoot, 'out', 'graph.json')
-  mkdirSync(dirname(graphPath), { recursive: true })
   const files = {
     route: join(sourceRoot, 'route.ts'),
     analytics: join(sourceRoot, 'analytics.ts'),
     redirect: join(sourceRoot, 'redirect.ts'),
   }
-  writeFileSync(files.route, 'export function handleClick() { trackClick(); redirectToDestination() }\n')
+  mkdirSync(sourceRoot, { recursive: true })
+  writeFileSync(files.route, [
+    "import { trackClick } from './analytics.js'",
+    "import { redirectToDestination } from './redirect.js'",
+    'export function handleClick() { trackClick(); redirectToDestination() }',
+    '',
+  ].join('\n'))
   writeFileSync(files.analytics, 'export function trackClick() {}\n')
   writeFileSync(files.redirect, 'export function redirectToDestination() {}\n')
-  writeFileSync(graphPath, JSON.stringify({
-    directed: true,
-    root_path: sourceRoot,
-    nodes: [
-      { id: 'route', label: 'handleClick', source_file: files.route, source_location: 'L1', file_type: 'code', node_kind: 'function', community: 0 },
-      { id: 'analytics', label: 'trackClick', source_file: files.analytics, source_location: 'L1', file_type: 'code', node_kind: 'function', community: 0 },
-      { id: 'redirect', label: 'redirectToDestination', source_file: files.redirect, source_location: 'L1', file_type: 'code', node_kind: 'function', community: 0 },
-    ],
-    edges: [
-      { source: 'route', target: 'analytics', relation: 'calls', confidence: 'EXTRACTED', source_file: files.route },
-      { source: 'route', target: 'redirect', relation: 'calls', confidence: 'EXTRACTED', source_file: files.route },
-    ],
-    hyperedges: [],
-  }))
-  return graphPath
+  const result = await updateIndexInWorker(sourceRoot)
+  if (result.updateReceipt?.mode !== 'cold_reconcile' || !existsSync(result.graphPath)) {
+    throw new Error('Packed parity fixture did not publish a canonical graph')
+  }
+  return result.graphPath
 }
 
 function normalizedResponse(response) {
   return JSON.parse(JSON.stringify(response, (key, value) =>
     key === 'checked_at' || key === 'generated_at' ? undefined : value))
+}
+
+function successfulRetrieve(response, label, expectedLabels) {
+  if (response?.error) {
+    throw new Error(`${label} returned an MCP error: ${JSON.stringify(response.error)}`)
+  }
+  const text = response?.result?.content?.[0]?.text
+  if (typeof text !== 'string') {
+    throw new Error(`${label} did not return text evidence`)
+  }
+  let result
+  try {
+    result = JSON.parse(text)
+  } catch {
+    throw new Error(`${label} did not return canonical JSON evidence`)
+  }
+  if (result?.schema !== 'madar.retrieve' || result?.outcome !== 'evidence') {
+    throw new Error(`${label} did not complete successful evidence retrieval`)
+  }
+  const labels = new Set((result.matched_nodes ?? []).map((node) =>
+    String(node.label ?? '').replaceAll(/[^a-z0-9]/gi, '').toLowerCase()))
+  for (const expected of expectedLabels) {
+    if (!labels.has(expected.toLowerCase())) {
+      throw new Error(
+        `${label} omitted expected declaration ${expected}; returned ${[...labels].join(', ')}`,
+      )
+    }
+  }
+  return result
 }
 
 const tempRoot = join(tmpdir(), `madar-packed-parity-${randomUUID()}`)
@@ -208,8 +231,8 @@ try {
   }
 
   process.env.MADAR_TOOL_PROFILE = 'full'
-  const graphPath = createParityGraph(tempRoot)
-  const prompt = 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?'
+  const graphPath = await createParityGraph(tempRoot, packedWatcher.updateIndexInWorker)
+  const prompt = 'Where is handleClick defined?'
   const request = {
     jsonrpc: '2.0',
     id: 551,
@@ -219,13 +242,22 @@ try {
       arguments: {
         question: prompt,
         budget: 1200,
-        retrieval_strategy: 'slice-v1',
-        verbose: true,
       },
     },
   }
   const checkoutResponse = await Promise.resolve(checkoutServer.handleStdioRequest(graphPath, request))
   const packedResponse = await Promise.resolve(packedServer.handleStdioRequest(graphPath, request))
+  const expectedDeclarations = ['handleclick']
+  successfulRetrieve(
+    checkoutResponse,
+    'Checkout runtime',
+    expectedDeclarations,
+  )
+  successfulRetrieve(
+    packedResponse,
+    'Packed runtime',
+    expectedDeclarations,
+  )
   const normalizedCheckout = normalizedResponse(checkoutResponse)
   const normalizedPacked = normalizedResponse(packedResponse)
   if (JSON.stringify(normalizedCheckout) !== JSON.stringify(normalizedPacked)) {
@@ -287,6 +319,12 @@ try {
   }
   input.end()
   await serverPromise
+  const responses = responseText.trim().split(/\r?\n/).map((line) => JSON.parse(line))
+  const retrieveResponse = responses.find((response) => response.id === 701)
+  if (!retrieveResponse) {
+    throw new Error('Packed MCP stdio dropped the queued retrieve request')
+  }
+  successfulRetrieve(retrieveResponse, 'Queued packed runtime', ['value0'])
 
   const crashRoot = join(tempRoot, 'crash-workspace')
   mkdirSync(crashRoot, { recursive: true })

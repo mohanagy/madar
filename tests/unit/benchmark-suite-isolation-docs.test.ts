@@ -107,6 +107,14 @@ describe('benchmark suite isolation docs', () => {
     expect(parityScript).toContain('Packed retrieval parity passed')
     expect(parityScript).toContain('checkoutServer.handleStdioRequest')
     expect(parityScript).toContain('packedServer.handleStdioRequest')
+    expect(parityScript).toContain(
+      'await createParityGraph(tempRoot, packedWatcher.updateIndexInWorker)',
+    )
+    expect(parityScript).toContain(
+      "successfulRetrieve(retrieveResponse, 'Queued packed runtime', ['value0'])",
+    )
+    expect(parityScript).not.toContain("retrieval_strategy: 'slice-v1'")
+    expect(parityScript).not.toContain('verbose: true')
     expect(parityScript).toContain('Packed artifact unexpectedly contains checkout-only docs')
     expect(workflow).toContain('npm run verify:pack-parity')
   })
