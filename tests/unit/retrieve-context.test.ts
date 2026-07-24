@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -1098,17 +1098,18 @@ describe('retrieve context', () => {
       ...attributes,
       label: 'flow-003 escape local 00',
       qualified_name: 'escapeLocal00',
-      source_file: outside,
+      source_file: relative(fixture.root, outside),
       source_location: 'L1-L3',
       line_number: 1,
       end_line_number: 3,
     })
+    const escapedSource = relative(fixture.root, outside)
     const escapedIndex: ReadyQueryIndex = {
       ...fixture.index,
       graph: fixture.graph,
       file_hashes: new Map([
         ...fixture.index.file_hashes,
-        [outside, createHash('sha256').update(readFileSync(outside)).digest('hex')],
+        [escapedSource, createHash('sha256').update(readFileSync(outside)).digest('hex')],
       ]),
     }
 
@@ -1119,8 +1120,48 @@ describe('retrieve context', () => {
     expect(result.outcome).toBe('unavailable')
     expect(result.matched_nodes).toEqual([])
     expect(result.boundaries).toEqual([
-      { kind: 'unavailable', subject: outside },
+      { kind: 'unavailable', subject: escapedSource },
     ])
+  })
+
+  it('does not replace an exact hard-ignored graph target with unrelated evidence', () => {
+    const fixture = flowFixture()
+    const ignoredSource = 'tmp/escape.ts'
+    const outside = write(fixture.root, ignoredSource, [
+      'export function ignoredEscapeLocal00(): string {',
+      "  return 'ignored'",
+      '}',
+      '',
+    ].join('\n'))
+    const entry = fixture.graph.nodeEntries().find(([, attributes]) =>
+      attributes.qualified_name === 'storageLocal02')
+    if (!entry) throw new Error('Canonical fixture did not index storageLocal02')
+    fixture.graph.replaceNodeAttributes(entry[0], {
+      ...entry[1],
+      label: 'ignored escape local 00',
+      qualified_name: 'ignoredEscapeLocal00',
+      source_file: ignoredSource,
+      source_location: 'L1-L3',
+      line_number: 1,
+      end_line_number: 3,
+    })
+    const ignoredIndex: ReadyQueryIndex = {
+      ...fixture.index,
+      graph: fixture.graph,
+      file_hashes: new Map([
+        ...fixture.index.file_hashes,
+        [ignoredSource, createHash('sha256').update(readFileSync(outside)).digest('hex')],
+      ]),
+    }
+
+    expect(retrieveContext(ignoredIndex, {
+      question: 'Explain `ignoredEscapeLocal00`.',
+    })).toMatchObject({
+      outcome: 'unavailable',
+      matched_nodes: [],
+      relationships: [],
+      boundaries: [{ kind: 'unavailable', subject: 'ignoredEscapeLocal00' }],
+    })
   })
 
   it('classifies an authenticated symbol with an invalid graph range as stale', () => {

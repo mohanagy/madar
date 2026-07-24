@@ -68,7 +68,9 @@ describe('Git workspace helpers', () => {
     mkdirSync(join(root, 'ignored-dir'))
     writeFileSync(join(root, 'ignored-dir', 'hidden.ts'), 'ignored\n', 'utf8')
 
-    expect(collectGitVisibleFiles(root)?.map((path) => path.slice(root.length + 1)).sort()).toEqual([
+    expect(collectGitVisibleFiles(root)
+      ?.map((path) => path.slice(root.length + 1).replaceAll('\\', '/'))
+      .sort()).toEqual([
       '.gitignore',
       'packages/app/nested.ts',
       'tracked.ts',

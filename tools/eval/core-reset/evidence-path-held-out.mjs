@@ -1623,8 +1623,12 @@ export function assertShareSafeReceipt(receipt, privateRoots) {
         : path.startsWith("/var/")
           ? [path, `/private${path}`]
           : [path]
+      const serializedAliases = aliases.flatMap((candidate) => [
+        candidate,
+        JSON.stringify(candidate).slice(1, -1),
+      ])
       assert(
-        aliases.every((candidate) => !serialized.includes(candidate)),
+        serializedAliases.every((candidate) => !serialized.includes(candidate)),
         "share-safe receipt contains a private absolute path",
       )
     }

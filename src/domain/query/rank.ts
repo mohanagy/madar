@@ -161,7 +161,7 @@ function buildCorpus(index: ReadyQueryIndex): RankCorpus {
   const nodes: RankCorpusNode[] = []
   for (const [id, attributes] of index.graph.nodeEntries()) {
     const sourceFile = stringAttribute(attributes, 'source_file')
-    if (sourceFile && isPollutedSourcePath(sourceFile, index.root_path)) continue
+    const polluted = sourceFile.length > 0 && isPollutedSourcePath(sourceFile, index.root_path)
     const nodeKind = stringAttribute(attributes, 'node_kind')
 
     const metadata = scalarMetadataValues(attributes.framework_metadata).join(' ')
@@ -203,7 +203,7 @@ function buildCorpus(index: ReadyQueryIndex): RankCorpus {
       lineSpan: typeof attributes.line_number === 'number' && typeof attributes.end_line_number === 'number'
         ? Math.max(1, attributes.end_line_number - attributes.line_number + 1)
         : Number.MAX_SAFE_INTEGER,
-      selectable: selectableGraphNode(attributes, sourceFile, index),
+      selectable: !polluted && selectableGraphNode(attributes, sourceFile, index),
     })
   }
 

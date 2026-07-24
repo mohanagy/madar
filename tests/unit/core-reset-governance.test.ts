@@ -89,6 +89,14 @@ const EVIDENCE_DARWIN_PATH_OWNER_APPROVAL =
   'https://github.com/mohanagy/madar/issues/596#issuecomment-5066655931'
 const EVIDENCE_DARWIN_PATH_RFC_APPROVAL =
   'https://github.com/mohanagy/madar/issues/577#issuecomment-5066657672'
+const EVIDENCE_PORTABILITY_PROPOSAL =
+  'https://github.com/mohanagy/madar/issues/596#issuecomment-5072454599'
+const EVIDENCE_PORTABILITY_RFC_PROPOSAL =
+  'https://github.com/mohanagy/madar/issues/577#issuecomment-5072454807'
+const EVIDENCE_PORTABILITY_OWNER_APPROVAL =
+  'https://github.com/mohanagy/madar/issues/596#issuecomment-5072486888'
+const EVIDENCE_PORTABILITY_RFC_APPROVAL =
+  'https://github.com/mohanagy/madar/issues/577#issuecomment-5072487113'
 const EVIDENCE_HELDOUT_EVALUATOR = 'tools/eval/core-reset/evidence-path-held-out.mjs'
 const EVIDENCE_HELDOUT_RECEIPT_SCHEMA =
   'tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json'
@@ -144,7 +152,7 @@ type EvidencePerformanceDescriptor = {
 const FROZEN_EVIDENCE_HASHES = {
   'tools/eval/core-reset/contracts/evaluation-contract.json': 'c22819a9e24e53f7b11a69c06511a8dc0c2cba8841868d8d9bb734575290bba9',
   'tools/eval/core-reset/schemas/evaluation-contract.schema.json': '581acc2332cbe9015e0bd1c7da4db84e9c3d5c73cedcb21fd7427a67bf56e615',
-  'tools/eval/core-reset/evidence-path-held-out.mjs': 'a41a51cbe1853f524e3e05cc91b31016382778f980dbb67ef06f910925892841',
+  'tools/eval/core-reset/evidence-path-held-out.mjs': 'b7211c7e56360921a6b8e681ac84b21a1f13963f78a925589ea8611ee25bab97',
   'tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json':
     '2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714',
   'docs/core-reset/evidence/evidence-path-held-out.json':
@@ -1269,6 +1277,10 @@ describe('core reset governance', () => {
           darwin_path_rfc_proposal: string
           darwin_path_owner_approval: string
           darwin_path_rfc_approval: string
+          portability_proposal: string
+          portability_rfc_proposal: string
+          portability_owner_approval: string
+          portability_rfc_approval: string
           protected_base: string
           implementation_started?: boolean
         }
@@ -1667,6 +1679,10 @@ describe('core reset governance', () => {
         darwin_path_rfc_proposal: EVIDENCE_DARWIN_PATH_RFC_PROPOSAL,
         darwin_path_owner_approval: EVIDENCE_DARWIN_PATH_OWNER_APPROVAL,
         darwin_path_rfc_approval: EVIDENCE_DARWIN_PATH_RFC_APPROVAL,
+        portability_proposal: EVIDENCE_PORTABILITY_PROPOSAL,
+        portability_rfc_proposal: EVIDENCE_PORTABILITY_RFC_PROPOSAL,
+        portability_owner_approval: EVIDENCE_PORTABILITY_OWNER_APPROVAL,
+        portability_rfc_approval: EVIDENCE_PORTABILITY_RFC_APPROVAL,
         protected_base: EVIDENCE_BASE,
         implementation_started: true,
       },
