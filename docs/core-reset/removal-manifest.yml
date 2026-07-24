@@ -31,13 +31,13 @@ current:
   base_commit: bce4f4fb1520a582bfedf5eab9133e9befbc79f7
   completed_phase_commit: b56966c06c0ae1b04c252f297036f332fa1b384c
   production_typescript_files: 73
-  production_typescript_loc: 21681
-  production_loc_added: 3494
+  production_typescript_loc: 21687
+  production_loc_added: 3500
   production_loc_removed: 48231
-  production_loc_net: -44737
+  production_loc_net: -44731
   npm_files: 162
-  npm_packed_bytes: 231253
-  npm_unpacked_bytes: 982570
+  npm_packed_bytes: 231304
+  npm_unpacked_bytes: 982903
   measurement_state: source_and_package_exact
   snapshot_scope: exact_implementation_source_and_package
 
@@ -571,21 +571,21 @@ items:
       packed_bytes_delta_max: -1
     implementation_inventory:
       receipt: docs/core-reset/evidence/evidence-path-inventory.json
-      receipt_sha256: 9a1655b06c761e5d239a189a705f66b7be7840b164b18f54af0ca19c24f1f2ee
-      subject_commit: 8bf056533721f4935ef85d7336aeace098c5744c
-      subject_tree_oid: 4b50fff0c85efd33b398b383d87fc09e64a921ea
+      receipt_sha256: afacc3b91176bd2768827e56c84438aad8885e61f34226fdb8fbf0bbc4a7e3a8
+      subject_commit: 37ab665118743cb834bfa34e3764bb52e6dbaff4
+      subject_tree_oid: 3b22d9972f058de53134bc72b162743e44505e76
       production_typescript_files: 73
-      production_typescript_loc: 21681
-      production_loc_added: 3494
+      production_typescript_loc: 21687
+      production_loc_added: 3500
       production_loc_removed: 48231
-      production_loc_net: -44737
+      production_loc_net: -44731
       runtime_dependencies_added: 0
       development_dependencies_added: 0
       optional_peer_metadata_removed: true
       npm_files: 162
-      npm_packed_bytes: 231253
-      npm_unpacked_bytes: 982570
-      npm_packed_bytes_delta: -340918
+      npm_packed_bytes: 231304
+      npm_unpacked_bytes: 982903
+      npm_packed_bytes_delta: -340867
       all_phase_budgets_pass: true
     deterministic_query_contract:
       graph_authoritative_for_selection_and_graph_facts: true
@@ -690,10 +690,10 @@ items:
       receipt: docs/core-reset/evidence/evidence-path-held-out.json
       result:
         status: passed
-        receipt_file_sha256: 84e317a4595a44c15cd3fc7026cb5e49bfe7feb94f0ad8f0d8c752e2283eb74b
-        receipt_payload_sha256: 6a01552125c7956417e9c38ebcc2abe9b3945d904b42c7d2d556e3d0c4ee9399
-        subject_commit: 0a0ccb33693df3f50f7c3a2a08e54e9c4a518c25
-        subject_tree_oid: 4c6c0fb34151da4c861e54873c33dd3f64d65160
+        receipt_file_sha256: 45abbca5cd9326e8ba7e03fc97206802944f9ac16c002de72b8925d6e2edb9bd
+        receipt_payload_sha256: 53ca425294de9f64d221977a294eb19e916ad9b0cae7a75b5706492fc115083a
+        subject_commit: 37ab665118743cb834bfa34e3764bb52e6dbaff4
+        subject_tree_oid: 3b22d9972f058de53134bc72b162743e44505e76
         eligible_for_acceptance: true
         blocking_questions_passed: 2
         blocking_questions_total: 2
@@ -832,11 +832,11 @@ items:
       receipt: docs/core-reset/evidence/evidence-path-performance.json
       result:
         status: passed
-        receipt_file_sha256: a1b068f2c1dd86eaeffd37ddd0b8a578f02748e4613898f4b8548d47cd6ee205
-        receipt_payload_sha256: 0ac397cae0744535209cda4b3b69c45a9ba9d1c140cf38a367129a2dcb8584ad
-        subject_commit: d15973a1bb3cd4d3567e163513159ce870007740
-        subject_tree_oid: 5d656fe953ffd90f2ac02ffe36606eb28ef35c29
-        p95_ms: 262.612
+        receipt_file_sha256: d816ae74b246f1d0190e437df2e34a3c32fbd81a943c498e4d31d490816788ed
+        receipt_payload_sha256: 5efa42833796f4039e9f899839fdccc8d65b9a6ad58f0af7609fd2e37a91fadb
+        subject_commit: 37ab665118743cb834bfa34e3764bb52e6dbaff4
+        subject_tree_oid: 3b22d9972f058de53134bc72b162743e44505e76
+        p95_ms: 280.156
         eligible_for_acceptance: true
       runner: node tools/eval/core-reset/evidence-path-performance.mjs --contract tools/eval/core-reset/contracts/evidence-path-performance-v2.json --receipt docs/core-reset/evidence/evidence-path-performance.json
     importer_closure_contract:
