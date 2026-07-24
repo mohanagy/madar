@@ -146,6 +146,8 @@ const FROZEN_EVIDENCE_HASHES = {
     '2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714',
   'docs/core-reset/evidence/evidence-path-held-out.json':
     '984de29854f798e9d7e1e96a04c64d7c0260d64ddb0047269fd083ee9c5e9aeb',
+  'docs/core-reset/evidence/evidence-path-performance.json':
+    'a1b068f2c1dd86eaeffd37ddd0b8a578f02748e4613898f4b8548d47cd6ee205',
   'docs/core-reset/evidence/baseline-v0.32.0.json': 'c2b96e75e64934de998bb5c7087cb604b680cd8fd2aa5c6d1f74cd9f1a0c6516',
   'tools/eval/core-reset/schemas/baseline-receipt.schema.json': '04eeb47a14da18ec90c6e687bbd557d44a3fe5ac493d8d6946f4b3fc4f7f6a59',
 } as const
@@ -417,7 +419,8 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('an empty positive result fails')
     expect(roadmap).toContain('63-file / 33,031-LOC deletion contract with 22 ownership transfers')
     expect(roadmap).toContain('passes held-out-v2')
-    expect(roadmap).toContain('performance receipt, final package inventory, dependency audit, CI, and review remain pending')
+    expect(roadmap).toContain('passes the [frozen loaded-graph performance gate]')
+    expect(roadmap).toContain('Final package inventory, dependency, CI, and review gates are not yet passed')
     expect(roadmap).toContain('issues/592')
     expect(roadmap).toContain('issues/588')
     expect(roadmap).not.toContain('## Ready — generation and incremental index')
@@ -1552,6 +1555,15 @@ describe('core reset governance', () => {
           memory_bytes: 51_539_607_552,
         },
         receipt: EVIDENCE_PERFORMANCE_RECEIPT,
+        result: {
+          status: 'passed',
+          receipt_file_sha256: FROZEN_EVIDENCE_HASHES[EVIDENCE_PERFORMANCE_RECEIPT],
+          receipt_payload_sha256: '0ac397cae0744535209cda4b3b69c45a9ba9d1c140cf38a367129a2dcb8584ad',
+          subject_commit: 'd15973a1bb3cd4d3567e163513159ce870007740',
+          subject_tree_oid: '5d656fe953ffd90f2ac02ffe36606eb28ef35c29',
+          p95_ms: 262.612,
+          eligible_for_acceptance: true,
+        },
         runner: `node tools/eval/core-reset/evidence-path-performance.mjs --contract ${EVIDENCE_PERFORMANCE_DESCRIPTOR} --receipt ${EVIDENCE_PERFORMANCE_RECEIPT}`,
       },
       importer_closure_contract: {
@@ -1683,7 +1695,7 @@ describe('core reset governance', () => {
     }
     expect(EVIDENCE_REPLACEMENTS.every((path) => !baseFiles.includes(path))).toBe(true)
     expect(EVIDENCE_REPLACEMENTS.every((path) => existsSync(resolve(path)))).toBe(true)
-    expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(false)
+    expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(true)
     const implementationDelta = productionSourceDelta(EVIDENCE_BASE)
     expect(implementationDelta.added).toBeLessThanOrEqual(3_500)
     expect(implementationDelta.removed).toBeGreaterThanOrEqual(33_031)
@@ -1884,7 +1896,19 @@ describe('core reset governance', () => {
     expect(heldoutReceipt.questions.find(
       (question) => question.question_id === 'openstatus-574-strict-one-call',
     )?.passed).toBe(false)
-    expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(false)
+    const performanceReceipt = JSON.parse(read(EVIDENCE_PERFORMANCE_RECEIPT))
+    expect(performanceReceipt).toMatchObject({
+      receipt_sha256: '0ac397cae0744535209cda4b3b69c45a9ba9d1c140cf38a367129a2dcb8584ad',
+      benchmark_passed: true,
+      eligible_for_acceptance: true,
+      subject: {
+        head_commit: 'd15973a1bb3cd4d3567e163513159ce870007740',
+        head_tree_oid: '5d656fe953ffd90f2ac02ffe36606eb28ef35c29',
+        worktree_dirty: false,
+      },
+      measurements: { p95_ms: 262.612, target_ms: 500 },
+      failures: [],
+    })
   })
 
   it('detects load-bearing evaluation data hidden in published text files', () => {
