@@ -50,7 +50,7 @@ interface QueryObligation {
   terms: readonly string[]; localTerms: ReadonlySet<string>; coordinated: boolean
 }
 interface QueryVocabulary {
-  terms: string[]; positions: ReadonlyMap<string, number>; scopes: ExplicitScope[]
+  question: string; terms: string[]; positions: ReadonlyMap<string, number>; scopes: ExplicitScope[]
   constraints: ExplicitScope[]; obligations: readonly QueryObligation[]
 }
 interface ExplicitScope { subject: string; tokens: string[]; compact: string; firstMatch: number; restrictsCandidates: boolean }
@@ -306,7 +306,7 @@ function queryVocabulary(question: string, relationKinds: readonly string[]): Qu
     }
   })
   return {
-    terms, positions, scopes, obligations,
+    question: task, terms, positions, scopes, obligations,
     constraints: scopes.filter((scope) => scope.restrictsCandidates),
   }
 }
@@ -393,6 +393,11 @@ function compareScoredNodes(left: ScoredNode, right: ScoredNode): number {
     || compareCodeUnits(left.node.id, right.node.id)
 }
 
+function exactLabelMatch(node: RankCorpusNode, vocabulary: QueryVocabulary): boolean {
+  const label = stringAttribute(node.attributes, 'label')
+  return meaningfulTokens(label).length > 0 && vocabulary.question.includes(label)
+}
+
 function scoredNodes(corpus: RankCorpus, vocabulary: QueryVocabulary): ScoredNode[] {
   const requestedDomains = new Set(
     Object.entries(SOURCE_DOMAIN_TERMS).flatMap(([domain, terms]) =>
@@ -412,7 +417,8 @@ function scoredNodes(corpus: RankCorpus, vocabulary: QueryVocabulary): ScoredNod
     const kindTokens = new Set(lexicalTokens(node.nodeKind))
     const requestedKind = vocabulary.terms.some((term) => kindTokens.has(term))
     if ((!implementation || ['interface', 'type-alias'].includes(node.nodeKind)) && !requestedKind
-      && !vocabulary.scopes.some((scope) => matchesScope(node, scope))) return []
+      && !vocabulary.scopes.some((scope) => matchesScope(node, scope))
+      && !exactLabelMatch(node, vocabulary)) return []
     const ranked = scoreNode(corpus, node, vocabulary)
     return ranked ? [{
       node,
@@ -775,7 +781,7 @@ export function rankQueryAnchors(
     ? constraints.length === 0 ? [] : scored.filter(({ node }) =>
       constraints.some((scope) => matchesScope(node, scope)))
     : scopes.length === 0
-    ? scored
+    ? missingScopes.some((boundary) => boundary.kind === 'unavailable') ? [] : scored
     : scored.filter(({ node, ranked }) =>
       scopes.some((scope) => matchesScope(node, scope))
       || (scopes.length > 0

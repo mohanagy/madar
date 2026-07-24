@@ -793,6 +793,47 @@ describe('retrieve context', () => {
     expect(result.boundaries).toEqual([{ kind: 'missing', subject: 'missingHasher' }])
   })
 
+  it('retrieves exact natural symbol names without requiring kind words or backticks', () => {
+    const root = sandbox('natural-symbol')
+    write(root, 'src/config.ts', [
+      'export const MAX_RETRIES = 3',
+      'export const MAX_TIMEOUT = 30',
+      'export const providerToFunction = { email: () => "sent" }',
+      '',
+    ].join('\n'))
+    write(root, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
+    const index = readyIndex(root)
+
+    expect(retrieveContext(index, { question: 'What is MAX_RETRIES?' })
+      .matched_nodes.map((node) => node.label)).toEqual(['MAX_RETRIES'])
+    expect(retrieveContext(index, { question: 'How does providerToFunction work?' })
+      .matched_nodes.map((node) => node.label)).toEqual(['providerToFunction'])
+  })
+
+  it('reports exact synthetic framework targets as unavailable without unrelated evidence', () => {
+    const root = sandbox('synthetic-framework')
+    write(root, 'src/router.ts', [
+      "import { initTRPC } from '@trpc/server'",
+      'const t = initTRPC.create()',
+      "const namedHealth = t.procedure.query(() => 'ok')",
+      "export const appRouter = t.router({ namedHealth, inlineHealth: t.procedure.query(() => 'ok') })",
+      '',
+    ].join('\n'))
+    write(root, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
+    const index = readyIndex(root)
+
+    expect(retrieveContext(index, { question: 'Explain `appRouter.inlineHealth`.' }))
+      .toMatchObject({
+        outcome: 'unavailable',
+        matched_nodes: [],
+        relationships: [],
+        boundaries: [{ kind: 'unavailable', subject: 'appRouter.inlineHealth' }],
+        metrics: { selected_files: 0, snippets: 0, closure_passes: 0 },
+      })
+    expect(retrieveContext(index, { question: 'Explain `namedHealth`.' })
+      .matched_nodes.map((node) => node.label)).toEqual(['namedHealth'])
+  })
+
   it('reports a canonical file-only exact path as unavailable, not corrupt', () => {
     const root = sandbox('file-only')
     write(root, 'src/setup.ts', "import 'node:fs'\n")

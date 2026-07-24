@@ -33,15 +33,15 @@ For `.ts`, `.tsx`, `.js`, and `.jsx`, the canonical index can emit framework-sem
 | tRPC | routers and source-visible query, mutation, and subscription procedures | `trpc_router`, `trpc_procedure_query`, `trpc_procedure_mutation`, `trpc_procedure_subscription` |
 | Prisma | client ownership plus synthetic source-visible model reads and writes carrying `storage_operation` metadata | `prisma_client`, `prisma_model_reader`, `prisma_model_writer` |
 
-These are static structural hints, not runtime traces. Heavily dynamic wrappers, generated routes, and custom meta-programming may remain ordinary symbols or require focused source verification.
+These are static structural hints, not runtime traces. Retrieval can quote named declarations that have canonical declaration ranges. Inline handlers, synthesized tRPC properties, and Prisma operation expressions remain graph-only hints: an exact request for one returns `unavailable` and requires focused source verification. Madar does not relabel an expression as a declaration to manufacture a snippet. Heavily dynamic wrappers, generated routes, and custom meta-programming may remain ordinary symbols or require the same verification.
 
 ## Runtime retrieval hints users will notice
 
 | Situation | What Madar preserves | Why users care |
 | --- | --- | --- |
 | Queue-backed NestJS / BullMQ flows | `enqueues_job` semantic edges preserve a statically visible producer-to-worker handoff | Backend questions can keep the worker path without pretending the producer directly calls the worker |
-| Hono / Fastify / tRPC / Prisma workspaces | Conservative request-flow and storage hints when routers, procedures, and model access stay source-visible | Answers get stronger entrypoint and persistence candidates |
-| Prisma and repository operations | `storage_operation` metadata marks likely source-visible reads and writes | Persistence questions can rank the relevant endpoints more accurately |
+| Hono / Fastify / tRPC / Prisma workspaces | Conservative request-flow graph hints when routers, named handlers, procedures, and model access stay source-visible; inline or synthesized targets are not snippet evidence | Named declarations can strengthen entrypoint and persistence candidates; exact inline targets require source verification |
+| Prisma and repository operations | `storage_operation` metadata marks likely source-visible reads and writes as graph hints | Persistence questions can rank named owners; exact operation expressions remain unavailable as snippets |
 | Next.js App Router | `runtime_boundary` metadata plus client-component and server-action roles for visible directives | Client/server questions stay aligned with explicit source boundaries |
 
 For outcome definitions, unsupported-file reporting, and strict thresholds, see [Indexing completeness](./indexing-completeness.md).
