@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
-import { saveQueryResult } from '../../src/infrastructure/save-query-result.js'
+import { saveQueryResult } from '../../tools/eval/lib/infrastructure/save-query-result.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-save-query-result-'))
@@ -88,7 +88,7 @@ describe('saveQueryResult', () => {
       })
 
       const { saveQueryResult: saveWithMock } = await import(
-        '../../src/infrastructure/save-query-result.js'
+        '../../tools/eval/lib/infrastructure/save-query-result.js'
       )
       const output = saveWithMock('q', 'a', join(tempDir, 'memory'))
 

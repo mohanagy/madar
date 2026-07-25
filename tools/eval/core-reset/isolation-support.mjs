@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { readFileSync, readdirSync } from "node:fs"
+import { lstatSync, readFileSync, readdirSync } from "node:fs"
 import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -9,12 +9,12 @@ import { evidencePathsForPhase } from "./contract-validation.mjs"
 
 const scriptRoot = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(scriptRoot, "..", "..", "..")
-const contractPath = join(scriptRoot, "contracts", "evaluation-contract.json")
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm"
 const gitCommand = process.platform === "win32" ? "git.exe" : "git"
 const forbiddenPackagePrefixes = [
   "tools/",
   "docs/core-reset/",
+  "dist-eval/",
   "dist/tools/",
   "dist/docs/",
 ]
@@ -23,6 +23,100 @@ const forbiddenPackageMetadataMarkers = [
   "docs/core-reset",
   "core-reset:",
 ]
+
+const evaluationToolingSources = [
+  "src/infrastructure/benchmark.ts",
+  "src/infrastructure/benchmark/corpus.ts",
+  "src/infrastructure/benchmark/environment.ts",
+  "src/infrastructure/benchmark/generate-performance.ts",
+  "src/infrastructure/benchmark/quality.ts",
+  "src/infrastructure/benchmark/questions.ts",
+  "src/infrastructure/benchmark/runner.ts",
+  "src/infrastructure/benchmark/runtime-proof.ts",
+  "src/infrastructure/benchmark/suite.ts",
+  "src/infrastructure/benchmark/usage.ts",
+  "src/infrastructure/compare.ts",
+  "src/infrastructure/prompt-runner.ts",
+  "src/infrastructure/save-query-result.ts",
+  "src/infrastructure/try-command.ts",
+  "src/runtime/benchmark/probe-calibration.ts",
+  "src/shared/graph-source-root.ts",
+  "src/shared/package-metadata.ts",
+  "src/shared/share-safe-artifacts.ts",
+  "src/shared/shell.ts",
+  "src/shared/workspace-copy.ts",
+]
+
+export const evaluationToolingMoves = Object.freeze(
+  evaluationToolingSources.map((source) =>
+    Object.freeze({
+      source,
+      destination: source.replace(/^src\//u, "tools/eval/lib/"),
+    }),
+  ),
+)
+
+export const evaluationPackageBudget = Object.freeze({
+  files_max: 102,
+  packed_bytes_max: 165_000,
+  unpacked_bytes_max: 640_000,
+})
+
+function pathExists(path) {
+  try {
+    lstatSync(path)
+    return true
+  } catch (error) {
+    if (error?.code === "ENOENT") return false
+    throw error
+  }
+}
+
+function isRegularFile(path) {
+  try {
+    return lstatSync(path).isFile()
+  } catch (error) {
+    if (error?.code === "ENOENT") return false
+    throw error
+  }
+}
+
+function emittedTypeScriptPaths(source, outputRoot) {
+  const stem = source.slice(0, -".ts".length)
+  return [`${outputRoot}/${stem}.js`, `${outputRoot}/${stem}.d.ts`]
+}
+
+export function evaluationToolingLayout(root = repositoryRoot) {
+  const oldSources = evaluationToolingMoves.map(({ source }) => source)
+  const movedSources = evaluationToolingMoves.map(
+    ({ destination }) => destination,
+  )
+  const productionOutputs = evaluationToolingMoves.flatMap(({ source }) =>
+    emittedTypeScriptPaths(source, "dist"),
+  )
+  const evaluationOutputs = evaluationToolingMoves.flatMap(
+    ({ destination }) => emittedTypeScriptPaths(destination, "dist-eval"),
+  )
+
+  return {
+    old_sources: oldSources,
+    moved_sources: movedSources,
+    production_outputs: productionOutputs,
+    evaluation_outputs: evaluationOutputs,
+    present_old_sources: oldSources.filter((path) =>
+      pathExists(join(root, path)),
+    ),
+    missing_moved_sources: movedSources.filter(
+      (path) => !isRegularFile(join(root, path)),
+    ),
+    present_production_outputs: productionOutputs.filter((path) =>
+      pathExists(join(root, path)),
+    ),
+    missing_evaluation_outputs: evaluationOutputs.filter(
+      (path) => !isRegularFile(join(root, path)),
+    ),
+  }
+}
 
 function controlledEnvironment() {
   const environment = { ...process.env }
@@ -304,8 +398,6 @@ export function packageContentLeaks(paths, markers, root = repositoryRoot) {
 }
 
 export function inspectPackageContents(markers = []) {
-  const contract = JSON.parse(readFileSync(contractPath, "utf8"))
-  const targets = contract.measurements.baseline_targets.package
   const record = parseNpmPackJson(
     run(npmCommand, [
       "pack",
@@ -322,24 +414,42 @@ export function inspectPackageContents(markers = []) {
     normalizePath(String(entry.path ?? "")),
   )
   const fileCount = Number(record.entryCount ?? paths.length)
+  const packedBytes = Number(record.size)
   const unpackedBytes = Number(record.unpackedSize)
-  if (![fileCount, unpackedBytes].every(Number.isFinite)) {
+  if (![fileCount, packedBytes, unpackedBytes].every(Number.isFinite)) {
     throw new Error(
       "npm pack dry-run returned non-numeric package measurements",
     )
   }
+  const exactEvaluationPaths = new Set([
+    ...evaluationToolingMoves.flatMap(({ source, destination }) => [
+      source,
+      destination,
+    ]),
+    ...evaluationToolingMoves.flatMap(({ source }) =>
+      emittedTypeScriptPaths(source, "dist"),
+    ),
+    ...evaluationToolingMoves.flatMap(({ destination }) =>
+      emittedTypeScriptPaths(destination, "dist-eval"),
+    ),
+  ])
   const packageMetadata = readFileSync(
     join(repositoryRoot, "package.json"),
     "utf8",
   )
   return {
     file_count: fileCount,
+    packed_bytes: packedBytes,
     unpacked_bytes: unpackedBytes,
     target_passed:
-      fileCount < targets.file_count_max &&
-      unpackedBytes < targets.unpacked_bytes_max,
+      fileCount <= evaluationPackageBudget.files_max &&
+      packedBytes <= evaluationPackageBudget.packed_bytes_max &&
+      unpackedBytes <= evaluationPackageBudget.unpacked_bytes_max,
     forbidden_paths: paths.filter((path) =>
       forbiddenPackagePrefixes.some((prefix) => path.startsWith(prefix)),
+    ),
+    forbidden_evaluation_modules: paths.filter((path) =>
+      exactEvaluationPaths.has(path),
     ),
     forbidden_metadata: forbiddenPackageMetadataMarkers.filter((marker) =>
       packageMetadata.includes(marker),

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { loadGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
 import { generateIndex } from '../../src/application/generate-index.js'
-import { retrieveBenchmarkContext } from '../../src/infrastructure/benchmark/runtime-proof.js'
+import { retrieveBenchmarkContext } from '../../tools/eval/lib/infrastructure/benchmark/runtime-proof.js'
 
 const roots: string[] = []
 

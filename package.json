@@ -54,6 +54,7 @@
     "scripts": {
         "clean": "node --eval \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
         "build": "tsc -p tsconfig.build.json",
+        "build:eval": "tsc -p tsconfig.eval.json",
         "typecheck": "tsc --noEmit",
         "test": "vitest",
         "test:run": "vitest run",

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { runTryCommand } from '../../src/infrastructure/try-command.js'
+import { runTryCommand } from '../../tools/eval/lib/infrastructure/try-command.js'
 
 const roots: string[] = []
 

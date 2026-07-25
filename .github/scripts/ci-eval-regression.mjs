@@ -1,11 +1,11 @@
 import { resolve } from 'node:path'
 
 import { loadGraphArtifact } from '../../dist/src/adapters/filesystem/graph-artifact.js'
-import { loadBenchmarkQuestions } from '../../dist/src/infrastructure/benchmark/questions.js'
+import { loadBenchmarkQuestions } from '../../dist-eval/tools/eval/lib/infrastructure/benchmark/questions.js'
 import {
   evaluateRetrievalQuality,
   formatQualityReport,
-} from '../../dist/src/infrastructure/benchmark/quality.js'
+} from '../../dist-eval/tools/eval/lib/infrastructure/benchmark/quality.js'
 import { resolveMadarWorkspace } from '../../dist/src/shared/workspace.js'
 
 const demoRoot = resolve('examples/demo-repo')

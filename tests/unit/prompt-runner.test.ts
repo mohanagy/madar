@@ -6,7 +6,7 @@ import {
   parsePlainTextPromptRunnerOutput,
   parsePromptRunnerJsonRecord,
   parsePromptRunnerOutput,
-} from '../../src/infrastructure/prompt-runner.js'
+} from '../../tools/eval/lib/infrastructure/prompt-runner.js'
 
 describe('parsePromptRunnerJsonRecord', () => {
   it('accepts a whitespace-padded JSON object', () => {

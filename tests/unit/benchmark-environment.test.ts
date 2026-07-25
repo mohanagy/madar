@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   captureBenchmarkEnvironment,
   extractEnvironmentContamination,
-} from '../../src/infrastructure/benchmark/environment.js'
+} from '../../tools/eval/lib/infrastructure/benchmark/environment.js'
 
 async function withTempDir(callback: (tempDir: string) => Promise<void> | void): Promise<void> {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-benchmark-environment-'))

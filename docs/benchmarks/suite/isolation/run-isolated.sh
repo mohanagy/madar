@@ -11,7 +11,9 @@ CURSOR_MCP_PATH="${CURSOR_CONFIG_DIR}/mcp.json"
 PACKED_ARTIFACT_ROOT="${MADAR_BENCH_PACKED_ARTIFACT_ROOT:-${RUNTIME_PROFILE_ROOT}/packed-artifact}"
 CLI_PATH="${MADAR_BENCH_CLI_PATH:-}"
 RUNTIME_ROOT="${MADAR_BENCH_RUNTIME_ROOT:-}"
+EVALUATOR_ROOT="${MADAR_BENCH_EVALUATOR_ROOT:-${REPO_ROOT}}"
 BENCHMARK_RUNNER_PATH="${REPO_ROOT}/tools/eval/core-reset/benchmark-suite.mjs"
+BENCHMARK_SUITE_PATH="${EVALUATOR_ROOT}/dist-eval/tools/eval/lib/infrastructure/benchmark/suite.js"
 
 prepare_packed_cli() {
   if [[ -n "${CLI_PATH}" ]]; then
@@ -106,8 +108,8 @@ if [[ ! -f "${CLI_PATH}" ]]; then
   echo "Missing benchmark CLI at ${CLI_PATH}." >&2
   exit 1
 fi
-if [[ ! -f "${RUNTIME_ROOT}/dist/src/infrastructure/benchmark/suite.js" ]]; then
-  echo "Missing benchmark suite module under ${RUNTIME_ROOT}." >&2
+if [[ ! -f "${BENCHMARK_SUITE_PATH}" ]]; then
+  echo "Missing checkout evaluation build at ${BENCHMARK_SUITE_PATH}. Run npm run build:eval first." >&2
   exit 1
 fi
 if [[ ! -f "${BENCHMARK_RUNNER_PATH}" ]]; then
@@ -154,6 +156,8 @@ writeFileSync(outputPath, `${JSON.stringify({
 export CLAUDE_CONFIG_DIR
 export CURSOR_CONFIG_DIR
 export MADAR_BENCH_ISOLATION=1
+export MADAR_BENCH_CLI_PATH="${CLI_PATH}"
+export MADAR_BENCH_EVALUATOR_ROOT="${EVALUATOR_ROOT}"
 export MADAR_BENCH_RUNTIME_ROOT="${RUNTIME_ROOT}"
 
 echo "Benchmark runtime source: ${MADAR_BENCH_RUNTIME_SOURCE}" >&2

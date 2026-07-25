@@ -19,7 +19,7 @@ describe('development-only benchmark isolation', () => {
   })
 
   it('pins scratch evaluation MCP wiring without calling the product installer', () => {
-    const suite = read('src/infrastructure/benchmark/suite.ts')
+    const suite = read('tools/eval/lib/infrastructure/benchmark/suite.ts')
 
     expect(suite).not.toContain("from '../install.js'")
     expect(suite).toContain("args: ['mcp']")
@@ -27,7 +27,7 @@ describe('development-only benchmark isolation', () => {
     expect(suite).toContain("join(workspaceRoot, '.mcp.json')")
   })
 
-  it('launches the packed suite through checkout-only tooling, not a public CLI alias', () => {
+  it('launches the checkout evaluation suite with the packed CLI, not a public CLI alias', () => {
     const root = mkdtempSync(join(tmpdir(), 'madar-isolated-launcher-'))
     const runtimeRoot = join(root, 'runtime')
     const profileRoot = join(root, 'profile')
@@ -39,7 +39,17 @@ describe('development-only benchmark isolation', () => {
       'cli',
       'madar\\windows.js',
     )
-    const suitePath = join(runtimeRoot, 'dist', 'src', 'infrastructure', 'benchmark', 'suite.js')
+    const evaluatorRoot = join(root, 'evaluator')
+    const suitePath = join(
+      evaluatorRoot,
+      'dist-eval',
+      'tools',
+      'eval',
+      'lib',
+      'infrastructure',
+      'benchmark',
+      'suite.js',
+    )
     mkdirSync(resolve(cliPath, '..'), { recursive: true })
     mkdirSync(resolve(suitePath, '..'), { recursive: true })
     writeFileSync(join(runtimeRoot, 'package.json'), '{"type":"module"}\n', 'utf8')
@@ -65,6 +75,7 @@ describe('development-only benchmark isolation', () => {
         env: {
           ...process.env,
           MADAR_BENCH_CLI_PATH: cliPath,
+          MADAR_BENCH_EVALUATOR_ROOT: evaluatorRoot,
           MADAR_BENCH_RUNTIME_ROOT: runtimeRoot,
           MADAR_BENCH_ISOLATION_PROFILE_ROOT: profileRoot,
         },

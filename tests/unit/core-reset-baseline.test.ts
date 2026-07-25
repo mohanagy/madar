@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import Ajv2020 from 'ajv/dist/2020.js'
@@ -8,11 +8,17 @@ import { describe, expect, it } from 'vitest'
 // Development-only JavaScript is deliberately outside the production TypeScript build.
 // @ts-expect-error -- the isolated evaluator does not ship declarations in the npm package
 import * as contractValidation from '../../tools/eval/core-reset/contract-validation.mjs'
+// @ts-expect-error -- development-only isolation support is not part of the npm declaration surface
+import * as isolationSupport from '../../tools/eval/core-reset/isolation-support.mjs'
 const {
   evidencePathsForPhase,
   validateContractSemantics,
   validateHistoricalBaselineReceipt,
 } = contractValidation
+const {
+  evaluationPackageBudget,
+  evaluationToolingMoves,
+} = isolationSupport
 
 type JsonObject = Record<string, any>
 
@@ -169,13 +175,79 @@ describe('Core Reset baseline contract', () => {
 
   it('keeps evaluation tooling outside the production build and package allowlist', () => {
     const build = readJson('tsconfig.build.json')
+    const evalBuild = readJson('tsconfig.eval.json')
     const manifest = readJson('package.json')
+    const ignoreRules = readFileSync(resolve('.gitignore'), 'utf8').split(/\r?\n/u)
+    const ciWorkflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
+      .replaceAll('\r\n', '\n')
+    const expectedSources = [
+      'src/infrastructure/benchmark.ts',
+      'src/infrastructure/benchmark/corpus.ts',
+      'src/infrastructure/benchmark/environment.ts',
+      'src/infrastructure/benchmark/generate-performance.ts',
+      'src/infrastructure/benchmark/quality.ts',
+      'src/infrastructure/benchmark/questions.ts',
+      'src/infrastructure/benchmark/runner.ts',
+      'src/infrastructure/benchmark/runtime-proof.ts',
+      'src/infrastructure/benchmark/suite.ts',
+      'src/infrastructure/benchmark/usage.ts',
+      'src/infrastructure/compare.ts',
+      'src/infrastructure/prompt-runner.ts',
+      'src/infrastructure/save-query-result.ts',
+      'src/infrastructure/try-command.ts',
+      'src/runtime/benchmark/probe-calibration.ts',
+      'src/shared/graph-source-root.ts',
+      'src/shared/package-metadata.ts',
+      'src/shared/share-safe-artifacts.ts',
+      'src/shared/shell.ts',
+      'src/shared/workspace-copy.ts',
+    ]
 
     expect(build.compilerOptions.rootDir).toBe('src')
     expect(build.compilerOptions.outDir).toBe('dist/src')
     expect(build.compilerOptions.noEmitOnError).toBe(true)
     expect(build.include).toEqual(['src/**/*.ts'])
-    expect(manifest.files).not.toEqual(expect.arrayContaining(['tools/', 'docs/']))
+    expect(evalBuild).toMatchObject({
+      extends: './tsconfig.json',
+      compilerOptions: {
+        rootDir: '.',
+        outDir: 'dist-eval',
+        noEmitOnError: true,
+      },
+      include: ['tools/eval/lib/**/*.ts'],
+    })
+    expect(evalBuild.exclude).toEqual(expect.arrayContaining([
+      'tests/**/*.ts',
+      'dist',
+      'dist-eval',
+      'vitest.config.ts',
+    ]))
+    expect(evaluationToolingMoves.map(({ source }: { source: string }) => source))
+      .toEqual(expectedSources)
+    expect(evaluationToolingMoves.map(({ destination }: { destination: string }) => destination))
+      .toEqual(expectedSources.map((path) => path.replace(/^src\//u, 'tools/eval/lib/')))
+    for (const { source, destination } of evaluationToolingMoves) {
+      expect(existsSync(resolve(source)), `${source} must be deleted`).toBe(false)
+      expect(existsSync(resolve(destination)), `${destination} must exist`).toBe(true)
+    }
+    expect(evaluationPackageBudget).toEqual({
+      files_max: 102,
+      packed_bytes_max: 165_000,
+      unpacked_bytes_max: 640_000,
+    })
+    expect(manifest.files.every((path: string) =>
+      !path.startsWith('tools/') &&
+      !path.startsWith('docs/') &&
+      !path.startsWith('dist-eval/'))).toBe(true)
+    expect(manifest.scripts['build:eval']).toBe('tsc -p tsconfig.eval.json')
+    expect(manifest.scripts.build).toBe('tsc -p tsconfig.build.json')
+    expect(manifest.scripts.prepack).toBe('npm run clean && npm run build')
+    expect(manifest.scripts.clean).not.toMatch(/(?:build:eval|tsconfig\.eval|dist-eval|tools\/eval)/u)
+    expect(ignoreRules).toContain('dist-eval/')
+    expect(ignoreRules.some((rule) => rule.startsWith('!dist-eval'))).toBe(false)
+    expect(ciWorkflow).toContain(
+      '      - name: Build evaluation tooling\n        run: npm run build:eval',
+    )
     expect(Object.keys(manifest.scripts).some((name) => name.startsWith('core-reset:'))).toBe(false)
   })
 })

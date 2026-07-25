@@ -1,7 +1,7 @@
-import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
-import { retrieveContext } from '../../application/retrieve-context.js'
-import { inspectQueryIndex } from '../../domain/query/index-status.js'
-import type { RetrieveContextResult } from '../../domain/query/types.js'
+import { KnowledgeGraph } from '../../../../../src/domain/graph/directed-multigraph.js'
+import { retrieveContext } from '../../../../../src/application/retrieve-context.js'
+import { inspectQueryIndex } from '../../../../../src/domain/query/index-status.js'
+import type { RetrieveContextResult } from '../../../../../src/domain/query/types.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './corpus.js'
 import { normalizeBenchmarkQuestion, normalizeExpectedLabel, type BenchmarkQuestionSpec } from './questions.js'
 import { type PromptRunnerUsage } from '../prompt-runner.js'
@@ -20,7 +20,7 @@ import {
   usageCaptureSummary,
   usageProviderLabel,
 } from './usage.js'
-import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
+import { resolveWorkspaceGraphPath } from '../../../../../src/shared/workspace.js'
 
 export interface GoldQuestion {
   question: string

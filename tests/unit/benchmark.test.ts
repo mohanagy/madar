@@ -12,9 +12,9 @@ import {
   printBenchmark,
   queryEvidenceTokens,
   runBenchmark,
-} from '../../src/infrastructure/benchmark.js'
-import { runBenchmarkPrompt } from '../../src/infrastructure/benchmark/runner.js'
-import { evaluateBenchmarkQuestion } from '../../src/infrastructure/benchmark/questions.js'
+} from '../../tools/eval/lib/infrastructure/benchmark.js'
+import { runBenchmarkPrompt } from '../../tools/eval/lib/infrastructure/benchmark/runner.js'
+import { evaluateBenchmarkQuestion } from '../../tools/eval/lib/infrastructure/benchmark/questions.js'
 
 const sandboxes: string[] = []
 

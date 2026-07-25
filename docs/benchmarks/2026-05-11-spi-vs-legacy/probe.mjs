@@ -6,7 +6,7 @@ import { basename, relative, resolve } from 'node:path'
 import { computeContextPackDiagnostics } from '../../../dist/src/runtime/context-pack-diagnostics.js'
 import { estimateContextPackEntryTokens } from '../../../dist/src/runtime/context-pack.js'
 import { applyContextPackResolution } from '../../../dist/src/runtime/context-pack-resolution.js'
-import { classifyCalibrationBucket } from '../../../dist/src/runtime/benchmark/probe-calibration.js'
+import { classifyCalibrationBucket } from '../../../dist-eval/tools/eval/lib/runtime/benchmark/probe-calibration.js'
 import { contextPackFromRetrieveResult, retrieveContext } from '../../../dist/src/runtime/retrieve.js'
 import { loadGraph } from '../../../dist/src/runtime/serve.js'
 

@@ -7,7 +7,7 @@ import {
   sanitizeShareSafeText,
   toShareSafeArtifactPath,
   type ShareSafePathRoots,
-} from '../../src/shared/share-safe-artifacts.js'
+} from '../../tools/eval/lib/shared/share-safe-artifacts.js'
 
 const ROOTS = {
   artifactRoot: '/workspace/out/compare',

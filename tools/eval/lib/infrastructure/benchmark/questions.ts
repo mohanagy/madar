@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 
-import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
+import { KnowledgeGraph } from '../../../../../src/domain/graph/directed-multigraph.js'
 
 import { type PromptRunnerUsage } from '../prompt-runner.js'
 import {

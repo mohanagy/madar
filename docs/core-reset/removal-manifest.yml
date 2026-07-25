@@ -21,7 +21,7 @@ review:
   unowned_files: 0
   overlapping_files: 0
   disposition_changes: 11
-  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transfers graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activates the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. No production source changes in governance activation. Graph, index, generation, retrieval, CLI, MCP, installer, workspace, held-out, performance, grading, budget, and timeout semantics remain frozen.'
+  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transfers graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activates the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. The pre-PR implementation candidate moves the exact 20 files / 4,698 LOC, changes no surviving production TypeScript or dependency, and remains In progress pending exact-head CI and review gates. Graph, index, generation, retrieval, CLI, MCP, installer, workspace, held-out, performance, grading, budget, and timeout semantics remain frozen.'
 
 current:
   updated_at: 2026-07-25
@@ -30,14 +30,14 @@ current:
   ready_phase: null
   base_commit: 317dda89f2ea5c75e7626a26b104ceca1bd04ce5
   completed_phase_commit: 14791cefa195f43e30ec9ec2dd611e38ad2b1b83
-  production_typescript_files: 63
-  production_typescript_loc: 16654
+  production_typescript_files: 43
+  production_typescript_loc: 11956
   production_loc_added: 0
-  production_loc_removed: 0
-  production_loc_net: 0
-  npm_files: 142
-  npm_packed_bytes: 200310
-  npm_unpacked_bytes: 812531
+  production_loc_removed: 4698
+  production_loc_net: -4698
+  npm_files: 102
+  npm_packed_bytes: 159759
+  npm_unpacked_bytes: 637602
   measurement_state: source_and_package_exact
   snapshot_scope: exact_implementation_source_and_package
 
@@ -1382,8 +1382,39 @@ items:
       protected_base: 317dda89f2ea5c75e7626a26b104ceca1bd04ce5
       protected_src_tree: b99217c74f6b26daef4ecab12e1cde5f8fe60122
       target_branch: core-reset
-      implementation_started: false
-    notes: 'Owner-approved issue #606 activates only this governance contract from protected core-reset base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5 and unchanged src tree b99217c74f6b26daef4ecab12e1cde5f8fe60122. Governance activation changes no production source. Implementation must move exactly 20 production TypeScript files / 4,698 LOC into tools/eval/lib/**, delete every old src location, add no production file or LOC, change no surviving production TypeScript, and change no dependency. One tsconfig.eval.json plus one build:eval script may emit only development output under dist-eval/**, outside dist, prepack, and npm. Historical Core Reset evaluation contracts and receipts remain byte-identical. Capability Validation remains blocked because no valid blinded Native-vs-Graphify-vs-Madar runner exists; this phase cannot design one or restore retired --no-html behavior. No semantic, public-surface, budget, timeout, publication, release, or main-branch work is authorized.'
+      implementation_start_commit: 452ad84890c012392c5e6af613e8bfeb17de45db
+      implementation_started: true
+    implementation:
+      candidate_state: pre_pr_source_and_package_candidate
+      implementation_start_commit: 452ad84890c012392c5e6af613e8bfeb17de45db
+      production_typescript_files: 43
+      production_typescript_loc: 11956
+      production_files_added: 0
+      production_files_removed: 20
+      production_loc_added: 0
+      production_loc_removed: 4698
+      production_loc_net: -4698
+      surviving_production_typescript_edits: 0
+      moved_evaluation_typescript_files: 20
+      moved_evaluation_typescript_loc: 4698
+      npm_files: 102
+      npm_packed_bytes: 159759
+      npm_unpacked_bytes: 637602
+      npm_shasum: 6eee13af22e8c76113fe578e44d76a9e6d6fd899
+      npm_integrity: sha512-B/+Bjh9O2xlB0VsVtDn1xFsUnIPpd//GptyVCZa9mV3nASLg6LMDWoW0GNJx+sYG3GGDIJm5azAMfF+Hh9Yp0w==
+      dependencies_added: 0
+      dependencies_removed: 0
+      dependencies_upgraded: 0
+      package_lock_unchanged: true
+      exact_move_passed: true
+      evaluator_build_boundary_passed: true
+      audited_development_callers_rewired: 5
+      directly_importing_tests_rewired: true
+      production_build_isolation_passed: true
+      npm_package_isolation_passed: true
+      frozen_evidence_byte_identical: true
+      source_and_package_budgets_passed: true
+    notes: 'Owner-approved issue #606 activates only this governance contract from protected core-reset base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5 and unchanged src tree b99217c74f6b26daef4ecab12e1cde5f8fe60122. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes, and implementation started from that exact merge. The pre-PR candidate moves exactly 20 production TypeScript files / 4,698 LOC into tools/eval/lib/**, deletes every old src location, adds no production file or LOC, changes no surviving production TypeScript, and changes no dependency. It finishes at 43 production files / 11,956 LOC with +0 / -4,698 / net -4,698 and packs as 102 files / 159,759 packed bytes / 637,602 unpacked bytes, within the fixed ceilings. One tsconfig.eval.json plus one build:eval script emits only development output under dist-eval/**, outside dist, prepack, and npm. Historical Core Reset evaluation contracts and receipts remain byte-identical. This is not a completion claim: exact-head six-job CI, independent no-blocker review, honest CodeRabbit disposition, zero review threads, and merge remain pending. Capability Validation remains blocked because no valid blinded Native-vs-Graphify-vs-Madar runner exists; this phase cannot design one or restore retired --no-html behavior. No semantic, public-surface, budget, timeout, publication, release, or main-branch work is authorized.'
     exit_gate: Evaluation remains runnable but is excluded from dist, npm, and production imports.
 
   - id: non-core-graph-products

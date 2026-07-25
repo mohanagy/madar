@@ -54,14 +54,9 @@ function assertPackageMeasurement(record) {
     join(repositoryRoot, 'docs', 'core-reset', 'removal-manifest.yml'),
     'utf8',
   ))
-  const thinDelivery = manifest.items?.find((item) => item.id === 'thin-delivery')
-  const precedingPhase = manifest.items?.find((item) => item.id === 'evidence-path-query')
-  const implementation = thinDelivery?.implementation
-  const budget = thinDelivery?.npm_package_budget
-  const startup = JSON.parse(readFileSync(
-    join(repositoryRoot, 'docs', 'core-reset', 'evidence', 'thin-delivery-startup.json'),
-    'utf8',
-  ))
+  const evaluationTooling = manifest.items?.find((item) => item.id === 'evaluation-tooling')
+  const implementation = evaluationTooling?.implementation
+  const budget = evaluationTooling?.npm_package_budget
   const actual = {
     npm_files: requiredNumber(record.entryCount, 'npm pack entryCount'),
     npm_packed_bytes: requiredNumber(record.size, 'npm pack size'),
@@ -69,7 +64,7 @@ function assertPackageMeasurement(record) {
   }
   const recordedMeasurements = [
     ['current package receipt', manifest.current],
-    ['Thin Delivery implementation receipt', implementation],
+    ['Evaluation Tooling implementation receipt', implementation],
   ]
   for (const [label, receipt] of recordedMeasurements) {
     for (const [field, value] of Object.entries(actual)) {
@@ -81,43 +76,22 @@ function assertPackageMeasurement(record) {
     }
   }
   if (
-    startup.package?.files !== actual.npm_files
-    || startup.package?.packed_bytes !== actual.npm_packed_bytes
-    || startup.package?.unpacked_bytes !== actual.npm_unpacked_bytes
-    || startup.package?.shasum !== record.shasum
-    || startup.package?.integrity !== record.integrity
-  ) {
-    throw new Error('Thin Delivery startup package receipt is stale for the freshly packed artifact')
-  }
-
-  const precedingPackedBytes = requiredNumber(
-    precedingPhase?.completion?.npm_packed_bytes,
-    'evidence-path-query completion npm_packed_bytes',
-  )
-  const packedBytesDelta = actual.npm_packed_bytes - precedingPackedBytes
-  if (
-    requiredNumber(
-      implementation?.npm_packed_bytes_delta,
-      'Thin Delivery implementation npm_packed_bytes_delta',
-    ) !== packedBytesDelta
+    implementation?.npm_shasum !== record.shasum
+    || implementation?.npm_integrity !== record.integrity
   ) {
     throw new Error(
-      `Thin Delivery packed-byte delta is stale: recorded=${implementation?.npm_packed_bytes_delta}, `
-      + `freshly packed delta=${packedBytesDelta}`,
+      'Evaluation Tooling implementation artifact identity is stale for the freshly packed artifact',
     )
   }
   if (
-    actual.npm_files >= requiredNumber(budget?.files_less_than, 'Thin Delivery files_less_than')
+    actual.npm_files > requiredNumber(budget?.files_max, 'Evaluation Tooling files_max')
+    || actual.npm_packed_bytes
+      > requiredNumber(budget?.packed_bytes_max, 'Evaluation Tooling packed_bytes_max')
     || actual.npm_unpacked_bytes
-      >= requiredNumber(budget?.unpacked_bytes_less_than, 'Thin Delivery unpacked_bytes_less_than')
-    || packedBytesDelta
-      > requiredNumber(budget?.packed_bytes_delta_max, 'Thin Delivery packed_bytes_delta_max')
+      > requiredNumber(budget?.unpacked_bytes_max, 'Evaluation Tooling unpacked_bytes_max')
   ) {
     throw new Error(
-      `Fresh npm package exceeds Thin Delivery budgets: ${JSON.stringify({
-        ...actual,
-        npm_packed_bytes_delta: packedBytesDelta,
-      })}`,
+      `Fresh npm package exceeds Evaluation Tooling budgets: ${JSON.stringify(actual)}`,
     )
   }
   return actual

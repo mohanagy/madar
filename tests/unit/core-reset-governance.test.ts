@@ -212,6 +212,8 @@ const THIN_DELIVERY_ABSORBED_HANDLES = [
 const EVALUATION_TOOLING_BASE = '317dda89f2ea5c75e7626a26b104ceca1bd04ce5'
 const EVALUATION_TOOLING_BASE_TREE = 'd23753870a2d91d036d2b3663560ffbf260392a8'
 const EVALUATION_TOOLING_SRC_TREE = 'b99217c74f6b26daef4ecab12e1cde5f8fe60122'
+const EVALUATION_TOOLING_ACTIVATION_MERGE = '452ad84890c012392c5e6af613e8bfeb17de45db'
+const EVALUATION_TOOLING_ACTIVATION_TREE = 'ad282a07d772ed5ac942101c55ad53ac77a0252a'
 const EVALUATION_TOOLING_ISSUE = 'https://github.com/mohanagy/madar/issues/606'
 const EVALUATION_TOOLING_OWNER_APPROVAL =
   `${EVALUATION_TOOLING_ISSUE}#issuecomment-5078675449`
@@ -251,6 +253,34 @@ const EVALUATION_TOOLING_DEVELOPMENT_CALLERS = [
   'docs/benchmarks/performance/run.mjs',
   'docs/benchmarks/suite/isolation/run-isolated.sh',
   'tools/eval/core-reset/benchmark-suite.mjs',
+] as const
+const EVALUATION_TOOLING_DEVELOPMENT_CALLER_TARGETS = {
+  '.github/scripts/ci-eval-regression.mjs':
+    'dist-eval/tools/eval/lib/infrastructure/benchmark/questions.js',
+  'docs/benchmarks/2026-05-11-spi-vs-legacy/probe.mjs':
+    'dist-eval/tools/eval/lib/runtime/benchmark/probe-calibration.js',
+  'docs/benchmarks/performance/run.mjs':
+    'dist-eval/tools/eval/lib/infrastructure/benchmark/generate-performance.js',
+  'docs/benchmarks/suite/isolation/run-isolated.sh':
+    'dist-eval/tools/eval/lib/infrastructure/benchmark/suite.js',
+  'tools/eval/core-reset/benchmark-suite.mjs':
+    'dist-eval/tools/eval/lib/infrastructure/benchmark/suite.js',
+} as const
+const EVALUATION_TOOLING_DIRECT_TESTS = [
+  'tests/unit/benchmark-environment.test.ts',
+  'tests/unit/benchmark-probe-calibration.test.ts',
+  'tests/unit/benchmark-quality.test.ts',
+  'tests/unit/benchmark-runtime-proof.test.ts',
+  'tests/unit/benchmark-suite-isolation-docs.test.ts',
+  'tests/unit/benchmark-suite.test.ts',
+  'tests/unit/benchmark.test.ts',
+  'tests/unit/compare.test.ts',
+  'tests/unit/prompt-runner.test.ts',
+  'tests/unit/save-query-result.test.ts',
+  'tests/unit/share-safe-artifacts.test.ts',
+  'tests/unit/shell.test.ts',
+  'tests/unit/try-command.test.ts',
+  'tests/unit/workspace-copy.test.ts',
 ] as const
 const EVALUATION_TOOLING_ACTIVATION_FILES = [
   'docs/core-reset/removal-manifest.yml',
@@ -951,14 +981,14 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: EVALUATION_TOOLING_BASE,
       completed_phase_commit: THIN_DELIVERY_MERGE,
-      production_typescript_files: 63,
-      production_typescript_loc: 16_654,
+      production_typescript_files: 43,
+      production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
-      npm_files: 142,
-      npm_packed_bytes: 200_310,
-      npm_unpacked_bytes: 812_531,
+      production_loc_removed: 4_698,
+      production_loc_net: -4_698,
+      npm_files: 102,
+      npm_packed_bytes: 159_759,
+      npm_unpacked_bytes: 637_602,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'exact_implementation_source_and_package',
     })
@@ -1399,11 +1429,11 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: EVALUATION_TOOLING_BASE,
       completed_phase_commit: THIN_DELIVERY_MERGE,
-      production_typescript_files: 63,
-      production_typescript_loc: 16_654,
+      production_typescript_files: 43,
+      production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
+      production_loc_removed: 4_698,
+      production_loc_net: -4_698,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'exact_implementation_source_and_package',
     })
@@ -1652,7 +1682,12 @@ describe('core reset governance', () => {
       .toEqual([...THIN_DELIVERY_ABSORBED_PREDECESSORS].sort())
 
     const baseFiles = productionTypeScriptFilesAtCommit(THIN_DELIVERY_IMPLEMENTATION_START)
-    const inventory = sourceInventory()
+    const implementationFiles = productionTypeScriptFilesAtCommit(THIN_DELIVERY_MERGE)
+    const inventory = {
+      files: implementationFiles.length,
+      loc: logicalLocAtCommit(THIN_DELIVERY_MERGE, implementationFiles),
+      paths: implementationFiles,
+    }
     const baseFileSet = new Set(baseFiles)
     const currentFileSet = new Set(inventory.paths)
     expect(baseFiles).toHaveLength(73)
@@ -1660,7 +1695,7 @@ describe('core reset governance', () => {
     expect(logicalLocAtCommit(THIN_DELIVERY_IMPLEMENTATION_START, THIN_DELIVERY_PREDECESSORS))
       .toBe(7_277)
     expect(THIN_DELIVERY_REPLACEMENTS.every((path) => !baseFiles.includes(path))).toBe(true)
-    expect(inventory).toMatchObject({ files: 63, loc: 16_654, filesystemViolations: [] })
+    expect(inventory).toMatchObject({ files: 63, loc: 16_654 })
     const removedSinceImplementationStart = baseFiles.filter((path) => !currentFileSet.has(path)).sort()
     const addedSinceImplementationStart = inventory.paths
       .filter((path: string) => !baseFileSet.has(path))
@@ -1699,7 +1734,10 @@ describe('core reset governance', () => {
       ],
     })
 
-    const delta = productionSourceDelta(THIN_DELIVERY_IMPLEMENTATION_START)
+    const delta = productionSourceDeltaBetween(
+      THIN_DELIVERY_IMPLEMENTATION_START,
+      THIN_DELIVERY_MERGE,
+    )
     expect(delta).toEqual({ added: 2_248, removed: 7_281, net: -5_033 })
     expect(delta.added).toBeLessThanOrEqual(thinDelivery!.production_loc_budget!.added_max)
     expect(delta.removed).toBeGreaterThanOrEqual(thinDelivery!.production_loc_budget!.removed_min)
@@ -1711,8 +1749,10 @@ describe('core reset governance', () => {
     expect(inventory.loc).toBeLessThanOrEqual(thinDelivery!.final_source_budget!.loc_max)
 
     const predecessorSet = new Set<string>(THIN_DELIVERY_PREDECESSORS)
+    const implementationFileSet = new Set(inventory.paths)
     const survivingLegacyImporterEdges = inventory.paths.flatMap((importer: string) =>
-      importedRelativeTargets(importer, read(importer), predecessorSet)
+      importedProductionFilesAtCommit(THIN_DELIVERY_MERGE, importer, implementationFileSet)
+        .filter((target) => predecessorSet.has(target))
         .map((target) => `${importer}\0${target}`))
     expect(survivingLegacyImporterEdges).toEqual([])
 
@@ -1770,18 +1810,18 @@ describe('core reset governance', () => {
 
     const implementation = thinDelivery!.implementation!
     expect({
-      npm_files: manifest.current.npm_files,
-      npm_packed_bytes: manifest.current.npm_packed_bytes,
-      npm_unpacked_bytes: manifest.current.npm_unpacked_bytes,
-    }).toEqual({
       npm_files: implementation.npm_files,
       npm_packed_bytes: implementation.npm_packed_bytes,
       npm_unpacked_bytes: implementation.npm_unpacked_bytes,
+    }).toEqual({
+      npm_files: 142,
+      npm_packed_bytes: 200_310,
+      npm_unpacked_bytes: 812_531,
     })
-    expect(manifest.current.npm_files).toBeLessThan(thinDelivery!.npm_package_budget!.files_less_than)
-    expect(manifest.current.npm_unpacked_bytes)
+    expect(implementation.npm_files).toBeLessThan(thinDelivery!.npm_package_budget!.files_less_than)
+    expect(implementation.npm_unpacked_bytes)
       .toBeLessThan(thinDelivery!.npm_package_budget!.unpacked_bytes_less_than)
-    expect(manifest.current.npm_packed_bytes - THIN_DELIVERY_BASE_NPM_PACKED_BYTES)
+    expect(implementation.npm_packed_bytes - THIN_DELIVERY_BASE_NPM_PACKED_BYTES)
       .toBeLessThanOrEqual(thinDelivery!.npm_package_budget!.packed_bytes_delta_max)
 
     type StartupSample = {
@@ -2194,7 +2234,7 @@ describe('core reset governance', () => {
     expect(manifest.review.amendment).toContain('exact 16-file / 7,277-LOC thin-delivery deletion contract')
   })
 
-  it('activates the exact Evaluation Tooling Isolation contract without changing production', () => {
+  it('records the exact Evaluation Tooling activation and pre-PR implementation candidate', () => {
     const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
       review: { disposition_changes: number; amendment: string }
       current: {
@@ -2236,14 +2276,14 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: EVALUATION_TOOLING_BASE,
       completed_phase_commit: THIN_DELIVERY_MERGE,
-      production_typescript_files: 63,
-      production_typescript_loc: 16_654,
+      production_typescript_files: 43,
+      production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
-      npm_files: 142,
-      npm_packed_bytes: 200_310,
-      npm_unpacked_bytes: 812_531,
+      production_loc_removed: 4_698,
+      production_loc_net: -4_698,
+      npm_files: 102,
+      npm_packed_bytes: 159_759,
+      npm_unpacked_bytes: 637_602,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual(['evaluation-tooling'])
@@ -2350,7 +2390,40 @@ describe('core reset governance', () => {
         protected_base: EVALUATION_TOOLING_BASE,
         protected_src_tree: EVALUATION_TOOLING_SRC_TREE,
         target_branch: 'core-reset',
-        implementation_started: false,
+        implementation_start_commit: EVALUATION_TOOLING_ACTIVATION_MERGE,
+        implementation_started: true,
+      },
+      implementation: {
+        candidate_state: 'pre_pr_source_and_package_candidate',
+        implementation_start_commit: EVALUATION_TOOLING_ACTIVATION_MERGE,
+        production_typescript_files: 43,
+        production_typescript_loc: 11_956,
+        production_files_added: 0,
+        production_files_removed: 20,
+        production_loc_added: 0,
+        production_loc_removed: 4_698,
+        production_loc_net: -4_698,
+        surviving_production_typescript_edits: 0,
+        moved_evaluation_typescript_files: 20,
+        moved_evaluation_typescript_loc: 4_698,
+        npm_files: 102,
+        npm_packed_bytes: 159_759,
+        npm_unpacked_bytes: 637_602,
+        npm_shasum: '6eee13af22e8c76113fe578e44d76a9e6d6fd899',
+        npm_integrity:
+          'sha512-B/+Bjh9O2xlB0VsVtDn1xFsUnIPpd//GptyVCZa9mV3nASLg6LMDWoW0GNJx+sYG3GGDIJm5azAMfF+Hh9Yp0w==',
+        dependencies_added: 0,
+        dependencies_removed: 0,
+        dependencies_upgraded: 0,
+        package_lock_unchanged: true,
+        exact_move_passed: true,
+        evaluator_build_boundary_passed: true,
+        audited_development_callers_rewired: 5,
+        directly_importing_tests_rewired: true,
+        production_build_isolation_passed: true,
+        npm_package_isolation_passed: true,
+        frozen_evidence_byte_identical: true,
+        source_and_package_budgets_passed: true,
       },
     })
 
@@ -2380,9 +2453,14 @@ describe('core reset governance', () => {
     expect(edgeListSha256(edges.surviving))
       .toBe('01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b')
 
+    expect(execFileSync(
+      git,
+      ['rev-parse', `${EVALUATION_TOOLING_ACTIVATION_MERGE}^{tree}`],
+      { encoding: 'utf8' },
+    ).trim()).toBe(EVALUATION_TOOLING_ACTIVATION_TREE)
     const activationDiff = execFileSync(
       git,
-      ['diff', '--name-only', EVALUATION_TOOLING_BASE, '--'],
+      ['diff', '--name-only', EVALUATION_TOOLING_BASE, EVALUATION_TOOLING_ACTIVATION_MERGE, '--'],
       { encoding: 'utf8' },
     ).trim().split('\n').filter(Boolean).sort()
     expect(activationDiff).toEqual([...EVALUATION_TOOLING_ACTIVATION_FILES].sort())
@@ -2390,6 +2468,7 @@ describe('core reset governance', () => {
       'diff',
       '--exit-code',
       EVALUATION_TOOLING_BASE,
+      EVALUATION_TOOLING_ACTIVATION_MERGE,
       '--',
       'src',
       'package.json',
@@ -2399,7 +2478,142 @@ describe('core reset governance', () => {
     ])).not.toThrow()
     expect(() => execFileSync(
       git,
-      ['diff', '--exit-code', EVALUATION_TOOLING_BASE, '--', ...EVALUATION_TOOLING_FROZEN_EVIDENCE],
+      [
+        'diff',
+        '--exit-code',
+        EVALUATION_TOOLING_BASE,
+        EVALUATION_TOOLING_ACTIVATION_MERGE,
+        '--',
+        ...EVALUATION_TOOLING_FROZEN_EVIDENCE,
+      ],
+    )).not.toThrow()
+
+    const evaluatorDestinations = EVALUATION_TOOLING_PREDECESSORS
+      .map((path) => `tools/eval/lib/${path.slice('src/'.length)}`)
+    const productionFiles = productionTypeScriptFiles().sort()
+    const evaluatorFiles = productionTypeScriptFiles('tools/eval/lib').sort()
+    expect(sourceInventory()).toMatchObject({
+      files: 43,
+      loc: 11_956,
+      filesystemViolations: [],
+    })
+    expect(evaluatorFiles).toEqual([...evaluatorDestinations].sort())
+    expect(evaluatorFiles.reduce((total, path) => {
+      const source = read(path)
+      const lineFeeds = source.match(/\n/g)?.length ?? 0
+      return total + lineFeeds + (source.length > 0 && !source.endsWith('\n') ? 1 : 0)
+    }, 0)).toBe(4_698)
+
+    const changedProduction = execFileSync(
+      git,
+      ['diff', '--name-only', EVALUATION_TOOLING_ACTIVATION_MERGE, '--', 'src'],
+      { encoding: 'utf8' },
+    ).trim().split('\n').filter(Boolean).sort()
+    expect(changedProduction).toEqual([...EVALUATION_TOOLING_PREDECESSORS].sort())
+    expect(productionSourceDelta(EVALUATION_TOOLING_ACTIVATION_MERGE))
+      .toEqual({ added: 0, removed: 4_698, net: -4_698 })
+    for (const predecessor of EVALUATION_TOOLING_PREDECESSORS) {
+      expect(existsSync(resolve(predecessor)), `${predecessor} must be absent`).toBe(false)
+    }
+    for (const destination of evaluatorDestinations) {
+      expect(existsSync(resolve(destination)), `${destination} must exist`).toBe(true)
+    }
+    expect(productionFiles).toHaveLength(43)
+
+    const evalConfig = JSON.parse(read('tsconfig.eval.json')) as Record<string, unknown>
+    expect(evalConfig).toEqual({
+      extends: './tsconfig.json',
+      compilerOptions: {
+        types: ['node'],
+        rootDir: '.',
+        outDir: 'dist-eval',
+        noEmitOnError: true,
+      },
+      include: ['tools/eval/lib/**/*.ts'],
+      exclude: ['tests/**/*.ts', 'dist', 'dist-eval', 'vitest.config.ts'],
+    })
+    expect(() => execFileSync(git, [
+      'diff',
+      '--exit-code',
+      EVALUATION_TOOLING_ACTIVATION_MERGE,
+      '--',
+      'tsconfig.json',
+      'tsconfig.build.json',
+    ])).not.toThrow()
+    expect(read('.gitignore').split(/\r?\n/)).toContain('dist-eval/')
+
+    type EvaluationPackage = {
+      scripts: Record<string, string>
+      files: string[]
+      dependencies: Record<string, string>
+      devDependencies: Record<string, string>
+      optionalDependencies?: Record<string, string>
+      peerDependencies?: Record<string, string>
+    }
+    const activationPackage = JSON.parse(execFileSync(
+      git,
+      ['show', `${EVALUATION_TOOLING_ACTIVATION_MERGE}:package.json`],
+      { encoding: 'utf8' },
+    )) as EvaluationPackage
+    const currentPackage = JSON.parse(read('package.json')) as EvaluationPackage
+    expect(currentPackage).toEqual({
+      ...activationPackage,
+      scripts: {
+        ...activationPackage.scripts,
+        'build:eval': 'tsc -p tsconfig.eval.json',
+      },
+    })
+    expect(currentPackage.files).not.toContain('dist-eval/')
+    expect(currentPackage.scripts.prepack).not.toContain('build:eval')
+    expect(read('package-lock.json')).toBe(execFileSync(
+      git,
+      ['show', `${EVALUATION_TOOLING_ACTIVATION_MERGE}:package-lock.json`],
+      { encoding: 'utf8' },
+    ))
+
+    const rewiredCallers = execFileSync(
+      git,
+      [
+        'diff',
+        '--name-only',
+        EVALUATION_TOOLING_ACTIVATION_MERGE,
+        '--',
+        ...EVALUATION_TOOLING_DEVELOPMENT_CALLERS,
+      ],
+      { encoding: 'utf8' },
+    ).trim().split('\n').filter(Boolean).sort()
+    expect(rewiredCallers).toEqual([...EVALUATION_TOOLING_DEVELOPMENT_CALLERS].sort())
+    for (const [caller, target] of Object.entries(EVALUATION_TOOLING_DEVELOPMENT_CALLER_TARGETS)) {
+      expect(read(caller), `${caller} must use the isolated evaluator output`).toContain(target)
+    }
+    for (const testPath of EVALUATION_TOOLING_DIRECT_TESTS) {
+      expect(read(testPath), `${testPath} must use the isolated evaluator source`).toContain(
+        'tools/eval/lib/',
+      )
+    }
+    expect(read('.github/workflows/ci.yml')).toContain('run: npm run build:eval')
+
+    expect(() => execFileSync(
+      git,
+      [
+        'diff',
+        '--exit-code',
+        EVALUATION_TOOLING_ACTIVATION_MERGE,
+        '--',
+        'docs/core-reset/evidence',
+        'tools/eval/core-reset/contracts',
+        'tools/eval/core-reset/schemas',
+      ],
+    )).not.toThrow()
+    expect(() => execFileSync(
+      git,
+      [
+        'diff',
+        '--exit-code',
+        EVALUATION_TOOLING_ACTIVATION_MERGE,
+        '--',
+        ...EVALUATION_TOOLING_FROZEN_EVIDENCE,
+      ],
     )).not.toThrow()
   })
 
@@ -2781,14 +2995,14 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: EVALUATION_TOOLING_BASE,
       completed_phase_commit: THIN_DELIVERY_MERGE,
-      production_typescript_files: 63,
-      production_typescript_loc: 16_654,
+      production_typescript_files: 43,
+      production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
-      npm_files: 142,
-      npm_packed_bytes: 200_310,
-      npm_unpacked_bytes: 812_531,
+      production_loc_removed: 4_698,
+      production_loc_net: -4_698,
+      npm_files: 102,
+      npm_packed_bytes: 159_759,
+      npm_unpacked_bytes: 637_602,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'exact_implementation_source_and_package',
     })

@@ -144,13 +144,13 @@ export async function main(args = process.argv.slice(2)) {
     return 1
   }
 
-  const runtimeRoot = process.env.MADAR_BENCH_RUNTIME_ROOT?.trim()
-  if (!runtimeRoot) {
-    throw new Error('error: MADAR_BENCH_RUNTIME_ROOT is required')
+  const evaluatorRoot = process.env.MADAR_BENCH_EVALUATOR_ROOT?.trim()
+  if (!evaluatorRoot) {
+    throw new Error('error: MADAR_BENCH_EVALUATOR_ROOT is required')
   }
   const suitePath = resolve(
-    runtimeRoot,
-    'dist/src/infrastructure/benchmark/suite.js',
+    evaluatorRoot,
+    'dist-eval/tools/eval/lib/infrastructure/benchmark/suite.js',
   )
   if (!existsSync(suitePath)) {
     throw new Error(`error: missing benchmark suite module at ${suitePath}`)
