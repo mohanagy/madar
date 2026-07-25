@@ -76,7 +76,7 @@ const cleanProgram =
 const containmentPolicyId = "darwin-sandbox-exec-node-permissions-v1"
 export const generateCommand = Object.freeze([
   "node",
-  "dist/src/cli/bin.js",
+  "dist/src/adapters/cli/bin.js",
   "generate",
   ".",
 ])
@@ -1512,7 +1512,7 @@ function buildGraph(
     git(checkout, "status", "--porcelain=v1", "--untracked-files=all") === "",
     `${repository.id} checkout changed before graph generation`,
   )
-  const cliPath = resolve(candidateRuntimeRoot, "dist/src/cli/bin.js")
+  const cliPath = resolve(candidateRuntimeRoot, "dist/src/adapters/cli/bin.js")
   const outputRoot = join(generationGraphRoot, "out")
   mkdirSync(outputRoot, { recursive: true })
   const started = performance.now()

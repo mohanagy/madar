@@ -1,31 +1,40 @@
 # Agent compatibility
 
-All MCP-capable integrations expose one tool: `retrieve(question, budget?)`. There are no tool profiles.
+All MCP-capable integrations receive the same surface: exactly one `retrieve(question, budget?)` tool, the tools capability, and no MCP resources or prompts.
 
-## Project-local installers
+## Supported installers
 
-| Agent | Command | Managed files | Live MCP | Verification |
-| --- | --- | --- | --- | --- |
-| Claude Code | `madar claude install` | `CLAUDE.md`, `.claude/settings.json`, `.claude/madar-user-prompt-submit.cjs`, `.mcp.json` | Yes | `madar doctor`, then `/mcp` |
-| Cursor | `madar cursor install` | `.cursor/rules/madar.mdc`, `.cursor/mcp.json` | Yes | `madar doctor`, then inspect MCP settings |
-| GitHub Copilot CLI | `madar copilot install` | home skill, `.vscode/mcp.json` | Yes | `madar doctor`, then inspect MCP settings |
-| Gemini CLI | `madar gemini install` | home skill, `GEMINI.md`, `.gemini/settings.json` | Yes | `madar doctor`, then inspect MCP settings |
-| Codex CLI | `madar codex install` | `AGENTS.md`, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, marked block in `~/.codex/config.toml` | Yes | `madar status`, `/hooks`, `/mcp` or `codex mcp list` |
-| OpenCode | `madar opencode install` | `AGENTS.md`, `.opencode/plugins/madar.js`, `opencode.json` or `opencode.jsonc` | Yes | `madar doctor`, then inspect MCP settings |
-| Aider | `madar aider install` | `AGENTS.md` | No | inspect `AGENTS.md`; use `madar query` |
-| Claw | `madar claw install` | `AGENTS.md` | No | inspect `AGENTS.md`; use `madar query` |
-| Factory Droid | `madar droid install` | `AGENTS.md` | No | inspect `AGENTS.md`; use `madar query` |
-| Trae | `madar trae install` | `AGENTS.md` | No | inspect `AGENTS.md`; use `madar query` |
-| Trae CN | `madar trae-cn install` | `AGENTS.md` | No | inspect `AGENTS.md`; use `madar query` |
+| Client | Command | Managed surface | Verification |
+| --- | --- | --- | --- |
+| Claude Code | `madar install claude` | Supported per-project local MCP registration outside the repository | `madar doctor`, then inspect the client's MCP list |
+| Codex CLI | `madar install codex` | Workspace-hashed block in `$CODEX_HOME/config.toml` or `~/.codex/config.toml` | `madar status`, then `/mcp` or `codex mcp list` |
 
-Prompt hooks and instruction files provide guidance, not enforcement. `doctor` and `status` inspect on-disk state; they cannot prove that a running host trusted a hook or activated a server.
+Fresh install, idempotent reinstall, and uninstall change zero repository bytes. No installer creates a tracked prompt, instruction, hook, skill, plugin, routing profile, classifier, or project-local MCP configuration.
 
-## Home-skill aliases
+Uninstall with:
 
-`madar install --platform <name>` installs a bundled home skill for supported platforms. It does not replace the project-local installer above. Use the dedicated project command when you want repository instructions, hooks, or MCP wiring.
+```bash
+madar install claude --uninstall
+madar install codex --uninstall
+```
 
-## Worktrees
+The Codex block contains exact `command = "madar"`, `args = ["mcp"]`, workspace `cwd`, `startup_timeout_sec = 180`, and `tool_timeout_sec = 60`. Its server name is derived from the workspace path, so repositories and linked worktrees coexist and uninstall independently.
 
-Run the installer from the linked worktree where the agent will operate. Madar resolves that worktree's graph through the MCP process working directory and keeps generated artifacts isolated from sibling worktrees.
+## Registry or manual clients
 
-For Codex, the installer owns only the marked workspace block in `~/.codex/config.toml` or `$CODEX_HOME/config.toml`. Reinstalling or uninstalling preserves other workspace registrations and user-managed configuration.
+Cursor, GitHub Copilot, Gemini, OpenCode, Aider, and other clients are not direct installer targets. Where the host supports the public MCP Registry, use the `@lubab/madar` entry. Otherwise register:
+
+```text
+command: madar
+arguments: ["mcp"]
+working directory: exact repository or linked worktree
+transport: stdio
+```
+
+`doctor` and `status` inspect only Claude Code and Codex registrations. They report on-disk state; they do not prove that a running client initialized, listed, or called the tool.
+
+## Worktrees and legacy migration
+
+Run the installer from the exact linked worktree where the client will operate. Madar resolves that worktree's graph through the MCP process working directory and keeps it isolated from sibling worktrees.
+
+Legacy cleanup is deliberately narrow. It may remove only enumerated, byte-recognized Madar-owned content while preserving unrelated user content, comments, formatting, permissions, TOML constructs, and other MCP servers.

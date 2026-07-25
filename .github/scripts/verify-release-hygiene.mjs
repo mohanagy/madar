@@ -13,7 +13,6 @@ const HOMEPAGE_URL = `${REPOSITORY_WEB_URL}#readme`
 const MCP_SERVER_NAME = 'io.github.mohanagy/madar'
 const RELEASE_BRANCHED_README_PATHS = new Set([
   'docs/team-enterprise-offer.md',
-  'docs/telemetry.md',
 ])
 
 function loadJson(path) {

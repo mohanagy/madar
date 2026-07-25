@@ -14,7 +14,7 @@ source scan
 
 `.js`, `.jsx`, `.ts`, and `.tsx` files enter one compiler-backed index. Other languages and non-code formats add no graph facts. `graph.json` is the authoritative atomic artifact; reports and manifests are derived diagnostics.
 
-`madar generate . --update`, `madar watch`, and MCP auto-refresh use the same canonical reconcile.
+`madar generate . --update`, `madar generate . --watch`, and `madar mcp` use the same canonical reconcile. There is no standalone updater, incremental index, or fallback generation engine.
 
 ## Retrieval
 
@@ -30,6 +30,8 @@ question
 The retrieval pipeline has no profile, planner, recovery engine, semantic reranker, session state, or task-specific product wrapper.
 
 Its hard output limits are 12 files, 25 snippets, one closure pass, and 4,000 serialized tokens.
+
+CLI `query`, direct application use, and MCP `retrieve` serialize byte-identical results for the same accepted graph and normalized request. MCP advertises only the tools capability, exactly one tool, and no resources or prompts.
 
 ## Correctness boundary
 

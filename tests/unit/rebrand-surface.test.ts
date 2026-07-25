@@ -1,52 +1,25 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
-
-import { formatHelp } from '../../src/cli/main.js'
-import {
-  parseCompareArgs,
-  parseDoctorArgs,
-  parseQueryArgs,
-  parseServeArgs,
-} from '../../src/cli/parser.js'
-import {
-  resolveMadarOutputDirectory,
-  resolveWorkspaceGraphPath,
-} from '../../src/shared/workspace.js'
 
 function readText(path: string): string {
   return readFileSync(resolve(path), 'utf8')
 }
 
 const LEGACY_BRAND = ['g', 'r', 'a', 'p', 'h', 'i', 'f', 'y'].join('')
-const LEGACY_OUT_DIR = `${LEGACY_BRAND}-out`
-const RENAME_NOTE_HEADING = '## Rename and migration'
 
-function stripRenameNote(text: string): string {
-  const headingIndex = text.indexOf(RENAME_NOTE_HEADING)
-  if (headingIndex === -1) {
-    return text
-  }
-
-  const nextHeadingIndex = text.indexOf('\n## ', headingIndex + RENAME_NOTE_HEADING.length)
-  if (nextHeadingIndex === -1) {
-    return text.slice(0, headingIndex)
-  }
-
-  return `${text.slice(0, headingIndex)}${text.slice(nextHeadingIndex + 1)}`
-}
-
-describe('rebrand surface', () => {
-  it('keeps only the madar command and removes compatibility packaging scripts', () => {
+describe('thin delivery package surface', () => {
+  it('ships only the Madar binary at the lazy adapter entrypoint', () => {
     const manifest = JSON.parse(readText('package.json')) as {
+      name?: string
       bin?: Record<string, string>
       scripts?: Record<string, string>
-      postinstall?: string
     }
 
+    expect(manifest.name).toBe('@lubab/madar')
     expect(manifest.bin).toEqual({
-      madar: 'dist/src/cli/bin.js',
+      madar: 'dist/src/adapters/cli/bin.js',
     })
     expect(Object.keys(manifest.scripts ?? {})).not.toEqual(
       expect.arrayContaining([
@@ -56,67 +29,66 @@ describe('rebrand surface', () => {
         'compat:publish:public',
       ]),
     )
-    expect(existsSync(resolve('src/infrastructure/compat-package.ts'))).toBe(false)
-    expect(existsSync(resolve('scripts/prepare-legacy-compat-package.mjs'))).toBe(false)
     expect(JSON.stringify(manifest)).not.toContain(LEGACY_BRAND)
   })
 
-  it('uses madar and out in surviving command defaults', () => {
-    const help = formatHelp()
+  it('removes predecessor CLI and stdio modules instead of retaining facades', () => {
+    const removedPaths = [
+      'src/cli/bin.ts',
+      'src/cli/main.ts',
+      'src/cli/parser.ts',
+      'src/runtime/stdio-server.ts',
+      'src/runtime/stdio/definitions.ts',
+      'src/runtime/stdio/resources.ts',
+      'src/runtime/stdio/tools.ts',
+    ]
 
-    expect(help).toContain('Usage: madar <command>')
-    expect(help).toContain('default out/graph.json')
-    expect(help).toContain('query "<question>"')
-    expect(help).toContain('compare [question]')
-    expect(help).toContain('doctor [graph.json]')
-    expect(help).toContain('serve [graph.json]')
-    expect(help).not.toContain('summary [graph.json]')
-    expect(help).not.toContain('diff [graph.json]')
-    expect(help).not.toContain('federate [graph.json]')
-    expect(help).not.toContain('--cluster-only')
-    expect(help).not.toContain('add <url>')
-    expect(help).not.toContain(LEGACY_BRAND)
-    expect(help).not.toContain(LEGACY_OUT_DIR)
-
-    expect(parseQueryArgs(['how does auth work']).graphPath).toBe('out/graph.json')
-    expect(parseCompareArgs([
-      'how does login work',
-      '--exec',
-      'claude -p "$(cat {prompt_file})"',
-    ])).toMatchObject({
-      graphPath: resolveWorkspaceGraphPath('out/graph.json'),
-      outputDir: join(resolveMadarOutputDirectory(), 'compare'),
-    })
-    expect(parseDoctorArgs([]).graphPath).toBe('out/graph.json')
-    expect(parseServeArgs([]).graphPath).toBe('out/graph.json')
+    for (const path of removedPaths) {
+      expect(existsSync(resolve(path)), path).toBe(false)
+    }
+    expect(existsSync(resolve('src/adapters/cli/bin.ts'))).toBe(true)
+    expect(existsSync(resolve('src/adapters/cli/main.ts'))).toBe(true)
+    expect(existsSync(resolve('src/adapters/mcp/protocol.ts'))).toBe(true)
+    expect(existsSync(resolve('src/adapters/mcp/server.ts'))).toBe(true)
   })
 
-  it('documents the canonical Madar rename path for users arriving from legacy links', () => {
-    const readme = readText('README.md')
-    const cliReference = readText('docs/reference/cli-and-mcp.md')
+  it('keeps the lightweight bin free of retired command and transport aliases', () => {
+    const source = readText('src/adapters/cli/bin.ts')
+    const retiredCommands = [
+      'watch',
+      'serve',
+      'try',
+      'benchmark',
+      'bench:suite',
+      'eval',
+      'compare',
+      'hook',
+      'telemetry',
+    ]
+    const retiredFlags = [
+      '--stdio',
+      '--mcp',
+      '--auto-refresh',
+      '--neo4j-',
+    ]
 
-    expect(readme).not.toContain(RENAME_NOTE_HEADING)
-    expect(cliReference).toContain('older `graphify-ts` links or listings')
-    expect(cliReference).toContain('`@lubab/madar`')
-    expect(cliReference).toContain('`https://github.com/mohanagy/madar`')
-    expect(stripRenameNote(readme)).not.toContain(LEGACY_BRAND)
-  })
-
-  it('removes legacy branding from the main docs', () => {
-    const readme = stripRenameNote(readText('README.md'))
-    const gettingStarted = readText('docs/tutorials/getting-started.md')
-    const capabilityMatrix = readText('docs/language-capability-matrix.md')
-    const releaseDoc = readText('docs/release.md')
-
-    expect(readme).not.toContain(LEGACY_BRAND)
-    expect(readme).not.toContain(LEGACY_OUT_DIR)
-    expect(readme).not.toContain('## Credit')
-    expect(readme).not.toContain('Safi Shamsi')
-    expect(readme).not.toContain('original `madar`')
-    expect(gettingStarted).not.toContain(LEGACY_BRAND)
-    expect(gettingStarted).not.toContain(LEGACY_OUT_DIR)
-    expect(capabilityMatrix).not.toContain('madar add <url>')
-    expect(releaseDoc).not.toContain(LEGACY_BRAND)
-    expect(releaseDoc).not.toContain(LEGACY_OUT_DIR)
+    for (const command of retiredCommands) {
+      expect(source, command).not.toMatch(
+        new RegExp(`\\n {2}${command.replace(':', '\\:')}(?:\\s|$)`),
+      )
+    }
+    for (const flag of retiredFlags) {
+      expect(source, flag).not.toContain(flag)
+    }
+    for (const command of [
+      'generate',
+      'query',
+      'status',
+      'doctor',
+      'install',
+      'mcp',
+    ]) {
+      expect(source).toContain(command)
+    }
   })
 })

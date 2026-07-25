@@ -2,6 +2,8 @@
 
 Use this checklist when preparing a new `madar` release. It is intentionally manual: the goal is to keep each version easy to verify without hiding the release steps behind automation.
 
+> Thin Delivery implementation under Core Reset issue #602 is not release authorization. Do not publish npm, create a GitHub Release, or publish MCP Registry metadata from that phase; this checklist applies only after a separately authorized release begins.
+
 ## 1. Prepare the release commit
 
 1. Update the package version with `npm version <patch|minor|major>`.
@@ -37,17 +39,20 @@ These checks verify that the published surface still matches the docs and change
 ```bash
 madar --version
 madar generate .
-madar claude install
-madar codex install
+madar install claude
+madar install codex
+madar query "trace the release path"
 ```
 
 Recommended follow-up checks:
 
 - confirm `madar --version` prints the version you are about to publish
 - confirm `madar generate .` completes and refreshes `out/graph.json`
-- confirm install commands write the expected project files and instructions
-- for Codex, confirm `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and this workspace's block in `~/.codex/config.toml` exist, and that it contains `startup_timeout_sec = 180` plus `tool_timeout_sec = 60`; only in a trusted repository, restart or open a new session, use `/hooks` to review/trust the project hook, then use `/mcp` or `codex mcp list` to verify the local MCP server
-- uninstall any agent profile you enabled during the smoke test so the workspace returns to a clean state
+- confirm fresh install, idempotent reinstall, and uninstall produce zero repository-byte changes
+- confirm Claude Code has a supported per-project local registration outside the repository
+- for Codex, confirm the workspace-hashed block in `~/.codex/config.toml` or `$CODEX_HOME/config.toml` has exact command `madar`, args `["mcp"]`, workspace `cwd`, `startup_timeout_sec = 180`, and `tool_timeout_sec = 60`
+- confirm initialize plus `tools/list` advertises only the tools capability and exactly one `retrieve` tool, with no resources or prompts
+- uninstall with `madar install claude --uninstall` and `madar install codex --uninstall`
 
 ## 4. Publish and tag
 
@@ -73,8 +78,8 @@ After the package is live:
 ```bash
 madar --version
 madar generate .
-madar claude install
-madar codex install
+madar install claude
+madar install codex
 ```
 
 3. Verify the README, changelog, and install docs still describe the released behavior accurately.

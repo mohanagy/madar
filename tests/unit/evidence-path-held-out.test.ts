@@ -17,7 +17,7 @@ import addFormats from "ajv-formats"
 import { countTokens } from "gpt-tokenizer/encoding/cl100k_base"
 import { describe, expect, it } from "vitest"
 
-import { parseGenerateArgs } from "../../src/cli/parser.js"
+import { parseGenerateArgs } from "../../src/adapters/cli/main.js"
 
 // Development-only JavaScript is deliberately outside the production build.
 // @ts-expect-error -- the evaluator is not part of the published declaration surface
@@ -1761,8 +1761,11 @@ process.stdout.write(JSON.stringify({
       "containment_policy_id",
     )
     expect(
-      schema.properties.protocol.properties.candidate_generate_command.const,
-    ).toEqual(generateCommand)
+      schema.properties.protocol.properties.candidate_generate_command.oneOf,
+    ).toEqual([
+      { const: ["node", "dist/src/cli/bin.js", "generate", "."] },
+      { const: generateCommand },
+    ])
     expect(() => parseGenerateArgs(generateCommand.slice(3))).not.toThrow()
     expect(schema.properties.protocol.properties).not.toHaveProperty(
       "candidate_filesystem_policy",

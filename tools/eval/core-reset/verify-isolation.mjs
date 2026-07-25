@@ -144,6 +144,10 @@ assert(
   `npm package contents embed load-bearing evaluation evidence:\n${packageMeasurement.forbidden_content.join("\n")}`,
 )
 assert(
+  packageMeasurement.target_passed,
+  `npm package exceeds the Core Reset package targets: ${packageMeasurement.file_count} files / ${packageMeasurement.unpacked_bytes} unpacked bytes`,
+)
+assert(
   !existsSync(resolve(repositoryRoot, "dist", "tools")),
   "build emitted dist/tools",
 )

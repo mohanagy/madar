@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -6,6 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import type { NativeAgentCompareReport } from '../../src/infrastructure/compare.js'
 import type { GenerateIndexResult } from '../../src/application/generate-index.js'
+import { captureBenchmarkEnvironment } from '../../src/infrastructure/benchmark/environment.js'
 import {
   loadBenchmarkSuiteRepos,
   loadBenchmarkSuiteTasks,
@@ -560,12 +562,17 @@ describe('canonical benchmark planning', () => {
       generateGraph: (rootPath = '.') => {
         generatedRoots.push(rootPath)
         expect(rootPath).not.toBe(repoPath)
-        expect(existsSync(join(rootPath, 'CLAUDE.md'))).toBe(true)
-        expect(existsSync(join(rootPath, '.claude', 'settings.json'))).toBe(true)
+        const fixtureHash = (relativePath: string): string => createHash('sha256')
+          .update(readFileSync(join(rootPath, relativePath)))
+          .digest('hex')
+        expect(fixtureHash('CLAUDE.md')).toBe('729ce56a7c59791da8720f3d30d9a580a12d0115072afbc9815e8296f6b8b386')
+        expect(fixtureHash(join('.claude', 'settings.json'))).toBe('17489105808b2abcff198fdf066a1ceb9bd177ef3ac704d3b6f35e02455807cc')
+        expect(fixtureHash(join('.claude', 'madar-user-prompt-submit.cjs'))).toBe('768daf1e1e9fa851c38d771650d1257a392bed1bb89af8259613319beeed1826')
         const config = JSON.parse(readFileSync(join(rootPath, '.mcp.json'), 'utf8')) as {
-          mcpServers?: { madar?: { command?: string; env?: Record<string, string> } }
+          mcpServers?: { madar?: { command?: string; args?: string[]; env?: Record<string, string> } }
         }
         expect(config.mcpServers?.madar?.command).toBe('madar')
+        expect(config.mcpServers?.madar?.args).toEqual(['mcp'])
         expect(config.mcpServers?.madar?.env).not.toHaveProperty('MADAR_TOOL_PROFILE')
         expect(config.mcpServers?.madar?.env?.PATH ?? config.mcpServers?.madar?.env?.Path).toContain(join(rootPath, '.claude', 'bin'))
         return generateResult(rootPath)
@@ -581,7 +588,62 @@ describe('canonical benchmark planning', () => {
     expect(new Set(generatedRoots).size).toBe(2)
     expect(existsSync(join(repoPath, 'CLAUDE.md'))).toBe(false)
     expect(existsSync(join(repoPath, '.mcp.json'))).toBe(false)
+    expect(existsSync(join(repoPath, '.claude'))).toBe(false)
     expect(result.summary?.cells[0]).toEqual(expect.objectContaining({ status: 'completed' }))
     expect(result.summary?.cells_skipped_for_install).toBe(0)
+  })
+
+  it('matches the frozen isolation environment with the suite-managed workspace', async () => {
+    const root = tempRoot()
+    const repoPath = createFixtureRepo(join(root, 'repo'))
+    const claudeConfigDir = join(root, 'profile', '.claude')
+    mkdirSync(claudeConfigDir, { recursive: true })
+    writeFileSync(
+      join(claudeConfigDir, 'CLAUDE.md'),
+      readFileSync(resolve('docs/benchmarks/suite/isolation/.claude/CLAUDE.md')),
+    )
+    writeFileSync(join(claudeConfigDir, 'settings.json'), '{"hooks":{}}\n', 'utf8')
+    const previousIsolation = process.env.MADAR_BENCH_ISOLATION
+    process.env.MADAR_BENCH_ISOLATION = '1'
+
+    try {
+      const result = await runBenchmarkSuite({
+        repo: 'typescript-service',
+        task: 'explain-runtime',
+        mode: 'warm',
+        trials: 1,
+        outputDir: join(root, 'results'),
+        execTemplate: 'mock-runner',
+        dryRun: false,
+        yes: true,
+      }, {
+        repos: [readyRepo({ source: { kind: 'path', path: repoPath } })],
+        tasks: [readyTask()],
+        expectedEnvironment: JSON.parse(readFileSync(
+          resolve('docs/benchmarks/suite/isolation/environment.json'),
+          'utf8',
+        )),
+        generateGraph: (rootPath = '.') => generateResult(rootPath),
+        captureBenchmarkEnvironment: ({ projectRoot }) => captureBenchmarkEnvironment({
+          projectRoot,
+          claudeConfigDir,
+          getClaudeCodeVersion: () => null,
+        }),
+        executeNativeAgentCompare: async (input) => compareResult({
+          question: input.question ?? 'unknown',
+          graphPath: input.graphPath,
+          outputDir: input.outputDir,
+        }),
+      })
+
+      expect(result.summary?.cells[0]).toEqual(expect.objectContaining({
+        status: 'completed',
+        isolation: true,
+      }))
+      expect(result.summary?.cells_skipped_for_env_drift).toBe(0)
+    } finally {
+      if (previousIsolation === undefined) delete process.env.MADAR_BENCH_ISOLATION
+      else process.env.MADAR_BENCH_ISOLATION = previousIsolation
+    }
   })
 })

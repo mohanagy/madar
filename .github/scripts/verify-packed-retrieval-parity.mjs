@@ -1,107 +1,200 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
-  chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { gunzipSync } from 'node:zlib'
+
+import { parse } from 'yaml'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(scriptDirectory, '..', '..')
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
-function readTarString(buffer, start, length) {
-  const nul = buffer.indexOf(0, start)
-  const end = nul >= start && nul < start + length ? nul : start + length
-  return buffer.subarray(start, end).toString('utf8').trim()
+function requiredNumber(value, label) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) {
+    throw new Error(`${label} must be a finite number`)
+  }
+  return number
 }
 
-function readTarOctal(buffer, start, length) {
-  const value = readTarString(buffer, start, length).replace(/\0/g, '').trim()
-  return value.length === 0 ? 0 : Number.parseInt(value, 8)
-}
-
-function parsePaxPath(buffer) {
-  let offset = 0
-  let path = null
-  while (offset < buffer.length) {
-    const separator = buffer.indexOf(0x20, offset)
-    if (separator < 0) break
-    const recordLength = Number.parseInt(buffer.subarray(offset, separator).toString('ascii'), 10)
-    if (!Number.isFinite(recordLength) || recordLength <= 0) break
-    const record = buffer.subarray(separator + 1, offset + recordLength).toString('utf8').replace(/\n$/, '')
-    const equals = record.indexOf('=')
-    if (equals > 0 && record.slice(0, equals) === 'path') {
-      path = record.slice(equals + 1)
+function parsePackRecord(output) {
+  const trimmed = output.trim()
+  const bracketed = trimmed.slice(trimmed.indexOf('['), trimmed.lastIndexOf(']') + 1)
+  for (const candidate of [trimmed, bracketed]) {
+    if (candidate.length === 0) continue
+    try {
+      const parsed = JSON.parse(candidate)
+      const records = Array.isArray(parsed)
+        ? parsed
+        : parsed?.filename
+          ? [parsed]
+          : Object.values(parsed ?? {})
+      if (records.length === 1 && records[0]?.filename) {
+        return records[0]
+      }
+    } catch {
+      // npm releases can include lifecycle output before the JSON record.
     }
-    offset += recordLength
   }
-  return path
+  throw new Error(`npm pack did not return one parseable JSON record:\n${output}`)
 }
 
-function safeArchiveTarget(destination, archivePath) {
-  const normalized = archivePath.replaceAll('\\', '/')
-  if (!normalized.startsWith('package/') || normalized.split('/').includes('..')) {
-    throw new Error(`Unsafe npm package path: ${archivePath}`)
+function assertPackageMeasurement(record) {
+  const manifest = parse(readFileSync(
+    join(repositoryRoot, 'docs', 'core-reset', 'removal-manifest.yml'),
+    'utf8',
+  ))
+  const thinDelivery = manifest.items?.find((item) => item.id === 'thin-delivery')
+  const precedingPhase = manifest.items?.find((item) => item.id === 'evidence-path-query')
+  const implementation = thinDelivery?.implementation
+  const budget = thinDelivery?.npm_package_budget
+  const startup = JSON.parse(readFileSync(
+    join(repositoryRoot, 'docs', 'core-reset', 'evidence', 'thin-delivery-startup.json'),
+    'utf8',
+  ))
+  const actual = {
+    npm_files: requiredNumber(record.entryCount, 'npm pack entryCount'),
+    npm_packed_bytes: requiredNumber(record.size, 'npm pack size'),
+    npm_unpacked_bytes: requiredNumber(record.unpackedSize, 'npm pack unpackedSize'),
   }
-  const target = resolve(destination, ...normalized.split('/'))
-  const prefix = destination.endsWith(sep) ? destination : `${destination}${sep}`
-  if (!target.startsWith(prefix)) {
-    throw new Error(`npm package path escaped extraction root: ${archivePath}`)
+  const recordedMeasurements = [
+    ['current package receipt', manifest.current],
+    ['Thin Delivery implementation receipt', implementation],
+  ]
+  for (const [label, receipt] of recordedMeasurements) {
+    for (const [field, value] of Object.entries(actual)) {
+      if (requiredNumber(receipt?.[field], `${label} ${field}`) !== value) {
+        throw new Error(
+          `${label} is stale: ${field}=${receipt?.[field]}, freshly packed artifact=${value}`,
+        )
+      }
+    }
   }
-  return target
+  if (
+    startup.package?.files !== actual.npm_files
+    || startup.package?.packed_bytes !== actual.npm_packed_bytes
+    || startup.package?.unpacked_bytes !== actual.npm_unpacked_bytes
+    || startup.package?.shasum !== record.shasum
+    || startup.package?.integrity !== record.integrity
+  ) {
+    throw new Error('Thin Delivery startup package receipt is stale for the freshly packed artifact')
+  }
+
+  const precedingPackedBytes = requiredNumber(
+    precedingPhase?.completion?.npm_packed_bytes,
+    'evidence-path-query completion npm_packed_bytes',
+  )
+  const packedBytesDelta = actual.npm_packed_bytes - precedingPackedBytes
+  if (
+    requiredNumber(
+      implementation?.npm_packed_bytes_delta,
+      'Thin Delivery implementation npm_packed_bytes_delta',
+    ) !== packedBytesDelta
+  ) {
+    throw new Error(
+      `Thin Delivery packed-byte delta is stale: recorded=${implementation?.npm_packed_bytes_delta}, `
+      + `freshly packed delta=${packedBytesDelta}`,
+    )
+  }
+  if (
+    actual.npm_files >= requiredNumber(budget?.files_less_than, 'Thin Delivery files_less_than')
+    || actual.npm_unpacked_bytes
+      >= requiredNumber(budget?.unpacked_bytes_less_than, 'Thin Delivery unpacked_bytes_less_than')
+    || packedBytesDelta
+      > requiredNumber(budget?.packed_bytes_delta_max, 'Thin Delivery packed_bytes_delta_max')
+  ) {
+    throw new Error(
+      `Fresh npm package exceeds Thin Delivery budgets: ${JSON.stringify({
+        ...actual,
+        npm_packed_bytes_delta: packedBytesDelta,
+      })}`,
+    )
+  }
+  return actual
 }
 
-function extractNpmTarball(tarballPath, destination) {
-  const tar = gunzipSync(readFileSync(tarballPath))
-  let offset = 0
-  let pendingPath = null
-
-  while (offset + 512 <= tar.length) {
-    const header = tar.subarray(offset, offset + 512)
-    if (header.every((byte) => byte === 0)) break
-
-    const name = readTarString(header, 0, 100)
-    const prefix = readTarString(header, 345, 155)
-    const archivePath = pendingPath ?? (prefix ? `${prefix}/${name}` : name)
-    const size = readTarOctal(header, 124, 12)
-    const mode = readTarOctal(header, 100, 8)
-    const type = String.fromCharCode(header[156] ?? 0)
-    const contentStart = offset + 512
-    const contentEnd = contentStart + size
-    if (contentEnd > tar.length) {
-      throw new Error(`Truncated npm package entry: ${archivePath}`)
-    }
-    const content = tar.subarray(contentStart, contentEnd)
-    pendingPath = null
-
-    if (type === 'x') {
-      pendingPath = parsePaxPath(content)
-    } else if (type === 'L') {
-      pendingPath = content.toString('utf8').replace(/\0.*$/s, '').trim()
-    } else if (type === '5') {
-      mkdirSync(safeArchiveTarget(destination, archivePath), { recursive: true })
-    } else if (type === '0' || type === '\0' || type === '') {
-      const target = safeArchiveTarget(destination, archivePath)
-      mkdirSync(dirname(target), { recursive: true })
-      writeFileSync(target, content)
-      if (mode > 0 && process.platform !== 'win32') chmodSync(target, mode)
-    } else if (type !== 'g') {
-      throw new Error(`Unsupported npm package entry type ${JSON.stringify(type)}: ${archivePath}`)
-    }
-
-    offset = contentStart + Math.ceil(size / 512) * 512
+function registryLaunch(packageName, packageVersion) {
+  const registryManifest = JSON.parse(readFileSync(
+    join(repositoryRoot, 'docs', 'mcp-registry', 'server.json'),
+    'utf8',
+  ))
+  const packages = registryManifest.packages
+  if (!Array.isArray(packages) || packages.length !== 1) {
+    throw new Error('MCP Registry manifest must contain exactly one package')
   }
+  const [registryPackage] = packages
+  if (
+    registryManifest.version !== packageVersion
+    || registryPackage.registryType !== 'npm'
+    || registryPackage.registryBaseUrl !== 'https://registry.npmjs.org'
+    || registryPackage.identifier !== packageName
+    || registryPackage.version !== packageVersion
+    || registryPackage.runtimeHint !== 'npx'
+    || registryPackage.transport?.type !== 'stdio'
+  ) {
+    throw new Error('MCP Registry package does not match the freshly installed npm package')
+  }
+  const args = (registryPackage.packageArguments ?? []).map((argument) => {
+    if (argument?.type !== 'positional' || typeof argument.value !== 'string') {
+      throw new Error('Packed parity requires concrete positional MCP Registry arguments')
+    }
+    return argument.value
+  })
+  if (args.length === 0) {
+    throw new Error('MCP Registry launch has no package arguments')
+  }
+  return args
+}
+
+function retrieveThroughInstalledBin(installedBinPath, registryArgs, cwd, request) {
+  const initializeId = request.id - 2
+  const toolsListId = request.id - 1
+  const input = [
+    { jsonrpc: '2.0', id: initializeId, method: 'initialize', params: {} },
+    { jsonrpc: '2.0', id: toolsListId, method: 'tools/list', params: {} },
+    request,
+  ].map((payload) => JSON.stringify(payload)).join('\n') + '\n'
+  let output
+  try {
+    output = execFileSync(installedBinPath, registryArgs, {
+      cwd,
+      input,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 35_000,
+      maxBuffer: 4 * 1024 * 1024,
+      shell: process.platform === 'win32',
+    })
+  } catch (error) {
+    const stdout = error?.stdout?.toString?.('utf8') ?? ''
+    const stderr = error?.stderr?.toString?.('utf8') ?? ''
+    throw new Error(`Installed Registry launch failed.\nstdout:\n${stdout}\nstderr:\n${stderr}`)
+  }
+  const responses = output.trim().split(/\r?\n/).map((line) => JSON.parse(line))
+  const initialize = responses.find((response) => response.id === initializeId)
+  if (typeof initialize?.result?.protocolVersion !== 'string') {
+    throw new Error('Installed Registry launch did not complete initialize')
+  }
+  const toolsList = responses.find((response) => response.id === toolsListId)
+  const tools = toolsList?.result?.tools?.map((tool) => tool.name)
+  if (JSON.stringify(tools) !== JSON.stringify(['retrieve'])) {
+    throw new Error(`Installed Registry launch advertised unexpected tools: ${JSON.stringify(tools)}`)
+  }
+  const response = responses.find((candidate) => candidate.id === request.id)
+  if (!response) {
+    throw new Error('Installed Registry launch did not complete tools/call')
+  }
+  return response
 }
 
 async function createParityGraph(root, updateIndexInWorker) {
@@ -124,7 +217,33 @@ async function createParityGraph(root, updateIndexInWorker) {
   if (result.updateReceipt?.mode !== 'cold_reconcile' || !existsSync(result.graphPath)) {
     throw new Error('Packed parity fixture did not publish a canonical graph')
   }
-  return result.graphPath
+  return { graphPath: result.graphPath, sourceRoot }
+}
+
+async function retrieveThroughMcp(server, cwd, version, request) {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  const errorOutput = new PassThrough()
+  let responseText = ''
+  output.on('data', (chunk) => { responseText += chunk.toString('utf8') })
+  const serving = server.serveMcpServer({
+    version,
+    cwd,
+    requestWaitMs: 25_000,
+    input,
+    output,
+    errorOutput,
+  })
+  for (const payload of [
+    { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+    { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    request,
+  ]) input.write(`${JSON.stringify(payload)}\n`)
+  input.end()
+  await serving
+  return responseText.trim().split(/\r?\n/)
+    .map((line) => JSON.parse(line))
+    .find((response) => response.id === request.id)
 }
 
 function normalizedResponse(response) {
@@ -163,12 +282,10 @@ function successfulRetrieve(response, label, expectedLabels) {
 
 const tempRoot = join(tmpdir(), `madar-packed-parity-${randomUUID()}`)
 const packRoot = join(tempRoot, 'pack')
-const extractionRoot = join(tempRoot, 'extracted')
-const previousToolProfile = process.env.MADAR_TOOL_PROFILE
-
+const consumerRoot = join(tempRoot, 'consumer')
 try {
   mkdirSync(packRoot, { recursive: true })
-  mkdirSync(extractionRoot, { recursive: true })
+  mkdirSync(consumerRoot, { recursive: true })
   const packOutput = execFileSync(npmCommand, [
     'pack',
     '--json',
@@ -180,58 +297,84 @@ try {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  let packedFilename = null
-  try {
-    const parsed = JSON.parse(packOutput)
-    packedFilename = Array.isArray(parsed) && typeof parsed[0]?.filename === 'string' ? parsed[0].filename : null
-  } catch {
-    // Older npm releases may add lifecycle output around --json. The archive
-    // directory remains authoritative and contains exactly one package here.
-  }
-  const tarballPath = join(
-    packRoot,
-    packedFilename ?? readdirSync(packRoot).find((entry) => entry.endsWith('.tgz')) ?? '',
-  )
+  const packRecord = parsePackRecord(packOutput)
+  const tarballPath = join(packRoot, packRecord.filename)
   if (!existsSync(tarballPath)) throw new Error('npm pack did not produce a tarball')
 
-  extractNpmTarball(tarballPath, extractionRoot)
-  const packedRoot = join(extractionRoot, 'package')
+  const checkoutManifest = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'))
+  writeFileSync(join(consumerRoot, 'package.json'), JSON.stringify({
+    name: 'madar-packed-parity-consumer',
+    private: true,
+    version: '0.0.0',
+  }, null, 2))
+  execFileSync(npmCommand, [
+    'install',
+    '--ignore-scripts',
+    '--no-audit',
+    '--no-fund',
+    '--package-lock=false',
+    tarballPath,
+  ], {
+    cwd: consumerRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const packedRoot = join(consumerRoot, 'node_modules', ...checkoutManifest.name.split('/'))
+  if (!existsSync(packedRoot) || lstatSync(packedRoot).isSymbolicLink()) {
+    throw new Error('npm did not create a real packed consumer installation')
+  }
   if (existsSync(join(packedRoot, 'docs'))) {
     throw new Error('Packed artifact unexpectedly contains checkout-only docs')
   }
-  symlinkSync(
-    join(repositoryRoot, 'node_modules'),
-    join(packedRoot, 'node_modules'),
-    process.platform === 'win32' ? 'junction' : 'dir',
+  const installedBinPath = join(
+    consumerRoot,
+    'node_modules',
+    '.bin',
+    process.platform === 'win32' ? 'madar.cmd' : 'madar',
   )
+  if (!existsSync(installedBinPath)) {
+    throw new Error(`Packed consumer install did not link the madar bin: ${installedBinPath}`)
+  }
 
-  const checkoutServerPath = join(repositoryRoot, 'dist', 'src', 'runtime', 'stdio-server.js')
-  const packedServerPath = join(packedRoot, 'dist', 'src', 'runtime', 'stdio-server.js')
-  const checkoutMetadataPath = join(repositoryRoot, 'dist', 'src', 'shared', 'package-metadata.js')
-  const packedMetadataPath = join(packedRoot, 'dist', 'src', 'shared', 'package-metadata.js')
+  const checkoutServerPath = join(repositoryRoot, 'dist', 'src', 'adapters', 'mcp', 'server.js')
+  const packedServerPath = join(packedRoot, 'dist', 'src', 'adapters', 'mcp', 'server.js')
   const packedWatcherPath = join(packedRoot, 'dist', 'src', 'infrastructure', 'watch-index.js')
   const packedStorePath = join(packedRoot, 'dist', 'src', 'adapters', 'filesystem', 'index-store.js')
   const packedUpdatePath = join(packedRoot, 'dist', 'src', 'application', 'update-index.js')
-  for (const path of [checkoutServerPath, packedServerPath, checkoutMetadataPath, packedMetadataPath, packedWatcherPath, packedStorePath, packedUpdatePath]) {
+  const packedArtifactPath = join(packedRoot, 'dist', 'src', 'adapters', 'filesystem', 'graph-artifact.js')
+  const packedApplicationPath = join(packedRoot, 'dist', 'src', 'application', 'retrieve-context.js')
+  const packedIndexPath = join(packedRoot, 'dist', 'src', 'domain', 'query', 'index-status.js')
+  for (const path of [
+    checkoutServerPath, packedServerPath, packedWatcherPath,
+    packedStorePath, packedUpdatePath, packedArtifactPath,
+    packedApplicationPath, packedIndexPath,
+  ]) {
     if (!existsSync(path)) throw new Error(`Missing parity runtime module: ${path}`)
   }
 
-  const [checkoutServer, packedServer, checkoutMetadata, packedMetadata, packedWatcher, packedStore] = await Promise.all([
+  const [
+    checkoutServer, packedServer, packedWatcher, packedStore,
+    packedArtifact, packedApplication, packedIndex,
+  ] = await Promise.all([
     import(`${pathToFileURL(checkoutServerPath).href}?parity=checkout`),
     import(`${pathToFileURL(packedServerPath).href}?parity=packed`),
-    import(`${pathToFileURL(checkoutMetadataPath).href}?parity=checkout`),
-    import(`${pathToFileURL(packedMetadataPath).href}?parity=packed`),
     import(`${pathToFileURL(packedWatcherPath).href}?parity=packed`),
     import(`${pathToFileURL(packedStorePath).href}?parity=packed`),
+    import(`${pathToFileURL(packedArtifactPath).href}?parity=packed`),
+    import(`${pathToFileURL(packedApplicationPath).href}?parity=packed`),
+    import(`${pathToFileURL(packedIndexPath).href}?parity=packed`),
   ])
-  const checkoutVersion = checkoutMetadata.readPackageVersion(repositoryRoot)
-  const packedVersion = packedMetadata.readPackageVersion(packedRoot)
+  const checkoutVersion = checkoutManifest.version
+  const packedVersion = JSON.parse(readFileSync(join(packedRoot, 'package.json'), 'utf8')).version
   if (checkoutVersion !== packedVersion) {
     throw new Error(`Package version mismatch: checkout=${checkoutVersion} packed=${packedVersion}`)
   }
+  const registryArgs = registryLaunch(checkoutManifest.name, packedVersion)
 
-  process.env.MADAR_TOOL_PROFILE = 'full'
-  const graphPath = await createParityGraph(tempRoot, packedWatcher.updateIndexInWorker)
+  const { graphPath, sourceRoot } = await createParityGraph(
+    tempRoot,
+    packedWatcher.updateIndexInWorker,
+  )
   const prompt = 'Where is handleClick defined?'
   const request = {
     jsonrpc: '2.0',
@@ -245,14 +388,40 @@ try {
       },
     },
   }
-  const checkoutResponse = await Promise.resolve(checkoutServer.handleStdioRequest(graphPath, request))
-  const packedResponse = await Promise.resolve(packedServer.handleStdioRequest(graphPath, request))
+  const checkoutResponse = await retrieveThroughMcp(
+    checkoutServer, sourceRoot, checkoutVersion, request,
+  )
+  const packedResponse = retrieveThroughInstalledBin(
+    installedBinPath, registryArgs, sourceRoot, request,
+  )
+  const directText = packedApplication.serializeRetrieveContextResult(
+    packedApplication.retrieveContext(
+      packedIndex.inspectQueryIndex(packedArtifact.loadGraphArtifact(graphPath)),
+      request.params.arguments,
+    ),
+  )
+  const cliText = execFileSync(
+    installedBinPath,
+    ['query', request.params.arguments.question, '--graph', graphPath,
+      '--budget', String(request.params.arguments.budget)],
+    {
+      cwd: sourceRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+    },
+  )
   const expectedDeclarations = ['handleclick']
   successfulRetrieve(
     checkoutResponse,
     'Checkout runtime',
     expectedDeclarations,
   )
+  const checkoutText = checkoutResponse?.result?.content?.[0]?.text
+  const packedText = packedResponse?.result?.content?.[0]?.text
+  if (checkoutText !== directText || packedText !== directText || cliText !== directText) {
+    throw new Error('Checkout MCP, packed MCP, CLI query, and direct application bytes differ')
+  }
   successfulRetrieve(
     packedResponse,
     'Packed runtime',
@@ -299,11 +468,22 @@ try {
   const input = new PassThrough(), output = new PassThrough(), errorOutput = new PassThrough()
   let responseText = ''
   output.on('data', (chunk) => { responseText += chunk.toString('utf8') })
-  const serverPromise = packedServer.serveGraphStdio({
-    graphPath: responsiveGraph.graphPath, workspaceRoot: responsiveRoot, autoRefresh: true,
-    autoRefreshDebounceSeconds: 0, autoRefreshRequestWaitMs: 30_000, input, output, errorOutput,
+  const serverPromise = packedServer.serveMcpServer({
+    version: packedVersion,
+    cwd: responsiveRoot,
+    requestWaitMs: 25_000,
+    input,
+    output,
+    errorOutput,
   })
   input.write(`${JSON.stringify({
+    jsonrpc: '2.0', id: 699, method: 'initialize', params: {},
+  })}\n`)
+  input.write(`${JSON.stringify({
+    jsonrpc: '2.0', id: 700, method: 'tools/list', params: {},
+  })}\n`)
+  input.write(`${JSON.stringify({
+    jsonrpc: '2.0',
     id: 701,
     method: 'tools/call',
     params: {
@@ -311,7 +491,7 @@ try {
       arguments: { question: 'What is value0?' },
     },
   })}\n`)
-  input.write(`${JSON.stringify({ id: 702, method: 'ping' })}\n`)
+  input.write(`${JSON.stringify({ jsonrpc: '2.0', id: 702, method: 'ping' })}\n`)
   const pingDeadline = Date.now() + 5_000
   while (!responseText.includes('"id":702') && Date.now() < pingDeadline) await new Promise((done) => setTimeout(done, 10))
   if (!responseText.includes('"id":702') || responseText.includes('"id":701')) {
@@ -343,11 +523,15 @@ try {
   const releaseAfterCrash = packedStore.acquireIndexLease(join(crashRoot, 'out'))
   releaseAfterCrash()
 
+  const packageMeasurement = assertPackageMeasurement(packRecord)
   console.log(`Packed retrieval parity passed for @lubab/madar ${checkoutVersion}.`)
+  console.log(
+    `Fresh package: ${packageMeasurement.npm_files} files / `
+    + `${packageMeasurement.npm_packed_bytes} packed bytes / `
+    + `${packageMeasurement.npm_unpacked_bytes} unpacked bytes.`,
+  )
   console.log(`Artifact runtime: ${relative(tempRoot, packedServerPath)}`)
 } finally {
-  if (previousToolProfile === undefined) delete process.env.MADAR_TOOL_PROFILE
-  else process.env.MADAR_TOOL_PROFILE = previousToolProfile
   if (process.env.MADAR_KEEP_PACK_PARITY_ARTIFACTS !== '1') {
     rmSync(tempRoot, { recursive: true, force: true })
   }

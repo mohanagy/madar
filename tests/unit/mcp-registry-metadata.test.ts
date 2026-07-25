@@ -138,17 +138,16 @@ describe('MCP Registry metadata', () => {
       transport: { type: 'stdio' },
     })
     expect(npmPackage?.packageArguments?.map((entry) => entry.value)).toEqual([
-      'serve',
-      '--stdio',
-      '--auto-refresh',
+      'mcp',
     ])
     expect(graphPathArgument).toBeUndefined()
     expect(npmPackage).not.toHaveProperty('environmentVariables')
     expect(publisherNotes?.source).toBe('docs/mcp-registry/server.json')
     expect(publisherNotes?.notes).toContain('When an MCP host launches')
-    expect(publisherNotes?.notes).toContain('one `retrieve(question, budget?)` tool')
+    expect(publisherNotes?.notes).toContain('exactly one `retrieve(question, budget?)` tool')
+    expect(publisherNotes?.notes).toContain('no MCP resources or prompts')
     expect(publisherNotes?.notes).toContain('Madar is the renamed continuation of `graphify-ts`')
-    expect(publisherNotes?.notes).toContain('`madar serve --stdio --auto-refresh`')
+    expect(publisherNotes?.notes).toContain('`madar mcp`')
     expect(publisherNotes?.notes).toContain('`@lubab/madar`')
     expect(publisherNotes?.notes).toContain('`https://github.com/mohanagy/madar`')
   })
@@ -206,7 +205,7 @@ describe('MCP Registry metadata', () => {
     expect(reference).toContain('docs/mcp-registry/server.json')
     expect(reference).toContain('npm run registry:validate')
     expect(reference).toContain('The official MCP Registry hosts metadata, not Madar code or your local graph artifact.')
-    expect(reference).toContain('npx @lubab/madar serve --stdio --auto-refresh')
+    expect(reference).toContain('["mcp"]')
     expect(reference).toContain('Private registry usage stays out of scope for the public Madar listing')
     expect(reference).toContain('If you still discover older `graphify-ts` links or listings, Madar is the current project name.')
     expect(reference).toContain('`https://github.com/mohanagy/madar`')

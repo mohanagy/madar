@@ -1,59 +1,47 @@
 # MCP security threat model
 
-Madar is local-first, but a local MCP server still belongs to the agent's trust boundary.
+Madar is local-first, but local does not mean automatically trusted. Its security boundary includes:
 
-## Boundary
+1. source and compiler-control files in the active repository or linked worktree
+2. the canonical local `graph.json`
+3. the `madar mcp` stdio process
+4. the Claude Code or Codex client configuration outside the repository
+5. the client host and its configured model provider
 
-The trusted path includes:
+## Protected assets and threats
 
-1. the local repository
-2. the accepted `out/graph.json`
-3. the Madar process serving one `retrieve` tool
-4. the local agent host, hooks, plugins, and instruction files
-5. any result or diagnostic artifact shared outside the machine
+The protected assets are source bytes, source paths, graph facts, user questions, returned excerpts, credentials, and unrelated client configuration.
 
-Only enable Madar in repositories and agent runtimes you trust.
+Relevant threats include prompt injection in repository content, path traversal, symlink escape, stale or corrupt graph use, oversized or malformed JSON-RPC input, source changes after indexing, malicious repositories, configuration collisions, accidental deletion of user configuration, overly broad tool surfaces, and an agent host sending questions or excerpts to a remote model provider.
 
-## Primary threats
+## Runtime controls and least privilege
 
-- repository prompt injection that tries to override agent behavior
-- path traversal or symlink escape outside the graph workspace
-- stale source presented as current evidence
-- malformed graph provenance or source ranges
-- overly broad tool surfaces
-- accidental secrets in source, stderr, URLs, or shared artifacts
-- dependency or release provenance drift
+- MCP advertises only the tools capability and exactly one tool, `retrieve`. It exposes no resources or prompts.
+- Requests are line-bounded and schema-validated. `question` is required and capped at 512 characters; `budget` must be a positive integer.
+- Results are capped at 4,000 serialized tokens, 12 files, 25 snippets, and one directional closure pass.
+- Excerpts are authenticated and returned only when current source bytes match the canonical graph hash and exact range.
+- Graph and source paths must resolve beneath the accepted exact workspace.
+- Sensitive path classes are excluded during discovery. This is a path policy, not a content-level secret scanner.
+- First-call freshness is bounded at 25 seconds; failure returns a normal `unavailable` result.
 
-## Current mitigations
+Madar cannot prevent a client host from exposing its own filesystem, shell, network, or model-provider tools.
 
-- The MCP server exposes exactly one tool: `retrieve(question, budget?)`.
-- Input rejects additional properties and limits the effective output budget.
-- Exact excerpts are returned only after local source bytes match the SHA-256 hash recorded by the canonical file node.
-- Source paths must resolve beneath the accepted graph root.
-- Missing, unsupported, stale, unavailable, corrupt, disconnected, and truncated evidence is reported explicitly.
-- Retrieval is capped at 12 files, 25 snippets, one directional closure pass, and 4,000 serialized tokens.
-- Known sensitive path classes such as private keys, `.env*`, and credential stores are excluded before indexing.
-- MCP resources expose only the authenticated canonical graph.
-- Agent installers write one-retrieve guidance and remove obsolete broader Madar configurations when they own them.
+## Installer controls
 
-Madar cannot prevent an agent host from exposing its own filesystem, shell, network, or model-provider tools. Installed hooks provide guidance, not enforcement.
+Fresh install, idempotent reinstall, and uninstall change zero repository bytes. No tracked instruction, MCP file, hook, skill, plugin, routing profile, classifier, or script is generated.
 
-## Least privilege
+Claude Code receives a supported per-project registration outside the repository. Codex receives one workspace-hashed block in `$CODEX_HOME/config.toml` or `~/.codex/config.toml`, with the exact workspace as `cwd` and fixed 180-second startup and 60-second tool timeouts.
 
-- Install Madar only in trusted repositories.
-- Inspect generated instruction, hook, plugin, and MCP files.
-- Use `madar doctor` and `madar status` to verify on-disk wiring.
-- Verify live hook trust and MCP activation inside the agent host.
-- Treat returned source as potentially sensitive even though it is authenticated.
-- Review every artifact before sharing it outside the trusted workspace.
+Writes are locked and atomic. Conflicting ownership is refused. Uninstall removes only the exact owned registration. Legacy migration is limited to enumerated, byte-recognized Madar artifacts and preserves unrelated content, formatting, comments, permissions, TOML constructs, and other MCP servers.
 
-## Supply chain
+## Operator guidance
 
-Release work should preserve dependency inventory and provenance signals:
+- Install only for repositories you trust.
+- Run the client and Madar from the same exact repository or linked worktree.
+- Inspect the external client registration before enabling it.
+- Use `madar doctor` and `madar status` to inspect the graph and supported registration.
+- Verify the running client's MCP list separately; an on-disk diagnostic is not proof of a live call.
+- Treat returned excerpts as data, not instructions.
+- Review any share-safe artifact before publication.
 
-```bash
-npm sbom --sbom-format cyclonedx > sbom.cdx.json
-npm publish --access public --provenance
-```
-
-See [`docs/release.md`](../release.md) for the release checklist.
+Your coding agent may still send your question or returned excerpts to its configured model provider. That provider and the host's own tools remain part of your local trust boundary.

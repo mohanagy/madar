@@ -10,6 +10,8 @@ retrieve(question, budget?)
 
 The result is a small set of exact source excerpts and directed relationships, or an explicit boundary explaining why evidence could not be returned. There are no tool profiles or alternate retrieval modes to choose.
 
+MCP advertises only the tools capability. It exposes no resources or prompts.
+
 [![npm](https://img.shields.io/npm/v/%40lubab%2Fmadar)](https://www.npmjs.com/package/@lubab/madar)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
 [![local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#local-by-design)
@@ -32,7 +34,7 @@ madar generate .
 Connect the coding agent you use:
 
 ```bash
-madar claude install
+madar install claude
 ```
 
 Then ask your normal repository question:
@@ -41,21 +43,9 @@ Then ask your normal repository question:
 Trace how a failed payment becomes a retry. Cite the exact files and symbols, and state what remains uncertain.
 ```
 
-The installed guidance asks the agent to call `retrieve` once with your question unchanged before broad repository search. Use `madar doctor` and `madar status` to check the graph and local agent wiring.
+For a transport check, explicitly ask the client to call `retrieve` once. That proves the configured client path, not natural tool preference. Use `madar doctor` and `madar status` to check the graph and external client registration. Codex is also supported directly with `madar install codex`. Other hosts can launch the package through the MCP Registry or a manual `madar mcp` stdio registration.
 
-Other project-local installers:
-
-| Agent | Command |
-| --- | --- |
-| Claude Code | `madar claude install` |
-| Codex CLI | `madar codex install` |
-| Cursor | `madar cursor install` |
-| GitHub Copilot | `madar copilot install` |
-| Gemini CLI | `madar gemini install` |
-| Aider | `madar aider install` |
-| OpenCode | `madar opencode install` |
-
-See the [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) for generated files and activation checks.
+See the [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) for registration details and activation checks.
 
 ## Use it without MCP
 
@@ -102,7 +92,7 @@ JavaScript / TypeScript repository
 
 `graph.json` is authoritative. The indexing manifest is a derived diagnostic.
 
-Use `madar generate . --update` after repository changes, `madar watch .` for a long-running local watcher, or install an MCP integration that starts `madar serve --stdio --auto-refresh`.
+Use `madar generate . --update` for a one-off reconcile or `madar generate . --watch` for continued local reconciliation. `madar mcp` starts stdio immediately and keeps the graph for its exact working directory current.
 
 ## Where Madar fits
 
@@ -129,9 +119,10 @@ Madar complements coding agents and IDE indexing. It is not a runtime tracer, PR
 - **Sensitive paths:** private keys, `.env*`, credential stores, and known non-source secret material are excluded before extraction. This is a path policy, not a content-level secret scanner.
 - **Agent boundary:** your coding agent may still send your question or returned excerpts to its configured model provider.
 - **Worktrees:** run Madar and the agent from the same linked worktree. Each worktree gets isolated graph artifacts.
-- **Telemetry:** Telemetry is disabled unless you explicitly enable it. See [telemetry](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md).
+- **No product telemetry:** the Thin Delivery runtime has no telemetry or updater route.
+- **Zero repository writes from install:** fresh install, reinstall, and uninstall modify only supported external client configuration.
 
-Treat every local MCP install, hook, plugin, or instruction file as part of your local trust boundary. See the [MCP threat model](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md).
+Treat every local MCP registration as part of your local trust boundary. See the [MCP threat model](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md).
 
 ## Evidence and limits
 

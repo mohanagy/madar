@@ -1,131 +1,74 @@
 # Agent quickstarts
 
-Every integration follows the same contract:
-
-1. run `madar generate .`
-2. install the agent integration
-3. verify the on-disk wiring
-4. ask a repository question normally
-5. let the agent call `retrieve` once with the question unchanged
-
-There are no profiles. All MCP-capable integrations expose the same single tool.
+Every MCP integration uses one contract: command `madar`, arguments `["mcp"]`, stdio transport, exact repository or linked worktree as `cwd`, and exactly one `retrieve` tool. Madar exposes no MCP resources or prompts.
 
 ## Claude Code
 
 ```bash
+cd /path/to/repository
 madar generate .
-madar claude install
+madar install claude
 madar doctor
 ```
 
-Generated files: `CLAUDE.md`, `.claude/settings.json`, `.claude/madar-user-prompt-submit.cjs`, and `.mcp.json`.
+The installer creates a supported per-project local MCP registration in Claude Code configuration outside the repository. It writes no repository files.
 
-Restart Claude Code, inspect `/mcp`, and ask:
+Restart Claude Code, inspect its MCP server list, and ask:
 
 ```text
 Trace how password reset reaches the email job. Cite exact files and symbols.
 ```
 
-The `UserPromptSubmit` hook provides guidance, not enforcement. Enable it only in a trusted repository.
+For a transport check, direct the client to call `retrieve` once. This proves transport only, not that the client will select Madar naturally.
 
 ## Codex CLI
 
 ```bash
+cd /path/to/repository
 madar generate .
-madar codex install
+madar install codex
 madar status
 ```
 
-Generated or managed files: `AGENTS.md`, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and this workspace's marked block in `~/.codex/config.toml` or `$CODEX_HOME/config.toml`.
+The installer writes one workspace-hashed managed block to `$CODEX_HOME/config.toml` or `~/.codex/config.toml`. It contains:
 
-Restart Codex, use `/hooks` to review and trust the project hook, then use `/mcp` or `codex mcp list` to verify the server. `doctor` and `status` validate on-disk wiring only, not live hook trust or MCP activation.
-
-## Cursor
-
-```bash
-madar generate .
-madar cursor install
-madar doctor
+```toml
+command = "madar"
+args = ["mcp"]
+cwd = "/exact/workspace"
+startup_timeout_sec = 180
+tool_timeout_sec = 60
 ```
 
-Generated files: `.cursor/rules/madar.mdc` and `.cursor/mcp.json`.
+Restart Codex and use `/mcp` or `codex mcp list` to verify the server. `doctor` and `status` validate configuration on disk; they do not prove that the running client called the tool.
 
-Restart Cursor and verify the local `madar` MCP server. Cursor has no separate prompt hook; its rule file supplies the one-retrieve guidance.
+## Other clients
 
-## GitHub Copilot CLI
+Cursor, GitHub Copilot, Gemini, OpenCode, Aider, and other clients are Registry or manual targets. Where supported, use the public `@lubab/madar` MCP Registry entry. Otherwise create a stdio registration with:
 
-```bash
-madar generate .
-madar copilot install
-madar doctor
+```text
+command: madar
+arguments: ["mcp"]
+working directory: exact repository or linked worktree
 ```
 
-The install writes the Madar home skill and `.vscode/mcp.json`. Verify the MCP entry in your Copilot-compatible host before asking a repository question.
-
-## Gemini CLI
-
-```bash
-madar generate .
-madar gemini install
-madar doctor
-```
-
-The install writes the Madar home skill, `GEMINI.md`, and `.gemini/settings.json` hook and MCP entry. Restart Gemini CLI and verify the server.
-
-## OpenCode
-
-```bash
-madar generate .
-madar opencode install
-madar doctor
-```
-
-Generated or managed files: `AGENTS.md`, `.opencode/plugins/madar.js`, and a Madar MCP entry in `opencode.json` or `opencode.jsonc`.
-
-## Aider
-
-```bash
-madar generate .
-madar aider install
-madar query "how does password reset enqueue the email job?"
-```
-
-The project installer writes Madar guidance into `AGENTS.md`. It does not register an MCP server, so use `madar query` to get the same evidence envelope and provide that result to Aider.
-
-## Other instruction-only integrations
-
-Claw, Factory Droid, Trae, and Trae CN receive `AGENTS.md` guidance:
-
-```bash
-madar claw install
-madar droid install
-madar trae install
-madar trae-cn install
-```
-
-Where the host has no Madar MCP connection, run `madar query "<question>"`.
+Madar does not generate client-specific instruction files, hooks, skills, plugins, classifiers, or project-local MCP configuration for these hosts.
 
 ## Uninstall
 
-Use the matching project-local command:
-
 ```bash
-madar claude uninstall
-madar codex uninstall
-madar cursor uninstall
-madar copilot uninstall
-madar gemini uninstall
-madar aider uninstall
-madar opencode uninstall
+madar install claude --uninstall
+madar install codex --uninstall
 ```
 
-Uninstall removes only Madar-owned content and preserves unrelated user configuration.
+Fresh install, idempotent reinstall, and uninstall change zero repository bytes. Multiple repositories and linked worktrees coexist and uninstall independently. Madar refuses conflicting ownership and preserves unrelated user configuration.
 
 ## Verification checklist
 
 - `madar status` reports a fresh accepted graph.
-- `madar doctor` reports the intended integration as healthy.
-- the running host lists the `madar` MCP server when that integration supports MCP.
+- `madar doctor` reports the intended Claude Code or Codex registration as exact.
+- the running client lists the Madar MCP server.
+- the capability list contains tools only.
 - the tool list contains exactly `retrieve`.
-- one test question produces either authenticated evidence or an explicit boundary.
-- the agent does not present missing, unsupported, stale, unavailable, or corrupt evidence as a complete answer.
+- one forced test question produces authenticated evidence or an explicit boundary.
+- the client does not present missing, unsupported, stale, unavailable, corrupt, disconnected, or truncated evidence as a complete answer.

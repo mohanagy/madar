@@ -124,10 +124,40 @@ const EVIDENCE_IMPORTER_RECEIPT = 'docs/core-reset/evidence/evidence-path-import
 const EVIDENCE_IMPORTER_RECEIPT_SHA256 = '466d48749f2502b5c91dab44cc62ef7a9d91c6b53226ca09ce7846b5dc5be334'
 const THIN_DELIVERY_BASE = '8efe41fc665fcea7e625dda0864a72ecf27a111b'
 const THIN_DELIVERY_BASE_TREE = '16a942da72c1a24ebe3f420437abec88771c1242'
+const THIN_DELIVERY_IMPLEMENTATION_START = 'edcf3e45b8c8fb76a57531bc74bede2a06189aba'
+const THIN_DELIVERY_IMPLEMENTATION_START_TREE = 'b980dae663b780cffbe1d989c01afc27a341c707'
 const THIN_DELIVERY_ISSUE = 'https://github.com/mohanagy/madar/issues/602'
 const THIN_DELIVERY_ABSORBED_ISSUE = 'https://github.com/mohanagy/madar/issues/567'
 const THIN_DELIVERY_OWNER_APPROVAL = `${THIN_DELIVERY_ISSUE}#issuecomment-5075969972`
 const THIN_DELIVERY_RFC_APPROVAL = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5075969871'
+const THIN_DELIVERY_BIN = 'dist/src/adapters/cli/bin.js'
+const THIN_DELIVERY_HISTORICAL_BIN = 'dist/src/cli/bin.js'
+const THIN_DELIVERY_HISTORICAL_EVALUATOR_SHA256 =
+  'b7211c7e56360921a6b8e681ac84b21a1f13963f78a925589ea8611ee25bab97'
+const THIN_DELIVERY_REPINNED_EVALUATOR_SHA256 =
+  '7f8934d871c27f18bcb86e26fd2462dc87645e8a2850dc3ef68856ee97675928'
+const THIN_DELIVERY_HISTORICAL_RECEIPT_SCHEMA_SHA256 =
+  '2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714'
+const THIN_DELIVERY_DUAL_PATH_RECEIPT_SCHEMA_SHA256 =
+  '1f27acfaf452c731e861435b72c4eea76cd1aec990806059fa2da2d8ae9fbcaf'
+const THIN_DELIVERY_BASE_NPM_PACKED_BYTES = 231_524
+const THIN_DELIVERY_CLIENT_RECEIPT =
+  'docs/core-reset/evidence/thin-delivery-client-transport.json'
+const THIN_DELIVERY_FINAL_CLIENT_ISSUE_RECEIPT =
+  'https://github.com/mohanagy/madar/issues/602#issuecomment-5077981356'
+const THIN_DELIVERY_FINAL_CLIENT_RFC_RECEIPT =
+  'https://github.com/mohanagy/madar/issues/577#issuecomment-5077981401'
+const THIN_DELIVERY_NEO4J_LOCK_CLOSURE = [
+  'node_modules/base64-js',
+  'node_modules/buffer',
+  'node_modules/ieee754',
+  'node_modules/neo4j-driver',
+  'node_modules/neo4j-driver-bolt-connection',
+  'node_modules/neo4j-driver-core',
+  'node_modules/rxjs',
+  'node_modules/safe-buffer',
+  'node_modules/string_decoder',
+] as const
 const THIN_DELIVERY_PREDECESSORS = [
   'src/cli/bin.ts',
   'src/cli/main.ts',
@@ -146,7 +176,6 @@ const THIN_DELIVERY_PREDECESSORS = [
   'src/shared/telemetry.ts',
   'src/shared/update-notifier.ts',
 ] as const
-const THIN_DELIVERY_DIRECT_PREDECESSORS = THIN_DELIVERY_PREDECESSORS.slice(0, 10)
 const THIN_DELIVERY_ABSORBED_PREDECESSORS = THIN_DELIVERY_PREDECESSORS.slice(10)
 const THIN_DELIVERY_REPLACEMENTS = [
   'src/adapters/cli/bin.ts',
@@ -354,12 +383,11 @@ function productionSourceDeltaBetween(
 const gitBlobSha256 = (revision: string, path: string): string =>
   createHash('sha256').update(execFileSync(git, ['show', `${revision}:${path}`])).digest('hex')
 
-function importedProductionFilesAtCommit(
-  commit: string,
+function importedRelativeTargets(
   importer: string,
-  productionFiles: ReadonlySet<string>,
+  source: string,
+  targets: ReadonlySet<string>,
 ): string[] {
-  const source = execFileSync(git, ['show', `${commit}:${importer}`], { encoding: 'utf8' })
   const sourceFile = ts.createSourceFile(importer, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const moduleSpecifiers = new Set<string>()
 
@@ -405,8 +433,17 @@ function importedProductionFilesAtCommit(
       `${unresolved}.ts`,
       `${unresolved}/index.ts`,
     ]
-    return candidates.find((candidate) => productionFiles.has(candidate)) ?? []
+    return candidates.find((candidate) => targets.has(candidate)) ?? []
   }).filter((target, index, targets) => targets.indexOf(target) === index).sort()
+}
+
+function importedProductionFilesAtCommit(
+  commit: string,
+  importer: string,
+  productionFiles: ReadonlySet<string>,
+): string[] {
+  const source = execFileSync(git, ['show', `${commit}:${importer}`], { encoding: 'utf8' })
+  return importedRelativeTargets(importer, source, productionFiles)
 }
 
 function deletionImportEdgesAtCommit(commit: string, deletionFiles: ReadonlySet<string>): {
@@ -800,14 +837,14 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: THIN_DELIVERY_BASE,
       completed_phase_commit: EVIDENCE_MERGE,
-      production_typescript_files: 73,
-      production_typescript_loc: 21_687,
-      production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
-      npm_files: 162,
-      npm_packed_bytes: 231_524,
-      npm_unpacked_bytes: 984_434,
+      production_typescript_files: 63,
+      production_typescript_loc: 16_654,
+      production_loc_added: 2_248,
+      production_loc_removed: 7_281,
+      production_loc_net: -5_033,
+      npm_files: 142,
+      npm_packed_bytes: 200_310,
+      npm_unpacked_bytes: 812_531,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'exact_implementation_source_and_package',
     })
@@ -1050,7 +1087,7 @@ describe('core reset governance', () => {
     expect(manifest.items.find((item) => item.id === 'thin-delivery')?.status).toBe('in_progress')
   })
 
-  it('activates the exact Thin Delivery contract without changing production', () => {
+  it('enforces the active Thin Delivery implementation contract', () => {
     const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
       review: { disposition_changes: number; amendment: string }
       targets: {
@@ -1147,9 +1184,11 @@ describe('core reset governance', () => {
         }
         startup_contract?: {
           isolated_cold_samples_min: number
+          statistics_required: string[]
           version_median_ms_less_than: number
           version_max_rss_bytes_less_than: number
           initialize_tools_list_median_ms_less_than: number
+          initialize_tools_list_tools_exact: string[]
           packed_install_required: boolean
           registry_arguments: string[]
         }
@@ -1164,6 +1203,11 @@ describe('core reset governance', () => {
         evaluation_repin?: {
           transport_path_only: boolean
           repositories_prompts_grading_expected_evidence_query_budgets_and_semantics_frozen: boolean
+          approved_historical_evaluator_sha256: string
+          current_transport_repin_evaluator_sha256: string
+          current_normalized_to_historical_sha256: string
+          approved_historical_receipt_schema_sha256: string
+          current_dual_path_receipt_schema_sha256: string
         }
         review_contract?: {
           ci_matrix_jobs: number
@@ -1177,7 +1221,33 @@ describe('core reset governance', () => {
           owner_approval: string
           rfc_amendment: string
           protected_base: string
+          implementation_start_commit?: string
           implementation_started?: boolean
+        }
+        implementation?: {
+          start_commit: string
+          production_files_added: number
+          production_files_removed: number
+          production_typescript_files: number
+          production_typescript_loc: number
+          production_loc_added: number
+          production_loc_removed: number
+          production_loc_net: number
+          runtime_dependencies_added: number
+          runtime_dependencies_removed: number
+          development_dependencies_added: number
+          npm_files: number
+          npm_packed_bytes: number
+          npm_unpacked_bytes: number
+          npm_packed_bytes_delta: number
+          npm_shasum: string
+          npm_integrity: string
+          npm_tarball_sha256: string
+          all_phase_budgets_pass: boolean
+          final_artifact_client_revalidation_passed: boolean
+          final_artifact_registration: string
+          final_artifact_claude_session: string
+          final_artifact_codex_session: string
         }
         notes?: string
       }>
@@ -1185,21 +1255,27 @@ describe('core reset governance', () => {
 
     expect(execFileSync(git, ['rev-parse', `${THIN_DELIVERY_BASE}^{tree}`], { encoding: 'utf8' }).trim())
       .toBe(THIN_DELIVERY_BASE_TREE)
-    expect(manifest.current).toEqual({
+    expect(execFileSync(
+      git,
+      ['rev-parse', `${THIN_DELIVERY_IMPLEMENTATION_START}^{tree}`],
+      { encoding: 'utf8' },
+    ).trim()).toBe(THIN_DELIVERY_IMPLEMENTATION_START_TREE)
+    expect(() => execFileSync(
+      git,
+      ['merge-base', '--is-ancestor', THIN_DELIVERY_BASE, THIN_DELIVERY_IMPLEMENTATION_START],
+    )).not.toThrow()
+    expect(manifest.current).toMatchObject({
       updated_at: '2026-07-25',
       completed_phase: 'evidence-path-query',
       active_phase: 'thin-delivery',
       ready_phase: null,
       base_commit: THIN_DELIVERY_BASE,
       completed_phase_commit: EVIDENCE_MERGE,
-      production_typescript_files: 73,
-      production_typescript_loc: 21_687,
-      production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
-      npm_files: 162,
-      npm_packed_bytes: 231_524,
-      npm_unpacked_bytes: 984_434,
+      production_typescript_files: 63,
+      production_typescript_loc: 16_654,
+      production_loc_added: 2_248,
+      production_loc_removed: 7_281,
+      production_loc_net: -5_033,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'exact_implementation_source_and_package',
     })
@@ -1219,6 +1295,7 @@ describe('core reset governance', () => {
     expect(thinDelivery).toMatchObject({
       disposition: 'rebuild',
       status: 'in_progress',
+      sources: [...THIN_DELIVERY_REPLACEMENTS],
       removed_sources: [...THIN_DELIVERY_PREDECESSORS],
       absorbs: [...THIN_DELIVERY_ABSORBED_HANDLES],
       transferred_sources: ['src/infrastructure/doctor.ts'],
@@ -1284,9 +1361,11 @@ describe('core reset governance', () => {
       },
       startup_contract: {
         isolated_cold_samples_min: 10,
+        statistics_required: ['median_ms', 'p95_ms', 'max_rss_bytes'],
         version_median_ms_less_than: 100,
         version_max_rss_bytes_less_than: 83_886_080,
         initialize_tools_list_median_ms_less_than: 1_000,
+        initialize_tools_list_tools_exact: ['retrieve'],
         packed_install_required: true,
         registry_arguments: ['mcp'],
       },
@@ -1301,6 +1380,11 @@ describe('core reset governance', () => {
       evaluation_repin: {
         transport_path_only: true,
         repositories_prompts_grading_expected_evidence_query_budgets_and_semantics_frozen: true,
+        approved_historical_evaluator_sha256: THIN_DELIVERY_HISTORICAL_EVALUATOR_SHA256,
+        current_transport_repin_evaluator_sha256: THIN_DELIVERY_REPINNED_EVALUATOR_SHA256,
+        current_normalized_to_historical_sha256: THIN_DELIVERY_HISTORICAL_EVALUATOR_SHA256,
+        approved_historical_receipt_schema_sha256: THIN_DELIVERY_HISTORICAL_RECEIPT_SCHEMA_SHA256,
+        current_dual_path_receipt_schema_sha256: THIN_DELIVERY_DUAL_PATH_RECEIPT_SCHEMA_SHA256,
       },
       review_contract: {
         ci_matrix_jobs: 6,
@@ -1314,7 +1398,35 @@ describe('core reset governance', () => {
         owner_approval: THIN_DELIVERY_OWNER_APPROVAL,
         rfc_amendment: THIN_DELIVERY_RFC_APPROVAL,
         protected_base: THIN_DELIVERY_BASE,
-        implementation_started: false,
+        implementation_start_commit: THIN_DELIVERY_IMPLEMENTATION_START,
+        implementation_started: true,
+      },
+      implementation: {
+        start_commit: THIN_DELIVERY_IMPLEMENTATION_START,
+        production_files_added: 6,
+        production_files_removed: 16,
+        production_typescript_files: 63,
+        production_typescript_loc: 16_654,
+        production_loc_added: 2_248,
+        production_loc_removed: 7_281,
+        production_loc_net: -5_033,
+        runtime_dependencies_added: 0,
+        runtime_dependencies_removed: 1,
+        development_dependencies_added: 0,
+        npm_files: 142,
+        npm_packed_bytes: 200_310,
+        npm_unpacked_bytes: 812_531,
+        npm_packed_bytes_delta: -31_214,
+        npm_shasum: '1a915fdc597463f57cd0d79ffa26a7f1c27ff2ef',
+        npm_integrity: 'sha512-94PSjJbRCsgv8oUt18iPZFzysl5S/7njrB1F05fzwkK5Amk6abxGcHv2L8K4fw1qijZLJ2sxr83nIl7NZWef8A==',
+        npm_tarball_sha256: '2186259073a6bc05b7268ac7115fd56584d27024b76d167db021f68f83c603b9',
+        all_phase_budgets_pass: true,
+        final_artifact_client_revalidation_passed: true,
+        final_artifact_registration: 'madar_6b8bb2115fe0',
+        final_artifact_claude_session: 'f021741f-b474-438e-a07b-a54ef35e071c',
+        final_artifact_codex_session: '019f9890-e9fb-7610-a379-f3ef19a418ef',
+        final_artifact_transport_pass_record: THIN_DELIVERY_FINAL_CLIENT_ISSUE_RECEIPT,
+        final_artifact_rfc_transport_pass_record: THIN_DELIVERY_FINAL_CLIENT_RFC_RECEIPT,
       },
     })
     expect(thinDelivery?.cli_contract?.retired_commands).toEqual([
@@ -1346,8 +1458,6 @@ describe('core reset governance', () => {
       '--auto-refresh',
       '--neo4j-*',
     ])
-    expect(thinDelivery?.notes).toContain('No implementation success')
-
     const evaluationTooling = manifest.items.find((item) => item.id === 'evaluation-tooling')
     expect(evaluationTooling?.sources).toEqual(expect.arrayContaining([...THIN_DELIVERY_EVALUATION_TRANSFERS]))
     expect(evaluationTooling?.transferred_sources).toEqual([...THIN_DELIVERY_EVALUATION_TRANSFERS])
@@ -1364,21 +1474,27 @@ describe('core reset governance', () => {
     expect(absorbed.flatMap((item) => item?.sources ?? []).sort())
       .toEqual([...THIN_DELIVERY_ABSORBED_PREDECESSORS].sort())
 
-    const baseFiles = productionTypeScriptFilesAtCommit(THIN_DELIVERY_BASE)
+    const baseFiles = productionTypeScriptFilesAtCommit(THIN_DELIVERY_IMPLEMENTATION_START)
+    const inventory = sourceInventory()
+    const baseFileSet = new Set(baseFiles)
+    const currentFileSet = new Set(inventory.paths)
     expect(baseFiles).toHaveLength(73)
     expect(THIN_DELIVERY_PREDECESSORS.every((path) => baseFiles.includes(path))).toBe(true)
-    expect(THIN_DELIVERY_PREDECESSORS.every((path) => existsSync(resolve(path)))).toBe(true)
-    expect(logicalLocAtCommit(THIN_DELIVERY_BASE, THIN_DELIVERY_PREDECESSORS)).toBe(7_277)
+    expect(logicalLocAtCommit(THIN_DELIVERY_IMPLEMENTATION_START, THIN_DELIVERY_PREDECESSORS))
+      .toBe(7_277)
     expect(THIN_DELIVERY_REPLACEMENTS.every((path) => !baseFiles.includes(path))).toBe(true)
-    expect(THIN_DELIVERY_REPLACEMENTS.every((path) => !existsSync(resolve(path)))).toBe(true)
-
-    const directOwned = baseFiles.filter((file) =>
-      (thinDelivery?.sources ?? []).some((pattern) => manifestGlob(pattern).test(file)))
-    expect(directOwned.sort()).toEqual([...THIN_DELIVERY_DIRECT_PREDECESSORS].sort())
-    for (const file of baseFiles) {
-      const owners = manifest.items.filter((item) =>
-        (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(file)))
-      expect(owners.map((item) => item.id), `${file} must have one activation owner`).toHaveLength(1)
+    expect(inventory).toMatchObject({ files: 63, loc: 16_654, filesystemViolations: [] })
+    const removedSinceImplementationStart = baseFiles.filter((path) => !currentFileSet.has(path)).sort()
+    const addedSinceImplementationStart = inventory.paths
+      .filter((path: string) => !baseFileSet.has(path))
+      .sort()
+    expect(removedSinceImplementationStart).toEqual([...THIN_DELIVERY_PREDECESSORS].sort())
+    expect(addedSinceImplementationStart).toEqual([...THIN_DELIVERY_REPLACEMENTS].sort())
+    for (const predecessor of THIN_DELIVERY_PREDECESSORS) {
+      expect(existsSync(resolve(predecessor)), `${predecessor} must be absent`).toBe(false)
+    }
+    for (const replacement of THIN_DELIVERY_REPLACEMENTS) {
+      expect(existsSync(resolve(replacement)), `${replacement} must exist`).toBe(true)
     }
 
     const edges = deletionImportEdgesAtCommit(
@@ -1406,21 +1522,497 @@ describe('core reset governance', () => {
       ],
     })
 
-    expect(productionSourceDelta(THIN_DELIVERY_BASE)).toEqual({ added: 0, removed: 0, net: 0 })
-    expect((JSON.parse(read('package.json')) as { dependencies: Record<string, string> }).dependencies)
-      .toHaveProperty('neo4j-driver')
-    expect(execFileSync(git, ['diff', '--name-only', THIN_DELIVERY_BASE, '--'], { encoding: 'utf8' })
-      .trim().split('\n').filter(Boolean).sort()).toEqual([
-      'docs/core-reset/removal-manifest.yml',
-      'docs/core-reset/scorecard.md',
-      'docs/designs/2026-07-19-core-reset.md',
-      'docs/roadmap.md',
-      'tests/unit/core-reset-governance.test.ts',
-    ])
-    expect(() => execFileSync(
+    const delta = productionSourceDelta(THIN_DELIVERY_IMPLEMENTATION_START)
+    expect(delta).toEqual({ added: 2_248, removed: 7_281, net: -5_033 })
+    expect(delta.added).toBeLessThanOrEqual(thinDelivery!.production_loc_budget!.added_max)
+    expect(delta.removed).toBeGreaterThanOrEqual(thinDelivery!.production_loc_budget!.removed_min)
+    expect(delta.net).toBeLessThanOrEqual(thinDelivery!.production_loc_budget!.net_max)
+    expect(addedSinceImplementationStart).toHaveLength(thinDelivery!.production_file_budget!.added_max)
+    expect(removedSinceImplementationStart.length)
+      .toBeGreaterThanOrEqual(thinDelivery!.production_file_budget!.removed_min)
+    expect(inventory.files).toBeLessThanOrEqual(thinDelivery!.final_source_budget!.files_max)
+    expect(inventory.loc).toBeLessThanOrEqual(thinDelivery!.final_source_budget!.loc_max)
+
+    const predecessorSet = new Set<string>(THIN_DELIVERY_PREDECESSORS)
+    const survivingLegacyImporterEdges = inventory.paths.flatMap((importer: string) =>
+      importedRelativeTargets(importer, read(importer), predecessorSet)
+        .map((target) => `${importer}\0${target}`))
+    expect(survivingLegacyImporterEdges).toEqual([])
+
+    type PackageManifest = {
+      bin?: Record<string, string>
+      dependencies: Record<string, string>
+      devDependencies: Record<string, string>
+      optionalDependencies?: Record<string, string>
+      peerDependencies?: Record<string, string>
+    }
+    type PackageLock = {
+      packages: Record<string, {
+        bin?: Record<string, string>
+        dependencies?: Record<string, string>
+        devDependencies?: Record<string, string>
+        optionalDependencies?: Record<string, string>
+        peerDependencies?: Record<string, string>
+      }>
+    }
+    const basePackage = JSON.parse(execFileSync(
       git,
-      ['diff', '--quiet', THIN_DELIVERY_BASE, '--', 'src', 'package.json', 'package-lock.json'],
-    )).not.toThrow()
+      ['show', `${THIN_DELIVERY_IMPLEMENTATION_START}:package.json`],
+      { encoding: 'utf8' },
+    )) as PackageManifest
+    const currentPackage = JSON.parse(read('package.json')) as PackageManifest
+    const expectedRuntimeDependencies = { ...basePackage.dependencies }
+    expect(expectedRuntimeDependencies['neo4j-driver']).toBe('^6.0.1')
+    delete expectedRuntimeDependencies['neo4j-driver']
+    expect(currentPackage.dependencies).toEqual(expectedRuntimeDependencies)
+    expect(currentPackage.devDependencies).toEqual(basePackage.devDependencies)
+    expect(currentPackage.optionalDependencies).toEqual(basePackage.optionalDependencies)
+    expect(currentPackage.peerDependencies).toEqual(basePackage.peerDependencies)
+    expect(currentPackage.bin).toEqual({ madar: THIN_DELIVERY_BIN })
+
+    const baseLock = JSON.parse(execFileSync(
+      git,
+      ['show', `${THIN_DELIVERY_IMPLEMENTATION_START}:package-lock.json`],
+      { encoding: 'utf8' },
+    )) as PackageLock
+    const currentLock = JSON.parse(read('package-lock.json')) as PackageLock
+    const removedLockPackages = Object.keys(baseLock.packages)
+      .filter((path) => !(path in currentLock.packages))
+      .sort()
+    const addedLockPackages = Object.keys(currentLock.packages)
+      .filter((path) => !(path in baseLock.packages))
+      .sort()
+    expect(removedLockPackages).toEqual([...THIN_DELIVERY_NEO4J_LOCK_CLOSURE])
+    expect(addedLockPackages).toEqual([])
+    expect(currentLock.packages['']?.dependencies).toEqual(currentPackage.dependencies)
+    expect(currentLock.packages['']?.devDependencies).toEqual(currentPackage.devDependencies)
+    expect(currentLock.packages['']?.optionalDependencies).toEqual(currentPackage.optionalDependencies)
+    expect(currentLock.packages['']?.peerDependencies).toEqual(currentPackage.peerDependencies)
+    expect(currentLock.packages['']?.bin).toEqual({ madar: THIN_DELIVERY_BIN })
+    expect(JSON.stringify(currentLock)).not.toMatch(/neo4j/i)
+
+    const implementation = thinDelivery!.implementation!
+    expect({
+      npm_files: manifest.current.npm_files,
+      npm_packed_bytes: manifest.current.npm_packed_bytes,
+      npm_unpacked_bytes: manifest.current.npm_unpacked_bytes,
+    }).toEqual({
+      npm_files: implementation.npm_files,
+      npm_packed_bytes: implementation.npm_packed_bytes,
+      npm_unpacked_bytes: implementation.npm_unpacked_bytes,
+    })
+    expect(manifest.current.npm_files).toBeLessThan(thinDelivery!.npm_package_budget!.files_less_than)
+    expect(manifest.current.npm_unpacked_bytes)
+      .toBeLessThan(thinDelivery!.npm_package_budget!.unpacked_bytes_less_than)
+    expect(manifest.current.npm_packed_bytes - THIN_DELIVERY_BASE_NPM_PACKED_BYTES)
+      .toBeLessThanOrEqual(thinDelivery!.npm_package_budget!.packed_bytes_delta_max)
+
+    type StartupSample = {
+      elapsed_ms: number
+      max_rss_bytes: number
+      tools?: string[]
+    }
+    type StartupMeasurement = {
+      isolated_cold_processes: number
+      samples: StartupSample[]
+      median_ms: number
+      p95_ms: number
+      max_rss_bytes: number
+      median_gate_ms_less_than: number
+      max_rss_gate_bytes_less_than?: number
+      tools_exact?: string[]
+      passed: boolean
+    }
+    type ThinDeliveryStartupReceipt = {
+      implementation_start_commit: string
+      candidate_state: string
+      measurement_method: {
+        install: string
+        elapsed_clock: string
+        rss_command: string
+        rss_unit: string
+        median: string
+        p95: string
+        version_elapsed_boundary: string
+        mcp_elapsed_boundary: string
+      }
+      package: {
+        name: string
+        version: string
+        files: number
+        packed_bytes: number
+        unpacked_bytes: number
+        preceding_packed_bytes: number
+        packed_bytes_delta: number
+        shasum: string
+        integrity: string
+        tarball_sha256: string
+      }
+      version_startup: StartupMeasurement
+      mcp_startup: StartupMeasurement & { protocol_version: string }
+      claims: {
+        packed_install_used: boolean
+        startup_gates_passed: boolean
+        real_client_transport_proved: boolean
+        completion_claimed: boolean
+      }
+    }
+    const startup = JSON.parse(
+      read('docs/core-reset/evidence/thin-delivery-startup.json'),
+    ) as ThinDeliveryStartupReceipt
+    expect(startup).toMatchObject({
+      implementation_start_commit: THIN_DELIVERY_IMPLEMENTATION_START,
+      candidate_state: 'pre_pr_final_candidate',
+      measurement_method: {
+        install: 'fresh consumer install from the real packed tarball',
+        elapsed_clock: 'monotonic',
+        rss_command: '/usr/bin/time -l',
+        rss_unit: 'bytes',
+        median: 'mean of the middle pair after ascending sort',
+        p95: 'nearest rank at ceil(0.95 * sample count)',
+      },
+      package: {
+        name: '@lubab/madar',
+        version: '0.32.0',
+        files: implementation.npm_files,
+        packed_bytes: implementation.npm_packed_bytes,
+        unpacked_bytes: implementation.npm_unpacked_bytes,
+        preceding_packed_bytes: THIN_DELIVERY_BASE_NPM_PACKED_BYTES,
+        packed_bytes_delta: implementation.npm_packed_bytes_delta,
+        shasum: implementation.npm_shasum,
+        integrity: implementation.npm_integrity,
+        tarball_sha256: implementation.npm_tarball_sha256,
+      },
+      claims: {
+        packed_install_used: true,
+        startup_gates_passed: true,
+        real_client_transport_proved: true,
+        completion_claimed: false,
+      },
+    })
+    expect(startup.measurement_method.version_elapsed_boundary)
+      .toBe('process spawn through version process exit')
+    expect(startup.measurement_method.mcp_elapsed_boundary)
+      .toBe('process spawn through parsed tools/list response')
+
+    const roundMilliseconds = (value: number): number => Math.round(value * 1_000) / 1_000
+    const deriveStartupStatistics = (samples: StartupSample[]) => {
+      const elapsed = samples.map((sample) => sample.elapsed_ms).sort((left, right) => left - right)
+      const midpoint = Math.floor(elapsed.length / 2)
+      const median = elapsed.length % 2 === 0
+        ? (elapsed[midpoint - 1]! + elapsed[midpoint]!) / 2
+        : elapsed[midpoint]!
+      return {
+        median_ms: roundMilliseconds(median),
+        p95_ms: elapsed[Math.ceil(elapsed.length * 0.95) - 1],
+        max_rss_bytes: Math.max(...samples.map((sample) => sample.max_rss_bytes)),
+      }
+    }
+    const startupContract = thinDelivery!.startup_contract!
+    expect(startupContract.statistics_required)
+      .toEqual(['median_ms', 'p95_ms', 'max_rss_bytes'])
+    for (const measurement of [startup.version_startup, startup.mcp_startup]) {
+      expect(measurement.samples).toHaveLength(measurement.isolated_cold_processes)
+      expect(measurement.samples.length)
+        .toBeGreaterThanOrEqual(startupContract.isolated_cold_samples_min)
+      expect(measurement.samples.every((sample) => (
+        Number.isFinite(sample.elapsed_ms)
+        && sample.elapsed_ms > 0
+        && Number.isInteger(sample.max_rss_bytes)
+        && sample.max_rss_bytes > 0
+      ))).toBe(true)
+      expect({
+        median_ms: measurement.median_ms,
+        p95_ms: measurement.p95_ms,
+        max_rss_bytes: measurement.max_rss_bytes,
+      }).toEqual(deriveStartupStatistics(measurement.samples))
+      expect(measurement.median_ms).toBeLessThan(measurement.median_gate_ms_less_than)
+      expect(measurement.passed).toBe(true)
+    }
+    expect(startup.version_startup.median_gate_ms_less_than)
+      .toBe(startupContract.version_median_ms_less_than)
+    expect(startup.version_startup.max_rss_gate_bytes_less_than)
+      .toBe(startupContract.version_max_rss_bytes_less_than)
+    expect(startup.version_startup.max_rss_bytes)
+      .toBeLessThan(startupContract.version_max_rss_bytes_less_than)
+    expect(startup.mcp_startup.median_gate_ms_less_than)
+      .toBe(startupContract.initialize_tools_list_median_ms_less_than)
+    expect(startup.mcp_startup.tools_exact)
+      .toEqual(startupContract.initialize_tools_list_tools_exact)
+    expect(startup.mcp_startup.samples.every((sample) => (
+      JSON.stringify(sample.tools) === JSON.stringify(startupContract.initialize_tools_list_tools_exact)
+    ))).toBe(true)
+
+    type ClientPass = {
+      normal_launch: boolean
+      launch_mode: string
+      configuration_override_used: boolean
+      manual_tool_override_used: boolean
+      dangerous_bypass_used: boolean
+      question: string
+      budget: number
+      retrieve_call_count: number
+      result_received: boolean
+      matched_source: string
+      provenance: string
+      final_response: string
+      passed: boolean
+    }
+    type ThinDeliveryClientReceipt = {
+      implementation_start_commit: string
+      artifact: {
+        name: string
+        version: string
+        shasum: string
+        integrity: string
+        tarball_sha256: string
+        files: number
+        packed_bytes: number
+        unpacked_bytes: number
+        packed_install: boolean
+      }
+      registration: {
+        name: string
+        command: string
+        args: string[]
+        workspace_hashed: boolean
+        exact_workspace_cwd: boolean
+        configuration_override_used: boolean
+        manual_tool_override_used: boolean
+      }
+      codex: { passed: boolean }
+      codex_stable_retry: { passed: boolean }
+      codex_interactive_retry: { passed: boolean }
+      final_candidate_revalidation: {
+        candidate_state: string
+        passed: boolean
+        artifact: {
+          npm_shasum: string
+          npm_integrity: string
+          tarball_sha256: string
+          files: number
+          packed_bytes: number
+          unpacked_bytes: number
+          preceding_packed_bytes: number
+          packed_bytes_delta: number
+          packed_install: boolean
+          installed_package_is_symlink: boolean
+        }
+        fixture: {
+          head: string
+          status_before: string
+          status_after: string
+        }
+        registration: {
+          name: string
+          command: string
+          args: string[]
+          workspace_hashed: boolean
+          exact_workspace_cwd: boolean
+        }
+        codex: ClientPass & {
+          version: string
+          thread_id: string
+          tool_approval: string
+          tool_approval_persisted: boolean
+          terminal_event: string
+          server: string
+          tool: string
+          result: string
+        }
+        claude: ClientPass & {
+          version: string
+          session_id: string
+          tool: string
+        }
+        cleanup: {
+          supported_install_used: boolean
+          supported_uninstall_used: boolean
+          repository_changes: string
+          codex_config_restored_sha256: string
+          claude_config_restored_sha256: string
+          claude_home_routing_restored_sha256: string
+          all_captured_configuration_restored_byte_exact: boolean
+        }
+        github_records: {
+          issue_602: string
+          rfc_577: string
+        }
+        claims: {
+          normal_codex_tools_call_proved: boolean
+          normal_claude_tools_call_proved: boolean
+          client_transport_passed: boolean
+          stop_condition_triggered: boolean
+          implementation_pr_opened: boolean
+          implementation_merge_authorized: boolean
+          thin_delivery_complete: boolean
+        }
+      }
+      stop: {
+        historically_triggered: boolean
+        triggered: boolean
+      }
+    }
+    const clientReceipt = JSON.parse(read(THIN_DELIVERY_CLIENT_RECEIPT)) as ThinDeliveryClientReceipt
+    expect(clientReceipt).toMatchObject({
+      implementation_start_commit: THIN_DELIVERY_IMPLEMENTATION_START,
+      artifact: {
+        name: '@lubab/madar',
+        version: '0.32.0',
+        shasum: implementation.npm_shasum,
+        integrity: implementation.npm_integrity,
+        tarball_sha256: implementation.npm_tarball_sha256,
+        files: implementation.npm_files,
+        packed_bytes: implementation.npm_packed_bytes,
+        unpacked_bytes: implementation.npm_unpacked_bytes,
+        packed_install: true,
+      },
+      registration: {
+        name: implementation.final_artifact_registration,
+        command: 'madar',
+        args: ['mcp'],
+        workspace_hashed: true,
+        exact_workspace_cwd: true,
+        configuration_override_used: false,
+        manual_tool_override_used: false,
+      },
+      codex: { passed: false },
+      codex_stable_retry: { passed: false },
+      codex_interactive_retry: { passed: true },
+      stop: {
+        historically_triggered: true,
+        triggered: false,
+      },
+    })
+    const finalClient = clientReceipt.final_candidate_revalidation
+    expect(finalClient).toMatchObject({
+      candidate_state: 'pre_pr_final_candidate',
+      passed: true,
+      artifact: {
+        npm_shasum: implementation.npm_shasum,
+        npm_integrity: implementation.npm_integrity,
+        tarball_sha256: implementation.npm_tarball_sha256,
+        files: implementation.npm_files,
+        packed_bytes: implementation.npm_packed_bytes,
+        unpacked_bytes: implementation.npm_unpacked_bytes,
+        preceding_packed_bytes: THIN_DELIVERY_BASE_NPM_PACKED_BYTES,
+        packed_bytes_delta: implementation.npm_packed_bytes_delta,
+        packed_install: true,
+        installed_package_is_symlink: false,
+      },
+      fixture: {
+        head: '9b036583bab1dbd6fc38b6180e6bad73b4875e23',
+        status_before: '?? out/',
+        status_after: '?? out/',
+      },
+      registration: {
+        name: implementation.final_artifact_registration,
+        command: 'madar',
+        args: ['mcp'],
+        workspace_hashed: true,
+        exact_workspace_cwd: true,
+      },
+      codex: {
+        version: '0.145.0',
+        thread_id: implementation.final_artifact_codex_session,
+        tool_approval: 'one_call_allow',
+        tool_approval_persisted: false,
+        terminal_event: 'mcp_tool_call_end',
+        server: implementation.final_artifact_registration,
+        tool: 'retrieve',
+        result: 'Ok',
+      },
+      claude: {
+        version: '2.1.218',
+        session_id: implementation.final_artifact_claude_session,
+        tool: `mcp__${implementation.final_artifact_registration}__retrieve`,
+      },
+      cleanup: {
+        supported_install_used: true,
+        supported_uninstall_used: true,
+        repository_changes: 'none',
+        codex_config_restored_sha256:
+          'fbfa000be5a6248766818b54cf2ec881dd8d88b578a3323e204c22408a414703',
+        claude_config_restored_sha256:
+          '9bb18a350ae4616e4a382025b366af0f15145bb209d6300af4a38736d36068fd',
+        claude_home_routing_restored_sha256:
+          '576e6cc125d7e1f236eb7b4ffa414d0b31a36562374a22202b646af08242cff2',
+        all_captured_configuration_restored_byte_exact: true,
+      },
+      github_records: {
+        issue_602: THIN_DELIVERY_FINAL_CLIENT_ISSUE_RECEIPT,
+        rfc_577: THIN_DELIVERY_FINAL_CLIENT_RFC_RECEIPT,
+      },
+      claims: {
+        normal_codex_tools_call_proved: true,
+        normal_claude_tools_call_proved: true,
+        client_transport_passed: true,
+        stop_condition_triggered: false,
+        implementation_pr_opened: false,
+        implementation_merge_authorized: false,
+        thin_delivery_complete: false,
+      },
+    })
+    const expectedQuestion = 'Where is scheduleConstellationRetry defined and what calls it?'
+    for (const client of [finalClient.codex, finalClient.claude]) {
+      expect(client).toMatchObject({
+        normal_launch: true,
+        launch_mode: 'interactive',
+        configuration_override_used: false,
+        manual_tool_override_used: false,
+        dangerous_bypass_used: false,
+        question: expectedQuestion,
+        budget: 1_000,
+        retrieve_call_count: 1,
+        result_received: true,
+        matched_source: 'src/payment-retry.ts',
+        provenance: 'src/payment-retry.ts:L1-L3',
+        final_response: 'evidence — src/payment-retry.ts',
+        passed: true,
+      })
+    }
+
+    const evaluator = read(EVIDENCE_HELDOUT_EVALUATOR)
+    const normalizedEvaluator = evaluator.replaceAll(THIN_DELIVERY_BIN, THIN_DELIVERY_HISTORICAL_BIN)
+    expect(evaluator.split(THIN_DELIVERY_BIN)).toHaveLength(3)
+    expect(createHash('sha256').update(evaluator).digest('hex'))
+      .toBe(THIN_DELIVERY_REPINNED_EVALUATOR_SHA256)
+    expect(createHash('sha256').update(normalizedEvaluator).digest('hex'))
+      .toBe(THIN_DELIVERY_HISTORICAL_EVALUATOR_SHA256)
+    expect(gitBlobSha256(THIN_DELIVERY_IMPLEMENTATION_START, EVIDENCE_HELDOUT_EVALUATOR))
+      .toBe(THIN_DELIVERY_HISTORICAL_EVALUATOR_SHA256)
+
+    type HeldOutReceiptSchema = {
+      properties: {
+        protocol: {
+          properties: Record<string, unknown>
+        }
+      }
+    }
+    const historicalReceiptSchema = JSON.parse(execFileSync(
+      git,
+      ['show', `${THIN_DELIVERY_IMPLEMENTATION_START}:${EVIDENCE_HELDOUT_RECEIPT_SCHEMA}`],
+      { encoding: 'utf8' },
+    )) as HeldOutReceiptSchema
+    const currentReceiptSchema = JSON.parse(read(EVIDENCE_HELDOUT_RECEIPT_SCHEMA)) as HeldOutReceiptSchema
+    const historicalGenerateCommand = ['node', THIN_DELIVERY_HISTORICAL_BIN, 'generate', '.']
+    const currentGenerateCommand = ['node', THIN_DELIVERY_BIN, 'generate', '.']
+    expect(currentReceiptSchema.properties.protocol.properties.candidate_generate_command).toEqual({
+      oneOf: [
+        { const: historicalGenerateCommand },
+        { const: currentGenerateCommand },
+      ],
+    })
+    const normalizedReceiptSchema = structuredClone(currentReceiptSchema)
+    normalizedReceiptSchema.properties.protocol.properties.candidate_generate_command = {
+      const: historicalGenerateCommand,
+    }
+    expect(normalizedReceiptSchema).toEqual(historicalReceiptSchema)
+    expect(gitBlobSha256(THIN_DELIVERY_IMPLEMENTATION_START, EVIDENCE_HELDOUT_RECEIPT_SCHEMA))
+      .toBe(THIN_DELIVERY_HISTORICAL_RECEIPT_SCHEMA_SHA256)
+    expect(createHash('sha256').update(read(EVIDENCE_HELDOUT_RECEIPT_SCHEMA)).digest('hex'))
+      .toBe(THIN_DELIVERY_DUAL_PATH_RECEIPT_SCHEMA_SHA256)
+
     expect(manifest.review).toMatchObject({ disposition_changes: 9 })
     expect(manifest.review.amendment).toContain('exact 16-file / 7,277-LOC thin-delivery deletion contract')
   })
@@ -1803,14 +2395,14 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: THIN_DELIVERY_BASE,
       completed_phase_commit: EVIDENCE_MERGE,
-      production_typescript_files: 73,
-      production_typescript_loc: 21_687,
-      production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
-      npm_files: 162,
-      npm_packed_bytes: 231_524,
-      npm_unpacked_bytes: 984_434,
+      production_typescript_files: 63,
+      production_typescript_loc: 16_654,
+      production_loc_added: 2_248,
+      production_loc_removed: 7_281,
+      production_loc_net: -5_033,
+      npm_files: 142,
+      npm_packed_bytes: 200_310,
+      npm_unpacked_bytes: 812_531,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'exact_implementation_source_and_package',
     })
@@ -2319,7 +2911,7 @@ describe('core reset governance', () => {
     expect(EVIDENCE_REPLACEMENTS.every((path) => existsSync(resolve(path)))).toBe(true)
     expect(logicalLocAtCommit(EVIDENCE_IMPLEMENTATION, EVIDENCE_REPLACEMENTS)).toBe(1_812)
     expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(true)
-    const implementationDelta = productionSourceDelta(EVIDENCE_BASE)
+    const implementationDelta = productionSourceDeltaBetween(EVIDENCE_BASE, EVIDENCE_IMPLEMENTATION)
     expect(implementationDelta.added).toBeLessThanOrEqual(3_500)
     expect(implementationDelta.removed).toBeGreaterThanOrEqual(33_031)
     expect(implementationDelta.net).toBeLessThanOrEqual(-25_900)
@@ -2329,7 +2921,12 @@ describe('core reset governance', () => {
   })
 
   it('pins the frozen held-out and performance contracts byte for byte', () => {
+    const transportRepinPaths = new Set([
+      EVIDENCE_HELDOUT_EVALUATOR,
+      EVIDENCE_HELDOUT_RECEIPT_SCHEMA,
+    ])
     for (const [path, expectedSha256] of Object.entries(FROZEN_EVIDENCE_HASHES)) {
+      if (transportRepinPaths.has(path)) continue
       expect(
         createHash('sha256').update(readFileSync(resolve(path))).digest('hex'),
         `${path} must remain byte-frozen`,
@@ -3169,7 +3766,10 @@ describe('core reset governance', () => {
       expect(generation?.sources ?? [], `${source} cannot remain owned by generation`).not.toContain(source)
       expect(
         manifest.items
-          .filter((item) => (item.sources ?? []).some((pattern) => manifestGlob(pattern).test(source)))
+          .filter((item) => [
+            ...(item.sources ?? []),
+            ...(item.removed_sources ?? []),
+          ].some((pattern) => manifestGlob(pattern).test(source)))
           .map((item) => item.id),
         `${source} must have one transferred owner`,
       ).toEqual([expectedOwner])

@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:e2a14876-ac4a-4fe0-acd4-a5eccd174675",
+  "serialNumber": "urn:uuid:02baf348-4fd8-403d-a13e-227f108f1d0e",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-22T03:55:06.507Z",
+    "timestamp": "2026-07-25T09:57:56.033Z",
     "lifecycles": [
       {
         "phase": "build"
@@ -25,7 +25,7 @@
       "version": "0.32.0",
       "scope": "required",
       "author": "mohanagy",
-      "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
+      "description": "Give AI coding agents a small, authenticated evidence path through large TypeScript and JavaScript repositories.",
       "purl": "pkg:npm/%40lubab/madar@0.32.0",
       "properties": [],
       "externalReferences": [
@@ -1159,90 +1159,6 @@
       ]
     },
     {
-      "bom-ref": "base64-js@1.5.1",
-      "type": "library",
-      "name": "base64-js",
-      "version": "1.5.1",
-      "scope": "required",
-      "author": "T. Jameson Little <t.jameson.little@gmail.com>",
-      "description": "Base64 encoding/decoding in pure JS",
-      "purl": "pkg:npm/base64-js@1.5.1",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz"
-        },
-        {
-          "type": "vcs",
-          "url": "git://github.com/beatgammit/base64-js.git"
-        },
-        {
-          "type": "website",
-          "url": "https://github.com/beatgammit/base64-js"
-        },
-        {
-          "type": "issue-tracker",
-          "url": "https://github.com/beatgammit/base64-js/issues"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "00aa5a6251e7f2de1255b3870b2f9be7e28a82f478bebb03f2f6efadb890269b3b7ca0d3923903af2ea38b4ad42630b49336cd78f2f0cf1abc8b2a68e35a9e58"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ]
-    },
-    {
-      "bom-ref": "buffer@6.0.3",
-      "type": "library",
-      "name": "buffer",
-      "version": "6.0.3",
-      "scope": "required",
-      "author": "Feross Aboukhadijeh",
-      "description": "Node.js Buffer API, for the browser",
-      "purl": "pkg:npm/buffer@6.0.3",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz"
-        },
-        {
-          "type": "vcs",
-          "url": "git://github.com/feross/buffer.git"
-        },
-        {
-          "type": "website",
-          "url": "https://github.com/feross/buffer"
-        },
-        {
-          "type": "issue-tracker",
-          "url": "https://github.com/feross/buffer/issues"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "153882a4dc6dc226591c465b71b4c87198c44552029fdcaafe90c591397de7f031cc3d6768172d37b60eebcae233f80b48363bb1dacc6f2f21a1f00362ebaa38"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ]
-    },
-    {
       "bom-ref": "chai@6.2.2",
       "type": "library",
       "name": "chai",
@@ -1729,40 +1645,6 @@
       ]
     },
     {
-      "bom-ref": "ieee754@1.2.1",
-      "type": "library",
-      "name": "ieee754",
-      "version": "1.2.1",
-      "scope": "required",
-      "author": "Feross Aboukhadijeh",
-      "description": "Read/write IEEE754 floating point numbers from/to a Buffer or array-like object",
-      "purl": "pkg:npm/ieee754@1.2.1",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz"
-        },
-        {
-          "type": "vcs",
-          "url": "git://github.com/feross/ieee754.git"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "75ccaa843bd7d42e3a95765c56a0a92be16d31141574830debf0dfe63b36ce8b94b2a1bb23ab05c62b480beeca60adbd29d5ce2c776ef732f8b059e85509ea68"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "BSD-3-Clause"
-          }
-        }
-      ]
-    },
-    {
       "bom-ref": "istanbul-lib-coverage@3.2.2",
       "type": "library",
       "name": "istanbul-lib-coverage",
@@ -2142,124 +2024,6 @@
       ]
     },
     {
-      "bom-ref": "neo4j-driver@6.2.0",
-      "type": "library",
-      "name": "neo4j-driver",
-      "version": "6.2.0",
-      "scope": "required",
-      "author": "Neo4j",
-      "description": "The official Neo4j driver for Javascript",
-      "purl": "pkg:npm/neo4j-driver@6.2.0",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/neo4j-driver/-/neo4j-driver-6.2.0.tgz"
-        },
-        {
-          "type": "vcs",
-          "url": "git://github.com/neo4j/neo4j-javascript-driver.git"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "f56fd393b1328d91edbfcecd169aa821b9749a5431f1b5fca61505cc033dc66789ad1a460efaa4a5d433735d438f0cf2c1009d8627da64f4afa244a7029ed84e"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ]
-    },
-    {
-      "bom-ref": "neo4j-driver-bolt-connection@6.2.0",
-      "type": "library",
-      "name": "neo4j-driver-bolt-connection",
-      "version": "6.2.0",
-      "scope": "required",
-      "author": "Neo4j",
-      "description": "Implements the connection with the Neo4j Database using the Bolt Protocol",
-      "purl": "pkg:npm/neo4j-driver-bolt-connection@6.2.0",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/neo4j-driver-bolt-connection/-/neo4j-driver-bolt-connection-6.2.0.tgz"
-        },
-        {
-          "type": "vcs",
-          "url": "git://github.com/neo4j/neo4j-javascript-driver.git"
-        },
-        {
-          "type": "website",
-          "url": "https://github.com/neo4j/neo4j-javascript-driver#readme"
-        },
-        {
-          "type": "issue-tracker",
-          "url": "https://github.com/neo4j/neo4j-javascript-driver/issues"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "4849c54817ee9a5783c660c064a9235f16792e02f6899493c74f2c3bea975f8e5929ac5924e720f68c70a170025d9d516c8ab75db0df1d4f08e6d1316a760438"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ]
-    },
-    {
-      "bom-ref": "neo4j-driver-core@6.2.0",
-      "type": "library",
-      "name": "neo4j-driver-core",
-      "version": "6.2.0",
-      "scope": "required",
-      "author": "Neo4j",
-      "description": "Internals of neo4j-driver",
-      "purl": "pkg:npm/neo4j-driver-core@6.2.0",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/neo4j-driver-core/-/neo4j-driver-core-6.2.0.tgz"
-        },
-        {
-          "type": "vcs",
-          "url": "git://github.com/neo4j/neo4j-javascript-driver.git"
-        },
-        {
-          "type": "website",
-          "url": "https://github.com/neo4j/neo4j-javascript-driver#readme"
-        },
-        {
-          "type": "issue-tracker",
-          "url": "https://github.com/neo4j/neo4j-javascript-driver/issues"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "53c3d276f0c40969828125b286a34d57330e35714758f71377982a8b5dbe103c71b746844c0d26f970977fd1fbabaa905dd8ac738d2b50910e71540ebbaa5e10"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ]
-    },
-    {
       "bom-ref": "obug@2.1.1",
       "type": "library",
       "name": "obug",
@@ -2409,14 +2173,14 @@
       ]
     },
     {
-      "bom-ref": "postcss@8.5.17",
+      "bom-ref": "postcss@8.5.23",
       "type": "library",
       "name": "postcss",
-      "version": "8.5.17",
+      "version": "8.5.23",
       "scope": "required",
       "author": "Andrey Sitnik <andrey@sitnik.es>",
       "description": "Tool for transforming styles with JS plugins",
-      "purl": "pkg:npm/postcss@8.5.17",
+      "purl": "pkg:npm/postcss@8.5.23",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2426,7 +2190,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/postcss/-/postcss-8.5.17.tgz"
+          "url": "https://registry.npmjs.org/postcss/-/postcss-8.5.23.tgz"
         },
         {
           "type": "website",
@@ -2440,7 +2204,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "27b105fbc5fe0b344f6893cebfd0a4db035626f1a79e5dcf70d3c074683a1932e3c95a72434c804cc497445455d3506f893ffd1b0b9cdeb8c4c896c3246f5ae3"
+          "content": "839d39f3acebe1b666c0589395f94cbbc1346c34dbe48e607abb60c002a6b1d5254d022166dba7cd4943d564b3c1c5563e8015a6cac0eaf95f083ee85ef47082"
         }
       ],
       "licenses": [
@@ -2518,80 +2282,6 @@
         {
           "alg": "SHA-512",
           "content": "b7dcf6f5c2635dffefc50f1dca1092a6de87e9a4b01d393c713e48de2cba48c5ee169939981e8f2fa5df0bc3c2c2b3d3c7ddee7702949bd1d1b5e0254c604b88"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ]
-    },
-    {
-      "bom-ref": "rxjs@7.8.2",
-      "type": "library",
-      "name": "rxjs",
-      "version": "7.8.2",
-      "scope": "required",
-      "author": "Ben Lesh <ben@benlesh.com>",
-      "description": "Reactive Extensions for modern JavaScript",
-      "purl": "pkg:npm/rxjs@7.8.2",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/reactivex/rxjs.git"
-        },
-        {
-          "type": "website",
-          "url": "https://rxjs.dev"
-        },
-        {
-          "type": "issue-tracker",
-          "url": "https://github.com/ReactiveX/RxJS/issues"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ]
-    },
-    {
-      "bom-ref": "safe-buffer@5.2.1",
-      "type": "library",
-      "name": "safe-buffer",
-      "version": "5.2.1",
-      "scope": "required",
-      "author": "Feross Aboukhadijeh",
-      "description": "Safer Node.js Buffer API",
-      "purl": "pkg:npm/safe-buffer@5.2.1",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.2.1.tgz"
-        },
-        {
-          "type": "vcs",
-          "url": "git://github.com/feross/safe-buffer.git"
-        },
-        {
-          "type": "website",
-          "url": "https://github.com/feross/safe-buffer"
-        },
-        {
-          "type": "issue-tracker",
-          "url": "https://github.com/feross/safe-buffer/issues"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "ae9dd2a34eca71d9a629b1af81a37141226bedb1954959394bd12ad45fa9a5b468ef4f9879a0f1930e4377c34f37e183e9b8e7626d95b8fb825e6a6e62f9825d"
         }
       ],
       "licenses": [
@@ -2741,43 +2431,6 @@
         }
       ],
       "externalReferences": [],
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ]
-    },
-    {
-      "bom-ref": "string_decoder@1.3.0",
-      "type": "library",
-      "name": "string_decoder",
-      "version": "1.3.0",
-      "scope": "required",
-      "description": "The string_decoder module from Node core",
-      "purl": "pkg:npm/string_decoder@1.3.0",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.3.0.tgz"
-        },
-        {
-          "type": "vcs",
-          "url": "git://github.com/nodejs/string_decoder.git"
-        },
-        {
-          "type": "website",
-          "url": "https://github.com/nodejs/string_decoder"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "864457f14d568c915df0bb03276c90ff0596c5aa2912c0015355df90cf00fa3d3ef392401a9a6dd7a72bd56860e8a21b6f8a2453a32a97a04e8febaea7fc0a78"
-        }
-      ],
       "licenses": [
         {
           "license": {
@@ -2948,38 +2601,6 @@
         {
           "license": {
             "id": "MIT"
-          }
-        }
-      ]
-    },
-    {
-      "bom-ref": "tslib@2.8.1",
-      "type": "library",
-      "name": "tslib",
-      "version": "2.8.1",
-      "scope": "required",
-      "author": "Microsoft Corp.",
-      "description": "Runtime library for TypeScript helper functions",
-      "purl": "pkg:npm/tslib@2.8.1",
-      "properties": [],
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/Microsoft/tslib.git"
-        },
-        {
-          "type": "website",
-          "url": "https://www.typescriptlang.org/"
-        },
-        {
-          "type": "issue-tracker",
-          "url": "https://github.com/Microsoft/TypeScript/issues"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "0BSD"
           }
         }
       ]
@@ -3238,7 +2859,6 @@
       "ref": "@lubab/madar@0.32.0",
       "dependsOn": [
         "gpt-tokenizer@3.4.0",
-        "neo4j-driver@6.2.0",
         "typescript@6.0.3",
         "@types/node@26.1.1",
         "@vitest/coverage-v8@4.1.10",
@@ -3422,17 +3042,6 @@
       ]
     },
     {
-      "ref": "base64-js@1.5.1",
-      "dependsOn": []
-    },
-    {
-      "ref": "buffer@6.0.3",
-      "dependsOn": [
-        "base64-js@1.5.1",
-        "ieee754@1.2.1"
-      ]
-    },
-    {
       "ref": "chai@6.2.2",
       "dependsOn": []
     },
@@ -3484,10 +3093,6 @@
     },
     {
       "ref": "html-escaper@2.0.2",
-      "dependsOn": []
-    },
-    {
-      "ref": "ieee754@1.2.1",
       "dependsOn": []
     },
     {
@@ -3553,26 +3158,6 @@
       "dependsOn": []
     },
     {
-      "ref": "neo4j-driver@6.2.0",
-      "dependsOn": [
-        "neo4j-driver-bolt-connection@6.2.0",
-        "neo4j-driver-core@6.2.0",
-        "rxjs@7.8.2"
-      ]
-    },
-    {
-      "ref": "neo4j-driver-bolt-connection@6.2.0",
-      "dependsOn": [
-        "buffer@6.0.3",
-        "neo4j-driver-core@6.2.0",
-        "string_decoder@1.3.0"
-      ]
-    },
-    {
-      "ref": "neo4j-driver-core@6.2.0",
-      "dependsOn": []
-    },
-    {
       "ref": "obug@2.1.1",
       "dependsOn": []
     },
@@ -3589,7 +3174,7 @@
       "dependsOn": []
     },
     {
-      "ref": "postcss@8.5.17",
+      "ref": "postcss@8.5.23",
       "dependsOn": [
         "nanoid@3.3.16",
         "picocolors@1.1.1",
@@ -3607,16 +3192,6 @@
         "@rolldown/pluginutils@1.0.1",
         "@rolldown/binding-darwin-arm64@1.1.5"
       ]
-    },
-    {
-      "ref": "rxjs@7.8.2",
-      "dependsOn": [
-        "tslib@2.8.1"
-      ]
-    },
-    {
-      "ref": "safe-buffer@5.2.1",
-      "dependsOn": []
     },
     {
       "ref": "semver@7.7.4",
@@ -3637,12 +3212,6 @@
     {
       "ref": "std-env@4.1.0",
       "dependsOn": []
-    },
-    {
-      "ref": "string_decoder@1.3.0",
-      "dependsOn": [
-        "safe-buffer@5.2.1"
-      ]
     },
     {
       "ref": "supports-color@7.2.0",
@@ -3670,10 +3239,6 @@
       "dependsOn": []
     },
     {
-      "ref": "tslib@2.8.1",
-      "dependsOn": []
-    },
-    {
       "ref": "typescript@6.0.3",
       "dependsOn": []
     },
@@ -3686,7 +3251,7 @@
       "dependsOn": [
         "lightningcss@1.32.0",
         "picomatch@4.0.5",
-        "postcss@8.5.17",
+        "postcss@8.5.23",
         "rolldown@1.1.5",
         "tinyglobby@0.2.17",
         "fsevents@2.3.3"

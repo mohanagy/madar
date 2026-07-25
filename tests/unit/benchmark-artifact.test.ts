@@ -308,8 +308,10 @@ describe('demo benchmark contract versions', () => {
 
   it('uses the versioned declaration contract in CI and rejects token claims from the tiny fixture', () => {
     const workflow = readFileSync(resolve('.github', 'workflows', 'ci.yml'), 'utf8')
+    const evalRegression = readFileSync(resolve('.github', 'scripts', 'ci-eval-regression.mjs'), 'utf8')
     const readme = readFileSync(resolve('examples', 'demo-repo', 'README.md'), 'utf8')
-    expect(workflow).toContain('--questions examples/demo-repo/benchmark-questions.v3.json')
+    expect(workflow).toContain('node .github/scripts/ci-eval-regression.mjs')
+    expect(evalRegression).toContain("resolve('examples/demo-repo/benchmark-questions.v3.json')")
     expect(readme).toContain('preserves the historical mixed container/file-label gold')
     expect(readme).toContain('not evidence that Madar reduces tokens')
   })

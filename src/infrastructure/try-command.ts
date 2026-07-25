@@ -6,8 +6,12 @@ import {
   retrieveContext,
   serializeRetrieveContextResult,
 } from '../application/retrieve-context.js'
-import type { TryCliOptions } from '../cli/parser.js'
 import { inspectQueryIndex } from '../domain/query/index-status.js'
+
+interface TryCliOptions {
+  question: string
+  path: string
+}
 
 export interface TryCommandDependencies {
   generateGraph: typeof generateIndex

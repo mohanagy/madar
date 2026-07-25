@@ -1,6 +1,6 @@
 # Madar MCP examples
 
-Madar exposes exactly one MCP tool: `retrieve`.
+Madar exposes exactly one MCP tool, `retrieve`, and only the tools capability. It exposes no MCP resources or prompts.
 
 ## Basic question
 

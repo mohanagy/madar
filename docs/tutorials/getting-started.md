@@ -1,149 +1,107 @@
 # Getting started
 
-This walkthrough proves the complete Madar path in about 10 minutes:
+This walkthrough builds one local JavaScript/TypeScript graph, runs one retrieval, and registers the same one-tool MCP surface.
 
-```text
-generate a graph -> connect one agent -> make one retrieve call
-```
+## 1. Install and generate
 
-It does not call a hosted model unless you choose to ask a connected coding agent.
-
-## 1. Install Madar
-
-Madar requires Node.js 20 or newer.
+Madar requires Node.js 20 or newer:
 
 ```bash
 npm install -g @lubab/madar
-madar --version
-```
-
-## 2. Generate the sample graph
-
-From the Madar checkout:
-
-```bash
+cd /path/to/madar
 madar generate examples/sample-workspace
-cd examples/sample-workspace
 ```
 
-You can also enter the workspace first and run `madar generate .`.
+Expected output identifies the workspace, indexed JavaScript/TypeScript files, graph node and edge counts, and `out/graph.json`.
 
-The expected output reports:
+`graph.json` is the authoritative local artifact. Source in other languages and non-code files contributes no graph facts.
 
-- detected and indexed file counts
-- graph nodes and directed edges
-- indexing outcomes
-- the `out/graph.json` path
-
-JavaScript and TypeScript use one canonical compiler-backed path. Unsupported languages and non-code formats do not add graph facts.
-
-## 3. Check the graph directly
-
-Before involving an agent, run the CLI equivalent of the MCP tool:
+## 2. Inspect a retrieval
 
 ```bash
+cd examples/sample-workspace
 madar query "how does password reset request enqueue the reset email?"
 ```
 
-The JSON result should use schema `madar.retrieve`, version `1`, and contain:
+The result contains authenticated `matched_nodes`, directed `relationships`, explicit `boundaries`, and bounded `metrics`. It uses the same query application as MCP.
 
-- `matched_nodes` with exact source ranges and excerpts
-- directed `relationships`
-- explicit `boundaries`
-- bounded `metrics`
-
-The sample flow should lead through the account route, password-reset service, persistence, queued job, and email gateway. Exact selection can vary when the sample changes; every returned excerpt must still be authenticated against the generated graph.
-
-## 4. Connect an agent
-
-For Claude Code:
+Madar returns at most 12 files, 25 snippets, and 4,000 serialized tokens. A smaller positive budget is optional:
 
 ```bash
-madar claude install
-madar doctor out/graph.json
-madar status out/graph.json
+madar query "how does password reset request enqueue the reset email?" --budget 2000
 ```
 
-Restart Claude Code, verify the `madar` MCP server, then ask:
+## 3. Connect Claude Code or Codex
+
+Run the installer from the exact repository or linked worktree where the client will operate:
+
+```bash
+madar install claude
+madar doctor
+madar status
+```
+
+For Codex:
+
+```bash
+madar install codex
+madar doctor
+madar status
+```
+
+Claude Code receives a supported per-project local registration outside the repository. Codex receives a workspace-hashed block in `$CODEX_HOME/config.toml` or `~/.codex/config.toml` with exact `cwd`, `startup_timeout_sec = 180`, and `tool_timeout_sec = 60`.
+
+Fresh install, idempotent reinstall, and uninstall create zero repository bytes. There are no generated prompts, instructions, hooks, skills, plugins, or project-local MCP files.
+
+Restart the client, confirm that it lists the Madar server, and ask:
 
 ```text
 How does password reset request enqueue the reset email? Cite exact files and symbols, and state any missing evidence.
 ```
 
-The installed guidance asks Claude to call `retrieve` exactly once with that question unchanged before broad search.
+For a transport check, ask the client to call `retrieve` exactly once. A forced call proves only that the client initialized, listed, and dispatched the tool; it does not prove natural tool preference.
 
-Use the matching command for another agent:
-
-```bash
-madar codex install
-madar cursor install
-madar copilot install
-madar gemini install
-madar aider install
-madar opencode install
-```
-
-`doctor` and `status` also report Codex, Aider, and OpenCode when their instruction, hook, plugin, or MCP signals are present. They verify on-disk wiring, not whether a running host has trusted and activated it.
-
-## 5. Try your repository
-
-```bash
-cd /path/to/your/repository
-madar generate .
-madar claude install
-```
-
-Ask one real codebase question with clear evidence requirements. Good examples:
-
-```text
-Trace a request from the route to persistence and background work. Cite exact files and symbols.
-```
-
-```text
-Which code paths can update subscription status? Preserve causal order and state any unsupported or disconnected phase.
-```
-
-Use `madar query "<question>" --budget 2000` when you want to inspect the exact retrieval response without MCP.
+Other MCP clients are Registry or manual targets. Register command `madar`, arguments `["mcp"]`, stdio transport, and the exact repository as the working directory.
 
 ## Expected result behavior
 
-- `outcome: "evidence"` means at least one authenticated graph node survived; structural file evidence may have no excerpt.
+- `outcome: "evidence"` means authenticated graph evidence survived selection.
 - `outcome: "missing"` means the graph has no support for the question.
-- `outcome: "unsupported"` means a required source is outside the JavaScript/TypeScript index.
+- `outcome: "unsupported"` means required source is outside the JavaScript/TypeScript index.
 - `outcome: "stale"` means source bytes or ranges no longer match the graph.
 - `outcome: "unavailable"` means required local source cannot be read safely.
 - `outcome: "corrupt"` means required graph facts are malformed.
-- `boundaries` may also report disconnected or truncated evidence.
+- `boundaries` may additionally report disconnected or truncated evidence.
 
 Do not treat a partial path as complete. Use the returned evidence first, report its boundary, and make only the focused source read needed to verify what is missing.
 
 ## Refresh after changes
 
-For a one-off refresh:
+For a one-off reconcile:
 
 ```bash
 madar generate . --update
 ```
 
-For active local development:
+For continued local development:
 
 ```bash
-madar watch .
+madar generate . --watch
 ```
 
-MCP installs use `madar serve --stdio --auto-refresh` where supported. Re-run the install after upgrading Madar, then reconnect the MCP server.
+`madar mcp` starts stdio before loading reconciliation code and keeps the exact working-directory graph current. The first tool call waits no more than 25 seconds; if a graph is not accepted, it returns the canonical `unavailable` result.
 
 ## Troubleshooting
 
 - **`out/graph.json` is missing:** run `madar generate .`.
-- **The result is stale:** regenerate after source changes and retry the same question.
-- **The MCP server is absent:** rerun the agent install, restart the host, and inspect its MCP list.
-- **Codex shows partial wiring:** inspect `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and the workspace block in `~/.codex/config.toml`; use `/hooks` and `/mcp` in the running session.
+- **The result is stale:** reconcile after source changes and repeat the same question.
+- **The MCP server is absent:** rerun `madar install claude` or `madar install codex`, restart the client, and inspect its MCP list.
+- **The installer reports a conflict:** preserve the existing user-owned registration and resolve ownership explicitly; Madar will not overwrite it.
 - **The result is unsupported:** confirm the load-bearing code is JavaScript or TypeScript.
-- **The result is truncated:** ask a narrower question or request a smaller phase; increasing `budget` above 4,000 does not increase the effective cap.
+- **The result is truncated:** ask a narrower question; budgets above 4,000 do not increase the effective cap.
 
 ## Optional next steps
 
 - Read the [CLI and MCP reference](../reference/cli-and-mcp.md).
-- Follow an [agent-specific quickstart](./agent-quickstarts.md).
+- Follow an [agent quickstart](./agent-quickstarts.md).
 - Review the [design-partner test format](../design-partners.md) before sharing results from a private repository.
