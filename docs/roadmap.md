@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, and Thin Delivery have passed. No technical phase is active. Evaluation tooling isolation is the sole Ready successor but is not accepted or activated; capability validation and every later phase remain blocked.
+The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, and Thin Delivery have passed. Evaluation tooling isolation is the sole In progress technical phase under the exact owner-approved #606 contract. Capability validation and every later phase remain blocked.
 
 ## Passed — directed multigraph
 
@@ -101,16 +101,22 @@ Query, ranking, traversal, slicing, graph, index, generation, public limits, tim
 
 No npm package, GitHub Release, or MCP Registry metadata was published, and this phase did not target `main`.
 
-## Ready — evaluation tooling isolation
+## In progress — evaluation tooling isolation
 
-The `evaluation-tooling` removal-manifest handle is the sole Ready successor, but it is not accepted, activated, or In progress. No technical phase is active. Its bounded outcome is to keep evaluation runnable under `tools/eval/**` behind a development-only boundary while removing production imports and excluding evaluation code from dist and npm. A complete work-item contract, explicit owner approval, and a green governance-only activation PR are required before implementation starts.
+The owner approved the exact [#606 Evaluation Tooling Isolation contract](https://github.com/mohanagy/madar/issues/606#issuecomment-5078675449) and recorded the matching [RFC approval](https://github.com/mohanagy/madar/issues/577#issuecomment-5078676116). Governance activation starts from protected `core-reset` commit `317dda89f2ea5c75e7626a26b104ceca1bd04ce5`, whose audited `src` tree is `b99217c74f6b26daef4ecab12e1cde5f8fe60122`. This activation changes only governance; implementation must start from the exact activation merge commit.
 
-Capability validation remains blocked until evaluation tooling isolation passes and its exit gate is recorded. Ready status does not authorize native/Graphify comparison, natural-activation claims, external validation, publication, release, or work targeting `main`.
+The contract moves exactly 20 production TypeScript files / 4,698 LOC from `src/**` to corresponding paths under `tools/eval/lib/**`, deletes all old locations, adds no production file or LOC, modifies no surviving production TypeScript, and changes no dependency. `src/shared/graph-source-root.ts` and `src/shared/workspace-copy.ts` transfer from `safe-workspace-primitives`; `src/shared/package-metadata.ts` and `src/shared/shell.ts` retain their Evaluation Tooling ownership. Final production source is exactly 43 TypeScript files / 11,956 LOC with net `-4,698`.
+
+One `tsconfig.eval.json` and one `build:eval` script may produce development-only `dist-eval/**`. The production build remains rooted exclusively in `src/**`; `dist-eval/**` and every moved module are forbidden from `dist/**`, `prepack`, and the npm artifact. The audited package projection is 102 files / 159,748 packed bytes / 637,551 unpacked bytes, with blocking ceilings of 102 files / 165,000 packed bytes / 640,000 unpacked bytes.
+
+Only mechanical import, test, script, CI, and documentation path rewrites are permitted. Compatibility aliases, forwarding modules, fallbacks, duplicates, retained `src/**` copies, production-semantic changes, public-surface changes, budget or timeout changes, and historical evaluation-contract or receipt rewrites are forbidden. The current CI thresholds remain recall >=90%, MRR >=0.95, snippet coverage >=95%, and grounded-match rate report-only.
+
+Capability Validation remains blocked. There is no valid blinded Native-vs-Graphify-vs-Madar runner: the current guided suite has no Graphify arm, while the historical frozen contract still records retired `--no-html` commands. #606 neither authorizes a replacement runner nor permits restoring that flag. No native/Graphify comparison, natural-activation claim, external validation, publication, release, or work targeting `main` may begin.
 
 With Thin Delivery passed, the remaining dependency order is:
 
-1. Move evaluation tooling outside runtime and finish npm-package isolation.
-2. Run blinded native vs Graphify vs Madar capability evaluation.
+1. Complete the exact #606 Evaluation Tooling Isolation contract and record its exit gate.
+2. Define and separately approve a valid blinded Native-vs-Graphify-vs-Madar capability contract.
 3. Run external design-partner validation.
 4. Publish a beta under npm tag `next` only after its preceding gates authorize it.
 
