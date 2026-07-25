@@ -3,7 +3,7 @@
 > **Tracking issue:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
 > **Project:** [Madar Roadmap](https://github.com/users/mohanagy/projects/8)
-> **Status:** accepted — phases through `evidence-path-query` are complete; no technical phase is active; Thin Delivery is Ready but not activated; every later phase remains blocked
+> **Status:** accepted — phases through `evidence-path-query` are complete; `thin-delivery` is the sole technical phase In progress under owner-approved #602; every later phase remains blocked
 
 ## Decision
 
@@ -148,7 +148,7 @@ The phase owned and removed exactly 15 predecessor files / 3,839 LOC recorded in
 - `src/adapters/filesystem/index-store.ts`
 - `src/infrastructure/watch-index.ts`
 
-`src/core/pipeline/stage.ts`, `src/runtime/freshness.ts`, and `src/shared/source-discovery.ts` transferred to `evidence-path-query`; `src/infrastructure/doctor.ts` transferred to `thin-delivery`. Evidence-path query later completed under its separately accepted contract, while Thin Delivery is now Ready but not active. Neither recipient behavior was redesigned by the completed generation phase.
+`src/core/pipeline/stage.ts`, `src/runtime/freshness.ts`, and `src/shared/source-discovery.ts` transferred to `evidence-path-query`; `src/infrastructure/doctor.ts` transferred to `thin-delivery`. Evidence-path query later completed under its separately accepted contract, while Thin Delivery is now active under #602. Neither recipient behavior was redesigned by the completed generation phase.
 
 The implementation finished at 130 production files / 66,418 production LOC, with net production delta `-2,536`, no new runtime or development dependency, and 276 npm files / 2,699,851 unpacked bytes; packed bytes decreased from the protected-base package.
 
@@ -208,7 +208,7 @@ The phase must remove at least 63 production files / 33,031 LOC, finish with net
 
 Canonical declaration facts require narrow changes in three existing index-owned files: `src/domain/index/model.ts`, `src/adapters/typescript/index.ts`, and `src/domain/index/build-state.ts`. The #599 prerequisite also permits `src/adapters/typescript/index.ts` to disable automatic external ambient type discovery and neutralize composite/incremental build behavior during canonical indexing; it does not suppress explicit imports or scanner-owned declarations. Ownership remains exclusively with `canonical-typescript-index`; the graph artifact envelope stays v2, the canonical index format advances to v3, and old indexes require regeneration with no compatibility fallback. These are not additional replacement files, but every added production line counts inside the unchanged 3,500-line phase ceiling.
 
-Surviving CLI, MCP, installer, and development-only evaluation callers only remove obsolete imports and invoke the new application use case; they retain no compatibility engine. MCP `retrieve` accepts required `question` plus optional `budget`; legacy semantic, rerank, strategy, session, and mode controls are removed. `compare.ts` consumes the generic result after deleting its old pack/session/routing/runtime-proof response branches, installer applicability-hook generation is removed with its predecessor, and the held-out and performance runners remain development-only. Thin Delivery continues to own its surviving files except transferred `src/runtime/serve.ts`; it is Ready but not activated.
+Surviving CLI, MCP, installer, and development-only evaluation callers only remove obsolete imports and invoke the new application use case; they retain no compatibility engine. MCP `retrieve` accepts required `question` plus optional `budget`; legacy semantic, rerank, strategy, session, and mode controls are removed. `compare.ts` consumes the generic result after deleting its old pack/session/routing/runtime-proof response branches, installer applicability-hook generation is removed with its predecessor, and the held-out and performance runners remain development-only. `src/runtime/serve.ts` was deleted by this completed phase; #602 removes its stale historical Thin Delivery ownership and transfers `src/shared/package-metadata.ts` plus `src/shared/shell.ts` to the surviving evaluation owner.
 
 ### Frozen correctness and one-call gates
 
@@ -232,19 +232,92 @@ The runner first rejects inherited Node preload paths, authenticates every `src`
 
 ### Completed evidence and remaining stop conditions
 
-Query implementation and deletion are complete. Exact evaluated head `29aba7ebffe14d6a70bde78df1490bf4cded64a4` passes held-out-v2 and loaded-graph performance, and the exact source/package inventory passes every phase budget. [PR #600](https://github.com/mohanagy/madar/pull/600) was squash-merged at `596d286cdf4bb53670a6d8c27b2cec5f86137739` from final head `a0ef9003b9bb71a8defb3463ee131e677b32fecc`; all six jobs in [CI run 30124465700](https://github.com/mohanagy/madar/actions/runs/30124465700) passed, an [independent exact-head review](https://github.com/mohanagy/madar/pull/600#issuecomment-5074482136) found no blocker, and zero review threads remained. CodeRabbit skipped the non-default `core-reset` base under the owner-approved exception and is not represented as having reviewed. Thin Delivery is Ready but not active; native/Graphify/provider-token comparison, three Claude and three Codex trials, blinded human scoring, external validation, and release work remain blocked.
+Query implementation and deletion are complete. Exact evaluated head `29aba7ebffe14d6a70bde78df1490bf4cded64a4` passes held-out-v2 and loaded-graph performance, and the exact source/package inventory passes every phase budget. [PR #600](https://github.com/mohanagy/madar/pull/600) was squash-merged at `596d286cdf4bb53670a6d8c27b2cec5f86137739` from final head `a0ef9003b9bb71a8defb3463ee131e677b32fecc`; all six jobs in [CI run 30124465700](https://github.com/mohanagy/madar/actions/runs/30124465700) passed, an [independent exact-head review](https://github.com/mohanagy/madar/pull/600#issuecomment-5074482136) found no blocker, and zero review threads remained. CodeRabbit skipped the non-default `core-reset` base under the owner-approved exception and is not represented as having reviewed. Thin Delivery is active under its separate bounded contract; native/Graphify/provider-token comparison, natural agent trials, external validation, and release work remain blocked.
 
 Stop and amend #577 before continuing if implementation requires a predecessor or facade, repository-specific tuning, global top-k inflation, another planner/recovery/confidence/session/mode, a second internal query or model call, invented relationships, hidden budget growth, a new dependency, a source/package budget failure, Go/non-code ingestion, an index change beyond the three authorized canonical declaration-range files, graph/generation redesign, or a release.
 
+## Active amendment — thin delivery
+
+The repository owner approved the exact [#602 Thin Delivery contract](https://github.com/mohanagy/madar/issues/602#issuecomment-5075969972) and the matching [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5075969871) on 2026-07-25. Governance activation starts from protected base `8efe41fc665fcea7e625dda0864a72ecf27a111b`, where the exact inventory is 73 production TypeScript files / 21,687 LOC and 162 npm files / 231,524 packed bytes / 984,434 unpacked bytes. The activation diff changes no production code, so its phase delta is zero; implementation and completion evidence remain pending.
+
+This phase changes delivery, not query semantics. Its user outcome is one fast local executable that exposes one authenticated `retrieve` MCP tool, initializes transport before reconciliation code loads, keeps the active repository or linked worktree graph current, installs safely into Claude Code and Codex, removes only configuration it owns, and reports truthful graph and wiring diagnostics. Forced client calls prove transport only; natural selection, comparator advantage, retention, and paid intent remain later gates.
+
+### Exact deletion, ownership, and source budget
+
+Delete exactly these 16 production files / 7,277 LOC plus obsolete tests, exports, flags, documentation, and package references:
+
+- `src/cli/bin.ts`
+- `src/cli/main.ts`
+- `src/cli/parser.ts`
+- `src/runtime/stdio-server.ts`
+- `src/runtime/stdio/definitions.ts`
+- `src/runtime/stdio/resources.ts`
+- `src/runtime/stdio/tools.ts`
+- `src/infrastructure/install.ts`
+- `src/shared/env.ts`
+- `src/infrastructure/doctor.ts`
+- `src/infrastructure/neo4j.ts`
+- `src/infrastructure/hooks.ts`
+- `src/infrastructure/install-routing-guidance.ts`
+- `src/infrastructure/install-skill-templates.ts`
+- `src/shared/telemetry.ts`
+- `src/shared/update-notifier.ts`
+
+The phase absorbs the remaining production ownership of `non-core-graph-products` and `activation-and-extra-integrations`. It removes stale historical Thin Delivery ownership of already-deleted `src/runtime/serve.ts`. It transfers `src/shared/package-metadata.ts` and `src/shared/shell.ts` to `evaluation-tooling`. Only `src/infrastructure/benchmark/suite.ts`, which imports the old installer, and `src/infrastructure/try-command.ts`, which imports a parser type, survive as production importers requiring narrow rewiring.
+
+At most these six production files may be added:
+
+- `src/adapters/cli/bin.ts`
+- `src/adapters/cli/main.ts`
+- `src/adapters/cli/install.ts`
+- `src/adapters/cli/doctor.ts`
+- `src/adapters/mcp/protocol.ts`
+- `src/adapters/mcp/server.ts`
+
+All production additions, including edits to retained files, must total at most 2,300 LOC. The phase must remove at least 7,277 LOC, finish net at most `-4,977`, and finish at no more than 63 production files / 16,710 LOC. The obsolete 25,000-LOC lower bound is removed; adding code to meet a minimum is forbidden. Add zero runtime and zero development dependencies. Remove exactly `neo4j-driver`; removing any other declared runtime or development dependency requires an amendment. The final package must contain fewer than 150 files and fewer than 1,500,000 unpacked bytes, and packed bytes cannot increase.
+
+### CLI and MCP contract
+
+The CLI exposes at most six entrypoints, drawn only from:
+
+- `generate`
+- `query`
+- `status`
+- `doctor`
+- `install`
+- internal `mcp`
+
+`--help` and `--version` remain global. `generate --watch` replaces standalone `watch`; `mcp` always means stdio plus workspace auto-refresh. Retire `watch`, `serve`, `try`, `benchmark`, `bench:suite`, `eval`, `compare`, `hook`, `telemetry`, every client-named platform command, implicit `madar .`, `--stdio`, `--mcp`, `--auto-refresh`, and every `--neo4j-*` flag. Removed surfaces fail with clear usage errors and do not survive as aliases, trampolines, re-exports, wrappers, or compatibility facades. If both `status` and `doctor` remain, they compose one diagnostic implementation.
+
+MCP advertises exactly one tool, `retrieve`, and only the tools capability. No resource or prompt surface survives. Input remains required `question` plus optional positive-integer `budget`, with no additional properties. The 512-character question limit, 4,000-token maximum, 12-file cap, 25-snippet cap, graph-authenticated excerpts, explicit evidence boundaries, initialization, ping, notifications, `tools/list`, `tools/call`, bounded line handling, stream recovery, and graceful shutdown remain. CLI `query`, direct application use, and MCP return byte-identical canonical results for the same accepted graph and normalized request.
+
+No query, ranking, traversal, slicing, source-authentication, graph, index, generation, or held-out grading rule may change in this phase.
+
+### Freshness, installers, and real-client transport
+
+`madar mcp` resolves workspace and external graph identity from process `cwd`, including linked worktrees. Initialize and `tools/list` complete before the TypeScript reconciler is imported. Reconciliation then uses the one existing generation/reconciliation engine. The first graph-backed call waits only within the frozen 25,000 ms request-wait ceiling and configured tool timeout; if the accepted graph is not ready, it returns one truthful terminal `unavailable` boundary before host timeout and never instructs the agent to call Madar again. No second watcher, cache, queue, session, retry planner, or compatibility engine is allowed.
+
+Claude Code receives only supported per-project local MCP registration outside the repository, running `madar mcp` from the exact workspace. Codex receives one workspace-hashed block in `$CODEX_HOME/config.toml` or `~/.codex/config.toml` with `command = "madar"`, `args = ["mcp"]`, exact workspace `cwd`, `startup_timeout_sec = 180`, and `tool_timeout_sec = 60`. Multiple repositories and linked worktrees coexist and uninstall independently. No `CLAUDE.md`, `AGENTS.md`, tracked MCP/config file, hook, script, skill, routing profile, classifier, or generated instruction survives.
+
+Fresh install, idempotent reinstall, and uninstall create or modify zero repository bytes. Legacy migration may remove only byte-recognized, enumerated Madar-owned artifacts and must preserve all unrelated user content, formatting, comments, permissions, TOML constructs, and other MCP servers.
+
+A normally launched Claude session and a normally launched Codex session must each initialize, list, and dispatch exactly one forced `retrieve` without `-c`, injected MCP configuration, or manual tool override. [#567](https://github.com/mohanagy/madar/issues/567) remains open until the real Codex client reaches Madar `tools/call`; direct JSON-RPC testing is insufficient. If the real client cancels before `tools/call`, the phase stops and records the external-client blocker rather than weakening the gate.
+
+### Package, startup, review, and stop gates
+
+From a fresh packed install, at least ten isolated cold processes must report median, p95, and maximum RSS. `madar --version` median must be below 100 ms and maximum RSS below 80 MiB. Initialize plus `tools/list` median must be below 1,000 ms and list exactly one tool. Registry package arguments are exactly `["mcp"]`; a packed-tarball Registry launch initializes, lists one tool, and completes one call. Cross-platform Claude/Codex lifecycle, migration, uninstall, worktree, two-registration, first-call, package-isolation, release-hygiene, and byte-parity tests remain blocking.
+
+Every exact-head Node 20/22 Ubuntu/macOS/Windows CI job must pass. Independent exact-head review must find no blocker and zero review threads may remain. CodeRabbit must pass or have an explicitly approved unavailable/rate-limit/non-default-base exception recorded honestly; a skip is never represented as a completed review.
+
+Development-only evaluators may re-pin only the transport path from the old built CLI to the new package bin. Repositories, prompts, grading, expected evidence, query budgets, and query semantics remain frozen.
+
+Stop and amend #577 before continuing if implementation needs more than six replacement files or 2,300 added production LOC; any new dependency; any retained predecessor, facade, alias, fallback, or second engine; any extra command, tool, resource, prompt, hook, skill, telemetry/updater/Neo4j route, or client installer; a retry-Madar instruction; a timeout increase; a semantic or grading change; repository-specific activation logic; or a weakened source, package, startup, client, CI, review, or zero-thread gate. No npm publication, GitHub Release, Registry publication, comparator result, natural-activation claim, external-validation claim, or stable release is authorized.
+
 ## Public surface target
 
-The reset targets no more than five MCP tools:
+The active reset target is exactly one MCP tool:
 
 - `retrieve`
-- `get_node`
-- `get_neighbors`
-- `graph_status`
-- `shortest_path`, only if held-out evaluation proves it is needed
 
 The CLI remains narrow and lazy-loaded:
 
@@ -255,7 +328,7 @@ The CLI remains narrow and lazy-loaded:
 - `install`
 - internal `mcp` entrypoint
 
-Existing names are preserved only when their meaning remains valid.
+These six names are an allowlist, not a quota. Existing names are preserved only when their meaning remains valid; removed names do not survive as aliases.
 
 ## Migration and compatibility
 
@@ -314,7 +387,7 @@ The detailed scorecard is [`docs/core-reset/scorecard.md`](../core-reset/scoreca
 - [#565](https://github.com/mohanagy/madar/issues/565) remains the real acceptance failure; its Go prefix is diagnostic/unsupported, while supported-scope TypeScript acceptance and later Claude/Codex/human trials remain open.
 - [#574](https://github.com/mohanagy/madar/issues/574) is superseded by the generic, scope-correct replacement in [#596](https://github.com/mohanagy/madar/issues/596), not implemented as another patch.
 - [#571](https://github.com/mohanagy/madar/issues/571) is superseded if extraction modes are removed.
-- [#567](https://github.com/mohanagy/madar/issues/567) is folded into thin Codex delivery and remains a beta activation blocker.
+- [#567](https://github.com/mohanagy/madar/issues/567) is owned by [#602](https://github.com/mohanagy/madar/issues/602) and remains open until a normally launched, normally configured Codex client reaches Madar `tools/call`; direct JSON-RPC cannot close it.
 
 Their final disposition is applied only through the dependency-ordered phase that owns each issue.
 
@@ -324,6 +397,8 @@ Their final disposition is applied only through the dependency-ordered phase tha
 - TypeScript static analysis cannot prove all dynamic runtime behavior. Missing edges must remain explicit rather than guessed.
 - Removing broad features may affect existing users. The pre-1.0 migration notes must name every removed command, tool, language, and artifact.
 - Evaluation can contaminate production retrieval. Held-out expected paths remain outside production and are checked by CI.
+- Thin Delivery can disguise semantic drift as adapter cleanup. CLI/application/MCP parity and frozen query/index/graph/generation contracts prevent delivery work from changing evidence behavior.
+- Client configuration can appear correct without a real dispatch. #567 remains open until a normal no-override Codex launch reaches Madar `tools/call`.
 - A technically cleaner engine may still have no durable demand. If it cannot match comparator correctness, materially reduce discovery cost, or earn voluntary repeat use, the project stops or pivots instead of broadening again.
 
 ## Superseded direction
@@ -340,7 +415,7 @@ Any change to the product job, non-goals, architecture boundary, compatibility p
 
 ## Acceptance
 
-The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.com/mohanagy/madar/issues/577) after the governance review passed. Scope/baseline, directed-multigraph, canonical-index, legacy/non-code deletion, generation/reconciliation, and evidence-path-query phases later passed their gates. On 2026-07-22 the owner accepted [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the linked RFC amendment, then approved the recorded stop amendment after its fixed incremental gate failed. PR #594 completed that narrowed contract. On 2026-07-23 the owner accepted [#596](https://github.com/mohanagy/madar/issues/596#issuecomment-5050888977) and the linked [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198), then approved the graph-authenticated source-excerpt correction through the durable [owner](https://github.com/mohanagy/madar/issues/596#issuecomment-5054853667) and [RFC](https://github.com/mohanagy/madar/issues/577#issuecomment-5054853815) receipts after its stop condition fired. The owner later approved the exact source-only generation prerequisite through [#599](https://github.com/mohanagy/madar/issues/599#issuecomment-5060766685) and its [RFC receipt](https://github.com/mohanagy/madar/issues/577#issuecomment-5060766863). PR #600 completed the combined phase. No technical phase is active; Thin Delivery is Ready but not activated, and every later phase remains blocked.
+The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.com/mohanagy/madar/issues/577) after the governance review passed. Scope/baseline, directed-multigraph, canonical-index, legacy/non-code deletion, generation/reconciliation, and evidence-path-query phases later passed their gates. On 2026-07-22 the owner accepted [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and the linked RFC amendment, then approved the recorded stop amendment after its fixed incremental gate failed. PR #594 completed that narrowed contract. On 2026-07-23 the owner accepted [#596](https://github.com/mohanagy/madar/issues/596#issuecomment-5050888977) and the linked [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198), then approved the graph-authenticated source-excerpt correction through the durable [owner](https://github.com/mohanagy/madar/issues/596#issuecomment-5054853667) and [RFC](https://github.com/mohanagy/madar/issues/577#issuecomment-5054853815) receipts after its stop condition fired. The owner later approved the exact source-only generation prerequisite through [#599](https://github.com/mohanagy/madar/issues/599#issuecomment-5060766685) and its [RFC receipt](https://github.com/mohanagy/madar/issues/577#issuecomment-5060766863). PR #600 completed the combined phase. On 2026-07-25 the owner approved the exact [#602 Thin Delivery contract](https://github.com/mohanagy/madar/issues/602#issuecomment-5075969972) and [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5075969871). Thin Delivery is the sole technical phase In progress from protected base `8efe41fc665fcea7e625dda0864a72ecf27a111b`; implementation evidence remains pending and every later phase remains blocked.
 
 ## Decision log
 
@@ -361,3 +436,4 @@ The repository owner accepted this RFC on 2026-07-19 in [#577](https://github.co
 | 2026-07-24 | PR #600 portability correction approved | The [owner proposal](https://github.com/mohanagy/madar/issues/596#issuecomment-5072454599), [RFC proposal](https://github.com/mohanagy/madar/issues/577#issuecomment-5072454807), [owner approval](https://github.com/mohanagy/madar/issues/596#issuecomment-5072486888), and [RFC approval](https://github.com/mohanagy/madar/issues/577#issuecomment-5072487113) pin evaluator SHA-256 `b7211c7e56360921a6b8e681ac84b21a1f13963f78a925589ea8611ee25bab97`, authenticate JSON-escaped forms of the same private roots, force deterministic LF checkout bytes, and preserve an exact hard-ignored target as unavailable instead of unrelated evidence. No evaluation authority, sandbox access, gate, budget, query pass, or engine changes. |
 | 2026-07-24 | Held-out-v2 correctness and loaded-graph performance revalidated | Exact evaluated head `29aba7ebffe14d6a70bde78df1490bf4cded64a4` produced acceptance-eligible [held-out](../core-reset/evidence/evidence-path-held-out.json) and [performance](../core-reset/evidence/evidence-path-performance.json) receipts: Documenso and Formbricks each have full phase coverage and precision, zero unrelated files, every required handoff matches, and the frozen performance workload passes at 279.28 ms p95. OpenStatus remains an explicitly non-blocking failing diagnostic. The package remains within the approved ceiling with no dependency additions; CI, review, and release remain pending. |
 | 2026-07-25 | Evidence-path query complete | PR #600 was squash-merged at `596d286cdf4bb53670a6d8c27b2cec5f86137739` from exact head `a0ef9003b9bb71a8defb3463ee131e677b32fecc`. The phase removed 63 contracted predecessors plus one supplemental production file, added seven replacements, finished at 73 files / 21,687 LOC and net `-44,731`, passed 2/2 blocking held-outs and 279.28 ms loaded-graph p95, passed all six exact-head CI jobs, and retained zero review threads. Independent exact-head review found no blocker; CodeRabbit skipped the non-default base and is not represented as having reviewed. No phase is active; Thin Delivery is Ready but requires a bounded issue and explicit owner activation. |
+| 2026-07-25 | Thin Delivery accepted and governance-activated | The owner approved [#602](https://github.com/mohanagy/madar/issues/602#issuecomment-5075969972) and the matching [RFC amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5075969871). The active contract starts from `8efe41fc665fcea7e625dda0864a72ecf27a111b`, deletes exactly 16 production files / 7,277 LOC, permits at most six replacements / 2,300 total added LOC, adds no dependency, removes exactly `neo4j-driver`, ships at most six allowlisted CLI entrypoints and exactly one MCP tool, preserves query/index/graph/generation semantics, and keeps #567 open until real no-override Codex `tools/call`. Governance activation changes no production code; implementation evidence is pending. |
