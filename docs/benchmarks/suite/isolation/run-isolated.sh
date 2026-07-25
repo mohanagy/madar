@@ -131,19 +131,25 @@ fi
 
 mkdir -p "${CURSOR_CONFIG_DIR}"
 
-cat > "${CURSOR_MCP_PATH}" <<JSON
-{
-  "mcpServers": {
-    "madar": {
-      "command": "node",
-      "args": [
-        "${CLI_PATH}",
-        "mcp"
-      ]
-    }
-  }
+MADAR_BENCH_CURSOR_CONFIG_PATH="${CURSOR_MCP_PATH}" \
+MADAR_BENCH_CURSOR_CLI_PATH="${CLI_PATH}" \
+node --input-type=module --eval '
+import { writeFileSync } from "node:fs"
+
+const outputPath = process.env.MADAR_BENCH_CURSOR_CONFIG_PATH
+const cliPath = process.env.MADAR_BENCH_CURSOR_CLI_PATH
+if (!outputPath || !cliPath) {
+  throw new Error("Missing benchmark Cursor config or CLI path")
 }
-JSON
+writeFileSync(outputPath, `${JSON.stringify({
+  mcpServers: {
+    madar: {
+      command: "node",
+      args: [cliPath, "mcp"],
+    },
+  },
+}, null, 2)}\n`, "utf8")
+'
 
 export CLAUDE_CONFIG_DIR
 export CURSOR_CONFIG_DIR

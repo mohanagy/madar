@@ -31,7 +31,14 @@ describe('development-only benchmark isolation', () => {
     const root = mkdtempSync(join(tmpdir(), 'madar-isolated-launcher-'))
     const runtimeRoot = join(root, 'runtime')
     const profileRoot = join(root, 'profile')
-    const cliPath = join(runtimeRoot, 'dist', 'src', 'adapters', 'cli', 'bin.js')
+    const cliPath = join(
+      runtimeRoot,
+      'dist',
+      'src',
+      'adapters',
+      'cli',
+      'madar\\windows.js',
+    )
     const suitePath = join(runtimeRoot, 'dist', 'src', 'infrastructure', 'benchmark', 'suite.js')
     mkdirSync(resolve(cliPath, '..'), { recursive: true })
     mkdirSync(resolve(suitePath, '..'), { recursive: true })
@@ -75,7 +82,12 @@ describe('development-only benchmark isolation', () => {
         dryRun: true,
       }))
 
-      const cursor = JSON.parse(readFileSync(join(profileRoot, '.cursor', 'mcp.json'), 'utf8')) as {
+      const cursorText = readFileSync(
+        join(profileRoot, '.cursor', 'mcp.json'),
+        'utf8',
+      )
+      expect(cursorText).toContain('madar\\\\windows.js')
+      const cursor = JSON.parse(cursorText) as {
         mcpServers?: { madar?: { command?: string; args?: string[]; env?: unknown } }
       }
       expect(cursor.mcpServers?.madar).toEqual({
