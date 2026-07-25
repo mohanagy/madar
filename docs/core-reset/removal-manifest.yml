@@ -21,15 +21,15 @@ review:
   unowned_files: 0
   overlapping_files: 0
   disposition_changes: 9
-  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removes stale thin-delivery ownership of deleted serve.ts, transfers package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbs the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. The protected-base importer audit records exactly two surviving production importers for narrow rewiring. Query, graph, index, generation, held-out grading, budgets, and timeout semantics remain frozen.'
+  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. The protected-base importer audit records exactly two surviving production importers for narrow rewiring. Query, graph, index, generation, held-out grading, budgets, and timeout semantics remain frozen.'
 
 current:
   updated_at: 2026-07-25
-  completed_phase: evidence-path-query
-  active_phase: thin-delivery
-  ready_phase: null
+  completed_phase: thin-delivery
+  active_phase: null
+  ready_phase: evaluation-tooling
   base_commit: 8efe41fc665fcea7e625dda0864a72ecf27a111b
-  completed_phase_commit: 596d286cdf4bb53670a6d8c27b2cec5f86137739
+  completed_phase_commit: 14791cefa195f43e30ec9ec2dd611e38ad2b1b83
   production_typescript_files: 63
   production_typescript_loc: 16654
   production_loc_added: 2248
@@ -411,7 +411,7 @@ items:
       independent_reviews_passed: 3
       independent_review_receipt: https://github.com/mohanagy/madar/pull/594#issuecomment-5049404550
       unresolved_review_threads: 0
-    notes: 'Completed by #592 and PR #594 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5 after the recorded stop amendment. The fixed 500-file gate failed at candidate checkpoint 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d / worktree tree 6bd1ae5762afaa868d5cf6ce165b061aa290bfda: warm index p50 ratio 0.824, refresh p50 1.047, and refresh p95 1.029. Held-out timing was intentionally skipped because it could not reverse the mandatory stop. The failed incremental path was deleted. Exact runtime commit 1be24dc45a5f07c352c74fc374feb95a9440df8e ships cold no-op plus one full canonical reconcile for every changed source state, with neither an in-memory nor disk session cache. Its compatible 500-file receipt passes cold no-op at 0.067 of clean generation, zero parse/invalidation/publication, and clean regression at 1.045. build-state.ts is one of the six permitted replacements but remains owned by the completed canonical-typescript-index domain pattern, so no fifth ownership transfer is created. graph.json remains the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. All six exact-head CI jobs passed, three independent P0/P1 audits found no blocker, CodeRabbit explicitly skipped review for the non-default base under the owner-approved exception, and zero review threads remained. Evidence-path query later completed through PR #600; thin delivery is now active under owner-approved #602.'
+    notes: 'Completed by #592 and PR #594 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5 after the recorded stop amendment. The fixed 500-file gate failed at candidate checkpoint 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d / worktree tree 6bd1ae5762afaa868d5cf6ce165b061aa290bfda: warm index p50 ratio 0.824, refresh p50 1.047, and refresh p95 1.029. Held-out timing was intentionally skipped because it could not reverse the mandatory stop. The failed incremental path was deleted. Exact runtime commit 1be24dc45a5f07c352c74fc374feb95a9440df8e ships cold no-op plus one full canonical reconcile for every changed source state, with neither an in-memory nor disk session cache. Its compatible 500-file receipt passes cold no-op at 0.067 of clean generation, zero parse/invalidation/publication, and clean regression at 1.045. build-state.ts is one of the six permitted replacements but remains owned by the completed canonical-typescript-index domain pattern, so no fifth ownership transfer is created. graph.json remains the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. All six exact-head CI jobs passed, three independent P0/P1 audits found no blocker, CodeRabbit explicitly skipped review for the non-default base under the owner-approved exception, and zero review threads remained. Evidence-path query later completed through PR #600, and Thin Delivery later completed through #602 and PR #604. Evaluation tooling is Ready but not active.'
     remove_when: Add, change, delete, rename, compiler-control, ignore-policy, recognized-unsupported-file, symlink, and linked-worktree updates equal clean generation through the one full-reconcile path; supported-JS/TS completeness, cold no-op, graph-last failure/concurrency, source/package, CI, and review gates pass; all 15 predecessors and the failed incremental path remain absent.
     exit_gate: One source catalog publishes a clean-equivalent graph.json through cold no-op or full canonical reconciliation, with zero stale facts, no mixed authoritative generation, no predecessor path, and no in-memory or disk session cache.
 
@@ -938,7 +938,7 @@ items:
       independent_reviews_passed: 1
       independent_review_receipt: https://github.com/mohanagy/madar/pull/600#issuecomment-5074482136
       unresolved_review_threads: 0
-    notes: 'Completed by #596 and absorbed prerequisite #599 through PR #600. Exact runtime 29aba7ebffe14d6a70bde78df1490bf4cded64a4 deletes the 63 contracted predecessors plus supplemental src/runtime/stdio/prompts.ts, for 64 actual production-file deletions, and adds exactly seven replacements containing 1,812 logical LOC. Held-out-v2 passes both blocking repositories with full phase coverage and precision, zero unrelated files, and every required handoff; OpenStatus remains an honest failing non-blocking diagnostic. Loaded-graph p95 is 279.28 ms against the strict <500 ms gate. The phase finishes at 73 production files / 21,687 LOC, +3,500 production LOC in total / -48,231 / net -44,731, zero runtime/development dependency additions, one removed optional peer declaration, and 162 npm files / 984,434 unpacked bytes. Final PR head a0ef9003b9bb71a8defb3463ee131e677b32fecc passed all six CI jobs and independent exact-head review with zero review threads; CodeRabbit skipped the non-default base under the owner-approved exception and is not represented as having reviewed. This proves the narrow query only: Thin Delivery is active under owner-approved #602, while comparator, natural-agent, external-validation, and release gates remain open.'
+    notes: 'Completed by #596 and absorbed prerequisite #599 through PR #600. Exact runtime 29aba7ebffe14d6a70bde78df1490bf4cded64a4 deletes the 63 contracted predecessors plus supplemental src/runtime/stdio/prompts.ts, for 64 actual production-file deletions, and adds exactly seven replacements containing 1,812 logical LOC. Held-out-v2 passes both blocking repositories with full phase coverage and precision, zero unrelated files, and every required handoff; OpenStatus remains an honest failing non-blocking diagnostic. Loaded-graph p95 is 279.28 ms against the strict <500 ms gate. The phase finishes at 73 production files / 21,687 LOC, +3,500 production LOC in total / -48,231 / net -44,731, zero runtime/development dependency additions, one removed optional peer declaration, and 162 npm files / 984,434 unpacked bytes. Final PR head a0ef9003b9bb71a8defb3463ee131e677b32fecc passed all six CI jobs and independent exact-head review with zero review threads; CodeRabbit skipped the non-default base under the owner-approved exception and is not represented as having reviewed. This proves the narrow query only: Thin Delivery later completed through #602 and PR #604; Evaluation tooling is Ready but not active, while comparator, natural-agent, external-validation, and release gates remain open.'
     remove_when: The deterministic query and held-out one-call gates pass; the fixed loaded-graph performance receipt passes; all 63 predecessors, the approved stdio/prompts.ts supplemental cleanup, obsolete tests/docs/flags/exports, and optional semantic peer metadata are absent; all surviving callers use retrieve-context without a compatibility engine; and the accepted source, package, dependency, CI, review, and zero-thread gates pass.
     exit_gate: One deterministic generic TypeScript/JavaScript evidence query returns graph-backed causal evidence with exact graph-authenticated source excerpts, or stable missing/unsupported/stale/unavailable/corrupt boundaries with no unauthenticated snippet, within the accepted caps and without repository-specific rules, hidden fallback, predecessor path, or global confidence/governance stack.
 
@@ -978,7 +978,7 @@ items:
 
   - id: thin-delivery
     disposition: rebuild
-    status: in_progress
+    status: complete
     sources:
       - src/adapters/cli/bin.ts
       - src/adapters/cli/main.ts
@@ -1207,15 +1207,62 @@ items:
       rfc_transport_pass_record: https://github.com/mohanagy/madar/issues/577#issuecomment-5077629090
       issue_567_acceptance_record: https://github.com/mohanagy/madar/issues/567#issuecomment-5077630691
       issue_567_closed: true
-      implementation_pr_opened: false
-      implementation_merge_authorized: false
-    notes: 'Owner-approved issue #602 activates this governance contract from protected base 8efe41fc665fcea7e625dda0864a72ecf27a111b, and implementation starts from governance merge edcf3e45b8c8fb76a57531bc74bede2a06189aba. The final pre-PR candidate deletes all 16 predecessors, adds the six exact replacement files, removes neo4j-driver without adding a dependency, and passes the source, package, test, parity, isolation, Registry, release-hygiene, development-eval, and packed cold-start ceilings. Stock Codex CLI 0.144.5 and a stable 0.145.0 codex exec retry historically started the installed MCP item but failed with user cancelled MCP tool call and returned no Madar result. The later normal interactive Codex pass cleared that stop and closed #567. The final sealed artifact was then revalidated through normally launched Claude Code session f021741f-b474-438e-a07b-a54ef35e071c and normal interactive Codex 0.145.0 session 019f9890-e9fb-7610-a379-f3ef19a418ef, both using exact registration madar_6b8bb2115fe0 with no configuration or tool override and returning authenticated src/payment-retry.ts evidence from one retrieve call; the final pass records are https://github.com/mohanagy/madar/issues/602#issuecomment-5077981356 and https://github.com/mohanagy/madar/issues/577#issuecomment-5077981401. Supported uninstall restored user configuration byte-exact and changed no repository bytes. The implementation PR may proceed, but merge remains blocked on exact-head six-job CI, independent review, honest CodeRabbit disposition, and zero review threads. Query, graph, index, generation, held-out grading, budgets, and timeout semantics remain frozen. No completion, natural activation, comparator advantage, external validation, publication, or release is claimed.'
+      implementation_pr_opened: true
+      implementation_merge_authorized: true
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/602
+      absorbed_issue: https://github.com/mohanagy/madar/issues/567
+      pull_request: https://github.com/mohanagy/madar/pull/604
+      commit: 14791cefa195f43e30ec9ec2dd611e38ad2b1b83
+      final_pr_head: ddd9761b137ef1f07eb362a91f9f2478c1d08c38
+      final_pr_tree: 02a059c66a214fe52e31d8fffa2c501a1761bf0f
+      ci_head: ddd9761b137ef1f07eb362a91f9f2478c1d08c38
+      outcome: lazy_one_tool_delivery
+      production_files_added: 6
+      production_files_removed: 16
+      production_typescript_files: 63
+      production_typescript_loc: 16654
+      production_loc_added: 2248
+      production_loc_removed: 7281
+      production_loc_net: -5033
+      dependencies_added: 0
+      dependencies_removed: 1
+      runtime_dependencies_added: 0
+      development_dependencies_added: 0
+      npm_files: 142
+      npm_packed_bytes: 200310
+      npm_unpacked_bytes: 812531
+      npm_packed_bytes_delta: -31214
+      npm_shasum: 1a915fdc597463f57cd0d79ffa26a7f1c27ff2ef
+      npm_integrity: sha512-94PSjJbRCsgv8oUt18iPZFzysl5S/7njrB1F05fzwkK5Amk6abxGcHv2L8K4fw1qijZLJ2sxr83nIl7NZWef8A==
+      npm_artifact_sha256: 2186259073a6bc05b7268ac7115fd56584d27024b76d167db021f68f83c603b9
+      held_out_benchmark_passed: true
+      held_out_eligible_for_acceptance: true
+      held_out_receipt_self_sha256: 6baed3cfc2b3aa963581613be6cf17ccf1aa261dd29343e27bfe87d52bdaad6c
+      ci_matrix_jobs_passed: 6
+      ci_run: https://github.com/mohanagy/madar/actions/runs/30154480779
+      test_files_passed: 74
+      tests_passed: 619
+      coverage_statements_percent: 81.55
+      coverage_branches_percent: 72.61
+      coverage_functions_percent: 88.94
+      coverage_lines_percent: 84.44
+      coderabbit: skipped_base_owner_exception
+      coderabbit_receipt: https://github.com/mohanagy/madar/pull/604#issuecomment-5078118509
+      independent_review: passed
+      independent_reviews_passed: 1
+      independent_review_receipt: https://github.com/mohanagy/madar/pull/604#pullrequestreview-4779114409
+      unresolved_review_threads: 0
+      merge_gate_receipt: https://github.com/mohanagy/madar/pull/604#issuecomment-5078171793
+      issue_completion_receipt: https://github.com/mohanagy/madar/issues/602#issuecomment-5078180041
+      rfc_completion_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5078180116
+    notes: 'Completed by #602 and PR #604 from governance merge edcf3e45b8c8fb76a57531bc74bede2a06189aba. The final exact head ddd9761b137ef1f07eb362a91f9f2478c1d08c38 and tree 02a059c66a214fe52e31d8fffa2c501a1761bf0f delete all 16 predecessors, add the six exact replacement files, remove neo4j-driver without adding a dependency, and pass the source, package, test, parity, isolation, Registry, release-hygiene, development-eval, held-out, and packed cold-start gates. Stock Codex CLI 0.144.5 and a stable 0.145.0 codex exec retry historically started the installed MCP item but failed with user cancelled MCP tool call and returned no Madar result. The later normal interactive Codex pass cleared that stop and closed #567. The final sealed artifact was revalidated through normally launched Claude Code session f021741f-b474-438e-a07b-a54ef35e071c and normal interactive Codex 0.145.0 session 019f9890-e9fb-7610-a379-f3ef19a418ef, both using exact registration madar_6b8bb2115fe0 with no configuration or tool override and returning authenticated src/payment-retry.ts evidence from one retrieve call. All six exact-head CI jobs passed, an independent exact-head review found no blocker, CodeRabbit explicitly skipped the non-default core-reset base and is not represented as having reviewed, and zero review threads remained. PR #604 merged as 14791cefa195f43e30ec9ec2dd611e38ad2b1b83 with the exact reviewed tree. Query, graph, index, generation, held-out grading, budgets, and timeout semantics remain frozen. This proves Thin Delivery transport and package gates only; evaluation isolation, comparator advantage, natural activation, external validation, publication, and release remain unclaimed.'
     remove_when: All 16 predecessors, obsolete tests, exports, flags, docs, aliases, package references, and neo4j-driver are absent; only the six allowlisted CLI entrypoints and one retrieve MCP tool survive; startup, package, parity, freshness, Claude, Codex, uninstall, worktree, cross-platform, exact-head CI, independent-review, honest CodeRabbit-disposition, and zero-thread gates pass.
     exit_gate: One lazy local executable serves a byte-identical CLI/application/MCP retrieve result, keeps each repository or linked worktree graph current through the single reconciler, installs and uninstalls exact Claude/Codex configuration without fresh-lifecycle repository mutation, and proves normally launched Claude and Codex tools/call transport without changing query, graph, index, or generation semantics.
 
   - id: evaluation-tooling
     disposition: move
-    status: proposed
+    status: ready
     sources:
       - src/infrastructure/benchmark.ts
       - src/infrastructure/benchmark/**
@@ -1231,12 +1278,12 @@ items:
       - src/shared/package-metadata.ts
       - src/shared/shell.ts
     destination: tools/eval/** with a dev-only build boundary
-    notes: 'Issue #596 transferred proof-report.ts and review-compare.ts to evidence-path-query for deletion because the frozen Core Reset evaluator did not import them. Issue #602 transfers package-metadata.ts and shell.ts from thin-delivery to this surviving evaluation owner. During Thin Delivery, evaluators may re-pin only the old built CLI transport path to the new package bin; repositories, prompts, grading, expected evidence, query budgets, and query semantics remain frozen.'
+    notes: 'Ready after Thin Delivery completed through #602 and PR #604. Issue #596 transferred proof-report.ts and review-compare.ts to evidence-path-query for deletion because the frozen Core Reset evaluator did not import them. Issue #602 transferred package-metadata.ts and shell.ts from thin-delivery to this surviving evaluation owner. Thin Delivery re-pinned only the old built CLI transport path to the new package bin; repositories, prompts, grading, expected evidence, query budgets, and query semantics remain frozen. No evaluation-tooling implementation is active until a bounded issue is accepted and the owner explicitly approves activation.'
     exit_gate: Evaluation remains runnable but is excluded from dist, npm, and production imports.
 
   - id: non-core-graph-products
     disposition: delete
-    status: planned
+    status: complete
     sources:
       - src/infrastructure/neo4j.ts
     transferred_sources:
@@ -1249,12 +1296,12 @@ items:
       - src/runtime/diff.ts
       - src/runtime/graph-summary.ts
     absorbed_by: thin-delivery
-    notes: 'Issues #596 and #599 transferred semantic.ts, http-server.ts, infrastructure/time-travel.ts, runtime/time-travel.ts, and the eight finalizer sources above to evidence-path-query for deletion as part of the completed combined importer closure. Issue #602 absorbs the sole remaining production source, neo4j.ts, into the active thin-delivery deletion contract; no non-core graph product survives.'
+    notes: 'Completed as an absorbed ownership handle under #602 and PR #604. Issues #596 and #599 transferred semantic.ts, http-server.ts, infrastructure/time-travel.ts, runtime/time-travel.ts, and the eight finalizer sources above to evidence-path-query for deletion as part of the completed combined importer closure. Issue #602 absorbed and deleted the sole remaining production source, neo4j.ts; no non-core graph product survives.'
     exit_gate: Removed from code, package, dependencies, CLI/MCP, docs, and tests.
 
   - id: activation-and-extra-integrations
     disposition: delete
-    status: planned
+    status: complete
     sources:
       - src/infrastructure/hooks.ts
       - src/infrastructure/install-routing-guidance.ts
@@ -1262,7 +1309,7 @@ items:
       - src/shared/telemetry.ts
       - src/shared/update-notifier.ts
     absorbed_by: thin-delivery
-    notes: 'Issue #596 transferred context-pack-command.ts, context-prompt-command.ts, context-prompt.ts, and handoff-command.ts to evidence-path-query for deletion as importer-only surfaces. Issue #602 absorbs the five surviving hook, generated-routing, telemetry, and updater sources into the active thin-delivery deletion contract. Forced Claude/Codex transport is proved here; natural tool choice moves to later capability validation and is not claimed by this phase.'
+    notes: 'Completed as an absorbed ownership handle under #602 and PR #604. Issue #596 transferred context-pack-command.ts, context-prompt-command.ts, context-prompt.ts, and handoff-command.ts to evidence-path-query for deletion as importer-only surfaces. Issue #602 absorbed and deleted the five surviving hook, generated-routing, telemetry, and updater sources. Forced Claude/Codex transport is proved here; natural tool choice moves to later capability validation and is not claimed by this phase.'
     exit_gate: Hooks, generated skills/routing, telemetry, update checks, and non-Claude/Codex installer branches are absent; later natural activation has no hidden routing surface.
 
   - id: post-validation-products
