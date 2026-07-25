@@ -6,7 +6,7 @@
     "license": "MIT",
     "author": "mohanagy",
     "bin": {
-        "madar": "dist/src/cli/bin.js"
+        "madar": "dist/src/adapters/cli/bin.js"
     },
     "type": "module",
     "files": [
@@ -78,7 +78,6 @@
     },
     "dependencies": {
         "gpt-tokenizer": "^3.4.0",
-        "neo4j-driver": "^6.0.1",
         "typescript": "^6.0.3"
     }
 }

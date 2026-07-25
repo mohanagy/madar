@@ -1,5 +1,9 @@
 # Benchmark suite methodology
 
+> Historical development harness. The public `benchmark`, `bench:suite`, and
+> `eval` commands described below were retired by Thin Delivery. This document
+> preserves the method behind earlier receipts; it is not current CLI guidance.
+
 This suite exists to make Madar's benchmark claims reproducible without collapsing everything into one blended marketing number.
 
 ## Repo selection
@@ -77,10 +81,10 @@ For checked-in fixture bundles under `docs/benchmarks/suite/results/`, `report.j
 ## Isolation mode and canonical environment
 
 - Published benchmark cells are expected to run in isolation mode via [`docs/benchmarks/suite/isolation/`](./isolation/).
-- `./isolation/run-isolated.sh` creates an npm tarball, unpacks it under the external runtime profile, uses the packed CLI for both `bench:suite` and MCP, syncs the shipped minimal config, points `CLAUDE_CONFIG_DIR` at that profile, and exports `MADAR_BENCH_ISOLATION=1`.
+- `./isolation/run-isolated.sh` creates an npm tarball, unpacks it under the external runtime profile, uses the packed product CLI for MCP, invokes the checkout-only `tools/eval/core-reset/benchmark-suite.mjs` runner, syncs the minimal evaluation config, points `CLAUDE_CONFIG_DIR` at that profile, and exports `MADAR_BENCH_ISOLATION=1`.
 - Published cells must report `MADAR_BENCH_RUNTIME_SOURCE=npm_pack`. A `MADAR_BENCH_CLI_PATH` override is for development only because it reintroduces checkout behavior.
 - That isolation profile is separate from the user's default Claude profile; if the default profile is logged in but the isolated runtime profile is not, the launcher now fails fast and prints the exact `CLAUDE_CONFIG_DIR=... claude auth login` command to run once before a measured rerun.
-- The pinned environment contract lives in [`isolation/environment.json`](./isolation/environment.json). In isolation mode, `madar bench:suite` compares the live environment against that contract before each cell.
+- The pinned environment contract lives in [`isolation/environment.json`](./isolation/environment.json). In isolation mode, the checkout-only benchmark runner compares the live environment against that contract before each cell.
 - Environment drift marks the cell `status: "env_mismatch"` and excludes it from measured counts. `summary.md` records `Cells skipped for env drift: N`.
 - Development runs outside isolation mode remain useful receipts, but their cells are tagged `isolation: false` and should not be cited as published benchmark claims.
 

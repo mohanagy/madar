@@ -15,17 +15,20 @@ describe('getting started documentation', () => {
     expect(tutorial).toContain('npm install -g @lubab/madar')
     expect(tutorial).toContain('madar generate examples/sample-workspace')
     expect(tutorial).toContain('madar query "how does password reset request enqueue the reset email?"')
-    expect(tutorial).toContain('madar claude install')
-    expect(tutorial).toContain('madar doctor out/graph.json')
-    expect(tutorial).toContain('madar status out/graph.json')
+    expect(tutorial).toContain('madar install claude')
+    expect(tutorial).toContain('madar install codex')
+    expect(tutorial).toContain('madar doctor')
+    expect(tutorial).toContain('madar status')
     expect(tutorial).toContain('call `retrieve` exactly once')
+    expect(tutorial).toContain('zero repository bytes')
+    expect(tutorial).toContain('arguments `["mcp"]`')
     expect(tutorial.toLowerCase()).toContain('expected output')
     expect(tutorial.toLowerCase()).toContain('troubleshooting')
     expect(tutorial).toContain('../design-partners.md')
 
     expect(readme).toContain('## Start in three steps')
     expect(readme).toContain('madar generate .')
-    expect(readme).toContain('madar claude install')
+    expect(readme).toContain('madar install claude')
     expect(readme).toContain('retrieve(question, budget?)')
     expect(readme).toContain('madar query "how does authentication work?"')
   })
@@ -45,6 +48,17 @@ describe('getting started documentation', () => {
       'madar pack',
       'madar prompt',
       'madar handoff',
+      'madar serve',
+      'madar watch',
+      'madar telemetry',
+      'madar hook',
+      'madar cursor',
+      'madar copilot',
+      'madar gemini',
+      'madar opencode',
+      '--stdio',
+      '--auto-refresh',
+      '--neo4j',
       'context_pack',
       'context_expand',
       'MADAR_TOOL_PROFILE',

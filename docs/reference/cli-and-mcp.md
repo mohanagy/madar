@@ -1,36 +1,66 @@
 # CLI and MCP reference
 
-Madar has one retrieval path. MCP clients call `retrieve`; terminal users call `madar query`. Both return the same `madar.retrieve` version 1 envelope.
+Madar has one retrieval path. MCP clients call `retrieve`; terminal users call `madar query`. For the same accepted graph and normalized request, both return the same byte-identical `madar.retrieve` version 1 envelope.
 
-## First run
+## Supported commands
+
+The public command allowlist is:
+
+```text
+madar generate [path] [options]
+madar query "<question>" [--graph graph.json] [--budget tokens]
+madar status [graph.json]
+madar doctor [graph.json]
+madar install <claude|codex> [--uninstall]
+madar mcp
+```
+
+Global `--help` and `--version` are also supported. Removed commands and flags are usage errors; they are not compatibility aliases.
+
+## Generate
 
 ```bash
 madar generate .
-madar claude install
-madar doctor
-madar status
+madar generate . --update
+madar generate . --watch
 ```
 
-Ask the connected agent a repository question normally. The installed guidance tells it to call `retrieve` once with the question unchanged before broad file search.
+Generation uses one canonical compiler-backed JavaScript/TypeScript index. `--update` performs a cold no-op when the accepted source snapshot is unchanged. `--watch` continuously invokes the same canonical reconcile after relevant changes.
 
-Without MCP:
+Supported generation options are:
+
+- `--update`
+- `--watch`
+- `--debounce <seconds>`
+- `--follow-symlinks`
+- `--respect-gitignore`
+- `--strict-indexing`
+- `--max-indexing-failed <count>`
+- `--max-indexing-unsupported <count>`
+
+There is no Neo4j route and no alternate graph, index, query, or updater engine.
+
+## Query
 
 ```bash
 madar query "how does authentication work?"
 madar query "what calls enqueueInvoice?" --budget 2000
+madar query "trace login" --graph out/graph.json
 ```
 
-## MCP tool
+`question` is required and limited to 512 characters. `budget` is an optional positive integer; the effective result is capped at 4,000 serialized tokens, 12 files, 25 snippets, and one directional closure pass.
 
-The server exposes exactly one tool:
+## MCP
+
+`madar mcp` starts the stdio server for its exact working directory. It advertises only the tools capability and exactly one tool:
 
 | Tool | Input | Result |
 | --- | --- | --- |
 | `retrieve` | `{ "question": string, "budget"?: positive integer }` | Authenticated nodes, directed relationships, explicit boundaries, and metrics |
 
-Extra input properties are rejected. A requested budget is clamped to an effective range of 256 to 4,000 serialized tokens. The result is also capped at 12 files, 25 snippets, and one directional closure pass.
+Extra input properties are rejected. There are no MCP resources or prompts.
 
-Example:
+Example call:
 
 ```json
 {
@@ -42,88 +72,60 @@ Example:
 }
 ```
 
-MCP also exposes authenticated `graph.json` as a read-only resource. The artifact is not an alternate query tool.
+The server completes initialization and `tools/list` before it loads reconciliation code. Listing the tool starts one background reconciler for the active repository or linked worktree. The first tool call waits at most 25 seconds for an accepted graph. If the graph is still unavailable, Madar returns the normal canonical `unavailable` result; it never asks the client to retry Madar.
 
 ## Result outcomes
 
 `outcome` is one of:
 
-- `evidence` — at least one authenticated graph node survived; structural file evidence may have no excerpt
+- `evidence` — authenticated graph evidence survived selection
 - `missing` — the graph has no support for the question
 - `unsupported` — required source is outside the JavaScript/TypeScript index
 - `stale` — source bytes or ranges no longer match the accepted graph
 - `unavailable` — required local source cannot be read safely
 - `corrupt` — required graph facts or provenance are malformed
 
-`boundaries` can additionally report `disconnected` and `truncated`. A result can contain useful evidence and boundaries at the same time.
+`boundaries` can additionally report `disconnected` and `truncated`. A result can contain useful evidence and boundaries at the same time. See [MCP response shape](../mcp-response-shape.md) for every field.
 
-See [MCP response shape](../mcp-response-shape.md) for every field.
+## Diagnostics
 
-## Agent installs
+```bash
+madar doctor
+madar status
+```
 
-There are no install profiles. Every MCP-capable install exposes the same single `retrieve` tool.
+Both commands compose the same diagnostic report. They inspect the accepted graph plus the supported external Claude Code and Codex registrations. They do not claim that a running client dispatched the tool.
 
-| Agent | Command | Generated or managed surface |
-| --- | --- | --- |
-| Claude Code | `madar claude <install\|uninstall>` | `CLAUDE.md`, `.claude/settings.json`, `.claude/madar-user-prompt-submit.cjs`, `.mcp.json` |
-| Cursor | `madar cursor <install\|uninstall>` | `.cursor/rules/madar.mdc`, `.cursor/mcp.json` |
-| GitHub Copilot CLI | `madar copilot <install\|uninstall>` | home skill plus `.vscode/mcp.json` |
-| Gemini CLI | `madar gemini <install\|uninstall>` | home skill, `GEMINI.md`, `.gemini/settings.json` hook and MCP entry |
-| Codex CLI | `madar codex <install\|uninstall>` | `AGENTS.md`, `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, workspace block in `~/.codex/config.toml` |
-| OpenCode | `madar opencode <install\|uninstall>` | `AGENTS.md`, `.opencode/plugins/madar.js`, `opencode.json` or `opencode.jsonc` MCP entry |
-| Aider | `madar aider <install\|uninstall>` | `AGENTS.md` instructions; use `madar query` because this install adds no MCP server |
-| Claw, Droid, Trae, Trae CN | `madar <agent> <install\|uninstall>` | `AGENTS.md` instructions; use `madar query` where MCP is unavailable |
+## Claude Code and Codex installation
 
-`madar doctor` and `madar status` validate the graph plus on-disk Madar-owned instruction, hook, plugin, and MCP files. They do not prove that a running agent has trusted a hook or activated an MCP server.
+There are no install profiles, hooks, skills, generated instructions, or project-local MCP files.
 
-For Codex, restart or open a new session, inspect and trust the project hook with `/hooks`, then verify the server with `/mcp` or `codex mcp list`. The installer owns only its marked workspace block in `~/.codex/config.toml`; unrelated configuration is preserved.
+```bash
+madar install claude
+madar install codex
+madar install claude --uninstall
+madar install codex --uninstall
+```
 
-All installed prompt hooks are guidance, not enforcement. They cannot prevent the host agent from using its own filesystem or shell tools.
+Fresh install, idempotent reinstall, and uninstall create or modify zero repository bytes.
+
+Claude Code receives a supported per-project local MCP registration outside the repository. It runs `madar mcp` from the exact workspace.
+
+Codex receives one workspace-hashed managed block in `$CODEX_HOME/config.toml` or `~/.codex/config.toml`:
+
+```toml
+command = "madar"
+args = ["mcp"]
+cwd = "/exact/workspace"
+startup_timeout_sec = 180
+tool_timeout_sec = 60
+```
+
+Multiple repositories and linked worktrees coexist and uninstall independently. The installer refuses conflicting ownership and preserves unrelated configuration, formatting, comments, permissions, TOML constructs, and other MCP servers. Legacy cleanup removes only enumerated, byte-recognized Madar-owned artifacts.
+
+Cursor, GitHub Copilot, Gemini, OpenCode, Aider, and other clients are not direct installer targets. Use the MCP Registry where supported, or manually register `madar mcp` with the repository as its working directory.
 
 See [agent quickstarts](../tutorials/agent-quickstarts.md) and the [compatibility matrix](../integrations/compatibility.md).
-
-## Graph lifecycle
-
-```bash
-madar generate [path]
-madar generate [path] --update
-madar generate [path] --watch
-madar watch [path]
-```
-
-Generation uses one canonical compiler-backed JavaScript/TypeScript index. `--update` skips publication when the accepted graph is unchanged. `watch` and MCP auto-refresh perform the same canonical reconcile after relevant changes.
-
-Useful diagnostics:
-
-```bash
-madar doctor [graph.json]
-madar status [graph.json]
-```
-
-## MCP server
-
-```bash
-madar serve [graph.json] --stdio
-madar serve --stdio --auto-refresh
-```
-
-With `--auto-refresh`, the server resolves the graph from its working directory, builds it when needed, and reconciles changes while running. During a temporary rebuild, retrieval returns an explicit unavailable boundary rather than serving unauthenticated source.
-
-## Other maintained commands
-
-These commands support graph maintenance and evaluation. They do not create alternate retrieval products:
-
-```bash
-madar compare [question] --exec TEMPLATE [--yes]
-madar benchmark [graph.json] --exec TEMPLATE --yes
-madar eval [graph.json] --exec TEMPLATE --yes
-madar bench:suite ...
-madar telemetry <enable|disable|status|clear|report>
-madar hook <install|uninstall|status>
-madar install [platform]
-```
-
-`compare`, `benchmark`, and `eval` can execute an external model runner and may spend paid model tokens. They use the same retrieval result rather than a separate query engine.
 
 ## Official MCP Registry
 
@@ -133,10 +135,12 @@ The checked-in Registry manifest is [`docs/mcp-registry/server.json`](../mcp-reg
 npm run registry:validate
 ```
 
-The public entry launches:
+Checking and testing this metadata does not publish it. Thin Delivery issue #602 does not authorize Registry publication.
 
-```bash
-npx @lubab/madar serve --stdio --auto-refresh
+The public entry launches the package with exact package arguments:
+
+```text
+["mcp"]
 ```
 
 The official MCP Registry hosts metadata, not Madar code or your local graph artifact. Private registry usage stays out of scope for the public Madar listing.
@@ -145,6 +149,6 @@ If you still discover older `graphify-ts` links or listings, Madar is the curren
 
 ## Trust boundary
 
-Enable project hooks and local MCP servers only in repositories you trust. Madar authenticates returned excerpts against the accepted graph, constrains local graph paths, and excludes known sensitive path classes during source discovery. Your agent host and model provider remain separate trust boundaries.
+Enable local MCP servers only for repositories you trust. Madar authenticates returned excerpts against the accepted graph, constrains graph paths, and excludes known sensitive path classes during source discovery. Your client host and model provider remain separate trust boundaries.
 
 See the [MCP security threat model](../security/mcp-threat-model.md).

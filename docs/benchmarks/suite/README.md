@@ -1,6 +1,10 @@
 # Benchmark suite scaffold
 
-This directory is the public landing zone for the reproducible benchmark suite tracked in [#332](https://github.com/mohanagy/madar/issues/332).
+This directory is the repository landing zone for the reproducible benchmark suite tracked in [#332](https://github.com/mohanagy/madar/issues/332).
+
+The retained runner is checkout-only development/evaluation tooling. It is not
+part of the public package CLI. Thin Delivery retired `madar bench:suite`;
+dated receipts below preserve that historical surface only as recorded evidence.
 
 ## What this suite is for
 
@@ -18,7 +22,7 @@ This directory is the public landing zone for the reproducible benchmark suite t
 
 ## Current status
 
-The runner-backed suite now ships in this directory:
+The runner-backed suite remains in this checkout:
 
 - [`repos.json`](./repos.json) — fixed repo ids and current readiness
 - [`tasks.json`](./tasks.json) — fixed task ids and current prompt wiring
@@ -26,7 +30,7 @@ The runner-backed suite now ships in this directory:
 - [`human-review.json`](./human-review.json) — separate semantic review prompts, notes, and explicit `pending`/`passed`/`failed` status
 - [`holdouts/`](./holdouts/) — alternate repos/prompts with no runtime-proof profile
 - [`methodology.md`](./methodology.md) — trial protocol, caveats, and reporting rules
-- `madar bench:suite` — the CLI entrypoint that expands runnable cells and writes results under `docs/benchmarks/suite/results/<timestamp>/`
+- [`../../../tools/eval/core-reset/benchmark-suite.mjs`](../../../tools/eval/core-reset/benchmark-suite.mjs) — the checkout-only runner that expands runnable cells and writes results under `docs/benchmarks/suite/results/<timestamp>/`
 
 Current wiring is still conservative, but it is no longer a single-cell scaffold:
 
@@ -39,7 +43,7 @@ Current wiring is still conservative, but it is no longer a single-cell scaffold
 - public explain-runtime reruns load deterministic answer-quality gates from [`quality-gates.json`](./quality-gates.json); human semantic review status is tracked independently in [`human-review.json`](./human-review.json), and all July rows remain `pending` without overriding their machine-ineligible outcomes
 - isolated Claude reruns for those public explain-runtime rows must allow `mcp__madar__retrieve` (for example with `--allowedTools mcp__madar__retrieve`)
 - runner execution now clones or copies each ready row into a temporary benchmark workspace, normalizes repo-local Claude/MCP config there, provisions the Madar Claude install, and verifies that install before prompt spend
-- `./isolation/run-isolated.sh` builds `npm pack`, unpacks it outside the checkout, and uses that artifact for both the suite CLI and MCP server; `MADAR_BENCH_CLI_PATH` is an explicit development override and cannot produce a publishable receipt
+- `./isolation/run-isolated.sh` builds `npm pack`, unpacks it outside the checkout, uses that artifact for the product CLI and MCP server, and invokes the checkout-only suite runner; `MADAR_BENCH_CLI_PATH` is an explicit development override and cannot produce a publishable receipt
 - the launcher treats `docs/benchmarks/suite/isolation/.claude` as a checked-in template and syncs it into a persistent runtime isolation profile outside the repo; if your normal Claude profile is logged in but that isolated runtime profile is not, it fails fast and prints the exact login command
 
 Current public TypeScript `explain-runtime` receipts (July 15, 2026; packed `0.31.0` artifact; one warm-cache trial per row):
@@ -75,16 +79,17 @@ Historical fixture bundle:
 - [`results/2026-05-31T12-00-00/summary.md`](./results/2026-05-31T12-00-00/summary.md) — small-library, service, and monorepo fixture-style rows across explain, implement, review, and impact tasks, with workflow-outcome summaries on the implement/review cells
 - [`results/2026-05-26T18-31-04/summary.md`](./results/2026-05-26T18-31-04/summary.md) — the first warm-cache `nestjs-mid` / `explain-runtime` receipt kept for historical continuity
 
-Run a dry-run first:
+From a source checkout, run the development harness in isolation mode. Start
+with a dry run:
 
 ```bash
-madar bench:suite --dry-run
+./docs/benchmarks/suite/isolation/run-isolated.sh --dry-run
 ```
 
 Run one wired cell:
 
 ```bash
-madar bench:suite \
+./docs/benchmarks/suite/isolation/run-isolated.sh \
   --repo nestjs-mid \
   --task explain-runtime \
   --mode warm \

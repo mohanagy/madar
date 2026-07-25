@@ -4,7 +4,7 @@
 
 ## What exists today
 
-- `madar serve` gives local query and inspection endpoints over the canonical graph artifact.
+- `madar query` and the one-tool `madar mcp` stdio server keep retrieval local to the canonical graph artifact.
 - `report.share-safe.json` gives a sanitized artifact for sharing benchmark or compare receipts without exposing workstation paths.
 
 That means the current default path is already: generate and query locally, and share only the receipt layer when someone else needs evidence.

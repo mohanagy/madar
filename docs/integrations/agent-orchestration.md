@@ -18,7 +18,7 @@ Use MCP when the lead agent supports it:
 
 ```bash
 madar generate .
-madar claude install
+madar install claude
 ```
 
 Use the equivalent CLI call when MCP is unavailable:
@@ -28,6 +28,8 @@ madar query "Trace authentication from the route to session persistence."
 ```
 
 Do not run several discovery products for the same question. Madar has one query path; changing from MCP `retrieve` to CLI `query` changes transport, not evidence selection.
+
+MCP exposes exactly that one tool and no resources or prompts. Hosts without a supported Claude Code or Codex installer should use the public Registry entry or manually register `madar mcp` with the exact workspace as `cwd`.
 
 ## Explain, review, impact, and implementation
 

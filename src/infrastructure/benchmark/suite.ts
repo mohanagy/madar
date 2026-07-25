@@ -9,7 +9,6 @@ import {
   executeNativeAgentCompare,
   type NativeAgentCompareReport,
 } from '../compare.js'
-import { claudeInstall } from '../install.js'
 import { copyWorkspaceForBenchmark } from '../../shared/workspace-copy.js'
 import {
   benchmarkIsolationEnabled,
@@ -168,6 +167,16 @@ export interface BenchmarkSuiteDependencies {
 const DEFAULT_REPOS_PATH = resolve('docs/benchmarks/suite/repos.json')
 const DEFAULT_TASKS_PATH = resolve('docs/benchmarks/suite/tasks.json')
 const DEFAULT_EXPECTED_ENVIRONMENT_PATH = resolve('docs/benchmarks/suite/isolation/environment.json')
+const BENCHMARK_CLAUDE_MD = `## madar
+
+This project has a Madar knowledge graph.
+
+1. For a repository question, call Madar's \`retrieve\` MCP tool exactly once with the user's question unchanged before broad file search.
+2. Use returned authenticated excerpts and relationships when \`outcome\` is \`evidence\`.
+3. When retrieval returns a boundary instead of evidence, state it and use only focused verification needed to continue.
+4. Skip Madar for tasks that do not require local repository context.
+`
+const BENCHMARK_ROUTING_GUIDE = 'This project has a Madar knowledge graph. For a repository question, call the Madar retrieve tool exactly once with the user question unchanged before broad file search. Use authenticated evidence when it is returned; otherwise report the explicit boundary and continue with only focused verification.'
 
 function readJsonFile(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown
@@ -501,7 +510,9 @@ function resetBenchmarkWorkspaceConfig(workspaceRoot: string): void {
 
 function benchmarkWorkspaceCliPath(): string {
   const override = process.env.MADAR_BENCH_CLI_PATH?.trim()
-  const cliPath = override ? resolve(override) : join(findPackageRoot(), 'dist', 'src', 'cli', 'bin.js')
+  const cliPath = override
+    ? resolve(override)
+    : join(findPackageRoot(), 'dist', 'src', 'adapters', 'cli', 'bin.js')
   if (!existsSync(cliPath)) {
     throw new Error(`Benchmark suite requires the built CLI at ${portablePath(cliPath)}. Run npm run build first.`)
   }
@@ -557,7 +568,37 @@ function pinBenchmarkWorkspaceClaudeCommandPath(workspaceRoot: string): void {
 
 function ensureBenchmarkWorkspaceInstall(workspaceRoot: string): void {
   resetBenchmarkWorkspaceConfig(workspaceRoot)
-  claudeInstall(workspaceRoot)
+  const claudeDirectory = join(workspaceRoot, '.claude')
+  mkdirSync(claudeDirectory, { recursive: true })
+  writeFileSync(join(workspaceRoot, 'CLAUDE.md'), BENCHMARK_CLAUDE_MD, 'utf8')
+  writeFileSync(join(claudeDirectory, 'settings.json'), `${JSON.stringify({
+    hooks: {
+      UserPromptSubmit: [{
+        hooks: [{
+          type: 'command',
+          command: 'node .claude/madar-user-prompt-submit.cjs',
+        }],
+        name: 'madar',
+        source: 'madar',
+      }],
+    },
+  }, null, 2)}\n`, 'utf8')
+  const promptPayload = JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: BENCHMARK_ROUTING_GUIDE,
+    },
+  })
+  writeFileSync(
+    join(claudeDirectory, 'madar-user-prompt-submit.cjs'),
+    `// madar managed Claude UserPromptSubmit hook\n'use strict'\nprocess.stdout.write(${JSON.stringify(promptPayload)})\n`,
+    'utf8',
+  )
+  writeFileSync(join(workspaceRoot, '.mcp.json'), `${JSON.stringify({
+    mcpServers: {
+      madar: { command: 'madar', args: ['mcp'] },
+    },
+  }, null, 2)}\n`, 'utf8')
   pinBenchmarkWorkspaceClaudeCommandPath(workspaceRoot)
 }
 

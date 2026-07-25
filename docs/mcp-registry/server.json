@@ -23,22 +23,14 @@
             "packageArguments": [
                 {
                     "type": "positional",
-                    "value": "serve"
-                },
-                {
-                    "type": "positional",
-                    "value": "--stdio"
-                },
-                {
-                    "type": "positional",
-                    "value": "--auto-refresh"
+                    "value": "mcp"
                 }
             ]
         }
     ],
     "_meta": {
         "io.modelcontextprotocol.registry/publisher-provided": {
-            "notes": "Public npm package with one `retrieve(question, budget?)` tool and local auto-refresh. When an MCP host launches `madar serve --stdio --auto-refresh` with a workspace as its cwd, Madar builds and refreshes that workspace's local graph without a static graph-path argument. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
+            "notes": "Public npm package with exactly one `retrieve(question, budget?)` tool, the tools capability only, and no MCP resources or prompts. When an MCP host launches `madar mcp` with a workspace as its cwd, Madar builds and refreshes that workspace's local graph without a static graph-path argument. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
             "source": "docs/mcp-registry/server.json"
         }
     }

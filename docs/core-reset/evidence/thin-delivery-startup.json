@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-07-25T09:15:40Z",
+  "phase": "thin-delivery",
+  "issue": "https://github.com/mohanagy/madar/issues/602",
+  "implementation_start_commit": "edcf3e45b8c8fb76a57531bc74bede2a06189aba",
+  "candidate_state": "pre_pr_final_candidate",
+  "environment": {
+    "os": "Darwin 25.3.0",
+    "arch": "arm64",
+    "node": "v22.22.3"
+  },
+  "measurement_method": {
+    "install": "fresh consumer install from the real packed tarball",
+    "elapsed_clock": "monotonic",
+    "rss_command": "/usr/bin/time -l",
+    "rss_unit": "bytes",
+    "median": "mean of the middle pair after ascending sort",
+    "p95": "nearest rank at ceil(0.95 * sample count)",
+    "version_elapsed_boundary": "process spawn through version process exit",
+    "mcp_elapsed_boundary": "process spawn through parsed tools/list response"
+  },
+  "package": {
+    "name": "@lubab/madar",
+    "version": "0.32.0",
+    "files": 142,
+    "packed_bytes": 200310,
+    "unpacked_bytes": 812531,
+    "preceding_packed_bytes": 231524,
+    "packed_bytes_delta": -31214,
+    "shasum": "1a915fdc597463f57cd0d79ffa26a7f1c27ff2ef",
+    "integrity": "sha512-94PSjJbRCsgv8oUt18iPZFzysl5S/7njrB1F05fzwkK5Amk6abxGcHv2L8K4fw1qijZLJ2sxr83nIl7NZWef8A==",
+    "tarball_sha256": "2186259073a6bc05b7268ac7115fd56584d27024b76d167db021f68f83c603b9"
+  },
+  "version_startup": {
+    "command": "madar --version",
+    "isolated_cold_processes": 10,
+    "samples": [
+      {
+        "elapsed_ms": 39.205,
+        "max_rss_bytes": 43286528
+      },
+      {
+        "elapsed_ms": 36.487,
+        "max_rss_bytes": 43286528
+      },
+      {
+        "elapsed_ms": 38.997,
+        "max_rss_bytes": 43122688
+      },
+      {
+        "elapsed_ms": 37.427,
+        "max_rss_bytes": 43319296
+      },
+      {
+        "elapsed_ms": 39.229,
+        "max_rss_bytes": 43253760
+      },
+      {
+        "elapsed_ms": 40.28,
+        "max_rss_bytes": 43286528
+      },
+      {
+        "elapsed_ms": 38.586,
+        "max_rss_bytes": 43532288
+      },
+      {
+        "elapsed_ms": 39.36,
+        "max_rss_bytes": 43270144
+      },
+      {
+        "elapsed_ms": 37.83,
+        "max_rss_bytes": 43270144
+      },
+      {
+        "elapsed_ms": 37.734,
+        "max_rss_bytes": 43220992
+      }
+    ],
+    "median_ms": 38.792,
+    "p95_ms": 40.28,
+    "max_rss_bytes": 43532288,
+    "median_gate_ms_less_than": 100,
+    "max_rss_gate_bytes_less_than": 83886080,
+    "passed": true
+  },
+  "mcp_startup": {
+    "command": "madar mcp",
+    "protocol_version": "2025-11-25",
+    "measurement": "process spawn through initialize and parsed tools/list responses",
+    "isolated_cold_processes": 10,
+    "samples": [
+      {
+        "elapsed_ms": 119.651,
+        "max_rss_bytes": 206077952,
+        "tools": [
+          "retrieve"
+        ]
+      },
+      {
+        "elapsed_ms": 156.06,
+        "max_rss_bytes": 205357056,
+        "tools": [
+          "retrieve"
+        ]
+      },
+      {
+        "elapsed_ms": 159.569,
+        "max_rss_bytes": 207650816,
+        "tools": [
+          "retrieve"
+        ]
+      },
+      {
+        "elapsed_ms": 148.346,
+        "max_rss_bytes": 205455360,
+        "tools": [
+          "retrieve"
+        ]
+      },
+      {
+        "elapsed_ms": 185.684,
+        "max_rss_bytes": 205422592,
+        "tools": [
+          "retrieve"
+        ]
+      },
+      {
+        "elapsed_ms": 159.342,
+        "max_rss_bytes": 208977920,
+        "tools": [
+          "retrieve"
+        ]
+      },
+      {
+        "elapsed_ms": 161.192,
+        "max_rss_bytes": 207175680,
+        "tools": [
+          "retrieve"
+        ]
+      },
+      {
+        "elapsed_ms": 184.931,
+        "max_rss_bytes": 207355904,
+        "tools": [
+          "retrieve"
+        ]
+      },
+      {
+        "elapsed_ms": 183.96,
+        "max_rss_bytes": 207028224,
+        "tools": [
+          "retrieve"
+        ]
+      },
+      {
+        "elapsed_ms": 179.174,
+        "max_rss_bytes": 205373440,
+        "tools": [
+          "retrieve"
+        ]
+      }
+    ],
+    "median_ms": 160.38,
+    "p95_ms": 185.684,
+    "max_rss_bytes": 208977920,
+    "tools_exact": [
+      "retrieve"
+    ],
+    "median_gate_ms_less_than": 1000,
+    "passed": true
+  },
+  "claims": {
+    "packed_install_used": true,
+    "startup_gates_passed": true,
+    "real_client_transport_proved": true,
+    "completion_claimed": false
+  }
+}

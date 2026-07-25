@@ -10,9 +10,12 @@ CURSOR_CONFIG_DIR="${RUNTIME_PROFILE_ROOT}/.cursor"
 CURSOR_MCP_PATH="${CURSOR_CONFIG_DIR}/mcp.json"
 PACKED_ARTIFACT_ROOT="${MADAR_BENCH_PACKED_ARTIFACT_ROOT:-${RUNTIME_PROFILE_ROOT}/packed-artifact}"
 CLI_PATH="${MADAR_BENCH_CLI_PATH:-}"
+RUNTIME_ROOT="${MADAR_BENCH_RUNTIME_ROOT:-}"
+BENCHMARK_RUNNER_PATH="${REPO_ROOT}/tools/eval/core-reset/benchmark-suite.mjs"
 
 prepare_packed_cli() {
   if [[ -n "${CLI_PATH}" ]]; then
+    RUNTIME_ROOT="${RUNTIME_ROOT:-${REPO_ROOT}}"
     export MADAR_BENCH_RUNTIME_SOURCE="cli_override"
     return
   fi
@@ -39,7 +42,8 @@ prepare_packed_cli() {
     cd "${PACKED_ARTIFACT_ROOT}/package"
     npm install --ignore-scripts --omit=optional --no-package-lock --no-audit --no-fund --silent
   )
-  CLI_PATH="${PACKED_ARTIFACT_ROOT}/package/dist/src/cli/bin.js"
+  CLI_PATH="${PACKED_ARTIFACT_ROOT}/package/dist/src/adapters/cli/bin.js"
+  RUNTIME_ROOT="${PACKED_ARTIFACT_ROOT}/package"
   export MADAR_BENCH_RUNTIME_SOURCE="npm_pack"
   export MADAR_BENCH_PACKAGE_TARBALL="${tarballs[0]}"
   export MADAR_BENCH_PACKAGE_VERSION
@@ -102,6 +106,14 @@ if [[ ! -f "${CLI_PATH}" ]]; then
   echo "Missing benchmark CLI at ${CLI_PATH}." >&2
   exit 1
 fi
+if [[ ! -f "${RUNTIME_ROOT}/dist/src/infrastructure/benchmark/suite.js" ]]; then
+  echo "Missing benchmark suite module under ${RUNTIME_ROOT}." >&2
+  exit 1
+fi
+if [[ ! -f "${BENCHMARK_RUNNER_PATH}" ]]; then
+  echo "Missing development benchmark runner at ${BENCHMARK_RUNNER_PATH}." >&2
+  exit 1
+fi
 
 seed_runtime_profile
 
@@ -126,13 +138,8 @@ cat > "${CURSOR_MCP_PATH}" <<JSON
       "command": "node",
       "args": [
         "${CLI_PATH}",
-        "serve",
-        "--stdio",
-        "out/graph.json"
-      ],
-      "env": {
-        "MADAR_TOOL_PROFILE": "core"
-      }
+        "mcp"
+      ]
     }
   }
 }
@@ -141,6 +148,7 @@ JSON
 export CLAUDE_CONFIG_DIR
 export CURSOR_CONFIG_DIR
 export MADAR_BENCH_ISOLATION=1
+export MADAR_BENCH_RUNTIME_ROOT="${RUNTIME_ROOT}"
 
 echo "Benchmark runtime source: ${MADAR_BENCH_RUNTIME_SOURCE}" >&2
 if [[ "${MADAR_BENCH_RUNTIME_SOURCE}" == "npm_pack" ]]; then
@@ -149,4 +157,5 @@ else
   echo "Benchmark CLI override: ${CLI_PATH} (not valid for published receipts)" >&2
 fi
 
-exec node "${CLI_PATH}" bench:suite "$@"
+cd "${REPO_ROOT}"
+exec node "${BENCHMARK_RUNNER_PATH}" "$@"

@@ -196,7 +196,19 @@
       ],
       "properties": {
         "candidate_generate_command": {
-          "const": ["node", "dist/src/cli/bin.js", "generate", "."]
+          "oneOf": [
+            {
+              "const": ["node", "dist/src/cli/bin.js", "generate", "."]
+            },
+            {
+              "const": [
+                "node",
+                "dist/src/adapters/cli/bin.js",
+                "generate",
+                "."
+              ]
+            }
+          ]
         },
         "candidate_runtime_source": {
           "const": "exact_head_npm_packed_artifact"

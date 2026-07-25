@@ -40,6 +40,21 @@ function loadCiWorkflow(): string {
   return readFileSync(join(process.cwd(), '.github', 'workflows', 'ci.yml'), 'utf8')
 }
 
+function loadCiEvalRegression(): string {
+  return readFileSync(join(process.cwd(), '.github', 'scripts', 'ci-eval-regression.mjs'), 'utf8')
+}
+
+function loadPackParityVerifier(): string {
+  return readFileSync(
+    join(process.cwd(), '.github', 'scripts', 'verify-packed-retrieval-parity.mjs'),
+    'utf8',
+  )
+}
+
+function loadIsolationVerifier(): string {
+  return readFileSync(join(process.cwd(), 'tools', 'eval', 'core-reset', 'verify-isolation.mjs'), 'utf8')
+}
+
 function loadReadme(): string {
   return readFileSync(join(process.cwd(), 'README.md'), 'utf8')
 }
@@ -131,7 +146,7 @@ describe('package metadata', () => {
     expect(manifest.name).toBe('@lubab/madar')
     expect(manifest.mcpName).toBe('io.github.mohanagy/madar')
     expect(manifest.bin).toEqual({
-      madar: 'dist/src/cli/bin.js',
+      madar: 'dist/src/adapters/cli/bin.js',
     })
     expect(Object.keys(manifest.scripts ?? {})).not.toEqual(expect.arrayContaining([
       'compat:prepare',
@@ -171,10 +186,10 @@ describe('package metadata', () => {
     expect(keywords).not.toEqual(expect.arrayContaining(['code-review', 'impact-analysis', 'pr-review', 'context']))
     expect(keywords).not.toContain('context-plane')
     expect(keywords).not.toContain('context-compiler')
-    expect(readme).toContain('claude code')
-    expect(readme).toContain('cursor')
-    expect(readme).toContain('codex')
-    expect(readme).toContain('copilot')
+    expect(readme).toContain('madar install claude')
+    expect(readme).toContain('madar install codex')
+    expect(readme).not.toContain('madar install cursor')
+    expect(readme).not.toContain('madar install copilot')
     expect(readme).toContain('authenticated repository evidence')
     expect(readme).toContain('authenticated local graph')
     expect(readme).toContain('retrieve(question, budget?)')
@@ -201,15 +216,33 @@ describe('package metadata', () => {
 
   it('keeps the eval regression workflow aligned with runner-backed eval requirements', () => {
     const ciWorkflow = loadCiWorkflow()
+    const evalRegression = loadCiEvalRegression()
 
     expect(ciWorkflow).toContain('Enforce eval regression thresholds')
-    expect(ciWorkflow).toContain('ci-prompt-runner.mjs')
-    expect(ciWorkflow).toContain('--exec')
-    expect(ciWorkflow).toContain('--yes')
-    expect(ciWorkflow).toContain('Snippet coverage:')
-    expect(ciWorkflow).toContain('snippet_coverage')
-    expect(ciWorkflow).toContain('recall < 90')
-    expect(ciWorkflow).toContain('mrr < 0.95')
+    expect(ciWorkflow).toContain('node .github/scripts/ci-eval-regression.mjs')
+    expect(evalRegression).toContain('ci-prompt-runner.mjs')
+    expect(evalRegression).toContain('formatQualityReport(report)')
+    expect(evalRegression).toContain('report.avg_snippet_coverage')
+    expect(evalRegression).toContain('snippet_coverage')
+    expect(evalRegression).toContain('recall < 90')
+    expect(evalRegression).toContain('report.mrr < 0.95')
+  })
+
+  it('runs release gates against the exact head and a clean packed consumer', () => {
+    const workflow = loadCiWorkflow()
+    const parity = loadPackParityVerifier()
+    const isolation = loadIsolationVerifier()
+
+    expect(workflow).toContain(
+      "ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}",
+    )
+    expect(parity).toContain("'install'")
+    expect(parity).toContain("'--ignore-scripts'")
+    expect(parity).toContain('installedBinPath')
+    expect(parity).toContain('registryPackage.packageArguments')
+    expect(parity).toContain('assertPackageMeasurement(packRecord)')
+    expect(parity).not.toContain('symlinkSync')
+    expect(isolation).toContain('packageMeasurement.target_passed')
   })
 
   it('documents canonical framework-aware JS/TS support and explicit unsupported input', () => {

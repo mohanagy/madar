@@ -1,65 +1,59 @@
 # Proof workflows
 
-Proof work must distinguish retrieval correctness from model quality and end-to-end agent behavior.
+Proof work must distinguish retrieval correctness, transport, model quality, and end-to-end agent behavior.
 
-## Retrieval correctness
+## Local retrieval check
 
-Use the checked-in question set:
+Use the public surface for an ordinary repository check:
+
+```bash
+madar generate .
+madar query "Trace authentication from the route to session persistence."
+```
+
+For the same accepted graph and normalized request, CLI `query`, direct application use, and MCP `retrieve` produce the same canonical bytes.
+
+## Core Reset evaluators
+
+The release-gating held-out and performance evaluators are development-only repository tooling, not public CLI commands:
 
 ```bash
 npm run build
-node dist/src/cli/bin.js generate examples/demo-repo
-node dist/src/cli/bin.js eval examples/demo-repo/out/graph.json \
-  --questions examples/demo-repo/benchmark-questions.v3.json \
-  --exec 'cat {prompt_file} | claude -p' \
-  --yes
+node tools/eval/core-reset/evidence-path-held-out.mjs \
+  --contract tools/eval/core-reset/contracts/evaluation-contract.json \
+  --receipt docs/core-reset/evidence/evidence-path-held-out.json
+node tools/eval/core-reset/evidence-path-performance.mjs \
+  --contract tools/eval/core-reset/contracts/evidence-path-performance-v2.json \
+  --receipt docs/core-reset/evidence/evidence-path-performance.json
 ```
 
-`eval` checks graph-backed evidence against labeled expectations. The external runner may spend paid model tokens.
+Their repositories, prompts, grading, expected evidence, query budgets, and query semantics are frozen. Thin Delivery may re-pin only the transport path from the old built CLI to the package bin.
 
-## Same-question comparison
-
-`compare` runs one baseline and one Madar evidence arm for the same question and external model command:
-
-```bash
-node dist/src/cli/bin.js compare "How does login create a session?" \
-  --graph examples/demo-repo/out/graph.json \
-  --exec 'cat {prompt_file} | claude -p' \
-  --yes
-```
-
-Madar's arm uses the same `retrieve` implementation as MCP and `madar query`; comparison does not introduce another retrieval engine.
-
-Reports are local artifacts. A share-safe report redacts known workstation paths and credentials, but it remains a best-effort artifact that must be reviewed before publication.
-
-On Windows, external runner templates execute through `cmd.exe`; use a command compatible with that shell.
-
-## Core Reset acceptance
-
-The release-gating proof is frozen in the Core Reset design and receipts:
+The acceptance boundary includes:
 
 - exact predecessor-deletion closure
 - production file and line budgets
-- pinned Documenso, Formbricks, and OpenStatus held-out cases
-- independent source/hash/provenance grading
+- pinned Documenso, Formbricks, and OpenStatus cases
+- independently authenticated source, range, hash, and provenance grading
 - 15,000-node, 30,000-edge p95 performance fixture
-- package file-count and packed-byte gates
+- package file-count and byte gates
 
 See [`docs/core-reset/scorecard.md`](./core-reset/scorecard.md). Do not replace a frozen evaluator with a friendlier ad hoc demo.
 
-## Agent activation
+## Transport evidence
 
-Retrieval quality and agent adoption are separate:
+A normally launched client transport receipt must separately show:
 
-1. verify the installed host actually called `retrieve`
-2. preserve the exact question and returned result
-3. check whether the agent used authenticated evidence
-4. record broad fallback reads separately
-5. mark performance ineligible when attribution or answer gates fail
+1. initialize
+2. `tools/list` returning exactly `retrieve`
+3. one forced `tools/call`
+
+No injected MCP configuration, manual override, or direct JSON-RPC substitute proves the normal client path. A forced call proves transport only; natural selection and product preference are later gates.
 
 ## Honest interpretation
 
-- A single good row is a case study, not a universal win.
-- A failed activation row says the integration failed to engage, not that retrieval was slower.
-- A partial evidence result must keep its boundary.
-- Historical receipts remain valid for their named version and setup even when current commands differ.
+- A single good result is a case study, not a universal win.
+- A failed activation says the integration did not engage; it is not a retrieval-speed result.
+- A partial evidence result must preserve its boundary.
+- Historical benchmark receipts remain valid for their named version and setup even when their recorded command no longer exists.
+- Share-safe artifacts are best-effort redactions and must be reviewed before publication.

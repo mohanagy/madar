@@ -37,6 +37,10 @@ describe('benchmark suite docs', () => {
     expect(content).toContain('preserve the historical `Legacy` and `SPI` arm labels exactly as recorded')
     expect(content).toContain('Those labels are not current commands or current benchmark arms')
     expect(content).toContain('New runs use one canonical JavaScript/TypeScript Madar arm')
+    expect(content).toContain('checkout-only development/evaluation tooling')
+    expect(content).toContain('tools/eval/core-reset/benchmark-suite.mjs')
+    expect(content).toContain('./docs/benchmarks/suite/isolation/run-isolated.sh --dry-run')
+    expect(content).not.toContain('\nmadar bench:suite')
     for (const retiredFlag of ['--legacy', '--spi', '--include-docs', '--docs', '--wiki']) {
       expect(content).not.toContain(retiredFlag)
     }

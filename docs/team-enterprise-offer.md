@@ -19,14 +19,14 @@ Madar stays an open-source, local-first product. The near-term paid offer is ser
 
 - Everything in the team evaluation package.
 - An **internal proof report** built from local graph, retrieval, and comparison artifacts for engineering leadership.
-- A local-only **procurement/security note** covering the local-first trust boundary, telemetry posture, artifact sharing limits, and operator responsibilities.
+- A local-only **procurement/security note** covering the local-first trust boundary, the absence of product telemetry, artifact sharing limits, and operator responsibilities.
 
 ## What paid support includes
 
 ### In scope
 
 - **Shared benchmark setup** for one or more agreed repo/task cells.
-- Local workflow calibration for `retrieve`, `madar query`, and `compare`.
+- Local workflow calibration for `retrieve` and `madar query`; comparative proof uses the development-only frozen evaluators.
 - An **internal proof report** that leadership can review without exposing workstation paths by leaning on share-safe receipts.
 - Local-only **policy templates** and procurement/security notes that explain how to evaluate Madar inside the existing trust boundary.
 

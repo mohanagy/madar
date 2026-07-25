@@ -30,14 +30,14 @@ current:
   ready_phase: null
   base_commit: 8efe41fc665fcea7e625dda0864a72ecf27a111b
   completed_phase_commit: 596d286cdf4bb53670a6d8c27b2cec5f86137739
-  production_typescript_files: 73
-  production_typescript_loc: 21687
-  production_loc_added: 0
-  production_loc_removed: 0
-  production_loc_net: 0
-  npm_files: 162
-  npm_packed_bytes: 231524
-  npm_unpacked_bytes: 984434
+  production_typescript_files: 63
+  production_typescript_loc: 16654
+  production_loc_added: 2248
+  production_loc_removed: 7281
+  production_loc_net: -5033
+  npm_files: 142
+  npm_packed_bytes: 200310
+  npm_unpacked_bytes: 812531
   measurement_state: source_and_package_exact
   snapshot_scope: exact_implementation_source_and_package
 
@@ -980,14 +980,12 @@ items:
     disposition: rebuild
     status: in_progress
     sources:
-      - src/cli/**
-      - src/runtime/stdio-server.ts
-      - src/runtime/stdio/definitions.ts
-      - src/runtime/stdio/resources.ts
-      - src/runtime/stdio/tools.ts
-      - src/infrastructure/install.ts
-      - src/shared/env.ts
-      - src/infrastructure/doctor.ts
+      - src/adapters/cli/bin.ts
+      - src/adapters/cli/main.ts
+      - src/adapters/cli/install.ts
+      - src/adapters/cli/doctor.ts
+      - src/adapters/mcp/protocol.ts
+      - src/adapters/mcp/server.ts
     removed_sources:
       - src/cli/bin.ts
       - src/cli/main.ts
@@ -1122,9 +1120,15 @@ items:
       tracked_prompt_or_mcp_configuration: forbidden
     startup_contract:
       isolated_cold_samples_min: 10
+      statistics_required:
+        - median_ms
+        - p95_ms
+        - max_rss_bytes
       version_median_ms_less_than: 100
       version_max_rss_bytes_less_than: 83886080
       initialize_tools_list_median_ms_less_than: 1000
+      initialize_tools_list_tools_exact:
+        - retrieve
       packed_install_required: true
       registry_arguments:
         - mcp
@@ -1140,6 +1144,11 @@ items:
     evaluation_repin:
       transport_path_only: true
       repositories_prompts_grading_expected_evidence_query_budgets_and_semantics_frozen: true
+      approved_historical_evaluator_sha256: b7211c7e56360921a6b8e681ac84b21a1f13963f78a925589ea8611ee25bab97
+      current_transport_repin_evaluator_sha256: 7f8934d871c27f18bcb86e26fd2462dc87645e8a2850dc3ef68856ee97675928
+      current_normalized_to_historical_sha256: b7211c7e56360921a6b8e681ac84b21a1f13963f78a925589ea8611ee25bab97
+      approved_historical_receipt_schema_sha256: 2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714
+      current_dual_path_receipt_schema_sha256: 1f27acfaf452c731e861435b72c4eea76cd1aec990806059fa2da2d8ae9fbcaf
     review_contract:
       ci_matrix_jobs: 6
       independent_exact_head_review: required
@@ -1151,8 +1160,56 @@ items:
       owner_approval: https://github.com/mohanagy/madar/issues/602#issuecomment-5075969972
       rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5075969871
       protected_base: 8efe41fc665fcea7e625dda0864a72ecf27a111b
-      implementation_started: false
-    notes: 'Owner-approved issue #602 activates only this governance contract from protected base 8efe41fc665fcea7e625dda0864a72ecf27a111b. The current production and package inventory is unchanged and the active phase delta is zero. The phase deletes exactly 16 predecessors / 7,277 LOC, absorbs the last non-core graph and extra-integration owners, transfers package-metadata.ts and shell.ts to evaluation-tooling, and permits at most six replacement files / 2,300 total added production LOC with no dependency addition. Delivery exposes at most six allowlisted lazy CLI entrypoints and exactly one retrieve MCP tool. Query, graph, index, generation, held-out grading, budgets, and timeout semantics remain frozen. #567 stays open until a normally launched Codex client reaches tools/call without configuration overrides. No implementation success, natural activation, comparator advantage, external validation, publication, or release is claimed.'
+      implementation_start_commit: edcf3e45b8c8fb76a57531bc74bede2a06189aba
+      implementation_started: true
+    implementation:
+      start_commit: edcf3e45b8c8fb76a57531bc74bede2a06189aba
+      production_files_added: 6
+      production_files_removed: 16
+      production_typescript_files: 63
+      production_typescript_loc: 16654
+      production_loc_added: 2248
+      production_loc_removed: 7281
+      production_loc_net: -5033
+      runtime_dependencies_added: 0
+      runtime_dependencies_removed: 1
+      development_dependencies_added: 0
+      npm_files: 142
+      npm_packed_bytes: 200310
+      npm_unpacked_bytes: 812531
+      npm_packed_bytes_delta: -31214
+      npm_shasum: 1a915fdc597463f57cd0d79ffa26a7f1c27ff2ef
+      npm_integrity: sha512-94PSjJbRCsgv8oUt18iPZFzysl5S/7njrB1F05fzwkK5Amk6abxGcHv2L8K4fw1qijZLJ2sxr83nIl7NZWef8A==
+      npm_tarball_sha256: 2186259073a6bc05b7268ac7115fd56584d27024b76d167db021f68f83c603b9
+      all_phase_budgets_pass: true
+      startup_receipt: docs/core-reset/evidence/thin-delivery-startup.json
+      startup_gates_passed: true
+      client_transport_receipt: docs/core-reset/evidence/thin-delivery-client-transport.json
+      claude_transport_passed: true
+      codex_transport_passed: true
+      final_artifact_client_revalidation_passed: true
+      final_artifact_registration: madar_6b8bb2115fe0
+      final_artifact_claude_session: f021741f-b474-438e-a07b-a54ef35e071c
+      final_artifact_codex_session: 019f9890-e9fb-7610-a379-f3ef19a418ef
+      final_artifact_transport_pass_record: https://github.com/mohanagy/madar/issues/602#issuecomment-5077981356
+      final_artifact_rfc_transport_pass_record: https://github.com/mohanagy/madar/issues/577#issuecomment-5077981401
+      stop_condition_triggered: false
+      historical_stop_condition: codex_exec_cancels_before_verifiable_tools_call_result
+      stable_codex_retry_version: 0.145.0
+      stable_codex_retry_passed: false
+      stable_codex_retry_thread: 019f9843-32d2-7f50-b5eb-f8a10fcf7161
+      interactive_codex_retry_version: 0.145.0
+      interactive_codex_retry_passed: true
+      interactive_codex_retry_thread: 019f984b-e210-76f0-b80c-cf52ac8f1460
+      stop_record: https://github.com/mohanagy/madar/issues/602#issuecomment-5077587623
+      rfc_stop_record: https://github.com/mohanagy/madar/issues/577#issuecomment-5077587577
+      transport_pass_record: https://github.com/mohanagy/madar/issues/602#issuecomment-5077629727
+      rfc_transport_pass_record: https://github.com/mohanagy/madar/issues/577#issuecomment-5077629090
+      issue_567_acceptance_record: https://github.com/mohanagy/madar/issues/567#issuecomment-5077630691
+      issue_567_closed: true
+      implementation_pr_opened: false
+      implementation_merge_authorized: false
+    notes: 'Owner-approved issue #602 activates this governance contract from protected base 8efe41fc665fcea7e625dda0864a72ecf27a111b, and implementation starts from governance merge edcf3e45b8c8fb76a57531bc74bede2a06189aba. The final pre-PR candidate deletes all 16 predecessors, adds the six exact replacement files, removes neo4j-driver without adding a dependency, and passes the source, package, test, parity, isolation, Registry, release-hygiene, development-eval, and packed cold-start ceilings. Stock Codex CLI 0.144.5 and a stable 0.145.0 codex exec retry historically started the installed MCP item but failed with user cancelled MCP tool call and returned no Madar result. The later normal interactive Codex pass cleared that stop and closed #567. The final sealed artifact was then revalidated through normally launched Claude Code session f021741f-b474-438e-a07b-a54ef35e071c and normal interactive Codex 0.145.0 session 019f9890-e9fb-7610-a379-f3ef19a418ef, both using exact registration madar_6b8bb2115fe0 with no configuration or tool override and returning authenticated src/payment-retry.ts evidence from one retrieve call; the final pass records are https://github.com/mohanagy/madar/issues/602#issuecomment-5077981356 and https://github.com/mohanagy/madar/issues/577#issuecomment-5077981401. Supported uninstall restored user configuration byte-exact and changed no repository bytes. The implementation PR may proceed, but merge remains blocked on exact-head six-job CI, independent review, honest CodeRabbit disposition, and zero review threads. Query, graph, index, generation, held-out grading, budgets, and timeout semantics remain frozen. No completion, natural activation, comparator advantage, external validation, publication, or release is claimed.'
     remove_when: All 16 predecessors, obsolete tests, exports, flags, docs, aliases, package references, and neo4j-driver are absent; only the six allowlisted CLI entrypoints and one retrieve MCP tool survive; startup, package, parity, freshness, Claude, Codex, uninstall, worktree, cross-platform, exact-head CI, independent-review, honest CodeRabbit-disposition, and zero-thread gates pass.
     exit_gate: One lazy local executable serves a byte-identical CLI/application/MCP retrieve result, keeps each repository or linked worktree graph current through the single reconciler, installs and uninstalls exact Claude/Codex configuration without fresh-lifecycle repository mutation, and proves normally launched Claude and Codex tools/call transport without changing query, graph, index, or generation semantics.
 

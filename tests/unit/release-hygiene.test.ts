@@ -140,7 +140,6 @@ describe('release hygiene', () => {
       [
         '[release notes](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0277-next0---2026-05-29)',
         '[enterprise offer](https://github.com/mohanagy/madar/blob/main/docs/team-enterprise-offer.md)',
-        '[telemetry](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md)',
         '',
       ].join('\n'),
       (runVerify) => {
@@ -155,7 +154,6 @@ describe('release hygiene', () => {
       [
         '[release notes](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0277---2026-05-29)',
         '[enterprise offer](https://github.com/mohanagy/madar/blob/next/docs/team-enterprise-offer.md)',
-        '[telemetry](https://github.com/mohanagy/madar/blob/next/docs/telemetry.md)',
         '',
       ].join('\n'),
       (runVerify) => {
