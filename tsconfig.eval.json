@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "dist-eval",
+    "noEmitOnError": true
+  },
+  "include": ["tools/eval/lib/**/*.ts"],
+  "exclude": ["tests/**/*.ts", "dist", "dist-eval", "vitest.config.ts"]
+}

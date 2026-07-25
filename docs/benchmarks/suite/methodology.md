@@ -81,7 +81,7 @@ For checked-in fixture bundles under `docs/benchmarks/suite/results/`, `report.j
 ## Isolation mode and canonical environment
 
 - Published benchmark cells are expected to run in isolation mode via [`docs/benchmarks/suite/isolation/`](./isolation/).
-- `./isolation/run-isolated.sh` creates an npm tarball, unpacks it under the external runtime profile, uses the packed product CLI for MCP, invokes the checkout-only `tools/eval/core-reset/benchmark-suite.mjs` runner, syncs the minimal evaluation config, points `CLAUDE_CONFIG_DIR` at that profile, and exports `MADAR_BENCH_ISOLATION=1`.
+- `npm run build:eval` compiles the checkout-only evaluator under `dist-eval/**`; `./isolation/run-isolated.sh` creates an npm tarball, unpacks it under the external runtime profile, uses the packed product CLI for MCP, invokes that checkout-only evaluator through `tools/eval/core-reset/benchmark-suite.mjs`, syncs the minimal evaluation config, points `CLAUDE_CONFIG_DIR` at that profile, and exports `MADAR_BENCH_ISOLATION=1`.
 - Published cells must report `MADAR_BENCH_RUNTIME_SOURCE=npm_pack`. A `MADAR_BENCH_CLI_PATH` override is for development only because it reintroduces checkout behavior.
 - That isolation profile is separate from the user's default Claude profile; if the default profile is logged in but the isolated runtime profile is not, the launcher now fails fast and prints the exact `CLAUDE_CONFIG_DIR=... claude auth login` command to run once before a measured rerun.
 - The pinned environment contract lives in [`isolation/environment.json`](./isolation/environment.json). In isolation mode, the checkout-only benchmark runner compares the live environment against that contract before each cell.

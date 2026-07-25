@@ -1,8 +1,8 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 
-import { generateIndex, type GenerateIndexOptions, type GenerateIndexResult } from '../../application/generate-index.js'
-import { updateIndex } from '../../application/update-index.js'
+import { generateIndex, type GenerateIndexOptions, type GenerateIndexResult } from '../../../../../src/application/generate-index.js'
+import { updateIndex } from '../../../../../src/application/update-index.js'
 
 export type GeneratePerformanceVariantName =
   | 'generate'

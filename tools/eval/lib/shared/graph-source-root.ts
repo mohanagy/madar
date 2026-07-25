@@ -1,8 +1,8 @@
 import { resolve } from 'node:path'
 
-import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
-import { readBuildState } from '../domain/index/build-state.js'
-import { resolveWorkspaceGraphPath } from './workspace.js'
+import { loadGraphArtifact } from '../../../../src/adapters/filesystem/graph-artifact.js'
+import { readBuildState } from '../../../../src/domain/index/build-state.js'
+import { resolveWorkspaceGraphPath } from '../../../../src/shared/workspace.js'
 
 export function readGraphSourceRoot(graphPath: string): string {
   const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)

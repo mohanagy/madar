@@ -9,7 +9,7 @@ import { loadGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.
 import {
   evaluateRetrievalQuality,
   formatQualityReport,
-} from '../../src/infrastructure/benchmark/quality.js'
+} from '../../tools/eval/lib/infrastructure/benchmark/quality.js'
 
 const sandboxes: string[] = []
 

@@ -1,5 +1,5 @@
-import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
-import { KnowledgeGraph } from '../domain/graph/directed-multigraph.js'
+import { loadGraphArtifact } from '../../../../src/adapters/filesystem/graph-artifact.js'
+import { KnowledgeGraph } from '../../../../src/domain/graph/directed-multigraph.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './benchmark/corpus.js'
 import {
   runBenchmarkPrompt,
@@ -20,7 +20,7 @@ import {
   usageCaptureSummary,
   usageProviderLabel,
 } from './benchmark/usage.js'
-import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
+import { resolveWorkspaceGraphPath } from '../../../../src/shared/workspace.js'
 
 export { loadBenchmarkQuestions, queryEvidenceTokens, type BenchmarkQuestionInput } from './benchmark/questions.js'
 

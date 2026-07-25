@@ -4,7 +4,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, re
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { generateIndex, type GenerateIndexOptions, type GenerateIndexResult } from '../../application/generate-index.js'
+import { generateIndex, type GenerateIndexOptions, type GenerateIndexResult } from '../../../../../src/application/generate-index.js'
 import {
   executeNativeAgentCompare,
   type NativeAgentCompareReport,
@@ -19,8 +19,8 @@ import {
 } from './environment.js'
 import { shellEscape } from '../../shared/shell.js'
 import { findPackageRoot } from '../../shared/package-metadata.js'
-import { validateGraphOutputPath } from '../../shared/security.js'
-import { hasOnlyKeys, isRecord } from '../../shared/guards.js'
+import { validateGraphOutputPath } from '../../../../../src/shared/security.js'
+import { hasOnlyKeys, isRecord } from '../../../../../src/shared/guards.js'
 
 export type BenchmarkSuiteMode = 'cold' | 'warm' | 'all'
 export type BenchmarkSuiteEntryStatus = 'ready' | 'planned'

@@ -11,7 +11,7 @@ import { join, relative } from 'node:path'
 import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import { resolveShellCommand, shellEscape } from '../shared/shell.js'
 import { sanitizeShareSafeText } from '../shared/share-safe-artifacts.js'
-import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
+import { validateGraphOutputPath, validateGraphPath } from '../../../../src/shared/security.js'
 
 export type CompareRunMode = 'baseline' | 'madar'
 

@@ -1,12 +1,12 @@
 import { resolve } from 'node:path'
 
-import { loadGraphArtifact } from '../adapters/filesystem/graph-artifact.js'
-import { generateIndex } from '../application/generate-index.js'
+import { loadGraphArtifact } from '../../../../src/adapters/filesystem/graph-artifact.js'
+import { generateIndex } from '../../../../src/application/generate-index.js'
 import {
   retrieveContext,
   serializeRetrieveContextResult,
-} from '../application/retrieve-context.js'
-import { inspectQueryIndex } from '../domain/query/index-status.js'
+} from '../../../../src/application/retrieve-context.js'
+import { inspectQueryIndex } from '../../../../src/domain/query/index-status.js'
 
 interface TryCliOptions {
   question: string

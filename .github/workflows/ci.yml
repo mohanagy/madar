@@ -69,6 +69,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Build evaluation tooling
+        run: npm run build:eval
+
       - name: Validate Core Reset evidence contract
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
         run: npx vitest run tests/unit/core-reset-baseline.test.ts

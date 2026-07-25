@@ -5,16 +5,16 @@ import { join, resolve, sep } from 'node:path'
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
-import type { NativeAgentCompareReport } from '../../src/infrastructure/compare.js'
+import type { NativeAgentCompareReport } from '../../tools/eval/lib/infrastructure/compare.js'
 import type { GenerateIndexResult } from '../../src/application/generate-index.js'
-import { captureBenchmarkEnvironment } from '../../src/infrastructure/benchmark/environment.js'
+import { captureBenchmarkEnvironment } from '../../tools/eval/lib/infrastructure/benchmark/environment.js'
 import {
   loadBenchmarkSuiteRepos,
   loadBenchmarkSuiteTasks,
   runBenchmarkSuite,
   type BenchmarkSuiteRepo,
   type BenchmarkSuiteTask,
-} from '../../src/infrastructure/benchmark/suite.js'
+} from '../../tools/eval/lib/infrastructure/benchmark/suite.js'
 
 const roots: string[] = []
 const cliStubRoot = mkdtempSync(join(tmpdir(), 'madar-benchmark-cli-'))

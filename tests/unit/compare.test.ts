@@ -17,7 +17,7 @@ import {
   expandCompareExecTemplate,
   parseAnthropicResultEvent,
   type NativeAgentRunner,
-} from '../../src/infrastructure/compare.js'
+} from '../../tools/eval/lib/infrastructure/compare.js'
 import { generateIndex } from '../../src/application/generate-index.js'
 
 const roots: string[] = []
