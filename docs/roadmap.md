@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, and Thin Delivery have passed. Evaluation tooling isolation is the sole In progress technical phase under the exact owner-approved #606 contract. Capability validation and every later phase remain blocked.
+The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, and Evaluation Tooling Isolation have passed. No technical phase is active. Capability Validation and every later phase remain blocked and unapproved.
 
 ## Passed — directed multigraph
 
@@ -101,7 +101,7 @@ Query, ranking, traversal, slicing, graph, index, generation, public limits, tim
 
 No npm package, GitHub Release, or MCP Registry metadata was published, and this phase did not target `main`.
 
-## In progress — evaluation tooling isolation
+## Passed — evaluation tooling isolation
 
 The owner approved the exact [#606 Evaluation Tooling Isolation contract](https://github.com/mohanagy/madar/issues/606#issuecomment-5078675449) and recorded the matching [RFC approval](https://github.com/mohanagy/madar/issues/577#issuecomment-5078676116). Governance activation starts from protected `core-reset` commit `317dda89f2ea5c75e7626a26b104ceca1bd04ce5`, whose audited `src` tree is `b99217c74f6b26daef4ecab12e1cde5f8fe60122`. The governance-only activation merged at `452ad84890c012392c5e6af613e8bfeb17de45db`, and implementation started from that exact merge.
 
@@ -109,18 +109,21 @@ The contract moves exactly 20 production TypeScript files / 4,698 LOC from `src/
 
 One `tsconfig.eval.json` and one `build:eval` script may produce development-only `dist-eval/**`. The production build remains rooted exclusively in `src/**`; `dist-eval/**` and every moved module are forbidden from `dist/**`, `prepack`, and the npm artifact. The audited package projection is 102 files / 159,748 packed bytes / 637,551 unpacked bytes, with blocking ceilings of 102 files / 165,000 packed bytes / 640,000 unpacked bytes.
 
-The pre-PR candidate satisfies the exact source, move, build-boundary, dependency, frozen-evidence, and package gates. All 20 predecessors / 4,698 LOC are now under corresponding `tools/eval/lib/**` paths and absent from `src/**`; production is exactly 43 TypeScript files / 11,956 LOC with `+0 / -4,698 / net -4,698`, zero surviving production TypeScript edits, and zero dependency changes. The fresh artifact is 102 files / 159,759 packed bytes / 637,602 unpacked bytes, within the fixed ceilings. This is not a completion claim: exact-head six-job CI, independent no-blocker review, honest CodeRabbit disposition, zero review threads, and merge remain pending.
+The completed implementation satisfies the exact source, move, build-boundary, dependency, frozen-evidence, and package gates. All 20 predecessors / 4,698 LOC are under corresponding `tools/eval/lib/**` paths and absent from `src/**`; production is exactly 43 TypeScript files / 11,956 LOC with `+0 / -4,698 / net -4,698`, zero surviving production TypeScript edits, and zero dependency changes. The fresh artifact is 102 files / 159,759 packed bytes / 637,602 unpacked bytes, within the fixed ceilings, with shasum `6eee13af22e8c76113fe578e44d76a9e6d6fd899`.
+
+[PR #608](https://github.com/mohanagy/madar/pull/608) was squash-merged into protected `core-reset` as `565c42bb1b34b67f7fefc7aabd0513e4e391a13b` from exact reviewed head `c0496413518382ca6dff74fa5c81ab72b9edd57c`. Merge tree `225f446ee88ecc74a3226bd17c362458c2312528` exactly matches the reviewed-head tree and its sole parent is the governance activation merge. All six jobs in [exact-head CI run 30162721277](https://github.com/mohanagy/madar/actions/runs/30162721277) passed, including 74 test files / 617 tests passed with 3 skipped and 81.57% statement, 73.05% branch, 89.04% function, and 85.45% line coverage. The [independent exact-head review](https://github.com/mohanagy/madar/pull/608#pullrequestreview-4779465252) found no blocker, zero review threads remained, and [CodeRabbit explicitly skipped](https://github.com/mohanagy/madar/pull/608#issuecomment-5078954363) because `core-reset` is a non-default base; the skip is not represented as a completed review. The [#606 implementation merge receipt](https://github.com/mohanagy/madar/issues/606#issuecomment-5078995452) and [RFC receipt](https://github.com/mohanagy/madar/issues/577#issuecomment-5078995591) preserve the exact merge evidence.
 
 Only mechanical import, test, script, CI, and documentation path rewrites are permitted. Compatibility aliases, forwarding modules, fallbacks, duplicates, retained `src/**` copies, production-semantic changes, public-surface changes, budget or timeout changes, and historical evaluation-contract or receipt rewrites are forbidden. The current CI thresholds remain recall >=90%, MRR >=0.95, snippet coverage >=95%, and grounded-match rate report-only.
 
 Capability Validation remains blocked. There is no valid blinded Native-vs-Graphify-vs-Madar runner: the current guided suite has no Graphify arm, while the historical frozen contract still records retired `--no-html` commands. #606 neither authorizes a replacement runner nor permits restoring that flag. No native/Graphify comparison, natural-activation claim, external validation, publication, release, or work targeting `main` may begin.
 
-With Thin Delivery passed, the remaining dependency order is:
+No #606 stop condition triggered. No npm package, GitHub Release, Registry metadata, or tag was published, and the phase did not target `main`.
 
-1. Complete the exact #606 Evaluation Tooling Isolation contract and record its exit gate.
-2. Define and separately approve a valid blinded Native-vs-Graphify-vs-Madar capability contract.
-3. Run external design-partner validation.
-4. Publish a beta under npm tag `next` only after its preceding gates authorize it.
+With Evaluation Tooling Isolation passed, the remaining dependency order is:
+
+1. Define and separately approve a valid blinded Native-vs-Graphify-vs-Madar capability contract.
+2. Run external design-partner validation.
+3. Publish a beta under npm tag `next` only after its preceding gates authorize it.
 
 Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
 
