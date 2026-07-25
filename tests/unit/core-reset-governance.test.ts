@@ -126,10 +126,26 @@ const THIN_DELIVERY_BASE = '8efe41fc665fcea7e625dda0864a72ecf27a111b'
 const THIN_DELIVERY_BASE_TREE = '16a942da72c1a24ebe3f420437abec88771c1242'
 const THIN_DELIVERY_IMPLEMENTATION_START = 'edcf3e45b8c8fb76a57531bc74bede2a06189aba'
 const THIN_DELIVERY_IMPLEMENTATION_START_TREE = 'b980dae663b780cffbe1d989c01afc27a341c707'
+const THIN_DELIVERY_MERGE = '14791cefa195f43e30ec9ec2dd611e38ad2b1b83'
+const THIN_DELIVERY_FINAL_HEAD = 'ddd9761b137ef1f07eb362a91f9f2478c1d08c38'
+const THIN_DELIVERY_FINAL_TREE = '02a059c66a214fe52e31d8fffa2c501a1761bf0f'
+const THIN_DELIVERY_CI_RUN = 'https://github.com/mohanagy/madar/actions/runs/30154480779'
+const THIN_DELIVERY_REVIEW_RECEIPT =
+  'https://github.com/mohanagy/madar/pull/604#pullrequestreview-4779114409'
+const THIN_DELIVERY_CODERABBIT_RECEIPT =
+  'https://github.com/mohanagy/madar/pull/604#issuecomment-5078118509'
+const THIN_DELIVERY_MERGE_GATE_RECEIPT =
+  'https://github.com/mohanagy/madar/pull/604#issuecomment-5078171793'
+const THIN_DELIVERY_HELD_OUT_RECEIPT_SHA256 =
+  '6baed3cfc2b3aa963581613be6cf17ccf1aa261dd29343e27bfe87d52bdaad6c'
 const THIN_DELIVERY_ISSUE = 'https://github.com/mohanagy/madar/issues/602'
 const THIN_DELIVERY_ABSORBED_ISSUE = 'https://github.com/mohanagy/madar/issues/567'
 const THIN_DELIVERY_OWNER_APPROVAL = `${THIN_DELIVERY_ISSUE}#issuecomment-5075969972`
 const THIN_DELIVERY_RFC_APPROVAL = 'https://github.com/mohanagy/madar/issues/577#issuecomment-5075969871'
+const THIN_DELIVERY_ISSUE_COMPLETION =
+  'https://github.com/mohanagy/madar/issues/602#issuecomment-5078180041'
+const THIN_DELIVERY_RFC_COMPLETION =
+  'https://github.com/mohanagy/madar/issues/577#issuecomment-5078180116'
 const THIN_DELIVERY_BIN = 'dist/src/adapters/cli/bin.js'
 const THIN_DELIVERY_HISTORICAL_BIN = 'dist/src/cli/bin.js'
 const THIN_DELIVERY_HISTORICAL_EVALUATOR_SHA256 =
@@ -487,7 +503,8 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Passed — delete legacy extraction and non-code/other-language ingestion')
     expect(roadmap).toContain('## Passed — generation and reconciliation')
     expect(roadmap).toContain('## Passed — evidence-path query')
-    expect(roadmap).toContain('## In progress — thin delivery')
+    expect(roadmap).toContain('## Passed — thin delivery')
+    expect(roadmap).toContain('## Ready — evaluation tooling isolation')
     expect(roadmap).toContain(THIN_DELIVERY_OWNER_APPROVAL)
     expect(roadmap).toContain(THIN_DELIVERY_RFC_APPROVAL)
     expect(roadmap).toContain(THIN_DELIVERY_BASE)
@@ -556,7 +573,7 @@ describe('core reset governance', () => {
     expect(design).toContain('There is no generation directory, persistent fact cache, versioned snapshot store')
     expect(design).toContain('## Completed amendment — generation and reconciliation')
     expect(design).toContain('## Completed amendment — generic evidence-path query')
-    expect(design).toContain('## Active amendment — thin delivery')
+    expect(design).toContain('## Completed amendment — thin delivery')
     expect(design).toContain(THIN_DELIVERY_OWNER_APPROVAL)
     expect(design).toContain(THIN_DELIVERY_RFC_APPROVAL)
     expect(design).toContain(THIN_DELIVERY_BASE)
@@ -591,7 +608,8 @@ describe('core reset governance', () => {
     expect(design).toContain('Identical normalized request plus identical canonical graph bytes plus the identical authenticated source snapshot')
     expect(design).toContain('All five expectations must pass before warmup')
     expect(design).toContain('empty positive results, missing/extra nodes or edges, reversed/wrong relationship kinds')
-    expect(design).toContain('`thin-delivery` is the sole technical phase In progress')
+    expect(design).toContain('No technical phase is active')
+    expect(design).toContain('`evaluation-tooling` is Ready but not activated')
     expect(design).toContain('exactly one tool, `retrieve`')
     expect(design).toContain('frozen 25,000 ms request-wait ceiling')
     expect(design).toContain('direct JSON-RPC testing is insufficient')
@@ -599,6 +617,15 @@ describe('core reset governance', () => {
     expect(design).toContain(EVIDENCE_MERGE)
     expect(design).toContain(EVIDENCE_CI_RUN)
     expect(design).toContain(EVIDENCE_REVIEW_RECEIPT)
+    expect(design).toContain(THIN_DELIVERY_MERGE)
+    expect(design).toContain(THIN_DELIVERY_FINAL_HEAD)
+    expect(design).toContain(THIN_DELIVERY_FINAL_TREE)
+    expect(design).toContain(THIN_DELIVERY_CI_RUN)
+    expect(design).toContain(THIN_DELIVERY_REVIEW_RECEIPT)
+    expect(design).toContain(THIN_DELIVERY_CODERABBIT_RECEIPT)
+    expect(design).toContain(THIN_DELIVERY_HELD_OUT_RECEIPT_SHA256)
+    expect(design).toContain(THIN_DELIVERY_ISSUE_COMPLETION)
+    expect(design).toContain(THIN_DELIVERY_RFC_COMPLETION)
     expect(design).not.toContain('## Active amendment — generation and incremental index')
     expect(design).not.toContain('the phase remains active')
     expect(design).not.toContain('completion evidence remains open')
@@ -610,7 +637,8 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Legacy extraction plus non-code/other-language ingestion | **Passed**')
     expect(scorecard).toContain('| Generation and reconciliation | **Passed**')
     expect(scorecard).toContain('| Evidence-path query | **Passed**')
-    expect(scorecard).toContain('| Delivery and package | **In progress**')
+    expect(scorecard).toContain('| Delivery and package | **Passed**')
+    expect(scorecard).toContain('| Evaluation tooling isolation | **Ready**')
     expect(scorecard).toContain(THIN_DELIVERY_OWNER_APPROVAL)
     expect(scorecard).toContain(THIN_DELIVERY_RFC_APPROVAL)
     expect(scorecard).toContain(THIN_DELIVERY_BASE)
@@ -642,13 +670,21 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('only an authenticated canonical symbol declaration may provide a snippet or cover a phase')
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
-    expect(scorecard).toContain('`thin-delivery` is the sole active phase')
+    expect(scorecard).toContain('No technical phase is active')
+    expect(scorecard).toContain('`evaluation-tooling` is Ready but not activated')
     expect(scorecard).toContain('exactly one `retrieve` tool')
     expect(scorecard).toContain('frozen 25,000 ms request-wait ceiling')
     expect(scorecard).toContain('no lower bound')
     expect(scorecard).toContain(EVIDENCE_MERGE)
     expect(scorecard).toContain(EVIDENCE_CI_RUN)
     expect(scorecard).toContain(EVIDENCE_REVIEW_RECEIPT)
+    expect(scorecard).toContain(THIN_DELIVERY_MERGE)
+    expect(scorecard).toContain(THIN_DELIVERY_FINAL_HEAD)
+    expect(scorecard).toContain(THIN_DELIVERY_FINAL_TREE)
+    expect(scorecard).toContain(THIN_DELIVERY_CI_RUN)
+    expect(scorecard).toContain(THIN_DELIVERY_REVIEW_RECEIPT)
+    expect(scorecard).toContain(THIN_DELIVERY_CODERABBIT_RECEIPT)
+    expect(scorecard).toContain(THIN_DELIVERY_HELD_OUT_RECEIPT_SHA256)
     expect(scorecard).toContain('passes held-out-v2')
     expect(scorecard).toContain('clean generation stays within the accepted 10% regression limit')
     expect(scorecard).toContain('recognized unsupported files and expected policy exclusions are informational')
@@ -832,11 +868,11 @@ describe('core reset governance', () => {
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-25',
-      completed_phase: 'evidence-path-query',
-      active_phase: 'thin-delivery',
-      ready_phase: null,
+      completed_phase: 'thin-delivery',
+      active_phase: null,
+      ready_phase: 'evaluation-tooling',
       base_commit: THIN_DELIVERY_BASE,
-      completed_phase_commit: EVIDENCE_MERGE,
+      completed_phase_commit: THIN_DELIVERY_MERGE,
       production_typescript_files: 63,
       production_typescript_loc: 16_654,
       production_loc_added: 2_248,
@@ -962,7 +998,7 @@ describe('core reset governance', () => {
     expect(logicalLocAtCommit(legacyBase, deletionFiles)).toBe(20_951)
     const generation = manifest.items.find((item) => item.id === 'generation-and-incremental')
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['thin-delivery'])
+      .toEqual([])
     expect(generation).toMatchObject({
       status: 'complete',
       sources: INCREMENTAL_OWNED_REPLACEMENTS,
@@ -1084,10 +1120,10 @@ describe('core reset governance', () => {
     expect(INCREMENTAL_REPLACEMENTS.every((path) => existsSync(resolve(path)))).toBe(true)
     expect(logicalLocAtCommit(INCREMENTAL_BASE, INCREMENTAL_PREDECESSORS)).toBe(3_839)
     expect(manifest.items.find((item) => item.id === 'evidence-path-query')?.status).toBe('complete')
-    expect(manifest.items.find((item) => item.id === 'thin-delivery')?.status).toBe('in_progress')
+    expect(manifest.items.find((item) => item.id === 'thin-delivery')?.status).toBe('complete')
   })
 
-  it('enforces the active Thin Delivery implementation contract', () => {
+  it('enforces the completed Thin Delivery implementation contract', () => {
     const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
       review: { disposition_changes: number; amendment: string }
       targets: {
@@ -1249,6 +1285,7 @@ describe('core reset governance', () => {
           final_artifact_claude_session: string
           final_artifact_codex_session: string
         }
+        completion?: Record<string, unknown>
         notes?: string
       }>
     }
@@ -1260,17 +1297,30 @@ describe('core reset governance', () => {
       ['rev-parse', `${THIN_DELIVERY_IMPLEMENTATION_START}^{tree}`],
       { encoding: 'utf8' },
     ).trim()).toBe(THIN_DELIVERY_IMPLEMENTATION_START_TREE)
+    expect(execFileSync(git, ['rev-parse', `${THIN_DELIVERY_FINAL_HEAD}^{tree}`], { encoding: 'utf8' }).trim())
+      .toBe(THIN_DELIVERY_FINAL_TREE)
+    expect(execFileSync(git, ['rev-parse', `${THIN_DELIVERY_MERGE}^{tree}`], { encoding: 'utf8' }).trim())
+      .toBe(THIN_DELIVERY_FINAL_TREE)
+    expect(execFileSync(
+      git,
+      ['rev-list', '--parents', '-n', '1', THIN_DELIVERY_MERGE],
+      { encoding: 'utf8' },
+    ).trim()).toBe(`${THIN_DELIVERY_MERGE} ${THIN_DELIVERY_IMPLEMENTATION_START}`)
     expect(() => execFileSync(
       git,
       ['merge-base', '--is-ancestor', THIN_DELIVERY_BASE, THIN_DELIVERY_IMPLEMENTATION_START],
     )).not.toThrow()
+    expect(() => execFileSync(
+      git,
+      ['merge-base', '--is-ancestor', THIN_DELIVERY_IMPLEMENTATION_START, THIN_DELIVERY_MERGE],
+    )).not.toThrow()
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-25',
-      completed_phase: 'evidence-path-query',
-      active_phase: 'thin-delivery',
-      ready_phase: null,
+      completed_phase: 'thin-delivery',
+      active_phase: null,
+      ready_phase: 'evaluation-tooling',
       base_commit: THIN_DELIVERY_BASE,
-      completed_phase_commit: EVIDENCE_MERGE,
+      completed_phase_commit: THIN_DELIVERY_MERGE,
       production_typescript_files: 63,
       production_typescript_loc: 16_654,
       production_loc_added: 2_248,
@@ -1280,7 +1330,7 @@ describe('core reset governance', () => {
       snapshot_scope: 'exact_implementation_source_and_package',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['thin-delivery'])
+      .toEqual([])
     expect(manifest.targets).toMatchObject({
       production_typescript_files_max: 80,
       production_typescript_loc_max: 35_000,
@@ -1294,7 +1344,7 @@ describe('core reset governance', () => {
     const thinDelivery = manifest.items.find((item) => item.id === 'thin-delivery')
     expect(thinDelivery).toMatchObject({
       disposition: 'rebuild',
-      status: 'in_progress',
+      status: 'complete',
       sources: [...THIN_DELIVERY_REPLACEMENTS],
       removed_sources: [...THIN_DELIVERY_PREDECESSORS],
       absorbs: [...THIN_DELIVERY_ABSORBED_HANDLES],
@@ -1428,6 +1478,54 @@ describe('core reset governance', () => {
         final_artifact_transport_pass_record: THIN_DELIVERY_FINAL_CLIENT_ISSUE_RECEIPT,
         final_artifact_rfc_transport_pass_record: THIN_DELIVERY_FINAL_CLIENT_RFC_RECEIPT,
       },
+      completion: {
+        issue: THIN_DELIVERY_ISSUE,
+        absorbed_issue: THIN_DELIVERY_ABSORBED_ISSUE,
+        pull_request: 'https://github.com/mohanagy/madar/pull/604',
+        commit: THIN_DELIVERY_MERGE,
+        final_pr_head: THIN_DELIVERY_FINAL_HEAD,
+        final_pr_tree: THIN_DELIVERY_FINAL_TREE,
+        ci_head: THIN_DELIVERY_FINAL_HEAD,
+        outcome: 'lazy_one_tool_delivery',
+        production_files_added: 6,
+        production_files_removed: 16,
+        production_typescript_files: 63,
+        production_typescript_loc: 16_654,
+        production_loc_added: 2_248,
+        production_loc_removed: 7_281,
+        production_loc_net: -5_033,
+        dependencies_added: 0,
+        dependencies_removed: 1,
+        runtime_dependencies_added: 0,
+        development_dependencies_added: 0,
+        npm_files: 142,
+        npm_packed_bytes: 200_310,
+        npm_unpacked_bytes: 812_531,
+        npm_packed_bytes_delta: -31_214,
+        npm_shasum: '1a915fdc597463f57cd0d79ffa26a7f1c27ff2ef',
+        npm_integrity: 'sha512-94PSjJbRCsgv8oUt18iPZFzysl5S/7njrB1F05fzwkK5Amk6abxGcHv2L8K4fw1qijZLJ2sxr83nIl7NZWef8A==',
+        npm_artifact_sha256: '2186259073a6bc05b7268ac7115fd56584d27024b76d167db021f68f83c603b9',
+        held_out_benchmark_passed: true,
+        held_out_eligible_for_acceptance: true,
+        held_out_receipt_self_sha256: THIN_DELIVERY_HELD_OUT_RECEIPT_SHA256,
+        ci_matrix_jobs_passed: 6,
+        ci_run: THIN_DELIVERY_CI_RUN,
+        test_files_passed: 74,
+        tests_passed: 619,
+        coverage_statements_percent: 81.55,
+        coverage_branches_percent: 72.61,
+        coverage_functions_percent: 88.94,
+        coverage_lines_percent: 84.44,
+        coderabbit: 'skipped_base_owner_exception',
+        coderabbit_receipt: THIN_DELIVERY_CODERABBIT_RECEIPT,
+        independent_review: 'passed',
+        independent_reviews_passed: 1,
+        independent_review_receipt: THIN_DELIVERY_REVIEW_RECEIPT,
+        unresolved_review_threads: 0,
+        merge_gate_receipt: THIN_DELIVERY_MERGE_GATE_RECEIPT,
+        issue_completion_receipt: THIN_DELIVERY_ISSUE_COMPLETION,
+        rfc_completion_receipt: THIN_DELIVERY_RFC_COMPLETION,
+      },
     })
     expect(thinDelivery?.cli_contract?.retired_commands).toEqual([
       'watch',
@@ -1468,8 +1566,8 @@ describe('core reset governance', () => {
       manifest.items.find((item) => item.id === id))
     expect(absorbed.map((item) => ({ id: item?.id, status: item?.status, absorbed_by: item?.absorbed_by })))
       .toEqual([
-        { id: 'non-core-graph-products', status: 'planned', absorbed_by: 'thin-delivery' },
-        { id: 'activation-and-extra-integrations', status: 'planned', absorbed_by: 'thin-delivery' },
+        { id: 'non-core-graph-products', status: 'complete', absorbed_by: 'thin-delivery' },
+        { id: 'activation-and-extra-integrations', status: 'complete', absorbed_by: 'thin-delivery' },
       ])
     expect(absorbed.flatMap((item) => item?.sources ?? []).sort())
       .toEqual([...THIN_DELIVERY_ABSORBED_PREDECESSORS].sort())
@@ -2390,11 +2488,11 @@ describe('core reset governance', () => {
       .toBe(EVIDENCE_BASE_TREE)
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-25',
-      completed_phase: 'evidence-path-query',
-      active_phase: 'thin-delivery',
-      ready_phase: null,
+      completed_phase: 'thin-delivery',
+      active_phase: null,
+      ready_phase: 'evaluation-tooling',
       base_commit: THIN_DELIVERY_BASE,
-      completed_phase_commit: EVIDENCE_MERGE,
+      completed_phase_commit: THIN_DELIVERY_MERGE,
       production_typescript_files: 63,
       production_typescript_loc: 16_654,
       production_loc_added: 2_248,
@@ -2407,7 +2505,7 @@ describe('core reset governance', () => {
       snapshot_scope: 'exact_implementation_source_and_package',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['thin-delivery'])
+      .toEqual([])
 
     const evidence = manifest.items.find((item) => item.id === 'evidence-path-query')
     expect(evidence).toMatchObject({
@@ -2892,7 +2990,7 @@ describe('core reset governance', () => {
         { id: 'derived-product-wrappers', status: 'complete', absorbed_by: 'evidence-path-query' },
       ])
     expect(manifest.items.find((item) => item.id === 'thin-delivery')).toMatchObject({
-      status: 'in_progress',
+      status: 'complete',
     })
     expect(manifest.items.find((item) => item.id === 'thin-delivery')).not.toHaveProperty('blocked_by')
 
@@ -3787,13 +3885,15 @@ describe('core reset governance', () => {
     expect(thinDelivery?.transferred_sources).toEqual(['src/infrastructure/doctor.ts'])
     expect(evaluationTooling?.transferred_sources).toEqual([...THIN_DELIVERY_EVALUATION_TRANSFERS])
     expect(evidencePath?.status).toBe('complete')
-    expect(thinDelivery?.status).toBe('in_progress')
+    expect(thinDelivery?.status).toBe('complete')
+    expect(evaluationTooling?.status).toBe('ready')
     for (const completedId of [
       'directed-multigraph',
       'canonical-typescript-index',
       'legacy-extraction',
       'generation-and-incremental',
       'evidence-path-query',
+      'thin-delivery',
     ]) {
       const completed = manifest.items.find((item) => item.id === completedId)
       expect(completed).toBeDefined()
@@ -3883,7 +3983,12 @@ describe('core reset governance', () => {
   })
 
   it('does not retain stale completed-phase language', () => {
-    const governance = `${read('docs/roadmap.md')}\n${read('docs/core-reset/scorecard.md')}\n${read('docs/designs/2026-07-19-core-reset.md')}`
+    const governance = [
+      read('docs/roadmap.md'),
+      read('docs/core-reset/scorecard.md'),
+      read('docs/core-reset/removal-manifest.yml'),
+      read('docs/designs/2026-07-19-core-reset.md'),
+    ].join('\n')
     expect(governance).not.toContain('candidate evidence')
     expect(governance).not.toContain('pending PR review')
     expect(governance).not.toContain('Final CI matrix, CodeRabbit, and unresolved-thread evidence remains pending')
@@ -3891,8 +3996,13 @@ describe('core reset governance', () => {
     expect(governance).not.toContain('Legacy and non-code deletion contract (in progress)')
     expect(governance).not.toContain('## Ready — generation and incremental index')
     expect(governance).toContain('## Passed — evidence-path query')
-    expect(governance).toContain('## In progress — thin delivery')
-    expect(governance).toContain('Thin Delivery is the sole technical phase In progress')
+    expect(governance).toContain('## Passed — thin delivery')
+    expect(governance).toContain('No technical phase is active')
+    expect(governance).toContain('`evaluation-tooling` is Ready but not activated')
+    expect(governance).not.toContain('## In progress — thin delivery')
+    expect(governance).not.toContain('Thin Delivery is the sole technical phase In progress')
+    expect(governance).not.toContain('Thin Delivery is active under owner-approved #602')
+    expect(governance).not.toContain('thin delivery is now active under owner-approved #602')
     expect(governance).not.toContain('Thin Delivery is Ready but not activated')
     expect(governance).not.toContain('Thin Delivery is Ready but not active')
     expect(governance).not.toContain('Evidence-path query is the sole technical phase In progress')

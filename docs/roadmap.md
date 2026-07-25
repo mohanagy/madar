@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, and Evidence-path query have passed. Thin Delivery is the sole technical phase In progress under owner-approved [#602](https://github.com/mohanagy/madar/issues/602); every later phase remains blocked.
+The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, and Thin Delivery have passed. No technical phase is active. Evaluation tooling isolation is the sole Ready successor but is not accepted or activated; capability validation and every later phase remain blocked.
 
 ## Passed — directed multigraph
 
@@ -40,7 +40,7 @@ The resulting npm package has 314 files, 592,783 packed bytes, and 2,794,076 unp
 
 ## Passed — generation and reconciliation
 
-The owner accepted the exact contract in [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and amended [RFC #577](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586). The completed phase shipped cold no-op plus full canonical reconciliation. Its successor Evidence-path query later passed; Thin Delivery is now active through its separately approved governance contract.
+The owner accepted the exact contract in [#592](https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506) and amended [RFC #577](https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586). The completed phase shipped cold no-op plus full canonical reconciliation. Its successors Evidence-path query and Thin Delivery later passed through their separately approved governance contracts.
 
 The phase removed 15 predecessor files / 3,839 LOC, transferred three mixed query files to `evidence-path-query` and `doctor.ts` to `thin-delivery`, and added the six permitted replacements. It finished net `-2,536` LOC at 130 production files / 66,418 LOC, added no runtime or development dependency, and reduced the npm package to 276 files / 2,699,851 unpacked bytes without increasing packed bytes.
 
@@ -76,7 +76,7 @@ The implementation added canonical `definition_range` and `declaration_range` fa
 
 Exact evaluated head `29aba7ebffe14d6a70bde78df1490bf4cded64a4` passes held-out-v2: both blocking repositories have full phase coverage and precision, zero unrelated files, every required handoff matches, and [the byte-pinned receipt](core-reset/evidence/evidence-path-held-out.json) is eligible for acceptance; OpenStatus remains a failing non-blocking diagnostic. The same exact head passes the [frozen loaded-graph performance gate](core-reset/evidence/evidence-path-performance.json) at 279.28 ms p95 against the strict `<500 ms` limit, with every measured result correct. [PR #600](https://github.com/mohanagy/madar/pull/600) was squash-merged at `596d286cdf4bb53670a6d8c27b2cec5f86137739` from final head `a0ef9003b9bb71a8defb3463ee131e677b32fecc`; all six jobs in [exact-head CI run 30124465700](https://github.com/mohanagy/madar/actions/runs/30124465700) passed, an [independent exact-head review](https://github.com/mohanagy/madar/pull/600#issuecomment-5074482136) found no blocker, and zero review threads remained. CodeRabbit skipped the non-default `core-reset` base under the owner-approved exception and is not represented as having reviewed. The completed contract forbids a facade or V1/V2 fallback, repository-specific tuning, global top-k inflation, another planner/recovery/confidence/session/mode, a second internal query or model call, invented graph relationships, hidden budget expansion, and new dependencies. This phase proves the narrow query only; it does not prove agent behavior, comparator advantage, external demand, or release readiness.
 
-## In progress — thin delivery
+## Passed — thin delivery
 
 The owner approved the exact [#602 Thin Delivery contract](https://github.com/mohanagy/madar/issues/602#issuecomment-5075969972) and recorded the matching [RFC approval](https://github.com/mohanagy/madar/issues/577#issuecomment-5075969871). Governance activation started from protected base `8efe41fc665fcea7e625dda0864a72ecf27a111b`, and implementation started from governance merge `edcf3e45b8c8fb76a57531bc74bede2a06189aba`.
 
@@ -91,19 +91,28 @@ The phase has one bounded replacement contract:
 - From a fresh packed install, at least ten isolated cold samples must report median, nearest-rank p95, and maximum RSS for both commands and prove `madar --version` median `<100 ms`, max RSS `<80 MiB`, and initialize plus one-tool listing median `<1,000 ms`. Package, Registry-argument, byte-parity, platform, release-hygiene, six-job exact-head CI, independent-review, honest CodeRabbit-disposition, and zero-thread gates all remain blocking.
 - A normally launched Claude session and Codex session must each reach a forced `retrieve` without configuration override. These are transport receipts only. [#567](https://github.com/mohanagy/madar/issues/567) closed only after the real normally launched Codex client completed Madar `tools/call`; direct JSON-RPC is insufficient, and the earlier cancelled `codex exec` attempts also did not qualify.
 
-The active candidate now satisfies the source, dependency, and package ceilings: all 16 predecessors are absent; exactly six replacements produce `+2,248 / -7,281 / net -5,033` production LOC; the tree is 63 production files / 16,654 LOC; `neo4j-driver` is removed with no dependency addition; and the package is 142 files / 200,310 packed bytes / 812,531 unpacked bytes. This is not a completion claim.
+The completed implementation satisfies the source, dependency, and package ceilings: all 16 predecessors are absent; exactly six replacements produce `+2,248 / -7,281 / net -5,033` production LOC; the tree is 63 production files / 16,654 LOC; `neo4j-driver` is removed with no dependency addition; and the package is 142 files / 200,310 packed bytes / 812,531 unpacked bytes.
 
-Final packed cold-start sampling passed across ten isolated processes. `madar --version` measured 38.792 ms median, 40.280 ms nearest-rank p95, and 43,532,288-byte maximum RSS; initialize plus one-tool listing measured 160.380 ms median, 185.684 ms nearest-rank p95, and 208,977,920-byte maximum RSS, with every sample listing exactly `retrieve`. The same sealed artifact passed normally launched Claude Code session `f021741f-b474-438e-a07b-a54ef35e071c` and normal interactive Codex 0.145.0 session `019f9890-e9fb-7610-a379-f3ef19a418ef`. Both used exact installed registration `madar_6b8bb2115fe0`, dispatched one forced `retrieve`, and returned authenticated `src/payment-retry.ts` evidence without a configuration or tool override; supported uninstall restored user configuration byte-exact and changed no repository bytes. The [#602 final-candidate record](https://github.com/mohanagy/madar/issues/602#issuecomment-5077981356), [RFC final-candidate record](https://github.com/mohanagy/madar/issues/577#issuecomment-5077981401), and [client receipt](core-reset/evidence/thin-delivery-client-transport.json) preserve the transport history and #567 closure. The implementation PR may proceed; merge remains blocked on exact-head six-job CI, independent review, honest CodeRabbit disposition, and zero unresolved threads.
+Final packed cold-start sampling passed across ten isolated processes. `madar --version` measured 38.792 ms median, 40.280 ms nearest-rank p95, and 43,532,288-byte maximum RSS; initialize plus one-tool listing measured 160.380 ms median, 185.684 ms nearest-rank p95, and 208,977,920-byte maximum RSS, with every sample listing exactly `retrieve`. The same sealed artifact passed normally launched Claude Code session `f021741f-b474-438e-a07b-a54ef35e071c` and normal interactive Codex 0.145.0 session `019f9890-e9fb-7610-a379-f3ef19a418ef`. Both used exact installed registration `madar_6b8bb2115fe0`, dispatched one forced `retrieve`, and returned authenticated `src/payment-retry.ts` evidence without a configuration or tool override; supported uninstall restored user configuration byte-exact and changed no repository bytes. The [#602 final-candidate record](https://github.com/mohanagy/madar/issues/602#issuecomment-5077981356), [RFC final-candidate record](https://github.com/mohanagy/madar/issues/577#issuecomment-5077981401), and [client receipt](core-reset/evidence/thin-delivery-client-transport.json) preserve both the successful final transport receipt and the earlier failed non-interactive Codex attempts that did not qualify; #567 closed only after the normal interactive client completed Madar `tools/call`.
+
+[PR #604](https://github.com/mohanagy/madar/pull/604) was squash-merged into protected `core-reset` as `14791cefa195f43e30ec9ec2dd611e38ad2b1b83` from independently reviewed head `ddd9761b137ef1f07eb362a91f9f2478c1d08c38`; merge tree `02a059c66a214fe52e31d8fffa2c501a1761bf0f` exactly matches the reviewed head tree. All six jobs in [exact-head CI run 30154480779](https://github.com/mohanagy/madar/actions/runs/30154480779) passed. The [independent exact-head review](https://github.com/mohanagy/madar/pull/604#pullrequestreview-4779114409) found no blocker, and zero review threads remained. [CodeRabbit explicitly skipped](https://github.com/mohanagy/madar/pull/604#issuecomment-5078118509) the non-default `core-reset` base and is not represented as having reviewed. The acceptance-eligible held-out receipt has self-hash `6baed3cfc2b3aa963581613be6cf17ccf1aa261dd29343e27bfe87d52bdaad6c`; Documenso and Formbricks passed while OpenStatus remained an honest non-blocking diagnostic.
 
 Query, ranking, traversal, slicing, graph, index, generation, public limits, timeouts, and held-out grading cannot change. Any retained predecessor, extra surface, dependency, budget breach, semantic change, weakened gate, or repository-specific activation rule stops work and requires an RFC amendment. No npm, GitHub Release, Registry publication, comparator claim, natural-activation claim, external-validation claim, or stable release is authorized.
 
-With Thin Delivery active, the remaining dependency order is:
+No npm package, GitHub Release, or MCP Registry metadata was published, and this phase did not target `main`.
 
-1. Complete Thin Delivery and record every deletion, package, startup, transport, CI, and review gate.
-2. Move evaluation tooling outside runtime and finish npm-package reduction.
-3. Run blinded native vs Graphify vs Madar capability evaluation.
-4. Run external design-partner validation.
-5. Publish a beta under npm tag `next` only after its preceding gates authorize it.
+## Ready — evaluation tooling isolation
+
+The `evaluation-tooling` removal-manifest handle is the sole Ready successor, but it is not accepted, activated, or In progress. No technical phase is active. Its bounded outcome is to keep evaluation runnable under `tools/eval/**` behind a development-only boundary while removing production imports and excluding evaluation code from dist and npm. A complete work-item contract, explicit owner approval, and a green governance-only activation PR are required before implementation starts.
+
+Capability validation remains blocked until evaluation tooling isolation passes and its exit gate is recorded. Ready status does not authorize native/Graphify comparison, natural-activation claims, external validation, publication, release, or work targeting `main`.
+
+With Thin Delivery passed, the remaining dependency order is:
+
+1. Move evaluation tooling outside runtime and finish npm-package isolation.
+2. Run blinded native vs Graphify vs Madar capability evaluation.
+3. Run external design-partner validation.
+4. Publish a beta under npm tag `next` only after its preceding gates authorize it.
 
 Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
 
