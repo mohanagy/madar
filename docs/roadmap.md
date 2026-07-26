@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, and Evaluation Tooling Isolation have passed. No technical phase is active. Capability Validation and every later phase remain blocked and unapproved.
+The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, and Evaluation Tooling Isolation have passed. Capability Validation is the sole active technical phase under the exact first-stage owner-approved #610 proposal; its activation merge, implementation, and campaign remain separately gated.
 
 ## Passed — directed multigraph
 
@@ -115,13 +115,25 @@ The completed implementation satisfies the exact source, move, build-boundary, d
 
 Only mechanical import, test, script, CI, and documentation path rewrites are permitted. Compatibility aliases, forwarding modules, fallbacks, duplicates, retained `src/**` copies, production-semantic changes, public-surface changes, budget or timeout changes, and historical evaluation-contract or receipt rewrites are forbidden. The current CI thresholds remain recall >=90%, MRR >=0.95, snippet coverage >=95%, and grounded-match rate report-only.
 
-Capability Validation remains blocked. There is no valid blinded Native-vs-Graphify-vs-Madar runner: the current guided suite has no Graphify arm, while the historical frozen contract still records retired `--no-html` commands. #606 neither authorizes a replacement runner nor permits restoring that flag. No native/Graphify comparison, natural-activation claim, external validation, publication, release, or work targeting `main` may begin.
+Capability Validation remained blocked throughout #606. The completed phase neither authorized a replacement runner nor permitted restoring `--no-html`; its historical limitation is superseded only by the separately approval-bound #610 contract below.
 
 No #606 stop condition triggered. No npm package, GitHub Release, Registry metadata, or tag was published, and the phase did not target `main`.
 
-With Evaluation Tooling Isolation passed, the remaining dependency order is:
+## In progress — capability validation
 
-1. Define and separately approve a valid blinded Native-vs-Graphify-vs-Madar capability contract.
+The owner approved proposal-body SHA-256 `27c04eca61e8c3ae65e2a9eab5c0b7e269313be933cef785b94e9bdca7292ba5` through the durable [#610 first-stage receipt](https://github.com/mohanagy/madar/issues/610#issuecomment-5081132612) and [matching RFC receipt](https://github.com/mohanagy/madar/issues/577#issuecomment-5081133199). Governance activation starts from protected `core-reset` commit `e7b3be547bc3f6cfdefdd514f17a1ad229afea03`, tree `0fb5664ab85ecb04275f6277ee65270b948f8ab3`, and audited `src` tree `1a37e3a58ee7b2a75ca034112506590f699b3918`.
+
+The activation adds only the versioned companion `tools/eval/core-reset/contracts/capability-validation-v1.json` and its contract and receipt schemas, while modifying only the five governing files. It changes no production code, executable evaluator, dependency, package/build configuration, CI workflow, historical contract, or receipt. Before activation may merge, a second owner receipt must bind the exact unchanged activation head, all three asset SHA-256 values, and every new JSON-pointer, raw-tool, receipt, dossier, mapping, error, and operational/schema choice.
+
+After that exact activation merge, implementation is limited to the 29 paths and line budgets in #610. It must preserve 43 production TypeScript files / 11,956 LOC, the `src` tree, package and lock bytes, graph/index/query semantics, public budgets and timeouts, the 102-file npm artifact boundary, and every frozen v2 grading input. No compatibility alias, dependency, production edit, generated commit, historical rewrite, or `main` target is permitted.
+
+The fixed campaign is exactly 60 paid answer trials across Native, Graphify cold/warm, and Madar cold/warm, plus one separate Madar-only diagnostic, using first-party Anthropic Messages API model `claude-sonnet-4-6`, temperatures `0` and `0.7`, at most 12 tool calls and 13 create requests per trial, and the frozen 300-second boundary. Provider input is capped at 20,000,000 tokens, output at 2,000,000, the runner ledger at USD $90, and the provider-enforced workspace/key cap at USD $100.
+
+No provider request of any kind—including Count Tokens—is authorized until the exact implementation merge is locked with the machine, toolchain, request, environment, schedule, spend, isolation, mapping-custodian, reviewer, and adjudicator receipts required by #610. The campaign runs once with no retry, replacement, repair, dropped row, post-reveal regrade, or budget widening. Any stop condition requires an RFC #577 amendment before further technical work.
+
+With Capability Validation active, the remaining dependency order is:
+
+1. Complete the exact #610 activation, implementation, one fixed campaign, sealed review, and receipt gates.
 2. Run external design-partner validation.
 3. Publish a beta under npm tag `next` only after its preceding gates authorize it.
 
