@@ -21,14 +21,14 @@ review:
   unowned_files: 0
   overlapping_files: 0
   disposition_changes: 11
-  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transferred graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activated the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. PR #608 completed the exact move without changing any surviving production TypeScript or dependency. First-stage owner-approved issue #610 authorizes only the eight-path governance activation candidate from protected base e7b3be547bc3f6cfdefdd514f17a1ad229afea03; activation merge still requires exact unchanged-head and three-asset SHA-256 approval, with zero production ownership or disposition change. Graph, index, generation, retrieval, CLI, MCP, installer, workspace, held-out, performance, grading, budget, and timeout semantics remain frozen.'
+  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transferred graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activated the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. PR #608 completed the exact move without changing any surviving production TypeScript or dependency. First-stage owner-approved issue #610 governance activation merged at dcb52596a3efa89f9ef5d372231ce97a91ae5f9f, then independent review stopped its uncommitted implementation under conditions 7, 8, and 13 before any implementation PR, campaign lock, provider request, or spend. First-stage owner-approved issue #612 authorizes only an eight-path governance-only v2 candidate from that exact merge; its separate activation merge approval remains required. It changes no production ownership or disposition. Graph, index, generation, retrieval, CLI, MCP, installer, workspace, held-out, provider, campaign, grading, product, package, dependency, budget, and timeout semantics remain frozen.'
 
 current:
   updated_at: 2026-07-26
   completed_phase: evaluation-tooling
-  active_phase: capability-validation
+  active_phase: capability-validation-v2
   ready_phase: null
-  base_commit: e7b3be547bc3f6cfdefdd514f17a1ad229afea03
+  base_commit: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
   completed_phase_commit: 565c42bb1b34b67f7fefc7aabd0513e4e391a13b
   production_typescript_files: 43
   production_typescript_loc: 11956
@@ -1478,7 +1478,7 @@ items:
 
   - id: capability-validation
     disposition: keep
-    status: in_progress
+    status: stopped
     destination: development-only blinded Native-vs-Graphify-vs-Madar capability evidence
     production_file_budget:
       added_max: 0
@@ -1509,7 +1509,7 @@ items:
       receipt_schema:
         path: tools/eval/core-reset/schemas/capability-validation-receipt.schema.json
         sha256: a33a6b3532a3e0df62bcd0f3616a9585b2be4ede1f360cf3d55f70c99c29f30e
-      exact_head_and_asset_owner_approval: required_before_activation_merge
+      exact_head_and_asset_owner_approval: passed
     frozen_contract:
       v2_blob: a6d1539cb99e8fd58ca20f868bf4d720812de4a5
       v2_sha256: c22819a9e24e53f7b11a69c06511a8dc0c2cba8841868d8d9bb734575290bba9
@@ -1575,10 +1575,190 @@ items:
       rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5081133199
       protected_base: e7b3be547bc3f6cfdefdd514f17a1ad229afea03
       target_branch: core-reset
+      second_owner_hash_approval: passed
+      activation_head: 80e942a8a28e3895465aa9ca432c4a926054055d
+      activation_merge: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
+      activation_tree: d0ca317290dbd6837295f36f36ded5b49855c0fe
+      implementation_start_commit: exact_activation_merge_only
+    stop:
+      conditions:
+        - 7
+        - 8
+        - 13
+      issue_receipt: https://github.com/mohanagy/madar/issues/610#issuecomment-5083281270
+      issue_receipt_body_sha256: 115e88cc3e1e00066c92f6ce4b3dd9ed8e0f6eabc1f8dbad918d1125c5cdaef9
+      rfc_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5083282711
+      rfc_receipt_body_sha256: 65ac67ca30f24eb2c9d2741ab12ee42d2f593915220ff1251adb8af97e717ed0
+      implementation_pr_opened: false
+      campaign_lock_created: false
+      provider_requests: 0
+      spend_usd: 0
+      protected_branch_implementation_changed: false
+      successor: capability-validation-v2
+    notes: 'Issue #610 governance activation merged at dcb52596a3efa89f9ef5d372231ce97a91ae5f9f with its exact reviewed tree and immutable three-asset contract. Fresh independent review of the uncommitted implementation draft then triggered stop conditions 7, 8, and 13: no concrete campaign coordinator/relay, claim-based authorization, caller-resettable spend, abstract containment, incomplete provider/MCP evidence, and forgeable receipt/archive facts. The phase stopped before any implementation PR, campaign lock, Count Tokens, Create, other provider request, paid spend, production/package/dependency change, publication, release, Registry metadata, tag, or main target. The v2 successor does not edit, reopen, reinterpret, or silently repair these historical bytes or this first-stop observation.'
+    exit_gate: The one fixed campaign and sealed independent review produce a schema-valid receipt proving or honestly failing every frozen machine, human, cost, isolation, schedule, and comparator gate without semantic or budget drift.
+
+  - id: capability-validation-v2
+    disposition: keep
+    status: in_progress
+    predecessor: capability-validation
+    supersedes: development implementation allowlist and LOC ceiling only
+    destination: development-only evidence-authenticated Capability Validation execution boundary
+    production_file_budget:
+      added_max: 0
+      removed_exact: 0
+    production_loc_budget:
+      added_max: 0
+      removed_exact: 0
+      net_exact: 0
+    anchor:
+      commit: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
+      tree: d0ca317290dbd6837295f36f36ded5b49855c0fe
+      src_tree: 1a37e3a58ee7b2a75ca034112506590f699b3918
+      tools_eval_tree: b8ef02da3ce135596e87fdf6252441755061d956
+      production_typescript_files: 43
+      production_typescript_loc: 11956
+      npm_files: 102
+      npm_packed_bytes: 159759
+      npm_unpacked_bytes: 637602
+    predecessor_stop:
+      issue: https://github.com/mohanagy/madar/issues/610
+      activation_head: 80e942a8a28e3895465aa9ca432c4a926054055d
+      activation_merge: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
+      activation_tree: d0ca317290dbd6837295f36f36ded5b49855c0fe
+      conditions:
+        - 7
+        - 8
+        - 13
+      issue_receipt: https://github.com/mohanagy/madar/issues/610#issuecomment-5083281270
+      issue_receipt_body_sha256: 115e88cc3e1e00066c92f6ce4b3dd9ed8e0f6eabc1f8dbad918d1125c5cdaef9
+      rfc_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5083282711
+      rfc_receipt_body_sha256: 65ac67ca30f24eb2c9d2741ab12ee42d2f593915220ff1251adb8af97e717ed0
+    governance_assets:
+      proposal_body_sha256: 4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0
+      exact_added_assets: 3
+      aggregate_physical_lines_max: 3200
+      aggregate_utf8_bytes_max: 2097152
+      governance_added_lines_max: 650
+      governance_removed_lines_max: 250
+      activation_added_lines_max: 3850
+      activation_removed_lines_max: 250
+      contract:
+        path: tools/eval/core-reset/contracts/capability-validation-v2.json
+        sha256: 21d45642cbac36b0ae99258f6aa1d64480a33a20e0fc7334ffd166989ea0f44c
+        physical_lines_max: 1400
+        utf8_bytes_max: 196608
+      contract_schema:
+        path: tools/eval/core-reset/schemas/capability-validation-contract-v2.schema.json
+        sha256: ce6f2b132868d65e92ef958cdd28f39744f8169a21fcd4ef95d666a13ae0ae58
+        physical_lines_max: 200
+        utf8_bytes_max: 262144
+      receipt_schema:
+        path: tools/eval/core-reset/schemas/capability-validation-receipt-v2.schema.json
+        sha256: 0aa0743837bdb2fa23430807c89d3ae433ee19c64fb0aa20901d53c5306204e2
+        physical_lines_max: 1600
+        utf8_bytes_max: 1638400
+      exact_head_and_asset_owner_approval: required_before_activation_merge
+    inheritance:
+      v1_contract_sha256: ae03a6b2cc8675ca66ad0ff67f06e13389cf04e6a6a8167c3404f1c8657f36f5
+      v1_contract_schema_sha256: 6d8679e335730180bee0c9fc62f144ae2086ea16dade800887a0301da27f23b6
+      v1_receipt_schema_sha256: a33a6b3532a3e0df62bcd0f3616a9585b2be4ede1f360cf3d55f70c99c29f30e
+      allowed_difference_pointers:
+        - /schema_version
+        - /contract_id
+        - /status
+        - /governance
+        - /anchors/protected_base_commit
+        - /anchors/base_tree
+        - /anchors/tools_eval_tree
+        - /inheritance
+        - /receipt/path
+        - /receipt/schema_path
+        - /receipt/canonical_transcript
+        - /receipt/canonical_archive
+        - /execution_boundary
+      all_other_recursive_subjects: jcs_identical_to_v1
+    provider_contract:
+      provider: anthropic_first_party_messages
+      endpoint: https://api.anthropic.com/v1/messages
+      api_version: 2023-06-01
+      model: claude-sonnet-4-6
+      temperatures:
+        - 0
+        - 0.7
+      thinking: disabled
+      max_tokens: 4096
+      service_tier: standard_only
+      inference_geography: global
+      streaming: false
+      caching: forbidden
+      retry: forbidden
+    campaign_budget:
+      blocking_paid_answer_trials_exact: 60
+      separate_madar_diagnostic_exact: 1
+      refresh_samples_exact: 12
+      trials_per_cell: 3
+      tool_calls_per_trial_max: 12
+      create_requests_per_trial_max: 13
+      trial_timeout_seconds: 300
+      provider_input_tokens_max: 20000000
+      provider_output_tokens_max: 2000000
+      runner_usd_max: 90
+      provider_enforced_usd_max: 100
+      provider_request_before_campaign_lock: forbidden
+      real_campaign_lock_offline: forbidden
+      retry_replace_drop_or_regrade: forbidden
+    implementation_budget:
+      touched_paths_exact: 53
+      added_physical_lines_max: 29130
+      removed_physical_lines_max: 350
+      activation_plus_implementation_added_max: 32980
+      activation_plus_implementation_removed_max: 600
+      production_files_or_loc_changed: 0
+      dependencies_changed: 0
+      compatibility_aliases: forbidden
+      generated_files_committed: forbidden
+      ci_change: exact_offline_self_test_step_only
+    review_contract:
+      activation_ci_matrix_jobs: 6
+      activation_independent_exact_head_review: required
+      activation_coderabbit_actual_disposition_must_be_honest: true
+      activation_unresolved_review_threads: 0
+      implementation_independent_reviews: 2
+      two_independent_natural_person_reviews: required_before_reveal
+      third_eligible_adjudicator_for_disagreement: required
+      sixth_independent_archive_verifier: required
+      one_fixed_campaign_without_rerun: required
+    activation:
+      issue: https://github.com/mohanagy/madar/issues/612
+      proposal_receipt: https://github.com/mohanagy/madar/issues/612#issuecomment-5083546156
+      rfc_proposal_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5083547611
+      owner_approval: https://github.com/mohanagy/madar/issues/612#issuecomment-5083661878
+      rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5083662827
+      protected_base: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
+      target_branch: core-reset
       second_owner_hash_approval: required_before_activation_merge
       implementation_start_commit: exact_activation_merge_only
-    notes: 'Owner-approved issue #610 activates the governance-bound Capability Validation successor without changing production source, package, dependencies, CI, executable evaluation tooling, or historical evidence. The activation assets narrow frozen held-out v2 into one exact three-arm direct Anthropic campaign and strict receipt/review lifecycle. Activation merge still requires the second exact-head and three-asset-hash owner approval. Implementation, Count Tokens, paid execution, receipt evidence, external validation, publication, release, Registry metadata, tags, and main remain separately gated.'
-    exit_gate: The one fixed campaign and sealed independent review produce a schema-valid receipt proving or honestly failing every frozen machine, human, cost, isolation, schedule, and comparator gate without semantic or budget drift.
+    deferred_provider_account_observer:
+      status: unresolved_separate_proposal_required
+      generic_proof_acceptance: forbidden
+      provider_hard_cap_and_zero_use_observation: required_before_real_campaign_lock
+    governance_closure:
+      after: exact_offline_implementation_merge_only
+      modified_paths:
+        - docs/core-reset/removal-manifest.yml
+        - docs/core-reset/scorecard.md
+        - docs/roadmap.md
+        - docs/designs/2026-07-19-core-reset.md
+        - tests/unit/core-reset-governance.test.ts
+      added_physical_lines_max: 400
+      removed_physical_lines_max: 200
+      activation_plus_implementation_plus_closure_added_max: 33380
+      activation_plus_implementation_plus_closure_removed_max: 800
+      records_only: v2 offline execution boundary passed, exact merge/tree/review/CI receipts, unchanged v1 stop, unresolved provider observer, zero provider requests/spend, and no active campaign
+      evaluator_schema_contract_ci_production_package_dependency_receipt_evidence_change: forbidden
+    notes: 'First-stage owner-approved #612 authorizes preparation and review of this governance-only candidate. It makes the stopped v1 execution boundary concrete and approval-bound while preserving every v1 provider, campaign, comparator, grading, product, production, package, dependency, token, USD, matrix, timeout, and tool-call ceiling. Only the later development implementation allowlist and LOC ceiling expand. This first-stage asset does not authorize activation merge or offline implementation; those require live second-stage approval and the exact activation merge. It never authorizes provider-account observation, campaign lock, target-repository execution, Count Tokens, Create, any provider request, spend, npm/package/product publication, release, Registry metadata, tags, or main.'
+    exit_gate: A separately approved offline implementation makes every authorization, coordination, containment, evidence, ledger, lifecycle, stopped-finalization, receipt, archive, and public-validation boundary executable and adversarially proven without creating a campaign lock or provider request.
 
   - id: non-core-graph-products
     disposition: delete

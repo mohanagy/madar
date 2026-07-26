@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, and Evaluation Tooling Isolation have passed. Capability Validation is the sole active technical phase under the exact first-stage owner-approved #610 proposal; its activation merge, implementation, and campaign remain separately gated.
+The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, and Evaluation Tooling Isolation have passed. Capability Validation v1 is stopped under #610; `capability-validation-v2` is the sole active technical phase under the exact first-stage owner-approved #612 proposal, while activation merge, offline implementation, provider-account observation, and the fixed campaign remain separately gated.
 
 ## Passed — directed multigraph
 
@@ -119,23 +119,26 @@ Capability Validation remained blocked throughout #606. The completed phase neit
 
 No #606 stop condition triggered. No npm package, GitHub Release, Registry metadata, or tag was published, and the phase did not target `main`.
 
-## In progress — capability validation
+## In progress — capability validation v2
 
-The owner approved proposal-body SHA-256 `27c04eca61e8c3ae65e2a9eab5c0b7e269313be933cef785b94e9bdca7292ba5` through the durable [#610 first-stage receipt](https://github.com/mohanagy/madar/issues/610#issuecomment-5081132612) and [matching RFC receipt](https://github.com/mohanagy/madar/issues/577#issuecomment-5081133199). Governance activation starts from protected `core-reset` commit `e7b3be547bc3f6cfdefdd514f17a1ad229afea03`, tree `0fb5664ab85ecb04275f6277ee65270b948f8ab3`, and audited `src` tree `1a37e3a58ee7b2a75ca034112506590f699b3918`.
+Capability Validation v1 stopped before an implementation PR, campaign lock, or provider request when independent review triggered #610 stop conditions 7, 8, and 13. Its original protected base `e7b3be547bc3f6cfdefdd514f17a1ad229afea03`, proposal SHA-256 `27c04eca61e8c3ae65e2a9eab5c0b7e269313be933cef785b94e9bdca7292ba5`, [#610 approval](https://github.com/mohanagy/madar/issues/610#issuecomment-5081132612), and [RFC approval](https://github.com/mohanagy/madar/issues/577#issuecomment-5081133199) remain historical. The immutable [#610 stop receipt](https://github.com/mohanagy/madar/issues/610#issuecomment-5083281270) and [RFC stop amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5083282711) preserve activation head `80e942a8a28e3895465aa9ca432c4a926054055d`, merge `dcb52596a3efa89f9ef5d372231ce97a91ae5f9f`, tree `d0ca317290dbd6837295f36f36ded5b49855c0fe`, and the three v1 asset bytes. No Count Tokens, Create, other provider request, campaign spend, implementation PR, production change, or publication occurred.
 
-The activation adds only the versioned companion `tools/eval/core-reset/contracts/capability-validation-v1.json` and its contract and receipt schemas, while modifying only the five governing files. It changes no production code, executable evaluator, dependency, package/build configuration, CI workflow, historical contract, or receipt. Before activation may merge, a second owner receipt must bind the exact unchanged activation head, all three asset SHA-256 values, and every new JSON-pointer, raw-tool, receipt, dossier, mapping, error, and operational/schema choice.
+The owner approved exact v2 proposal-body SHA-256 `4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0` through the durable [#612 first-stage receipt](https://github.com/mohanagy/madar/issues/612#issuecomment-5083661878) and [matching RFC receipt](https://github.com/mohanagy/madar/issues/577#issuecomment-5083662827). Governance activation starts from protected `core-reset` commit `dcb52596a3efa89f9ef5d372231ce97a91ae5f9f`, tree `d0ca317290dbd6837295f36f36ded5b49855c0fe`, audited `src` tree `1a37e3a58ee7b2a75ca034112506590f699b3918`, and `tools/eval` tree `b8ef02da3ce135596e87fdf6252441755061d956`.
 
-After that exact activation merge, implementation is limited to the 29 paths and line budgets in #610. It must preserve 43 production TypeScript files / 11,956 LOC, the `src` tree, package and lock bytes, graph/index/query semantics, public budgets and timeouts, the 102-file npm artifact boundary, and every frozen v2 grading input. No compatibility alias, dependency, production edit, generated commit, historical rewrite, or `main` target is permitted.
+The governance-only candidate adds exactly `capability-validation-v2.json`, `capability-validation-contract-v2.schema.json`, and `capability-validation-receipt-v2.schema.json` and modifies only the five governing files, within `+3,850/-250`. It changes no production code, executable evaluator, CI, dependency, package/build configuration, historical contract, or receipt. Before activation may merge, a second owner receipt must bind the exact unchanged head, all three asset SHA-256 values, and every newly exact coordinator, relay, evidence, containment, ledger, receipt, stopped-finalization, archive, public-validation, error, path, LOC, schema, and operational choice.
 
-The fixed campaign is exactly 60 paid answer trials across Native, Graphify cold/warm, and Madar cold/warm, plus one separate Madar-only diagnostic, using first-party Anthropic Messages API model `claude-sonnet-4-6`, temperatures `0` and `0.7`, at most 12 tool calls and 13 create requests per trial, and the frozen 300-second boundary. Provider input is capped at 20,000,000 tokens, output at 2,000,000, the runner ledger at USD $90, and the provider-enforced workspace/key cap at USD $100.
+Only after that exact activation merge may offline implementation start, limited to #612's 53 exact paths and `+29,130/-350`; combined activation plus implementation remains `+32,980/-600`. This supersedes only v1's 29-path / `+12,200/-200` development boundary. The provider, token, USD, trial, matrix, timeout, tool-call, product, production, package, dependency, graph/index/generation/query, and public-semantic ceilings remain unchanged; no compatibility alias, dependency, production edit, generated commit, historical rewrite, or `main` target is permitted.
 
-No provider request of any kind—including Count Tokens—is authorized until the exact implementation merge is locked with the machine, toolchain, request, environment, schedule, spend, isolation, mapping-custodian, reviewer, and adjudicator receipts required by #610. The campaign runs once with no retry, replacement, repair, dropped row, post-reveal regrade, or budget widening. Any stop condition requires an RFC #577 amendment before further technical work.
+After the exact offline implementation merge, one separately reviewed governance-only closure may modify only these five governance files within `+400/-200`, for full activation-plus-implementation-plus-closure ceilings of `+33,380/-800`. It may record only that the v2 offline execution boundary passed, exact merge/review/CI evidence, v1's unchanged stop, the unresolved provider observer, zero requests/spend, and no active campaign.
 
-With Capability Validation active, the remaining dependency order is:
+The offline v2 boundary cannot create a real campaign lock: authenticated provider-account hard-cap and zero-use observation remains a separately proposed future mechanism. No provider request of any kind—including Count Tokens or Create—target-repository execution, paid spend, or fixed campaign is authorized by this activation. Any stop condition requires an RFC #577 amendment before further technical work.
 
-1. Complete the exact #610 activation, implementation, one fixed campaign, sealed review, and receipt gates.
-2. Run external design-partner validation.
-3. Publish a beta under npm tag `next` only after its preceding gates authorize it.
+The remaining dependency order is:
+
+1. Complete exact #612 governance activation and separately authorized offline implementation.
+2. Approve and prove the provider-account observer, then separately lock and run the unchanged fixed campaign.
+3. Run external design-partner validation.
+4. Publish a beta under npm tag `next` only after its preceding gates authorize it.
 
 Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
 
