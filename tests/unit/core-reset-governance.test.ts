@@ -12,6 +12,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join, posix, resolve } from 'node:path'
 
+import Ajv2020 from 'ajv/dist/2020.js'
+import addFormats from 'ajv-formats'
 import ts from 'typescript'
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
@@ -304,6 +306,50 @@ const EVALUATION_TOOLING_ACTIVATION_FILES = [
   'docs/roadmap.md',
   'tests/unit/core-reset-governance.test.ts',
 ] as const
+const CAPABILITY_VALIDATION_BASE = 'e7b3be547bc3f6cfdefdd514f17a1ad229afea03'
+const CAPABILITY_VALIDATION_BASE_TREE = '0fb5664ab85ecb04275f6277ee65270b948f8ab3'
+const CAPABILITY_VALIDATION_SRC_TREE = '1a37e3a58ee7b2a75ca034112506590f699b3918'
+const CAPABILITY_VALIDATION_TOOLS_EVAL_TREE = '983df4a5462ae8e5f57cf549bcc23c06c328b596'
+const CAPABILITY_VALIDATION_PROPOSAL_SHA256 =
+  '27c04eca61e8c3ae65e2a9eab5c0b7e269313be933cef785b94e9bdca7292ba5'
+const CAPABILITY_VALIDATION_ISSUE = 'https://github.com/mohanagy/madar/issues/610'
+const CAPABILITY_VALIDATION_PROPOSAL_RECEIPT =
+  `${CAPABILITY_VALIDATION_ISSUE}#issuecomment-5080113972`
+const CAPABILITY_VALIDATION_RFC_PROPOSAL_RECEIPT =
+  'https://github.com/mohanagy/madar/issues/577#issuecomment-5080113127'
+const CAPABILITY_VALIDATION_OWNER_APPROVAL =
+  `${CAPABILITY_VALIDATION_ISSUE}#issuecomment-5081132612`
+const CAPABILITY_VALIDATION_RFC_APPROVAL =
+  'https://github.com/mohanagy/madar/issues/577#issuecomment-5081133199'
+const CAPABILITY_VALIDATION_CONTRACT =
+  'tools/eval/core-reset/contracts/capability-validation-v1.json'
+const CAPABILITY_VALIDATION_CONTRACT_SCHEMA =
+  'tools/eval/core-reset/schemas/capability-validation-contract.schema.json'
+const CAPABILITY_VALIDATION_RECEIPT_SCHEMA =
+  'tools/eval/core-reset/schemas/capability-validation-receipt.schema.json'
+const CAPABILITY_VALIDATION_ACTIVATION_FILES = [
+  ...EVALUATION_TOOLING_ACTIVATION_FILES,
+  CAPABILITY_VALIDATION_CONTRACT,
+  CAPABILITY_VALIDATION_CONTRACT_SCHEMA,
+  CAPABILITY_VALIDATION_RECEIPT_SCHEMA,
+] as const
+const CAPABILITY_VALIDATION_FROZEN_HASHES = {
+  'tools/eval/core-reset/contracts/evaluation-contract.json':
+    'c22819a9e24e53f7b11a69c06511a8dc0c2cba8841868d8d9bb734575290bba9',
+  'tools/eval/core-reset/schemas/evaluation-contract.schema.json':
+    '581acc2332cbe9015e0bd1c7da4db84e9c3d5c73cedcb21fd7427a67bf56e615',
+  'tools/eval/core-reset/contract-validation.mjs':
+    'd7402f8caaf838d0695060d375c1504e4a173786281730010c7a7eb5449608a0',
+  'package.json': 'd464fd8e59b3d4d3f817ebdd6457fb3cfb02d9f3fad4fc8648f29c03a8a56b33',
+  'package-lock.json': 'b9d179f0ee70e14d85653c5013cf2513efb22127b10fc3ee1deb5fa698993a61',
+  'tsconfig.eval.json': 'b2eb8dea28aab40a794bda38f11100dcc98e8c2987b3d8fdefc62263ebe7ae17',
+  '.github/workflows/ci.yml': '4dde28b814127bceabe8e076c2f5afc286153d9f8b655cf5e8a1681f754ac2f8',
+} as const
+const CAPABILITY_VALIDATION_ASSET_HASHES = {
+  [CAPABILITY_VALIDATION_CONTRACT]: 'ae03a6b2cc8675ca66ad0ff67f06e13389cf04e6a6a8167c3404f1c8657f36f5',
+  [CAPABILITY_VALIDATION_CONTRACT_SCHEMA]: '6d8679e335730180bee0c9fc62f144ae2086ea16dade800887a0301da27f23b6',
+  [CAPABILITY_VALIDATION_RECEIPT_SCHEMA]: 'a33a6b3532a3e0df62bcd0f3616a9585b2be4ede1f360cf3d55f70c99c29f30e',
+} as const
 const EVALUATION_TOOLING_FROZEN_EVIDENCE = [
   'docs/core-reset/evidence/baseline-v0.32.0.json',
   'docs/core-reset/evidence/evidence-path-held-out.json',
@@ -590,6 +636,14 @@ function deletionImportEdgesAtCommit(commit: string, deletionFiles: ReadonlySet<
 const edgeListSha256 = (edges: readonly string[]): string =>
   createHash('sha256').update(`${edges.join('\n')}\n`).digest('hex')
 
+const canonicalJson = (value: unknown): string => {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  const record = value as Record<string, unknown>
+  return `{${Object.keys(record).sort().map((key) =>
+    `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`
+}
+
 describe('core reset governance', () => {
   it('keeps one linked roadmap and RFC contract', () => {
     const roadmap = read('docs/roadmap.md')
@@ -611,6 +665,11 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Passed — evidence-path query')
     expect(roadmap).toContain('## Passed — thin delivery')
     expect(roadmap).toContain('## Passed — evaluation tooling isolation')
+    expect(roadmap).toContain('## In progress — capability validation')
+    expect(roadmap).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
+    expect(roadmap).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
+    expect(roadmap).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
+    expect(roadmap).toContain(CAPABILITY_VALIDATION_BASE)
     expect(roadmap).toContain(EVALUATION_TOOLING_OWNER_APPROVAL)
     expect(roadmap).toContain(EVALUATION_TOOLING_RFC_APPROVAL)
     expect(roadmap).toContain(EVALUATION_TOOLING_BASE)
@@ -624,7 +683,7 @@ describe('core reset governance', () => {
     expect(roadmap).toContain(EVALUATION_TOOLING_ISSUE_MERGE_RECEIPT)
     expect(roadmap).toContain(EVALUATION_TOOLING_RFC_MERGE_RECEIPT)
     expect(roadmap).toContain('exactly 20 production TypeScript files / 4,698 LOC')
-    expect(roadmap).toContain('no valid blinded Native-vs-Graphify-vs-Madar runner')
+    expect(roadmap).toContain('Capability Validation remained blocked throughout #606')
     expect(roadmap).toContain(THIN_DELIVERY_OWNER_APPROVAL)
     expect(roadmap).toContain(THIN_DELIVERY_RFC_APPROVAL)
     expect(roadmap).toContain(THIN_DELIVERY_BASE)
@@ -695,6 +754,11 @@ describe('core reset governance', () => {
     expect(design).toContain('## Completed amendment — generic evidence-path query')
     expect(design).toContain('## Completed amendment — thin delivery')
     expect(design).toContain('## Completed amendment — evaluation tooling isolation')
+    expect(design).toContain('## Accepted amendment — capability validation')
+    expect(design).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
+    expect(design).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
+    expect(design).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
+    expect(design).toContain(CAPABILITY_VALIDATION_BASE)
     expect(design).toContain(EVALUATION_TOOLING_OWNER_APPROVAL)
     expect(design).toContain(EVALUATION_TOOLING_RFC_APPROVAL)
     expect(design).toContain(EVALUATION_TOOLING_BASE)
@@ -733,9 +797,9 @@ describe('core reset governance', () => {
     expect(design).toContain('Identical normalized request plus identical canonical graph bytes plus the identical authenticated source snapshot')
     expect(design).toContain('All five expectations must pass before warmup')
     expect(design).toContain('empty positive results, missing/extra nodes or edges, reversed/wrong relationship kinds')
-    expect(design).toContain('No technical phase is active')
+    expect(design).toContain('At that #608 completion checkpoint no technical phase was active')
     expect(design).toContain('43 production TypeScript files / 11,956 LOC')
-    expect(design).toContain('No valid blinded Native-vs-Graphify-vs-Madar capability runner exists')
+    expect(design).toContain('At the #606 boundary no valid blinded Native-vs-Graphify-vs-Madar capability runner existed')
     expect(design).toContain('exactly one tool, `retrieve`')
     expect(design).toContain('frozen 25,000 ms request-wait ceiling')
     expect(design).toContain('direct JSON-RPC testing is insufficient')
@@ -773,6 +837,11 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Evidence-path query | **Passed**')
     expect(scorecard).toContain('| Delivery and package | **Passed**')
     expect(scorecard).toContain('| Evaluation tooling isolation | **Passed**')
+    expect(scorecard).toContain('| Capability validation | **In progress**')
+    expect(scorecard).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
+    expect(scorecard).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
+    expect(scorecard).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
+    expect(scorecard).toContain(CAPABILITY_VALIDATION_BASE)
     expect(scorecard).toContain(EVALUATION_TOOLING_OWNER_APPROVAL)
     expect(scorecard).toContain(EVALUATION_TOOLING_RFC_APPROVAL)
     expect(scorecard).toContain(EVALUATION_TOOLING_BASE)
@@ -808,7 +877,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('only an authenticated canonical symbol declaration may provide a snippet or cover a phase')
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
-    expect(scorecard).toContain('No technical phase is active')
+    expect(scorecard).toContain('`capability-validation` is the sole active phase')
     expect(scorecard).toContain('exactly 20 production TypeScript files / 4,698 LOC')
     expect(scorecard).toContain('completed Evaluation Tooling Isolation is 43 files / 11,956 LOC')
     expect(scorecard).toContain('- [x] Production cannot import `tools/eval`')
@@ -1017,17 +1086,17 @@ describe('core reset governance', () => {
     expect(manifest.schema_version).toBe(1)
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-25',
+      updated_at: '2026-07-26',
       completed_phase: 'evaluation-tooling',
-      active_phase: null,
+      active_phase: 'capability-validation',
       ready_phase: null,
-      base_commit: EVALUATION_TOOLING_BASE,
+      base_commit: CAPABILITY_VALIDATION_BASE,
       completed_phase_commit: EVALUATION_TOOLING_MERGE,
       production_typescript_files: 43,
       production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 4_698,
-      production_loc_net: -4_698,
+      production_loc_removed: 0,
+      production_loc_net: 0,
       npm_files: 102,
       npm_packed_bytes: 159_759,
       npm_unpacked_bytes: 637_602,
@@ -1148,7 +1217,7 @@ describe('core reset governance', () => {
     expect(logicalLocAtCommit(legacyBase, deletionFiles)).toBe(20_951)
     const generation = manifest.items.find((item) => item.id === 'generation-and-incremental')
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([])
+      .toEqual(['capability-validation'])
     expect(generation).toMatchObject({
       status: 'complete',
       sources: INCREMENTAL_OWNED_REPLACEMENTS,
@@ -1465,22 +1534,22 @@ describe('core reset governance', () => {
       ['merge-base', '--is-ancestor', THIN_DELIVERY_IMPLEMENTATION_START, THIN_DELIVERY_MERGE],
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-25',
+      updated_at: '2026-07-26',
       completed_phase: 'evaluation-tooling',
-      active_phase: null,
+      active_phase: 'capability-validation',
       ready_phase: null,
-      base_commit: EVALUATION_TOOLING_BASE,
+      base_commit: CAPABILITY_VALIDATION_BASE,
       completed_phase_commit: EVALUATION_TOOLING_MERGE,
       production_typescript_files: 43,
       production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 4_698,
-      production_loc_net: -4_698,
+      production_loc_removed: 0,
+      production_loc_net: 0,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'exact_implementation_source_and_package',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([])
+      .toEqual(['capability-validation'])
     expect(manifest.targets).toMatchObject({
       production_typescript_files_max: 80,
       production_typescript_loc_max: 35_000,
@@ -2333,21 +2402,21 @@ describe('core reset governance', () => {
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
       completed_phase: 'evaluation-tooling',
-      active_phase: null,
+      active_phase: 'capability-validation',
       ready_phase: null,
-      base_commit: EVALUATION_TOOLING_BASE,
+      base_commit: CAPABILITY_VALIDATION_BASE,
       completed_phase_commit: EVALUATION_TOOLING_MERGE,
       production_typescript_files: 43,
       production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 4_698,
-      production_loc_net: -4_698,
+      production_loc_removed: 0,
+      production_loc_net: 0,
       npm_files: 102,
       npm_packed_bytes: 159_759,
       npm_unpacked_bytes: 637_602,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([])
+      .toEqual(['capability-validation'])
 
     const evaluation = manifest.items.find((item) => item.id === 'evaluation-tooling')
     expect(evaluation).toMatchObject({
@@ -2433,7 +2502,7 @@ describe('core reset governance', () => {
       },
       capability_validation: {
         blinded_runner_exists: false,
-        status: 'blocked',
+        status: 'separately_activated_under_610',
         runner_design_in_scope: false,
         graphify_integration_in_scope: false,
         historical_no_html_restoration: 'forbidden',
@@ -2558,6 +2627,7 @@ describe('core reset governance', () => {
     expect(manifest.review).toMatchObject({ disposition_changes: 11 })
     expect(manifest.review.amendment).toContain('Owner-approved issue #606')
     expect(manifest.review.amendment).toContain('exact 20-file / 4,698-LOC move contract')
+    expect(manifest.review.amendment).toContain('First-stage owner-approved issue #610')
 
     const baseFiles = productionTypeScriptFilesAtCommit(EVALUATION_TOOLING_BASE)
     expect(baseFiles).toHaveLength(63)
@@ -2762,6 +2832,270 @@ describe('core reset governance', () => {
         ...EVALUATION_TOOLING_FROZEN_EVIDENCE,
       ],
     )).not.toThrow()
+  })
+
+  it('activates the exact Capability Validation governance contract without implementation drift', () => {
+    const manifest = parse(read('docs/core-reset/removal-manifest.yml')) as {
+      current: Record<string, unknown>
+      items: Array<Record<string, unknown> & { id: string; status: string }>
+    }
+    const phase = manifest.items.find((item) => item.id === 'capability-validation') as
+      | (Record<string, unknown> & {
+        governance_assets: {
+          contract: { path: string; sha256: string }
+          contract_schema: { path: string; sha256: string }
+          receipt_schema: { path: string; sha256: string }
+        }
+      })
+      | undefined
+    expect(manifest.current).toMatchObject({
+      completed_phase: 'evaluation-tooling',
+      active_phase: 'capability-validation',
+      base_commit: CAPABILITY_VALIDATION_BASE,
+      production_typescript_files: 43,
+      production_typescript_loc: 11_956,
+      production_loc_added: 0,
+      production_loc_removed: 0,
+      production_loc_net: 0,
+    })
+    expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
+      .toEqual(['capability-validation'])
+    expect(phase).toMatchObject({
+      disposition: 'keep',
+      status: 'in_progress',
+      production_file_budget: { added_max: 0, removed_exact: 0 },
+      production_loc_budget: { added_max: 0, removed_exact: 0, net_exact: 0 },
+      anchor: {
+        commit: CAPABILITY_VALIDATION_BASE,
+        tree: CAPABILITY_VALIDATION_BASE_TREE,
+        src_tree: CAPABILITY_VALIDATION_SRC_TREE,
+        tools_eval_tree: CAPABILITY_VALIDATION_TOOLS_EVAL_TREE,
+      },
+      activation: {
+        issue: CAPABILITY_VALIDATION_ISSUE,
+        proposal_receipt: CAPABILITY_VALIDATION_PROPOSAL_RECEIPT,
+        rfc_proposal_receipt: CAPABILITY_VALIDATION_RFC_PROPOSAL_RECEIPT,
+        owner_approval: CAPABILITY_VALIDATION_OWNER_APPROVAL,
+        rfc_amendment: CAPABILITY_VALIDATION_RFC_APPROVAL,
+        protected_base: CAPABILITY_VALIDATION_BASE,
+        target_branch: 'core-reset',
+        second_owner_hash_approval: 'required_before_activation_merge',
+      },
+    })
+
+    expect(execFileSync(git, ['rev-parse', `${CAPABILITY_VALIDATION_BASE}^{tree}`], { encoding: 'utf8' }).trim())
+      .toBe(CAPABILITY_VALIDATION_BASE_TREE)
+    expect(execFileSync(git, ['rev-parse', `${CAPABILITY_VALIDATION_BASE}:src`], { encoding: 'utf8' }).trim())
+      .toBe(CAPABILITY_VALIDATION_SRC_TREE)
+    expect(execFileSync(git, ['rev-parse', `${CAPABILITY_VALIDATION_BASE}:tools/eval`], { encoding: 'utf8' }).trim())
+      .toBe(CAPABILITY_VALIDATION_TOOLS_EVAL_TREE)
+
+    for (const [path, expected] of Object.entries(CAPABILITY_VALIDATION_FROZEN_HASHES)) {
+      expect(createHash('sha256').update(readFileSync(resolve(path))).digest('hex'), path).toBe(expected)
+    }
+    let assetLines = 0
+    for (const [path, expected] of Object.entries(CAPABILITY_VALIDATION_ASSET_HASHES)) {
+      expect(existsSync(resolve(path)), path).toBe(true)
+      const source = read(path)
+      assetLines += source.match(/\n/g)?.length ?? 0
+      assetLines += source.length > 0 && !source.endsWith('\n') ? 1 : 0
+      expect(createHash('sha256').update(source).digest('hex'), path).toBe(expected)
+    }
+    expect(assetLines).toBeLessThanOrEqual(2_300)
+    expect(phase?.governance_assets).toMatchObject({
+      contract: {
+        path: CAPABILITY_VALIDATION_CONTRACT,
+        sha256: CAPABILITY_VALIDATION_ASSET_HASHES[CAPABILITY_VALIDATION_CONTRACT],
+      },
+      contract_schema: {
+        path: CAPABILITY_VALIDATION_CONTRACT_SCHEMA,
+        sha256: CAPABILITY_VALIDATION_ASSET_HASHES[CAPABILITY_VALIDATION_CONTRACT_SCHEMA],
+      },
+      receipt_schema: {
+        path: CAPABILITY_VALIDATION_RECEIPT_SCHEMA,
+        sha256: CAPABILITY_VALIDATION_ASSET_HASHES[CAPABILITY_VALIDATION_RECEIPT_SCHEMA],
+      },
+    })
+
+    const contract = JSON.parse(read(CAPABILITY_VALIDATION_CONTRACT)) as {
+      contract_id: string
+      governance: { proposal_body_sha256: string; target_branch: string; forbidden_branch: string }
+      inheritance: { pointers: string[] }
+      provider: { system: string }
+      blinding: { pseudonym: { format: string }; blind_bundle_allowed_fields: string[] }
+      graphify: {
+        combined_jcs: { initialize: { serverInfo: { name: string } } }
+        combined_bytes: number
+        combined_sha256: string
+        resolved_constraints: string[]
+        resolved_constraints_sha256: string
+      }
+      raw_tools: {
+        provider_order: string[]
+        tool_definitions: Array<{ name: string; description: string }>
+        tool_definitions_jcs_sha256: string
+        result_schema: unknown
+        result_schema_jcs_sha256: string
+        semantics: unknown
+        semantics_jcs_sha256: string
+        path_policy: unknown
+        path_policy_jcs_sha256: string
+        error_messages: unknown
+        error_messages_jcs_sha256: string
+        aggregate_hashes_jcs_sha256: string
+      }
+      campaign: { blocking_answers: number; tool_call_budget: number; timeout_seconds: number }
+    }
+    const contractSchema = JSON.parse(read(CAPABILITY_VALIDATION_CONTRACT_SCHEMA))
+    const receiptSchema = JSON.parse(read(CAPABILITY_VALIDATION_RECEIPT_SCHEMA)) as {
+      $defs: Record<string, unknown>
+    }
+    // @ts-expect-error -- Ajv's NodeNext declaration shape differs from its runtime default export
+    const ajv = new Ajv2020({ allErrors: true, strict: true })
+    // @ts-expect-error -- ajv-formats has the same declaration/runtime mismatch
+    addFormats(ajv)
+    const validate = ajv.compile(contractSchema)
+    expect(validate(contract), ajv.errorsText(validate.errors)).toBe(true)
+    expect(() => ajv.compile(receiptSchema)).not.toThrow()
+    const mutations: Array<(candidate: typeof contract) => void> = [
+      (candidate) => { candidate.inheritance.pointers.pop() },
+      (candidate) => { candidate.provider.system += ' drift' },
+      (candidate) => { candidate.raw_tools.tool_definitions[0]!.description += ' drift' },
+      (candidate) => { candidate.graphify.combined_jcs.initialize.serverInfo.name = 'drift' },
+      (candidate) => { candidate.blinding.pseudonym.format = 'drift' },
+    ]
+    for (const mutate of mutations) {
+      const mutated = structuredClone(contract)
+      mutate(mutated)
+      expect(validate(mutated)).toBe(false)
+    }
+    expect(contract).toMatchObject({
+      contract_id: 'core-reset-capability-validation-v1',
+      governance: {
+        proposal_body_sha256: CAPABILITY_VALIDATION_PROPOSAL_SHA256,
+        target_branch: 'core-reset',
+        forbidden_branch: 'main',
+      },
+      campaign: { blocking_answers: 60, tool_call_budget: 12, timeout_seconds: 300 },
+    })
+    expect(contract.raw_tools.provider_order).toEqual(['read', 'search', 'list', 'shell-read-only'])
+    expect(contract.raw_tools.tool_definitions.map((tool) => tool.name))
+      .toEqual(contract.raw_tools.provider_order)
+    for (const [value, expected] of [
+      [contract.raw_tools.tool_definitions, contract.raw_tools.tool_definitions_jcs_sha256],
+      [contract.raw_tools.result_schema, contract.raw_tools.result_schema_jcs_sha256],
+      [contract.raw_tools.semantics, contract.raw_tools.semantics_jcs_sha256],
+      [contract.raw_tools.path_policy, contract.raw_tools.path_policy_jcs_sha256],
+      [contract.raw_tools.error_messages, contract.raw_tools.error_messages_jcs_sha256],
+    ] as const) {
+      expect(createHash('sha256').update(canonicalJson(value)).digest('hex')).toBe(expected)
+    }
+    const rawToolComponentHashes = {
+      tool_definitions_jcs_sha256: contract.raw_tools.tool_definitions_jcs_sha256,
+      path_policy_jcs_sha256: contract.raw_tools.path_policy_jcs_sha256,
+      result_schema_jcs_sha256: contract.raw_tools.result_schema_jcs_sha256,
+      error_messages_jcs_sha256: contract.raw_tools.error_messages_jcs_sha256,
+      semantics_jcs_sha256: contract.raw_tools.semantics_jcs_sha256,
+    }
+    expect(createHash('sha256').update(canonicalJson(rawToolComponentHashes)).digest('hex'))
+      .toBe(contract.raw_tools.aggregate_hashes_jcs_sha256)
+    for (const definition of ['campaignLock', 'campaignLockPass']) {
+      const lock = receiptSchema.$defs[definition] as {
+        properties: {
+          raw_semantics_sha256: { const: string }
+          raw_tools_aggregate_sha256: { const: string }
+        }
+      }
+      expect(lock.properties.raw_semantics_sha256.const).toBe(contract.raw_tools.semantics_jcs_sha256)
+      expect(lock.properties.raw_tools_aggregate_sha256.const)
+        .toBe(contract.raw_tools.aggregate_hashes_jcs_sha256)
+    }
+    const graphifyJcs = canonicalJson(contract.graphify.combined_jcs)
+    expect(Buffer.byteLength(graphifyJcs)).toBe(contract.graphify.combined_bytes)
+    expect(createHash('sha256').update(graphifyJcs).digest('hex'))
+      .toBe(contract.graphify.combined_sha256)
+    const constraints = `${contract.graphify.resolved_constraints.join('\n')}\n`
+    expect(contract.graphify.resolved_constraints).toHaveLength(59)
+    expect(createHash('sha256').update(constraints).digest('hex'))
+      .toBe(contract.graphify.resolved_constraints_sha256)
+    expect(Object.keys(receiptSchema.$defs)).toEqual(expect.arrayContaining([
+      'blind_bundle',
+      'review_score_payload',
+      'review_attestation',
+      'review_receipt',
+      'adjudication_score_payload',
+      'adjudication_attestation',
+      'adjudication_receipt',
+      'reveal_map',
+    ]))
+    const blindBundle = receiptSchema.$defs.blind_bundle as { properties: Record<string, unknown> }
+    expect([...contract.blinding.blind_bundle_allowed_fields].sort())
+      .toEqual(Object.keys(blindBundle.properties).sort())
+    for (const definition of [
+      'comparisonBlockPass_documenso_0',
+      'comparisonBlockPass_documenso_0_7',
+      'comparisonBlockPass_formbricks_0',
+      'comparisonBlockPass_formbricks_0_7',
+    ]) {
+      const block = receiptSchema.$defs[definition] as {
+        properties: { status: { const: string }; trials: { $ref: string } }
+      }
+      expect(block).toMatchObject({
+        properties: { status: { const: 'complete' }, trials: { $ref: expect.any(String) } },
+      })
+      const trialsDefinition = block.properties.trials.$ref.replace('#/$defs/', '')
+      expect(receiptSchema.$defs[trialsDefinition]).toMatchObject({ minItems: 15, maxItems: 15 })
+    }
+    for (const [definition, samples] of [
+      ['refreshBlockPass_documenso_graphify', 'refreshSamplesGraphifyPass'],
+      ['refreshBlockPass_documenso_madar', 'refreshSamplesMadarPass'],
+      ['refreshBlockPass_formbricks_graphify', 'refreshSamplesGraphifyPass'],
+      ['refreshBlockPass_formbricks_madar', 'refreshSamplesMadarPass'],
+    ] as const) {
+      expect(receiptSchema.$defs[definition]).toMatchObject({
+        properties: { status: { const: 'complete' }, samples: { $ref: `#/$defs/${samples}` } },
+      })
+    }
+    expect(receiptSchema.$defs.trialPassZero_documenso_0_native_agent_native_1).toMatchObject({
+      properties: { status: { enum: ['failed', 'timed_out', 'invalid', 'budget_terminated'] } },
+    })
+    expect(receiptSchema.$defs.trialPassSuccess_documenso_0_native_agent_native_1).toMatchObject({
+      properties: { status: { const: 'success' } },
+    })
+    expect(receiptSchema.$defs.diagnosticPassDisposition).toEqual({
+      oneOf: [
+        { $ref: '#/$defs/diagnosticSuccessPassDisposition' },
+        { $ref: '#/$defs/diagnosticFailurePassDisposition' },
+      ],
+    })
+
+    const nameStatus = execFileSync(git, [
+      'diff', '--no-ext-diff', '--no-renames', '--name-status', CAPABILITY_VALIDATION_BASE, '--',
+    ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean)
+    expect(nameStatus.every((line) => /^(?:A|M)\t/.test(line))).toBe(true)
+    expect(nameStatus.map((line) => line.slice(line.indexOf('\t') + 1)).sort())
+      .toEqual([...CAPABILITY_VALIDATION_ACTIVATION_FILES].sort())
+    const rows = execFileSync(git, [
+      'diff', '--no-ext-diff', '--no-renames', '--numstat', CAPABILITY_VALIDATION_BASE, '--',
+    ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).map((line) => {
+      const [added = '', removed = '', path = ''] = line.split('\t')
+      expect([added, removed]).not.toContain('-')
+      return { added: Number(added), removed: Number(removed), path }
+    })
+    const governance = rows.filter((row) =>
+      (EVALUATION_TOOLING_ACTIVATION_FILES as readonly string[]).includes(row.path))
+    expect(governance.reduce((sum, row) => sum + row.added, 0)).toBeLessThanOrEqual(600)
+    expect(governance.reduce((sum, row) => sum + row.removed, 0)).toBeLessThanOrEqual(250)
+    expect(rows.reduce((sum, row) => sum + row.added, 0)).toBeLessThanOrEqual(2_900)
+    expect(rows.reduce((sum, row) => sum + row.removed, 0)).toBeLessThanOrEqual(250)
+    expect(() => execFileSync(git, [
+      'diff', '--exit-code', CAPABILITY_VALIDATION_BASE, '--',
+      'src', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json',
+      'tsconfig.eval.json', '.github/workflows/ci.yml', 'docs/core-reset/evidence',
+      'tools/eval/core-reset/contracts/evaluation-contract.json',
+      'tools/eval/core-reset/schemas/evaluation-contract.schema.json',
+      'tools/eval/core-reset/contract-validation.mjs',
+    ])).not.toThrow()
   })
 
   it('freezes the completed combined evidence-path implementation contract and receipt', () => {
@@ -3136,17 +3470,17 @@ describe('core reset governance', () => {
     expect(execFileSync(git, ['rev-parse', `${EVIDENCE_BASE}^{tree}`], { encoding: 'utf8' }).trim())
       .toBe(EVIDENCE_BASE_TREE)
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-25',
+      updated_at: '2026-07-26',
       completed_phase: 'evaluation-tooling',
-      active_phase: null,
+      active_phase: 'capability-validation',
       ready_phase: null,
-      base_commit: EVALUATION_TOOLING_BASE,
+      base_commit: CAPABILITY_VALIDATION_BASE,
       completed_phase_commit: EVALUATION_TOOLING_MERGE,
       production_typescript_files: 43,
       production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 4_698,
-      production_loc_net: -4_698,
+      production_loc_removed: 0,
+      production_loc_net: 0,
       npm_files: 102,
       npm_packed_bytes: 159_759,
       npm_unpacked_bytes: 637_602,
@@ -3154,7 +3488,7 @@ describe('core reset governance', () => {
       snapshot_scope: 'exact_implementation_source_and_package',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([])
+      .toEqual(['capability-validation'])
 
     const evidence = manifest.items.find((item) => item.id === 'evidence-path-query')
     expect(evidence).toMatchObject({
@@ -4659,7 +4993,11 @@ describe('core reset governance', () => {
     expect(governance).toContain('## Passed — thin delivery')
     expect(governance).toContain('## Passed — evaluation tooling isolation')
     expect(governance).toContain('## Completed amendment — evaluation tooling isolation')
-    expect(governance).toContain('No technical phase is active')
+    expect(governance).toContain('## In progress — capability validation')
+    expect(governance).toContain('## Accepted amendment — capability validation')
+    expect(governance).toContain('`capability-validation` is the sole active phase')
+    expect(governance).toContain('At that #608 completion checkpoint no technical phase was active')
+    expect(governance).not.toContain('\nNo technical phase is active; Capability Validation')
     expect(governance).not.toContain('## In progress — evaluation tooling isolation')
     expect(governance).not.toContain('`evaluation-tooling` is the sole active phase')
     expect(governance).not.toContain('Evaluation tooling is active under owner-approved #606')

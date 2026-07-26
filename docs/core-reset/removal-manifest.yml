@@ -21,20 +21,20 @@ review:
   unowned_files: 0
   overlapping_files: 0
   disposition_changes: 11
-  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transferred graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activated the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. PR #608 completed the exact move without changing any surviving production TypeScript or dependency. Graph, index, generation, retrieval, CLI, MCP, installer, workspace, held-out, performance, grading, budget, and timeout semantics remain frozen.'
+  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transferred graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activated the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. PR #608 completed the exact move without changing any surviving production TypeScript or dependency. First-stage owner-approved issue #610 authorizes only the eight-path governance activation candidate from protected base e7b3be547bc3f6cfdefdd514f17a1ad229afea03; activation merge still requires exact unchanged-head and three-asset SHA-256 approval, with zero production ownership or disposition change. Graph, index, generation, retrieval, CLI, MCP, installer, workspace, held-out, performance, grading, budget, and timeout semantics remain frozen.'
 
 current:
-  updated_at: 2026-07-25
+  updated_at: 2026-07-26
   completed_phase: evaluation-tooling
-  active_phase: null
+  active_phase: capability-validation
   ready_phase: null
-  base_commit: 317dda89f2ea5c75e7626a26b104ceca1bd04ce5
+  base_commit: e7b3be547bc3f6cfdefdd514f17a1ad229afea03
   completed_phase_commit: 565c42bb1b34b67f7fefc7aabd0513e4e391a13b
   production_typescript_files: 43
   production_typescript_loc: 11956
   production_loc_added: 0
-  production_loc_removed: 4698
-  production_loc_net: -4698
+  production_loc_removed: 0
+  production_loc_net: 0
   npm_files: 102
   npm_packed_bytes: 159759
   npm_unpacked_bytes: 637602
@@ -409,7 +409,7 @@ items:
       independent_reviews_passed: 3
       independent_review_receipt: https://github.com/mohanagy/madar/pull/594#issuecomment-5049404550
       unresolved_review_threads: 0
-    notes: 'Completed by #592 and PR #594 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5 after the recorded stop amendment. The fixed 500-file gate failed at candidate checkpoint 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d / worktree tree 6bd1ae5762afaa868d5cf6ce165b061aa290bfda: warm index p50 ratio 0.824, refresh p50 1.047, and refresh p95 1.029. Held-out timing was intentionally skipped because it could not reverse the mandatory stop. The failed incremental path was deleted. Exact runtime commit 1be24dc45a5f07c352c74fc374feb95a9440df8e ships cold no-op plus one full canonical reconcile for every changed source state, with neither an in-memory nor disk session cache. Its compatible 500-file receipt passes cold no-op at 0.067 of clean generation, zero parse/invalidation/publication, and clean regression at 1.045. build-state.ts is one of the six permitted replacements but remains owned by the completed canonical-typescript-index domain pattern, so no fifth ownership transfer is created. graph.json remains the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. All six exact-head CI jobs passed, three independent P0/P1 audits found no blocker, CodeRabbit explicitly skipped review for the non-default base under the owner-approved exception, and zero review threads remained. Evidence-path query later completed through PR #600, Thin Delivery through #602 and PR #604, and Evaluation Tooling Isolation through #606 and PR #608. Capability Validation remains blocked and unapproved.'
+    notes: 'Completed by #592 and PR #594 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5 after the recorded stop amendment. The fixed 500-file gate failed at candidate checkpoint 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d / worktree tree 6bd1ae5762afaa868d5cf6ce165b061aa290bfda: warm index p50 ratio 0.824, refresh p50 1.047, and refresh p95 1.029. Held-out timing was intentionally skipped because it could not reverse the mandatory stop. The failed incremental path was deleted. Exact runtime commit 1be24dc45a5f07c352c74fc374feb95a9440df8e ships cold no-op plus one full canonical reconcile for every changed source state, with neither an in-memory nor disk session cache. Its compatible 500-file receipt passes cold no-op at 0.067 of clean generation, zero parse/invalidation/publication, and clean regression at 1.045. build-state.ts is one of the six permitted replacements but remains owned by the completed canonical-typescript-index domain pattern, so no fifth ownership transfer is created. graph.json remains the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. All six exact-head CI jobs passed, three independent P0/P1 audits found no blocker, CodeRabbit explicitly skipped review for the non-default base under the owner-approved exception, and zero review threads remained. Evidence-path query later completed through PR #600, Thin Delivery through #602 and PR #604, and Evaluation Tooling Isolation through #606 and PR #608. At that #608 completion checkpoint Capability Validation remained blocked and unapproved; the separately owner-approved #610 activation item below supersedes that status.'
     remove_when: Add, change, delete, rename, compiler-control, ignore-policy, recognized-unsupported-file, symlink, and linked-worktree updates equal clean generation through the one full-reconcile path; supported-JS/TS completeness, cold no-op, graph-last failure/concurrency, source/package, CI, and review gates pass; all 15 predecessors and the failed incremental path remain absent.
     exit_gate: One source catalog publishes a clean-equivalent graph.json through cold no-op or full canonical reconciliation, with zero stale facts, no mixed authoritative generation, no predecessor path, and no in-memory or disk session cache.
 
@@ -936,7 +936,7 @@ items:
       independent_reviews_passed: 1
       independent_review_receipt: https://github.com/mohanagy/madar/pull/600#issuecomment-5074482136
       unresolved_review_threads: 0
-    notes: 'Completed by #596 and absorbed prerequisite #599 through PR #600. Exact runtime 29aba7ebffe14d6a70bde78df1490bf4cded64a4 deletes the 63 contracted predecessors plus supplemental src/runtime/stdio/prompts.ts, for 64 actual production-file deletions, and adds exactly seven replacements containing 1,812 logical LOC. Held-out-v2 passes both blocking repositories with full phase coverage and precision, zero unrelated files, and every required handoff; OpenStatus remains an honest failing non-blocking diagnostic. Loaded-graph p95 is 279.28 ms against the strict <500 ms gate. The phase finishes at 73 production files / 21,687 LOC, +3,500 production LOC in total / -48,231 / net -44,731, zero runtime/development dependency additions, one removed optional peer declaration, and 162 npm files / 984,434 unpacked bytes. Final PR head a0ef9003b9bb71a8defb3463ee131e677b32fecc passed all six CI jobs and independent exact-head review with zero review threads; CodeRabbit skipped the non-default base under the owner-approved exception and is not represented as having reviewed. This proves the narrow query only: Thin Delivery later completed through #602 and PR #604, and Evaluation Tooling Isolation through #606 and PR #608. Capability Validation, natural-agent, external-validation, and release gates remain blocked.'
+    notes: 'Completed by #596 and absorbed prerequisite #599 through PR #600. Exact runtime 29aba7ebffe14d6a70bde78df1490bf4cded64a4 deletes the 63 contracted predecessors plus supplemental src/runtime/stdio/prompts.ts, for 64 actual production-file deletions, and adds exactly seven replacements containing 1,812 logical LOC. Held-out-v2 passes both blocking repositories with full phase coverage and precision, zero unrelated files, and every required handoff; OpenStatus remains an honest failing non-blocking diagnostic. Loaded-graph p95 is 279.28 ms against the strict <500 ms gate. The phase finishes at 73 production files / 21,687 LOC, +3,500 production LOC in total / -48,231 / net -44,731, zero runtime/development dependency additions, one removed optional peer declaration, and 162 npm files / 984,434 unpacked bytes. Final PR head a0ef9003b9bb71a8defb3463ee131e677b32fecc passed all six CI jobs and independent exact-head review with zero review threads; CodeRabbit skipped the non-default base under the owner-approved exception and is not represented as having reviewed. This proves the narrow query only: Thin Delivery later completed through #602 and PR #604, and Evaluation Tooling Isolation through #606 and PR #608. At that #608 completion checkpoint Capability Validation, natural-agent, external-validation, and release gates remained blocked; the separately owner-approved #610 activation item below supersedes only the Capability Validation status.'
     remove_when: The deterministic query and held-out one-call gates pass; the fixed loaded-graph performance receipt passes; all 63 predecessors, the approved stdio/prompts.ts supplemental cleanup, obsolete tests/docs/flags/exports, and optional semantic peer metadata are absent; all surviving callers use retrieve-context without a compatibility engine; and the accepted source, package, dependency, CI, review, and zero-thread gates pass.
     exit_gate: One deterministic generic TypeScript/JavaScript evidence query returns graph-backed causal evidence with exact graph-authenticated source excerpts, or stable missing/unsupported/stale/unavailable/corrupt boundaries with no unauthenticated snippet, within the accepted caps and without repository-specific rules, hidden fallback, predecessor path, or global confidence/governance stack.
 
@@ -1366,7 +1366,7 @@ items:
       grounded_match_rate: report_only
     capability_validation:
       blinded_runner_exists: false
-      status: blocked
+      status: separately_activated_under_610
       runner_design_in_scope: false
       graphify_integration_in_scope: false
       historical_no_html_restoration: forbidden
@@ -1473,8 +1473,112 @@ items:
       merge_gate_receipt: https://github.com/mohanagy/madar/pull/608#issuecomment-5078992331
       issue_merge_receipt: https://github.com/mohanagy/madar/issues/606#issuecomment-5078995452
       rfc_merge_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5078995591
-    notes: 'Completed by #606 and PR #608 from governance merge 452ad84890c012392c5e6af613e8bfeb17de45db. Exact reviewed head c0496413518382ca6dff74fa5c81ab72b9edd57c and tree 225f446ee88ecc74a3226bd17c362458c2312528 move exactly 20 production TypeScript files / 4,698 LOC into tools/eval/lib/**, delete every old src location, add no production file or LOC, change no surviving production TypeScript, and change no dependency. The final production boundary is 43 files / 11,956 LOC with +0 / -4,698 / net -4,698. One tsconfig.eval.json plus one build:eval script emits only development output under dist-eval/**, outside dist, prepack, and npm. The package is 102 files / 159,759 packed bytes / 637,602 unpacked bytes, within every fixed ceiling. Historical Core Reset evaluation contracts and receipts remain byte-identical. All six exact-head CI jobs passed, three independent audits found no blocker, CodeRabbit explicitly skipped the required non-default core-reset base and is not represented as having reviewed, and zero review threads remained. PR #608 merged as 565c42bb1b34b67f7fefc7aabd0513e4e391a13b with the exact reviewed tree and sole parent 452ad84890c012392c5e6af613e8bfeb17de45db. Capability Validation remains blocked and unapproved because no valid blinded Native-vs-Graphify-vs-Madar runner exists; no semantic, public-surface, budget, timeout, publication, release, Registry, or main-branch work is authorized.'
+    notes: 'Completed by #606 and PR #608 from governance merge 452ad84890c012392c5e6af613e8bfeb17de45db. Exact reviewed head c0496413518382ca6dff74fa5c81ab72b9edd57c and tree 225f446ee88ecc74a3226bd17c362458c2312528 move exactly 20 production TypeScript files / 4,698 LOC into tools/eval/lib/**, delete every old src location, add no production file or LOC, change no surviving production TypeScript, and change no dependency. The final production boundary is 43 files / 11,956 LOC with +0 / -4,698 / net -4,698. One tsconfig.eval.json plus one build:eval script emits only development output under dist-eval/**, outside dist, prepack, and npm. The package is 102 files / 159,759 packed bytes / 637,602 unpacked bytes, within every fixed ceiling. Historical Core Reset evaluation contracts and receipts remain byte-identical. All six exact-head CI jobs passed, three independent audits found no blocker, CodeRabbit explicitly skipped the required non-default core-reset base and is not represented as having reviewed, and zero review threads remained. PR #608 merged as 565c42bb1b34b67f7fefc7aabd0513e4e391a13b with the exact reviewed tree and sole parent 452ad84890c012392c5e6af613e8bfeb17de45db. At that #608 completion checkpoint Capability Validation remained blocked and unapproved because no valid blinded Native-vs-Graphify-vs-Madar runner existed; the separately owner-approved #610 activation item below supersedes that status without authorizing semantic, public-surface, budget, timeout, publication, release, Registry, or main-branch work.'
     exit_gate: Evaluation remains runnable but is excluded from dist, npm, and production imports.
+
+  - id: capability-validation
+    disposition: keep
+    status: in_progress
+    destination: development-only blinded Native-vs-Graphify-vs-Madar capability evidence
+    production_file_budget:
+      added_max: 0
+      removed_exact: 0
+    production_loc_budget:
+      added_max: 0
+      removed_exact: 0
+      net_exact: 0
+    anchor:
+      commit: e7b3be547bc3f6cfdefdd514f17a1ad229afea03
+      tree: 0fb5664ab85ecb04275f6277ee65270b948f8ab3
+      src_tree: 1a37e3a58ee7b2a75ca034112506590f699b3918
+      tools_eval_tree: 983df4a5462ae8e5f57cf549bcc23c06c328b596
+      production_typescript_files: 43
+      production_typescript_loc: 11956
+      npm_files: 102
+      npm_packed_bytes: 159759
+      npm_unpacked_bytes: 637602
+    governance_assets:
+      proposal_body_sha256: 27c04eca61e8c3ae65e2a9eab5c0b7e269313be933cef785b94e9bdca7292ba5
+      aggregate_physical_lines_max: 2300
+      contract:
+        path: tools/eval/core-reset/contracts/capability-validation-v1.json
+        sha256: ae03a6b2cc8675ca66ad0ff67f06e13389cf04e6a6a8167c3404f1c8657f36f5
+      contract_schema:
+        path: tools/eval/core-reset/schemas/capability-validation-contract.schema.json
+        sha256: 6d8679e335730180bee0c9fc62f144ae2086ea16dade800887a0301da27f23b6
+      receipt_schema:
+        path: tools/eval/core-reset/schemas/capability-validation-receipt.schema.json
+        sha256: a33a6b3532a3e0df62bcd0f3616a9585b2be4ede1f360cf3d55f70c99c29f30e
+      exact_head_and_asset_owner_approval: required_before_activation_merge
+    frozen_contract:
+      v2_blob: a6d1539cb99e8fd58ca20f868bf4d720812de4a5
+      v2_sha256: c22819a9e24e53f7b11a69c06511a8dc0c2cba8841868d8d9bb734575290bba9
+      v2_schema_sha256: 581acc2332cbe9015e0bd1c7da4db84e9c3d5c73cedcb21fd7427a67bf56e615
+      v2_validator_sha256: d7402f8caaf838d0695060d375c1504e4a173786281730010c7a7eb5449608a0
+      package_json_sha256: d464fd8e59b3d4d3f817ebdd6457fb3cfb02d9f3fad4fc8648f29c03a8a56b33
+      package_lock_sha256: b9d179f0ee70e14d85653c5013cf2513efb22127b10fc3ee1deb5fa698993a61
+      tsconfig_eval_sha256: b2eb8dea28aab40a794bda38f11100dcc98e8c2987b3d8fdefc62263ebe7ae17
+      ci_workflow_sha256: 4dde28b814127bceabe8e076c2f5afc286153d9f8b655cf5e8a1681f754ac2f8
+      production_and_historical_semantics: byte_identical
+    provider_contract:
+      provider: anthropic_first_party_messages
+      endpoint: https://api.anthropic.com/v1/messages
+      api_version: 2023-06-01
+      model: claude-sonnet-4-6
+      temperatures:
+        - 0
+        - 0.7
+      thinking: disabled
+      max_tokens: 4096
+      service_tier: standard_only
+      inference_geography: global
+      streaming: false
+      caching: forbidden
+      retry: forbidden
+    campaign_budget:
+      blocking_paid_answer_trials_exact: 60
+      separate_madar_diagnostic_exact: 1
+      trials_per_cell: 3
+      tool_calls_per_trial_max: 12
+      create_requests_per_trial_max: 13
+      trial_timeout_seconds: 300
+      provider_input_tokens_max: 20000000
+      provider_output_tokens_max: 2000000
+      runner_usd_max: 90
+      provider_enforced_usd_max: 100
+      provider_request_before_campaign_lock: forbidden
+      retry_replace_drop_or_regrade: forbidden
+    implementation_budget:
+      touched_paths_max: 29
+      added_physical_lines_max: 12200
+      removed_physical_lines_max: 200
+      activation_plus_implementation_added_max: 15100
+      activation_plus_implementation_removed_max: 450
+      production_files_or_loc_changed: 0
+      dependencies_changed: 0
+      compatibility_aliases: forbidden
+      generated_files_committed: forbidden
+      ci_change: exact_offline_self_test_step_only
+    review_contract:
+      ci_matrix_jobs: 6
+      independent_exact_head_review: required
+      coderabbit_actual_disposition_must_be_honest: true
+      unresolved_review_threads: 0
+      two_independent_natural_person_reviews: required_before_reveal
+      third_eligible_adjudicator_for_disagreement: required
+      one_fixed_campaign_without_rerun: required
+    activation:
+      issue: https://github.com/mohanagy/madar/issues/610
+      proposal_receipt: https://github.com/mohanagy/madar/issues/610#issuecomment-5080113972
+      rfc_proposal_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5080113127
+      owner_approval: https://github.com/mohanagy/madar/issues/610#issuecomment-5081132612
+      rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5081133199
+      protected_base: e7b3be547bc3f6cfdefdd514f17a1ad229afea03
+      target_branch: core-reset
+      second_owner_hash_approval: required_before_activation_merge
+      implementation_start_commit: exact_activation_merge_only
+    notes: 'Owner-approved issue #610 activates the governance-bound Capability Validation successor without changing production source, package, dependencies, CI, executable evaluation tooling, or historical evidence. The activation assets narrow frozen held-out v2 into one exact three-arm direct Anthropic campaign and strict receipt/review lifecycle. Activation merge still requires the second exact-head and three-asset-hash owner approval. Implementation, Count Tokens, paid execution, receipt evidence, external validation, publication, release, Registry metadata, tags, and main remain separately gated.'
+    exit_gate: The one fixed campaign and sealed independent review produce a schema-valid receipt proving or honestly failing every frozen machine, human, cost, isolation, schedule, and comparator gate without semantic or budget drift.
 
   - id: non-core-graph-products
     disposition: delete
