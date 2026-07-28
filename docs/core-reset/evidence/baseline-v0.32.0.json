@@ -1,0 +1,865 @@
+{
+  "schema_version": 1,
+  "receipt_id": "madar-v0.32.0-core-reset-baseline",
+  "generated_at": "2026-07-19T23:11:54.899Z",
+  "share_safe": true,
+  "contract_id": "core-reset-held-out-v1",
+  "contract_sha256": "20c7f4f03a1a35182b4148a71e4293b3ef932d73be61d8d85db1f81e8fb795fc",
+  "baseline_target": {
+    "package": "@lubab/madar",
+    "version": "0.32.0",
+    "commit": "33951d6cb57f6f4c33c8a8610fd61dcc94443f1f",
+    "checkout_commit": "250a637e03b736ab0146c9f87c102e90bca2af2e",
+    "source_tree_matches_baseline": true,
+    "worktree_dirty": false,
+    "commands": [
+      [
+        "npm",
+        "ci"
+      ],
+      [
+        "npm",
+        "run",
+        "build"
+      ],
+      [
+        "node",
+        "tools/eval/core-reset/record-baseline.mjs",
+        "--output",
+        "./baseline.local.json",
+        "--retrieval-repository",
+        "<openstatus-checkout>"
+      ],
+      [
+        "npx",
+        "vitest",
+        "run",
+        "tests/unit/core-reset-baseline.test.ts"
+      ]
+    ]
+  },
+  "environment": {
+    "platform": "darwin",
+    "release": "25.3.0",
+    "architecture": "arm64",
+    "node": "v22.9.0",
+    "npm": "11.12.1",
+    "git": "git version 2.50.1 (Apple Git-155)",
+    "cpu_count": 16,
+    "controlled_environment": {
+      "policy": "core-reset-controlled-v1",
+      "locale": "C",
+      "timezone": "UTC",
+      "npm_registry": "https://registry.npmjs.org/",
+      "node_options": "cleared",
+      "node_path": "cleared",
+      "madar_variables": "cleared_except_explicit_probe_flags",
+      "git_configuration": "system_and_global_disabled; checkout_core.autocrlf=false; checkout_core.eol=lf"
+    }
+  },
+  "production_source": {
+    "files": 181,
+    "loc": 96766,
+    "expected_files": 181,
+    "expected_loc": 96766,
+    "matches_expected": true,
+    "filesystem_violations": [],
+    "production_loc_delta": {
+      "added": 0,
+      "removed": 0,
+      "net": 0
+    }
+  },
+  "package": {
+    "status": "measured",
+    "artifact_filename": "lubab-madar-0.32.0.tgz",
+    "artifact_sha256": "2b7d32f9f6d149f6c9dc0da93002cd1e844dd1b8f2b5d2c9fb1ad4133a2ea307",
+    "install_command": [
+      "npm",
+      "install",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "../lubab-madar-0.32.0.tgz"
+    ],
+    "install_elapsed_ms": 3457.71,
+    "resolved_dependency_count": 16,
+    "resolved_dependency_lock_sha256": "bd269788d4bf9bbbed1397c3f141b9b4a69bc4143be995882072274416ffc676",
+    "resolved_dependency_lock": {
+      "name": "install",
+      "lockfileVersion": 3,
+      "requires": true,
+      "packages": {
+        "": {
+          "dependencies": {
+            "@lubab/madar": "file:../lubab-madar-0.32.0.tgz"
+          }
+        },
+        "node_modules/@lubab/madar": {
+          "version": "0.32.0",
+          "resolved": "file:../lubab-madar-0.32.0.tgz",
+          "integrity": "sha512-6jTiO8Gfr95zEhwQw5AyIwpzWsh/P4Zoc3ljm5v20QNUbCI6t0zQSJLjMpgQV5TyIoC1Px9Lip0cs07augGfuQ==",
+          "license": "MIT",
+          "dependencies": {
+            "@vscode/tree-sitter-wasm": "^0.3.1",
+            "fflate": "^0.8.2",
+            "gpt-tokenizer": "^3.4.0",
+            "neo4j-driver": "^6.0.1",
+            "typescript": "^6.0.3",
+            "web-tree-sitter": "^0.26.8"
+          },
+          "bin": {
+            "madar": "dist/src/cli/bin.js"
+          },
+          "engines": {
+            "node": ">=20"
+          },
+          "peerDependencies": {
+            "@huggingface/transformers": "^4.2.0"
+          },
+          "peerDependenciesMeta": {
+            "@huggingface/transformers": {
+              "optional": true
+            }
+          }
+        },
+        "node_modules/@vscode/tree-sitter-wasm": {
+          "version": "0.3.1",
+          "resolved": "https://registry.npmjs.org/@vscode/tree-sitter-wasm/-/tree-sitter-wasm-0.3.1.tgz",
+          "integrity": "sha512-RJFoomET6FajjG511fmQxeBQfU6M24a0aFZPqpid+ttIxanWf1VGytBG0UmsGjt07qmIPJS8U31D+aecuCucsQ==",
+          "license": "MIT"
+        },
+        "node_modules/base64-js": {
+          "version": "1.5.1",
+          "resolved": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz",
+          "integrity": "sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==",
+          "funding": [
+            {
+              "type": "github",
+              "url": "https://github.com/sponsors/feross"
+            },
+            {
+              "type": "patreon",
+              "url": "https://www.patreon.com/feross"
+            },
+            {
+              "type": "consulting",
+              "url": "https://feross.org/support"
+            }
+          ],
+          "license": "MIT"
+        },
+        "node_modules/buffer": {
+          "version": "6.0.3",
+          "resolved": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz",
+          "integrity": "sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==",
+          "funding": [
+            {
+              "type": "github",
+              "url": "https://github.com/sponsors/feross"
+            },
+            {
+              "type": "patreon",
+              "url": "https://www.patreon.com/feross"
+            },
+            {
+              "type": "consulting",
+              "url": "https://feross.org/support"
+            }
+          ],
+          "license": "MIT",
+          "dependencies": {
+            "base64-js": "^1.3.1",
+            "ieee754": "^1.2.1"
+          }
+        },
+        "node_modules/fflate": {
+          "version": "0.8.3",
+          "resolved": "https://registry.npmjs.org/fflate/-/fflate-0.8.3.tgz",
+          "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==",
+          "license": "MIT"
+        },
+        "node_modules/gpt-tokenizer": {
+          "version": "3.4.0",
+          "resolved": "https://registry.npmjs.org/gpt-tokenizer/-/gpt-tokenizer-3.4.0.tgz",
+          "integrity": "sha512-wxFLnhIXTDjYebd9A9pGl3e31ZpSypbpIJSOswbgop5jLte/AsZVDvjlbEuVFlsqZixVKqbcoNmRlFDf6pz/UQ==",
+          "license": "MIT"
+        },
+        "node_modules/ieee754": {
+          "version": "1.2.1",
+          "resolved": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz",
+          "integrity": "sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==",
+          "funding": [
+            {
+              "type": "github",
+              "url": "https://github.com/sponsors/feross"
+            },
+            {
+              "type": "patreon",
+              "url": "https://www.patreon.com/feross"
+            },
+            {
+              "type": "consulting",
+              "url": "https://feross.org/support"
+            }
+          ],
+          "license": "BSD-3-Clause"
+        },
+        "node_modules/neo4j-driver": {
+          "version": "6.2.0",
+          "resolved": "https://registry.npmjs.org/neo4j-driver/-/neo4j-driver-6.2.0.tgz",
+          "integrity": "sha512-9W/Tk7EyjZHtv87NFpqoIbl0mlQx8bX8phUFzAM9xmeJrRpGDvqkpdQzc11DjwzywQCdhifaZPSvokSnAp7YTg==",
+          "license": "Apache-2.0",
+          "dependencies": {
+            "neo4j-driver-bolt-connection": "6.2.0",
+            "neo4j-driver-core": "6.2.0",
+            "rxjs": "^7.8.2"
+          },
+          "engines": {
+            "node": ">=18.0.0"
+          }
+        },
+        "node_modules/neo4j-driver-bolt-connection": {
+          "version": "6.2.0",
+          "resolved": "https://registry.npmjs.org/neo4j-driver-bolt-connection/-/neo4j-driver-bolt-connection-6.2.0.tgz",
+          "integrity": "sha512-SEnFSBfumleDxmDAZKkjXxZ5LgL2iZSTx08sO+qXX45ZKaxZJOcg9oxwoXACXZ1RbIq3XbDfHU8I5tExanYEOA==",
+          "license": "Apache-2.0",
+          "dependencies": {
+            "buffer": "^6.0.3",
+            "neo4j-driver-core": "6.2.0",
+            "string_decoder": "^1.3.0"
+          }
+        },
+        "node_modules/neo4j-driver-core": {
+          "version": "6.2.0",
+          "resolved": "https://registry.npmjs.org/neo4j-driver-core/-/neo4j-driver-core-6.2.0.tgz",
+          "integrity": "sha512-U8PSdvDECWmCgSWyhqNNVzMONXFHWPcTd5gqi12+EDxxt0aETA0m+XCXf9H7q6qQXdisc40rUJEOcVQOu6peEA==",
+          "license": "Apache-2.0"
+        },
+        "node_modules/rxjs": {
+          "version": "7.8.2",
+          "resolved": "https://registry.npmjs.org/rxjs/-/rxjs-7.8.2.tgz",
+          "integrity": "sha512-dhKf903U/PQZY6boNNtAGdWbG85WAbjT/1xYoZIC7FAY0yWapOBQVsVrDl58W86//e1VpMNBtRV4MaXfdMySFA==",
+          "license": "Apache-2.0",
+          "dependencies": {
+            "tslib": "^2.1.0"
+          }
+        },
+        "node_modules/safe-buffer": {
+          "version": "5.2.1",
+          "resolved": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.2.1.tgz",
+          "integrity": "sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==",
+          "funding": [
+            {
+              "type": "github",
+              "url": "https://github.com/sponsors/feross"
+            },
+            {
+              "type": "patreon",
+              "url": "https://www.patreon.com/feross"
+            },
+            {
+              "type": "consulting",
+              "url": "https://feross.org/support"
+            }
+          ],
+          "license": "MIT"
+        },
+        "node_modules/string_decoder": {
+          "version": "1.3.0",
+          "resolved": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.3.0.tgz",
+          "integrity": "sha512-hkRX8U1WjJFd8LsDJ2yQ/wWWxaopEsABU1XfkM8A+j0+85JAGppt16cr1Whg6KIbb4okU6Mql6BOj+uup/wKeA==",
+          "license": "MIT",
+          "dependencies": {
+            "safe-buffer": "~5.2.0"
+          }
+        },
+        "node_modules/tslib": {
+          "version": "2.8.1",
+          "resolved": "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz",
+          "integrity": "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==",
+          "license": "0BSD"
+        },
+        "node_modules/typescript": {
+          "version": "6.0.3",
+          "resolved": "https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz",
+          "integrity": "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==",
+          "license": "Apache-2.0",
+          "bin": {
+            "tsc": "bin/tsc",
+            "tsserver": "bin/tsserver"
+          },
+          "engines": {
+            "node": ">=14.17"
+          }
+        },
+        "node_modules/web-tree-sitter": {
+          "version": "0.26.11",
+          "resolved": "https://registry.npmjs.org/web-tree-sitter/-/web-tree-sitter-0.26.11.tgz",
+          "integrity": "sha512-Q5Dm3YTIXSXuH6FxX6RuzX2Qwpc4DPGiYMU87Wg5Z8OIStiQFiUex4zMDc0vBTw78EphaYJacncJghCHzbZptg==",
+          "license": "MIT"
+        }
+      }
+    },
+    "file_count": 398,
+    "packed_bytes": 781502,
+    "unpacked_bytes": 3777995,
+    "targets": {
+      "file_count_max": 150,
+      "unpacked_bytes_max": 1500000
+    },
+    "target_passed": false,
+    "forbidden_paths": [],
+    "forbidden_metadata": []
+  },
+  "cli_startup": {
+    "status": "measured",
+    "subject_command": [
+      "node",
+      "<packed-install>/dist/src/cli/bin.js",
+      "--version"
+    ],
+    "measurement_command": [
+      "node",
+      "--require",
+      "<rss-probe.cjs>",
+      "<packed-install>/dist/src/cli/bin.js",
+      "--version"
+    ],
+    "instrumentation_caveat": "A Node preload records process.resourceUsage().maxRSS at exit; reported elapsed time and RSS include the preload's own overhead.",
+    "cold_process_samples": [
+      {
+        "elapsed_ms": 315.601,
+        "peak_rss_bytes": 209076224
+      },
+      {
+        "elapsed_ms": 318.316,
+        "peak_rss_bytes": 220151808
+      },
+      {
+        "elapsed_ms": 311.212,
+        "peak_rss_bytes": 209518592
+      }
+    ],
+    "median_elapsed_ms": 315.601,
+    "max_peak_rss_bytes": 220151808,
+    "targets": {
+      "elapsed_ms_max": 100,
+      "peak_rss_bytes_max": 83886080
+    },
+    "target_passed": false,
+    "cache_caveat": "Every sample is a fresh process; filesystem and operating-system page caches are not flushed."
+  },
+  "mcp_startup": {
+    "status": "measured",
+    "profile": "core",
+    "command": [
+      "node",
+      "<packed-install>/dist/src/cli/bin.js",
+      "serve",
+      "<graph.json>",
+      "--stdio"
+    ],
+    "cold_process_samples": [
+      {
+        "initialize_ms": 311.725,
+        "tools_list_ms": 313.14,
+        "tool_count": 7,
+        "public_tools": [
+          "call_chain",
+          "community_overview",
+          "graph_stats",
+          "graph_summary",
+          "impact",
+          "pr_impact",
+          "retrieve"
+        ]
+      },
+      {
+        "initialize_ms": 304.65,
+        "tools_list_ms": 306.02,
+        "tool_count": 7,
+        "public_tools": [
+          "call_chain",
+          "community_overview",
+          "graph_stats",
+          "graph_summary",
+          "impact",
+          "pr_impact",
+          "retrieve"
+        ]
+      },
+      {
+        "initialize_ms": 306.822,
+        "tools_list_ms": 308.235,
+        "tool_count": 7,
+        "public_tools": [
+          "call_chain",
+          "community_overview",
+          "graph_stats",
+          "graph_summary",
+          "impact",
+          "pr_impact",
+          "retrieve"
+        ]
+      }
+    ],
+    "median_initialize_ms": 306.822,
+    "median_tools_list_ms": 308.235,
+    "public_tool_count": 7,
+    "public_tools": [
+      "call_chain",
+      "community_overview",
+      "graph_stats",
+      "graph_summary",
+      "impact",
+      "pr_impact",
+      "retrieve"
+    ],
+    "target_tools_list_ms": 1000,
+    "target_tool_count_max": 5,
+    "latency_target_passed": true,
+    "tool_count_target_passed": false,
+    "target_passed": false
+  },
+  "graph_contract": {
+    "status": "measured",
+    "command": [
+      "node",
+      "tools/eval/core-reset/record-baseline.mjs",
+      "<graph-contract-probe>"
+    ],
+    "directed": true,
+    "loaded_directed": true,
+    "node_ids_present": true,
+    "edge_ids_present": false,
+    "parallel_edge_kinds_input": [
+      "calls",
+      "imports_from"
+    ],
+    "parallel_edge_kinds_output": [
+      "imports_from"
+    ],
+    "parallel_edges_preserved": false,
+    "opposite_directions_preserved": true,
+    "provenance_preserved_after_round_trip": true,
+    "serialization_round_trip_preserved": false,
+    "serialized_node_ids": [
+      "source",
+      "target"
+    ],
+    "loaded_node_ids": [
+      "source",
+      "target"
+    ],
+    "serialized_node_count": 2,
+    "serialized_node_id_count": 2,
+    "serialized_edge_id_count": 0,
+    "serialized_edge_tuples": [
+      "source -> target [imports_from]",
+      "target -> source [returns_to]"
+    ],
+    "loaded_edge_tuples": [
+      "source -> target [imports_from]",
+      "target -> source [returns_to]"
+    ],
+    "serialized_contract_sha256": "2755c4d836b9652158c790a699456d70b1a4796f64696a6a6af229fd05eca485",
+    "loaded_contract_sha256": "c8bd029bb723f6c8c7714054d77486ee2c5dd45842ebbe931f6f0c4afb623cb2",
+    "serialized_provenance_sha256": "d1703625c9a103deb64ef59074d19a1c9fe85bdae0d4555eb8e418bf66bd6202",
+    "loaded_provenance_sha256": "d1703625c9a103deb64ef59074d19a1c9fe85bdae0d4555eb8e418bf66bd6202",
+    "serialized_provenance_entry_count": 4,
+    "loaded_provenance_entry_count": 4,
+    "observed_edge_count": 2,
+    "expected_multigraph_edge_count": 3
+  },
+  "default_extraction": {
+    "status": "measured",
+    "command": [
+      "node",
+      "<packed-install>/dist/src/cli/bin.js",
+      "generate",
+      "<fixture>",
+      "--no-html"
+    ],
+    "requested_extraction_mode": "auto",
+    "extraction_strategy_buckets": {
+      "spi": 8
+    },
+    "capability_buckets": {
+      "spi:javascript": 1,
+      "spi:jsx": 1,
+      "spi:tsx": 1,
+      "spi:typescript": 5
+    },
+    "auto_summary": "SPI routed 8 supported source file(s); legacy semantic augmentation routed 8 supported source file(s); legacy fallback routed 0 SPI-unsupported source file(s).",
+    "supported_fixture_extensions": [
+      ".js",
+      ".jsx",
+      ".ts",
+      ".tsx"
+    ],
+    "fixture_symbol_evidence": [
+      {
+        "extension": ".js",
+        "source_file": "src/route.js",
+        "expected_symbol": "postOrder",
+        "indexed": true,
+        "matched_node_ids": [
+          "route_postorder"
+        ]
+      },
+      {
+        "extension": ".jsx",
+        "source_file": "src/badge.jsx",
+        "expected_symbol": "OrderBadge",
+        "indexed": true,
+        "matched_node_ids": [
+          "badge_orderbadge"
+        ]
+      },
+      {
+        "extension": ".ts",
+        "source_file": "src/repository.ts",
+        "expected_symbol": "saveOrder",
+        "indexed": true,
+        "matched_node_ids": [
+          "repository_saveorder"
+        ]
+      },
+      {
+        "extension": ".tsx",
+        "source_file": "src/view.tsx",
+        "expected_symbol": "OrderView",
+        "indexed": true,
+        "matched_node_ids": [
+          "view_orderview"
+        ]
+      }
+    ],
+    "generated_graph_directed": true,
+    "loaded_graph_directed": true,
+    "generated_graph_direction_preserved": true,
+    "canonicalization_excluded_fields": [
+      "generated_at",
+      "graph_build_freshness",
+      "root_path"
+    ],
+    "first_node_count": 17,
+    "first_valid_node_id_count": 17,
+    "first_unique_node_id_count": 17,
+    "second_node_count": 17,
+    "second_valid_node_id_count": 17,
+    "second_unique_node_id_count": 17,
+    "generated_node_ids_present_and_unique": true,
+    "first_node_ids_sha256": "41604de14365af14b86f0d9cb9cab4e91f783d67579ff868385c0228fa5d9d0d",
+    "second_node_ids_sha256": "41604de14365af14b86f0d9cb9cab4e91f783d67579ff868385c0228fa5d9d0d",
+    "first_node_identity_id_bindings_sha256": "5f128a13f212700b84b0bf03220769499c842bfe63ee2e11f83c7784e4a6758d",
+    "second_node_identity_id_bindings_sha256": "5f128a13f212700b84b0bf03220769499c842bfe63ee2e11f83c7784e4a6758d",
+    "first_edge_count": 21,
+    "first_valid_edge_id_count": 0,
+    "first_unique_edge_id_count": 0,
+    "second_edge_count": 21,
+    "second_valid_edge_id_count": 0,
+    "second_unique_edge_id_count": 0,
+    "generated_edge_ids_present_and_unique": false,
+    "first_edge_ids_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "second_edge_ids_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "first_edge_identity_id_bindings_sha256": "cdb1a737002c0a19de6186aefcd86e0765f05e5ffc3664d4632ce3f941b4c5ad",
+    "second_edge_identity_id_bindings_sha256": "cdb1a737002c0a19de6186aefcd86e0765f05e5ffc3664d4632ce3f941b4c5ad",
+    "first_graph_sha256": "ec7433d5e0fd262bd16fa2a76595e0250dcf68f12f380ffb49b1fc4c43493c1b",
+    "second_graph_sha256": "ec7433d5e0fd262bd16fa2a76595e0250dcf68f12f380ffb49b1fc4c43493c1b",
+    "stable_node_ids_across_clean_rebuilds": true,
+    "stable_edge_ids_across_clean_rebuilds": false,
+    "stable_serialized_graph_across_clean_rebuilds": true
+  },
+  "incremental_equivalence": {
+    "status": "measured",
+    "command": [
+      "node",
+      "<packed-install>/dist/src/cli/bin.js",
+      "generate",
+      "<fixture>",
+      "--update",
+      "--no-html"
+    ],
+    "canonicalization_excluded_fields": [
+      "generated_at",
+      "graph_build_freshness",
+      "root_path"
+    ],
+    "scenarios": [
+      {
+        "operation": "add",
+        "equal_to_clean_generation": true,
+        "incremental_nodes": 19,
+        "clean_nodes": 19,
+        "incremental_edges": 25,
+        "clean_edges": 25,
+        "incremental_graph_sha256": "595fee100dc2b7954cd4897dcbf62326229a74b45722eefffb6dc84632a03071",
+        "clean_graph_sha256": "595fee100dc2b7954cd4897dcbf62326229a74b45722eefffb6dc84632a03071",
+        "update_elapsed_ms": 955.468,
+        "clean_elapsed_ms": 1185.674
+      },
+      {
+        "operation": "change",
+        "equal_to_clean_generation": true,
+        "incremental_nodes": 17,
+        "clean_nodes": 17,
+        "incremental_edges": 21,
+        "clean_edges": 21,
+        "incremental_graph_sha256": "3c0e700174be9aac6245a43dab01c05112300c0378680cdd7e989c89b0711ca4",
+        "clean_graph_sha256": "3c0e700174be9aac6245a43dab01c05112300c0378680cdd7e989c89b0711ca4",
+        "update_elapsed_ms": 924.2,
+        "clean_elapsed_ms": 1156.896
+      },
+      {
+        "operation": "delete",
+        "equal_to_clean_generation": true,
+        "incremental_nodes": 15,
+        "clean_nodes": 15,
+        "incremental_edges": 17,
+        "clean_edges": 17,
+        "incremental_graph_sha256": "29594001a554106efce114e87f7a001ebf89a57d556b0f2acd013880c3dfda98",
+        "clean_graph_sha256": "29594001a554106efce114e87f7a001ebf89a57d556b0f2acd013880c3dfda98",
+        "update_elapsed_ms": 883.519,
+        "clean_elapsed_ms": 1186.972
+      },
+      {
+        "operation": "rename",
+        "equal_to_clean_generation": true,
+        "incremental_nodes": 17,
+        "clean_nodes": 17,
+        "incremental_edges": 21,
+        "clean_edges": 21,
+        "incremental_graph_sha256": "ea2b5664eedbf43631ea3d265aa2820a4de4a06839f3bb6d8f176cd04f23a818",
+        "clean_graph_sha256": "ea2b5664eedbf43631ea3d265aa2820a4de4a06839f3bb6d8f176cd04f23a818",
+        "update_elapsed_ms": 982.382,
+        "clean_elapsed_ms": 1260.286
+      },
+      {
+        "operation": "linked_worktree",
+        "equal_to_clean_generation": true,
+        "artifact_outside_worktree": true,
+        "incremental_nodes": 17,
+        "clean_nodes": 17,
+        "incremental_edges": 21,
+        "clean_edges": 21,
+        "incremental_graph_sha256": "3c0e700174be9aac6245a43dab01c05112300c0378680cdd7e989c89b0711ca4",
+        "clean_graph_sha256": "3c0e700174be9aac6245a43dab01c05112300c0378680cdd7e989c89b0711ca4",
+        "worktree_elapsed_ms": 996.359,
+        "clean_elapsed_ms": 1134.594
+      }
+    ],
+    "all_equal_to_clean_generation": true
+  },
+  "one_call_retrieval": {
+    "status": "measured",
+    "question_id": "openstatus-574-strict-one-call",
+    "command": [
+      "node",
+      "tools/eval/core-reset/record-baseline.mjs",
+      "--retrieval-repository",
+      "<openstatus-checkout>"
+    ],
+    "repository": "https://github.com/openstatusHQ/openstatus",
+    "repository_commit": "295e5a72f52c172d326aa950e81043e72a4f20c0",
+    "generator_artifact_sha256": "2b7d32f9f6d149f6c9dc0da93002cd1e844dd1b8f2b5d2c9fb1ad4133a2ea307",
+    "graph_sha256": "f4f99e60f7676d3b66c0f7bd98cbbdb77be8410c0714e11638904f3b1b1c5d84",
+    "graph_build_elapsed_ms": 224485.466,
+    "graph_artifact_bytes": 36310715,
+    "source_tree_paths_sha256": "9ccb1f1dce50c03ea67703953c124cb6026ee978a97be4f358d7276c20e764f4",
+    "graph_freshness": {
+      "head_sha": "295e5a72f52c172d326aa950e81043e72a4f20c0",
+      "dirty_file_count": 0
+    },
+    "graph_requested_extraction_mode": "auto",
+    "graph_nodes": 20137,
+    "graph_edges": 23452,
+    "mcp_initialize_ms": 73354.1,
+    "elapsed_ms": 79372.482,
+    "reported_context_token_count": 1522,
+    "serialized_response_bytes": 16324,
+    "provider_total_input_tokens": null,
+    "matched_file_count": 9,
+    "matched_files": [
+      "apps/checker/pkg/otel/otel.go",
+      "apps/status-page/src/app/api/status/[[...path]]/route.ts",
+      "apps/status-page/src/content/status-json.test.ts",
+      "apps/status-page/src/content/status-json.ts",
+      "apps/status-page/src/lib/http/etag.ts",
+      "apps/web/public/assets/changelog/auto-resolved-incidents.png",
+      "apps/workflows/src/checker/alerting.ts",
+      "apps/workflows/src/checker/index.ts",
+      "packages/db/src/schema/incidents/incident.ts"
+    ],
+    "snippet_file_count": 7,
+    "snippet_files": [
+      "apps/checker/pkg/otel/otel.go",
+      "apps/status-page/src/app/api/status/[[...path]]/route.ts",
+      "apps/status-page/src/content/status-json.ts",
+      "apps/web/public/assets/changelog/auto-resolved-incidents.png",
+      "apps/workflows/src/checker/alerting.ts",
+      "apps/workflows/src/checker/index.ts",
+      "packages/db/src/schema/incidents/incident.ts"
+    ],
+    "verification_target_file_count": 3,
+    "verification_target_files": [
+      "apps/status-page/src/app/api/status/[[...path]]/route.ts",
+      "apps/status-page/src/content/status-json.ts",
+      "apps/web/public/assets/changelog/auto-resolved-incidents.png"
+    ],
+    "returned_file_count": 9,
+    "returned_files": [
+      "apps/checker/pkg/otel/otel.go",
+      "apps/status-page/src/app/api/status/[[...path]]/route.ts",
+      "apps/status-page/src/content/status-json.test.ts",
+      "apps/status-page/src/content/status-json.ts",
+      "apps/status-page/src/lib/http/etag.ts",
+      "apps/web/public/assets/changelog/auto-resolved-incidents.png",
+      "apps/workflows/src/checker/alerting.ts",
+      "apps/workflows/src/checker/index.ts",
+      "packages/db/src/schema/incidents/incident.ts"
+    ],
+    "snippet_count": 8,
+    "snippets": [
+      {
+        "label": "status-json.ts",
+        "source_file": "apps/status-page/src/content/status-json.ts",
+        "line_number": 1,
+        "preview": "L10: type Page = NonNullable<RouterOutputs[\"statusPage\"][\"get\"]>;\nL16: \"current.json\": \"status\",\nL46: status: pageIndicator(page.status),\nL51: return page.statusReports .filter((report) => report.status !== \"resolved\") .map((report) => ({",
+        "sha256": "bd7c0885c6f384ca3d766a10f86e12633edfaa99639cc6177fa74f631da71038"
+      },
+      {
+        "label": "GET()",
+        "source_file": "apps/status-page/src/app/api/status/[[...path]]/route.ts",
+        "line_number": 34,
+        "preview": "L68: const data = await queryClient.fetchQuery( trpc.statusPage.get.queryOptions({ slug: row.slug }),\nL90: const payload = endpoint === \"status\" ? toStatus(data, baseUrl) : endpoint === \"incidents\"\nL99: const cacheControl = data.accessType ",
+        "sha256": "64427141cdad7cc800ebc301d080f9b9b1ae03e612541ac0fdb77a675bd61862"
+      },
+      {
+        "label": "auto-resolved-incidents.png",
+        "source_file": "apps/web/public/assets/changelog/auto-resolved-incidents.png",
+        "line_number": 1,
+        "preview": "L17: <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\nL19: xmlns:exif=\"http://ns.adobe.com/exif/1.0/\"",
+        "sha256": "b3fb4e34698e2f6c55300eb3cca6e97bba3b5477f3e0fa6a3bc74f5bf4e008dc"
+      },
+      {
+        "label": "statusIncident",
+        "source_file": "packages/db/src/schema/incidents/incident.ts",
+        "line_number": 14,
+        "preview": "L14: export const statusIncident = [\nL55: autoResolved: integer(\"auto_resolved\", { mode: \"boolean\" }).default(false),\nL57: createdAt: integer(\"created_at\", { mode: \"timestamp\" }).default(\nL70: export const incidentRelations = relations(inci",
+        "sha256": "61d0b80182bcf3eee9f5a0201ed6b248fa0c750b538256325c24878a53d7503d"
+      },
+      {
+        "label": "findOpenIncident()",
+        "source_file": "apps/workflows/src/checker/index.ts",
+        "line_number": 37,
+        "preview": "L98: const result = payloadSchema.safeParse(json);\nL199: await checkerAudit.publishAuditLog({ action: \"monitor.failed\", statusCode: statusCode ?? -1,\nL311: const [newIncident] = await db .insert(incidentTable) .values({\nL352: (event.status_",
+        "sha256": "5adf32355125de4211d8b8c66ef8029d72f661245282c63d6b3c68bc4cf34fc9"
+      },
+      {
+        "label": "upsertMonitorStatus",
+        "source_file": "apps/workflows/src/checker/alerting.ts",
+        "line_number": 276,
+        "preview": "L52: error_message: err instanceof Error ? err.message : String(err),\nL231: logger.error(\"Failed to send degraded notification\", { monitor_id: monitorId,\nL241: await checkerAudit.publishAuditLog({ action: \"notification.sent\", type: notifTyp",
+        "sha256": "c9d5c3524f53569755d1939893865fec3f8c8badd2899ed3acb8cbff2e38c701"
+      },
+      {
+        "label": "triggerNotifications",
+        "source_file": "apps/workflows/src/checker/alerting.ts",
+        "line_number": 17,
+        "preview": "L52: error_message: err instanceof Error ? err.message : String(err),\nL231: logger.error(\"Failed to send degraded notification\", { monitor_id: monitorId,\nL241: await checkerAudit.publishAuditLog({ action: \"notification.sent\", type: notifTyp",
+        "sha256": "c9d5c3524f53569755d1939893865fec3f8c8badd2899ed3acb8cbff2e38c701"
+      },
+      {
+        "label": "recordErrorCounter()",
+        "source_file": "apps/checker/pkg/otel/otel.go",
+        "line_number": 96,
+        "preview": "L11: \"go.opentelemetry.io/otel\"\nL97: counter, err := meter.Int64Counter(\"openstatus.error\", metric.WithDescription(\"Status of the check\"))\nL121: semconv.HTTPResponseStatusCode(result.Status),",
+        "sha256": "7f8e3c89938c5a091918bcbe3d61f193a61877353244dbc8962bce0817e16139"
+      }
+    ],
+    "phase_coverage": [
+      {
+        "phase": "checker_detection",
+        "scope": "unsupported_language",
+        "matched_paths": [],
+        "verification_target_paths": [],
+        "covered": false,
+        "reachable_after_focused_reads": false
+      },
+      {
+        "phase": "tinybird_persistence",
+        "scope": "unsupported_language",
+        "matched_paths": [],
+        "verification_target_paths": [],
+        "covered": false,
+        "reachable_after_focused_reads": false
+      },
+      {
+        "phase": "incident_mutation",
+        "scope": "required",
+        "matched_paths": [
+          "apps/workflows/src/checker/index.ts"
+        ],
+        "verification_target_paths": [],
+        "covered": true,
+        "reachable_after_focused_reads": true
+      },
+      {
+        "phase": "notification_delivery",
+        "scope": "required",
+        "matched_paths": [
+          "apps/workflows/src/checker/alerting.ts"
+        ],
+        "verification_target_paths": [],
+        "covered": false,
+        "reachable_after_focused_reads": false
+      },
+      {
+        "phase": "public_html",
+        "scope": "required",
+        "matched_paths": [],
+        "verification_target_paths": [],
+        "covered": false,
+        "reachable_after_focused_reads": false
+      },
+      {
+        "phase": "json_feeds",
+        "scope": "required",
+        "matched_paths": [
+          "apps/status-page/src/app/api/status/[[...path]]/route.ts",
+          "apps/status-page/src/content/status-json.ts"
+        ],
+        "verification_target_paths": [],
+        "covered": true,
+        "reachable_after_focused_reads": true
+      }
+    ],
+    "in_scope_phase_coverage": 0.5,
+    "answerability": "verify_targets",
+    "coverage": "partial",
+    "pack_confidence": "medium",
+    "focused_verification_reads": 0,
+    "focused_reads_note": "Direct MCP characterization stops after exactly one retrieve call; reachability reserves the contract-bounded sorted frozen-path verification targets globally, while actual agent reads are measured only in comparator trials."
+  },
+  "isolation": {
+    "build_root": "src",
+    "build_output": "dist/src",
+    "production_import_violations": [],
+    "production_evaluation_leaks": [],
+    "package_forbidden_paths": [],
+    "package_forbidden_metadata": []
+  },
+  "unknowns": [
+    {
+      "field": "one_call_retrieval.provider_total_input_tokens",
+      "reason": "A direct MCP probe measures the serialized Madar response but has no provider session from which to read total input usage.",
+      "reproduction_command": [
+        "<agent>",
+        "<frozen-comparator-protocol>",
+        "openstatus-574-strict-one-call"
+      ]
+    }
+  ]
+}

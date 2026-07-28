@@ -1,6 +1,5 @@
 {
   "prompt": "enforce account ownership in the Hono users route handler for users/:userId before calling prisma.user.findFirst",
-  "use_spi": true,
   "expected_workflow_centers": [
     "src/users/router.ts"
   ],

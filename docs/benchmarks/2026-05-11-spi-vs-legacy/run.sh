@@ -45,7 +45,7 @@ run_variant() {
   t0=$(node -e 'console.log(Date.now())')
   # CodeRabbit follow-up: build args as a quoted array instead of relying
   # on unquoted $extra_flag word-splitting.
-  local generate_args=(generate "$fixture_copy" --no-html)
+  local generate_args=(generate "$fixture_copy")
   if [[ -n "$extra_flag" ]]; then
     generate_args+=("$extra_flag")
   fi
@@ -119,7 +119,7 @@ run_variant "spi-cold" "--spi"
 echo "[spi-warm] generate (cache hit)"
 SPI_WARM_FIXTURE="$RESULTS_DIR/fixture-spi-cold"
 t0=$(node -e 'console.log(Date.now())')
-node "$MADAR" generate "$SPI_WARM_FIXTURE" --spi --no-html > "$RESULTS_DIR/spi-warm.generate.log" 2>&1
+node "$MADAR" generate "$SPI_WARM_FIXTURE" --spi > "$RESULTS_DIR/spi-warm.generate.log" 2>&1
 t1=$(node -e 'console.log(Date.now())')
 SPI_WARM_ELAPSED=$((t1 - t0))
 # CodeRabbit follow-up: capture graph_size_bytes + node_count alongside

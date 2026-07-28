@@ -3,7 +3,7 @@
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 
-import { runGeneratePerformanceBenchmark } from '../../../dist/src/infrastructure/benchmark/generate-performance.js'
+import { runGeneratePerformanceBenchmark } from '../../../dist-eval/tools/eval/lib/infrastructure/benchmark/generate-performance.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const timestamp = new Date().toISOString().replace(/:/g, '-')

@@ -10,7 +10,7 @@ The goal is not to publish polished marketing. The goal is to capture what happe
 - Do not include source code.
 - Do not include secrets, internal project names, customer names, or full prompts copied from private repos.
 - Do include coarse repo metadata such as repo size bucket, framework, agent runtime, task type, redacted command shapes, outcome, and caveats.
-- Prefer links to `report.share-safe.json`, `madar handoff`, or short markdown notes over raw artifacts that expose local paths or source.
+- Prefer links to reviewed `report.share-safe.json` files or short markdown notes over raw artifacts that expose local paths or source.
 
 ## Workflow
 
@@ -35,8 +35,8 @@ task_type: explain-runtime
 baseline_commands:
   - claude "how does password reset enqueue the email job"
 madar_commands:
-  - madar generate . --spi --no-html
-  - madar pack "how does password reset enqueue the email job" --task explain
+  - madar generate .
+  - madar query "how does password reset enqueue the email job"
 result:
   outcome: better
   metrics_or_observations:

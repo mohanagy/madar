@@ -1,0 +1,1044 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mohanagy/madar/tools/eval/core-reset/schemas/capability-validation-receipt-v2.schema.json",
+  "title": "Madar Core Reset capability-validation v2 public receipt and local private evidence fragments",
+  "description": "The top level validates only the closed committed public v2 receipt. Private evidence is validated only by explicitly selecting a local fragment under $defs.privateEvidenceEnvelope; no private artifact is valid at the public top level.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "contract_id",
+    "status",
+    "generated_at",
+    "contract",
+    "candidate",
+    "campaign_lock",
+    "archive",
+    "comparison_blocks",
+    "diagnostic",
+    "refresh_blocks",
+    "provider_ledger",
+    "human_review",
+    "aggregates",
+    "eligibility",
+    "receipt_sha256",
+    "stop_conditions",
+    "first_stop_condition_id",
+    "rfc_amendment_url",
+    "validator_assertions",
+    "lifecycle_evidence"
+  ],
+  "properties": {
+    "schema_version": {"const": 2},
+    "receipt_id": {"const": "core-reset-capability-validation-v2"},
+    "contract_id": {"const": "core-reset-capability-validation-v2"},
+    "status": {"enum": ["pass", "failed", "stopped"]},
+    "generated_at": {"$ref": "#/$defs/timestamp"},
+    "contract": {"$ref": "#/$defs/publicContractBinding"},
+    "candidate": {"$ref": "#/$defs/publicCandidateBinding"},
+    "campaign_lock": {"$ref": "#/$defs/publicCampaignLock"},
+    "archive": {"$ref": "#/$defs/publicArchiveCommitment"},
+    "comparison_blocks": {"type": "array", "maxItems": 4, "items": {"$ref": "#/$defs/publicValueCommitment"}},
+    "diagnostic": {"oneOf": [{"$ref": "#/$defs/publicValueCommitment"}, {"type": "null"}]},
+    "refresh_blocks": {"type": "array", "maxItems": 4, "items": {"$ref": "#/$defs/publicValueCommitment"}},
+    "provider_ledger": {"$ref": "#/$defs/publicProviderLedger"},
+    "human_review": {"$ref": "#/$defs/publicHumanReviewCommitment"},
+    "aggregates": {"oneOf": [{"$ref": "#/$defs/publicAggregatesCommitment"}, {"type": "null"}]},
+    "eligibility": {"$ref": "#/$defs/publicEligibility"},
+    "receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "stop_conditions": {"type": "array", "minItems": 14, "maxItems": 14, "prefixItems": [
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 1}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 2}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 3}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 4}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 5}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 6}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 7}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 8}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 9}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 10}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 11}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 12}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 13}}}]},
+      {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"id": {"const": 14}}}]}
+    ], "items": false},
+    "first_stop_condition_id": {"type": ["integer", "null"], "minimum": 1, "maximum": 14},
+    "rfc_amendment_url": {"oneOf": [{"$ref": "#/$defs/rfc577CommentUrl"}, {"type": "null"}]},
+    "validator_assertions": {"$ref": "#/$defs/publicValidatorAssertions"},
+    "lifecycle_evidence": {"$ref": "#/$defs/publicLifecycleEvidence"}
+  },
+  "allOf": [
+    {
+      "if": {"type": "object", "properties": {"status": {"const": "pass"}}, "required": ["status"]},
+      "then": {
+        "type": "object",
+        "properties": {
+          "campaign_lock": {"allOf": [{"$ref": "#/$defs/publicCampaignLock"}, {"type": "object", "properties": {"status": {"const": "complete"}}}]},
+          "comparison_blocks": {"type": "array", "minItems": 4, "maxItems": 4},
+          "diagnostic": {"$ref": "#/$defs/publicValueCommitment"},
+          "refresh_blocks": {"type": "array", "minItems": 4, "maxItems": 4},
+          "aggregates": {"$ref": "#/$defs/publicAggregatesCommitment"},
+          "eligibility": {"allOf": [{"$ref": "#/$defs/publicEligibility"}, {"type": "object", "properties": {"outcome": {"const": "eligible"}, "passes": {"const": true}, "stop_condition_triggered": {"const": false}, "stop_condition_id": {"type": "null"}}}]},
+          "stop_conditions": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"status": {"const": "not_triggered"}, "matched": {"const": false}}}]}},
+          "first_stop_condition_id": {"type": "null"},
+          "rfc_amendment_url": {"type": "null"},
+          "lifecycle_evidence": {"$ref": "#/$defs/publicCompletedLifecycleEvidence"}
+        }
+      }
+    },
+    {
+      "if": {"type": "object", "properties": {"status": {"const": "failed"}}, "required": ["status"]},
+      "then": {
+        "type": "object",
+        "properties": {
+          "campaign_lock": {"allOf": [{"$ref": "#/$defs/publicCampaignLock"}, {"type": "object", "properties": {"status": {"const": "complete"}}}]},
+          "comparison_blocks": {"type": "array", "minItems": 4, "maxItems": 4},
+          "diagnostic": {"$ref": "#/$defs/publicValueCommitment"},
+          "refresh_blocks": {"type": "array", "minItems": 4, "maxItems": 4},
+          "aggregates": {"$ref": "#/$defs/publicAggregatesCommitment"},
+          "eligibility": {"allOf": [{"$ref": "#/$defs/publicEligibility"}, {"type": "object", "properties": {"outcome": {"const": "not_eligible"}, "passes": {"const": false}, "stop_condition_triggered": {"const": false}, "stop_condition_id": {"type": "null"}}}]},
+          "stop_conditions": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"status": {"const": "not_triggered"}, "matched": {"const": false}}}]}},
+          "first_stop_condition_id": {"type": "null"},
+          "rfc_amendment_url": {"$ref": "#/$defs/rfc577CommentUrl"},
+          "lifecycle_evidence": {"$ref": "#/$defs/publicCompletedLifecycleEvidence"}
+        }
+      }
+    },
+    {
+      "if": {"type": "object", "properties": {"status": {"const": "stopped"}}, "required": ["status"]},
+      "then": {
+        "type": "object",
+        "properties": {
+          "eligibility": {"allOf": [{"$ref": "#/$defs/publicEligibility"}, {"type": "object", "properties": {"outcome": {"const": "stopped"}, "passes": {"const": false}, "stop_condition_triggered": {"const": true}, "stop_condition_id": {"type": "integer"}}}]},
+          "first_stop_condition_id": {"type": "integer", "minimum": 1, "maximum": 14},
+          "rfc_amendment_url": {"$ref": "#/$defs/rfc577CommentUrl"},
+          "stop_conditions": {"type": "array", "contains": {"allOf": [{"$ref": "#/$defs/publicStopCondition"}, {"type": "object", "properties": {"status": {"const": "triggered"}, "matched": {"const": true}}}]}, "minContains": 1},
+          "lifecycle_evidence": {"$ref": "#/$defs/publicStoppedLifecycleEvidence"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nullableSha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "bigint": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "base64": {"type": "string", "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"},
+    "absolutePath": {"type": "string", "pattern": "^/[^\\u0000]+$"},
+    "githubLogin": {"type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"},
+    "rfc577CommentUrl": {"type": "string", "format": "uri", "pattern": "^https://github\\.com/mohanagy/madar/issues/577#issuecomment-[0-9]+$"},
+    "issue612CommentUrl": {"type": "string", "format": "uri", "pattern": "^https://github\\.com/mohanagy/madar/issues/612#issuecomment-[0-9]+$"},
+    "githubCommentUrl": {"type": "string", "format": "uri", "pattern": "^https://github\\.com/mohanagy/madar/issues/[0-9]+#issuecomment-[0-9]+$"},
+
+    "capturedBytes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["utf8_or_binary_base64", "bytes", "sha256"],
+      "properties": {
+        "utf8_or_binary_base64": {"$ref": "#/$defs/base64"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "publicValueCommitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semantic_id", "value_jcs_utf8_base64", "value_bytes", "value_sha256", "private_source_manifest_sha256"],
+      "properties": {
+        "semantic_id": {"$ref": "#/$defs/nonEmptyString"},
+        "value_jcs_utf8_base64": {"$ref": "#/$defs/base64"},
+        "value_bytes": {"type": "integer", "minimum": 0},
+        "value_sha256": {"$ref": "#/$defs/sha256"},
+        "private_source_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "v1SemanticsBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_path", "contract_sha256", "contract_schema_path", "contract_schema_sha256", "receipt_schema_path", "receipt_schema_sha256", "receipt_root_pointer", "receipt_required_pointers", "allowed_difference_pointers", "recursive_equality_manifest_sha256", "v1_public_projection_sha256"],
+      "properties": {
+        "contract_path": {"const": "tools/eval/core-reset/contracts/capability-validation-v1.json"},
+        "contract_sha256": {"const": "ae03a6b2cc8675ca66ad0ff67f06e13389cf04e6a6a8167c3404f1c8657f36f5"},
+        "contract_schema_path": {"const": "tools/eval/core-reset/schemas/capability-validation-contract.schema.json"},
+        "contract_schema_sha256": {"const": "6d8679e335730180bee0c9fc62f144ae2086ea16dade800887a0301da27f23b6"},
+        "receipt_schema_path": {"const": "tools/eval/core-reset/schemas/capability-validation-receipt.schema.json"},
+        "receipt_schema_sha256": {"const": "a33a6b3532a3e0df62bcd0f3616a9585b2be4ede1f360cf3d55f70c99c29f30e"},
+        "receipt_root_pointer": {"const": "#"},
+        "receipt_required_pointers": {"const": ["/schema_version", "/receipt_id", "/contract_id", "/status", "/generated_at", "/contract", "/candidate", "/campaign_lock", "/archive", "/comparison_blocks", "/diagnostic", "/refresh_blocks", "/provider_ledger", "/human_review", "/aggregates", "/eligibility", "/receipt_sha256", "/stop_conditions", "/first_stop_condition_id", "/rfc_amendment_url", "/validator_assertions", "/lifecycle_evidence"]},
+        "allowed_difference_pointers": {"const": ["/schema_version", "/contract_id", "/status", "/governance", "/anchors/protected_base_commit", "/anchors/base_tree", "/anchors/tools_eval_tree", "/inheritance", "/receipt/path", "/receipt/schema_path", "/receipt/canonical_transcript", "/receipt/canonical_archive", "/execution_boundary"]},
+        "recursive_equality_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "v1_public_projection_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "v2AssetBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposal_issue", "proposal_body_sha256", "contract_path", "contract_sha256", "contract_schema_path", "contract_schema_sha256", "receipt_schema_path", "receipt_schema_sha256", "first_owner_approval_issue", "first_owner_approval_issue_body_sha256", "first_owner_approval_rfc", "first_owner_approval_rfc_body_sha256", "second_owner_approval_issue", "second_owner_approval_issue_body_sha256", "second_owner_approval_rfc", "second_owner_approval_rfc_body_sha256", "activation_head", "activation_merge_commit", "activation_tree", "implementation_merge_commit", "implementation_tree"],
+      "properties": {
+        "proposal_issue": {"const": "https://github.com/mohanagy/madar/issues/612"},
+        "proposal_body_sha256": {"const": "4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0"},
+        "contract_path": {"const": "tools/eval/core-reset/contracts/capability-validation-v2.json"},
+        "contract_sha256": {"$ref": "#/$defs/sha256"},
+        "contract_schema_path": {"const": "tools/eval/core-reset/schemas/capability-validation-contract-v2.schema.json"},
+        "contract_schema_sha256": {"$ref": "#/$defs/sha256"},
+        "receipt_schema_path": {"const": "tools/eval/core-reset/schemas/capability-validation-receipt-v2.schema.json"},
+        "receipt_schema_sha256": {"$ref": "#/$defs/sha256"},
+        "first_owner_approval_issue": {"$ref": "#/$defs/issue612CommentUrl"},
+        "first_owner_approval_issue_body_sha256": {"$ref": "#/$defs/sha256"},
+        "first_owner_approval_rfc": {"$ref": "#/$defs/rfc577CommentUrl"},
+        "first_owner_approval_rfc_body_sha256": {"$ref": "#/$defs/sha256"},
+        "second_owner_approval_issue": {"$ref": "#/$defs/issue612CommentUrl"},
+        "second_owner_approval_issue_body_sha256": {"$ref": "#/$defs/sha256"},
+        "second_owner_approval_rfc": {"$ref": "#/$defs/rfc577CommentUrl"},
+        "second_owner_approval_rfc_body_sha256": {"$ref": "#/$defs/sha256"},
+        "activation_head": {"$ref": "#/$defs/sha"},
+        "activation_merge_commit": {"$ref": "#/$defs/sha"},
+        "activation_tree": {"$ref": "#/$defs/sha"},
+        "implementation_merge_commit": {"$ref": "#/$defs/sha"},
+        "implementation_tree": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "publicContractBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v1_semantics_binding", "v2_assets", "receipt_derivation_subject_sha256"],
+      "properties": {
+        "v1_semantics_binding": {"$ref": "#/$defs/v1SemanticsBinding"},
+        "v2_assets": {"$ref": "#/$defs/v2AssetBinding"},
+        "receipt_derivation_subject_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "publicCandidateBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementation_merge_commit", "implementation_tree", "src_tree", "package_json_sha256", "package_lock_sha256", "tarball_sha256", "tarball_sha1", "package_file_count", "packed_bytes", "unpacked_bytes", "production_ts_files", "production_loc"],
+      "properties": {
+        "implementation_merge_commit": {"$ref": "#/$defs/sha"},
+        "implementation_tree": {"$ref": "#/$defs/sha"},
+        "src_tree": {"const": "1a37e3a58ee7b2a75ca034112506590f699b3918"},
+        "package_json_sha256": {"const": "d464fd8e59b3d4d3f817ebdd6457fb3cfb02d9f3fad4fc8648f29c03a8a56b33"},
+        "package_lock_sha256": {"const": "b9d179f0ee70e14d85653c5013cf2513efb22127b10fc3ee1deb5fa698993a61"},
+        "tarball_sha256": {"$ref": "#/$defs/sha256"},
+        "tarball_sha1": {"const": "6eee13af22e8c76113fe578e44d76a9e6d6fd899"},
+        "package_file_count": {"const": 102},
+        "packed_bytes": {"const": 159759},
+        "unpacked_bytes": {"const": 637602},
+        "production_ts_files": {"const": 43},
+        "production_loc": {"const": 11956}
+      }
+    },
+    "publicCampaignLock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "campaign_id", "authorization_subject_sha256", "observed_proof_manifest_sha256", "role_acceptance_manifest_sha256", "lock_jcs_sha256", "provider_account_observation_sha256", "execution_started_seal_sha256", "created_at"],
+      "properties": {
+        "status": {"enum": ["complete", "incomplete"]},
+        "campaign_id": {"type": "string", "pattern": "^capability-validation-v2-[0-9]{8}T[0-9]{6}Z$"},
+        "authorization_subject_sha256": {"$ref": "#/$defs/sha256"},
+        "observed_proof_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "role_acceptance_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "lock_jcs_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "provider_account_observation_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "execution_started_seal_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "created_at": {"oneOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]}
+      },
+      "allOf": [
+        {"if": {"type": "object", "properties": {"status": {"const": "complete"}}, "required": ["status"]}, "then": {"type": "object", "properties": {"lock_jcs_sha256": {"$ref": "#/$defs/sha256"}, "provider_account_observation_sha256": {"$ref": "#/$defs/sha256"}, "execution_started_seal_sha256": {"$ref": "#/$defs/sha256"}, "created_at": {"$ref": "#/$defs/timestamp"}}}},
+        {"if": {"type": "object", "properties": {"status": {"const": "incomplete"}}, "required": ["status"]}, "then": {"type": "object", "properties": {"lock_jcs_sha256": {"type": "null"}, "execution_started_seal_sha256": {"type": "null"}}}}
+      ]
+    },
+    "publicArchiveCopyCommitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["copy", "archive_sha256", "archive_bytes", "copy_identity_sha256", "file_fsync_observation_sha256", "directory_fsync_observation_sha256", "independent_reread_sha256"],
+      "properties": {
+        "copy": {"enum": ["primary", "secondary"]},
+        "archive_sha256": {"$ref": "#/$defs/sha256"},
+        "archive_bytes": {"type": "integer", "minimum": 1},
+        "copy_identity_sha256": {"$ref": "#/$defs/sha256"},
+        "file_fsync_observation_sha256": {"$ref": "#/$defs/sha256"},
+        "directory_fsync_observation_sha256": {"$ref": "#/$defs/sha256"},
+        "independent_reread_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "publicArchiveManifestRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "path", "bytes", "sha256"],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 1},
+        "path": {"type": "string", "pattern": "^p/[0-9]{8}\\.bin$"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "publicArchiveManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "campaign_id", "files"],
+      "properties": {
+        "schema_version": {"const": "madar-capability-archive-v2"},
+        "campaign_id": {"$ref": "#/$defs/nonEmptyString"},
+        "files": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/publicArchiveManifestRow"}}
+      }
+    },
+    "publicArchiveCommitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "private_index_schema_version", "magic_utf8", "encoding", "path_policy", "ordering", "entry_count", "manifest", "manifest_jcs_sha256", "archive_sha256", "archive_bytes", "copies", "copy_identity_record_sha256", "private_copies_re_read_at_build", "public_validation_disposition", "external_archive_verifier_required"],
+      "properties": {
+        "schema_version": {"const": "madar-capability-archive-v2"},
+        "private_index_schema_version": {"const": "madar-capability-private-index-v2"},
+        "magic_utf8": {"const": "MADAR-CAPABILITY-ARCHIVE-V2\n"},
+        "encoding": {"const": "magic-u64be-manifest-u64be-content-no-trailing-bytes"},
+        "path_policy": {"const": "p/NNNNNNNN.bin"},
+        "ordering": {"const": "unsigned-utf8-artifact_kind-then-semantic_id"},
+        "entry_count": {"type": "integer", "minimum": 1},
+        "manifest": {"$ref": "#/$defs/publicArchiveManifest"},
+        "manifest_jcs_sha256": {"$ref": "#/$defs/sha256"},
+        "archive_sha256": {"$ref": "#/$defs/sha256"},
+        "archive_bytes": {"type": "integer", "minimum": 1},
+        "copies": {"type": "array", "minItems": 2, "maxItems": 2, "prefixItems": [
+          {"allOf": [{"$ref": "#/$defs/publicArchiveCopyCommitment"}, {"type": "object", "properties": {"copy": {"const": "primary"}}}]},
+          {"allOf": [{"$ref": "#/$defs/publicArchiveCopyCommitment"}, {"type": "object", "properties": {"copy": {"const": "secondary"}}}]}
+        ], "items": false},
+        "copy_identity_record_sha256": {"$ref": "#/$defs/sha256"},
+        "private_copies_re_read_at_build": {"const": true},
+        "public_validation_disposition": {"const": "commitment-only"},
+        "external_archive_verifier_required": {"const": true}
+      }
+    },
+    "publicProviderLedger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["journal_manifest_sha256", "ledger_manifest_sha256", "last_global_sequence", "input_tokens", "output_tokens", "actual_micro_usd", "retained_micro_usd", "reserved_micro_usd", "outstanding_micro_usd", "provider_event_count", "create_reservation_count", "unknown_cost_count", "runner_ceiling_micro_usd", "provider_cap_micro_usd", "strict_ceiling_disposition"],
+      "properties": {
+        "journal_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "ledger_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "last_global_sequence": {"type": "integer", "minimum": 0},
+        "input_tokens": {"type": "integer", "minimum": 0},
+        "output_tokens": {"type": "integer", "minimum": 0},
+        "actual_micro_usd": {"type": "integer", "minimum": 0},
+        "retained_micro_usd": {"type": "integer", "minimum": 0},
+        "reserved_micro_usd": {"type": "integer", "minimum": 0},
+        "outstanding_micro_usd": {"type": "integer", "minimum": 0},
+        "provider_event_count": {"type": "integer", "minimum": 0},
+        "create_reservation_count": {"type": "integer", "minimum": 0},
+        "unknown_cost_count": {"type": "integer", "minimum": 0},
+        "runner_ceiling_micro_usd": {"const": 90000000},
+        "provider_cap_micro_usd": {"const": 100000000},
+        "strict_ceiling_disposition": {"enum": ["below", "reached_or_exceeded", "unknown"]}
+      }
+    },
+    "publicHumanReviewCommitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "dossier_manifest_sha256", "blind_bundle_manifest_sha256", "review_manifest_sha256", "adjudication_manifest_sha256", "reveal_mapping_manifest_sha256", "role_join_manifest_sha256"],
+      "properties": {
+        "stage": {"enum": ["not_started", "dossiers_sealed", "bundles_sealed", "reviews_sealed", "adjudications_sealed", "revealed", "stopped"]},
+        "dossier_manifest_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "blind_bundle_manifest_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "review_manifest_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "adjudication_manifest_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "reveal_mapping_manifest_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "role_join_manifest_sha256": {"$ref": "#/$defs/nullableSha256"}
+      }
+    },
+    "publicAggregatesCommitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cells_count", "madar_comparisons_count", "refresh_medians_count", "clean_build_medians_count", "break_even_count", "values_jcs_sha256", "source_join_manifest_sha256"],
+      "properties": {
+        "cells_count": {"const": 20},
+        "madar_comparisons_count": {"const": 8},
+        "refresh_medians_count": {"const": 4},
+        "clean_build_medians_count": {"const": 4},
+        "break_even_count": {"const": 24},
+        "values_jcs_sha256": {"$ref": "#/$defs/sha256"},
+        "source_join_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "publicEligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "passes", "reasons", "blocking_unknowns", "stop_condition_triggered", "stop_condition_id", "derivation_manifest_sha256"],
+      "properties": {
+        "outcome": {"enum": ["eligible", "not_eligible", "stopped"]},
+        "passes": {"type": "boolean"},
+        "reasons": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}},
+        "blocking_unknowns": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}},
+        "stop_condition_triggered": {"type": "boolean"},
+        "stop_condition_id": {"type": ["integer", "null"], "minimum": 1, "maximum": 14},
+        "derivation_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "publicStopCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "matched", "observation_sha256", "evaluation_sha256", "stage"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 1, "maximum": 14},
+        "status": {"enum": ["not_triggered", "triggered"]},
+        "matched": {"type": "boolean"},
+        "observation_sha256": {"$ref": "#/$defs/sha256"},
+        "evaluation_sha256": {"$ref": "#/$defs/sha256"},
+        "stage": {"enum": ["setup", "campaign_lock", "preflight", "clean_build", "schedule", "provider_count", "provider_create", "tool_loop", "refresh", "human_review", "reveal", "aggregation", "receipt"]}
+      }
+    },
+    "derivationRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "input_manifest_sha256", "output_sha256"],
+      "properties": {
+        "subject": {"enum": ["v1_public_projection", "provider_cost", "ledger", "tool_bijection", "answer_kind", "machine_grade", "review_join", "aggregates", "eligibility", "stop", "lifecycle", "archive", "receipt"]},
+        "input_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "output_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "publicValidatorAssertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["builder_path", "receipt_build_input_sha256", "private_evidence_manifest_sha256", "derivations", "caller_supplied_derived_fields_accepted", "private_artifact_kinds", "private_copies_re_read", "live_comments_re_fetched", "public_validation_disposition"],
+      "properties": {
+        "builder_path": {"const": "tools/eval/lib/capability-validation-v2/receipt-builder.ts"},
+        "receipt_build_input_sha256": {"$ref": "#/$defs/sha256"},
+        "private_evidence_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "derivations": {"type": "array", "minItems": 13, "maxItems": 13, "prefixItems": [
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "v1_public_projection"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "provider_cost"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "ledger"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "tool_bijection"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "answer_kind"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "machine_grade"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "review_join"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "aggregates"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "eligibility"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "stop"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "lifecycle"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "archive"}}}]},
+          {"allOf": [{"$ref": "#/$defs/derivationRow"}, {"type": "object", "properties": {"subject": {"const": "receipt"}}}]}
+        ], "items": false},
+        "caller_supplied_derived_fields_accepted": {"const": false},
+        "private_artifact_kinds": {"const": ["lock_observation", "role_acceptance", "environment_manifest", "containment_observation", "containment_probe", "journal_frame", "ledger_frame", "provider_event", "tool_event", "transcript", "machine_grade_join", "dossier", "blind_bundle", "review", "adjudication", "reveal_mapping", "lifecycle_manifest", "stop_observation", "receipt_build_input", "raw_repository", "graph", "hidden_fixture", "provider_body", "review_working", "dossier_excerpt"]},
+        "private_copies_re_read": {"const": false},
+        "live_comments_re_fetched": {"const": false},
+        "public_validation_disposition": {"const": "commitment-only"}
+      }
+    },
+    "publicLifecycleRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "stage", "occurred_at", "local_monotonic_ns", "subject_manifest_sha256", "durable_receipt_url"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 0},
+        "stage": {"$ref": "#/$defs/nonEmptyString"},
+        "occurred_at": {"$ref": "#/$defs/timestamp"},
+        "local_monotonic_ns": {"oneOf": [{"$ref": "#/$defs/bigint"}, {"type": "null"}]},
+        "subject_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "durable_receipt_url": {"oneOf": [{"$ref": "#/$defs/githubCommentUrl"}, {"type": "null"}]}
+      }
+    },
+    "publicLifecycleEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinary_prefix", "triggering_partial_stage", "stop_finalization", "execution_manifest_sha256", "seal_plan_sha256"],
+      "properties": {
+        "ordinary_prefix": {"type": "array", "items": {"$ref": "#/$defs/publicLifecycleRecord"}},
+        "triggering_partial_stage": {"oneOf": [{"$ref": "#/$defs/publicLifecycleRecord"}, {"type": "null"}]},
+        "stop_finalization": {"type": "array", "maxItems": 4, "items": {"$ref": "#/$defs/publicLifecycleRecord"}},
+        "execution_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "seal_plan_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "publicCompletedLifecycleEvidence": {
+      "allOf": [
+        {"$ref": "#/$defs/publicLifecycleEvidence"},
+        {"type": "object", "properties": {"triggering_partial_stage": {"type": "null"}, "stop_finalization": {"type": "array", "maxItems": 0}}}
+      ]
+    },
+    "publicStoppedLifecycleEvidence": {
+      "allOf": [
+        {"$ref": "#/$defs/publicLifecycleEvidence"},
+        {"type": "object", "properties": {
+          "triggering_partial_stage": {"$ref": "#/$defs/publicLifecycleRecord"},
+          "stop_finalization": {"type": "array", "minItems": 4, "maxItems": 4, "prefixItems": [
+            {"allOf": [{"$ref": "#/$defs/publicLifecycleRecord"}, {"type": "object", "properties": {"stage": {"const": "stop_prefix_sealed"}}}]},
+            {"allOf": [{"$ref": "#/$defs/publicLifecycleRecord"}, {"type": "object", "properties": {"stage": {"const": "prefix_archive_copies_fsynced"}}}]},
+            {"allOf": [{"$ref": "#/$defs/publicLifecycleRecord"}, {"type": "object", "properties": {"stage": {"const": "rfc_stop_amendment_posted"}}}]},
+            {"allOf": [{"$ref": "#/$defs/publicLifecycleRecord"}, {"type": "object", "properties": {"stage": {"const": "stopped_receipt_sealed"}}}]}
+          ], "items": false}
+        }}
+      ]
+    },
+
+    "gitObjectObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object_type", "oid", "canonical_bytes"],
+      "properties": {
+        "object_type": {"enum": ["commit", "tree", "blob"]},
+        "oid": {"$ref": "#/$defs/sha"},
+        "canonical_bytes": {"$ref": "#/$defs/capturedBytes"}
+      }
+    },
+    "fileObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "realpath", "mode_octal", "device", "inode", "nlink", "size", "mtime_ns", "content"],
+      "properties": {
+        "path": {"$ref": "#/$defs/absolutePath"},
+        "realpath": {"$ref": "#/$defs/absolutePath"},
+        "mode_octal": {"type": "string", "pattern": "^[0-7]{4}$"},
+        "device": {"$ref": "#/$defs/bigint"},
+        "inode": {"$ref": "#/$defs/bigint"},
+        "nlink": {"type": "integer", "minimum": 1},
+        "size": {"type": "integer", "minimum": 0},
+        "mtime_ns": {"$ref": "#/$defs/bigint"},
+        "content": {"$ref": "#/$defs/capturedBytes"}
+      }
+    },
+    "ownerCommentObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository_id", "repository_owner_id", "issue_number", "comment_numeric_id", "author_login", "author_numeric_id", "author_association", "body_utf8", "body_sha256", "created_at", "updated_at", "includes_created_edit", "html_url"],
+      "properties": {
+        "repository_id": {"type": "integer", "minimum": 1},
+        "repository_owner_id": {"type": "integer", "minimum": 1},
+        "issue_number": {"type": "integer", "minimum": 1},
+        "comment_numeric_id": {"type": "integer", "minimum": 1},
+        "author_login": {"$ref": "#/$defs/githubLogin"},
+        "author_numeric_id": {"type": "integer", "minimum": 1},
+        "author_association": {"const": "OWNER"},
+        "body_utf8": {"type": "string"},
+        "body_sha256": {"$ref": "#/$defs/sha256"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "updated_at": {"$ref": "#/$defs/timestamp"},
+        "includes_created_edit": {"const": false},
+        "html_url": {"$ref": "#/$defs/githubCommentUrl"}
+      },
+      "examples": [{"repository_id":1,"repository_owner_id":1,"issue_number":612,"comment_numeric_id":1,"author_login":"mohanagy","author_numeric_id":1,"author_association":"OWNER","body_utf8":"approve","body_sha256":"0000000000000000000000000000000000000000000000000000000000000000","created_at":"2026-07-26T00:00:00Z","updated_at":"2026-07-26T00:00:00Z","includes_created_edit":false,"html_url":"https://github.com/mohanagy/madar/issues/612#issuecomment-1"}],
+      "$comment": "Rejection fixture: the same object with author_association NONE must fail this owner-only fragment."
+    },
+    "roleCommentObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository_id", "repository_owner_id", "issue_number", "comment_numeric_id", "author_login", "author_numeric_id", "author_association", "body_utf8", "body_sha256", "created_at", "updated_at", "includes_created_edit", "html_url"],
+      "properties": {
+        "repository_id": {"type": "integer", "minimum": 1},
+        "repository_owner_id": {"type": "integer", "minimum": 1},
+        "issue_number": {"type": "integer", "minimum": 1},
+        "comment_numeric_id": {"type": "integer", "minimum": 1},
+        "author_login": {"$ref": "#/$defs/githubLogin"},
+        "author_numeric_id": {"type": "integer", "minimum": 1},
+        "author_association": {"enum": ["COLLABORATOR", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR", "MANNEQUIN", "MEMBER", "NONE", "OWNER"]},
+        "body_utf8": {"type": "string"},
+        "body_sha256": {"$ref": "#/$defs/sha256"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "updated_at": {"$ref": "#/$defs/timestamp"},
+        "includes_created_edit": {"const": false},
+        "html_url": {"$ref": "#/$defs/githubCommentUrl"}
+      },
+      "examples": [{"repository_id":1,"repository_owner_id":1,"issue_number":612,"comment_numeric_id":2,"author_login":"reviewer-one","author_numeric_id":2,"author_association":"NONE","body_utf8":"accept","body_sha256":"0000000000000000000000000000000000000000000000000000000000000000","created_at":"2026-07-26T00:00:00Z","updated_at":"2026-07-26T00:00:00Z","includes_created_edit":false,"html_url":"https://github.com/mohanagy/madar/issues/612#issuecomment-2"}],
+      "$comment": "Rejection fixture: deleting or renaming any exact observation field, adding any field, changing a locked author identity, or setting includes_created_edit true must fail validation or the semantic lock join."
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"],
+      "properties": {
+        "input_tokens": {"type": "integer", "minimum": 0},
+        "cache_creation_input_tokens": {"type": "integer", "minimum": 0},
+        "cache_read_input_tokens": {"type": "integer", "minimum": 0},
+        "output_tokens": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rateRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "tokens", "micro_usd_numerator", "token_denominator", "amount_micro_usd"],
+      "properties": {
+        "category": {"enum": ["uncached_input", "cache_write_5m", "cache_write_1h", "cache_read", "output"]},
+        "tokens": {"type": "integer", "minimum": 0},
+        "micro_usd_numerator": {"type": "integer", "minimum": 0},
+        "token_denominator": {"type": "integer", "minimum": 1},
+        "amount_micro_usd": {"type": "integer", "minimum": 0}
+      }
+    },
+    "requestHeaders": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accept", "accept-encoding", "anthropic-version", "content-type", "user-agent", "x-api-key", "host", "content-length"],
+      "properties": {
+        "accept": {"const": "application/json"},
+        "accept-encoding": {"const": "identity"},
+        "anthropic-version": {"const": "2023-06-01"},
+        "content-type": {"const": "application/json"},
+        "user-agent": {"const": "madar-core-reset-capability-validation-v1"},
+        "x-api-key": {"const": "<redacted>"},
+        "host": {"const": "api.anthropic.com"},
+        "content-length": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "connection": {"const": "keep-alive"},
+        "accept-language": {"const": "*"},
+        "sec-fetch-mode": {"const": "cors"}
+      }
+    },
+    "responseHeaders": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9!#$%&'*+.^_`|~-]+$"},
+      "additionalProperties": {"type": "string"}
+    },
+    "providerUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uncached_input", "cache_write_5m", "cache_write_1h", "cache_read", "output"],
+      "properties": {
+        "uncached_input": {"type": "integer", "minimum": 0},
+        "cache_write_5m": {"type": "integer", "minimum": 0},
+        "cache_write_1h": {"type": "integer", "minimum": 0},
+        "cache_read": {"type": "integer", "minimum": 0},
+        "output": {"type": "integer", "minimum": 0}
+      }
+    },
+    "providerRate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "micro_usd_numerator", "token_denominator"],
+      "properties": {
+        "category": {"enum": ["uncached_input", "cache_write_5m", "cache_write_1h", "cache_read", "output"]},
+        "micro_usd_numerator": {"type": "integer", "minimum": 0},
+        "token_denominator": {"type": "integer", "minimum": 1}
+      }
+    },
+    "providerReservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["counted_input_tokens", "reserved_input_tokens", "reserved_output_tokens", "reserved_micro_usd", "ledger_frame_sha256", "ack_monotonic_ns"],
+      "properties": {
+        "counted_input_tokens": {"type": "integer", "minimum": 0},
+        "reserved_input_tokens": {"type": "integer", "minimum": 0},
+        "reserved_output_tokens": {"const": 4096},
+        "reserved_micro_usd": {"type": "integer", "minimum": 0},
+        "ledger_frame_sha256": {"$ref": "#/$defs/sha256"},
+        "ack_monotonic_ns": {"$ref": "#/$defs/bigint"}
+      }
+    },
+    "providerTranscriptEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_index", "event_kind", "provider_sequence", "count_provider_sequence", "state_before", "state_after", "monotonic_reservation_request_ns", "monotonic_reservation_ack_ns", "monotonic_send_start_ns", "monotonic_headers_ns", "monotonic_body_end_ns", "monotonic_outcome_ack_ns", "deadline_remaining_ms", "abort_ms", "request_url", "final_url", "tls_hostname", "http_method", "request_body_base64", "request_bytes", "request_sha256", "request_headers", "request_headers_sha256", "canonical_semantic_fields_sha256", "tools_sha256", "messages_sha256", "system_sha256", "tool_choice_sha256", "http_status", "response_body_base64", "response_bytes", "response_sha256", "response_headers", "response_headers_sha256", "request_id", "request_id_sha256", "request_id_header_sha256", "model", "service_tier", "inference_geo", "usage", "rate", "reservation", "actual_cost_micro_usd", "ledger_disposition", "content_classification", "assistant_content_sha256", "stop_reason", "terminal_classification"],
+      "properties": {
+        "event_index": {"type": "integer", "minimum": 0},
+        "event_kind": {"enum": ["count", "create"]},
+        "provider_sequence": {"type": "integer", "minimum": 1},
+        "count_provider_sequence": {"type": ["integer", "null"], "minimum": 1},
+        "state_before": {"$ref": "#/$defs/nonEmptyString"},
+        "state_after": {"$ref": "#/$defs/nonEmptyString"},
+        "monotonic_reservation_request_ns": {"oneOf": [{"$ref": "#/$defs/bigint"}, {"type": "null"}]},
+        "monotonic_reservation_ack_ns": {"oneOf": [{"$ref": "#/$defs/bigint"}, {"type": "null"}]},
+        "monotonic_send_start_ns": {"$ref": "#/$defs/bigint"},
+        "monotonic_headers_ns": {"oneOf": [{"$ref": "#/$defs/bigint"}, {"type": "null"}]},
+        "monotonic_body_end_ns": {"oneOf": [{"$ref": "#/$defs/bigint"}, {"type": "null"}]},
+        "monotonic_outcome_ack_ns": {"$ref": "#/$defs/bigint"},
+        "deadline_remaining_ms": {"type": "integer", "minimum": 1},
+        "abort_ms": {"type": "integer", "minimum": 1, "maximum": 120000},
+        "request_url": {"enum": ["https://api.anthropic.com/v1/messages/count_tokens", "https://api.anthropic.com/v1/messages"]},
+        "final_url": {"type": ["string", "null"], "format": "uri"},
+        "tls_hostname": {"enum": ["api.anthropic.com", null]},
+        "http_method": {"const": "POST"},
+        "request_body_base64": {"$ref": "#/$defs/base64"},
+        "request_bytes": {"type": "integer", "minimum": 1, "maximum": 2097152},
+        "request_sha256": {"$ref": "#/$defs/sha256"},
+        "request_headers": {"$ref": "#/$defs/requestHeaders"},
+        "request_headers_sha256": {"$ref": "#/$defs/sha256"},
+        "canonical_semantic_fields_sha256": {"$ref": "#/$defs/sha256"},
+        "tools_sha256": {"$ref": "#/$defs/sha256"},
+        "messages_sha256": {"$ref": "#/$defs/sha256"},
+        "system_sha256": {"$ref": "#/$defs/sha256"},
+        "tool_choice_sha256": {"$ref": "#/$defs/sha256"},
+        "http_status": {"type": ["integer", "null"], "minimum": 100, "maximum": 599},
+        "response_body_base64": {"oneOf": [{"$ref": "#/$defs/base64"}, {"type": "null"}]},
+        "response_bytes": {"type": ["integer", "null"], "minimum": 0, "maximum": 262144},
+        "response_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "response_headers": {"oneOf": [{"$ref": "#/$defs/responseHeaders"}, {"type": "null"}]},
+        "response_headers_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "request_id": {"type": ["string", "null"], "minLength": 1},
+        "request_id_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "request_id_header_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "model": {"type": ["string", "null"]},
+        "service_tier": {"type": ["string", "null"]},
+        "inference_geo": {"type": ["string", "null"]},
+        "usage": {"oneOf": [{"$ref": "#/$defs/providerUsage"}, {"type": "null"}]},
+        "rate": {"type": "array", "items": {"$ref": "#/$defs/providerRate"}},
+        "reservation": {"oneOf": [{"$ref": "#/$defs/providerReservation"}, {"type": "null"}]},
+        "actual_cost_micro_usd": {"type": ["integer", "null"], "minimum": 0},
+        "ledger_disposition": {"enum": ["zero_cost_count", "actual_reconciled", "reservation_retained"]},
+        "content_classification": {"enum": ["count_tokens", "single_tool_use", "final_text", "refusal", "malformed", "unsupported", "none", "provider_error_json", "provider_error_text", "empty_body"]},
+        "assistant_content_sha256": {"$ref": "#/$defs/nullableSha256"},
+        "stop_reason": {"type": ["string", "null"]},
+        "terminal_classification": {"enum": ["continue", "success", "terminal_zero", "campaign_stop"]}
+      },
+      "allOf": [
+        {
+          "if": {"type": "object", "properties": {"event_kind": {"const": "count"}}, "required": ["event_kind"]},
+          "then": {"type": "object", "properties": {
+            "count_provider_sequence": {"type": "null"},
+            "abort_ms": {"type": "integer", "maximum": 30000},
+            "request_url": {"const": "https://api.anthropic.com/v1/messages/count_tokens"},
+            "response_bytes": {"type": ["integer", "null"], "maximum": 65536},
+            "reservation": {"type": "null"},
+            "actual_cost_micro_usd": {"const": 0},
+            "ledger_disposition": {"const": "zero_cost_count"}
+          }}
+        },
+        {
+          "if": {"type": "object", "properties": {"event_kind": {"const": "create"}}, "required": ["event_kind"]},
+          "then": {"type": "object", "properties": {
+            "count_provider_sequence": {"type": "integer", "minimum": 1},
+            "request_url": {"const": "https://api.anthropic.com/v1/messages"},
+            "reservation": {"$ref": "#/$defs/providerReservation"}
+          }}
+        }
+      ]
+    },
+    "toolResultSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "is_error", "semantic_sha256"],
+      "properties": {
+        "kind": {"enum": ["raw_tool", "mcp", "stopped_prefix"]},
+        "is_error": {"type": "boolean"},
+        "semantic_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "mcpBoundedErrorResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "isError"],
+      "properties": {
+        "content": {"type": "array", "items": {"type": "object"}},
+        "isError": {"const": true}
+      }
+    },
+    "toolTranscriptEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_index", "event_kind", "tool_call_index", "provider_sequence", "continuation_provider_sequence", "monotonic_start_ns", "monotonic_end_ns", "tool_use_id", "name", "input", "input_jcs_base64", "input_bytes", "input_sha256", "result", "result_jcs_base64", "result_bytes", "result_sha256", "result_subject", "status"],
+      "properties": {
+        "event_index": {"type": "integer", "minimum": 0},
+        "event_kind": {"const": "tool"},
+        "tool_call_index": {"type": "integer", "minimum": 1, "maximum": 12},
+        "provider_sequence": {"type": "integer", "minimum": 1},
+        "continuation_provider_sequence": {"type": ["integer", "null"], "minimum": 1},
+        "monotonic_start_ns": {"$ref": "#/$defs/bigint"},
+        "monotonic_end_ns": {"$ref": "#/$defs/bigint"},
+        "tool_use_id": {"$ref": "#/$defs/nonEmptyString"},
+        "name": {"$ref": "#/$defs/nonEmptyString"},
+        "input": {"type": "object"},
+        "input_jcs_base64": {"$ref": "#/$defs/base64"},
+        "input_bytes": {"type": "integer", "minimum": 2},
+        "input_sha256": {"$ref": "#/$defs/sha256"},
+        "result": {"type": "object"},
+        "result_jcs_base64": {"$ref": "#/$defs/base64"},
+        "result_bytes": {"type": "integer", "minimum": 2},
+        "result_sha256": {"$ref": "#/$defs/sha256"},
+        "result_subject": {"$ref": "#/$defs/toolResultSubject"},
+        "status": {"enum": ["success", "bounded_error", "timed_out", "invalid", "denied", "overflow", "protocol_lost", "process_lost", "failed"]}
+      },
+      "allOf": [
+        {
+          "if": {"type": "object", "properties": {"status": {"const": "bounded_error"}}, "required": ["status"]},
+          "then": {"type": "object", "properties": {
+            "result": {"$ref": "#/$defs/mcpBoundedErrorResult"},
+            "result_bytes": {"type": "integer", "maximum": 65536},
+            "result_subject": {"type": "object", "properties": {"kind": {"const": "mcp"}, "is_error": {"const": true}}},
+            "continuation_provider_sequence": {"type": "integer", "minimum": 1}
+          }}
+        },
+        {
+          "if": {"type": "object", "properties": {"status": {"enum": ["protocol_lost", "process_lost", "overflow"]}}, "required": ["status"]},
+          "then": {"type": "object", "properties": {"continuation_provider_sequence": {"type": "null"}}}
+        }
+      ]
+    },
+    "toolJoinRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_index", "tool_use_id", "name", "input_bytes", "input_sha256", "result_bytes", "result_sha256", "provider_sequence", "continuation_sequence", "result_subject_sha256"],
+      "properties": {
+        "event_index": {"type": "integer", "minimum": 0},
+        "tool_use_id": {"$ref": "#/$defs/nonEmptyString"},
+        "name": {"$ref": "#/$defs/nonEmptyString"},
+        "input_bytes": {"type": "integer", "minimum": 0},
+        "input_sha256": {"$ref": "#/$defs/sha256"},
+        "result_bytes": {"type": "integer", "minimum": 0},
+        "result_sha256": {"$ref": "#/$defs/sha256"},
+        "provider_sequence": {"type": "integer", "minimum": 1},
+        "continuation_sequence": {"type": ["integer", "null"], "minimum": 1},
+        "result_subject_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "stopEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "matched", "evaluation_sha256"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 1, "maximum": 14},
+        "matched": {"type": "boolean"},
+        "evaluation_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "privateLifecycleRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "stage", "occurred_at", "local_monotonic_ns", "subject_manifest_sha256", "journal_frame_sha256"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 0},
+        "stage": {"$ref": "#/$defs/nonEmptyString"},
+        "occurred_at": {"$ref": "#/$defs/timestamp"},
+        "local_monotonic_ns": {"$ref": "#/$defs/bigint"},
+        "subject_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "journal_frame_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "archiveIndexRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "path", "artifact_kind", "semantic_id", "bytes", "sha256"],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 2},
+        "path": {"type": "string", "pattern": "^p/[0-9]{8}\\.bin$"},
+        "artifact_kind": {"enum": ["lock_observation", "role_acceptance", "environment_manifest", "containment_observation", "containment_probe", "journal_frame", "ledger_frame", "provider_event", "tool_event", "transcript", "machine_grade_join", "dossier", "blind_bundle", "review", "adjudication", "reveal_mapping", "lifecycle_manifest", "stop_observation", "receipt_build_input", "raw_repository", "graph", "hidden_fixture", "provider_body", "review_working", "dossier_excerpt"]},
+        "semantic_id": {"$ref": "#/$defs/nonEmptyString"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "privateArchiveIndex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "campaign_id", "entries"],
+      "properties": {
+        "schema_version": {"const": "madar-capability-private-index-v2"},
+        "campaign_id": {"$ref": "#/$defs/nonEmptyString"},
+        "entries": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/archiveIndexRow"}}
+      },
+      "examples": [{"schema_version":"madar-capability-private-index-v2","campaign_id":"capability-validation-v2-20260726T000000Z","entries":[{"ordinal":2,"path":"p/00000002.bin","artifact_kind":"lock_observation","semantic_id":"lock-1","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]}]
+    },
+
+    "privateLockObservation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_kind", "schema_version", "semantic_id", "campaign_id", "observed_at", "authorization_subject_sha256", "git_objects", "files", "owner_comments", "role_comments", "provider_account_observation", "proof_package_jcs_sha256"],
+      "properties": {
+        "artifact_kind": {"const": "lock_observation"}, "schema_version": {"const": 2}, "semantic_id": {"$ref": "#/$defs/nonEmptyString"}, "campaign_id": {"$ref": "#/$defs/nonEmptyString"}, "observed_at": {"$ref": "#/$defs/timestamp"}, "authorization_subject_sha256": {"$ref": "#/$defs/sha256"},
+        "git_objects": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/gitObjectObservation"}}, "files": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fileObservation"}}, "owner_comments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/ownerCommentObservation"}}, "role_comments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/roleCommentObservation"}},
+        "provider_account_observation": {"type": "null"}, "proof_package_jcs_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "examples": [{"artifact_kind":"lock_observation","schema_version":2,"semantic_id":"lock-1","campaign_id":"capability-validation-v2-20260726T000000Z","observed_at":"2026-07-26T00:00:00Z","authorization_subject_sha256":"0000000000000000000000000000000000000000000000000000000000000000","git_objects":[{"object_type":"commit","oid":"0000000000000000000000000000000000000000","canonical_bytes":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}],"files":[{"path":"/tmp/a","realpath":"/tmp/a","mode_octal":"0600","device":"1","inode":"2","nlink":1,"size":2,"mtime_ns":"1","content":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}],"owner_comments":[{"repository_id":1,"repository_owner_id":1,"issue_number":612,"comment_numeric_id":1,"author_login":"mohanagy","author_numeric_id":1,"author_association":"OWNER","body_utf8":"approve","body_sha256":"0000000000000000000000000000000000000000000000000000000000000000","created_at":"2026-07-26T00:00:00Z","updated_at":"2026-07-26T00:00:00Z","includes_created_edit":false,"html_url":"https://github.com/mohanagy/madar/issues/612#issuecomment-1"}],"role_comments":[{"repository_id":1,"repository_owner_id":1,"issue_number":612,"comment_numeric_id":2,"author_login":"reviewer-one","author_numeric_id":2,"author_association":"NONE","body_utf8":"accept","body_sha256":"0000000000000000000000000000000000000000000000000000000000000000","created_at":"2026-07-26T00:00:00Z","updated_at":"2026-07-26T00:00:00Z","includes_created_edit":false,"html_url":"https://github.com/mohanagy/madar/issues/612#issuecomment-2"}],"provider_account_observation":null,"proof_package_jcs_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "privateRoleAcceptance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_kind", "schema_version", "semantic_id", "campaign_id", "role", "authorization_subject_sha256", "github_comment", "independence_statement_sha256", "observed_before_lock"],
+      "properties": {"artifact_kind":{"const":"role_acceptance"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"role":{"enum":["operator","mapping_custodian","reviewer_1","reviewer_2","adjudicator","archive_verifier"]},"authorization_subject_sha256":{"$ref":"#/$defs/sha256"},"github_comment":{"$ref":"#/$defs/roleCommentObservation"},"independence_statement_sha256":{"$ref":"#/$defs/sha256"},"observed_before_lock":{"const":true}},
+      "examples": [{"artifact_kind":"role_acceptance","schema_version":2,"semantic_id":"role-operator","campaign_id":"capability-validation-v2-20260726T000000Z","role":"operator","authorization_subject_sha256":"0000000000000000000000000000000000000000000000000000000000000000","github_comment":{"repository_id":1,"repository_owner_id":1,"issue_number":612,"comment_numeric_id":2,"author_login":"operator-one","author_numeric_id":2,"author_association":"NONE","body_utf8":"accept","body_sha256":"0000000000000000000000000000000000000000000000000000000000000000","created_at":"2026-07-26T00:00:00Z","updated_at":"2026-07-26T00:00:00Z","includes_created_edit":false,"html_url":"https://github.com/mohanagy/madar/issues/612#issuecomment-2"},"independence_statement_sha256":"0000000000000000000000000000000000000000000000000000000000000000","observed_before_lock":true}]
+    },
+    "privateEnvironmentManifest": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","stage","argv","environment","file_manifest_sha256","toolchain_manifest_sha256","sealed_at"],
+      "properties":{"artifact_kind":{"const":"environment_manifest"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"stage":{"enum":["prelock_setup","worker","mcp","relay"]},"argv":{"type":"array","minItems":1,"items":{"type":"string"}},"environment":{"type":"object","additionalProperties":{"type":"string"}},"file_manifest_sha256":{"$ref":"#/$defs/sha256"},"toolchain_manifest_sha256":{"$ref":"#/$defs/sha256"},"sealed_at":{"$ref":"#/$defs/timestamp"}},
+      "examples":[{"artifact_kind":"environment_manifest","schema_version":2,"semantic_id":"env-1","campaign_id":"capability-validation-v2-20260726T000000Z","stage":"worker","argv":["/usr/bin/node"],"environment":{},"file_manifest_sha256":"0000000000000000000000000000000000000000000000000000000000000000","toolchain_manifest_sha256":"0000000000000000000000000000000000000000000000000000000000000000","sealed_at":"2026-07-26T00:00:00Z"}]
+    },
+    "privateContainmentObservation": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","trial_id","sample_monotonic_ns","sample_gap_ns","roots","spawn_gate_closed","fork_exec_kernel_denied","monitor_source_sha256","monitor_binary_sha256","sandbox_profile_sha256"],
+      "properties":{"artifact_kind":{"const":"containment_observation"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"trial_id":{"$ref":"#/$defs/nonEmptyString"},"sample_monotonic_ns":{"$ref":"#/$defs/bigint"},"sample_gap_ns":{"type":"integer","minimum":0,"maximum":10000000},"roots":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["monotonic_ns","pid","ppid","process_group","rss_bytes","descendant_marker","fork_exec_denial","termination_state"],"properties":{"monotonic_ns":{"$ref":"#/$defs/bigint"},"pid":{"type":"integer","minimum":1},"ppid":{"type":"integer","minimum":0},"process_group":{"type":"integer","minimum":1},"rss_bytes":{"type":"integer","minimum":0},"descendant_marker":{"$ref":"#/$defs/nonEmptyString"},"fork_exec_denial":{"const":true},"termination_state":{"enum":["running","terminating","exited"]}}}},"spawn_gate_closed":{"type":"boolean"},"fork_exec_kernel_denied":{"const":true},"monitor_source_sha256":{"$ref":"#/$defs/sha256"},"monitor_binary_sha256":{"$ref":"#/$defs/sha256"},"sandbox_profile_sha256":{"$ref":"#/$defs/sha256"}},
+      "examples":[{"artifact_kind":"containment_observation","schema_version":2,"semantic_id":"contain-1","campaign_id":"capability-validation-v2-20260726T000000Z","trial_id":"trial-1","sample_monotonic_ns":"1","sample_gap_ns":5000000,"roots":[{"monotonic_ns":"1","pid":123,"ppid":1,"process_group":123,"rss_bytes":4096,"descendant_marker":"worker-1","fork_exec_denial":true,"termination_state":"running"}],"spawn_gate_closed":false,"fork_exec_kernel_denied":true,"monitor_source_sha256":"0000000000000000000000000000000000000000000000000000000000000000","monitor_binary_sha256":"0000000000000000000000000000000000000000000000000000000000000000","sandbox_profile_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "privateContainmentProbe": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","probe","target","attempted_at_monotonic_ns","result","evidence_sha256"],
+      "properties":{"artifact_kind":{"const":"containment_probe"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"probe":{"enum":["anthropic_network","sentinel_network","credential_read","escape","termination"]},"target":{"$ref":"#/$defs/nonEmptyString"},"attempted_at_monotonic_ns":{"$ref":"#/$defs/bigint"},"result":{"enum":["kernel_denied","not_readable","not_reachable","terminated","failed"]},"evidence_sha256":{"$ref":"#/$defs/sha256"}},
+      "examples":[{"artifact_kind":"containment_probe","schema_version":2,"semantic_id":"probe-1","campaign_id":"capability-validation-v2-20260726T000000Z","probe":"anthropic_network","target":"api.anthropic.com","attempted_at_monotonic_ns":"1","result":"kernel_denied","evidence_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "privateJournalFrame": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","global_sequence","previous_frame_sha256","payload_kind","payload_jcs","frame_length","frame_sha256","writer_seal_sha256","fsynced_at_monotonic_ns"],
+      "properties":{"artifact_kind":{"const":"journal_frame"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"global_sequence":{"type":"integer","minimum":0},"previous_frame_sha256":{"$ref":"#/$defs/sha256"},"payload_kind":{"enum":["reservation","provider_outcome","tool","state","answer","stop","lifecycle"]},"payload_jcs":{"$ref":"#/$defs/capturedBytes"},"frame_length":{"type":"integer","minimum":1},"frame_sha256":{"$ref":"#/$defs/sha256"},"writer_seal_sha256":{"$ref":"#/$defs/sha256"},"fsynced_at_monotonic_ns":{"$ref":"#/$defs/bigint"}},
+      "examples":[{"artifact_kind":"journal_frame","schema_version":2,"semantic_id":"journal-0","campaign_id":"capability-validation-v2-20260726T000000Z","global_sequence":0,"previous_frame_sha256":"0000000000000000000000000000000000000000000000000000000000000000","payload_kind":"state","payload_jcs":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"frame_length":2,"frame_sha256":"0000000000000000000000000000000000000000000000000000000000000000","writer_seal_sha256":"0000000000000000000000000000000000000000000000000000000000000000","fsynced_at_monotonic_ns":"1"}]
+    },
+    "privateLedgerFrame": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","global_sequence","previous_frame_sha256","trial_id","operation","disposition","counted_input_tokens","reserved_micro_usd","actual_micro_usd","retained_micro_usd","campaign_actual_micro_usd","campaign_retained_micro_usd","frame_length","frame_sha256","journal_frame_sha256","writer_seal_sha256","fsynced_at_monotonic_ns"],
+      "properties":{"artifact_kind":{"const":"ledger_frame"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"global_sequence":{"type":"integer","minimum":0},"previous_frame_sha256":{"$ref":"#/$defs/sha256"},"trial_id":{"$ref":"#/$defs/nonEmptyString"},"operation":{"enum":["count","create"]},"disposition":{"enum":["reserved","actual_reconciled","reservation_retained","zero_cost_count"]},"counted_input_tokens":{"type":"integer","minimum":0},"reserved_micro_usd":{"type":"integer","minimum":0},"actual_micro_usd":{"type":["integer","null"],"minimum":0},"retained_micro_usd":{"type":"integer","minimum":0},"campaign_actual_micro_usd":{"type":"integer","minimum":0},"campaign_retained_micro_usd":{"type":"integer","minimum":0},"frame_length":{"type":"integer","minimum":1},"frame_sha256":{"$ref":"#/$defs/sha256"},"journal_frame_sha256":{"$ref":"#/$defs/sha256"},"writer_seal_sha256":{"$ref":"#/$defs/sha256"},"fsynced_at_monotonic_ns":{"$ref":"#/$defs/bigint"}},
+      "allOf":[
+        {"if":{"type":"object","properties":{"operation":{"const":"count"}},"required":["operation"]},"then":{"type":"object","properties":{"disposition":{"const":"zero_cost_count"},"reserved_micro_usd":{"const":0},"actual_micro_usd":{"const":0},"retained_micro_usd":{"const":0}}}},
+        {"if":{"type":"object","properties":{"disposition":{"enum":["reserved","reservation_retained"]}},"required":["disposition"]},"then":{"type":"object","properties":{"actual_micro_usd":{"type":"null"}}}},
+        {"if":{"type":"object","properties":{"disposition":{"const":"actual_reconciled"}},"required":["disposition"]},"then":{"type":"object","properties":{"actual_micro_usd":{"type":"integer"}}}}
+      ],
+      "examples":[{"artifact_kind":"ledger_frame","schema_version":2,"semantic_id":"ledger-0","campaign_id":"capability-validation-v2-20260726T000000Z","global_sequence":0,"previous_frame_sha256":"0000000000000000000000000000000000000000000000000000000000000000","trial_id":"trial-1","operation":"count","disposition":"zero_cost_count","counted_input_tokens":5,"reserved_micro_usd":0,"actual_micro_usd":0,"retained_micro_usd":0,"campaign_actual_micro_usd":0,"campaign_retained_micro_usd":0,"frame_length":2,"frame_sha256":"0000000000000000000000000000000000000000000000000000000000000000","journal_frame_sha256":"0000000000000000000000000000000000000000000000000000000000000000","writer_seal_sha256":"0000000000000000000000000000000000000000000000000000000000000000","fsynced_at_monotonic_ns":"1"}]
+    },
+    "privateProviderEvent": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","trial_id","event"],
+      "properties":{"artifact_kind":{"const":"provider_event"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"trial_id":{"$ref":"#/$defs/nonEmptyString"},"event":{"$ref":"#/$defs/providerTranscriptEvent"}},
+      "examples":[{"artifact_kind":"provider_event","schema_version":2,"semantic_id":"provider-1","campaign_id":"capability-validation-v2-20260726T000000Z","trial_id":"trial-1","event":{"event_index":0,"event_kind":"count","provider_sequence":1,"count_provider_sequence":null,"state_before":"count_pending","state_after":"count_complete","monotonic_reservation_request_ns":null,"monotonic_reservation_ack_ns":null,"monotonic_send_start_ns":"1","monotonic_headers_ns":"2","monotonic_body_end_ns":"3","monotonic_outcome_ack_ns":"4","deadline_remaining_ms":300000,"abort_ms":30000,"request_url":"https://api.anthropic.com/v1/messages/count_tokens","final_url":"https://api.anthropic.com/v1/messages/count_tokens","tls_hostname":"api.anthropic.com","http_method":"POST","request_body_base64":"e30=","request_bytes":2,"request_sha256":"0000000000000000000000000000000000000000000000000000000000000000","request_headers":{"accept":"application/json","accept-encoding":"identity","anthropic-version":"2023-06-01","content-type":"application/json","user-agent":"madar-core-reset-capability-validation-v1","x-api-key":"<redacted>","host":"api.anthropic.com","content-length":"2"},"request_headers_sha256":"0000000000000000000000000000000000000000000000000000000000000000","canonical_semantic_fields_sha256":"0000000000000000000000000000000000000000000000000000000000000000","tools_sha256":"0000000000000000000000000000000000000000000000000000000000000000","messages_sha256":"0000000000000000000000000000000000000000000000000000000000000000","system_sha256":"0000000000000000000000000000000000000000000000000000000000000000","tool_choice_sha256":"0000000000000000000000000000000000000000000000000000000000000000","http_status":200,"response_body_base64":"e30=","response_bytes":2,"response_sha256":"0000000000000000000000000000000000000000000000000000000000000000","response_headers":{},"response_headers_sha256":"0000000000000000000000000000000000000000000000000000000000000000","request_id":"req_1","request_id_sha256":"0000000000000000000000000000000000000000000000000000000000000000","request_id_header_sha256":"0000000000000000000000000000000000000000000000000000000000000000","model":null,"service_tier":null,"inference_geo":null,"usage":{"uncached_input":5,"cache_write_5m":0,"cache_write_1h":0,"cache_read":0,"output":0},"rate":[],"reservation":null,"actual_cost_micro_usd":0,"ledger_disposition":"zero_cost_count","content_classification":"count_tokens","assistant_content_sha256":null,"stop_reason":null,"terminal_classification":"continue"}}]
+    },
+    "privateToolEvent": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","trial_id","event"],
+      "properties":{"artifact_kind":{"const":"tool_event"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"trial_id":{"$ref":"#/$defs/nonEmptyString"},"event":{"$ref":"#/$defs/toolTranscriptEvent"}},
+      "examples":[{"artifact_kind":"tool_event","schema_version":2,"semantic_id":"tool-1","campaign_id":"capability-validation-v2-20260726T000000Z","trial_id":"trial-1","event":{"event_index":1,"event_kind":"tool","tool_call_index":1,"provider_sequence":2,"continuation_provider_sequence":3,"monotonic_start_ns":"5","monotonic_end_ns":"6","tool_use_id":"toolu_1","name":"tools/call","input":{},"input_jcs_base64":"e30=","input_bytes":2,"input_sha256":"0000000000000000000000000000000000000000000000000000000000000000","result":{"content":[],"isError":true},"result_jcs_base64":"e30=","result_bytes":2,"result_sha256":"0000000000000000000000000000000000000000000000000000000000000000","result_subject":{"kind":"mcp","is_error":true,"semantic_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"status":"bounded_error"}}]
+    },
+    "privateTranscript": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","transcript"],
+      "properties":{"artifact_kind":{"const":"transcript"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"transcript":{"type":"object","additionalProperties":false,"required":["schema_version","campaign_id","trial_id","events"],"properties":{"schema_version":{"const":"madar-capability-transcript-v2"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"trial_id":{"$ref":"#/$defs/nonEmptyString"},"events":{"type":"array","items":{"oneOf":[{"$ref":"#/$defs/providerTranscriptEvent"},{"$ref":"#/$defs/toolTranscriptEvent"}]}}}}},
+      "examples":[{"artifact_kind":"transcript","schema_version":2,"semantic_id":"transcript-1","transcript":{"schema_version":"madar-capability-transcript-v2","campaign_id":"capability-validation-v2-20260726T000000Z","trial_id":"trial-1","events":[]}}]
+    },
+    "privateMachineGradeJoin": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","trial_id","transcript_sha256","final_answer","tool_events","public_tool_calls","machine_tool_rows","completed_tool_event_indexes","phase_rows","expected_fixture_sha256"],
+      "properties":{"artifact_kind":{"const":"machine_grade_join"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"trial_id":{"$ref":"#/$defs/nonEmptyString"},"transcript_sha256":{"$ref":"#/$defs/sha256"},"final_answer":{"$ref":"#/$defs/capturedBytes"},"tool_events":{"type":"array","items":{"$ref":"#/$defs/toolJoinRow"}},"public_tool_calls":{"type":"array","items":{"$ref":"#/$defs/toolJoinRow"}},"machine_tool_rows":{"type":"array","items":{"$ref":"#/$defs/toolJoinRow"}},"completed_tool_event_indexes":{"type":"array","uniqueItems":true,"items":{"type":"integer","minimum":0}},"phase_rows":{"type":"array","items":{"$ref":"#/$defs/capturedBytes"}},"expected_fixture_sha256":{"$ref":"#/$defs/sha256"}},
+      "examples":[{"artifact_kind":"machine_grade_join","schema_version":2,"semantic_id":"grade-1","campaign_id":"capability-validation-v2-20260726T000000Z","trial_id":"trial-1","transcript_sha256":"0000000000000000000000000000000000000000000000000000000000000000","final_answer":{"utf8_or_binary_base64":"","bytes":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"tool_events":[],"public_tool_calls":[],"machine_tool_rows":[],"completed_tool_event_indexes":[],"phase_rows":[],"expected_fixture_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "privateDossier": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","question_id","repository_id","answer_ids","entries","dossier_sha256"],
+      "properties":{"artifact_kind":{"const":"dossier"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"question_id":{"$ref":"#/$defs/nonEmptyString"},"repository_id":{"enum":["documenso","formbricks"]},"answer_ids":{"type":"array","minItems":1,"uniqueItems":true,"items":{"$ref":"#/$defs/nonEmptyString"}},"entries":{"type":"array","items":{"$ref":"#/$defs/capturedBytes"}},"dossier_sha256":{"$ref":"#/$defs/sha256"}},
+      "examples":[{"artifact_kind":"dossier","schema_version":2,"semantic_id":"dossier-1","campaign_id":"capability-validation-v2-20260726T000000Z","question_id":"documenso-document-send","repository_id":"documenso","answer_ids":["A-0000000000000000"],"entries":[],"dossier_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "privateBlindBundle": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","answer_id","question_id","repository_id","pseudonym","answer_kind","question","final_answer","answer_sha256","dossier_sha256","bundle_sha256"],
+      "properties":{"artifact_kind":{"const":"blind_bundle"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"answer_id":{"$ref":"#/$defs/nonEmptyString"},"question_id":{"$ref":"#/$defs/nonEmptyString"},"repository_id":{"enum":["documenso","formbricks"]},"pseudonym":{"type":"string","pattern":"^A-[0-9a-f]{16}$"},"answer_kind":{"enum":["substantive","empty_zero"]},"question":{"$ref":"#/$defs/capturedBytes"},"final_answer":{"$ref":"#/$defs/capturedBytes"},"answer_sha256":{"$ref":"#/$defs/sha256"},"dossier_sha256":{"$ref":"#/$defs/sha256"},"bundle_sha256":{"$ref":"#/$defs/sha256"}},
+      "examples":[{"artifact_kind":"blind_bundle","schema_version":2,"semantic_id":"bundle-1","campaign_id":"capability-validation-v2-20260726T000000Z","answer_id":"A-0000000000000000","question_id":"documenso-document-send","repository_id":"documenso","pseudonym":"A-0000000000000000","answer_kind":"empty_zero","question":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"final_answer":{"utf8_or_binary_base64":"","bytes":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"answer_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","dossier_sha256":"0000000000000000000000000000000000000000000000000000000000000000","bundle_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "privateReview": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","answer_id","answer_sha256","answer_kind","reviewer_role","score_payload","score_payload_sha256","submitted_at","attestation_comment","receipt_sha256"],
+      "properties":{"artifact_kind":{"const":"review"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"answer_id":{"$ref":"#/$defs/nonEmptyString"},"answer_sha256":{"$ref":"#/$defs/sha256"},"answer_kind":{"enum":["substantive","empty_zero"]},"reviewer_role":{"enum":["reviewer_1","reviewer_2"]},"score_payload":{"$ref":"#/$defs/capturedBytes"},"score_payload_sha256":{"$ref":"#/$defs/sha256"},"submitted_at":{"$ref":"#/$defs/timestamp"},"attestation_comment":{"$ref":"#/$defs/roleCommentObservation"},"receipt_sha256":{"$ref":"#/$defs/sha256"}},
+      "examples":[{"artifact_kind":"review","schema_version":2,"semantic_id":"review-1","campaign_id":"capability-validation-v2-20260726T000000Z","answer_id":"A-0000000000000000","answer_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","answer_kind":"empty_zero","reviewer_role":"reviewer_1","score_payload":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"score_payload_sha256":"0000000000000000000000000000000000000000000000000000000000000000","submitted_at":"2026-07-26T00:00:00Z","attestation_comment":{"repository_id":1,"repository_owner_id":1,"issue_number":612,"comment_numeric_id":2,"author_login":"reviewer-one","author_numeric_id":2,"author_association":"NONE","body_utf8":"review","body_sha256":"0000000000000000000000000000000000000000000000000000000000000000","created_at":"2026-07-26T00:00:00Z","updated_at":"2026-07-26T00:00:00Z","includes_created_edit":false,"html_url":"https://github.com/mohanagy/madar/issues/612#issuecomment-2"},"receipt_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "privateAdjudication": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","answer_id","answer_sha256","answer_kind","review_receipt_sha256s","score_payload","score_payload_sha256","submitted_at","attestation_comment","receipt_sha256"],
+      "properties":{"artifact_kind":{"const":"adjudication"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"answer_id":{"$ref":"#/$defs/nonEmptyString"},"answer_sha256":{"$ref":"#/$defs/sha256"},"answer_kind":{"const":"substantive"},"review_receipt_sha256s":{"type":"array","minItems":2,"maxItems":2,"uniqueItems":true,"items":{"$ref":"#/$defs/sha256"}},"score_payload":{"$ref":"#/$defs/capturedBytes"},"score_payload_sha256":{"$ref":"#/$defs/sha256"},"submitted_at":{"$ref":"#/$defs/timestamp"},"attestation_comment":{"$ref":"#/$defs/roleCommentObservation"},"receipt_sha256":{"$ref":"#/$defs/sha256"}},
+      "examples":[{"artifact_kind":"adjudication","schema_version":2,"semantic_id":"adjudication-1","campaign_id":"capability-validation-v2-20260726T000000Z","answer_id":"A-0000000000000000","answer_sha256":"0000000000000000000000000000000000000000000000000000000000000000","answer_kind":"substantive","review_receipt_sha256s":["0000000000000000000000000000000000000000000000000000000000000000","1111111111111111111111111111111111111111111111111111111111111111"],"score_payload":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"score_payload_sha256":"0000000000000000000000000000000000000000000000000000000000000000","submitted_at":"2026-07-26T00:00:00Z","attestation_comment":{"repository_id":1,"repository_owner_id":1,"issue_number":612,"comment_numeric_id":3,"author_login":"adjudicator-one","author_numeric_id":3,"author_association":"NONE","body_utf8":"adjudicate","body_sha256":"0000000000000000000000000000000000000000000000000000000000000000","created_at":"2026-07-26T00:00:00Z","updated_at":"2026-07-26T00:00:00Z","includes_created_edit":false,"html_url":"https://github.com/mohanagy/madar/issues/612#issuecomment-3"},"receipt_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "privateRevealMapping": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","seed","salt","aes_key","nonce","mapping_jcs","mapping_sha256","envelope","commitment_sha256","custodian","created_at"],
+      "properties":{"artifact_kind":{"const":"reveal_mapping"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"seed":{"$ref":"#/$defs/capturedBytes"},"salt":{"$ref":"#/$defs/capturedBytes"},"aes_key":{"$ref":"#/$defs/capturedBytes"},"nonce":{"$ref":"#/$defs/capturedBytes"},"mapping_jcs":{"$ref":"#/$defs/capturedBytes"},"mapping_sha256":{"$ref":"#/$defs/sha256"},"envelope":{"$ref":"#/$defs/capturedBytes"},"commitment_sha256":{"$ref":"#/$defs/sha256"},"custodian":{"$ref":"#/$defs/githubLogin"},"created_at":{"$ref":"#/$defs/timestamp"}},
+      "examples":[{"artifact_kind":"reveal_mapping","schema_version":2,"semantic_id":"reveal-1","campaign_id":"capability-validation-v2-20260726T000000Z","seed":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"salt":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"aes_key":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"nonce":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"mapping_jcs":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"mapping_sha256":"0000000000000000000000000000000000000000000000000000000000000000","envelope":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"commitment_sha256":"0000000000000000000000000000000000000000000000000000000000000000","custodian":"mohanagy","created_at":"2026-07-26T00:00:00Z"}]
+    },
+    "privateLifecycleManifest": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","events","execution_manifest_sha256","contiguous_prefix_sha256"],
+      "properties":{"artifact_kind":{"const":"lifecycle_manifest"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"events":{"type":"array","items":{"$ref":"#/$defs/privateLifecycleRecord"}},"execution_manifest_sha256":{"$ref":"#/$defs/sha256"},"contiguous_prefix_sha256":{"$ref":"#/$defs/sha256"}},
+      "examples":[{"artifact_kind":"lifecycle_manifest","schema_version":2,"semantic_id":"lifecycle-1","campaign_id":"capability-validation-v2-20260726T000000Z","events":[],"execution_manifest_sha256":"0000000000000000000000000000000000000000000000000000000000000000","contiguous_prefix_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "privateStopObservation": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","observed_at","global_sequence","stage","evaluations","simultaneous_match_ids","first_stop_condition_id","completed_schedule_prefix_sha256","triggering_partial_row_sha256","rfc_amendment_comment","observation_sha256"],
+      "properties":{"artifact_kind":{"const":"stop_observation"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"observed_at":{"$ref":"#/$defs/timestamp"},"global_sequence":{"type":"integer","minimum":0},"stage":{"$ref":"#/$defs/nonEmptyString"},"evaluations":{"type":"array","minItems":14,"maxItems":14,"prefixItems":[
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":1}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":2}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":3}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":4}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":5}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":6}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":7}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":8}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":9}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":10}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":11}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":12}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":13}}}]},
+        {"allOf":[{"$ref":"#/$defs/stopEvaluation"},{"type":"object","properties":{"id":{"const":14}}}]}
+      ],"items":false},"simultaneous_match_ids":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"integer","minimum":1,"maximum":14}},"first_stop_condition_id":{"type":"integer","minimum":1,"maximum":14},"completed_schedule_prefix_sha256":{"$ref":"#/$defs/sha256"},"triggering_partial_row_sha256":{"$ref":"#/$defs/sha256"},"rfc_amendment_comment":{"$ref":"#/$defs/ownerCommentObservation"},"observation_sha256":{"$ref":"#/$defs/sha256"}},
+      "examples":[{"artifact_kind":"stop_observation","schema_version":2,"semantic_id":"stop-1","campaign_id":"capability-validation-v2-20260726T000000Z","observed_at":"2026-07-26T00:00:00Z","global_sequence":0,"stage":"preflight","evaluations":[{"id":1,"matched":true,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":2,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":3,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":4,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":5,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":6,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":7,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":8,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":9,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":10,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":11,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":12,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":13,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"id":14,"matched":false,"evaluation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}],"simultaneous_match_ids":[1],"first_stop_condition_id":1,"completed_schedule_prefix_sha256":"0000000000000000000000000000000000000000000000000000000000000000","triggering_partial_row_sha256":"0000000000000000000000000000000000000000000000000000000000000000","rfc_amendment_comment":{"repository_id":1,"repository_owner_id":1,"issue_number":577,"comment_numeric_id":1,"author_login":"mohanagy","author_numeric_id":1,"author_association":"OWNER","body_utf8":"stop","body_sha256":"0000000000000000000000000000000000000000000000000000000000000000","created_at":"2026-07-26T00:00:00Z","updated_at":"2026-07-26T00:00:00Z","includes_created_edit":false,"html_url":"https://github.com/mohanagy/madar/issues/577#issuecomment-1"},"observation_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "derivedArchiveManifest": {
+      "type":"object","additionalProperties":false,
+      "required":["record_type","schema_version","campaign_id","public_manifest","public_manifest_jcs","archive_sha256","archive_bytes"],
+      "properties":{"record_type":{"const":"archive_manifest_derivation"},"schema_version":{"const":2},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"public_manifest":{"$ref":"#/$defs/publicArchiveManifest"},"public_manifest_jcs":{"$ref":"#/$defs/capturedBytes"},"archive_sha256":{"$ref":"#/$defs/sha256"},"archive_bytes":{"type":"integer","minimum":1}},
+      "examples":[{"record_type":"archive_manifest_derivation","schema_version":2,"campaign_id":"capability-validation-v2-20260726T000000Z","public_manifest":{"schema_version":"madar-capability-archive-v2","campaign_id":"capability-validation-v2-20260726T000000Z","files":[{"ordinal":1,"path":"p/00000001.bin","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},{"ordinal":2,"path":"p/00000002.bin","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]},"public_manifest_jcs":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"archive_sha256":"0000000000000000000000000000000000000000000000000000000000000000","archive_bytes":2}]
+    },
+    "statObservation": {
+      "type":"object","additionalProperties":false,
+      "required":["realpath","device","inode","nlink","mode_octal","size","mtime_ns","regular_file","symlink"],
+      "properties":{"realpath":{"$ref":"#/$defs/absolutePath"},"device":{"$ref":"#/$defs/bigint"},"inode":{"$ref":"#/$defs/bigint"},"nlink":{"const":1},"mode_octal":{"const":"0600"},"size":{"type":"integer","minimum":1},"mtime_ns":{"$ref":"#/$defs/bigint"},"regular_file":{"const":true},"symlink":{"const":false}}
+    },
+    "derivedArchiveCopyAttestation": {
+      "type":"object","additionalProperties":false,
+      "required":["record_type","schema_version","campaign_id","copy","absolute_path","create_flags","pre_reread_stat","file_fsync_monotonic_ns","directory_fsync_monotonic_ns","reread_stat","reread","archive_sha256","manifest_sha256","copy_identity_sha256"],
+      "properties":{"record_type":{"const":"archive_copy_attestation"},"schema_version":{"const":2},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"copy":{"enum":["primary","secondary"]},"absolute_path":{"$ref":"#/$defs/absolutePath"},"create_flags":{"const":["O_CREAT","O_EXCL","O_NOFOLLOW","O_WRONLY"]},"pre_reread_stat":{"$ref":"#/$defs/statObservation"},"file_fsync_monotonic_ns":{"$ref":"#/$defs/bigint"},"directory_fsync_monotonic_ns":{"$ref":"#/$defs/bigint"},"reread_stat":{"$ref":"#/$defs/statObservation"},"reread":{"$ref":"#/$defs/capturedBytes"},"archive_sha256":{"$ref":"#/$defs/sha256"},"manifest_sha256":{"$ref":"#/$defs/sha256"},"copy_identity_sha256":{"$ref":"#/$defs/sha256"}},
+      "examples":[{"record_type":"archive_copy_attestation","schema_version":2,"campaign_id":"capability-validation-v2-20260726T000000Z","copy":"primary","absolute_path":"/tmp/primary.archive","create_flags":["O_CREAT","O_EXCL","O_NOFOLLOW","O_WRONLY"],"pre_reread_stat":{"realpath":"/tmp/primary.archive","device":"1","inode":"2","nlink":1,"mode_octal":"0600","size":2,"mtime_ns":"1","regular_file":true,"symlink":false},"file_fsync_monotonic_ns":"1","directory_fsync_monotonic_ns":"2","reread_stat":{"realpath":"/tmp/primary.archive","device":"1","inode":"2","nlink":1,"mode_octal":"0600","size":2,"mtime_ns":"1","regular_file":true,"symlink":false},"reread":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"archive_sha256":"0000000000000000000000000000000000000000000000000000000000000000","manifest_sha256":"0000000000000000000000000000000000000000000000000000000000000000","copy_identity_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
+    },
+    "externalArchiveVerifierAttestation": {
+      "type":"object","additionalProperties":false,
+      "required":["record_type","schema_version","campaign_id","verifier_login","candidate_receipt_sha256","primary_archive_sha256","secondary_archive_sha256","manifest_sha256","copy_identity_record_sha256","reviewed_at","attestation_comment"],
+      "properties":{"record_type":{"const":"archive_verifier_attestation"},"schema_version":{"const":2},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"verifier_login":{"$ref":"#/$defs/githubLogin"},"candidate_receipt_sha256":{"$ref":"#/$defs/sha256"},"primary_archive_sha256":{"$ref":"#/$defs/sha256"},"secondary_archive_sha256":{"$ref":"#/$defs/sha256"},"manifest_sha256":{"$ref":"#/$defs/sha256"},"copy_identity_record_sha256":{"$ref":"#/$defs/sha256"},"reviewed_at":{"$ref":"#/$defs/timestamp"},"attestation_comment":{"$ref":"#/$defs/roleCommentObservation"}},
+      "examples":[{"record_type":"archive_verifier_attestation","schema_version":2,"campaign_id":"capability-validation-v2-20260726T000000Z","verifier_login":"verifier-one","candidate_receipt_sha256":"0000000000000000000000000000000000000000000000000000000000000000","primary_archive_sha256":"0000000000000000000000000000000000000000000000000000000000000000","secondary_archive_sha256":"0000000000000000000000000000000000000000000000000000000000000000","manifest_sha256":"0000000000000000000000000000000000000000000000000000000000000000","copy_identity_record_sha256":"0000000000000000000000000000000000000000000000000000000000000000","reviewed_at":"2026-07-26T00:00:00Z","attestation_comment":{"repository_id":1,"repository_owner_id":1,"issue_number":612,"comment_numeric_id":4,"author_login":"verifier-one","author_numeric_id":4,"author_association":"NONE","body_utf8":"verify","body_sha256":"0000000000000000000000000000000000000000000000000000000000000000","created_at":"2026-07-26T00:00:00Z","updated_at":"2026-07-26T00:00:00Z","includes_created_edit":false,"html_url":"https://github.com/mohanagy/madar/issues/612#issuecomment-4"}}]
+    },
+    "privateReceiptBuildInput": {
+      "type":"object","additionalProperties":false,
+      "required":["artifact_kind","schema_version","semantic_id","campaign_id","sealed_evidence_root_sha256","ordered_artifacts","first_stop_observation_sha256","v1_projection_input_sha256","contract_sha256","input_manifest_jcs","builder_source_sha256","created_at"],
+      "properties":{"artifact_kind":{"const":"receipt_build_input"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"sealed_evidence_root_sha256":{"$ref":"#/$defs/sha256"},"ordered_artifacts":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/archiveIndexRow"}},"first_stop_observation_sha256":{"$ref":"#/$defs/nullableSha256"},"v1_projection_input_sha256":{"$ref":"#/$defs/sha256"},"contract_sha256":{"$ref":"#/$defs/sha256"},"input_manifest_jcs":{"$ref":"#/$defs/capturedBytes"},"builder_source_sha256":{"$ref":"#/$defs/sha256"},"created_at":{"$ref":"#/$defs/timestamp"}},
+      "examples":[{"artifact_kind":"receipt_build_input","schema_version":2,"semantic_id":"build-1","campaign_id":"capability-validation-v2-20260726T000000Z","sealed_evidence_root_sha256":"0000000000000000000000000000000000000000000000000000000000000000","ordered_artifacts":[{"ordinal":2,"path":"p/00000002.bin","artifact_kind":"lock_observation","semantic_id":"lock-1","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}],"first_stop_observation_sha256":null,"v1_projection_input_sha256":"0000000000000000000000000000000000000000000000000000000000000000","contract_sha256":"0000000000000000000000000000000000000000000000000000000000000000","input_manifest_jcs":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"builder_source_sha256":"0000000000000000000000000000000000000000000000000000000000000000","created_at":"2026-07-26T00:00:00Z"}]
+    },
+
+    "privateRawRepository": {
+      "type":"object","additionalProperties":false,"required":["artifact_kind","schema_version","semantic_id","campaign_id","repository_id","commit","tree","content"],"properties":{"artifact_kind":{"const":"raw_repository"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"repository_id":{"$ref":"#/$defs/nonEmptyString"},"commit":{"$ref":"#/$defs/sha"},"tree":{"$ref":"#/$defs/sha"},"content":{"$ref":"#/$defs/capturedBytes"}},"examples":[{"artifact_kind":"raw_repository","schema_version":2,"semantic_id":"repo-1","campaign_id":"capability-validation-v2-20260726T000000Z","repository_id":"documenso","commit":"0000000000000000000000000000000000000000","tree":"0000000000000000000000000000000000000000","content":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}]
+    },
+    "privateGraph": {
+      "type":"object","additionalProperties":false,"required":["artifact_kind","schema_version","semantic_id","campaign_id","trial_id","arm","checkpoint","content"],"properties":{"artifact_kind":{"const":"graph"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"trial_id":{"$ref":"#/$defs/nonEmptyString"},"arm":{"enum":["graphify","madar"]},"checkpoint":{"enum":["after_clean_build","before_answer","after_answer","refresh_pre","refresh_post"]},"content":{"$ref":"#/$defs/capturedBytes"}},"examples":[{"artifact_kind":"graph","schema_version":2,"semantic_id":"graph-1","campaign_id":"capability-validation-v2-20260726T000000Z","trial_id":"trial-1","arm":"madar","checkpoint":"after_answer","content":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}]
+    },
+    "privateHiddenFixture": {
+      "type":"object","additionalProperties":false,"required":["artifact_kind","schema_version","semantic_id","campaign_id","fixture_id","repository_id","question_id","content"],"properties":{"artifact_kind":{"const":"hidden_fixture"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"fixture_id":{"$ref":"#/$defs/nonEmptyString"},"repository_id":{"enum":["documenso","formbricks","openstatus"]},"question_id":{"$ref":"#/$defs/nonEmptyString"},"content":{"$ref":"#/$defs/capturedBytes"}},"examples":[{"artifact_kind":"hidden_fixture","schema_version":2,"semantic_id":"fixture-1","campaign_id":"capability-validation-v2-20260726T000000Z","fixture_id":"fixture-1","repository_id":"documenso","question_id":"documenso-document-send","content":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}]
+    },
+    "privateProviderBody": {
+      "type":"object","additionalProperties":false,"required":["artifact_kind","schema_version","semantic_id","campaign_id","trial_id","provider_sequence","direction","operation","content"],"properties":{"artifact_kind":{"const":"provider_body"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"trial_id":{"$ref":"#/$defs/nonEmptyString"},"provider_sequence":{"type":"integer","minimum":1},"direction":{"enum":["request","response"]},"operation":{"enum":["count","create"]},"content":{"$ref":"#/$defs/capturedBytes"}},"examples":[{"artifact_kind":"provider_body","schema_version":2,"semantic_id":"provider-body-1","campaign_id":"capability-validation-v2-20260726T000000Z","trial_id":"trial-1","provider_sequence":1,"direction":"request","operation":"count","content":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}]
+    },
+    "privateReviewWorking": {
+      "type":"object","additionalProperties":false,"required":["artifact_kind","schema_version","semantic_id","campaign_id","role","answer_id","content"],"properties":{"artifact_kind":{"const":"review_working"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"role":{"enum":["reviewer_1","reviewer_2","adjudicator"]},"answer_id":{"$ref":"#/$defs/nonEmptyString"},"content":{"$ref":"#/$defs/capturedBytes"}},"examples":[{"artifact_kind":"review_working","schema_version":2,"semantic_id":"working-1","campaign_id":"capability-validation-v2-20260726T000000Z","role":"reviewer_1","answer_id":"A-0000000000000000","content":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}]
+    },
+    "privateDossierExcerpt": {
+      "type":"object","additionalProperties":false,"required":["artifact_kind","schema_version","semantic_id","campaign_id","question_id","path","start_line","end_line","file_bytes","file_sha256","excerpt_bytes","excerpt_sha256","text"],"properties":{"artifact_kind":{"const":"dossier_excerpt"},"schema_version":{"const":2},"semantic_id":{"$ref":"#/$defs/nonEmptyString"},"campaign_id":{"$ref":"#/$defs/nonEmptyString"},"question_id":{"$ref":"#/$defs/nonEmptyString"},"path":{"type":"string","minLength":1},"start_line":{"const":1},"end_line":{"type":"integer","minimum":1},"file_bytes":{"type":"integer","minimum":1},"file_sha256":{"$ref":"#/$defs/sha256"},"excerpt_bytes":{"type":"integer","minimum":1},"excerpt_sha256":{"$ref":"#/$defs/sha256"},"text":{"$ref":"#/$defs/capturedBytes"}},"examples":[{"artifact_kind":"dossier_excerpt","schema_version":2,"semantic_id":"excerpt-1","campaign_id":"capability-validation-v2-20260726T000000Z","question_id":"documenso-document-send","path":"src/a.ts","start_line":1,"end_line":1,"file_bytes":2,"file_sha256":"0000000000000000000000000000000000000000000000000000000000000000","excerpt_bytes":2,"excerpt_sha256":"0000000000000000000000000000000000000000000000000000000000000000","text":{"utf8_or_binary_base64":"e30=","bytes":2,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}}]
+    },
+
+    "privateEvidenceEnvelope": {
+      "title": "Local-only closed private evidence envelope",
+      "description": "Implementation selects this local fragment explicitly. Each artifact kind is represented by exactly one non-overlapping branch; there is no generic or catch-all private artifact.",
+      "oneOf": [
+        {"$ref": "#/$defs/privateLockObservation"},
+        {"$ref": "#/$defs/privateRoleAcceptance"},
+        {"$ref": "#/$defs/privateEnvironmentManifest"},
+        {"$ref": "#/$defs/privateContainmentObservation"},
+        {"$ref": "#/$defs/privateContainmentProbe"},
+        {"$ref": "#/$defs/privateJournalFrame"},
+        {"$ref": "#/$defs/privateLedgerFrame"},
+        {"$ref": "#/$defs/privateProviderEvent"},
+        {"$ref": "#/$defs/privateToolEvent"},
+        {"$ref": "#/$defs/privateTranscript"},
+        {"$ref": "#/$defs/privateMachineGradeJoin"},
+        {"$ref": "#/$defs/privateDossier"},
+        {"$ref": "#/$defs/privateBlindBundle"},
+        {"$ref": "#/$defs/privateReview"},
+        {"$ref": "#/$defs/privateAdjudication"},
+        {"$ref": "#/$defs/privateRevealMapping"},
+        {"$ref": "#/$defs/privateLifecycleManifest"},
+        {"$ref": "#/$defs/privateStopObservation"},
+        {"$ref": "#/$defs/privateReceiptBuildInput"},
+        {"$ref": "#/$defs/privateRawRepository"},
+        {"$ref": "#/$defs/privateGraph"},
+        {"$ref": "#/$defs/privateHiddenFixture"},
+        {"$ref": "#/$defs/privateProviderBody"},
+        {"$ref": "#/$defs/privateReviewWorking"},
+        {"$ref": "#/$defs/privateDossierExcerpt"}
+      ]
+    }
+  }
+}

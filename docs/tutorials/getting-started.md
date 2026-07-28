@@ -1,131 +1,107 @@
-# End-to-end getting started tutorial
+# Getting started
 
-Use this walkthrough when you want a 10-minute first-run path through `madar` without a private repository or paid model calls. It uses the checked-in `examples/sample-workspace/` demo so every step stays local and reproducible.
+This walkthrough builds one local JavaScript/TypeScript graph, runs one retrieval, and registers the same one-tool MCP surface.
 
-## 1. Install madar
+## 1. Install and generate
 
-```bash
-npm install -g @lubab/madar
-```
-
-If you are working from this repository instead of a published npm install, run `npm run build` from the repository root first so the local CLI is up to date.
-
-## 2. Start with the one-command trial flow
+Madar requires Node.js 20 or newer:
 
 ```bash
-madar try "how does password reset request enqueue the reset email" examples/sample-workspace
+npm install -g @lubab/madar@next
+cd /path/to/madar
+madar generate examples/sample-workspace
 ```
 
-This builds or reuses `examples/sample-workspace/out/graph.json`, prints one human-readable local explanation, and ends with the next recommended install command without requiring Claude/Cursor/Codex/Copilot setup first.
+Expected output identifies the workspace, indexed JavaScript/TypeScript files, graph node and edge counts, and `out/graph.json`.
 
-## 3. Generate a graph for the sample workspace manually
+`graph.json` is the authoritative local artifact. Source in other languages and non-code files contributes no graph facts.
 
-```bash
-madar generate examples/sample-workspace --no-html
-```
-
-This creates `examples/sample-workspace/out/graph.json`.
-
-Default generation combines SPI metadata with proven legacy semantics for supported TypeScript/JavaScript code, while retaining legacy fallback for other supported languages. Strict SPI mode restricts code extraction to SPI-supported JS/TS without legacy semantics or language fallback; eligible non-code evidence remains included:
-
-```bash
-madar generate examples/sample-workspace --spi --no-html
-```
-
-## 4. Install one agent profile
-
-Move into the sample workspace before installing so the generated graph, agent config, and verification commands all point at the same project:
+## 2. Inspect a retrieval
 
 ```bash
 cd examples/sample-workspace
+madar query "how does password reset request enqueue the reset email?"
 ```
 
-Use one install target so the generated graph has an actual MCP or instruction surface attached to it. Claude is the shortest path here:
+The result contains authenticated `matched_nodes`, directed `relationships`, explicit `boundaries`, and bounded `metrics`. It uses the same query application as MCP.
+
+Madar returns at most 12 files, 25 snippets, and 4,000 serialized tokens. A smaller positive budget is optional:
 
 ```bash
-madar claude install
+madar query "how does password reset request enqueue the reset email?" --budget 2000
 ```
 
-If you want a different runtime, use the same step with `madar codex install`, `madar cursor install`, `madar copilot install`, `madar gemini install`, `madar aider install`, or `madar opencode install`.
+## 3. Connect Claude Code or Codex
 
-## 5. Verify the install before asking bigger questions
+Run the installer from the exact repository or linked worktree where the client will operate:
 
 ```bash
-madar doctor out/graph.json
-madar status out/graph.json
+madar install claude
+madar doctor
+madar status
 ```
 
-For Claude, Cursor, Gemini, and Copilot, `doctor` checks graph freshness plus the install wiring, and `status` gives you the compact readiness summary plus the next recommended commands. `doctor`/`status` also report Codex, Aider, and OpenCode when their AGENTS/hook/plugin/MCP signals are present; if any of those drift, the agent is marked `partial` with a reinstall suggestion.
-
-## 6. Start with a bounded summary
+For Codex:
 
 ```bash
-madar summary out/graph.json
+madar install codex
+madar doctor
+madar status
 ```
 
-This prints the deterministic high-signal overview first: graph counts, source domains, top modules, frameworks, entrypoints, and runtime paths. It is the fastest way to decide whether you need a deeper `pack`, `prompt`, or MCP retrieval call.
+Claude Code receives a supported per-project local registration outside the repository. Codex receives a workspace-hashed block in `$CODEX_HOME/config.toml` or `~/.codex/config.toml` with exact `cwd`, `startup_timeout_sec = 180`, and `tool_timeout_sec = 60`.
 
-## 7. Build a compact pack
+Fresh install, idempotent reinstall, and uninstall create zero repository bytes. There are no generated prompts, instructions, hooks, skills, plugins, or project-local MCP files.
+
+Restart the client, confirm that it lists the Madar server, and ask:
+
+```text
+How does password reset request enqueue the reset email? Cite exact files and symbols, and state any missing evidence.
+```
+
+For a transport check, ask the client to call `retrieve` exactly once. A forced call proves only that the client initialized, listed, and dispatched the tool; it does not prove natural tool preference.
+
+Other MCP clients are Registry or manual targets. Register command `madar`, arguments `["mcp"]`, stdio transport, and the exact repository as the working directory.
+
+## Expected result behavior
+
+- `outcome: "evidence"` means authenticated graph evidence survived selection.
+- `outcome: "missing"` means the graph has no support for the question.
+- `outcome: "unsupported"` means required source is outside the JavaScript/TypeScript index.
+- `outcome: "stale"` means source bytes or ranges no longer match the graph.
+- `outcome: "unavailable"` means required local source cannot be read safely.
+- `outcome: "corrupt"` means required graph facts are malformed.
+- `boundaries` may additionally report disconnected or truncated evidence.
+
+Do not treat a partial path as complete. Use the returned evidence first, report its boundary, and make only the focused source read needed to verify what is missing.
+
+## Refresh after changes
+
+For a one-off reconcile:
 
 ```bash
-madar pack "how does password reset request enqueue the reset email" \
-  --graph out/graph.json \
-  --task explain
+madar generate . --update
 ```
 
-This is the fastest way to confirm the route → service → job flow is represented in the graph. On runtime-generation questions like this one, newer reports can also preserve an `execution_slice` so you can inspect ordered steps without reading the whole raw slice. Treat it as a static runtime-path hypothesis from the graph, not a live trace. The nested `phase_coverage` is also static and prompt-scoped, so broader report-generation questions may show planner/research/report-builder/scoring/renderer/persistence phases when the graph supports them.
-
-## 8. Compile a provider-ready prompt
+For continued local development:
 
 ```bash
-madar prompt "where is reset token persisted before the email job runs" \
-  --provider claude \
-  --graph out/graph.json
+madar generate . --watch
 ```
 
-`prompt` only compiles the prompt payload. It does **not** call Claude or spend paid model tokens by itself.
-
-## 9. Run a safe compare smoke check
-
-If you want to exercise `compare` without calling a paid model, use a local echo-style runner:
-
-```bash
-madar compare "how does password reset request enqueue the reset email" \
-  --graph out/graph.json \
-  --baseline-mode pack_only \
-  --exec 'cat {prompt_file}' \
-  --yes
-```
-
-This does **not** measure model quality. It is a safe local smoke check that proves `compare` can build both prompts, isolate one bounded raw-context baseline against one compiled madar pack rendered from the same explain-pack core as `madar pack --task explain`, and save the artifact bundle without requiring a hosted model. Real model-backed compare runs are optional, and compare or benchmark flows only spend paid model tokens once you replace the local smoke-check runner with a real CLI model command.
-
-On Windows, use `--exec "type {prompt_file}"` for the same smoke check because `compare` runs `--exec` through `cmd.exe`.
-
-## Expected output
-
-- `try` should print one human-readable local result plus a recommended install command
-- `generate` should write `examples/sample-workspace/out/graph.json`
-- `claude install` should register the local Madar integration for the sample workspace
-- `doctor` should confirm the graph path plus install wiring for Claude, Cursor, Gemini, or Copilot
-- `status` should print the next recommended commands for this sample workspace when you use one of those reported agents
-- `summary` should print the bounded overview before any deeper retrieval
-- `pack` should print a compact JSON payload with matched nodes from the password reset flow
-- `prompt` should print a provider-ready prompt payload
-- `compare` should create an artifact directory under `out/compare/` containing prompt and answer files plus both `report.json` and `report.share-safe.json`
-- runtime-generation compare reports may also carry an `execution_slice` inside `report.json` when madar can preserve the ordered backend flow compactly; it is a static runtime-path hypothesis, not a live trace
+`madar mcp` starts stdio before loading reconciliation code and keeps the exact working-directory graph current. The first tool call waits no more than 25 seconds; if a graph is not accepted, it returns the canonical `unavailable` result.
 
 ## Troubleshooting
 
-- **`madar: command not found`**: make sure the global npm install succeeded, or run from a local repo checkout after `npm run build`.
-- **`graph.json` missing**: rerun `madar generate . --no-html` before `pack`, `prompt`, or `compare`.
-- **`doctor` or `status` says the install is missing**: rerun your chosen `madar <agent> install` command from the sample workspace root, then rerun the verification commands for Claude, Cursor, Gemini, or Copilot.
-- **Need a strict JS/TS code-extraction diagnostic?** Regenerate with `madar generate . --spi --no-html`; eligible non-code evidence remains included. Normal `madar generate . --no-html` already includes framework-aware JS/TS hints and retains Go, Python, and other supported legacy languages.
-- **`compare` looks noisy**: the `cat {prompt_file}` runner (or `type {prompt_file}` on Windows) is only a local smoke check. Use a real terminal model runner later if you want meaningful answer comparisons.
-- **Need more questions?** Start with `examples/sample-workspace/prompt-examples.json`.
+- **`out/graph.json` is missing:** run `madar generate .`.
+- **The result is stale:** reconcile after source changes and repeat the same question.
+- **The MCP server is absent:** rerun `madar install claude` or `madar install codex`, restart the client, and inspect its MCP list.
+- **The installer reports a conflict:** preserve the existing user-owned registration and resolve ownership explicitly; Madar will not overwrite it.
+- **The result is unsupported:** confirm the load-bearing code is JavaScript or TypeScript.
+- **The result is truncated:** ask a narrower question; budgets above 4,000 do not increase the effective cap.
 
 ## Optional next steps
 
-- Replace the local compare runner with your real CLI model command from [`docs/proof-workflows.md`](../proof-workflows.md).
-- Turn the same workflow into a public share-safe receipt with the [design-partner program](https://github.com/mohanagy/madar/blob/next/docs/design-partners.md).
-- Install one of the agent profiles from the README after the sample graph is generated.
-- Move from `examples/sample-workspace/` to your own workspace and rerun the same `generate` → `pack` → `prompt` flow.
+- Read the [CLI and MCP reference](../reference/cli-and-mcp.md).
+- Follow an [agent quickstart](./agent-quickstarts.md).
+- Review the [design-partner test format](../design-partners.md) before sharing results from a private repository.

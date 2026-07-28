@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { copyWorkspaceForBenchmark } from '../../src/shared/workspace-copy.js'
+import { copyWorkspaceForBenchmark } from '../../tools/eval/lib/shared/workspace-copy.js'
 
 describe('copyWorkspaceForBenchmark', () => {
   const tempRoots: string[] = []

@@ -1,0 +1,1833 @@
+schema_version: 1
+status: accepted
+tracking_issue: https://github.com/mohanagy/madar/issues/577
+milestone: https://github.com/mohanagy/madar/milestone/7
+project: https://github.com/users/mohanagy/projects/8
+
+baseline:
+  recorded_at: 2026-07-19
+  commit: 33951d6cb57f6f4c33c8a8610fd61dcc94443f1f
+  package_version: 0.32.0
+  production_typescript_files: 181
+  production_typescript_loc: 96766
+
+review:
+  status: complete
+  reviewed_at: 2026-07-19
+  issue: https://github.com/mohanagy/madar/issues/580
+  evidence_receipt: docs/core-reset/evidence/baseline-v0.32.0.json
+  production_files_reviewed: 181
+  files_with_one_owner: 181
+  unowned_files: 0
+  overlapping_files: 0
+  disposition_changes: 11
+  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transferred graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activated the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. PR #608 completed the exact move without changing any surviving production TypeScript or dependency. First-stage owner-approved issue #610 governance activation merged at dcb52596a3efa89f9ef5d372231ce97a91ae5f9f, then independent review stopped its uncommitted implementation under conditions 7, 8, and 13 before any implementation PR, campaign lock, provider request, or spend. First-stage owner-approved issue #612 authorizes only an eight-path governance-only v2 candidate from that exact merge; its separate activation merge approval remains required. It changes no production ownership or disposition. Graph, index, generation, retrieval, CLI, MCP, installer, workspace, held-out, provider, campaign, grading, product, package, dependency, budget, and timeout semantics remain frozen.'
+  release_amendment: 'On 2026-07-28 the owner cancelled Capability Validation and the Native-vs-Graphify comparator as release gates. Issues #610, #612, #614, #615, and #616 are closed not planned; every unconsumed preparation, activation, implementation, campaign, provider, spend, and target-execution authority in those issues and their RFC receipts is superseded and revoked. No campaign ran, no comparative result exists, provider requests remain zero, and spend remains USD 0. The completed vertical slice through Evaluation Tooling Isolation is ready for release preparation as 0.40.0-beta.1 on next only; this is not stable-release or comparator evidence.'
+
+current:
+  updated_at: 2026-07-28
+  completed_phase: evaluation-tooling
+  active_phase: null
+  ready_phase: release-beta
+  base_commit: 452ad84890c012392c5e6af613e8bfeb17de45db
+  completed_phase_commit: 565c42bb1b34b67f7fefc7aabd0513e4e391a13b
+  production_typescript_files: 43
+  production_typescript_loc: 11956
+  production_loc_added: 0
+  production_loc_removed: 4698
+  production_loc_net: -4698
+  npm_files: 102
+  npm_packed_bytes: 160118
+  npm_unpacked_bytes: 638445
+  npm_shasum: 5811e58e02799d103ad12b7220c31e6a7244043c
+  npm_integrity: sha512-h4Uwa2LVbJnYEoEXbLJ10QybVX5FDvgweWKFhWSxRGxsvVZzp3M+//uO1UlwpucyHKNofDo+/uXir33AmDNfWA==
+  npm_artifact_sha256: 390ba73ae215caea37a3403d7963f709997ac86d462e8e3dedfed8a710c7fa40
+  measurement_state: source_and_package_exact
+  snapshot_scope: release_candidate_source_and_package
+  release_candidate:
+    version: 0.40.0-beta.1
+    protected_anchor_commit: 5c9d1e2436932f7420169ea4ffa617c6bea4fbd0
+    protected_anchor_tree: 35b68cd733e07b9306d52e2076a287269f8919eb
+    target_branch: next
+    npm_dist_tag: next
+    stable_release: false
+    comparator_result: none
+    provider_requests: 0
+    spend_usd: 0
+    publication_state: preparation
+
+targets:
+  production_typescript_files_max: 80
+  production_typescript_loc_max: 35000
+  npm_files_max: 150
+  npm_unpacked_bytes_max: 1500000
+  cli_commands_max: 6
+  mcp_tools_max: 1
+
+rules:
+  - A rebuild item is incomplete until its predecessor code, imports, flags, obsolete tests, docs, and dependencies are removed.
+  - Production code must not import moved evaluation tooling.
+  - No permanent V1/V2 implementation, extraction mode, or fallback engine may survive the reset.
+  - No repository-specific path, symbol, expected answer, or proof profile may exist in production retrieval.
+  - Every reset PR records its net production LOC delta.
+
+items:
+  - id: safe-workspace-primitives
+    disposition: keep
+    status: proposed
+    sources:
+      - src/shared/atomic-file.ts
+      - src/shared/discovery-safety.ts
+      - src/shared/security.ts
+      - src/shared/source-path.ts
+      - src/shared/source-location.ts
+      - src/shared/git.ts
+      - src/shared/guards.ts
+      - src/shared/workspace.ts
+    destination: adapters/filesystem and focused domain value objects
+    exit_gate: Preserved safety and linked-worktree tests pass through the new application boundary.
+
+  - id: provenance
+    disposition: keep
+    status: proposed
+    sources:
+      - src/core/provenance/types.ts
+    destination: domain/graph provenance contract
+    exit_gate: One validated provenance vocabulary is used by index and query results.
+
+  - id: directed-multigraph
+    disposition: rebuild
+    status: complete
+    sources:
+      - src/adapters/filesystem/graph-artifact.ts
+      - src/domain/graph/artifact.ts
+      - src/domain/graph/canonical-json.ts
+      - src/domain/graph/directed-multigraph.ts
+    removed_sources:
+      - src/contracts/graph.ts
+      - src/pipeline/build.ts
+      - src/pipeline/export.ts
+      - src/pipeline/export/community-summary.ts
+      - src/pipeline/export/overview-bridges.ts
+      - src/pipeline/export/overview-navigation.ts
+      - src/core/schema/normalize.ts
+      - src/runtime/direction.ts
+    destination: src/domain/graph/**
+    notes: 'The obsolete exporter helpers moved from the later non-core-products bucket to this phase because #582 deletes the entire legacy exporter surface; no later phase retains ownership of those files. The transitional src/application/build-graph.ts adapter moved to #588 because it becomes an orphan only when legacy and non-code extraction are deleted.'
+    production_loc_budget:
+      added_max: 1200
+      removed_min: 2852
+      net_max: -1500
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/582
+      pull_request: https://github.com/mohanagy/madar/pull/583
+      commit: 63c59049178e82bd6bd1c928f6666ef159365bbe
+      production_typescript_files: 178
+      production_typescript_loc: 93792
+      production_loc_added: 1197
+      production_loc_removed: 4171
+      production_loc_net: -2974
+      dependencies_added: 0
+      ci_matrix_jobs_passed: 6
+      coderabbit: passed
+      unresolved_review_threads: 0
+    remove_when: Schema-v2 invariant, serialization, migration-error, and deterministic-ID tests pass.
+    exit_gate: Parallel relationship kinds and direction survive build, store, and load.
+
+  - id: canonical-typescript-index
+    disposition: rebuild
+    status: complete
+    sources:
+      - src/domain/index/**
+      - src/adapters/typescript/**
+    removed_sources:
+      - src/pipeline/spi/**
+      - src/contracts/extraction.ts
+      - src/contracts/types.ts
+      - src/core/layers/types.ts
+    destination: src/domain/index/** and src/adapters/typescript/**
+    preserve:
+      - Generic TypeScript semantic-resolution algorithms
+      - Framework detectors that satisfy the canonical adapter contract
+    notes: 'Completed by #585 and PR #586 from protected base f68d64482578f0c7992ec63095fa00e19ac25880; the final CodeRabbit rerun was rate-limited and merged under the explicit owner exception recorded below after all nine actionable comments and two review-body nitpicks were fixed, independent review passed, six CI jobs passed, and no review thread remained unresolved.'
+    production_loc_budget:
+      added_max: 5900
+      removed_min: 7564
+      net_max: -1500
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/585
+      pull_request: https://github.com/mohanagy/madar/pull/586
+      commit: 4dfd48194f2fab00b2cd2271a6f7917909dde9d4
+      production_typescript_files: 170
+      production_typescript_loc: 91539
+      production_loc_added: 5538
+      production_loc_removed: 7791
+      production_loc_net: -2253
+      dependencies_added: 0
+      ci_matrix_jobs_passed: 6
+      coderabbit: rate_limited_owner_exception
+      coderabbit_findings_addressed: 9
+      coderabbit_findings_confirmed: 8
+      coderabbit_review_body_nitpicks_addressed: 2
+      independent_review: passed
+      independent_review_receipt: https://github.com/mohanagy/madar/pull/586#issuecomment-5036311350
+      unresolved_review_threads: 0
+    remove_when: Labelled language and framework fixtures pass without legacy augmentation.
+    exit_gate: One canonical index schema writes the graph directly.
+
+  - id: legacy-extraction
+    disposition: delete
+    status: complete
+    removed_sources:
+      - src/application/build-graph.ts
+      - src/core/provenance/ingest.ts
+      - src/infrastructure/cache.ts
+      - src/infrastructure/capabilities.ts
+      - src/pipeline/extract.ts
+      - src/pipeline/extract/call-resolution.ts
+      - src/pipeline/extract/combine.ts
+      - src/pipeline/extract/core.ts
+      - src/pipeline/extract/cross-file.ts
+      - src/pipeline/extract/dispatch.ts
+      - src/pipeline/extract/frameworks/core.ts
+      - src/pipeline/extract/frameworks/express.ts
+      - src/pipeline/extract/frameworks/js-import-paths.ts
+      - src/pipeline/extract/frameworks/nest.ts
+      - src/pipeline/extract/frameworks/next.ts
+      - src/pipeline/extract/frameworks/react-router.ts
+      - src/pipeline/extract/frameworks/redux.ts
+      - src/pipeline/extract/frameworks/types.ts
+      - src/pipeline/extract/generic.ts
+      - src/pipeline/extract/pipeline.ts
+      - src/pipeline/extract/typescript-utils.ts
+      - src/pipeline/extract/contracts.ts
+      - src/pipeline/tree-sitter-wasm.ts
+    absorbs:
+      - non-code-and-other-language-ingest
+    transferred_sources:
+      - src/application/build-graph.ts
+      - src/core/provenance/ingest.ts
+      - src/infrastructure/cache.ts
+      - src/infrastructure/capabilities.ts
+    production_file_budget:
+      added_max: 1
+      removed_min: 31
+    production_loc_budget:
+      added_max: 900
+      removed_min: 20951
+      net_max: -20000
+    runtime_dependency_budget:
+      added_max: 0
+      removed_min: 3
+    runtime_dependencies_removed:
+      - '@vscode/tree-sitter-wasm'
+      - web-tree-sitter
+      - fflate
+    retired_cli_flags:
+      - --legacy
+      - --spi
+      - --include-docs
+      - --docs
+      - --wiki
+    notes: 'Completed by #588 and PR #590 from protected base 9a762d0a4e10a0ae210ba3f53bb1d4468367e81e. This scalar handle completed one combined deletion of 31 production files, including the non-code-and-other-language-ingest item and four transferred extraction orphans. CodeRabbit skipped the actual review because reviews are disabled for the core-reset base; the owner-approved exception is backed by the independent exact-head review recorded below.'
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/588
+      pull_request: https://github.com/mohanagy/madar/pull/590
+      commit: d46031eed7b0cf2d8bb7b7b6267a51322d9e2490
+      production_files_added: 0
+      production_files_removed: 31
+      production_typescript_files: 139
+      production_typescript_loc: 68954
+      production_loc_added: 815
+      production_loc_removed: 23400
+      production_loc_net: -22585
+      dependencies_added: 0
+      dependencies_removed: 3
+      npm_files: 314
+      npm_packed_bytes: 592783
+      npm_unpacked_bytes: 2794076
+      ci_matrix_jobs_passed: 6
+      ci_run: https://github.com/mohanagy/madar/actions/runs/29899357806
+      coderabbit: skipped_base_owner_exception
+      independent_review: passed
+      independent_review_receipt: https://github.com/mohanagy/madar/pull/590#issuecomment-5043069972
+      unresolved_review_threads: 0
+    exit_gate: Canonical TypeScript fixtures pass and no production import references the legacy engine.
+
+  - id: non-code-and-other-language-ingest
+    disposition: delete
+    status: complete
+    removed_sources:
+      - src/pipeline/docs.ts
+      - src/pipeline/wiki.ts
+      - src/shared/binary-ingest-sidecar.ts
+      - src/pipeline/extract/non-code.ts
+      - src/pipeline/extract/non-code/**
+      - src/pipeline/extract/python-rationale.ts
+      - src/pipeline/extract/go-cross-file.ts
+    absorbed_by: legacy-extraction
+    notes: 'Completed by #588 and PR #590 under the legacy-extraction completion receipt. These non-TypeScript handlers retained distinct manifest ownership while being deleted by the single combined phase, so no temporary companion path survived.'
+    exit_gate: Package, docs, flags, dependencies, and tests no longer claim unsupported ingestion.
+
+  - id: generation-and-incremental
+    disposition: rebuild
+    status: complete
+    sources:
+      - src/application/generate-index.ts
+      - src/application/update-index.ts
+      - src/adapters/filesystem/source-catalog.ts
+      - src/adapters/filesystem/index-store.ts
+      - src/infrastructure/watch-index.ts
+    removed_sources:
+      - src/infrastructure/generate.ts
+      - src/contracts/generation-policy.ts
+      - src/infrastructure/generation-policy.ts
+      - src/contracts/indexing.ts
+      - src/pipeline/indexing-generation.ts
+      - src/pipeline/indexing-outcomes.ts
+      - src/infrastructure/indexing-manifest.ts
+      - src/pipeline/detect.ts
+      - src/pipeline/manifest.ts
+      - src/infrastructure/refresh-lease.ts
+      - src/contracts/watcher-state.ts
+      - src/infrastructure/watcher-state.ts
+      - src/infrastructure/watch.ts
+      - src/infrastructure/background-auto-refresh.ts
+      - src/shared/graph-build-freshness.ts
+    transferred_sources:
+      - src/core/pipeline/stage.ts
+      - src/runtime/freshness.ts
+      - src/shared/source-discovery.ts
+      - src/infrastructure/doctor.ts
+    replacement_sources:
+      - src/application/generate-index.ts
+      - src/application/update-index.ts
+      - src/domain/index/build-state.ts
+      - src/adapters/filesystem/source-catalog.ts
+      - src/adapters/filesystem/index-store.ts
+      - src/infrastructure/watch-index.ts
+    destination: one source catalog, one full canonical TypeScript reconcile, directed multigraph, and authoritative graph.json
+    production_file_budget:
+      added_max: 6
+      removed_min: 15
+    production_loc_budget:
+      added_max: 2200
+      removed_min: 3839
+      net_max: -1500
+    runtime_dependency_budget:
+      added_max: 0
+      removed_min: 0
+    development_dependency_budget:
+      added_max: 0
+      removed_min: 0
+    final_source_budget:
+      files_max: 130
+      loc_max: 67454
+    npm_package_budget:
+      files_max: 296
+      unpacked_bytes_max: 2700000
+      packed_bytes_delta_max: 0
+    performance_budget:
+      cold_noop_median_ratio_max: 0.20
+      clean_generation_regression_ratio_max: 0.10
+      measured_trials_min: 20
+    stopped_incremental_gate:
+      candidate_checkpoint: 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d
+      candidate_worktree_tree: 6bd1ae5762afaa868d5cf6ce165b061aa290bfda
+      fixed_fixture_supported_files: 500
+      warm_index_p50_ratio: 0.824
+      warm_refresh_p50_ratio: 1.047
+      warm_refresh_p95_ratio: 1.029
+      heldout: intentionally_skipped_after_fixed_gate_stop
+      failed_path: deleted
+    completeness_contract:
+      supported_extensions:
+        - .ts
+        - .tsx
+        - .js
+        - .jsx
+      supported_success_determines_completeness: true
+      supported_failure: incomplete_with_exact_file_and_reason
+      recognized_unsupported: informational
+      expected_policy_exclusions: informational
+      safety_exclusions: separate_and_never_indexed
+    equivalence_mutations:
+      - no_op
+      - add
+      - private_leaf_change
+      - exported_signature_change
+      - delete
+      - rename
+      - compiler_control
+      - madarignore
+      - gitignore
+      - recognized_unsupported_add_delete_rename
+      - allowed_and_rejected_symlink
+      - linked_worktree
+    publication_contract:
+      authoritative_artifact: graph.json
+      commit_marker: graph.json
+      derived_diagnostics_non_blocking: true
+      persistent_fact_cache: forbidden
+      versioned_snapshot_store: forbidden
+    activation:
+      issue: https://github.com/mohanagy/madar/issues/592
+      owner_approval: https://github.com/mohanagy/madar/issues/592#issuecomment-5044052506
+      rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5044052586
+      protected_base: 8886a0299ee30765ce149ca7ad5d1779496b78b5
+    implementation:
+      commit: 1be24dc45a5f07c352c74fc374feb95a9440df8e
+      mode: cold_noop_or_full_canonical_reconcile
+      in_memory_session_cache: absent
+      disk_session_cache: absent
+      failed_incremental_path: deleted
+      evidence_receipts:
+        - docs/core-reset/evidence/generation-incremental-protected-base-500.json
+        - docs/core-reset/evidence/generation-incremental-stop-500.json
+        - docs/core-reset/evidence/generation-full-reconcile-500.json
+        - docs/core-reset/evidence/generation-incremental-inventory.json
+        - docs/core-reset/evidence/generation-mutation-equivalence.json
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/592
+      pull_request: https://github.com/mohanagy/madar/pull/594
+      commit: b56966c06c0ae1b04c252f297036f332fa1b384c
+      implementation_commit: 1be24dc45a5f07c352c74fc374feb95a9440df8e
+      final_pr_head: 3f40c5b64cdd63054c52ed67588b782034f8b935
+      ci_head: 3f40c5b64cdd63054c52ed67588b782034f8b935
+      outcome: cold_noop_or_full_canonical_reconcile_after_incremental_stop
+      production_files_added: 6
+      production_files_removed: 15
+      production_typescript_files: 130
+      production_typescript_loc: 66418
+      production_loc_added: 2190
+      production_loc_removed: 4726
+      production_loc_net: -2536
+      replacement_loc: 1484
+      dependencies_added: 0
+      dependencies_removed: 0
+      runtime_dependencies_added: 0
+      development_dependencies_added: 0
+      npm_files: 276
+      npm_packed_bytes: 572143
+      npm_unpacked_bytes: 2699851
+      ci_matrix_jobs_passed: 6
+      ci_run: https://github.com/mohanagy/madar/actions/runs/29942216697
+      test_files_passed: 156
+      tests_passed: 1885
+      tests_skipped: 2
+      coverage_statements_percent: 84.44
+      coverage_branches_percent: 76.64
+      coverage_functions_percent: 89.57
+      coverage_lines_percent: 85.34
+      coderabbit: skipped_base_owner_exception
+      independent_review: passed
+      independent_reviews_passed: 3
+      independent_review_receipt: https://github.com/mohanagy/madar/pull/594#issuecomment-5049404550
+      unresolved_review_threads: 0
+    notes: 'Completed by #592 and PR #594 from protected base 8886a0299ee30765ce149ca7ad5d1779496b78b5 after the recorded stop amendment. The fixed 500-file gate failed at candidate checkpoint 1d3c9b6d264a5c76d212b93da7c63718cbe49b3d / worktree tree 6bd1ae5762afaa868d5cf6ce165b061aa290bfda: warm index p50 ratio 0.824, refresh p50 1.047, and refresh p95 1.029. Held-out timing was intentionally skipped because it could not reverse the mandatory stop. The failed incremental path was deleted. Exact runtime commit 1be24dc45a5f07c352c74fc374feb95a9440df8e ships cold no-op plus one full canonical reconcile for every changed source state, with neither an in-memory nor disk session cache. Its compatible 500-file receipt passes cold no-op at 0.067 of clean generation, zero parse/invalidation/publication, and clean regression at 1.045. build-state.ts is one of the six permitted replacements but remains owned by the completed canonical-typescript-index domain pattern, so no fifth ownership transfer is created. graph.json remains the sole authoritative artifact and commits last; diagnostics are derived and non-blocking. All six exact-head CI jobs passed, three independent P0/P1 audits found no blocker, CodeRabbit explicitly skipped review for the non-default base under the owner-approved exception, and zero review threads remained. Evidence-path query later completed through PR #600, Thin Delivery through #602 and PR #604, and Evaluation Tooling Isolation through #606 and PR #608. At that #608 completion checkpoint Capability Validation remained blocked and unapproved; the separately owner-approved #610 activation item below supersedes that status.'
+    remove_when: Add, change, delete, rename, compiler-control, ignore-policy, recognized-unsupported-file, symlink, and linked-worktree updates equal clean generation through the one full-reconcile path; supported-JS/TS completeness, cold no-op, graph-last failure/concurrency, source/package, CI, and review gates pass; all 15 predecessors and the failed incremental path remain absent.
+    exit_gate: One source catalog publishes a clean-equivalent graph.json through cold no-op or full canonical reconciliation, with zero stale facts, no mixed authoritative generation, no predecessor path, and no in-memory or disk session cache.
+
+  - id: evidence-path-query
+    disposition: rebuild
+    status: complete
+    sources:
+      - src/runtime/retrieve.ts
+      - src/runtime/retrieve/**
+      - src/runtime/context-pack.ts
+      - src/runtime/routing-debug.ts
+      - src/runtime/value-per-token.ts
+      - src/core/pipeline/stage.ts
+      - src/runtime/freshness.ts
+      - src/shared/source-discovery.ts
+      - src/runtime/semantic.ts
+      - src/runtime/http-server.ts
+      - src/infrastructure/time-travel.ts
+      - src/runtime/time-travel.ts
+      - src/infrastructure/context-pack-command.ts
+      - src/infrastructure/context-prompt-command.ts
+      - src/infrastructure/context-prompt.ts
+      - src/infrastructure/handoff-command.ts
+      - src/infrastructure/proof-report.ts
+      - src/infrastructure/review-compare.ts
+      - src/pipeline/cluster.ts
+      - src/pipeline/community-details.ts
+      - src/pipeline/community-naming.ts
+      - src/pipeline/analyze.ts
+      - src/pipeline/report.ts
+      - src/pipeline/federate.ts
+      - src/runtime/diff.ts
+      - src/runtime/graph-summary.ts
+      - src/runtime/serve.ts
+      - src/domain/query/types.ts
+      - src/domain/query/source-domain.ts
+      - src/domain/query/rank.ts
+      - src/domain/query/traverse.ts
+      - src/domain/query/slice.ts
+      - src/domain/query/index-status.ts
+      - src/application/retrieve-context.ts
+    removed_sources:
+      - src/runtime/retrieve.ts
+      - src/runtime/retrieve/**
+      - src/runtime/context-pack.ts
+      - src/runtime/routing-debug.ts
+      - src/runtime/value-per-token.ts
+      - src/core/pipeline/stage.ts
+      - src/runtime/freshness.ts
+      - src/shared/source-discovery.ts
+      - src/contracts/context-*
+      - src/contracts/retrieval-*
+      - src/contracts/task-*
+      - src/contracts/handoff.ts
+      - src/contracts/runtime-proof.ts
+      - src/runtime/context-inventory.ts
+      - src/runtime/context-pack-*.ts
+      - src/runtime/context-session.ts
+      - src/runtime/task-*
+      - src/runtime/retrieval-gate.ts
+      - src/runtime/mcp-response-evidence.ts
+      - src/runtime/feature-map.ts
+      - src/runtime/risk-map.ts
+      - src/runtime/implementation-checklist.ts
+      - src/runtime/implementation-pack.ts
+      - src/runtime/relevant-files.ts
+      - src/runtime/pr-impact.ts
+      - src/runtime/impact.ts
+      - src/runtime/semantic.ts
+      - src/infrastructure/context-pack-command.ts
+      - src/infrastructure/context-prompt-command.ts
+      - src/infrastructure/context-prompt.ts
+      - src/infrastructure/handoff-command.ts
+      - src/runtime/http-server.ts
+      - src/infrastructure/time-travel.ts
+      - src/runtime/time-travel.ts
+      - src/infrastructure/proof-report.ts
+      - src/infrastructure/review-compare.ts
+      - src/pipeline/cluster.ts
+      - src/pipeline/community-details.ts
+      - src/pipeline/community-naming.ts
+      - src/pipeline/analyze.ts
+      - src/pipeline/report.ts
+      - src/pipeline/federate.ts
+      - src/runtime/diff.ts
+      - src/runtime/graph-summary.ts
+      - src/runtime/serve.ts
+    absorbs:
+      - context-governance-stack
+      - derived-product-wrappers
+    transferred_sources:
+      - src/core/pipeline/stage.ts
+      - src/runtime/freshness.ts
+      - src/shared/source-discovery.ts
+      - src/runtime/semantic.ts
+      - src/runtime/http-server.ts
+      - src/infrastructure/time-travel.ts
+      - src/runtime/time-travel.ts
+      - src/infrastructure/context-pack-command.ts
+      - src/infrastructure/context-prompt-command.ts
+      - src/infrastructure/context-prompt.ts
+      - src/infrastructure/handoff-command.ts
+      - src/infrastructure/proof-report.ts
+      - src/infrastructure/review-compare.ts
+      - src/pipeline/cluster.ts
+      - src/pipeline/community-details.ts
+      - src/pipeline/community-naming.ts
+      - src/pipeline/analyze.ts
+      - src/pipeline/report.ts
+      - src/pipeline/federate.ts
+      - src/runtime/diff.ts
+      - src/runtime/graph-summary.ts
+      - src/runtime/serve.ts
+    supplemental_cleanup_sources:
+      - src/runtime/stdio/prompts.ts
+    replacement_sources:
+      - src/domain/query/types.ts
+      - src/domain/query/source-domain.ts
+      - src/domain/query/rank.ts
+      - src/domain/query/traverse.ts
+      - src/domain/query/slice.ts
+      - src/domain/query/index-status.ts
+      - src/application/retrieve-context.ts
+    preserve:
+      - SourceDomain
+      - classifySourceDomain
+      - isPollutedSourcePath
+      - private helpers required only by those query-classification exports
+    destination: src/domain/query/** and src/application/retrieve-context.ts
+    predecessor_contract:
+      files: 63
+      production_loc: 33031
+      transferred_sources: 22
+      absorbed_handles: 2
+    production_file_budget:
+      added_max: 7
+      removed_min: 63
+    production_loc_budget:
+      added_max: 3500
+      removed_min: 33031
+      net_max: -25900
+    runtime_dependency_budget:
+      added_max: 0
+      removed_min: 0
+    development_dependency_budget:
+      added_max: 0
+      removed_min: 0
+    optional_peer_metadata_to_remove:
+      - '@huggingface/transformers'
+    final_source_budget:
+      files_max: 83
+      loc_max: 40500
+    npm_package_budget:
+      files_max: 210
+      unpacked_bytes_max: 2200000
+      packed_bytes_delta_max: -1
+    implementation_inventory:
+      receipt: docs/core-reset/evidence/evidence-path-inventory.json
+      receipt_sha256: c027cd1bd79cafdaa65a3f96ec6c359e57e5f567666c6eb25f28bab7014466e4
+      subject_commit: 29aba7ebffe14d6a70bde78df1490bf4cded64a4
+      subject_tree_oid: 277649ed917fc134e9808a995ce8c84f22258acb
+      production_typescript_files: 73
+      production_typescript_loc: 21687
+      production_loc_added: 3500
+      production_loc_removed: 48231
+      production_loc_net: -44731
+      runtime_dependencies_added: 0
+      development_dependencies_added: 0
+      optional_peer_metadata_removed: true
+      npm_files: 162
+      npm_packed_bytes: 231524
+      npm_unpacked_bytes: 984434
+      npm_packed_bytes_delta: -340647
+      all_phase_budgets_pass: true
+    deterministic_query_contract:
+      graph_authoritative_for_selection_and_graph_facts: true
+      preserve_typed_directional_relationships: true
+      structural_file_nodes:
+        allowed: true
+        node_kind: file
+        allowed_relationships:
+          - imports_from
+          - contains
+        relationship_endpoints:
+          imports_from: file_to_file
+          contains: file_to_symbol
+        range: forbidden
+        snippet: forbidden
+        phase_coverage: forbidden
+        count_toward_selected_files_and_precision: true
+      symbol_declarations:
+        definition_range: complete_ast_definition
+        declaration_range: canonical_signature_or_declaration_prefix
+        coordinates: one_based_utf16_end_exclusive
+        snippet: exact_authenticated_declaration_range
+        full_file_sha256: required
+        non_contiguous_or_synthesized_excerpt: forbidden
+      disconnected_boundaries_explicit: true
+      missing_and_unsupported_boundaries_explicit: true
+      stale_unavailable_corrupt_and_truncated_boundaries_explicit: true
+      duplicate_evidence_forbidden: true
+      authenticated_source_excerpt:
+        source_layer: application
+        graph_fields_required:
+          - node
+          - source_file
+          - definition_range
+          - declaration_range
+          - provenance
+          - canonical_file_node.content_hash
+        source_root: graph_root
+        source_path_must_remain_beneath_root: true
+        hash_algorithm: sha256_complete_utf8_source
+        hash_must_equal: canonical_file_node.content_hash
+        excerpt: exact_declaration_range_text_only
+        unauthenticated_or_synthesized_snippet: forbidden
+        missing_unreadable_or_escape: unavailable_without_snippet
+        hash_mismatch_or_invalid_range: stale_without_snippet
+      determinism_inputs:
+        - normalized_retrieve_request
+        - canonical_graph_bytes
+        - authenticated_source_snapshot
+      closure_pass_max: 1
+      global_confidence_score: forbidden
+      planner_or_recursive_recovery: forbidden
+      hidden_second_query_or_model_call: forbidden
+      repository_specific_rules: forbidden
+    cross_phase_amendment:
+      purpose: Add canonical declaration ranges and normalize non-graph compiler settings in the existing TypeScript index without creating a second index, compatibility format, or ownership overlap.
+      index_format_after_implementation: v3
+      graph_artifact_envelope: v2_unchanged
+      old_index_policy: regeneration_required_no_fallback
+      authorized_existing_source_modifications:
+        - path: src/domain/index/model.ts
+          owner: canonical-typescript-index
+          purpose: canonical definition_range and declaration_range facts
+        - path: src/adapters/typescript/index.ts
+          owner: canonical-typescript-index
+          purpose: deterministic AST declaration ranges plus build/dependency-only compiler normalization
+        - path: src/domain/index/build-state.ts
+          owner: canonical-typescript-index
+          purpose: bind the canonical index format and engine version
+      ownership: remains_exclusively_canonical-typescript-index
+      replacement_source_count_change: 0
+      budget_accounting: Added production lines in these files count inside evidence-path-query's unchanged 3500-line added ceiling.
+      compatibility_engine: forbidden
+    retrieve_input_contract:
+      allowed_keys:
+        - question
+        - budget
+      additional_properties: forbidden
+      question: required
+      budget: optional_and_part_of_normalized_request
+      forbidden_legacy_controls:
+        - semantic
+        - rerank
+        - strategy
+        - session
+        - mode
+    surviving_caller_contract:
+      compare_legacy_response_branches: delete
+      installer_applicability_hook_generation: delete
+      heldout_and_performance_runners: development_only
+      compatibility_types_or_engine: forbidden
+    heldout_contract:
+      id: core-reset-held-out-v2
+      contract: tools/eval/core-reset/contracts/evaluation-contract.json
+      contract_sha256: c22819a9e24e53f7b11a69c06511a8dc0c2cba8841868d8d9bb734575290bba9
+      contract_schema: tools/eval/core-reset/schemas/evaluation-contract.schema.json
+      contract_schema_sha256: 581acc2332cbe9015e0bd1c7da4db84e9c3d5c73cedcb21fd7427a67bf56e615
+      evaluator: tools/eval/core-reset/evidence-path-held-out.mjs
+      evaluator_sha256: b7211c7e56360921a6b8e681ac84b21a1f13963f78a925589ea8611ee25bab97
+      receipt_schema: tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json
+      receipt_schema_sha256: 2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714
+      receipt: docs/core-reset/evidence/evidence-path-held-out.json
+      result:
+        status: passed
+        receipt_file_sha256: ebc2755d8406e4433ff5cb76792b7031ea4b95a54120d95b301ab1ac888e2390
+        receipt_payload_sha256: f07cac4200b77ed9d74a5792e72b032c471c84337ef71709b8c0e96312ae2693
+        subject_commit: 29aba7ebffe14d6a70bde78df1490bf4cded64a4
+        subject_tree_oid: 277649ed917fc134e9808a995ce8c84f22258acb
+        eligible_for_acceptance: true
+        blocking_questions_passed: 2
+        blocking_questions_total: 2
+        diagnostic_questions_passed: 0
+        diagnostic_questions_total: 1
+        diagnostic_is_blocking: false
+      runner: node tools/eval/core-reset/evidence-path-held-out.mjs --repository openstatus=<path> --repository documenso=<path> --repository formbricks=<path>
+      execution_protocol:
+        acceptance_platform: darwin_reference_only
+        os_boundary: sandbox_exec_network_fork_non_runtime_exec_and_evaluator_checkout_denial
+        candidate_runtime: detached_exact_head_clean_build_npm_pack_exact_lock_offline
+        generation_source: pinned_git_archive_without_vcs_metadata
+        workspace_config_source: exact_tracked_local_workspace_packages_no_package_manager
+        graph_generation_process: one_contained_process_per_repository
+        retrieval_process: fresh_contained_process_per_question
+        candidate_access: node_permission_fs_allowlist_and_child_process_denial
+        filesystem_argv_canonicalization: explicitly_declared_indexes_only
+        response_handoff: fsync_sha256_before_hidden_grading
+        anti_tuning_gate: literal_marker_scan_plus_independent_review_required
+      generation_prerequisite:
+        issue: https://github.com/mohanagy/madar/issues/599
+        owner_approval: https://github.com/mohanagy/madar/issues/599#issuecomment-5060766685
+        rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5060766863
+        workspace_config_view: exact_tracked_local_packages_referenced_by_compiler_extends
+        workspace_config_mapping: sorted_count_and_sha256
+        package_manager: forbidden
+        network: forbidden
+        external_dependencies: forbidden
+        repository_specific_rules: forbidden
+        compiler_normalization:
+          external_ambient_types: disabled
+          composite: false
+          incremental: false
+        publication_gate: unchanged_fail_closed
+      supersedes: core-reset-held-out-v1
+      historical_baseline:
+        receipt: docs/core-reset/evidence/baseline-v0.32.0.json
+        receipt_sha256: c2b96e75e64934de998bb5c7087cb604b680cd8fd2aa5c6d1f74cd9f1a0c6516
+        receipt_schema: tools/eval/core-reset/schemas/baseline-receipt.schema.json
+        receipt_schema_sha256: 04eeb47a14da18ec90c6e687bbd557d44a3fe5ac493d8d6946f4b3fc4f7f6a59
+        contract_id: core-reset-held-out-v1
+        contract_ordered_json_sha256: 20c7f4f03a1a35182b4148a71e4293b3ef932d73be61d8d85db1f81e8fb795fc
+        disposition: historical_baseline_only_not_v2_held_out_evidence
+      evidence_semantics:
+        structural_file_nodes: exact_directed_imports_from_and_contains_only
+        structural_file_phase_coverage: forbidden
+        symbol_phase_evidence: exact_owner_fixture_with_authenticated_declaration
+        right_file_wrong_symbol: fail
+        absent_runtime_user_or_async_handoff: disconnected
+        invented_reversed_or_projected_edge: forbidden
+      blocking_repositories:
+        - question: documenso-document-send
+          repository: documenso
+          commit: 4ee789ea378d12c85daacf7dceda80b4dec80652
+          tree_path_sha256: 48728969cb89adeb6567f030a41fdf380e6c523473a04d3a264a4f4970b95709
+          graph_root: packages/lib
+          required_phases:
+            - recipient_creation
+            - document_send
+            - signing_completion
+            - seal_execution
+            - notification_delivery
+          required_connected_handoffs: 0
+          required_disconnected_handoffs: 4
+        - question: formbricks-survey-response
+          repository: formbricks
+          commit: 415bd9828ba150f7944fe10422acdbaf3089c707
+          tree_path_sha256: d50418a92fd6dae8d07ad09e4aaecbefb53c5ed29c85e374d41320e0669a7572
+          graph_root: apps/web
+          required_phases:
+            - request_handling
+            - response_persistence
+            - event_enqueue
+            - worker_binding
+            - event_tracking
+          required_connected_handoffs: 1
+          required_disconnected_handoffs: 3
+      diagnostic_scope_guard:
+        question: openstatus-574-strict-one-call
+        repository: openstatus
+        commit: 295e5a72f52c172d326aa950e81043e72a4f20c0
+        tree_path_sha256: 9ccb1f1dce50c03ea67703953c124cb6026ee978a97be4f358d7276c20e764f4
+        graph_root: .
+        required_typescript_phases:
+          - incident_mutation
+          - notification_delivery
+          - public_html
+          - json_feeds
+        unsupported_phases:
+          - checker_detection
+          - tinybird_persistence
+      query_invocations_max: 1
+      required_phase_coverage: 1.0
+      direct_phase_evidence_requires_authenticated_excerpt: true
+      direct_phase_evidence_requires_exact_owner_fixture: true
+      structural_file_nodes_cover_phases: false
+      required_handoff_coverage: 1.0
+      verification_targets_cover_blocking_phases: false
+      selected_file_precision_min: 0.70
+      unrelated_files_max: 2
+      selected_files_max: 12
+      snippets_max: 25
+      serialized_tokens_max: 4000
+      incorrect_load_bearing_paths_max: 0
+    performance_contract:
+      id: evidence-path-performance-v2
+      descriptor: tools/eval/core-reset/contracts/evidence-path-performance-v2.json
+      descriptor_sha256: 4ddba368f5ef17dc059bd8d41c0549e38d6a5ded42e9448ae31aefd0e35506e4
+      evaluator: tools/eval/core-reset/evidence-path-performance.mjs
+      evaluator_sha256: 6029ab84baa42eeed7abd7df98a8d570f001ddbc349c7a2aee1a28f3ec96893f
+      receipt_schema: tools/eval/core-reset/schemas/evidence-path-performance-receipt.schema.json
+      receipt_schema_sha256: 6c178889c9e2a7b27318145ac49645e3fdb6ea1a907990fff7215d2c32225ce6
+      generator: component-ring-structural-imports-v3
+      nodes: 15000
+      directed_edges: 30000
+      candidate_runtime_source: detached_standalone_exact_head_clone
+      graph_loaded_before_timer: true
+      query_index_inspected_before_timer: true
+      positive_queries: 4
+      missing_queries: 1
+      untimed_preflight_invocations_per_query: 1
+      preflight_must_pass_before_warmup: true
+      every_warmup_and_measured_result_must_match: true
+      empty_positive_result: fail
+      warmups: 3
+      measured_queries_min: 20
+      warm_retrieval_p95_ms_max: 500
+      closure_pass_max: 1
+      reference_environment:
+        node: v22.9.0
+        platform: darwin
+        release: 25.3.0
+        arch: arm64
+        cpu: Apple M3 Max
+        memory_bytes: 51539607552
+      receipt: docs/core-reset/evidence/evidence-path-performance.json
+      result:
+        status: passed
+        receipt_file_sha256: 7adc3734ef4ad462bd36c7c0ed944de1686fdc02b540cc453f232017c0e578e7
+        receipt_payload_sha256: 384df2ba175bd2df2c1cdbed855c2aefd53b16abff7fbae5ff5fad82a668e77e
+        subject_commit: 29aba7ebffe14d6a70bde78df1490bf4cded64a4
+        subject_tree_oid: 277649ed917fc134e9808a995ce8c84f22258acb
+        p95_ms: 279.28
+        eligible_for_acceptance: true
+      runner: node tools/eval/core-reset/evidence-path-performance.mjs --contract tools/eval/core-reset/contracts/evidence-path-performance-v2.json --receipt docs/core-reset/evidence/evidence-path-performance.json
+    importer_closure_contract:
+      receipt: docs/core-reset/evidence/evidence-path-importer-closure.json
+      receipt_sha256: 466d48749f2502b5c91dab44cc62ef7a9d91c6b53226ca09ce7846b5dc5be334
+      subject_commit: bce4f4fb1520a582bfedf5eab9133e9befbc79f7
+      subject_tree: 7ac3c1ef990ee628ca5c9a215ae6388c82dabcd3
+      predecessor_files: 63
+      predecessor_loc: 33031
+      all_edges: 263
+      internal_deleted_importers: 51
+      internal_edges: 184
+      surviving_edges: 79
+      surviving_direct_importers: 16
+      surface_only_callers: 1
+      transfers: 22
+      unexpected_direct_importers: 0
+      supplemental_cleanup_sources: 1
+      activation_state: implementation_in_progress
+    activation:
+      issue: https://github.com/mohanagy/madar/issues/596
+      owner_approval: https://github.com/mohanagy/madar/issues/596#issuecomment-5050888977
+      rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5050889198
+      performance_amendment: https://github.com/mohanagy/madar/issues/596#issuecomment-5051857404
+      performance_rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5051857542
+      authenticated_source_amendment: https://github.com/mohanagy/madar/issues/596#issuecomment-5052210144
+      authenticated_source_rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5052210334
+      authenticated_source_owner_approval: https://github.com/mohanagy/madar/issues/596#issuecomment-5054853667
+      authenticated_source_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5054853815
+      heldout_v2_proposal: https://github.com/mohanagy/madar/issues/596#issuecomment-5056946202
+      heldout_v2_owner_approval: https://github.com/mohanagy/madar/issues/596#issuecomment-5058567870
+      heldout_v2_rfc_proposal: https://github.com/mohanagy/madar/issues/577#issuecomment-5056947999
+      heldout_v2_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5058568992
+      generation_prerequisite: https://github.com/mohanagy/madar/issues/599
+      generation_prerequisite_owner_approval: https://github.com/mohanagy/madar/issues/599#issuecomment-5060766685
+      generation_prerequisite_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5060766863
+      original_finalizer_proposal: https://github.com/mohanagy/madar/issues/599#issuecomment-5061269139
+      original_finalizer_owner_approval: https://github.com/mohanagy/madar/issues/599#issuecomment-5061378036
+      original_finalizer_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5061380711
+      combined_dependency_proposal_599: https://github.com/mohanagy/madar/issues/599#issuecomment-5062823249
+      combined_dependency_proposal_596: https://github.com/mohanagy/madar/issues/596#issuecomment-5062823215
+      combined_rfc_proposal: https://github.com/mohanagy/madar/issues/577#issuecomment-5062823238
+      combined_owner_approval_599: https://github.com/mohanagy/madar/issues/599#issuecomment-5062879476
+      combined_owner_approval_596: https://github.com/mohanagy/madar/issues/596#issuecomment-5062879444
+      combined_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5062879430
+      obligation_coverage_proposal: https://github.com/mohanagy/madar/issues/596#issuecomment-5064590915
+      obligation_coverage_rfc_proposal: https://github.com/mohanagy/madar/issues/577#issuecomment-5064592884
+      obligation_coverage_owner_approval: https://github.com/mohanagy/madar/issues/596#issuecomment-5065202635
+      obligation_coverage_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5065202781
+      darwin_path_proposal: https://github.com/mohanagy/madar/issues/596#issuecomment-5066594490
+      darwin_path_rfc_proposal: https://github.com/mohanagy/madar/issues/577#issuecomment-5066600460
+      darwin_path_owner_approval: https://github.com/mohanagy/madar/issues/596#issuecomment-5066655931
+      darwin_path_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5066657672
+      portability_proposal: https://github.com/mohanagy/madar/issues/596#issuecomment-5072454599
+      portability_rfc_proposal: https://github.com/mohanagy/madar/issues/577#issuecomment-5072454807
+      portability_owner_approval: https://github.com/mohanagy/madar/issues/596#issuecomment-5072486888
+      portability_rfc_approval: https://github.com/mohanagy/madar/issues/577#issuecomment-5072487113
+      protected_base: bce4f4fb1520a582bfedf5eab9133e9befbc79f7
+      implementation_started: true
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/596
+      absorbed_issue: https://github.com/mohanagy/madar/issues/599
+      pull_request: https://github.com/mohanagy/madar/pull/600
+      commit: 596d286cdf4bb53670a6d8c27b2cec5f86137739
+      implementation_commit: 29aba7ebffe14d6a70bde78df1490bf4cded64a4
+      final_pr_head: a0ef9003b9bb71a8defb3463ee131e677b32fecc
+      final_pr_tree: 146aaaaffd94404cf3b544f3613a26472886de0c
+      ci_head: a0ef9003b9bb71a8defb3463ee131e677b32fecc
+      outcome: deterministic_graph_authenticated_evidence_path
+      production_files_added: 7
+      production_files_removed: 64
+      production_typescript_files: 73
+      production_typescript_loc: 21687
+      production_loc_added: 3500
+      production_loc_removed: 48231
+      production_loc_net: -44731
+      replacement_loc: 1812
+      dependencies_added: 0
+      dependencies_removed: 1
+      runtime_dependencies_added: 0
+      development_dependencies_added: 0
+      optional_peer_metadata_removed: true
+      npm_files: 162
+      npm_packed_bytes: 231524
+      npm_unpacked_bytes: 984434
+      npm_shasum: 736304da55902eb36dd414bc618794102c7fa747
+      npm_integrity: 'sha512-bx6t7+gHxtvk2cmbkbrf/Zi4fmFPZEhhxXV40GHq2+u02NW57B2hZZxWRrYMXxN8UvZptVLibZZ/GirTbcMjXg=='
+      npm_artifact_sha256: 59843af17736c5d6ff5bf4499d6509eaf69605f70b57c08be4e1716758e25528
+      ci_matrix_jobs_passed: 6
+      ci_run: https://github.com/mohanagy/madar/actions/runs/30124465700
+      test_files_passed: 81
+      tests_passed: 740
+      tests_skipped: 3
+      coverage_statements_percent: 81.38
+      coverage_branches_percent: 71.79
+      coverage_functions_percent: 87.83
+      coverage_lines_percent: 83.56
+      coderabbit: skipped_base_owner_exception
+      independent_review: passed
+      independent_reviews_passed: 1
+      independent_review_receipt: https://github.com/mohanagy/madar/pull/600#issuecomment-5074482136
+      unresolved_review_threads: 0
+    notes: 'Completed by #596 and absorbed prerequisite #599 through PR #600. Exact runtime 29aba7ebffe14d6a70bde78df1490bf4cded64a4 deletes the 63 contracted predecessors plus supplemental src/runtime/stdio/prompts.ts, for 64 actual production-file deletions, and adds exactly seven replacements containing 1,812 logical LOC. Held-out-v2 passes both blocking repositories with full phase coverage and precision, zero unrelated files, and every required handoff; OpenStatus remains an honest failing non-blocking diagnostic. Loaded-graph p95 is 279.28 ms against the strict <500 ms gate. The phase finishes at 73 production files / 21,687 LOC, +3,500 production LOC in total / -48,231 / net -44,731, zero runtime/development dependency additions, one removed optional peer declaration, and 162 npm files / 984,434 unpacked bytes. Final PR head a0ef9003b9bb71a8defb3463ee131e677b32fecc passed all six CI jobs and independent exact-head review with zero review threads; CodeRabbit skipped the non-default base under the owner-approved exception and is not represented as having reviewed. This proves the narrow query only: Thin Delivery later completed through #602 and PR #604, and Evaluation Tooling Isolation through #606 and PR #608. At that #608 completion checkpoint Capability Validation, natural-agent, external-validation, and release gates remained blocked; the separately owner-approved #610 activation item below supersedes only the Capability Validation status.'
+    remove_when: The deterministic query and held-out one-call gates pass; the fixed loaded-graph performance receipt passes; all 63 predecessors, the approved stdio/prompts.ts supplemental cleanup, obsolete tests/docs/flags/exports, and optional semantic peer metadata are absent; all surviving callers use retrieve-context without a compatibility engine; and the accepted source, package, dependency, CI, review, and zero-thread gates pass.
+    exit_gate: One deterministic generic TypeScript/JavaScript evidence query returns graph-backed causal evidence with exact graph-authenticated source excerpts, or stable missing/unsupported/stale/unavailable/corrupt boundaries with no unauthenticated snippet, within the accepted caps and without repository-specific rules, hidden fallback, predecessor path, or global confidence/governance stack.
+
+  - id: context-governance-stack
+    disposition: delete
+    status: complete
+    sources:
+      - src/contracts/context-*
+      - src/contracts/retrieval-*
+      - src/contracts/task-*
+      - src/contracts/handoff.ts
+      - src/contracts/runtime-proof.ts
+      - src/runtime/context-inventory.ts
+      - src/runtime/context-pack-*.ts
+      - src/runtime/context-session.ts
+      - src/runtime/task-*
+      - src/runtime/retrieval-gate.ts
+      - src/runtime/mcp-response-evidence.ts
+    absorbed_by: evidence-path-query
+    notes: 'Completed as an absorbed ownership handle under #596 and PR #600. These 26 predecessor files were deleted rather than wrapped.'
+    exit_gate: Query results state exact evidence and missing targets without the superseded governance layers.
+
+  - id: derived-product-wrappers
+    disposition: delete
+    status: complete
+    sources:
+      - src/runtime/feature-map.ts
+      - src/runtime/risk-map.ts
+      - src/runtime/implementation-checklist.ts
+      - src/runtime/implementation-pack.ts
+      - src/runtime/relevant-files.ts
+      - src/runtime/pr-impact.ts
+      - src/runtime/impact.ts
+    absorbed_by: evidence-path-query
+    notes: 'Completed as an absorbed ownership handle under #596 and PR #600. These seven derived products were deleted with their governance/query predecessor and do not survive as public compatibility wrappers.'
+    exit_gate: Public MCP and CLI no longer expose or document these wrappers.
+
+  - id: thin-delivery
+    disposition: rebuild
+    status: complete
+    sources:
+      - src/adapters/cli/bin.ts
+      - src/adapters/cli/main.ts
+      - src/adapters/cli/install.ts
+      - src/adapters/cli/doctor.ts
+      - src/adapters/mcp/protocol.ts
+      - src/adapters/mcp/server.ts
+    removed_sources:
+      - src/cli/bin.ts
+      - src/cli/main.ts
+      - src/cli/parser.ts
+      - src/runtime/stdio-server.ts
+      - src/runtime/stdio/definitions.ts
+      - src/runtime/stdio/resources.ts
+      - src/runtime/stdio/tools.ts
+      - src/infrastructure/install.ts
+      - src/shared/env.ts
+      - src/infrastructure/doctor.ts
+      - src/infrastructure/neo4j.ts
+      - src/infrastructure/hooks.ts
+      - src/infrastructure/install-routing-guidance.ts
+      - src/infrastructure/install-skill-templates.ts
+      - src/shared/telemetry.ts
+      - src/shared/update-notifier.ts
+    absorbs:
+      - non-core-graph-products
+      - activation-and-extra-integrations
+    transferred_sources:
+      - src/infrastructure/doctor.ts
+    replacement_sources:
+      - src/adapters/cli/bin.ts
+      - src/adapters/cli/main.ts
+      - src/adapters/cli/install.ts
+      - src/adapters/cli/doctor.ts
+      - src/adapters/mcp/protocol.ts
+      - src/adapters/mcp/server.ts
+    destination: src/adapters/cli/** and src/adapters/mcp/**
+    predecessor_contract:
+      files: 16
+      production_loc: 7277
+      absorbed_handles: 2
+      evaluation_transfers: 2
+      surviving_direct_importers: 2
+    production_file_budget:
+      added_max: 6
+      removed_min: 16
+    production_loc_budget:
+      added_max: 2300
+      removed_min: 7277
+      net_max: -4977
+    runtime_dependency_budget:
+      added_max: 0
+      removed_exact: 1
+    development_dependency_budget:
+      added_max: 0
+      removed_max: 0
+    runtime_dependencies_removed:
+      - neo4j-driver
+    final_source_budget:
+      files_max: 63
+      loc_max: 16710
+    npm_package_budget:
+      files_less_than: 150
+      unpacked_bytes_less_than: 1500000
+      packed_bytes_delta_max: 0
+    cli_contract:
+      entrypoints_max: 6
+      allowlist:
+        - generate
+        - query
+        - status
+        - doctor
+        - install
+        - mcp
+      retired_commands:
+        - watch
+        - serve
+        - try
+        - benchmark
+        - bench:suite
+        - eval
+        - compare
+        - hook
+        - telemetry
+        - aider
+        - claude
+        - cursor
+        - gemini
+        - copilot
+        - codex
+        - opencode
+        - claw
+        - droid
+        - trae
+        - trae-cn
+      retired_flags:
+        - implicit_madar_dot
+        - --stdio
+        - --mcp
+        - --auto-refresh
+        - --neo4j-*
+      compatibility_aliases: forbidden
+      command_local_dynamic_imports: required
+    mcp_contract:
+      tools_exact:
+        - retrieve
+      advertised_capabilities:
+        - tools
+      resources: forbidden
+      prompts: forbidden
+      question_chars_max: 512
+      budget_tokens_max: 4000
+      selected_files_max: 12
+      snippets_max: 25
+      cli_application_mcp_result_parity: byte_identical
+      query_graph_index_generation_semantic_changes: forbidden
+    freshness_contract:
+      workspace_from_process_cwd: true
+      linked_worktree_graph_isolation: required
+      initialize_and_tools_list_before_reconciler_import: true
+      reconciliation_engine_count: 1
+      request_wait_ms_max: 25000
+      first_graph_call_waits_within_tool_timeout: true
+      timeout_boundary: unavailable
+      retry_madar_instruction: forbidden
+      second_watcher_cache_queue_session_or_retry_planner: forbidden
+    installer_contract:
+      supported_clients:
+        - claude
+        - codex
+      codex_startup_timeout_sec: 180
+      codex_tool_timeout_sec: 60
+      codex_workspace_hashed_global_block: required
+      exact_workspace_cwd: required
+      concurrent_workspace_registrations: required
+      exact_owned_uninstall: required
+      fresh_lifecycle_repository_byte_changes: 0
+      legacy_cleanup: byte_recognized_madar_owned_only
+      tracked_prompt_or_mcp_configuration: forbidden
+    startup_contract:
+      isolated_cold_samples_min: 10
+      statistics_required:
+        - median_ms
+        - p95_ms
+        - max_rss_bytes
+      version_median_ms_less_than: 100
+      version_max_rss_bytes_less_than: 83886080
+      initialize_tools_list_median_ms_less_than: 1000
+      initialize_tools_list_tools_exact:
+        - retrieve
+      packed_install_required: true
+      registry_arguments:
+        - mcp
+    real_client_contract:
+      normal_launch_without_configuration_override: true
+      forced_retrieve_calls:
+        - claude
+        - codex
+      codex_tools_call_required_to_close_567: true
+      direct_json_rpc_insufficient_to_close_567: true
+      codex_cancels_before_tools_call: stop_and_record_external_client_blocker
+      natural_tool_choice_claimed: false
+    evaluation_repin:
+      transport_path_only: true
+      repositories_prompts_grading_expected_evidence_query_budgets_and_semantics_frozen: true
+      approved_historical_evaluator_sha256: b7211c7e56360921a6b8e681ac84b21a1f13963f78a925589ea8611ee25bab97
+      current_transport_repin_evaluator_sha256: 7f8934d871c27f18bcb86e26fd2462dc87645e8a2850dc3ef68856ee97675928
+      current_normalized_to_historical_sha256: b7211c7e56360921a6b8e681ac84b21a1f13963f78a925589ea8611ee25bab97
+      approved_historical_receipt_schema_sha256: 2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714
+      current_dual_path_receipt_schema_sha256: 1f27acfaf452c731e861435b72c4eea76cd1aec990806059fa2da2d8ae9fbcaf
+    review_contract:
+      ci_matrix_jobs: 6
+      independent_exact_head_review: required
+      coderabbit_non_default_base_exception_must_be_honest: true
+      unresolved_review_threads: 0
+    activation:
+      issue: https://github.com/mohanagy/madar/issues/602
+      absorbed_issue: https://github.com/mohanagy/madar/issues/567
+      owner_approval: https://github.com/mohanagy/madar/issues/602#issuecomment-5075969972
+      rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5075969871
+      protected_base: 8efe41fc665fcea7e625dda0864a72ecf27a111b
+      implementation_start_commit: edcf3e45b8c8fb76a57531bc74bede2a06189aba
+      implementation_started: true
+    implementation:
+      start_commit: edcf3e45b8c8fb76a57531bc74bede2a06189aba
+      production_files_added: 6
+      production_files_removed: 16
+      production_typescript_files: 63
+      production_typescript_loc: 16654
+      production_loc_added: 2248
+      production_loc_removed: 7281
+      production_loc_net: -5033
+      runtime_dependencies_added: 0
+      runtime_dependencies_removed: 1
+      development_dependencies_added: 0
+      npm_files: 142
+      npm_packed_bytes: 200310
+      npm_unpacked_bytes: 812531
+      npm_packed_bytes_delta: -31214
+      npm_shasum: 1a915fdc597463f57cd0d79ffa26a7f1c27ff2ef
+      npm_integrity: sha512-94PSjJbRCsgv8oUt18iPZFzysl5S/7njrB1F05fzwkK5Amk6abxGcHv2L8K4fw1qijZLJ2sxr83nIl7NZWef8A==
+      npm_tarball_sha256: 2186259073a6bc05b7268ac7115fd56584d27024b76d167db021f68f83c603b9
+      all_phase_budgets_pass: true
+      startup_receipt: docs/core-reset/evidence/thin-delivery-startup.json
+      startup_gates_passed: true
+      client_transport_receipt: docs/core-reset/evidence/thin-delivery-client-transport.json
+      claude_transport_passed: true
+      codex_transport_passed: true
+      final_artifact_client_revalidation_passed: true
+      final_artifact_registration: madar_6b8bb2115fe0
+      final_artifact_claude_session: f021741f-b474-438e-a07b-a54ef35e071c
+      final_artifact_codex_session: 019f9890-e9fb-7610-a379-f3ef19a418ef
+      final_artifact_transport_pass_record: https://github.com/mohanagy/madar/issues/602#issuecomment-5077981356
+      final_artifact_rfc_transport_pass_record: https://github.com/mohanagy/madar/issues/577#issuecomment-5077981401
+      stop_condition_triggered: false
+      historical_stop_condition: codex_exec_cancels_before_verifiable_tools_call_result
+      stable_codex_retry_version: 0.145.0
+      stable_codex_retry_passed: false
+      stable_codex_retry_thread: 019f9843-32d2-7f50-b5eb-f8a10fcf7161
+      interactive_codex_retry_version: 0.145.0
+      interactive_codex_retry_passed: true
+      interactive_codex_retry_thread: 019f984b-e210-76f0-b80c-cf52ac8f1460
+      stop_record: https://github.com/mohanagy/madar/issues/602#issuecomment-5077587623
+      rfc_stop_record: https://github.com/mohanagy/madar/issues/577#issuecomment-5077587577
+      transport_pass_record: https://github.com/mohanagy/madar/issues/602#issuecomment-5077629727
+      rfc_transport_pass_record: https://github.com/mohanagy/madar/issues/577#issuecomment-5077629090
+      issue_567_acceptance_record: https://github.com/mohanagy/madar/issues/567#issuecomment-5077630691
+      issue_567_closed: true
+      implementation_pr_opened: true
+      implementation_merge_authorized: true
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/602
+      absorbed_issue: https://github.com/mohanagy/madar/issues/567
+      pull_request: https://github.com/mohanagy/madar/pull/604
+      commit: 14791cefa195f43e30ec9ec2dd611e38ad2b1b83
+      final_pr_head: ddd9761b137ef1f07eb362a91f9f2478c1d08c38
+      final_pr_tree: 02a059c66a214fe52e31d8fffa2c501a1761bf0f
+      ci_head: ddd9761b137ef1f07eb362a91f9f2478c1d08c38
+      outcome: lazy_one_tool_delivery
+      production_files_added: 6
+      production_files_removed: 16
+      production_typescript_files: 63
+      production_typescript_loc: 16654
+      production_loc_added: 2248
+      production_loc_removed: 7281
+      production_loc_net: -5033
+      dependencies_added: 0
+      dependencies_removed: 1
+      runtime_dependencies_added: 0
+      development_dependencies_added: 0
+      npm_files: 142
+      npm_packed_bytes: 200310
+      npm_unpacked_bytes: 812531
+      npm_packed_bytes_delta: -31214
+      npm_shasum: 1a915fdc597463f57cd0d79ffa26a7f1c27ff2ef
+      npm_integrity: sha512-94PSjJbRCsgv8oUt18iPZFzysl5S/7njrB1F05fzwkK5Amk6abxGcHv2L8K4fw1qijZLJ2sxr83nIl7NZWef8A==
+      npm_artifact_sha256: 2186259073a6bc05b7268ac7115fd56584d27024b76d167db021f68f83c603b9
+      held_out_benchmark_passed: true
+      held_out_eligible_for_acceptance: true
+      held_out_receipt_self_sha256: 6baed3cfc2b3aa963581613be6cf17ccf1aa261dd29343e27bfe87d52bdaad6c
+      ci_matrix_jobs_passed: 6
+      ci_run: https://github.com/mohanagy/madar/actions/runs/30154480779
+      test_files_passed: 74
+      tests_passed: 619
+      coverage_statements_percent: 81.55
+      coverage_branches_percent: 72.61
+      coverage_functions_percent: 88.94
+      coverage_lines_percent: 84.44
+      coderabbit: skipped_base_owner_exception
+      coderabbit_receipt: https://github.com/mohanagy/madar/pull/604#issuecomment-5078118509
+      independent_review: passed
+      independent_reviews_passed: 1
+      independent_review_receipt: https://github.com/mohanagy/madar/pull/604#pullrequestreview-4779114409
+      unresolved_review_threads: 0
+      merge_gate_receipt: https://github.com/mohanagy/madar/pull/604#issuecomment-5078171793
+      issue_completion_receipt: https://github.com/mohanagy/madar/issues/602#issuecomment-5078180041
+      rfc_completion_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5078180116
+    notes: 'Completed by #602 and PR #604 from governance merge edcf3e45b8c8fb76a57531bc74bede2a06189aba. The final exact head ddd9761b137ef1f07eb362a91f9f2478c1d08c38 and tree 02a059c66a214fe52e31d8fffa2c501a1761bf0f delete all 16 predecessors, add the six exact replacement files, remove neo4j-driver without adding a dependency, and pass the source, package, test, parity, isolation, Registry, release-hygiene, development-eval, held-out, and packed cold-start gates. Stock Codex CLI 0.144.5 and a stable 0.145.0 codex exec retry historically started the installed MCP item but failed with user cancelled MCP tool call and returned no Madar result. The later normal interactive Codex pass cleared that stop and closed #567. The final sealed artifact was revalidated through normally launched Claude Code session f021741f-b474-438e-a07b-a54ef35e071c and normal interactive Codex 0.145.0 session 019f9890-e9fb-7610-a379-f3ef19a418ef, both using exact registration madar_6b8bb2115fe0 with no configuration or tool override and returning authenticated src/payment-retry.ts evidence from one retrieve call. All six exact-head CI jobs passed, an independent exact-head review found no blocker, CodeRabbit explicitly skipped the non-default core-reset base and is not represented as having reviewed, and zero review threads remained. PR #604 merged as 14791cefa195f43e30ec9ec2dd611e38ad2b1b83 with the exact reviewed tree. Query, graph, index, generation, held-out grading, budgets, and timeout semantics remain frozen. This proves Thin Delivery transport and package gates only; evaluation isolation, comparator advantage, natural activation, external validation, publication, and release remain unclaimed.'
+    remove_when: All 16 predecessors, obsolete tests, exports, flags, docs, aliases, package references, and neo4j-driver are absent; only the six allowlisted CLI entrypoints and one retrieve MCP tool survive; startup, package, parity, freshness, Claude, Codex, uninstall, worktree, cross-platform, exact-head CI, independent-review, honest CodeRabbit-disposition, and zero-thread gates pass.
+    exit_gate: One lazy local executable serves a byte-identical CLI/application/MCP retrieve result, keeps each repository or linked worktree graph current through the single reconciler, installs and uninstalls exact Claude/Codex configuration without fresh-lifecycle repository mutation, and proves normally launched Claude and Codex tools/call transport without changing query, graph, index, or generation semantics.
+
+  - id: evaluation-tooling
+    disposition: move
+    status: complete
+    sources:
+      - src/infrastructure/benchmark.ts
+      - src/infrastructure/benchmark/corpus.ts
+      - src/infrastructure/benchmark/environment.ts
+      - src/infrastructure/benchmark/generate-performance.ts
+      - src/infrastructure/benchmark/quality.ts
+      - src/infrastructure/benchmark/questions.ts
+      - src/infrastructure/benchmark/runner.ts
+      - src/infrastructure/benchmark/runtime-proof.ts
+      - src/infrastructure/benchmark/suite.ts
+      - src/infrastructure/benchmark/usage.ts
+      - src/infrastructure/compare.ts
+      - src/infrastructure/prompt-runner.ts
+      - src/infrastructure/save-query-result.ts
+      - src/infrastructure/try-command.ts
+      - src/runtime/benchmark/probe-calibration.ts
+      - src/shared/graph-source-root.ts
+      - src/shared/package-metadata.ts
+      - src/shared/share-safe-artifacts.ts
+      - src/shared/shell.ts
+      - src/shared/workspace-copy.ts
+    transferred_sources:
+      - src/shared/graph-source-root.ts
+      - src/shared/workspace-copy.ts
+      - src/shared/package-metadata.ts
+      - src/shared/shell.ts
+    destination: tools/eval/lib/** with tsconfig.eval.json and development-only dist-eval/** output
+    predecessor_contract:
+      files_exact: 20
+      production_loc_exact: 4698
+      safe_workspace_transfers: 2
+      retained_thin_delivery_transfers: 2
+      audited_development_callers: 5
+    audited_development_callers:
+      - .github/scripts/ci-eval-regression.mjs
+      - docs/benchmarks/2026-05-11-spi-vs-legacy/probe.mjs
+      - docs/benchmarks/performance/run.mjs
+      - docs/benchmarks/suite/isolation/run-isolated.sh
+      - tools/eval/core-reset/benchmark-suite.mjs
+    production_file_budget:
+      added_max: 0
+      removed_exact: 20
+    production_loc_budget:
+      added_max: 0
+      removed_min: 4698
+      removed_exact: 4698
+      net_max: -4698
+      net_exact: -4698
+    final_source_budget:
+      files_exact: 43
+      loc_exact: 11956
+    dependency_contract:
+      added: 0
+      removed: 0
+      upgraded: 0
+    build_contract:
+      config: tsconfig.eval.json
+      package_script: build:eval
+      output: dist-eval/**
+      ignore_rule: dist-eval/
+      production_config: tsconfig.build.json
+      production_root: src/**
+      evaluator_output_in_dist: forbidden
+      evaluator_output_in_npm: forbidden
+      evaluator_output_in_prepack: forbidden
+    package_isolation_contract:
+      moved_modules_rejected_exact: 20
+      dist_eval_rejected: true
+      generic_evaluation_assets_summary_insufficient: true
+      clean_production_build_and_npm_pack_required: true
+    movement_contract:
+      preserve_module_grouping: true
+      delete_old_src_locations: required
+      surviving_production_typescript_edits: 0
+      production_typescript_files_added: 0
+      compatibility_aliases: forbidden
+      forwarding_modules: forbidden
+      fallback_imports: forbidden
+      duplicate_src_copies: forbidden
+      permitted_rewrites:
+        - relative-imports
+        - test-imports
+        - script-paths
+        - CI-paths
+        - documentation-paths
+    npm_package_projection:
+      files: 102
+      packed_bytes: 159748
+      unpacked_bytes: 637551
+    npm_package_budget:
+      files_max: 102
+      packed_bytes_max: 165000
+      unpacked_bytes_max: 640000
+    frozen_contract:
+      production_semantics: graph_index_generation_reconciliation_retrieval_ranking_traversal_slicing
+      public_surfaces: cli_mcp_installer_workspace
+      token_budgets_and_request_timeouts: frozen
+      held_out_performance_contracts_and_receipts: byte_identical
+      repositories_prompts_expected_evidence_grading_schemas_limits_hashes_isolation_and_timeouts: frozen
+      ci_recall_percent_min: 90
+      ci_mrr_min: 0.95
+      ci_snippet_coverage_percent_min: 95
+      grounded_match_rate: report_only
+    capability_validation:
+      blinded_runner_exists: false
+      status: separately_activated_under_610
+      runner_design_in_scope: false
+      graphify_integration_in_scope: false
+      historical_no_html_restoration: forbidden
+    review_contract:
+      ci_matrix_jobs: 6
+      independent_exact_head_review: required
+      coderabbit_actual_disposition_must_be_honest: true
+      unresolved_review_threads: 0
+    activation:
+      issue: https://github.com/mohanagy/madar/issues/606
+      owner_approval: https://github.com/mohanagy/madar/issues/606#issuecomment-5078675449
+      rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5078676116
+      protected_base: 317dda89f2ea5c75e7626a26b104ceca1bd04ce5
+      protected_src_tree: b99217c74f6b26daef4ecab12e1cde5f8fe60122
+      target_branch: core-reset
+      implementation_start_commit: 452ad84890c012392c5e6af613e8bfeb17de45db
+      implementation_started: true
+    implementation:
+      candidate_state: merged_exact_implementation
+      implementation_start_commit: 452ad84890c012392c5e6af613e8bfeb17de45db
+      production_typescript_files: 43
+      production_typescript_loc: 11956
+      production_files_added: 0
+      production_files_removed: 20
+      production_loc_added: 0
+      production_loc_removed: 4698
+      production_loc_net: -4698
+      surviving_production_typescript_edits: 0
+      moved_evaluation_typescript_files: 20
+      moved_evaluation_typescript_loc: 4698
+      npm_files: 102
+      npm_packed_bytes: 159759
+      npm_unpacked_bytes: 637602
+      npm_shasum: 6eee13af22e8c76113fe578e44d76a9e6d6fd899
+      npm_integrity: sha512-B/+Bjh9O2xlB0VsVtDn1xFsUnIPpd//GptyVCZa9mV3nASLg6LMDWoW0GNJx+sYG3GGDIJm5azAMfF+Hh9Yp0w==
+      dependencies_added: 0
+      dependencies_removed: 0
+      dependencies_upgraded: 0
+      package_lock_unchanged: true
+      exact_move_passed: true
+      evaluator_build_boundary_passed: true
+      audited_development_callers_rewired: 5
+      directly_importing_tests_rewired: true
+      production_build_isolation_passed: true
+      npm_package_isolation_passed: true
+      frozen_evidence_byte_identical: true
+      source_and_package_budgets_passed: true
+    completion:
+      issue: https://github.com/mohanagy/madar/issues/606
+      pull_request: https://github.com/mohanagy/madar/pull/608
+      commit: 565c42bb1b34b67f7fefc7aabd0513e4e391a13b
+      final_pr_head: c0496413518382ca6dff74fa5c81ab72b9edd57c
+      final_pr_tree: 225f446ee88ecc74a3226bd17c362458c2312528
+      ci_head: c0496413518382ca6dff74fa5c81ab72b9edd57c
+      outcome: evaluation_tooling_isolated_from_production_and_npm
+      production_files_added: 0
+      production_files_removed: 20
+      production_typescript_files: 43
+      production_typescript_loc: 11956
+      production_loc_added: 0
+      production_loc_removed: 4698
+      production_loc_net: -4698
+      surviving_production_typescript_edits: 0
+      moved_evaluation_typescript_files: 20
+      moved_evaluation_typescript_loc: 4698
+      dependencies_added: 0
+      dependencies_removed: 0
+      dependencies_upgraded: 0
+      package_lock_unchanged: true
+      npm_files: 102
+      npm_packed_bytes: 159759
+      npm_unpacked_bytes: 637602
+      npm_shasum: 6eee13af22e8c76113fe578e44d76a9e6d6fd899
+      npm_integrity: sha512-B/+Bjh9O2xlB0VsVtDn1xFsUnIPpd//GptyVCZa9mV3nASLg6LMDWoW0GNJx+sYG3GGDIJm5azAMfF+Hh9Yp0w==
+      base_to_head_diff_sha256: aa75782ad9216c4b82e4279224db7bb820f72b2f8e4bb1cd4baf63cb8a286167
+      exact_move_passed: true
+      evaluator_build_boundary_passed: true
+      audited_development_callers_rewired: 5
+      directly_importing_tests_rewired: true
+      production_build_isolation_passed: true
+      npm_package_isolation_passed: true
+      frozen_evidence_byte_identical: true
+      source_and_package_budgets_passed: true
+      ci_matrix_jobs_passed: 6
+      ci_run: https://github.com/mohanagy/madar/actions/runs/30162721277
+      test_files_passed: 74
+      tests_total: 620
+      tests_passed: 617
+      tests_skipped: 3
+      coverage_statements_percent: 81.57
+      coverage_branches_percent: 73.05
+      coverage_functions_percent: 89.04
+      coverage_lines_percent: 85.45
+      eval_recall_percent: 100
+      eval_mrr: 1.0
+      eval_snippet_coverage_percent: 100
+      eval_grounded_match_percent_report_only: 100
+      coderabbit: skipped_non_default_base
+      coderabbit_receipt: https://github.com/mohanagy/madar/pull/608#issuecomment-5078954363
+      independent_review: passed
+      independent_reviews_passed: 3
+      independent_review_receipt: https://github.com/mohanagy/madar/pull/608#pullrequestreview-4779465252
+      unresolved_review_threads: 0
+      merge_gate_receipt: https://github.com/mohanagy/madar/pull/608#issuecomment-5078992331
+      issue_merge_receipt: https://github.com/mohanagy/madar/issues/606#issuecomment-5078995452
+      rfc_merge_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5078995591
+    notes: 'Completed by #606 and PR #608 from governance merge 452ad84890c012392c5e6af613e8bfeb17de45db. Exact reviewed head c0496413518382ca6dff74fa5c81ab72b9edd57c and tree 225f446ee88ecc74a3226bd17c362458c2312528 move exactly 20 production TypeScript files / 4,698 LOC into tools/eval/lib/**, delete every old src location, add no production file or LOC, change no surviving production TypeScript, and change no dependency. The final production boundary is 43 files / 11,956 LOC with +0 / -4,698 / net -4,698. One tsconfig.eval.json plus one build:eval script emits only development output under dist-eval/**, outside dist, prepack, and npm. The package is 102 files / 159,759 packed bytes / 637,602 unpacked bytes, within every fixed ceiling. Historical Core Reset evaluation contracts and receipts remain byte-identical. All six exact-head CI jobs passed, three independent audits found no blocker, CodeRabbit explicitly skipped the required non-default core-reset base and is not represented as having reviewed, and zero review threads remained. PR #608 merged as 565c42bb1b34b67f7fefc7aabd0513e4e391a13b with the exact reviewed tree and sole parent 452ad84890c012392c5e6af613e8bfeb17de45db. At that #608 completion checkpoint Capability Validation remained blocked and unapproved because no valid blinded Native-vs-Graphify-vs-Madar runner existed; the separately owner-approved #610 activation item below supersedes that status without authorizing semantic, public-surface, budget, timeout, publication, release, Registry, or main-branch work.'
+    exit_gate: Evaluation remains runnable but is excluded from dist, npm, and production imports.
+
+  - id: capability-validation
+    disposition: keep
+    status: stopped
+    destination: development-only blinded Native-vs-Graphify-vs-Madar capability evidence
+    production_file_budget:
+      added_max: 0
+      removed_exact: 0
+    production_loc_budget:
+      added_max: 0
+      removed_exact: 0
+      net_exact: 0
+    anchor:
+      commit: e7b3be547bc3f6cfdefdd514f17a1ad229afea03
+      tree: 0fb5664ab85ecb04275f6277ee65270b948f8ab3
+      src_tree: 1a37e3a58ee7b2a75ca034112506590f699b3918
+      tools_eval_tree: 983df4a5462ae8e5f57cf549bcc23c06c328b596
+      production_typescript_files: 43
+      production_typescript_loc: 11956
+      npm_files: 102
+      npm_packed_bytes: 159759
+      npm_unpacked_bytes: 637602
+    governance_assets:
+      proposal_body_sha256: 27c04eca61e8c3ae65e2a9eab5c0b7e269313be933cef785b94e9bdca7292ba5
+      aggregate_physical_lines_max: 2300
+      contract:
+        path: tools/eval/core-reset/contracts/capability-validation-v1.json
+        sha256: ae03a6b2cc8675ca66ad0ff67f06e13389cf04e6a6a8167c3404f1c8657f36f5
+      contract_schema:
+        path: tools/eval/core-reset/schemas/capability-validation-contract.schema.json
+        sha256: 6d8679e335730180bee0c9fc62f144ae2086ea16dade800887a0301da27f23b6
+      receipt_schema:
+        path: tools/eval/core-reset/schemas/capability-validation-receipt.schema.json
+        sha256: a33a6b3532a3e0df62bcd0f3616a9585b2be4ede1f360cf3d55f70c99c29f30e
+      exact_head_and_asset_owner_approval: passed
+    frozen_contract:
+      v2_blob: a6d1539cb99e8fd58ca20f868bf4d720812de4a5
+      v2_sha256: c22819a9e24e53f7b11a69c06511a8dc0c2cba8841868d8d9bb734575290bba9
+      v2_schema_sha256: 581acc2332cbe9015e0bd1c7da4db84e9c3d5c73cedcb21fd7427a67bf56e615
+      v2_validator_sha256: d7402f8caaf838d0695060d375c1504e4a173786281730010c7a7eb5449608a0
+      package_json_sha256: d464fd8e59b3d4d3f817ebdd6457fb3cfb02d9f3fad4fc8648f29c03a8a56b33
+      package_lock_sha256: b9d179f0ee70e14d85653c5013cf2513efb22127b10fc3ee1deb5fa698993a61
+      tsconfig_eval_sha256: b2eb8dea28aab40a794bda38f11100dcc98e8c2987b3d8fdefc62263ebe7ae17
+      ci_workflow_sha256: 4dde28b814127bceabe8e076c2f5afc286153d9f8b655cf5e8a1681f754ac2f8
+      production_and_historical_semantics: byte_identical
+    provider_contract:
+      provider: anthropic_first_party_messages
+      endpoint: https://api.anthropic.com/v1/messages
+      api_version: 2023-06-01
+      model: claude-sonnet-4-6
+      temperatures:
+        - 0
+        - 0.7
+      thinking: disabled
+      max_tokens: 4096
+      service_tier: standard_only
+      inference_geography: global
+      streaming: false
+      caching: forbidden
+      retry: forbidden
+    campaign_budget:
+      blocking_paid_answer_trials_exact: 60
+      separate_madar_diagnostic_exact: 1
+      trials_per_cell: 3
+      tool_calls_per_trial_max: 12
+      create_requests_per_trial_max: 13
+      trial_timeout_seconds: 300
+      provider_input_tokens_max: 20000000
+      provider_output_tokens_max: 2000000
+      runner_usd_max: 90
+      provider_enforced_usd_max: 100
+      provider_request_before_campaign_lock: forbidden
+      retry_replace_drop_or_regrade: forbidden
+    implementation_budget:
+      touched_paths_max: 29
+      added_physical_lines_max: 12200
+      removed_physical_lines_max: 200
+      activation_plus_implementation_added_max: 15100
+      activation_plus_implementation_removed_max: 450
+      production_files_or_loc_changed: 0
+      dependencies_changed: 0
+      compatibility_aliases: forbidden
+      generated_files_committed: forbidden
+      ci_change: exact_offline_self_test_step_only
+    review_contract:
+      ci_matrix_jobs: 6
+      independent_exact_head_review: required
+      coderabbit_actual_disposition_must_be_honest: true
+      unresolved_review_threads: 0
+      two_independent_natural_person_reviews: required_before_reveal
+      third_eligible_adjudicator_for_disagreement: required
+      one_fixed_campaign_without_rerun: required
+    activation:
+      issue: https://github.com/mohanagy/madar/issues/610
+      proposal_receipt: https://github.com/mohanagy/madar/issues/610#issuecomment-5080113972
+      rfc_proposal_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5080113127
+      owner_approval: https://github.com/mohanagy/madar/issues/610#issuecomment-5081132612
+      rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5081133199
+      protected_base: e7b3be547bc3f6cfdefdd514f17a1ad229afea03
+      target_branch: core-reset
+      second_owner_hash_approval: passed
+      activation_head: 80e942a8a28e3895465aa9ca432c4a926054055d
+      activation_merge: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
+      activation_tree: d0ca317290dbd6837295f36f36ded5b49855c0fe
+      implementation_start_commit: exact_activation_merge_only
+    stop:
+      conditions:
+        - 7
+        - 8
+        - 13
+      issue_receipt: https://github.com/mohanagy/madar/issues/610#issuecomment-5083281270
+      issue_receipt_body_sha256: 115e88cc3e1e00066c92f6ce4b3dd9ed8e0f6eabc1f8dbad918d1125c5cdaef9
+      rfc_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5083282711
+      rfc_receipt_body_sha256: 65ac67ca30f24eb2c9d2741ab12ee42d2f593915220ff1251adb8af97e717ed0
+      implementation_pr_opened: false
+      campaign_lock_created: false
+      provider_requests: 0
+      spend_usd: 0
+      protected_branch_implementation_changed: false
+      successor: capability-validation-v2
+    notes: 'Issue #610 governance activation merged at dcb52596a3efa89f9ef5d372231ce97a91ae5f9f with its exact reviewed tree and immutable three-asset contract. Fresh independent review of the uncommitted implementation draft then triggered stop conditions 7, 8, and 13: no concrete campaign coordinator/relay, claim-based authorization, caller-resettable spend, abstract containment, incomplete provider/MCP evidence, and forgeable receipt/archive facts. The phase stopped before any implementation PR, campaign lock, Count Tokens, Create, other provider request, paid spend, production/package/dependency change, publication, release, Registry metadata, tag, or main target. The v2 successor does not edit, reopen, reinterpret, or silently repair these historical bytes or this first-stop observation.'
+    exit_gate: The one fixed campaign and sealed independent review produce a schema-valid receipt proving or honestly failing every frozen machine, human, cost, isolation, schedule, and comparator gate without semantic or budget drift.
+
+  - id: capability-validation-v2
+    disposition: keep
+    status: stopped
+    predecessor: capability-validation
+    supersedes: development implementation allowlist and LOC ceiling only
+    destination: development-only evidence-authenticated Capability Validation execution boundary
+    production_file_budget:
+      added_max: 0
+      removed_exact: 0
+    production_loc_budget:
+      added_max: 0
+      removed_exact: 0
+      net_exact: 0
+    anchor:
+      commit: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
+      tree: d0ca317290dbd6837295f36f36ded5b49855c0fe
+      src_tree: 1a37e3a58ee7b2a75ca034112506590f699b3918
+      tools_eval_tree: b8ef02da3ce135596e87fdf6252441755061d956
+      production_typescript_files: 43
+      production_typescript_loc: 11956
+      npm_files: 102
+      npm_packed_bytes: 159759
+      npm_unpacked_bytes: 637602
+    predecessor_stop:
+      issue: https://github.com/mohanagy/madar/issues/610
+      activation_head: 80e942a8a28e3895465aa9ca432c4a926054055d
+      activation_merge: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
+      activation_tree: d0ca317290dbd6837295f36f36ded5b49855c0fe
+      conditions:
+        - 7
+        - 8
+        - 13
+      issue_receipt: https://github.com/mohanagy/madar/issues/610#issuecomment-5083281270
+      issue_receipt_body_sha256: 115e88cc3e1e00066c92f6ce4b3dd9ed8e0f6eabc1f8dbad918d1125c5cdaef9
+      rfc_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5083282711
+      rfc_receipt_body_sha256: 65ac67ca30f24eb2c9d2741ab12ee42d2f593915220ff1251adb8af97e717ed0
+    governance_assets:
+      proposal_body_sha256: 4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0
+      exact_added_assets: 3
+      aggregate_physical_lines_max: 3200
+      aggregate_utf8_bytes_max: 2097152
+      governance_added_lines_max: 650
+      governance_removed_lines_max: 250
+      activation_added_lines_max: 3850
+      activation_removed_lines_max: 250
+      contract:
+        path: tools/eval/core-reset/contracts/capability-validation-v2.json
+        sha256: 21d45642cbac36b0ae99258f6aa1d64480a33a20e0fc7334ffd166989ea0f44c
+        physical_lines_max: 1400
+        utf8_bytes_max: 196608
+      contract_schema:
+        path: tools/eval/core-reset/schemas/capability-validation-contract-v2.schema.json
+        sha256: ce6f2b132868d65e92ef958cdd28f39744f8169a21fcd4ef95d666a13ae0ae58
+        physical_lines_max: 200
+        utf8_bytes_max: 262144
+      receipt_schema:
+        path: tools/eval/core-reset/schemas/capability-validation-receipt-v2.schema.json
+        sha256: 0aa0743837bdb2fa23430807c89d3ae433ee19c64fb0aa20901d53c5306204e2
+        physical_lines_max: 1600
+        utf8_bytes_max: 1638400
+      exact_head_and_asset_owner_approval: required_before_activation_merge
+    inheritance:
+      v1_contract_sha256: ae03a6b2cc8675ca66ad0ff67f06e13389cf04e6a6a8167c3404f1c8657f36f5
+      v1_contract_schema_sha256: 6d8679e335730180bee0c9fc62f144ae2086ea16dade800887a0301da27f23b6
+      v1_receipt_schema_sha256: a33a6b3532a3e0df62bcd0f3616a9585b2be4ede1f360cf3d55f70c99c29f30e
+      allowed_difference_pointers:
+        - /schema_version
+        - /contract_id
+        - /status
+        - /governance
+        - /anchors/protected_base_commit
+        - /anchors/base_tree
+        - /anchors/tools_eval_tree
+        - /inheritance
+        - /receipt/path
+        - /receipt/schema_path
+        - /receipt/canonical_transcript
+        - /receipt/canonical_archive
+        - /execution_boundary
+      all_other_recursive_subjects: jcs_identical_to_v1
+    provider_contract:
+      provider: anthropic_first_party_messages
+      endpoint: https://api.anthropic.com/v1/messages
+      api_version: 2023-06-01
+      model: claude-sonnet-4-6
+      temperatures:
+        - 0
+        - 0.7
+      thinking: disabled
+      max_tokens: 4096
+      service_tier: standard_only
+      inference_geography: global
+      streaming: false
+      caching: forbidden
+      retry: forbidden
+    campaign_budget:
+      blocking_paid_answer_trials_exact: 60
+      separate_madar_diagnostic_exact: 1
+      refresh_samples_exact: 12
+      trials_per_cell: 3
+      tool_calls_per_trial_max: 12
+      create_requests_per_trial_max: 13
+      trial_timeout_seconds: 300
+      provider_input_tokens_max: 20000000
+      provider_output_tokens_max: 2000000
+      runner_usd_max: 90
+      provider_enforced_usd_max: 100
+      provider_request_before_campaign_lock: forbidden
+      real_campaign_lock_offline: forbidden
+      retry_replace_drop_or_regrade: forbidden
+    implementation_budget:
+      touched_paths_exact: 53
+      added_physical_lines_max: 29130
+      removed_physical_lines_max: 350
+      activation_plus_implementation_added_max: 32980
+      activation_plus_implementation_removed_max: 600
+      production_files_or_loc_changed: 0
+      dependencies_changed: 0
+      compatibility_aliases: forbidden
+      generated_files_committed: forbidden
+      ci_change: exact_offline_self_test_step_only
+    review_contract:
+      activation_ci_matrix_jobs: 6
+      activation_independent_exact_head_review: required
+      activation_coderabbit_actual_disposition_must_be_honest: true
+      activation_unresolved_review_threads: 0
+      implementation_independent_reviews: 2
+      two_independent_natural_person_reviews: required_before_reveal
+      third_eligible_adjudicator_for_disagreement: required
+      sixth_independent_archive_verifier: required
+      one_fixed_campaign_without_rerun: required
+    activation:
+      issue: https://github.com/mohanagy/madar/issues/612
+      proposal_receipt: https://github.com/mohanagy/madar/issues/612#issuecomment-5083546156
+      rfc_proposal_receipt: https://github.com/mohanagy/madar/issues/577#issuecomment-5083547611
+      owner_approval: https://github.com/mohanagy/madar/issues/612#issuecomment-5083661878
+      rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5083662827
+      protected_base: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
+      target_branch: core-reset
+      second_owner_hash_approval: passed
+      activation_head: 7c0cff71c512512d534e4d5b011cd27ced5992fe
+      activation_merge: 5c9d1e2436932f7420169ea4ffa617c6bea4fbd0
+      activation_tree: 35b68cd733e07b9306d52e2076a287269f8919eb
+      implementation_start_commit: not_started_cancelled
+    deferred_provider_account_observer:
+      status: unresolved_separate_proposal_required
+      generic_proof_acceptance: forbidden
+      provider_hard_cap_and_zero_use_observation: required_before_real_campaign_lock
+    governance_closure:
+      after: exact_offline_implementation_merge_only
+      modified_paths:
+        - docs/core-reset/removal-manifest.yml
+        - docs/core-reset/scorecard.md
+        - docs/roadmap.md
+        - docs/designs/2026-07-19-core-reset.md
+        - tests/unit/core-reset-governance.test.ts
+      added_physical_lines_max: 400
+      removed_physical_lines_max: 200
+      activation_plus_implementation_plus_closure_added_max: 33380
+      activation_plus_implementation_plus_closure_removed_max: 800
+      records_only: v2 offline execution boundary passed, exact merge/tree/review/CI receipts, unchanged v1 stop, unresolved provider observer, zero provider requests/spend, and no active campaign
+      evaluator_schema_contract_ci_production_package_dependency_receipt_evidence_change: forbidden
+    closure:
+      state_reason: not_planned
+      issue: https://github.com/mohanagy/madar/issues/612
+      implementation_commit_created: false
+      implementation_pr_opened: false
+      campaign_lock_created: false
+      provider_requests: 0
+      spend_usd: 0
+      comparator_result_created: false
+      release_gate: deferred_not_passed
+      unconsumed_authority: superseded_and_revoked
+    notes: 'The #612 governance activation merged through PR #613, but implementation never started. On 2026-07-28 the owner cancelled this phase and all later Capability Validation successor issues as not planned, superseded and revoked every unconsumed authority, and removed the comparator campaign from the beta release gate. The committed contract and schemas remain historical development-only records outside dist and npm. They prove no capability, token, latency, cost, activation, or external-user result.'
+    exit_gate: 'CANCELLED — CLOSED AS NOT PLANNED. No campaign ran and no Native-vs-Graphify-vs-Madar result exists. This phase is deferred beyond 0.40.0-beta.1, not passed, and supplies no stable-release evidence.'
+
+  - id: non-core-graph-products
+    disposition: delete
+    status: complete
+    sources:
+      - src/infrastructure/neo4j.ts
+    transferred_sources:
+      - src/pipeline/cluster.ts
+      - src/pipeline/community-details.ts
+      - src/pipeline/community-naming.ts
+      - src/pipeline/analyze.ts
+      - src/pipeline/report.ts
+      - src/pipeline/federate.ts
+      - src/runtime/diff.ts
+      - src/runtime/graph-summary.ts
+    absorbed_by: thin-delivery
+    notes: 'Completed as an absorbed ownership handle under #602 and PR #604. Issues #596 and #599 transferred semantic.ts, http-server.ts, infrastructure/time-travel.ts, runtime/time-travel.ts, and the eight finalizer sources above to evidence-path-query for deletion as part of the completed combined importer closure. Issue #602 absorbed and deleted the sole remaining production source, neo4j.ts; no non-core graph product survives.'
+    exit_gate: Removed from code, package, dependencies, CLI/MCP, docs, and tests.
+
+  - id: activation-and-extra-integrations
+    disposition: delete
+    status: complete
+    sources:
+      - src/infrastructure/hooks.ts
+      - src/infrastructure/install-routing-guidance.ts
+      - src/infrastructure/install-skill-templates.ts
+      - src/shared/telemetry.ts
+      - src/shared/update-notifier.ts
+    absorbed_by: thin-delivery
+    notes: 'Completed as an absorbed ownership handle under #602 and PR #604. Issue #596 transferred context-pack-command.ts, context-prompt-command.ts, context-prompt.ts, and handoff-command.ts to evidence-path-query for deletion as importer-only surfaces. Issue #602 absorbed and deleted the five surviving hook, generated-routing, telemetry, and updater sources. Forced Claude/Codex transport is proved here; natural tool choice moves to later capability validation and is not claimed by this phase.'
+    exit_gate: Hooks, generated skills/routing, telemetry, update checks, and non-Claude/Codex installer branches are absent; later natural activation has no hidden routing surface.
+
+  - id: post-validation-products
+    disposition: defer
+    status: proposed
+    capabilities:
+      - General implementation planning
+      - PR review and security analysis
+      - Hosted dashboard or control plane
+      - Enterprise administration
+      - Multi-repository federation
+      - Additional languages and agent-specific installers
+    exit_gate: Reconsider only after core technical gates, repeat external use, and independent customer demand.

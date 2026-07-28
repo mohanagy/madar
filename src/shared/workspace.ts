@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 export interface MadarWorkspace {
@@ -21,7 +21,7 @@ export interface MadarWorkspace {
 function canonicalPath(path: string): string {
   const resolved = resolve(path)
   try {
-    return realpathSync(resolved)
+    return realpathSync.native(resolved)
   } catch {
     return resolved
   }
@@ -83,6 +83,9 @@ export function resolveMadarWorkspace(rootPath = '.'): MadarWorkspace {
     ? join(gitCommonDir, 'madar', 'worktrees', worktreeArtifactId(gitCommonDir, worktreeRoot, sourceRoot))
     : sourceRoot
   const outputDir = join(artifactRoot, 'out')
+  if (existsSync(outputDir) && lstatSync(outputDir).isSymbolicLink()) {
+    throw new Error(`Refusing to use symlinked Madar output directory: ${outputDir}`)
+  }
 
   return {
     rootPath: sourceRoot,

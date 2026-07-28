@@ -7,8 +7,7 @@
     "size": "small",
     "language": "typescript",
     "shape": "library",
-    "status": "ready",
-    "supportsSpi": true
+    "status": "ready"
   },
   {
     "id": "nestjs-mid",
@@ -18,8 +17,7 @@
     "size": "mid",
     "language": "typescript",
     "shape": "nestjs-service-proxy",
-    "status": "ready",
-    "supportsSpi": true
+    "status": "ready"
   },
   {
     "id": "ts-monorepo-large",
@@ -29,30 +27,7 @@
     "size": "large",
     "language": "typescript",
     "shape": "monorepo",
-    "status": "ready",
-    "supportsSpi": true
-  },
-  {
-    "id": "python-service",
-    "name": "Python service proxy",
-    "path": "docs/benchmarks/suite/fixtures/python-service",
-    "description": "Public FastAPI-style session service fixture used as the Python benchmark target.",
-    "size": "mid",
-    "language": "python",
-    "shape": "fastapi-or-django",
-    "status": "ready",
-    "supportsSpi": true
-  },
-  {
-    "id": "go-service",
-    "name": "Go HTTP service proxy",
-    "path": "docs/benchmarks/suite/fixtures/go-service",
-    "description": "Public net/http login session fixture used as the Go benchmark target.",
-    "size": "mid",
-    "language": "go",
-    "shape": "http-service",
-    "status": "ready",
-    "supportsSpi": true
+    "status": "ready"
   },
   {
     "id": "documenso",
@@ -67,8 +42,7 @@
     "size": "large",
     "language": "typescript",
     "shape": "document-platform",
-    "status": "ready",
-    "supportsSpi": true
+    "status": "ready"
   },
   {
     "id": "formbricks",
@@ -83,8 +57,7 @@
     "size": "large",
     "language": "typescript",
     "shape": "survey-platform",
-    "status": "ready",
-    "supportsSpi": true
+    "status": "ready"
   },
   {
     "id": "dub",
@@ -99,8 +72,7 @@
     "language": "typescript",
     "shape": "link-platform",
     "status": "ready",
-    "graphRoot": "apps/web",
-    "supportsSpi": true
+    "graphRoot": "apps/web"
   },
   {
     "id": "twenty",
@@ -115,8 +87,7 @@
     "size": "large",
     "language": "typescript",
     "shape": "crm-platform",
-    "status": "ready",
-    "supportsSpi": true
+    "status": "ready"
   },
   {
     "id": "cal-diy",
@@ -130,8 +101,7 @@
     "size": "large",
     "language": "typescript",
     "shape": "scheduling-platform",
-    "status": "ready",
-    "supportsSpi": false
+    "status": "ready"
   },
   {
     "id": "novu",
@@ -146,7 +116,6 @@
     "size": "large",
     "language": "typescript",
     "shape": "notification-platform",
-    "status": "ready",
-    "supportsSpi": false
+    "status": "ready"
   }
 ]

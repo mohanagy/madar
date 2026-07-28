@@ -1,7 +1,10 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    "rootDir": "src",
+    "outDir": "dist/src",
+    "noEmitOnError": true
   },
   "include": ["src/**/*.ts"],
   "exclude": ["tests/**/*.ts", "dist", "vitest.config.ts"]

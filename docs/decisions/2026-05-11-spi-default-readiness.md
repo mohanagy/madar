@@ -1,7 +1,7 @@
 # SPI default-readiness criteria + legacy-extractor fallback plan
 
 > **Tracking issue:** [#134](https://github.com/mohanagy/madar/issues/134).
-> **Status:** partially superseded by capability-aware auto-extraction in [#570](https://github.com/mohanagy/madar/issues/570). The pure-SPI graduation criteria remain historical evidence gates, not the current default contract.
+> **Status:** superseded by the accepted Core Reset ([#577](https://github.com/mohanagy/madar/issues/577), [#588](https://github.com/mohanagy/madar/issues/588)). Everything below is preserved as historical context for the removed extraction architectures and commands; it is not current usage guidance.
 
 ## What this document is
 

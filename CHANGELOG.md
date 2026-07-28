@@ -4,6 +4,24 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.40.0-beta.1] - 2026-07-28
+
+### Changed
+
+- **Core Reset replaces the broad legacy runtime with one local evidence path**: the public surface is six CLI entrypoints and one MCP `retrieve` tool over a canonical JavaScript/TypeScript graph. No compatibility aliases, secondary engine, product telemetry, or updater remains.
+- **Generation and automatic refresh now share one canonical update rule**: an unchanged accepted source snapshot parses and publishes nothing; every changed CLI, watch, or MCP update performs the same full canonical reconcile. Madar keeps no AST, per-file fact, dependency-closure, or compiler-session cache in memory or on disk.
+- **`graph.json` is the sole authoritative index artifact and commit marker**: it embeds the authenticated build id, source snapshot, generation policy, source-root identity, corpus counts, and supported-index completeness. Local/share-safe indexing manifests are best-effort derived diagnostics; missing or mismatched diagnostics do not override an accepted graph. `GRAPH_REPORT.md` is retired.
+- **Completeness now describes the supported JavaScript/TypeScript index**: supported `.ts`, `.tsx`, `.js`, and `.jsx` failures determine complete, partial, or failed state. Unsupported languages and policy skips remain informational by default, safety exclusions remain separate, and explicit strict thresholds can still make failed or unsupported counts block publication. Addresses #592.
+
+### Migration
+
+- Install this beta with `npm install -g @lubab/madar@next`, run `madar generate . --update`, rerun `madar install claude` or `madar install codex`, then restart the client.
+- The complete command, tool, language, artifact, and installer transition is in the [0.40.0-beta.1 migration guide](https://github.com/mohanagy/madar/blob/next/docs/migrations/0.40.0-beta.1.md).
+
+### Validation status
+
+- The fixed Native-versus-Graphify-versus-Madar campaign did not run. This beta makes no comparative token, latency, cost, correctness, natural-activation, or retention claim.
+
 ## [0.32.0] - 2026-07-19
 
 ### Added

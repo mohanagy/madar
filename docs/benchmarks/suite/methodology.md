@@ -1,12 +1,16 @@
 # Benchmark suite methodology
 
+> Historical development harness. The public `benchmark`, `bench:suite`, and
+> `eval` commands described below were retired by Thin Delivery. This document
+> preserves the method behind earlier receipts; it is not current CLI guidance.
+
 This suite exists to make Madar's benchmark claims reproducible without collapsing everything into one blended marketing number.
 
 ## Repo selection
 
 The fixed repo set is tracked in [`repos.json`](./repos.json).
 
-- Keep the shape mix explicit: small TypeScript, mid-size service, larger TypeScript monorepo, Python service, Go service.
+- Keep the supported shape mix explicit: small TypeScript, mid-size JavaScript/TypeScript service, and larger TypeScript monorepo.
 - The suite may use public repos or fixture-style proxies. It must not require the private GoValidate codebase.
 - The current public git-backed rows are `documenso`, `formbricks`, `dub`, `twenty`, `cal-diy`, and `novu`.
 - `status: "ready"` means the repo/task cell is prompt-wired and intended to run once the local install gate passes.
@@ -35,10 +39,11 @@ The fixed task set is tracked in [`tasks.json`](./tasks.json).
 - Run modes:
   - **cold** — measured directly with no suite-managed priming run
   - **warm** — one priming compare run is executed and discarded before the measured run
-- Each measured cell currently records:
+- Each new measured cell records:
   - baseline
-  - Madar
-  - SPI Madar when the repo entry supports SPI
+  - one canonical JavaScript/TypeScript Madar arm
+
+Dated receipts may retain historical alternate-arm labels in their immutable artifacts. The live runner does not expose those removed extraction architectures as current choices.
 
 When a benchmark run uses an ordered question list, Madar keeps one session across that list so repeated-turn savings can be measured instead of only first-turn cost. Those per-question receipts include `reused_context_tokens`, `effective_query_tokens`, and `session_diagnostics`; single-question cells remain first-turn only.
 
@@ -76,10 +81,10 @@ For checked-in fixture bundles under `docs/benchmarks/suite/results/`, `report.j
 ## Isolation mode and canonical environment
 
 - Published benchmark cells are expected to run in isolation mode via [`docs/benchmarks/suite/isolation/`](./isolation/).
-- `./isolation/run-isolated.sh` creates an npm tarball, unpacks it under the external runtime profile, uses the packed CLI for both `bench:suite` and MCP, syncs the shipped minimal config, points `CLAUDE_CONFIG_DIR` at that profile, and exports `MADAR_BENCH_ISOLATION=1`.
+- `npm run build:eval` compiles the checkout-only evaluator under `dist-eval/**`; `./isolation/run-isolated.sh` creates an npm tarball, unpacks it under the external runtime profile, uses the packed product CLI for MCP, invokes that checkout-only evaluator through `tools/eval/core-reset/benchmark-suite.mjs`, syncs the minimal evaluation config, points `CLAUDE_CONFIG_DIR` at that profile, and exports `MADAR_BENCH_ISOLATION=1`.
 - Published cells must report `MADAR_BENCH_RUNTIME_SOURCE=npm_pack`. A `MADAR_BENCH_CLI_PATH` override is for development only because it reintroduces checkout behavior.
 - That isolation profile is separate from the user's default Claude profile; if the default profile is logged in but the isolated runtime profile is not, the launcher now fails fast and prints the exact `CLAUDE_CONFIG_DIR=... claude auth login` command to run once before a measured rerun.
-- The pinned environment contract lives in [`isolation/environment.json`](./isolation/environment.json). In isolation mode, `madar bench:suite` compares the live environment against that contract before each cell.
+- The pinned environment contract lives in [`isolation/environment.json`](./isolation/environment.json). In isolation mode, the checkout-only benchmark runner compares the live environment against that contract before each cell.
 - Environment drift marks the cell `status: "env_mismatch"` and excludes it from measured counts. `summary.md` records `Cells skipped for env drift: N`.
 - Development runs outside isolation mode remain useful receipts, but their cells are tagged `isolation: false` and should not be cited as published benchmark claims.
 

@@ -18,6 +18,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html'],
       reportsDirectory: 'coverage',
+      include: ['src/**/*.ts'],
       thresholds: {
         statements: 75,
         branches: 70,

@@ -1,0 +1,742 @@
+{
+  "schema_version": 2,
+  "receipt_kind": "core-reset-evidence-path-held-out",
+  "generated_at": "2026-07-24T20:22:15.879Z",
+  "share_safe": true,
+  "issue": 596,
+  "benchmark_passed": true,
+  "eligible_for_acceptance": true,
+  "contract": {
+    "path": "tools/eval/core-reset/contracts/evaluation-contract.json",
+    "contract_id": "core-reset-held-out-v2",
+    "sha256": "c22819a9e24e53f7b11a69c06511a8dc0c2cba8841868d8d9bb734575290bba9"
+  },
+  "evaluator": {
+    "path": "tools/eval/core-reset/evidence-path-held-out.mjs",
+    "sha256": "b7211c7e56360921a6b8e681ac84b21a1f13963f78a925589ea8611ee25bab97",
+    "schema_path": "tools/eval/core-reset/schemas/evidence-path-held-out-receipt.schema.json",
+    "schema_sha256": "2f3bb3ef0061f515eadbf4bc462af8ddef15a790892630553a069d4510a87714"
+  },
+  "candidate_build": {
+    "commands": [
+      [
+        "node",
+        "<resolved-npm-cli>",
+        "ci",
+        "--offline",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--userconfig=<isolated-empty-user-config>",
+        "--globalconfig=<isolated-empty-global-config>"
+      ],
+      [
+        "node",
+        "--eval",
+        "import { rmSync } from \"node:fs\"; rmSync(\"dist\", { recursive: true, force: true })"
+      ],
+      [
+        "node",
+        "node_modules/typescript/bin/tsc",
+        "-p",
+        "tsconfig.build.json"
+      ],
+      [
+        "node",
+        "<resolved-npm-cli>",
+        "pack",
+        "--ignore-scripts",
+        "--json",
+        "--pack-destination",
+        "<isolated>",
+        "--userconfig=<isolated-empty-user-config>",
+        "--globalconfig=<isolated-empty-global-config>"
+      ],
+      [
+        "node",
+        "<resolved-npm-cli>",
+        "ci",
+        "--offline",
+        "--omit=dev",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--userconfig=<isolated-empty-user-config>",
+        "--globalconfig=<isolated-empty-global-config>"
+      ]
+    ],
+    "performed_before_runtime_load": true,
+    "build_source": "detached_standalone_exact_head_clone",
+    "node_executable_sha256": "983a169edf336738090b93b76df43fe9752aa7d0ed733099fa4b36d8a1116ed8",
+    "npm_cli_sha256": "8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7",
+    "typescript_cli_sha256": "8d5fa5bd883fec0979fc2004f1fe1d99aef40570155d550eadc0b03b55513bf0",
+    "git_executable": "/usr/bin/git",
+    "git_executable_sha256": "506cb2ddd061e2992c8ee7c53853340688b53d9fcec94c3aa936524cea5b40cb",
+    "tar_executable": "/usr/bin/bsdtar",
+    "tar_executable_sha256": "d91cd48a538bfd67fa222bf00f0631d5554aaaa50f2298a2887cd495d8c65ad4",
+    "git_configuration": [
+      "core.hooksPath=/dev/null",
+      "core.fsmonitor=false",
+      "core.untrackedCache=false",
+      "protocol.ext.allow=never",
+      "protocol.ssh.allow=never",
+      "protocol.http.allow=never",
+      "protocol.https.allow=never",
+      "protocol.file.allow=always",
+      "fetch.fsckObjects=true",
+      "transfer.fsckObjects=true",
+      "submodule.recurse=false"
+    ],
+    "head_commit": "29aba7ebffe14d6a70bde78df1490bf4cded64a4",
+    "head_tree_oid": "277649ed917fc134e9808a995ce8c84f22258acb",
+    "head_tree_paths_sha256": "e3208a5d8e4dd80f83d3c053d7a79a98b9cfc6177d5a79bf332d56eaf5df9f48",
+    "worktree_clean_before": true,
+    "worktree_clean_after": true,
+    "build_dependency_files": 6098,
+    "build_dependency_tree_sha256": "9150d1f2d36392a46ea61fa42564d6ed14c7b4acc0d2a87ec3a67c9fd0b8759b",
+    "package_sha256": "59843af17736c5d6ff5bf4499d6509eaf69605f70b57c08be4e1716758e25528",
+    "package_bytes": 231524,
+    "package_lock_sha256": "d22ed275e75c70d73a6077631b9a08641bdf6b30504729376842f628e272bb4a",
+    "dependency_files": 4076,
+    "dependency_tree_sha256": "8ed24d016323fbc879d3d473d71fb529c2b8d791f2133fcc27e6be1f0a31ab62",
+    "dist_files": 146,
+    "dist_tree_sha256": "ed136748dd991b23bb52488cb9194b45a621717844789b9f3e4df39b659601d7"
+  },
+  "subject": {
+    "head_commit": "29aba7ebffe14d6a70bde78df1490bf4cded64a4",
+    "head_tree_oid": "277649ed917fc134e9808a995ce8c84f22258acb",
+    "worktree_dirty": false
+  },
+  "environment": {
+    "node": "v22.9.0",
+    "platform": "darwin",
+    "release": "25.3.0",
+    "arch": "arm64",
+    "node_options": "absent",
+    "node_path": "absent",
+    "process_exec_argv": []
+  },
+  "protocol": {
+    "candidate_generate_command": [
+      "node",
+      "dist/src/cli/bin.js",
+      "generate",
+      "."
+    ],
+    "candidate_runtime_source": "exact_head_npm_packed_artifact",
+    "candidate_dependency_install": "exact_lock_offline_production_only",
+    "workspace_config_source": "exact_tracked_local_workspace_packages_no_package_manager",
+    "containment_policy_id": "darwin-sandbox-exec-node-permissions-v1",
+    "response_handoff": "fsync_sha256_before_hidden_grading",
+    "isolated_plan_process_loaded_contract_before_retrieval": true,
+    "hidden_fixtures_loaded_in_evaluator_after_response_persistence": true,
+    "execution_plan_isolated_from_hidden_fixtures": true,
+    "grading_contract_loaded_sequence": 4,
+    "grading_contract_loaded_at": "2026-07-24T20:22:15.485Z",
+    "selected_questions": [
+      "openstatus-574-strict-one-call",
+      "documenso-document-send",
+      "formbricks-survey-response"
+    ],
+    "excluded_diagnostic_questions": [
+      "openstatus-565-runtime-flow"
+    ]
+  },
+  "thresholds": {
+    "required_in_scope_phase_coverage": 1,
+    "selected_file_precision_min": 0.7,
+    "unrelated_files_max": 2,
+    "selected_files_max": 12,
+    "snippets_max": 25,
+    "serialized_tokens_max": 4000,
+    "reported_closure_passes_max": 1
+  },
+  "repositories": [
+    {
+      "repository_id": "openstatus",
+      "commit": "295e5a72f52c172d326aa950e81043e72a4f20c0",
+      "tree_paths_sha256": "9ccb1f1dce50c03ea67703953c124cb6026ee978a97be4f358d7276c20e764f4",
+      "graph_root": ".",
+      "checkout_clean": true,
+      "build": {
+        "source_snapshot_files": 3505,
+        "source_snapshot_tree_sha256": "5c9fcaa8871030cf2235fc6389fd62e5813191c2662df986557accdccd3c76a1",
+        "workspace_config_packages": 1,
+        "workspace_config_mapping_sha256": "aee50cabfb95e7a09054a3579c60971468b58a27b2bfac2d68f896b45f00528f",
+        "elapsed_ms": 22677.975,
+        "artifact_sha256": "f9b5eb664e14e6e2d719638f398073b03c13cd7663637fe4a9b274d2d3ed3b7a",
+        "artifact_bytes": 54866819,
+        "nodes": 15620,
+        "directed_edges": 37031,
+        "generated_output_absent_before_retrieve": true
+      }
+    },
+    {
+      "repository_id": "documenso",
+      "commit": "4ee789ea378d12c85daacf7dceda80b4dec80652",
+      "tree_paths_sha256": "48728969cb89adeb6567f030a41fdf380e6c523473a04d3a264a4f4970b95709",
+      "graph_root": "packages/lib",
+      "checkout_clean": true,
+      "build": {
+        "source_snapshot_files": 2670,
+        "source_snapshot_tree_sha256": "980ca9ce5017e973c254546b8004dfc055e8a97139dd8097f619cb0b53e62e68",
+        "workspace_config_packages": 1,
+        "workspace_config_mapping_sha256": "115059e14512baa0265146f9f91e27d587e5a51b3347eee6f8651bef3cd2815b",
+        "elapsed_ms": 5677.267,
+        "artifact_sha256": "44e4c21e11d5bdfbbc9c4e776b857b8699783c85c9f0d07dd5e3b0851db73dcd",
+        "artifact_bytes": 13335616,
+        "nodes": 3862,
+        "directed_edges": 9132,
+        "generated_output_absent_before_retrieve": true
+      }
+    },
+    {
+      "repository_id": "formbricks",
+      "commit": "415bd9828ba150f7944fe10422acdbaf3089c707",
+      "tree_paths_sha256": "d50418a92fd6dae8d07ad09e4aaecbefb53c5ed29c85e374d41320e0669a7572",
+      "graph_root": "apps/web",
+      "checkout_clean": true,
+      "build": {
+        "source_snapshot_files": 3780,
+        "source_snapshot_tree_sha256": "4fbcd53c6c9459039c76284ade02210e9414725a0ec28a25a800c0c719feb2e2",
+        "workspace_config_packages": 1,
+        "workspace_config_mapping_sha256": "68cab01ff4126d8bdadcb030627319eecc953dcd4aa70beb936045df5266f919",
+        "elapsed_ms": 29815.714,
+        "artifact_sha256": "b5d25a7a397a349fab08777c229692a476a51ed669bc59e2180f281e56eb7122",
+        "artifact_bytes": 55210982,
+        "nodes": 14401,
+        "directed_edges": 37709,
+        "generated_output_absent_before_retrieve": true
+      }
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "openstatus-574-strict-one-call",
+      "repository_id": "openstatus",
+      "gate_role": "scope_guard",
+      "comparison_role": "diagnostic_only",
+      "response": {
+        "sha256": "104187737ba6824c7c956b531da552390eee9dfb6fcebf60ce6ff0139c49eafc",
+        "bytes": 3880,
+        "child_pid": 52781,
+        "process_state_probe": 1,
+        "retrieve_invocations": 1,
+        "persisted_sequence": 1,
+        "persisted_before_grading": true,
+        "persisted_bytes_verified": true
+      },
+      "phases": [
+        {
+          "id": "checker_detection",
+          "scope": "unsupported_language",
+          "boundary_subjects": [
+            "apps/checker/handlers/checker.go"
+          ],
+          "minimum_boundary_matches": 1,
+          "unsupported_boundary_subjects": [],
+          "covered": false
+        },
+        {
+          "id": "tinybird_persistence",
+          "scope": "unsupported_language",
+          "boundary_subjects": [
+            "apps/checker/handlers/checker.go",
+            "apps/checker/pkg/tinybird/client.go"
+          ],
+          "minimum_boundary_matches": 2,
+          "unsupported_boundary_subjects": [
+            "apps/checker/pkg/tinybird/client.go"
+          ],
+          "covered": false
+        },
+        {
+          "id": "incident_mutation",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "openstatus.resolve-incident"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [],
+          "covered": false
+        },
+        {
+          "id": "notification_delivery",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "openstatus.trigger-notifications",
+            "openstatus.insert-notification-trigger"
+          ],
+          "minimum_owner_matches": 2,
+          "authenticated_owner_ids": [
+            "openstatus.trigger-notifications"
+          ],
+          "covered": false
+        },
+        {
+          "id": "public_html",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "openstatus.page-indicator",
+            "openstatus.public-client"
+          ],
+          "minimum_owner_matches": 2,
+          "authenticated_owner_ids": [],
+          "covered": false
+        },
+        {
+          "id": "json_feeds",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "openstatus.status-json-get",
+            "openstatus.to-status",
+            "openstatus.to-unresolved-incidents"
+          ],
+          "minimum_owner_matches": 3,
+          "authenticated_owner_ids": [],
+          "covered": false
+        }
+      ],
+      "handoffs": [],
+      "authenticated_owner_ids": [
+        "openstatus.trigger-notifications"
+      ],
+      "owner_order_valid": true,
+      "required_phase_coverage": 0,
+      "unsupported_phases_reported": false,
+      "selected_files": [
+        "apps/server/src/routes/rpc/handlers/monitor/errors.ts",
+        "apps/status-page/src/app/(status-page)/[domain]/[locale]/(public)/feed/json/route.ts",
+        "apps/workflows/src/checker/alerting.ts"
+      ],
+      "relevant_selected_files": [
+        "apps/workflows/src/checker/alerting.ts"
+      ],
+      "unrelated_files": [
+        "apps/server/src/routes/rpc/handlers/monitor/errors.ts",
+        "apps/status-page/src/app/(status-page)/[domain]/[locale]/(public)/feed/json/route.ts"
+      ],
+      "selected_file_precision": 0.333333,
+      "independent_metric_failures": [],
+      "metrics": {
+        "authenticated_symbol_declarations": 3,
+        "structural_files": 0,
+        "result_selected_files": 3,
+        "snippets": 3,
+        "reported_closure_passes": 1,
+        "serialized_tokens": 1066,
+        "truncated": true
+      },
+      "gates": {
+        "outcome_evidence": true,
+        "required_phase_coverage": false,
+        "unsupported_phases_reported": false,
+        "authenticated_owner_sets": false,
+        "owner_order": true,
+        "required_handoffs": true,
+        "selected_file_precision": false,
+        "unrelated_files": true,
+        "selected_files": true,
+        "snippets": true,
+        "serialized_tokens": true,
+        "reported_closure_passes": true,
+        "not_truncated": false,
+        "graph_fact_integrity": true
+      },
+      "passed": false
+    },
+    {
+      "question_id": "documenso-document-send",
+      "repository_id": "documenso",
+      "gate_role": "blocking",
+      "comparison_role": "included",
+      "response": {
+        "sha256": "831227fe9bf0e93e3553cb104dfc06aaa05c859e70de755f740c1c4a85e9c645",
+        "bytes": 5262,
+        "child_pid": 53341,
+        "process_state_probe": 1,
+        "retrieve_invocations": 1,
+        "persisted_sequence": 2,
+        "persisted_before_grading": true,
+        "persisted_bytes_verified": true
+      },
+      "phases": [
+        {
+          "id": "recipient_creation",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "documenso.set-document-recipients"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [
+            "documenso.set-document-recipients"
+          ],
+          "covered": true
+        },
+        {
+          "id": "document_send",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "documenso.send-document"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [
+            "documenso.send-document"
+          ],
+          "covered": true
+        },
+        {
+          "id": "signing_completion",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "documenso.complete-document-with-token"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [
+            "documenso.complete-document-with-token"
+          ],
+          "covered": true
+        },
+        {
+          "id": "seal_execution",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "documenso.seal-document-run"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [
+            "documenso.seal-document-run"
+          ],
+          "covered": true
+        },
+        {
+          "id": "notification_delivery",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "documenso.send-completed-emails-run"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [
+            "documenso.send-completed-emails-run"
+          ],
+          "covered": true
+        }
+      ],
+      "handoffs": [
+        {
+          "from_owner_id": "documenso.set-document-recipients",
+          "to_owner_id": "documenso.send-document",
+          "expectation": "disconnected",
+          "expected_subject": "symbol:file:d0377e16ec10c898/constant/setDocumentRecipients -> symbol:file:9a97dc1acc210889/constant/sendDocument",
+          "authoritative_forward_path_relationship_ids": [],
+          "authoritative_reverse_path_relationship_ids": [],
+          "selected_forward_path_relationship_ids": [],
+          "selected_reverse_path_relationship_ids": [],
+          "selected_structural_support_path_relationship_ids": [],
+          "matched": true,
+          "violations": []
+        },
+        {
+          "from_owner_id": "documenso.send-document",
+          "to_owner_id": "documenso.complete-document-with-token",
+          "expectation": "disconnected",
+          "expected_subject": "symbol:file:9a97dc1acc210889/constant/sendDocument -> symbol:file:c9f29ac5161c104c/constant/completeDocumentWithToken",
+          "authoritative_forward_path_relationship_ids": [],
+          "authoritative_reverse_path_relationship_ids": [],
+          "selected_forward_path_relationship_ids": [],
+          "selected_reverse_path_relationship_ids": [],
+          "selected_structural_support_path_relationship_ids": [],
+          "matched": true,
+          "violations": []
+        },
+        {
+          "from_owner_id": "documenso.complete-document-with-token",
+          "to_owner_id": "documenso.seal-document-run",
+          "expectation": "disconnected",
+          "expected_subject": "symbol:file:c9f29ac5161c104c/constant/completeDocumentWithToken -> symbol:file:e64b608251fd694d/constant/run",
+          "authoritative_forward_path_relationship_ids": [],
+          "authoritative_reverse_path_relationship_ids": [],
+          "selected_forward_path_relationship_ids": [],
+          "selected_reverse_path_relationship_ids": [],
+          "selected_structural_support_path_relationship_ids": [],
+          "matched": true,
+          "violations": []
+        },
+        {
+          "from_owner_id": "documenso.seal-document-run",
+          "to_owner_id": "documenso.send-completed-emails-run",
+          "expectation": "disconnected",
+          "expected_subject": "symbol:file:e64b608251fd694d/constant/run -> symbol:file:61878b807a5d9b1a/constant/run",
+          "authoritative_forward_path_relationship_ids": [],
+          "authoritative_reverse_path_relationship_ids": [],
+          "selected_forward_path_relationship_ids": [],
+          "selected_reverse_path_relationship_ids": [],
+          "selected_structural_support_path_relationship_ids": [],
+          "matched": true,
+          "violations": []
+        }
+      ],
+      "authenticated_owner_ids": [
+        "documenso.set-document-recipients",
+        "documenso.send-document",
+        "documenso.complete-document-with-token",
+        "documenso.seal-document-run",
+        "documenso.send-completed-emails-run"
+      ],
+      "owner_order_valid": true,
+      "required_phase_coverage": 1,
+      "unsupported_phases_reported": true,
+      "selected_files": [
+        "packages/lib/jobs/definitions/emails/send-document-completed-emails.handler.ts",
+        "packages/lib/jobs/definitions/internal/seal-document.handler.ts",
+        "packages/lib/server-only/document/complete-document-with-token.ts",
+        "packages/lib/server-only/document/send-document.ts",
+        "packages/lib/server-only/recipient/set-document-recipients.ts"
+      ],
+      "relevant_selected_files": [
+        "packages/lib/jobs/definitions/emails/send-document-completed-emails.handler.ts",
+        "packages/lib/jobs/definitions/internal/seal-document.handler.ts",
+        "packages/lib/server-only/document/complete-document-with-token.ts",
+        "packages/lib/server-only/document/send-document.ts",
+        "packages/lib/server-only/recipient/set-document-recipients.ts"
+      ],
+      "unrelated_files": [],
+      "selected_file_precision": 1,
+      "independent_metric_failures": [],
+      "metrics": {
+        "authenticated_symbol_declarations": 5,
+        "structural_files": 0,
+        "result_selected_files": 5,
+        "snippets": 5,
+        "reported_closure_passes": 1,
+        "serialized_tokens": 1438,
+        "truncated": false
+      },
+      "gates": {
+        "outcome_evidence": true,
+        "required_phase_coverage": true,
+        "unsupported_phases_reported": true,
+        "authenticated_owner_sets": true,
+        "owner_order": true,
+        "required_handoffs": true,
+        "selected_file_precision": true,
+        "unrelated_files": true,
+        "selected_files": true,
+        "snippets": true,
+        "serialized_tokens": true,
+        "reported_closure_passes": true,
+        "not_truncated": true,
+        "graph_fact_integrity": true
+      },
+      "passed": true
+    },
+    {
+      "question_id": "formbricks-survey-response",
+      "repository_id": "formbricks",
+      "gate_role": "blocking",
+      "comparison_role": "included",
+      "response": {
+        "sha256": "5d6e422a3445f36500f5f447c089e6795b4682510a505e1f5bafe8987924b02e",
+        "bytes": 5497,
+        "child_pid": 53344,
+        "process_state_probe": 1,
+        "retrieve_invocations": 1,
+        "persisted_sequence": 3,
+        "persisted_before_grading": true,
+        "persisted_bytes_verified": true
+      },
+      "phases": [
+        {
+          "id": "request_handling",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "formbricks.v2-response-post"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [
+            "formbricks.v2-response-post"
+          ],
+          "covered": true
+        },
+        {
+          "id": "response_persistence",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "formbricks.create-response"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [
+            "formbricks.create-response"
+          ],
+          "covered": true
+        },
+        {
+          "id": "event_enqueue",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "formbricks.send-to-pipeline"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [
+            "formbricks.send-to-pipeline"
+          ],
+          "covered": true
+        },
+        {
+          "id": "worker_binding",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "formbricks.register-jobs-worker"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [
+            "formbricks.register-jobs-worker"
+          ],
+          "covered": true
+        },
+        {
+          "id": "event_tracking",
+          "scope": "required",
+          "accepted_owner_ids": [
+            "formbricks.process-response-pipeline-job"
+          ],
+          "minimum_owner_matches": 1,
+          "authenticated_owner_ids": [
+            "formbricks.process-response-pipeline-job"
+          ],
+          "covered": true
+        }
+      ],
+      "handoffs": [
+        {
+          "from_owner_id": "formbricks.v2-response-post",
+          "to_owner_id": "formbricks.create-response",
+          "expectation": "disconnected",
+          "expected_subject": "symbol:file:19cabc31710a0c84/constant/POST -> symbol:file:5ae59e499efbc6e8/constant/createResponse",
+          "authoritative_forward_path_relationship_ids": [],
+          "authoritative_reverse_path_relationship_ids": [],
+          "selected_forward_path_relationship_ids": [],
+          "selected_reverse_path_relationship_ids": [],
+          "selected_structural_support_path_relationship_ids": [],
+          "matched": true,
+          "violations": []
+        },
+        {
+          "from_owner_id": "formbricks.v2-response-post",
+          "to_owner_id": "formbricks.send-to-pipeline",
+          "expectation": "connected",
+          "expected_subject": "symbol:file:19cabc31710a0c84/constant/POST -> symbol:file:848f99905aa3938d/constant/sendToPipeline",
+          "authoritative_forward_path_relationship_ids": [
+            "edge_26ef062b6d697c443c1e43c4e188ba08"
+          ],
+          "authoritative_reverse_path_relationship_ids": [],
+          "selected_forward_path_relationship_ids": [
+            "edge_9419a79fda9d44abd5aa83fb15df816d"
+          ],
+          "selected_reverse_path_relationship_ids": [],
+          "selected_structural_support_path_relationship_ids": [],
+          "matched": true,
+          "violations": []
+        },
+        {
+          "from_owner_id": "formbricks.send-to-pipeline",
+          "to_owner_id": "formbricks.register-jobs-worker",
+          "expectation": "disconnected",
+          "expected_subject": "symbol:file:848f99905aa3938d/constant/sendToPipeline -> symbol:file:f970f2053d680bab/constant/registerJobsWorker",
+          "authoritative_forward_path_relationship_ids": [],
+          "authoritative_reverse_path_relationship_ids": [],
+          "selected_forward_path_relationship_ids": [],
+          "selected_reverse_path_relationship_ids": [],
+          "selected_structural_support_path_relationship_ids": [],
+          "matched": true,
+          "violations": []
+        },
+        {
+          "from_owner_id": "formbricks.register-jobs-worker",
+          "to_owner_id": "formbricks.process-response-pipeline-job",
+          "expectation": "disconnected",
+          "expected_subject": "symbol:file:f970f2053d680bab/constant/registerJobsWorker -> symbol:file:38d6ffc6b3b3b7cb/constant/processResponsePipelineJob",
+          "authoritative_forward_path_relationship_ids": [],
+          "authoritative_reverse_path_relationship_ids": [],
+          "selected_forward_path_relationship_ids": [],
+          "selected_reverse_path_relationship_ids": [],
+          "selected_structural_support_path_relationship_ids": [],
+          "matched": true,
+          "violations": []
+        }
+      ],
+      "authenticated_owner_ids": [
+        "formbricks.v2-response-post",
+        "formbricks.create-response",
+        "formbricks.send-to-pipeline",
+        "formbricks.register-jobs-worker",
+        "formbricks.process-response-pipeline-job"
+      ],
+      "owner_order_valid": true,
+      "required_phase_coverage": 1,
+      "unsupported_phases_reported": true,
+      "selected_files": [
+        "apps/web/app/api/v2/client/[workspaceId]/responses/lib/response.ts",
+        "apps/web/app/api/v2/client/[workspaceId]/responses/route.ts",
+        "apps/web/app/lib/pipelines.ts",
+        "apps/web/instrumentation-jobs.ts",
+        "apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts"
+      ],
+      "relevant_selected_files": [
+        "apps/web/app/api/v2/client/[workspaceId]/responses/lib/response.ts",
+        "apps/web/app/api/v2/client/[workspaceId]/responses/route.ts",
+        "apps/web/app/lib/pipelines.ts",
+        "apps/web/instrumentation-jobs.ts",
+        "apps/web/modules/response-pipeline/lib/process-response-pipeline-job.ts"
+      ],
+      "unrelated_files": [],
+      "selected_file_precision": 1,
+      "independent_metric_failures": [],
+      "metrics": {
+        "authenticated_symbol_declarations": 5,
+        "structural_files": 0,
+        "result_selected_files": 5,
+        "snippets": 5,
+        "reported_closure_passes": 1,
+        "serialized_tokens": 1522,
+        "truncated": false
+      },
+      "gates": {
+        "outcome_evidence": true,
+        "required_phase_coverage": true,
+        "unsupported_phases_reported": true,
+        "authenticated_owner_sets": true,
+        "owner_order": true,
+        "required_handoffs": true,
+        "selected_file_precision": true,
+        "unrelated_files": true,
+        "selected_files": true,
+        "snippets": true,
+        "serialized_tokens": true,
+        "reported_closure_passes": true,
+        "not_truncated": true,
+        "graph_fact_integrity": true
+      },
+      "passed": true
+    }
+  ],
+  "diagnostic": {
+    "affects_blocking_gate": false,
+    "passed": false,
+    "question_ids": [
+      "openstatus-574-strict-one-call"
+    ]
+  },
+  "gates": {
+    "contract_identity": true,
+    "candidate_runtime_built_from_subject": true,
+    "candidate_process_isolation_and_containment": true,
+    "immutable_response_handoff": true,
+    "grading_order": true,
+    "standalone_pinned_repositories": true,
+    "one_retrieve_per_question": true,
+    "blocking_questions": true
+  },
+  "failures": [],
+  "receipt_sha256": "f07cac4200b77ed9d74a5792e72b032c471c84337ef71709b8c0e96312ae2693"
+}

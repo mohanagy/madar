@@ -4,11 +4,5 @@
     "require_direct_evidence": true,
     "required_answer_terms": ["submitOrder", "reserveInventory", "saveOrder", "publishOrderConfirmed"],
     "forbidden_answer_terms": ["mcp__madar__retrieve", "not enough evidence", "not present in this knowledge graph"]
-  },
-  "holdout-invoice-service-explain-runtime": {
-    "prompt": "How does an invoice request move from the API through billing calculation and ledger persistence to audit emission?",
-    "require_direct_evidence": true,
-    "required_answer_terms": ["create_invoice", "calculate_total", "record_invoice", "emit_invoice_created"],
-    "forbidden_answer_terms": ["mcp__madar__retrieve", "not enough evidence", "not present in this knowledge graph"]
   }
 }

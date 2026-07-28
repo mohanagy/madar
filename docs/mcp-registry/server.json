@@ -1,7 +1,7 @@
 {
     "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
     "name": "io.github.mohanagy/madar",
-    "description": "Task-aware local context packs for TypeScript/Node AI coding workflows.",
+    "description": "Authenticated local evidence paths for JavaScript and TypeScript coding agents.",
     "title": "Madar",
     "websiteUrl": "https://github.com/mohanagy/madar",
     "repository": {
@@ -9,13 +9,13 @@
         "source": "github",
         "url": "https://github.com/mohanagy/madar"
     },
-    "version": "0.32.0",
+    "version": "0.40.0-beta.1",
     "packages": [
         {
             "registryType": "npm",
             "registryBaseUrl": "https://registry.npmjs.org",
             "identifier": "@lubab/madar",
-            "version": "0.32.0",
+            "version": "0.40.0-beta.1",
             "runtimeHint": "npx",
             "transport": {
                 "type": "stdio"
@@ -23,34 +23,14 @@
             "packageArguments": [
                 {
                     "type": "positional",
-                    "value": "serve"
-                },
-                {
-                    "type": "positional",
-                    "value": "--stdio"
-                },
-                {
-                    "type": "positional",
-                    "value": "--auto-refresh"
-                }
-            ],
-            "environmentVariables": [
-                {
-                    "name": "MADAR_TOOL_PROFILE",
-                    "description": "Optional MCP tool surface: core graph-navigation tools, strict bounded context_pack/context_expand tools, or full.",
-                    "default": "core",
-                    "choices": [
-                        "core",
-                        "strict",
-                        "full"
-                    ]
+                    "value": "mcp"
                 }
             ]
         }
     ],
     "_meta": {
         "io.modelcontextprotocol.registry/publisher-provided": {
-            "notes": "Public npm package plus local auto-refresh MCP flow. When an MCP host launches `madar serve --stdio --auto-refresh` with a workspace as its cwd, Madar builds and refreshes that workspace's local graph without a static graph-path argument. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
+            "notes": "Public npm package with exactly one `retrieve(question, budget?)` tool, the tools capability only, and no MCP resources or prompts. When an MCP host launches `madar mcp` with a workspace as its cwd, Madar builds and refreshes that workspace's local graph without a static graph-path argument. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
             "source": "docs/mcp-registry/server.json"
         }
     }

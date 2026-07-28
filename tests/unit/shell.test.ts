@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import * as shell from '../../src/shared/shell.js'
+import * as shell from '../../tools/eval/lib/shared/shell.js'
 
 describe('shared shell helpers', () => {
   afterEach(() => {

@@ -1,13 +1,13 @@
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
+import { join, relative, resolve, sep } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { generateGraph } from '../../src/infrastructure/generate.js'
-import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
-import { retrieveContext } from '../../src/runtime/retrieve.js'
-import { loadGraph } from '../../src/runtime/serve.js'
+import { loadGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
+import { generateIndex } from '../../src/application/generate-index.js'
+import { retrieveContext } from '../../src/application/retrieve-context.js'
+import { inspectQueryIndex } from '../../src/domain/query/index-status.js'
 import { UserRepository } from '../../examples/sample-workspace/src/persistence/user-repository.js'
 import { createPasswordResetService } from '../../examples/sample-workspace/src/services/password-reset-service.js'
 
@@ -16,19 +16,14 @@ interface PromptExample {
   expected_labels: string[]
 }
 
-function withTempDir<T>(callback: (tempDir: string) => T | Promise<T>): T | Promise<T> {
+async function withTempDir<T>(
+  callback: (tempDir: string) => T | Promise<T>,
+): Promise<T> {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-sample-workspace-'))
-  const finalize = () => rmSync(tempDir, { recursive: true, force: true })
   try {
-    const result = callback(tempDir)
-    if (result && typeof (result as Promise<T>).then === 'function') {
-      return (result as Promise<T>).finally(finalize)
-    }
-    finalize()
-    return result
-  } catch (error) {
-    finalize()
-    throw error
+    return await callback(tempDir)
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true })
   }
 }
 
@@ -46,56 +41,34 @@ function copySampleWorkspace(tempDir: string): string {
 }
 
 describe('examples/sample-workspace', () => {
-  it('ships a small sample workspace that can generate a graph and answer a pack prompt', async () => {
+  it('generates an authenticated graph and answers a canonical query', async () => {
     expect(existsSync(resolve('examples/sample-workspace'))).toBe(true)
-    expect(existsSync(resolve('examples/sample-workspace/prompt-examples.json'))).toBe(true)
 
-    await withTempDir(async (tempDir) => {
+    await withTempDir((tempDir) => {
       const sampleRoot = copySampleWorkspace(tempDir)
-      const promptExamples = JSON.parse(
+      const prompts = JSON.parse(
         readFileSync(join(sampleRoot, 'prompt-examples.json'), 'utf8'),
       ) as PromptExample[]
-      const firstPrompt = promptExamples[0]
+      const prompt = prompts[0]
+      expect(prompt).toBeDefined()
 
-      expect(firstPrompt).toBeDefined()
-      const result = generateGraph(sampleRoot, { noHtml: true })
-      const graphPath = join(sampleRoot, 'out', 'graph.json')
-      const packOutput = await runContextPackCommand({
-        prompt: firstPrompt?.question ?? '',
+      const generated = generateIndex(sampleRoot)
+      const graph = loadGraphArtifact(generated.graphPath)
+      const result = retrieveContext(inspectQueryIndex(graph), {
+        question: prompt?.question ?? '',
         budget: 1800,
-        task: 'explain',
-        graphPath,
-      })
-      const pack = JSON.parse(packOutput) as {
-        pack: {
-          matched_nodes: Array<{ label: string }>
-        }
-      }
-      const serviceLookup = retrieveContext(loadGraph(graphPath), {
-        question: 'PasswordResetService',
-        budget: 1000,
       })
 
-      expect(result.nodeCount).toBeGreaterThan(0)
-      expect(existsSync(graphPath)).toBe(true)
-      expect(pack.pack.matched_nodes.length).toBeGreaterThan(0)
-      expect(serviceLookup.matched_nodes.map((node) => node.label)).toContain('PasswordResetService')
+      expect(generated.nodeCount).toBeGreaterThan(0)
+      expect(result.schema).toBe('madar.retrieve')
+      expect(result.version).toBe(1)
+      expect(result.outcome).toBe('evidence')
+      expect(result.metrics.serialized_tokens).toBeLessThanOrEqual(1800)
       expect(
-        (firstPrompt?.expected_labels ?? []).some((label) =>
-          pack.pack.matched_nodes.some((node) => node.label === label)),
+        (prompt?.expected_labels ?? []).some((label) =>
+          result.matched_nodes.some((node) => node.label === label)),
       ).toBe(true)
     })
-  })
-
-  it('documents how to generate and pack against the sample workspace', () => {
-    const tutorial = readFileSync(resolve('docs/tutorials/sample-workspace.md'), 'utf8')
-
-    if (tutorial.includes('npm run build')) {
-      expect(tutorial.toLowerCase()).toContain('repository root')
-    }
-    expect(tutorial).toContain('madar generate examples/sample-workspace')
-    expect(tutorial).toContain('madar pack')
-    expect(tutorial).toContain('prompt-examples.json')
   })
 
   it('does not return the password reset token to the caller', () => {
@@ -120,11 +93,14 @@ describe('examples/sample-workspace', () => {
       sendPasswordResetEmail: () => ({ delivered: true, channel: 'email' }),
     })
 
-    const existingUserResult = passwordResetService.requestPasswordReset('sam@example.test')
-    const unknownUserResult = passwordResetService.requestPasswordReset('missing@example.test')
-
-    expect(existingUserResult).toEqual({ queued: true })
-    expect(unknownUserResult).toEqual({ queued: true })
-    expect(userRepository.findUserByEmail('missing@example.test')).toBeUndefined()
+    expect(
+      passwordResetService.requestPasswordReset('sam@example.test'),
+    ).toEqual({ queued: true })
+    expect(
+      passwordResetService.requestPasswordReset('missing@example.test'),
+    ).toEqual({ queued: true })
+    expect(
+      userRepository.findUserByEmail('missing@example.test'),
+    ).toBeUndefined()
   })
 })

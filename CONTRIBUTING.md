@@ -16,6 +16,12 @@ A few high-value ways to help:
 
 The public roadmap lives in [`docs/roadmap.md`](docs/roadmap.md). If you want to propose a roadmap change, open or update the relevant issue first so the scope is visible before implementation. If you are unsure where to start, pick a small issue linked from the roadmap or one tagged `good first issue` / `help wanted`, and keep the pull request scoped to that issue.
 
+## Core Reset contributions
+
+The accepted Core Reset is governed by [RFC #577](https://github.com/mohanagy/madar/issues/577), the [versioned design](docs/designs/2026-07-19-core-reset.md), the [removal manifest](docs/core-reset/removal-manifest.yml), and the [scorecard](docs/core-reset/scorecard.md).
+
+Reset implementation is authorized only for the one removal-manifest item named by `current.active_phase`, after its work-item contract and owner activation are recorded. Use the Core Reset issue form, reference the affected manifest IDs, state the exact predecessor code to delete, and record the production LOC delta. A replacement is not complete while the old path, fallback, flags, obsolete tests, documentation, or dependencies remain.
+
 ## Development setup
 
 Prerequisites:

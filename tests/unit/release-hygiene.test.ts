@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -90,7 +90,7 @@ describe('release hygiene', () => {
     const scripts = loadPackageManifest().scripts ?? {}
 
     expect(scripts['release:verify']).toBe('node .github/scripts/verify-release-hygiene.mjs')
-    expect(scripts['publish:next']).toBe('npm publish --tag next --access public')
+    expect(scripts['publish:next']).toBe('npm publish --tag next --access public --provenance')
     expect(() =>
       execFileSync(process.execPath, [releaseVerifyScriptPath()], {
         cwd: process.cwd(),
@@ -110,8 +110,58 @@ describe('release hygiene', () => {
     const releaseDoc = loadFile('docs/release.md')
 
     expect(releaseDoc).toContain('npm run release:verify')
+    expect(releaseDoc).toContain('npm version 0.40.0-beta.1 --no-git-tag-version')
     expect(releaseDoc).toContain('`main` for stable releases, `next` for prereleases')
     expect(releaseDoc).toContain('npm publish --tag next --access public --provenance')
+  })
+
+  it('creates hyphenated GitHub releases as prereleases without moving latest', () => {
+    const releaseWorkflow = loadFile('.github/workflows/release.yml')
+
+    expect(releaseWorkflow).toContain('if [[ "$VERSION" == *-* ]]')
+    expect(releaseWorkflow).toContain('RELEASE_FLAGS+=(--prerelease --latest=false)')
+    expect(releaseWorkflow).toContain('--verify-tag')
+  })
+
+  it('publishes the beta only from the exact next tip through OIDC provenance', () => {
+    const releaseWorkflow = loadFile('.github/workflows/release.yml')
+    const publishIndex = releaseWorkflow.indexOf('npm run publish:next')
+    const githubReleaseIndex = releaseWorkflow.indexOf('gh release create')
+    const nextFetches = releaseWorkflow.match(/git fetch --no-tags origin next/g) ?? []
+    const remoteTagChecks = releaseWorkflow.match(/git ls-remote origin/g) ?? []
+
+    expect(existsSync(join(process.cwd(), '.github/workflows/publish-npm.yml'))).toBe(false)
+    expect(releaseWorkflow).toContain('id-token: write')
+    expect(releaseWorkflow).toContain('persist-credentials: false')
+    expect(releaseWorkflow).toContain('package-manager-cache: false')
+    expect(releaseWorkflow).not.toContain('cache: npm')
+    expect(nextFetches.length).toBeGreaterThanOrEqual(4)
+    expect(remoteTagChecks.length).toBeGreaterThanOrEqual(3)
+    expect(releaseWorkflow).toContain('if [[ "$RELEASE_SHA" != "$NEXT_SHA" ]]')
+    expect(releaseWorkflow).toContain('test "$RELEASE_SHA" = "$GITHUB_SHA"')
+    expect(releaseWorkflow).toContain('verify_remote_tag')
+    expect(releaseWorkflow).toContain('if [[ "$VERSION" != "0.40.0-beta.1" ]]')
+    expect(releaseWorkflow).toContain('npm run publish:next')
+    expect(releaseWorkflow).toContain('dist.attestations.provenance')
+    expect(releaseWorkflow).toContain('npm --prefix "$VERIFY_DIR" audit signatures')
+    expect(releaseWorkflow).toContain('5811e58e02799d103ad12b7220c31e6a7244043c')
+    expect(releaseWorkflow).toContain('LATEST_VERSION" == "0.32.0"')
+    expect(publishIndex).toBeGreaterThan(0)
+    expect(githubReleaseIndex).toBeGreaterThan(publishIndex)
+    expect(releaseWorkflow).not.toContain('NPM_TOKEN')
+    expect(releaseWorkflow).not.toContain('--no-provenance')
+  })
+
+  it('verifies an existing or newly created GitHub prerelease without moving latest', () => {
+    const releaseWorkflow = loadFile('.github/workflows/release.yml')
+
+    expect(releaseWorkflow).toContain('git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}"')
+    expect(releaseWorkflow).toContain('test "$REMOTE_TAG_SHA" = "$GITHUB_SHA"')
+    expect(releaseWorkflow).not.toContain("'.target_commitish'")
+    expect(releaseWorkflow).toContain("'.prerelease'")
+    expect(releaseWorkflow).toContain("'.draft'")
+    expect(releaseWorkflow).toContain('releases/latest')
+    expect(releaseWorkflow).toContain('"v0.32.0"')
   })
 
   it('requires prerelease README changelog links to target next', () => {
@@ -140,7 +190,6 @@ describe('release hygiene', () => {
       [
         '[release notes](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0277-next0---2026-05-29)',
         '[enterprise offer](https://github.com/mohanagy/madar/blob/main/docs/team-enterprise-offer.md)',
-        '[telemetry](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md)',
         '',
       ].join('\n'),
       (runVerify) => {
@@ -155,7 +204,6 @@ describe('release hygiene', () => {
       [
         '[release notes](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0277---2026-05-29)',
         '[enterprise offer](https://github.com/mohanagy/madar/blob/next/docs/team-enterprise-offer.md)',
-        '[telemetry](https://github.com/mohanagy/madar/blob/next/docs/telemetry.md)',
         '',
       ].join('\n'),
       (runVerify) => {

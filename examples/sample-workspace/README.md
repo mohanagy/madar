@@ -1,6 +1,6 @@
 # Password Reset Demo Workspace
 
-This sample workspace is intentionally smaller than `examples/demo-repo/`. It is meant for quick local demos, screenshots, and first-run experiments when you want a believable TypeScript codebase without a large benchmark corpus.
+This packaged sample workspace is intentionally smaller than the [full demo fixture in the source repository](https://github.com/mohanagy/madar/tree/main/examples/demo-repo). It is meant for quick local demos, screenshots, and first-run experiments when you want a believable TypeScript codebase without a large benchmark corpus.
 
 The flow is compact but realistic:
 
@@ -13,10 +13,9 @@ The flow is compact but realistic:
 Try it locally:
 
 ```bash
-madar generate examples/sample-workspace --no-html
-madar pack "how does password reset request enqueue the reset email" \
-  --graph examples/sample-workspace/out/graph.json \
-  --task explain
+madar generate examples/sample-workspace
+madar query "how does password reset request enqueue the reset email" \
+  --graph examples/sample-workspace/out/graph.json
 ```
 
 Prompt examples live in [`prompt-examples.json`](./prompt-examples.json).

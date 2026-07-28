@@ -1,55 +1,32 @@
 #!/bin/bash
-# Quick benchmark script — run this in any project to see madar in action
+# Quick local evidence check. This is not a comparative benchmark receipt.
 #
 # Usage:
 #   cd your-project
-#   bash path/to/quick-benchmark.sh
+#   MADAR_QUESTION='How does authentication work?' bash path/to/quick-benchmark.sh
 
-set -e
+set -eu
 
-echo "=== madar Quick Benchmark ==="
-echo ""
-
-if [ -z "${MADAR_RUNNER:-}" ]; then
-  echo "Set MADAR_RUNNER to a prompt runner command template first, for example:"
-  echo "  export MADAR_RUNNER='cat {prompt_file} | claude -p'"
-  echo "  export MADAR_RUNNER='cat {prompt_file} | gemini -p \"\" --output-format json'"
+if [ -z "${MADAR_QUESTION:-}" ]; then
+  echo "Set MADAR_QUESTION to one repository question."
   exit 1
 fi
 
-# Check if madar is installed
-if ! command -v madar &> /dev/null; then
-  echo "Installing madar..."
-  npm install -g @lubab/madar
+if ! command -v madar >/dev/null 2>&1; then
+  echo "Install Madar first: npm install -g @lubab/madar"
+  exit 1
 fi
 
-# Generate graph
-echo "Step 1: Generating knowledge graph..."
+echo "Step 1: generate the canonical graph"
 madar generate .
-echo ""
 
-# Run benchmark
-echo "Step 2: Running token reduction benchmark..."
-madar benchmark out/graph.json --exec "$MADAR_RUNNER" --yes
-echo ""
+echo "Step 2: inspect the byte-identical CLI retrieval"
+madar query "$MADAR_QUESTION"
 
-# Show key stats
-echo "Step 3: Graph summary..."
-echo ""
-head -20 out/GRAPH_REPORT.md
-echo ""
+echo "Step 3: inspect graph and supported client registrations"
+madar status
 
-# Set up MCP for your agent
-echo "Step 4: Setting up AI agent integration..."
-echo ""
-echo "Run one of these to connect your agent:"
-echo "  madar claude install    # Claude Code (.mcp.json)"
-echo "  madar cursor install    # Cursor (.cursor/mcp.json)"
-echo "  madar copilot install   # Copilot (.vscode/mcp.json)"
-echo ""
-echo "Then ask your agent:"
-echo '  "What is the blast radius of changing [YourMainEntity]?"'
-echo '  "How does [feature X] work?"'
-echo '  "Is this PR safe to merge?"'
-echo ""
-echo "=== Done ==="
+echo "Optional client registration:"
+echo "  madar install claude"
+echo "  madar install codex"
+echo "Other MCP clients can register command 'madar', args ['mcp'], and this exact cwd."

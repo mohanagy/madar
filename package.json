@@ -1,17 +1,18 @@
 {
     "name": "@lubab/madar",
-    "version": "0.32.0",
+    "version": "0.40.0-beta.1",
     "mcpName": "io.github.mohanagy/madar",
-    "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
+    "description": "Give AI coding agents a small, authenticated evidence path through large TypeScript and JavaScript repositories.",
     "license": "MIT",
     "author": "mohanagy",
     "bin": {
-        "madar": "dist/src/cli/bin.js"
+        "madar": "dist/src/adapters/cli/bin.js"
     },
     "type": "module",
     "files": [
         "dist/",
-        "examples/",
+        "examples/sample-workspace/",
+        "examples/why-madar.md",
         "CHANGELOG.md",
         "README.md",
         "LICENSE"
@@ -24,17 +25,15 @@
         "code-intelligence",
         "codebase",
         "codex",
-        "context",
-        "code-review",
+        "evidence",
+        "retrieval",
         "coding-agents",
         "copilot",
         "cursor",
-        "impact-analysis",
         "graphrag",
         "knowledge-graph",
         "mcp",
         "nodejs",
-        "pr-review",
         "static-analysis",
         "typescript"
     ],
@@ -55,14 +54,15 @@
     "scripts": {
         "clean": "node --eval \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
         "build": "tsc -p tsconfig.build.json",
+        "build:eval": "tsc -p tsconfig.eval.json",
         "typecheck": "tsc --noEmit",
         "test": "vitest",
         "test:run": "vitest run",
-        "test:coverage": "vitest run --coverage",
+        "test:coverage": "vitest run --coverage --maxWorkers=1",
         "prepack": "npm run clean && npm run build",
         "pack:dry-run": "npm pack --dry-run",
         "publish:public": "npm publish --access public",
-        "publish:next": "npm publish --tag next --access public",
+        "publish:next": "npm publish --tag next --access public --provenance",
         "publish:dry-run": "npm publish --dry-run",
         "release:verify": "node .github/scripts/verify-release-hygiene.mjs",
         "verify:pack-parity": "node .github/scripts/verify-packed-retrieval-parity.mjs",
@@ -78,19 +78,7 @@
         "yaml": "^2.9.0"
     },
     "dependencies": {
-        "@vscode/tree-sitter-wasm": "^0.3.1",
-        "fflate": "^0.8.2",
         "gpt-tokenizer": "^3.4.0",
-        "neo4j-driver": "^6.0.1",
-        "typescript": "^6.0.3",
-        "web-tree-sitter": "^0.26.8"
-    },
-    "peerDependencies": {
-        "@huggingface/transformers": "^4.2.0"
-    },
-    "peerDependenciesMeta": {
-        "@huggingface/transformers": {
-            "optional": true
-        }
+        "typescript": "^6.0.3"
     }
 }

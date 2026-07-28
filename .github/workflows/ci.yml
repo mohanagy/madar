@@ -33,6 +33,10 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -65,6 +69,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Build evaluation tooling
+        run: npm run build:eval
+
+      - name: Validate Core Reset evidence contract
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
+        run: npx vitest run tests/unit/core-reset-baseline.test.ts
+
       - name: Verify checkout and packed retrieval parity
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
         run: npm run verify:pack-parity
@@ -75,30 +86,12 @@ jobs:
 
       - name: Generate demo graph for eval regression
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
-        run: node dist/src/cli/bin.js generate examples/demo-repo --no-html
+        run: node dist/src/adapters/cli/bin.js generate examples/demo-repo
 
       - name: Enforce eval regression thresholds
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
-        shell: bash
-        run: |
-          set -euo pipefail
-          runner_template='node .github/scripts/ci-prompt-runner.mjs --prompt {prompt_file} --output {output_file} --question {question} --mode {mode}'
-          output="$(node dist/src/cli/bin.js eval examples/demo-repo/out/graph.json --questions examples/demo-repo/benchmark-questions.json --exec "$runner_template" --yes)"
-          printf '%s\n' "$output"
-
-          recall="$(printf '%s\n' "$output" | awk '/Recall:/ { gsub("%", "", $2); print $2 }')"
-          mrr="$(printf '%s\n' "$output" | awk '/MRR:/ { print $2 }')"
-          snippet_coverage="$(printf '%s\n' "$output" | awk '/Snippet coverage:/ { gsub("%", "", $3); print $3 }')"
-          grounded_match_rate="$(printf '%s\n' "$output" | awk '/Grounded match rate:/ { gsub("%", "", $4); print $4 }')"
-
-          # The demo-repo eval fixture currently measures 92% recall on this branch.
-          # Keep the workflow floor aligned with the documented benchmark/report gate
-          # until a stronger real-repo eval threshold replaces the fixture baseline.
-          node -e "const recall = Number(process.argv[1]); const mrr = Number(process.argv[2]); const snippetCoverage = Number(process.argv[3]); if (!Number.isFinite(recall) || recall < 90 || !Number.isFinite(mrr) || mrr < 0.95 || !Number.isFinite(snippetCoverage) || snippetCoverage < 95) { console.error('eval thresholds failed: recall=' + recall + ', mrr=' + mrr + ', snippet_coverage=' + snippetCoverage); process.exit(1) }" "$recall" "$mrr" "$snippet_coverage"
-          if [ -n "$grounded_match_rate" ]; then
-            echo "::notice title=Eval grounded match rate::${grounded_match_rate}% (report-only for now)"
-          fi
+        run: node .github/scripts/ci-eval-regression.mjs
 
       - name: Validate npm package contents
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20'
-        run: npm pack --dry-run
+        run: node tools/eval/core-reset/verify-isolation.mjs

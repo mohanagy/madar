@@ -13,7 +13,6 @@
     "npm run test:run"
   ],
   "expected_negative_guidance": [
-    "Missing required context: supporting, structural.",
-    "High-risk shared boundary: DashboardPage() affects 2 files."
+    "Missing required context: supporting, structural."
   ]
 }

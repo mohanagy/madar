@@ -1,30 +1,19 @@
-# Sample workspace tutorial
+# Sample workspace
 
-Use `examples/sample-workspace/` when you want a fast, reproducible TypeScript workspace for demos without the larger benchmark-oriented `examples/demo-repo/`.
-
-## Generate the graph
+The sample workspace demonstrates a route-to-service-to-persistence-to-job flow.
 
 ```bash
-npm run build # run from the repository root to build madar locally
-madar generate examples/sample-workspace --no-html
+madar generate examples/sample-workspace
+cd examples/sample-workspace
+madar query "how does password reset request enqueue the reset email?"
 ```
 
-This creates `examples/sample-workspace/out/graph.json`.
+Expected evidence comes from:
 
-## Run a compact pack query
+- `src/routes/account-routes.ts`
+- `src/services/password-reset-service.ts`
+- `src/persistence/user-repository.ts`
+- `src/jobs/reset-email-job.ts`
+- `src/notifications/email-gateway.ts`
 
-```bash
-madar pack "how does password reset request enqueue the reset email" \
-  --graph examples/sample-workspace/out/graph.json \
-  --task explain
-```
-
-That prompt should surface the route → service → queue-like job flow around password reset email delivery.
-
-## Prompt examples
-
-The sample workspace ships checked-in prompt examples in [`examples/sample-workspace/prompt-examples.json`](../../examples/sample-workspace/prompt-examples.json):
-
-- how does password reset request enqueue the reset email
-- where is reset token persisted before the email job runs
-- what updates the password after a reset token is verified
+The exact selected symbols and relationships remain graph-derived. If you edit the sample, run `madar generate . --update` before querying again.

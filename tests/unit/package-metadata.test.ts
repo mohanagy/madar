@@ -40,6 +40,21 @@ function loadCiWorkflow(): string {
   return readFileSync(join(process.cwd(), '.github', 'workflows', 'ci.yml'), 'utf8')
 }
 
+function loadCiEvalRegression(): string {
+  return readFileSync(join(process.cwd(), '.github', 'scripts', 'ci-eval-regression.mjs'), 'utf8')
+}
+
+function loadPackParityVerifier(): string {
+  return readFileSync(
+    join(process.cwd(), '.github', 'scripts', 'verify-packed-retrieval-parity.mjs'),
+    'utf8',
+  )
+}
+
+function loadIsolationVerifier(): string {
+  return readFileSync(join(process.cwd(), 'tools', 'eval', 'core-reset', 'verify-isolation.mjs'), 'utf8')
+}
+
 function loadReadme(): string {
   return readFileSync(join(process.cwd(), 'README.md'), 'utf8')
 }
@@ -58,10 +73,6 @@ function loadVitestConfig(): string {
 
 function loadLanguageCapabilityMatrix(): string {
   return readFileSync(join(process.cwd(), 'docs', 'language-capability-matrix.md'), 'utf8')
-}
-
-function loadContextPacksDoc(): string {
-  return readFileSync(join(process.cwd(), 'docs', 'concepts', 'context-packs.md'), 'utf8')
 }
 
 function normalizeVersionRange(range: string | undefined): string {
@@ -135,7 +146,7 @@ describe('package metadata', () => {
     expect(manifest.name).toBe('@lubab/madar')
     expect(manifest.mcpName).toBe('io.github.mohanagy/madar')
     expect(manifest.bin).toEqual({
-      madar: 'dist/src/cli/bin.js',
+      madar: 'dist/src/adapters/cli/bin.js',
     })
     expect(Object.keys(manifest.scripts ?? {})).not.toEqual(expect.arrayContaining([
       'compat:prepare',
@@ -160,49 +171,41 @@ describe('package metadata', () => {
     expect(loadChangelog()).toContain(`## [${manifest.version}]`)
   })
 
-  it('positions package metadata around outcome-first task-aware local packs instead of generic graph marketing', () => {
+  it('positions public metadata around authenticated local evidence instead of generic graph marketing', () => {
     const manifest = loadPackageManifest()
     const readme = loadReadme().toLowerCase()
-    const contextPacks = loadContextPacksDoc().toLowerCase()
+    const repoMetadata = readFileSync(join(process.cwd(), '.github', 'repo-metadata.json'), 'utf8').toLowerCase()
     const keywords = manifest.keywords ?? []
 
-    expect(manifest.description?.toLowerCase()).toContain('stop')
-    expect(manifest.description?.toLowerCase()).toContain('typescript/node')
-    expect(manifest.description?.toLowerCase()).toContain('task-aware')
-    expect(manifest.description?.toLowerCase()).toContain('what runs for this task')
-    expect(manifest.description?.toLowerCase()).toContain('local')
+    expect(manifest.description?.toLowerCase()).toContain('authenticated evidence path')
+    expect(manifest.description?.toLowerCase()).toContain('typescript')
+    expect(manifest.description?.toLowerCase()).toContain('javascript')
     expect(manifest.description?.toLowerCase()).not.toContain('context plane')
     expect(manifest.description?.toLowerCase()).not.toContain('context compiler')
-    expect(keywords).toEqual(expect.arrayContaining(['nodejs', 'code-review', 'impact-analysis']))
+    expect(keywords).toEqual(expect.arrayContaining(['nodejs', 'evidence', 'retrieval']))
+    expect(keywords).not.toEqual(expect.arrayContaining(['code-review', 'impact-analysis', 'pr-review', 'context']))
     expect(keywords).not.toContain('context-plane')
     expect(keywords).not.toContain('context-compiler')
-    expect(readme).toContain('claude code')
-    expect(readme).toContain('cursor')
-    expect(readme).toContain('codex')
-    expect(readme).toContain('copilot')
-    expect(readme).toContain('repo context it needs before it starts searching')
-    expect(readme).toContain('local graph')
-    expect(readme).toContain('task-aware context pack')
-    expect(contextPacks).toContain('deterministic local context compilation')
+    expect(readme).toContain('madar install claude')
+    expect(readme).toContain('madar install codex')
+    expect(readme).not.toContain('madar install cursor')
+    expect(readme).not.toContain('madar install copilot')
+    expect(readme).toContain('authenticated repository evidence')
+    expect(readme).toContain('authenticated local graph')
+    expect(readme).toContain('retrieve(question, budget?)')
+    expect(repoMetadata).toContain('authenticated local evidence paths')
     expect(readme).not.toContain('context plane')
     expect(readme).not.toContain('context compiler')
   })
 
-  it('keeps the command surface aligned with pack/prompt automation and MCP docs', () => {
+  it('keeps the command surface aligned with the one-query MCP docs', () => {
     const readme = loadReadme()
     const examples = readFileSync(join(process.cwd(), 'examples', 'mcp-tool-examples.md'), 'utf8')
 
-    expect(readme).toContain('madar pack')
-    expect(readme).toContain('madar prompt')
-    expect(examples).toContain('context_pack')
-    expect(examples).toContain('context_prompt')
-  })
-
-  it('documents broad runtime-generation pack compaction in the context-pack docs', () => {
-    const contextPacks = readFileSync(join(process.cwd(), 'docs', 'concepts', 'context-packs.md'), 'utf8').toLowerCase()
-
-    expect(contextPacks).toContain('runtime-generation prompts stay compact')
-    expect(contextPacks).toContain('shared-hub fan-out')
+    expect(readme).toContain('madar query')
+    expect(readme).toContain('retrieve(question, budget?)')
+    expect(examples).toContain('"name": "retrieve"')
+    expect(examples).not.toContain('context_pack')
   })
 
   it('avoids circular maintainer guidance in the contributing guide', () => {
@@ -213,23 +216,40 @@ describe('package metadata', () => {
 
   it('keeps the eval regression workflow aligned with runner-backed eval requirements', () => {
     const ciWorkflow = loadCiWorkflow()
+    const evalRegression = loadCiEvalRegression()
 
     expect(ciWorkflow).toContain('Enforce eval regression thresholds')
-    expect(ciWorkflow).toContain('ci-prompt-runner.mjs')
-    expect(ciWorkflow).toContain('--exec')
-    expect(ciWorkflow).toContain('--yes')
-    expect(ciWorkflow).toContain('Snippet coverage:')
-    expect(ciWorkflow).toContain('snippet_coverage')
-    expect(ciWorkflow).toContain('recall < 90')
-    expect(ciWorkflow).toContain('mrr < 0.95')
+    expect(ciWorkflow).toContain('node .github/scripts/ci-eval-regression.mjs')
+    expect(evalRegression).toContain('ci-prompt-runner.mjs')
+    expect(evalRegression).toContain('formatQualityReport(report)')
+    expect(evalRegression).toContain('report.avg_snippet_coverage')
+    expect(evalRegression).toContain('snippet_coverage')
+    expect(evalRegression).toContain('recall < 90')
+    expect(evalRegression).toContain('report.mrr < 0.95')
   })
 
-  it('documents framework-aware JS/TS support and conservative deeper retrieval hints in the language capability matrix', () => {
+  it('runs release gates against the exact head and a clean packed consumer', () => {
+    const workflow = loadCiWorkflow()
+    const parity = loadPackParityVerifier()
+    const isolation = loadIsolationVerifier()
+
+    expect(workflow).toContain(
+      "ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}",
+    )
+    expect(parity).toContain("'install'")
+    expect(parity).toContain("'--ignore-scripts'")
+    expect(parity).toContain('installedBinPath')
+    expect(parity).toContain('registryPackage.packageArguments')
+    expect(parity).toContain('assertPackageMeasurement(packRecord, tarballPath)')
+    expect(parity).not.toContain('symlinkSync')
+    expect(isolation).toContain('packageMeasurement.target_passed')
+  })
+
+  it('documents canonical framework-aware JS/TS support and explicit unsupported input', () => {
     const matrix = loadLanguageCapabilityMatrix()
 
     expect(matrix).toContain('## Framework awareness')
     expect(matrix).toContain('Express')
-    expect(matrix).toContain('Redux Toolkit')
     expect(matrix).toContain('React Router')
     expect(matrix).toContain('NestJS')
     expect(matrix).toContain('Next.js')
@@ -238,14 +258,13 @@ describe('package metadata', () => {
     expect(matrix).toContain('tRPC')
     expect(matrix).toContain('Prisma')
     expect(matrix).toContain('`framework_role`')
-    expect(matrix).toContain('compact MCP payloads by default')
     expect(matrix).toContain('request-flow')
     expect(matrix).toContain('storage')
-    expect(matrix).toContain('runtime-boundary')
-    expect(matrix).toContain('generic AST structure')
-    expect(matrix).toContain('visible client/server boundaries')
-    expect(matrix).toContain('source-visible Hono/Fastify route ownership')
-    expect(matrix).toContain('In default auto mode, Hono, Fastify, tRPC, and Prisma contribute conservative request-flow and storage hints')
+    expect(matrix).toContain('`runtime_boundary`')
+    expect(matrix).toContain('## Explicitly unsupported input')
+    expect(matrix).toContain('There is no language mode, secondary extractor, parser fallback, or generic structural pass.')
+    expect(matrix).toContain('Other source languages and non-code formats do not produce graph nodes or edges.')
+    expect(matrix).toContain('static structural hints, not runtime traces')
   })
 
   it('pins non-vulnerable dependency floors for the CI security audit', () => {
@@ -259,8 +278,8 @@ describe('package metadata', () => {
     expect(devDependencies.vite).toMatch(/^[~^]?8\./)
     expect(dependencies['@xenova/transformers']).toBeUndefined()
     expect(dependencies['@huggingface/transformers']).toBeUndefined()
-    expect(typeof peerDependencies['@huggingface/transformers']).toBe('string')
-    expect(peerDependenciesMeta['@huggingface/transformers']).toEqual({ optional: true })
+    expect(peerDependencies['@huggingface/transformers']).toBeUndefined()
+    expect(peerDependenciesMeta['@huggingface/transformers']).toBeUndefined()
   })
 
   it('caps vitest worker parallelism to keep the full suite stable on shared machines', () => {

@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -15,26 +16,33 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
-          cache: npm
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
-      - name: Validate tag, package version, and changelog
+      - name: Pin provenance-capable npm
+        run: npm install --global npm@12.0.1
+
+      - name: Validate exact next tip, tag, package version, and changelog
         run: |
           set -euo pipefail
 
           TAG="${GITHUB_REF_NAME}"
           VERSION="$(node -pe 'require("./package.json").version')"
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          test "$RELEASE_SHA" = "$GITHUB_SHA"
 
           if [[ -z "$VERSION" || "$VERSION" == "undefined" ]]; then
             echo "package.json must contain a valid version field"
@@ -51,35 +59,183 @@ jobs:
             exit 1
           fi
 
+          if [[ "$VERSION" != "0.40.0-beta.1" ]]; then
+            echo "This release candidate is authorized only for 0.40.0-beta.1"
+            exit 1
+          fi
+
           if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
             echo "CHANGELOG.md is missing a section for version $VERSION"
             exit 1
           fi
 
+          git fetch --no-tags origin next
+          NEXT_SHA="$(git rev-parse FETCH_HEAD)"
+          if [[ "$RELEASE_SHA" != "$NEXT_SHA" ]]; then
+            echo "Tag commit $RELEASE_SHA is not the exact next tip $NEXT_SHA"
+            exit 1
+          fi
+
+          REMOTE_TAGS="$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"
+          REMOTE_TAG_SHA="$(printf '%s\n' "$REMOTE_TAGS" | awk '$2 ~ /\^\{\}$/ { print $1 }')"
+          if [[ -z "$REMOTE_TAG_SHA" ]]; then
+            REMOTE_TAG_SHA="$(printf '%s\n' "$REMOTE_TAGS" | awk '$2 !~ /\^\{\}$/ { print $1 }')"
+          fi
+          test "$REMOTE_TAG_SHA" = "$GITHUB_SHA"
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify release hygiene
+        run: npm run release:verify
+
+      - name: Validate MCP Registry metadata
+        run: npm run registry:validate
 
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Run tests
-        run: npm run test:run
+      - name: Run tests with coverage
+        run: npm run test:coverage
 
-      - name: Build
-        run: npm run build
+      - name: Build production and evaluation tooling
+        run: |
+          npm run build
+          npm run build:eval
+
+      - name: Verify baseline, packed parity, audit, and isolation
+        run: |
+          npx vitest run tests/unit/core-reset-baseline.test.ts
+          npm run verify:pack-parity
+          npm audit --audit-level=high
+          npm audit signatures
+          node tools/eval/core-reset/verify-isolation.mjs
 
       - name: Validate npm package contents
         run: npm pack --dry-run
+
+      - name: Publish with npm Trusted Publishing
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME="$(node -pe 'require("./package.json").name')"
+          VERSION="$(node -pe 'require("./package.json").version')"
+          SPEC="$PACKAGE_NAME@$VERSION"
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          test "$RELEASE_SHA" = "$GITHUB_SHA"
+          VIEW_STDERR="$(mktemp)"
+          trap 'rm -f "$VIEW_STDERR"' EXIT
+
+          verify_remote_tag() {
+            REMOTE_TAGS="$(git ls-remote origin "refs/tags/$GITHUB_REF_NAME" "refs/tags/$GITHUB_REF_NAME^{}")"
+            REMOTE_TAG_SHA="$(printf '%s\n' "$REMOTE_TAGS" | awk '$2 ~ /\^\{\}$/ { print $1 }')"
+            if [[ -z "$REMOTE_TAG_SHA" ]]; then
+              REMOTE_TAG_SHA="$(printf '%s\n' "$REMOTE_TAGS" | awk '$2 !~ /\^\{\}$/ { print $1 }')"
+            fi
+            test "$REMOTE_TAG_SHA" = "$GITHUB_SHA"
+          }
+
+          git fetch --no-tags origin next
+          NEXT_SHA="$(git rev-parse FETCH_HEAD)"
+          test "$RELEASE_SHA" = "$NEXT_SHA"
+          verify_remote_tag
+
+          if PUBLISHED_VERSION="$(npm view "$SPEC" version 2>"$VIEW_STDERR")"; then
+            test "$PUBLISHED_VERSION" = "$VERSION"
+            echo "$SPEC is already public; verifying the immutable artifact instead of republishing."
+          else
+            if ! grep -q 'E404' "$VIEW_STDERR"; then
+              cat "$VIEW_STDERR" >&2
+              exit 1
+            fi
+
+            git fetch --no-tags origin next
+            NEXT_SHA="$(git rev-parse FETCH_HEAD)"
+            test "$RELEASE_SHA" = "$NEXT_SHA"
+            verify_remote_tag
+            npm run publish:next
+          fi
+
+      - name: Verify npm artifact, dist-tags, provenance, and signatures
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME="$(node -pe 'require("./package.json").name')"
+          VERSION="$(node -pe 'require("./package.json").version')"
+          SPEC="$PACKAGE_NAME@$VERSION"
+          EXPECTED_SHASUM="5811e58e02799d103ad12b7220c31e6a7244043c"
+          EXPECTED_INTEGRITY="sha512-h4Uwa2LVbJnYEoEXbLJ10QybVX5FDvgweWKFhWSxRGxsvVZzp3M+//uO1UlwpucyHKNofDo+/uXir33AmDNfWA=="
+          VERIFIED=false
+
+          for attempt in 1 2 3 4 5 6; do
+            PUBLISHED_VERSION="$(npm view "$SPEC" version 2>/dev/null || true)"
+            NEXT_VERSION="$(npm view "$PACKAGE_NAME" dist-tags.next 2>/dev/null || true)"
+            LATEST_VERSION="$(npm view "$PACKAGE_NAME" dist-tags.latest 2>/dev/null || true)"
+            PUBLISHED_SHASUM="$(npm view "$SPEC" dist.shasum 2>/dev/null || true)"
+            PUBLISHED_INTEGRITY="$(npm view "$SPEC" dist.integrity 2>/dev/null || true)"
+            PROVENANCE="$(npm view "$SPEC" dist.attestations.provenance --json 2>/dev/null || true)"
+
+            if [[ "$PUBLISHED_VERSION" == "$VERSION" \
+              && "$NEXT_VERSION" == "$VERSION" \
+              && "$LATEST_VERSION" == "0.32.0" \
+              && "$PUBLISHED_SHASUM" == "$EXPECTED_SHASUM" \
+              && "$PUBLISHED_INTEGRITY" == "$EXPECTED_INTEGRITY" \
+              && -n "$PROVENANCE" \
+              && "$PROVENANCE" != "null" ]]; then
+              VERIFIED=true
+              break
+            fi
+
+            sleep "$((attempt * 5))"
+          done
+
+          test "$VERIFIED" = true
+
+          VERIFY_DIR="$(mktemp -d)"
+          trap 'rm -rf "$VERIFY_DIR"' EXIT
+          npm --prefix "$VERIFY_DIR" init --yes >/dev/null
+          npm --prefix "$VERIFY_DIR" install --ignore-scripts "$SPEC"
+          npm --prefix "$VERIFY_DIR" audit signatures
+
+          {
+            echo "Verified $SPEC from $GITHUB_SHA."
+            echo "dist-tag next=$VERSION; latest=0.32.0."
+            echo "shasum=$EXPECTED_SHASUM."
+            echo "Trusted Publishing provenance and registry signatures passed."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "GitHub release already exists for $GITHUB_REF_NAME"
-            exit 0
+          set -euo pipefail
+
+          TAG="$GITHUB_REF_NAME"
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          git fetch --no-tags origin next
+          NEXT_SHA="$(git rev-parse FETCH_HEAD)"
+          test "$RELEASE_SHA" = "$NEXT_SHA"
+          test "$(git rev-parse "refs/tags/$TAG^{commit}")" = "$GITHUB_SHA"
+
+          REMOTE_TAGS="$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"
+          REMOTE_TAG_SHA="$(printf '%s\n' "$REMOTE_TAGS" | awk '$2 ~ /\^\{\}$/ { print $1 }')"
+          if [[ -z "$REMOTE_TAG_SHA" ]]; then
+            REMOTE_TAG_SHA="$(printf '%s\n' "$REMOTE_TAGS" | awk '$2 !~ /\^\{\}$/ { print $1 }')"
+          fi
+          test "$REMOTE_TAG_SHA" = "$GITHUB_SHA"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            VERSION="$(node -pe 'require("./package.json").version')"
+            RELEASE_FLAGS=(--title "$TAG" --generate-notes --verify-tag)
+            if [[ "$VERSION" == *-* ]]; then
+              RELEASE_FLAGS+=(--prerelease --latest=false)
+            fi
+
+            gh release create "$TAG" "${RELEASE_FLAGS[@]}"
           fi
 
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes
+          RELEASE_ENDPOINT="repos/$GITHUB_REPOSITORY/releases/tags/$TAG"
+          test "$(gh api "$RELEASE_ENDPOINT" --jq '.tag_name')" = "$TAG"
+          test "$(gh api "$RELEASE_ENDPOINT" --jq '.prerelease')" = "true"
+          test "$(gh api "$RELEASE_ENDPOINT" --jq '.draft')" = "false"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')" = "v0.32.0"
