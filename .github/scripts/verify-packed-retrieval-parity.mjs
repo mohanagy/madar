@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
   lstatSync,
@@ -49,38 +49,38 @@ function parsePackRecord(output) {
   throw new Error(`npm pack did not return one parseable JSON record:\n${output}`)
 }
 
-function assertPackageMeasurement(record) {
+function assertPackageMeasurement(record, tarballPath) {
   const manifest = parse(readFileSync(
     join(repositoryRoot, 'docs', 'core-reset', 'removal-manifest.yml'),
     'utf8',
   ))
   const evaluationTooling = manifest.items?.find((item) => item.id === 'evaluation-tooling')
-  const implementation = evaluationTooling?.implementation
   const budget = evaluationTooling?.npm_package_budget
+  const current = manifest.current
   const actual = {
     npm_files: requiredNumber(record.entryCount, 'npm pack entryCount'),
     npm_packed_bytes: requiredNumber(record.size, 'npm pack size'),
     npm_unpacked_bytes: requiredNumber(record.unpackedSize, 'npm pack unpackedSize'),
   }
-  const recordedMeasurements = [
-    ['current package receipt', manifest.current],
-    ['Evaluation Tooling implementation receipt', implementation],
-  ]
-  for (const [label, receipt] of recordedMeasurements) {
-    for (const [field, value] of Object.entries(actual)) {
-      if (requiredNumber(receipt?.[field], `${label} ${field}`) !== value) {
-        throw new Error(
-          `${label} is stale: ${field}=${receipt?.[field]}, freshly packed artifact=${value}`,
-        )
-      }
+  for (const [field, value] of Object.entries(actual)) {
+    if (requiredNumber(current?.[field], `current package receipt ${field}`) !== value) {
+      throw new Error(
+        `current package receipt is stale: ${field}=${current?.[field]}, freshly packed artifact=${value}`,
+      )
     }
   }
   if (
-    implementation?.npm_shasum !== record.shasum
-    || implementation?.npm_integrity !== record.integrity
+    current?.npm_shasum !== record.shasum
+    || current?.npm_integrity !== record.integrity
   ) {
     throw new Error(
-      'Evaluation Tooling implementation artifact identity is stale for the freshly packed artifact',
+      'Current release-candidate artifact identity is stale for the freshly packed artifact',
+    )
+  }
+  const artifactSha256 = createHash('sha256').update(readFileSync(tarballPath)).digest('hex')
+  if (current?.npm_artifact_sha256 !== artifactSha256) {
+    throw new Error(
+      'Current release-candidate SHA-256 is stale for the freshly packed artifact',
     )
   }
   if (
@@ -497,7 +497,7 @@ try {
   const releaseAfterCrash = packedStore.acquireIndexLease(join(crashRoot, 'out'))
   releaseAfterCrash()
 
-  const packageMeasurement = assertPackageMeasurement(packRecord)
+  const packageMeasurement = assertPackageMeasurement(packRecord, tarballPath)
   console.log(`Packed retrieval parity passed for @lubab/madar ${checkoutVersion}.`)
   console.log(
     `Fresh package: ${packageMeasurement.npm_files} files / `

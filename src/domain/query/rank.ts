@@ -18,10 +18,10 @@ const FIELD_WEIGHTS = {
 } as const
 const STOP_WORDS = new Set([
   'a', 'actual', 'an', 'and', 'any', 'applicabl', 'are', 'as', 'at', 'be', 'by',
-  'bas', 'do', 'does', 'exist', 'final', 'for', 'from', 'handl', 'how', 'in',
-  'initial', 'is', 'it', 'its', 'new', 'of', 'on', 'operat', 'or', 'specific',
-  'that', 'the',
-  'then', 'through', 'to', 'trace', 'what', 'when', 'which', 'with',
+  'bas', 'being', 'can', 'do', 'does', 'exist', 'final', 'for', 'from', 'handl',
+  'how', 'in', 'initial', 'is', 'it', 'its', 'me', 'new', 'of', 'on', 'operat',
+  'or', 'specific', 'tell', 'that', 'the', 'then', 'through', 'to', 'trace',
+  'what', 'when', 'which', 'with', 'you',
 ])
 const UNSUPPORTED_CODE_EXTENSIONS = new Set([
   'bash', 'c', 'cc', 'cljs', 'clj', 'cpp', 'cs', 'cxx', 'dart', 'elm', 'ex',
@@ -615,6 +615,7 @@ function hasEvidenceEdge(index: ReadyQueryIndex, from: string, to: string): bool
   return index.graph.edgesBetween(from, to).some(({ attributes }) =>
     EVIDENCE_RELATIONS.some((relation) => attributes.relation === relation))
 }
+
 function rankDiverseAnchors(
   index: ReadyQueryIndex, corpus: RankCorpus,
   scored: readonly ScoredNode[], vocabulary: QueryVocabulary,
@@ -672,10 +673,17 @@ function rankDiverseAnchors(
       return !!target && tokenSetMatches(target.tokens, term)
     }))
     .reduce((total, term) => total + rarityWeight(corpus, term), 0)
+  const unscoped = vocabulary.scopes.length === 0
+  const flowIntent = unscoped
+    && /flow|(?=[^]*report)[^]*generat/iu.test(vocabulary.question)
+  let anchorLimit = MAX_RANKED_ANCHORS
 
   if (vocabulary.constraints.length === 0) {
     const route = scored.filter((candidate) => entry(candidate)).sort(compareScoredNodes)[0]
-    const seed = route ?? scored[0]
+    const upstream = flowIntent ? scored.find((candidate) =>
+      candidate.ranked.score * 4 >= (scored[0]?.ranked.score ?? 0) * 3
+      && candidate.node.incomingIds.length === 0) : undefined
+    const seed = route ?? upstream ?? scored[0]
     if (seed) {
       add(seed)
       const targets = seed.node.outgoingIds.map((id) => corpus.nodeById.get(id))
@@ -686,8 +694,24 @@ function rankDiverseAnchors(
           || right.outgoingDegree - left.outgoingDegree
           || compareCodeUnits(left.id, right.id))
       const relevantTargets = targets.filter((target) => successorContext(target) > 0)
-      for (const target of relevantTargets.length > 0 ? relevantTargets : targets.slice(0, 1)) {
-        if (selected.length >= MAX_RANKED_ANCHORS
+      const nextStep = (node: RankCorpusNode): RankCorpusNode | undefined =>
+        node.outgoingIds.map((id) => corpus.nodeById.get(id))
+          .find((next): next is RankCorpusNode => !!next?.selectable)
+      const bridge = flowIntent
+        ? targets.find((target) => successorContext(target) === 0
+          && nextStep(target)) : undefined
+      if (bridge) anchorLimit = 4
+      const continuation = bridge ? nextStep(bridge) : undefined
+      const queued = continuation
+        ? corpus.nodeById.get(continuation.outgoingIds.find((id) =>
+          index.graph.edgesBetween(continuation.id, id)
+            .some(({ attributes }) => attributes.relation === 'enqueues_job')) ?? '')
+        : undefined
+      const selectedTargets = bridge
+        ? [bridge, continuation!, ...(queued?.selectable ? [queued] : [])]
+        : relevantTargets.length > 0 ? relevantTargets.slice(0, 1) : targets.slice(0, 1)
+      for (const target of selectedTargets) {
+        if (selected.length >= anchorLimit
           || (!selectedFiles.has(target.sourceFile) && selectedFiles.size >= MAX_RETRIEVE_FILES)) break
         add(scored.find(({ node }) => node.id === target.id) ?? {
           node: target, representativeScore: successorContext(target), ranked: {
@@ -699,7 +723,7 @@ function rankDiverseAnchors(
       }
     }
   }
-  while (selected.length < MAX_RANKED_ANCHORS) {
+  while (selected.length < anchorLimit) {
     const eligible = scored.filter(({ node }) => !selectedIds.has(node.id)
       && (selectedFiles.has(node.sourceFile) || selectedFiles.size < MAX_RETRIEVE_FILES))
     if (eligible.length === 0) break
@@ -708,6 +732,10 @@ function rankDiverseAnchors(
       + candidate.node.outgoingDegree * FIELD_WEIGHTS.sourceFile * 64
     eligible.sort((left, right) => {
       return coverage(right) - coverage(left)
+        || (unscoped
+          ? connected(right) - connected(left)
+            || right.node.outgoingDegree - left.node.outgoingDegree
+          : 0)
         || (vocabulary.constraints.length > 0
         ? priority(right) - priority(left)
         : right.representativeScore - left.representativeScore)
@@ -718,7 +746,7 @@ function rankDiverseAnchors(
     if (vocabulary.constraints.length === 0 && coverage(next) === 0 && connected(next) === 0) break
     if (vocabulary.constraints.length > 0 && selected.length > 0
       && !selectedFiles.has(next.node.sourceFile) && coverage(next) === 0) break
-    if (next.representativeScore < scoreFloor) break
+    if (next.representativeScore < scoreFloor && anchorLimit === MAX_RANKED_ANCHORS) break
     add(next)
   }
   const rootsOf = (candidates: readonly ScoredNode[]): ScoredNode[] => candidates

@@ -86,6 +86,11 @@ function dedupeBoundaries(boundaries: readonly EvidenceBoundary[]): EvidenceBoun
   })
 }
 
+function verificationTarget(graph: QueryGraph, nodeId: string): string {
+  const attributes = graph.nodeAttributes(nodeId)
+  return [attributes.source_file, attributes.source_location].filter(String).join(':') || nodeId
+}
+
 function validAnchors(
   graph: QueryGraph, ranking: RankQueryResult, boundaries: EvidenceBoundary[],
 ): RankedQueryNode[] {
@@ -176,7 +181,7 @@ export function traverseEvidencePaths(
         boundaries.push({
           kind: 'disconnected',
           subject: `${search.source.id} -> ${target.id}`,
-          detail: 'no directed evidence path connects these query anchors',
+          detail: `${verificationTarget(index.graph, search.source.id)} -> ${verificationTarget(index.graph, target.id)}`,
         })
       }
       for (const edge of path ?? []) {

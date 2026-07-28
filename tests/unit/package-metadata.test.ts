@@ -240,7 +240,7 @@ describe('package metadata', () => {
     expect(parity).toContain("'--ignore-scripts'")
     expect(parity).toContain('installedBinPath')
     expect(parity).toContain('registryPackage.packageArguments')
-    expect(parity).toContain('assertPackageMeasurement(packRecord)')
+    expect(parity).toContain('assertPackageMeasurement(packRecord, tarballPath)')
     expect(parity).not.toContain('symlinkSync')
     expect(isolation).toContain('packageMeasurement.target_passed')
   })

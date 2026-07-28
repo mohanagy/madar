@@ -1,9 +1,9 @@
-import { enqueueIdeaReportJob } from './queue-registry.service.js'
+import { enqueueJob } from './queue-registry.service.js'
 
-export async function startIdeaReportPipeline(
+export async function startPipeline(
   userId: string,
   problem: string,
   ideaId: string,
 ): Promise<{ jobId: string }> {
-  return enqueueIdeaReportJob({ userId, problem, ideaId })
+  return enqueueJob({ userId, problem, ideaId })
 }

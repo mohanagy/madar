@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { MCP_TOOLS } from '../../src/adapters/mcp/protocol.js'
 import {
+  DEFAULT_RETRIEVE_BUDGET,
   MAX_RETRIEVE_BUDGET,
   MAX_RETRIEVE_QUESTION_LENGTH,
 } from '../../src/domain/query/types.js'
@@ -29,11 +30,12 @@ describe('MCP schema budget', () => {
         budget: expect.objectContaining({
           type: 'integer',
           minimum: 1,
+          default: DEFAULT_RETRIEVE_BUDGET,
         }),
       },
     })
-    expect(MCP_TOOLS[0]?.inputSchema.properties.budget.description)
-      .toContain(String(MAX_RETRIEVE_BUDGET))
+    expect(DEFAULT_RETRIEVE_BUDGET).toBe(MAX_RETRIEVE_BUDGET)
+    expect(MCP_TOOLS[0]?.inputSchema.properties.budget.description).toContain('Omit')
     expect(Object.keys(MCP_TOOLS[0]?.inputSchema.properties ?? {}))
       .toEqual(['question', 'budget'])
   })

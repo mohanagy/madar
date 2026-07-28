@@ -1,4 +1,5 @@
 import {
+  DEFAULT_RETRIEVE_BUDGET,
   MAX_RETRIEVE_BUDGET,
   MAX_RETRIEVE_QUESTION_LENGTH,
   normalizeRetrieveRequest,
@@ -66,8 +67,8 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = Object.freeze([
         budget: Object.freeze({
           type: 'integer',
           minimum: 1,
-          description:
-            `Requested result budget; effective serialized output is capped at ${MAX_RETRIEVE_BUDGET} tokens.`,
+          default: DEFAULT_RETRIEVE_BUDGET,
+          description: 'Omit for default',
         }),
       }),
     }),
