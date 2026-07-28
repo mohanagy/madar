@@ -7,6 +7,23 @@
     "src/modules/pipeline/api/queue-registry.service.ts",
     "src/modules/pipeline/workers/orchestrator.worker.ts"
   ],
+  "expected_relationships": [
+    {
+      "from": ".generateFromProblem()",
+      "relation": "calls",
+      "to": "startPipeline()"
+    },
+    {
+      "from": "startPipeline()",
+      "relation": "calls",
+      "to": "enqueueJob()"
+    },
+    {
+      "from": "enqueueJob()",
+      "relation": "enqueues_job",
+      "to": ".process()"
+    }
+  ],
   "expected_likely_edit_files": [],
   "expected_likely_test_files": [],
   "expected_validation_commands": [],

@@ -14,9 +14,18 @@ export interface SliceEvidenceInput {
   boundaries: readonly EvidenceBoundary[]; priorityNodeIds: readonly string[]; closurePasses: 0 | 1
 }
 
-function truncatedBoundary(): EvidenceBoundary {
-  return { kind: 'truncated', subject: 'retrieve',
-    detail: 'Some graph facts were omitted to satisfy the file, snippet, or token limit.' }
+function truncatedBoundary(target?: EvidenceNode): EvidenceBoundary {
+  if (!target) {
+    return { kind: 'truncated', subject: 'retrieve',
+      detail: 'Omitted by limit.' }
+  }
+  const location = target.evidence_kind === 'symbol_declaration'
+    ? `${target.source_file}:${target.source_location}`
+    : target.source_file
+  return {
+    kind: 'truncated',
+    subject: location,
+  }
 }
 
 function compareRelationships(left: EvidenceRelationship, right: EvidenceRelationship): number {
@@ -188,7 +197,7 @@ export function sliceEvidence(input: SliceEvidenceInput): RetrieveContextResult 
   )
   if (cappedResult.metrics.serialized_tokens <= input.request.budget) return cappedResult
 
-  const retainedBoundaries: EvidenceBoundary[] = [truncatedBoundary()]
+  let retainedBoundaries: EvidenceBoundary[] = [truncatedBoundary()]
   const retainedNodes: EvidenceNode[] = []
   const retainedRelationships: EvidenceRelationship[] = []
 
@@ -255,7 +264,16 @@ export function sliceEvidence(input: SliceEvidenceInput): RetrieveContextResult 
   for (const boundary of boundaries.filter((candidate) => candidate.kind !== 'truncated')) {
     const candidateBoundaries = deduplicateBoundaries([...retainedBoundaries, boundary])
     if (fits(retainedNodes, retainedRelationships, candidateBoundaries)) {
-      retainedBoundaries.splice(0, retainedBoundaries.length, ...candidateBoundaries)
+      retainedBoundaries = candidateBoundaries
+    }
+  }
+
+  const omittedTarget = capped.nodes.find((node) => !retainedNodeIds.has(node.node_id))
+  if (omittedTarget) {
+    const candidateBoundaries = retainedBoundaries.map((boundary) =>
+      boundary.kind === 'truncated' ? truncatedBoundary(omittedTarget) : boundary)
+    if (fits(retainedNodes, retainedRelationships, candidateBoundaries)) {
+      retainedBoundaries = candidateBoundaries
     }
   }
 

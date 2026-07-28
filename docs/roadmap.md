@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, and Evaluation Tooling Isolation have passed. Capability Validation and the Native-vs-Graphify comparator are cancelled as release gates. No technical implementation phase is active; `0.40.0-beta.1` release preparation is ready for `next`.
+The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, Evaluation Tooling Isolation, and the bounded retrieval repair in [#618](https://github.com/mohanagy/madar/issues/618) have passed. Capability Validation and the Native-vs-Graphify comparator are cancelled as release gates. No technical implementation phase is active; `0.40.0-beta.2` release preparation is ready for `next`.
 
 ## Passed — directed multigraph
 
@@ -127,13 +127,19 @@ The v2 governance candidate, proposal SHA-256 `4906405cbb806c850c0612305ef460e02
 
 No Native-vs-Graphify-vs-Madar campaign ran. Provider requests and paid spend are zero, and no correctness, token, latency, cost, activation, retention, or external-user result exists. The committed evaluation assets remain outside production, dist, and npm and are not release evidence.
 
-## Ready — `0.40.0-beta.1`
+## Passed — retrieval regression #618
 
-The completed product vertical slice is anchored to protected `core-reset` commit `5c9d1e2436932f7420169ea4ffa617c6bea4fbd0`, tree `35b68cd733e07b9306d52e2076a287269f8919eb`. Release preparation may change only governance, version and package metadata, changelog and migration documentation, SBOM, Registry metadata, release workflow, and their tests. It cannot change dependencies or product semantics.
+[#618](https://github.com/mohanagy/madar/issues/618) completed through [PR #620](https://github.com/mohanagy/madar/pull/620), merged into protected `core-reset` as `eaa1a8781eda28dad5395d6da378a2cc40bf81fe`. The repair changes only the four approved production paths, adds no production file or dependency, and records `+69/-17/net +52` production LOC.
 
-The release PR targets `next`, never `main`. Merge is allowed only after the exact candidate passes all six CI jobs, release and Registry validation, typecheck, build, full tests, package/SBOM review, CLI and MCP smoke checks, independent no-blocker review, and zero unresolved review threads. CodeRabbit's actual disposition must be reported honestly.
+The frozen stable-versus-beta comparison found identical retrieval implementation bytes and identical frozen-fixture raw responses. The observed sessions first diverged operationally in graph topology and the explicit `budget: 40` request. The repair therefore fixes the shared ranking and evidence-boundary weakness without claiming a beta-only implementation divergence. Its fixture proves grounded natural-flow evidence in one call or one bounded recovery, preserves exact disconnected and truncation targets, and keeps focused title-generation questions focused.
 
-After the exact reviewed commit merges to `next`, publish `@lubab/madar@0.40.0-beta.1` under npm dist-tag `next` with provenance, create matching tag `v0.40.0-beta.1` and a GitHub prerelease, publish matching MCP Registry metadata, and verify a clean installation. npm `latest`, stable `0.40.0`, comparative claims, and `main` remain outside this beta.
+## Ready — `0.40.0-beta.2`
+
+The release candidate starts from the published `0.40.0-beta.1` `next` tip and applies the exact #618 repair. Release preparation may change only governance, version/package metadata, changelog and migration documentation, SBOM, Registry metadata, release workflow, and tests. It cannot change dependencies, graph/index semantics, or the accepted retrieval repair.
+
+The release PR targets `next`, never `main`. Merge is allowed only after the exact candidate passes all six CI jobs, release and Registry validation, typecheck, builds, full tests, package/SBOM review, packed CLI and MCP smoke checks, independent no-blocker review, and zero unresolved review threads. CodeRabbit's actual disposition must be reported honestly.
+
+After the exact reviewed commit merges to `next`, publish `@lubab/madar@0.40.0-beta.2` under npm dist-tag `next` with Trusted Publishing provenance, create matching tag `v0.40.0-beta.2` and a GitHub prerelease, and verify a clean installation. npm `latest`, stable `0.40.0`, MCP Registry publication, comparative claims, and `main` remain outside this release.
 
 ## Validation — release decision
 
