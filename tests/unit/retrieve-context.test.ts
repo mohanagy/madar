@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -9,6 +10,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -136,6 +138,46 @@ function authFlowFixture(): FlowFixture {
     },
   }))
   return { root, source, ...indexedWorkspace(root) }
+}
+
+function reportGenerationFixture(includeDistractor = false): {
+  fixture: FlowFixture
+  prompt: string
+  expectedWorkflowCenters: string[]
+  expectedRelationships: Array<{ from: string; relation: string; to: string }>
+} {
+  const fixtureDirectory = fileURLToPath(new URL(
+    '../fixtures/pack-quality/runtime-generation-explain-report-flow/',
+    import.meta.url,
+  ))
+  const root = sandbox('report-generation')
+  const workspace = join(root, 'workspace')
+  cpSync(join(fixtureDirectory, 'workspace'), workspace, { recursive: true })
+  if (includeDistractor) {
+    write(workspace, 'platform/src/app/entry.worker.js/route.ts', [
+      'export function GET(): Response {',
+      "  return new Response('unrelated')",
+      '}',
+      '',
+    ].join('\n'))
+  }
+  const metadata = JSON.parse(
+    readFileSync(join(fixtureDirectory, 'fixture.json'), 'utf8'),
+  ) as {
+    prompt: string
+    expected_workflow_centers: string[]
+    expected_relationships: Array<{ from: string; relation: string; to: string }>
+  }
+  return {
+    prompt: metadata.prompt,
+    expectedWorkflowCenters: metadata.expected_workflow_centers,
+    expectedRelationships: metadata.expected_relationships,
+    fixture: {
+      root: workspace,
+      source: {},
+      ...indexedWorkspace(workspace),
+    },
+  }
 }
 
 function writeDisconnectedFlow(
@@ -364,6 +406,87 @@ describe('retrieve context', () => {
     ])
     expect(result.boundaries).toEqual([])
     expect(result.metrics.closure_passes).toBe(1)
+  })
+
+  it('recovers the known report-generation path instead of response-format helpers', () => {
+    for (const includeDistractor of [false, true]) {
+      const {
+        fixture,
+        prompt,
+        expectedWorkflowCenters,
+        expectedRelationships,
+      } = reportGenerationFixture(includeDistractor)
+
+      for (const question of [
+        prompt,
+        'can you tell me how is the flow generating report for idea?',
+      ]) {
+        const result = retrieveContext(fixture.index, { question })
+        const selectedFiles = result.matched_nodes.map((node) => node.source_file)
+        const labels = new Map(result.matched_nodes.map((node) => [node.node_id, node.label]))
+        const relationships = result.relationships.map((relationship) => ({
+          from: labels.get(relationship.from_id),
+          relation: relationship.relation,
+          to: labels.get(relationship.to_id),
+        }))
+
+        expect(result.outcome).toBe('evidence')
+        expect(selectedFiles).toEqual(expect.arrayContaining(expectedWorkflowCenters))
+        expect(selectedFiles).not.toContain(
+          'src/modules/ideas/application/helpers/idea-report-status-message.helper.ts',
+        )
+        expect(selectedFiles).not.toContain(
+          'src/modules/ideas/application/helpers/idea-report-suggested-next-steps.helper.ts',
+        )
+        expect(selectedFiles).not.toContain('platform/src/app/entry.worker.js/route.ts')
+        expect(relationships).toEqual(expect.arrayContaining(expectedRelationships))
+        expect(result.boundaries).toEqual([])
+      }
+    }
+  })
+
+  it('reports the exact first omitted authenticated target under a tiny budget', () => {
+    const { fixture, prompt } = reportGenerationFixture()
+    const constrained = retrieveContext(fixture.index, {
+      question: prompt,
+      budget: 40,
+    })
+    expect(constrained.boundaries).toContainEqual({
+      kind: 'truncated',
+      subject:
+        'src/modules/ideas/interface/http/idea-generation.controller.ts:L16-L28',
+    })
+
+    const partial = retrieveContext(fixture.index, {
+      question: prompt,
+      budget: 400,
+    })
+    const retainedLocations = partial.matched_nodes.map((node) =>
+      node.evidence_kind === 'symbol_declaration'
+        ? `${node.source_file}:${node.source_location}`
+        : node.source_file)
+    const exactOmissions = partial.boundaries
+      .filter((boundary) => boundary.kind === 'truncated' && boundary.subject !== 'retrieve')
+      .map((boundary) => boundary.subject)
+    expect(exactOmissions.length).toBeGreaterThan(0)
+    expect(exactOmissions.every((target) => !retainedLocations.includes(target))).toBe(true)
+  })
+
+  it('keeps nearby report subflows focused while improving the broad flow', () => {
+    const { fixture } = reportGenerationFixture()
+    const cases = [
+      ['Where is idea title generated?', 'generateIdeaTitle()'],
+      ['How is idea title generated?', 'generateIdeaTitle()'],
+      ['Where is idea report status message built?', 'getIdeaReportStatusMessage()'],
+      ['How is idea report quality validated?', 'validateIdeaReportQuality()'],
+      ['How are quality gate failures handled?', 'handleQualityGateFailure()'],
+      ['How does failure report storage work?', 'writeRawFailureReport()'],
+      ['How is database sync performed for reports?', 'saveStructuredReport()'],
+    ] as const
+    for (const [question, expectedLabel] of cases) {
+      const result = retrieveContext(fixture.index, { question })
+      expect(result.matched_nodes[0]?.label).toBe(expectedLabel)
+    }
   })
 
   it('uses bounded successor context to recover a zero-overlap route branch', () => {
@@ -718,7 +841,11 @@ describe('retrieve context', () => {
     expect(result.matched_nodes).toHaveLength(2)
     expect(result.relationships).toEqual([])
     expect(result.boundaries).toEqual([
-      expect.objectContaining({ kind: 'disconnected' }),
+      expect.objectContaining({
+        kind: 'disconnected',
+        detail:
+          'src/flow-002/alpha-local-00.ts:L1-L3 -> src/flow-002/beta-local-01.ts:L1-L3',
+      }),
     ])
     expect(result.metrics.closure_passes).toBe(1)
   })

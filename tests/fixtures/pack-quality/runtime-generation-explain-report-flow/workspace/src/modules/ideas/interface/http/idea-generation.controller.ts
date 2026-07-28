@@ -1,6 +1,7 @@
 import { generateIdeaReportSuggestedNextSteps } from '../../application/helpers/idea-report-suggested-next-steps.helper.js'
 import { getIdeaReportStatusMessage } from '../../application/helpers/idea-report-status-message.helper.js'
-import { startIdeaReportPipeline } from '../../../pipeline/api/pipeline-trigger.service.js'
+import { generateIdeaTitle } from '../../application/helpers/idea-title-generation.helper.js'
+import { startPipeline } from '../../../pipeline/api/pipeline-trigger.service.js'
 
 function Controller(_path: string): any {
   return () => {}
@@ -16,7 +17,8 @@ export class IdeaGenerationController {
   async generateFromProblem(
     dto: { problem: string; userId: string },
   ): Promise<{ status: string; next_steps: string[]; jobId: string }> {
-    const pipelineRun = await startIdeaReportPipeline(
+    generateIdeaTitle(dto.problem)
+    const pipelineRun = await startPipeline(
       dto.userId,
       dto.problem,
       'idea-1',

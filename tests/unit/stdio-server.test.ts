@@ -177,6 +177,17 @@ describe('MCP tools-only protocol', () => {
       result(initialized!).capabilities as Record<string, unknown>,
     )).toEqual(['tools'])
     expect(result(listed!).tools?.map((tool) => tool.name)).toEqual(['retrieve'])
+    expect(result(listed!).tools?.[0]).toMatchObject({
+      inputSchema: {
+        properties: {
+          budget: {
+            type: 'integer',
+            minimum: 1,
+            default: 4000,
+          },
+        },
+      },
+    })
     expect(context.loadQueryIndex).not.toHaveBeenCalled()
   })
 
