@@ -12,21 +12,21 @@ The result is a small set of exact source excerpts and directed relationships, o
 
 MCP advertises only the tools capability. It exposes no resources or prompts.
 
-[![npm](https://img.shields.io/npm/v/%40lubab%2Fmadar)](https://www.npmjs.com/package/@lubab/madar)
+[![npm next](https://img.shields.io/npm/v/%40lubab%2Fmadar/next?label=npm%20next)](https://www.npmjs.com/package/@lubab/madar/v/0.40.0-beta.1)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
 [![local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#local-by-design)
-[![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/madar/blob/main/LICENSE)
+[![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/madar/blob/next/LICENSE)
 
 ## What's new
 
-Read the full notes in the [0.32.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0320---2026-07-19).
+This is the Core Reset beta. Read the [0.40.0-beta.1 notes](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0400-beta1---2026-07-28) and [migration guide](https://github.com/mohanagy/madar/blob/next/docs/migrations/0.40.0-beta.1.md). Comparative performance and external retention remain unmeasured.
 
 ## Start in three steps
 
 Install Madar with Node.js 20 or newer:
 
 ```bash
-npm install -g @lubab/madar
+npm install -g @lubab/madar@next
 cd your-repository
 madar generate .
 ```
@@ -45,7 +45,7 @@ Trace how a failed payment becomes a retry. Cite the exact files and symbols, an
 
 For a transport check, explicitly ask the client to call `retrieve` once. That proves the configured client path, not natural tool preference. Use `madar doctor` and `madar status` to check the graph and external client registration. Codex is also supported directly with `madar install codex`. Other hosts can launch the package through the MCP Registry or a manual `madar mcp` stdio registration.
 
-See the [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) for registration details and activation checks.
+See the [agent quickstarts](https://github.com/mohanagy/madar/blob/next/docs/tutorials/agent-quickstarts.md) for registration details and activation checks.
 
 ## Use it without MCP
 
@@ -71,7 +71,7 @@ Madar authenticates an excerpt against the canonical file hash before returning 
 
 If `outcome` is `evidence`, start with the returned excerpts and relationships. If it is `missing`, `unsupported`, `stale`, `unavailable`, or `corrupt`, report that boundary and use only the focused verification needed to continue. Do not invent a path that Madar did not prove.
 
-The complete envelope is documented in [MCP response shape](https://github.com/mohanagy/madar/blob/main/docs/mcp-response-shape.md).
+The complete envelope is documented in [MCP response shape](https://github.com/mohanagy/madar/blob/next/docs/mcp-response-shape.md).
 
 ## How it works
 
@@ -122,27 +122,27 @@ Madar complements coding agents and IDE indexing. It is not a runtime tracer, PR
 - **No product telemetry:** the Thin Delivery runtime has no telemetry or updater route.
 - **Zero repository writes from install:** fresh install, reinstall, and uninstall modify only supported external client configuration.
 
-Treat every local MCP registration as part of your local trust boundary. See the [MCP threat model](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md).
+Treat every local MCP registration as part of your local trust boundary. See the [MCP threat model](https://github.com/mohanagy/madar/blob/next/docs/security/mcp-threat-model.md).
 
 ## Evidence and limits
 
 Historical benchmark receipts remain published, including controlled experiments that used older task-specific workflows. They are real measurements of those recorded versions, not proof that the current untuned package wins on every repository.
 
-Core Reset acceptance uses pinned held-out repositories, exact-source grading, an independently measured 15,000-node performance fixture, package-size gates, and deletion receipts. See the [claims and evidence map](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) and [Core Reset scorecard](https://github.com/mohanagy/madar/blob/main/docs/core-reset/scorecard.md).
+Core Reset acceptance uses pinned held-out repositories, exact-source grading, an independently measured 15,000-node performance fixture, package-size gates, and deletion receipts. See the [claims and evidence map](https://github.com/mohanagy/madar/blob/next/docs/claims-and-evidence.md) and [Core Reset scorecard](https://github.com/mohanagy/madar/blob/next/docs/core-reset/scorecard.md).
 
 ## Documentation
 
 | Need | Start here |
 | --- | --- |
-| First run | [Getting started](https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md) |
-| Agent setup | [Agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) |
-| CLI and MCP contract | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md) |
-| Response fields | [MCP response shape](https://github.com/mohanagy/madar/blob/main/docs/mcp-response-shape.md) |
-| Indexing coverage | [Indexing completeness](https://github.com/mohanagy/madar/blob/main/docs/indexing-completeness.md) |
-| Privacy and MCP trust | [Threat model](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md) |
-| Evidence and benchmarks | [Claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) |
-| Product roadmap | [Roadmap](https://github.com/mohanagy/madar/blob/main/docs/roadmap.md) |
-| Release history | [Changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md) |
+| First run | [Getting started](https://github.com/mohanagy/madar/blob/next/docs/tutorials/getting-started.md) |
+| Agent setup | [Agent quickstarts](https://github.com/mohanagy/madar/blob/next/docs/tutorials/agent-quickstarts.md) |
+| CLI and MCP contract | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/next/docs/reference/cli-and-mcp.md) |
+| Response fields | [MCP response shape](https://github.com/mohanagy/madar/blob/next/docs/mcp-response-shape.md) |
+| Indexing coverage | [Indexing completeness](https://github.com/mohanagy/madar/blob/next/docs/indexing-completeness.md) |
+| Privacy and MCP trust | [Threat model](https://github.com/mohanagy/madar/blob/next/docs/security/mcp-threat-model.md) |
+| Evidence and benchmarks | [Claims and evidence](https://github.com/mohanagy/madar/blob/next/docs/claims-and-evidence.md) |
+| Product roadmap | [Roadmap](https://github.com/mohanagy/madar/blob/next/docs/roadmap.md) |
+| Release history | [Changelog](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md) |
 
 ## Contributing
 

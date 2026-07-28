@@ -22,24 +22,39 @@ review:
   overlapping_files: 0
   disposition_changes: 11
   amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transferred graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activated the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. PR #608 completed the exact move without changing any surviving production TypeScript or dependency. First-stage owner-approved issue #610 governance activation merged at dcb52596a3efa89f9ef5d372231ce97a91ae5f9f, then independent review stopped its uncommitted implementation under conditions 7, 8, and 13 before any implementation PR, campaign lock, provider request, or spend. First-stage owner-approved issue #612 authorizes only an eight-path governance-only v2 candidate from that exact merge; its separate activation merge approval remains required. It changes no production ownership or disposition. Graph, index, generation, retrieval, CLI, MCP, installer, workspace, held-out, provider, campaign, grading, product, package, dependency, budget, and timeout semantics remain frozen.'
+  release_amendment: 'On 2026-07-28 the owner cancelled Capability Validation and the Native-vs-Graphify comparator as release gates. Issues #610, #612, #614, #615, and #616 are closed not planned; every unconsumed preparation, activation, implementation, campaign, provider, spend, and target-execution authority in those issues and their RFC receipts is superseded and revoked. No campaign ran, no comparative result exists, provider requests remain zero, and spend remains USD 0. The completed vertical slice through Evaluation Tooling Isolation is ready for release preparation as 0.40.0-beta.1 on next only; this is not stable-release or comparator evidence.'
 
 current:
-  updated_at: 2026-07-26
+  updated_at: 2026-07-28
   completed_phase: evaluation-tooling
-  active_phase: capability-validation-v2
-  ready_phase: null
-  base_commit: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
+  active_phase: null
+  ready_phase: release-beta
+  base_commit: 452ad84890c012392c5e6af613e8bfeb17de45db
   completed_phase_commit: 565c42bb1b34b67f7fefc7aabd0513e4e391a13b
   production_typescript_files: 43
   production_typescript_loc: 11956
   production_loc_added: 0
-  production_loc_removed: 0
-  production_loc_net: 0
+  production_loc_removed: 4698
+  production_loc_net: -4698
   npm_files: 102
-  npm_packed_bytes: 159759
-  npm_unpacked_bytes: 637602
+  npm_packed_bytes: 160118
+  npm_unpacked_bytes: 638445
+  npm_shasum: 5811e58e02799d103ad12b7220c31e6a7244043c
+  npm_integrity: sha512-h4Uwa2LVbJnYEoEXbLJ10QybVX5FDvgweWKFhWSxRGxsvVZzp3M+//uO1UlwpucyHKNofDo+/uXir33AmDNfWA==
+  npm_artifact_sha256: 390ba73ae215caea37a3403d7963f709997ac86d462e8e3dedfed8a710c7fa40
   measurement_state: source_and_package_exact
-  snapshot_scope: exact_implementation_source_and_package
+  snapshot_scope: release_candidate_source_and_package
+  release_candidate:
+    version: 0.40.0-beta.1
+    protected_anchor_commit: 5c9d1e2436932f7420169ea4ffa617c6bea4fbd0
+    protected_anchor_tree: 35b68cd733e07b9306d52e2076a287269f8919eb
+    target_branch: next
+    npm_dist_tag: next
+    stable_release: false
+    comparator_result: none
+    provider_requests: 0
+    spend_usd: 0
+    publication_state: preparation
 
 targets:
   production_typescript_files_max: 80
@@ -1600,7 +1615,7 @@ items:
 
   - id: capability-validation-v2
     disposition: keep
-    status: in_progress
+    status: stopped
     predecessor: capability-validation
     supersedes: development implementation allowlist and LOC ceiling only
     destination: development-only evidence-authenticated Capability Validation execution boundary
@@ -1737,8 +1752,11 @@ items:
       rfc_amendment: https://github.com/mohanagy/madar/issues/577#issuecomment-5083662827
       protected_base: dcb52596a3efa89f9ef5d372231ce97a91ae5f9f
       target_branch: core-reset
-      second_owner_hash_approval: required_before_activation_merge
-      implementation_start_commit: exact_activation_merge_only
+      second_owner_hash_approval: passed
+      activation_head: 7c0cff71c512512d534e4d5b011cd27ced5992fe
+      activation_merge: 5c9d1e2436932f7420169ea4ffa617c6bea4fbd0
+      activation_tree: 35b68cd733e07b9306d52e2076a287269f8919eb
+      implementation_start_commit: not_started_cancelled
     deferred_provider_account_observer:
       status: unresolved_separate_proposal_required
       generic_proof_acceptance: forbidden
@@ -1757,8 +1775,19 @@ items:
       activation_plus_implementation_plus_closure_removed_max: 800
       records_only: v2 offline execution boundary passed, exact merge/tree/review/CI receipts, unchanged v1 stop, unresolved provider observer, zero provider requests/spend, and no active campaign
       evaluator_schema_contract_ci_production_package_dependency_receipt_evidence_change: forbidden
-    notes: 'First-stage owner-approved #612 authorizes preparation and review of this governance-only candidate. It makes the stopped v1 execution boundary concrete and approval-bound while preserving every v1 provider, campaign, comparator, grading, product, production, package, dependency, token, USD, matrix, timeout, and tool-call ceiling. Only the later development implementation allowlist and LOC ceiling expand. This first-stage asset does not authorize activation merge or offline implementation; those require live second-stage approval and the exact activation merge. It never authorizes provider-account observation, campaign lock, target-repository execution, Count Tokens, Create, any provider request, spend, npm/package/product publication, release, Registry metadata, tags, or main.'
-    exit_gate: A separately approved offline implementation makes every authorization, coordination, containment, evidence, ledger, lifecycle, stopped-finalization, receipt, archive, and public-validation boundary executable and adversarially proven without creating a campaign lock or provider request.
+    closure:
+      state_reason: not_planned
+      issue: https://github.com/mohanagy/madar/issues/612
+      implementation_commit_created: false
+      implementation_pr_opened: false
+      campaign_lock_created: false
+      provider_requests: 0
+      spend_usd: 0
+      comparator_result_created: false
+      release_gate: deferred_not_passed
+      unconsumed_authority: superseded_and_revoked
+    notes: 'The #612 governance activation merged through PR #613, but implementation never started. On 2026-07-28 the owner cancelled this phase and all later Capability Validation successor issues as not planned, superseded and revoked every unconsumed authority, and removed the comparator campaign from the beta release gate. The committed contract and schemas remain historical development-only records outside dist and npm. They prove no capability, token, latency, cost, activation, or external-user result.'
+    exit_gate: 'CANCELLED — CLOSED AS NOT PLANNED. No campaign ran and no Native-vs-Graphify-vs-Madar result exists. This phase is deferred beyond 0.40.0-beta.1, not passed, and supplies no stable-release evidence.'
 
   - id: non-core-graph-products
     disposition: delete

@@ -355,6 +355,9 @@ const CAPABILITY_VALIDATION_STOP_BODY_HASHES = {
 } as const
 const CAPABILITY_VALIDATION_V2_BASE = 'dcb52596a3efa89f9ef5d372231ce97a91ae5f9f'
 const CAPABILITY_VALIDATION_V2_BASE_TREE = 'd0ca317290dbd6837295f36f36ded5b49855c0fe'
+const CAPABILITY_VALIDATION_V2_ACTIVATION_HEAD = '7c0cff71c512512d534e4d5b011cd27ced5992fe'
+const CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE = '5c9d1e2436932f7420169ea4ffa617c6bea4fbd0'
+const CAPABILITY_VALIDATION_V2_ACTIVATION_TREE = '35b68cd733e07b9306d52e2076a287269f8919eb'
 const CAPABILITY_VALIDATION_V2_SRC_TREE = '1a37e3a58ee7b2a75ca034112506590f699b3918'
 const CAPABILITY_VALIDATION_V2_TOOLS_EVAL_TREE = 'b8ef02da3ce135596e87fdf6252441755061d956'
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
@@ -760,7 +763,8 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Passed — evidence-path query')
     expect(roadmap).toContain('## Passed — thin delivery')
     expect(roadmap).toContain('## Passed — evaluation tooling isolation')
-    expect(roadmap).toContain('## In progress — capability validation v2')
+    expect(roadmap).toContain('## Stopped — capability validation')
+    expect(roadmap).toContain('## Ready — `0.40.0-beta.1`')
     expect(roadmap).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -854,7 +858,8 @@ describe('core reset governance', () => {
     expect(design).toContain('## Completed amendment — thin delivery')
     expect(design).toContain('## Completed amendment — evaluation tooling isolation')
     expect(design).toContain('## Stopped amendment — capability validation v1')
-    expect(design).toContain('## Accepted amendment — capability validation v2')
+    expect(design).toContain('## Historical accepted amendment — capability validation v2')
+    expect(design).toContain('## Cancelled amendment — capability validation; beta release ready')
     expect(design).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(design).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(design).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -942,7 +947,8 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Delivery and package | **Passed**')
     expect(scorecard).toContain('| Evaluation tooling isolation | **Passed**')
     expect(scorecard).toContain('| Capability validation v1 | **Stopped**')
-    expect(scorecard).toContain('| Capability validation v2 | **In progress**')
+    expect(scorecard).toContain('| Capability validation v2 | **Stopped / not planned**')
+    expect(scorecard).toContain('| Beta release | **Ready**')
     expect(scorecard).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(scorecard).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(scorecard).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -986,7 +992,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('only an authenticated canonical symbol declaration may provide a snippet or cover a phase')
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
-    expect(scorecard).toContain('`capability-validation-v2` is the sole active phase')
+    expect(scorecard).toContain('No technical implementation phase is active')
     expect(scorecard).toContain('exactly 20 production TypeScript files / 4,698 LOC')
     expect(scorecard).toContain('completed Evaluation Tooling Isolation is 43 files / 11,956 LOC')
     expect(scorecard).toContain('- [x] Production cannot import `tools/eval`')
@@ -1195,22 +1201,22 @@ describe('core reset governance', () => {
     expect(manifest.schema_version).toBe(1)
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-26',
+      updated_at: '2026-07-28',
       completed_phase: 'evaluation-tooling',
-      active_phase: 'capability-validation-v2',
-      ready_phase: null,
-      base_commit: CAPABILITY_VALIDATION_V2_BASE,
+      active_phase: null,
+      ready_phase: 'release-beta',
+      base_commit: EVALUATION_TOOLING_ACTIVATION_MERGE,
       completed_phase_commit: EVALUATION_TOOLING_MERGE,
       production_typescript_files: 43,
       production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
+      production_loc_removed: 4_698,
+      production_loc_net: -4_698,
       npm_files: 102,
-      npm_packed_bytes: 159_759,
-      npm_unpacked_bytes: 637_602,
+      npm_packed_bytes: 160_118,
+      npm_unpacked_bytes: 638_445,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'exact_implementation_source_and_package',
+      snapshot_scope: 'release_candidate_source_and_package',
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
@@ -1327,7 +1333,7 @@ describe('core reset governance', () => {
     expect(logicalLocAtCommit(legacyBase, deletionFiles)).toBe(20_951)
     const generation = manifest.items.find((item) => item.id === 'generation-and-incremental')
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['capability-validation-v2'])
+      .toEqual([])
     expect(generation).toMatchObject({
       status: 'complete',
       sources: INCREMENTAL_OWNED_REPLACEMENTS,
@@ -1644,22 +1650,22 @@ describe('core reset governance', () => {
       ['merge-base', '--is-ancestor', THIN_DELIVERY_IMPLEMENTATION_START, THIN_DELIVERY_MERGE],
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-26',
+      updated_at: '2026-07-28',
       completed_phase: 'evaluation-tooling',
-      active_phase: 'capability-validation-v2',
-      ready_phase: null,
-      base_commit: CAPABILITY_VALIDATION_V2_BASE,
+      active_phase: null,
+      ready_phase: 'release-beta',
+      base_commit: EVALUATION_TOOLING_ACTIVATION_MERGE,
       completed_phase_commit: EVALUATION_TOOLING_MERGE,
       production_typescript_files: 43,
       production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
+      production_loc_removed: 4_698,
+      production_loc_net: -4_698,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'exact_implementation_source_and_package',
+      snapshot_scope: 'release_candidate_source_and_package',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['capability-validation-v2'])
+      .toEqual([])
     expect(manifest.targets).toMatchObject({
       production_typescript_files_max: 80,
       production_typescript_loc_max: 35_000,
@@ -2512,21 +2518,21 @@ describe('core reset governance', () => {
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
       completed_phase: 'evaluation-tooling',
-      active_phase: 'capability-validation-v2',
-      ready_phase: null,
-      base_commit: CAPABILITY_VALIDATION_V2_BASE,
+      active_phase: null,
+      ready_phase: 'release-beta',
+      base_commit: EVALUATION_TOOLING_ACTIVATION_MERGE,
       completed_phase_commit: EVALUATION_TOOLING_MERGE,
       production_typescript_files: 43,
       production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
+      production_loc_removed: 4_698,
+      production_loc_net: -4_698,
       npm_files: 102,
-      npm_packed_bytes: 159_759,
-      npm_unpacked_bytes: 637_602,
+      npm_packed_bytes: 160_118,
+      npm_unpacked_bytes: 638_445,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['capability-validation-v2'])
+      .toEqual([])
 
     const evaluation = manifest.items.find((item) => item.id === 'evaluation-tooling')
     expect(evaluation).toMatchObject({
@@ -2856,6 +2862,7 @@ describe('core reset governance', () => {
     expect(read('.gitignore').split(/\r?\n/)).toContain('dist-eval/')
 
     type EvaluationPackage = {
+      version: string
       scripts: Record<string, string>
       files: string[]
       dependencies: Record<string, string>
@@ -2874,26 +2881,40 @@ describe('core reset governance', () => {
       ['show', `${EVALUATION_TOOLING_MERGE}:package.json`],
       { encoding: 'utf8' },
     )) as EvaluationPackage
-    expect(currentPackage).toEqual({
+    expect(implementationPackage).toEqual({
       ...activationPackage,
       scripts: {
         ...activationPackage.scripts,
         'build:eval': 'tsc -p tsconfig.eval.json',
       },
     })
-    expect(currentPackage).toEqual(implementationPackage)
+    expect(currentPackage).toEqual({
+      ...implementationPackage,
+      version: '0.40.0-beta.1',
+      scripts: {
+        ...implementationPackage.scripts,
+        'publish:next': 'npm publish --tag next --access public --provenance',
+      },
+    })
     expect(currentPackage.files).not.toContain('dist-eval/')
     expect(currentPackage.scripts.prepack).not.toContain('build:eval')
-    expect(read('package-lock.json')).toBe(execFileSync(
-      git,
-      ['show', `${EVALUATION_TOOLING_ACTIVATION_MERGE}:package-lock.json`],
-      { encoding: 'utf8' },
-    ))
-    expect(read('package-lock.json')).toBe(execFileSync(
+    const implementationLock = JSON.parse(execFileSync(
       git,
       ['show', `${EVALUATION_TOOLING_MERGE}:package-lock.json`],
       { encoding: 'utf8' },
-    ))
+    )) as any
+    const currentLock = JSON.parse(read('package-lock.json')) as any
+    expect(currentLock).toEqual({
+      ...implementationLock,
+      version: '0.40.0-beta.1',
+      packages: {
+        ...implementationLock.packages,
+        '': {
+          ...implementationLock.packages[''],
+          version: '0.40.0-beta.1',
+        },
+      },
+    })
 
     const rewiredCallers = execFileSync(
       git,
@@ -2960,16 +2981,17 @@ describe('core reset governance', () => {
       | undefined
     expect(manifest.current).toMatchObject({
       completed_phase: 'evaluation-tooling',
-      active_phase: 'capability-validation-v2',
-      base_commit: CAPABILITY_VALIDATION_V2_BASE,
+      active_phase: null,
+      ready_phase: 'release-beta',
+      base_commit: EVALUATION_TOOLING_ACTIVATION_MERGE,
       production_typescript_files: 43,
       production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
+      production_loc_removed: 4_698,
+      production_loc_net: -4_698,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['capability-validation-v2'])
+      .toEqual([])
     expect(phase).toMatchObject({
       disposition: 'keep',
       status: 'stopped',
@@ -3015,7 +3037,7 @@ describe('core reset governance', () => {
       .toBe(CAPABILITY_VALIDATION_TOOLS_EVAL_TREE)
 
     for (const [path, expected] of Object.entries(CAPABILITY_VALIDATION_FROZEN_HASHES)) {
-      expect(createHash('sha256').update(readFileSync(resolve(path))).digest('hex'), path).toBe(expected)
+      expect(gitBlobSha256(CAPABILITY_VALIDATION_V2_BASE, path), path).toBe(expected)
     }
     let assetLines = 0
     for (const [path, expected] of Object.entries(CAPABILITY_VALIDATION_ASSET_HASHES)) {
@@ -3217,20 +3239,20 @@ describe('core reset governance', () => {
       | undefined
     expect(manifest.current).toMatchObject({
       completed_phase: 'evaluation-tooling',
-      active_phase: 'capability-validation-v2',
-      ready_phase: null,
-      base_commit: CAPABILITY_VALIDATION_V2_BASE,
+      active_phase: null,
+      ready_phase: 'release-beta',
+      base_commit: EVALUATION_TOOLING_ACTIVATION_MERGE,
       production_typescript_files: 43,
       production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
+      production_loc_removed: 4_698,
+      production_loc_net: -4_698,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['capability-validation-v2'])
+      .toEqual([])
     expect(phase).toMatchObject({
       disposition: 'keep',
-      status: 'in_progress',
+      status: 'stopped',
       predecessor: 'capability-validation',
       supersedes: 'development implementation allowlist and LOC ceiling only',
       production_file_budget: { added_max: 0, removed_exact: 0 },
@@ -3273,7 +3295,11 @@ describe('core reset governance', () => {
         rfc_amendment: CAPABILITY_VALIDATION_V2_RFC_APPROVAL,
         protected_base: CAPABILITY_VALIDATION_V2_BASE,
         target_branch: 'core-reset',
-        second_owner_hash_approval: 'required_before_activation_merge',
+        second_owner_hash_approval: 'passed',
+        activation_head: CAPABILITY_VALIDATION_V2_ACTIVATION_HEAD,
+        activation_merge: CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE,
+        activation_tree: CAPABILITY_VALIDATION_V2_ACTIVATION_TREE,
+        implementation_start_commit: 'not_started_cancelled',
       },
     })
 
@@ -3283,6 +3309,16 @@ describe('core reset governance', () => {
       .toBe(CAPABILITY_VALIDATION_V2_SRC_TREE)
     expect(execFileSync(git, ['rev-parse', `${CAPABILITY_VALIDATION_V2_BASE}:tools/eval`], { encoding: 'utf8' }).trim())
       .toBe(CAPABILITY_VALIDATION_V2_TOOLS_EVAL_TREE)
+    expect(execFileSync(
+      git,
+      ['rev-parse', `${CAPABILITY_VALIDATION_V2_ACTIVATION_HEAD}^{tree}`],
+      { encoding: 'utf8' },
+    ).trim()).toBe(CAPABILITY_VALIDATION_V2_ACTIVATION_TREE)
+    expect(execFileSync(
+      git,
+      ['rev-parse', `${CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE}^{tree}`],
+      { encoding: 'utf8' },
+    ).trim()).toBe(CAPABILITY_VALIDATION_V2_ACTIVATION_TREE)
     for (const [path, expected] of Object.entries(CAPABILITY_VALIDATION_ASSET_HASHES)) {
       expect(createHash('sha256').update(readFileSync(resolve(path))).digest('hex'), path).toBe(expected)
     }
@@ -3437,7 +3473,8 @@ describe('core reset governance', () => {
     }
 
     const nameStatus = execFileSync(git, [
-      'diff', '--no-ext-diff', '--no-renames', '--name-status', CAPABILITY_VALIDATION_V2_BASE, '--',
+      'diff', '--no-ext-diff', '--no-renames', '--name-status',
+      CAPABILITY_VALIDATION_V2_BASE, CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE, '--',
     ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean)
     expect(nameStatus.every((line) => /^(?:A|M)\t/.test(line))).toBe(true)
     expect(nameStatus.map((line) => line.slice(line.indexOf('\t') + 1)).sort())
@@ -3449,7 +3486,8 @@ describe('core reset governance', () => {
         CAPABILITY_VALIDATION_V2_RECEIPT_SCHEMA,
       ].sort())
     const rows = execFileSync(git, [
-      'diff', '--no-ext-diff', '--no-renames', '--numstat', CAPABILITY_VALIDATION_V2_BASE, '--',
+      'diff', '--no-ext-diff', '--no-renames', '--numstat',
+      CAPABILITY_VALIDATION_V2_BASE, CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE, '--',
     ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).map((line) => {
       const [added = '', removed = '', path = ''] = line.split('\t')
       expect([added, removed]).not.toContain('-')
@@ -3835,25 +3873,25 @@ describe('core reset governance', () => {
     expect(execFileSync(git, ['rev-parse', `${EVIDENCE_BASE}^{tree}`], { encoding: 'utf8' }).trim())
       .toBe(EVIDENCE_BASE_TREE)
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-26',
+      updated_at: '2026-07-28',
       completed_phase: 'evaluation-tooling',
-      active_phase: 'capability-validation-v2',
-      ready_phase: null,
-      base_commit: CAPABILITY_VALIDATION_V2_BASE,
+      active_phase: null,
+      ready_phase: 'release-beta',
+      base_commit: EVALUATION_TOOLING_ACTIVATION_MERGE,
       completed_phase_commit: EVALUATION_TOOLING_MERGE,
       production_typescript_files: 43,
       production_typescript_loc: 11_956,
       production_loc_added: 0,
-      production_loc_removed: 0,
-      production_loc_net: 0,
+      production_loc_removed: 4_698,
+      production_loc_net: -4_698,
       npm_files: 102,
-      npm_packed_bytes: 159_759,
-      npm_unpacked_bytes: 637_602,
+      npm_packed_bytes: 160_118,
+      npm_unpacked_bytes: 638_445,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'exact_implementation_source_and_package',
+      snapshot_scope: 'release_candidate_source_and_package',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual(['capability-validation-v2'])
+      .toEqual([])
 
     const evidence = manifest.items.find((item) => item.id === 'evidence-path-query')
     expect(evidence).toMatchObject({
@@ -5358,10 +5396,12 @@ describe('core reset governance', () => {
     expect(governance).toContain('## Passed — thin delivery')
     expect(governance).toContain('## Passed — evaluation tooling isolation')
     expect(governance).toContain('## Completed amendment — evaluation tooling isolation')
-    expect(governance).toContain('## In progress — capability validation v2')
+    expect(governance).toContain('## Stopped — capability validation')
+    expect(governance).toContain('## Ready — `0.40.0-beta.1`')
     expect(governance).toContain('## Stopped amendment — capability validation v1')
-    expect(governance).toContain('## Accepted amendment — capability validation v2')
-    expect(governance).toContain('`capability-validation-v2` is the sole active phase')
+    expect(governance).toContain('## Historical accepted amendment — capability validation v2')
+    expect(governance).toContain('## Cancelled amendment — capability validation; beta release ready')
+    expect(governance).toContain('No technical implementation phase is active')
     expect(governance).toContain('At that #608 completion checkpoint no technical phase was active')
     expect(governance).not.toContain('\nNo technical phase is active; Capability Validation')
     expect(governance).not.toContain('## In progress — evaluation tooling isolation')

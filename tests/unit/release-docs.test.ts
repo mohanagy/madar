@@ -18,7 +18,7 @@ describe('release documentation', () => {
     expect(releaseDoc).toContain('npm run build')
     expect(releaseDoc).toContain('npm run test:run')
     expect(releaseDoc).toContain('npm pack --dry-run')
-    expect(releaseDoc).toContain('npm sbom --sbom-format cyclonedx')
+    expect(releaseDoc).toContain('npm sbom --sbom-format cyclonedx --package-lock-only')
     expect(releaseDoc).toContain('sbom.cdx.json')
     expect(releaseDoc).toContain('npm publish --access public --provenance')
     expect(releaseDoc).toContain('docs/security/mcp-threat-model.md')
@@ -53,15 +53,22 @@ describe('release documentation', () => {
   })
 
   it('keeps the checked supply-chain snapshot aligned with current dependencies', () => {
+    const packageManifest = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
+      name: string
+      version: string
+    }
+    const packageLock = JSON.parse(readFileSync(resolve('package-lock.json'), 'utf8')) as {
+      packages: Record<string, { name?: string, version?: string }>
+    }
     const sbomText = readFileSync(resolve('sbom.cdx.json'), 'utf8')
     const sbom = JSON.parse(sbomText) as {
       metadata?: { component?: { name?: string, version?: string } }
-      components?: Array<{ name?: string }>
+      components?: Array<{ name?: string, version?: string }>
     }
 
     expect(sbom.metadata?.component).toEqual(expect.objectContaining({
-      name: '@lubab/madar',
-      version: '0.32.0',
+      name: packageManifest.name,
+      version: packageManifest.version,
     }))
     expect(
       sbom.components
@@ -69,5 +76,20 @@ describe('release documentation', () => {
         .filter((name) => name?.startsWith('neo4j-driver')),
     ).toEqual([])
     expect(sbomText).not.toContain('neo4j-driver')
+
+    const lockedComponents = new Set(Object.entries(packageLock.packages)
+      .filter(([path, value]) => path !== '' && value.version)
+      .map(([path, value]) => {
+        const suffix = path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length)
+        const segments = suffix.split('/')
+        const derivedName = segments[0]?.startsWith('@')
+          ? `${segments[0]}/${segments[1]}`
+          : segments[0]
+        return `${value.name ?? derivedName}@${value.version}`
+      }))
+    const unlockedComponents = (sbom.components ?? [])
+      .map((component) => `${component.name}@${component.version}`)
+      .filter((component) => !lockedComponents.has(component))
+    expect(unlockedComponents).toEqual([])
   })
 })

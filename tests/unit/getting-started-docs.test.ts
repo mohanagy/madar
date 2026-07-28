@@ -12,7 +12,7 @@ describe('getting started documentation', () => {
     const tutorial = read('docs/tutorials/getting-started.md')
     const readme = read('README.md')
 
-    expect(tutorial).toContain('npm install -g @lubab/madar')
+    expect(tutorial).toContain('npm install -g @lubab/madar@next')
     expect(tutorial).toContain('madar generate examples/sample-workspace')
     expect(tutorial).toContain('madar query "how does password reset request enqueue the reset email?"')
     expect(tutorial).toContain('madar install claude')

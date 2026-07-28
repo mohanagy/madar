@@ -20,12 +20,11 @@ Six controlled June v0.30 TypeScript trials recorded lower tool-call, provider-i
 
 Those experiments answer different questions. Neither is a universal claim about the current one-query implementation.
 
-## In progress
+## Beta boundary
 
-- Complete the pinned Core Reset held-out cases without repository-specific production vocabulary.
-- Keep p95 retrieval below the frozen 500 ms threshold on the 15,000-node, 30,000-edge fixture.
-- Demonstrate successful agent activation and useful evidence on repeated real repositories.
-- Publish comparative implementation/review outcomes only after several independent cells pass.
+The completed Core Reset product path and package gates support a prerelease for JavaScript/TypeScript repositories. Capability Validation and the Native-vs-Graphify comparator were cancelled before any campaign, provider request, paid spend, or result. `0.40.0-beta.1` therefore makes no comparative correctness, token, latency, cost, activation, retention, or external-user claim.
+
+The historical evaluation contracts remain development records. A future comparison or stable-release claim requires a new issue, fresh owner authorization, and new reproducible evidence.
 
 ## Not yet measured
 

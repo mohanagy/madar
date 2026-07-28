@@ -1,6 +1,6 @@
 {
     "name": "@lubab/madar",
-    "version": "0.32.0",
+    "version": "0.40.0-beta.1",
     "mcpName": "io.github.mohanagy/madar",
     "description": "Give AI coding agents a small, authenticated evidence path through large TypeScript and JavaScript repositories.",
     "license": "MIT",
@@ -62,7 +62,7 @@
         "prepack": "npm run clean && npm run build",
         "pack:dry-run": "npm pack --dry-run",
         "publish:public": "npm publish --access public",
-        "publish:next": "npm publish --tag next --access public",
+        "publish:next": "npm publish --tag next --access public --provenance",
         "publish:dry-run": "npm publish --dry-run",
         "release:verify": "node .github/scripts/verify-release-hygiene.mjs",
         "verify:pack-parity": "node .github/scripts/verify-packed-retrieval-parity.mjs",

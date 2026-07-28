@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, and Evaluation Tooling Isolation have passed. Capability Validation v1 is stopped under #610; `capability-validation-v2` is the sole active technical phase under the exact first-stage owner-approved #612 proposal, while activation merge, offline implementation, provider-account observation, and the fixed campaign remain separately gated.
+The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, and Evaluation Tooling Isolation have passed. Capability Validation and the Native-vs-Graphify comparator are cancelled as release gates. No technical implementation phase is active; `0.40.0-beta.1` release preparation is ready for `next`.
 
 ## Passed — directed multigraph
 
@@ -119,32 +119,25 @@ Capability Validation remained blocked throughout #606. The completed phase neit
 
 No #606 stop condition triggered. No npm package, GitHub Release, Registry metadata, or tag was published, and the phase did not target `main`.
 
-## In progress — capability validation v2
+## Stopped — capability validation
 
-Capability Validation v1 stopped before an implementation PR, campaign lock, or provider request when independent review triggered #610 stop conditions 7, 8, and 13. Its original protected base `e7b3be547bc3f6cfdefdd514f17a1ad229afea03`, proposal SHA-256 `27c04eca61e8c3ae65e2a9eab5c0b7e269313be933cef785b94e9bdca7292ba5`, [#610 approval](https://github.com/mohanagy/madar/issues/610#issuecomment-5081132612), and [RFC approval](https://github.com/mohanagy/madar/issues/577#issuecomment-5081133199) remain historical. The immutable [#610 stop receipt](https://github.com/mohanagy/madar/issues/610#issuecomment-5083281270) and [RFC stop amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5083282711) preserve activation head `80e942a8a28e3895465aa9ca432c4a926054055d`, merge `dcb52596a3efa89f9ef5d372231ce97a91ae5f9f`, tree `d0ca317290dbd6837295f36f36ded5b49855c0fe`, and the three v1 asset bytes. No Count Tokens, Create, other provider request, campaign spend, implementation PR, production change, or publication occurred.
+Capability Validation v1 stopped before an implementation PR, campaign lock, or provider request when independent review triggered #610 stop conditions 7, 8, and 13. Its original protected base `e7b3be547bc3f6cfdefdd514f17a1ad229afea03`, proposal SHA-256 `27c04eca61e8c3ae65e2a9eab5c0b7e269313be933cef785b94e9bdca7292ba5`, [#610 approval](https://github.com/mohanagy/madar/issues/610#issuecomment-5081132612), and [RFC approval](https://github.com/mohanagy/madar/issues/577#issuecomment-5081133199) remain historical. The immutable [#610 stop receipt](https://github.com/mohanagy/madar/issues/610#issuecomment-5083281270) and [RFC stop amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5083282711) preserve the exact stopped state. No Count Tokens, Create, other provider request, campaign spend, implementation PR, production change, or publication occurred.
 
-The owner approved exact v2 proposal-body SHA-256 `4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0` through the durable [#612 first-stage receipt](https://github.com/mohanagy/madar/issues/612#issuecomment-5083661878) and [matching RFC receipt](https://github.com/mohanagy/madar/issues/577#issuecomment-5083662827). Governance activation starts from protected `core-reset` commit `dcb52596a3efa89f9ef5d372231ce97a91ae5f9f`, tree `d0ca317290dbd6837295f36f36ded5b49855c0fe`, audited `src` tree `1a37e3a58ee7b2a75ca034112506590f699b3918`, and `tools/eval` tree `b8ef02da3ce135596e87fdf6252441755061d956`.
+The v2 governance candidate, proposal SHA-256 `4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0`, was anchored to `dcb52596a3efa89f9ef5d372231ce97a91ae5f9f`, authorized by the [#612 owner receipt](https://github.com/mohanagy/madar/issues/612#issuecomment-5083661878) and [matching RFC receipt](https://github.com/mohanagy/madar/issues/577#issuecomment-5083662827), then merged by PR #613. It remains a historical development-only contract; implementation did not start. Later v3, v4, and v5 successor records likewise produced no accepted implementation or campaign. On 2026-07-28 the owner closed #610, #612, #614, #615, and #616 as not planned and [revoked every unused authority](https://github.com/mohanagy/madar/issues/577#issuecomment-5107237329).
 
-The governance-only candidate adds exactly `capability-validation-v2.json`, `capability-validation-contract-v2.schema.json`, and `capability-validation-receipt-v2.schema.json` and modifies only the five governing files, within `+3,850/-250`. It changes no production code, executable evaluator, CI, dependency, package/build configuration, historical contract, or receipt. Before activation may merge, a second owner receipt must bind the exact unchanged head, all three asset SHA-256 values, and every newly exact coordinator, relay, evidence, containment, ledger, receipt, stopped-finalization, archive, public-validation, error, path, LOC, schema, and operational choice.
+No Native-vs-Graphify-vs-Madar campaign ran. Provider requests and paid spend are zero, and no correctness, token, latency, cost, activation, retention, or external-user result exists. The committed evaluation assets remain outside production, dist, and npm and are not release evidence.
 
-Only after that exact activation merge may offline implementation start, limited to #612's 53 exact paths and `+29,130/-350`; combined activation plus implementation remains `+32,980/-600`. This supersedes only v1's 29-path / `+12,200/-200` development boundary. The provider, token, USD, trial, matrix, timeout, tool-call, product, production, package, dependency, graph/index/generation/query, and public-semantic ceilings remain unchanged; no compatibility alias, dependency, production edit, generated commit, historical rewrite, or `main` target is permitted.
+## Ready — `0.40.0-beta.1`
 
-After the exact offline implementation merge, one separately reviewed governance-only closure may modify only these five governance files within `+400/-200`, for full activation-plus-implementation-plus-closure ceilings of `+33,380/-800`. It may record only that the v2 offline execution boundary passed, exact merge/review/CI evidence, v1's unchanged stop, the unresolved provider observer, zero requests/spend, and no active campaign.
+The completed product vertical slice is anchored to protected `core-reset` commit `5c9d1e2436932f7420169ea4ffa617c6bea4fbd0`, tree `35b68cd733e07b9306d52e2076a287269f8919eb`. Release preparation may change only governance, version and package metadata, changelog and migration documentation, SBOM, Registry metadata, release workflow, and their tests. It cannot change dependencies or product semantics.
 
-The offline v2 boundary cannot create a real campaign lock: authenticated provider-account hard-cap and zero-use observation remains a separately proposed future mechanism. No provider request of any kind—including Count Tokens or Create—target-repository execution, paid spend, or fixed campaign is authorized by this activation. Any stop condition requires an RFC #577 amendment before further technical work.
+The release PR targets `next`, never `main`. Merge is allowed only after the exact candidate passes all six CI jobs, release and Registry validation, typecheck, build, full tests, package/SBOM review, CLI and MCP smoke checks, independent no-blocker review, and zero unresolved review threads. CodeRabbit's actual disposition must be reported honestly.
 
-The remaining dependency order is:
-
-1. Complete exact #612 governance activation and separately authorized offline implementation.
-2. Approve and prove the provider-account observer, then separately lock and run the unchanged fixed campaign.
-3. Run external design-partner validation.
-4. Publish a beta under npm tag `next` only after its preceding gates authorize it.
-
-Every replacement issue has an exact deletion contract. New and old implementations may coexist only temporarily on the reset integration branch; the old path cannot survive the phase.
+After the exact reviewed commit merges to `next`, publish `@lubab/madar@0.40.0-beta.1` under npm dist-tag `next` with provenance, create matching tag `v0.40.0-beta.1` and a GitHub prerelease, publish matching MCP Registry metadata, and verify a clean installation. npm `latest`, stable `0.40.0`, comparative claims, and `main` remain outside this beta.
 
 ## Validation — release decision
 
-The stable release depends on two separate evidence tracks:
+The stable release still depends on two separate evidence tracks. They are not claims of this beta:
 
 ### Capability
 
@@ -180,7 +173,7 @@ A deferred capability returns to the roadmap only after at least three independe
 
 | Issue | Accepted reset disposition |
 | --- | --- |
-| [#565](https://github.com/mohanagy/madar/issues/565) | Retain as the real acceptance failure; treat its Go prefix as diagnostic/unsupported and keep supported-scope plus later Claude/Codex/human validation open |
+| [#565](https://github.com/mohanagy/madar/issues/565) | Closed not planned. Its v0.31.x mixed-language OpenStatus result remains a historical non-blocking diagnostic, not a beta gate or current product claim. |
 | [#574](https://github.com/mohanagy/madar/issues/574) | Superseded by the generic, scope-correct replacement in [#596](https://github.com/mohanagy/madar/issues/596), not another patch |
 | [#567](https://github.com/mohanagy/madar/issues/567) | Closed by [#602](https://github.com/mohanagy/madar/issues/602) only after normal interactive Codex thread `019f984b-e210-76f0-b80c-cf52ac8f1460` completed Madar `tools/call`; direct JSON-RPC and cancelled non-interactive attempts did not qualify |
 | [#571](https://github.com/mohanagy/madar/issues/571) | Closed as obsolete by the extraction-mode deletion in #588 and PR #590 |

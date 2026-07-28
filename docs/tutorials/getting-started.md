@@ -7,7 +7,7 @@ This walkthrough builds one local JavaScript/TypeScript graph, runs one retrieva
 Madar requires Node.js 20 or newer:
 
 ```bash
-npm install -g @lubab/madar
+npm install -g @lubab/madar@next
 cd /path/to/madar
 madar generate examples/sample-workspace
 ```
