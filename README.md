@@ -12,14 +12,14 @@ The result is a small set of exact source excerpts and directed relationships, o
 
 MCP advertises only the tools capability. It exposes no resources or prompts.
 
-[![npm next](https://img.shields.io/npm/v/%40lubab%2Fmadar/next?label=npm%20next)](https://www.npmjs.com/package/@lubab/madar/v/0.40.0-beta.2)
+[![npm next](https://img.shields.io/npm/v/%40lubab%2Fmadar/next?label=npm%20next)](https://www.npmjs.com/package/@lubab/madar/v/0.40.0-beta.3)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
 [![local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#local-by-design)
 [![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/madar/blob/next/LICENSE)
 
 ## What's new
 
-The [0.40.0-beta.2 notes](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0400-beta2---2026-07-29) cover the bounded retrieval repair. New Core Reset users should also read the [beta.1 migration guide](https://github.com/mohanagy/madar/blob/next/docs/migrations/0.40.0-beta.1.md). Comparative performance and external retention remain unmeasured.
+The [0.40.0-beta.3 notes](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0400-beta3---2026-07-29) cover complete bounded report-flow retrieval and honest asynchronous handoffs. New Core Reset users should also read the [beta.1 migration guide](https://github.com/mohanagy/madar/blob/next/docs/migrations/0.40.0-beta.1.md). Comparative performance and external retention remain unmeasured.
 
 ## Start in three steps
 
@@ -43,7 +43,7 @@ Then ask your normal repository question:
 Trace how a failed payment becomes a retry. Cite the exact files and symbols, and state what remains uncertain.
 ```
 
-For a transport check, explicitly ask the client to call `retrieve` once. That proves the configured client path, not natural tool preference. Use `madar doctor` and `madar status` to check the graph and external client registration. Codex is also supported directly with `madar install codex`. Other hosts can launch the package through the MCP Registry or a manual `madar mcp` stdio registration.
+To verify transport, ask the client to call `retrieve` once; this proves connectivity, not natural tool preference. Use `madar doctor` or `madar status` to inspect the graph and registration. Install Codex support with `madar install codex`; other MCP hosts can launch `madar mcp`.
 
 See the [agent quickstarts](https://github.com/mohanagy/madar/blob/next/docs/tutorials/agent-quickstarts.md) for registration details and activation checks.
 

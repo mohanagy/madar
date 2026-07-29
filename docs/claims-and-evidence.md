@@ -22,7 +22,7 @@ Those experiments answer different questions. Neither is a universal claim about
 
 ## Beta boundary
 
-The completed Core Reset product path, package gates, and bounded #618 repair support a prerelease for JavaScript/TypeScript repositories. Capability Validation and the Native-vs-Graphify comparator were cancelled before any campaign, provider request, paid spend, or result. `0.40.0-beta.2` therefore makes no comparative correctness, token, latency, cost, activation, retention, or external-user claim.
+The completed Core Reset product path, package gates, and bounded #618 and #622 retrieval repairs support a prerelease for JavaScript/TypeScript repositories. Capability Validation and the Native-vs-Graphify comparator were cancelled before any campaign, provider request, paid spend, or result. `0.40.0-beta.3` therefore makes no comparative correctness, token, latency, cost, activation, retention, or external-user claim.
 
 The historical evaluation contracts remain development records. A future comparison or stable-release claim requires a new issue, fresh owner authorization, and new reproducible evidence.
 

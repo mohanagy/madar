@@ -23,32 +23,32 @@ review:
   disposition_changes: 11
   amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transferred graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activated the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. PR #608 completed the exact move without changing any surviving production TypeScript or dependency. First-stage owner-approved issue #610 governance activation merged at dcb52596a3efa89f9ef5d372231ce97a91ae5f9f, then independent review stopped its uncommitted implementation under conditions 7, 8, and 13 before any implementation PR, campaign lock, provider request, or spend. First-stage owner-approved issue #612 authorizes only an eight-path governance-only v2 candidate from that exact merge; its separate activation merge approval remains required. It changes no production ownership or disposition. Graph, index, generation, retrieval, CLI, MCP, installer, workspace, held-out, provider, campaign, grading, product, package, dependency, budget, and timeout semantics remain frozen.'
   cancellation_amendment: 'On 2026-07-28 the owner closed Capability Validation issues #610, #612, #614, #615, and #616 as not planned and revoked every unconsumed preparation, activation, implementation, campaign, provider, spend, and target-execution authority. No campaign ran, no comparative result exists, provider requests remain zero, and spend remains USD 0. The governance-only v2 activation remains immutable history. Issue #618 is a separate bounded retrieval repair and does not revive Capability Validation or Graphify.'
-  release_amendment: 'The completed vertical slice and bounded #618 repair are ready for release preparation as 0.40.0-beta.2 on next only. npm latest, stable 0.40.0, MCP Registry publication, comparative claims, and main remain outside this release.'
+  release_amendment: 'The completed vertical slice and bounded #618 and #622 repairs are authorized for release preparation as 0.40.0-beta.3 on next only under the exact owner receipt at https://github.com/mohanagy/madar/issues/622#issuecomment-5118521969. Merge, tag, and publication require GitHub to report next as protected. npm latest, stable 0.40.0, MCP Registry publication, comparative claims, and main remain outside this release.'
 
 current:
   updated_at: 2026-07-29
-  completed_phase: retrieval-regression-618
+  completed_phase: retrieval-regression-622
   active_phase: null
   ready_phase: release-beta
   base_commit: 5c9d1e2436932f7420169ea4ffa617c6bea4fbd0
-  completed_phase_commit: eaa1a8781eda28dad5395d6da378a2cc40bf81fe
+  completed_phase_commit: 6416dbc02cefb3bd79157cf440e420b30dda8cf0
   production_typescript_files: 43
-  production_typescript_loc: 12008
-  production_loc_added: 69
-  production_loc_removed: 17
-  production_loc_net: 52
+  production_typescript_loc: 12147
+  production_loc_added: 164
+  production_loc_removed: 25
+  production_loc_net: 139
   npm_files: 102
-  npm_packed_bytes: 160319
-  npm_unpacked_bytes: 639962
-  npm_shasum: b1c16839b13a4b8ff5d60795af7f375dd48dcb98
-  npm_integrity: sha512-H8GnBRaGnkbCuMbdO8BSxyS/69UEesCBCoHWLfixMpur26b0uze1E1vE97EmcY0LuC5v+FNZoK98LGIupUKr8g==
-  npm_artifact_sha256: e90662a267fe5311453571de672844b72aadf76a47cecf79c3db3a46c06664fc
+  npm_packed_bytes: 158330
+  npm_unpacked_bytes: 639914
+  npm_shasum: c72c5f786dd07aff16f3ef4990bb4d166a197791
+  npm_integrity: sha512-ulfQ/bNBKz5VDzErYke1hsk3xIxoZtaJKZlN/lsRb60Tq7wvUnFFlxFR2sdkRQ9HBNBWgc/vhpcCgVvdPEk1lw==
+  npm_artifact_sha256: f3b74abf196c790fb65389a6dc93f8574a655943315553f2097d82f91974c787
   measurement_state: source_and_package_exact
   snapshot_scope: release_candidate_source_and_package
   release_candidate:
-    version: 0.40.0-beta.2
-    protected_anchor_commit: eaa1a8781eda28dad5395d6da378a2cc40bf81fe
-    protected_anchor_tree: d7f67986629bbf7a58b4d1830c01eaabd9cfa3d7
+    version: 0.40.0-beta.3
+    protected_anchor_commit: 6416dbc02cefb3bd79157cf440e420b30dda8cf0
+    protected_anchor_tree: d43d9d3cb7cf7d566bcb35eca7df2564f0d9ff8c
     target_branch: next
     npm_dist_tag: next
     stable_release: false
@@ -1391,11 +1391,11 @@ items:
       publication_authorized: false
       candidate_package:
         npm_files: 102
-        npm_packed_bytes: 158295
-        npm_unpacked_bytes: 639867
-        npm_shasum: 34d9d17708b2f7d582309caf1519db62c6599928
-        npm_integrity: sha512-ED2BpphacoQg6/1wYLK6BgPaz3vNPFHzPtibE08Jrsh2Cc8jTKbRGNTqcekFvQ1J7pq6yF6NueZ13PJqVuAXwA==
-        npm_artifact_sha256: 89971e2c2df3f698f48ee066b08923c0ca28853a547d1aaab2d0bd64fdacf005
+        npm_packed_bytes: 158330
+        npm_unpacked_bytes: 639914
+        npm_shasum: c72c5f786dd07aff16f3ef4990bb4d166a197791
+        npm_integrity: sha512-ulfQ/bNBKz5VDzErYke1hsk3xIxoZtaJKZlN/lsRb60Tq7wvUnFFlxFR2sdkRQ9HBNBWgc/vhpcCgVvdPEk1lw==
+        npm_artifact_sha256: f3b74abf196c790fb65389a6dc93f8574a655943315553f2097d82f91974c787
     frozen_contract:
       production_semantics: graph_index_generation_reconciliation_retrieval_ranking_traversal_slicing
       public_surfaces: cli_mcp_installer_workspace
@@ -1864,7 +1864,7 @@ items:
 
   - id: retrieval-regression-622
     disposition: keep
-    status: ready
+    status: complete
     destination: bounded post-beta full-flow ranking and asynchronous handoff recovery
     modified_sources:
       - src/domain/query/rank.ts
@@ -1907,6 +1907,16 @@ items:
       production_loc_added: 164
       production_loc_removed: 25
       production_loc_net: 139
+    completion:
+      pull_request: https://github.com/mohanagy/madar/pull/623
+      reviewed_head: 3b3fb9d404864e725305dc491b75e82006c2371f
+      merge_commit: 6416dbc02cefb3bd79157cf440e420b30dda8cf0
+      merge_tree: d43d9d3cb7cf7d566bcb35eca7df2564f0d9ff8c
+      ci_run: https://github.com/mohanagy/madar/actions/runs/30452883659
+      independent_reviews_no_blocker: 2
+      review_threads_unresolved: 0
+      coderabbit: passed
+      coderabbit_findings_addressed: 3
     build_output_exception: evaluation-tooling.post_completion_build_output_amendment
     constraints:
       repository_specific_ranking: forbidden
