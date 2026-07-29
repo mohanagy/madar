@@ -12,14 +12,14 @@ The result is a small set of exact source excerpts and directed relationships, o
 
 MCP advertises only the tools capability. It exposes no resources or prompts.
 
-[![npm next](https://img.shields.io/npm/v/%40lubab%2Fmadar/next?label=npm%20next)](https://www.npmjs.com/package/@lubab/madar/v/0.40.0-beta.1)
+[![npm next](https://img.shields.io/npm/v/%40lubab%2Fmadar/next?label=npm%20next)](https://www.npmjs.com/package/@lubab/madar/v/0.40.0-beta.2)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
 [![local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#local-by-design)
 [![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/madar/blob/next/LICENSE)
 
 ## What's new
 
-This is the Core Reset beta. Read the [0.40.0-beta.1 notes](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0400-beta1---2026-07-28) and [migration guide](https://github.com/mohanagy/madar/blob/next/docs/migrations/0.40.0-beta.1.md). Comparative performance and external retention remain unmeasured.
+The [0.40.0-beta.2 notes](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0400-beta2---2026-07-29) cover the bounded retrieval repair. New Core Reset users should also read the [beta.1 migration guide](https://github.com/mohanagy/madar/blob/next/docs/migrations/0.40.0-beta.1.md). Comparative performance and external retention remain unmeasured.
 
 ## Start in three steps
 
@@ -60,18 +60,9 @@ madar query "what calls enqueueInvoice?" --budget 2000
 
 ## What the result means
 
-An evidence result includes:
+Results contain authenticated nodes and excerpts, directed relationships, explicit boundaries, and size metrics. `evidence` means the returned path is usable; other outcomes name the focused verification needed instead of implying a path Madar did not prove.
 
-- `matched_nodes`: exact graph-backed files, symbols, source ranges, hashes, provenance, and excerpts
-- `relationships`: directed graph edges between selected nodes
-- `boundaries`: missing, disconnected, unsupported, stale, unavailable, corrupt, or truncated evidence
-- `metrics`: selected files, snippets, closure passes, serialized tokens, and truncation
-
-Madar authenticates an excerpt against the canonical file hash before returning it. It returns at most 12 files, 25 snippets, one directional closure pass, and 4,000 serialized tokens.
-
-If `outcome` is `evidence`, start with the returned excerpts and relationships. If it is `missing`, `unsupported`, `stale`, `unavailable`, or `corrupt`, report that boundary and use only the focused verification needed to continue. Do not invent a path that Madar did not prove.
-
-The complete envelope is documented in [MCP response shape](https://github.com/mohanagy/madar/blob/next/docs/mcp-response-shape.md).
+Results include at most 12 files, 25 snippets, one directional closure pass, and 4,000 serialized tokens. See [MCP response shape](https://github.com/mohanagy/madar/blob/next/docs/mcp-response-shape.md) for the exact envelope.
 
 ## How it works
 
@@ -96,39 +87,22 @@ Use `madar generate . --update` for a one-off reconcile or `madar generate . --w
 
 ## Where Madar fits
 
-Madar is most useful when:
+Madar fits larger JavaScript or TypeScript repositories where ownership or flow crosses files and exact local evidence matters. It helps less for one-file questions, unsupported languages, stale or unavailable source, and behavior visible only at runtime.
 
-- the repository is large enough that agents repeatedly rediscover ownership and flow
-- the important path crosses several JavaScript or TypeScript files
-- exact source evidence matters more than a broad generated summary
-- token usage, latency, or local repository privacy matter
-
-It helps less when:
-
-- the task is already obvious from one file
-- the answer depends on live runtime state that static analysis cannot observe
-- critical code is in an unsupported language
-- the graph is stale or relevant source files are unavailable
-
-Madar complements coding agents and IDE indexing. It is not a runtime tracer, PR reviewer, vulnerability scanner, or hosted source-code service.
+It complements coding agents and IDE indexing; it is not a runtime tracer, PR reviewer, vulnerability scanner, or hosted source-code service.
 
 ## Local by design
 
-- **Local generation:** source indexing runs on your machine and requires no API key.
-- **Authenticated excerpts:** returned source must match the hash recorded in the accepted graph.
-- **Sensitive paths:** private keys, `.env*`, credential stores, and known non-source secret material are excluded before extraction. This is a path policy, not a content-level secret scanner.
-- **Agent boundary:** your coding agent may still send your question or returned excerpts to its configured model provider.
-- **Worktrees:** run Madar and the agent from the same linked worktree. Each worktree gets isolated graph artifacts.
-- **No product telemetry:** the Thin Delivery runtime has no telemetry or updater route.
-- **Zero repository writes from install:** fresh install, reinstall, and uninstall modify only supported external client configuration.
+- **Local evidence:** indexing needs no API key, and returned excerpts must match the accepted graph hash.
+- **Sensitive paths:** keys, `.env*`, credential stores, and known non-source secrets are path-excluded, not content-scanned; your coding agent may still send your question or returned excerpts to its model provider.
+- **Isolated worktrees:** run Madar and the agent together; each worktree has separate graph artifacts. Install operations touch only supported external client configuration.
+- **No telemetry or updater:** neither is shipped.
 
 Treat every local MCP registration as part of your local trust boundary. See the [MCP threat model](https://github.com/mohanagy/madar/blob/next/docs/security/mcp-threat-model.md).
 
 ## Evidence and limits
 
-Historical benchmark receipts remain published, including controlled experiments that used older task-specific workflows. They are real measurements of those recorded versions, not proof that the current untuned package wins on every repository.
-
-Core Reset acceptance uses pinned held-out repositories, exact-source grading, an independently measured 15,000-node performance fixture, package-size gates, and deletion receipts. See the [claims and evidence map](https://github.com/mohanagy/madar/blob/next/docs/claims-and-evidence.md) and [Core Reset scorecard](https://github.com/mohanagy/madar/blob/next/docs/core-reset/scorecard.md).
+Historical receipts describe their recorded versions, not a universal win. See [claims and evidence](https://github.com/mohanagy/madar/blob/next/docs/claims-and-evidence.md) and the [Core Reset scorecard](https://github.com/mohanagy/madar/blob/next/docs/core-reset/scorecard.md).
 
 ## Documentation
 
@@ -146,7 +120,7 @@ Core Reset acceptance uses pinned held-out repositories, exact-source grading, a
 
 ## Contributing
 
-The most useful contributions are held-out retrieval cases from real JavaScript or TypeScript repositories, incorrect or missing evidence reports, framework extraction fixes, and cross-platform MCP reliability improvements.
+Useful contributions include retrieval cases, incorrect evidence reports, framework fixes, and cross-platform MCP improvements.
 
 Open issues or pull requests against the `next` branch. Before opening a PR, run:
 

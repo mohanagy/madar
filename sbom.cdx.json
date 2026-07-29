@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:a446ae3f-fd0c-4be9-85e7-f397f8b84835",
+  "serialNumber": "urn:uuid:f41f7070-9af8-461a-b5f7-85173e66c543",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-28T17:30:00.823Z",
+    "timestamp": "2026-07-29T04:05:57.395Z",
     "lifecycles": [
       {
         "phase": "pre-build"
@@ -19,14 +19,14 @@
       }
     ],
     "component": {
-      "bom-ref": "@lubab/madar@0.40.0-beta.1",
+      "bom-ref": "@lubab/madar@0.40.0-beta.2",
       "type": "library",
       "name": "@lubab/madar",
-      "version": "0.40.0-beta.1",
+      "version": "0.40.0-beta.2",
       "scope": "required",
       "author": "mohanagy",
       "description": "Give AI coding agents a small, authenticated evidence path through large TypeScript and JavaScript repositories.",
-      "purl": "pkg:npm/%40lubab/madar@0.40.0-beta.1",
+      "purl": "pkg:npm/%40lubab/madar@0.40.0-beta.2",
       "properties": [],
       "externalReferences": [
         {
@@ -3103,7 +3103,7 @@
   ],
   "dependencies": [
     {
-      "ref": "@lubab/madar@0.40.0-beta.1",
+      "ref": "@lubab/madar@0.40.0-beta.2",
       "dependsOn": [
         "gpt-tokenizer@3.4.0",
         "typescript@6.0.3",

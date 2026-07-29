@@ -2,7 +2,7 @@
 
 > **RFC:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
-> **Status:** accepted; the product vertical slice through Evaluation Tooling Isolation passed; Capability Validation and its comparator campaign are cancelled as release gates; `0.40.0-beta.1` release preparation is ready for `next`
+> **Status:** accepted; the product vertical slice through Evaluation Tooling Isolation and retrieval regression #618 passed; Capability Validation and its comparator campaign are cancelled as release gates; `0.40.0-beta.2` release preparation is ready for `next`
 
 This is the phase-gate evidence ledger. An issue or PR link is not evidence by itself; each gate needs a reproducible test, receipt, measurement, or external-user record.
 
@@ -40,11 +40,12 @@ The schema-validated, share-safe receipt was recorded at tooling checkout `250a6
 | Evaluation tooling isolation | **Passed** | Exactly 20 production files / 4,698 LOC moved to `tools/eval/lib/**`; evaluation remains runnable while production imports, dist, prepack, and npm exclude it | [#606](https://github.com/mohanagy/madar/issues/606) completed through merged [PR #608](https://github.com/mohanagy/madar/pull/608) at `565c42bb1b34b67f7fefc7aabd0513e4e391a13b`; [six exact-head CI jobs](https://github.com/mohanagy/madar/actions/runs/30162721277) passed; [independent review](https://github.com/mohanagy/madar/pull/608#pullrequestreview-4779465252) found no blocker; zero review threads remained; CodeRabbit's non-default-base skip is recorded honestly |
 | Capability validation v1 | **Stopped** | Preserve the activated contract and mandatory first-stop observation without reinterpretation | [#610 stop receipt](https://github.com/mohanagy/madar/issues/610#issuecomment-5083281270) and [RFC stop amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5083282711); stop conditions 7, 8, and 13 triggered before implementation PR, campaign lock, or provider request |
 | Capability validation v2 | **Stopped / not planned** | Preserve the governance history without resuming implementation or claiming a result | [#612](https://github.com/mohanagy/madar/issues/612) is closed not planned; its governance PR merged, implementation never started, provider requests and spend are zero, and all unconsumed authority is revoked |
-| External validation | **Deferred** | Activation, retention, and paid-intent evidence remains required for later stable claims, not this beta | No external-validation claim in `0.40.0-beta.1` |
-| Beta release | **Ready** | Publish and verify one exact reviewed `next` commit as npm `next`, a GitHub prerelease, and matching Registry metadata | [RFC #577 beta amendment](https://github.com/mohanagy/madar/issues/577#issuecomment-5107212351) |
+| Retrieval regression #618 | **Passed** | Restore grounded natural-flow retrieval in one call or at most one bounded recovery without repository-specific rules, graph/index changes, dependencies, or fallback engines | [#618](https://github.com/mohanagy/madar/issues/618) completed through [PR #620](https://github.com/mohanagy/madar/pull/620), merged at `eaa1a8781eda28dad5395d6da378a2cc40bf81fe`; all six exact-head CI jobs, two independent no-blocker reviews, and zero review threads passed |
+| External validation | **Deferred** | Activation, retention, and paid-intent evidence remains required for later stable claims, not this beta | No external-validation claim in `0.40.0-beta.2` |
+| Beta release | **Ready** | Publish and verify one exact reviewed `next` commit as npm `next` and a GitHub prerelease | Owner authorization for `0.40.0-beta.2`; MCP Registry publication remains separate |
 | Stable release | Not started | Every separately retained stable gate passed; old core absent; migration docs ready | Pending; the beta does not satisfy this gate |
 
-No technical implementation phase is active. Evaluation Tooling Isolation completed through #606 and PR #608 at 43 production files / 11,956 LOC. Capability Validation issues #610, #612, #614, #615, and #616 are closed not planned: no campaign ran, no Native/Graphify/Madar result exists, provider requests remain zero, and paid spend remains USD 0. Their `Deferred` project disposition means “not a beta gate and not passed.” The release candidate may make only claims supported by the completed product tests and its own artifact verification.
+No technical implementation phase is active. Evaluation Tooling Isolation completed through #606 and PR #608 at 43 production files / 11,956 LOC; #618 completed at 43 production files / 12,008 LOC with `+69/-17/net +52`. Capability Validation issues #610, #612, #614, #615, and #616 are closed not planned: no campaign ran, no Native/Graphify/Madar result exists, provider requests remain zero, and paid spend remains USD 0. Their `Deferred` project disposition means “not a beta gate and not passed.” The release candidate may make only claims supported by the completed product tests and its own artifact verification.
 
 ### Directed multigraph phase evidence (passed)
 
@@ -150,6 +151,15 @@ The following contract facts are historical. Issues #610 and #612, together with
 - The proposed development boundary would have expanded from 29 paths / `+12,200/-200` to 53 exact paths / `+29,130/-350`, with combined activation plus implementation at `+32,980/-600`. Implementation never started, so none of that budget was consumed.
 - A later five-governance-file closure and provider-account observation mechanism were planned but never authorized or executed. No offline execution boundary, campaign lock, Count Tokens, Create, other provider request, target-repository run, spend, campaign, or result occurred.
 - Provider requests remain zero and paid spend remains USD 0. The project release-gate value `Deferred` means “not a beta gate and not passed.” Any future evaluation requires a new issue and fresh owner authorization.
+
+### Retrieval regression #618 (passed)
+
+- The protected base is `5c9d1e2436932f7420169ea4ffa617c6bea4fbd0`. Production changes are limited to `src/adapters/mcp/protocol.ts`, `src/domain/query/rank.ts`, `src/domain/query/slice.ts`, and `src/domain/query/traverse.ts`, with zero added production files or dependencies and ceilings of `+100/-0/net +100`.
+- The packed-retrieval parity script may read the active manifest snapshot and verify its SHA-256; it must not rewrite historical Evaluation Tooling implementation receipts.
+- The beta.2 candidate is 43 production TypeScript files / 12,008 LOC at `+69/-17/net +52`; its package is 102 files / 160,319 packed / 639,962 unpacked bytes, SHA-256 `e90662a267fe5311453571de672844b72aadf76a47cecf79c3db3a46c06664fc`.
+- The committed JS/TS fixture found no retrieval-code or frozen raw-response divergence between `0.32.0` and `0.40.0-beta.1`; the observed sessions first diverged in graph topology and explicit `budget: 40`.
+- Natural-flow retrieval now returns grounded evidence in one call or after at most one bounded recovery. Incomplete results preserve useful local evidence and exact verification targets. Repository-specific ranking, graph/index changes, compatibility fallbacks, a second retrieval engine, and dependency changes remain forbidden.
+- PR #620 merged as `eaa1a8781eda28dad5395d6da378a2cc40bf81fe` from reviewed head `c586fd9d30adf2abedc518909862d9734fddef06`; all six exact-head CI jobs passed, two independent reviews found no blocker, and zero review threads remained. CodeRabbit skipped because `core-reset` is a non-default base and is not counted as a review.
 
 ## Graph gates
 

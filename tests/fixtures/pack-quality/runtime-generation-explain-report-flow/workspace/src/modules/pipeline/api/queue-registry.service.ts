@@ -17,7 +17,7 @@ class PipelineQueue {
 
 const pipelineQueue = new PipelineQueue()
 
-export async function enqueueIdeaReportJob(input: PipelineJobPayload): Promise<{ jobId: string }> {
+export async function enqueueJob(input: PipelineJobPayload): Promise<{ jobId: string }> {
   const job = await pipelineQueue.add('pipeline.orchestrator.process', input)
   return {
     jobId: job.id,
