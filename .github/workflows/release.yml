@@ -121,6 +121,8 @@ jobs:
         run: npm pack --dry-run
 
       - name: Publish with npm Trusted Publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -141,10 +143,15 @@ jobs:
             test "$REMOTE_TAG_SHA" = "$GITHUB_SHA"
           }
 
+          verify_next_protection() {
+            test "$(gh api "repos/$GITHUB_REPOSITORY/branches/next" --jq '.protected')" = "true"
+          }
+
           git fetch --no-tags origin next
           NEXT_SHA="$(git rev-parse FETCH_HEAD)"
           test "$RELEASE_SHA" = "$NEXT_SHA"
           verify_remote_tag
+          verify_next_protection
 
           if PUBLISHED_VERSION="$(npm view "$SPEC" version 2>"$VIEW_STDERR")"; then
             test "$PUBLISHED_VERSION" = "$VERSION"
@@ -159,6 +166,7 @@ jobs:
             NEXT_SHA="$(git rev-parse FETCH_HEAD)"
             test "$RELEASE_SHA" = "$NEXT_SHA"
             verify_remote_tag
+            verify_next_protection
             npm run publish:next
           fi
 

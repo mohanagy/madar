@@ -129,6 +129,7 @@ describe('release hygiene', () => {
     const githubReleaseIndex = releaseWorkflow.indexOf('gh release create')
     const nextFetches = releaseWorkflow.match(/git fetch --no-tags origin next/g) ?? []
     const remoteTagChecks = releaseWorkflow.match(/git ls-remote origin/g) ?? []
+    const protectionChecks = releaseWorkflow.match(/verify_next_protection/g) ?? []
 
     expect(existsSync(join(process.cwd(), '.github/workflows/publish-npm.yml'))).toBe(false)
     expect(releaseWorkflow).toContain('id-token: write')
@@ -139,6 +140,7 @@ describe('release hygiene', () => {
     expect(remoteTagChecks.length).toBeGreaterThanOrEqual(3)
     expect(releaseWorkflow).toContain('if [[ "$RELEASE_SHA" != "$NEXT_SHA" ]]')
     expect(releaseWorkflow).toContain("branches/next\" --jq '.protected'")
+    expect(protectionChecks.length).toBeGreaterThanOrEqual(3)
     expect(releaseWorkflow).toContain('test "$RELEASE_SHA" = "$GITHUB_SHA"')
     expect(releaseWorkflow).toContain('verify_remote_tag')
     expect(releaseWorkflow).toContain('if [[ "$VERSION" != "0.40.0-beta.3" ]]')

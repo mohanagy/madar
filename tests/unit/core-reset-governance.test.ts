@@ -2766,13 +2766,13 @@ describe('core reset governance', () => {
         publication_authorized: false,
         candidate_package: {
           npm_files: 102,
-          npm_packed_bytes: 158_330,
-          npm_unpacked_bytes: 639_914,
-          npm_shasum: 'c72c5f786dd07aff16f3ef4990bb4d166a197791',
+          npm_packed_bytes: 158_295,
+          npm_unpacked_bytes: 639_867,
+          npm_shasum: '34d9d17708b2f7d582309caf1519db62c6599928',
           npm_integrity:
-            'sha512-ulfQ/bNBKz5VDzErYke1hsk3xIxoZtaJKZlN/lsRb60Tq7wvUnFFlxFR2sdkRQ9HBNBWgc/vhpcCgVvdPEk1lw==',
+            'sha512-ED2BpphacoQg6/1wYLK6BgPaz3vNPFHzPtibE08Jrsh2Cc8jTKbRGNTqcekFvQ1J7pq6yF6NueZ13PJqVuAXwA==',
           npm_artifact_sha256:
-            'f3b74abf196c790fb65389a6dc93f8574a655943315553f2097d82f91974c787',
+            '89971e2c2df3f698f48ee066b08923c0ca28853a547d1aaab2d0bd64fdacf005',
         },
       },
       frozen_contract: {
