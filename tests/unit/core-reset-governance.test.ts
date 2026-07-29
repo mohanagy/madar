@@ -1227,12 +1227,12 @@ describe('core reset governance', () => {
       production_loc_removed: 17,
       production_loc_net: 52,
       npm_files: 102,
-      npm_packed_bytes: 160_233,
-      npm_unpacked_bytes: 639_996,
-      npm_shasum: '6e62302c344d4d900cdfb0b7897a59bbab0a8249',
+      npm_packed_bytes: 160_319,
+      npm_unpacked_bytes: 639_962,
+      npm_shasum: 'b1c16839b13a4b8ff5d60795af7f375dd48dcb98',
       npm_integrity:
-        'sha512-NuBjjtAdure3xNe2FN2/9FiKYr3y7Gh6vV4vTBZKfDAU2bKZQvkm/EB+dbNoB67PwfCPJi8kChxjqe545cVn9Q==',
-      npm_artifact_sha256: '450bbabe8620a443ab864c884025a163fd3ad54dedbb27d2a08681b2b1308642',
+        'sha512-H8GnBRaGnkbCuMbdO8BSxyS/69UEesCBCoHWLfixMpur26b0uze1E1vE97EmcY0LuC5v+FNZoK98LGIupUKr8g==',
+      npm_artifact_sha256: 'e90662a267fe5311453571de672844b72aadf76a47cecf79c3db3a46c06664fc',
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'release_candidate_source_and_package',
     })
@@ -2585,8 +2585,8 @@ describe('core reset governance', () => {
       production_loc_removed: 17,
       production_loc_net: 52,
       npm_files: 102,
-      npm_packed_bytes: 160_233,
-      npm_unpacked_bytes: 639_996,
+      npm_packed_bytes: 160_319,
+      npm_unpacked_bytes: 639_962,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([])
@@ -2951,7 +2951,7 @@ describe('core reset governance', () => {
     })
     expect(currentPackage).toEqual({
       ...implementationPackage,
-      version: '0.40.0-beta.1',
+      version: '0.40.0-beta.2',
       scripts: {
         ...implementationPackage.scripts,
         'publish:next': 'npm publish --tag next --access public --provenance',
@@ -2967,12 +2967,12 @@ describe('core reset governance', () => {
     const currentLock = JSON.parse(read('package-lock.json')) as any
     expect(currentLock).toEqual({
       ...implementationLock,
-      version: '0.40.0-beta.1',
+      version: '0.40.0-beta.2',
       packages: {
         ...implementationLock.packages,
         '': {
           ...implementationLock.packages[''],
-          version: '0.40.0-beta.1',
+          version: '0.40.0-beta.2',
         },
       },
     })
@@ -3946,8 +3946,8 @@ describe('core reset governance', () => {
       production_loc_removed: 17,
       production_loc_net: 52,
       npm_files: 102,
-      npm_packed_bytes: 160_233,
-      npm_unpacked_bytes: 639_996,
+      npm_packed_bytes: 160_319,
+      npm_unpacked_bytes: 639_962,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'release_candidate_source_and_package',
     })

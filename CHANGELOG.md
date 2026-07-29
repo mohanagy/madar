@@ -4,6 +4,16 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.40.0-beta.2] - 2026-07-29
+
+### Fixed
+
+- **Natural report-flow questions now preserve grounded evidence**: one bounded topology recovery can connect explicit flow intent, while incomplete results name exact disconnected or truncated verification targets. Focused generation questions remain focused. Closes #618.
+
+### Notes
+
+- Frozen `0.32.0` and `0.40.0-beta.1` retrieval bytes and raw fixture responses were identical. The observed sessions first diverged in graph topology and an explicit 40-token budget; this release fixes the shared ranking and boundary weakness without claiming a beta-only implementation divergence.
+
 ## [0.40.0-beta.1] - 2026-07-28
 
 ### Changed
