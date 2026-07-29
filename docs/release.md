@@ -6,7 +6,7 @@ Use this checklist when preparing a new `madar` release. Preparation and approva
 
 ## 1. Prepare the release commit
 
-1. Update the package version without creating a pre-merge tag. For this beta, run `npm version 0.40.0-beta.2 --no-git-tag-version`.
+1. Update the package version without creating a pre-merge tag. For this beta, run `npm version 0.40.0-beta.3 --no-git-tag-version`.
 2. Review `package.json` and `package-lock.json` to confirm the new version is correct.
 3. Update `CHANGELOG.md` with the user-visible changes in the release.
 4. Make sure any linked docs, examples, install flows, and `docs/mcp-registry/server.json` reflect the new behavior.
@@ -60,7 +60,7 @@ After the verification steps are green:
 
 1. Configure the npm package's trusted publisher for GitHub Actions workflow filename `release.yml`, repository `mohanagy/madar`, and no environment. The workflow uses GitHub OIDC and contains no registry token or no-provenance fallback. If trusted publishing or provenance is unavailable, stop before publication.
 2. Push and merge the verified release commit so the published README links already exist on the target release branch (`main` for stable releases, `next` for prereleases).
-3. Create and push `vX.Y.Z` at that exact merged release commit. Never tag the pre-merge release branch. For `0.40.0-beta.2`, `.github/workflows/release.yml` requires the tag commit to equal the remote `next` tip and then reruns every release gate before it runs `npm publish --tag next --access public --provenance`. Stable releases use `npm publish --access public --provenance` under their separately reviewed release workflow.
+3. Create and push `vX.Y.Z` at that exact merged release commit. Never tag the pre-merge release branch. For `0.40.0-beta.3`, `.github/workflows/release.yml` requires the tag commit to equal the protected remote `next` tip and then reruns every release gate before it runs `npm publish --tag next --access public --provenance`. The matching GitHub prerelease must target that exact commit, never `main`. Stable releases use `npm publish --access public --provenance` under their separately reviewed release workflow.
 4. The workflow verifies the exact npm version, immutable shasum and integrity, `next` dist-tag, unchanged `latest` dist-tag, Trusted Publishing provenance, and registry signatures before creating the GitHub prerelease. A hyphenated version is never marked latest. If publication succeeds but a later verification is interrupted, rerun the same workflow: it verifies the existing exact artifact rather than attempting to overwrite it.
 5. If this release is also authorized to update the public MCP Registry, run the **Publish MCP Registry metadata** GitHub Actions workflow with that `vX.Y.Z` tag only after npm confirms the package is public. It uses GitHub OIDC (no registry secret), verifies the published package has `mcpName: "io.github.mohanagy/madar"`, publishes the checked-in manifest, and verifies the Registry API result. npm prerelease publication alone does not authorize this separate dispatch.
 6. Before posting on npm/GitHub directories, social/news sites, or videos/blogs, complete the copied proof-first launch checklist from [`docs/launch-checklist.md`](./launch-checklist.md) so every public surface starts from a dated receipt plus caveats.

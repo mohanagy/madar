@@ -36,6 +36,8 @@ jobs:
         run: npm install --global npm@12.0.1
 
       - name: Validate exact next tip, tag, package version, and changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -59,8 +61,8 @@ jobs:
             exit 1
           fi
 
-          if [[ "$VERSION" != "0.40.0-beta.2" ]]; then
-            echo "This release candidate is authorized only for 0.40.0-beta.2"
+          if [[ "$VERSION" != "0.40.0-beta.3" ]]; then
+            echo "This release candidate is authorized only for 0.40.0-beta.3"
             exit 1
           fi
 
@@ -73,6 +75,10 @@ jobs:
           NEXT_SHA="$(git rev-parse FETCH_HEAD)"
           if [[ "$RELEASE_SHA" != "$NEXT_SHA" ]]; then
             echo "Tag commit $RELEASE_SHA is not the exact next tip $NEXT_SHA"
+            exit 1
+          fi
+          if [[ "$(gh api "repos/$GITHUB_REPOSITORY/branches/next" --jq '.protected')" != "true" ]]; then
+            echo "The next branch must be protected before prerelease publication"
             exit 1
           fi
 
@@ -115,6 +121,8 @@ jobs:
         run: npm pack --dry-run
 
       - name: Publish with npm Trusted Publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -135,10 +143,15 @@ jobs:
             test "$REMOTE_TAG_SHA" = "$GITHUB_SHA"
           }
 
+          verify_next_protection() {
+            test "$(gh api "repos/$GITHUB_REPOSITORY/branches/next" --jq '.protected')" = "true"
+          }
+
           git fetch --no-tags origin next
           NEXT_SHA="$(git rev-parse FETCH_HEAD)"
           test "$RELEASE_SHA" = "$NEXT_SHA"
           verify_remote_tag
+          verify_next_protection
 
           if PUBLISHED_VERSION="$(npm view "$SPEC" version 2>"$VIEW_STDERR")"; then
             test "$PUBLISHED_VERSION" = "$VERSION"
@@ -153,6 +166,7 @@ jobs:
             NEXT_SHA="$(git rev-parse FETCH_HEAD)"
             test "$RELEASE_SHA" = "$NEXT_SHA"
             verify_remote_tag
+            verify_next_protection
             npm run publish:next
           fi
 
@@ -163,8 +177,8 @@ jobs:
           PACKAGE_NAME="$(node -pe 'require("./package.json").name')"
           VERSION="$(node -pe 'require("./package.json").version')"
           SPEC="$PACKAGE_NAME@$VERSION"
-          EXPECTED_SHASUM="b1c16839b13a4b8ff5d60795af7f375dd48dcb98"
-          EXPECTED_INTEGRITY="sha512-H8GnBRaGnkbCuMbdO8BSxyS/69UEesCBCoHWLfixMpur26b0uze1E1vE97EmcY0LuC5v+FNZoK98LGIupUKr8g=="
+          EXPECTED_SHASUM="c72c5f786dd07aff16f3ef4990bb4d166a197791"
+          EXPECTED_INTEGRITY="sha512-ulfQ/bNBKz5VDzErYke1hsk3xIxoZtaJKZlN/lsRb60Tq7wvUnFFlxFR2sdkRQ9HBNBWgc/vhpcCgVvdPEk1lw=="
           VERIFIED=false
 
           for attempt in 1 2 3 4 5 6; do
@@ -226,7 +240,7 @@ jobs:
 
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             VERSION="$(node -pe 'require("./package.json").version')"
-            RELEASE_FLAGS=(--title "$TAG" --generate-notes --verify-tag)
+            RELEASE_FLAGS=(--title "$TAG" --generate-notes --verify-tag --target "$GITHUB_SHA")
             if [[ "$VERSION" == *-* ]]; then
               RELEASE_FLAGS+=(--prerelease --latest=false)
             fi
@@ -236,6 +250,7 @@ jobs:
 
           RELEASE_ENDPOINT="repos/$GITHUB_REPOSITORY/releases/tags/$TAG"
           test "$(gh api "$RELEASE_ENDPOINT" --jq '.tag_name')" = "$TAG"
+          test "$(gh api "$RELEASE_ENDPOINT" --jq '.target_commitish')" = "$GITHUB_SHA"
           test "$(gh api "$RELEASE_ENDPOINT" --jq '.prerelease')" = "true"
           test "$(gh api "$RELEASE_ENDPOINT" --jq '.draft')" = "false"
           test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')" = "v0.32.0"

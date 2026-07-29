@@ -376,6 +376,11 @@ const FULL_FLOW_RETRIEVAL_FILES = [
 ] as const
 const FULL_FLOW_RETRIEVAL_OWNER_APPROVAL =
   'https://github.com/mohanagy/madar/issues/622#issuecomment-5116842414'
+const FULL_FLOW_RETRIEVAL_HEAD = '3b3fb9d404864e725305dc491b75e82006c2371f'
+const FULL_FLOW_RETRIEVAL_MERGE = '6416dbc02cefb3bd79157cf440e420b30dda8cf0'
+const FULL_FLOW_RETRIEVAL_TREE = 'd43d9d3cb7cf7d566bcb35eca7df2564f0d9ff8c'
+const FULL_FLOW_RETRIEVAL_CI =
+  'https://github.com/mohanagy/madar/actions/runs/30452883659'
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
   '4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0'
 const CAPABILITY_VALIDATION_V2_ISSUE = 'https://github.com/mohanagy/madar/issues/612'
@@ -781,7 +786,7 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Passed — evaluation tooling isolation')
     expect(roadmap).toContain('## Stopped — capability validation')
     expect(roadmap).toContain('## Passed — retrieval regression #618')
-    expect(roadmap).toContain('## Ready — `0.40.0-beta.2`')
+    expect(roadmap).toContain('## Ready — `0.40.0-beta.3`')
     expect(roadmap).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -878,7 +883,7 @@ describe('core reset governance', () => {
     expect(design).toContain('## Historical accepted amendment — capability validation v2')
     expect(design).toContain('## Cancelled amendment — capability validation')
     expect(design).toContain('## Completed amendment — retrieval regression #618')
-    expect(design).toContain('## Release amendment — `0.40.0-beta.2` ready')
+    expect(design).toContain('## Release amendment — `0.40.0-beta.3` ready')
     expect(design).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(design).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(design).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -1012,8 +1017,8 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('only an authenticated canonical symbol declaration may provide a snippet or cover a phase')
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
-    expect(scorecard).toContain('| Retrieval regression #622 | **Ready for review**')
-    expect(scorecard).toContain('The bounded #622 candidate is ready for PR review against `next`')
+    expect(scorecard).toContain('| Retrieval regression #622 | **Passed**')
+    expect(scorecard).toContain('Issue `#622` is complete on `next`')
     expect(scorecard).toContain('/compilerOptions/removeComments=true')
     expect(scorecard).toContain('exactly 20 production TypeScript files / 4,698 LOC')
     expect(scorecard).toContain('completed Evaluation Tooling Isolation is 43 files / 11,956 LOC')
@@ -1227,23 +1232,23 @@ describe('core reset governance', () => {
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-29',
-      completed_phase: RETRIEVAL_REGRESSION_ID,
+      completed_phase: FULL_FLOW_RETRIEVAL_ID,
       active_phase: null,
       ready_phase: 'release-beta',
       base_commit: CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE,
-      completed_phase_commit: 'eaa1a8781eda28dad5395d6da378a2cc40bf81fe',
+      completed_phase_commit: FULL_FLOW_RETRIEVAL_MERGE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_008,
-      production_loc_added: 69,
-      production_loc_removed: 17,
-      production_loc_net: 52,
+      production_typescript_loc: 12_147,
+      production_loc_added: 164,
+      production_loc_removed: 25,
+      production_loc_net: 139,
       npm_files: 102,
-      npm_packed_bytes: 160_319,
-      npm_unpacked_bytes: 639_962,
-      npm_shasum: 'b1c16839b13a4b8ff5d60795af7f375dd48dcb98',
+      npm_packed_bytes: 158_330,
+      npm_unpacked_bytes: 639_914,
+      npm_shasum: 'c72c5f786dd07aff16f3ef4990bb4d166a197791',
       npm_integrity:
-        'sha512-H8GnBRaGnkbCuMbdO8BSxyS/69UEesCBCoHWLfixMpur26b0uze1E1vE97EmcY0LuC5v+FNZoK98LGIupUKr8g==',
-      npm_artifact_sha256: 'e90662a267fe5311453571de672844b72aadf76a47cecf79c3db3a46c06664fc',
+        'sha512-ulfQ/bNBKz5VDzErYke1hsk3xIxoZtaJKZlN/lsRb60Tq7wvUnFFlxFR2sdkRQ9HBNBWgc/vhpcCgVvdPEk1lw==',
+      npm_artifact_sha256: 'f3b74abf196c790fb65389a6dc93f8574a655943315553f2097d82f91974c787',
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'release_candidate_source_and_package',
     })
@@ -1406,7 +1411,7 @@ describe('core reset governance', () => {
     const fullFlowRegression = manifest.items.find((item) => item.id === FULL_FLOW_RETRIEVAL_ID) as any
     expect(fullFlowRegression).toMatchObject({
       disposition: 'keep',
-      status: 'ready',
+      status: 'complete',
       modified_sources: [...FULL_FLOW_RETRIEVAL_FILES],
       verification: [
         '.github/scripts/verify-packed-retrieval-parity.mjs',
@@ -1442,6 +1447,17 @@ describe('core reset governance', () => {
         production_loc_added: 164,
         production_loc_removed: 25,
         production_loc_net: 139,
+      },
+      completion: {
+        pull_request: 'https://github.com/mohanagy/madar/pull/623',
+        reviewed_head: FULL_FLOW_RETRIEVAL_HEAD,
+        merge_commit: FULL_FLOW_RETRIEVAL_MERGE,
+        merge_tree: FULL_FLOW_RETRIEVAL_TREE,
+        ci_run: FULL_FLOW_RETRIEVAL_CI,
+        independent_reviews_no_blocker: 2,
+        review_threads_unresolved: 0,
+        coderabbit: 'passed',
+        coderabbit_findings_addressed: 3,
       },
       build_output_exception: 'evaluation-tooling.post_completion_build_output_amendment',
       constraints: {
@@ -1778,16 +1794,16 @@ describe('core reset governance', () => {
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-29',
-      completed_phase: RETRIEVAL_REGRESSION_ID,
+      completed_phase: FULL_FLOW_RETRIEVAL_ID,
       active_phase: null,
       ready_phase: 'release-beta',
       base_commit: CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE,
-      completed_phase_commit: 'eaa1a8781eda28dad5395d6da378a2cc40bf81fe',
+      completed_phase_commit: FULL_FLOW_RETRIEVAL_MERGE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_008,
-      production_loc_added: 69,
-      production_loc_removed: 17,
-      production_loc_net: 52,
+      production_typescript_loc: 12_147,
+      production_loc_added: 164,
+      production_loc_removed: 25,
+      production_loc_net: 139,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'release_candidate_source_and_package',
     })
@@ -2644,19 +2660,19 @@ describe('core reset governance', () => {
       ['merge-base', '--is-ancestor', EVALUATION_TOOLING_ACTIVATION_MERGE, EVALUATION_TOOLING_MERGE],
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
-      completed_phase: RETRIEVAL_REGRESSION_ID,
+      completed_phase: FULL_FLOW_RETRIEVAL_ID,
       active_phase: null,
       ready_phase: 'release-beta',
       base_commit: CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE,
-      completed_phase_commit: 'eaa1a8781eda28dad5395d6da378a2cc40bf81fe',
+      completed_phase_commit: FULL_FLOW_RETRIEVAL_MERGE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_008,
-      production_loc_added: 69,
-      production_loc_removed: 17,
-      production_loc_net: 52,
+      production_typescript_loc: 12_147,
+      production_loc_added: 164,
+      production_loc_removed: 25,
+      production_loc_net: 139,
       npm_files: 102,
-      npm_packed_bytes: 160_319,
-      npm_unpacked_bytes: 639_962,
+      npm_packed_bytes: 158_330,
+      npm_unpacked_bytes: 639_914,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([])
@@ -3068,7 +3084,7 @@ describe('core reset governance', () => {
     })
     expect(currentPackage).toEqual({
       ...implementationPackage,
-      version: '0.40.0-beta.2',
+      version: '0.40.0-beta.3',
       scripts: {
         ...implementationPackage.scripts,
         'publish:next': 'npm publish --tag next --access public --provenance',
@@ -3084,12 +3100,12 @@ describe('core reset governance', () => {
     const currentLock = JSON.parse(read('package-lock.json')) as any
     expect(currentLock).toEqual({
       ...implementationLock,
-      version: '0.40.0-beta.2',
+      version: '0.40.0-beta.3',
       packages: {
         ...implementationLock.packages,
         '': {
           ...implementationLock.packages[''],
-          version: '0.40.0-beta.2',
+          version: '0.40.0-beta.3',
         },
       },
     })
@@ -3158,15 +3174,15 @@ describe('core reset governance', () => {
       })
       | undefined
     expect(manifest.current).toMatchObject({
-      completed_phase: RETRIEVAL_REGRESSION_ID,
+      completed_phase: FULL_FLOW_RETRIEVAL_ID,
       active_phase: null,
       ready_phase: 'release-beta',
       base_commit: CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_008,
-      production_loc_added: 69,
-      production_loc_removed: 17,
-      production_loc_net: 52,
+      production_typescript_loc: 12_147,
+      production_loc_added: 164,
+      production_loc_removed: 25,
+      production_loc_net: 139,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([])
@@ -3416,15 +3432,15 @@ describe('core reset governance', () => {
       })
       | undefined
     expect(manifest.current).toMatchObject({
-      completed_phase: RETRIEVAL_REGRESSION_ID,
+      completed_phase: FULL_FLOW_RETRIEVAL_ID,
       active_phase: null,
       ready_phase: 'release-beta',
       base_commit: CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_008,
-      production_loc_added: 69,
-      production_loc_removed: 17,
-      production_loc_net: 52,
+      production_typescript_loc: 12_147,
+      production_loc_added: 164,
+      production_loc_removed: 25,
+      production_loc_net: 139,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([])
@@ -4052,19 +4068,19 @@ describe('core reset governance', () => {
       .toBe(EVIDENCE_BASE_TREE)
     expect(manifest.current).toMatchObject({
       updated_at: '2026-07-29',
-      completed_phase: RETRIEVAL_REGRESSION_ID,
+      completed_phase: FULL_FLOW_RETRIEVAL_ID,
       active_phase: null,
       ready_phase: 'release-beta',
       base_commit: CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE,
-      completed_phase_commit: 'eaa1a8781eda28dad5395d6da378a2cc40bf81fe',
+      completed_phase_commit: FULL_FLOW_RETRIEVAL_MERGE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_008,
-      production_loc_added: 69,
-      production_loc_removed: 17,
-      production_loc_net: 52,
+      production_typescript_loc: 12_147,
+      production_loc_added: 164,
+      production_loc_removed: 25,
+      production_loc_net: 139,
       npm_files: 102,
-      npm_packed_bytes: 160_319,
-      npm_unpacked_bytes: 639_962,
+      npm_packed_bytes: 158_330,
+      npm_unpacked_bytes: 639_914,
       measurement_state: 'source_and_package_exact',
       snapshot_scope: 'release_candidate_source_and_package',
     })
@@ -5588,13 +5604,13 @@ describe('core reset governance', () => {
     expect(governance).toContain('## Completed amendment — evaluation tooling isolation')
     expect(governance).toContain('## Stopped — capability validation')
     expect(governance).toContain('## Passed — retrieval regression #618')
-    expect(governance).toContain('## Ready — `0.40.0-beta.2`')
+    expect(governance).toContain('## Ready — `0.40.0-beta.3`')
     expect(governance).toContain('## Stopped amendment — capability validation v1')
     expect(governance).toContain('## Historical accepted amendment — capability validation v2')
     expect(governance).toContain('## Cancelled amendment — capability validation')
     expect(governance).toContain('## Completed amendment — retrieval regression #618')
-    expect(governance).toContain('## Ready for review — retrieval regression #622')
-    expect(governance).toContain('## Authorized amendment — retrieval regression #622')
+    expect(governance).toContain('## Passed — retrieval regression #622')
+    expect(governance).toContain('## Completed amendment — retrieval regression #622')
     expect(governance).toContain('/compilerOptions/removeComments=true')
     expect(governance).toContain('At that #608 completion checkpoint no technical phase was active')
     expect(governance).not.toContain('\nNo technical phase is active; Capability Validation')

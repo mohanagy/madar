@@ -110,7 +110,7 @@ describe('release hygiene', () => {
     const releaseDoc = loadFile('docs/release.md')
 
     expect(releaseDoc).toContain('npm run release:verify')
-    expect(releaseDoc).toContain('npm version 0.40.0-beta.2 --no-git-tag-version')
+    expect(releaseDoc).toContain('npm version 0.40.0-beta.3 --no-git-tag-version')
     expect(releaseDoc).toContain('`main` for stable releases, `next` for prereleases')
     expect(releaseDoc).toContain('npm publish --tag next --access public --provenance')
   })
@@ -129,6 +129,7 @@ describe('release hygiene', () => {
     const githubReleaseIndex = releaseWorkflow.indexOf('gh release create')
     const nextFetches = releaseWorkflow.match(/git fetch --no-tags origin next/g) ?? []
     const remoteTagChecks = releaseWorkflow.match(/git ls-remote origin/g) ?? []
+    const protectionChecks = releaseWorkflow.match(/verify_next_protection/g) ?? []
 
     expect(existsSync(join(process.cwd(), '.github/workflows/publish-npm.yml'))).toBe(false)
     expect(releaseWorkflow).toContain('id-token: write')
@@ -138,13 +139,18 @@ describe('release hygiene', () => {
     expect(nextFetches.length).toBeGreaterThanOrEqual(4)
     expect(remoteTagChecks.length).toBeGreaterThanOrEqual(3)
     expect(releaseWorkflow).toContain('if [[ "$RELEASE_SHA" != "$NEXT_SHA" ]]')
+    expect(releaseWorkflow).toContain("branches/next\" --jq '.protected'")
+    expect(protectionChecks.length).toBeGreaterThanOrEqual(3)
     expect(releaseWorkflow).toContain('test "$RELEASE_SHA" = "$GITHUB_SHA"')
     expect(releaseWorkflow).toContain('verify_remote_tag')
-    expect(releaseWorkflow).toContain('if [[ "$VERSION" != "0.40.0-beta.2" ]]')
+    expect(releaseWorkflow).toContain('if [[ "$VERSION" != "0.40.0-beta.3" ]]')
     expect(releaseWorkflow).toContain('npm run publish:next')
     expect(releaseWorkflow).toContain('dist.attestations.provenance')
     expect(releaseWorkflow).toContain('npm --prefix "$VERIFY_DIR" audit signatures')
-    expect(releaseWorkflow).toContain('b1c16839b13a4b8ff5d60795af7f375dd48dcb98')
+    expect(releaseWorkflow).toContain('c72c5f786dd07aff16f3ef4990bb4d166a197791')
+    expect(releaseWorkflow).toContain(
+      'sha512-ulfQ/bNBKz5VDzErYke1hsk3xIxoZtaJKZlN/lsRb60Tq7wvUnFFlxFR2sdkRQ9HBNBWgc/vhpcCgVvdPEk1lw==',
+    )
     expect(releaseWorkflow).toContain('LATEST_VERSION" == "0.32.0"')
     expect(publishIndex).toBeGreaterThan(0)
     expect(githubReleaseIndex).toBeGreaterThan(publishIndex)
@@ -157,7 +163,8 @@ describe('release hygiene', () => {
 
     expect(releaseWorkflow).toContain('git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}"')
     expect(releaseWorkflow).toContain('test "$REMOTE_TAG_SHA" = "$GITHUB_SHA"')
-    expect(releaseWorkflow).not.toContain("'.target_commitish'")
+    expect(releaseWorkflow).toContain('--target "$GITHUB_SHA"')
+    expect(releaseWorkflow).toContain("'.target_commitish'")
     expect(releaseWorkflow).toContain("'.prerelease'")
     expect(releaseWorkflow).toContain("'.draft'")
     expect(releaseWorkflow).toContain('releases/latest')

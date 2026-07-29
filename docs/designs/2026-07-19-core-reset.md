@@ -408,7 +408,7 @@ No campaign ran, no provider request was made, paid spend is USD 0, and no compa
 
 Issue [#618](https://github.com/mohanagy/madar/issues/618) completed through [PR #620](https://github.com/mohanagy/madar/pull/620), merged into protected `core-reset` as `eaa1a8781eda28dad5395d6da378a2cc40bf81fe`. It modifies only `src/adapters/mcp/protocol.ts`, `src/domain/query/rank.ts`, `src/domain/query/slice.ts`, and `src/domain/query/traverse.ts`, adds no production file or dependency, and records `+69/-17/net +52` production LOC.
 
-## Authorized amendment — retrieval regression #622
+## Completed amendment — retrieval regression #622
 
 Issue [#622](https://github.com/mohanagy/madar/issues/622) authorizes a bounded `next` candidate that stabilizes equivalent report-flow phrasings and returns the controller, enqueue, orchestration/planning, section-research, assembly, and DB-sync skeleton with authenticated relationships or exact disconnected handoff targets. Ranking, bounded recovery, traversal, slicing tests, and the representative JS/TS fixture are the only semantic implementation surfaces; repository-specific production rules, graph/index changes, compatibility paths, a second engine, dependencies, and retrieval-budget changes remain forbidden.
 
@@ -416,11 +416,13 @@ The exact [owner amendment](https://github.com/mohanagy/madar/issues/622#issueco
 
 The frozen `0.32.0` versus `0.40.0-beta.1` comparison found byte-identical relevant retrieval modules and raw fixture responses. The observed sessions first diverged in graph topology and the explicit `budget: 40` request. The repair addresses the shared ranking and evidence-boundary weakness without claiming a beta-only code divergence. Natural flow questions recover grounded evidence with at most one bounded recovery; incomplete responses name exact disconnected or truncated verification targets; focused generation questions do not broaden into a pipeline.
 
-## Release amendment — `0.40.0-beta.2` ready
+[PR #623](https://github.com/mohanagy/madar/pull/623) merged into `next` as `6416dbc02cefb3bd79157cf440e420b30dda8cf0` from exact reviewed head `3b3fb9d404864e725305dc491b75e82006c2371f`, with reviewed and merged tree `d43d9d3cb7cf7d566bcb35eca7df2564f0d9ff8c`. All six jobs in [CI run 30452883659](https://github.com/mohanagy/madar/actions/runs/30452883659) passed, two independent reviews found no blocker, CodeRabbit passed after all three findings were addressed, and zero review threads remained. The implementation finished at 43 production TypeScript files / 12,147 LOC with `+164/-25/net +139` against protected base `5df59886190a65ba80e07339203aeba013c94ef2`.
 
-The completed product vertical slice plus #618 satisfy this RFC's beta policy. Release preparation starts from the published `0.40.0-beta.1` `next` tip and applies the exact protected fix. It may change only governance, version/package metadata, changelog and migration documentation, SBOM, Registry metadata, release workflow, and tests. It targets `next` only and cannot change dependencies, graph/index semantics, or the accepted retrieval repair.
+## Release amendment — `0.40.0-beta.3` ready
 
-Only one exact reviewed `next` commit may publish as `@lubab/madar@0.40.0-beta.2` under npm dist-tag `next`, tag `v0.40.0-beta.2`, and a matching GitHub prerelease after all release, CI, review, thread, artifact, CLI, and MCP gates pass. This does not authorize MCP Registry publication, npm `latest`, stable `0.40.0`, `main`, or any cancelled validation claim.
+The completed product vertical slice plus #618 and #622 satisfy this RFC's beta policy. Release preparation starts from exact #622 merge `6416dbc02cefb3bd79157cf440e420b30dda8cf0` on `next`. It may change only governance, version/package metadata, changelog and release documentation, SBOM, checked-in Registry metadata, release workflow, and tests. It targets protected `next` only and cannot change dependencies, graph/index semantics, or the accepted retrieval repairs.
+
+Only one exact reviewed protected-`next` commit may publish as `@lubab/madar@0.40.0-beta.3` under npm dist-tag `next`, tag `v0.40.0-beta.3`, and a matching GitHub prerelease targeting that same commit after all release, CI, review, thread, artifact, CLI, and MCP gates pass. Exact [owner authorization](https://github.com/mohanagy/madar/issues/622#issuecomment-5118521969) does not authorize MCP Registry publication, npm `latest`, stable `0.40.0`, `main`, or any cancelled validation claim.
 
 ## Public surface target
 
@@ -563,3 +565,4 @@ On 2026-07-26 the owner approved the original Capability Validation proposal has
 | 2026-07-28 | Capability Validation cancelled | The v2 governance activation merged, but implementation never started. The owner closed #610, #612, #614, #615, and #616 as not planned and revoked every unconsumed authority. No campaign ran, no provider request or spend occurred, and no comparator result exists. |
 | 2026-07-28 | `0.40.0-beta.1` published | The completed vertical slice was published from exact `next` commit `522d138151e837f0eb059b38d3e116c8b965c968` under npm dist-tag `next` with Trusted Publishing provenance and a GitHub prerelease. npm `latest` remained `0.32.0`. |
 | 2026-07-29 | Retrieval regression #618 complete; beta.2 ready | PR #620 merged the bounded four-path repair into protected `core-reset` as `eaa1a8781eda28dad5395d6da378a2cc40bf81fe` after all six exact-head CI jobs, independent no-blocker review, and zero threads passed. Prepare `0.40.0-beta.2` for npm `next` and a matching GitHub prerelease; MCP Registry, npm `latest`, stable `0.40.0`, and `main` remain outside this release. |
+| 2026-07-29 | Retrieval regression #622 complete; beta.3 authorized | PR #623 merged the bounded full-flow repair into `next` as `6416dbc02cefb3bd79157cf440e420b30dda8cf0` after all six exact-head CI jobs, two independent no-blocker reviews, CodeRabbit PASS, and zero threads. The owner separately authorized `0.40.0-beta.3` for protected `next`, npm dist-tag `next`, and a matching exact-commit GitHub prerelease; MCP Registry, npm `latest`, stable `0.40.0`, and `main` remain outside this release. |

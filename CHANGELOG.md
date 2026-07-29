@@ -4,6 +4,10 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.40.0-beta.3] - 2026-07-29
+
+- Fixes report-flow retrieval and traversal; build output omits comments. Closes #622.
+
 ## [0.40.0-beta.2] - 2026-07-29
 
 ### Fixed
