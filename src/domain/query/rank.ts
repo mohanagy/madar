@@ -684,7 +684,7 @@ function rankDiverseAnchors(
   const flowIntent = unscoped && (stageIntent || isFlowQuestion(vocabulary.question))
   const locator = unscoped && !flowIntent && vocabulary.terms[0] === 'where'
   const flowTerms = vocabulary.terms.filter((term) => ['flow', 'pipelin', 'queue', 'stag', 'worker', 'process'].includes(term))
-  const flowCoverage = (node: RankCorpusNode): number => flowTerms.filter((term) => tokenSetMatches(node.tokens, term)).length
+  const flowCoverage = (node?: RankCorpusNode): number => node ? flowTerms.filter((term) => tokenSetMatches(node.tokens, term)).length : 0
   let anchorLimit = MAX_RANKED_ANCHORS
 
   if (vocabulary.constraints.length === 0) {
@@ -699,7 +699,7 @@ function rankDiverseAnchors(
         - (vocabulary.positions.get(term) ?? 0), 0)
     const stageEntry = stageIntent ? scored.filter(({ node }) =>
       node.incomingIds.length === 0 && node.outgoingIds.some((id) =>
-        flowCoverage(corpus.nodeById.get(id)!)))
+        flowCoverage(corpus.nodeById.get(id))))
       .sort((left, right) => topicRank(right.node) - topicRank(left.node)
         || compareScoredNodes(left, right))[0] : undefined
     const seed = flowIntent ? route ?? stageEntry ?? upstream ?? scored[0] : scored[0]

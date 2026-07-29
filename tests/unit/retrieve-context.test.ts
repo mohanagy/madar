@@ -25,8 +25,9 @@ import {
   type QueryIndex,
   type ReadyQueryIndex,
 } from '../../src/domain/query/index-status.js'
+import { traverseEvidencePaths } from '../../src/domain/query/traverse.js'
 import { sliceEvidence } from '../../src/domain/query/slice.js'
-import type { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 
 const roots: string[] = []
 
@@ -1763,5 +1764,67 @@ describe('retrieve context', () => {
       .toBeLessThanOrEqual(256)
     expect(retrieveContext(fixture.index, { question: 'trace entry', budget: 20_000 }).metrics.serialized_tokens)
       .toBeLessThanOrEqual(4000)
+  })
+
+  it('traverses a side branch between adjacent flow anchors without mixing index spaces', () => {
+    const graph = new KnowledgeGraph({ root_path: '/workspace' })
+    const chain = ['entry', 'plan', 'research', 'assembly']
+    const anchors = [...chain.slice(0, -1), 'notification', chain.at(-1)!]
+    const range = {
+      start: { line: 1, column: 1 },
+      end: { line: 1, column: 20 },
+    }
+    for (const id of anchors) {
+      graph.addNode(id, {
+        label: `${id}()`,
+        node_kind: 'function',
+        source_file: `src/${id}.ts`,
+        source_location: 'L1',
+        definition_range: range,
+        declaration_range: range,
+      })
+    }
+    for (const [from, to] of [
+      ['entry', 'plan'],
+      ['plan', 'research'],
+      ['research', 'notification'],
+      ['research', 'assembly'],
+    ]) {
+      graph.addEdge(from!, to!, {
+        relation: 'calls',
+        source_file: `src/${from!}.ts`,
+        source_location: 'L1',
+        provenance: [],
+      })
+    }
+    const index: ReadyQueryIndex = {
+      state: 'ready',
+      graph,
+      root_path: '/workspace',
+      file_hashes: new Map(),
+      unsupported_sources: [],
+    }
+
+    const slice = traverseEvidencePaths(index, {
+      anchors: anchors.map((id, firstMatch) => ({
+        id,
+        attributes: graph.nodeAttributes(id),
+        score: 1,
+        matchedTerms: [],
+        firstMatch,
+      })),
+      boundaries: [],
+      queryTerms: ['flow'],
+      flow: true,
+      branch: 'notification',
+    })
+
+    expect(slice.edges.map(({ from, to }) => `${from}->${to}`)).toEqual([
+      'entry->plan',
+      'plan->research',
+      'research->assembly',
+      'research->notification',
+    ])
+    expect(slice.boundaries).toEqual([])
   })
 })

@@ -1408,6 +1408,14 @@ describe('core reset governance', () => {
       disposition: 'keep',
       status: 'ready',
       modified_sources: [...FULL_FLOW_RETRIEVAL_FILES],
+      verification: [
+        '.github/scripts/verify-packed-retrieval-parity.mjs',
+        'tests/fixtures/pack-quality/runtime-generation-explain-report-flow/fixture.json',
+        'tests/unit/core-reset-baseline.test.ts',
+        'tests/unit/core-reset-governance.test.ts',
+        'tests/unit/retrieve-context.test.ts',
+        'tools/eval/core-reset/verify-isolation.mjs',
+      ],
       production_file_budget: { added_max: 0, removed_min: 0 },
       production_loc_budget: { added_max: 164, removed_min: 21, net_max: 143 },
       runtime_dependency_budget: { added_max: 0, removed_min: 0 },
@@ -1431,8 +1439,8 @@ describe('core reset governance', () => {
       candidate_source: {
         production_typescript_files: 43,
         production_typescript_loc: 12_147,
-        production_loc_added: 163,
-        production_loc_removed: 24,
+        production_loc_added: 164,
+        production_loc_removed: 25,
         production_loc_net: 139,
       },
       build_output_exception: 'evaluation-tooling.post_completion_build_output_amendment',
@@ -2742,13 +2750,13 @@ describe('core reset governance', () => {
         publication_authorized: false,
         candidate_package: {
           npm_files: 102,
-          npm_packed_bytes: 158_284,
-          npm_unpacked_bytes: 639_839,
-          npm_shasum: 'd9be5a2b86de370c74938e58343b862334c8d9e6',
+          npm_packed_bytes: 158_295,
+          npm_unpacked_bytes: 639_867,
+          npm_shasum: '34d9d17708b2f7d582309caf1519db62c6599928',
           npm_integrity:
-            'sha512-kHuWp72gv/g0r2dROXvM9nTvHeOAHmIRdzPZpJo7GVCdWHIoRMZWaoDQarZ5z6wecHuXBuOMkYGhY22tuQsLFg==',
+            'sha512-ED2BpphacoQg6/1wYLK6BgPaz3vNPFHzPtibE08Jrsh2Cc8jTKbRGNTqcekFvQ1J7pq6yF6NueZ13PJqVuAXwA==',
           npm_artifact_sha256:
-            '7b5ecf689c2a4a79a8101aad296b8872d478e875107a10a0d24eb75da1763494',
+            '89971e2c2df3f698f48ee066b08923c0ca28853a547d1aaab2d0bd64fdacf005',
         },
       },
       frozen_contract: {
