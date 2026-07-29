@@ -4,6 +4,7 @@
     "types": ["node"],
     "rootDir": "src",
     "outDir": "dist/src",
+    "removeComments": true,
     "noEmitOnError": true
   },
   "include": ["src/**/*.ts"],

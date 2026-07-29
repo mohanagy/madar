@@ -143,6 +143,12 @@ function authFlowFixture(): FlowFixture {
 function reportGenerationFixture(includeDistractor = false): {
   fixture: FlowFixture
   prompt: string
+  shortControlPrompt: string
+  longFlowPrompt: string
+  masterAgentFollowupPrompt: string
+  masterAgentFollowupParaphrasePrompts: string[]
+  paraphrasePrompts: string[]
+  focusedQueuePrompts: string[]
   expectedWorkflowCenters: string[]
   expectedRelationships: Array<{ from: string; relation: string; to: string }>
 } {
@@ -165,11 +171,23 @@ function reportGenerationFixture(includeDistractor = false): {
     readFileSync(join(fixtureDirectory, 'fixture.json'), 'utf8'),
   ) as {
     prompt: string
+    short_control_prompt: string
+    long_flow_prompt: string
+    master_agent_followup_prompt: string
+    master_agent_followup_paraphrase_prompts: string[]
+    paraphrase_prompts: string[]
+    focused_queue_prompts: string[]
     expected_workflow_centers: string[]
     expected_relationships: Array<{ from: string; relation: string; to: string }>
   }
   return {
     prompt: metadata.prompt,
+    shortControlPrompt: metadata.short_control_prompt,
+    longFlowPrompt: metadata.long_flow_prompt,
+    masterAgentFollowupPrompt: metadata.master_agent_followup_prompt,
+    masterAgentFollowupParaphrasePrompts: metadata.master_agent_followup_paraphrase_prompts,
+    paraphrasePrompts: metadata.paraphrase_prompts,
+    focusedQueuePrompts: metadata.focused_queue_prompts,
     expectedWorkflowCenters: metadata.expected_workflow_centers,
     expectedRelationships: metadata.expected_relationships,
     fixture: {
@@ -442,6 +460,140 @@ describe('retrieve context', () => {
         expect(relationships).toEqual(expect.arrayContaining(expectedRelationships))
         expect(result.boundaries).toEqual([])
       }
+    }
+  })
+
+  it('keeps the full report pipeline and MasterAgent follow-up useful at the protocol budget', () => {
+    const {
+      fixture,
+      shortControlPrompt,
+      longFlowPrompt,
+      masterAgentFollowupPrompt,
+      masterAgentFollowupParaphrasePrompts,
+      paraphrasePrompts,
+      focusedQueuePrompts,
+    } = reportGenerationFixture()
+    const corePipeline = [
+      ['src/modules/ideas/interface/http/idea-generation.controller.ts', '.generateFromProblem()'],
+      ['src/modules/pipeline/api/pipeline-trigger.service.ts', 'startPipeline()'],
+      ['src/modules/pipeline/api/queue-registry.service.ts', 'enqueueJob()'],
+      ['src/modules/pipeline/workers/orchestrator.worker.ts', '.process()'],
+      ['src/modules/planning/planner.service.ts', '.plan()'],
+      ['src/modules/research/workers/section-research.worker.ts', '.process()'],
+      ['src/modules/research/research-agent.service.ts', '.researchSection()'],
+      ['src/modules/pipeline/assembly/assembly.worker.ts', '.process()'],
+      ['src/modules/reports/assembly.service.ts', '.assembleReport()'],
+      ['src/modules/pipeline/workers/db-sync.worker.ts', '.process()'],
+    ]
+    const exactBoundaryDetails = [
+      'src/modules/planning/planner.service.ts:L13-L16 -> '
+        + 'src/modules/research/workers/section-research.worker.ts:L17-L19',
+      'src/modules/research/research-agent.service.ts:L10-L14 -> '
+        + 'src/modules/pipeline/assembly/assembly.worker.ts:L17-L19',
+      'src/modules/reports/assembly.service.ts:L20-L31 -> '
+        + 'src/modules/pipeline/workers/db-sync.worker.ts:L26-L35',
+    ]
+    const assertLimitsAndSignal = (
+      result: ReturnType<typeof retrieveContext>,
+    ): void => {
+      expect(result.outcome).toBe('evidence')
+      expect(result.relationships.length).toBeGreaterThan(0)
+      expect(result.matched_nodes.map((node) => node.source_file)).not.toContain(
+        'platform/src/components/InProgressIdeasDropdown.tsx',
+      )
+      expect(result.metrics.selected_files).toBeLessThanOrEqual(12)
+      expect(result.metrics.snippets).toBeLessThanOrEqual(25)
+      expect(result.metrics.closure_passes).toBeLessThanOrEqual(1)
+      expect(result.metrics.serialized_tokens).toBeLessThanOrEqual(4_000)
+      expect(result.metrics.truncated).toBe(false)
+    }
+    const selected = (result: ReturnType<typeof retrieveContext>): string[][] =>
+      result.matched_nodes.map((node) => [node.source_file, node.label])
+    const disconnected = (result: ReturnType<typeof retrieveContext>): string[] =>
+      result.boundaries.filter(({ kind }) => kind === 'disconnected')
+        .map(({ detail }) => detail ?? '').sort()
+    const relationships = (result: ReturnType<typeof retrieveContext>): string[] => {
+      const nodes = new Map(result.matched_nodes.map((node) => [
+        node.node_id,
+        `${node.source_file}#${node.label}`,
+      ]))
+      return result.relationships.map((edge) =>
+        `${nodes.get(edge.from_id)} --${edge.relation}--> ${nodes.get(edge.to_id)}`).sort()
+    }
+    const coreRelationships = [
+      'src/modules/ideas/interface/http/idea-generation.controller.ts#.generateFromProblem() '
+        + '--calls--> src/modules/pipeline/api/pipeline-trigger.service.ts#startPipeline()',
+      'src/modules/pipeline/api/pipeline-trigger.service.ts#startPipeline() '
+        + '--calls--> src/modules/pipeline/api/queue-registry.service.ts#enqueueJob()',
+      'src/modules/pipeline/api/queue-registry.service.ts#enqueueJob() '
+        + '--enqueues_job--> src/modules/pipeline/workers/orchestrator.worker.ts#.process()',
+      'src/modules/pipeline/workers/orchestrator.worker.ts#.process() '
+        + '--calls--> src/modules/planning/planner.service.ts#.plan()',
+      'src/modules/research/workers/section-research.worker.ts#.process() '
+        + '--calls--> src/modules/research/research-agent.service.ts#.researchSection()',
+      'src/modules/pipeline/assembly/assembly.worker.ts#.process() '
+        + '--calls--> src/modules/reports/assembly.service.ts#.assembleReport()',
+    ].sort()
+    const assertCorePipeline = (result: ReturnType<typeof retrieveContext>): void => {
+      assertLimitsAndSignal(result)
+      expect(selected(result)).toEqual(corePipeline)
+      expect(relationships(result)).toEqual(coreRelationships)
+      expect(disconnected(result)).toEqual([...exactBoundaryDetails].sort())
+    }
+
+    const shortControl = retrieveContext(fixture.index, {
+      question: shortControlPrompt,
+      budget: 8_000,
+    })
+    assertLimitsAndSignal(shortControl)
+    expect(selected(shortControl)).toEqual(corePipeline.slice(0, 4))
+    expect(relationships(shortControl)).toEqual(coreRelationships.filter((edge) =>
+      !edge.includes('planner.service.ts')
+      && !edge.includes('research/')
+      && !edge.includes('assembly/')))
+
+    const fullFlow = retrieveContext(fixture.index, {
+      question: longFlowPrompt,
+      budget: 8_000,
+    })
+    assertCorePipeline(fullFlow)
+    for (const question of paraphrasePrompts) {
+      assertCorePipeline(retrieveContext(fixture.index, { question, budget: 8_000 }))
+    }
+
+    for (const question of [
+      masterAgentFollowupPrompt,
+      ...masterAgentFollowupParaphrasePrompts,
+    ]) {
+      const masterAgentFollowup = retrieveContext(fixture.index, {
+        question,
+        budget: 8_000,
+      })
+      assertLimitsAndSignal(masterAgentFollowup)
+      expect(selected(masterAgentFollowup)).toEqual([
+        ...corePipeline.slice(0, 7),
+        ['src/modules/pipeline/agent/master-agent.service.ts', '.call()'],
+        ...corePipeline.slice(7, 9),
+      ])
+      expect(relationships(masterAgentFollowup)).toEqual([
+        ...coreRelationships,
+        'src/modules/research/research-agent.service.ts#.researchSection() '
+          + '--calls--> src/modules/pipeline/agent/master-agent.service.ts#.call()',
+      ].sort())
+      expect(disconnected(masterAgentFollowup)).toEqual(
+        exactBoundaryDetails.slice(0, 2).sort(),
+      )
+    }
+
+    for (const question of focusedQueuePrompts) {
+      const focused = retrieveContext(fixture.index, { question })
+      expect(focused.metrics.selected_files).toBeLessThanOrEqual(3)
+      expect(focused.metrics.snippets).toBeLessThanOrEqual(3)
+      expect(focused.metrics.truncated).toBe(false)
+      expect(selected(focused)).not.toEqual(corePipeline)
+      expect(selected(focused)).not.toContainEqual(corePipeline[0])
+      expect(selected(focused)).not.toContainEqual(corePipeline[4])
+      expect(selected(focused)).not.toContainEqual(corePipeline[9])
     }
   })
 

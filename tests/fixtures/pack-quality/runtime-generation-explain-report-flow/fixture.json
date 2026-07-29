@@ -1,6 +1,22 @@
 {
   "task": "explain",
   "prompt": "How idea report is being generated",
+  "short_control_prompt": "How does idea report generation work?",
+  "long_flow_prompt": "How is an idea report generated? Explain the pipeline flow from request to final report.",
+  "master_agent_followup_prompt": "What does MasterAgentService do and what pipeline stages/queues run between idea creation and assembly?",
+  "master_agent_followup_paraphrase_prompts": [
+    "Between idea creation and assembly, what pipeline stages/queues run and what does MasterAgentService do?"
+  ],
+  "paraphrase_prompts": [
+    "Explain how an idea report is generated from request to final report.",
+    "How is the idea report generated from the initial request through to the completed report?",
+    "Explain the generation of an idea report from request to final report.",
+    "How does generation of an idea report work from request to final report?"
+  ],
+  "focused_queue_prompts": [
+    "Where is the assembly queue registered?",
+    "Where are pipeline queues configured?"
+  ],
   "expected_workflow_centers": [
     "src/modules/ideas/interface/http/idea-generation.controller.ts",
     "src/modules/pipeline/api/pipeline-trigger.service.ts",

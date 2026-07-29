@@ -205,7 +205,10 @@ describe('Core Reset baseline contract', () => {
 
     expect(build.compilerOptions.rootDir).toBe('src')
     expect(build.compilerOptions.outDir).toBe('dist/src')
+    expect(build.compilerOptions.removeComments).toBe(true)
     expect(build.compilerOptions.noEmitOnError).toBe(true)
+    expect(readJson('tsconfig.json').compilerOptions).not.toHaveProperty('removeComments')
+    expect(evalBuild.compilerOptions).not.toHaveProperty('removeComments')
     expect(build.include).toEqual(['src/**/*.ts'])
     expect(evalBuild).toMatchObject({
       extends: './tsconfig.json',

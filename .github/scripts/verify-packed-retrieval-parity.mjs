@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -56,31 +57,31 @@ function assertPackageMeasurement(record, tarballPath) {
   ))
   const evaluationTooling = manifest.items?.find((item) => item.id === 'evaluation-tooling')
   const budget = evaluationTooling?.npm_package_budget
-  const current = manifest.current
+  const receipt = evaluationTooling?.post_completion_build_output_amendment?.candidate_package
   const actual = {
     npm_files: requiredNumber(record.entryCount, 'npm pack entryCount'),
     npm_packed_bytes: requiredNumber(record.size, 'npm pack size'),
     npm_unpacked_bytes: requiredNumber(record.unpackedSize, 'npm pack unpackedSize'),
   }
   for (const [field, value] of Object.entries(actual)) {
-    if (requiredNumber(current?.[field], `current package receipt ${field}`) !== value) {
+    if (requiredNumber(receipt?.[field], `#622 candidate package receipt ${field}`) !== value) {
       throw new Error(
-        `current package receipt is stale: ${field}=${current?.[field]}, freshly packed artifact=${value}`,
+        `#622 candidate package receipt is stale: ${field}=${receipt?.[field]}, freshly packed artifact=${value}`,
       )
     }
   }
   if (
-    current?.npm_shasum !== record.shasum
-    || current?.npm_integrity !== record.integrity
+    receipt?.npm_shasum !== record.shasum
+    || receipt?.npm_integrity !== record.integrity
   ) {
     throw new Error(
-      'Current release-candidate artifact identity is stale for the freshly packed artifact',
+      '#622 candidate artifact identity is stale for the freshly packed artifact',
     )
   }
   const artifactSha256 = createHash('sha256').update(readFileSync(tarballPath)).digest('hex')
-  if (current?.npm_artifact_sha256 !== artifactSha256) {
+  if (receipt?.npm_artifact_sha256 !== artifactSha256) {
     throw new Error(
-      'Current release-candidate SHA-256 is stale for the freshly packed artifact',
+      '#622 candidate SHA-256 is stale for the freshly packed artifact',
     )
   }
   if (
@@ -309,6 +310,25 @@ try {
   if (!existsSync(installedBinPath)) {
     throw new Error(`Packed consumer install did not link the madar bin: ${installedBinPath}`)
   }
+  const packedCliModulePath = join(packedRoot, 'dist', 'src', 'adapters', 'cli', 'bin.js')
+  const packedCliModule = readFileSync(packedCliModulePath, 'utf8')
+  if (!packedCliModule.startsWith('#!/usr/bin/env node\n')) {
+    throw new Error('Owner-approved comment removal must preserve the packed CLI shebang')
+  }
+  const commentSentinel = 'Publish one text artifact with same-filesystem rename semantics'
+  if (!readFileSync(join(repositoryRoot, 'src', 'shared', 'atomic-file.ts'), 'utf8')
+    .includes(commentSentinel)) {
+    throw new Error('The #622 emitted-comment sentinel must remain in production source')
+  }
+  for (const extension of ['js', 'd.ts']) {
+    const emitted = readFileSync(
+      join(packedRoot, 'dist', 'src', 'shared', `atomic-file.${extension}`),
+      'utf8',
+    )
+    if (emitted.includes(commentSentinel)) {
+      throw new Error(`The packed atomic-file.${extension} retained the #622 comment sentinel`)
+    }
+  }
 
   const checkoutServerPath = join(repositoryRoot, 'dist', 'src', 'adapters', 'mcp', 'server.js')
   const packedServerPath = join(packedRoot, 'dist', 'src', 'adapters', 'mcp', 'server.js')
@@ -407,6 +427,106 @@ try {
     writeFileSync(join(tempRoot, 'checkout-response.json'), JSON.stringify(normalizedCheckout, null, 2))
     writeFileSync(join(tempRoot, 'packed-response.json'), JSON.stringify(normalizedPacked, null, 2))
     throw new Error(`Packed retrieval differs from checkout retrieval; inspect ${tempRoot}`)
+  }
+
+  const flowRoot = join(tempRoot, 'report-flow-workspace')
+  cpSync(
+    join(
+      repositoryRoot,
+      'tests',
+      'fixtures',
+      'pack-quality',
+      'runtime-generation-explain-report-flow',
+      'workspace',
+    ),
+    flowRoot,
+    { recursive: true },
+  )
+  const flowGraph = await packedWatcher.updateIndexInWorker(flowRoot)
+  const flowRequest = {
+    jsonrpc: '2.0',
+    id: 561,
+    method: 'tools/call',
+    params: {
+      name: 'retrieve',
+      arguments: {
+        question: 'How is an idea report generated? Explain the pipeline flow from request to final report.',
+        budget: 8_000,
+      },
+    },
+  }
+  const checkoutFlow = await retrieveThroughMcp(
+    checkoutServer, flowRoot, checkoutVersion, flowRequest,
+  )
+  const packedFlow = retrieveThroughInstalledBin(
+    installedBinPath, registryArgs, flowRoot, flowRequest,
+  )
+  const directFlowText = packedApplication.serializeRetrieveContextResult(
+    packedApplication.retrieveContext(
+      packedIndex.inspectQueryIndex(packedArtifact.loadGraphArtifact(flowGraph.graphPath)),
+      flowRequest.params.arguments,
+    ),
+  )
+  const cliFlowText = execFileSync(
+    installedBinPath,
+    ['query', flowRequest.params.arguments.question, '--graph', flowGraph.graphPath,
+      '--budget', String(flowRequest.params.arguments.budget)],
+    {
+      cwd: flowRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+    },
+  )
+  const checkoutFlowText = checkoutFlow?.result?.content?.[0]?.text
+  const packedFlowText = packedFlow?.result?.content?.[0]?.text
+  if (
+    checkoutFlowText !== directFlowText
+    || packedFlowText !== directFlowText
+    || cliFlowText !== directFlowText
+  ) {
+    throw new Error('Packed full-flow MCP, CLI, direct, and checkout bytes differ')
+  }
+  const flowResult = successfulRetrieve(packedFlow, 'Packed full-flow runtime', [
+    'generatefromproblem',
+    'startpipeline',
+    'enqueuejob',
+    'plan',
+    'researchsection',
+    'assemblereport',
+  ])
+  const expectedFlowFiles = [
+    'src/modules/ideas/interface/http/idea-generation.controller.ts',
+    'src/modules/pipeline/api/pipeline-trigger.service.ts',
+    'src/modules/pipeline/api/queue-registry.service.ts',
+    'src/modules/pipeline/workers/orchestrator.worker.ts',
+    'src/modules/planning/planner.service.ts',
+    'src/modules/research/workers/section-research.worker.ts',
+    'src/modules/research/research-agent.service.ts',
+    'src/modules/pipeline/assembly/assembly.worker.ts',
+    'src/modules/reports/assembly.service.ts',
+    'src/modules/pipeline/workers/db-sync.worker.ts',
+  ]
+  const actualFlowFiles = flowResult.matched_nodes?.map((node) => node.source_file)
+  const expectedBoundaries = [
+    'src/modules/planning/planner.service.ts:L13-L16 -> src/modules/research/workers/section-research.worker.ts:L17-L19',
+    'src/modules/research/research-agent.service.ts:L10-L14 -> src/modules/pipeline/assembly/assembly.worker.ts:L17-L19',
+    'src/modules/reports/assembly.service.ts:L20-L31 -> src/modules/pipeline/workers/db-sync.worker.ts:L26-L35',
+  ]
+  const actualBoundaries = flowResult.boundaries
+    ?.filter((boundary) => boundary.kind === 'disconnected')
+    .map((boundary) => boundary.detail)
+  if (
+    JSON.stringify(actualFlowFiles) !== JSON.stringify(expectedFlowFiles)
+    || !expectedBoundaries.every((boundary) => actualBoundaries?.includes(boundary))
+    || flowResult.relationships?.length === 0
+    || flowResult.metrics?.selected_files > 12
+    || flowResult.metrics?.snippets > 25
+    || flowResult.metrics?.closure_passes > 1
+    || flowResult.metrics?.serialized_tokens > 4_000
+    || flowResult.metrics?.truncated !== false
+  ) {
+    throw new Error(`Packed full-flow evidence violated #622: ${JSON.stringify(flowResult)}`)
   }
 
   const workerRoot = join(tempRoot, 'worker-workspace')

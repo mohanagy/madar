@@ -367,6 +367,15 @@ const RETRIEVAL_REGRESSION_FILES = [
   'src/domain/query/slice.ts',
   'src/domain/query/traverse.ts',
 ] as const
+const FULL_FLOW_RETRIEVAL_ID = 'retrieval-regression-622'
+const FULL_FLOW_RETRIEVAL_BASE = '5df59886190a65ba80e07339203aeba013c94ef2'
+const FULL_FLOW_RETRIEVAL_FILES = [
+  'src/domain/query/rank.ts',
+  'src/domain/query/traverse.ts',
+  'src/domain/query/types.ts',
+] as const
+const FULL_FLOW_RETRIEVAL_OWNER_APPROVAL =
+  'https://github.com/mohanagy/madar/issues/622#issuecomment-5116842414'
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
   '4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0'
 const CAPABILITY_VALIDATION_V2_ISSUE = 'https://github.com/mohanagy/madar/issues/612'
@@ -1003,7 +1012,9 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('only an authenticated canonical symbol declaration may provide a snippet or cover a phase')
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
-    expect(scorecard).toContain('No technical implementation phase is active')
+    expect(scorecard).toContain('| Retrieval regression #622 | **Ready for review**')
+    expect(scorecard).toContain('The bounded #622 candidate is ready for PR review against `next`')
+    expect(scorecard).toContain('/compilerOptions/removeComments=true')
     expect(scorecard).toContain('exactly 20 production TypeScript files / 4,698 LOC')
     expect(scorecard).toContain('completed Evaluation Tooling Isolation is 43 files / 11,956 LOC')
     expect(scorecard).toContain('- [x] Production cannot import `tools/eval`')
@@ -1385,12 +1396,63 @@ describe('core reset governance', () => {
         'diff',
         '--name-only',
         CAPABILITY_VALIDATION_V2_ACTIVATION_MERGE,
+        'eaa1a8781eda28dad5395d6da378a2cc40bf81fe',
         '--',
         'src',
       ],
       { encoding: 'utf8' },
     ).trim().split('\n').filter(Boolean).sort()
     expect(changedRegressionProduction).toEqual([...RETRIEVAL_REGRESSION_FILES].sort())
+    const fullFlowRegression = manifest.items.find((item) => item.id === FULL_FLOW_RETRIEVAL_ID) as any
+    expect(fullFlowRegression).toMatchObject({
+      disposition: 'keep',
+      status: 'ready',
+      modified_sources: [...FULL_FLOW_RETRIEVAL_FILES],
+      production_file_budget: { added_max: 0, removed_min: 0 },
+      production_loc_budget: { added_max: 164, removed_min: 21, net_max: 143 },
+      runtime_dependency_budget: { added_max: 0, removed_min: 0 },
+      npm_package_budget: {
+        files_max: 102,
+        packed_bytes_max: 165_000,
+        unpacked_bytes_max: 640_000,
+      },
+      retrieval_budget: {
+        files_max: 12,
+        snippets_max: 25,
+        closure_passes_max: 1,
+        serialized_tokens_max: 4_000,
+      },
+      activation: {
+        issue: 'https://github.com/mohanagy/madar/issues/622',
+        protected_base: FULL_FLOW_RETRIEVAL_BASE,
+        target_branch: 'next',
+        owner_approval: FULL_FLOW_RETRIEVAL_OWNER_APPROVAL,
+      },
+      candidate_source: {
+        production_typescript_files: 43,
+        production_typescript_loc: 12_147,
+        production_loc_added: 163,
+        production_loc_removed: 24,
+        production_loc_net: 139,
+      },
+      build_output_exception: 'evaluation-tooling.post_completion_build_output_amendment',
+      constraints: {
+        repository_specific_ranking: 'forbidden',
+        graph_or_index_semantics_change: 'forbidden',
+        compatibility_fallback: 'forbidden',
+        dependency_change: 'forbidden',
+        second_retrieval_engine: 'forbidden',
+        target_repository_execution_in_production: 'forbidden',
+        publication: 'forbidden',
+        main_target: 'forbidden',
+      },
+    })
+    const changedFullFlowProduction = execFileSync(
+      git,
+      ['diff', '--name-only', FULL_FLOW_RETRIEVAL_BASE, '--', 'src'],
+      { encoding: 'utf8' },
+    ).trim().split('\n').filter(Boolean).sort()
+    expect(changedFullFlowProduction).toEqual([...FULL_FLOW_RETRIEVAL_FILES].sort())
     expect(generation).toMatchObject({
       status: 'complete',
       sources: INCREMENTAL_OWNED_REPLACEMENTS,
@@ -2660,6 +2722,35 @@ describe('core reset governance', () => {
         packed_bytes_max: 165_000,
         unpacked_bytes_max: 640_000,
       },
+      post_completion_build_output_amendment: {
+        issue: 'https://github.com/mohanagy/madar/issues/622',
+        owner_authorization: FULL_FLOW_RETRIEVAL_OWNER_APPROVAL,
+        config: 'tsconfig.build.json',
+        allowed_json_pointers_exact: ['/compilerOptions/removeComments'],
+        previous_state: 'absent',
+        value: true,
+        source_comments: 'preserved',
+        emitted_javascript_comments: 'removed',
+        emitted_declaration_jsdoc: 'removed',
+        declaration_signatures: 'unchanged_by_compiler_option',
+        runtime_semantics_change: 'forbidden',
+        tsconfig_json_change: 'forbidden',
+        tsconfig_eval_json_change: 'forbidden',
+        package_script_change: 'forbidden',
+        dependency_change: 'forbidden',
+        package_budget_change: 'forbidden',
+        publication_authorized: false,
+        candidate_package: {
+          npm_files: 102,
+          npm_packed_bytes: 158_284,
+          npm_unpacked_bytes: 639_839,
+          npm_shasum: 'd9be5a2b86de370c74938e58343b862334c8d9e6',
+          npm_integrity:
+            'sha512-kHuWp72gv/g0r2dROXvM9nTvHeOAHmIRdzPZpJo7GVCdWHIoRMZWaoDQarZ5z6wecHuXBuOMkYGhY22tuQsLFg==',
+          npm_artifact_sha256:
+            '7b5ecf689c2a4a79a8101aad296b8872d478e875107a10a0d24eb75da1763494',
+        },
+      },
       frozen_contract: {
         production_semantics:
           'graph_index_generation_reconciliation_retrieval_ranking_traversal_slicing',
@@ -2918,8 +3009,26 @@ describe('core reset governance', () => {
       EVALUATION_TOOLING_ACTIVATION_MERGE,
       '--',
       'tsconfig.json',
-      'tsconfig.build.json',
     ])).not.toThrow()
+    const historicalBuildText = execFileSync(
+      git,
+      ['show', `${EVALUATION_TOOLING_ACTIVATION_MERGE}:tsconfig.build.json`],
+      { encoding: 'utf8' },
+    )
+    const historicalBuild = JSON.parse(historicalBuildText) as {
+      compilerOptions: Record<string, unknown>
+    }
+    const currentBuild = JSON.parse(read('tsconfig.build.json')) as {
+      compilerOptions: Record<string, unknown>
+    }
+    expect(historicalBuild.compilerOptions).not.toHaveProperty('removeComments')
+    expect(currentBuild.compilerOptions.removeComments).toBe(true)
+    expect(withoutJsonPointers(currentBuild, ['/compilerOptions/removeComments']))
+      .toEqual(historicalBuild)
+    expect(read('tsconfig.build.json')).toBe(historicalBuildText.replace(
+      '    "noEmitOnError": true',
+      '    "removeComments": true,\n    "noEmitOnError": true',
+    ))
     expect(read('.gitignore').split(/\r?\n/)).toContain('dist-eval/')
 
     type EvaluationPackage = {
@@ -5081,15 +5190,27 @@ describe('core reset governance', () => {
         disposition: string
         status: string
         production_loc_budget?: { added_max: number; removed_min: number; net_max: number }
+        activation?: { protected_base: string }
+        candidate_source?: {
+          production_typescript_files: number
+          production_typescript_loc: number
+          production_loc_added: number
+          production_loc_removed: number
+          production_loc_net: number
+        }
       }>
     }
     const { current } = manifest
-    expect(execFileSync(git, ['cat-file', '-t', `${current.base_commit}^{commit}`], { encoding: 'utf8' }).trim()).toBe('commit')
-    expect(() => execFileSync(git, ['merge-base', '--is-ancestor', current.base_commit, 'HEAD'])).not.toThrow()
+    const candidatePhase = manifest.items.find((item) => item.id === FULL_FLOW_RETRIEVAL_ID)
+    const baseline = candidatePhase?.activation?.protected_base ?? current.base_commit
+    const snapshot = candidatePhase?.candidate_source ?? current
+    expect(execFileSync(git, ['cat-file', '-t', `${baseline}^{commit}`], { encoding: 'utf8' }).trim()).toBe('commit')
+    expect(() => execFileSync(git, ['merge-base', '--is-ancestor', baseline, 'HEAD'])).not.toThrow()
 
     const inventory = sourceInventory()
-    const delta = productionSourceDelta(current.base_commit)
-    const phase = manifest.items.find((item) => item.id === (current.active_phase ?? current.completed_phase))
+    const delta = productionSourceDelta(baseline)
+    const phase = candidatePhase
+      ?? manifest.items.find((item) => item.id === (current.active_phase ?? current.completed_phase))
     const budget = phase?.production_loc_budget
     expect(budget).toBeDefined()
     expect(inventory.filesystemViolations).toEqual([])
@@ -5109,11 +5230,11 @@ describe('core reset governance', () => {
       production_loc_removed: delta.removed,
       production_loc_net: delta.net,
     }).toEqual({
-      production_typescript_files: current.production_typescript_files,
-      production_typescript_loc: current.production_typescript_loc,
-      production_loc_added: current.production_loc_added,
-      production_loc_removed: current.production_loc_removed,
-      production_loc_net: current.production_loc_net,
+      production_typescript_files: snapshot.production_typescript_files,
+      production_typescript_loc: snapshot.production_typescript_loc,
+      production_loc_added: snapshot.production_loc_added,
+      production_loc_removed: snapshot.production_loc_removed,
+      production_loc_net: snapshot.production_loc_net,
     })
     expect(current.npm_files).toBeGreaterThan(0)
     expect(current.npm_packed_bytes).toBeGreaterThan(0)
@@ -5464,7 +5585,9 @@ describe('core reset governance', () => {
     expect(governance).toContain('## Historical accepted amendment — capability validation v2')
     expect(governance).toContain('## Cancelled amendment — capability validation')
     expect(governance).toContain('## Completed amendment — retrieval regression #618')
-    expect(governance).toContain('No technical implementation phase is active')
+    expect(governance).toContain('## Ready for review — retrieval regression #622')
+    expect(governance).toContain('## Authorized amendment — retrieval regression #622')
+    expect(governance).toContain('/compilerOptions/removeComments=true')
     expect(governance).toContain('At that #608 completion checkpoint no technical phase was active')
     expect(governance).not.toContain('\nNo technical phase is active; Capability Validation')
     expect(governance).not.toContain('## In progress — evaluation tooling isolation')

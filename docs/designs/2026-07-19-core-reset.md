@@ -3,7 +3,7 @@
 > **Tracking issue:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
 > **Project:** [Madar Roadmap](https://github.com/users/mohanagy/projects/8)
-> **Status:** accepted — the product vertical slice through `evaluation-tooling` and retrieval regression #618 are complete; Capability Validation and the comparator campaign are cancelled as release gates; `0.40.0-beta.2` release preparation is ready for `next`
+> **Status:** accepted — the product vertical slice through `evaluation-tooling` and retrieval regression #618 are complete; the bounded #622 candidate is ready for review against `next`; Capability Validation remains cancelled; no further publication is authorized
 
 ## Decision
 
@@ -407,6 +407,12 @@ No campaign ran, no provider request was made, paid spend is USD 0, and no compa
 ## Completed amendment — retrieval regression #618
 
 Issue [#618](https://github.com/mohanagy/madar/issues/618) completed through [PR #620](https://github.com/mohanagy/madar/pull/620), merged into protected `core-reset` as `eaa1a8781eda28dad5395d6da378a2cc40bf81fe`. It modifies only `src/adapters/mcp/protocol.ts`, `src/domain/query/rank.ts`, `src/domain/query/slice.ts`, and `src/domain/query/traverse.ts`, adds no production file or dependency, and records `+69/-17/net +52` production LOC.
+
+## Authorized amendment — retrieval regression #622
+
+Issue [#622](https://github.com/mohanagy/madar/issues/622) authorizes a bounded `next` candidate that stabilizes equivalent report-flow phrasings and returns the controller, enqueue, orchestration/planning, section-research, assembly, and DB-sync skeleton with authenticated relationships or exact disconnected handoff targets. Ranking, bounded recovery, traversal, slicing tests, and the representative JS/TS fixture are the only semantic implementation surfaces; repository-specific production rules, graph/index changes, compatibility paths, a second engine, dependencies, and retrieval-budget changes remain forbidden.
+
+The exact [owner amendment](https://github.com/mohanagy/madar/issues/622#issuecomment-5116842414) permits only `/compilerOptions/removeComments=true` in `tsconfig.build.json`. This globally removes emitted JavaScript comments and declaration JSDoc while preserving source comments, declaration signatures, the CLI shebang, all other build-config bytes, and the existing 102-file / 165,000 packed / 640,000 unpacked package ceilings. Historical #606 and published beta.2 receipts remain immutable. No npm/package publication, GitHub Release, Registry metadata, tag, external validation, or `main` action is authorized.
 
 The frozen `0.32.0` versus `0.40.0-beta.1` comparison found byte-identical relevant retrieval modules and raw fixture responses. The observed sessions first diverged in graph topology and the explicit `budget: 40` request. The repair addresses the shared ranking and evidence-boundary weakness without claiming a beta-only code divergence. Natural flow questions recover grounded evidence with at most one bounded recovery; incomplete responses name exact disconnected or truncated verification targets; focused generation questions do not broaden into a pipeline.
 
