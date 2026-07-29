@@ -124,9 +124,19 @@ export function traverseEvidencePaths(
     }
   }
 
-  const sources = anchors.slice(0, -1).map((source, sourceIndex) => ({
+  const sideBranches = new Set([ranking.branch])
+  const chain = anchors.filter(({ id }) => !sideBranches.has(id))
+  const sources = chain.slice(0, -1).map((source, sourceIndex) => ({
     source,
-    targets: anchors.slice(sourceIndex + 1),
+    targets: ranking.flow
+      ? [
+        chain[sourceIndex + 1]!,
+        ...anchors.slice(
+          anchors.indexOf(source) + 1,
+          anchors.indexOf(chain[sourceIndex + 1]!),
+        ).filter(({ id }) => sideBranches.has(id)),
+      ]
+      : anchors.slice(anchors.indexOf(source) + 1),
   }))
   const visited = sources.map(({ source }) => new Set([source.id]))
   const predecessors = sources.map(() => new Map<string, PathPredecessor>())
@@ -171,7 +181,7 @@ export function traverseEvidencePaths(
   for (const [sourceIndex, search] of sources.entries()) {
     for (const [targetIndex, target] of search.targets.entries()) {
       const path = paths[sourceIndex]!.get(target.id)
-      const coveredByAdjacentPaths = targetIndex > 0
+      const coveredByAdjacentPaths = !ranking.flow && targetIndex > 0
         && anchors.slice(sourceIndex, sourceIndex + targetIndex + 1).every((_, offset) =>
           paths[sourceIndex + offset]!.has(anchors[sourceIndex + offset + 1]!.id))
       const coveredByCommonPredecessor = sources.slice(0, sourceIndex).some((_, earlier) =>

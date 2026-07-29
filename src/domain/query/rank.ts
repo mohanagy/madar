@@ -53,6 +53,7 @@ interface QueryVocabulary {
   question: string; terms: string[]; positions: ReadonlyMap<string, number>; scopes: ExplicitScope[]
   constraints: ExplicitScope[]; obligations: readonly QueryObligation[]
 }
+interface RankSelection { anchors: RankedQueryNode[]; branch: string; flow: boolean }
 interface ExplicitScope { subject: string; tokens: string[]; compact: string; firstMatch: number; restrictsCandidates: boolean }
 interface ScoredNode { node: RankCorpusNode; ranked: RankedQueryNode; representativeScore: number }
 interface OwnerFit { candidate: ScoredNode; vector: readonly number[]; ownedTerms: ReadonlySet<string>; totalCovered: number }
@@ -392,6 +393,8 @@ function exactLabelMatch(node: RankCorpusNode, vocabulary: QueryVocabulary): boo
   const label = stringAttribute(node.attributes, 'label')
   return meaningfulTokens(label).length > 0 && vocabulary.question.includes(label)
 }
+function isFlowQuestion(question: string): boolean { return /\bflow\b|(?=[^]*report)(?=[^]*generat)/iu.test(question) }
+function hasStageRange(question: string): boolean { return /\bbetween\b|\bfrom\b[^]*\b(?:to|through)\b|\b(?:pipeline|queue|stage)\s+flow\b/iu.test(question) }
 
 function scoredNodes(corpus: RankCorpus, vocabulary: QueryVocabulary): ScoredNode[] {
   const requestedDomains = new Set(
@@ -619,8 +622,12 @@ function hasEvidenceEdge(index: ReadyQueryIndex, from: string, to: string): bool
 function rankDiverseAnchors(
   index: ReadyQueryIndex, corpus: RankCorpus,
   scored: readonly ScoredNode[], vocabulary: QueryVocabulary,
-): RankedQueryNode[] {
-  if (vocabulary.obligations.length > 1) {
+): RankSelection {
+  const unscoped = vocabulary.scopes.length === 0
+  const stageIntent = unscoped && hasStageRange(vocabulary.question)
+    && (isFlowQuestion(vocabulary.question)
+      || /\b(?:pipeline|queues?|stages?)\b/iu.test(vocabulary.question))
+  if (vocabulary.obligations.length > 1 && !stageIntent) {
     const selected: ScoredNode[] = []
     const selectedIds = new Set<string>()
     const selectedFiles = new Set<string>()
@@ -647,12 +654,13 @@ function rankDiverseAnchors(
       selectedIds.add(candidate.node.id)
       selectedFiles.add(candidate.node.sourceFile)
     }
-    return selected.map(({ ranked }) => ranked)
+    return { anchors: selected.map(({ ranked }) => ranked), branch: '', flow: false }
   }
   const selected: ScoredNode[] = []
   const selectedIds = new Set<string>()
   const selectedFiles = new Set<string>()
   const coveredTerms = new Set<string>()
+  let branch = ''
   const scoreFloor = Math.max(1, (scored[0]?.representativeScore ?? 0) / 4)
   const entry = (candidate: ScoredNode): number =>
     candidate.node.nodeKind.includes('route')
@@ -673,9 +681,10 @@ function rankDiverseAnchors(
       return !!target && tokenSetMatches(target.tokens, term)
     }))
     .reduce((total, term) => total + rarityWeight(corpus, term), 0)
-  const unscoped = vocabulary.scopes.length === 0
-  const flowIntent = unscoped
-    && /flow|(?=[^]*report)[^]*generat/iu.test(vocabulary.question)
+  const flowIntent = unscoped && (stageIntent || isFlowQuestion(vocabulary.question))
+  const locator = unscoped && !flowIntent && vocabulary.terms[0] === 'where'
+  const flowTerms = vocabulary.terms.filter((term) => ['flow', 'pipelin', 'queue', 'stag', 'worker', 'process'].includes(term))
+  const flowCoverage = (node?: RankCorpusNode): number => node ? flowTerms.filter((term) => tokenSetMatches(node.tokens, term)).length : 0
   let anchorLimit = MAX_RANKED_ANCHORS
 
   if (vocabulary.constraints.length === 0) {
@@ -683,7 +692,17 @@ function rankDiverseAnchors(
     const upstream = flowIntent ? scored.find((candidate) =>
       candidate.ranked.score * 4 >= (scored[0]?.ranked.score ?? 0) * 3
       && candidate.node.incomingIds.length === 0) : undefined
-    const seed = route ?? upstream ?? scored[0]
+    const topicTerms = vocabulary.terms.filter((term) => !flowTerms.includes(term))
+    const topicRank = (node: RankCorpusNode): number => topicTerms
+      .filter((term) => tokenSetMatches(node.tokens, term))
+      .reduce((score, term) => score + 1_000
+        - (vocabulary.positions.get(term) ?? 0), 0)
+    const stageEntry = stageIntent ? scored.filter(({ node }) =>
+      node.incomingIds.length === 0 && node.outgoingIds.some((id) =>
+        flowCoverage(corpus.nodeById.get(id))))
+      .sort((left, right) => topicRank(right.node) - topicRank(left.node)
+        || compareScoredNodes(left, right))[0] : undefined
+    const seed = flowIntent ? route ?? stageEntry ?? upstream ?? scored[0] : scored[0]
     if (seed) {
       add(seed)
       const targets = seed.node.outgoingIds.map((id) => corpus.nodeById.get(id))
@@ -694,23 +713,124 @@ function rankDiverseAnchors(
           || right.outgoingDegree - left.outgoingDegree
           || compareCodeUnits(left.id, right.id))
       const relevantTargets = targets.filter((target) => successorContext(target) > 0)
-      const nextStep = (node: RankCorpusNode): RankCorpusNode | undefined =>
-        node.outgoingIds.map((id) => corpus.nodeById.get(id))
-          .find((next): next is RankCorpusNode => !!next?.selectable)
-      const bridge = flowIntent
-        ? targets.find((target) => successorContext(target) === 0
-          && nextStep(target)) : undefined
+      const registrationFor = (node: RankCorpusNode): RankCorpusNode | undefined =>
+        corpus.nodes.find((candidate) =>
+          candidate.selectable && candidate.id !== node.id
+          && candidate.sourceFile === node.sourceFile && candidate.incomingIds.length > 1
+          && tokenSetMatches(candidate.tokens, 'register')
+          && tokenSetMatches(candidate.tokens, 'worker'))
+      const nextStep = (node: RankCorpusNode): RankCorpusNode | undefined => {
+        const candidates = node.outgoingIds.map((id) => corpus.nodeById.get(id))
+          .filter((next): next is RankCorpusNode => !!next?.selectable)
+        if (!stageIntent) return candidates[0]
+        return candidates.sort((left, right) =>
+          flowCoverage(right) - flowCoverage(left)
+          || Number(!!registrationFor(right)) - Number(!!registrationFor(left))
+          || right.incomingIds.length - left.incomingIds.length
+          || compareCodeUnits(left.id, right.id))[0]
+      }
+      const bridgePairs = targets.flatMap((target) => {
+        const next = nextStep(target)
+        return next ? [[target, next] as const] : []
+      })
+      const bridgePair = flowIntent
+        ? stageIntent
+          ? [...bridgePairs].sort((left, right) =>
+            flowCoverage(right[0]) + flowCoverage(right[1])
+              - flowCoverage(left[0]) - flowCoverage(left[1])
+              || Number(!!registrationFor(right[1])) - Number(!!registrationFor(left[1]))
+              || right[1].incomingIds.length - left[1].incomingIds.length
+              || successorContext(left[0]) - successorContext(right[0])
+              || compareCodeUnits(left[0].id, right[0].id))[0]
+          : bridgePairs.find(([target]) => successorContext(target) === 0)
+        : undefined
+      const bridge = bridgePair?.[0]
       if (bridge) anchorLimit = 4
-      const continuation = bridge ? nextStep(bridge) : undefined
-      const queued = continuation
-        ? corpus.nodeById.get(continuation.outgoingIds.find((id) =>
-          index.graph.edgesBetween(continuation.id, id)
+      const handoff = bridgePair?.[1]
+      const queued = handoff
+        ? corpus.nodeById.get(handoff.outgoingIds.find((id) =>
+          index.graph.edgesBetween(handoff.id, id)
             .some(({ attributes }) => attributes.relation === 'enqueues_job')) ?? '')
         : undefined
+      const reaches = (source: RankCorpusNode, target: RankCorpusNode): boolean => {
+        const seen = new Map([[source.id, 4]])
+        const visit = (current: RankCorpusNode, depth: number): boolean =>
+          depth > 0 && current.outgoingIds.some((id) => {
+            if (id === target.id) return true
+            const next = corpus.nodeById.get(id)
+            const remaining = depth - 1
+            if (!next?.selectable || (seen.get(id) ?? -1) >= remaining) return false
+            seen.set(id, remaining)
+            return visit(next, remaining)
+          })
+        return visit(source, 4)
+      }
+      const registration = stageIntent && handoff
+        ? registrationFor(handoff) : undefined
+      const consumers = registration
+        ? registration.incomingIds.flatMap((id) => {
+          const caller = corpus.nodeById.get(id)
+          return caller?.outgoingIds.map((targetId) => corpus.nodeById.get(targetId))
+            .filter((target): target is RankCorpusNode =>
+              !!target?.selectable && target.sourceFile === caller.sourceFile) ?? []
+        }) : []
+      const degree = (node: RankCorpusNode): number => Math.max(0, ...node.outgoingIds
+        .map((id) => corpus.nodeById.get(id)?.outgoingDegree ?? 0))
+      const cycle = handoff
+        ? consumers.filter((consumer) => reaches(consumer, handoff))
+          .sort((left, right) =>
+            Number(right.id === queued?.id) - Number(left.id === queued?.id)
+            || degree(left) - degree(right)
+            || compareCodeUnits(left.id, right.id))
+        : []
+      const terminal = handoff
+        && !/\bbetween\b/iu.test(vocabulary.question)
+        ? consumers.filter((consumer) => !reaches(consumer, handoff))
+          .sort((left, right) => successorContext(right) - successorContext(left)
+            || compareCodeUnits(left.id, right.id))[0]
+        : undefined
+      const stages = cycle.flatMap((consumer) => {
+        const service = consumer.outgoingIds.map((id) => corpus.nodeById.get(id))
+          .filter((candidate): candidate is RankCorpusNode =>
+            !!candidate?.selectable && candidate.sourceFile !== consumer.sourceFile)
+          .sort((left, right) => successorContext(right) - successorContext(left)
+            || right.outgoingDegree - left.outgoingDegree
+            || compareCodeUnits(left.id, right.id))[0]
+        return [consumer, ...(service ? [service] : [])]
+      })
+      const ownerCompact = compactTokens(stageIntent
+        ? vocabulary.question.match(
+          /\b[A-Z][A-Za-z0-9]*(?:Agent|Service|Worker|Controller)\b/u,
+        )?.[0] ?? '' : '')
+      const queryOwner = ownerCompact
+        ? scored.find(({ node }) => node.nodeKind !== 'class'
+          && node.outgoingDegree > 0
+          && node.fields.some(({ compact }) => compact.includes(ownerCompact)))?.node
+        : undefined
+      const ownerBranch = queryOwner
+        && !stages.some(({ id }) => id === queryOwner.id) ? queryOwner : undefined
+      if (ownerBranch) branch = ownerBranch.id
+      const recovered = stages.flatMap((stage) =>
+        ownerBranch && stage.outgoingIds.includes(ownerBranch.id)
+          ? [stage, ownerBranch] : [stage])
       const selectedTargets = bridge
-        ? [bridge, continuation!, ...(queued?.selectable ? [queued] : [])]
+        ? (cycle.length ? [
+          bridge,
+          handoff!,
+          ...recovered,
+          ...(terminal ? [terminal] : []),
+          ...(ownerBranch && !recovered.includes(ownerBranch) ? [ownerBranch] : []),
+        ] : [
+          bridge,
+          handoff!,
+          ...(queued?.selectable ? [queued] : []),
+        ])
         : relevantTargets.length > 0 ? relevantTargets.slice(0, 1) : targets.slice(0, 1)
-      for (const target of selectedTargets) {
+      const unique = [...new Map(selectedTargets.map((node) => [node.id, node])).values()]
+      if (cycle.length) {
+        anchorLimit = Math.min(MAX_RANKED_ANCHORS, selected.length + unique.length)
+      }
+      for (const target of unique) {
         if (selected.length >= anchorLimit
           || (!selectedFiles.has(target.sourceFile) && selectedFiles.size >= MAX_RETRIEVE_FILES)) break
         add(scored.find(({ node }) => node.id === target.id) ?? {
@@ -720,6 +840,9 @@ function rankDiverseAnchors(
             firstMatch: seed.ranked.firstMatch,
           },
         })
+      }
+      if (cycle.length) {
+        return { anchors: selected.map(({ ranked }) => ranked), branch, flow: true }
       }
     }
   }
@@ -743,6 +866,7 @@ function rankDiverseAnchors(
         || compareScoredNodes(left, right)
     })
     const next = eligible[0]!
+    if (locator && selected.length && (connected(next) === 0 || coverage(next) === 0)) break
     if (vocabulary.constraints.length === 0 && coverage(next) === 0 && connected(next) === 0) break
     if (vocabulary.constraints.length > 0 && selected.length > 0
       && !selectedFiles.has(next.node.sourceFile) && coverage(next) === 0) break
@@ -767,7 +891,7 @@ function rankDiverseAnchors(
     ordered.push(next)
     remaining.splice(remaining.indexOf(next), 1)
   }
-  return ordered.map(({ ranked }) => ranked)
+  return { anchors: ordered.map(({ ranked }) => ranked), branch, flow: false }
 }
 function uniqueBoundaries(boundaries: readonly EvidenceBoundary[]): EvidenceBoundary[] {
   const byIdentity = new Map(boundaries.map((boundary) => [
@@ -814,7 +938,8 @@ export function rankQueryAnchors(
       scopes.some((scope) => matchesScope(node, scope))
       || (scopes.length > 0
         && ranked.matchedTerms.some((term) => !scopedTerms.has(term))))
-  const anchors = rankDiverseAnchors(index, corpus, candidatePool, vocabulary)
+  const selection = rankDiverseAnchors(index, corpus, candidatePool, vocabulary)
+  const { anchors } = selection
   const selectedIds = new Set(anchors.map((anchor) => anchor.id))
   const selectedFiles = new Set(anchors.map((anchor) =>
     stringAttribute(anchor.attributes, 'source_file')))
@@ -827,5 +952,8 @@ export function rankQueryAnchors(
     && missingScopes.length === 0
     ? [{ kind: 'missing', subject: request.question } satisfies EvidenceBoundary]
     : [...unsupportedBoundaries, ...missingScopes, ...anchorTruncated]
-  return { anchors, boundaries: uniqueBoundaries(boundaries), queryTerms: vocabulary.terms }
+  return {
+    anchors, boundaries: uniqueBoundaries(boundaries),
+    queryTerms: vocabulary.terms, flow: selection.flow, branch: selection.branch,
+  }
 }

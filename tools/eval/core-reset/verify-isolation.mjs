@@ -103,8 +103,17 @@ assert(
   "tsconfig.build.json must keep outDir at dist/src",
 )
 assert(
+  buildConfig.compilerOptions?.removeComments === true,
+  "production build must strip emitted comments under the owner-approved #622 exception",
+)
+assert(
   buildConfig.compilerOptions?.noEmitOnError === true,
   "tsconfig.build.json must not emit after type errors",
+)
+assert(
+  typeScriptConfig.compilerOptions?.removeComments === undefined &&
+    evaluationBuildConfig.compilerOptions?.removeComments === undefined,
+  "the #622 removeComments exception must remain production-build-only",
 )
 assert(
   (buildConfig.include ?? []).length === 1 &&

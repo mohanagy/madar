@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, Evaluation Tooling Isolation, and the bounded retrieval repair in [#618](https://github.com/mohanagy/madar/issues/618) have passed. Capability Validation and the Native-vs-Graphify comparator are cancelled as release gates. No technical implementation phase is active; `0.40.0-beta.2` release preparation is ready for `next`.
+The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, Evaluation Tooling Isolation, and the bounded retrieval repair in [#618](https://github.com/mohanagy/madar/issues/618) have passed. Capability Validation and the Native-vs-Graphify comparator are cancelled as release gates. The bounded [#622](https://github.com/mohanagy/madar/issues/622) candidate is ready for review against `next`; no further publication is authorized.
 
 ## Passed — directed multigraph
 
@@ -130,6 +130,12 @@ No Native-vs-Graphify-vs-Madar campaign ran. Provider requests and paid spend ar
 ## Passed — retrieval regression #618
 
 [#618](https://github.com/mohanagy/madar/issues/618) completed through [PR #620](https://github.com/mohanagy/madar/pull/620), merged into protected `core-reset` as `eaa1a8781eda28dad5395d6da378a2cc40bf81fe`. The repair changes only the four approved production paths, adds no production file or dependency, and records `+69/-17/net +52` production LOC.
+
+## Ready for review — retrieval regression #622
+
+[#622](https://github.com/mohanagy/madar/issues/622) stabilizes equivalent end-to-end report-flow prompts and exposes authenticated stage edges plus exact asynchronous handoff targets within the unchanged 12-file / 25-snippet / one-closure / 4,000-token limits. It adds no dependency, compatibility path, second engine, graph/index change, CLI/MCP change, or repository-specific production rule.
+
+The exact [owner amendment](https://github.com/mohanagy/madar/issues/622#issuecomment-5116842414) permits only `/compilerOptions/removeComments=true` in `tsconfig.build.json`. Emitted JavaScript comments and declaration JSDoc are removed; source comments, declaration signatures, the CLI shebang, every other build byte, and the 102-file / 165,000 packed / 640,000 unpacked package ceilings remain fixed. The published beta.2 receipt remains immutable and the candidate grants no npm, release, Registry, tag, external-validation, or `main` authority.
 
 The frozen stable-versus-beta comparison found identical retrieval implementation bytes and identical frozen-fixture raw responses. The observed sessions first diverged operationally in graph topology and the explicit `budget: 40` request. The repair therefore fixes the shared ranking and evidence-boundary weakness without claiming a beta-only implementation divergence. Its fixture proves grounded natural-flow evidence in one call or one bounded recovery, preserves exact disconnected and truncation targets, and keeps focused title-generation questions focused.
 

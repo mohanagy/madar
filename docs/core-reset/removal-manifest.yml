@@ -1370,6 +1370,32 @@ items:
       files_max: 102
       packed_bytes_max: 165000
       unpacked_bytes_max: 640000
+    post_completion_build_output_amendment:
+      issue: https://github.com/mohanagy/madar/issues/622
+      owner_authorization: https://github.com/mohanagy/madar/issues/622#issuecomment-5116842414
+      config: tsconfig.build.json
+      allowed_json_pointers_exact:
+        - /compilerOptions/removeComments
+      previous_state: absent
+      value: true
+      source_comments: preserved
+      emitted_javascript_comments: removed
+      emitted_declaration_jsdoc: removed
+      declaration_signatures: unchanged_by_compiler_option
+      runtime_semantics_change: forbidden
+      tsconfig_json_change: forbidden
+      tsconfig_eval_json_change: forbidden
+      package_script_change: forbidden
+      dependency_change: forbidden
+      package_budget_change: forbidden
+      publication_authorized: false
+      candidate_package:
+        npm_files: 102
+        npm_packed_bytes: 158295
+        npm_unpacked_bytes: 639867
+        npm_shasum: 34d9d17708b2f7d582309caf1519db62c6599928
+        npm_integrity: sha512-ED2BpphacoQg6/1wYLK6BgPaz3vNPFHzPtibE08Jrsh2Cc8jTKbRGNTqcekFvQ1J7pq6yF6NueZ13PJqVuAXwA==
+        npm_artifact_sha256: 89971e2c2df3f698f48ee066b08923c0ca28853a547d1aaab2d0bd64fdacf005
     frozen_contract:
       production_semantics: graph_index_generation_reconciliation_retrieval_ranking_traversal_slicing
       public_surfaces: cli_mcp_installer_workspace
@@ -1835,6 +1861,64 @@ items:
       coderabbit: skipped_non_default_base_not_counted_as_review
     notes: 'Issue #618 repaired the observed 0.40.0-beta.1 natural-flow failure. Frozen stable and beta retrieval bytes and raw fixture responses were identical; the observed sessions first diverged in graph topology and explicit budget 40. The generic repair is limited to query ranking and traversal, honest slicing boundaries, and MCP budget guidance. It does not revive the cancelled comparator campaign or add repository-specific rules, a second retrieval engine, graph/index changes, dependencies, or main.'
     exit_gate: The frozen JS/TS flow fixture returns grounded evidence in one call or at most one bounded recovery, and incomplete results preserve useful local evidence with exact verification targets.
+
+  - id: retrieval-regression-622
+    disposition: keep
+    status: ready
+    destination: bounded post-beta full-flow ranking and asynchronous handoff recovery
+    modified_sources:
+      - src/domain/query/rank.ts
+      - src/domain/query/traverse.ts
+      - src/domain/query/types.ts
+    verification:
+      - .github/scripts/verify-packed-retrieval-parity.mjs
+      - tests/fixtures/pack-quality/runtime-generation-explain-report-flow/fixture.json
+      - tests/unit/core-reset-baseline.test.ts
+      - tests/unit/core-reset-governance.test.ts
+      - tests/unit/retrieve-context.test.ts
+      - tools/eval/core-reset/verify-isolation.mjs
+    production_file_budget:
+      added_max: 0
+      removed_min: 0
+    production_loc_budget:
+      added_max: 164
+      removed_min: 21
+      net_max: 143
+    runtime_dependency_budget:
+      added_max: 0
+      removed_min: 0
+    npm_package_budget:
+      files_max: 102
+      packed_bytes_max: 165000
+      unpacked_bytes_max: 640000
+    retrieval_budget:
+      files_max: 12
+      snippets_max: 25
+      closure_passes_max: 1
+      serialized_tokens_max: 4000
+    activation:
+      issue: https://github.com/mohanagy/madar/issues/622
+      protected_base: 5df59886190a65ba80e07339203aeba013c94ef2
+      target_branch: next
+      owner_approval: https://github.com/mohanagy/madar/issues/622#issuecomment-5116842414
+    candidate_source:
+      production_typescript_files: 43
+      production_typescript_loc: 12147
+      production_loc_added: 164
+      production_loc_removed: 25
+      production_loc_net: 139
+    build_output_exception: evaluation-tooling.post_completion_build_output_amendment
+    constraints:
+      repository_specific_ranking: forbidden
+      graph_or_index_semantics_change: forbidden
+      compatibility_fallback: forbidden
+      dependency_change: forbidden
+      second_retrieval_engine: forbidden
+      target_repository_execution_in_production: forbidden
+      publication: forbidden
+      main_target: forbidden
+    notes: 'Issue #622 freezes the exact long report-flow reproduction, its MasterAgent follow-up, the working short control, and two close paraphrases. The generic repair recovers the controller, enqueue, orchestration/planning, section-research, assembly, and DB-sync skeleton while preserving authenticated edges and exact disconnected handoff targets. The owner approved exactly one package-output exception: compilerOptions.removeComments=true in tsconfig.build.json; source comments, every other build byte, package and retrieval ceilings, dependencies, graph/index semantics, CLI, MCP, publication, and main remain frozen.'
+    exit_gate: The frozen JS/TS fixture and freshly packed consumer return the exact bounded full-flow stage skeleton and honest asynchronous boundaries without UI distractors, semantic widening, or a raised package ceiling.
 
   - id: non-core-graph-products
     disposition: delete
