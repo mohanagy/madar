@@ -1018,7 +1018,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
     expect(scorecard).toContain('| Retrieval regression #622 | **Passed**')
-    expect(scorecard).toContain('#622 is complete on `next`')
+    expect(scorecard).toContain('Issue `#622` is complete on `next`')
     expect(scorecard).toContain('/compilerOptions/removeComments=true')
     expect(scorecard).toContain('exactly 20 production TypeScript files / 4,698 LOC')
     expect(scorecard).toContain('completed Evaluation Tooling Isolation is 43 files / 11,956 LOC')

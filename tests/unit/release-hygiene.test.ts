@@ -148,6 +148,9 @@ describe('release hygiene', () => {
     expect(releaseWorkflow).toContain('dist.attestations.provenance')
     expect(releaseWorkflow).toContain('npm --prefix "$VERIFY_DIR" audit signatures')
     expect(releaseWorkflow).toContain('c72c5f786dd07aff16f3ef4990bb4d166a197791')
+    expect(releaseWorkflow).toContain(
+      'sha512-ulfQ/bNBKz5VDzErYke1hsk3xIxoZtaJKZlN/lsRb60Tq7wvUnFFlxFR2sdkRQ9HBNBWgc/vhpcCgVvdPEk1lw==',
+    )
     expect(releaseWorkflow).toContain('LATEST_VERSION" == "0.32.0"')
     expect(publishIndex).toBeGreaterThan(0)
     expect(githubReleaseIndex).toBeGreaterThan(publishIndex)
