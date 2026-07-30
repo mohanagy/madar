@@ -61,8 +61,8 @@ jobs:
             exit 1
           fi
 
-          if [[ "$VERSION" != "0.40.0-beta.3" ]]; then
-            echo "This release candidate is authorized only for 0.40.0-beta.3"
+          if [[ "$VERSION" != "0.40.0-beta.4" ]]; then
+            echo "This release candidate is authorized only for 0.40.0-beta.4"
             exit 1
           fi
 
@@ -177,8 +177,8 @@ jobs:
           PACKAGE_NAME="$(node -pe 'require("./package.json").name')"
           VERSION="$(node -pe 'require("./package.json").version')"
           SPEC="$PACKAGE_NAME@$VERSION"
-          EXPECTED_SHASUM="c72c5f786dd07aff16f3ef4990bb4d166a197791"
-          EXPECTED_INTEGRITY="sha512-ulfQ/bNBKz5VDzErYke1hsk3xIxoZtaJKZlN/lsRb60Tq7wvUnFFlxFR2sdkRQ9HBNBWgc/vhpcCgVvdPEk1lw=="
+          EXPECTED_SHASUM="c5250a0d308b3d6df374851154ddb393a678a992"
+          EXPECTED_INTEGRITY="sha512-772P+n4Cx55nqC+CAx8A1aTJ2rY4yk1hUH45lAlxNMMw4YRj8hhswgDiCwczS5hx1S3a+Z+KUv2jma/zWjQZ6w=="
           VERIFIED=false
 
           for attempt in 1 2 3 4 5 6; do

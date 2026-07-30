@@ -110,7 +110,7 @@ describe('release hygiene', () => {
     const releaseDoc = loadFile('docs/release.md')
 
     expect(releaseDoc).toContain('npm run release:verify')
-    expect(releaseDoc).toContain('npm version 0.40.0-beta.3 --no-git-tag-version')
+    expect(releaseDoc).toContain('npm version 0.40.0-beta.4 --no-git-tag-version')
     expect(releaseDoc).toContain('`main` for stable releases, `next` for prereleases')
     expect(releaseDoc).toContain('npm publish --tag next --access public --provenance')
   })
@@ -143,13 +143,13 @@ describe('release hygiene', () => {
     expect(protectionChecks.length).toBeGreaterThanOrEqual(3)
     expect(releaseWorkflow).toContain('test "$RELEASE_SHA" = "$GITHUB_SHA"')
     expect(releaseWorkflow).toContain('verify_remote_tag')
-    expect(releaseWorkflow).toContain('if [[ "$VERSION" != "0.40.0-beta.3" ]]')
+    expect(releaseWorkflow).toContain('if [[ "$VERSION" != "0.40.0-beta.4" ]]')
     expect(releaseWorkflow).toContain('npm run publish:next')
     expect(releaseWorkflow).toContain('dist.attestations.provenance')
     expect(releaseWorkflow).toContain('npm --prefix "$VERIFY_DIR" audit signatures')
-    expect(releaseWorkflow).toContain('c72c5f786dd07aff16f3ef4990bb4d166a197791')
+    expect(releaseWorkflow).toContain('c5250a0d308b3d6df374851154ddb393a678a992')
     expect(releaseWorkflow).toContain(
-      'sha512-ulfQ/bNBKz5VDzErYke1hsk3xIxoZtaJKZlN/lsRb60Tq7wvUnFFlxFR2sdkRQ9HBNBWgc/vhpcCgVvdPEk1lw==',
+      'sha512-772P+n4Cx55nqC+CAx8A1aTJ2rY4yk1hUH45lAlxNMMw4YRj8hhswgDiCwczS5hx1S3a+Z+KUv2jma/zWjQZ6w==',
     )
     expect(releaseWorkflow).toContain('LATEST_VERSION" == "0.32.0"')
     expect(publishIndex).toBeGreaterThan(0)
