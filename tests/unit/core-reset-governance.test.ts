@@ -390,10 +390,10 @@ const EVIDENCE_SKELETON_RETRIEVAL_FILES = [
   'src/domain/query/traverse.ts',
   'src/domain/query/types.ts',
 ] as const
-const EVIDENCE_SKELETON_RETRIEVAL_SNAPSHOT = '4de4e0f77dffe8a5f299d04242cacab38737df9e'
-const EVIDENCE_SKELETON_RETRIEVAL_SNAPSHOT_TREE = 'de667a6a595fc55ba67f24a76a1cecfa82145537'
-const EVIDENCE_SKELETON_RETRIEVAL_SNAPSHOT_SRC_TREE = 'a5d7e22d8d3cb2ae71ab0c57f129237e184edaf7'
-const EVIDENCE_SKELETON_RETRIEVAL_SNAPSHOT_TESTS_TREE = '87423eebb3b1dcdc64d56355975d1d5d2b82fb61'
+const EVIDENCE_SKELETON_RETRIEVAL_SNAPSHOT = '4285bdf3f335a31b9c5176cb4215db3aabc5e787'
+const EVIDENCE_SKELETON_RETRIEVAL_SNAPSHOT_TREE = 'd6c04a8189e9db73a709b259b64d07dc8d09f7b7'
+const EVIDENCE_SKELETON_RETRIEVAL_SNAPSHOT_SRC_TREE = '3d146a24b2fd457159493be2e68c4c7c57c550f5'
+const EVIDENCE_SKELETON_RETRIEVAL_SNAPSHOT_TESTS_TREE = '0942cb5258a022fd5a929d3ba32addd42e3998fd'
 const EVIDENCE_SKELETON_RETRIEVAL_FROZEN_PATHS = [
   ...EVIDENCE_SKELETON_RETRIEVAL_FILES,
   'tests/fixtures/issue-625-evidence-skeleton',
@@ -402,7 +402,7 @@ const EVIDENCE_SKELETON_RETRIEVAL_FROZEN_PATHS = [
   'tests/unit/retrieve-evidence-skeleton-regression.test.ts',
 ] as const
 const EVIDENCE_SKELETON_RETRIEVAL_DIFF_SHA256 =
-  'de303eb22abf34554a5c087c9d9718fefdf2a0c1f4408604455afcb85aea4548'
+  'b16c0e04fccc044d421cb594fe90504a56e5197f2702e826d4a98394d6450131'
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
   '4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0'
 const CAPABILITY_VALIDATION_V2_ISSUE = 'https://github.com/mohanagy/madar/issues/612'
@@ -997,7 +997,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Capability validation v1 | **Stopped**')
     expect(scorecard).toContain('| Capability validation v2 | **Stopped / not planned**')
     expect(scorecard).toContain('| Retrieval regression #618 | **Passed**')
-    expect(scorecard).toContain('| Retrieval regression #625 | **In progress / pre-PR**')
+    expect(scorecard).toContain('| Retrieval regression #625 | **In progress / corrective PR**')
     expect(scorecard).toContain('| Beta release | **Published**')
     expect(scorecard).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(scorecard).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
@@ -1045,7 +1045,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Retrieval regression #622 | **Passed**')
     expect(scorecard).toContain('Issue `#622` is complete on `next`')
     expect(scorecard).toContain('first-candidate stop receipt')
-    expect(scorecard).toContain('102 entries / 159,961 packed / 639,876 unpacked bytes')
+    expect(scorecard).toContain('102 entries / 159,980 packed / 639,930 unpacked bytes')
     expect(scorecard).toContain('/compilerOptions/removeComments=true')
     expect(scorecard).toContain('exactly 20 production TypeScript files / 4,698 LOC')
     expect(scorecard).toContain('completed Evaluation Tooling Isolation is 43 files / 11,956 LOC')
@@ -1287,19 +1287,19 @@ describe('core reset governance', () => {
       base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
       completed_phase_commit: FULL_FLOW_RETRIEVAL_MERGE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_449,
-      production_loc_added: 1_403,
-      production_loc_removed: 1_101,
-      production_loc_net: 302,
+      production_typescript_loc: 12_454,
+      production_loc_added: 1_409,
+      production_loc_removed: 1_102,
+      production_loc_net: 307,
       npm_files: 102,
-      npm_packed_bytes: 159_961,
-      npm_unpacked_bytes: 639_876,
-      npm_shasum: '1f68e2862e938fdfd7364835d004b1bc4baf0352',
+      npm_packed_bytes: 159_980,
+      npm_unpacked_bytes: 639_930,
+      npm_shasum: '398f08c8315a3b2ba8fb1c0ec22e17d8bf2c3c05',
       npm_integrity:
-        'sha512-VRZmM3qkyJZa4RElDBCn9RHxwFJx6q2QRn9LuDnkZjkearKwgRoxnyCETHKlaP0mCSab324WFyCr6SMnYXitzw==',
-      npm_artifact_sha256: '9c42187926225d188562b6c3f09fe24b33609c320749b4d7ac47915a4a2a8eba',
+        'sha512-X1DWZZdJmq3Y2nZzfPEQpWkU4c/eLSguPCxK4F6YSCx/iCqOHK0zrA4jHpPVhYNufDrpcIeyNeW5EahZ+Q7kPQ==',
+      npm_artifact_sha256: 'd30d7990fe217bd8b50a8fb2d0085b1864ce4a8a1725731424bde00957934b76',
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'retrieval_regression_625_pre_pr_source_and_package',
+      snapshot_scope: 'retrieval_regression_625_corrective_pr_source_and_package',
     })
     expect(manifest.current.release_candidate).toMatchObject({
       version: '0.40.0-beta.3',
@@ -1575,26 +1575,26 @@ describe('core reset governance', () => {
         target_branch: 'next',
       },
       candidate: {
-        state: 'in_progress_pre_pr',
-        pull_request: 'pending_not_opened',
-        ci_six_jobs: 'pending_not_run',
-        independent_review: 'pending',
-        unresolved_review_threads: 'not_applicable_until_pull_request',
+        state: 'pr_open_corrective_candidate',
+        pull_request: 'https://github.com/mohanagy/madar/pull/626',
+        ci_six_jobs: 'corrective_exact_head_pending_after_first_head_stop',
+        independent_review: 'corrective_source_test_snapshot_passed_final_head_pending',
+        unresolved_review_threads: 'five_on_superseded_head_correction_pending',
         merge: 'pending_all_gates',
         package_gate: 'passed',
         npm_files: 102,
-        npm_packed_bytes: 159_961,
-        npm_unpacked_bytes: 639_876,
-        npm_shasum: '1f68e2862e938fdfd7364835d004b1bc4baf0352',
+        npm_packed_bytes: 159_980,
+        npm_unpacked_bytes: 639_930,
+        npm_shasum: '398f08c8315a3b2ba8fb1c0ec22e17d8bf2c3c05',
         npm_integrity:
-          'sha512-VRZmM3qkyJZa4RElDBCn9RHxwFJx6q2QRn9LuDnkZjkearKwgRoxnyCETHKlaP0mCSab324WFyCr6SMnYXitzw==',
-        npm_artifact_sha256: '9c42187926225d188562b6c3f09fe24b33609c320749b4d7ac47915a4a2a8eba',
+          'sha512-X1DWZZdJmq3Y2nZzfPEQpWkU4c/eLSguPCxK4F6YSCx/iCqOHK0zrA4jHpPVhYNufDrpcIeyNeW5EahZ+Q7kPQ==',
+        npm_artifact_sha256: 'd30d7990fe217bd8b50a8fb2d0085b1864ce4a8a1725731424bde00957934b76',
         source_measurement: {
           production_typescript_files: 43,
-          production_typescript_loc: 12_449,
-          added: 1_403,
-          removed: 1_101,
-          net: 302,
+          production_typescript_loc: 12_454,
+          added: 1_409,
+          removed: 1_102,
+          net: 307,
           diff_sha256: EVIDENCE_SKELETON_RETRIEVAL_DIFF_SHA256,
         },
         source_test_snapshot: {
@@ -1641,13 +1641,42 @@ describe('core reset governance', () => {
           queue_configuration_locator_serialized_tokens: 341,
           queue_configuration_locator_closure_passes: 0,
           measured_calls: 100,
-          latency_p50_ms: 142.916,
-          latency_p95_ms: 175.534,
-          latency_p99_ms: 286.364,
-          latency_max_ms: 677.704,
-          latency_mean_ms: 150.279,
-          forced_gc_heap_delta_bytes: 275_168,
-          rss_delta_bytes: -292_274_176,
+          latency_p50_ms: 129.501,
+          latency_p95_ms: 145.671,
+          latency_p99_ms: 162.403,
+          latency_max_ms: 162.958,
+          latency_mean_ms: 133.734,
+          declared_reference_samples: 20,
+          declared_reference_p50_ms: 139.214,
+          declared_reference_p95_ms: 161.626,
+          declared_reference_p99_ms: 162.958,
+          declared_reference_max_ms: 162.958,
+          declared_reference_mean_ms: 136.366,
+          declared_reference_gate_ms_strictly_below: 500,
+          declared_reference_gate: 'passed',
+          reference_environment: 'node_22_9_0_darwin_25_3_0_arm64_apple_m3_max',
+          memory_regression_gate: {
+            base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
+            candidate_commit: EVIDENCE_SKELETON_RETRIEVAL_SNAPSHOT,
+            worker_sha256: '6f0cffe705f2cfbe4bbdfe94a1086de00e434d66b29137c2f78d765db63969a0',
+            trials_per_head: 3,
+            separate_process_per_trial: true,
+            warmup_rounds: 3,
+            warmup_queries_per_round: 5,
+            forced_gc_rounds: 5,
+            macrotask_yields_before_final_gc: 2,
+            weakref_same_job_corpus_bytes_median: 31_549_504,
+            weakref_same_job_interpretation: 'ecmascript_keep_during_job_not_retained_leak',
+            base_post_yield_forced_gc_heap_bytes_median: 115_398_016,
+            candidate_post_yield_forced_gc_heap_bytes_median: 114_099_800,
+            candidate_minus_base_post_yield_heap_bytes: -1_298_216,
+            cold_after_collection_candidate_median_ms: 660.295,
+            cold_after_collection_base_median_ms: 956.252,
+            cold_after_collection_disposition:
+              'diagnostic_outside_inherited_warm_reference_protocol',
+            rss_disposition: 'allocator_and_os_noise_not_used_to_override_heap_result',
+            status: 'passed_no_material_retained_heap_regression',
+          },
         },
         adversarial_gates: {
           unrelated_registry_topology_rejected: true,
@@ -1662,7 +1691,8 @@ describe('core reset governance', () => {
           common_parent_stress_nodes: 7_000,
           common_parent_stress_status: 'passed_bounded_and_stack_safe',
           scoped_rank_stress_nodes: 12_344,
-          scoped_rank_stress_status: 'passed_exact_endpoints_below_500_ms',
+          scoped_rank_stress_status: 'passed_exact_endpoints_functional_only',
+          hosted_ci_reference_latency_claim: 'none',
           queue_registration_locator_status: 'passed_exact_pair',
           queue_configuration_locator_status: 'passed_exact_singleton',
           parallel_relationships_traversed: 2_000,
@@ -1675,6 +1705,9 @@ describe('core reset governance', () => {
           parallel_relationship_latency_mean_ms: 269.129,
           exact_splice_token_accounting: true,
           oversized_relationship_does_not_block_later_small_relationship: true,
+          lowercase_period_not_promoted_to_stage_boundary: true,
+          disconnected_locator_undefined_forbidden: true,
+          maximum_question_minimum_budget_envelope: 'passed_512_utf16_chars_256_tokens',
         },
         local_gates: {
           isolation: 'passed',
@@ -1686,20 +1719,40 @@ describe('core reset governance', () => {
           packed_retrieval_parity: 'passed',
           npm_audit: 'passed_zero_vulnerabilities',
           focused_test_files: 3,
-          focused_tests: 103,
+          focused_tests: 107,
           candidate_gate_command:
             'npm test -- --run tests/unit/core-reset-governance.test.ts tests/unit/retrieve-context.test.ts tests/unit/retrieve-evidence-skeleton-adversarial.test.ts tests/unit/retrieve-evidence-skeleton-regression.test.ts tests/unit/benchmark-quality.test.ts --maxWorkers=1',
           candidate_gate_test_files: 5,
-          candidate_gate_tests: 124,
+          candidate_gate_tests: 128,
           full_test_files: 76,
-          full_tests: 680,
+          full_tests: 684,
           coverage: {
-            statements_pct: 83.73,
-            branches_pct: 75.35,
+            statements_pct: 83.74,
+            branches_pct: 75.41,
             functions_pct: 91,
             lines_pct: 87.56,
           },
         },
+      },
+      first_pr_head_stop: {
+        head: 'eb664013a399bd4ef970915ce9382f841395ebfa',
+        run: 'https://github.com/mohanagy/madar/actions/runs/30527791296',
+        required_jobs_failed: 6,
+        merge_attempted: false,
+        invalid_unit_timing_protocol: {
+          cold_single_sample_assertions: 2,
+          hosted_coverage_lane_included: true,
+          accepted_reference_gate_ms: 500,
+          accepted_gate_changed: false,
+          disposition: 'removed_from_portability_ci_reference_receipt_remains_required',
+        },
+        fixture_setup_timeout: {
+          previous_ms: 10_000,
+          corrected_setup_only_ms: 30_000,
+          retrieval_timeout_changed: false,
+        },
+        coderabbit_review_threads: 5,
+        corrective_snapshot: EVIDENCE_SKELETON_RETRIEVAL_SNAPSHOT,
       },
       first_candidate_stop: {
         receipt: 'https://github.com/mohanagy/madar/issues/625#issuecomment-5122801278',
@@ -2143,12 +2196,12 @@ describe('core reset governance', () => {
       base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
       completed_phase_commit: FULL_FLOW_RETRIEVAL_MERGE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_449,
-      production_loc_added: 1_403,
-      production_loc_removed: 1_101,
-      production_loc_net: 302,
+      production_typescript_loc: 12_454,
+      production_loc_added: 1_409,
+      production_loc_removed: 1_102,
+      production_loc_net: 307,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'retrieval_regression_625_pre_pr_source_and_package',
+      snapshot_scope: 'retrieval_regression_625_corrective_pr_source_and_package',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([EVIDENCE_SKELETON_RETRIEVAL_ID])
@@ -3009,13 +3062,13 @@ describe('core reset governance', () => {
       base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
       completed_phase_commit: FULL_FLOW_RETRIEVAL_MERGE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_449,
-      production_loc_added: 1_403,
-      production_loc_removed: 1_101,
-      production_loc_net: 302,
+      production_typescript_loc: 12_454,
+      production_loc_added: 1_409,
+      production_loc_removed: 1_102,
+      production_loc_net: 307,
       npm_files: 102,
-      npm_packed_bytes: 159_961,
-      npm_unpacked_bytes: 639_876,
+      npm_packed_bytes: 159_980,
+      npm_unpacked_bytes: 639_930,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([EVIDENCE_SKELETON_RETRIEVAL_ID])
@@ -3522,10 +3575,10 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_449,
-      production_loc_added: 1_403,
-      production_loc_removed: 1_101,
-      production_loc_net: 302,
+      production_typescript_loc: 12_454,
+      production_loc_added: 1_409,
+      production_loc_removed: 1_102,
+      production_loc_net: 307,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([EVIDENCE_SKELETON_RETRIEVAL_ID])
@@ -3780,10 +3833,10 @@ describe('core reset governance', () => {
       ready_phase: null,
       base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_449,
-      production_loc_added: 1_403,
-      production_loc_removed: 1_101,
-      production_loc_net: 302,
+      production_typescript_loc: 12_454,
+      production_loc_added: 1_409,
+      production_loc_removed: 1_102,
+      production_loc_net: 307,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([EVIDENCE_SKELETON_RETRIEVAL_ID])
@@ -4417,15 +4470,15 @@ describe('core reset governance', () => {
       base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
       completed_phase_commit: FULL_FLOW_RETRIEVAL_MERGE,
       production_typescript_files: 43,
-      production_typescript_loc: 12_449,
-      production_loc_added: 1_403,
-      production_loc_removed: 1_101,
-      production_loc_net: 302,
+      production_typescript_loc: 12_454,
+      production_loc_added: 1_409,
+      production_loc_removed: 1_102,
+      production_loc_net: 307,
       npm_files: 102,
-      npm_packed_bytes: 159_961,
-      npm_unpacked_bytes: 639_876,
+      npm_packed_bytes: 159_980,
+      npm_unpacked_bytes: 639_930,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'retrieval_regression_625_pre_pr_source_and_package',
+      snapshot_scope: 'retrieval_regression_625_corrective_pr_source_and_package',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([EVIDENCE_SKELETON_RETRIEVAL_ID])

@@ -33,18 +33,18 @@ current:
   base_commit: ece7d0d02643ecec08bd91aa904a4514aa845f42
   completed_phase_commit: 6416dbc02cefb3bd79157cf440e420b30dda8cf0
   production_typescript_files: 43
-  production_typescript_loc: 12449
-  production_loc_added: 1403
-  production_loc_removed: 1101
-  production_loc_net: 302
+  production_typescript_loc: 12454
+  production_loc_added: 1409
+  production_loc_removed: 1102
+  production_loc_net: 307
   npm_files: 102
-  npm_packed_bytes: 159961
-  npm_unpacked_bytes: 639876
-  npm_shasum: 1f68e2862e938fdfd7364835d004b1bc4baf0352
-  npm_integrity: sha512-VRZmM3qkyJZa4RElDBCn9RHxwFJx6q2QRn9LuDnkZjkearKwgRoxnyCETHKlaP0mCSab324WFyCr6SMnYXitzw==
-  npm_artifact_sha256: 9c42187926225d188562b6c3f09fe24b33609c320749b4d7ac47915a4a2a8eba
+  npm_packed_bytes: 159980
+  npm_unpacked_bytes: 639930
+  npm_shasum: 398f08c8315a3b2ba8fb1c0ec22e17d8bf2c3c05
+  npm_integrity: sha512-X1DWZZdJmq3Y2nZzfPEQpWkU4c/eLSguPCxK4F6YSCx/iCqOHK0zrA4jHpPVhYNufDrpcIeyNeW5EahZ+Q7kPQ==
+  npm_artifact_sha256: d30d7990fe217bd8b50a8fb2d0085b1864ce4a8a1725731424bde00957934b76
   measurement_state: source_and_package_exact
-  snapshot_scope: retrieval_regression_625_pre_pr_source_and_package
+  snapshot_scope: retrieval_regression_625_corrective_pr_source_and_package
   release_candidate:
     version: 0.40.0-beta.3
     protected_anchor_commit: ece7d0d02643ecec08bd91aa904a4514aa845f42
@@ -1983,31 +1983,31 @@ items:
       protected_base: ece7d0d02643ecec08bd91aa904a4514aa845f42
       target_branch: next
     candidate:
-      state: in_progress_pre_pr
-      pull_request: pending_not_opened
-      ci_six_jobs: pending_not_run
-      independent_review: pending
-      unresolved_review_threads: not_applicable_until_pull_request
+      state: pr_open_corrective_candidate
+      pull_request: https://github.com/mohanagy/madar/pull/626
+      ci_six_jobs: corrective_exact_head_pending_after_first_head_stop
+      independent_review: corrective_source_test_snapshot_passed_final_head_pending
+      unresolved_review_threads: five_on_superseded_head_correction_pending
       merge: pending_all_gates
       package_gate: passed
       npm_files: 102
-      npm_packed_bytes: 159961
-      npm_unpacked_bytes: 639876
-      npm_shasum: 1f68e2862e938fdfd7364835d004b1bc4baf0352
-      npm_integrity: sha512-VRZmM3qkyJZa4RElDBCn9RHxwFJx6q2QRn9LuDnkZjkearKwgRoxnyCETHKlaP0mCSab324WFyCr6SMnYXitzw==
-      npm_artifact_sha256: 9c42187926225d188562b6c3f09fe24b33609c320749b4d7ac47915a4a2a8eba
+      npm_packed_bytes: 159980
+      npm_unpacked_bytes: 639930
+      npm_shasum: 398f08c8315a3b2ba8fb1c0ec22e17d8bf2c3c05
+      npm_integrity: sha512-X1DWZZdJmq3Y2nZzfPEQpWkU4c/eLSguPCxK4F6YSCx/iCqOHK0zrA4jHpPVhYNufDrpcIeyNeW5EahZ+Q7kPQ==
+      npm_artifact_sha256: d30d7990fe217bd8b50a8fb2d0085b1864ce4a8a1725731424bde00957934b76
       source_measurement:
         production_typescript_files: 43
-        production_typescript_loc: 12449
-        added: 1403
-        removed: 1101
-        net: 302
-        diff_sha256: de303eb22abf34554a5c087c9d9718fefdf2a0c1f4408604455afcb85aea4548
+        production_typescript_loc: 12454
+        added: 1409
+        removed: 1102
+        net: 307
+        diff_sha256: b16c0e04fccc044d421cb594fe90504a56e5197f2702e826d4a98394d6450131
       source_test_snapshot:
-        commit: 4de4e0f77dffe8a5f299d04242cacab38737df9e
-        tree: de667a6a595fc55ba67f24a76a1cecfa82145537
-        src_tree: a5d7e22d8d3cb2ae71ab0c57f129237e184edaf7
-        tests_tree: 87423eebb3b1dcdc64d56355975d1d5d2b82fb61
+        commit: 4285bdf3f335a31b9c5176cb4215db3aabc5e787
+        tree: d6c04a8189e9db73a709b259b64d07dc8d09f7b7
+        src_tree: 3d146a24b2fd457159493be2e68c4c7c57c550f5
+        tests_tree: 0942cb5258a022fd5a929d3ba32addd42e3998fd
         protected_base: ece7d0d02643ecec08bd91aa904a4514aa845f42
         frozen_paths:
           - src/application/retrieve-context.ts
@@ -2053,13 +2053,40 @@ items:
         queue_configuration_locator_serialized_tokens: 341
         queue_configuration_locator_closure_passes: 0
         measured_calls: 100
-        latency_p50_ms: 142.916
-        latency_p95_ms: 175.534
-        latency_p99_ms: 286.364
-        latency_max_ms: 677.704
-        latency_mean_ms: 150.279
-        forced_gc_heap_delta_bytes: 275168
-        rss_delta_bytes: -292274176
+        latency_p50_ms: 129.501
+        latency_p95_ms: 145.671
+        latency_p99_ms: 162.403
+        latency_max_ms: 162.958
+        latency_mean_ms: 133.734
+        declared_reference_samples: 20
+        declared_reference_p50_ms: 139.214
+        declared_reference_p95_ms: 161.626
+        declared_reference_p99_ms: 162.958
+        declared_reference_max_ms: 162.958
+        declared_reference_mean_ms: 136.366
+        declared_reference_gate_ms_strictly_below: 500
+        declared_reference_gate: passed
+        reference_environment: node_22_9_0_darwin_25_3_0_arm64_apple_m3_max
+        memory_regression_gate:
+          base_commit: ece7d0d02643ecec08bd91aa904a4514aa845f42
+          candidate_commit: 4285bdf3f335a31b9c5176cb4215db3aabc5e787
+          worker_sha256: 6f0cffe705f2cfbe4bbdfe94a1086de00e434d66b29137c2f78d765db63969a0
+          trials_per_head: 3
+          separate_process_per_trial: true
+          warmup_rounds: 3
+          warmup_queries_per_round: 5
+          forced_gc_rounds: 5
+          macrotask_yields_before_final_gc: 2
+          weakref_same_job_corpus_bytes_median: 31549504
+          weakref_same_job_interpretation: ecmascript_keep_during_job_not_retained_leak
+          base_post_yield_forced_gc_heap_bytes_median: 115398016
+          candidate_post_yield_forced_gc_heap_bytes_median: 114099800
+          candidate_minus_base_post_yield_heap_bytes: -1298216
+          cold_after_collection_candidate_median_ms: 660.295
+          cold_after_collection_base_median_ms: 956.252
+          cold_after_collection_disposition: diagnostic_outside_inherited_warm_reference_protocol
+          rss_disposition: allocator_and_os_noise_not_used_to_override_heap_result
+          status: passed_no_material_retained_heap_regression
       adversarial_gates:
         unrelated_registry_topology_rejected: true
         pure_fan_in_sequential_handoff_rejected: true
@@ -2073,7 +2100,8 @@ items:
         common_parent_stress_nodes: 7000
         common_parent_stress_status: passed_bounded_and_stack_safe
         scoped_rank_stress_nodes: 12344
-        scoped_rank_stress_status: passed_exact_endpoints_below_500_ms
+        scoped_rank_stress_status: passed_exact_endpoints_functional_only
+        hosted_ci_reference_latency_claim: none
         queue_registration_locator_status: passed_exact_pair
         queue_configuration_locator_status: passed_exact_singleton
         parallel_relationships_traversed: 2000
@@ -2086,6 +2114,9 @@ items:
         parallel_relationship_latency_mean_ms: 269.129
         exact_splice_token_accounting: true
         oversized_relationship_does_not_block_later_small_relationship: true
+        lowercase_period_not_promoted_to_stage_boundary: true
+        disconnected_locator_undefined_forbidden: true
+        maximum_question_minimum_budget_envelope: passed_512_utf16_chars_256_tokens
       local_gates:
         isolation: passed
         typecheck: passed
@@ -2096,17 +2127,40 @@ items:
         packed_retrieval_parity: passed
         npm_audit: passed_zero_vulnerabilities
         focused_test_files: 3
-        focused_tests: 103
+        focused_tests: 107
         candidate_gate_command: npm test -- --run tests/unit/core-reset-governance.test.ts tests/unit/retrieve-context.test.ts tests/unit/retrieve-evidence-skeleton-adversarial.test.ts tests/unit/retrieve-evidence-skeleton-regression.test.ts tests/unit/benchmark-quality.test.ts --maxWorkers=1
         candidate_gate_test_files: 5
-        candidate_gate_tests: 124
+        candidate_gate_tests: 128
         full_test_files: 76
-        full_tests: 680
+        full_tests: 684
         coverage:
-          statements_pct: 83.73
-          branches_pct: 75.35
+          statements_pct: 83.74
+          branches_pct: 75.41
           functions_pct: 91
           lines_pct: 87.56
+    first_pr_head_stop:
+      head: eb664013a399bd4ef970915ce9382f841395ebfa
+      run: https://github.com/mohanagy/madar/actions/runs/30527791296
+      required_jobs_failed: 6
+      merge_attempted: false
+      invalid_unit_timing_protocol:
+        cold_single_sample_assertions: 2
+        hosted_coverage_lane_included: true
+        accepted_reference_gate_ms: 500
+        accepted_gate_changed: false
+        disposition: removed_from_portability_ci_reference_receipt_remains_required
+      fixture_setup_timeout:
+        previous_ms: 10000
+        corrected_setup_only_ms: 30000
+        retrieval_timeout_changed: false
+      coderabbit_review_threads: 5
+      corrective_findings:
+        - uppercase_sentence_guard_was_accidentally_case_insensitive
+        - disconnected_locator_filter_could_emit_undefined
+        - exact_budget_accounting_requires_boundary_heavy_regression
+        - hosted_ci_cannot_claim_reference_hardware_latency
+        - parallel_hosted_ci_cannot_claim_reference_hardware_latency
+      corrective_snapshot: 4285bdf3f335a31b9c5176cb4215db3aabc5e787
     first_candidate_stop:
       receipt: https://github.com/mohanagy/madar/issues/625#issuecomment-5122801278
       condition: inherited_npm_package_ceiling_exceeded
@@ -2144,7 +2198,7 @@ items:
       registry_metadata_publication: forbidden
       tag: forbidden
       main_target: forbidden
-    notes: 'Issue #625 is a separate architecture repair after the immutable #618 and #622 merges and the published beta.3 receipt. It replaces phrase-gated full-flow recovery with one generic deterministic pipeline: concept groups -> bounded candidate subgraph -> graph-coherent evidence skeleton or forest -> atomic evidence-bundle packing -> structural coverage check. The immutable first candidate stopped before PR under receipt 5122801278 at 104 files / 168,719 packed / 697,521 unpacked bytes with five correctness blockers and a material retained-heap regression. Source/test snapshot 4de4e0f77dffe8a5f299d04242cacab38737df9e is frozen and independently reviewed without blocker; it passes the unchanged package gate at 102 files / 159,961 packed / 639,876 unpacked bytes. The contract derives 15 committed query counts from the fixture, separates its six synthetic relationships and three handoffs from the live five-call/four-handoff GoValidate result, and covers explicit scopes, test-domain boundaries, sequential siblings, genuine fan-out/fan-in, exact token-splice packing, and 2,000 distinct parallel relationships. No ceiling is widened. Final governance-head review, PR, six-job CI, thread, merge, publication, and release receipts remain pending.'
+    notes: 'Issue #625 is a separate architecture repair after the immutable #618 and #622 merges and the published beta.3 receipt. It replaces phrase-gated full-flow recovery with one generic deterministic pipeline: concept groups -> bounded candidate subgraph -> graph-coherent evidence skeleton or forest -> atomic evidence-bundle packing -> structural coverage check. The immutable first candidate stopped before PR under receipt 5122801278 at 104 files / 168,719 packed / 697,521 unpacked bytes with five correctness blockers and a material retained-heap regression. PR #626 first head eb664013a399bd4ef970915ce9382f841395ebfa then stopped honestly when all six hosted jobs rejected cold single-sample timing assertions and CodeRabbit opened five threads; no merge was attempted. Corrective source/test snapshot 4285bdf3f335a31b9c5176cb4215db3aabc5e787 is frozen and independently reviewed without blocker; it fixes sentence-boundary casing and locator formatting, proves exact boundary-heavy budget accounting plus the maximum-question/minimum-budget envelope, and passes the unchanged package gate at 102 files / 159,980 packed / 639,930 unpacked bytes. The strict warmed loaded-ready-graph reference p95 remains below 500 ms and is not claimed by hosted CI. A corrected post-yield forced-GC comparison proves no material retained-heap regression. No ceiling is widened. Corrective exact-head CI, final review, zero-thread, and merge receipts remain pending; publication and release remain forbidden.'
     exit_gate: The released broad, focused, and control report-flow prompts, accepted paraphrases, alpha-renamed and distractor-heavy variants, and independent synchronous, queued, fan-out/fan-in, cyclic, and disconnected topologies pass within the frozen retrieval and performance ceilings, with zero false-ready results and no repository-specific production rule.
 
   - id: non-core-graph-products
