@@ -4,6 +4,12 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.40.0-beta.4] - 2026-07-30
+
+### Fixed
+
+- **Cross-file flow retrieval now returns graph-coherent evidence** while preserving token budgets and honest disconnected boundaries. Closes #625.
+
 ## [0.40.0-beta.3] - 2026-07-29
 
 - Fixes report-flow retrieval and traversal; build output omits comments. Closes #622.
