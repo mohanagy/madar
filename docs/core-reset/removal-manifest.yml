@@ -33,16 +33,16 @@ current:
   base_commit: ece7d0d02643ecec08bd91aa904a4514aa845f42
   completed_phase_commit: 6416dbc02cefb3bd79157cf440e420b30dda8cf0
   production_typescript_files: 43
-  production_typescript_loc: 12311
-  production_loc_added: 1159
-  production_loc_removed: 995
-  production_loc_net: 164
+  production_typescript_loc: 12377
+  production_loc_added: 1237
+  production_loc_removed: 1007
+  production_loc_net: 230
   npm_files: 102
-  npm_packed_bytes: 159068
-  npm_unpacked_bytes: 639920
-  npm_shasum: d7d9b3d8a783b283ecd1f0200deefa42da4448f2
-  npm_integrity: sha512-aWFR8ZTEHidQaHrC8I6Vu2u7p71nfmSSKg9xoV+xYfWGCPQddwb8nRBkp4jMtwTXu+PjogGX8J55ss7Yj7uybw==
-  npm_artifact_sha256: a3594fba0d6c71a13ec9996b92f5fc7068feeca339f84d928798f12571dff353
+  npm_packed_bytes: 159512
+  npm_unpacked_bytes: 639959
+  npm_shasum: 9ea5e2922cb5effec9da5397ed28e7bfd73cfa58
+  npm_integrity: sha512-kTrtKbp+jNY1B/RFYKJ58oV1ljiZDx3YelJmCsuVe5riZIP1gkWsjn2ePqwbzDnjSzB0wmExSkqcxHq2v1CeGQ==
+  npm_artifact_sha256: ce13a827c81062e7f2c2aa8fb5016f67e780335bd47f9b3f7484f4f606b0cba3
   measurement_state: source_and_package_exact
   snapshot_scope: retrieval_regression_625_pre_pr_source_and_package
   release_candidate:
@@ -1991,20 +1991,22 @@ items:
       merge: pending_all_gates
       package_gate: passed
       npm_files: 102
-      npm_packed_bytes: 159068
-      npm_unpacked_bytes: 639920
-      npm_shasum: d7d9b3d8a783b283ecd1f0200deefa42da4448f2
-      npm_integrity: sha512-aWFR8ZTEHidQaHrC8I6Vu2u7p71nfmSSKg9xoV+xYfWGCPQddwb8nRBkp4jMtwTXu+PjogGX8J55ss7Yj7uybw==
-      npm_artifact_sha256: a3594fba0d6c71a13ec9996b92f5fc7068feeca339f84d928798f12571dff353
+      npm_packed_bytes: 159512
+      npm_unpacked_bytes: 639959
+      npm_shasum: 9ea5e2922cb5effec9da5397ed28e7bfd73cfa58
+      npm_integrity: sha512-kTrtKbp+jNY1B/RFYKJ58oV1ljiZDx3YelJmCsuVe5riZIP1gkWsjn2ePqwbzDnjSzB0wmExSkqcxHq2v1CeGQ==
+      npm_artifact_sha256: ce13a827c81062e7f2c2aa8fb5016f67e780335bd47f9b3f7484f4f606b0cba3
       source_measurement:
         production_typescript_files: 43
-        production_typescript_loc: 12311
-        added: 1159
-        removed: 995
-        net: 164
-        diff_sha256: 50c048bff7b1a1b6c697e3723b8d831de2441f9d745f4607121a8e33b2979d9f
+        production_typescript_loc: 12377
+        added: 1237
+        removed: 1007
+        net: 230
+        diff_sha256: 06a9ddf17b1273bc10fb8ffbd2b9c569183c5c9ac8f79e3f66aa0d45c6911cff
       real_graph_gate:
-        flow_queries: 5
+        flow_queries: 13
+        frozen_fixture_queries: 10
+        natural_variants: 3
         required_stages_passed: 10
         selected_files: 10
         snippets: 10
@@ -2019,14 +2021,33 @@ items:
         locator_snippets: 1
         locator_serialized_tokens: 270
         locator_closure_passes: 0
+        queue_registration_locator_files: 2
+        queue_registration_locator_snippets: 2
+        queue_registration_locator_serialized_tokens: 668
+        queue_registration_locator_calls: 1
+        queue_configuration_locator_files: 1
+        queue_configuration_locator_snippets: 1
+        queue_configuration_locator_serialized_tokens: 341
+        queue_configuration_locator_closure_passes: 0
         measured_calls: 100
-        latency_p50_ms: 241.803
-        latency_p95_ms: 270.488
-        latency_p99_ms: 274.112
-        latency_max_ms: 275.395
-        latency_mean_ms: 245.122
-        forced_gc_heap_delta_mb: 1.245
-        rss_delta_mb: -3.406
+        latency_p50_ms: 225.928
+        latency_p95_ms: 304.812
+        latency_p99_ms: 317.881
+        latency_max_ms: 319.218
+        latency_mean_ms: 231.274
+        forced_gc_heap_delta_bytes: 1329536
+        rss_delta_bytes: -350371840
+      adversarial_gates:
+        unrelated_registry_topology_rejected: true
+        pure_fan_in_sequential_handoff_rejected: true
+        priority_endpoints_survive_file_and_token_pressure: true
+        exact_symbol_requires_whole_request_lexeme: true
+        common_parent_stress_nodes: 7000
+        common_parent_stress_status: passed_bounded_and_stack_safe
+        scoped_rank_stress_nodes: 12344
+        scoped_rank_stress_status: passed_exact_endpoints_below_500_ms
+        queue_registration_locator_status: passed_exact_pair
+        queue_configuration_locator_status: passed_exact_singleton
       local_gates:
         isolation: passed
         typecheck: passed
@@ -2036,14 +2057,14 @@ items:
         registry_validation: passed
         npm_audit: passed_zero_vulnerabilities
         focused_test_files: 4
-        focused_tests: 101
+        focused_tests: 106
         full_test_files: 76
-        full_tests: 662
+        full_tests: 667
         coverage:
-          statements_pct: 83.54
-          branches_pct: 74.82
-          functions_pct: 90.8
-          lines_pct: 87.44
+          statements_pct: 83.58
+          branches_pct: 75.03
+          functions_pct: 90.81
+          lines_pct: 87.47
     first_candidate_stop:
       receipt: https://github.com/mohanagy/madar/issues/625#issuecomment-5122801278
       condition: inherited_npm_package_ceiling_exceeded
@@ -2081,7 +2102,7 @@ items:
       registry_metadata_publication: forbidden
       tag: forbidden
       main_target: forbidden
-    notes: 'Issue #625 is a separate architecture repair after the immutable #618 and #622 merges and the published beta.3 receipt. It replaces phrase-gated full-flow recovery with one generic deterministic pipeline: concept groups -> bounded candidate subgraph -> graph-coherent evidence skeleton or forest -> atomic evidence-bundle packing -> structural coverage check. The immutable first candidate stopped before PR under receipt 5122801278 at 104 files / 168,719 packed / 697,521 unpacked bytes with five correctness blockers and a material retained-heap regression. The smaller five-file candidate is in progress and passes the unchanged package gate at 102 files / 159,068 packed / 639,920 unpacked bytes. No ceiling is widened. No current-candidate PR, CI, independent review, thread, exact head, merge, publication, or release receipt exists.'
+    notes: 'Issue #625 is a separate architecture repair after the immutable #618 and #622 merges and the published beta.3 receipt. It replaces phrase-gated full-flow recovery with one generic deterministic pipeline: concept groups -> bounded candidate subgraph -> graph-coherent evidence skeleton or forest -> atomic evidence-bundle packing -> structural coverage check. The immutable first candidate stopped before PR under receipt 5122801278 at 104 files / 168,719 packed / 697,521 unpacked bytes with five correctness blockers and a material retained-heap regression. The smaller five-file candidate is in progress and passes the unchanged package gate at 102 files / 159,512 packed / 639,959 unpacked bytes. Adversarial gates reject unrelated registry topology and pure fan-in handoffs, preserve priority endpoints under file and token pressure, require whole-request-lexeme exact-symbol credit, bound 7,000 common parents, keep 12,344-node scoped ranking under 500 ms with exact endpoints, and keep queue locators at the exact registration pair or configuration singleton. No ceiling is widened. No current-candidate PR, CI, independent review, thread, exact head, merge, publication, or release receipt exists.'
     exit_gate: The released broad, focused, and control report-flow prompts, accepted paraphrases, alpha-renamed and distractor-heavy variants, and independent synchronous, queued, fan-out/fan-in, cyclic, and disconnected topologies pass within the frozen retrieval and performance ceilings, with zero false-ready results and no repository-specific production rule.
 
   - id: non-core-graph-products

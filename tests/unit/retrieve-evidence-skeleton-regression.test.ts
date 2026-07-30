@@ -504,6 +504,25 @@ describe('issue #625 generic evidence-skeleton retrieval', () => {
     }))
   })
 
+  it('preserves a stronger corrupt outcome when structural coverage is unavailable', () => {
+    const result = sliceEvidence({
+      request: { question: 'trace the unavailable runtime flow', budget: 4_000 },
+      outcome: 'corrupt',
+      matchedNodes: [],
+      relationships: [],
+      boundaries: [{ kind: 'corrupt', subject: 'canonical index' }],
+      priorityNodeIds: [],
+      closurePasses: 0,
+      structuralRequired: true,
+      structuralCoverageComplete: false,
+    })
+
+    expect(result.outcome).toBe('corrupt')
+    expect(result.boundaries).toEqual([
+      { kind: 'corrupt', subject: 'canonical index' },
+    ])
+  })
+
   it('packs each disconnected handoff with both endpoints under the hard file cap', () => {
     const nodes = Array.from({ length: 13 }, (_, pair) => [
       evidenceNode(`producer-${pair}`),
@@ -538,6 +557,43 @@ describe('issue #625 generic evidence-skeleton retrieval', () => {
       expect(retainedIds.has(`producer-${pair}`))
         .toBe(retainedIds.has(`consumer-${pair}`))
     }
+    expect(result.metrics.selected_files).toBeLessThanOrEqual(12)
+    expect(result.metrics.truncated).toBe(true)
+  })
+
+  it('keeps priority disconnected endpoints ahead of non-priority causal closure', () => {
+    const askedStart = evidenceNode('asked-start')
+    const askedFinish = evidenceNode('asked-finish')
+    const closureNodes = Array.from({ length: 12 }, (_, index) =>
+      evidenceNode(`closure-${index}`))
+    const relationships = Array.from({ length: 6 }, (_, pair) => ({
+      id: `closure-edge-${pair}`,
+      from_id: `closure-${pair * 2}`,
+      to_id: `closure-${pair * 2 + 1}`,
+      relation: 'calls',
+      source_file: `src/closure-${pair * 2}.ts`,
+      source_location: 'L1',
+      provenance: [{}],
+    }))
+    const result = sliceEvidence({
+      request: { question: 'trace asked start to asked finish', budget: 4_000 },
+      outcome: 'evidence',
+      matchedNodes: [askedStart, askedFinish, ...closureNodes],
+      relationships,
+      boundaries: [{
+        kind: 'disconnected',
+        subject: `${askedStart.node_id} -> ${askedFinish.node_id}`,
+      }],
+      priorityNodeIds: [askedStart.node_id, askedFinish.node_id],
+      closurePasses: 1,
+    })
+
+    expect(result.matched_nodes.map(({ node_id }) => node_id))
+      .toEqual(expect.arrayContaining([askedStart.node_id, askedFinish.node_id]))
+    expect(result.boundaries).toContainEqual({
+      kind: 'disconnected',
+      subject: `${askedStart.node_id} -> ${askedFinish.node_id}`,
+    })
     expect(result.metrics.selected_files).toBeLessThanOrEqual(12)
     expect(result.metrics.truncated).toBe(true)
   })

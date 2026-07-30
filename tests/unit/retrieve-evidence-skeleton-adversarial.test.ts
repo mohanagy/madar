@@ -6,16 +6,19 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { performance } from 'node:perf_hooks'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { loadGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
 import { generateIndex } from '../../src/application/generate-index.js'
 import { retrieveContext } from '../../src/application/retrieve-context.js'
+import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import {
   inspectQueryIndex,
   type ReadyQueryIndex,
 } from '../../src/domain/query/index-status.js'
+import { rankQueryAnchors } from '../../src/domain/query/rank.js'
 import type {
   EvidenceRelationship,
   RetrieveContextResult,
@@ -79,6 +82,35 @@ function expectWithinProtocol(result: RetrieveContextResult): void {
   expect(result.metrics.snippets).toBeLessThanOrEqual(25)
   expect(result.metrics.serialized_tokens).toBeLessThanOrEqual(4_000)
   expect(result.metrics.closure_passes).toBeLessThanOrEqual(1)
+}
+
+function syntheticNode(label: string, file: string): Record<string, unknown> {
+  return {
+    label: `${label}()`,
+    qualified_name: label,
+    node_kind: 'function',
+    source_file: file,
+    source_location: 'L1',
+    provenance: [{}],
+    definition_range: {
+      start: { line: 1, column: 1 },
+      end: { line: 1, column: 24 },
+    },
+    declaration_range: {
+      start: { line: 1, column: 1 },
+      end: { line: 1, column: 23 },
+    },
+  }
+}
+
+function syntheticIndex(graph: KnowledgeGraph): ReadyQueryIndex {
+  return {
+    state: 'ready',
+    graph,
+    root_path: '/workspace',
+    file_hashes: new Map(),
+    unsupported_sources: [],
+  }
 }
 
 afterEach(() => {
@@ -339,30 +371,48 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
         "  return `finish:${value}`",
         '}',
       ].join('\n'),
-      'src/registry/unrelated-registry.ts': [
-        "import { AlphaUnit } from './unit-alpha.js'",
-        "import { OmegaUnit } from './unit-omega.js'",
-        '',
-        'export class UnrelatedRegistry {',
-        '  registerUnit(task: () => string): void { void task }',
+      'src/registry/queue.ts': [
+        'export class Queue {',
+        '  addJob(value: string): string { return this.noise(value) }',
+        '  noise(value: string): string { return value }',
+        '  registerWorker(task: () => string): string { return task() }',
         '}',
-        '',
-        'export function bootstrapRegistry(): void {',
-        '  const registry = new UnrelatedRegistry()',
-        '  const alpha = new AlphaUnit()',
-        '  const omega = new OmegaUnit()',
-        '  registry.registerUnit(() => alpha.runTask())',
-        '  registry.registerUnit(() => omega.runTask())',
+        'export const queue = new Queue()',
+        'export function bootstrapRegistry(): string { return queue.addJob("boot") }',
+      ].join('\n'),
+      'src/registry/worker-alpha.ts': [
+        "import { queue } from './queue.js'",
+        "import { AlphaService } from './service-alpha.js'",
+        'export class AlphaWorker {',
+        '  private readonly service = new AlphaService()',
+        '  register(): string {',
+        '    queue.registerWorker(() => this.process())',
+        '    return this.process()',
+        '  }',
+        '  process(): string { return this.service.execute() }',
         '}',
       ].join('\n'),
-      'src/registry/unit-alpha.ts': [
-        'export class AlphaUnit {',
-        '  runTask(): string { return "alpha" }',
+      'src/registry/worker-omega.ts': [
+        "import { queue } from './queue.js'",
+        "import { OmegaService } from './service-omega.js'",
+        'export class OmegaWorker {',
+        '  private readonly service = new OmegaService()',
+        '  register(): string {',
+        '    queue.registerWorker(() => this.process())',
+        '    return this.process()',
+        '  }',
+        '  process(): string { return this.service.execute() }',
         '}',
       ].join('\n'),
-      'src/registry/unit-omega.ts': [
-        'export class OmegaUnit {',
-        '  runTask(): string { return "omega" }',
+      'src/registry/service-alpha.ts': [
+        "import { queue } from './queue.js'",
+        'export class AlphaService {',
+        '  execute(): string { return queue.addJob("alpha") }',
+        '}',
+      ].join('\n'),
+      'src/registry/service-omega.ts': [
+        'export class OmegaService {',
+        '  execute(): string { return "omega" }',
         '}',
       ].join('\n'),
     })
@@ -374,9 +424,7 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
 
     expect(result.outcome).not.toBe('evidence')
     expect(result.matched_nodes.some((node) =>
-      node.label.includes('runTask')
-      || node.label.includes('registerUnit')
-      || node.label.includes('UnrelatedRegistry'))).toBe(false)
+      node.source_file.startsWith('src/registry/'))).toBe(false)
     expect(result.boundaries).toContainEqual(expect.objectContaining({
       kind: 'missing',
     }))
@@ -484,6 +532,39 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
     expectWithinProtocol(result)
   })
 
+  it('does not fabricate a disconnected handoff between pure fan-in branches', () => {
+    const index = readyFixture('pure-fan-in', {
+      'src/fan-in/alpha.ts': [
+        "import { mergeResult } from './merge.js'",
+        'export function alphaProcess(value: string): string {',
+        '  return mergeResult(`alpha:${value}`)',
+        '}',
+      ].join('\n'),
+      'src/fan-in/beta.ts': [
+        "import { mergeResult } from './merge.js'",
+        'export function betaProcess(value: string): string {',
+        '  return mergeResult(`beta:${value}`)',
+        '}',
+      ].join('\n'),
+      'src/fan-in/merge.ts': [
+        'export function mergeResult(value: string): string { return value }',
+      ].join('\n'),
+    })
+
+    const result = retrieveContext(index, {
+      question:
+        'Explain the flow from alphaProcess and betaProcess to mergeResult.',
+      budget: 4_000,
+    })
+
+    expect(result.outcome).toBe('evidence')
+    expectCall(result, 'alphaProcess', 'mergeResult')
+    expectCall(result, 'betaProcess', 'mergeResult')
+    expect(result.boundaries.filter(({ kind }) => kind === 'disconnected'))
+      .toEqual([])
+    expectWithinProtocol(result)
+  })
+
   it('keeps retry-cycle evidence while exposing an unresolved terminal handoff', () => {
     const index = readyFixture('retry-cycle', {
       'src/retry/open.ts': [
@@ -570,5 +651,73 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
       kind: 'missing',
     }))
     expectWithinProtocol(result)
+  })
+
+  it('bounds common-parent expansion before ordering a deep 7k-node candidate', () => {
+    const graph = new KnowledgeGraph({ root_path: '/workspace' })
+    const file = 'src/deep-common-parents.ts'
+    graph.addNode('alpha-anchor', syntheticNode('alphaAnchor', file))
+    graph.addNode('beta-anchor', syntheticNode('betaAnchor', file))
+    for (let index = 0; index < 7_000; index += 1) {
+      const id = `parent-${index.toString().padStart(4, '0')}`
+      graph.addNode(id, syntheticNode(`sharedParent${index}`, file))
+    }
+    for (let index = 0; index < 7_000; index += 1) {
+      const id = `parent-${index.toString().padStart(4, '0')}`
+      for (const target of [
+        index < 6_999
+          ? `parent-${(index + 1).toString().padStart(4, '0')}`
+          : '',
+        'alpha-anchor',
+        'beta-anchor',
+      ].filter(Boolean)) {
+        graph.addEdge(id, target, {
+          relation: 'calls',
+          source_file: file,
+          source_location: 'L1',
+          provenance: [{}],
+        })
+      }
+    }
+
+    const ranked = rankQueryAnchors(syntheticIndex(graph), {
+      question: 'Trace alphaAnchor through betaAnchor.',
+      budget: 4_000,
+    })
+
+    expect(ranked.anchors.length).toBeGreaterThan(0)
+    expect(ranked.anchors.length).toBeLessThanOrEqual(25)
+  })
+
+  it('keeps concentrated 12k-node scoped ranking below the reference gate', () => {
+    const graph = new KnowledgeGraph({ root_path: '/workspace' })
+    const file = 'src/concentrated.ts'
+    const count = 12_344
+    for (let index = 0; index < count; index += 1) {
+      const id = `chain-${index.toString().padStart(5, '0')}`
+      const label = index === 0
+        ? 'startConcentrated'
+        : index === count - 1 ? 'finishConcentrated' : `chainNode${index}`
+      graph.addNode(id, syntheticNode(label, file))
+    }
+    graph.addEdge('chain-00000', 'chain-12343', {
+      relation: 'calls',
+      source_file: file,
+      source_location: 'L1',
+      provenance: [{}],
+    })
+
+    const started = performance.now()
+    const ranked = rankQueryAnchors(syntheticIndex(graph), {
+      question: 'Trace startConcentrated through finishConcentrated.',
+      budget: 4_000,
+    })
+    const elapsed = performance.now() - started
+
+    expect(ranked.priorityAnchorIds).toEqual([
+      'chain-00000',
+      'chain-12343',
+    ])
+    expect(elapsed).toBeLessThan(500)
   })
 })

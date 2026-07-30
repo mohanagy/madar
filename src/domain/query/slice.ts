@@ -93,7 +93,7 @@ function pruneStructuralOrphans(
     node.evidence_kind !== 'structural_file' || related.has(node.node_id))
 }
 
-function resultWithTokenCount(
+function finalize(
   input: Pick<
     SliceEvidenceInput,
     'request' | 'outcome' | 'closurePasses' | 'structuralRequired'
@@ -114,12 +114,13 @@ function resultWithTokenCount(
   const structurallyReady = !input.structuralRequired
     || (input.structuralCoverageComplete !== false
       && (hasCausalRelationship || hasHandoff))
+  const structuralMissing = input.outcome === 'evidence' && !structurallyReady
   const sortedBoundaries = uniqueBoundaries([
     ...boundaries,
-    ...structurallyReady ? [] : [{
+    ...structuralMissing ? [{
       kind: 'missing' as const,
       subject: `structural coverage for ${input.request.question}`,
-    }],
+    }] : [],
   ])
   const files = new Set([
     ...sortedNodes.map(({ source_file }) => source_file),
@@ -129,7 +130,7 @@ function resultWithTokenCount(
   const result = (serializedTokens: number): RetrieveContextResult => ({
     schema: RETRIEVE_RESULT_SCHEMA,
     version: RETRIEVE_RESULT_VERSION,
-    outcome: !structurallyReady
+    outcome: structuralMissing
       || (sortedNodes.length === 0 && input.outcome === 'evidence')
       ? 'missing'
       : input.outcome,
@@ -171,28 +172,28 @@ function pack(
   boundaries: EvidenceBoundary[]
   omitted: boolean
 } {
-  const nodesById = new Map(nodes.map((node) => [node.node_id, node]))
-  const uniquePriorityIds = [...new Set(input.priorityNodeIds)]
-  const priorityIds = new Set(uniquePriorityIds)
-  const orderedNodes = [
-    ...uniquePriorityIds.flatMap((id) => {
-      const node = nodesById.get(id)
+  const byId = new Map(nodes.map((node) => [node.node_id, node]))
+  const priorities = [...new Set(input.priorityNodeIds)]
+  const prioritySet = new Set(priorities)
+  const ordered = [
+    ...priorities.flatMap((id) => {
+      const node = byId.get(id)
       return node ? [node] : []
     }),
-    ...nodes.filter(({ node_id }) => !priorityIds.has(node_id)),
+    ...nodes.filter(({ node_id }) => !prioritySet.has(node_id)),
   ]
-  const priorityOrder = new Map(uniquePriorityIds.map((nodeId, index) => [nodeId, index]))
+  const priorityOrder = new Map(priorities.map((nodeId, index) => [nodeId, index]))
   const priority = (ids: readonly string[]): readonly [number, number] => {
     const ranks = ids.map((id) => priorityOrder.get(id) ?? Number.POSITIVE_INFINITY)
     return [Math.max(...ranks), Math.min(...ranks)]
   }
   const bundles: Bundle[] = []
-  const remainingBoundaries: EvidenceBoundary[] = []
+  const remaining: EvidenceBoundary[] = []
   let omitted = false
 
   for (const relationship of relationships) {
     const ids = [...new Set([relationship.from_id, relationship.to_id])]
-    const endpoints = ids.map((id) => nodesById.get(id))
+    const endpoints = ids.map((id) => byId.get(id))
     if (endpoints.some((node) => !node)) {
       omitted = true
       continue
@@ -208,12 +209,12 @@ function pack(
   for (const boundary of boundaries) {
     if (boundary.kind !== 'disconnected') {
       if (budget === undefined || boundary.kind !== 'truncated') {
-        remainingBoundaries.push(boundary)
+        remaining.push(boundary)
       }
       continue
     }
     const ids = disconnectedEndpoints(boundary)
-    const endpoints = ids?.map((id) => nodesById.get(id))
+    const endpoints = ids?.map((id) => byId.get(id))
     if (!ids || !endpoints || endpoints.some((node) => !node)) {
       omitted = true
       continue
@@ -226,24 +227,26 @@ function pack(
       identity: canonicalJsonString(boundary),
     })
   }
-  const compareRank = (left: number, right: number): number =>
+  const rank = (left: number, right: number): number =>
     left === right ? 0 : left < right ? -1 : 1
   bundles.sort((left, right) =>
-    left.order - right.order
-    || compareRank(left.priority[0], right.priority[0])
-    || compareRank(left.priority[1], right.priority[1])
+    Number(Number.isFinite(right.priority[0]))
+      - Number(Number.isFinite(left.priority[0]))
+    || left.order - right.order
+    || rank(left.priority[0], right.priority[0])
+    || rank(left.priority[1], right.priority[1])
     || compareCodeUnits(left.identity, right.identity))
 
-  const selectedIds = new Set<string>()
-  const selectedRelationships: EvidenceRelationship[] = []
-  let selectedBoundaries = budget === undefined ? [] : [truncatedBoundary()]
+  const chosen = new Set<string>()
+  const chosenEdges: EvidenceRelationship[] = []
+  let chosenFacts = budget === undefined ? [] : [truncatedBoundary()]
   const files = new Set<string>()
-  const blockedStandalone = new Set<string>()
+  const blocked = new Set<string>()
   let snippets = 0
-  const selectedNodes = (candidateIds: ReadonlySet<string> = selectedIds): EvidenceNode[] =>
-    orderedNodes.filter(({ node_id }) => candidateIds.has(node_id))
+  const selectedNodes = (candidateIds: ReadonlySet<string> = chosen): EvidenceNode[] =>
+    ordered.filter(({ node_id }) => candidateIds.has(node_id))
   const tryAdd = (bundle: Pick<Bundle, 'nodes' | 'relationship' | 'boundary'>): boolean => {
-    const missing = bundle.nodes.filter(({ node_id }) => !selectedIds.has(node_id))
+    const missing = bundle.nodes.filter(({ node_id }) => !chosen.has(node_id))
     const addedFiles = new Set(
       missing.map(({ source_file }) => source_file).filter((file) => !files.has(file)),
     )
@@ -253,26 +256,26 @@ function pack(
     if (files.size + addedFiles.size > MAX_RETRIEVE_FILES
       || snippets + addedSnippets > MAX_RETRIEVE_SNIPPETS) return false
 
-    const candidateIds = new Set(selectedIds)
+    const candidateIds = new Set(chosen)
     for (const { node_id } of missing) candidateIds.add(node_id)
     const candidateRelationships = bundle.relationship
-      ? [...selectedRelationships, bundle.relationship]
-      : selectedRelationships
+      ? [...chosenEdges, bundle.relationship]
+      : chosenEdges
     const candidateBoundaries = bundle.boundary
-      ? uniqueBoundaries([...selectedBoundaries, bundle.boundary])
-      : selectedBoundaries
-    if (budget !== undefined && resultWithTokenCount(
+      ? uniqueBoundaries([...chosenFacts, bundle.boundary])
+      : chosenFacts
+    if (budget !== undefined && finalize(
       input,
       selectedNodes(candidateIds),
       candidateRelationships,
       candidateBoundaries,
     ).metrics.serialized_tokens > budget) return false
 
-    for (const node of missing) selectedIds.add(node.node_id)
+    for (const node of missing) chosen.add(node.node_id)
     for (const file of addedFiles) files.add(file)
     snippets += addedSnippets
-    if (bundle.relationship) selectedRelationships.push(bundle.relationship)
-    if (bundle.boundary) selectedBoundaries = candidateBoundaries
+    if (bundle.relationship) chosenEdges.push(bundle.relationship)
+    if (bundle.boundary) chosenFacts = candidateBoundaries
     return true
   }
 
@@ -281,24 +284,24 @@ function pack(
     omitted = true
     if (bundle.boundary) {
       for (const { node_id } of bundle.nodes) {
-        if (!selectedIds.has(node_id)) blockedStandalone.add(node_id)
+        if (!chosen.has(node_id)) blocked.add(node_id)
       }
     }
   }
-  for (const node of orderedNodes) {
-    if (selectedIds.has(node.node_id) || blockedStandalone.has(node.node_id)) continue
+  for (const node of ordered) {
+    if (chosen.has(node.node_id) || blocked.has(node.node_id)) continue
     if (node.evidence_kind === 'structural_file' || !tryAdd({ nodes: [node] })) {
       omitted = true
     }
   }
-  for (const boundary of remainingBoundaries.sort(compareBoundaries)) {
+  for (const boundary of remaining.sort(compareBoundaries)) {
     if (!tryAdd({ nodes: [], boundary })) omitted = true
   }
 
   return {
     nodes: selectedNodes(),
-    relationships: selectedRelationships,
-    boundaries: selectedBoundaries,
+    relationships: chosenEdges,
+    boundaries: chosenFacts,
     omitted,
   }
 }
@@ -313,7 +316,7 @@ export function sliceEvidence(input: SliceEvidenceInput): RetrieveContextResult 
   if (capped.omitted && !capped.boundaries.some(({ kind }) => kind === 'truncated')) {
     capped.boundaries = uniqueBoundaries([...capped.boundaries, truncatedBoundary()])
   }
-  const cappedResult = resultWithTokenCount(
+  const cappedResult = finalize(
     input, capped.nodes, capped.relationships, capped.boundaries,
   )
   if (cappedResult.metrics.serialized_tokens <= input.request.budget) return cappedResult
@@ -326,11 +329,11 @@ export function sliceEvidence(input: SliceEvidenceInput): RetrieveContextResult 
   if (omittedTarget) {
     const targeted = retained.boundaries.map((boundary) =>
       boundary.kind === 'truncated' ? truncatedBoundary(omittedTarget) : boundary)
-    if (resultWithTokenCount(
+    if (finalize(
       input, retained.nodes, retained.relationships, targeted,
     ).metrics.serialized_tokens <= input.request.budget) retained.boundaries = targeted
   }
-  return resultWithTokenCount(
+  return finalize(
     input, retained.nodes, retained.relationships, retained.boundaries,
   )
 }

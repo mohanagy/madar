@@ -201,9 +201,17 @@ export function traverseEvidencePaths(
         && candidate.id !== target.id
         && hasDirectEvidenceEdge(index.graph, candidate.id, search.source.id)
         && hasDirectEvidenceEdge(index.graph, candidate.id, target.id))
+      const targetSourceIndex = sources.findIndex(({ source }) => source.id === target.id)
+      const coveredBySelectedFanIn = !ranking.sequential && targetSourceIndex >= 0
+        && anchors.some((candidate) =>
+          candidate.id !== search.source.id
+          && candidate.id !== target.id
+          && visited[sourceIndex]!.has(candidate.id)
+          && visited[targetSourceIndex]!.has(candidate.id))
       if (coveredByAdjacentPaths) continue
       if (!path && targetIndex === 0
-        && !coveredByCommonPredecessor && !coveredBySelectedFanOut) {
+        && !coveredByCommonPredecessor
+        && !coveredBySelectedFanOut && !coveredBySelectedFanIn) {
         boundaries.push({
           kind: 'disconnected',
           subject: `${search.source.id} -> ${target.id}`,

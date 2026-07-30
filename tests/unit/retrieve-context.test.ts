@@ -586,11 +586,27 @@ describe('retrieve context', () => {
       )
     }
 
-    for (const question of focusedQueuePrompts) {
+    const focusedQueueEvidence = [
+      [
+        ['src/modules/pipeline/assembly/assembly.worker.ts', '.onModuleInit()'],
+        ['src/modules/pipeline/api/queue-registry.service.ts', 'registerWorker()'],
+      ],
+      [
+        ['src/modules/pipeline/api/queue-registry.service.ts', 'PipelineQueue'],
+      ],
+    ]
+    for (const [index, question] of focusedQueuePrompts.entries()) {
       const focused = retrieveContext(fixture.index, { question })
-      expect(focused.metrics.selected_files).toBeLessThanOrEqual(3)
-      expect(focused.metrics.snippets).toBeLessThanOrEqual(3)
+      expect(selected(focused)).toEqual(focusedQueueEvidence[index])
+      expect(focused.metrics.selected_files).toBeLessThanOrEqual(2)
+      expect(focused.metrics.snippets).toBeLessThanOrEqual(2)
       expect(focused.metrics.truncated).toBe(false)
+      expect(focused.boundaries).toEqual([])
+      expect(focused.matched_nodes.every((node) =>
+        node.source_file.includes('/pipeline/'))).toBe(true)
+      if (focused.matched_nodes.length === 2) {
+        expect(focused.relationships.length).toBeGreaterThan(0)
+      }
       expect(selected(focused)).not.toEqual(corePipeline)
       expect(selected(focused)).not.toContainEqual(corePipeline[0])
       expect(selected(focused)).not.toContainEqual(corePipeline[4])
