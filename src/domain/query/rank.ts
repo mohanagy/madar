@@ -15,7 +15,7 @@ const CAUSAL = new Set(['calls', 'enqueues_job'])
 const RELATIONS = ['calls', 'contains', 'enqueues_job', 'imports_from']
 const LAST = Number.MAX_SAFE_INTEGER
 const STOP = new Set(
-  'a actual an and any applicabl are as at be by bas being can do does exist final for from handl explain how in initial is it its me new of on operat or specific tell that the then through to trace what when which with you'.split(' '),
+  'a actual an and any applicabl are as at be by bas being can do does exist final for from get gett handl explain how in initial is it its me new of on operat or specific tell that the then through to trace what when which with work you'.split(' '),
 )
 const UNSUPPORTED =
   /^(?:bash|c|cc|cljs|clj|cpp|cs|cxx|dart|elm|ex|exs|fs|fsx|go|groovy|h|hpp|hs|java|jl|kt|kts|lua|m|mm|php|ps1|py|r|rb|rs|scala|sh|sol|sql|svelte|swift|vue|zig)$/u
@@ -44,23 +44,24 @@ interface Corpus {
   nodes: readonly Node[]; byId: ReadonlyMap<string, Node>
   members: ReadonlyMap<string, readonly string[]>
   files: ReadonlyMap<string, readonly Node[]>
-  frequency: ReadonlyMap<string, number>; documents: number
+  freq: ReadonlyMap<string, number>; docs: number
 }
 interface Scope {
   subject: string; tokens: string[]; compact: string; first: number
   hard: boolean
 }
 interface Vocabulary {
-  question: string; terms: string[]; positions: ReadonlyMap<string, number>
+  terms: string[]; pos: ReadonlyMap<string, number>
   scopes: Scope[]; limits: Scope[]; parts: readonly ReadonlySet<string>[]
   mentions: ReadonlySet<string>
+  domains: ReadonlySet<SourceDomain>
   structural: boolean; expand: boolean; sequential: boolean
 }
 interface Scored { n: Node; rank: RankedQueryNode }
 interface Seed extends Scored { hits: string[]; parts: number[] }
 interface Selection {
   ids: string[]; flow: boolean; complete: boolean
-  structuralRequired: boolean; branch?: string
+  structuralRequired: boolean; branch?: string[]
 }
 interface UnsupportedCandidate {
   path: string; terms: string[]; weights: ReadonlyMap<string, number>
@@ -96,7 +97,7 @@ function tokens(value: string): string[] {
     .filter((token) => token.length > 1 || /^\d+$/.test(token))
 }
 
-function meaningful(value: string): string[] {
+function words(value: string): string[] {
   return tokens(value).filter((token) => !STOP.has(token))
 }
 
@@ -193,24 +194,24 @@ function buildCorpus(index: ReadyQueryIndex): Corpus {
   for (const [owner, owned] of members) {
     members.set(owner, [...new Set(owned)].sort(compare))
   }
-  const documents = new Map<string, Set<string>>()
+  const docs = new Map<string, Set<string>>()
   const files = new Map<string, Node[]>()
   for (const n of nodes) {
     const siblings = files.get(n.file) ?? []
     siblings.push(n)
     files.set(n.file, siblings)
-    const document = documents.get(n.file || n.id) ?? new Set<string>()
+    const document = docs.get(n.file || n.id) ?? new Set<string>()
     for (const field of n.fields) for (const token of field.tokens) document.add(token)
-    documents.set(n.file || n.id, document)
+    docs.set(n.file || n.id, document)
   }
-  const frequency = new Map<string, number>()
-  for (const document of documents.values()) {
+  const freq = new Map<string, number>()
+  for (const document of docs.values()) {
     for (const token of document) {
-      frequency.set(token, (frequency.get(token) ?? 0) + 1)
+      freq.set(token, (freq.get(token) ?? 0) + 1)
     }
   }
   const c = {
-    nodes, byId, members, files, frequency, documents: documents.size,
+    nodes, byId, members, files, freq, docs: docs.size,
   } satisfies Corpus
   corpusCache.set(index, new WeakRef(c))
   return c
@@ -254,11 +255,11 @@ function vocabulary(question: string): Vocabulary {
   const task = question.replace(/\.\s+(?:cite|use|report)\b[\s\S]*$/iu, '')
   const raw = tokens(task)
   const terms: string[] = []
-  const positions = new Map<string, number>()
+  const pos = new Map<string, number>()
   for (const [position, t] of raw.entries()) {
-    if (!STOP.has(t) && !positions.has(t)) {
+    if (!STOP.has(t) && !pos.has(t)) {
       terms.push(t)
-      positions.set(t, position)
+      pos.set(t, position)
     }
   }
   const lower = task.toLowerCase()
@@ -266,15 +267,15 @@ function vocabulary(question: string): Vocabulary {
     const variants = [relation, relation.replaceAll('_', ' ')]
     const found = variants.map((variant) => lower.indexOf(variant))
       .filter((position) => position >= 0)
-    if (found.length > 0 && !positions.has(relation)) {
+    if (found.length > 0 && !pos.has(relation)) {
       terms.push(relation)
-      positions.set(relation, Math.min(...found))
+      pos.set(relation, Math.min(...found))
     }
   }
   const explicit = scopes(task)
   const clauses = task
     .split(/[,;:\u2013\u2014]+|[!?]+|\.(?=\s+[A-Z])|\b(?:and\s+then|then)\b/iu)
-    .map(meaningful).filter((part) => part.length > 0)
+    .map(words).filter((part) => part.length > 0)
   const parts = (clauses.length > 0 ? clauses : [terms])
     .map((part) => new Set(part))
   const connector = raw.findIndex((t, index) =>
@@ -287,7 +288,7 @@ function vocabulary(question: string): Vocabulary {
       t === 'end' && raw[index + 1] === 'to' && raw[index + 2] === 'end')
   const from = raw.indexOf('from')
   const to = raw.indexOf('to', from + 1)
-  const fanIn = from >= 0 && to > from && raw.slice(from + 1, to).includes('and')
+  const parallel = from >= 0 && to > from && raw.includes('and')
   const explainsProcess = raw.includes('how') && terms.length > 1
     && explicit.every((s) => s.hard)
   const structural = directed || parts.length > 1
@@ -300,12 +301,16 @@ function vocabulary(question: string): Vocabulary {
     || (terms.some((t) => t === 'stag' || t === 'stage')
       && terms.some((t) =>
       ['job', 'jobs', 'queue', 'enqueu', 'orchestrat'].includes(t)))
+  const domains = new Set<SourceDomain>(Object.entries(DOMAIN_TERMS)
+    .filter(([, variants]) =>
+      variants.some((variant) => terms.includes(variant)))
+    .map(([domain]) => domain as SourceDomain))
   return {
-    question: task, terms, positions, scopes: explicit,
+    terms, pos, scopes: explicit,
     limits: explicit.filter((s) => s.hard),
-    parts, mentions: new Set(task.split(/[^A-Za-z0-9_$]+/u)),
+    parts, mentions: new Set(task.split(/[^A-Za-z0-9_$]+/u)), domains,
     structural, expand,
-    sequential: connector >= 0 || raw.includes('then') || (directed && !fanIn),
+    sequential: connector >= 0 || raw.includes('then') || (directed && !parallel),
   }
 }
 
@@ -315,9 +320,9 @@ function inScope(n: Node, s: Scope): boolean {
 }
 
 function rarity(c: Corpus, t: string): number {
-  const frequency = c.frequency.get(t) ?? 0
+  const seen = c.freq.get(t) ?? 0
   return Math.max(1, Math.round(
-    (1 + Math.log2((c.documents + 1) / (frequency + 1))) * 64,
+    (1 + Math.log2((c.docs + 1) / (seen + 1))) * 64,
   ))
 }
 
@@ -325,7 +330,7 @@ function exactLabel(n: Node, q: Vocabulary): boolean {
   const label = text(n.attributes, 'label')
   const identifier = label.replace(/^\./u, '').replace(/\(\)$/u, '')
   return (label.endsWith('()') || /[A-Z_$\d.:]/u.test(identifier))
-    && meaningful(identifier).length > 0 && q.mentions.has(identifier)
+    && words(identifier).length > 0 && q.mentions.has(identifier)
 }
 
 function termsOf(n: Node, q: Vocabulary, semantic = false): string[] {
@@ -364,7 +369,7 @@ function score(
   }
   if (exactLabel(n, q)) value += 2_000_000
   const firstMatch = hits.reduce((first, t) =>
-    Math.min(first, q.positions.get(t) ?? LAST),
+    Math.min(first, q.pos.get(t) ?? LAST),
   LAST)
   return {
     id: n.id, attributes: n.attributes, score: value,
@@ -372,7 +377,7 @@ function score(
   }
 }
 
-function rankOrder(a: Scored, b: Scored): number {
+function byRank(a: Scored, b: Scored): number {
   return b.rank.score - a.rank.score
     || a.rank.firstMatch - b.rank.firstMatch
     || b.n.outs.length - a.n.outs.length
@@ -380,12 +385,15 @@ function rankOrder(a: Scored, b: Scored): number {
     || compare(a.n.id, b.n.id)
 }
 
+function inDomain(n: Node, q: Vocabulary): boolean {
+  return q.domains.size > 0
+    ? q.domains.has(n.domain)
+    : n.domain === 'production' || n.domain === 'unknown'
+}
+
 function scoredNodes(
   c: Corpus, q: Vocabulary, keep: (n: Node) => boolean,
 ): Scored[] {
-  const requestedDomains = new Set(Object.entries(DOMAIN_TERMS)
-    .filter(([, terms]) => terms.some((t) => q.terms.includes(t)))
-    .map(([domain]) => domain))
   const items = c.nodes.flatMap((n): Scored[] => {
     if (!n.eligible || !keep(n)
       || (q.limits.length > 0
@@ -398,14 +406,11 @@ function scoredNodes(
       && !q.terms.some((t) => t === 'defin' || t === 'declar')
       && !q.scopes.some((s) => inScope(n, s))
       && !exactLabel(n, q)) return []
-    if (requestedDomains.size > 0
-      ? !requestedDomains.has(n.domain)
-      : n.domain !== 'production' && n.domain !== 'unknown'
-        && !q.scopes.some((s) => inScope(n, s))) return []
+    if (!inDomain(n, q) && !q.scopes.some((s) => inScope(n, s))) return []
     const rank = score(c, n, q)
     if (!rank) return []
     return [{ n, rank }]
-  }).sort(rankOrder)
+  }).sort(byRank)
   if (q.parts.length > 1 || q.scopes.length > 0) return items
   const locator = q.terms[0] === 'where'
   const byFile = new Map<string, Scored[]>()
@@ -416,20 +421,21 @@ function scoredNodes(
   }
   return [...byFile.values()].flatMap((entries) =>
     entries.sort((a, b) => {
-      if (locator) return rankOrder(a, b)
+      if (locator) return byRank(a, b)
       const ids = new Set(entries.map((entry) => entry.n.id))
       return b.n.outs.filter((id) => ids.has(id)).length
         - a.n.outs.filter((id) => ids.has(id)).length
-        || rankOrder(a, b)
-    }).slice(0, 2)).sort(rankOrder)
+        || byRank(a, b)
+    }).slice(0, 2)).sort(byRank)
 }
 
-function usable(n: Node | undefined): n is Node {
+function usable(n: Node | undefined, q: Vocabulary): n is Node {
   return !!n?.eligible && n.kind !== 'file' && n.kind !== 'class'
+    && (inDomain(n, q) || n.domain === 'production' || n.domain === 'unknown')
 }
 
 function path(
-  c: Corpus, from: string, to: string, backwards = false,
+  c: Corpus, from: string, to: string, q: Vocabulary, backwards = false,
   maximumDepth = 16,
 ): string[] | null {
   if (from === to) return [from]
@@ -444,7 +450,7 @@ function path(
       ? c.byId.get(id)?.ins ?? []
       : c.byId.get(id)?.outs ?? []
     for (const next of adjacent) {
-      if (depth.has(next)) continue
+      if (depth.has(next) || !usable(c.byId.get(next), q)) continue
       depth.set(next, distance + 1)
       previous.set(next, id)
       if (next === to) {
@@ -458,7 +464,7 @@ function path(
   return null
 }
 
-function causalOrder(c: Corpus, input: readonly string[]): {
+function toposort(c: Corpus, input: readonly string[]): {
   ids: string[]; depth: number
 } {
   const allowed = new Set(input)
@@ -466,7 +472,7 @@ function causalOrder(c: Corpus, input: readonly string[]): {
   const low = new Map<string, number>()
   const stack: string[] = []
   const active = new Set<string>()
-  const components: string[][] = []
+  const groups: string[][] = []
   let ordinal = 0
   const visit = (id: string): void => {
     index.set(id, ordinal)
@@ -483,25 +489,25 @@ function causalOrder(c: Corpus, input: readonly string[]): {
       }
     }
     if (low.get(id) !== index.get(id)) return
-    const component: string[] = []
+    const group: string[] = []
     while (stack.length > 0) {
       const member = stack.pop()!
       active.delete(member)
-      component.push(member)
+      group.push(member)
       if (member === id) break
     }
-    components.push(component)
+    groups.push(group)
   }
   for (const id of input) if (!index.has(id)) visit(id)
-  const componentOf = new Map(components.flatMap((component, componentIndex) =>
-    component.map((id) => [id, componentIndex] as const)))
+  const groupOf = new Map(groups.flatMap((group, groupIndex) =>
+    group.map((id) => [id, groupIndex] as const)))
   const outs = new Map<number, Set<number>>()
   const indegree = new Map<number, number>()
   for (const id of input) {
-    const from = componentOf.get(id)!
+    const from = groupOf.get(id)!
     for (const next of c.byId.get(id)?.outs ?? []) {
       if (!allowed.has(next)) continue
-      const to = componentOf.get(next)!
+      const to = groupOf.get(next)!
       if (from === to) continue
       const targets = outs.get(from) ?? new Set<number>()
       if (targets.has(to)) continue
@@ -510,34 +516,34 @@ function causalOrder(c: Corpus, input: readonly string[]): {
       indegree.set(to, (indegree.get(to) ?? 0) + 1)
     }
   }
-  const position = new Map(input.map((id, order) => [id, order]))
-  const ready = components.map((_, component) => component)
-    .filter((component) => !indegree.has(component))
-  const depths = new Map(ready.map((component) => [
-    component, Math.max(0, components[component]!.length - 1),
+  const pos = new Map(input.map((id, order) => [id, order]))
+  const ready = groups.map((_, group) => group)
+    .filter((group) => !indegree.has(group))
+  const depths = new Map(ready.map((group) => [
+    group, Math.max(0, groups[group]!.length - 1),
   ]))
   const ids: string[] = []
   let depth = 0
   while (ready.length > 0) {
     ready.sort((a, b) =>
-      Math.min(...components[a]!.map((id) =>
-        position.get(id) ?? LAST))
-      - Math.min(...components[b]!.map((id) =>
-        position.get(id) ?? LAST)))
-    const component = ready.shift()!
-    const currentDepth = depths.get(component) ?? 0
-    depth = Math.max(depth, currentDepth)
-    ids.push(...components[component]!.sort((a, b) =>
-      (position.get(a) ?? LAST)
-      - (position.get(b) ?? LAST)
+      Math.min(...groups[a]!.map((id) =>
+        pos.get(id) ?? LAST))
+      - Math.min(...groups[b]!.map((id) =>
+        pos.get(id) ?? LAST)))
+    const group = ready.shift()!
+    const level = depths.get(group) ?? 0
+    depth = Math.max(depth, level)
+    ids.push(...groups[group]!.sort((a, b) =>
+      (pos.get(a) ?? LAST)
+      - (pos.get(b) ?? LAST)
       || compare(a, b)))
-    for (const next of outs.get(component) ?? []) {
+    for (const next of outs.get(group) ?? []) {
       depths.set(next, Math.max(
         depths.get(next) ?? 0,
-        currentDepth + 1 + Math.max(0, components[next]!.length - 1),
+        level + 1 + Math.max(0, groups[next]!.length - 1),
       ))
-      const remaining = (indegree.get(next) ?? 0) - 1
-      if (remaining > 0) indegree.set(next, remaining)
+      const left = (indegree.get(next) ?? 0) - 1
+      if (left > 0) indegree.set(next, left)
       else {
         indegree.delete(next)
         ready.push(next)
@@ -548,8 +554,8 @@ function causalOrder(c: Corpus, input: readonly string[]): {
 }
 
 function rootPath(
-  c: Corpus, target: string, seedById: ReadonlyMap<string, Seed>,
-  forbidden: ReadonlySet<string>,
+  c: Corpus, target: string, seedMap: ReadonlyMap<string, Seed>,
+  forbidden: ReadonlySet<string>, q: Vocabulary,
 ): string[] | null {
   const next = new Map<string, string>()
   const depth = new Map([[target, 0]])
@@ -559,9 +565,10 @@ function rootPath(
     const id = queue[cursor]!
     const n = c.byId.get(id)
     const distance = depth.get(id) ?? 0
-    if (id !== target && n?.ins.length === 0) roots.push(id)
-    if (!n || distance >= 16) continue
-    for (const parent of n.ins) {
+    if (!usable(n, q) || distance >= 16) continue
+    const parents = n.ins.filter((parent) => usable(c.byId.get(parent), q))
+    if (id !== target && parents.length === 0) roots.push(id)
+    for (const parent of parents) {
       if (depth.has(parent)) continue
       depth.set(parent, distance + 1)
       next.set(parent, id)
@@ -579,113 +586,114 @@ function rootPath(
     return [{
       ids,
       parts: new Set(ids.flatMap((id) =>
-        seedById.get(id)?.parts ?? [])).size,
+        seedMap.get(id)?.parts ?? [])).size,
       terms: new Set(ids.flatMap((id) =>
-        seedById.get(id)?.hits ?? [])).size,
+        seedMap.get(id)?.hits ?? [])).size,
     }]
   })
   return choices.sort((a, b) =>
     a.ids.length - b.ids.length
     || b.parts - a.parts
     || b.terms - a.terms
-    || (seedById.get(b.ids[0]!)?.rank.score ?? 0)
-      - (seedById.get(a.ids[0]!)?.rank.score ?? 0)
+    || (seedMap.get(b.ids[0]!)?.rank.score ?? 0)
+      - (seedMap.get(a.ids[0]!)?.rank.score ?? 0)
     || compare(a.ids[0]!, b.ids[0]!))[0]?.ids ?? null
 }
 
 function connect(
   c: Corpus, seeds: readonly Seed[], q: Vocabulary,
 ): Selection | null {
-  const seedById = new Map(seeds.map((seed) => [seed.n.id, seed]))
+  const seedMap = new Map(seeds.map((seed) => [seed.n.id, seed]))
   const byId = c.byId
   const hubs = c.nodes.filter((hub) =>
-    usable(hub) && hub.ins.length > 0 && hub.outs.length > 0)
+    usable(hub, q) && hub.ins.length > 0 && hub.outs.length > 0)
   const shapes = new Map<string, Array<{
-    registryId: string; registrars: string[]; consumers: string[]
+    registryId: string; hooks: string[]; workers: string[]
   }>>()
   for (const file of new Set(hubs.map((hub) => hub.file))) {
     shapes.set(file, (c.files.get(file) ?? []).flatMap((registry) => {
-      if (!usable(registry) || registry.ins.length < 2) return []
-      const pairs = registry.ins.flatMap((registrarId) => {
-        const registrar = byId.get(registrarId)
-        if (!usable(registrar) || !registrar.owner) return []
-        const consumers = (c.members.get(registrar.owner) ?? [])
-          .filter((id) => id !== registrarId && registrar.outs.includes(id)
-            && usable(byId.get(id)))
-        return consumers.length === 1
-          ? [{ registrarId, consumerId: consumers[0]! }] : []
+      if (!usable(registry, q) || registry.ins.length < 2) return []
+      const pairs = registry.ins.flatMap((hookId) => {
+        const registrar = byId.get(hookId)
+        if (!usable(registrar, q) || !registrar.owner) return []
+        const workers = (c.members.get(registrar.owner) ?? [])
+          .filter((id) => id !== hookId && registrar.outs.includes(id)
+            && usable(byId.get(id), q))
+        return workers.length === 1
+          ? [{ hookId, workerId: workers[0]! }] : []
       })
-      const registrars = [...new Set(pairs.map((pair) => pair.registrarId))]
-      const consumers = [...new Set(pairs.map((pair) => pair.consumerId))]
+      const hooks = [...new Set(pairs.map((pair) => pair.hookId))]
+      const workers = [...new Set(pairs.map((pair) => pair.workerId))]
       const role = (id: string): string => {
         const n = byId.get(id)!
         return `${n.kind}\0${text(n.attributes, 'label').replace(/^\./u, '')}`
       }
-      return registrars.length >= 2 && registrars.length === consumers.length
-        && new Set(registrars.map(role)).size === 1
-        && new Set(consumers.map(role)).size === 1
-        && role(registrars[0]!) !== role(consumers[0]!)
-        ? [{ registryId: registry.id, registrars, consumers }] : []
+      return hooks.length >= 2 && hooks.length === workers.length
+        && new Set(hooks.map(role)).size === 1
+        && new Set(workers.map(role)).size === 1
+        && role(hooks[0]!) !== role(workers[0]!)
+        ? [{ registryId: registry.id, hooks, workers }] : []
     }))
   }
-  const candidates = hubs.flatMap((hub) =>
+  const choices = hubs.flatMap((hub) =>
     (shapes.get(hub.file) ?? [])
       .filter(({ registryId }) => registryId !== hub.id)
-      .flatMap(({ registrars, consumers }) => {
-        const hits = consumers.filter((id) => hub.outs.includes(id)).length
-        if (hits * 2 >= consumers.length) return []
+      .flatMap(({ hooks, workers }) => {
+        const hits = workers.filter((id) => hub.outs.includes(id)).length
+        if (hits * 2 >= workers.length) return []
         const entry = rootPath(
-          c, hub.id, seedById, new Set([...registrars, ...consumers]),
+          c, hub.id, seedMap, new Set([...hooks, ...workers]),
+          q,
         )
         if (!entry) return []
-        const relevant = [...entry, ...consumers]
+        const relevant = [...entry, ...workers]
         const scopes = q.scopes.filter((s) => !s.hard)
         const matchesQuery = scopes.length > 0
           ? scopes.every((s) => c.nodes.some((n) =>
-            usable(n) && inScope(n, s)
-            && relevant.some((id) => !!path(c, id, n.id, false, 3))))
-          : relevant.some((id) => seedById.has(id))
-        return matchesQuery ? [{ hub, consumers, entry }] : []
+            usable(n, q) && inScope(n, s)
+            && relevant.some((id) => !!path(c, id, n.id, q, false, 3))))
+          : relevant.some((id) => seedMap.has(id))
+        return matchesQuery ? [{ hub, workers, entry }] : []
       }))
     .sort((a, b) =>
-      Number(seedById.has(b.hub.id)) - Number(seedById.has(a.hub.id))
+      Number(seedMap.has(b.hub.id)) - Number(seedMap.has(a.hub.id))
       || b.hub.ins.length - a.hub.ins.length
-      || b.consumers.length - a.consumers.length
+      || b.workers.length - a.workers.length
       || compare(a.hub.id, b.hub.id))
-  const candidate = candidates[0]
-  if (!candidate) return null
-  const branches = candidate.consumers.map((consumerId) => {
-    const consumer = byId.get(consumerId)!
-    const services = consumer.outs.filter((id) => usable(byId.get(id)))
-    const serviceId = [...services].sort((a, b) =>
-      Number(!!path(c, b, candidate.hub.id))
-      - Number(!!path(c, a, candidate.hub.id))
-      || Number(byId.get(b)?.file !== consumer.file)
-      - Number(byId.get(a)?.file !== consumer.file)
-      || (seedById.get(b)?.rank.score ?? 0)
-      - (seedById.get(a)?.rank.score ?? 0)
+  const pick = choices[0]
+  if (!pick) return null
+  const branches = pick.workers.map((workerId) => {
+    const worker = byId.get(workerId)!
+    const services = worker.outs.filter((id) => usable(byId.get(id), q))
+    const service = [...services].sort((a, b) =>
+      Number(!!path(c, b, pick.hub.id, q))
+      - Number(!!path(c, a, pick.hub.id, q))
+      || Number(byId.get(b)?.file !== worker.file)
+      - Number(byId.get(a)?.file !== worker.file)
+      || (seedMap.get(b)?.rank.score ?? 0)
+      - (seedMap.get(a)?.rank.score ?? 0)
       || compare(a, b))[0]
     return {
-      consumerId, serviceId,
-      hits: candidate.hub.outs.includes(consumerId),
-      returns: !!serviceId && !!path(c, serviceId, candidate.hub.id),
+      workerId, service,
+      hits: pick.hub.outs.includes(workerId),
+      returns: !!service && !!path(c, service, pick.hub.id, q),
     }
   }).sort((a, b) =>
     Number(b.hits) - Number(a.hits)
     || Number(b.returns) - Number(a.returns)
-    || (byId.get(a.serviceId ?? '')?.outs.length
+    || (byId.get(a.service ?? '')?.outs.length
       ?? LAST)
-      - (byId.get(b.serviceId ?? '')?.outs.length
+      - (byId.get(b.service ?? '')?.outs.length
         ?? LAST)
-    || (seedById.get(b.consumerId)?.rank.score ?? 0)
-      - (seedById.get(a.consumerId)?.rank.score ?? 0)
-    || compare(a.consumerId, b.consumerId))
+    || (seedMap.get(b.workerId)?.rank.score ?? 0)
+      - (seedMap.get(a.workerId)?.rank.score ?? 0)
+    || compare(a.workerId, b.workerId))
   const ids: string[] = []
   const files = new Set<string>()
   const append = (id?: string): boolean => {
     if (!id || ids.includes(id)) return true
     const n = byId.get(id)
-    if (!usable(n)) return true
+    if (!usable(n, q)) return true
     if (ids.length >= SNIPPET_CAP
       || (n.file && !files.has(n.file) && files.size >= FILE_CAP)) return false
     ids.push(id)
@@ -693,31 +701,27 @@ function connect(
     return true
   }
   let complete = true
-  for (const id of candidate.entry) if (!append(id)) complete = false
-  const hits = branches.find((branch) => branch.hits) ?? branches[0]
-  if (!q.expand) {
-    if (!append(hits?.consumerId)) complete = false
-  } else {
-    const terminal = branches.filter((branch) => !branch.returns)
-    for (const branch of branches) {
-      if (branch.returns
-        || (!!branch.serviceId
-          && (termsOf(byId.get(branch.serviceId)!, q, true).length > 0
-            || (q.parts.length > 1 && terminal.length === 1
-              && q.scopes.every((s) => s.hard))))) {
-        if (!append(branch.consumerId)) complete = false
-      }
-      if (branch.returns && !append(branch.serviceId)) complete = false
+  for (const id of pick.entry) if (!append(id)) complete = false
+  const terminal = branches.filter((branch) => !branch.returns)
+  for (const branch of branches) {
+    if (branch.returns
+      || (!!branch.service
+        && (termsOf(byId.get(branch.service)!, q, true).length > 0
+          || (q.parts.length > 1 && terminal.length === 1
+            && q.scopes.every((s) => s.hard))))) {
+      if (!append(branch.workerId)) complete = false
     }
+    if (branch.returns && !append(branch.service)) complete = false
   }
-  let sideBranch: string | undefined
+  const sideBranches: string[] = []
   for (const s of q.scopes.filter((s) => !s.hard)) {
+    if (ids.some((id) => inScope(byId.get(id)!, s))) continue
     const side = c.nodes.filter((n) =>
-      usable(n) && !ids.includes(n.id) && inScope(n, s)
+      usable(n, q) && !ids.includes(n.id) && inScope(n, s)
       && n.ins.some((id) => ids.includes(id)))
       .sort((a, b) =>
-        (seedById.get(b.id)?.rank.score ?? 0)
-        - (seedById.get(a.id)?.rank.score ?? 0)
+        (seedMap.get(b.id)?.rank.score ?? 0)
+        - (seedMap.get(a.id)?.rank.score ?? 0)
         || compare(a.id, b.id))[0]
     if (!side) {
       complete = false
@@ -731,14 +735,15 @@ function connect(
     }
     ids.pop()
     ids.splice(parent + 1, 0, side.id)
-    sideBranch = side.id
-    break
+    sideBranches.push(side.id)
   }
+  if (!q.expand && !q.terms.every((t) => t === 'flow'
+    || ids.some((id) => termsOf(byId.get(id)!, q, true).includes(t)))) return null
   return {
     ids, flow: true,
     complete: complete && ids.length > 1,
     structuralRequired: true,
-    ...sideBranch ? { branch: sideBranch } : {},
+    branch: sideBranches,
   }
 }
 
@@ -746,24 +751,28 @@ function causal(
   c: Corpus, seeds: readonly Seed[], q: Vocabulary,
 ): Selection | null {
   if (seeds.length === 0) return null
-  const symbolScopes = q.scopes.filter((s) => !s.hard)
-  const scopedTerms = new Set(symbolScopes.flatMap((s) => s.tokens))
-  const selected = (symbolScopes.length > 0
+  const named = q.scopes.filter((s) => !s.hard)
+  const scoped = new Set(named.flatMap((s) => s.tokens))
+  const picked = (named.length > 0
     ? seeds.filter((seed) =>
-      symbolScopes.some((s) => inScope(seed.n, s))
-      || seed.hits.some((t) => !scopedTerms.has(t)))
+      named.some((s) => inScope(seed.n, s))
+      || seed.hits.some((t) => !scoped.has(t)))
     : seeds).slice(0, 32)
-  const ids = new Set(selected.map((seed) => seed.n.id))
+  const ids = new Set(picked.map((seed) => seed.n.id))
   for (const n of c.nodes) {
-    if (!usable(n)) continue
+    if (!usable(n, q)) continue
     const children = n.outs.filter((id) => ids.has(id)).length
     if (children < 2) continue
     ids.add(n.id)
     if (ids.size >= 256) break
   }
-  const filtered = [...ids].filter((id) => usable(c.byId.get(id)))
+  const ordered = [...new Set(q.scopes.flatMap((s) =>
+    picked.filter((seed) => inScope(seed.n, s))))]
+  const filtered = [...new Set([
+    ...ordered.map(({ n }) => n.id), ...ids,
+  ])].filter((id) => usable(c.byId.get(id), q))
   const files = new Set<string>()
-  const bounded = causalOrder(c, filtered).ids.filter((id) => {
+  const bounded = toposort(c, filtered).ids.filter((id) => {
     const n = c.byId.get(id)!
     if (files.size >= FILE_CAP && n.file && !files.has(n.file)) return false
     if (files.size < FILE_CAP && n.file) files.add(n.file)
@@ -772,12 +781,10 @@ function causal(
   const retained = new Set(bounded)
   const edges = bounded.reduce((count, id) =>
     count + c.byId.get(id)!.outs.filter((to) => retained.has(to)).length, 0)
-  const depth = causalOrder(c, bounded).depth
-  const ordered = [...new Set(q.scopes.flatMap((s) =>
-    selected.filter((seed) => inScope(seed.n, s))))]
+  const depth = toposort(c, bounded).depth
   const reachable = ordered.some((from, index) =>
     ordered.slice(index + 1).some((to) =>
-      !!path(c, from.n.id, to.n.id)))
+      !!path(c, from.n.id, to.n.id, q)))
   if (edges === 0 && (!(q.scopes.length > 1
     || q.terms.filter((t) => /^\d+$/.test(t)).length > 1)
     || (q.limits.length === 0 && !reachable))) return {
@@ -788,7 +795,7 @@ function causal(
     ids: [], flow: false, complete: false,
     structuralRequired: true,
   }
-  const conceptCoverage = new Set(selected
+  const conceptCoverage = new Set(picked
     .filter((seed) => retained.has(seed.n.id))
     .flatMap((seed) => seed.parts))
   return {
@@ -821,9 +828,7 @@ function selectStructure(
         }))) return null
   }
   const seeds = scored.flatMap((item): Seed[] => {
-    if (!usable(item.n)
-      || (item.n.domain !== 'production'
-        && item.n.domain !== 'unknown')) return []
+    if (!usable(item.n, q)) return []
     const hits = termsOf(item.n, q)
     if (hits.length === 0) return []
     return [{
@@ -835,7 +840,7 @@ function selectStructure(
     Number(b.n.ins.length + b.n.outs.length > 0)
     - Number(a.n.ins.length + a.n.outs.length > 0)
     || b.hits.length - a.hits.length
-    || rankOrder(a, b))
+    || byRank(a, b))
   return connect(c, seeds, q)
     ?? causal(c, seeds, q)
 }
@@ -872,19 +877,21 @@ function fallback(
         item.rank.matchedTerms.some((t) => concept.has(t)))
         .sort((a, b) =>
           Number(!files.has(b.n.file)) - Number(!files.has(a.n.file))
-          || rankOrder(a, b))[0]
+          || byRank(a, b))[0]
       if (next) add(next)
     }
   } else {
     const loc = q.terms[0] === 'where'
     const pos = (item: Scored): number[] =>
-      termsOf(item.n, q, true).map((t) => q.positions.get(t) ?? LAST)
+      termsOf(item.n, q, true).map((t) => q.pos.get(t) ?? LAST)
     const start = loc ? [...scored].sort((a, b) =>
       b.rank.matchedTerms.length - a.rank.matchedTerms.length
       || Math.min(LAST, ...pos(a)) - Math.min(LAST, ...pos(b))
       || pos(b).length - pos(a).length
-      || rankOrder(a, b))[0] : scored[0]
-    const first = start && (scored.find((item) =>
+      || byRank(a, b))[0] : scored[0]
+    const exact = start && start.n.kind !== 'class' && start.n.kind !== 'file'
+      && exactLabel(start.n, q)
+    const first = start && (exact ? start : scored.find((item) =>
       item.n.file === start.n.file
       && start.n.outs.includes(item.n.id)
       && start.rank.matchedTerms.every((t) =>
@@ -892,7 +899,7 @@ function fallback(
       && termsOf(item.n, q, true).length
         >= termsOf(start.n, q, true).length) ?? start)
     if (first) add(first)
-    while (ids.length < (loc ? 2 : SNIPPET_CAP)) {
+    while (ids.length < (exact && loc ? 1 : loc ? 2 : SNIPPET_CAP)) {
       const next = scored.filter((item) => !ids.includes(item.n.id)
         && (files.has(item.n.file) || files.size < FILE_CAP))
         .sort((a, b) => {
@@ -908,7 +915,7 @@ function fallback(
               || novelty(b) - novelty(a)
             : novelty(b) - novelty(a) || link(b) - link(a))
             || a.rank.firstMatch - b.rank.firstMatch
-            || rankOrder(a, b)
+            || byRank(a, b)
       })[0]
       if (!next) break
       const novel = next.rank.matchedTerms.some((t) => !covered.has(t))
@@ -919,7 +926,7 @@ function fallback(
       add(next)
     }
   }
-  const ordered = causalOrder(c, ids).ids
+  const ordered = toposort(c, ids).ids
   return {
     ids: ordered, flow: false, complete: true, structuralRequired: false,
   }
@@ -934,20 +941,20 @@ function unsupportedCandidates(
     if (!UNSUPPORTED.test(extension)
       || isPollutedSourcePath(source.path, index.root_path)
       || (domain !== 'production' && domain !== 'unknown')) return []
-    const pathTokens = new Set(meaningful(source.path))
-    const basename = new Set(meaningful(source.path.split('/').at(-1) ?? source.path))
+    const pathTokens = new Set(words(source.path))
+    const basename = new Set(words(source.path.split('/').at(-1) ?? source.path))
     const matched = q.terms.filter((t) =>
       !t.includes('_') && !t.includes('-') && pathTokens.has(t))
     const weights = new Map(matched.map((t) => [t, basename.has(t) ? 4 : 1]))
-    const s = q.scopes.some((candidate) =>
-      candidate.tokens.every((t) => pathTokens.has(t))
-      && tokens(source.path).join('').includes(candidate.compact))
+    const s = q.scopes.some((scope) =>
+      scope.tokens.every((t) => pathTokens.has(t))
+      && tokens(source.path).join('').includes(scope.compact))
     if (!s && (matched.length === 0
       || matched.every((t) => t.length < 4))) return []
     return [{
       path: source.path, terms: matched, weights,
       first: matched.reduce((first, t) =>
-        Math.min(first, q.positions.get(t) ?? LAST),
+        Math.min(first, q.pos.get(t) ?? LAST),
       LAST),
       score: matched.reduce((total, t) =>
         total + t.length ** 2 * (weights.get(t) ?? 1) * 100,
@@ -959,33 +966,33 @@ function unsupportedCandidates(
 }
 
 function unsupportedBoundaries(
-  candidates: readonly UnsupportedCandidate[],
+  choices: readonly UnsupportedCandidate[],
 ): EvidenceBoundary[] {
-  const selected: UnsupportedCandidate[] = []
+  const picked: UnsupportedCandidate[] = []
   const covered = new Set<string>()
-  const remaining = [...candidates]
-  while (remaining.length > 0 && selected.length < 4) {
-    remaining.sort((a, b) => {
-      const novelty = (candidate: UnsupportedCandidate): number =>
-        candidate.terms.filter((t) => !covered.has(t))
+  const rest = [...choices]
+  while (rest.length > 0 && picked.length < 4) {
+    rest.sort((a, b) => {
+      const novelty = (item: UnsupportedCandidate): number =>
+        item.terms.filter((t) => !covered.has(t))
           .reduce((total, t) =>
-            total + t.length ** 2 * (candidate.weights.get(t) ?? 1), 0)
+            total + t.length ** 2 * (item.weights.get(t) ?? 1), 0)
       return novelty(b) - novelty(a)
         || b.score - a.score || compare(a.path, b.path)
     })
-    const next = remaining.shift()!
-    if (selected.length > 0
+    const next = rest.shift()!
+    if (picked.length > 0
       && next.terms.every((t) => covered.has(t))
-      && next.score * 3 < selected[0]!.score) break
-    selected.push(next)
+      && next.score * 3 < picked[0]!.score) break
+    picked.push(next)
     for (const t of next.terms) covered.add(t)
   }
-  const boundaries: EvidenceBoundary[] = selected
-    .map((candidate): EvidenceBoundary => ({
-      kind: 'unsupported', subject: candidate.path,
+  const boundaries: EvidenceBoundary[] = picked
+    .map((item): EvidenceBoundary => ({
+      kind: 'unsupported', subject: item.path,
     }))
     .sort((a, b) => compare(a.subject, b.subject))
-  return selected.length >= 4 && remaining.length > 0
+  return picked.length >= 4 && rest.length > 0
     ? [...boundaries, { kind: 'truncated', subject: 'unsupported sources' }]
     : boundaries
 }
@@ -1008,26 +1015,26 @@ export function rankQueryAnchors(
   }
   q.scopes = q.scopes.filter(active)
   q.limits = q.scopes.filter((s) => s.hard)
-  const unsupported = unsupportedCandidates(index, q)
-  const unsupportedFacts = unsupportedBoundaries(unsupported)
+  const outside = unsupportedCandidates(index, q)
+  const unsupportedFacts = unsupportedBoundaries(outside)
   const missing = q.scopes.flatMap((s): EvidenceBoundary[] => {
     const graphMatches = c.nodes.filter((n) => inScope(n, s))
     if (graphMatches.some((n) => n.eligible)
-      || unsupported.some((candidate) =>
-        tokens(candidate.path).join('').includes(s.compact))) return []
+      || outside.some((item) =>
+        tokens(item.path).join('').includes(s.compact))) return []
     return [{
       kind: graphMatches.length > 0 ? 'unavailable' : 'missing',
       subject: s.subject,
     }]
   })
-  const available = q.scopes.filter((s) =>
+  const found = q.scopes.filter((s) =>
     c.nodes.some((n) => n.eligible && inScope(n, s)))
   const limits = q.limits.filter((s) =>
-    available.includes(s))
-  const scopedTerms = new Set(available.flatMap((s) => s.tokens))
+    found.includes(s))
+  const scoped = new Set(found.flatMap((s) => s.tokens))
   const allScopedTerms = new Set(q.scopes.flatMap((s) => s.tokens))
   const unscopedTerms = new Set(q.terms.filter((t) => !allScopedTerms.has(t)))
-  const outsideTerms = new Set(q.terms.filter((t) => !scopedTerms.has(t)))
+  const outsideTerms = new Set(q.terms.filter((t) => !scoped.has(t)))
   const has = (n: Node, terms: ReadonlySet<string>): boolean =>
     [...terms].some((t) => matches(n.tokens, t)
       || n.ins.concat(n.outs).some((id) => {
@@ -1037,17 +1044,17 @@ export function rankQueryAnchors(
   const keep = (n: Node): boolean => q.limits.length > 0
     ? limits.some((s) => inScope(n, s))
     : q.scopes.length === 0
-      || (available.length === 0
+      || (found.length === 0
         ? has(n, unscopedTerms)
-        : available.some((s) => inScope(n, s))
+        : found.some((s) => inScope(n, s))
           || has(n, outsideTerms))
   const pool = scoredNodes(c, q, keep)
   const structural = selectStructure(c, pool, q)
-  const selection = structural ?? fallback(
+  const choice = structural ?? fallback(
     index, c, pool, q,
   )
-  const anchors = selection.ids.flatMap((id, ordinal): RankedQueryNode[] => {
-    const existing = pool.find((candidate) => candidate.n.id === id)?.rank
+  const anchors = choice.ids.flatMap((id, ordinal): RankedQueryNode[] => {
+    const existing = pool.find((item) => item.n.id === id)?.rank
     if (existing) return [existing]
     const n = c.byId.get(id)
     if (!n?.eligible) return []
@@ -1057,14 +1064,14 @@ export function rankQueryAnchors(
       score: Math.max(0, (pool[0]?.rank.score ?? 0) - ordinal),
       matchedTerms,
       firstMatch: matchedTerms.reduce((first, t) =>
-        Math.min(first, q.positions.get(t) ?? LAST),
+        Math.min(first, q.pos.get(t) ?? LAST),
       LAST),
     }]
   })
-  const selected = new Set(anchors.map((anchor) => anchor.id))
+  const picked = new Set(anchors.map((anchor) => anchor.id))
   const selectedFiles = new Set(anchors.map((anchor) =>
     text(anchor.attributes, 'source_file')))
-  const truncated = pool.some(({ n }) => !selected.has(n.id))
+  const truncated = pool.some(({ n }) => !picked.has(n.id))
     && (anchors.length >= SNIPPET_CAP
       || selectedFiles.size >= FILE_CAP)
     ? [{ kind: 'truncated', subject: 'query anchors' } satisfies EvidenceBoundary]
@@ -1075,11 +1082,11 @@ export function rankQueryAnchors(
     : [...unsupportedFacts, ...missing, ...truncated]
   return {
     anchors, boundaries,
-    queryTerms: q.terms, flow: selection.flow, branch: selection.branch ?? '',
+    queryTerms: q.terms, flow: choice.flow, branch: choice.branch ?? [],
     sequential: q.sequential,
-    priorityAnchorIds: selection.ids,
-    structuralRequired: selection.structuralRequired,
-    structuralCoverageComplete: selection.complete
-      && (!selection.structuralRequired || missing.length === 0),
+    priorityAnchorIds: choice.ids,
+    structuralRequired: choice.structuralRequired,
+    structuralCoverageComplete: choice.complete
+      && (!choice.structuralRequired || missing.length === 0),
   }
 }

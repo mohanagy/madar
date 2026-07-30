@@ -1,24 +1,25 @@
-import { compareCodeUnits } from '../graph/canonical-json.js'
+import { compareCodeUnits as compare } from '../graph/canonical-json.js'
 import type { GraphEdge } from '../graph/directed-multigraph.js'
 import type { QueryGraph, ReadyQueryIndex } from './index-status.js'
 import type {
   EvidenceBoundary, QueryPathEdge, QuerySlice, RankedQueryNode, RankQueryResult,
 } from './types.js'
+import { sourceDomainOf as domainOf } from './source-domain.js'
 
-interface TraversalState { sourceIndex: number; nodeId: string }
+interface TraversalState { origin: number; nodeId: string }
 interface PathPredecessor { nodeId: string; edge: QueryPathEdge }
-function normalizedRelationTerms(value: string): string[] {
+function relationWords(value: string): string[] {
   const normalized = value.toLowerCase()
   return [normalized, ...normalized.split(/[^a-z0-9]+/u)]
     .filter((term, index, terms) => term.length > 0 && terms.indexOf(term) === index)
 }
-function queryMentionsRelation(relation: string, queryTerms: ReadonlySet<string>): boolean {
-  const terms = normalizedRelationTerms(relation)
+function mentions(relation: string, queryTerms: ReadonlySet<string>): boolean {
+  const terms = relationWords(relation)
   return queryTerms.has(terms[0]!)
     || (terms.length > 1 && terms.slice(1).every((term) => queryTerms.has(term)))
 }
 
-function asPathEdge(edge: GraphEdge): QueryPathEdge {
+function pathEdge(edge: GraphEdge): QueryPathEdge {
   const relation = edge.attributes.relation
   if (typeof relation !== 'string' || relation.length === 0) {
     throw new Error(`Graph edge ${edge.id} has no relation`)
@@ -26,7 +27,7 @@ function asPathEdge(edge: GraphEdge): QueryPathEdge {
   return { id: edge.id, from: edge.source, to: edge.target, relation, attributes: edge.attributes }
 }
 
-function allowedEvidenceEdge(graph: QueryGraph, edge: QueryPathEdge): boolean {
+function allowed(graph: QueryGraph, edge: QueryPathEdge): boolean {
   const from = graph.nodeAttributes(edge.from)
   const to = graph.nodeAttributes(edge.to)
   const fromFile = from.node_kind === 'file'
@@ -40,43 +41,43 @@ function allowedEvidenceEdge(graph: QueryGraph, edge: QueryPathEdge): boolean {
   return edge.relation === 'calls' || edge.relation === 'enqueues_job'
 }
 
-function outgoingEdges(
-  graph: QueryGraph, nodeId: string, queryTerms: ReadonlySet<string>,
+function outgoing(
+  graph: QueryGraph, nodeId: string, terms: ReadonlySet<string>,
 ): QueryPathEdge[] {
   return graph.successors(nodeId)
     .flatMap((targetId) => graph.edgesBetween(nodeId, targetId))
-    .map(asPathEdge)
-    .filter((edge) => allowedEvidenceEdge(graph, edge))
+    .map(pathEdge)
+    .filter((edge) => allowed(graph, edge))
     .sort((left, right) => {
-      const leftMentioned = queryMentionsRelation(left.relation, queryTerms)
-      const rightMentioned = queryMentionsRelation(right.relation, queryTerms)
+      const leftMentioned = mentions(left.relation, terms)
+      const rightMentioned = mentions(right.relation, terms)
       if (leftMentioned !== rightMentioned) return leftMentioned ? -1 : 1
       const line = (edge: QueryPathEdge): number =>
         Number(String(edge.attributes.source_location ?? '').match(/\d+/)?.[0] ?? Number.MAX_SAFE_INTEGER)
       return line(left) - line(right)
-        || compareCodeUnits(left.to, right.to)
-        || compareCodeUnits(left.relation, right.relation)
-        || compareCodeUnits(left.id, right.id)
+        || compare(left.to, right.to)
+        || compare(left.relation, right.relation)
+        || compare(left.id, right.id)
     })
 }
 
-function hasDirectEvidenceEdge(
+function direct(
   graph: QueryGraph,
   from: string,
   to: string,
 ): boolean {
   return graph.edgesBetween(from, to)
-    .map(asPathEdge)
-    .some((edge) => allowedEvidenceEdge(graph, edge))
+    .map(pathEdge)
+    .some((edge) => allowed(graph, edge))
 }
 
-function reconstructPath(
-  sourceId: string, targetId: string, predecessors: ReadonlyMap<string, PathPredecessor>,
+function rebuild(
+  sourceId: string, targetId: string, parents: ReadonlyMap<string, PathPredecessor>,
 ): QueryPathEdge[] {
   const reversed: QueryPathEdge[] = []
   let currentId = targetId
   while (currentId !== sourceId) {
-    const predecessor = predecessors.get(currentId)
+    const predecessor = parents.get(currentId)
     if (!predecessor) {
       throw new Error(`Traversal predecessor missing for ${sourceId} -> ${targetId}`)
     }
@@ -86,7 +87,7 @@ function reconstructPath(
   return reversed.reverse()
 }
 
-function dedupeBoundaries(boundaries: readonly EvidenceBoundary[]): EvidenceBoundary[] {
+function unique(boundaries: readonly EvidenceBoundary[]): EvidenceBoundary[] {
   const seen = new Set<string>()
   return boundaries.filter((boundary) => {
     const key = `${boundary.kind}\u0000${boundary.subject}\u0000${boundary.detail ?? ''}`
@@ -96,12 +97,12 @@ function dedupeBoundaries(boundaries: readonly EvidenceBoundary[]): EvidenceBoun
   })
 }
 
-function verificationTarget(graph: QueryGraph, nodeId: string): string {
+function verify(graph: QueryGraph, nodeId: string): string {
   const attributes = graph.nodeAttributes(nodeId)
   return [attributes.source_file, attributes.source_location].filter(String).join(':') || nodeId
 }
 
-function validAnchors(
+function valid(
   graph: QueryGraph, ranking: RankQueryResult, boundaries: EvidenceBoundary[],
 ): RankedQueryNode[] {
   const seen = new Set<string>()
@@ -123,106 +124,115 @@ function validAnchors(
 export function traverseEvidencePaths(
   index: ReadyQueryIndex, ranking: RankQueryResult,
 ): QuerySlice {
-  const boundaries = [...ranking.boundaries]
-  const anchors = validAnchors(index.graph, ranking, boundaries)
+  const facts = [...ranking.boundaries]
+  const anchors = valid(index.graph, ranking, facts)
   if (anchors.length <= 1) {
     return {
       nodeIds: anchors.map((anchor) => anchor.id),
       edges: [],
-      boundaries: dedupeBoundaries(boundaries),
+      boundaries: unique(facts),
       closurePasses: 0,
     }
   }
 
-  const sideBranches = new Set([ranking.branch])
-  const chain = anchors.filter(({ id }) => !sideBranches.has(id))
-  const sources = chain.slice(0, -1).map((source, sourceIndex) => ({
+  const branches = new Set(ranking.branch)
+  const chain = anchors.filter(({ id }) => !branches.has(id))
+  const sources = chain.slice(0, -1).map((source, origin) => ({
     source,
     targets: ranking.flow
       ? [
-        chain[sourceIndex + 1]!,
+        chain[origin + 1]!,
         ...anchors.slice(
           anchors.indexOf(source) + 1,
-          anchors.indexOf(chain[sourceIndex + 1]!),
-        ).filter(({ id }) => sideBranches.has(id)),
+          anchors.indexOf(chain[origin + 1]!),
+        ).filter(({ id }) => branches.has(id)),
       ]
       : anchors.slice(anchors.indexOf(source) + 1),
   }))
   const visited = sources.map(({ source }) => new Set([source.id]))
-  const predecessors = sources.map(() => new Map<string, PathPredecessor>())
+  const parents = sources.map(() => new Map<string, PathPredecessor>())
   const paths = sources.map(() => new Map<string, QueryPathEdge[]>())
-  const queue: TraversalState[] = sources.map(({ source }, sourceIndex) => ({
-    sourceIndex,
+  const queue: TraversalState[] = sources.map(({ source }, origin) => ({
+    origin,
     nodeId: source.id,
   }))
-  const queryTerms = new Set(ranking.queryTerms.map((term) => term.toLowerCase()))
+  const terms = new Set(ranking.queryTerms.map((term) => term.toLowerCase()))
+  const forest = !ranking.sequential
+  const domain = (id: string) => {
+    const a = index.graph.nodeAttributes(id)
+    return domainOf(a.source_domain, String(a.source_file ?? ''), index.root_path)
+  }
+  const domains = new Set([
+    'production', 'unknown', ...anchors.map(({ id }) => domain(id)),
+  ])
 
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const state = queue[cursor]!
-    const search = sources[state.sourceIndex]!
-    const found = paths[state.sourceIndex]!
+    const search = sources[state.origin]!
+    const found = paths[state.origin]!
     if (found.size === search.targets.length) continue
-    const sourceVisited = visited[state.sourceIndex]!
-    const outgoing = outgoingEdges(index.graph, state.nodeId, queryTerms)
-    const sourcePredecessors = predecessors[state.sourceIndex]!
+    const seen = visited[state.origin]!
+    const nextEdges = outgoing(index.graph, state.nodeId, terms)
+      .filter(({ to }) => domains.has(domain(to)))
+    const previous = parents[state.origin]!
 
-    for (const edge of outgoing) {
-      if (sourceVisited.has(edge.to)) continue
-      sourceVisited.add(edge.to)
-      sourcePredecessors.set(edge.to, { nodeId: state.nodeId, edge })
+    for (const edge of nextEdges) {
+      if (seen.has(edge.to)) continue
+      seen.add(edge.to)
+      previous.set(edge.to, { nodeId: state.nodeId, edge })
       if (search.targets.some((target) => target.id === edge.to)) {
-        found.set(edge.to, reconstructPath(search.source.id, edge.to, sourcePredecessors))
+        found.set(edge.to, rebuild(search.source.id, edge.to, previous))
       }
-      queue.push({ sourceIndex: state.sourceIndex, nodeId: edge.to })
+      queue.push({ origin: state.origin, nodeId: edge.to })
     }
   }
 
   const nodeIds: string[] = []
   const edges: QueryPathEdge[] = []
-  const seenNodes = new Set<string>()
-  const seenEdges = new Set<string>()
-  const includeNode = (nodeId: string): void => {
-    if (seenNodes.has(nodeId)) return
-    seenNodes.add(nodeId)
+  const nodes = new Set<string>()
+  const edgeIds = new Set<string>()
+  const include = (nodeId: string): void => {
+    if (nodes.has(nodeId)) return
+    nodes.add(nodeId)
     nodeIds.push(nodeId)
   }
-  for (const anchor of anchors) includeNode(anchor.id)
+  for (const anchor of anchors) include(anchor.id)
 
-  for (const [sourceIndex, search] of sources.entries()) {
+  for (const [origin, search] of sources.entries()) {
     for (const [targetIndex, target] of search.targets.entries()) {
-      const path = paths[sourceIndex]!.get(target.id)
-      const coveredByAdjacentPaths = !ranking.flow && targetIndex > 0
-        && anchors.slice(sourceIndex, sourceIndex + targetIndex + 1).every((_, offset) =>
-          paths[sourceIndex + offset]!.has(anchors[sourceIndex + offset + 1]!.id))
-      const coveredByCommonPredecessor = sources.slice(0, sourceIndex).some((_, earlier) =>
+      const path = paths[origin]!.get(target.id)
+      const adjacent = !ranking.flow && targetIndex > 0
+        && anchors.slice(origin, origin + targetIndex + 1).every((_, offset) =>
+          paths[origin + offset]!.has(anchors[origin + offset + 1]!.id))
+      const commonParent = forest
+        && sources.slice(0, origin).some((_, earlier) =>
         paths[earlier]!.has(search.source.id) && paths[earlier]!.has(target.id))
-      const coveredBySelectedFanOut = anchors.some((candidate) =>
-        candidate.id !== search.source.id
-        && candidate.id !== target.id
-        && hasDirectEvidenceEdge(index.graph, candidate.id, search.source.id)
-        && hasDirectEvidenceEdge(index.graph, candidate.id, target.id))
-      const targetSourceIndex = sources.findIndex(({ source }) => source.id === target.id)
-      const coveredBySelectedFanIn = !ranking.sequential && targetSourceIndex >= 0
-        && anchors.some((candidate) =>
-          candidate.id !== search.source.id
-          && candidate.id !== target.id
-          && visited[sourceIndex]!.has(candidate.id)
-          && visited[targetSourceIndex]!.has(candidate.id))
-      if (coveredByAdjacentPaths) continue
+      const fanOut = forest && anchors.some((anchor) =>
+        anchor.id !== search.source.id
+        && anchor.id !== target.id
+        && direct(index.graph, anchor.id, search.source.id)
+        && direct(index.graph, anchor.id, target.id))
+      const targetSource = sources.findIndex(({ source }) => source.id === target.id)
+      const fanIn = forest && targetSource >= 0
+        && anchors.some((anchor) =>
+          anchor.id !== search.source.id
+          && anchor.id !== target.id
+          && visited[origin]!.has(anchor.id)
+          && visited[targetSource]!.has(anchor.id))
+      if (adjacent) continue
       if (!path && targetIndex === 0
-        && !coveredByCommonPredecessor
-        && !coveredBySelectedFanOut && !coveredBySelectedFanIn) {
-        boundaries.push({
+        && !commonParent && !fanOut && !fanIn) {
+        facts.push({
           kind: 'disconnected',
           subject: `${search.source.id} -> ${target.id}`,
-          detail: `${verificationTarget(index.graph, search.source.id)} -> ${verificationTarget(index.graph, target.id)}`,
+          detail: `${verify(index.graph, search.source.id)} -> ${verify(index.graph, target.id)}`,
         })
       }
       for (const edge of path ?? []) {
-        includeNode(edge.from)
-        includeNode(edge.to)
-        if (seenEdges.has(edge.id)) continue
-        seenEdges.add(edge.id)
+        include(edge.from)
+        include(edge.to)
+        if (edgeIds.has(edge.id)) continue
+        edgeIds.add(edge.id)
         edges.push(edge)
       }
     }
@@ -234,15 +244,15 @@ export function traverseEvidencePaths(
   // back-edge.
   for (const from of nodeIds) {
     for (const to of index.graph.successors(from)) {
-      if (!seenNodes.has(to)) continue
+      if (!nodes.has(to)) continue
       for (const graphEdge of index.graph.edgesBetween(from, to)) {
-        const edge = asPathEdge(graphEdge)
-        if (!allowedEvidenceEdge(index.graph, edge) || seenEdges.has(edge.id)) continue
-        seenEdges.add(edge.id)
+        const edge = pathEdge(graphEdge)
+        if (!allowed(index.graph, edge) || edgeIds.has(edge.id)) continue
+        edgeIds.add(edge.id)
         edges.push(edge)
       }
     }
   }
 
-  return { nodeIds, edges, boundaries: dedupeBoundaries(boundaries), closurePasses: 1 }
+  return { nodeIds, edges, boundaries: unique(facts), closurePasses: 1 }
 }

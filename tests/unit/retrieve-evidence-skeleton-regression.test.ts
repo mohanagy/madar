@@ -56,6 +56,7 @@ interface Issue625Fixture {
     punctuation_variants: string[]
     clause_order_variants: string[]
     distant_paraphrases: string[]
+    field_incident_variants: string[]
   }
   stages: StageContract[]
   causal_relationships: RelationshipContract[]
@@ -416,6 +417,7 @@ describe('issue #625 generic evidence-skeleton retrieval', () => {
     ...contract.queries.punctuation_variants,
     ...contract.queries.clause_order_variants,
     ...contract.queries.distant_paraphrases,
+    ...contract.queries.field_incident_variants,
   ])('keeps the same semantic skeleton for paraphrase: %s', (question) => {
     const result = retrieveContext(index, { question, budget: 4_000 })
 

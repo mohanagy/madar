@@ -1,6 +1,8 @@
 import { countTokens } from 'gpt-tokenizer/encoding/cl100k_base'
 
-import { canonicalJsonString, compareCodeUnits } from '../graph/canonical-json.js'
+import {
+  canonicalJsonString as json, compareCodeUnits as compare,
+} from '../graph/canonical-json.js'
 import {
   MAX_RETRIEVE_FILES, MAX_RETRIEVE_SNIPPETS,
   RETRIEVE_RESULT_SCHEMA, RETRIEVE_RESULT_VERSION,
@@ -18,20 +20,20 @@ export interface SliceEvidenceInput {
 
 interface Bundle {
   nodes: readonly EvidenceNode[]
-  relationship?: EvidenceRelationship
-  boundary?: EvidenceBoundary
-  priority: readonly [number, number]
+  edge?: EvidenceRelationship
+  fact?: EvidenceBoundary
+  rank: readonly [number, number]
   order: number
-  identity: string
+  key: string
 }
 
 const CAUSAL_RELATIONS = new Set(['calls', 'enqueues_job'])
 
-function isCausalRelationship(relationship: EvidenceRelationship): boolean {
-  return CAUSAL_RELATIONS.has(relationship.relation)
+function causal(edge: EvidenceRelationship): boolean {
+  return CAUSAL_RELATIONS.has(edge.relation)
 }
 
-function truncatedBoundary(target?: EvidenceNode): EvidenceBoundary {
+function truncation(target?: EvidenceNode): EvidenceBoundary {
   if (!target) return { kind: 'truncated', subject: 'retrieve', detail: 'Omitted by limit.' }
   return {
     kind: 'truncated',
@@ -41,20 +43,52 @@ function truncatedBoundary(target?: EvidenceNode): EvidenceBoundary {
   }
 }
 
-function compareRelationships(left: EvidenceRelationship, right: EvidenceRelationship): number {
-  return compareCodeUnits(left.from_id, right.from_id)
-    || compareCodeUnits(left.relation, right.relation)
-    || compareCodeUnits(left.to_id, right.to_id)
-    || compareCodeUnits(left.id, right.id)
+function edgeOrder(left: EvidenceRelationship, right: EvidenceRelationship): number {
+  return compare(left.from_id, right.from_id)
+    || compare(left.relation, right.relation)
+    || compare(left.to_id, right.to_id)
+    || compare(left.id, right.id)
 }
 
-function compareBoundaries(left: EvidenceBoundary, right: EvidenceBoundary): number {
-  return compareCodeUnits(left.kind, right.kind)
-    || compareCodeUnits(left.subject, right.subject)
-    || compareCodeUnits(left.detail ?? '', right.detail ?? '')
+function edgeSlot(
+  edges: readonly EvidenceRelationship[],
+  edge: EvidenceRelationship,
+): { at: number; delta: number } {
+  let low = 0
+  let high = edges.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (edgeOrder(edges[middle]!, edge) < 0) low = middle + 1
+    else high = middle
+  }
+  const before = [edges[low - 1], edges[low]]
+    .filter((value): value is EvidenceRelationship => Boolean(value))
+  const after = [edges[low - 1], edge, edges[low]]
+    .filter((value): value is EvidenceRelationship => Boolean(value))
+  return {
+    at: low,
+    delta: countTokens(json(after)) - countTokens(json(before)),
+  }
 }
 
-function deduplicate<T>(
+function addEdgeTokens(current: number, delta: number): number {
+  const body = current - countTokens(String(current)) + delta
+  let tokens = body
+  for (let pass = 0; pass < 16; pass += 1) {
+    const observed = body + countTokens(String(tokens))
+    if (observed === tokens) return tokens
+    tokens = observed
+  }
+  throw new Error('Unable to stabilize retrieve serialized token count')
+}
+
+function factOrder(left: EvidenceBoundary, right: EvidenceBoundary): number {
+  return compare(left.kind, right.kind)
+    || compare(left.subject, right.subject)
+    || compare(left.detail ?? '', right.detail ?? '')
+}
+
+function unique<T>(
   values: readonly T[],
   identityOf: (value: T) => string,
   name: string,
@@ -62,7 +96,7 @@ function deduplicate<T>(
   const facts = new Map<string, { serialized: string; value: T }>()
   for (const value of values) {
     const identity = identityOf(value)
-    const serialized = canonicalJsonString(value)
+    const serialized = json(value)
     const previous = facts.get(identity)
     if (previous && previous.serialized !== serialized) {
       throw new TypeError(`Conflicting ${name} facts share identity ${JSON.stringify(identity)}`)
@@ -72,19 +106,19 @@ function deduplicate<T>(
   return [...facts.values()].map(({ value }) => value)
 }
 
-function uniqueBoundaries(boundaries: readonly EvidenceBoundary[]): EvidenceBoundary[] {
-  return deduplicate(boundaries, canonicalJsonString, 'boundary').sort(compareBoundaries)
+function uniqueFacts(facts: readonly EvidenceBoundary[]): EvidenceBoundary[] {
+  return unique(facts, json, 'boundary').sort(factOrder)
 }
 
-function disconnectedEndpoints(boundary: EvidenceBoundary): readonly [string, string] | null {
-  if (boundary.kind !== 'disconnected') return null
+function handoffEnds(fact: EvidenceBoundary): readonly [string, string] | null {
+  if (fact.kind !== 'disconnected') return null
   const separator = ' -> '
-  const at = boundary.subject.indexOf(separator)
-  if (at <= 0 || boundary.subject.indexOf(separator, at + separator.length) >= 0) return null
-  return [boundary.subject.slice(0, at), boundary.subject.slice(at + separator.length)]
+  const at = fact.subject.indexOf(separator)
+  if (at <= 0 || fact.subject.indexOf(separator, at + separator.length) >= 0) return null
+  return [fact.subject.slice(0, at), fact.subject.slice(at + separator.length)]
 }
 
-function pruneStructuralOrphans(
+function pruneFiles(
   nodes: readonly EvidenceNode[],
   relationships: readonly EvidenceRelationship[],
 ): EvidenceNode[] {
@@ -100,62 +134,62 @@ function finalize(
       | 'structuralCoverageComplete'
   >,
   nodes: readonly EvidenceNode[],
-  relationships: readonly EvidenceRelationship[],
-  boundaries: readonly EvidenceBoundary[],
+  edges: readonly EvidenceRelationship[],
+  facts: readonly EvidenceBoundary[],
 ): RetrieveContextResult {
-  const sortedRelationships = [...relationships].sort(compareRelationships)
-  const sortedNodes = pruneStructuralOrphans(nodes, sortedRelationships)
-  const nodeIds = new Set(sortedNodes.map(({ node_id }) => node_id))
-  const hasHandoff = boundaries.some((boundary) => {
-    const endpoints = disconnectedEndpoints(boundary)
-    return endpoints !== null && endpoints.every((endpoint) => nodeIds.has(endpoint))
+  const sortedEdges = [...edges].sort(edgeOrder)
+  const kept = pruneFiles(nodes, sortedEdges)
+  const ids = new Set(kept.map(({ node_id }) => node_id))
+  const handoff = facts.some((fact) => {
+    const ends = handoffEnds(fact)
+    return ends !== null && ends.every((id) => ids.has(id))
   })
-  const hasCausalRelationship = sortedRelationships.some(isCausalRelationship)
-  const structurallyReady = !input.structuralRequired
+  const hasEdge = sortedEdges.some(causal)
+  const ready = !input.structuralRequired
     || (input.structuralCoverageComplete !== false
-      && (hasCausalRelationship || hasHandoff))
-  const structuralMissing = input.outcome === 'evidence' && !structurallyReady
-  const sortedBoundaries = uniqueBoundaries([
-    ...boundaries,
-    ...structuralMissing ? [{
+      && (hasEdge || handoff))
+  const missing = input.outcome === 'evidence' && !ready
+  const outputFacts = uniqueFacts([
+    ...facts,
+    ...missing ? [{
       kind: 'missing' as const,
       subject: `structural coverage for ${input.request.question}`,
     }] : [],
   ])
   const files = new Set([
-    ...sortedNodes.map(({ source_file }) => source_file),
-    ...sortedRelationships.flatMap(({ source_file }) => source_file ? [source_file] : []),
+    ...kept.map(({ source_file }) => source_file),
+    ...sortedEdges.flatMap(({ source_file }) => source_file ? [source_file] : []),
   ]).size
-  const snippets = sortedNodes.filter(({ snippet }) => Boolean(snippet)).length
-  const result = (serializedTokens: number): RetrieveContextResult => ({
+  const snippets = kept.filter(({ snippet }) => Boolean(snippet)).length
+  const result = (tokenCount: number): RetrieveContextResult => ({
     schema: RETRIEVE_RESULT_SCHEMA,
     version: RETRIEVE_RESULT_VERSION,
-    outcome: structuralMissing
-      || (sortedNodes.length === 0 && input.outcome === 'evidence')
+    outcome: missing
+      || (kept.length === 0 && input.outcome === 'evidence')
       ? 'missing'
       : input.outcome,
-    matched_nodes: sortedNodes,
-    relationships: sortedRelationships,
-    boundaries: sortedBoundaries,
+    matched_nodes: kept,
+    relationships: sortedEdges,
+    boundaries: outputFacts,
     metrics: {
       selected_files: files,
       snippets,
       closure_passes: input.closurePasses,
-      serialized_tokens: serializedTokens,
-      truncated: sortedBoundaries.some(({ kind }) => kind === 'truncated'),
+      serialized_tokens: tokenCount,
+      truncated: outputFacts.some(({ kind }) => kind === 'truncated'),
     },
   })
 
   let tokens = 0
   for (let pass = 0; pass < 16; pass += 1) {
-    const candidate = result(tokens)
-    const observed = countTokens(canonicalJsonString(candidate))
-    if (observed === tokens) return candidate
-    tokens = observed
+    const value = result(tokens)
+    const seen = countTokens(json(value))
+    if (seen === tokens) return value
+    tokens = seen
   }
   for (tokens = 0; tokens <= 10_000; tokens += 1) {
-    const candidate = result(tokens)
-    if (countTokens(canonicalJsonString(candidate)) === tokens) return candidate
+    const value = result(tokens)
+    if (countTokens(json(value)) === tokens) return value
   }
   throw new Error('Unable to stabilize retrieve serialized token count')
 }
@@ -163,8 +197,8 @@ function finalize(
 function pack(
   input: SliceEvidenceInput,
   nodes: readonly EvidenceNode[],
-  relationships: readonly EvidenceRelationship[],
-  boundaries: readonly EvidenceBoundary[],
+  edges: readonly EvidenceRelationship[],
+  facts: readonly EvidenceBoundary[],
   budget?: number,
 ): {
   nodes: EvidenceNode[]
@@ -173,117 +207,138 @@ function pack(
   omitted: boolean
 } {
   const byId = new Map(nodes.map((node) => [node.node_id, node]))
-  const priorities = [...new Set(input.priorityNodeIds)]
-  const prioritySet = new Set(priorities)
+  const priorityIds = [...new Set(input.priorityNodeIds)]
+  const prioritySet = new Set(priorityIds)
   const ordered = [
-    ...priorities.flatMap((id) => {
+    ...priorityIds.flatMap((id) => {
       const node = byId.get(id)
       return node ? [node] : []
     }),
     ...nodes.filter(({ node_id }) => !prioritySet.has(node_id)),
   ]
-  const priorityOrder = new Map(priorities.map((nodeId, index) => [nodeId, index]))
+  const ordinals = new Map(priorityIds.map((id, index) => [id, index]))
   const priority = (ids: readonly string[]): readonly [number, number] => {
-    const ranks = ids.map((id) => priorityOrder.get(id) ?? Number.POSITIVE_INFINITY)
+    const ranks = ids.map((id) => ordinals.get(id) ?? Number.POSITIVE_INFINITY)
     return [Math.max(...ranks), Math.min(...ranks)]
   }
-  const bundles: Bundle[] = []
-  const remaining: EvidenceBoundary[] = []
+  const queue: Bundle[] = []
+  const loose: EvidenceBoundary[] = []
   let omitted = false
 
-  for (const relationship of relationships) {
-    const ids = [...new Set([relationship.from_id, relationship.to_id])]
-    const endpoints = ids.map((id) => byId.get(id))
-    if (endpoints.some((node) => !node)) {
+  for (const edge of edges) {
+    const ids = [...new Set([edge.from_id, edge.to_id])]
+    const ends = ids.map((id) => byId.get(id))
+    if (ends.some((node) => !node)) {
       omitted = true
       continue
     }
-    bundles.push({
-      nodes: endpoints as EvidenceNode[],
-      relationship,
-      priority: priority(ids),
-      order: isCausalRelationship(relationship) ? 0 : 2,
-      identity: canonicalJsonString(relationship),
+    queue.push({
+      nodes: ends as EvidenceNode[],
+      edge,
+      rank: priority(ids),
+      order: causal(edge) ? 0 : 2,
+      key: json(edge),
     })
   }
-  for (const boundary of boundaries) {
-    if (boundary.kind !== 'disconnected') {
-      if (budget === undefined || boundary.kind !== 'truncated') {
-        remaining.push(boundary)
+  for (const fact of facts) {
+    if (fact.kind !== 'disconnected') {
+      if (budget === undefined || fact.kind !== 'truncated') {
+        loose.push(fact)
       }
       continue
     }
-    const ids = disconnectedEndpoints(boundary)
-    const endpoints = ids?.map((id) => byId.get(id))
-    if (!ids || !endpoints || endpoints.some((node) => !node)) {
+    const ids = handoffEnds(fact)
+    const ends = ids?.map((id) => byId.get(id))
+    if (!ids || !ends || ends.some((node) => !node)) {
       omitted = true
       continue
     }
-    bundles.push({
-      nodes: endpoints as EvidenceNode[],
-      boundary,
-      priority: priority(ids),
+    queue.push({
+      nodes: ends as EvidenceNode[],
+      fact,
+      rank: priority(ids),
       order: 1,
-      identity: canonicalJsonString(boundary),
+      key: json(fact),
     })
   }
   const rank = (left: number, right: number): number =>
     left === right ? 0 : left < right ? -1 : 1
-  bundles.sort((left, right) =>
-    Number(Number.isFinite(right.priority[0]))
-      - Number(Number.isFinite(left.priority[0]))
+  queue.sort((left, right) =>
+    Number(Number.isFinite(right.rank[0]))
+      - Number(Number.isFinite(left.rank[0]))
     || left.order - right.order
-    || rank(left.priority[0], right.priority[0])
-    || rank(left.priority[1], right.priority[1])
-    || compareCodeUnits(left.identity, right.identity))
+    || rank(left.rank[0], right.rank[0])
+    || rank(left.rank[1], right.rank[1])
+    || compare(left.key, right.key))
 
   const chosen = new Set<string>()
-  const chosenEdges: EvidenceRelationship[] = []
-  let chosenFacts = budget === undefined ? [] : [truncatedBoundary()]
+  const keptEdges: EvidenceRelationship[] = []
+  let keptFacts = budget === undefined ? [] : [truncation()]
   const files = new Set<string>()
   const blocked = new Set<string>()
   let snippets = 0
-  const selectedNodes = (candidateIds: ReadonlySet<string> = chosen): EvidenceNode[] =>
-    ordered.filter(({ node_id }) => candidateIds.has(node_id))
-  const tryAdd = (bundle: Pick<Bundle, 'nodes' | 'relationship' | 'boundary'>): boolean => {
-    const missing = bundle.nodes.filter(({ node_id }) => !chosen.has(node_id))
+  let tokenCount: number | undefined
+  const selectedNodes = (ids: ReadonlySet<string> = chosen): EvidenceNode[] =>
+    ordered.filter(({ node_id }) => ids.has(node_id))
+  const tryAdd = (item: Pick<Bundle, 'nodes' | 'edge' | 'fact'>): boolean => {
+    const missing = item.nodes.filter(({ node_id }) => !chosen.has(node_id))
     const addedFiles = new Set(
       missing.map(({ source_file }) => source_file).filter((file) => !files.has(file)),
     )
-    const relationshipFile = bundle.relationship?.source_file
-    if (relationshipFile && !files.has(relationshipFile)) addedFiles.add(relationshipFile)
+    const edgeFile = item.edge?.source_file
+    if (edgeFile && !files.has(edgeFile)) addedFiles.add(edgeFile)
     const addedSnippets = missing.filter(({ snippet }) => Boolean(snippet)).length
     if (files.size + addedFiles.size > MAX_RETRIEVE_FILES
       || snippets + addedSnippets > MAX_RETRIEVE_SNIPPETS) return false
 
     const candidateIds = new Set(chosen)
     for (const { node_id } of missing) candidateIds.add(node_id)
-    const candidateRelationships = bundle.relationship
-      ? [...chosenEdges, bundle.relationship]
-      : chosenEdges
-    const candidateBoundaries = bundle.boundary
-      ? uniqueBoundaries([...chosenFacts, bundle.boundary])
-      : chosenFacts
-    if (budget !== undefined && finalize(
-      input,
-      selectedNodes(candidateIds),
-      candidateRelationships,
-      candidateBoundaries,
-    ).metrics.serialized_tokens > budget) return false
+    const candidateEdges = item.edge
+      ? [...keptEdges, item.edge]
+      : keptEdges
+    const candidateFacts = item.fact
+      ? uniqueFacts([...keptFacts, item.fact])
+      : keptFacts
+    let insertion: { at: number; delta: number } | undefined
+    let nextTokens: number | undefined
+    const edge = item.edge
+    const stableStructure = !input.structuralRequired
+      || !edge || !causal(edge)
+      || keptEdges.some(causal)
+    if (budget !== undefined) {
+      if (tokenCount !== undefined && edge && !item.fact
+        && missing.length === 0 && addedFiles.size === 0 && stableStructure) {
+        insertion = edgeSlot(keptEdges, edge)
+        nextTokens = addEdgeTokens(tokenCount, insertion.delta)
+      } else {
+        nextTokens = finalize(
+          input,
+          selectedNodes(candidateIds),
+          candidateEdges,
+          candidateFacts,
+        ).metrics.serialized_tokens
+      }
+      if (nextTokens > budget) return false
+    }
 
     for (const node of missing) chosen.add(node.node_id)
     for (const file of addedFiles) files.add(file)
     snippets += addedSnippets
-    if (bundle.relationship) chosenEdges.push(bundle.relationship)
-    if (bundle.boundary) chosenFacts = candidateBoundaries
+    if (edge) {
+      const at = insertion?.at
+        ?? edgeSlot(keptEdges, edge).at
+      keptEdges.splice(at, 0, edge)
+    }
+    if (item.fact) keptFacts = candidateFacts
+    tokenCount = nextTokens
     return true
   }
 
-  for (const bundle of bundles) {
-    if (tryAdd(bundle)) continue
+  for (const item of queue) {
+    if (tryAdd(item)) continue
     omitted = true
-    if (bundle.boundary) {
-      for (const { node_id } of bundle.nodes) {
+    if (item.fact) {
+      for (const { node_id } of item.nodes) {
         if (!chosen.has(node_id)) blocked.add(node_id)
       }
     }
@@ -294,27 +349,27 @@ function pack(
       omitted = true
     }
   }
-  for (const boundary of remaining.sort(compareBoundaries)) {
-    if (!tryAdd({ nodes: [], boundary })) omitted = true
+  for (const fact of loose.sort(factOrder)) {
+    if (!tryAdd({ nodes: [], fact })) omitted = true
   }
 
   return {
     nodes: selectedNodes(),
-    relationships: chosenEdges,
-    boundaries: chosenFacts,
+    relationships: keptEdges,
+    boundaries: keptFacts,
     omitted,
   }
 }
 
 export function sliceEvidence(input: SliceEvidenceInput): RetrieveContextResult {
-  const nodes = deduplicate(input.matchedNodes, ({ node_id }) => node_id, 'node')
-  const relationships = deduplicate(
+  const nodes = unique(input.matchedNodes, ({ node_id }) => node_id, 'node')
+  const relationships = unique(
     input.relationships, ({ id }) => id, 'relationship',
-  ).sort(compareRelationships)
-  const boundaries = uniqueBoundaries(input.boundaries)
+  ).sort(edgeOrder)
+  const boundaries = uniqueFacts(input.boundaries)
   const capped = pack(input, nodes, relationships, boundaries)
   if (capped.omitted && !capped.boundaries.some(({ kind }) => kind === 'truncated')) {
-    capped.boundaries = uniqueBoundaries([...capped.boundaries, truncatedBoundary()])
+    capped.boundaries = uniqueFacts([...capped.boundaries, truncation()])
   }
   const cappedResult = finalize(
     input, capped.nodes, capped.relationships, capped.boundaries,
@@ -328,7 +383,7 @@ export function sliceEvidence(input: SliceEvidenceInput): RetrieveContextResult 
     !retained.nodes.some((node) => node.node_id === node_id))
   if (omittedTarget) {
     const targeted = retained.boundaries.map((boundary) =>
-      boundary.kind === 'truncated' ? truncatedBoundary(omittedTarget) : boundary)
+      boundary.kind === 'truncated' ? truncation(omittedTarget) : boundary)
     if (finalize(
       input, retained.nodes, retained.relationships, targeted,
     ).metrics.serialized_tokens <= input.request.budget) retained.boundaries = targeted

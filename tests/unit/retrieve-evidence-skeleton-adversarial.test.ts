@@ -19,8 +19,10 @@ import {
   type ReadyQueryIndex,
 } from '../../src/domain/query/index-status.js'
 import { rankQueryAnchors } from '../../src/domain/query/rank.js'
+import { sliceEvidence } from '../../src/domain/query/slice.js'
+import { traverseEvidencePaths } from '../../src/domain/query/traverse.js'
 import type {
-  EvidenceRelationship,
+  EvidenceNode, EvidenceRelationship, RankQueryResult,
   RetrieveContextResult,
 } from '../../src/domain/query/types.js'
 
@@ -113,6 +115,64 @@ function syntheticIndex(graph: KnowledgeGraph): ReadyQueryIndex {
   }
 }
 
+function connectorIndex(): ReadyQueryIndex {
+  const graph = new KnowledgeGraph({ root_path: '/workspace' })
+  const queueFile = 'src/runtime/queue.ts'
+  graph.addNode('entry', syntheticNode('openWorkflow', 'src/runtime/entry.ts'))
+  graph.addNode('hub', syntheticNode('enqueueTask', queueFile))
+  graph.addNode('registry', syntheticNode('registerWorker', queueFile))
+  graph.addEdge('entry', 'hub', {
+    relation: 'calls', source_file: 'src/runtime/entry.ts',
+    source_location: 'L1', provenance: [{}],
+  })
+  for (const name of ['Alpha', 'Beta', 'Gamma']) {
+    const lower = name.toLowerCase()
+    const file = `src/runtime/${lower}-worker.ts`
+    const owner = `worker-${lower}`
+    const registrar = `register-${lower}`
+    const consumer = `process-${lower}`
+    const service = `service-${lower}`
+    graph.addNode(owner, {
+      ...syntheticNode(`${name}Worker`, file),
+      label: `${name}Worker`,
+      node_kind: 'class',
+    })
+    graph.addNode(registrar, syntheticNode('register', file))
+    graph.addNode(consumer, syntheticNode('process', file))
+    graph.addNode(service, syntheticNode(
+      `Service${name}.run${name}`,
+      `src/runtime/${lower}-service.ts`,
+    ))
+    graph.addEdge(owner, registrar, {
+      relation: 'contains', source_file: file,
+      source_location: 'L1', provenance: [{}],
+    })
+    graph.addEdge(owner, consumer, {
+      relation: 'contains', source_file: file,
+      source_location: 'L1', provenance: [{}],
+    })
+    graph.addEdge(registrar, 'registry', {
+      relation: 'calls', source_file: file,
+      source_location: 'L1', provenance: [{}],
+    })
+    graph.addEdge(registrar, consumer, {
+      relation: 'calls', source_file: file,
+      source_location: 'L2', provenance: [{}],
+    })
+    graph.addEdge(consumer, service, {
+      relation: 'calls', source_file: file,
+      source_location: 'L3', provenance: [{}],
+    })
+    if (name === 'Alpha') {
+      graph.addEdge('hub', consumer, {
+        relation: 'calls', source_file: queueFile,
+        source_location: 'L1', provenance: [{}],
+      })
+    }
+  }
+  return syntheticIndex(graph)
+}
+
 afterEach(() => {
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true })
@@ -120,6 +180,37 @@ afterEach(() => {
 })
 
 describe('issue #625 topology-independent adversarial retrieval', () => {
+  it('treats an explicit scope already in the connector entry as satisfied', () => {
+    const ranked = rankQueryAnchors(connectorIndex(), {
+      question: 'Trace openWorkflow through `enqueueTask`.',
+      budget: 4_000,
+    })
+
+    expect(ranked.anchors.map(({ id }) => id)).toContain('hub')
+    expect(ranked.structuralCoverageComplete).toBe(true)
+  })
+
+  it('does not silently drop a second explicit connector scope', () => {
+    const index = connectorIndex()
+    const ranked = rankQueryAnchors(index, {
+      question:
+        'Trace enqueueTask through `ServiceAlpha.runAlpha` and `ServiceBeta.runBeta`.',
+      budget: 4_000,
+    })
+    const traversed = traverseEvidencePaths(index, ranked)
+
+    expect(ranked.anchors.map(({ id }) => id)).toEqual(expect.arrayContaining([
+      'service-alpha',
+      'service-beta',
+    ]))
+    expect(traversed.edges.map(({ from, to }) => `${from}->${to}`))
+      .toEqual(expect.arrayContaining([
+        'process-alpha->service-alpha',
+        'process-beta->service-beta',
+      ]))
+    expect(ranked.structuralCoverageComplete).toBe(true)
+  })
+
   it('preserves every directed edge in a pure three-node causal cycle', () => {
     const index = readyFixture('pure-cycle', {
       'src/cycle/alpha.ts': [
@@ -347,16 +438,164 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
       ].join('\n'),
     })
 
+    for (const question of [
+      'Trace dispatchOrder to sendEmail, writeAudit, and updateMetric.',
+      'Trace from dispatchOrder to sendEmail and writeAudit.',
+    ]) {
+      const result = retrieveContext(index, { question, budget: 4_000 })
+
+      expect(result.outcome).toBe('evidence')
+      expectCall(result, 'dispatchOrder', 'sendEmail')
+      expectCall(result, 'dispatchOrder', 'writeAudit')
+      if (question.includes('updateMetric')) {
+        expectCall(result, 'dispatchOrder', 'updateMetric')
+      }
+      expect(result.boundaries).toEqual([])
+      expectWithinProtocol(result)
+    }
+  })
+
+  it('reports a sequential request between sibling sinks as disconnected', () => {
+    const index = readyFixture('sequential-siblings', {
+      'src/orders/dispatch.ts': [
+        "import { sendEmail } from '../sinks/email.js'",
+        "import { writeAudit } from '../sinks/audit.js'",
+        'export function dispatchOrder(order: string): string[] {',
+        '  return [sendEmail(order), writeAudit(order)]',
+        '}',
+      ].join('\n'),
+      'src/sinks/email.ts': [
+        'export function sendEmail(order: string): string {',
+        "  return `email:${order}`",
+        '}',
+      ].join('\n'),
+      'src/sinks/audit.ts': [
+        'export function writeAudit(order: string): string {',
+        "  return `audit:${order}`",
+        '}',
+      ].join('\n'),
+    })
+
+    const result = retrieveContext(index, {
+      question: 'Trace sendEmail through writeAudit.',
+      budget: 4_000,
+    })
+
+    const emailId = symbolId(result, 'sendEmail')
+    const auditId = symbolId(result, 'writeAudit')
+    expect(result.boundaries).toContainEqual(expect.objectContaining({
+      kind: 'disconnected',
+      subject: `${emailId} -> ${auditId}`,
+    }))
+    expectWithinProtocol(result)
+  })
+
+  it('does not use a test-only common parent as runtime flow evidence', () => {
+    const index = readyFixture('test-common-parent', {
+      'src/orders/email.ts': [
+        "import { finishOrder } from './finish.js'",
+        'export function sendEmail(order: string): string {',
+        '  return finishOrder(`email:${order}`)',
+        '}',
+      ].join('\n'),
+      'src/orders/audit.ts': [
+        "import { finishOrder } from './finish.js'",
+        'export function writeAudit(order: string): string {',
+        '  return finishOrder(`audit:${order}`)',
+        '}',
+      ].join('\n'),
+      'src/orders/finish.ts': [
+        'export function finishOrder(order: string): string { return order }',
+      ].join('\n'),
+      'tests/orders/dispatch.test.ts': [
+        "import { sendEmail } from '../../src/orders/email.js'",
+        "import { writeAudit } from '../../src/orders/audit.js'",
+        'export function dispatchTestOrder(order: string): string[] {',
+        '  return [sendEmail(order), writeAudit(order)]',
+        '}',
+      ].join('\n'),
+    })
+
     const result = retrieveContext(index, {
       question:
-        'Trace dispatchOrder to sendEmail, writeAudit, and updateMetric.',
+        'Explain the flow from sendEmail and writeAudit to finishOrder.',
       budget: 4_000,
     })
 
     expect(result.outcome).toBe('evidence')
-    expectCall(result, 'dispatchOrder', 'sendEmail')
-    expectCall(result, 'dispatchOrder', 'writeAudit')
-    expectCall(result, 'dispatchOrder', 'updateMetric')
+    expectCall(result, 'sendEmail', 'finishOrder')
+    expectCall(result, 'writeAudit', 'finishOrder')
+    expect(result.matched_nodes.some(({ source_file }) =>
+      source_file.startsWith('tests/'))).toBe(false)
+    expectWithinProtocol(result)
+  })
+
+  it('preserves a causal flow when the query explicitly requests tests', () => {
+    const index = readyFixture('explicit-test-flow', {
+      'tests/auth-route.test.ts': [
+        "import { testAuthService } from '../src/auth-service.js'",
+        'export function testAuthRoute(): string {',
+        '  return testAuthService()',
+        '}',
+      ].join('\n'),
+      'src/auth-service.ts': [
+        "import { assertAuthRecord } from '../tests/auth-assertion.js'",
+        'export function testAuthService(): string {',
+        '  return assertAuthRecord()',
+        '}',
+      ].join('\n'),
+      'tests/auth-assertion.ts': [
+        'export function assertAuthRecord(): string {',
+        "  return 'verified'",
+        '}',
+      ].join('\n'),
+    })
+
+    const result = retrieveContext(index, {
+      question:
+        'Explain the test flow from testAuthRoute through assertAuthRecord.',
+      budget: 4_000,
+    })
+
+    expect(result.outcome).toBe('evidence')
+    expectCall(result, 'testAuthRoute', 'testAuthService')
+    expectCall(result, 'testAuthService', 'assertAuthRecord')
+    expect(result.matched_nodes.map(({ source_file }) => source_file))
+      .toContain('src/auth-service.ts')
+    expectWithinProtocol(result)
+  })
+
+  it('does not authenticate a production path through a test-only bridge', () => {
+    const index = readyFixture('test-only-bridge', {
+      'src/runtime-start.ts': [
+        "import { testBridge } from '../tests/runtime-bridge.test.js'",
+        'export function runtimeStart(): string {',
+        '  return testBridge()',
+        '}',
+      ].join('\n'),
+      'tests/runtime-bridge.test.ts': [
+        "import { runtimeFinish } from '../src/runtime-finish.js'",
+        'export function testBridge(): string {',
+        '  return runtimeFinish()',
+        '}',
+      ].join('\n'),
+      'src/runtime-finish.ts': [
+        'export function runtimeFinish(): string {',
+        "  return 'complete'",
+        '}',
+      ].join('\n'),
+    })
+
+    const result = retrieveContext(index, {
+      question: 'Trace runtimeStart through runtimeFinish.',
+      budget: 4_000,
+    })
+
+    expect(result.outcome).toBe('missing')
+    expect(result.relationships).toEqual([])
+    expect(result.boundaries.length).toBeGreaterThan(0)
+    expect(result.matched_nodes.some(({ source_file }) =>
+      source_file.startsWith('tests/'))).toBe(false)
     expectWithinProtocol(result)
   })
 
@@ -719,5 +958,143 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
       'chain-12343',
     ])
     expect(elapsed).toBeLessThan(500)
+  })
+
+  it('bounds parallel authenticated edges within the retrieval latency gate', () => {
+    const graph = new KnowledgeGraph({ root_path: '/workspace' })
+    const file = 'src/parallel.ts'
+    graph.addNode('parallel-start', syntheticNode('parallelStart', file))
+    graph.addNode('parallel-finish', syntheticNode('parallelFinish', file))
+    for (let index = 0; index < 2_000; index += 1) {
+      graph.addEdge('parallel-start', 'parallel-finish', {
+        relation: 'calls',
+        source_file: file,
+        source_location: `L${index + 1}`,
+        provenance: [{}],
+      })
+    }
+    const queryIndex = syntheticIndex(graph)
+    const ranked: RankQueryResult = {
+      anchors: ['parallel-start', 'parallel-finish'].map((id, firstMatch) => ({
+        id,
+        attributes: graph.nodeAttributes(id),
+        score: 1,
+        matchedTerms: [],
+        firstMatch,
+      })),
+      boundaries: [],
+      queryTerms: ['parallel'],
+      flow: true,
+      branch: [],
+      priorityAnchorIds: ['parallel-start', 'parallel-finish'],
+      structuralRequired: true,
+      structuralCoverageComplete: true,
+    }
+    const evidenceNodes: EvidenceNode[] = ranked.anchors.map(({ id, attributes }) => ({
+      node_id: id,
+      label: String(attributes.label),
+      node_kind: 'function',
+      evidence_kind: 'symbol_declaration',
+      source_file: file,
+      source_location: 'L1',
+      line_number: 1,
+      end_line_number: 1,
+      provenance: [{}],
+      content_hash: 'hash',
+      definition_range: {
+        start: { line: 1, column: 1 },
+        end: { line: 1, column: 24 },
+      },
+      declaration_range: {
+        start: { line: 1, column: 1 },
+        end: { line: 1, column: 23 },
+      },
+      snippet: `export function ${String(attributes.label).replace('()', '')}(): void {}`,
+    }))
+
+    const started = performance.now()
+    const traversed = traverseEvidencePaths(queryIndex, ranked)
+    const result = sliceEvidence({
+      request: {
+        question: 'Trace parallelStart through parallelFinish.',
+        budget: 4_000,
+      },
+      outcome: 'evidence',
+      matchedNodes: evidenceNodes,
+      relationships: traversed.edges.map((edge): EvidenceRelationship => ({
+        id: edge.id,
+        from_id: edge.from,
+        to_id: edge.to,
+        relation: edge.relation,
+        source_file: file,
+        source_location: String(edge.attributes.source_location),
+        provenance: [{}],
+      })),
+      boundaries: traversed.boundaries,
+      priorityNodeIds: ranked.priorityAnchorIds ?? [],
+      closurePasses: traversed.closurePasses,
+      structuralRequired: true,
+      structuralCoverageComplete: true,
+    })
+    const elapsed = performance.now() - started
+
+    expect(traversed.edges).toHaveLength(2_000)
+    expect(traversed.boundaries).toEqual([])
+    expect(result.relationships.length).toBeGreaterThan(0)
+    expect(result.relationships.length).toBeLessThan(2_000)
+    expect(result.metrics.serialized_tokens).toBeLessThanOrEqual(4_000)
+    expect(result.metrics.truncated).toBe(true)
+    expect(elapsed).toBeLessThan(500)
+
+    const fitting = sliceEvidence({
+      request: {
+        question: 'Trace parallelStart through parallelFinish.',
+        budget: 4_000,
+      },
+      outcome: 'evidence',
+      matchedNodes: evidenceNodes,
+      relationships: traversed.edges.slice(0, 2).map((edge): EvidenceRelationship => ({
+        id: edge.id,
+        from_id: edge.from,
+        to_id: edge.to,
+        relation: edge.relation,
+        source_file: file,
+        source_location: String(edge.attributes.source_location),
+        provenance: [{}],
+      })),
+      boundaries: [],
+      priorityNodeIds: ranked.priorityAnchorIds ?? [],
+      closurePasses: 1,
+      structuralRequired: true,
+      structuralCoverageComplete: true,
+    })
+    expect(fitting.relationships).toHaveLength(2)
+
+    const packed = sliceEvidence({
+      request: {
+        question: 'Trace parallelStart through parallelFinish.',
+        budget: 500,
+      },
+      outcome: 'evidence',
+      matchedNodes: evidenceNodes,
+      relationships: ['a-small', 'b-huge', 'c-small'].map((id) => ({
+        id,
+        from_id: 'parallel-start',
+        to_id: 'parallel-finish',
+        relation: 'calls',
+        source_file: file,
+        source_location: 'L1',
+        provenance: id === 'b-huge' ? [{ detail: 'x'.repeat(8_000) }] : [{}],
+      })),
+      boundaries: [],
+      priorityNodeIds: ranked.priorityAnchorIds ?? [],
+      closurePasses: 1,
+      structuralRequired: true,
+      structuralCoverageComplete: true,
+    })
+    expect(packed.relationships.map(({ id }) => id)).toEqual([
+      'a-small',
+      'c-small',
+    ])
   })
 })

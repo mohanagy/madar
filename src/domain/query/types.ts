@@ -19,7 +19,7 @@ export interface RankedQueryNode {
 }
 export interface RankQueryResult {
   anchors: RankedQueryNode[]; boundaries: EvidenceBoundary[]; queryTerms: string[]
-  flow: boolean; branch: string; sequential?: boolean
+  flow: boolean; branch: readonly string[]; sequential?: boolean
   priorityAnchorIds?: readonly string[]
   coveredTerms?: readonly string[]
   structuralRequired?: boolean

@@ -15,6 +15,13 @@
     "distant_paraphrases": [
       "Follow a submitted idea from its HTTP handler through queued planning and section research until the assembled report is saved.",
       "Which runtime components accept an idea, schedule its analysis, research each section, compose the result, and write the durable read model?"
+    ],
+    "field_incident_variants": [
+      "explain how idea report generating is working",
+      "can you explain how idea report generated",
+      "can you tell me how is the flow generating report for idea ?",
+      "explain how generating the idea report flow is working",
+      "Explain how idea report is getting generated"
     ]
   },
   "stages": [
