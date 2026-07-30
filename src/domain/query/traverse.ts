@@ -99,7 +99,10 @@ function unique(boundaries: readonly EvidenceBoundary[]): EvidenceBoundary[] {
 
 function verify(graph: QueryGraph, nodeId: string): string {
   const attributes = graph.nodeAttributes(nodeId)
-  return [attributes.source_file, attributes.source_location].filter(String).join(':') || nodeId
+  return [attributes.source_file, attributes.source_location]
+    .filter((value): value is string =>
+      typeof value === 'string' && value.length > 0)
+    .join(':') || nodeId
 }
 
 function valid(

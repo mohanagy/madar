@@ -153,7 +153,7 @@ function finalize(
     ...facts,
     ...missing ? [{
       kind: 'missing' as const,
-      subject: `structural coverage for ${input.request.question}`,
+      subject: 'structural coverage',
     }] : [],
   ])
   const files = new Set([

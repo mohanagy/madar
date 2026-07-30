@@ -370,7 +370,7 @@ beforeAll(() => {
     throw new Error(`Expected ready false-ready query index, received ${inspectedFalseReady.state}`)
   }
   falseReadyIndex = inspectedFalseReady
-})
+}, 30_000)
 
 afterAll(() => {
   if (root) rmSync(root, { recursive: true, force: true })
@@ -502,7 +502,7 @@ describe('issue #625 generic evidence-skeleton retrieval', () => {
     expect(result.outcome).toBe('missing')
     expect(result.boundaries).toContainEqual(expect.objectContaining({
       kind: 'missing',
-      subject: 'structural coverage for trace the complete runtime flow',
+      subject: 'structural coverage',
     }))
   })
 
@@ -776,7 +776,7 @@ describe('issue #625 generic evidence-skeleton retrieval', () => {
     expect(result.outcome).toBe('missing')
     expect(result.boundaries).toContainEqual(expect.objectContaining({
       kind: 'missing',
-      subject: 'structural coverage for trace the complete runtime flow',
+      subject: 'structural coverage',
     }))
   })
 

@@ -274,7 +274,9 @@ function vocabulary(question: string): Vocabulary {
   }
   const explicit = scopes(task)
   const clauses = task
-    .split(/[,;:\u2013\u2014]+|[!?]+|\.(?=\s+[A-Z])|\b(?:and\s+then|then)\b/iu)
+    .split(
+      /[,;:\u2013\u2014]+|[!?]+|\.(?=\s+[A-Z])|\b(?:[Aa][Nn][Dd]\s+)?[Tt][Hh][Ee][Nn]\b/u,
+    )
     .map(words).filter((part) => part.length > 0)
   const parts = (clauses.length > 0 ? clauses : [terms])
     .map((part) => new Set(part))

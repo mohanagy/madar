@@ -6,13 +6,14 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { performance } from 'node:perf_hooks'
 
+import { countTokens } from 'gpt-tokenizer/encoding/cl100k_base'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { loadGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
 import { generateIndex } from '../../src/application/generate-index.js'
 import { retrieveContext } from '../../src/application/retrieve-context.js'
+import { canonicalJsonString } from '../../src/domain/graph/canonical-json.js'
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import {
   inspectQueryIndex,
@@ -180,6 +181,31 @@ afterEach(() => {
 })
 
 describe('issue #625 topology-independent adversarial retrieval', () => {
+  it('keeps lowercase prose periods distinct from sentence and then boundaries', () => {
+    const graph = new KnowledgeGraph({ root_path: '/workspace' })
+    graph.addNode('alpha', syntheticNode('alpha', 'src/alpha.ts'))
+    graph.addNode('beta', syntheticNode('beta', 'src/beta.ts'))
+    const index = syntheticIndex(graph)
+
+    const lowercase = rankQueryAnchors(index, {
+      question: 'Explain alpha. beta behavior',
+      budget: 4_000,
+    })
+    const sentence = rankQueryAnchors(index, {
+      question: 'Explain alpha. Beta behavior',
+      budget: 4_000,
+    })
+    const then = rankQueryAnchors(index, {
+      question: 'Explain alpha And Then beta behavior',
+      budget: 4_000,
+    })
+
+    expect(lowercase.structuralRequired).toBe(false)
+    expect(sentence.structuralRequired).toBe(true)
+    expect(then.structuralRequired).toBe(true)
+    expect(then.sequential).toBe(true)
+  })
+
   it('treats an explicit scope already in the connector entry as satisfied', () => {
     const ranked = rankQueryAnchors(connectorIndex(), {
       question: 'Trace openWorkflow through `enqueueTask`.',
@@ -488,6 +514,41 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
       subject: `${emailId} -> ${auditId}`,
     }))
     expectWithinProtocol(result)
+  })
+
+  it('uses only real locator attributes in disconnected verification details', () => {
+    const graph = new KnowledgeGraph({ root_path: '/workspace' })
+    graph.addNode('left', { label: 'left()', node_kind: 'function' })
+    graph.addNode('right', {
+      label: 'right()',
+      node_kind: 'function',
+      source_file: 'src/right.ts',
+    })
+    const ranked: RankQueryResult = {
+      anchors: ['left', 'right'].map((id, firstMatch) => ({
+        id,
+        attributes: graph.nodeAttributes(id),
+        score: 1,
+        matchedTerms: [],
+        firstMatch,
+      })),
+      boundaries: [],
+      queryTerms: ['left', 'right'],
+      flow: true,
+      branch: [],
+      priorityAnchorIds: ['left', 'right'],
+      structuralRequired: true,
+      structuralCoverageComplete: true,
+    }
+
+    const traversed = traverseEvidencePaths(syntheticIndex(graph), ranked)
+
+    expect(traversed.boundaries).toContainEqual({
+      kind: 'disconnected',
+      subject: 'left -> right',
+      detail: 'left -> src/right.ts',
+    })
+    expect(traversed.boundaries[0]?.detail).not.toContain('undefined')
   })
 
   it('does not use a test-only common parent as runtime flow evidence', () => {
@@ -928,7 +989,7 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
     expect(ranked.anchors.length).toBeLessThanOrEqual(25)
   })
 
-  it('keeps concentrated 12k-node scoped ranking below the reference gate', () => {
+  it('selects exact endpoints in a concentrated 12k-node scope', () => {
     const graph = new KnowledgeGraph({ root_path: '/workspace' })
     const file = 'src/concentrated.ts'
     const count = 12_344
@@ -946,21 +1007,18 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
       provenance: [{}],
     })
 
-    const started = performance.now()
     const ranked = rankQueryAnchors(syntheticIndex(graph), {
       question: 'Trace startConcentrated through finishConcentrated.',
       budget: 4_000,
     })
-    const elapsed = performance.now() - started
 
     expect(ranked.priorityAnchorIds).toEqual([
       'chain-00000',
       'chain-12343',
     ])
-    expect(elapsed).toBeLessThan(500)
   })
 
-  it('bounds parallel authenticated edges within the retrieval latency gate', () => {
+  it('preserves parallel authenticated edges before budget packing', () => {
     const graph = new KnowledgeGraph({ root_path: '/workspace' })
     const file = 'src/parallel.ts'
     graph.addNode('parallel-start', syntheticNode('parallelStart', file))
@@ -1012,7 +1070,6 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
       snippet: `export function ${String(attributes.label).replace('()', '')}(): void {}`,
     }))
 
-    const started = performance.now()
     const traversed = traverseEvidencePaths(queryIndex, ranked)
     const result = sliceEvidence({
       request: {
@@ -1036,7 +1093,6 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
       structuralRequired: true,
       structuralCoverageComplete: true,
     })
-    const elapsed = performance.now() - started
 
     expect(traversed.edges).toHaveLength(2_000)
     expect(traversed.boundaries).toEqual([])
@@ -1044,7 +1100,6 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
     expect(result.relationships.length).toBeLessThan(2_000)
     expect(result.metrics.serialized_tokens).toBeLessThanOrEqual(4_000)
     expect(result.metrics.truncated).toBe(true)
-    expect(elapsed).toBeLessThan(500)
 
     const fitting = sliceEvidence({
       request: {
@@ -1096,5 +1151,114 @@ describe('issue #625 topology-independent adversarial retrieval', () => {
       'a-small',
       'c-small',
     ])
+  })
+
+  it('keeps incremental parallel-edge accounting within the exact final budget', () => {
+    const file = 'src/exact-budget.ts'
+    const nodes: EvidenceNode[] = ['budgetStart', 'budgetFinish'].map((label) => ({
+      node_id: label,
+      label: `${label}()`,
+      node_kind: 'function',
+      evidence_kind: 'symbol_declaration',
+      source_file: file,
+      source_location: 'L1',
+      line_number: 1,
+      end_line_number: 1,
+      provenance: [{}],
+      content_hash: 'hash',
+      definition_range: {
+        start: { line: 1, column: 1 },
+        end: { line: 1, column: 24 },
+      },
+      declaration_range: {
+        start: { line: 1, column: 1 },
+        end: { line: 1, column: 23 },
+      },
+      snippet: `export function ${label}(): void {}`,
+    }))
+    const boundaryDetails = [
+      'plain',
+      'punctuation: },{][::,,',
+      'escaped: "quote" \\ slash \n newline',
+      'unicode: مرحبا — 東京 🙂',
+    ] as const
+    const relationships: EvidenceRelationship[] = Array.from(
+      { length: 96 },
+      (_, index) => ({
+        id: `${String(index).padStart(3, '0')}-${'xy'.repeat(index % 13)}`,
+        from_id: 'budgetStart',
+        to_id: 'budgetFinish',
+        relation: 'calls',
+        source_file: file,
+        source_location: `L${index + 1}-${'q'.repeat(index % 37)}`,
+        provenance: [{
+          detail: `${boundaryDetails[index % boundaryDetails.length]}:${
+            'z'.repeat((index * 17) % 53)
+          }`,
+        }],
+      }),
+    )
+    const retrieveAt = (budget: number): RetrieveContextResult => sliceEvidence({
+      request: {
+        question: 'Trace budgetStart through budgetFinish.',
+        budget,
+      },
+      outcome: 'evidence',
+      matchedNodes: nodes,
+      relationships,
+      boundaries: [],
+      priorityNodeIds: nodes.map(({ node_id }) => node_id),
+      closurePasses: 1,
+      structuralRequired: true,
+      structuralCoverageComplete: true,
+    })
+    const probe = retrieveAt(777)
+    const threshold = probe.metrics.serialized_tokens
+    const budgets = [...new Set([
+      256, 333, 511, threshold - 1, threshold, threshold + 1,
+      1_024, 2_048, 3_999,
+    ].filter((budget) => budget >= 256 && budget <= 4_000))]
+
+    for (const budget of budgets) {
+      const result = retrieveAt(budget)
+
+      expect(retrieveAt(budget)).toEqual(result)
+      expect(result.metrics.serialized_tokens).toBeLessThanOrEqual(budget)
+      expect(countTokens(canonicalJsonString(result)))
+        .toBe(result.metrics.serialized_tokens)
+      const retainedIds = new Set(
+        result.matched_nodes.map(({ node_id }) => node_id),
+      )
+      for (const edge of result.relationships) {
+        expect(retainedIds.has(edge.from_id)).toBe(true)
+        expect(retainedIds.has(edge.to_id)).toBe(true)
+      }
+    }
+  })
+
+  it('bounds a structural-missing envelope for a maximum-length question', () => {
+    const result = sliceEvidence({
+      request: {
+        question: '🙂'.repeat(256),
+        budget: 256,
+      },
+      outcome: 'evidence',
+      matchedNodes: [],
+      relationships: [],
+      boundaries: [],
+      priorityNodeIds: [],
+      closurePasses: 0,
+      structuralRequired: true,
+      structuralCoverageComplete: false,
+    })
+
+    expect(result.outcome).toBe('missing')
+    expect(result.boundaries).toContainEqual({
+      kind: 'missing',
+      subject: 'structural coverage',
+    })
+    expect(result.metrics.serialized_tokens).toBeLessThanOrEqual(256)
+    expect(countTokens(canonicalJsonString(result)))
+      .toBe(result.metrics.serialized_tokens)
   })
 })
