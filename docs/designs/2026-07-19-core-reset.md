@@ -3,7 +3,7 @@
 > **Tracking issue:** [#577](https://github.com/mohanagy/madar/issues/577)
 > **Milestone:** [`v0.40.0 — Core Reset`](https://github.com/mohanagy/madar/milestone/7)
 > **Project:** [Madar Roadmap](https://github.com/users/mohanagy/projects/8)
-> **Status:** accepted — the product vertical slice through `evaluation-tooling` and retrieval regression #618 are complete; the bounded #622 candidate is ready for review against `next`; Capability Validation remains cancelled; no further publication is authorized
+> **Status:** accepted — the product vertical slice through `evaluation-tooling` and retrieval regressions #618 and #622 are complete; `0.40.0-beta.3` is published from protected `next`; #625 is the sole technical phase in progress with a package-compliant five-file candidate still pre-PR; Capability Validation remains cancelled; no further publication is authorized
 
 ## Decision
 
@@ -418,11 +418,29 @@ The frozen `0.32.0` versus `0.40.0-beta.1` comparison found byte-identical relev
 
 [PR #623](https://github.com/mohanagy/madar/pull/623) merged into `next` as `6416dbc02cefb3bd79157cf440e420b30dda8cf0` from exact reviewed head `3b3fb9d404864e725305dc491b75e82006c2371f`, with reviewed and merged tree `d43d9d3cb7cf7d566bcb35eca7df2564f0d9ff8c`. All six jobs in [CI run 30452883659](https://github.com/mohanagy/madar/actions/runs/30452883659) passed, two independent reviews found no blocker, CodeRabbit passed after all three findings were addressed, and zero review threads remained. The implementation finished at 43 production TypeScript files / 12,147 LOC with `+164/-25/net +139` against protected base `5df59886190a65ba80e07339203aeba013c94ef2`.
 
-## Release amendment — `0.40.0-beta.3` ready
+## Release amendment — `0.40.0-beta.3` published
 
-The completed product vertical slice plus #618 and #622 satisfy this RFC's beta policy. Release preparation starts from exact #622 merge `6416dbc02cefb3bd79157cf440e420b30dda8cf0` on `next`. It may change only governance, version/package metadata, changelog and release documentation, SBOM, checked-in Registry metadata, release workflow, and tests. It targets protected `next` only and cannot change dependencies, graph/index semantics, or the accepted retrieval repairs.
+The completed product vertical slice plus #618 and #622 satisfied this RFC's beta policy. Release preparation started from exact #622 merge `6416dbc02cefb3bd79157cf440e420b30dda8cf0`; `@lubab/madar@0.40.0-beta.3`, tag `v0.40.0-beta.3`, and the matching [GitHub prerelease](https://github.com/mohanagy/madar/releases/tag/v0.40.0-beta.3) were published from exact protected-`next` commit `ece7d0d02643ecec08bd91aa904a4514aa845f42`.
 
-Only one exact reviewed protected-`next` commit may publish as `@lubab/madar@0.40.0-beta.3` under npm dist-tag `next`, tag `v0.40.0-beta.3`, and a matching GitHub prerelease targeting that same commit after all release, CI, review, thread, artifact, CLI, and MCP gates pass. Exact [owner authorization](https://github.com/mohanagy/madar/issues/622#issuecomment-5118521969) does not authorize MCP Registry publication, npm `latest`, stable `0.40.0`, `main`, or any cancelled validation claim.
+That exact publication receipt is immutable history. npm `latest` remains `0.32.0`; the [owner authorization](https://github.com/mohanagy/madar/issues/622#issuecomment-5118521969) does not authorize MCP Registry publication, stable `0.40.0`, `main`, or any cancelled validation claim.
+
+## In-progress amendment — retrieval regression #625
+
+Issue [#625](https://github.com/mohanagy/madar/issues/625) starts from protected `next` commit `ece7d0d02643ecec08bd91aa904a4514aa845f42` and targets `next`. It replaces phrase-gated full-flow recovery with a single generic deterministic architecture:
+
+1. Form concept groups from the normalized request.
+2. Build a bounded candidate subgraph from authenticated canonical graph facts.
+3. Select a graph-coherent evidence skeleton or forest.
+4. Pack relationships, endpoints, snippets, and disconnected evidence as atomic bundles.
+5. Require structural coverage before reporting the result ready.
+
+The only modified production paths are `src/application/retrieve-context.ts`, `src/domain/query/rank.ts`, `src/domain/query/slice.ts`, `src/domain/query/traverse.ts`, and `src/domain/query/types.ts`; no production file is added. The exact current measurement is 43 production TypeScript files / 12,311 LOC and a five-file `+1,159/-995/net +164` diff. The source budget remains `+1,900/-250/net +1,700`. The retrieval contract stays at 12 files, 25 snippets, one closure pass, and 4,000 serialized tokens.
+
+Repository-, prompt-, path-, or symbol-specific rules; dependencies; a second engine; compatibility aliases; graph/index semantic or schema changes; CLI/MCP changes; npm or product publication; GitHub Release; Registry metadata; tags; and `main` are forbidden.
+
+The inherited artifact limits are exactly 102 entries / 165,000 packed bytes / 640,000 unpacked bytes. Published beta.3 used 102 entries / 158,330 packed / 639,914 unpacked bytes. The immutable [first-candidate stop receipt](https://github.com/mohanagy/madar/issues/625#issuecomment-5122801278) remains 104 entries / 168,719 packed / 697,521 unpacked bytes, five correctness blockers, and a material retained-heap regression; that design stopped before PR. The smaller five-file candidate passes without widening any limit at 102 entries / 159,068 packed / 639,920 unpacked bytes, shasum `d7d9b3d8a783b283ecd1f0200deefa42da4448f2`, integrity `sha512-aWFR8ZTEHidQaHrC8I6Vu2u7p71nfmSSKg9xoV+xYfWGCPQddwb8nRBkp4jMtwTXu+PjogGX8J55ss7Yj7uybw==`, and tarball SHA-256 `a3594fba0d6c71a13ec9996b92f5fc7068feeca339f84d928798f12571dff353`.
+
+The final compacted local real-graph regate returns the exact ten-stage spine for all five flow queries at 10 files / 10 snippets / 3,669 serialized tokens / one closure pass / not truncated, preserves all five authenticated calls and four exact disconnected boundaries, and includes zero distractors. The focused locator remains 1 file / 1 snippet / 270 tokens / zero closure passes. One hundred loaded-graph calls measured p50 241.803 ms, p95 270.488 ms, p99 274.112 ms, maximum 275.395 ms, and mean 245.122 ms; forced-GC heap changed by +1.245 MB and RSS by -3.406 MB. Isolation, typecheck, both builds, release hygiene, Registry validation, the package gate, and npm audit with zero vulnerabilities pass locally. The four focused files pass 101/101 tests; the complete suite passes 76 files / 662 tests, with 83.54% statement, 74.82% branch, 90.8% function, and 87.44% line coverage. The five-production-file diff SHA-256 is `50c048bff7b1a1b6c697e3723b8d831de2441f9d745f4607121a8e33b2979d9f`. The candidate remains in progress and pre-PR: no exact commit or tree, independent-review receipt, PR, six-job CI run, review-thread count, merge, or new publication receipt exists.
 
 ## Public surface target
 
@@ -566,3 +584,7 @@ On 2026-07-26 the owner approved the original Capability Validation proposal has
 | 2026-07-28 | `0.40.0-beta.1` published | The completed vertical slice was published from exact `next` commit `522d138151e837f0eb059b38d3e116c8b965c968` under npm dist-tag `next` with Trusted Publishing provenance and a GitHub prerelease. npm `latest` remained `0.32.0`. |
 | 2026-07-29 | Retrieval regression #618 complete; beta.2 ready | PR #620 merged the bounded four-path repair into protected `core-reset` as `eaa1a8781eda28dad5395d6da378a2cc40bf81fe` after all six exact-head CI jobs, independent no-blocker review, and zero threads passed. Prepare `0.40.0-beta.2` for npm `next` and a matching GitHub prerelease; MCP Registry, npm `latest`, stable `0.40.0`, and `main` remain outside this release. |
 | 2026-07-29 | Retrieval regression #622 complete; beta.3 authorized | PR #623 merged the bounded full-flow repair into `next` as `6416dbc02cefb3bd79157cf440e420b30dda8cf0` after all six exact-head CI jobs, two independent no-blocker reviews, CodeRabbit PASS, and zero threads. The owner separately authorized `0.40.0-beta.3` for protected `next`, npm dist-tag `next`, and a matching exact-commit GitHub prerelease; MCP Registry, npm `latest`, stable `0.40.0`, and `main` remain outside this release. |
+| 2026-07-29 | `0.40.0-beta.3` published | `@lubab/madar@0.40.0-beta.3`, npm dist-tag `next`, tag `v0.40.0-beta.3`, and the matching GitHub prerelease were published from exact protected-`next` commit `ece7d0d02643ecec08bd91aa904a4514aa845f42`. npm `latest` remained `0.32.0`; stable, Registry, and `main` remained unauthorized. |
+| 2026-07-29 | Retrieval regression #625 active | [#625](https://github.com/mohanagy/madar/issues/625) starts from exact protected-`next` commit `ece7d0d02643ecec08bd91aa904a4514aa845f42`. Its generic evidence-skeleton candidate is local and in progress; PR, six-job CI, independent review, thread, head, and merge receipts remain pending. |
+| 2026-07-29 | Retrieval regression #625 package stop | The fresh local artifact measured 104 entries / 168,719 packed / 697,521 unpacked bytes and failed the inherited 102 / 165,000 / 640,000 ceilings before PR. The ceilings remain unchanged; no PR, CI, review, merge, tag, release, Registry, publication, or `main` action occurred. |
+| 2026-07-30 | Retrieval regression #625 resumed pre-PR | The smaller five-file candidate removed the extra production file and passes the unchanged package gate at 102 entries / 159,068 packed / 639,920 unpacked bytes. Its final compacted real-graph, focused-locator, latency, memory, isolation, typecheck, evaluation-build, release-hygiene, Registry-validation, and zero-vulnerability audit gates pass locally. The immutable first stop remains preserved; exact-head review, PR, six-job CI, zero-thread, and merge receipts remain pending. |

@@ -1,0 +1,159 @@
+{
+  "queries": {
+    "beta_3_broad": "How does idea report generation work end to end — pipeline stages, assembly, and persistence?",
+    "focused_recovery": "What is the pipeline orchestrator that runs idea analysis stages and enqueues jobs after an idea is created?",
+    "punctuation_variants": [
+      "How does idea report generation work end to end pipeline stages assembly and persistence",
+      "How does idea report generation work end to end through pipeline stages assembly and persistence?",
+      "How does idea report generation work end to end: pipeline stages; assembly; persistence?",
+      "How does idea report generation work end to end (pipeline stages, assembly and persistence)?"
+    ],
+    "clause_order_variants": [
+      "Pipeline stages, assembly, and persistence: how does idea report generation work end to end?",
+      "For idea report generation, explain end-to-end persistence after assembly and the preceding pipeline stages."
+    ],
+    "distant_paraphrases": [
+      "Follow a submitted idea from its HTTP handler through queued planning and section research until the assembled report is saved.",
+      "Which runtime components accept an idea, schedule its analysis, research each section, compose the result, and write the durable read model?"
+    ]
+  },
+  "stages": [
+    {
+      "id": "submission",
+      "label": ".generateFromProblem()"
+    },
+    {
+      "id": "kickoff",
+      "label": "startPipeline()"
+    },
+    {
+      "id": "dispatch",
+      "label": "enqueueJob()"
+    },
+    {
+      "id": "orchestration",
+      "label": ".process()",
+      "source_suffix": "/orchestrator.worker.ts"
+    },
+    {
+      "id": "planning",
+      "label": ".plan()"
+    },
+    {
+      "id": "section_worker",
+      "label": ".process()",
+      "source_suffix": "/section-research.worker.ts"
+    },
+    {
+      "id": "research",
+      "label": ".researchSection()"
+    },
+    {
+      "id": "assembly_worker",
+      "label": ".process()",
+      "source_suffix": "/assembly.worker.ts"
+    },
+    {
+      "id": "assembly",
+      "label": ".assembleReport()"
+    },
+    {
+      "id": "persistence",
+      "label": ".process()",
+      "source_suffix": "/db-sync.worker.ts"
+    }
+  ],
+  "causal_relationships": [
+    {
+      "from": "submission",
+      "relation": "calls",
+      "to": "kickoff"
+    },
+    {
+      "from": "kickoff",
+      "relation": "calls",
+      "to": "dispatch"
+    },
+    {
+      "from": "dispatch",
+      "relation": "enqueues_job",
+      "to": "orchestration"
+    },
+    {
+      "from": "orchestration",
+      "relation": "calls",
+      "to": "planning"
+    },
+    {
+      "from": "section_worker",
+      "relation": "calls",
+      "to": "research"
+    },
+    {
+      "from": "assembly_worker",
+      "relation": "calls",
+      "to": "assembly"
+    }
+  ],
+  "disconnected_handoffs": [
+    {
+      "from": "planning",
+      "to": "section_worker"
+    },
+    {
+      "from": "research",
+      "to": "assembly_worker"
+    },
+    {
+      "from": "assembly",
+      "to": "persistence"
+    }
+  ],
+  "focused_required_stages": [
+    "submission",
+    "kickoff",
+    "dispatch",
+    "orchestration",
+    "planning",
+    "section_worker",
+    "research",
+    "assembly_worker",
+    "assembly"
+  ],
+  "focused_required_relationships": [
+    {
+      "from": "submission",
+      "relation": "calls",
+      "to": "kickoff"
+    },
+    {
+      "from": "kickoff",
+      "relation": "calls",
+      "to": "dispatch"
+    },
+    {
+      "from": "dispatch",
+      "relation": "enqueues_job",
+      "to": "orchestration"
+    },
+    {
+      "from": "orchestration",
+      "relation": "calls",
+      "to": "planning"
+    },
+    {
+      "from": "section_worker",
+      "relation": "calls",
+      "to": "research"
+    },
+    {
+      "from": "assembly_worker",
+      "relation": "calls",
+      "to": "assembly"
+    }
+  ],
+  "distractor_source_prefixes": [
+    "platform/src/features/idea-report-inspector/",
+    "src/modules/pipeline/assembly/pipeline-assembly-catalog.module.ts"
+  ]
+}

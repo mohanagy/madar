@@ -60,6 +60,16 @@ function outgoingEdges(
     })
 }
 
+function hasDirectEvidenceEdge(
+  graph: QueryGraph,
+  from: string,
+  to: string,
+): boolean {
+  return graph.edgesBetween(from, to)
+    .map(asPathEdge)
+    .some((edge) => allowedEvidenceEdge(graph, edge))
+}
+
 function reconstructPath(
   sourceId: string, targetId: string, predecessors: ReadonlyMap<string, PathPredecessor>,
 ): QueryPathEdge[] {
@@ -186,8 +196,14 @@ export function traverseEvidencePaths(
           paths[sourceIndex + offset]!.has(anchors[sourceIndex + offset + 1]!.id))
       const coveredByCommonPredecessor = sources.slice(0, sourceIndex).some((_, earlier) =>
         paths[earlier]!.has(search.source.id) && paths[earlier]!.has(target.id))
+      const coveredBySelectedFanOut = anchors.some((candidate) =>
+        candidate.id !== search.source.id
+        && candidate.id !== target.id
+        && hasDirectEvidenceEdge(index.graph, candidate.id, search.source.id)
+        && hasDirectEvidenceEdge(index.graph, candidate.id, target.id))
       if (coveredByAdjacentPaths) continue
-      if (!path && targetIndex === 0 && !coveredByCommonPredecessor) {
+      if (!path && targetIndex === 0
+        && !coveredByCommonPredecessor && !coveredBySelectedFanOut) {
         boundaries.push({
           kind: 'disconnected',
           subject: `${search.source.id} -> ${target.id}`,
@@ -198,6 +214,22 @@ export function traverseEvidencePaths(
         includeNode(edge.from)
         includeNode(edge.to)
         if (seenEdges.has(edge.id)) continue
+        seenEdges.add(edge.id)
+        edges.push(edge)
+      }
+    }
+  }
+
+  // A selected evidence skeleton can be a forest, fan-in, or cycle rather than
+  // one linear path. Preserve every authenticated direct evidence edge between
+  // retained nodes so traversal ordering cannot silently discard a branch or
+  // back-edge.
+  for (const from of nodeIds) {
+    for (const to of index.graph.successors(from)) {
+      if (!seenNodes.has(to)) continue
+      for (const graphEdge of index.graph.edgesBetween(from, to)) {
+        const edge = asPathEdge(graphEdge)
+        if (!allowedEvidenceEdge(index.graph, edge) || seenEdges.has(edge.id)) continue
         seenEdges.add(edge.id)
         edges.push(edge)
       }

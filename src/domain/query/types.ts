@@ -20,6 +20,10 @@ export interface RankedQueryNode {
 export interface RankQueryResult {
   anchors: RankedQueryNode[]; boundaries: EvidenceBoundary[]; queryTerms: string[]
   flow: boolean; branch: string
+  priorityAnchorIds?: readonly string[]
+  coveredTerms?: readonly string[]
+  structuralRequired?: boolean
+  structuralCoverageComplete?: boolean
 }
 export interface QueryPathEdge {
   id: string; from: string; to: string; relation: string; attributes: GraphAttributes
