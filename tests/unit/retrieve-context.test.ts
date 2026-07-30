@@ -459,7 +459,8 @@ describe('retrieve context', () => {
         )
         expect(selectedFiles).not.toContain('platform/src/app/entry.worker.js/route.ts')
         expect(relationships).toEqual(expect.arrayContaining(expectedRelationships))
-        expect(result.boundaries).toEqual([])
+        expect(result.boundaries.every(({ kind }) =>
+          kind === 'disconnected')).toBe(true)
       }
     }
   })
@@ -546,12 +547,7 @@ describe('retrieve context', () => {
       question: shortControlPrompt,
       budget: 8_000,
     })
-    assertLimitsAndSignal(shortControl)
-    expect(selected(shortControl)).toEqual(corePipeline.slice(0, 4))
-    expect(relationships(shortControl)).toEqual(coreRelationships.filter((edge) =>
-      !edge.includes('planner.service.ts')
-      && !edge.includes('research/')
-      && !edge.includes('assembly/')))
+    assertCorePipeline(shortControl)
 
     const fullFlow = retrieveContext(fixture.index, {
       question: longFlowPrompt,
@@ -586,11 +582,27 @@ describe('retrieve context', () => {
       )
     }
 
-    for (const question of focusedQueuePrompts) {
+    const focusedQueueEvidence = [
+      [
+        ['src/modules/pipeline/assembly/assembly.worker.ts', '.onModuleInit()'],
+        ['src/modules/pipeline/api/queue-registry.service.ts', 'registerWorker()'],
+      ],
+      [
+        ['src/modules/pipeline/api/queue-registry.service.ts', 'PipelineQueue'],
+      ],
+    ]
+    for (const [index, question] of focusedQueuePrompts.entries()) {
       const focused = retrieveContext(fixture.index, { question })
-      expect(focused.metrics.selected_files).toBeLessThanOrEqual(3)
-      expect(focused.metrics.snippets).toBeLessThanOrEqual(3)
+      expect(selected(focused)).toEqual(focusedQueueEvidence[index])
+      expect(focused.metrics.selected_files).toBeLessThanOrEqual(2)
+      expect(focused.metrics.snippets).toBeLessThanOrEqual(2)
       expect(focused.metrics.truncated).toBe(false)
+      expect(focused.boundaries).toEqual([])
+      expect(focused.matched_nodes.every((node) =>
+        node.source_file.includes('/pipeline/'))).toBe(true)
+      if (focused.matched_nodes.length === 2) {
+        expect(focused.relationships.length).toBeGreaterThan(0)
+      }
       expect(selected(focused)).not.toEqual(corePipeline)
       expect(selected(focused)).not.toContainEqual(corePipeline[0])
       expect(selected(focused)).not.toContainEqual(corePipeline[4])
@@ -630,6 +642,7 @@ describe('retrieve context', () => {
     const cases = [
       ['Where is idea title generated?', 'generateIdeaTitle()'],
       ['How is idea title generated?', 'generateIdeaTitle()'],
+      ['How does title generation work?', 'generateIdeaTitle()'],
       ['Where is idea report status message built?', 'getIdeaReportStatusMessage()'],
       ['How is idea report quality validated?', 'validateIdeaReportQuality()'],
       ['How are quality gate failures handled?', 'handleQualityGateFailure()'],
@@ -1152,6 +1165,31 @@ describe('retrieve context', () => {
       .matched_nodes.map((node) => node.label)).toEqual(['MAX_RETRIES'])
     expect(retrieveContext(index, { question: 'How does providerToFunction work?' })
       .matched_nodes.map((node) => node.label)).toEqual(['providerToFunction'])
+  })
+
+  it('keeps an exact qualified method ahead of same-file fallback callees', () => {
+    const root = sandbox('qualified-method')
+    write(root, 'src/title-generation.service.ts', [
+      'export class TitleGenerationService {',
+      '  generateTitle(): string {',
+      '    return this.generateFallbackTitle()',
+      '  }',
+      '',
+      '  private generateFallbackTitle(): string {',
+      "    return 'fallback'",
+      '  }',
+      '}',
+      '',
+    ].join('\n'))
+    write(root, 'tsconfig.json', '{"compilerOptions":{"strict":true}}\n')
+    const index = readyIndex(root)
+
+    expect(retrieveContext(index, {
+      question: 'Where is TitleGenerationService.generateTitle defined?',
+    }).matched_nodes.map(({ label }) => label)).toEqual(['.generateTitle()'])
+    expect(retrieveContext(index, {
+      question: 'What does TitleGenerationService.generateTitle do?',
+    }).matched_nodes[0]?.label).toBe('.generateTitle()')
   })
 
   it('reports exact synthetic framework targets as unavailable without unrelated evidence', () => {
@@ -1816,7 +1854,7 @@ describe('retrieve context', () => {
       boundaries: [],
       queryTerms: ['flow'],
       flow: true,
-      branch: 'notification',
+      branch: ['notification'],
     })
 
     expect(slice.edges.map(({ from, to }) => `${from}->${to}`)).toEqual([

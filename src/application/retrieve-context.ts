@@ -244,15 +244,22 @@ export function retrieveContext(index: QueryIndex, input: unknown): RetrieveCont
   for (const node of orphanFiles) boundaries.push(boundary('unavailable', node.source_file))
   const orphanIds = new Set(orphanFiles.map((node) => node.node_id))
   matchedNodes = matchedNodes.filter((node) => !orphanIds.has(node.node_id))
-
   return sliceEvidence({
     request,
     outcome: outcomeFrom(matchedNodes, boundaries),
     matchedNodes,
     relationships,
     boundaries,
-    priorityNodeIds: traversal.nodeIds,
+    // Direct query anchors are mandatory evidence. Closure intermediates remain
+    // eligible, but must not evict an explicitly requested endpoint at a hard
+    // file or token cap.
+    priorityNodeIds: ranking.priorityAnchorIds
+      ? [...ranking.priorityAnchorIds]
+      : ranking.anchors.map((anchor) => anchor.id),
     closurePasses: traversal.closurePasses,
+    structuralRequired: ranking.structuralRequired === true,
+    structuralCoverageComplete:
+      ranking.structuralCoverageComplete !== false,
   })
 }
 

@@ -1,4 +1,4 @@
-import { canonicalJsonString, compareCodeUnits } from '../graph/canonical-json.js'
+import { compareCodeUnits as compare } from '../graph/canonical-json.js'
 import type { GraphAttributes } from '../graph/directed-multigraph.js'
 import type { ReadyQueryIndex } from './index-status.js'
 import {
@@ -7,953 +7,1088 @@ import {
 import type {
   EvidenceBoundary, NormalizedRetrieveRequest, RankedQueryNode, RankQueryResult,
 } from './types.js'
-import { MAX_RETRIEVE_FILES, MAX_RETRIEVE_SNIPPETS } from './types.js'
+import {
+  MAX_RETRIEVE_FILES as FILE_CAP, MAX_RETRIEVE_SNIPPETS as SNIPPET_CAP,
+} from './types.js'
 
-const MAX_RANKED_ANCHORS = MAX_RETRIEVE_SNIPPETS
-const MAX_UNSUPPORTED_BOUNDARIES = 4
-const EVIDENCE_RELATIONS = ['calls', 'contains', 'enqueues_job', 'imports_from'] as const
-const FIELD_WEIGHTS = {
-  label: 12, qualifiedName: 12, sourceFile: 7,
-  framework: 5, metadata: 5, nodeKind: 3,
-} as const
-const STOP_WORDS = new Set([
-  'a', 'actual', 'an', 'and', 'any', 'applicabl', 'are', 'as', 'at', 'be', 'by',
-  'bas', 'being', 'can', 'do', 'does', 'exist', 'final', 'for', 'from', 'handl',
-  'how', 'in', 'initial', 'is', 'it', 'its', 'me', 'new', 'of', 'on', 'operat',
-  'or', 'specific', 'tell', 'that', 'the', 'then', 'through', 'to', 'trace',
-  'what', 'when', 'which', 'with', 'you',
-])
-const UNSUPPORTED_CODE_EXTENSIONS = new Set([
-  'bash', 'c', 'cc', 'cljs', 'clj', 'cpp', 'cs', 'cxx', 'dart', 'elm', 'ex',
-  'exs', 'fs', 'fsx', 'go', 'groovy', 'h', 'hpp', 'hs', 'java', 'jl', 'kt',
-  'kts', 'lua', 'm', 'mm', 'php', 'ps1', 'py', 'r', 'rb', 'rs', 'scala', 'sh',
-  'sol', 'sql', 'svelte', 'swift', 'vue', 'zig',
-])
-const SOURCE_DOMAIN_TERMS: Readonly<Record<Exclude<SourceDomain, 'production' | 'unknown'>, readonly string[]>> = {
-  test: ['test', 'spec', 'e2e'], benchmark: ['benchmark', 'bench', 'performance'],
-  fixture: ['fixture', 'mock'], generated: ['generated'],
-  docs: ['doc', 'documentation', 'readme'], config: ['config', 'configuration', 'setting'],
-  build_artifact: [],
+const CAUSAL = new Set(['calls', 'enqueues_job'])
+const RELATIONS = ['calls', 'contains', 'enqueues_job', 'imports_from']
+const LAST = Number.MAX_SAFE_INTEGER
+const STOP = new Set(
+  'a actual an and any applicabl are as at be by bas being can do does exist final for from get gett handl explain how in initial is it its me new of on operat or specific tell that the then through to trace what when which with work you'.split(' '),
+)
+const UNSUPPORTED =
+  /^(?:bash|c|cc|cljs|clj|cpp|cs|cxx|dart|elm|ex|exs|fs|fsx|go|groovy|h|hpp|hs|java|jl|kt|kts|lua|m|mm|php|ps1|py|r|rb|rs|scala|sh|sol|sql|svelte|swift|vue|zig)$/u
+const DOMAIN_TERMS: Readonly<Record<string, readonly string[]>> = {
+  test: ['test', 'spec', 'e2e'],
+  benchmark: ['benchmark', 'bench', 'performance'],
+  fixture: ['fixture', 'mock'],
+  generated: ['generated'],
+  docs: ['doc', 'documentation', 'readme'],
+  config: ['config', 'configuration', 'setting'],
 }
-interface RankField { compact: string; tokens: ReadonlySet<string>; weight: number }
-interface RankCorpusNode {
-  id: string; documentKey: string; attributes: GraphAttributes; fields: readonly RankField[]
-  tokens: ReadonlySet<string>; pathTokens: ReadonlySet<string>; sourceFile: string
-  sourceDomain: SourceDomain; nodeKind: string; selectable: boolean
-  incomingIds: readonly string[]; outgoingIds: readonly string[]; outgoingDegree: number; lineSpan: number
-}
-interface RankCorpus {
-  nodes: readonly RankCorpusNode[]; documentFrequency: ReadonlyMap<string, number>
-  nodeById: ReadonlyMap<string, RankCorpusNode>; fileTermWeights: ReadonlyMap<string, ReadonlyMap<string, number>>
-}
-interface QueryObligation {
-  terms: readonly string[]; localTerms: ReadonlySet<string>; coordinated: boolean
-}
-interface QueryVocabulary {
-  question: string; terms: string[]; positions: ReadonlyMap<string, number>; scopes: ExplicitScope[]
-  constraints: ExplicitScope[]; obligations: readonly QueryObligation[]
-}
-interface RankSelection { anchors: RankedQueryNode[]; branch: string; flow: boolean }
-interface ExplicitScope { subject: string; tokens: string[]; compact: string; firstMatch: number; restrictsCandidates: boolean }
-interface ScoredNode { node: RankCorpusNode; ranked: RankedQueryNode; representativeScore: number }
-interface OwnerFit { candidate: ScoredNode; vector: readonly number[]; ownedTerms: ReadonlySet<string>; totalCovered: number }
-interface UnsupportedCandidate { path: string; matchedTerms: string[]; termWeights: ReadonlyMap<string, number>; score: number; firstMatch: number }
-
-const STEM_RULES = [
+const STEMS = [
   [7, 'ization', 'ize'], [5, 'ies', 'y'], [6, 'ence', ''], [6, 'ance', ''],
   [8, 'ment', ''], [5, 'ions', ''], [4, 'ion', ''], [5, 'ing', ''],
   [4, 'ery', 'er'], [4, 'ed', ''], [4, 's', ''], [5, 'e', ''],
 ] as const
 
-function stemToken(value: string): string {
-  if (/^\d+$/.test(value)) return value
-  let stem = value
-  for (let pass = 0; pass < 2; pass += 1) {
-    const rule = STEM_RULES.find(([minimum, suffix]) =>
-      stem.length > minimum && stem.endsWith(suffix)
-      && (suffix !== 's' || !stem.endsWith('ss')))
-    if (!rule) break
-    stem = `${stem.slice(0, -rule[1].length)}${rule[2]}`
-  }
-  return stem
+interface Field { compact: string; tokens: ReadonlySet<string>; weight: number }
+interface Node {
+  id: string; attributes: GraphAttributes; file: string; kind: string
+  domain: SourceDomain; fields: readonly Field[]; tokens: ReadonlySet<string>
+  pathTokens: ReadonlySet<string>; ins: string[]; outs: string[]
+  owner?: string; eligible: boolean; defined: boolean
+}
+interface Corpus {
+  nodes: readonly Node[]; byId: ReadonlyMap<string, Node>
+  members: ReadonlyMap<string, readonly string[]>
+  files: ReadonlyMap<string, readonly Node[]>
+  freq: ReadonlyMap<string, number>; docs: number
+}
+interface Scope {
+  subject: string; tokens: string[]; compact: string; first: number
+  hard: boolean
+}
+interface Vocabulary {
+  terms: string[]; pos: ReadonlyMap<string, number>
+  scopes: Scope[]; limits: Scope[]; parts: readonly ReadonlySet<string>[]
+  mentions: ReadonlySet<string>
+  domains: ReadonlySet<SourceDomain>
+  structural: boolean; expand: boolean; sequential: boolean
+}
+interface Scored { n: Node; rank: RankedQueryNode }
+interface Seed extends Scored { hits: string[]; parts: number[] }
+interface Selection {
+  ids: string[]; flow: boolean; complete: boolean
+  structuralRequired: boolean; branch?: string[]
+}
+interface UnsupportedCandidate {
+  path: string; terms: string[]; weights: ReadonlyMap<string, number>
+  score: number; first: number
 }
 
-function lexicalTokens(value: string): string[] {
+const corpusCache = new WeakMap<ReadyQueryIndex, WeakRef<Corpus>>()
+
+function stem(value: string): string {
+  if (/^\d+$/.test(value)) return value
+  let result = value
+  for (let pass = 0; pass < 2; pass += 1) {
+    const rule = STEMS.find(([minimum, suffix]) =>
+      result.length > minimum && result.endsWith(suffix)
+      && (suffix !== 's' || !result.endsWith('ss')))
+    if (!rule) break
+    result = `${result.slice(0, -rule[1].length)}${rule[2]}`
+  }
+  return result
+}
+
+function tokens(value: string): string[] {
   const separated = value
     .replace(/([a-z\d])([A-Z])/g, '$1 $2')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .toLowerCase()
-  const tokens = separated.match(/[a-z][a-z0-9]*|\d+/g) ?? []
-  return tokens.flatMap((token) => {
-    const parts = token.match(/[a-z]+|\d+/g) ?? []
-    return parts.length >= 3 ? parts : [token]
-  }).map(stemToken)
+  return (separated.match(/[a-z][a-z0-9]*|\d+/g) ?? [])
+    .flatMap((token) => {
+      const parts = token.match(/[a-z]+|\d+/g) ?? []
+      return parts.length >= 3 ? parts : [token]
+    })
+    .map(stem)
     .filter((token) => token.length > 1 || /^\d+$/.test(token))
 }
 
-function meaningfulTokens(value: string): string[] {
-  return lexicalTokens(value).filter((token) => !STOP_WORDS.has(token))
+function words(value: string): string[] {
+  return tokens(value).filter((token) => !STOP.has(token))
 }
 
-function compactTokens(value: string): string {
-  return lexicalTokens(value).join('')
-}
-
-function termsMatch(left: string, right: string): boolean {
-  if (left === right) return true
-  if (left.length < 3 || right.length < 3) return false
-  const forms = (term: string): string[] => [
-    term,
-    `${term}e`,
-    ...(term.length >= 4 && term.endsWith('s') && !term.endsWith('ss')
-      ? [term.slice(0, -1)] : []),
-  ]
-  return forms(left).some((leftForm) => forms(right).some((rightForm) =>
-    leftForm === rightForm
-    || ['en', 're', 'un'].some((prefix) =>
-      leftForm === `${prefix}${rightForm}` || rightForm === `${prefix}${leftForm}`)))
-}
-
-function tokenSetMatches(tokens: ReadonlySet<string>, term: string): boolean {
-  for (const token of tokens) if (termsMatch(token, term)) return true
+function matches(values: ReadonlySet<string>, t: string): boolean {
+  if (values.has(t)) return true
+  if (t.length < 3) return false
+  const singular = t.length >= 4 && t.endsWith('s') && !t.endsWith('ss')
+    ? t.slice(0, -1) : `${t}s`
+  const bare = t.endsWith('e') ? t.slice(0, -1) : `${t}e`
+  for (const form of [t, singular, bare]) {
+    if (values.has(form)) return true
+    for (const prefix of ['en', 're', 'un']) {
+      if (values.has(`${prefix}${form}`)
+        || (form.startsWith(prefix) && values.has(form.slice(prefix.length)))) return true
+    }
+  }
   return false
 }
 
-function scalarMetadataValues(value: unknown, depth = 0): string[] {
-  if (depth > 2 || value === null || value === undefined) return []
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return [String(value)]
-  }
-  if (Array.isArray(value)) return value.flatMap((entry) => scalarMetadataValues(entry, depth + 1))
-  if (typeof value !== 'object') return []
-  return Object.entries(value)
-    .sort(([left], [right]) => compareCodeUnits(left, right))
-    .flatMap(([key, entry]) => [key, ...scalarMetadataValues(entry, depth + 1)])
-}
-
-function stringAttribute(attributes: GraphAttributes, key: string): string {
+function text(attributes: GraphAttributes, key: string): string {
   const value = attributes[key]
   return typeof value === 'string' ? value : ''
 }
-function field(value: string, weight: number): RankField | null {
-  const tokens = lexicalTokens(value)
-  return tokens.length === 0 ? null : {
-    compact: tokens.join(''),
-    tokens: new Set(tokens),
-    weight,
+
+function field(value: string, weight: number): Field | null {
+  const lexical = tokens(value)
+  return lexical.length === 0 ? null : {
+    compact: lexical.join(''), tokens: new Set(lexical), weight,
   }
-}
-function selectableGraphNode(
-  attributes: GraphAttributes, sourceFile: string, index: ReadyQueryIndex,
-): boolean {
-  if (attributes.framework_metadata && typeof attributes.framework_metadata === 'object'
-    && 'external_call' in attributes.framework_metadata
-    && attributes.framework_metadata.external_call === true) return false
-  if (stringAttribute(attributes, 'node_kind') !== 'file') {
-    return !!attributes.definition_range && !!attributes.declaration_range
-  }
-  return sourceFile.length > 0
-    && Array.isArray(attributes.provenance)
-    && attributes.provenance.length > 0
-    && index.file_hashes.has(sourceFile)
 }
 
-function buildCorpus(index: ReadyQueryIndex): RankCorpus {
-  const nodes: RankCorpusNode[] = []
+function buildCorpus(index: ReadyQueryIndex): Corpus {
+  const cached = corpusCache.get(index)?.deref()
+  if (cached) return cached
+  const nodes: Node[] = []
+  const paths = new Map<string, Field | null>()
   for (const [id, attributes] of index.graph.nodeEntries()) {
-    const sourceFile = stringAttribute(attributes, 'source_file')
-    const polluted = sourceFile.length > 0 && isPollutedSourcePath(sourceFile, index.root_path)
-    const nodeKind = stringAttribute(attributes, 'node_kind')
-
-    const metadata = scalarMetadataValues(attributes.framework_metadata).join(' ')
-    const ownFields = [
-      field(stringAttribute(attributes, 'label'), FIELD_WEIGHTS.label),
-      field(stringAttribute(attributes, 'qualified_name'), FIELD_WEIGHTS.qualifiedName),
-      field([
-        stringAttribute(attributes, 'framework'),
-        stringAttribute(attributes, 'framework_role'),
-      ].join(' '), FIELD_WEIGHTS.framework),
-      field(metadata, FIELD_WEIGHTS.metadata),
-      field(stringAttribute(attributes, 'node_kind'), FIELD_WEIGHTS.nodeKind),
-    ].filter((entry): entry is RankField => entry !== null)
-    const rankFields = [
-      ...ownFields,
-      field(sourceFile, FIELD_WEIGHTS.sourceFile),
-    ].filter((entry): entry is RankField => entry !== null)
-    const tokens = new Set(rankFields.flatMap((entry) => [...entry.tokens]))
-    const successors = index.graph.successors(id)
-    const outgoingIds = nodeKind === 'file' ? [] : successors.filter((targetId) =>
-      index.graph.edgesBetween(id, targetId).some(({ attributes: edge }) =>
-        edge.relation === 'calls' || edge.relation === 'enqueues_job'))
-    const incomingIds = nodeKind === 'file' ? [] : index.graph.predecessors(id).filter((sourceId) =>
-      index.graph.edgesBetween(sourceId, id).some(({ attributes: edge }) =>
-        edge.relation === 'calls' || edge.relation === 'enqueues_job'))
+    const file = text(attributes, 'source_file')
+    const kind = text(attributes, 'node_kind')
+    if (!paths.has(file)) paths.set(file, field(file, 7))
+    const pathField = paths.get(file) ?? null
+    const fields = [
+      field(text(attributes, 'label'), 12),
+      field(text(attributes, 'qualified_name'), 12),
+      field(`${text(attributes, 'framework')} ${
+        text(attributes, 'framework_role')}`, 5),
+      field(JSON.stringify(attributes.framework_metadata) ?? '', 5),
+      field(kind, 3),
+      pathField,
+    ].filter((field): field is Field => !!field)
+    const eligible = !isPollutedSourcePath(file, index.root_path)
+      && (kind === 'file'
+        ? !!file && Array.isArray(attributes.provenance)
+          && attributes.provenance.length > 0 && index.file_hashes.has(file)
+        : !!attributes.definition_range && !!attributes.declaration_range
+          && !(attributes.framework_metadata
+            && typeof attributes.framework_metadata === 'object'
+            && 'external_call' in attributes.framework_metadata
+            && attributes.framework_metadata.external_call === true))
     nodes.push({
-      id,
-      documentKey: sourceFile || id,
-      attributes,
-      fields: rankFields,
-      tokens,
-      pathTokens: new Set(lexicalTokens(sourceFile)),
-      sourceFile,
-      sourceDomain: sourceDomainOf(attributes.source_domain, sourceFile, index.root_path),
-      nodeKind,
-      incomingIds,
-      outgoingIds,
-      outgoingDegree: successors.length,
-      lineSpan: typeof attributes.line_number === 'number' && typeof attributes.end_line_number === 'number'
-        ? Math.max(1, attributes.end_line_number - attributes.line_number + 1)
-        : Number.MAX_SAFE_INTEGER,
-      selectable: !polluted && selectableGraphNode(attributes, sourceFile, index),
+      id, attributes, file, kind, fields,
+      domain: sourceDomainOf(attributes.source_domain, file, index.root_path),
+      tokens: new Set(fields.flatMap((field) => [...field.tokens])),
+      pathTokens: pathField?.tokens ?? new Set(),
+      ins: [], outs: [], eligible,
+      defined: kind === 'file'
+        || JSON.stringify(attributes.declaration_range)
+          !== JSON.stringify(attributes.definition_range),
     })
   }
-
-  const fileTermWeights = new Map<string, Map<string, number>>()
-  for (const node of nodes) {
-    const terms = fileTermWeights.get(node.documentKey) ?? new Map<string, number>()
-    for (const candidate of node.fields) {
-      for (const token of candidate.tokens) {
-        terms.set(token, Math.max(terms.get(token) ?? 0, candidate.weight))
-      }
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const members = new Map<string, string[]>()
+  for (const [from, to, attributes] of index.graph.edgeEntries()) {
+    const source = byId.get(from)
+    const target = byId.get(to)
+    const relation = text(attributes, 'relation')
+    if (source && target && CAUSAL.has(relation)
+      && source.kind !== 'file' && target.kind !== 'file') {
+      source.outs.push(to)
+      target.ins.push(from)
     }
-    fileTermWeights.set(node.documentKey, terms)
-  }
-  const documentFrequency = new Map<string, number>()
-  for (const terms of fileTermWeights.values()) {
-    for (const token of terms.keys()) {
-      documentFrequency.set(token, (documentFrequency.get(token) ?? 0) + 1)
+    if (source?.kind === 'class' && target
+      && (relation === 'contains' || relation === 'method')) {
+      target.owner = from
+      const owned = members.get(from) ?? []
+      owned.push(to)
+      members.set(from, owned)
     }
   }
-  return { nodes, nodeById: new Map(nodes.map((node) => [node.id, node])),
-    documentFrequency, fileTermWeights }
+  for (const n of nodes) {
+    n.ins = [...new Set(n.ins)].sort(compare)
+    n.outs = [...new Set(n.outs)].sort(compare)
+  }
+  for (const [owner, owned] of members) {
+    members.set(owner, [...new Set(owned)].sort(compare))
+  }
+  const docs = new Map<string, Set<string>>()
+  const files = new Map<string, Node[]>()
+  for (const n of nodes) {
+    const siblings = files.get(n.file) ?? []
+    siblings.push(n)
+    files.set(n.file, siblings)
+    const document = docs.get(n.file || n.id) ?? new Set<string>()
+    for (const field of n.fields) for (const token of field.tokens) document.add(token)
+    docs.set(n.file || n.id, document)
+  }
+  const freq = new Map<string, number>()
+  for (const document of docs.values()) {
+    for (const token of document) {
+      freq.set(token, (freq.get(token) ?? 0) + 1)
+    }
+  }
+  const c = {
+    nodes, byId, members, files, freq, docs: docs.size,
+  } satisfies Corpus
+  corpusCache.set(index, new WeakRef(c))
+  return c
 }
 
-function explicitScopes(question: string): ExplicitScope[] {
-  const scopes: ExplicitScope[] = []
+function scopes(question: string): Scope[] {
+  const result: Scope[] = []
   const seen = new Set<string>()
   const patterns = [
     [/`([A-Za-z_$][A-Za-z0-9_$.:]*)`/g, false],
+    [/\b([A-Za-z_$][A-Za-z0-9_$]*[A-Z][A-Za-z0-9_$]*)\b/g, false],
     [/\b(?:[A-Za-z0-9_$.[\]-]+\/)+[A-Za-z0-9_$.[\]-]+\.(?:[cm]?[jt]sx?)\b/g, true],
     [/\b(?=[a-z0-9-]*\d)[a-z][a-z0-9]*(?:-[a-z0-9]+)+\b/g, true],
   ] as const
-  for (const [pattern, restrictsCandidates] of patterns) {
+  for (const [pattern, hard] of patterns) {
     for (const match of question.matchAll(pattern)) {
       const subject = (match[1] ?? match[0]).trim()
-      const tokens = lexicalTokens(subject)
-      const compact = tokens.join('')
+      if (subject === match[0] && /^[A-Z]+$/u.test(subject)) continue
+      const lexical = tokens(subject)
+      const compact = lexical.join('')
       if (!compact || seen.has(compact)) continue
       seen.add(compact)
-      scopes.push({
-        subject,
-        tokens,
-        compact,
-        firstMatch: match.index ?? Number.MAX_SAFE_INTEGER,
-        restrictsCandidates,
+      result.push({
+        subject, tokens: lexical, compact,
+        first: match.index ?? LAST, hard,
       })
     }
   }
-  return scopes.sort((left, right) =>
-    left.firstMatch - right.firstMatch || compareCodeUnits(left.subject, right.subject))
+  const qualified = result.filter((s) =>
+    !s.hard && s.subject.includes('.'))
+  return result.filter((s) => !qualified.some((parent) =>
+    parent !== s
+    && s.first > parent.first
+    && s.first <= parent.first + parent.subject.length + 1
+    && parent.subject.split('.').includes(s.subject)))
+    .sort((a, b) =>
+      a.first - b.first || compare(a.subject, b.subject))
 }
 
-function relationTerms(question: string, relationKinds: readonly string[]): Array<{ term: string; position: number }> {
-  const lowerQuestion = question.toLowerCase()
-  return relationKinds.flatMap((relation) => {
-    const variants = [
-      relation.toLowerCase(),
-      relation.toLowerCase().replaceAll('_', ' '),
-      relation.toLowerCase().replaceAll('-', ' '),
-    ]
-    const positions = variants.map((variant) => lowerQuestion.indexOf(variant)).filter((position) => position >= 0)
-    return positions.length === 0 ? [] : [{ term: relation, position: Math.min(...positions) }]
-  }).sort((left, right) => left.position - right.position || compareCodeUnits(left.term, right.term))
-}
-
-function queryVocabulary(question: string, relationKinds: readonly string[]): QueryVocabulary {
+function vocabulary(question: string): Vocabulary {
   const task = question.replace(/\.\s+(?:cite|use|report)\b[\s\S]*$/iu, '')
-  const rawTokens = lexicalTokens(task)
+  const raw = tokens(task)
   const terms: string[] = []
-  const positions = new Map<string, number>()
-  for (const [index, token] of rawTokens.entries()) {
-    if (STOP_WORDS.has(token)) continue
-    if (!positions.has(token)) {
-      positions.set(token, index)
-      terms.push(token)
+  const pos = new Map<string, number>()
+  for (const [position, t] of raw.entries()) {
+    if (!STOP.has(t) && !pos.has(t)) {
+      terms.push(t)
+      pos.set(t, position)
     }
   }
-  const relations = relationTerms(task, relationKinds)
-  for (const { term, position } of relations) {
-    if (!positions.has(term)) {
-      positions.set(term, position)
-      terms.push(term)
+  const lower = task.toLowerCase()
+  for (const relation of RELATIONS) {
+    const variants = [relation, relation.replaceAll('_', ' ')]
+    const found = variants.map((variant) => lower.indexOf(variant))
+      .filter((position) => position >= 0)
+    if (found.length > 0 && !pos.has(relation)) {
+      terms.push(relation)
+      pos.set(relation, Math.min(...found))
     }
   }
-  const scopes = explicitScopes(task)
-  const firstDelimiter = task.match(/[,;:]/u)?.[0]
-  const segments = task.split(/[,;:]+/u).map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0)
-  const topic = meaningfulTokens(segments[0] ?? '')
-  const obligationSegments = relations.length > 0 ? [task]
-    : firstDelimiter === ',' ? segments.slice(1) : segments
-  const obligations = obligationSegments.map((text): QueryObligation => {
-    const segment = meaningfulTokens(text)
-    const action = text.replace(/^(?:and\s+then|and)\s+/iu, '')
-    return {
-    terms: [...new Set([...segment, ...topic])],
-    localTerms: new Set(segment),
-      coordinated: /\band\b/iu.test(action),
-    }
-  })
+  const explicit = scopes(task)
+  const clauses = task
+    .split(
+      /[,;:\u2013\u2014]+|[!?]+|\.(?=\s+[A-Z])|\b(?:[Aa][Nn][Dd]\s+)?[Tt][Hh][Ee][Nn]\b/u,
+    )
+    .map(words).filter((part) => part.length > 0)
+  const parts = (clauses.length > 0 ? clauses : [terms])
+    .map((part) => new Set(part))
+  const connector = raw.findIndex((t, index) =>
+    index > 0 && index < raw.length - 1
+    && (t === 'through' || t === 'until'))
+  const directed = (raw.includes('from')
+    && raw.some((t) => t === 'to' || t === 'through'))
+    || connector >= 0
+    || raw.some((t, index) =>
+      t === 'end' && raw[index + 1] === 'to' && raw[index + 2] === 'end')
+  const from = raw.indexOf('from')
+  const to = raw.indexOf('to', from + 1)
+  const parallel = from >= 0 && to > from && raw.includes('and')
+  const explainsProcess = raw.includes('how') && terms.length > 1
+    && explicit.every((s) => s.hard)
+  const structural = directed || parts.length > 1
+    || explainsProcess
+    || terms.some((t) => [
+      'flow', 'handoff', 'journey', 'lifecycl', 'orchestrat',
+      'pipelin', 'process', 'queue', 'sequenc', 'stag',
+    ].includes(t))
+  const expand = directed || parts.length > 1
+    || (terms.some((t) => t === 'stag' || t === 'stage')
+      && terms.some((t) =>
+      ['job', 'jobs', 'queue', 'enqueu', 'orchestrat'].includes(t)))
+  const domains = new Set<SourceDomain>(Object.entries(DOMAIN_TERMS)
+    .filter(([, variants]) =>
+      variants.some((variant) => terms.includes(variant)))
+    .map(([domain]) => domain as SourceDomain))
   return {
-    question: task, terms, positions, scopes, obligations,
-    constraints: scopes.filter((scope) => scope.restrictsCandidates),
+    terms, pos, scopes: explicit,
+    limits: explicit.filter((s) => s.hard),
+    parts, mentions: new Set(task.split(/[^A-Za-z0-9_$]+/u)), domains,
+    structural, expand,
+    sequential: connector >= 0 || raw.includes('then') || (directed && !parallel),
   }
 }
-function rarityWeight(corpus: RankCorpus, token: string): number {
-  const documents = Math.max(1, corpus.fileTermWeights.size)
-  const frequency = corpus.documentFrequency.get(token) ?? 0
-  return Math.max(1, Math.round((1 + Math.log2((documents + 1) / (frequency + 1))) * 64))
-}
-function matchesScope(node: RankCorpusNode, scope: ExplicitScope): boolean {
-  return scope.tokens.every((token) => node.tokens.has(token))
-    && node.fields.some((candidate) => candidate.compact.includes(scope.compact))
+
+function inScope(n: Node, s: Scope): boolean {
+  return s.tokens.every((token) => n.tokens.has(token))
+    && n.fields.some((field) => field.compact.includes(s.compact))
 }
 
-function domainAdjustment(domain: SourceDomain): number {
-  if (domain === 'production') return 500
-  if (domain === 'unknown') return 0
-  if (domain === 'test') return -250
-  return -500
+function rarity(c: Corpus, t: string): number {
+  const seen = c.freq.get(t) ?? 0
+  return Math.max(1, Math.round(
+    (1 + Math.log2((c.docs + 1) / (seen + 1))) * 64,
+  ))
 }
-function scoreNode(
-  corpus: RankCorpus, node: RankCorpusNode, vocabulary: QueryVocabulary,
+
+function exactLabel(n: Node, q: Vocabulary): boolean {
+  const label = text(n.attributes, 'label')
+  const identifier = label.replace(/^\./u, '').replace(/\(\)$/u, '')
+  return (label.endsWith('()') || /[A-Z_$\d.:]/u.test(identifier))
+    && words(identifier).length > 0 && q.mentions.has(identifier)
+}
+
+function termsOf(n: Node, q: Vocabulary, semantic = false): string[] {
+  return q.terms.filter((t) => n.fields.some((field) =>
+    (!semantic || field.weight !== 7) && matches(field.tokens, t)))
+}
+
+function score(
+  c: Corpus, n: Node, q: Vocabulary,
 ): RankedQueryNode | null {
-  const scoringTerms = vocabulary.terms.filter((token) =>
-    !token.includes('_') && !token.includes('-') && tokenSetMatches(node.tokens, token))
-  const contextualTerms = vocabulary.terms.filter((token) => !scoringTerms.includes(token)
-    && [...node.incomingIds, ...node.outgoingIds].some((id) => {
-      const neighbor = corpus.nodeById.get(id)
-      return !!neighbor?.selectable && neighbor.nodeKind !== 'file'
-        && tokenSetMatches(neighbor.tokens, token)
-    })).sort((left, right) => rarityWeight(corpus, right) - rarityWeight(corpus, left)
-      || compareCodeUnits(left, right))
-  if (scoringTerms.length === 0 && contextualTerms.length === 0
-    && !vocabulary.scopes.some((scope) => matchesScope(node, scope))) return null
-  let score = domainAdjustment(node.sourceDomain)
-  for (const token of scoringTerms) {
-    const termScore = rarityWeight(corpus, token) * node.fields.reduce((weight, candidate) =>
-      tokenSetMatches(candidate.tokens, token) ? Math.max(weight, candidate.weight) : weight, 0)
-    score += termScore
-    if (tokenSetMatches(node.pathTokens, token)) {
-      score += rarityWeight(corpus, token) * FIELD_WEIGHTS.sourceFile
+  const hits = termsOf(n, q)
+  const context = q.terms.filter((t) => !hits.includes(t)
+    && [...n.ins, ...n.outs].some((id) => {
+      const adjacent = c.byId.get(id)
+      return !!adjacent?.eligible && matches(adjacent.tokens, t)
+    }))
+  if (hits.length === 0 && context.length === 0
+    && !q.scopes.some((s) => inScope(n, s))) return null
+  let value = n.domain === 'production' ? 500
+    : n.domain === 'test' ? -250
+      : n.domain === 'unknown' ? 0 : -500
+  for (const t of hits) {
+    const weight = Math.max(0, ...n.fields
+      .filter((field) => matches(field.tokens, t)).map((field) => field.weight))
+    value += rarity(c, t) * weight
+    if (n.fields.some((field) =>
+      field.weight !== 7 && matches(field.tokens, t))) {
+      value += rarity(c, t) * 12
     }
+    if (matches(n.pathTokens, t)) value += rarity(c, t) * 7
   }
-  const matchedTerms = [...scoringTerms, ...contextualTerms]
-  for (const token of contextualTerms) {
-    score += rarityWeight(corpus, token) * FIELD_WEIGHTS.framework
+  for (const t of context) value += rarity(c, t) * 5
+  for (const s of q.scopes.filter((s) => !s.hard)) {
+    if (n.fields.some((field) => field.compact === s.compact)) value += 2_000_000
+    else if (inScope(n, s)) value += 1_000_000
   }
-  for (const scope of vocabulary.scopes) {
-    if (!scope.restrictsCandidates) {
-      if (node.fields.some((candidate) => candidate.compact === scope.compact)) score += 2_000_000
-      else if (matchesScope(node, scope)) score += 1_000_000
-    }
+  if (exactLabel(n, q)) value += 2_000_000
+  const firstMatch = hits.reduce((first, t) =>
+    Math.min(first, q.pos.get(t) ?? LAST),
+  LAST)
+  return {
+    id: n.id, attributes: n.attributes, score: value,
+    matchedTerms: [...hits, ...context], firstMatch,
   }
-  if (exactLabelMatch(node, vocabulary)) score += 2_000_000
-  if (['interface', 'type-alias'].includes(node.nodeKind)
-    && vocabulary.terms.some((term) => term === 'defin' || term === 'declar')) score += 1_000_000
-  const localContext = contextualTerms.filter((token) => node.outgoingIds.some((id) => {
-    const neighbor = corpus.nodeById.get(id)
-    return neighbor?.sourceFile === node.sourceFile && tokenSetMatches(neighbor.tokens, token)
-  }))
-  const firstMatch = [...scoringTerms, ...localContext].reduce((last, token) =>
-    Math.max(last, vocabulary.positions.get(token) ?? 0), 0)
-  return { id: node.id, attributes: node.attributes, score, matchedTerms, firstMatch }
-}
-function scoreRepresentative(
-  corpus: RankCorpus, node: RankCorpusNode, ranked: RankedQueryNode,
-): number {
-  let score = ranked.matchedTerms.reduce((total, token) =>
-    total + rarityWeight(corpus, token) * node.fields.reduce((highest, candidate) =>
-      tokenSetMatches(candidate.tokens, token) ? Math.max(highest, candidate.weight) : highest, 0), 0)
-  if (stringAttribute(node.attributes, 'framework_role')) score += FIELD_WEIGHTS.framework * 64
-  if (node.attributes.exported === true) score += FIELD_WEIGHTS.label * 64
-  return score + node.outgoingDegree * FIELD_WEIGHTS.sourceFile * 64
 }
 
-function compareScoredNodes(left: ScoredNode, right: ScoredNode): number {
-  return right.ranked.score - left.ranked.score
-    || right.representativeScore - left.representativeScore
-    || left.ranked.firstMatch - right.ranked.firstMatch
-    || right.node.outgoingDegree - left.node.outgoingDegree
-    || left.node.lineSpan - right.node.lineSpan
-    || compareCodeUnits(left.node.sourceFile, right.node.sourceFile)
-    || compareCodeUnits(left.node.id, right.node.id)
+function byRank(a: Scored, b: Scored): number {
+  return b.rank.score - a.rank.score
+    || a.rank.firstMatch - b.rank.firstMatch
+    || b.n.outs.length - a.n.outs.length
+    || compare(a.n.file, b.n.file)
+    || compare(a.n.id, b.n.id)
 }
-function exactLabelMatch(node: RankCorpusNode, vocabulary: QueryVocabulary): boolean {
-  const label = stringAttribute(node.attributes, 'label')
-  return meaningfulTokens(label).length > 0 && vocabulary.question.includes(label)
-}
-function isFlowQuestion(question: string): boolean { return /\bflow\b|(?=[^]*report)(?=[^]*generat)/iu.test(question) }
-function hasStageRange(question: string): boolean { return /\bbetween\b|\bfrom\b[^]*\b(?:to|through)\b|\b(?:pipeline|queue|stage)\s+flow\b/iu.test(question) }
 
-function scoredNodes(corpus: RankCorpus, vocabulary: QueryVocabulary): ScoredNode[] {
-  const requestedDomains = new Set(
-    Object.entries(SOURCE_DOMAIN_TERMS).flatMap(([domain, terms]) =>
-      terms.some((term) => vocabulary.terms.includes(term)) ? [domain as SourceDomain] : []),
-  )
-  const structural = vocabulary.terms.includes('imports_from')
-  const candidates = corpus.nodes.flatMap((node) => {
-    if (!node.selectable) return []
-    if (vocabulary.constraints.length > 0
-      && !vocabulary.constraints.some((scope) => matchesScope(node, scope))) return []
-    if (node.nodeKind === 'file' && !structural
-      && !vocabulary.constraints.some((scope) =>
-        scope.subject.includes('/') && matchesScope(node, scope))) return []
-    const declarationPrefix = node.attributes.definition_range && node.attributes.declaration_range
-      && canonicalJsonString(node.attributes.definition_range) !== canonicalJsonString(node.attributes.declaration_range)
-    const implementation = node.nodeKind === 'file' || declarationPrefix
-    const kindTokens = new Set(lexicalTokens(node.nodeKind))
-    const requestedKind = vocabulary.terms.some((term) => kindTokens.has(term))
-    if ((!implementation || ['interface', 'type-alias'].includes(node.nodeKind)) && !requestedKind && !(
-      ['interface', 'type-alias'].includes(node.nodeKind) && vocabulary.terms.some((term) => term === 'defin' || term === 'declar'))
-      && !vocabulary.scopes.some((scope) => matchesScope(node, scope))
-      && !exactLabelMatch(node, vocabulary)) return []
-    const ranked = scoreNode(corpus, node, vocabulary)
-    return ranked ? [{
-      node,
-      ranked,
-      representativeScore: scoreRepresentative(corpus, node, ranked),
-    }] : []
-  }).filter(({ node }) =>
-    (requestedDomains.size > 0
-      ? requestedDomains.has(node.sourceDomain)
-      : node.sourceDomain === 'production' || node.sourceDomain === 'unknown')
-    || vocabulary.scopes.some((scope) => matchesScope(node, scope))
-  ).sort(compareScoredNodes)
-  if (vocabulary.obligations.length > 1) return candidates
-  const representatives = new Map<string, ScoredNode[]>()
-  for (const candidate of candidates) {
-    const key = vocabulary.scopes.some((scope) => matchesScope(candidate.node, scope))
-      ? candidate.node.id : candidate.node.documentKey
-    const current = representatives.get(key) ?? []
-    current.push(candidate)
-    representatives.set(key, current)
+function inDomain(n: Node, q: Vocabulary): boolean {
+  return q.domains.size > 0
+    ? q.domains.has(n.domain)
+    : n.domain === 'production' || n.domain === 'unknown'
+}
+
+function scoredNodes(
+  c: Corpus, q: Vocabulary, keep: (n: Node) => boolean,
+): Scored[] {
+  const items = c.nodes.flatMap((n): Scored[] => {
+    if (!n.eligible || !keep(n)
+      || (q.limits.length > 0
+        && !q.limits.some((s) => inScope(n, s)))) return []
+    if (n.kind === 'file' && !q.terms.includes('imports_from')
+      && !q.limits.some((s) =>
+        s.subject.includes('/') && inScope(n, s))) return []
+    if ((!n.defined || n.kind === 'interface' || n.kind === 'type-alias')
+      && !q.terms.some((t) => tokens(n.kind).includes(t))
+      && !q.terms.some((t) => t === 'defin' || t === 'declar')
+      && !q.scopes.some((s) => inScope(n, s))
+      && !exactLabel(n, q)) return []
+    if (!inDomain(n, q) && !q.scopes.some((s) => inScope(n, s))) return []
+    const rank = score(c, n, q)
+    if (!rank) return []
+    return [{ n, rank }]
+  }).sort(byRank)
+  if (q.parts.length > 1 || q.scopes.length > 0) return items
+  const locator = q.terms[0] === 'where'
+  const byFile = new Map<string, Scored[]>()
+  for (const item of items) {
+    const current = byFile.get(item.n.file || item.n.id) ?? []
+    current.push(item)
+    byFile.set(item.n.file || item.n.id, current)
   }
-  return [...representatives.entries()].flatMap(([key, current]) => {
-    const ids = new Set(current.map(({ node }) => node.id))
-    current.sort((left, right) =>
-      right.node.outgoingIds.filter((id) => ids.has(id)).length
-      - left.node.outgoingIds.filter((id) => ids.has(id)).length
-      || right.representativeScore - left.representativeScore
-      || compareScoredNodes(left, right))
-    return current.slice(0, ids.has(key) ? 1 : 2)
-  }).sort(compareScoredNodes)
+  return [...byFile.values()].flatMap((entries) =>
+    entries.sort((a, b) => {
+      if (locator) return byRank(a, b)
+      const ids = new Set(entries.map((entry) => entry.n.id))
+      return b.n.outs.filter((id) => ids.has(id)).length
+        - a.n.outs.filter((id) => ids.has(id)).length
+        || byRank(a, b)
+    }).slice(0, 2)).sort(byRank)
+}
+
+function usable(n: Node | undefined, q: Vocabulary): n is Node {
+  return !!n?.eligible && n.kind !== 'file' && n.kind !== 'class'
+    && (inDomain(n, q) || n.domain === 'production' || n.domain === 'unknown')
+}
+
+function path(
+  c: Corpus, from: string, to: string, q: Vocabulary, backwards = false,
+  maximumDepth = 16,
+): string[] | null {
+  if (from === to) return [from]
+  const previous = new Map<string, string>()
+  const depth = new Map([[from, 0]])
+  const queue = [from]
+  for (let cursor = 0; cursor < queue.length && queue.length < 512; cursor += 1) {
+    const id = queue[cursor]!
+    const distance = depth.get(id) ?? 0
+    if (distance >= maximumDepth) continue
+    const adjacent = backwards
+      ? c.byId.get(id)?.ins ?? []
+      : c.byId.get(id)?.outs ?? []
+    for (const next of adjacent) {
+      if (depth.has(next) || !usable(c.byId.get(next), q)) continue
+      depth.set(next, distance + 1)
+      previous.set(next, id)
+      if (next === to) {
+        const result = [to]
+        while (result.at(-1) !== from) result.push(previous.get(result.at(-1)!)!)
+        return result.reverse()
+      }
+      queue.push(next)
+    }
+  }
+  return null
+}
+
+function toposort(c: Corpus, input: readonly string[]): {
+  ids: string[]; depth: number
+} {
+  const allowed = new Set(input)
+  const index = new Map<string, number>()
+  const low = new Map<string, number>()
+  const stack: string[] = []
+  const active = new Set<string>()
+  const groups: string[][] = []
+  let ordinal = 0
+  const visit = (id: string): void => {
+    index.set(id, ordinal)
+    low.set(id, ordinal++)
+    stack.push(id)
+    active.add(id)
+    for (const next of c.byId.get(id)?.outs ?? []) {
+      if (!allowed.has(next)) continue
+      if (!index.has(next)) {
+        visit(next)
+        low.set(id, Math.min(low.get(id)!, low.get(next)!))
+      } else if (active.has(next)) {
+        low.set(id, Math.min(low.get(id)!, index.get(next)!))
+      }
+    }
+    if (low.get(id) !== index.get(id)) return
+    const group: string[] = []
+    while (stack.length > 0) {
+      const member = stack.pop()!
+      active.delete(member)
+      group.push(member)
+      if (member === id) break
+    }
+    groups.push(group)
+  }
+  for (const id of input) if (!index.has(id)) visit(id)
+  const groupOf = new Map(groups.flatMap((group, groupIndex) =>
+    group.map((id) => [id, groupIndex] as const)))
+  const outs = new Map<number, Set<number>>()
+  const indegree = new Map<number, number>()
+  for (const id of input) {
+    const from = groupOf.get(id)!
+    for (const next of c.byId.get(id)?.outs ?? []) {
+      if (!allowed.has(next)) continue
+      const to = groupOf.get(next)!
+      if (from === to) continue
+      const targets = outs.get(from) ?? new Set<number>()
+      if (targets.has(to)) continue
+      targets.add(to)
+      outs.set(from, targets)
+      indegree.set(to, (indegree.get(to) ?? 0) + 1)
+    }
+  }
+  const pos = new Map(input.map((id, order) => [id, order]))
+  const ready = groups.map((_, group) => group)
+    .filter((group) => !indegree.has(group))
+  const depths = new Map(ready.map((group) => [
+    group, Math.max(0, groups[group]!.length - 1),
+  ]))
+  const ids: string[] = []
+  let depth = 0
+  while (ready.length > 0) {
+    ready.sort((a, b) =>
+      Math.min(...groups[a]!.map((id) =>
+        pos.get(id) ?? LAST))
+      - Math.min(...groups[b]!.map((id) =>
+        pos.get(id) ?? LAST)))
+    const group = ready.shift()!
+    const level = depths.get(group) ?? 0
+    depth = Math.max(depth, level)
+    ids.push(...groups[group]!.sort((a, b) =>
+      (pos.get(a) ?? LAST)
+      - (pos.get(b) ?? LAST)
+      || compare(a, b)))
+    for (const next of outs.get(group) ?? []) {
+      depths.set(next, Math.max(
+        depths.get(next) ?? 0,
+        level + 1 + Math.max(0, groups[next]!.length - 1),
+      ))
+      const left = (indegree.get(next) ?? 0) - 1
+      if (left > 0) indegree.set(next, left)
+      else {
+        indegree.delete(next)
+        ready.push(next)
+      }
+    }
+  }
+  return { ids: ids.length === input.length ? ids : [...input], depth }
+}
+
+function rootPath(
+  c: Corpus, target: string, seedMap: ReadonlyMap<string, Seed>,
+  forbidden: ReadonlySet<string>, q: Vocabulary,
+): string[] | null {
+  const next = new Map<string, string>()
+  const depth = new Map([[target, 0]])
+  const queue = [target]
+  const roots: string[] = []
+  for (let cursor = 0; cursor < queue.length && queue.length < 512; cursor += 1) {
+    const id = queue[cursor]!
+    const n = c.byId.get(id)
+    const distance = depth.get(id) ?? 0
+    if (!usable(n, q) || distance >= 16) continue
+    const parents = n.ins.filter((parent) => usable(c.byId.get(parent), q))
+    if (id !== target && parents.length === 0) roots.push(id)
+    for (const parent of parents) {
+      if (depth.has(parent)) continue
+      depth.set(parent, distance + 1)
+      next.set(parent, id)
+      queue.push(parent)
+    }
+  }
+  const route = (root: string): string[] => {
+    const result = [root]
+    while (result.at(-1) !== target) result.push(next.get(result.at(-1)!)!)
+    return result
+  }
+  const choices = roots.flatMap((root) => {
+    const ids = route(root)
+    if (ids.slice(0, -1).some((id) => forbidden.has(id))) return []
+    return [{
+      ids,
+      parts: new Set(ids.flatMap((id) =>
+        seedMap.get(id)?.parts ?? [])).size,
+      terms: new Set(ids.flatMap((id) =>
+        seedMap.get(id)?.hits ?? [])).size,
+    }]
+  })
+  return choices.sort((a, b) =>
+    a.ids.length - b.ids.length
+    || b.parts - a.parts
+    || b.terms - a.terms
+    || (seedMap.get(b.ids[0]!)?.rank.score ?? 0)
+      - (seedMap.get(a.ids[0]!)?.rank.score ?? 0)
+    || compare(a.ids[0]!, b.ids[0]!))[0]?.ids ?? null
+}
+
+function connect(
+  c: Corpus, seeds: readonly Seed[], q: Vocabulary,
+): Selection | null {
+  const seedMap = new Map(seeds.map((seed) => [seed.n.id, seed]))
+  const byId = c.byId
+  const hubs = c.nodes.filter((hub) =>
+    usable(hub, q) && hub.ins.length > 0 && hub.outs.length > 0)
+  const shapes = new Map<string, Array<{
+    registryId: string; hooks: string[]; workers: string[]
+  }>>()
+  for (const file of new Set(hubs.map((hub) => hub.file))) {
+    shapes.set(file, (c.files.get(file) ?? []).flatMap((registry) => {
+      if (!usable(registry, q) || registry.ins.length < 2) return []
+      const pairs = registry.ins.flatMap((hookId) => {
+        const registrar = byId.get(hookId)
+        if (!usable(registrar, q) || !registrar.owner) return []
+        const workers = (c.members.get(registrar.owner) ?? [])
+          .filter((id) => id !== hookId && registrar.outs.includes(id)
+            && usable(byId.get(id), q))
+        return workers.length === 1
+          ? [{ hookId, workerId: workers[0]! }] : []
+      })
+      const hooks = [...new Set(pairs.map((pair) => pair.hookId))]
+      const workers = [...new Set(pairs.map((pair) => pair.workerId))]
+      const role = (id: string): string => {
+        const n = byId.get(id)!
+        return `${n.kind}\0${text(n.attributes, 'label').replace(/^\./u, '')}`
+      }
+      return hooks.length >= 2 && hooks.length === workers.length
+        && new Set(hooks.map(role)).size === 1
+        && new Set(workers.map(role)).size === 1
+        && role(hooks[0]!) !== role(workers[0]!)
+        ? [{ registryId: registry.id, hooks, workers }] : []
+    }))
+  }
+  const choices = hubs.flatMap((hub) =>
+    (shapes.get(hub.file) ?? [])
+      .filter(({ registryId }) => registryId !== hub.id)
+      .flatMap(({ hooks, workers }) => {
+        const hits = workers.filter((id) => hub.outs.includes(id)).length
+        if (hits * 2 >= workers.length) return []
+        const entry = rootPath(
+          c, hub.id, seedMap, new Set([...hooks, ...workers]),
+          q,
+        )
+        if (!entry) return []
+        const relevant = [...entry, ...workers]
+        const scopes = q.scopes.filter((s) => !s.hard)
+        const matchesQuery = scopes.length > 0
+          ? scopes.every((s) => c.nodes.some((n) =>
+            usable(n, q) && inScope(n, s)
+            && relevant.some((id) => !!path(c, id, n.id, q, false, 3))))
+          : relevant.some((id) => seedMap.has(id))
+        return matchesQuery ? [{ hub, workers, entry }] : []
+      }))
+    .sort((a, b) =>
+      Number(seedMap.has(b.hub.id)) - Number(seedMap.has(a.hub.id))
+      || b.hub.ins.length - a.hub.ins.length
+      || b.workers.length - a.workers.length
+      || compare(a.hub.id, b.hub.id))
+  const pick = choices[0]
+  if (!pick) return null
+  const branches = pick.workers.map((workerId) => {
+    const worker = byId.get(workerId)!
+    const services = worker.outs.filter((id) => usable(byId.get(id), q))
+    const service = [...services].sort((a, b) =>
+      Number(!!path(c, b, pick.hub.id, q))
+      - Number(!!path(c, a, pick.hub.id, q))
+      || Number(byId.get(b)?.file !== worker.file)
+      - Number(byId.get(a)?.file !== worker.file)
+      || (seedMap.get(b)?.rank.score ?? 0)
+      - (seedMap.get(a)?.rank.score ?? 0)
+      || compare(a, b))[0]
+    return {
+      workerId, service,
+      hits: pick.hub.outs.includes(workerId),
+      returns: !!service && !!path(c, service, pick.hub.id, q),
+    }
+  }).sort((a, b) =>
+    Number(b.hits) - Number(a.hits)
+    || Number(b.returns) - Number(a.returns)
+    || (byId.get(a.service ?? '')?.outs.length
+      ?? LAST)
+      - (byId.get(b.service ?? '')?.outs.length
+        ?? LAST)
+    || (seedMap.get(b.workerId)?.rank.score ?? 0)
+      - (seedMap.get(a.workerId)?.rank.score ?? 0)
+    || compare(a.workerId, b.workerId))
+  const ids: string[] = []
+  const files = new Set<string>()
+  const append = (id?: string): boolean => {
+    if (!id || ids.includes(id)) return true
+    const n = byId.get(id)
+    if (!usable(n, q)) return true
+    if (ids.length >= SNIPPET_CAP
+      || (n.file && !files.has(n.file) && files.size >= FILE_CAP)) return false
+    ids.push(id)
+    if (n.file) files.add(n.file)
+    return true
+  }
+  let complete = true
+  for (const id of pick.entry) if (!append(id)) complete = false
+  const terminal = branches.filter((branch) => !branch.returns)
+  for (const branch of branches) {
+    if (branch.returns
+      || (!!branch.service
+        && (termsOf(byId.get(branch.service)!, q, true).length > 0
+          || (q.parts.length > 1 && terminal.length === 1
+            && q.scopes.every((s) => s.hard))))) {
+      if (!append(branch.workerId)) complete = false
+    }
+    if (branch.returns && !append(branch.service)) complete = false
+  }
+  const sideBranches: string[] = []
+  for (const s of q.scopes.filter((s) => !s.hard)) {
+    if (ids.some((id) => inScope(byId.get(id)!, s))) continue
+    const side = c.nodes.filter((n) =>
+      usable(n, q) && !ids.includes(n.id) && inScope(n, s)
+      && n.ins.some((id) => ids.includes(id)))
+      .sort((a, b) =>
+        (seedMap.get(b.id)?.rank.score ?? 0)
+        - (seedMap.get(a.id)?.rank.score ?? 0)
+        || compare(a.id, b.id))[0]
+    if (!side) {
+      complete = false
+      continue
+    }
+    const parent = Math.max(...side.ins.map((id) => ids.indexOf(id)))
+    const length = ids.length
+    if (parent < 0 || !append(side.id) || ids.length === length) {
+      complete = false
+      continue
+    }
+    ids.pop()
+    ids.splice(parent + 1, 0, side.id)
+    sideBranches.push(side.id)
+  }
+  if (!q.expand && !q.terms.every((t) => t === 'flow'
+    || ids.some((id) => termsOf(byId.get(id)!, q, true).includes(t)))) return null
+  return {
+    ids, flow: true,
+    complete: complete && ids.length > 1,
+    structuralRequired: true,
+    branch: sideBranches,
+  }
+}
+
+function causal(
+  c: Corpus, seeds: readonly Seed[], q: Vocabulary,
+): Selection | null {
+  if (seeds.length === 0) return null
+  const named = q.scopes.filter((s) => !s.hard)
+  const scoped = new Set(named.flatMap((s) => s.tokens))
+  const picked = (named.length > 0
+    ? seeds.filter((seed) =>
+      named.some((s) => inScope(seed.n, s))
+      || seed.hits.some((t) => !scoped.has(t)))
+    : seeds).slice(0, 32)
+  const ids = new Set(picked.map((seed) => seed.n.id))
+  for (const n of c.nodes) {
+    if (!usable(n, q)) continue
+    const children = n.outs.filter((id) => ids.has(id)).length
+    if (children < 2) continue
+    ids.add(n.id)
+    if (ids.size >= 256) break
+  }
+  const ordered = [...new Set(q.scopes.flatMap((s) =>
+    picked.filter((seed) => inScope(seed.n, s))))]
+  const filtered = [...new Set([
+    ...ordered.map(({ n }) => n.id), ...ids,
+  ])].filter((id) => usable(c.byId.get(id), q))
+  const files = new Set<string>()
+  const bounded = toposort(c, filtered).ids.filter((id) => {
+    const n = c.byId.get(id)!
+    if (files.size >= FILE_CAP && n.file && !files.has(n.file)) return false
+    if (files.size < FILE_CAP && n.file) files.add(n.file)
+    return true
+  }).slice(0, SNIPPET_CAP)
+  const retained = new Set(bounded)
+  const edges = bounded.reduce((count, id) =>
+    count + c.byId.get(id)!.outs.filter((to) => retained.has(to)).length, 0)
+  const depth = toposort(c, bounded).depth
+  const reachable = ordered.some((from, index) =>
+    ordered.slice(index + 1).some((to) =>
+      !!path(c, from.n.id, to.n.id, q)))
+  if (edges === 0 && (!(q.scopes.length > 1
+    || q.terms.filter((t) => /^\d+$/.test(t)).length > 1)
+    || (q.limits.length === 0 && !reachable))) return {
+    ids: [], flow: false, complete: false,
+    structuralRequired: true,
+  }
+  if (depth < 2 && edges >= 3 && files.size <= 1) return {
+    ids: [], flow: false, complete: false,
+    structuralRequired: true,
+  }
+  const conceptCoverage = new Set(picked
+    .filter((seed) => retained.has(seed.n.id))
+    .flatMap((seed) => seed.parts))
+  return {
+    ids: bounded,
+    flow: bounded.length > 1,
+    complete: q.parts.every((concept, index) =>
+      concept.size === 0 || conceptCoverage.has(index)),
+    structuralRequired: true,
+  }
+}
+
+function selectStructure(
+  c: Corpus, scored: readonly Scored[], q: Vocabulary,
+): Selection | null {
+  if (!q.structural || q.terms[0] === 'where'
+    || (q.scopes.some((s) => !s.hard) && !q.expand)
+    || q.limits.some((s) => s.subject.includes('/'))) return null
+  if (!q.expand) {
+    const matches = scored.map(({ n }) =>
+      [n, termsOf(n, q)] as const)
+    const coverable = new Set(matches.flatMap(([, terms]) => terms))
+    if (matches.some(([n, found]) =>
+      found.length * 5 >= coverable.size * 3
+        && found.some((t) =>
+          matches.filter(([, terms]) => terms.includes(t)).length <= 2)
+        && !n.ins.concat(n.outs).some((id) => {
+          const adjacent = c.byId.get(id)
+          return !!adjacent && termsOf(adjacent, q)
+            .some((t) => coverable.has(t) && !found.includes(t))
+        }))) return null
+  }
+  const seeds = scored.flatMap((item): Seed[] => {
+    if (!usable(item.n, q)) return []
+    const hits = termsOf(item.n, q)
+    if (hits.length === 0) return []
+    return [{
+      ...item, hits,
+      parts: q.parts.flatMap((concept, index) =>
+        hits.some((t) => concept.has(t)) ? [index] : []),
+    }]
+  }).sort((a, b) =>
+    Number(b.n.ins.length + b.n.outs.length > 0)
+    - Number(a.n.ins.length + a.n.outs.length > 0)
+    || b.hits.length - a.hits.length
+    || byRank(a, b))
+  return connect(c, seeds, q)
+    ?? causal(c, seeds, q)
+}
+
+function fallback(
+  index: ReadyQueryIndex, c: Corpus, scored: readonly Scored[],
+  q: Vocabulary,
+): Selection {
+  const ids: string[] = []
+  const files = new Set<string>()
+  const covered = new Set<string>()
+  const add = (item: Scored): void => {
+    if (ids.includes(item.n.id)) return
+    if (item.n.file && !files.has(item.n.file)
+      && files.size >= FILE_CAP) return
+    ids.push(item.n.id)
+    if (item.n.file) files.add(item.n.file)
+    for (const t of item.rank.matchedTerms) covered.add(t)
+  }
+  if (q.limits.some((s) => s.subject.includes('/'))) {
+    for (const s of q.limits.filter((item) =>
+      item.subject.includes('/'))) {
+      const matching = scored.filter((item) => inScope(item.n, s))
+      const file = matching.find((item) => item.n.kind === 'file')
+      const symbol = matching.find((item) => item.n.kind !== 'file'
+        && (!file || index.graph.edgesBetween(file.n.id, item.n.id)
+          .some(({ attributes }) => text(attributes, 'relation') === 'contains')))
+      if (file) add(file)
+      if (symbol) add(symbol)
+    }
+  } else if (q.parts.length > 1) {
+    for (const concept of q.parts) {
+      const next = scored.filter((item) =>
+        item.rank.matchedTerms.some((t) => concept.has(t)))
+        .sort((a, b) =>
+          Number(!files.has(b.n.file)) - Number(!files.has(a.n.file))
+          || byRank(a, b))[0]
+      if (next) add(next)
+    }
+  } else {
+    const loc = q.terms[0] === 'where'
+    const pos = (item: Scored): number[] =>
+      termsOf(item.n, q, true).map((t) => q.pos.get(t) ?? LAST)
+    const start = loc ? [...scored].sort((a, b) =>
+      b.rank.matchedTerms.length - a.rank.matchedTerms.length
+      || Math.min(LAST, ...pos(a)) - Math.min(LAST, ...pos(b))
+      || pos(b).length - pos(a).length
+      || byRank(a, b))[0] : scored[0]
+    const exact = start && start.n.kind !== 'class' && start.n.kind !== 'file'
+      && exactLabel(start.n, q)
+    const first = start && (exact ? start : scored.find((item) =>
+      item.n.file === start.n.file
+      && start.n.outs.includes(item.n.id)
+      && start.rank.matchedTerms.every((t) =>
+        item.rank.matchedTerms.includes(t))
+      && termsOf(item.n, q, true).length
+        >= termsOf(start.n, q, true).length) ?? start)
+    if (first) add(first)
+    while (ids.length < (exact && loc ? 1 : loc ? 2 : SNIPPET_CAP)) {
+      const next = scored.filter((item) => !ids.includes(item.n.id)
+        && (files.has(item.n.file) || files.size < FILE_CAP))
+        .sort((a, b) => {
+          const link = (item: Scored): number => Number(ids.some((id) =>
+            index.graph.edgesBetween(id, item.n.id).some(({ attributes }) =>
+              CAUSAL.has(text(attributes, 'relation')))))
+          const novelty = (item: Scored): number =>
+            item.rank.matchedTerms.filter((t) => !covered.has(t)).length
+          return (loc
+            ? link(b) - link(a)
+              || Math.max(-1, ...pos(b)) - Math.max(-1, ...pos(a))
+              || pos(b).length - pos(a).length
+              || novelty(b) - novelty(a)
+            : novelty(b) - novelty(a) || link(b) - link(a))
+            || a.rank.firstMatch - b.rank.firstMatch
+            || byRank(a, b)
+      })[0]
+      if (!next) break
+      const novel = next.rank.matchedTerms.some((t) => !covered.has(t))
+      const connected = termsOf(next.n, q).length > 0 && ids.some((id) =>
+        index.graph.edgesBetween(id, next.n.id).some(({ attributes }) =>
+          CAUSAL.has(text(attributes, 'relation'))))
+      if (loc ? !connected : !novel && !connected) break
+      add(next)
+    }
+  }
+  const ordered = toposort(c, ids).ids
+  return {
+    ids: ordered, flow: false, complete: true, structuralRequired: false,
+  }
 }
 
 function unsupportedCandidates(
-  index: ReadyQueryIndex, vocabulary: QueryVocabulary,
+  index: ReadyQueryIndex, q: Vocabulary,
 ): UnsupportedCandidate[] {
-  const candidates = index.unsupported_sources.flatMap((source): UnsupportedCandidate[] => {
+  return index.unsupported_sources.flatMap((source): UnsupportedCandidate[] => {
     const extension = source.path.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? ''
-    if (!UNSUPPORTED_CODE_EXTENSIONS.has(extension)) return []
     const domain = classifySourceDomain(source.path, index.root_path)
-    if (isPollutedSourcePath(source.path, index.root_path)
+    if (!UNSUPPORTED.test(extension)
+      || isPollutedSourcePath(source.path, index.root_path)
       || (domain !== 'production' && domain !== 'unknown')) return []
-    const pathTokens = new Set(meaningfulTokens(source.path))
-    const basenameTokens = new Set(meaningfulTokens(source.path.split('/').at(-1) ?? source.path))
-    const matchedTerms = vocabulary.terms.filter((term) =>
-      !term.includes('_') && !term.includes('-') && pathTokens.has(term))
-    const termWeights = new Map(matchedTerms.map((term) => [
-      term,
-      basenameTokens.has(term) ? 4 : 1,
-    ]))
-    const scopeMatch = vocabulary.scopes.some((scope) =>
-      scope.tokens.every((token) => pathTokens.has(token))
-      && compactTokens(source.path).includes(scope.compact))
-    if (!scopeMatch
-      && (matchedTerms.length === 0 || matchedTerms.every((term) => term.length < 4))) return []
-    const firstMatch = matchedTerms.reduce((first, term) =>
-      Math.min(first, vocabulary.positions.get(term) ?? Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER)
-    const score = matchedTerms.reduce((total, term) =>
-      total + Math.max(1, term.length ** 2) * (termWeights.get(term) ?? 1) * 100, scopeMatch ? 1_000_000 : 0)
-    return [{ path: source.path, matchedTerms, termWeights, score, firstMatch }]
-  })
-  return candidates.sort((left, right) =>
-    right.score - left.score
-    || left.firstMatch - right.firstMatch
-    || compareCodeUnits(left.path, right.path))
+    const pathTokens = new Set(words(source.path))
+    const basename = new Set(words(source.path.split('/').at(-1) ?? source.path))
+    const matched = q.terms.filter((t) =>
+      !t.includes('_') && !t.includes('-') && pathTokens.has(t))
+    const weights = new Map(matched.map((t) => [t, basename.has(t) ? 4 : 1]))
+    const s = q.scopes.some((scope) =>
+      scope.tokens.every((t) => pathTokens.has(t))
+      && tokens(source.path).join('').includes(scope.compact))
+    if (!s && (matched.length === 0
+      || matched.every((t) => t.length < 4))) return []
+    return [{
+      path: source.path, terms: matched, weights,
+      first: matched.reduce((first, t) =>
+        Math.min(first, q.pos.get(t) ?? LAST),
+      LAST),
+      score: matched.reduce((total, t) =>
+        total + t.length ** 2 * (weights.get(t) ?? 1) * 100,
+      s ? 1_000_000 : 0),
+    }]
+  }).sort((a, b) =>
+    b.score - a.score || a.first - b.first
+    || compare(a.path, b.path))
 }
-function selectUnsupportedBoundaries(candidates: readonly UnsupportedCandidate[]): EvidenceBoundary[] {
-  const selected: UnsupportedCandidate[] = []
+
+function unsupportedBoundaries(
+  choices: readonly UnsupportedCandidate[],
+): EvidenceBoundary[] {
+  const picked: UnsupportedCandidate[] = []
   const covered = new Set<string>()
-  const remaining = [...candidates]
-  const bestScore = Math.max(1, remaining[0]?.score ?? 1)
-  const newCoverage = (candidate: UnsupportedCandidate): number =>
-    candidate.matchedTerms
-      .filter((term) => !covered.has(term))
-      .reduce((total, term) =>
-        total + term.length ** 2 * (candidate.termWeights.get(term) ?? 1), 0)
-  while (remaining.length > 0 && selected.length < MAX_UNSUPPORTED_BOUNDARIES) {
-    remaining.sort((left, right) => {
-      return newCoverage(right) - newCoverage(left)
-        || right.score - left.score
-        || left.firstMatch - right.firstMatch
-        || compareCodeUnits(left.path, right.path)
+  const rest = [...choices]
+  while (rest.length > 0 && picked.length < 4) {
+    rest.sort((a, b) => {
+      const novelty = (item: UnsupportedCandidate): number =>
+        item.terms.filter((t) => !covered.has(t))
+          .reduce((total, t) =>
+            total + t.length ** 2 * (item.weights.get(t) ?? 1), 0)
+      return novelty(b) - novelty(a)
+        || b.score - a.score || compare(a.path, b.path)
     })
-    const next = remaining.shift()
-    if (!next) break
-    const addsCoverage = next.matchedTerms.some((term) => !covered.has(term))
-    if (!addsCoverage && next.score * 3 < bestScore) break
-    selected.push(next)
-    for (const term of next.matchedTerms) covered.add(term)
+    const next = rest.shift()!
+    if (picked.length > 0
+      && next.terms.every((t) => covered.has(t))
+      && next.score * 3 < picked[0]!.score) break
+    picked.push(next)
+    for (const t of next.terms) covered.add(t)
   }
-  const boundaries = selected
-    .map((candidate): EvidenceBoundary => ({ kind: 'unsupported', subject: candidate.path }))
-    .sort((left, right) => compareCodeUnits(left.subject, right.subject))
-  return selected.length >= MAX_UNSUPPORTED_BOUNDARIES && remaining.length > 0
+  const boundaries: EvidenceBoundary[] = picked
+    .map((item): EvidenceBoundary => ({
+      kind: 'unsupported', subject: item.path,
+    }))
+    .sort((a, b) => compare(a.subject, b.subject))
+  return picked.length >= 4 && rest.length > 0
     ? [...boundaries, { kind: 'truncated', subject: 'unsupported sources' }]
     : boundaries
-}
-
-function missingScopeBoundaries(
-  corpus: RankCorpus, vocabulary: QueryVocabulary, unsupported: readonly UnsupportedCandidate[],
-): EvidenceBoundary[] {
-  return vocabulary.scopes.flatMap((scope): EvidenceBoundary[] => {
-    const graphMatches = corpus.nodes.filter((node) => matchesScope(node, scope))
-    const graphMatch = graphMatches.some((node) => node.selectable)
-    const unsupportedMatch = unsupported.some((candidate) =>
-      compactTokens(candidate.path).includes(scope.compact))
-    if (graphMatch || unsupportedMatch) return []
-    return [{
-      kind: graphMatches.length > 0 ? 'unavailable' : 'missing',
-      subject: scope.subject,
-    }]
-  })
-}
-
-function ownerFit(
-  corpus: RankCorpus, candidate: ScoredNode, obligation: QueryObligation,
-  selectedIds: ReadonlySet<string>,
-): OwnerFit {
-  const ownFields = candidate.node.fields.filter(({ weight }) =>
-    weight !== FIELD_WEIGHTS.sourceFile)
-  const supporters = candidate.node.outgoingIds
-    .map((id) => corpus.nodeById.get(id))
-    .filter((node): node is RankCorpusNode =>
-      !!node?.selectable && node.sourceFile === candidate.node.sourceFile)
-  const ownWeight = (term: string): number => ownFields.reduce((highest, field) =>
-    tokenSetMatches(field.tokens, term) ? Math.max(highest, field.weight) : highest, 0)
-  const supportMatch = (term: string): boolean => supporters.some((node) =>
-    node.fields.some((field) =>
-      field.weight !== FIELD_WEIGHTS.sourceFile && tokenSetMatches(field.tokens, term)))
-  const ownedTerms = new Set<string>()
-  const localCoveredTerms = new Set<string>()
-  const coordinatedSupport = new Set<string>()
-  let weighted = 0
-  let ownCovered = 0
-  let ownLocalCovered = 0
-  for (const term of obligation.terms) {
-    const own = ownWeight(term)
-    const support = supportMatch(term)
-    const path = tokenSetMatches(candidate.node.pathTokens, term)
-    if (own === 0 && !support && !path) continue
-    if (own > 0 || support) ownedTerms.add(term)
-    if (obligation.localTerms.has(term)) {
-      localCoveredTerms.add(term)
-      ownLocalCovered += Number(own > 0)
-      if (support) coordinatedSupport.add(term)
-    }
-    ownCovered += Number(own > 0)
-    weighted += rarityWeight(corpus, term)
-      * (own || (support ? FIELD_WEIGHTS.framework : 2))
-  }
-  const lead = [...obligation.localTerms][0]
-  const bridgeLead = !!lead
-    && localCoveredTerms.size === 0
-    && candidate.node.incomingIds.some((id) => selectedIds.has(id))
-    && candidate.node.outgoingIds.some((id) => {
-      const neighbor = corpus.nodeById.get(id)
-      return !!neighbor?.selectable && tokenSetMatches(neighbor.tokens, lead)
-    })
-  const sameFileOutgoing = candidate.node.outgoingIds.filter((id) =>
-    corpus.nodeById.get(id)?.sourceFile === candidate.node.sourceFile).length
-  const ownerClass = Number(candidate.node.attributes.exported === true
-    || candidate.node.nodeKind.includes('route')
-    || stringAttribute(candidate.node.attributes, 'framework_role').includes('route'))
-  const totalCovered = obligation.terms.filter((term) =>
-    ownedTerms.has(term) || tokenSetMatches(candidate.node.pathTokens, term)).length
-  const ownedTopic = obligation.terms.filter((term) =>
-    !obligation.localTerms.has(term) && ownedTerms.has(term)).length
-  const coherentTopic = ownLocalCovered > 0 ? ownedTopic : 0
-  const labelTokens = candidate.node.fields[0]?.tokens ?? new Set<string>()
-  const labelMatches = obligation.terms.filter((term) =>
-    tokenSetMatches(labelTokens, term)).length
-  const exactLabelMatches = obligation.terms.filter((term) =>
-    labelTokens.has(term)).length
-  const labelPrecision = Math.round(labelMatches * 1_000 / Math.max(1, labelTokens.size))
-  return {
-    candidate, ownedTerms, totalCovered,
-    vector: [
-      Number(bridgeLead),
-      obligation.coordinated ? coordinatedSupport.size : 0,
-      localCoveredTerms.size + coherentTopic,
-      ownLocalCovered, localCoveredTerms.size, ownedTopic,
-      ownCovered,
-      ownedTopic > 0 ? labelPrecision : 0,
-      ownedTopic > 0 ? exactLabelMatches : 0,
-      weighted, labelPrecision, exactLabelMatches,
-      ownerClass, sameFileOutgoing, candidate.representativeScore,
-    ],
-  }
-}
-
-function compareOwnerFits(left: OwnerFit, right: OwnerFit): number {
-  for (let index = 0; index < left.vector.length; index += 1) {
-    const difference = (right.vector[index] ?? 0) - (left.vector[index] ?? 0)
-    if (difference !== 0) return difference
-  }
-  return compareScoredNodes(left.candidate, right.candidate)
-}
-function hasEvidenceEdge(index: ReadyQueryIndex, from: string, to: string): boolean {
-  return index.graph.edgesBetween(from, to).some(({ attributes }) =>
-    EVIDENCE_RELATIONS.some((relation) => attributes.relation === relation))
-}
-
-function rankDiverseAnchors(
-  index: ReadyQueryIndex, corpus: RankCorpus,
-  scored: readonly ScoredNode[], vocabulary: QueryVocabulary,
-): RankSelection {
-  const unscoped = vocabulary.scopes.length === 0
-  const stageIntent = unscoped && hasStageRange(vocabulary.question)
-    && (isFlowQuestion(vocabulary.question)
-      || /\b(?:pipeline|queues?|stages?)\b/iu.test(vocabulary.question))
-  if (vocabulary.obligations.length > 1 && !stageIntent) {
-    const selected: ScoredNode[] = []
-    const selectedIds = new Set<string>()
-    const selectedFiles = new Set<string>()
-    for (const obligation of vocabulary.obligations) {
-      const previous = selected.at(-1)
-      const pivotal = [...obligation.localTerms][0]
-      if (previous && pivotal
-        && ownerFit(corpus, previous, obligation, selectedIds).ownedTerms.has(pivotal)) continue
-      const bestByFile = new Map<string, OwnerFit>()
-      for (const candidate of scored) {
-        if (selectedFiles.has(candidate.node.sourceFile)) continue
-        const fit = ownerFit(corpus, candidate, obligation, selectedIds)
-        const current = bestByFile.get(candidate.node.sourceFile)
-        if (!current || compareOwnerFits(fit, current) < 0) {
-          bestByFile.set(candidate.node.sourceFile, fit)
-        }
-      }
-      const next = [...bestByFile.values()]
-        .filter((fit) => fit.totalCovered > 0 || fit.vector[0] === 1)
-        .sort(compareOwnerFits)[0]
-      if (!next) continue
-      const candidate = next.candidate
-      selected.push(candidate)
-      selectedIds.add(candidate.node.id)
-      selectedFiles.add(candidate.node.sourceFile)
-    }
-    return { anchors: selected.map(({ ranked }) => ranked), branch: '', flow: false }
-  }
-  const selected: ScoredNode[] = []
-  const selectedIds = new Set<string>()
-  const selectedFiles = new Set<string>()
-  const coveredTerms = new Set<string>()
-  let branch = ''
-  const scoreFloor = Math.max(1, (scored[0]?.representativeScore ?? 0) / 4)
-  const entry = (candidate: ScoredNode): number =>
-    candidate.node.nodeKind.includes('route')
-    || stringAttribute(candidate.node.attributes, 'framework_role').includes('route') ? 1 : 0
-  const add = (candidate: ScoredNode): void => {
-    selected.push(candidate); selectedIds.add(candidate.node.id); selectedFiles.add(candidate.node.sourceFile)
-    for (const term of candidate.ranked.matchedTerms) {
-      if (tokenSetMatches(candidate.node.tokens, term)) coveredTerms.add(term)
-    }
-  }
-  const connected = (candidate: ScoredNode): number => selected.some(({ node }) => hasEvidenceEdge(index, node.id, candidate.node.id)) ? 1 : 0
-  const coverage = (candidate: ScoredNode): number => candidate.ranked.matchedTerms
-    .filter((term) => tokenSetMatches(candidate.node.tokens, term) && !coveredTerms.has(term))
-    .reduce((total, term) => total + rarityWeight(corpus, term), 0)
-  const successorContext = (node: RankCorpusNode): number => vocabulary.terms
-    .filter((term) => tokenSetMatches(node.tokens, term) || node.outgoingIds.some((id) => {
-      const target = corpus.nodeById.get(id)
-      return !!target && tokenSetMatches(target.tokens, term)
-    }))
-    .reduce((total, term) => total + rarityWeight(corpus, term), 0)
-  const flowIntent = unscoped && (stageIntent || isFlowQuestion(vocabulary.question))
-  const locator = unscoped && !flowIntent && vocabulary.terms[0] === 'where'
-  const flowTerms = vocabulary.terms.filter((term) => ['flow', 'pipelin', 'queue', 'stag', 'worker', 'process'].includes(term))
-  const flowCoverage = (node?: RankCorpusNode): number => node ? flowTerms.filter((term) => tokenSetMatches(node.tokens, term)).length : 0
-  let anchorLimit = MAX_RANKED_ANCHORS
-
-  if (vocabulary.constraints.length === 0) {
-    const route = scored.filter((candidate) => entry(candidate)).sort(compareScoredNodes)[0]
-    const upstream = flowIntent ? scored.find((candidate) =>
-      candidate.ranked.score * 4 >= (scored[0]?.ranked.score ?? 0) * 3
-      && candidate.node.incomingIds.length === 0) : undefined
-    const topicTerms = vocabulary.terms.filter((term) => !flowTerms.includes(term))
-    const topicRank = (node: RankCorpusNode): number => topicTerms
-      .filter((term) => tokenSetMatches(node.tokens, term))
-      .reduce((score, term) => score + 1_000
-        - (vocabulary.positions.get(term) ?? 0), 0)
-    const stageEntry = stageIntent ? scored.filter(({ node }) =>
-      node.incomingIds.length === 0 && node.outgoingIds.some((id) =>
-        flowCoverage(corpus.nodeById.get(id))))
-      .sort((left, right) => topicRank(right.node) - topicRank(left.node)
-        || compareScoredNodes(left, right))[0] : undefined
-    const seed = flowIntent ? route ?? stageEntry ?? upstream ?? scored[0] : scored[0]
-    if (seed) {
-      add(seed)
-      const targets = seed.node.outgoingIds.map((id) => corpus.nodeById.get(id))
-        .filter((node): node is RankCorpusNode =>
-          !!node?.selectable && node.sourceFile !== seed.node.sourceFile)
-        .sort((left, right) =>
-          successorContext(right) - successorContext(left)
-          || right.outgoingDegree - left.outgoingDegree
-          || compareCodeUnits(left.id, right.id))
-      const relevantTargets = targets.filter((target) => successorContext(target) > 0)
-      const registrationFor = (node: RankCorpusNode): RankCorpusNode | undefined =>
-        corpus.nodes.find((candidate) =>
-          candidate.selectable && candidate.id !== node.id
-          && candidate.sourceFile === node.sourceFile && candidate.incomingIds.length > 1
-          && tokenSetMatches(candidate.tokens, 'register')
-          && tokenSetMatches(candidate.tokens, 'worker'))
-      const nextStep = (node: RankCorpusNode): RankCorpusNode | undefined => {
-        const candidates = node.outgoingIds.map((id) => corpus.nodeById.get(id))
-          .filter((next): next is RankCorpusNode => !!next?.selectable)
-        if (!stageIntent) return candidates[0]
-        return candidates.sort((left, right) =>
-          flowCoverage(right) - flowCoverage(left)
-          || Number(!!registrationFor(right)) - Number(!!registrationFor(left))
-          || right.incomingIds.length - left.incomingIds.length
-          || compareCodeUnits(left.id, right.id))[0]
-      }
-      const bridgePairs = targets.flatMap((target) => {
-        const next = nextStep(target)
-        return next ? [[target, next] as const] : []
-      })
-      const bridgePair = flowIntent
-        ? stageIntent
-          ? [...bridgePairs].sort((left, right) =>
-            flowCoverage(right[0]) + flowCoverage(right[1])
-              - flowCoverage(left[0]) - flowCoverage(left[1])
-              || Number(!!registrationFor(right[1])) - Number(!!registrationFor(left[1]))
-              || right[1].incomingIds.length - left[1].incomingIds.length
-              || successorContext(left[0]) - successorContext(right[0])
-              || compareCodeUnits(left[0].id, right[0].id))[0]
-          : bridgePairs.find(([target]) => successorContext(target) === 0)
-        : undefined
-      const bridge = bridgePair?.[0]
-      if (bridge) anchorLimit = 4
-      const handoff = bridgePair?.[1]
-      const queued = handoff
-        ? corpus.nodeById.get(handoff.outgoingIds.find((id) =>
-          index.graph.edgesBetween(handoff.id, id)
-            .some(({ attributes }) => attributes.relation === 'enqueues_job')) ?? '')
-        : undefined
-      const reaches = (source: RankCorpusNode, target: RankCorpusNode): boolean => {
-        const seen = new Map([[source.id, 4]])
-        const visit = (current: RankCorpusNode, depth: number): boolean =>
-          depth > 0 && current.outgoingIds.some((id) => {
-            if (id === target.id) return true
-            const next = corpus.nodeById.get(id)
-            const remaining = depth - 1
-            if (!next?.selectable || (seen.get(id) ?? -1) >= remaining) return false
-            seen.set(id, remaining)
-            return visit(next, remaining)
-          })
-        return visit(source, 4)
-      }
-      const registration = stageIntent && handoff
-        ? registrationFor(handoff) : undefined
-      const consumers = registration
-        ? registration.incomingIds.flatMap((id) => {
-          const caller = corpus.nodeById.get(id)
-          return caller?.outgoingIds.map((targetId) => corpus.nodeById.get(targetId))
-            .filter((target): target is RankCorpusNode =>
-              !!target?.selectable && target.sourceFile === caller.sourceFile) ?? []
-        }) : []
-      const degree = (node: RankCorpusNode): number => Math.max(0, ...node.outgoingIds
-        .map((id) => corpus.nodeById.get(id)?.outgoingDegree ?? 0))
-      const cycle = handoff
-        ? consumers.filter((consumer) => reaches(consumer, handoff))
-          .sort((left, right) =>
-            Number(right.id === queued?.id) - Number(left.id === queued?.id)
-            || degree(left) - degree(right)
-            || compareCodeUnits(left.id, right.id))
-        : []
-      const terminal = handoff
-        && !/\bbetween\b/iu.test(vocabulary.question)
-        ? consumers.filter((consumer) => !reaches(consumer, handoff))
-          .sort((left, right) => successorContext(right) - successorContext(left)
-            || compareCodeUnits(left.id, right.id))[0]
-        : undefined
-      const stages = cycle.flatMap((consumer) => {
-        const service = consumer.outgoingIds.map((id) => corpus.nodeById.get(id))
-          .filter((candidate): candidate is RankCorpusNode =>
-            !!candidate?.selectable && candidate.sourceFile !== consumer.sourceFile)
-          .sort((left, right) => successorContext(right) - successorContext(left)
-            || right.outgoingDegree - left.outgoingDegree
-            || compareCodeUnits(left.id, right.id))[0]
-        return [consumer, ...(service ? [service] : [])]
-      })
-      const ownerCompact = compactTokens(stageIntent
-        ? vocabulary.question.match(
-          /\b[A-Z][A-Za-z0-9]*(?:Agent|Service|Worker|Controller)\b/u,
-        )?.[0] ?? '' : '')
-      const queryOwner = ownerCompact
-        ? scored.find(({ node }) => node.nodeKind !== 'class'
-          && node.outgoingDegree > 0
-          && node.fields.some(({ compact }) => compact.includes(ownerCompact)))?.node
-        : undefined
-      const ownerBranch = queryOwner
-        && !stages.some(({ id }) => id === queryOwner.id) ? queryOwner : undefined
-      if (ownerBranch) branch = ownerBranch.id
-      const recovered = stages.flatMap((stage) =>
-        ownerBranch && stage.outgoingIds.includes(ownerBranch.id)
-          ? [stage, ownerBranch] : [stage])
-      const selectedTargets = bridge
-        ? (cycle.length ? [
-          bridge,
-          handoff!,
-          ...recovered,
-          ...(terminal ? [terminal] : []),
-          ...(ownerBranch && !recovered.includes(ownerBranch) ? [ownerBranch] : []),
-        ] : [
-          bridge,
-          handoff!,
-          ...(queued?.selectable ? [queued] : []),
-        ])
-        : relevantTargets.length > 0 ? relevantTargets.slice(0, 1) : targets.slice(0, 1)
-      const unique = [...new Map(selectedTargets.map((node) => [node.id, node])).values()]
-      if (cycle.length) {
-        anchorLimit = Math.min(MAX_RANKED_ANCHORS, selected.length + unique.length)
-      }
-      for (const target of unique) {
-        if (selected.length >= anchorLimit
-          || (!selectedFiles.has(target.sourceFile) && selectedFiles.size >= MAX_RETRIEVE_FILES)) break
-        add(scored.find(({ node }) => node.id === target.id) ?? {
-          node: target, representativeScore: successorContext(target), ranked: {
-            id: target.id, attributes: target.attributes, score: 0,
-            matchedTerms: vocabulary.terms.filter((term) => tokenSetMatches(target.tokens, term)),
-            firstMatch: seed.ranked.firstMatch,
-          },
-        })
-      }
-      if (cycle.length) {
-        return { anchors: selected.map(({ ranked }) => ranked), branch, flow: true }
-      }
-    }
-  }
-  while (selected.length < anchorLimit) {
-    const eligible = scored.filter(({ node }) => !selectedIds.has(node.id)
-      && (selectedFiles.has(node.sourceFile) || selectedFiles.size < MAX_RETRIEVE_FILES))
-    if (eligible.length === 0) break
-    const priority = (candidate: ScoredNode): number => candidate.ranked.score
-      + coverage(candidate) * FIELD_WEIGHTS.label
-      + candidate.node.outgoingDegree * FIELD_WEIGHTS.sourceFile * 64
-    eligible.sort((left, right) => {
-      return coverage(right) - coverage(left)
-        || (unscoped
-          ? connected(right) - connected(left)
-            || right.node.outgoingDegree - left.node.outgoingDegree
-          : 0)
-        || (vocabulary.constraints.length > 0
-        ? priority(right) - priority(left)
-        : right.representativeScore - left.representativeScore)
-        || connected(right) - connected(left)
-        || compareScoredNodes(left, right)
-    })
-    const next = eligible[0]!
-    if (locator && selected.length && (connected(next) === 0 || coverage(next) === 0)) break
-    if (vocabulary.constraints.length === 0 && coverage(next) === 0 && connected(next) === 0) break
-    if (vocabulary.constraints.length > 0 && selected.length > 0
-      && !selectedFiles.has(next.node.sourceFile) && coverage(next) === 0) break
-    if (next.representativeScore < scoreFloor && anchorLimit === MAX_RANKED_ANCHORS) break
-    add(next)
-  }
-  const rootsOf = (candidates: readonly ScoredNode[]): ScoredNode[] => candidates
-    .filter((candidate) => !candidates.some((other) =>
-      other !== candidate && hasEvidenceEdge(index, other.node.id, candidate.node.id)))
-  const ordered: ScoredNode[] = []
-  const remaining = [...selected]
-  while (remaining.length > 0) {
-    const roots = rootsOf(remaining)
-    const next = [...(roots.length > 0 ? roots : remaining)].sort((left, right) => {
-      const leads = (candidate: ScoredNode): number =>
-        remaining.some((other) => other !== candidate
-          && hasEvidenceEdge(index, candidate.node.id, other.node.id)) ? 1 : 0
-      return entry(right) - entry(left) || left.ranked.firstMatch - right.ranked.firstMatch
-        || leads(right) - leads(left)
-        || compareScoredNodes(left, right)
-    })[0]!
-    ordered.push(next)
-    remaining.splice(remaining.indexOf(next), 1)
-  }
-  return { anchors: ordered.map(({ ranked }) => ranked), branch, flow: false }
-}
-function uniqueBoundaries(boundaries: readonly EvidenceBoundary[]): EvidenceBoundary[] {
-  const byIdentity = new Map(boundaries.map((boundary) => [
-    `${boundary.kind}\u0000${boundary.subject}`,
-    boundary,
-  ]))
-  return [...byIdentity.values()].sort((left, right) =>
-    compareCodeUnits(left.kind, right.kind) || compareCodeUnits(left.subject, right.subject))
 }
 
 export function rankQueryAnchors(
   index: ReadyQueryIndex, request: NormalizedRetrieveRequest,
 ): RankQueryResult {
-  const corpus = buildCorpus(index)
-  const vocabulary = queryVocabulary(request.question, EVIDENCE_RELATIONS)
-  const activeScope = (scope: ExplicitScope): boolean => !scope.restrictsCandidates
-    || scope.subject.includes('/') || corpus.nodes.some((node) => {
-      const prefix = scope.tokens.filter((token) => !/^\d+$/.test(token))
-      return prefix.every((token) => node.tokens.has(token))
-        && [...node.tokens].some((token) => /^\d+$/.test(token))
+  const c = buildCorpus(index)
+  const q = vocabulary(request.question)
+  const active = (s: Scope): boolean => !s.hard
+    || s.subject.includes('/') || c.nodes.some((n) => {
+      const prefix = s.tokens.filter((t) => !/^\d+$/.test(t))
+      return prefix.every((t) => n.tokens.has(t))
+        && [...n.tokens].some((t) => /^\d+$/.test(t))
     })
-  for (const scope of vocabulary.scopes.filter((candidate) => !activeScope(candidate))) {
-    const outside = new Set(lexicalTokens(request.question.replaceAll(scope.subject, '')))
-    vocabulary.terms = vocabulary.terms.filter((term) =>
-      !/^\d+$/.test(term) || !scope.tokens.includes(term) || outside.has(term))
+  for (const s of q.scopes.filter((s) => !active(s))) {
+    const outside = new Set(tokens(request.question.replaceAll(s.subject, '')))
+    q.terms = q.terms.filter((t) =>
+      !/^\d+$/.test(t) || !s.tokens.includes(t) || outside.has(t))
   }
-  vocabulary.scopes = vocabulary.scopes.filter(activeScope)
-  vocabulary.constraints = vocabulary.scopes.filter((scope) => scope.restrictsCandidates)
-  const unsupported = unsupportedCandidates(index, vocabulary)
-  const unsupportedBoundaries = selectUnsupportedBoundaries(unsupported)
-  const missingScopes = missingScopeBoundaries(corpus, vocabulary, unsupported)
-
-  const scored = scoredNodes(corpus, vocabulary)
-  const scopes = vocabulary.scopes.filter((scope) =>
-    corpus.nodes.some((node) => node.selectable && matchesScope(node, scope)))
-  const constraints = vocabulary.constraints.filter((scope) => scopes.includes(scope))
-  const scopedTerms = new Set(scopes.flatMap((scope) => scope.tokens))
-  const candidatePool = vocabulary.constraints.length > 0
-    ? constraints.length === 0 ? [] : scored.filter(({ node }) =>
-      constraints.some((scope) => matchesScope(node, scope)))
-    : scopes.length === 0
-    ? missingScopes.some((boundary) => boundary.kind === 'unavailable') ? [] : scored
-    : scored.filter(({ node, ranked }) =>
-      scopes.some((scope) => matchesScope(node, scope))
-      || (scopes.length > 0
-        && ranked.matchedTerms.some((term) => !scopedTerms.has(term))))
-  const selection = rankDiverseAnchors(index, corpus, candidatePool, vocabulary)
-  const { anchors } = selection
-  const selectedIds = new Set(anchors.map((anchor) => anchor.id))
+  q.scopes = q.scopes.filter(active)
+  q.limits = q.scopes.filter((s) => s.hard)
+  const outside = unsupportedCandidates(index, q)
+  const unsupportedFacts = unsupportedBoundaries(outside)
+  const missing = q.scopes.flatMap((s): EvidenceBoundary[] => {
+    const graphMatches = c.nodes.filter((n) => inScope(n, s))
+    if (graphMatches.some((n) => n.eligible)
+      || outside.some((item) =>
+        tokens(item.path).join('').includes(s.compact))) return []
+    return [{
+      kind: graphMatches.length > 0 ? 'unavailable' : 'missing',
+      subject: s.subject,
+    }]
+  })
+  const found = q.scopes.filter((s) =>
+    c.nodes.some((n) => n.eligible && inScope(n, s)))
+  const limits = q.limits.filter((s) =>
+    found.includes(s))
+  const scoped = new Set(found.flatMap((s) => s.tokens))
+  const allScopedTerms = new Set(q.scopes.flatMap((s) => s.tokens))
+  const unscopedTerms = new Set(q.terms.filter((t) => !allScopedTerms.has(t)))
+  const outsideTerms = new Set(q.terms.filter((t) => !scoped.has(t)))
+  const has = (n: Node, terms: ReadonlySet<string>): boolean =>
+    [...terms].some((t) => matches(n.tokens, t)
+      || n.ins.concat(n.outs).some((id) => {
+        const adjacent = c.byId.get(id)
+        return !!adjacent?.eligible && matches(adjacent.tokens, t)
+      }))
+  const keep = (n: Node): boolean => q.limits.length > 0
+    ? limits.some((s) => inScope(n, s))
+    : q.scopes.length === 0
+      || (found.length === 0
+        ? has(n, unscopedTerms)
+        : found.some((s) => inScope(n, s))
+          || has(n, outsideTerms))
+  const pool = scoredNodes(c, q, keep)
+  const structural = selectStructure(c, pool, q)
+  const choice = structural ?? fallback(
+    index, c, pool, q,
+  )
+  const anchors = choice.ids.flatMap((id, ordinal): RankedQueryNode[] => {
+    const existing = pool.find((item) => item.n.id === id)?.rank
+    if (existing) return [existing]
+    const n = c.byId.get(id)
+    if (!n?.eligible) return []
+    const matchedTerms = termsOf(n, q)
+    return [{
+      id, attributes: n.attributes,
+      score: Math.max(0, (pool[0]?.rank.score ?? 0) - ordinal),
+      matchedTerms,
+      firstMatch: matchedTerms.reduce((first, t) =>
+        Math.min(first, q.pos.get(t) ?? LAST),
+      LAST),
+    }]
+  })
+  const picked = new Set(anchors.map((anchor) => anchor.id))
   const selectedFiles = new Set(anchors.map((anchor) =>
-    stringAttribute(anchor.attributes, 'source_file')))
-  const anchorTruncated = candidatePool.some(({ node }) => !selectedIds.has(node.id))
-    && (anchors.length >= MAX_RANKED_ANCHORS || selectedFiles.size >= MAX_RETRIEVE_FILES)
+    text(anchor.attributes, 'source_file')))
+  const truncated = pool.some(({ n }) => !picked.has(n.id))
+    && (anchors.length >= SNIPPET_CAP
+      || selectedFiles.size >= FILE_CAP)
     ? [{ kind: 'truncated', subject: 'query anchors' } satisfies EvidenceBoundary]
     : []
   const boundaries = anchors.length === 0
-    && unsupportedBoundaries.length === 0
-    && missingScopes.length === 0
+    && unsupportedFacts.length === 0 && missing.length === 0
     ? [{ kind: 'missing', subject: request.question } satisfies EvidenceBoundary]
-    : [...unsupportedBoundaries, ...missingScopes, ...anchorTruncated]
+    : [...unsupportedFacts, ...missing, ...truncated]
   return {
-    anchors, boundaries: uniqueBoundaries(boundaries),
-    queryTerms: vocabulary.terms, flow: selection.flow, branch: selection.branch,
+    anchors, boundaries,
+    queryTerms: q.terms, flow: choice.flow, branch: choice.branch ?? [],
+    sequential: q.sequential,
+    priorityAnchorIds: choice.ids,
+    structuralRequired: choice.structuralRequired,
+    structuralCoverageComplete: choice.complete
+      && (!choice.structuralRequired || missing.length === 0),
   }
 }
