@@ -432,22 +432,22 @@ const SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS = [
 ] as const
 const SEMANTIC_EXECUTION_SOURCE = {
   production_typescript_files: 44,
-  production_typescript_loc: 15_873,
-  production_loc_added: 3_606,
+  production_typescript_loc: 15_942,
+  production_loc_added: 3_675,
   production_loc_removed: 187,
-  production_loc_net: 3_419,
+  production_loc_net: 3_488,
 } as const
 const SEMANTIC_EXECUTION_PACKAGE = {
   npm_files: 102,
-  npm_packed_bytes: 143_170,
-  npm_unpacked_bytes: 638_803,
-  npm_shasum: '8ed94633cdf6f63dfabe12845e5e77644a89dbf1',
+  npm_packed_bytes: 143_549,
+  npm_unpacked_bytes: 639_164,
+  npm_shasum: '590e27d375f95e5212374b7478e480f58199d702',
   npm_integrity:
-    'sha512-Nq3m/a7D/iZHYjjRd9b7ENth95qz4zssOPnBqmQEsy+aiebRp68UtMMWArYWFRTftdWwNfTcIvxns0JVdahrdw==',
-  npm_artifact_sha256: 'df9bb97b425db5063ab178920c7fb824c19c681378744c6cfc7094e99926f1eb',
+    'sha512-hN7chlybxfu1ZGZptit9rEP03eaYmBBGoFMornzenbbp9taNjjdl+Lj3DSjZQDhV9pJc5YdRPOlRVrccS1s6tA==',
+  npm_artifact_sha256: 'cf5a6c25c4fec77e2a2da03bfd7564ec394b238456eb4f38e738f6386d392e76',
 } as const
 const SEMANTIC_EXECUTION_DIFF_SHA256 =
-  '1916499d8e195e20c47cc05868a50f3ca408759e932596c16388da6e66e41ec6'
+  '03023cece3f0cb641aa05971e903ca4b3904d613c614a994f6427c472d67f4f4'
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
   '4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0'
 const CAPABILITY_VALIDATION_V2_ISSUE = 'https://github.com/mohanagy/madar/issues/612'
@@ -1931,26 +1931,26 @@ describe('core reset governance', () => {
         artifact_sha256: SEMANTIC_EXECUTION_PACKAGE.npm_artifact_sha256,
       },
       local_verification: {
-        focused_tests_passed: 149,
+        focused_tests_passed: 162,
         last_pre_cache_full_tests_passed: 722,
         candidate_full_suite_status: 'pending_clean_runner_after_local_host_memory_pressure',
         candidate_full_suite_local_attempts: 3,
-        graph_nodes: 12_350,
-        graph_edges: 32_839,
+        graph_nodes: 12_313,
+        graph_edges: 32_726,
         exact_queue_channels: 6,
         exact_channel_edges: 51,
-        graph_artifact_size_ratio: 1.2344886849638093,
+        graph_artifact_size_ratio: 1.2293214469979519,
         beta4_indexing_trials_seconds: [20.32, 21.33, 22.16, 22.51, 22.74],
         beta4_indexing_median_seconds: 22.16,
-        candidate_indexing_trials_seconds: [23.31, 24.16, 24.41, 24.87, 25.42],
-        candidate_indexing_median_seconds: 24.41,
-        indexing_median_ratio: 1.1015342960288808,
+        candidate_indexing_trials_seconds: [17.08, 15.08, 14.96, 13.82, 13.24],
+        candidate_indexing_median_seconds: 14.96,
+        indexing_median_ratio: 0.6750902527075813,
         warm_retrieval_samples: 100,
-        warm_retrieval_median_ms: 165.343,
-        warm_retrieval_p95_ms: 216.599,
-        warm_retrieval_max_ms: 257.814,
+        warm_retrieval_median_ms: 225.692208,
+        warm_retrieval_p95_ms: 253.599958,
+        warm_retrieval_max_ms: 300.229625,
         deterministic_graph_sha256:
-          '478e1ed93fcef5a7592dfa0f884318713128e01857dc706a28f2e0d6142937d0',
+          '82469164dbdf1229195d6fb71d8220736c15c5a13093dd2f2fc6f2a633f73a36',
         beta4_retrieval_output_byte_identical: true,
         exact_head_ci: 'pending',
         independent_review: 'pending',
@@ -2102,6 +2102,7 @@ describe('core reset governance', () => {
       [
         'diff',
         '--binary',
+        '--abbrev=7',
         sourceTestSnapshot.protected_base,
         sourceTestSnapshot.commit,
         '--',
@@ -5913,7 +5914,7 @@ describe('core reset governance', () => {
       expect(changedProduction).toEqual([...(phase?.modified_sources ?? [])].sort())
       const diffSha256 = createHash('sha256').update(execFileSync(
         git,
-        ['diff', '--binary', baseline, '--', ...(phase?.modified_sources ?? [])],
+        ['diff', '--binary', '--full-index', baseline, '--', ...(phase?.modified_sources ?? [])],
       )).digest('hex')
       expect(diffSha256).toBe(sourceMeasurement!.diff_sha256)
     } else if (phase?.status === 'complete') {

@@ -384,6 +384,14 @@ describe('query execution index validation', () => {
       },
     },
     {
+      name: 'a forged call callee payload',
+      mutate: ({ graph, runId }: Fixture) => {
+        mutateBodyFactWireRows(graph, runId, (rows) => {
+          payload(rowOfKind(rows, 3))[0] = 'forgedDelete'
+        })
+      },
+    },
+    {
       name: 'duplicate branch controls',
       mutate: ({ graph, runId }: Fixture) => {
         mutateBodyFactWireRows(graph, runId, (rows) => {
@@ -545,6 +553,7 @@ describe('query execution index validation', () => {
         wireKinds[kindOrdinal]!,
         [member[2], kindOrdinal, member[3], member[4]] as number[],
         forgedHash,
+        member.slice(1),
       )
     })
     resign(current.graph)

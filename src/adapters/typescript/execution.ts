@@ -10,24 +10,17 @@ const {
 } = ts
 const K = ts.SyntaxKind
 import {
-  decodeIndexBodyFactTable,
-  encodeIndexBodyFactTable,
-  INDEX_BODY_FACT_CONTROL_LIMIT,
-  IndexBodyFactBoundsError,
-  indexBodyFactId,
-  indexChannelId,
+  decodeIndexBodyFactTable, encodeIndexBodyFactTable, INDEX_BODY_FACT_CONTROL_LIMIT,
+  IndexBodyFactBoundsError, indexBodyFactId, indexChannelId,
 } from '../../domain/index/model.js'
 import type {
   IndexBodyFact, IndexCallFact, IndexChannelNode, IndexControlFrame,
   IndexDiagnostic, IndexEdge, IndexFactEvidence, IndexFactSource,
-  IndexChannelTransport, IndexPersistenceOperation, IndexRange, IndexSymbol,
-  IndexValue,
+  IndexChannelTransport, IndexPersistenceOperation, IndexRange, IndexSymbol, IndexValue,
 } from '../../domain/index/model.js'
 export type CollectExecutionInput = {
-  program: ts.Program
-  sourceFiles: readonly ts.SourceFile[]
-  checker: ts.TypeChecker
-  pathToFileId: ReadonlyMap<string, string>
+  program: ts.Program; sourceFiles: readonly ts.SourceFile[]
+  checker: ts.TypeChecker; pathToFileId: ReadonlyMap<string, string>
   symbols: IndexSymbol[]
   symbolsByFile: ReadonlyMap<string, readonly IndexSymbol[]>
 }
@@ -38,92 +31,87 @@ export type CollectExecutionResult = {
 type Confidence = 'high' | 'medium' | 'low'
 type OwnerSpan = { symbol: IndexSymbol; start: number; end: number }
 type ImportBinding = { imported: string; module: string; namespace: boolean }
-type CallSite = readonly [
-  targetId: string, arguments: readonly IndexValue[], node: EffectWitness,
-]
+type CallSite = readonly [targetId: string, arguments: readonly IndexValue[], node: EffectWitness]
 type QueueTransport = Extract<IndexChannelTransport, 'bull' | 'bullmq'>
 type QueueOrigin = readonly [key: IndexValue, transport: QueueTransport]
-type EmitterScope = readonly [
-  scope: string,
-  transport: 'node-event-emitter' | 'nestjs-event-emitter',
-]
+type MapQueueEntry = readonly [key: ts.Expression, file: FileContext, queueKey: ts.Expression, transport: QueueTransport]
+type EmitterScope = readonly [scope: string, transport: 'node-event-emitter' | 'nestjs-event-emitter']
 type EffectWitness = ts.CallExpression | ts.NewExpression
 type BullEffect = readonly [
   kind: 'bull-publish' | 'bull-consume', queue: IndexValue,
   endpoint: IndexValue, transport: QueueTransport, scope: undefined,
-  witness: EffectWitness, confidence: Confidence, source: IndexFactSource,
-]
+  witness: EffectWitness, confidence: Confidence, source: IndexFactSource]
 type EventEffect = readonly [
   kind: 'event-publish' | 'event-consume', event: IndexValue,
   handler: IndexValue | undefined,
   transport: 'node-event-emitter' | 'nestjs-event-emitter', scope: string,
-  witness: EffectWitness, confidence: Confidence, source: IndexFactSource,
-]
+  witness: EffectWitness, confidence: Confidence, source: IndexFactSource]
 type PersistenceEffect = readonly [
   kind: 'persistence', operation: IndexPersistenceOperation,
   resource: IndexValue | undefined, receiverType: string, scope: undefined,
-  witness: EffectWitness, confidence: Confidence, source: IndexFactSource,
-]
+  witness: EffectWitness, confidence: Confidence, source: IndexFactSource]
 type ExecutionEffect = BullEffect | EventEffect | PersistenceEffect
 type FileContext = {
-  sf: ts.SourceFile; fileId: string
-  imports: ReadonlyMap<string, ImportBinding>; owners: readonly OwnerSpan[]
+  sf: ts.SourceFile; fileId: string; imports: ReadonlyMap<string, ImportBinding>
+  owners: readonly OwnerSpan[]
 }
 type CollectionState = {
-  input: CollectExecutionInput
-  symbolsById: ReadonlyMap<string, IndexSymbol>
-  facts: Map<string, IndexBodyFact[]>
-  overflow: Set<string>
-  effects: Map<string, ExecutionEffect[]>
-  calls: Map<string, CallSite[]>
-  callIds: Map<ts.Node, string>
-  channels: Map<string, IndexChannelNode>
-  edges: IndexEdge[]
-  diagnostics: IndexDiagnostic[]
-  seenDiagnostics: Set<string>
-  queues: Map<string, Map<string, QueueOrigin>>
-  emitters: Map<string, EmitterScope>
-  nestQueues: Map<string, Map<string, QueueOrigin>>
+  input: CollectExecutionInput; symbolsById: ReadonlyMap<string, IndexSymbol>
+  facts: Map<string, IndexBodyFact[]>; overflow: Set<string>
+  effects: Map<string, ExecutionEffect[]>; calls: Map<string, CallSite[]>
+  callIds: Map<ts.Node, string>; channels: Map<string, IndexChannelNode>
+  edges: IndexEdge[]; diagnostics: IndexDiagnostic[]; seenDiagnostics: Set<string>
+  unstable: Set<ts.Symbol>
+  mapQueues: Map<ts.Symbol, Array<MapQueueEntry | null>>
+  emitters: Map<string, EmitterScope>; nestQueues: Map<string, Map<string, QueueOrigin>>
   files: Map<ts.SourceFile, FileContext>
 }
-const MAX_VALUE_DEPTH = 5, MAX_VALUE_ELEMENTS = 32
-const MAX_STRING_BYTES = 512, MAX_TEXT_BYTES = 256
-const MAX_WRAPPER_HOPS = 2
-const MAX_FACTS_PER_OWNER = 8_192, MAX_EFFECTS_PER_OWNER = 8_192
-const FS_MODULES = new Set(['node:fs', 'node:fs/promises', 'fs', 'fs/promises'])
-const FS_OPERATIONS = {
-  readFile: 'file_read', readFileSync: 'file_read', open: 'file_read',
+// Internal helpers are abbreviated because their emitted names count against
+// the protected npm ceiling; exported names and serialized fields stay explicit.
+const VDEP = 5, VELE = 32
+const SBYT = 512, TBYT = 256
+const WHOP = 2
+const FMAX = 8_192, EMAX = 8_192
+const FSM = new Set(['node:fs', 'node:fs/promises', 'fs', 'fs/promises'])
+const FSO = {
+  readFile: 'file_read', readFileSync: 'file_read',
   opendir: 'file_read', readdir: 'file_read', appendFile: 'file_write',
   appendFileSync: 'file_write', copyFile: 'file_write', copyFileSync: 'file_write',
   rename: 'file_write', writeFile: 'file_write', writeFileSync: 'file_write',
   rm: 'delete', rmSync: 'delete', unlink: 'delete', unlinkSync: 'delete',
 } as const satisfies Record<string, IndexPersistenceOperation>
-const REPOSITORY_OPERATIONS = {
+const TOO = {
   find: 'read', findOne: 'read', findOneBy: 'read', findMany: 'read',
-  findUnique: 'read', count: 'read', aggregate: 'read', create: 'create',
-  insert: 'create', save: 'create', createMany: 'create', update: 'update',
+  findUnique: 'read', count: 'read', aggregate: 'read', insert: 'create',
+  save: 'upsert', update: 'update',
   updateOne: 'update', updateMany: 'update', delete: 'delete',
   deleteOne: 'delete', deleteMany: 'delete', remove: 'delete', upsert: 'upsert',
-  transaction: 'transaction', $transaction: 'transaction',
+  transaction: 'transaction',
 } as const satisfies Record<string, IndexPersistenceOperation>
-const PROMISE_COMPLETIONS = {
+const PRO = {
+  findUnique: 'read', findFirst: 'read', findMany: 'read', count: 'read',
+  aggregate: 'read', groupBy: 'read', create: 'create', createMany: 'create',
+  update: 'update', updateMany: 'update', delete: 'delete',
+  deleteMany: 'delete', upsert: 'upsert', $transaction: 'transaction',
+} as const satisfies Record<string, IndexPersistenceOperation>
+const PMC = {
   all: 'all_or_first_rejection', allSettled: 'all_settled',
   any: 'first_fulfilled', race: 'first_settled',
 } as const
-const LOGICAL_FLOW = new Map<ts.SyntaxKind, readonly [ConditionKind, BranchArm]>([
+const LFL = new Map<ts.SyntaxKind, readonly [ConditionKind, BranchArm]>([
   [K.AmpersandAmpersandToken, ['logical_and', 'truthy']],
   [K.BarBarToken, ['logical_or', 'falsy']],
   [K.QuestionQuestionToken, ['nullish', 'nullish']],
 ])
-const ARRAY_MUTATIONS = new Map<string, MutationOperation>([
+const AMU = new Map<string, MutationOperation>([
   ['push', 'append'], ['unshift', 'append'], ['pop', 'remove'],
   ['shift', 'remove'], ['splice', 'remove'],
 ])
-const FACT_ORDER: Readonly<Record<IndexBodyFact['kind'], number>> = {
+const FORD: Readonly<Record<IndexBodyFact['kind'], number>> = {
   condition: 0, loop: 1, parallel: 2, call: 3, literal: 4,
   mutation: 5, persistence: 6, return: 7, throw: 8,
 }
-const ASSIGNMENT_OPERATORS = new Set<ts.SyntaxKind>([
+const AOP = new Set<ts.SyntaxKind>([
   K.EqualsToken, K.PlusEqualsToken,
   K.MinusEqualsToken, K.AsteriskEqualsToken,
   K.AsteriskAsteriskEqualsToken, K.SlashEqualsToken,
@@ -133,22 +121,22 @@ const ASSIGNMENT_OPERATORS = new Set<ts.SyntaxKind>([
   K.BarBarEqualsToken, K.AmpersandAmpersandEqualsToken,
   K.QuestionQuestionEqualsToken,
 ])
-const ARRAY_ITERATION_METHODS = new Set([
+const AIM = new Set([
   'every', 'filter', 'find', 'findIndex', 'flatMap',
   'forEach', 'map', 'reduce', 'reduceRight', 'some',
 ])
-const STRUCTURAL_LITERAL_TOKENS = new Set([
+const SLT = new Set([
   K.StringLiteral, K.NumericLiteral,
   K.BigIntLiteral, K.RegularExpressionLiteral,
   K.NoSubstitutionTemplateLiteral, K.TemplateHead,
   K.TemplateMiddle, K.TemplateTail,
 ])
-const SECRET_NAME = /(?:api[_-]?key|authorization|cookie|credential|passwd|password|private[_-]?key|secret|token)/i
-const SECRET_VALUE = /^(?:bearer\s+|gh[pousr]_|github_pat_|sk-(?:live|test|proj)-|xox[baprs]-)/i
-function sha256(value: string): string {
+const SNM = /(?:api[_-]?key|authorization|cookie|credential|database[_-]?url|dsn|jwt|passwd|password|private[_-]?key|secret|token)/i
+const SVAL = /^(?:bearer\s+|gh[pousr]_|github_pat_|sk-(?:live|test|proj)-|xox[baprs]-|[a-z][a-z\d+.-]*:\/\/[^/\s:@]+:[^@\s/]+@|eyJ[\w-]+\.[\w-]+\.[\w-]+$)/i
+function hash(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex')
 }
-function boundedText(value: string, maxBytes = MAX_TEXT_BYTES): string {
+function bd(value: string, maxBytes = TBYT): string {
   if (Buffer.byteLength(value, 'utf8') <= maxBytes) return value
   let result = ''
   for (const character of value) {
@@ -157,18 +145,18 @@ function boundedText(value: string, maxBytes = MAX_TEXT_BYTES): string {
   }
   return result
 }
-function structuralText(node: ts.Node, sf: ts.SourceFile): string {
+function st(node: ts.Node, sf: ts.SourceFile): string {
     const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, sf.languageVariant, node.getText(sf));
     const tokens: string[] = [];
     for (let token = scanner.scan(); token !== K.EndOfFileToken; token = scanner.scan()) {
-        tokens.push(STRUCTURAL_LITERAL_TOKENS.has(token) ? '<literal>' : scanner.getTokenText());
+        tokens.push(SLT.has(token) ? '<literal>' : scanner.getTokenText());
     }
-    return boundedText(tokens.join(' '));
+    return bd(tokens.join(' '));
 }
-function compareText(left: string, right: string): number {
+function ct(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
-function compareOrder(left: readonly number[], right: readonly number[]): number {
+function co(left: readonly number[], right: readonly number[]): number {
   const length = Math.min(left.length, right.length)
   for (let index = 0; index < length; index += 1) {
     const difference = (left[index] ?? 0) - (right[index] ?? 0)
@@ -176,10 +164,10 @@ function compareOrder(left: readonly number[], right: readonly number[]): number
   }
   return left.length - right.length
 }
-function rangeOf(node: ts.Node, sf: ts.SourceFile): IndexRange {
-  return rangeFromOffsets(sf, node.getStart(sf, false), node.getEnd())
+function ro(node: ts.Node, sf: ts.SourceFile): IndexRange {
+  return rf(sf, node.getStart(sf, false), node.getEnd())
 }
-function rangeFromOffsets(sf: ts.SourceFile, start: number, end: number): IndexRange {
+function rf(sf: ts.SourceFile, start: number, end: number): IndexRange {
   const startPosition = sf.getLineAndCharacterOfPosition(start)
   const endPosition = sf.getLineAndCharacterOfPosition(end)
   return {
@@ -187,7 +175,7 @@ function rangeFromOffsets(sf: ts.SourceFile, start: number, end: number): IndexR
     end: { line: endPosition.line + 1, column: endPosition.character + 1 },
   }
 }
-function statementFor(node: ts.Node): ts.Node {
+function stmt(node: ts.Node): ts.Node {
     let current: ts.Node = node;
     while (current.parent) {
         if (ts.isStatement(current)
@@ -202,7 +190,7 @@ function statementFor(node: ts.Node): ts.Node {
     }
     return current;
 }
-function evidenceFor(node: ts.Node, sf: ts.SourceFile, fileId: string, stmtNode: ts.Node = statementFor(node), bounds?: {
+function ev(node: ts.Node, sf: ts.SourceFile, fileId: string, stmtNode: ts.Node = stmt(node), bounds?: {
     start: number;
     end: number;
 }): IndexFactEvidence {
@@ -216,29 +204,29 @@ function evidenceFor(node: ts.Node, sf: ts.SourceFile, fileId: string, stmtNode:
         : rawStatementEnd;
     return {
         file_id: fileId,
-        range: rangeOf(node, sf),
-        statement_range: rangeFromOffsets(sf, statementStart, statementEnd),
-        excerpt_sha256: sha256(sf.text.slice(statementStart, statementEnd)),
+        range: ro(node, sf),
+        statement_range: rf(sf, statementStart, statementEnd),
+        excerpt_sha256: hash(sf.text.slice(statementStart, statementEnd)),
     };
 }
-function factOrder(kind: IndexBodyFact['kind'], node: ts.Node, suffix = 0): readonly number[] {
+function fo(kind: IndexBodyFact['kind'], node: ts.Node, suffix = 0): readonly number[] {
   const sf = node.getSourceFile()
   return [
     node.getStart(sf, false),
-    FACT_ORDER[kind],
+    FORD[kind],
     node.getEnd(),
     suffix,
   ]
 }
-function factBase(ownerId: string, kind: IndexBodyFact['kind'], node: ts.Node, file: FileContext, control: readonly IndexControlFrame[], opts: {
+function fb(ownerId: string, kind: IndexBodyFact['kind'], node: ts.Node, file: FileContext, control: readonly IndexControlFrame[], opts: {
     confidence?: Confidence;
     source?: IndexFactSource;
     statementNode?: ts.Node;
     orderSuffix?: number;
 } = {}): Pick<IndexBodyFact, 'id' | 'owner_symbol_id' | 'order' | 'evidence' | 'control' | 'confidence' | 'source'> {
     const ownerBounds = file.owners.find((span) => span.symbol.id === ownerId);
-    const order = factOrder(kind, node, opts.orderSuffix);
-    const evidence = evidenceFor(node, file.sf, file.fileId, opts.statementNode, ownerBounds);
+    const order = fo(kind, node, opts.orderSuffix);
+    const evidence = ev(node, file.sf, file.fileId, opts.statementNode, ownerBounds);
     return {
         id: indexBodyFactId(ownerId, kind, order, evidence.excerpt_sha256),
         owner_symbol_id: ownerId,
@@ -252,79 +240,75 @@ function factBase(ownerId: string, kind: IndexBodyFact['kind'], node: ts.Node, f
 type ConditionKind = Extract<IndexBodyFact, { kind: 'condition' }>['condition_kind']
 type BranchArm = Extract<IndexControlFrame, { kind: 'branch' }>['arm']
 type MutationOperation = Extract<IndexBodyFact, { kind: 'mutation' }>['operation']
-function addCondition(
-  ownerId: string,
-  conditionKind: ConditionKind,
-  expr: ts.Expression,
-  file: FileContext,
-  ctx: CollectionState,
-  control: readonly IndexControlFrame[],
+function ac(
+  ownerId: string, conditionKind: ConditionKind, expr: ts.Expression,
+  file: FileContext, ctx: CollectionState, control: readonly IndexControlFrame[],
   stmtNode: ts.Node,
-): ReturnType<typeof factBase> {
-  const base = factBase(ownerId, 'condition', expr, file, control, { statementNode: stmtNode })
-  addFact(ctx, {
+): ReturnType<typeof fb> {
+  const base = fb(ownerId, 'condition', expr, file, control, { statementNode: stmtNode })
+  af(ctx, {
     ...base,
     kind: 'condition',
     condition_kind: conditionKind,
-    test: readValue(expr, file, ctx, { constants: true }),
+    test: rd(expr, file, ctx, { constants: true }),
   })
   return base
 }
-function branchFrame(control: readonly IndexControlFrame[], controllerFactId: string, arm: BranchArm): IndexControlFrame[] {
+function br(control: readonly IndexControlFrame[], controllerFactId: string, arm: BranchArm): IndexControlFrame[] {
     return [...control, { kind: 'branch', controller_fact_id: controllerFactId, arm }];
 }
-function addMutation(
+function am(
   ownerId: string, operationNode: ts.Node, operation: MutationOperation,
   targetNode: ts.Node, file: FileContext, ctx: CollectionState,
   control: readonly IndexControlFrame[],
   value?: ts.Expression, orderSuffix = 0,
 ): void {
-  const target = structuralText(targetNode, file.sf)
-  addFact(ctx, {
-    ...factBase(ownerId, 'mutation', operationNode, file, control, { orderSuffix }),
+  const target = st(targetNode, file.sf)
+  af(ctx, {
+    ...fb(ownerId, 'mutation', operationNode, file, control, { orderSuffix }),
     kind: 'mutation',
     operation,
-    target: boundedText(target),
+    target: bd(target),
     ...(value ? {
-      value: readValue(value, file, ctx, {
+      value: rd(value, file, ctx, {
         constants: true,
-        secret: SECRET_NAME.test(target),
+        secret: SNM.test(target),
       }),
     } : {}),
   })
 }
-function addIteration(ownerId: string, node: ts.Node, file: FileContext, ctx: CollectionState, control: readonly IndexControlFrame[]): string {
-    const base = factBase(ownerId, 'loop', node, file, control, { orderSuffix: 1 });
-    addFact(ctx, { ...base, kind: 'loop', loop_kind: 'array_iteration' });
+function ai(ownerId: string, node: ts.Node, file: FileContext, ctx: CollectionState, control: readonly IndexControlFrame[]): string {
+    const base = fb(ownerId, 'loop', node, file, control, { orderSuffix: 1 });
+    af(ctx, { ...base, kind: 'loop', loop_kind: 'array_iteration' });
     return base.id;
 }
-function addFact(ctx: CollectionState, fact: IndexBodyFact): void {
+function af(ctx: CollectionState, fact: IndexBodyFact): void {
   if (ctx.overflow.has(fact.owner_symbol_id)) return
   const facts = ctx.facts.get(fact.owner_symbol_id)
   if (!facts) { ctx.facts.set(fact.owner_symbol_id, [fact]); return }
-  if (facts.length >= MAX_FACTS_PER_OWNER) {
+  if (facts.length >= FMAX) {
     ctx.overflow.add(fact.owner_symbol_id); return
   }
   facts.push(fact)
 }
-function addBounded<T>(
+function ab<T>(
   ctx: CollectionState, map: Map<string, T[]>, key: string, value: T,
 ): void {
   const values = map.get(key)
   if (!values) { map.set(key, [value]); return }
-  if (values.length >= MAX_EFFECTS_PER_OWNER) {
+  if (values.length >= EMAX) {
     ctx.overflow.add(key)
   } else {
     values.push(value)
   }
 }
-function addEffect(ctx: CollectionState, ownerId: string, fx: ExecutionEffect): void {
-  addBounded(ctx, ctx.effects, ownerId, fx)
+function ae(ctx: CollectionState, ownerId: string, fx: ExecutionEffect): void {
+  ab(ctx, ctx.effects, ownerId, fx)
 }
-function addCall(ctx: CollectionState, ownerId: string, callSite: CallSite): void {
-    addBounded(ctx, ctx.calls, ownerId, callSite);
+function al(ctx: CollectionState, ownerId: string, callSite: CallSite): void {
+    ab(ctx, ctx.calls, ownerId, callSite);
 }
-function isOwnerSymbol(symbol: IndexSymbol): boolean {
+function io(symbol: IndexSymbol): boolean {
   if (!['function', 'method', 'constant', 'variable'].includes(symbol.kind)) return false
   // Execution facts require an authenticated owner span. Framework-only
   // synthetic nodes without declaration/definition ranges remain topology
@@ -334,27 +318,27 @@ function isOwnerSymbol(symbol: IndexSymbol): boolean {
   if (typeof symbol.framework_metadata?.storage_operation === 'string') return false
   return true
 }
-function offsetOf(sf: ts.SourceFile, position: IndexRange['start']): number {
+function oo(sf: ts.SourceFile, position: IndexRange['start']): number {
   return sf.getPositionOfLineAndCharacter(position.line - 1, position.column - 1)
 }
-function owners(sf: ts.SourceFile, symbols: readonly IndexSymbol[]): OwnerSpan[] {
+function os(sf: ts.SourceFile, symbols: readonly IndexSymbol[]): OwnerSpan[] {
     return symbols
-        .filter(isOwnerSymbol)
+        .filter(io)
         .map((symbol) => ({
         symbol,
-        start: offsetOf(sf, symbol.range.start),
-        end: offsetOf(sf, symbol.range.end),
+        start: oo(sf, symbol.range.start),
+        end: oo(sf, symbol.range.end),
     }))
         .sort((left, right) => (left.end - left.start) - (right.end - right.start)
         || left.start - right.start
-        || compareText(left.symbol.id, right.symbol.id));
+        || ct(left.symbol.id, right.symbol.id));
 }
-function ownerFor(node: ts.Node, file: FileContext): IndexSymbol | null {
+function ow(node: ts.Node, file: FileContext): IndexSymbol | null {
   const start = node.getStart(file.sf, false)
   const end = node.getEnd()
   return file.owners.find((span) => span.start <= start && span.end >= end)?.symbol ?? null
 }
-function importsFor(sf: ts.SourceFile): ReadonlyMap<string, ImportBinding> {
+function im(sf: ts.SourceFile): ReadonlyMap<string, ImportBinding> {
   const bindings = new Map<string, ImportBinding>()
   for (const stmt of sf.statements) {
     if (!ts.isImportDeclaration(stmt) || !ts.isStringLiteral(stmt.moduleSpecifier)) continue
@@ -380,7 +364,7 @@ function importsFor(sf: ts.SourceFile): ReadonlyMap<string, ImportBinding> {
   }
   return bindings
 }
-function importedBinding(expr: ts.Expression, file: FileContext): ImportBinding | null {
+function ib(expr: ts.Expression, file: FileContext): ImportBinding | null {
     if (isIdentifier(expr))
         return file.imports.get(expr.text) ?? null;
     if (isAccess(expr)
@@ -396,13 +380,13 @@ function importedBinding(expr: ts.Expression, file: FileContext): ImportBinding 
     }
     return null;
 }
-function isImport(expr: ts.Expression, file: FileContext, modules: readonly string[], names: readonly string[]): boolean {
-    const binding = importedBinding(expr, file);
+function ii(expr: ts.Expression, file: FileContext, modules: readonly string[], names: readonly string[]): boolean {
+    const binding = ib(expr, file);
     return binding !== null
         && modules.includes(binding.module)
         && names.includes(binding.imported);
 }
-function followAlias(symbol: ts.Symbol | undefined, checker: ts.TypeChecker): ts.Symbol | undefined {
+function fa(symbol: ts.Symbol | undefined, checker: ts.TypeChecker): ts.Symbol | undefined {
   if (!symbol || (symbol.flags & ts.SymbolFlags.Alias) === 0) return symbol
   try {
     return checker.getAliasedSymbol(symbol)
@@ -410,54 +394,70 @@ function followAlias(symbol: ts.Symbol | undefined, checker: ts.TypeChecker): ts
     return symbol
   }
 }
-function symbolAt(node: ts.Node, ctx: CollectionState): ts.Symbol | undefined {
+function sy(node: ts.Node, ctx: CollectionState): ts.Symbol | undefined {
   const checker = ctx.input.checker
-  return followAlias(checker.getSymbolAtLocation(node), checker)
+  return fa(checker.getSymbolAtLocation(node), checker)
 }
-function declSymbol(node: ts.Node, file: FileContext, ctx: CollectionState): IndexSymbol | null {
+function ds(node: ts.Node, file: FileContext, ctx: CollectionState): IndexSymbol | null {
     const sf = node.getSourceFile();
     const fileId = ctx.input.pathToFileId.get(sf.fileName);
     if (!fileId)
         return null;
     const spans = sf === file.sf
         ? file.owners
-        : owners(sf, ctx.input.symbolsByFile.get(fileId) ?? []);
+        : os(sf, ctx.input.symbolsByFile.get(fileId) ?? []);
     const start = node.getStart(sf, false);
     const end = node.getEnd();
     return spans.find((span) => span.start <= start && span.end >= end)?.symbol ?? null;
 }
-function symbolFor(expr: ts.Expression, file: FileContext, ctx: CollectionState): IndexSymbol | null {
-    const symbol = symbolAt(isAccess(expr) ? expr.name : expr, ctx);
+function ed(node: ts.Node, file: FileContext, ctx: CollectionState): IndexSymbol | null {
+  const symbol = ds(node, file, ctx)
+  if (!symbol) return null
+  const sf = node.getSourceFile(), start = node.getStart(sf, false), end = node.getEnd()
+  const spans = sf === file.sf ? file.owners
+    : os(sf, ctx.input.symbolsByFile.get(ctx.input.pathToFileId.get(sf.fileName) ?? '') ?? [])
+  return spans.some((span) =>
+    span.symbol.id === symbol.id && span.start === start && span.end === end)
+    ? symbol : null
+}
+function sb(decl: ts.Declaration, ctx: CollectionState): boolean {
+  const name = (isVariable(decl) || isPropertyDecl(decl)) && isIdentifier(decl.name)
+    ? decl.name : null
+  const symbol = name ? sy(name, ctx) : undefined
+  return !!symbol && !ctx.unstable.has(symbol)
+}
+function sfor(expr: ts.Expression, file: FileContext, ctx: CollectionState): IndexSymbol | null {
+    const symbol = sy(isAccess(expr) ? expr.name : expr, ctx);
     const declarations = symbol?.declarations ?? [];
     for (const decl of declarations) {
-        const indexed = declSymbol(decl, file, ctx);
+        const indexed = ds(decl, file, ctx);
         if (indexed)
             return indexed;
     }
     return null;
 }
-function callSymbol(call: ts.CallExpression | ts.NewExpression, file: FileContext, ctx: CollectionState): IndexSymbol | null {
+function cs(call: ts.CallExpression | ts.NewExpression, file: FileContext, ctx: CollectionState): IndexSymbol | null {
     const signature = ctx.input.checker.getResolvedSignature(call);
     const decl = signature?.getDeclaration();
     if (decl && !decl.getSourceFile().isDeclarationFile) {
-        const indexed = declSymbol(decl, file, ctx);
+        const indexed = ds(decl, file, ctx);
         if (indexed)
             return indexed;
     }
-    return symbolFor(call.expression, file, ctx);
+    return sfor(call.expression, file, ctx);
 }
-function callableOwner(node: ts.SignatureDeclaration, file: FileContext, ctx: CollectionState): IndexSymbol | null {
+function ca(node: ts.SignatureDeclaration, file: FileContext, ctx: CollectionState): IndexSymbol | null {
     if (isArrow(node) || isFunction(node)) {
         const parent = node.parent;
         if (isVariable(parent) && parent.initializer === node) {
             const stmt = parent.parent.parent;
             return ts.isVariableStatement(stmt)
                 && ts.isSourceFile(stmt.parent)
-                ? declSymbol(parent, file, ctx)
+                ? ds(parent, file, ctx)
                 : null;
         }
         return isBinary(parent)
-            ? declSymbol(node, file, ctx)
+            ? ds(node, file, ctx)
             : null;
     }
     return ts.isFunctionDeclaration(node)
@@ -465,11 +465,11 @@ function callableOwner(node: ts.SignatureDeclaration, file: FileContext, ctx: Co
         || ts.isConstructorDeclaration(node)
         || ts.isGetAccessorDeclaration(node)
         || ts.isSetAccessorDeclaration(node)
-        ? declSymbol(node, file, ctx)
+        ? ed(node, file, ctx)
         : null;
 }
-function parameterValue(identifier: ts.Identifier, file: FileContext, ctx: CollectionState): IndexValue | null {
-    const symbol = symbolAt(identifier, ctx);
+function pv(identifier: ts.Identifier, file: FileContext, ctx: CollectionState): IndexValue | null {
+    const symbol = sy(identifier, ctx);
     for (const decl of symbol?.declarations ?? []) {
         if (!isParameter(decl))
             continue;
@@ -478,31 +478,31 @@ function parameterValue(identifier: ts.Identifier, file: FileContext, ctx: Colle
             continue;
         const position = parent.parameters.indexOf(decl);
         if (position >= 0) {
-            return callableOwner(parent, file, ctx)
+            return ca(parent, file, ctx)
                 ? { kind: 'parameter', position }
                 : { kind: 'parameter', position, scope: 'iteration' };
         }
     }
     return null;
 }
-function redactedValue(value: string): IndexValue {
+function red(value: string): IndexValue {
   return {
     kind: 'redacted',
-    sha256: sha256(value),
+    sha256: hash(value),
     byte_length: Buffer.byteLength(value, 'utf8'),
   }
 }
-function literalString(value: string, secret = false): IndexValue {
+function ls(value: string, secret = false): IndexValue {
   const byteLength = Buffer.byteLength(value, 'utf8')
-  if (secret || SECRET_VALUE.test(value) || byteLength > MAX_STRING_BYTES) {
-    return redactedValue(value)
+  if (secret || SVAL.test(value) || byteLength > SBYT) {
+    return red(value)
   }
   return { kind: 'literal', value }
 }
-function unknown(reason: 'dynamic' | 'ambiguous' | 'unsupported' = 'dynamic'): IndexValue {
+function uk(reason: 'dynamic' | 'ambiguous' | 'unsupported' = 'dynamic'): IndexValue {
   return { kind: 'unknown', reason }
 }
-function unwrap(node: ts.Expression): ts.Expression {
+function uw(node: ts.Expression): ts.Expression {
     let current = node;
     while (ts.isAsExpression(current)
         || ts.isTypeAssertionExpression(current)
@@ -513,37 +513,32 @@ function unwrap(node: ts.Expression): ts.Expression {
     }
     return current;
 }
-type ValueOptions = {
-  constants?: boolean
-  secret?: boolean
-  depth?: number
-  seen?: ReadonlySet<ts.Node>
-}
-function readValue(
+type ValueOptions = { constants?: boolean; secret?: boolean; depth?: number; seen?: ReadonlySet<ts.Node> }
+function rd(
   expr: ts.Expression,
   file: FileContext,
   ctx: CollectionState,
   opts: ValueOptions = {},
 ): IndexValue {
   const depth = opts.depth ?? 0
-  if (depth >= MAX_VALUE_DEPTH) return unknown('unsupported')
+  if (depth >= VDEP) return uk('unsupported')
   const seen = new Set(opts.seen ?? [])
-  const node = unwrap(expr)
-  if (seen.has(node)) return unknown('ambiguous')
+  const node = uw(expr)
+  if (seen.has(node)) return uk('ambiguous')
   seen.add(node)
   const nested = (value: ts.Expression, extra: Partial<ValueOptions> = {}): IndexValue =>
-    readValue(value, file, ctx, {
+    rd(value, file, ctx, {
       ...opts,
       ...extra,
       depth: depth + 1,
       seen,
     })
-  if (ts.isStringLiteralLike(node)) return literalString(node.text, opts.secret)
+  if (ts.isStringLiteralLike(node)) return ls(node.text, opts.secret)
   if (isNumeric(node)) {
     const value = Number(node.text)
     return Number.isFinite(value) && !Object.is(value, -0)
       ? { kind: 'literal', value }
-      : unknown('unsupported')
+      : uk('unsupported')
   }
   if (node.kind === K.TrueKeyword) return { kind: 'literal', value: true }
   if (node.kind === K.FalseKeyword) return { kind: 'literal', value: false }
@@ -558,66 +553,67 @@ function readValue(
     }
   }
   if (isIdentifier(node)) {
-    const parameter = parameterValue(node, file, ctx)
+    const parameter = pv(node, file, ctx)
     if (parameter) return parameter
-    const symbol = symbolAt(node, ctx)
+    const symbol = sy(node, ctx)
     const decl = symbol?.valueDeclaration
       ?? symbol?.declarations?.find((candidate) => isVariable(candidate))
     if (
       opts.constants
       && decl
       && isVariable(decl)
+      && sb(decl, ctx)
       && decl.initializer
     ) {
       return nested(decl.initializer, {
-        secret: opts.secret || SECRET_NAME.test(node.text),
+        secret: opts.secret || SNM.test(node.text),
       })
     }
     const indexed = decl
-      ? declSymbol(decl, file, ctx)
-      : symbolFor(node, file, ctx)
-    return indexed ? { kind: 'symbol', symbol_id: indexed.id } : unknown()
+      ? ds(decl, file, ctx)
+      : sfor(node, file, ctx)
+    return indexed ? { kind: 'symbol', symbol_id: indexed.id } : uk()
   }
   if (ts.isArrayLiteralExpression(node)) {
-    if (node.elements.length > MAX_VALUE_ELEMENTS) return unknown('unsupported')
+    if (node.elements.length > VELE) return uk('unsupported')
     const elements: IndexValue[] = []
     for (const element of node.elements) {
-      if (ts.isSpreadElement(element) || ts.isOmittedExpression(element)) return unknown('unsupported')
+      if (ts.isSpreadElement(element) || ts.isOmittedExpression(element)) return uk('unsupported')
       elements.push(nested(element, { constants: true }))
     }
     return { kind: 'array', elements }
   }
   if (ts.isObjectLiteralExpression(node)) {
-    if (node.properties.length > MAX_VALUE_ELEMENTS) return unknown('unsupported')
+    if (node.properties.length > VELE) return uk('unsupported')
     const entries = new Map<string, IndexValue>()
     for (const property of node.properties) {
       if (ts.isPropertyAssignment(property)) {
-        const key = propertyName(property.name)
+        const key = pn(property.name)
         if (key === null || key.includes('\0')
-          || Buffer.byteLength(key, 'utf8') > MAX_STRING_BYTES) {
-          return unknown('unsupported')
+          || Buffer.byteLength(key, 'utf8') > SBYT) {
+          return uk('unsupported')
         }
         entries.set(
           key,
           nested(property.initializer, {
             constants: true,
-            secret: SECRET_NAME.test(key),
+            secret: SNM.test(key),
           }),
         )
       } else if (ts.isShorthandPropertyAssignment(property)) {
         const key = property.name.text
-        if (Buffer.byteLength(key, 'utf8') > MAX_STRING_BYTES) {
-          return unknown('unsupported')
+        if (Buffer.byteLength(key, 'utf8') > SBYT) {
+          return uk('unsupported')
         }
         entries.set(
           key,
           nested(property.name, {
             constants: true,
-            secret: SECRET_NAME.test(key),
+            secret: SNM.test(key),
           }),
         )
       } else {
-        return unknown('unsupported')
+        return uk('unsupported')
       }
     }
     return {
@@ -625,15 +621,15 @@ function readValue(
       entries: [...entries].map(([key, value]) => ({ key, value })),
     }
   }
-  if (ts.isNoSubstitutionTemplateLiteral(node)) return literalString(node.text, opts.secret)
+  if (ts.isNoSubstitutionTemplateLiteral(node)) return ls(node.text, opts.secret)
   if (ts.isTemplateExpression(node)) {
-    if (1 + (2 * node.templateSpans.length) > MAX_VALUE_ELEMENTS) {
-      return unknown('unsupported')
+    if (1 + (2 * node.templateSpans.length) > VELE) {
+      return uk('unsupported')
     }
-    const parts: IndexValue[] = [literalString(node.head.text, opts.secret)]
+    const parts: IndexValue[] = [ls(node.head.text, opts.secret)]
     for (const span of node.templateSpans) {
       parts.push(nested(span.expression, { constants: true }))
-      parts.push(literalString(span.literal.text, opts.secret))
+      parts.push(ls(span.literal.text, opts.secret))
     }
     return { kind: 'template', parts }
   }
@@ -642,10 +638,10 @@ function readValue(
     const receiver = node.expression.expression
     if (method === 'slice') {
       const value = nested(receiver, { constants: true })
-      if (value.kind !== 'array') return unknown()
-      const start = numericIndex(node.arguments[0], file, ctx)
-      const end = numericIndex(node.arguments[1], file, ctx)
-      if (start === null || (node.arguments[1] && end === null)) return unknown()
+      if (value.kind !== 'array') return uk()
+      const start = ni(node.arguments[0], file, ctx)
+      const end = ni(node.arguments[1], file, ctx)
+      if (start === null || (node.arguments[1] && end === null)) return uk()
       return { kind: 'array', elements: value.elements.slice(start, end ?? undefined) }
     }
     if (method === 'map') {
@@ -655,34 +651,34 @@ function readValue(
   if (ts.isElementAccessExpression(node)) {
     const collection = nested(node.expression, { constants: true })
     const index = node.argumentExpression
-      ? numericIndex(node.argumentExpression, file, ctx)
+      ? ni(node.argumentExpression, file, ctx)
       : null
     if (collection.kind === 'array' && index !== null) {
-      return collection.elements[index] ?? unknown()
+      return collection.elements[index] ?? uk()
     }
   }
-  const target = symbolFor(node, file, ctx)
-  return target ? { kind: 'symbol', symbol_id: target.id } : unknown()
+  const target = sfor(node, file, ctx)
+  return target ? { kind: 'symbol', symbol_id: target.id } : uk()
 }
-function propertyName(name: ts.PropertyName): string | null {
+function pn(name: ts.PropertyName): string | null {
   if (isIdentifier(name) || ts.isStringLiteralLike(name) || isNumeric(name)) {
     return name.text
   }
   return null
 }
-function numericIndex(expr: ts.Expression | undefined, file: FileContext, ctx: CollectionState): number | null {
+function ni(expr: ts.Expression | undefined, file: FileContext, ctx: CollectionState): number | null {
     if (!expr)
         return 0;
-    const value = readValue(expr, file, ctx, { constants: true });
+    const value = rd(expr, file, ctx, { constants: true });
     return value.kind === 'literal'
         && typeof value.value === 'number'
         && Number.isSafeInteger(value.value)
         ? value.value
         : null;
 }
-function staticString(value: IndexValue): string | null {
+function ss(value: IndexValue): string | null {
   if (value.kind === 'literal' && typeof value.value === 'string') {
-    return value.value.length > 0 && Buffer.byteLength(value.value, 'utf8') <= MAX_TEXT_BYTES
+    return value.value.length > 0 && Buffer.byteLength(value.value, 'utf8') <= TBYT
       ? value.value
       : null
   }
@@ -693,80 +689,89 @@ function staticString(value: IndexValue): string | null {
       || !['string', 'number', 'boolean'].includes(typeof part.value)) return null
     result += String(part.value)
   }
-  return result.length > 0 && Buffer.byteLength(result, 'utf8') <= MAX_TEXT_BYTES
+  return result.length > 0 && Buffer.byteLength(result, 'utf8') <= TBYT
     ? result
     : null
 }
-function symbolId(value: IndexValue): string | null {
+function si(value: IndexValue): string | null {
   return value.kind === 'symbol' ? value.symbol_id : null
 }
-function mapValue(value: IndexValue, depth: number, resolve?: (position: number) => IndexValue): IndexValue {
+function mv(value: IndexValue, depth: number, resolve?: (position: number) => IndexValue): IndexValue {
     if (value.kind === 'parameter' && value.scope !== 'iteration' && resolve) {
-        return mapValue(resolve(value.position), depth);
+        return mv(resolve(value.position), depth);
     }
     if (value.kind === 'array') {
-        if (depth >= MAX_VALUE_DEPTH && value.elements.length > 0)
-            return unknown('unsupported');
+        if (depth >= VDEP && value.elements.length > 0)
+            return uk('unsupported');
         return {
             kind: 'array',
-            elements: value.elements.map((entry) => mapValue(entry, depth + 1, resolve)),
+            elements: value.elements.map((entry) => mv(entry, depth + 1, resolve)),
         };
     }
     if (value.kind === 'object') {
-        if (depth >= MAX_VALUE_DEPTH && value.entries.length > 0)
-            return unknown('unsupported');
+        if (depth >= VDEP && value.entries.length > 0)
+            return uk('unsupported');
         return {
             kind: 'object',
             entries: value.entries.map((entry) => ({
                 key: entry.key,
-                value: mapValue(entry.value, depth + 1, resolve),
+                value: mv(entry.value, depth + 1, resolve),
             })),
         };
     }
     if (value.kind === 'template') {
-        if (depth >= MAX_VALUE_DEPTH && value.parts.length > 0)
-            return unknown('unsupported');
+        if (depth >= VDEP && value.parts.length > 0)
+            return uk('unsupported');
         return {
             kind: 'template',
-            parts: value.parts.map((entry) => mapValue(entry, depth + 1, resolve)),
+            parts: value.parts.map((entry) => mv(entry, depth + 1, resolve)),
         };
     }
     return value;
 }
-function substitute(value: IndexValue, args: readonly IndexValue[]): IndexValue {
-  return mapValue(value, 0, (position) => args[position] ?? unknown())
+function sub(value: IndexValue, args: readonly IndexValue[]): IndexValue {
+  return mv(value, 0, (position) => args[position] ?? uk())
 }
-function instantiateEffect(fx: ExecutionEffect, args: readonly IndexValue[], witness: EffectWitness): ExecutionEffect {
+function ie(fx: ExecutionEffect, args: readonly IndexValue[], witness: EffectWitness): ExecutionEffect {
     switch (fx[0]) {
         case 'bull-publish':
         case 'bull-consume':
             return [
-                fx[0], substitute(fx[1], args), substitute(fx[2], args),
+                fx[0], sub(fx[1], args), sub(fx[2], args),
                 fx[3], undefined, witness, fx[6], 'wrapper-summary',
             ];
         case 'event-publish':
             return [
-                fx[0], substitute(fx[1], args), undefined, fx[3], fx[4],
+                fx[0], sub(fx[1], args), undefined, fx[3], fx[4],
                 witness, fx[6], 'wrapper-summary',
             ];
         case 'event-consume':
             return [
-                fx[0], substitute(fx[1], args), substitute(fx[2]!, args),
+                fx[0], sub(fx[1], args), sub(fx[2]!, args),
                 fx[3], fx[4], witness, fx[6], 'wrapper-summary',
             ];
         case 'persistence':
             return [
-                fx[0], fx[1], fx[2] ? substitute(fx[2], args) : undefined,
+                fx[0], fx[1], fx[2] ? sub(fx[2], args) : undefined,
                 fx[3], undefined, witness, fx[6], 'wrapper-summary',
             ];
     }
 }
-function callName(call: ts.CallExpression | ts.NewExpression): string {
+function cn(call: ts.CallExpression | ts.NewExpression): string {
   const sf = call.getSourceFile()
-  const text = structuralText(call.expression, sf)
-  return boundedText(isNew(call) ? `new ${text}` : text)
+  const text = st(call.expression, sf)
+  return bd(isNew(call) ? `new ${text}` : text)
 }
-function callScheduling(call: ts.CallExpression | ts.NewExpression): IndexCallFact['scheduling'] {
+function th(call: ts.CallExpression | ts.NewExpression, ctx: CollectionState): boolean {
+  try {
+    const signature = ctx.input.checker.getResolvedSignature(call)
+    const type = signature && ctx.input.checker.getReturnTypeOfSignature(signature)
+    const then = type?.getProperty('then')
+    return !!then
+      && ctx.input.checker.getTypeOfSymbolAtLocation(then, call).getCallSignatures().length > 0
+  } catch { return false }
+}
+function sch(call: ts.CallExpression | ts.NewExpression, ctx: CollectionState): IndexCallFact['scheduling'] {
     let current: ts.Node = call;
     while (ts.isParenthesizedExpression(current.parent)
         || ts.isAsExpression(current.parent)
@@ -775,53 +780,55 @@ function callScheduling(call: ts.CallExpression | ts.NewExpression): IndexCallFa
     }
     if (ts.isAwaitExpression(current.parent))
         return 'awaited';
-    if (ts.isVoidExpression(current.parent)
-        || ts.isExpressionStatement(current.parent)) {
+    if ((ts.isVoidExpression(current.parent)
+        || ts.isExpressionStatement(current.parent)) && th(call, ctx)) {
         return 'fire_and_forget';
     }
     return 'sync';
 }
-function callFact(
-  call: ts.CallExpression | ts.NewExpression,
-  sym: IndexSymbol,
-  file: FileContext,
-  ctx: CollectionState,
+function iar(expr: ts.Expression, ctx: CollectionState): boolean {
+  try {
+    const type = ctx.input.checker.getTypeAtLocation(expr)
+    return ctx.input.checker.isArrayType(type)
+      || ctx.input.checker.isTupleType(type)
+  } catch { return false }
+}
+function cf(
+  call: ts.CallExpression | ts.NewExpression, sym: IndexSymbol,
+  file: FileContext, ctx: CollectionState,
   control: readonly IndexControlFrame[],
 ): IndexCallFact {
-  const target = callSymbol(call, file, ctx)
+  const target = cs(call, file, ctx)
   const args = (call.arguments ?? []).map((argument) => {
-    const value = unwrap(argument)
+    const value = uw(argument)
     return isArrow(value) || isFunction(value)
-      ? handlerValue(value, file, ctx)
-      : readValue(value, file, ctx, {
+      ? hv(value, file, ctx)
+      : rd(value, file, ctx, {
           constants: true,
-          secret: SECRET_NAME.test(value.getText(file.sf)),
+          secret: SNM.test(value.getText(file.sf)),
         })
   })
   const fact: IndexCallFact = {
-    ...factBase(sym.id, 'call', call, file, control, {
+    ...fb(sym.id, 'call', call, file, control, {
       confidence: target ? 'high' : 'medium',
       source: target ? 'typescript-semantic' : 'typescript-syntactic',
     }),
     kind: 'call',
-    callee: callName(call),
+    callee: cn(call),
     ...(target ? { target_symbol_id: target.id } : {}),
     arguments: args,
-    scheduling: callScheduling(call),
+    scheduling: sch(call, ctx),
   }
-  addFact(ctx, fact)
+  af(ctx, fact)
   ctx.callIds.set(call, fact.id)
   if (target) {
-    addCall(ctx, sym.id, [target.id, fact.arguments, call])
+    al(ctx, sym.id, [target.id, fact.arguments, call])
   }
   return fact
 }
-function receiverType(
-  expr: ts.Expression,
-  ctx: CollectionState,
-): string {
+function rty(expr: ts.Expression, ctx: CollectionState): string {
   try {
-    return boundedText(
+    return bd(
       ctx.input.checker.typeToString(
         ctx.input.checker.getTypeAtLocation(expr),
         undefined,
@@ -832,8 +839,8 @@ function receiverType(
     return ''
   }
 }
-function typeImport(expr: ts.Expression, file: FileContext, ctx: CollectionState): ImportBinding | null {
-    const symbol = symbolAt(expr, ctx);
+function ti(expr: ts.Expression, file: FileContext, ctx: CollectionState): ImportBinding | null {
+    const symbol = sy(expr, ctx);
     for (const decl of symbol?.declarations ?? []) {
         const typeNode = isParameter(decl)
             || isPropertyDecl(decl)
@@ -853,79 +860,145 @@ function typeImport(expr: ts.Expression, file: FileContext, ctx: CollectionState
     }
     return null;
 }
-function bullTransport(binding: ImportBinding | null): QueueTransport | null {
+function bt(binding: ImportBinding | null): QueueTransport | null {
   if (!binding || !['bull', 'bullmq'].includes(binding.module)
     || !['Queue', 'default'].includes(binding.imported)) return null
   return binding.module as QueueTransport
 }
-function queueTypeTransport(
-  node: ts.TypeNode | undefined,
-  file: FileContext,
-): QueueTransport | null {
-  if (!node || !isTypeReference(node)) return null
-  const name = node.typeName
-  if (isIdentifier(name)) return bullTransport(file.imports.get(name.text) ?? null)
-  if (!isIdentifier(name.left) || name.right.text !== 'Queue') return null
-  const binding = file.imports.get(name.left.text)
-  return binding?.namespace ? bullTransport({ ...binding, imported: 'Queue' }) : null
-}
-function mapQueueTransport(expr: ts.Expression, file: FileContext, ctx: CollectionState): QueueTransport | null {
-    const target = isAccess(expr)
-        ? expr.name
-        : expr;
-    const symbol = symbolAt(target, ctx);
-    const decl = symbol?.valueDeclaration;
-    const declFile = decl
-        ? contextFor(decl.getSourceFile(), ctx)
-        : null;
-    if (!decl || !declFile)
-        return null;
-    const type = (isVariable(decl)
-        || isPropertyDecl(decl)
-        || isParameter(decl))
-        ? decl.type
-        : undefined;
-    const init = (isVariable(decl)
-        || isPropertyDecl(decl))
-        ? decl.initializer
-        : undefined;
-    const mapType = type && isTypeReference(type)
-        ? type.typeArguments?.[1]
-        : init && isNew(unwrap(init))
-            ? (unwrap(init) as ts.NewExpression).typeArguments?.[1]
-            : undefined;
-    return queueTypeTransport(mapType, declFile);
-}
-function contextFor(sf: ts.SourceFile, ctx: CollectionState): FileContext | null {
+function cx(sf: ts.SourceFile, ctx: CollectionState): FileContext | null {
     return ctx.files.get(sf) ?? null;
 }
-function queueOrigin(expr: ts.Expression, sym: IndexSymbol, file: FileContext, ctx: CollectionState, seen: ReadonlySet<ts.Node> = new Set()): QueueOrigin | null {
-    const node = unwrap(expr);
+function xs(expr: ts.Expression, ctx: CollectionState): ts.Symbol | undefined {
+  const node = uw(expr)
+  return sy(isAccess(node) ? node.name : node, ctx)
+}
+function eq(left: ts.Expression, right: ts.Expression, ctx: CollectionState): boolean {
+  const a = uw(left), b = uw(right)
+  if (ts.isStringLiteralLike(a) && ts.isStringLiteralLike(b)) {
+    return a.text === b.text
+  }
+  if (isIdentifier(a) && isIdentifier(b)) return sy(a, ctx) === sy(b, ctx)
+  if (isAccess(a) && isAccess(b)) {
+    return a.name.text === b.name.text
+      && xs(a.name, ctx) === xs(b.name, ctx)
+      && (a.expression.kind === K.ThisKeyword && b.expression.kind === K.ThisKeyword
+        || eq(a.expression, b.expression, ctx))
+  }
+  return false
+}
+function qc(expr: ts.Expression, ctx: CollectionState, seen: ReadonlySet<ts.Node> = new Set()): readonly [ts.Expression, FileContext, QueueTransport] | null {
+  const node = uw(expr)
+  if (seen.has(node)) return null
+  const next = new Set(seen).add(node)
+  const file = cx(node.getSourceFile(), ctx)
+  if (!file) return null
+  if (isNew(node) && node.arguments?.[0]) {
+    const transport = bt(ib(node.expression, file))
+    return transport ? [node.arguments[0], file, transport] : null
+  }
+  if (!isIdentifier(node)) return null
+  const decl = sy(node, ctx)?.valueDeclaration
+  return decl && isVariable(decl) && sb(decl, ctx) && decl.initializer
+    ? qc(decl.initializer, ctx, next) : null
+}
+function prep(ctx: CollectionState): void {
+  const sets: Array<readonly [ts.Symbol, ts.Expression, ts.Expression]> = []
+  const mark = (node: ts.Node): void => {
+    if (isIdentifier(node)) {
+      const symbol = sy(node, ctx)
+      if (symbol) ctx.unstable.add(symbol)
+    }
+    ts.forEachChild(node, mark)
+  }
+  for (const sf of ctx.input.sourceFiles) {
+    const visit = (node: ts.Node): void => {
+      if (isBinary(node) && AOP.has(node.operatorToken.kind)) {
+        mark(node.left)
+      } else if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
+        && [K.PlusPlusToken, K.MinusMinusToken].includes(node.operator)) {
+        mark(node.operand)
+      } else if (ts.isDeleteExpression(node)) {
+        mark(node.expression)
+      }
+      if (isCall(node) && isAccess(node.expression)
+        && node.expression.name.text === 'set'
+        && node.arguments[0] && node.arguments[1]) {
+        const symbol = xs(node.expression.expression, ctx)
+        if (symbol) sets.push([symbol, node.arguments[0], node.arguments[1]])
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sf)
+  }
+  for (const [symbol, key, value] of sets) {
+    const entries = ctx.mapQueues.get(symbol) ?? []
+    const queue = qc(value, ctx)
+    const file = cx(key.getSourceFile(), ctx)
+    entries.push(queue && file ? [key, file, queue[0], queue[2]] : null)
+    ctx.mapQueues.set(symbol, entries)
+  }
+}
+function sm(decl: ts.Declaration, ctx: CollectionState): boolean {
+  try {
+    const symbol = ctx.input.checker.getTypeAtLocation(decl).getSymbol()
+    return symbol?.name === 'Map'
+      && !!symbol.declarations?.some((item) =>
+        /\/typescript\/lib\/lib\..+\.d\.ts$/u.test(
+          item.getSourceFile().fileName.replaceAll('\\', '/'),
+        ))
+  } catch { return false }
+}
+function mq(map: ts.Expression, key: ts.Expression, file: FileContext, ctx: CollectionState): QueueOrigin | null {
+  const mapSymbol = xs(map, ctx)
+  const decl = mapSymbol?.valueDeclaration
+  if (!mapSymbol || !decl
+    || !(isVariable(decl) || isPropertyDecl(decl))
+    || !sb(decl, ctx) || !sm(decl, ctx)) return null
+  const entries = ctx.mapQueues.get(mapSymbol) ?? []
+  if (entries.length === 0 || entries.some((entry) => !entry)) return null
+  const proven = entries as MapQueueEntry[]
+  const lookup = ss(rd(key, file, ctx, { constants: true }))
+  if (lookup) {
+    const matches = proven.filter(([entryKey, entryFile]) =>
+      ss(rd(entryKey, entryFile, ctx, { constants: true })) === lookup)
+    if (matches.length) {
+      const origins = matches.map(([, entryFile, queueKey, transport]) =>
+        [rd(queueKey, entryFile, ctx, { constants: true }), transport] as const)
+      const first = JSON.stringify(origins[0])
+      return origins.every((origin) => JSON.stringify(origin) === first)
+        ? origins[0]! : null
+    }
+  }
+  const transport = proven[0]![3]
+  return proven.every(([entryKey, , queueKey, entryTransport]) =>
+    entryTransport === transport && eq(entryKey, queueKey, ctx))
+    ? [rd(key, file, ctx, { constants: true }), transport] : null
+}
+function qo(expr: ts.Expression, sym: IndexSymbol, file: FileContext, ctx: CollectionState, seen: ReadonlySet<ts.Node> = new Set()): QueueOrigin | null {
+    const node = uw(expr);
     if (seen.has(node))
         return null;
     const nextSeen = new Set(seen);
     nextSeen.add(node);
     if (isNew(node) && node.arguments?.[0]) {
-        const transport = bullTransport(importedBinding(node.expression, file));
+        const transport = bt(ib(node.expression, file));
         if (transport) {
             return [
-                readValue(node.arguments[0], file, ctx, { constants: true }),
+                rd(node.arguments[0], file, ctx, { constants: true }),
                 transport,
             ];
         }
     }
     if (isIdentifier(node)) {
-        const local = ctx.queues.get(sym.id)?.get(node.text);
-        if (local)
-            return local;
-        const symbol = symbolAt(node, ctx);
+        const symbol = sy(node, ctx);
         const decl = symbol?.valueDeclaration;
         if (decl
             && isVariable(decl)
+            && sb(decl, ctx)
             && decl.initializer) {
-            const declFile = contextFor(decl.getSourceFile(), ctx);
+            const declFile = cx(decl.getSourceFile(), ctx);
             return declFile
-                ? queueOrigin(decl.initializer, sym, declFile, ctx, nextSeen)
+                ? qo(decl.initializer, sym, declFile, ctx, nextSeen)
                 : null;
         }
     }
@@ -938,13 +1011,14 @@ function queueOrigin(expr: ts.Expression, sym: IndexSymbol, file: FileContext, c
             .get(`${sym.file_id}\0${className}`)?.get(node.name.text);
         if (injected)
             return injected;
-        const symbol = symbolAt(node.name, ctx);
+        const symbol = sy(node.name, ctx);
         const decl = symbol?.valueDeclaration;
         if (decl && isPropertyDecl(decl)
+            && sb(decl, ctx)
             && decl.initializer) {
-            const declFile = contextFor(decl.getSourceFile(), ctx);
+            const declFile = cx(decl.getSourceFile(), ctx);
             if (declFile) {
-                return queueOrigin(decl.initializer, sym, declFile, ctx, nextSeen);
+                return qo(decl.initializer, sym, declFile, ctx, nextSeen);
             }
         }
     }
@@ -952,46 +1026,41 @@ function queueOrigin(expr: ts.Expression, sym: IndexSymbol, file: FileContext, c
         && isAccess(node.expression)
         && node.expression.name.text === 'get'
         && node.arguments[0]) {
-        const transport = mapQueueTransport(node.expression.expression, file, ctx);
-        if (transport) {
-            return [
-                readValue(node.arguments[0], file, ctx, { constants: true }),
-                transport,
-            ];
-        }
+        return mq(
+          node.expression.expression, node.arguments[0], file, ctx,
+        )
     }
     return null;
 }
-function emitterScope(expr: ts.Expression, sym: IndexSymbol, file: FileContext, ctx: CollectionState, seen: ReadonlySet<ts.Node> = new Set()): EmitterScope | null {
-    const node = unwrap(expr);
+function es(expr: ts.Expression, sym: IndexSymbol, file: FileContext, ctx: CollectionState, seen: ReadonlySet<ts.Node> = new Set()): EmitterScope | null {
+    const node = uw(expr);
     if (seen.has(node))
         return null;
     const nextSeen = new Set(seen);
     nextSeen.add(node);
     if (isIdentifier(node)) {
-        const symbol = symbolAt(node, ctx);
+        const symbol = sy(node, ctx);
         const decl = symbol?.valueDeclaration;
         if (decl) {
-            const indexed = declSymbol(decl, file, ctx);
-            if (indexed) {
-                const cached = ctx.emitters.get(indexed.id);
-                if (cached)
-                    return cached;
-            }
+            const declFile = cx(decl.getSourceFile(), ctx);
+            const identity = declFile
+                ? `${declFile.fileId}:${decl.getStart(declFile.sf, false)}`
+                : null;
+            const cached = identity ? ctx.emitters.get(identity) : undefined;
+            if (cached)
+                return cached;
             if (isVariable(decl)
+                && sb(decl, ctx)
                 && decl.initializer
-                && isNew(unwrap(decl.initializer))) {
-                const init = unwrap(decl.initializer) as ts.NewExpression;
-                const declFile = contextFor(decl.getSourceFile(), ctx);
+                && isNew(uw(decl.initializer))) {
+                const init = uw(decl.initializer) as ts.NewExpression;
                 if (!declFile)
                     return null;
-                const transport = emitterTransport(init.expression, declFile);
+                const transport = et(init.expression, declFile);
                 if (transport) {
-                    const scope = indexed?.id
-                        ?? `${sym.id}:local:${node.text}:${decl.getStart(declFile.sf, false)}`;
+                    const scope = identity!;
                     const value: EmitterScope = [scope, transport];
-                    if (indexed)
-                        ctx.emitters.set(indexed.id, value);
+                    ctx.emitters.set(scope, value);
                     return value;
                 }
             }
@@ -999,18 +1068,19 @@ function emitterScope(expr: ts.Expression, sym: IndexSymbol, file: FileContext, 
     }
     if (isAccess(node)
         && node.expression.kind === K.ThisKeyword) {
-        const binding = typeImport(node, file, ctx);
+        const binding = ti(node, file, ctx);
         const transport = binding?.module === '@nestjs/event-emitter'
             ? 'nestjs-event-emitter'
             : binding?.module === 'node:events'
                 || binding?.module === 'events'
                 ? 'node-event-emitter'
                 : null;
-        const decl = symbolAt(node.name, ctx)?.valueDeclaration;
+        const decl = sy(node.name, ctx)?.valueDeclaration;
         const inferred = decl && isPropertyDecl(decl)
+            && sb(decl, ctx)
             && decl.initializer
-            && isNew(unwrap(decl.initializer))
-            ? emitterTransport((unwrap(decl.initializer) as ts.NewExpression).expression, contextFor(decl.getSourceFile(), ctx) ?? file)
+            && isNew(uw(decl.initializer))
+            ? et((uw(decl.initializer) as ts.NewExpression).expression, cx(decl.getSourceFile(), ctx) ?? file)
             : null;
         if (transport || inferred) {
             const className = sym.kind === 'method'
@@ -1024,24 +1094,24 @@ function emitterScope(expr: ts.Expression, sym: IndexSymbol, file: FileContext, 
     }
     return null;
 }
-function emitterTransport(expr: ts.Expression, file: FileContext): 'node-event-emitter' | 'nestjs-event-emitter' | null {
-    if (isImport(expr, file, ['node:events', 'events'], ['EventEmitter'])) {
+function et(expr: ts.Expression, file: FileContext): 'node-event-emitter' | 'nestjs-event-emitter' | null {
+    if (ii(expr, file, ['node:events', 'events'], ['EventEmitter'])) {
         return 'node-event-emitter';
     }
-    if (isImport(expr, file, ['@nestjs/event-emitter'], ['EventEmitter2'])) {
+    if (ii(expr, file, ['@nestjs/event-emitter'], ['EventEmitter2'])) {
         return 'nestjs-event-emitter';
     }
     return null;
 }
-function handlerValue(expr: ts.Expression, file: FileContext, ctx: CollectionState): IndexValue {
-    const node = unwrap(expr);
+function hv(expr: ts.Expression, file: FileContext, ctx: CollectionState): IndexValue {
+    const node = uw(expr);
     if (isArrow(node) || isFunction(node)) {
         const targets = new Set<string>();
         const visit = (child: ts.Node): void => {
             if (child !== node && (isArrow(child) || isFunction(child)))
                 return;
             if (isCall(child)) {
-                const target = callSymbol(child, file, ctx);
+                const target = cs(child, file, ctx);
                 if (target)
                     targets.add(target.id);
             }
@@ -1050,85 +1120,77 @@ function handlerValue(expr: ts.Expression, file: FileContext, ctx: CollectionSta
         visit(node.body);
         return targets.size === 1
             ? { kind: 'symbol', symbol_id: [...targets][0]! }
-            : unknown(targets.size > 1 ? 'ambiguous' : 'dynamic');
+            : uk(targets.size > 1 ? 'ambiguous' : 'dynamic');
     }
-    return readValue(node, file, ctx, { constants: false });
+    return rd(node, file, ctx, { constants: false });
 }
-type PersistenceSummary = readonly [
-  operation: IndexPersistenceOperation,
-  resource: IndexValue | undefined,
-  receiverType: string,
-]
-function storageEffect(
-  operation: IndexPersistenceOperation | null,
-  receiverType: string,
-  resource: ts.Expression | undefined,
-  file: FileContext,
-  ctx: CollectionState,
+type PersistenceSummary = readonly [operation: IndexPersistenceOperation, resource: IndexValue | undefined, receiverType: string]
+function se(
+  operation: IndexPersistenceOperation | null, receiverType: string,
+  resource: ts.Expression | undefined, file: FileContext, ctx: CollectionState,
 ): PersistenceSummary | null {
   return operation ? [
     operation,
-    resource ? readValue(resource, file, ctx, { constants: true }) : undefined,
+    resource ? rd(resource, file, ctx, { constants: true }) : undefined,
     receiverType,
   ] : null
 }
-function persistenceOperation(call: ts.CallExpression, file: FileContext, ctx: CollectionState): PersistenceSummary | null {
+function po(call: ts.CallExpression, file: FileContext, ctx: CollectionState): PersistenceSummary | null {
     const expr = call.expression;
     if (isIdentifier(expr)) {
         const binding = file.imports.get(expr.text);
-        if (binding && FS_MODULES.has(binding.module)) {
-            return storageEffect(fsOperation(binding.imported), `${binding.module}:${binding.imported}`, call.arguments[0], file, ctx);
+        if (binding && FSM.has(binding.module)) {
+            return se(fsop(binding.imported, call.arguments[1], file, ctx), `${binding.module}:${binding.imported}`, call.arguments[0], file, ctx);
         }
     }
     if (!isAccess(expr))
         return null;
     const method = expr.name.text;
     const receiver = expr.expression;
-    const root = leftmostIdentifier(receiver);
+    const root = li(receiver);
     const namespace = root ? file.imports.get(root.text) : undefined;
-    if (namespace?.namespace && FS_MODULES.has(namespace.module)) {
-        const summary = storageEffect(fsOperation(method), `${namespace.module}:namespace`, call.arguments[0], file, ctx);
+    if (namespace?.namespace && FSM.has(namespace.module)) {
+        const summary = se(fsop(method, call.arguments[1], file, ctx), `${namespace.module}:namespace`, call.arguments[0], file, ctx);
         if (summary)
             return summary;
     }
-    const type = receiverType(receiver, ctx);
-    const typeBinding = typeImport(receiver, file, ctx);
+    const type = rty(receiver, ctx);
+    const typeBinding = ti(receiver, file, ctx);
     if (typeBinding?.module === 'typeorm'
-        && ['Repository', 'MongoRepository'].includes(typeBinding.imported)
-        || packageDecl(receiver, ctx, '/node_modules/typeorm/')) {
-        const summary = storageEffect(repoOperation(method), type || `${typeBinding?.module}:${typeBinding?.imported}`, call.arguments[0], file, ctx);
+        && ['Repository', 'MongoRepository'].includes(typeBinding.imported)) {
+        const summary = se(typeormOperation(method), type || `${typeBinding.module}:${typeBinding.imported}`, call.arguments[0], file, ctx);
         if (summary)
             return summary;
     }
-    if (packageDecl(receiver, ctx, '/node_modules/@prisma/client/', '/node_modules/.prisma/client/')) {
-        const summary = storageEffect(repoOperation(method), type || 'PrismaClient', call.arguments[0], file, ctx);
+    if (pd(receiver, ctx, '/node_modules/@prisma/client/', '/node_modules/.prisma/client/')) {
+        const summary = se(prismaOperation(method), type || 'PrismaClient', call.arguments[0], file, ctx);
         if (summary)
             return summary;
     }
     if (method !== 'send'
         || !(typeBinding?.module === '@aws-sdk/client-s3'
             && typeBinding.imported === 'S3Client'
-            || packageDecl(receiver, ctx, '/node_modules/@aws-sdk/client-s3/')))
+            || pd(receiver, ctx, '/node_modules/@aws-sdk/client-s3/')))
         return null;
     const command = call.arguments[0];
-    if (command && isNew(unwrap(command))) {
-        const constructor = unwrap(command) as ts.NewExpression;
-        const binding = importedBinding(constructor.expression, file);
+    if (command && isNew(uw(command))) {
+        const constructor = uw(command) as ts.NewExpression;
+        const binding = ib(constructor.expression, file);
         if (binding?.module === '@aws-sdk/client-s3') {
             const writes = ['PutObjectCommand', 'UploadPartCommand', 'CompleteMultipartUploadCommand'];
             const reads = ['GetObjectCommand', 'HeadObjectCommand'];
-            return storageEffect(writes.includes(binding.imported) ? 'object_write'
+            return se(writes.includes(binding.imported) ? 'object_write'
                 : reads.includes(binding.imported) ? 'object_read' : null, type, constructor.arguments?.[0], file, ctx);
         }
     }
     return null;
 }
-function leftmostIdentifier(expr: ts.Expression): ts.Identifier | null {
+function li(expr: ts.Expression): ts.Identifier | null {
   let current = expr
   while (isAccess(current)) current = current.expression
   return isIdentifier(current) ? current : null
 }
-function packageDecl(expr: ts.Expression, ctx: CollectionState, ...packagePaths: readonly string[]): boolean {
+function pd(expr: ts.Expression, ctx: CollectionState, ...packagePaths: readonly string[]): boolean {
     const checker = ctx.input.checker;
     let current: ts.Expression = expr;
     while (true) {
@@ -1150,21 +1212,33 @@ function packageDecl(expr: ts.Expression, ctx: CollectionState, ...packagePaths:
         current = current.expression;
     }
 }
-function namedOperation(method: string, operations: Readonly<Record<string, IndexPersistenceOperation>>): IndexPersistenceOperation | null {
+function no(method: string, operations: Readonly<Record<string, IndexPersistenceOperation>>): IndexPersistenceOperation | null {
     return Object.hasOwn(operations, method) ? operations[method]! : null;
 }
-const fsOperation = (method: string): IndexPersistenceOperation | null => namedOperation(method, FS_OPERATIONS);
-const repoOperation = (method: string): IndexPersistenceOperation | null => namedOperation(method, REPOSITORY_OPERATIONS);
-function recordEffects(call: ts.CallExpression | ts.NewExpression, sym: IndexSymbol, file: FileContext, ctx: CollectionState): void {
+function fsop(
+  method: string, flags: ts.Expression | undefined, file: FileContext, ctx: CollectionState,
+): IndexPersistenceOperation | null {
+  if (!['open', 'openSync'].includes(method)) return no(method, FSO)
+  if (!flags) return null
+  const value = ss(rd(flags, file, ctx, { constants: true }))
+  if (!value) return null
+  if (value.includes('+') || /^[aw]/u.test(value)) return 'file_write'
+  return /^r(?:s|sr)?$/u.test(value) ? 'file_read' : null
+}
+const typeormOperation = (method: string): IndexPersistenceOperation | null =>
+  no(method, TOO)
+const prismaOperation = (method: string): IndexPersistenceOperation | null =>
+  no(method, PRO)
+function re(call: ts.CallExpression | ts.NewExpression, sym: IndexSymbol, file: FileContext, ctx: CollectionState): void {
     const proof = [call, 'high', 'framework'] as const;
     if (isNew(call)) {
-        if (isImport(call.expression, file, ['bullmq'], ['Worker'])
+        if (ii(call.expression, file, ['bullmq'], ['Worker'])
             && call.arguments?.[0]
             && call.arguments[1]) {
-            addEffect(ctx, sym.id, [
+            ae(ctx, sym.id, [
                 'bull-consume',
-                readValue(call.arguments[0], file, ctx, { constants: true }),
-                handlerValue(call.arguments[1], file, ctx),
+                rd(call.arguments[0], file, ctx, { constants: true }),
+                hv(call.arguments[1], file, ctx),
                 'bullmq', undefined, ...proof,
             ]);
         }
@@ -1174,20 +1248,20 @@ function recordEffects(call: ts.CallExpression | ts.NewExpression, sym: IndexSym
         const method = call.expression.name.text;
         const receiver = call.expression.expression;
         if (method === 'add' && call.arguments[0]) {
-            const queue = queueOrigin(receiver, sym, file, ctx);
+            const queue = qo(receiver, sym, file, ctx);
             if (queue) {
-                addEffect(ctx, sym.id, [
+                ae(ctx, sym.id, [
                     'bull-publish', queue[0],
-                    readValue(call.arguments[0], file, ctx, { constants: true }),
+                    rd(call.arguments[0], file, ctx, { constants: true }),
                     queue[1], undefined, ...proof,
                 ]);
             }
         }
-        const emitter = emitterScope(receiver, sym, file, ctx);
+        const emitter = es(receiver, sym, file, ctx);
         if (emitter && method === 'emit' && call.arguments[0]) {
-            addEffect(ctx, sym.id, [
+            ae(ctx, sym.id, [
                 'event-publish',
-                readValue(call.arguments[0], file, ctx, { constants: true }),
+                rd(call.arguments[0], file, ctx, { constants: true }),
                 undefined, emitter[1], emitter[0], ...proof,
             ]);
         }
@@ -1195,106 +1269,91 @@ function recordEffects(call: ts.CallExpression | ts.NewExpression, sym: IndexSym
             && ['addListener', 'on', 'once', 'prependListener'].includes(method)
             && call.arguments[0]
             && call.arguments[1]) {
-            addEffect(ctx, sym.id, [
+            ae(ctx, sym.id, [
                 'event-consume',
-                readValue(call.arguments[0], file, ctx, { constants: true }),
-                handlerValue(call.arguments[1], file, ctx),
+                rd(call.arguments[0], file, ctx, { constants: true }),
+                hv(call.arguments[1], file, ctx),
                 emitter[1], emitter[0], ...proof,
             ]);
         }
     }
-    const persistence = persistenceOperation(call, file, ctx);
+    const persistence = po(call, file, ctx);
     if (persistence) {
-        addEffect(ctx, sym.id, ['persistence', ...persistence, undefined, ...proof]);
+        ae(ctx, sym.id, ['persistence', ...persistence, undefined, ...proof]);
     }
 }
-function promiseCombinator(call: ts.CallExpression, ctx: CollectionState): {
-    combinator: 'all' | 'allSettled' | 'any' | 'race';
-    completion: 'all_or_first_rejection' | 'all_settled' | 'first_fulfilled' | 'first_settled';
+function pc(call: ts.CallExpression, ctx: CollectionState): {
+  combinator: 'all' | 'allSettled' | 'any' | 'race'
+  completion: 'all_or_first_rejection' | 'all_settled' | 'first_fulfilled' | 'first_settled'
 } | null {
     if (!isAccess(call.expression)
         || !isIdentifier(call.expression.expression)
         || call.expression.expression.text !== 'Promise') {
         return null;
     }
-    const symbol = symbolAt(call.expression.expression, ctx);
+    const symbol = sy(call.expression.expression, ctx);
     if (!symbol?.declarations?.some((decl) => decl.getSourceFile().isDeclarationFile
         && /\/typescript\/lib\/lib\..+\.d\.ts$/u.test(decl.getSourceFile().fileName.replaceAll('\\', '/'))))
         return null;
     const combinator = call.expression.name.text;
-    return Object.hasOwn(PROMISE_COMPLETIONS, combinator)
+    return Object.hasOwn(PMC, combinator)
         ? {
-            combinator: combinator as keyof typeof PROMISE_COMPLETIONS,
-            completion: PROMISE_COMPLETIONS[combinator as keyof typeof PROMISE_COMPLETIONS],
+            combinator: combinator as keyof typeof PMC,
+            completion: PMC[combinator as keyof typeof PMC],
         }
         : null;
 }
-function parallelSource(expr: ts.Expression | undefined, file: FileContext, ctx: CollectionState): IndexValue | undefined {
-    if (!expr)
-        return undefined;
-    const node = unwrap(expr);
-    if (isCall(node)
-        && isAccess(node.expression)
-        && node.expression.name.text === 'map') {
-        return readValue(node.expression.expression, file, ctx, { constants: true });
-    }
-    return readValue(node, file, ctx, { constants: true });
+function pl(expr: ts.Expression | undefined): readonly ts.Expression[] | null {
+    if (!expr) return null
+    const node = uw(expr);
+    if (!ts.isArrayLiteralExpression(node)
+      || node.elements.length > VELE
+      || node.elements.some((element) =>
+        ts.isOmittedExpression(element) || ts.isSpreadElement(element))) return null
+    return [...node.elements] as ts.Expression[]
 }
-function directParallelLanes(expr: ts.Expression | undefined): readonly ts.Expression[] {
-    if (!expr)
-        return [];
-    const node = unwrap(expr);
-    if (!ts.isArrayLiteralExpression(node))
-        return [];
-    return node.elements.flatMap((element) => ts.isOmittedExpression(element) || ts.isSpreadElement(element)
-        ? []
-        : [element]);
-}
-function mappedInput(expr: ts.Expression | undefined, file: FileContext, ctx: CollectionState): {
-    call: ts.CallExpression;
-    input: IndexValue;
-    receiver: ts.Expression;
+function mi(expr: ts.Expression | undefined, file: FileContext, ctx: CollectionState): {
+  call: ts.CallExpression; input: IndexValue; receiver: ts.Expression
 } | null {
     if (!expr)
         return null;
-    const node = unwrap(expr);
+    const node = uw(expr);
     if (!isCall(node)
         || !isAccess(node.expression)
         || node.expression.name.text !== 'map')
         return null;
-    const input = readValue(node.expression.expression, file, ctx, { constants: true });
+    const input = rd(node.expression.expression, file, ctx, { constants: true });
     return input.kind === 'array'
         ? { call: node, input, receiver: node.expression.expression }
         : null;
 }
-function exits(stmt: ts.Statement): boolean {
-  if (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) return true
+function ex(stmt: ts.Statement): boolean {
+  if (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)
+    || ts.isBreakStatement(stmt) || ts.isContinueStatement(stmt)) return true
   if (ts.isBlock(stmt)) {
     const last = stmt.statements.at(-1)
-    return last ? exits(last) : false
+    return last ? ex(last) : false
   }
   if (isIf(stmt) && stmt.elseStatement) {
-    return exits(stmt.thenStatement) && exits(stmt.elseStatement)
+    return ex(stmt.thenStatement) && ex(stmt.elseStatement)
   }
   return false
 }
-function guardContinuation(
-  stmt: ts.IfStatement,
-): BranchArm | 'unreachable' | null {
-  const thenExits = exits(stmt.thenStatement)
+function gc(stmt: ts.IfStatement): BranchArm | 'unreachable' | null {
+  const thenExits = ex(stmt.thenStatement)
   const elseExits = stmt.elseStatement
-    ? exits(stmt.elseStatement)
+    ? ex(stmt.elseStatement)
     : false
   if (thenExits && elseExits) return 'unreachable'
   if (thenExits) return 'else'
   return elseExits ? 'then' : null
 }
-function topLevelValue(decl: ts.VariableDeclaration, sym: IndexSymbol, file: FileContext, ctx: CollectionState): IndexValue | null {
+function tv(decl: ts.VariableDeclaration, sym: IndexSymbol, file: FileContext, ctx: CollectionState): IndexValue | null {
     if (!decl.initializer || decl.parent.parent.parent !== file.sf)
         return null;
-    const value = readValue(decl.initializer, file, ctx, {
+    const value = rd(decl.initializer, file, ctx, {
         constants: true,
-        secret: isIdentifier(decl.name) && SECRET_NAME.test(decl.name.text),
+        secret: isIdentifier(decl.name) && SNM.test(decl.name.text),
     });
     if (value.kind === 'unknown' || value.kind === 'symbol' || value.kind === 'parameter')
         return null;
@@ -1303,18 +1362,18 @@ function topLevelValue(decl: ts.VariableDeclaration, sym: IndexSymbol, file: Fil
         && value.value.length === 0) {
         return null;
     }
-    return sym.id === declSymbol(decl, file, ctx)?.id ? value : null;
+    return sym.id === ds(decl, file, ctx)?.id ? value : null;
 }
-function collectFacts(file: FileContext, ctx: CollectionState): void {
+function collect(file: FileContext, ctx: CollectionState): void {
   const visit = (
     node: ts.Node,
     control: readonly IndexControlFrame[],
     executeCallable = false,
   ): void => {
     if (ts.isDecorator(node)) return
-    const sym = ownerFor(node, file)
+    const sym = ow(node, file)
     if (ts.isFunctionLike(node)
-      && callableOwner(node, file, ctx)?.id !== sym?.id
+      && ca(node, file, ctx)?.id !== sym?.id
       && !executeCallable) return
     if (sym && control.length > INDEX_BODY_FACT_CONTROL_LIMIT) {
       ctx.overflow.add(sym.id)
@@ -1325,13 +1384,13 @@ function collectFacts(file: FileContext, ctx: CollectionState): void {
       for (const stmt of node.statements) {
         visit(stmt, nextControl)
         if (!isIf(stmt)) {
-          if (exits(stmt)) break
+          if (ex(stmt)) break
           continue
         }
-        const continuation = guardContinuation(stmt)
+        const continuation = gc(stmt)
         if (continuation === 'unreachable') break
         if (continuation) {
-          const base = factBase(
+          const base = fb(
             sym.id,
             'condition',
             stmt.expression,
@@ -1339,95 +1398,97 @@ function collectFacts(file: FileContext, ctx: CollectionState): void {
             nextControl,
             { statementNode: stmt },
           )
-          nextControl = branchFrame(nextControl, base.id, continuation)
+          nextControl = br(nextControl, base.id, continuation)
         }
       }
       return
     }
     if (sym && isVariable(node) && isIdentifier(node.name)) {
-      const value = topLevelValue(node, sym, file, ctx)
+      const value = tv(node, sym, file, ctx)
       if (value) {
-        addFact(ctx, {
-          ...factBase(sym.id, 'literal', node.initializer!, file, control, {
-            statementNode: statementFor(node),
+        af(ctx, {
+          ...fb(sym.id, 'literal', node.initializer!, file, control, {
+            statementNode: stmt(node),
           }),
           kind: 'literal',
           value,
           role: 'initializer',
         })
       }
-      if (node.initializer) {
-        const queue = queueOrigin(node.initializer, sym, file, ctx)
-        if (queue) {
-          const origins = ctx.queues.get(sym.id) ?? new Map<string, QueueOrigin>()
-          origins.set(node.name.text, queue)
-          ctx.queues.set(sym.id, origins)
-        }
-      }
     }
     if (sym && isIf(node)) {
-      const continuation = guardContinuation(node)
-      const base = addCondition(
+      const continuation = gc(node)
+      const base = ac(
         sym.id, continuation ? 'guard' : 'if',
         node.expression, file, ctx, control, node,
       )
       visit(node.expression, control)
-      visit(node.thenStatement, branchFrame(control, base.id, 'then'))
+      visit(node.thenStatement, br(control, base.id, 'then'))
       if (node.elseStatement) {
-        visit(node.elseStatement, branchFrame(control, base.id, 'else'))
+        visit(node.elseStatement, br(control, base.id, 'else'))
       }
       return
     }
     if (sym && ts.isSwitchStatement(node)) {
-      const base = addCondition(
+      const base = ac(
         sym.id, 'switch', node.expression, file, ctx, control, node,
       )
       visit(node.expression, control)
       for (const clause of node.caseBlock.clauses) {
         const arm = ts.isDefaultClause(clause)
           ? 'default' as const
-          : boundedText(
-              `case:${structuralText(clause.expression, file.sf)}`,
-              96,
-            ).replaceAll('\0', '') as `case:${string}`
+          : `case:${hash(`${clause.expression.getText(file.sf)}:${clause.pos}`).slice(0, 16)}` as const
         if (ts.isCaseClause(clause)) visit(clause.expression, control)
+        let armControl = br(control, base.id, arm)
         for (const stmt of clause.statements) {
-          visit(stmt, branchFrame(control, base.id, arm))
+          visit(stmt, armControl)
+          if (!isIf(stmt)) {
+            if (ex(stmt)) break
+            continue
+          }
+          const continuation = gc(stmt)
+          if (continuation === 'unreachable') break
+          if (continuation) armControl = br(
+            armControl, fb(
+              sym.id, 'condition', stmt.expression, file, armControl,
+              { statementNode: stmt },
+            ).id, continuation,
+          )
         }
       }
       return
     }
     if (sym && ts.isConditionalExpression(node)) {
-      const base = addCondition(
-        sym.id, 'ternary', node.condition, file, ctx, control, statementFor(node),
+      const base = ac(
+        sym.id, 'ternary', node.condition, file, ctx, control, stmt(node),
       )
       visit(node.condition, control)
-      visit(node.whenTrue, branchFrame(control, base.id, 'truthy'))
-      visit(node.whenFalse, branchFrame(control, base.id, 'falsy'))
+      visit(node.whenTrue, br(control, base.id, 'truthy'))
+      visit(node.whenFalse, br(control, base.id, 'falsy'))
       return
     }
-    const logical = isBinary(node) ? LOGICAL_FLOW.get(node.operatorToken.kind) : undefined
+    const logical = isBinary(node) ? LFL.get(node.operatorToken.kind) : undefined
     if (sym && isBinary(node) && logical) {
-      const base = addCondition(
-        sym.id, logical[0], node.left, file, ctx, control, statementFor(node),
+      const base = ac(
+        sym.id, logical[0], node.left, file, ctx, control, stmt(node),
       )
       visit(node.left, control)
-      visit(node.right, branchFrame(control, base.id, logical[1]))
+      visit(node.right, br(control, base.id, logical[1]))
       return
     }
-    const loop = loopDescriptor(node)
+    const loop = ld(node)
     if (sym && loop) {
-      const base = factBase(sym.id, 'loop', node, file, control)
+      const base = fb(sym.id, 'loop', node, file, control)
       const repeatedControl = [...control, {
         kind: 'loop' as const,
         controller_fact_id: base.id,
       }]
-      addFact(ctx, {
+      af(ctx, {
         ...base,
         kind: 'loop',
         loop_kind: loop.kind,
         ...(loop.test
-          ? { test: readValue(loop.test, file, ctx, { constants: true }) }
+          ? { test: rd(loop.test, file, ctx, { constants: true }) }
           : {}),
       })
       for (const setup of loop.once) visit(setup, control)
@@ -1446,57 +1507,65 @@ function collectFacts(file: FileContext, ctx: CollectionState): void {
       return
     }
     if (sym && ts.isReturnStatement(node)) {
-      addFact(ctx, {
-        ...factBase(sym.id, 'return', node, file, control),
+      af(ctx, {
+        ...fb(sym.id, 'return', node, file, control),
         kind: 'return',
         ...(node.expression
-          ? { value: readValue(node.expression, file, ctx, { constants: true }) }
+          ? { value: rd(node.expression, file, ctx, { constants: true }) }
           : {}),
       })
       if (node.expression) visit(node.expression, control)
       return
     }
     if (sym && ts.isThrowStatement(node)) {
-      addFact(ctx, {
-        ...factBase(sym.id, 'throw', node, file, control),
+      af(ctx, {
+        ...fb(sym.id, 'throw', node, file, control),
         kind: 'throw',
-        value: readValue(node.expression, file, ctx, { constants: true }),
+        value: rd(node.expression, file, ctx, { constants: true }),
       })
       visit(node.expression, control)
       return
     }
-    if (sym && isBinary(node) && ASSIGNMENT_OPERATORS.has(node.operatorToken.kind)) {
-      addMutation(sym.id, node, 'assign', node.left, file, ctx, control, node.right)
+    if (sym && isBinary(node) && AOP.has(node.operatorToken.kind)) {
+      am(sym.id, node, 'assign', node.left, file, ctx, control, node.right)
     } else if (
       sym
       && (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
       && [K.PlusPlusToken, K.MinusMinusToken].includes(node.operator)
     ) {
-      addMutation(
+      am(
         sym.id, node,
         node.operator === K.PlusPlusToken ? 'increment' : 'decrement',
         node.operand, file, ctx, control,
       )
     } else if (sym && ts.isDeleteExpression(node)) {
-      addMutation(sym.id, node, 'delete', node.expression, file, ctx, control)
+      am(sym.id, node, 'delete', node.expression, file, ctx, control)
     }
     if (sym && (isCall(node) || isNew(node))) {
-      const call = callFact(node, sym, file, ctx, control)
-      recordEffects(node, sym, file, ctx)
+      cf(node, sym, file, ctx, control)
+      re(node, sym, file, ctx)
       if (isCall(node)) {
-        const promise = promiseCombinator(node, ctx)
+        const promise = pc(node, ctx)
         if (promise) {
-          const base = factBase(sym.id, 'parallel', node, file, control)
+          const mapped = mi(node.arguments[0], file, ctx)
+          const lanes = mapped ? null : pl(node.arguments[0])
+          const input = mapped?.input ?? (lanes
+            ? rd(node.arguments[0]!, file, ctx, { constants: true })
+            : null)
+          if (!input || input.kind !== 'array'
+            || (lanes && lanes.length !== input.elements.length)) {
+            for (const argument of node.arguments) visit(argument, control)
+            return
+          }
+          const base = fb(sym.id, 'parallel', node, file, control)
           const before = ctx.facts.get(sym.id)?.length ?? 0
-          const input = parallelSource(node.arguments[0], file, ctx)
-          const mapped = mappedInput(node.arguments[0], file, ctx)
           if (mapped) {
-            callFact(mapped.call, sym, file, ctx, control)
-            recordEffects(mapped.call, sym, file, ctx)
-            const loopId = addIteration(sym.id, mapped.call, file, ctx, control)
+            cf(mapped.call, sym, file, ctx, control)
+            re(mapped.call, sym, file, ctx)
+            const loopId = ai(sym.id, mapped.call, file, ctx, control)
             visit(mapped.receiver, control)
             for (const argument of mapped.call.arguments) {
-              const callback = unwrap(argument)
+              const callback = uw(argument)
               const executes = isArrow(callback)
                 || isFunction(callback)
               visit(
@@ -1516,9 +1585,7 @@ function collectFacts(file: FileContext, ctx: CollectionState): void {
               )
             }
           } else {
-            for (const [lane, expr] of directParallelLanes(
-              node.arguments[0],
-            ).entries()) {
+            for (const [lane, expr] of lanes!.entries()) {
               visit(expr, [...control, {
                 kind: 'parallel',
                 controller_fact_id: base.id,
@@ -1533,21 +1600,21 @@ function collectFacts(file: FileContext, ctx: CollectionState): void {
                 frame.kind === 'parallel'
                 && frame.controller_fact_id === base.id))
             .map((fact) => fact.id)
-          addFact(ctx, {
+          af(ctx, {
             ...base,
             kind: 'parallel',
             ...promise,
-            lane_count: input?.kind === 'array' ? input.elements.length : 0,
-            ...(input ? { input } : {}),
+            lane_count: input.elements.length,
+            input,
             member_fact_ids: memberFactIds,
           })
           return
         }
         if (
           isAccess(node.expression)
-          && ARRAY_ITERATION_METHODS.has(node.expression.name.text)
+          && AIM.has(node.expression.name.text)
         ) {
-          const input = readValue(
+          const input = rd(
             node.expression.expression,
             file,
             ctx,
@@ -1558,9 +1625,9 @@ function collectFacts(file: FileContext, ctx: CollectionState): void {
             for (const argument of node.arguments) visit(argument, control)
             return
           }
-          const loopId = addIteration(sym.id, node, file, ctx, control)
+          const loopId = ai(sym.id, node, file, ctx, control)
           for (const argument of node.arguments) {
-            const callback = unwrap(argument)
+            const callback = uw(argument)
             visit(argument, [...control, {
               kind: 'loop',
               controller_fact_id: loopId,
@@ -1569,10 +1636,11 @@ function collectFacts(file: FileContext, ctx: CollectionState): void {
           return
         }
         const arrayMutation = isAccess(node.expression)
-          ? ARRAY_MUTATIONS.get(node.expression.name.text)
+          ? AMU.get(node.expression.name.text)
           : undefined
-        if (arrayMutation && isAccess(node.expression)) {
-          addMutation(
+        if (arrayMutation && isAccess(node.expression)
+          && iar(node.expression.expression, ctx)) {
+          am(
             sym.id, node, arrayMutation, node.expression.expression, file, ctx,
             control, arrayMutation === 'append' ? node.arguments[0] : undefined, 1,
           )
@@ -1583,12 +1651,9 @@ function collectFacts(file: FileContext, ctx: CollectionState): void {
   }
   visit(file.sf, [])
 }
-function loopDescriptor(node: ts.Node): {
-  kind: 'for' | 'for_in' | 'for_of' | 'while' | 'do_while'
-  test?: ts.Expression
-  once: readonly ts.Node[]
-  repeated: readonly ts.Node[]
-  body: ts.Statement
+function ld(node: ts.Node): {
+  kind: 'for' | 'for_in' | 'for_of' | 'while' | 'do_while'; test?: ts.Expression
+  once: readonly ts.Node[]; repeated: readonly ts.Node[]; body: ts.Statement
 } | null {
   if (ts.isForStatement(node)) {
     const once: ts.Node[] = []
@@ -1624,32 +1689,30 @@ function loopDescriptor(node: ts.Node): {
   }
   return null
 }
-function decorators(node: ts.Node): readonly ts.Decorator[] {
+function dc(node: ts.Node): readonly ts.Decorator[] {
   return ts.canHaveDecorators(node) ? ts.getDecorators(node) ?? [] : []
 }
-function bullDecoratorValue(
-  node: ts.Node,
-  name: 'InjectQueue' | 'Processor' | 'Process',
-  file: FileContext,
-  ctx: CollectionState,
+function bv(
+  node: ts.Node, name: 'InjectQueue' | 'Processor' | 'Process',
+  file: FileContext, ctx: CollectionState,
 ): { value: IndexValue; transport: QueueTransport } | null {
   let result: { value: IndexValue; transport: QueueTransport } | null = null
-  for (const decorator of decorators(node)) {
+  for (const decorator of dc(node)) {
     if (!isCall(decorator.expression)) continue
     const call = decorator.expression
     if (!call.arguments[0]) continue
-    const binding = importedBinding(call.expression, file)
+    const binding = ib(call.expression, file)
     if (binding?.imported === name
       && ['@nestjs/bull', '@nestjs/bullmq'].includes(binding.module)) {
       result = {
-        value: readValue(call.arguments[0], file, ctx, { constants: true }),
+        value: rd(call.arguments[0], file, ctx, { constants: true }),
         transport: binding.module === '@nestjs/bull' ? 'bull' : 'bullmq',
       }
     }
   }
   return result
 }
-function collectNest(file: FileContext, ctx: CollectionState): void {
+function cnest(file: FileContext, ctx: CollectionState): void {
   for (const stmt of file.sf.statements) {
     if (!ts.isClassDeclaration(stmt) || !stmt.name) continue
     const classKey = `${file.fileId}\0${stmt.name.text}`
@@ -1659,7 +1722,7 @@ function collectNest(file: FileContext, ctx: CollectionState): void {
       if (!ts.isConstructorDeclaration(member)) continue
       for (const parameter of member.parameters) {
         if (!isIdentifier(parameter.name)) continue
-        const queue = bullDecoratorValue(parameter, 'InjectQueue', file, ctx)
+        const queue = bv(parameter, 'InjectQueue', file, ctx)
         if (queue) {
           properties.set(parameter.name.text, [queue.value, queue.transport])
         }
@@ -1668,65 +1731,77 @@ function collectNest(file: FileContext, ctx: CollectionState): void {
     if (properties.size > 0) ctx.nestQueues.set(classKey, properties)
   }
 }
-function collectNestConsumers(file: FileContext, ctx: CollectionState): void {
+function nc(file: FileContext, ctx: CollectionState): void {
   for (const stmt of file.sf.statements) {
     if (!ts.isClassDeclaration(stmt) || !stmt.name) continue
-    const queue = bullDecoratorValue(stmt, 'Processor', file, ctx)
+    const queue = bv(stmt, 'Processor', file, ctx)
     if (!queue) continue
     for (const member of stmt.members) {
       if (!ts.isMethodDeclaration(member) || !member.name || !isIdentifier(member.name)) continue
-      const symbol = declSymbol(member, file, ctx)
+      const symbol = ds(member, file, ctx)
       if (!symbol) continue
-      const job = bullDecoratorValue(member, 'Process', file, ctx)
+      const job = bv(member, 'Process', file, ctx)
       if (job?.transport === queue.transport) {
-        const queueKey = staticString(queue.value)
-        const jobKey = staticString(job.value)
+        const queueKey = ss(queue.value)
+        const jobKey = ss(job.value)
         if (queueKey && jobKey) {
-          const queueNode = channel(ctx, {
+          const queueNode = ch(ctx, {
             channel_kind: 'queue',
             transport: queue.transport,
             key: queueKey,
           })
-          const jobNode = channel(ctx, {
+          const jobNode = ch(ctx, {
             channel_kind: 'job',
             transport: queue.transport,
             key: jobKey,
             parent_channel_id: queueNode.id,
           })
-          appendChannelEdge(ctx, symbol.id, jobNode.id, symbol.id, 'consumed_by', member, file, 'framework-decorator')
-          appendChannelEdge(ctx, symbol.id, jobNode.id, queueNode.id, 'routes_through', member, file, 'framework-decorator')
+          ce(ctx, symbol.id, jobNode.id, symbol.id, 'consumed_by', member, file, 'framework-decorator')
+          ce(ctx, symbol.id, jobNode.id, queueNode.id, 'routes_through', member, file, 'framework-decorator')
         }
       } else if (!job && member.name.text === 'process') {
-        const queueKey = staticString(queue.value)
+        const queueKey = ss(queue.value)
         if (queueKey) {
-          const queueNode = channel(ctx, {
+          const queueNode = ch(ctx, {
             channel_kind: 'queue',
             transport: queue.transport,
             key: queueKey,
           })
-          appendChannelEdge(ctx, symbol.id, queueNode.id, symbol.id, 'consumed_by', member, file, 'framework-decorator')
+          ce(ctx, symbol.id, queueNode.id, symbol.id, 'consumed_by', member, file, 'framework-decorator')
         }
       }
     }
   }
 }
-function expandedEffects(ownerId: string, ctx: CollectionState, depth: number, stack: ReadonlySet<string>): ExecutionEffect[] {
+function ee(ownerId: string, ctx: CollectionState, depth: number, stack: ReadonlySet<string>): ExecutionEffect[] {
     const direct = [...(ctx.effects.get(ownerId) ?? [])];
-    if (depth >= MAX_WRAPPER_HOPS || stack.has(ownerId))
+    if (direct.length > EMAX) {
+        ctx.overflow.add(ownerId);
+        return [];
+    }
+    if (depth >= WHOP || stack.has(ownerId))
         return direct;
     const nextStack = new Set(stack);
     nextStack.add(ownerId);
     for (const call of ctx.calls.get(ownerId) ?? []) {
         if (nextStack.has(call[0]))
             continue;
-        const nested = expandedEffects(call[0], ctx, depth + 1, nextStack);
+        const nested = ee(call[0], ctx, depth + 1, nextStack);
+        if (ctx.overflow.has(call[0])) {
+            ctx.overflow.add(ownerId);
+            return [];
+        }
         for (const fx of nested) {
-            direct.push(instantiateEffect(fx, call[1], call[2]));
+            if (direct.length >= EMAX) {
+                ctx.overflow.add(ownerId);
+                return [];
+            }
+            direct.push(ie(fx, call[1], call[2]));
         }
     }
-    return dedupeEffects(direct);
+    return de(direct);
 }
-function dedupeEffects(effects: readonly ExecutionEffect[]): ExecutionEffect[] {
+function de(effects: readonly ExecutionEffect[]): ExecutionEffect[] {
   const values = new Map<string, ExecutionEffect>()
   for (const fx of effects) {
     const witness = fx[5]
@@ -1741,7 +1816,7 @@ function dedupeEffects(effects: readonly ExecutionEffect[]): ExecutionEffect[] {
   return [...values.values()]
 }
 type ChannelDescriptor = Omit<IndexChannelNode, 'id' | 'node_kind'>
-function channel(ctx: CollectionState, descriptor: ChannelDescriptor): IndexChannelNode {
+function ch(ctx: CollectionState, descriptor: ChannelDescriptor): IndexChannelNode {
   const id = indexChannelId(descriptor)
   const node: IndexChannelNode = {
     id,
@@ -1755,18 +1830,13 @@ function channel(ctx: CollectionState, descriptor: ChannelDescriptor): IndexChan
   ctx.channels.set(id, node)
   return node
 }
-function appendChannelEdge(
-  ctx: CollectionState,
-  ownerId: string,
-  from: string,
-  to: string,
+function ce(
+  ctx: CollectionState, ownerId: string, from: string, to: string,
   kind: Extract<IndexEdge['kind'], 'publishes_to' | 'routes_through' | 'consumed_by'>,
-  witness: ts.Node,
-  file: FileContext,
-  source: IndexEdge['source'],
+  witness: ts.Node, file: FileContext, source: IndexEdge['source'],
   confidence: Confidence = 'high',
 ): void {
-  const evidence = evidenceFor(witness, file.sf, file.fileId)
+  const evidence = ev(witness, file.sf, file.fileId)
   ctx.edges.push({
     from,
     to,
@@ -1777,17 +1847,17 @@ function appendChannelEdge(
     metadata: { execution_owner_id: ownerId },
   })
 }
-function edgeSource(source: IndexFactSource): IndexEdge['source'] {
+function edgeS(source: IndexFactSource): IndexEdge['source'] {
   if (source === 'framework') return 'framework-decorator'
   return source
 }
-function fileContextForNode(node: ts.Node, ctx: CollectionState, filesById: ReadonlyMap<string, FileContext>): FileContext | null {
+function fn(node: ts.Node, ctx: CollectionState, filesById: ReadonlyMap<string, FileContext>): FileContext | null {
     const fileId = ctx.input.pathToFileId.get(node.getSourceFile().fileName);
     return fileId ? filesById.get(fileId) ?? null : null;
 }
-function unresolved(ctx: CollectionState, ownerId: string, fx: ExecutionEffect, file: FileContext): void {
+function ur(ctx: CollectionState, ownerId: string, fx: ExecutionEffect, file: FileContext): void {
     const witness = fx[5];
-    const id = `canonical-index.execution.unresolved.${sha256([
+    const id = `canonical-index.execution.unresolved.${hash([
         ownerId,
         fx[0],
         file.fileId,
@@ -1803,44 +1873,44 @@ function unresolved(ctx: CollectionState, ownerId: string, fx: ExecutionEffect, 
         message: `Dynamic or ambiguous ${fx[0]} identity; unresolved channel parts were omitted`,
         evidence: {
             file_id: file.fileId,
-            range: rangeOf(witness, file.sf),
+            range: ro(witness, file.sf),
         },
     });
 }
-function projectEffects(ctx: CollectionState, filesById: ReadonlyMap<string, FileContext>): void {
-  for (const sym of ctx.input.symbols.filter(isOwnerSymbol)) {
+function pe(ctx: CollectionState, filesById: ReadonlyMap<string, FileContext>): void {
+  for (const sym of ctx.input.symbols.filter(io)) {
     if (ctx.overflow.has(sym.id)) continue
-    for (const fx of expandedEffects(sym.id, ctx, 0, new Set())) {
+    for (const fx of ee(sym.id, ctx, 0, new Set())) {
       if (ctx.overflow.has(sym.id)) break
       const [kind, primary, endpoint, qualifier, scope, witness, confidence, source] = fx
-      const file = fileContextForNode(witness, ctx, filesById)
+      const file = fn(witness, ctx, filesById)
       if (!file) continue
       const emit = (
         fromId: string,
         toId: string,
         relation: 'publishes_to' | 'consumed_by' | 'routes_through',
-      ): void => appendChannelEdge(
+      ): void => ce(
         ctx, sym.id, fromId, toId, relation, witness, file,
-        edgeSource(source), confidence,
+        edgeS(source), confidence,
       )
       if (kind === 'bull-publish') {
-        const queueKey = staticString(primary)
-        const jobKey = staticString(endpoint)
+        const queueKey = ss(primary)
+        const jobKey = ss(endpoint)
         if (!queueKey) {
-          unresolved(ctx, sym.id, fx, file)
+          ur(ctx, sym.id, fx, file)
           continue
         }
-        const queueNode = channel(ctx, {
+        const queueNode = ch(ctx, {
           channel_kind: 'queue',
           transport: qualifier,
           key: queueKey,
         })
         if (!jobKey) {
           emit(sym.id, queueNode.id, 'publishes_to')
-          unresolved(ctx, sym.id, fx, file)
+          ur(ctx, sym.id, fx, file)
           continue
         }
-        const jobNode = channel(ctx, {
+        const jobNode = ch(ctx, {
           channel_kind: 'job',
           transport: qualifier,
           key: jobKey,
@@ -1849,27 +1919,27 @@ function projectEffects(ctx: CollectionState, filesById: ReadonlyMap<string, Fil
         emit(sym.id, jobNode.id, 'publishes_to')
         emit(jobNode.id, queueNode.id, 'routes_through')
       } else if (kind === 'bull-consume') {
-        const queueKey = staticString(primary)
-        const handlerId = symbolId(endpoint)
+        const queueKey = ss(primary)
+        const handlerId = si(endpoint)
         if (!queueKey || !handlerId || !ctx.symbolsById.has(handlerId)) {
-          unresolved(ctx, sym.id, fx, file)
+          ur(ctx, sym.id, fx, file)
           continue
         }
-        const queueNode = channel(ctx, {
+        const queueNode = ch(ctx, {
           channel_kind: 'queue',
           transport: qualifier,
           key: queueKey,
         })
         emit(queueNode.id, handlerId, 'consumed_by')
       } else if (kind === 'event-publish' || kind === 'event-consume') {
-        const eventKey = staticString(primary)
-        const handlerId = kind === 'event-consume' ? symbolId(endpoint!) : null
+        const eventKey = ss(primary)
+        const handlerId = kind === 'event-consume' ? si(endpoint!) : null
         if (!eventKey || (kind === 'event-consume'
           && (!handlerId || !ctx.symbolsById.has(handlerId)))) {
-          unresolved(ctx, sym.id, fx, file)
+          ur(ctx, sym.id, fx, file)
           continue
         }
-        const eventNode = channel(ctx, {
+        const eventNode = ch(ctx, {
           channel_kind: 'event',
           transport: qualifier,
           key: eventKey,
@@ -1886,7 +1956,7 @@ function projectEffects(ctx: CollectionState, filesById: ReadonlyMap<string, Fil
         const resource = persistence[2]
         const receiverType = persistence[3]
         const callFactId = ctx.callIds.get(witness)
-          ?? findCallId(sym.id, witness, ctx)
+          ?? fi(sym.id, witness, ctx)
         if (!callFactId || !receiverType) continue
         const ownerFacts = ctx.facts.get(sym.id) ?? []
         const existing = ownerFacts.some((fact) =>
@@ -1896,8 +1966,8 @@ function projectEffects(ctx: CollectionState, filesById: ReadonlyMap<string, Fil
         if (existing) continue
         const callControl = ownerFacts.find((fact) =>
           fact.id === callFactId)?.control ?? []
-        addFact(ctx, {
-          ...factBase(
+        af(ctx, {
+          ...fb(
             sym.id,
             'persistence',
             witness,
@@ -1918,20 +1988,20 @@ function projectEffects(ctx: CollectionState, filesById: ReadonlyMap<string, Fil
     }
   }
 }
-function findCallId(ownerId: string, witness: ts.Node, ctx: CollectionState): string | null {
+function fi(ownerId: string, witness: ts.Node, ctx: CollectionState): string | null {
     const sf = witness.getSourceFile();
-    const range = rangeOf(witness, sf);
+    const range = ro(witness, sf);
     return ctx.facts.get(ownerId)?.find((fact) => fact.kind === 'call'
         && fact.evidence.range.start.line === range.start.line
         && fact.evidence.range.start.column === range.start.column
         && fact.evidence.range.end.line === range.end.line
         && fact.evidence.range.end.column === range.end.column)?.id ?? null;
 }
-function attachFacts(ctx: CollectionState): void {
+function at(ctx: CollectionState): void {
     for (const symbol of ctx.input.symbols) {
         if (ctx.overflow.has(symbol.id)) {
             ctx.diagnostics.push({
-                id: `canonical-index.execution.owner-bound.${sha256(symbol.id).slice(0, 16)}`,
+                id: `canonical-index.execution.owner-bound.${hash(symbol.id).slice(0, 16)}`,
                 level: 'error',
                 message: `Execution facts exceeded a per-owner safety bound for ${symbol.name}; body facts were omitted`,
                 evidence: { file_id: symbol.file_id, range: symbol.range },
@@ -1944,7 +2014,7 @@ function attachFacts(ctx: CollectionState): void {
         const byId = new Map<string, IndexBodyFact>();
         for (const fact of facts)
             byId.set(fact.id, fact);
-        const sorted = [...byId.values()].sort((left, right) => compareOrder(left.order, right.order) || compareText(left.id, right.id));
+        const sorted = [...byId.values()].sort((left, right) => co(left.order, right.order) || ct(left.id, right.id));
         try {
             const encoded = encodeIndexBodyFactTable(sorted);
             const normalized = decodeIndexBodyFactTable(encoded, symbol.id, symbol.file_id);
@@ -1957,7 +2027,7 @@ function attachFacts(ctx: CollectionState): void {
                 throw new Error(`Invalid execution facts for ${symbol.name}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
             }
             ctx.diagnostics.push({
-                id: `canonical-index.execution.owner-bound.${sha256(symbol.id).slice(0, 16)}`,
+                id: `canonical-index.execution.owner-bound.${hash(symbol.id).slice(0, 16)}`,
                 level: 'error',
                 message: `Execution facts exceeded a per-owner safety bound for ${symbol.name}; body facts were omitted`,
                 evidence: { file_id: symbol.file_id, range: symbol.range },
@@ -1965,7 +2035,7 @@ function attachFacts(ctx: CollectionState): void {
         }
     }
 }
-function sortEdges(edges: readonly IndexEdge[]): IndexEdge[] {
+function sort(edges: readonly IndexEdge[]): IndexEdge[] {
     const structuralRoutes = new Map<string, IndexEdge>();
     const retained: IndexEdge[] = [];
     for (const edge of edges) {
@@ -1976,11 +2046,11 @@ function sortEdges(edges: readonly IndexEdge[]): IndexEdge[] {
         const key = `${edge.from}\u0000${edge.to}\u0000${edge.kind}`;
         const existing = structuralRoutes.get(key);
         if (!existing
-            || compareText(JSON.stringify(edge), JSON.stringify(existing)) < 0) {
+            || ct(JSON.stringify(edge), JSON.stringify(existing)) < 0) {
             structuralRoutes.set(key, edge);
         }
     }
-    return [...retained, ...structuralRoutes.values()].sort((left, right) => compareText(JSON.stringify(left), JSON.stringify(right)));
+    return [...retained, ...structuralRoutes.values()].sort((left, right) => ct(JSON.stringify(left), JSON.stringify(right)));
 }
 export function collectExecutionSemantics(input: CollectExecutionInput): CollectExecutionResult {
   const symbolsById = new Map(input.symbols.map((symbol) => [symbol.id, symbol]))
@@ -1996,7 +2066,8 @@ export function collectExecutionSemantics(input: CollectExecutionInput): Collect
     edges: [],
     diagnostics: [],
     seenDiagnostics: new Set(),
-    queues: new Map(),
+    unstable: new Set(),
+    mapQueues: new Map(),
     emitters: new Map(),
     nestQueues: new Map(),
     files: new Map(),
@@ -2008,26 +2079,27 @@ export function collectExecutionSemantics(input: CollectExecutionInput): Collect
     const file: FileContext = {
       sf,
       fileId,
-      imports: importsFor(sf),
-      owners: owners(sf, input.symbolsByFile.get(fileId) ?? []),
+      imports: im(sf),
+      owners: os(sf, input.symbolsByFile.get(fileId) ?? []),
     }
     filesById.set(fileId, file)
     ctx.files.set(sf, file)
   }
+  prep(ctx)
   for (const file of filesById.values()) {
-    collectNest(file, ctx)
+    cnest(file, ctx)
   }
   for (const file of filesById.values()) {
-    collectFacts(file, ctx)
-    collectNestConsumers(file, ctx)
+    collect(file, ctx)
+    nc(file, ctx)
   }
-  projectEffects(ctx, filesById)
-  attachFacts(ctx)
+  pe(ctx, filesById)
+  at(ctx)
   return {
     channels: [...ctx.channels.values()].sort((left, right) =>
-      compareText(left.id, right.id)),
-    edges: sortEdges(ctx.edges),
+      ct(left.id, right.id)),
+    edges: sort(ctx.edges),
     diagnostics: [...ctx.diagnostics].sort((left, right) =>
-      compareText(left.id, right.id)),
+      ct(left.id, right.id)),
   }
 }

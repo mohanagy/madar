@@ -156,18 +156,17 @@ export type IndexPersistenceFact = Fact<'persistence', {
 export type IndexBodyFact = IndexCallFact | IndexLiteralFact | IndexConditionFact
   | IndexLoopFact | IndexParallelFact | IndexReturnFact | IndexThrowFact
   | IndexMutationFact | IndexPersistenceFact
-/**
- * Binds an operation identity to its owner, stable AST order, and authenticated
- * statement bytes. Query-index validation recomputes this value so a
- * well-shaped but replaced excerpt digest cannot silently become ready.
- */
+/** Creates a draft collector ID, or a sealed ID when given canonical wire semantics. */
 export function indexBodyFactId(
   ownerSymbolId: string,
   kind: IndexBodyFact['kind'],
   order: readonly number[],
   excerptSha256: IndexSha256,
+  semantics?: readonly unknown[],
 ): string {
-  const identity = [ownerSymbolId, kind, order.join('.'), excerptSha256].join('\u0000')
+  const identity = semantics
+    ? JSON.stringify([ownerSymbolId, ...semantics])
+    : [ownerSymbolId, kind, order.join('.'), excerptSha256].join('\u0000')
   return `operation:${createHash('sha256').update(identity, 'utf8')
     .digest('hex').slice(0, 32)}`
 }
@@ -175,56 +174,56 @@ export function indexBodyFactId(
 export type IndexBodyFactTable = readonly [version: 1, rows: readonly string[]]
 export const INDEX_BODY_FACT_CONTROL_LIMIT = 64
 export class IndexBodyFactBoundsError extends Error {}
-function enumPos(values: readonly string[], value: string): number {
+function ep(values: readonly string[], value: string): number {
   const index = values.indexOf(value)
   if (index < 0) throw new Error(`Unsupported execution value ${value}`)
   return index
 }
-function orderCmp(left: readonly number[], right: readonly number[]): number {
+function oc(left: readonly number[], right: readonly number[]): number {
   for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
     const difference = left[index]! - right[index]!
     if (difference !== 0) return difference
   }
   return left.length - right.length
 }
-function isDense(value: readonly unknown[]): boolean {
+function dn(value: readonly unknown[]): boolean {
   for (let index = 0; index < value.length; index += 1)
     if (!Object.hasOwn(value, index)) return false
   return true
 }
-function scalar(value: unknown): value is IndexScalarValue {
+function sc(value: unknown): value is IndexScalarValue {
   return (value === null || ['string', 'number', 'boolean'].includes(typeof value))
     && !(typeof value === 'number' && (!Number.isFinite(value) || Object.is(value, -0)))
     && !(typeof value === 'string' && Buffer.byteLength(value, 'utf8') > MAX_TEXT)
 }
-function packVal(value: IndexValue, depth = 0): unknown {
+function pv(value: IndexValue, depth = 0): unknown {
   const nestedCount = value.kind === 'array' ? value.elements.length
     : value.kind === 'object' ? value.entries.length
       : value.kind === 'template' ? value.parts.length : 0
   if (depth > MAX_DEPTH || (depth === MAX_DEPTH && nestedCount > 0))
-    return [7, enumPos(UNKNOWN, 'unsupported')]
+    return [7, ep(UNKNOWN, 'unsupported')]
   switch (value.kind) {
     case 'literal':
-      if (!scalar(value.value)) throw new Error('Execution literal is not JSON-lossless')
+      if (!sc(value.value)) throw new Error('Execution literal is not JSON-lossless')
       return [0, value.value]
     case 'symbol':
-      if (!validText(value.symbol_id, 1_024))
+      if (!vt(value.symbol_id, 1_024))
         throw new Error('Execution symbol reference is invalid')
       return [1, value.symbol_id]
     case 'parameter':
-      if (!safeInt(value.position)
+      if (!si(value.position)
         || (value.scope !== undefined && value.scope !== 'iteration'))
         throw new Error('Execution parameter position is invalid')
       return value.scope === 'iteration'
         ? [2, value.position, 1]
         : [2, value.position]
     case 'array':
-      if (value.elements.length > MAX_ELEMENTS || !isDense(value.elements))
+      if (value.elements.length > MAX_ELEMENTS || !dn(value.elements))
         throw new Error('Execution array exceeds its element bound')
-      return [3, value.elements.map((entry) => packVal(entry, depth + 1))]
+      return [3, value.elements.map((entry) => pv(entry, depth + 1))]
     case 'object': {
       const keys = new Set<string>()
-      if (value.entries.length > MAX_ELEMENTS || !isDense(value.entries))
+      if (value.entries.length > MAX_ELEMENTS || !dn(value.entries))
         throw new Error('Execution object exceeds its element bound')
       for (const entry of value.entries) {
         if (Buffer.byteLength(entry.key, 'utf8') > MAX_TEXT
@@ -233,22 +232,22 @@ function packVal(value: IndexValue, depth = 0): unknown {
         keys.add(entry.key)
       }
       return [4, value.entries.map((entry) => [
-        entry.key, packVal(entry.value, depth + 1),
+        entry.key, pv(entry.value, depth + 1),
       ])]
     }
     case 'template':
-      if (value.parts.length > MAX_ELEMENTS || !isDense(value.parts))
+      if (value.parts.length > MAX_ELEMENTS || !dn(value.parts))
         throw new Error('Execution template exceeds its element bound')
-      return [5, value.parts.map((entry) => packVal(entry, depth + 1))]
+      return [5, value.parts.map((entry) => pv(entry, depth + 1))]
     case 'redacted':
-      if (!SHA256.test(value.sha256) || !safeInt(value.byte_length))
+      if (!SHA256.test(value.sha256) || !si(value.byte_length))
         throw new Error('Execution redaction is invalid')
       return [6, value.sha256, value.byte_length]
-    case 'unknown': return [7, enumPos(UNKNOWN, value.reason)]
+    case 'unknown': return [7, ep(UNKNOWN, value.reason)]
   }
   throw new Error('Unsupported execution value')
 }
-function packEvidence(proof: IndexFactEvidence): unknown {
+function pe(proof: IndexFactEvidence): unknown {
   return [
     proof.range.start.line, proof.range.start.column,
     proof.range.end.line, proof.range.end.column,
@@ -264,9 +263,9 @@ export function encodeIndexBodyFactTable(
       'Execution fact table is outside its row bound',
     )
   }
-  if (!isDense(facts)) throw new Error('Execution fact table is sparse')
+  if (!dn(facts)) throw new Error('Execution fact table is sparse')
   const ordered = [...facts].sort((left, right) =>
-    orderCmp(left.order, right.order)
+    oc(left.order, right.order)
     || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
   const ordinals = new Map(ordered.map((fact, index) => [fact.id, index]))
   if (ordinals.size !== ordered.length)
@@ -278,7 +277,7 @@ export function encodeIndexBodyFactTable(
   }
   const control = (frame: IndexControlFrame): unknown => {
     if (frame.kind === 'branch') {
-      if (!validText(frame.arm, 96)
+      if (!vt(frame.arm, 96)
         || (!['then', 'else', 'truthy', 'falsy', 'nullish', 'default'].includes(frame.arm)
           && !(frame.arm.startsWith('case:') && frame.arm.length > 5))) {
         throw new Error('Execution branch arm is invalid')
@@ -287,12 +286,12 @@ export function encodeIndexBodyFactTable(
     }
     if (frame.kind === 'loop') return [1, ordinal(frame.controller_fact_id)]
     if (frame.kind === 'parallel') {
-      if (frame.lane !== 'each' && !safeInt(frame.lane))
+      if (frame.lane !== 'each' && !si(frame.lane))
         throw new Error('Execution parallel lane is invalid')
       return [2, ordinal(frame.controller_fact_id), frame.lane]
     }
     if (frame.kind === 'exception')
-      return [3, enumPos(['try', 'catch', 'finally'], frame.arm)]
+      return [3, ep(['try', 'catch', 'finally'], frame.arm)]
     throw new Error('Unsupported execution control frame')
   }
   let bytes = 0
@@ -300,79 +299,85 @@ export function encodeIndexBodyFactTable(
   const rows = ordered.map((fact) => {
     const orderKey = fact.order.join('.')
     if (fact.order.length !== 4
-      || !isDense(fact.order) || !fact.order.every((value) => safeInt(value))
-      || !isDense(fact.control)
+      || !dn(fact.order) || !fact.order.every((value) => si(value))
+      || !dn(fact.control)
       || fact.control.length > INDEX_BODY_FACT_CONTROL_LIMIT
-      || fact.order[1] !== enumPos(KINDS, fact.kind)
-      || orderKeys.has(orderKey)
-      || fact.id !== indexBodyFactId(fact.owner_symbol_id, fact.kind, fact.order,
-        fact.evidence.excerpt_sha256)) {
+      || fact.order[1] !== ep(KINDS, fact.kind)
+      || orderKeys.has(orderKey)) {
       throw new Error(`Invalid execution fact identity ${fact.id}`)
     }
     orderKeys.add(orderKey)
     let wire: unknown
     switch (fact.kind) {
       case 'call':
-        if (!isDense(fact.arguments)) throw new Error(`Sparse call arguments for ${fact.id}`)
+        if (!dn(fact.arguments)) throw new Error(`Sparse call arguments for ${fact.id}`)
         wire = [
           fact.callee, fact.target_symbol_id ?? null,
-          fact.arguments.map(packVal), enumPos(TIMING, fact.scheduling),
+          fact.arguments.map(pv), ep(TIMING, fact.scheduling),
         ]
         break
       case 'literal':
-        wire = [packVal(fact.value), enumPos(ROLES, fact.role)]
+        wire = [pv(fact.value), ep(ROLES, fact.role)]
         break
       case 'condition':
         wire = [
-          enumPos(CONDITIONS, fact.condition_kind),
-          fact.test ? packVal(fact.test) : null,
+          ep(CONDITIONS, fact.condition_kind),
+          fact.test ? pv(fact.test) : null,
         ]
         break
       case 'loop':
         wire = [
-          enumPos(LOOPS, fact.loop_kind),
-          fact.test ? packVal(fact.test) : null,
+          ep(LOOPS, fact.loop_kind),
+          fact.test ? pv(fact.test) : null,
         ]
         break
       case 'parallel': {
-        const combinator = enumPos(PROMISES, fact.combinator)
+        const combinator = ep(PROMISES, fact.combinator)
         if (fact.completion !== COMPLETION[combinator]
-          || !safeInt(fact.lane_count)
-          || !isDense(fact.member_fact_ids)
+          || !si(fact.lane_count)
+          || !dn(fact.member_fact_ids)
           || new Set(fact.member_fact_ids).size !== fact.member_fact_ids.length)
           throw new Error(`Invalid parallel completion ${fact.id}`)
         wire = [
-          combinator, fact.input ? packVal(fact.input) : null,
+          combinator, fact.input ? pv(fact.input) : null,
           fact.member_fact_ids.map(ordinal), fact.lane_count,
         ]
         break
       }
       case 'return':
       case 'throw':
-        wire = [fact.value ? packVal(fact.value) : null]
+        wire = [fact.value ? pv(fact.value) : null]
         break
       case 'mutation':
         wire = [
-          enumPos(MUTATIONS, fact.operation), fact.target,
-          fact.value ? packVal(fact.value) : null,
+          ep(MUTATIONS, fact.operation), fact.target,
+          fact.value ? pv(fact.value) : null,
         ]
         break
       case 'persistence':
-        if (!validText(fact.receiver_type))
+        if (!vt(fact.receiver_type))
           throw new Error(`Persistence proof is missing for ${fact.id}`)
         wire = [
-          enumPos(STORAGE, fact.operation), ordinal(fact.call_fact_id),
-          fact.resource ? packVal(fact.resource) : null,
+          ep(STORAGE, fact.operation), ordinal(fact.call_fact_id),
+          fact.resource ? pv(fact.resource) : null,
           fact.receiver_type,
         ]
         break
     }
-    const row = JSON.stringify([
-      fact.id, enumPos(KINDS, fact.kind),
-      fact.order[0], fact.order[2], fact.order[3], packEvidence(fact.evidence),
-      fact.control.map(control), enumPos(LEVELS, fact.confidence),
-      enumPos(SOURCES, fact.source), wire,
-    ])
+    const semantics = [
+      ep(KINDS, fact.kind),
+      fact.order[0], fact.order[2], fact.order[3], pe(fact.evidence),
+      fact.control.map(control), ep(LEVELS, fact.confidence),
+      ep(SOURCES, fact.source), wire,
+    ]
+    const sealedId = indexBodyFactId(
+      fact.owner_symbol_id, fact.kind, fact.order,
+      fact.evidence.excerpt_sha256, semantics,
+    )
+    if (fact.id !== sealedId && fact.id !== indexBodyFactId(
+      fact.owner_symbol_id, fact.kind, fact.order, fact.evidence.excerpt_sha256,
+    )) throw new Error(`Invalid execution fact identity ${fact.id}`)
+    const row = JSON.stringify([sealedId, ...semantics])
     const rowBytes = Buffer.byteLength(row, 'utf8')
     bytes += rowBytes
     if (rowBytes > MAX_ROW || bytes > MAX_TABLE)
@@ -383,42 +388,42 @@ export function encodeIndexBodyFactTable(
   })
   return [1, rows]
 }
-function safeInt(value: unknown, minimum = 0): value is number {
+function si(value: unknown, minimum = 0): value is number {
   return typeof value === 'number'
     && Number.isSafeInteger(value)
     && !Object.is(value, -0)
     && value >= minimum
 }
-function validText(value: unknown, maxBytes = MAX_TEXT): value is string {
+function vt(value: unknown, maxBytes = MAX_TEXT): value is string {
   return typeof value === 'string'
     && value.length > 0
     && !value.includes('\0')
     && Buffer.byteLength(value, 'utf8') <= maxBytes
 }
-function tuple(value: unknown, length: number): unknown[] | null {
+function tu(value: unknown, length: number): unknown[] | null {
   return Array.isArray(value) && value.length === length ? value : null
 }
-function enumValue<T extends string>(values: readonly T[], value: unknown): T | null {
-  return safeInt(value) && value < values.length ? values[value]! : null
+function ev<T extends string>(values: readonly T[], value: unknown): T | null {
+  return si(value) && value < values.length ? values[value]! : null
 }
-function readVal(value: unknown, depth = 0): IndexValue | null {
+function rv(value: unknown, depth = 0): IndexValue | null {
   if (!Array.isArray(value)
-    || !safeInt(value[0]) || value[0] > 7) return null
+    || !si(value[0]) || value[0] > 7) return null
   if (depth > MAX_DEPTH) return null
   if (depth === MAX_DEPTH && [3, 4, 5].includes(value[0])
     && (!Array.isArray(value[1]) || value[1].length > 0)) return null
   switch (value[0]) {
     case 0: {
-      return value.length === 2 && scalar(value[1])
+      return value.length === 2 && sc(value[1])
         ? { kind: 'literal', value: value[1] } : null
     }
     case 1:
-      return value.length === 2 && validText(value[1], 1_024)
+      return value.length === 2 && vt(value[1], 1_024)
         ? { kind: 'symbol', symbol_id: value[1] }
         : null
     case 2:
       return (value.length === 2 || (value.length === 3 && value[2] === 1))
-        && safeInt(value[1])
+        && si(value[1])
         ? {
             kind: 'parameter',
             position: value[1],
@@ -429,7 +434,7 @@ function readVal(value: unknown, depth = 0): IndexValue | null {
     case 5: {
       if (value.length !== 2 || !Array.isArray(value[1])
         || value[1].length > MAX_ELEMENTS) return null
-      const values = value[1].map((entry) => readVal(entry, depth + 1))
+      const values = value[1].map((entry) => rv(entry, depth + 1))
       if (!values.every((entry): entry is IndexValue => entry !== null)) return null
       return value[0] === 3
         ? { kind: 'array', elements: values }
@@ -441,8 +446,8 @@ function readVal(value: unknown, depth = 0): IndexValue | null {
       const keys = new Set<string>()
       const entries: IndexObjectEntry[] = []
       for (const raw of value[1]) {
-        const entry = tuple(raw, 2)
-        const decoded = entry ? readVal(entry[1], depth + 1) : null
+        const entry = tu(raw, 2)
+        const decoded = entry ? rv(entry[1], depth + 1) : null
         if (!entry || typeof entry[0] !== 'string' || entry[0].includes('\0')
           || Buffer.byteLength(entry[0], 'utf8') > MAX_TEXT
           || keys.has(entry[0]) || !decoded) return null
@@ -453,11 +458,11 @@ function readVal(value: unknown, depth = 0): IndexValue | null {
     }
     case 6:
       return value.length === 3 && typeof value[1] === 'string'
-        && SHA256.test(value[1]) && safeInt(value[2])
+        && SHA256.test(value[1]) && si(value[2])
         ? { kind: 'redacted', sha256: value[1], byte_length: value[2] }
         : null
     case 7: {
-      const reason = enumValue(UNKNOWN, value[1])
+      const reason = ev(UNKNOWN, value[1])
       return value.length === 2 && reason ? { kind: 'unknown', reason } : null
     }
   }
@@ -468,9 +473,9 @@ type DecodedRow = {
   evidence: IndexFactEvidence; control: readonly unknown[]
   confidence: IndexFactConfidence; source: IndexFactSource; payload: unknown
 }
-function readEvidence(value: unknown, file: string): IndexFactEvidence | null {
-  const row = tuple(value, 9)
-  if (!row || !row.slice(0, 8).every((entry) => safeInt(entry, 1))
+function re(value: unknown, file: string): IndexFactEvidence | null {
+  const row = tu(value, 9)
+  if (!row || !row.slice(0, 8).every((entry) => si(entry, 1))
     || typeof row[8] !== 'string' || !SHA256.test(row[8])) return null
   const range = {
     start: { line: row[0] as number, column: row[1] as number },
@@ -489,7 +494,7 @@ function readEvidence(value: unknown, file: string): IndexFactEvidence | null {
     ? { file_id: file, range, statement_range, excerpt_sha256: row[8] }
     : null
 }
-function decodeRow(value: string, owner: string, file: string): DecodedRow | null {
+function dr(value: string, owner: string, file: string): DecodedRow | null {
   if (Buffer.byteLength(value, 'utf8') > MAX_ROW) return null
   let parsed: unknown
   try {
@@ -498,19 +503,21 @@ function decodeRow(value: string, owner: string, file: string): DecodedRow | nul
     return null
   }
   if (JSON.stringify(parsed) !== value) return null
-  const row = tuple(parsed, 10)
-  if (!row || !validText(row[0], 64)
-    || !safeInt(row[1]) || row[1] >= KINDS.length
-    || !safeInt(row[2]) || !safeInt(row[3]) || !safeInt(row[4])
+  const row = tu(parsed, 10)
+  if (!row || !vt(row[0], 64)
+    || !si(row[1]) || row[1] >= KINDS.length
+    || !si(row[2]) || !si(row[3]) || !si(row[4])
     || !Array.isArray(row[6])
     || row[6].length > INDEX_BODY_FACT_CONTROL_LIMIT) return null
   const kind = KINDS[row[1]]!
-  const proof = readEvidence(row[5], file)
-  const confidence = enumValue(LEVELS, row[7])
-  const source = enumValue(SOURCES, row[8])
+  const proof = re(row[5], file)
+  const confidence = ev(LEVELS, row[7])
+  const source = ev(SOURCES, row[8])
   const order = [row[2], row[1], row[3], row[4]] as number[]
   if (!proof || !confidence || !source
-    || row[0] !== indexBodyFactId(owner, kind, order, proof.excerpt_sha256)) {
+    || row[0] !== indexBodyFactId(
+      owner, kind, order, proof.excerpt_sha256, row.slice(1),
+    )) {
     return null
   }
   return {
@@ -523,8 +530,8 @@ export function decodeIndexBodyFactTable(
   owner: string,
   file: string,
 ): readonly IndexBodyFact[] | null {
-  const table = tuple(value, 2)
-  if (!validText(owner, 1_024) || !validText(file, 128)
+  const table = tu(value, 2)
+  if (!vt(owner, 1_024) || !vt(file, 128)
     || !table || table[0] !== 1 || !Array.isArray(table[1])
     || table[1].length === 0 || table[1].length > MAX_ROWS) return null
   const decoded: DecodedRow[] = []
@@ -533,24 +540,24 @@ export function decodeIndexBodyFactTable(
     if (typeof value !== 'string') return null
     bytes += Buffer.byteLength(value, 'utf8')
     if (bytes > MAX_TABLE) return null
-    const row = decodeRow(value, owner, file)
+    const row = dr(value, owner, file)
     if (!row) return null
     decoded.push(row)
   }
   const ids = decoded.map((row) => row.id)
   if (new Set(ids).size !== ids.length
     || decoded.some((row, index) => index > 0
-      && orderCmp(decoded[index - 1]!.order, row.order) >= 0)) {
+      && oc(decoded[index - 1]!.order, row.order) >= 0)) {
     return null
   }
   const idAt = (value: unknown): string | null =>
-    safeInt(value) && value < ids.length ? ids[value]! : null
+    si(value) && value < ids.length ? ids[value]! : null
   const control = (value: unknown): IndexControlFrame | null => {
-    if (!Array.isArray(value) || !safeInt(value[0])) return null
+    if (!Array.isArray(value) || !si(value[0])) return null
     const controller_fact_id = idAt(value[1])
     if (value[0] === 0) {
       return value.length === 3 && controller_fact_id
-        && validText(value[2], 96)
+        && vt(value[2], 96)
         && (['then', 'else', 'truthy', 'falsy', 'nullish', 'default'].includes(value[2])
           || (value[2].startsWith('case:') && value[2].length > 5))
         ? { kind: 'branch', controller_fact_id, arm: value[2] as IndexBranchArm }
@@ -559,9 +566,9 @@ export function decodeIndexBodyFactTable(
     if (value[0] === 1) return value.length === 2 && controller_fact_id
       ? { kind: 'loop', controller_fact_id } : null
     if (value[0] === 2) return value.length === 3 && controller_fact_id
-      && (value[2] === 'each' || safeInt(value[2]))
+      && (value[2] === 'each' || si(value[2]))
       ? { kind: 'parallel', controller_fact_id, lane: value[2] } : null
-    const arm = enumValue(['try', 'catch', 'finally'] as const, value[1])
+    const arm = ev(['try', 'catch', 'finally'] as const, value[1])
     return value[0] === 3 && value.length === 2 && arm
       ? { kind: 'exception', arm } : null
   }
@@ -577,12 +584,12 @@ export function decodeIndexBodyFactTable(
     const wire = Array.isArray(row.payload) ? row.payload : null
     let fact: IndexBodyFact | null = null
     if (row.kind === 'call' && wire?.length === 4) {
-      const scheduling = enumValue(TIMING, wire[3])
+      const scheduling = ev(TIMING, wire[3])
       const args = Array.isArray(wire[2])
-        ? wire[2].map((entry) => readVal(entry))
+        ? wire[2].map((entry) => rv(entry))
         : []
-      if (validText(wire[0]) && scheduling
-        && (wire[1] === null || validText(wire[1], 1_024))
+      if (vt(wire[0]) && scheduling
+        && (wire[1] === null || vt(wire[1], 1_024))
         && Array.isArray(wire[2])
         && args.every((entry): entry is IndexValue => entry !== null)) {
         fact = {
@@ -592,24 +599,24 @@ export function decodeIndexBodyFactTable(
         }
       }
     } else if (row.kind === 'literal' && wire?.length === 2) {
-      const decoded = readVal(wire[0])
-      const role = enumValue(ROLES, wire[1])
+      const decoded = rv(wire[0])
+      const role = ev(ROLES, wire[1])
       if (decoded && role) fact = { ...base, kind: 'literal', value: decoded, role }
     } else if (row.kind === 'condition' && wire?.length === 2) {
-      const condition_kind = enumValue(CONDITIONS, wire[0])
-      const test = wire[1] === null ? undefined : readVal(wire[1])
+      const condition_kind = ev(CONDITIONS, wire[0])
+      const test = wire[1] === null ? undefined : rv(wire[1])
       if (condition_kind && (wire[1] === null || test)) {
         fact = { ...base, kind: 'condition', condition_kind, ...(test ? { test } : {}) }
       }
     } else if (row.kind === 'loop' && wire?.length === 2) {
-      const loop_kind = enumValue(LOOPS, wire[0])
-      const test = wire[1] === null ? undefined : readVal(wire[1])
+      const loop_kind = ev(LOOPS, wire[0])
+      const test = wire[1] === null ? undefined : rv(wire[1])
       if (loop_kind && (wire[1] === null || test)) {
         fact = { ...base, kind: 'loop', loop_kind, ...(test ? { test } : {}) }
       }
     } else if (row.kind === 'parallel' && wire?.length === 4) {
-      const combinator = enumValue(PROMISES, wire[0])
-      const input = wire[1] === null ? undefined : readVal(wire[1])
+      const combinator = ev(PROMISES, wire[0])
+      const input = wire[1] === null ? undefined : rv(wire[1])
       const members = Array.isArray(wire[2])
         ? wire[2].map(idAt)
         : []
@@ -617,7 +624,7 @@ export function decodeIndexBodyFactTable(
         && Array.isArray(wire[2])
         && members.every((id): id is string => id !== null)
         && new Set(members).size === members.length
-        && safeInt(wire[3])) {
+        && si(wire[3])) {
         fact = {
           ...base, kind: 'parallel', combinator,
           completion: COMPLETION[PROMISES.indexOf(combinator)]!,
@@ -628,14 +635,14 @@ export function decodeIndexBodyFactTable(
       }
     } else if ((row.kind === 'return' || row.kind === 'throw')
       && wire?.length === 1) {
-      const decoded = wire[0] === null ? undefined : readVal(wire[0])
+      const decoded = wire[0] === null ? undefined : rv(wire[0])
       if (wire[0] === null || decoded) {
         fact = { ...base, kind: row.kind, ...(decoded ? { value: decoded } : {}) }
       }
     } else if (row.kind === 'mutation' && wire?.length === 3) {
-      const operation = enumValue(MUTATIONS, wire[0])
-      const decoded = wire[2] === null ? undefined : readVal(wire[2])
-      if (operation && validText(wire[1])
+      const operation = ev(MUTATIONS, wire[0])
+      const decoded = wire[2] === null ? undefined : rv(wire[2])
+      if (operation && vt(wire[1])
         && (wire[2] === null || decoded)) {
         fact = {
           ...base, kind: 'mutation', operation, target: wire[1],
@@ -643,11 +650,11 @@ export function decodeIndexBodyFactTable(
         }
       }
     } else if (row.kind === 'persistence' && wire?.length === 4) {
-      const operation = enumValue(STORAGE, wire[0])
+      const operation = ev(STORAGE, wire[0])
       const call_fact_id = idAt(wire[1])
-      const resource = wire[2] === null ? undefined : readVal(wire[2])
+      const resource = wire[2] === null ? undefined : rv(wire[2])
       if (operation && call_fact_id && (wire[2] === null || resource)
-        && validText(wire[3])) {
+        && vt(wire[3])) {
         fact = {
           ...base, kind: 'persistence', operation, call_fact_id,
           ...(resource ? { resource } : {}),

@@ -33,16 +33,16 @@ current:
   base_commit: 9043320cfa08370e5cdd3911bfb9283005aa9912
   completed_phase_commit: b6562b715133304bd46e537b6f39008bc1e02095
   production_typescript_files: 44
-  production_typescript_loc: 15873
-  production_loc_added: 3606
+  production_typescript_loc: 15942
+  production_loc_added: 3675
   production_loc_removed: 187
-  production_loc_net: 3419
+  production_loc_net: 3488
   npm_files: 102
-  npm_packed_bytes: 143170
-  npm_unpacked_bytes: 638803
-  npm_shasum: 8ed94633cdf6f63dfabe12845e5e77644a89dbf1
-  npm_integrity: sha512-Nq3m/a7D/iZHYjjRd9b7ENth95qz4zssOPnBqmQEsy+aiebRp68UtMMWArYWFRTftdWwNfTcIvxns0JVdahrdw==
-  npm_artifact_sha256: df9bb97b425db5063ab178920c7fb824c19c681378744c6cfc7094e99926f1eb
+  npm_packed_bytes: 143549
+  npm_unpacked_bytes: 639164
+  npm_shasum: 590e27d375f95e5212374b7478e480f58199d702
+  npm_integrity: sha512-hN7chlybxfu1ZGZptit9rEP03eaYmBBGoFMornzenbbp9taNjjdl+Lj3DSjZQDhV9pJc5YdRPOlRVrccS1s6tA==
+  npm_artifact_sha256: cf5a6c25c4fec77e2a2da03bfd7564ec394b238456eb4f38e738f6386d392e76
   measurement_state: source_and_package_exact
   snapshot_scope: semantic_execution_index_632_candidate
   release_candidate:
@@ -2233,6 +2233,7 @@ items:
     verification:
       - tests/unit/canonical-index-execution.test.ts
       - tests/unit/canonical-index-execution-hardening.test.ts
+      - tests/unit/canonical-index-execution-review-regressions.test.ts
       - tests/unit/query-index-execution-validation.test.ts
       - tests/unit/retrieve-context.test.ts
       - tests/unit/graph-artifact.test.ts
@@ -2265,28 +2266,28 @@ items:
     candidate:
       source_measurement:
         production_typescript_files: 44
-        production_typescript_loc: 15873
-        added: 3606
+        production_typescript_loc: 15942
+        added: 3675
         removed: 187
-        net: 3419
-        diff_sha256: 1916499d8e195e20c47cc05868a50f3ca408759e932596c16388da6e66e41ec6
+        net: 3488
+        diff_sha256: 03023cece3f0cb641aa05971e903ca4b3904d613c614a994f6427c472d67f4f4
       package_measurement:
         files: 102
-        packed_bytes: 143170
-        unpacked_bytes: 638803
-        shasum: 8ed94633cdf6f63dfabe12845e5e77644a89dbf1
-        integrity: sha512-Nq3m/a7D/iZHYjjRd9b7ENth95qz4zssOPnBqmQEsy+aiebRp68UtMMWArYWFRTftdWwNfTcIvxns0JVdahrdw==
-        artifact_sha256: df9bb97b425db5063ab178920c7fb824c19c681378744c6cfc7094e99926f1eb
+        packed_bytes: 143549
+        unpacked_bytes: 639164
+        shasum: 590e27d375f95e5212374b7478e480f58199d702
+        integrity: sha512-hN7chlybxfu1ZGZptit9rEP03eaYmBBGoFMornzenbbp9taNjjdl+Lj3DSjZQDhV9pJc5YdRPOlRVrccS1s6tA==
+        artifact_sha256: cf5a6c25c4fec77e2a2da03bfd7564ec394b238456eb4f38e738f6386d392e76
       local_verification:
-        focused_tests_passed: 149
+        focused_tests_passed: 162
         last_pre_cache_full_tests_passed: 722
         candidate_full_suite_status: pending_clean_runner_after_local_host_memory_pressure
         candidate_full_suite_local_attempts: 3
-        graph_nodes: 12350
-        graph_edges: 32839
+        graph_nodes: 12313
+        graph_edges: 32726
         exact_queue_channels: 6
         exact_channel_edges: 51
-        graph_artifact_size_ratio: 1.2344886849638093
+        graph_artifact_size_ratio: 1.2293214469979519
         beta4_indexing_trials_seconds:
           - 20.32
           - 21.33
@@ -2295,18 +2296,18 @@ items:
           - 22.74
         beta4_indexing_median_seconds: 22.16
         candidate_indexing_trials_seconds:
-          - 23.31
-          - 24.16
-          - 24.41
-          - 24.87
-          - 25.42
-        candidate_indexing_median_seconds: 24.41
-        indexing_median_ratio: 1.1015342960288808
+          - 17.08
+          - 15.08
+          - 14.96
+          - 13.82
+          - 13.24
+        candidate_indexing_median_seconds: 14.96
+        indexing_median_ratio: 0.6750902527075813
         warm_retrieval_samples: 100
-        warm_retrieval_median_ms: 165.343
-        warm_retrieval_p95_ms: 216.599
-        warm_retrieval_max_ms: 257.814
-        deterministic_graph_sha256: 478e1ed93fcef5a7592dfa0f884318713128e01857dc706a28f2e0d6142937d0
+        warm_retrieval_median_ms: 225.692208
+        warm_retrieval_p95_ms: 253.599958
+        warm_retrieval_max_ms: 300.229625
+        deterministic_graph_sha256: 82469164dbdf1229195d6fb71d8220736c15c5a13093dd2f2fc6f2a633f73a36
         beta4_retrieval_output_byte_identical: true
         exact_head_ci: pending
         independent_review: pending
@@ -2327,7 +2328,7 @@ items:
       registry_metadata_publication: forbidden
       tag: forbidden
       main_target: forbidden
-    notes: 'Issue #632 extends the canonical index with authenticated ordered body facts, exact shared queue/job/event channels, bounded two-hop wrapper substitution, concurrency groups, and receiver/type-proven persistence. It is active from exact protected next commit 9043320cfa08370e5cdd3911bfb9283005aa9912 and tree f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc. Exact local source, package, focused-test, real-corpus graph-size, channel-topology, beta.4 retrieval-compatibility, alternating indexing-median, warm-retrieval-p95, and deterministic-graph receipts are recorded above. The pre-cache candidate passed all 722 tests; the exact final candidate full suite remains pending a clean hosted runner because three local attempts were stopped by fork-start or per-test timeouts while an unrelated user process held approximately 19 GB of resident memory. Exact-head CI, independent review, zero-thread, merge, and publication receipts remain absent until those gates actually pass.'
+    notes: 'Issue #632 extends the canonical index with authenticated ordered body facts, exact shared queue/job/event channels, bounded two-hop wrapper substitution, concurrency groups, and receiver/type-proven persistence. It is active from exact protected next commit 9043320cfa08370e5cdd3911bfb9283005aa9912 and tree f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc. First PR head 9fe3c2448958c6b8cead2452758077fef093cf4e passed all six hosted jobs but independent review blocked twelve semantic-proof classes, so it was not merged. The corrective candidate binds fact IDs to semantic payloads; rejects unproven Promise lanes, mutable channels, uninvoked nested functions, false persistence, custom array lookalikes, unreachable control flow, and synchronous fire-and-forget claims; scopes event emitters; bounds wrapper expansion; and redacts secret-bearing receiver text. Exact corrected local source, package, focused-test, real-corpus graph-size, channel-topology, beta.4 retrieval-compatibility, indexing-median, warm-retrieval-p95, and deterministic-graph receipts are recorded above. The pre-cache candidate passed all 722 tests; the exact final candidate full suite remains pending a clean hosted runner because three local attempts were stopped by fork-start or per-test timeouts while an unrelated user process held approximately 19 GB of resident memory. Exact corrected-head CI, independent review, zero-thread, merge, and publication receipts remain absent until those gates actually pass.'
     exit_gate: Every retained fact and exact channel edge is deterministic, source-authenticated and mutation-sensitive; false persistence/channel matches remain absent; source, graph-size, indexing, warm-retrieval, package, full-test, exact-head CI, independent-review, and zero-thread gates pass without a v2 result cutover, new dependency, publication, tag, release, Registry metadata, or main target.
 
   - id: obligation-driven-retrieval-630
