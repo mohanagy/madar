@@ -16,60 +16,77 @@ import {
   type RetrieveContextResult, type RetrieveOutcome,
 } from '../domain/query/types.js'
 
-type AuthenticatedSource = { state: 'ready'; text: string }
+type AuthenticatedSource = {
+  state: 'ready'
+  text: string
+  lineStarts: readonly number[]
+  lineEnds: readonly number[]
+  proofHashes: Map<string, string>
+}
   | { state: 'stale' | 'unavailable'; subject: string }
 type AuthenticatedNode = { state: 'ready'; node: EvidenceNode }
   | { state: 'corrupt' | 'stale' | 'unavailable'; subject: string }
+type ChannelProof = readonly [edgeId: string, attributes: GraphAttributes]
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+const proofCache = new WeakMap<
+ReadyQueryIndex,
+Map<string, ChannelProof[]>
+>()
 
-function isPositiveLine(value: unknown): value is number {
+function validLine(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 }
 
-function stringFact(attributes: GraphAttributes, key: string): string | null {
-  const value = attributes[key]
+function stringFact(attrs: GraphAttributes, key: string): string | null {
+  const value = attrs[key]
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-function sourceIsBeneathRoot(root: string, source: string): boolean {
+function insideRoot(root: string, source: string): boolean {
   const path = relative(root, source)
   return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path)
 }
 
-function readAuthenticatedSource(
-  index: ReadyQueryIndex, sourceFile: string, cache: Map<string, AuthenticatedSource>,
+function readSource(
+  index: ReadyQueryIndex, file: string, cache: Map<string, AuthenticatedSource>,
 ): AuthenticatedSource {
-  const cached = cache.get(sourceFile)
+  const cached = cache.get(file)
   if (cached) return cached
   const remember = (result: AuthenticatedSource): AuthenticatedSource => {
-    cache.set(sourceFile, result)
+    cache.set(file, result)
     return result
   }
 
-  const expectedHash = index.file_hashes.get(sourceFile)
-  if (!expectedHash) return remember({ state: 'stale', subject: sourceFile })
+  const expected = index.file_hashes.get(file)
+  if (!expected) return remember({ state: 'stale', subject: file })
 
   try {
     const root = realpathSync(index.root_path)
-    const candidate = realpathSync(resolve(root, sourceFile))
-    if (isAbsolute(sourceFile) || !sourceIsBeneathRoot(root, candidate)) {
-      return remember({ state: 'unavailable', subject: sourceFile })
+    const candidate = realpathSync(resolve(root, file))
+    if (isAbsolute(file) || !insideRoot(root, candidate)) {
+      return remember({ state: 'unavailable', subject: file })
     }
     const bytes = readFileSync(candidate)
+    const actual = createHash('sha256').update(bytes).digest('hex')
+    if (actual !== expected) {
+      return remember({ state: 'stale', subject: file })
+    }
     const text = utf8.decode(bytes)
-    const hash = createHash('sha256').update(bytes).digest('hex')
-    return remember(hash === expectedHash
-      ? { state: 'ready', text }
-      : { state: 'stale', subject: sourceFile })
+    const lines = lineOffsets(text)
+    return remember({
+      state: 'ready', text, lineStarts: lines.starts, lineEnds: lines.ends,
+      proofHashes: new Map(),
+    })
   } catch {
-    return remember({ state: 'unavailable', subject: sourceFile })
+    return remember({ state: 'unavailable', subject: file })
   }
 }
 
-function offsetOf(text: string, position: IndexRange['start']): number | null {
-  if (!Number.isSafeInteger(position.line) || position.line < 1
-    || !Number.isSafeInteger(position.column) || position.column < 1) return null
+function lineOffsets(text: string): {
+  starts: readonly number[]
+  ends: readonly number[]
+} {
   const starts = [0], ends: number[] = []
   for (let index = 0; index < text.length; index += 1) {
     const code = text.charCodeAt(index)
@@ -79,93 +96,191 @@ function offsetOf(text: string, position: IndexRange['start']): number | null {
     starts.push(index + 1)
   }
   ends.push(text.length)
-  const start = starts[position.line - 1], end = ends[position.line - 1]
+  return { starts, ends }
+}
+
+function offset(
+  source: Extract<AuthenticatedSource, { state: 'ready' }>,
+  pos: IndexRange['start'],
+): number | null {
+  if (!Number.isSafeInteger(pos.line) || pos.line < 1
+    || !Number.isSafeInteger(pos.column) || pos.column < 1) return null
+  const start = source.lineStarts[pos.line - 1]
+  const end = source.lineEnds[pos.line - 1]
   if (start === undefined || end === undefined) return null
-  const offset = start + position.column - 1
+  const offset = start + pos.column - 1
   return offset <= end ? offset : null
 }
 
 function validRange(value: unknown): value is IndexRange {
   if (!value || typeof value !== 'object') return false
   const range = value as IndexRange
-  return offsetPosition(range.start) <= offsetPosition(range.end)
+  return positionKey(range.start) <= positionKey(range.end)
 }
 
-function offsetPosition(position: IndexRange['start'] | undefined): number {
-  return position && Number.isSafeInteger(position.line) && position.line > 0
-    && Number.isSafeInteger(position.column) && position.column > 0
-    ? position.line * 0x1_0000_0000 + position.column
+function positionKey(pos: IndexRange['start'] | undefined): number {
+  return pos && Number.isSafeInteger(pos.line) && pos.line > 0
+    && Number.isSafeInteger(pos.column) && pos.column > 0
+    ? pos.line * 0x1_0000_0000 + pos.column
     : Number.NaN
 }
 
-function exactRange(text: string, range: IndexRange): string | null {
-  const start = offsetOf(text, range.start), end = offsetOf(text, range.end)
-  return start === null || end === null || end < start ? null : text.slice(start, end)
+function excerpt(
+  source: Extract<AuthenticatedSource, { state: 'ready' }>,
+  range: IndexRange,
+): string | null {
+  const start = offset(source, range.start)
+  const end = offset(source, range.end)
+  return start === null || end === null || end < start
+    ? null
+    : source.text.slice(start, end)
+}
+
+function checkFactProofs(
+  index: ReadyQueryIndex,
+  ownerId: string,
+  source: Extract<AuthenticatedSource, { state: 'ready' }>,
+): boolean {
+  for (const fact of index.operations_by_owner.get(ownerId) ?? []) {
+    if (!proofMatches(
+      source,
+      fact.evidence.statement_range,
+      fact.evidence.excerpt_sha256,
+    )) return false
+  }
+  return true
+}
+
+function proofMatches(
+  source: Extract<AuthenticatedSource, { state: 'ready' }>,
+  range: IndexRange,
+  expected: string,
+): boolean {
+  const key = `${range.start.line}:${range.start.column}:${
+    range.end.line}:${range.end.column}`
+  let actual = source.proofHashes.get(key)
+  if (!actual) {
+    const proofText = excerpt(source, range)
+    if (proofText === null) return false
+    actual = createHash('sha256').update(proofText, 'utf8').digest('hex')
+    source.proofHashes.set(key, actual)
+  }
+  return actual === expected
+}
+
+function channelProofs(index: ReadyQueryIndex, ownerId: string): readonly ChannelProof[] {
+  let byOwner = proofCache.get(index)
+  if (!byOwner) {
+    byOwner = new Map()
+    for (const [, , attrs, edgeId] of index.graph.edgeEntries()) {
+      const owner = attrs.execution_owner_id
+      if (typeof owner !== 'string'
+        || !['publishes_to', 'routes_through', 'consumed_by']
+          .includes(String(attrs.relation))) continue
+      const proofs = byOwner.get(owner) ?? []
+      proofs.push([edgeId, attrs])
+      byOwner.set(owner, proofs)
+    }
+    proofCache.set(index, byOwner)
+  }
+  return byOwner.get(ownerId) ?? []
+}
+
+function checkChannelProofs(
+  index: ReadyQueryIndex,
+  ownerId: string,
+  sources: Map<string, AuthenticatedSource>,
+): { state: 'ready' } | { state: 'corrupt' | 'stale' | 'unavailable'; subject: string } {
+  for (const [edgeId, attrs] of channelProofs(index, ownerId)) {
+    const file = attrs.source_file
+    const evidence = attrs.evidence as Record<string, unknown> | undefined
+    const range = evidence?.statement_range
+    const expected = evidence?.excerpt_sha256
+    if (typeof file !== 'string' || !validRange(range)
+      || typeof expected !== 'string') {
+      return { state: 'corrupt', subject: edgeId }
+    }
+    const source = readSource(index, file, sources)
+    if (source.state !== 'ready') return source
+    if (!proofMatches(source, range, expected)) {
+      return { state: 'corrupt', subject: edgeId }
+    }
+  }
+  return { state: 'ready' }
 }
 
 function authenticateNode(
-  index: ReadyQueryIndex, nodeId: string, sourceCache: Map<string, AuthenticatedSource>,
+  index: ReadyQueryIndex, nodeId: string, sources: Map<string, AuthenticatedSource>,
 ): AuthenticatedNode {
   if (!index.graph.hasNode(nodeId)) return { state: 'corrupt', subject: nodeId }
-  const attributes = index.graph.nodeAttributes(nodeId)
-  const label = stringFact(attributes, 'label')
-  const nodeKind = stringFact(attributes, 'node_kind')
-  const sourceFile = stringFact(attributes, 'source_file')
-  const sourceLocation = stringFact(attributes, 'source_location')
-  const provenance = attributes.provenance
-  const contentHash = sourceFile ? index.file_hashes.get(sourceFile) : undefined
+  const attrs = index.graph.nodeAttributes(nodeId)
+  const label = stringFact(attrs, 'label')
+  const nodeKind = stringFact(attrs, 'node_kind')
+  const file = stringFact(attrs, 'source_file')
+  const location = stringFact(attrs, 'source_location')
+  const provenance = attrs.provenance
+  const contentHash = file ? index.file_hashes.get(file) : undefined
 
-  if (!label || !nodeKind || !sourceFile
+  if (!label || !nodeKind || !file
     || !Array.isArray(provenance) || provenance.length === 0 || !contentHash) {
     return { state: 'corrupt', subject: nodeId }
   }
 
-  const source = readAuthenticatedSource(index, sourceFile, sourceCache)
+  const source = readSource(index, file, sources)
   if (source.state !== 'ready') return source
-  const sourceDomain = stringFact(attributes, 'source_domain')
+  if (!checkFactProofs(index, nodeId, source)) {
+    return { state: 'corrupt', subject: nodeId }
+  }
+  const channelProof = checkChannelProofs(
+    index,
+    nodeId,
+    sources,
+  )
+  if (channelProof.state !== 'ready') return channelProof
+  const domain = stringFact(attrs, 'source_domain')
   const common = {
-    node_id: nodeId, label, source_file: sourceFile, provenance,
+    node_id: nodeId, label, source_file: file, provenance,
     content_hash: contentHash,
-    ...(sourceDomain ? { source_domain: sourceDomain } : {}),
+    ...(domain ? { source_domain: domain } : {}),
   }
   if (nodeKind === 'file') {
     return { state: 'ready', node: { ...common, evidence_kind: 'structural_file', node_kind: 'file' } }
   }
 
-  const startLine = attributes.line_number
-  const endLine = attributes.end_line_number
-  const definitionRange = attributes.definition_range
-  const declarationRange = attributes.declaration_range
-  if (!sourceLocation || !isPositiveLine(startLine) || !isPositiveLine(endLine)
+  const startLine = attrs.line_number
+  const endLine = attrs.end_line_number
+  const definition = attrs.definition_range
+  const declaration = attrs.declaration_range
+  if (!location || !validLine(startLine) || !validLine(endLine)
     ) return { state: 'corrupt', subject: nodeId }
-  if (!validRange(definitionRange) || !validRange(declarationRange)
-    || offsetPosition(declarationRange.start) < offsetPosition(definitionRange.start)
-    || offsetPosition(declarationRange.end) > offsetPosition(definitionRange.end)) {
-    return { state: 'stale', subject: sourceFile }
+  if (!validRange(definition) || !validRange(declaration)
+    || positionKey(declaration.start) < positionKey(definition.start)
+    || positionKey(declaration.end) > positionKey(definition.end)) {
+    return { state: 'stale', subject: file }
   }
-  const expectedLocation = definitionRange.end.line > definitionRange.start.line
-    ? `L${definitionRange.start.line}-L${definitionRange.end.line}`
-    : `L${definitionRange.start.line}`
-  if (startLine !== definitionRange.start.line || endLine !== definitionRange.end.line
-    || sourceLocation !== expectedLocation) return { state: 'stale', subject: sourceFile }
-  const snippet = exactRange(source.text, declarationRange)
-  if (snippet === null || exactRange(source.text, definitionRange) === null) {
-    return { state: 'stale', subject: sourceFile }
+  const expectedLocation = definition.end.line > definition.start.line
+    ? `L${definition.start.line}-L${definition.end.line}`
+    : `L${definition.start.line}`
+  if (startLine !== definition.start.line || endLine !== definition.end.line
+    || location !== expectedLocation) return { state: 'stale', subject: file }
+  const snippet = excerpt(source, declaration)
+  if (snippet === null || excerpt(source, definition) === null) {
+    return { state: 'stale', subject: file }
   }
 
   return {
     state: 'ready',
     node: {
       ...common, evidence_kind: 'symbol_declaration', node_kind: nodeKind,
-      source_location: sourceLocation, line_number: startLine, end_line_number: endLine,
-      definition_range: definitionRange, declaration_range: declarationRange, snippet,
+      source_location: location, line_number: startLine, end_line_number: endLine,
+      definition_range: definition, declaration_range: declaration, snippet,
     },
   }
 }
 
-function relationshipFromEdge(edge: QueryPathEdge): EvidenceRelationship | null {
-  const sourceFile = edge.attributes.source_file
-  const sourceLocation = edge.attributes.source_location
+function edgeResult(edge: QueryPathEdge): EvidenceRelationship | null {
+  const file = edge.attributes.source_file
+  const location = edge.attributes.source_location
   const provenance = edge.attributes.provenance
   if (!Array.isArray(provenance) || provenance.length === 0) return null
   return {
@@ -173,25 +288,25 @@ function relationshipFromEdge(edge: QueryPathEdge): EvidenceRelationship | null 
     from_id: edge.from,
     to_id: edge.to,
     relation: edge.relation,
-    ...(typeof sourceFile === 'string' && sourceFile.length > 0 ? { source_file: sourceFile } : {}),
-    ...(typeof sourceLocation === 'string' && sourceLocation.length > 0 ? { source_location: sourceLocation } : {}),
+    ...(typeof file === 'string' && file.length > 0 ? { source_file: file } : {}),
+    ...(typeof location === 'string' && location.length > 0 ? { source_location: location } : {}),
     provenance,
   }
 }
 
-function outcomeFrom(nodes: readonly EvidenceNode[], boundaries: readonly EvidenceBoundary[]): RetrieveOutcome {
+function outcome(nodes: readonly EvidenceNode[], boundaries: readonly EvidenceBoundary[]): RetrieveOutcome {
   if (nodes.length > 0) return 'evidence'
   for (const state of ['corrupt', 'unavailable', 'stale', 'unsupported', 'missing'] as const) {
-    if (boundaries.some((boundary) => boundary.kind === state)) return state
+    if (boundaries.some((limit) => limit.kind === state)) return state
   }
   return 'missing'
 }
 
-function boundary(kind: EvidenceBoundary['kind'], subject: string): EvidenceBoundary {
+function limit(kind: EvidenceBoundary['kind'], subject: string): EvidenceBoundary {
   return { kind, subject }
 }
 
-function emptyResult(
+function empty(
   request: NormalizedRetrieveRequest, outcome: RetrieveOutcome, boundaries: EvidenceBoundary[],
 ): RetrieveContextResult {
   return sliceEvidence({
@@ -205,48 +320,48 @@ function emptyResult(
 export function retrieveContext(index: QueryIndex, input: unknown): RetrieveContextResult {
   const request = normalizeRetrieveRequest(input)
   if (index.state !== 'ready') {
-    return emptyResult(request, index.state, [boundary(index.state, index.subject)])
+    return empty(request, index.state, [limit(index.state, index.subject)])
   }
 
   const ranking = rankQueryAnchors(index, request)
   if (ranking.anchors.length === 0) {
     const boundaries = ranking.boundaries.length > 0
       ? ranking.boundaries
-      : [boundary('missing', request.question)]
-    return emptyResult(request, outcomeFrom([], boundaries), boundaries)
+      : [limit('missing', request.question)]
+    return empty(request, outcome([], boundaries), boundaries)
   }
 
   const traversal = traverseEvidencePaths(index, ranking)
-  const sourceCache = new Map<string, AuthenticatedSource>()
+  const sources = new Map<string, AuthenticatedSource>()
   let matchedNodes: EvidenceNode[] = []
   const boundaries = [...ranking.boundaries, ...traversal.boundaries]
 
   for (const nodeId of traversal.nodeIds) {
-    const authenticated = authenticateNode(index, nodeId, sourceCache)
-    if (authenticated.state === 'ready') {
-      matchedNodes.push(authenticated.node)
+    const checked = authenticateNode(index, nodeId, sources)
+    if (checked.state === 'ready') {
+      matchedNodes.push(checked.node)
     } else {
-      boundaries.push(boundary(authenticated.state, authenticated.subject))
+      boundaries.push(limit(checked.state, checked.subject))
     }
   }
 
-  const selectedNodeIds = new Set(matchedNodes.map((node) => node.node_id))
+  const selected = new Set(matchedNodes.map((node) => node.node_id))
   const relationships: EvidenceRelationship[] = []
   for (const edge of traversal.edges) {
-    if (!selectedNodeIds.has(edge.from) || !selectedNodeIds.has(edge.to)) continue
-    const relationship = relationshipFromEdge(edge)
+    if (!selected.has(edge.from) || !selected.has(edge.to)) continue
+    const relationship = edgeResult(edge)
     if (relationship) relationships.push(relationship)
-    else boundaries.push(boundary('corrupt', edge.id))
+    else boundaries.push(limit('corrupt', edge.id))
   }
   const related = new Set(relationships.flatMap((edge) => [edge.from_id, edge.to_id]))
-  const orphanFiles = matchedNodes.filter((node) =>
+  const orphans = matchedNodes.filter((node) =>
     node.evidence_kind === 'structural_file' && !related.has(node.node_id))
-  for (const node of orphanFiles) boundaries.push(boundary('unavailable', node.source_file))
-  const orphanIds = new Set(orphanFiles.map((node) => node.node_id))
+  for (const node of orphans) boundaries.push(limit('unavailable', node.source_file))
+  const orphanIds = new Set(orphans.map((node) => node.node_id))
   matchedNodes = matchedNodes.filter((node) => !orphanIds.has(node.node_id))
   return sliceEvidence({
     request,
-    outcome: outcomeFrom(matchedNodes, boundaries),
+    outcome: outcome(matchedNodes, boundaries),
     matchedNodes,
     relationships,
     boundaries,

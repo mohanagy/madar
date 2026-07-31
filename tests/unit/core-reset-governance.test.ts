@@ -412,6 +412,42 @@ const BETA_4_SHASUM = 'c5250a0d308b3d6df374851154ddb393a678a992'
 const BETA_4_INTEGRITY =
   'sha512-772P+n4Cx55nqC+CAx8A1aTJ2rY4yk1hUH45lAlxNMMw4YRj8hhswgDiCwczS5hx1S3a+Z+KUv2jma/zWjQZ6w=='
 const BETA_4_SHA256 = '8bd8d501b8cd3546e16a5a1ddac1f7649434e685517e1171fbd5897515e76e6b'
+const SEMANTIC_EXECUTION_INDEX_ID = 'semantic-execution-index-632'
+const SEMANTIC_EXECUTION_INDEX_BASE = '9043320cfa08370e5cdd3911bfb9283005aa9912'
+const SEMANTIC_EXECUTION_INDEX_BASE_TREE = 'f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc'
+const SEMANTIC_EXECUTION_INDEX_FILES = [
+  'src/adapters/filesystem/graph-artifact.ts',
+  'src/adapters/mcp/server.ts',
+  'src/adapters/typescript/execution.ts',
+  'src/adapters/typescript/index.ts',
+  'src/application/retrieve-context.ts',
+  'src/domain/index/build-state.ts',
+  'src/domain/index/model.ts',
+  'src/domain/query/index-status.ts',
+  'src/domain/query/rank.ts',
+] as const
+const SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS = [
+  'examples/why-madar.md',
+  'CHANGELOG.md',
+] as const
+const SEMANTIC_EXECUTION_SOURCE = {
+  production_typescript_files: 44,
+  production_typescript_loc: 15_873,
+  production_loc_added: 3_606,
+  production_loc_removed: 187,
+  production_loc_net: 3_419,
+} as const
+const SEMANTIC_EXECUTION_PACKAGE = {
+  npm_files: 102,
+  npm_packed_bytes: 143_170,
+  npm_unpacked_bytes: 638_803,
+  npm_shasum: '8ed94633cdf6f63dfabe12845e5e77644a89dbf1',
+  npm_integrity:
+    'sha512-Nq3m/a7D/iZHYjjRd9b7ENth95qz4zssOPnBqmQEsy+aiebRp68UtMMWArYWFRTftdWwNfTcIvxns0JVdahrdw==',
+  npm_artifact_sha256: 'df9bb97b425db5063ab178920c7fb824c19c681378744c6cfc7094e99926f1eb',
+} as const
+const SEMANTIC_EXECUTION_DIFF_SHA256 =
+  '1916499d8e195e20c47cc05868a50f3ca408759e932596c16388da6e66e41ec6'
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
   '4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0'
 const CAPABILITY_VALIDATION_V2_ISSUE = 'https://github.com/mohanagy/madar/issues/612'
@@ -819,7 +855,10 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Passed — retrieval regression #618')
     expect(roadmap).toContain('## Published — `0.40.0-beta.3`')
     expect(roadmap).toContain('## Passed — retrieval regression #625')
-    expect(roadmap).toContain('## Ready — `0.40.0-beta.4`')
+    expect(roadmap).toContain('## Published — `0.40.0-beta.4`')
+    expect(roadmap).toContain('## In progress — semantic execution index #632')
+    expect(roadmap).toContain('## Pending — obligation-driven retrieval #630')
+    expect(roadmap).toContain('## Pending — installed no-fallback qualification #631')
     expect(roadmap).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -1009,7 +1048,10 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Capability validation v2 | **Stopped / not planned**')
     expect(scorecard).toContain('| Retrieval regression #618 | **Passed**')
     expect(scorecard).toContain('| Retrieval regression #625 | **Passed**')
-    expect(scorecard).toContain('| Beta release | **Ready**')
+    expect(scorecard).toContain('| Beta release | **Published**')
+    expect(scorecard).toContain('| Semantic execution index #632 | **In progress**')
+    expect(scorecard).toContain('| Obligation-driven retrieval #630 | **Pending**')
+    expect(scorecard).toContain('| No-fallback qualification #631 | **Pending**')
     expect(scorecard).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(scorecard).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(scorecard).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -1055,6 +1097,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
     expect(scorecard).toContain('| Retrieval regression #622 | **Passed**')
     expect(scorecard).toContain('Issues `#622` and `#625` are complete on `next`')
+    expect(scorecard).toContain('#632 active, then #630 pending, then #631 pending')
     expect(scorecard).toContain('first-candidate stop receipt')
     expect(scorecard).toContain('102 entries / 159,980 packed / 639,930 unpacked bytes')
     expect(scorecard).toContain('/compilerOptions/removeComments=true')
@@ -1291,34 +1334,36 @@ describe('core reset governance', () => {
     expect(manifest.schema_version).toBe(1)
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-30',
+      updated_at: '2026-07-31',
       completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: null,
-      ready_phase: 'release-beta',
-      base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
+      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      ready_phase: null,
+      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
       completed_phase_commit: EVIDENCE_SKELETON_RETRIEVAL_MERGE,
-      production_typescript_files: 43,
-      production_typescript_loc: 12_454,
-      production_loc_added: 1_409,
-      production_loc_removed: 1_102,
-      production_loc_net: 307,
-      npm_files: 102,
-      npm_packed_bytes: 159_937,
-      npm_unpacked_bytes: 639_875,
-      npm_shasum: BETA_4_SHASUM,
-      npm_integrity: BETA_4_INTEGRITY,
-      npm_artifact_sha256: BETA_4_SHA256,
+      ...SEMANTIC_EXECUTION_SOURCE,
+      ...SEMANTIC_EXECUTION_PACKAGE,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'release_candidate_source_and_package',
+      snapshot_scope: 'semantic_execution_index_632_candidate',
     })
     expect(manifest.current.release_candidate).toMatchObject({
       version: '0.40.0-beta.4',
-      protected_anchor_commit: EVIDENCE_SKELETON_RETRIEVAL_MERGE,
-      protected_anchor_tree: EVIDENCE_SKELETON_RETRIEVAL_FINAL_TREE,
+      protected_anchor_commit: SEMANTIC_EXECUTION_INDEX_BASE,
+      protected_anchor_tree: SEMANTIC_EXECUTION_INDEX_BASE_TREE,
       target_branch: 'next',
       npm_dist_tag: 'next',
       stable_release: false,
-      publication_state: 'preparation',
+      publication_state: 'published',
+      tag: 'v0.40.0-beta.4',
+      github_prerelease: 'https://github.com/mohanagy/madar/releases/tag/v0.40.0-beta.4',
+      published_at: '2026-07-30T13:07:45.103Z',
+      published_package: {
+        npm_files: 102,
+        npm_packed_bytes: 159_937,
+        npm_unpacked_bytes: 639_875,
+        npm_shasum: BETA_4_SHASUM,
+        npm_integrity: BETA_4_INTEGRITY,
+        npm_artifact_sha256: BETA_4_SHA256,
+      },
     })
     expect(manifest.rules.length).toBeGreaterThan(0)
     expect(manifest.items.length).toBeGreaterThan(10)
@@ -1435,7 +1480,7 @@ describe('core reset governance', () => {
     expect(logicalLocAtCommit(legacyBase, deletionFiles)).toBe(20_951)
     const generation = manifest.items.find((item) => item.id === 'generation-and-incremental')
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([])
+      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
     const retrievalRegression = manifest.items.find((item) => item.id === RETRIEVAL_REGRESSION_ID) as any
     expect(retrievalRegression).toMatchObject({
       disposition: 'keep',
@@ -1813,10 +1858,109 @@ describe('core reset governance', () => {
         main_target: 'forbidden',
       },
     })
-    const changedEvidenceSkeletonProduction = [
+    const semanticExecution = manifest.items.find(
+      (item) => item.id === SEMANTIC_EXECUTION_INDEX_ID,
+    ) as any
+    expect(semanticExecution).toMatchObject({
+      disposition: 'keep',
+      status: 'in_progress',
+      destination: 'canonical JavaScript/TypeScript semantic execution index',
+      modified_sources: [...SEMANTIC_EXECUTION_INDEX_FILES],
+      activation: {
+        issue: 'https://github.com/mohanagy/madar/issues/632',
+        protected_base: SEMANTIC_EXECUTION_INDEX_BASE,
+        protected_base_tree: SEMANTIC_EXECUTION_INDEX_BASE_TREE,
+        target_branch: 'next',
+      },
+      delivery_limits: {
+        new_production_files_max: 4,
+        net_production_loc_max: 3_500,
+        graph_artifact_size_ratio_max: 1.5,
+        indexing_median_ratio_max: 1.25,
+        warm_retrieval_p95_ms_less_than: 500,
+      },
+      npm_package_budget: {
+        files_max: 102,
+        packed_bytes_max: 165_000,
+        unpacked_bytes_max: 640_000,
+      },
+      package_metadata_contract: {
+        path: 'package.json',
+        removed_files_entries: [...SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS],
+        repository_files_deleted: false,
+        version_change: 'forbidden',
+        script_change: 'forbidden',
+        dependency_change: 'forbidden',
+        package_lock_change: 'forbidden',
+      },
+      retrieval_budget: {
+        files_max: 12,
+        snippets_max: 25,
+        closure_passes_max: 1,
+        serialized_tokens_max: 4_000,
+      },
+      constraints: {
+        repository_specific_rule: 'forbidden',
+        manual_channel_map: 'forbidden',
+        dependency_change: 'forbidden',
+        retrieval_result_v2_cutover: 'forbidden',
+        compatibility_reader_or_alias: 'forbidden',
+        provider_activity: 'forbidden',
+        npm_publication: 'forbidden',
+        github_release: 'forbidden',
+        registry_metadata_publication: 'forbidden',
+        tag: 'forbidden',
+        main_target: 'forbidden',
+      },
+    })
+    expect(semanticExecution.candidate).toMatchObject({
+      source_measurement: {
+        production_typescript_files: SEMANTIC_EXECUTION_SOURCE.production_typescript_files,
+        production_typescript_loc: SEMANTIC_EXECUTION_SOURCE.production_typescript_loc,
+        added: SEMANTIC_EXECUTION_SOURCE.production_loc_added,
+        removed: SEMANTIC_EXECUTION_SOURCE.production_loc_removed,
+        net: SEMANTIC_EXECUTION_SOURCE.production_loc_net,
+        diff_sha256: SEMANTIC_EXECUTION_DIFF_SHA256,
+      },
+      package_measurement: {
+        files: SEMANTIC_EXECUTION_PACKAGE.npm_files,
+        packed_bytes: SEMANTIC_EXECUTION_PACKAGE.npm_packed_bytes,
+        unpacked_bytes: SEMANTIC_EXECUTION_PACKAGE.npm_unpacked_bytes,
+        shasum: SEMANTIC_EXECUTION_PACKAGE.npm_shasum,
+        integrity: SEMANTIC_EXECUTION_PACKAGE.npm_integrity,
+        artifact_sha256: SEMANTIC_EXECUTION_PACKAGE.npm_artifact_sha256,
+      },
+      local_verification: {
+        focused_tests_passed: 149,
+        last_pre_cache_full_tests_passed: 722,
+        candidate_full_suite_status: 'pending_clean_runner_after_local_host_memory_pressure',
+        candidate_full_suite_local_attempts: 3,
+        graph_nodes: 12_350,
+        graph_edges: 32_839,
+        exact_queue_channels: 6,
+        exact_channel_edges: 51,
+        graph_artifact_size_ratio: 1.2344886849638093,
+        beta4_indexing_trials_seconds: [20.32, 21.33, 22.16, 22.51, 22.74],
+        beta4_indexing_median_seconds: 22.16,
+        candidate_indexing_trials_seconds: [23.31, 24.16, 24.41, 24.87, 25.42],
+        candidate_indexing_median_seconds: 24.41,
+        indexing_median_ratio: 1.1015342960288808,
+        warm_retrieval_samples: 100,
+        warm_retrieval_median_ms: 165.343,
+        warm_retrieval_p95_ms: 216.599,
+        warm_retrieval_max_ms: 257.814,
+        deterministic_graph_sha256:
+          '478e1ed93fcef5a7592dfa0f884318713128e01857dc706a28f2e0d6142937d0',
+        beta4_retrieval_output_byte_identical: true,
+        exact_head_ci: 'pending',
+        independent_review: 'pending',
+      },
+    })
+    expect(semanticExecution).not.toHaveProperty('completion')
+    const changedSemanticExecutionProduction = [
       ...execFileSync(
         git,
-        ['diff', '--name-only', EVIDENCE_SKELETON_RETRIEVAL_BASE, '--', 'src'],
+        ['diff', '--name-only', SEMANTIC_EXECUTION_INDEX_BASE, '--', 'src'],
         { encoding: 'utf8' },
       ).trim().split('\n').filter(Boolean),
       ...execFileSync(
@@ -1825,6 +1969,56 @@ describe('core reset governance', () => {
         { encoding: 'utf8' },
       ).trim().split('\n').filter(Boolean),
     ].sort()
+    expect(changedSemanticExecutionProduction).toEqual([...SEMANTIC_EXECUTION_INDEX_FILES].sort())
+    const semanticBaseFiles = new Set(productionTypeScriptFilesAtCommit(SEMANTIC_EXECUTION_INDEX_BASE))
+    expect(SEMANTIC_EXECUTION_INDEX_FILES.filter((path) => !semanticBaseFiles.has(path)))
+      .toHaveLength(1)
+    expect(productionSourceDelta(SEMANTIC_EXECUTION_INDEX_BASE).net).toBeLessThanOrEqual(3_500)
+    expect(execFileSync(
+      git,
+      ['rev-parse', `${SEMANTIC_EXECUTION_INDEX_BASE}^{tree}`],
+      { encoding: 'utf8' },
+    ).trim()).toBe(SEMANTIC_EXECUTION_INDEX_BASE_TREE)
+    const obligationRetrieval = manifest.items.find(
+      (item) => item.id === 'obligation-driven-retrieval-630',
+    ) as any
+    expect(obligationRetrieval).toMatchObject({
+      disposition: 'keep',
+      status: 'planned',
+      depends_on: [SEMANTIC_EXECUTION_INDEX_ID],
+      activation: {
+        issue: 'https://github.com/mohanagy/madar/issues/630',
+        protected_base: SEMANTIC_EXECUTION_INDEX_BASE,
+        protected_base_tree: SEMANTIC_EXECUTION_INDEX_BASE_TREE,
+        target_branch: 'next',
+      },
+    })
+    const noFallbackQualification = manifest.items.find(
+      (item) => item.id === 'no-fallback-qualification-631',
+    ) as any
+    expect(noFallbackQualification).toMatchObject({
+      disposition: 'keep',
+      status: 'planned',
+      depends_on: [SEMANTIC_EXECUTION_INDEX_ID, 'obligation-driven-retrieval-630'],
+      activation: {
+        issue: 'https://github.com/mohanagy/madar/issues/631',
+        protected_base: SEMANTIC_EXECUTION_INDEX_BASE,
+        protected_base_tree: SEMANTIC_EXECUTION_INDEX_BASE_TREE,
+        target_branch: 'next',
+      },
+    })
+    const changedEvidenceSkeletonProduction = execFileSync(
+      git,
+      [
+        'diff',
+        '--name-only',
+        EVIDENCE_SKELETON_RETRIEVAL_BASE,
+        EVIDENCE_SKELETON_RETRIEVAL_MERGE,
+        '--',
+        'src',
+      ],
+      { encoding: 'utf8' },
+    ).trim().split('\n').filter(Boolean).sort()
     expect(changedEvidenceSkeletonProduction).toEqual([...EVIDENCE_SKELETON_RETRIEVAL_FILES].sort())
     expect(execFileSync(
       git,
@@ -1894,7 +2088,14 @@ describe('core reset governance', () => {
     )).not.toThrow()
     expect(() => execFileSync(
       git,
-      ['diff', '--quiet', sourceTestSnapshot.commit, '--', ...sourceTestSnapshot.frozen_paths],
+      [
+        'diff',
+        '--quiet',
+        sourceTestSnapshot.commit,
+        EVIDENCE_SKELETON_RETRIEVAL_MERGE,
+        '--',
+        ...sourceTestSnapshot.frozen_paths,
+      ],
     )).not.toThrow()
     const sourceDiffSha256 = createHash('sha256').update(execFileSync(
       git,
@@ -2224,22 +2425,18 @@ describe('core reset governance', () => {
       ['merge-base', '--is-ancestor', THIN_DELIVERY_IMPLEMENTATION_START, THIN_DELIVERY_MERGE],
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-30',
+      updated_at: '2026-07-31',
       completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: null,
-      ready_phase: 'release-beta',
-      base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
+      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      ready_phase: null,
+      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
       completed_phase_commit: EVIDENCE_SKELETON_RETRIEVAL_MERGE,
-      production_typescript_files: 43,
-      production_typescript_loc: 12_454,
-      production_loc_added: 1_409,
-      production_loc_removed: 1_102,
-      production_loc_net: 307,
+      ...SEMANTIC_EXECUTION_SOURCE,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'release_candidate_source_and_package',
+      snapshot_scope: 'semantic_execution_index_632_candidate',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([])
+      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
     expect(manifest.targets).toMatchObject({
       production_typescript_files_max: 80,
       production_typescript_loc_max: 35_000,
@@ -3092,21 +3289,17 @@ describe('core reset governance', () => {
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
       completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: null,
-      ready_phase: 'release-beta',
-      base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
+      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      ready_phase: null,
+      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
       completed_phase_commit: EVIDENCE_SKELETON_RETRIEVAL_MERGE,
-      production_typescript_files: 43,
-      production_typescript_loc: 12_454,
-      production_loc_added: 1_409,
-      production_loc_removed: 1_102,
-      production_loc_net: 307,
-      npm_files: 102,
-      npm_packed_bytes: 159_937,
-      npm_unpacked_bytes: 639_875,
+      ...SEMANTIC_EXECUTION_SOURCE,
+      npm_files: SEMANTIC_EXECUTION_PACKAGE.npm_files,
+      npm_packed_bytes: SEMANTIC_EXECUTION_PACKAGE.npm_packed_bytes,
+      npm_unpacked_bytes: SEMANTIC_EXECUTION_PACKAGE.npm_unpacked_bytes,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([])
+      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
 
     const evaluation = manifest.items.find((item) => item.id === 'evaluation-tooling')
     expect(evaluation).toMatchObject({
@@ -3516,11 +3709,19 @@ describe('core reset governance', () => {
     expect(currentPackage).toEqual({
       ...implementationPackage,
       version: '0.40.0-beta.4',
+      files: implementationPackage.files.filter(
+        (path) => !SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS.includes(
+          path as (typeof SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS)[number],
+        ),
+      ),
       scripts: {
         ...implementationPackage.scripts,
         'publish:next': 'npm publish --tag next --access public --provenance',
       },
     })
+    expect(SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS.every(
+      (path) => !currentPackage.files.includes(path),
+    )).toBe(true)
     expect(currentPackage.files).not.toContain('dist-eval/')
     expect(currentPackage.scripts.prepack).not.toContain('build:eval')
     const implementationLock = JSON.parse(execFileSync(
@@ -3606,17 +3807,13 @@ describe('core reset governance', () => {
       | undefined
     expect(manifest.current).toMatchObject({
       completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: null,
-      ready_phase: 'release-beta',
-      base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
-      production_typescript_files: 43,
-      production_typescript_loc: 12_454,
-      production_loc_added: 1_409,
-      production_loc_removed: 1_102,
-      production_loc_net: 307,
+      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      ready_phase: null,
+      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
+      ...SEMANTIC_EXECUTION_SOURCE,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([])
+      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
     expect(phase).toMatchObject({
       disposition: 'keep',
       status: 'stopped',
@@ -3864,17 +4061,13 @@ describe('core reset governance', () => {
       | undefined
     expect(manifest.current).toMatchObject({
       completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: null,
-      ready_phase: 'release-beta',
-      base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
-      production_typescript_files: 43,
-      production_typescript_loc: 12_454,
-      production_loc_added: 1_409,
-      production_loc_removed: 1_102,
-      production_loc_net: 307,
+      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      ready_phase: null,
+      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
+      ...SEMANTIC_EXECUTION_SOURCE,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([])
+      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
     expect(phase).toMatchObject({
       disposition: 'keep',
       status: 'stopped',
@@ -4498,25 +4691,21 @@ describe('core reset governance', () => {
     expect(execFileSync(git, ['rev-parse', `${EVIDENCE_BASE}^{tree}`], { encoding: 'utf8' }).trim())
       .toBe(EVIDENCE_BASE_TREE)
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-30',
+      updated_at: '2026-07-31',
       completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: null,
-      ready_phase: 'release-beta',
-      base_commit: EVIDENCE_SKELETON_RETRIEVAL_BASE,
+      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      ready_phase: null,
+      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
       completed_phase_commit: EVIDENCE_SKELETON_RETRIEVAL_MERGE,
-      production_typescript_files: 43,
-      production_typescript_loc: 12_454,
-      production_loc_added: 1_409,
-      production_loc_removed: 1_102,
-      production_loc_net: 307,
-      npm_files: 102,
-      npm_packed_bytes: 159_937,
-      npm_unpacked_bytes: 639_875,
+      ...SEMANTIC_EXECUTION_SOURCE,
+      npm_files: SEMANTIC_EXECUTION_PACKAGE.npm_files,
+      npm_packed_bytes: SEMANTIC_EXECUTION_PACKAGE.npm_packed_bytes,
+      npm_unpacked_bytes: SEMANTIC_EXECUTION_PACKAGE.npm_unpacked_bytes,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'release_candidate_source_and_package',
+      snapshot_scope: 'semantic_execution_index_632_candidate',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([])
+      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
 
     const evidence = manifest.items.find((item) => item.id === 'evidence-path-query')
     expect(evidence).toMatchObject({
@@ -5647,6 +5836,7 @@ describe('core reset governance', () => {
         status: string
         modified_sources?: string[]
         production_loc_budget?: { added_max: number; removed_min: number; net_max: number }
+        delivery_limits?: { net_production_loc_max: number }
         activation?: { protected_base: string }
         candidate?: {
           source_measurement?: {
@@ -5668,8 +5858,8 @@ describe('core reset governance', () => {
       }>
     }
     const { current } = manifest
-    const candidatePhase = manifest.items.find((item) => item.id === EVIDENCE_SKELETON_RETRIEVAL_ID)
-      ?? manifest.items.find((item) => item.id === current.active_phase)
+    const candidatePhase = manifest.items.find((item) => item.id === current.active_phase)
+      ?? manifest.items.find((item) => item.id === EVIDENCE_SKELETON_RETRIEVAL_ID)
       ?? manifest.items.find((item) => item.id === FULL_FLOW_RETRIEVAL_ID)
     const baseline = candidatePhase?.activation?.protected_base ?? current.base_commit
     expect(execFileSync(git, ['cat-file', '-t', `${baseline}^{commit}`], { encoding: 'utf8' }).trim()).toBe('commit')
@@ -5680,15 +5870,16 @@ describe('core reset governance', () => {
     const phase = candidatePhase
       ?? manifest.items.find((item) => item.id === (current.active_phase ?? current.completed_phase))
     const budget = phase?.production_loc_budget
-    expect(budget).toBeDefined()
+    const netMax = phase?.delivery_limits?.net_production_loc_max ?? budget?.net_max
+    expect(netMax).toBeDefined()
     expect(inventory.filesystemViolations).toEqual([])
-    expect(delta.added).toBeLessThanOrEqual(budget!.added_max)
+    if (budget) expect(delta.added).toBeLessThanOrEqual(budget.added_max)
     const isNonCompleteCandidate = phase?.id === EVIDENCE_SKELETON_RETRIEVAL_ID
       && ['in_progress', 'stopped'].includes(phase.status)
-      && delta.added <= budget!.added_max
-      && delta.net <= budget!.net_max
-    const meetsExitBudget = delta.removed >= budget!.removed_min
-      && delta.net <= budget!.net_max
+      && delta.added <= (budget?.added_max ?? Number.POSITIVE_INFINITY)
+      && delta.net <= netMax!
+    const meetsExitBudget = (!budget || delta.removed >= budget.removed_min)
+      && delta.net <= netMax!
     expect(isNonCompleteCandidate || meetsExitBudget).toBe(true)
     const measuredInventory = {
       production_typescript_files: inventory.files,
@@ -6081,7 +6272,10 @@ describe('core reset governance', () => {
     expect(governance).toContain('## Passed — retrieval regression #618')
     expect(governance).toContain('## Published — `0.40.0-beta.3`')
     expect(governance).toContain('## Passed — retrieval regression #625')
-    expect(governance).toContain('## Ready — `0.40.0-beta.4`')
+    expect(governance).toContain('## Published — `0.40.0-beta.4`')
+    expect(governance).toContain('## In progress — semantic execution index #632')
+    expect(governance).toContain('## Pending — obligation-driven retrieval #630')
+    expect(governance).toContain('## Pending — installed no-fallback qualification #631')
     expect(governance).toContain('## Stopped amendment — capability validation v1')
     expect(governance).toContain('## Historical accepted amendment — capability validation v2')
     expect(governance).toContain('## Cancelled amendment — capability validation')

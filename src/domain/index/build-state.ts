@@ -4,10 +4,10 @@ import { canonicalJsonString, canonicalJsonValue, compareCodeUnits } from '../gr
 import type { KnowledgeGraph } from '../graph/directed-multigraph.js'
 import { hasExactKeys, isRecord } from '../../shared/guards.js'
 
-export const CANONICAL_INDEX_FORMAT_VERSION = 3 as const
+export const CANONICAL_INDEX_FORMAT_VERSION = 4 as const
 export const GENERATION_POLICY_VERSION = 4 as const
 export const INDEX_BUILD_STATE_VERSION = 3 as const
-export const INDEX_ENGINE_ID = 'madar-typescript-index-v3' as const
+export const INDEX_ENGINE_ID = 'madar-typescript-index-v4' as const
 export const INDEXING_OUTCOME_STATUSES = [
   'indexed', 'indexed_with_warnings', 'skipped_by_policy', 'unsupported', 'failed',
 ] as const

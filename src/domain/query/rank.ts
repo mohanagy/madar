@@ -137,6 +137,10 @@ function buildCorpus(index: ReadyQueryIndex): Corpus {
   for (const [id, attributes] of index.graph.nodeEntries()) {
     const file = text(attributes, 'source_file')
     const kind = text(attributes, 'node_kind')
+    // Shared execution channels are traversal infrastructure for retrieval v2.
+    // Keeping them out of the v1 lexical corpus prevents their labels from
+    // changing document frequency and therefore existing symbol ranking.
+    if (kind === 'channel') continue
     if (!paths.has(file)) paths.set(file, field(file, 7))
     const pathField = paths.get(file) ?? null
     const fields = [

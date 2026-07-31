@@ -11,11 +11,13 @@ import ts from 'typescript'
 
 import { KnowledgeGraph } from '../../domain/graph/directed-multigraph.js'
 import { CANONICAL_INDEX_FORMAT_VERSION } from '../../domain/index/build-state.js'
+import { encodeIndexBodyFactTable } from '../../domain/index/model.js'
 import type {
   IndexDiagnostic,
   IndexEdge,
   IndexEdgeEvidence,
   IndexFile,
+  IndexChannelNode,
   IndexFrameworkRole,
   IndexLanguage,
   IndexRange,
@@ -31,6 +33,7 @@ import { detectHonoFramework } from './framework-hono.js'
 import { detectFastifyFramework } from './framework-fastify.js'
 import { detectTrpcFramework } from './framework-trpc.js'
 import { detectPrismaFramework } from './framework-prisma.js'
+import { collectExecutionSemantics } from './execution.js'
 
 export interface BuildCanonicalTypeScriptIndexOptions {
   root: string
@@ -119,6 +122,7 @@ export function buildCanonicalTypeScriptIndex(opts: BuildCanonicalTypeScriptInde
   const files: IndexFile[] = []
   const symbols: IndexSymbol[] = []
   const symbolById = new Map<string, IndexSymbol>()
+  const channels: IndexChannelNode[] = []
   const edges: IndexEdge[] = []
   const diagnostics: IndexDiagnostic[] = []
 
@@ -152,15 +156,29 @@ export function buildCanonicalTypeScriptIndex(opts: BuildCanonicalTypeScriptInde
         visitFile(sourceFile, file, root, pathToFileId, compiler.resolveModule, symbols, symbolById, edges, diagnostics)
       }
     }
-    addTypeCheckerEdges({ files, root, pathToFileId, symbols, edges, diagnostics, program: compiler.program })
+    addTypeCheckerEdges({
+      files,
+      root,
+      pathToFileId,
+      symbols,
+      channels,
+      edges,
+      diagnostics,
+      program: compiler.program,
+    })
   }
 
   files.sort((a, b) => compareCodeUnits(a.path, b.path))
   symbols.sort((a, b) => compareCodeUnits(symbolSortKey(a), symbolSortKey(b)))
+  channels.sort((a, b) => compareCodeUnits(a.id, b.id))
   edges.sort((a, b) => compareCodeUnits(edgeSortKey(a), edgeSortKey(b)))
   diagnostics.sort((a, b) => compareCodeUnits(diagnosticSortKey(a), diagnosticSortKey(b)))
 
-  return { graph: writeCanonicalGraph(root, files, symbols, edges), files, diagnostics }
+  return {
+    graph: writeCanonicalGraph(root, files, symbols, channels, edges),
+    files,
+    diagnostics,
+  }
 }
 
 const confidence = {
@@ -173,6 +191,7 @@ function writeCanonicalGraph(
   root: string,
   files: readonly IndexFile[],
   symbols: readonly IndexSymbol[],
+  channels: readonly IndexChannelNode[],
   edges: readonly IndexEdge[],
 ): KnowledgeGraph {
   const graph = new KnowledgeGraph({
@@ -225,7 +244,25 @@ function writeCanonicalGraph(
         framework_role: symbol.framework_role,
       } : {}),
       ...(Object.keys(metadata).length > 0 ? { framework_metadata: metadata, ...metadata } : {}),
+      ...(symbol.body_facts && symbol.body_facts.length > 0
+        ? { body_facts: encodeIndexBodyFactTable(symbol.body_facts) }
+        : {}),
       provenance: [provenance(file.path, location)],
+    })
+  }
+
+  for (const channel of channels) {
+    graph.addNode(channel.id, {
+      label: channel.key,
+      node_kind: 'channel',
+      channel_kind: channel.channel_kind,
+      transport: channel.transport,
+      key: channel.key,
+      ...(channel.scope ? { scope: channel.scope } : {}),
+      ...(channel.parent_channel_id
+        ? { parent_channel_id: channel.parent_channel_id }
+        : {}),
+      layer: 'semantic',
     })
   }
 
@@ -265,7 +302,16 @@ function writeCanonicalGraph(
       source_file: sourceFile,
       source_location: location,
       layer: 'semantic',
-      evidence: { source: edge.source, ...(range ? { range } : {}) },
+      evidence: {
+        source: edge.source,
+        ...(range ? { range } : {}),
+        ...(edge.evidence?.statement_range
+          ? { statement_range: edge.evidence.statement_range }
+          : {}),
+        ...(edge.evidence?.excerpt_sha256
+          ? { excerpt_sha256: edge.evidence.excerpt_sha256 }
+          : {}),
+      },
       ...(edge.metadata ?? {}),
       provenance: [provenance(sourceFile, location)],
     }
@@ -1039,7 +1085,10 @@ function makeFileId(relPath: string): string {
 }
 
 function makeSymbolId(fileId: string, kind: IndexSymbolKind, name: string): string {
-  return `symbol:${fileId}/${kind}/${name}`
+  const id = `symbol:${fileId}/${kind}/${name}`
+  return Buffer.byteLength(id, 'utf8') <= 1_024
+    ? id
+    : `symbol:${fileId}/${kind}/hashed:${sha256(name).slice(0, 32)}`
 }
 
 function sha256(text: string): string {
@@ -1113,13 +1162,23 @@ type TypeCheckerEdgeContext = {
   root: string
   pathToFileId: Map<string, string>
   symbols: IndexSymbol[]
+  channels: IndexChannelNode[]
   edges: IndexEdge[]
   diagnostics: IndexDiagnostic[]
   program: ts.Program
 }
 
 function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
-  const { files, root, pathToFileId, symbols, edges, diagnostics, program } = ctx
+  const {
+    files,
+    root,
+    pathToFileId,
+    symbols,
+    channels,
+    edges,
+    diagnostics,
+    program,
+  } = ctx
   const checker = program.getTypeChecker()
   const seenCalls = new Set<string>()
   const seenTypeEdges = new Set<string>()
@@ -1221,6 +1280,17 @@ function addTypeCheckerEdges(ctx: TypeCheckerEdgeContext): void {
   }
 
   finalizeExpressMountPrefixes({ symbols, edges })
+  const execution = collectExecutionSemantics({
+    program,
+    sourceFiles: programSourceFiles,
+    checker,
+    pathToFileId,
+    symbols,
+    symbolsByFile,
+  })
+  channels.push(...execution.channels)
+  edges.push(...execution.edges)
+  diagnostics.push(...execution.diagnostics)
 }
 
 function walkCallExpressions(

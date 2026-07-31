@@ -255,10 +255,14 @@ beforeAll(() => {
   if (!moduleEntry || !methodEntry) {
     throw new Error('Expected deterministic module distractor nodes')
   }
+  const {
+    body_facts: _authenticatedBodyFacts,
+    ...distractorMethodAttributes
+  } = methodEntry[1]
   for (let ordinal = 0; ordinal < 10_001; ordinal += 1) {
     const nodeId = `issue-625-overlay-${ordinal.toString().padStart(5, '0')}`
     overlayGraph.addNode(nodeId, {
-      ...methodEntry[1],
+      ...distractorMethodAttributes,
       label: `ideaReportPipelineAssemblyPersistenceOverlay${ordinal}()`,
       qualified_name:
         `PipelineAssemblyCatalogModule.ideaReportPipelineAssemblyPersistenceOverlay${ordinal}`,

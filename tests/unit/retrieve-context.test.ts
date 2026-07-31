@@ -1841,6 +1841,10 @@ describe('retrieve context', () => {
       root_path: '/workspace',
       file_hashes: new Map(),
       unsupported_sources: [],
+      operation_by_id: new Map(),
+      operations_by_owner: new Map(),
+      channels_by_id: new Map(),
+      channels_by_key: new Map(),
     }
 
     const slice = traverseEvidencePaths(index, {

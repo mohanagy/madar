@@ -4,7 +4,13 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { loadGraphArtifact, parseGraphArtifact, readBoundedUtf8, readGraphArtifactReceipt } from '../../src/adapters/filesystem/graph-artifact.js'
+import {
+  graphArtifactIdentity,
+  loadGraphArtifact,
+  parseGraphArtifact,
+  readBoundedUtf8,
+  readGraphArtifactReceipt,
+} from '../../src/adapters/filesystem/graph-artifact.js'
 import { GRAPH_ARTIFACT_REGENERATE_MESSAGE, serializeGraphArtifact } from '../../src/domain/graph/artifact.js'
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 
@@ -49,6 +55,7 @@ describe('stored graph artifact guard', () => {
     writeFileSync(graphPath, firstArtifact)
 
     const first = readGraphArtifactReceipt(graphPath)
+    expect(graphArtifactIdentity(graphPath)).toBe(first.identity)
     expect(readGraphArtifactReceipt(graphPath, first)).toBe(first)
     expect(first.graphSha256).toBe(createHash('sha256').update(firstArtifact).digest('hex'))
 
@@ -58,6 +65,7 @@ describe('stored graph artifact guard', () => {
 
     expect(next).not.toBe(first)
     expect(next.identity).not.toBe(first.identity)
+    expect(graphArtifactIdentity(graphPath)).toBe(next.identity)
     expect(next.graphSha256).toBe(createHash('sha256').update(nextArtifact).digest('hex'))
     expect(next.graph.graph.fixture_tags).toEqual(['api'])
   })
