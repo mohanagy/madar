@@ -1933,7 +1933,7 @@ describe('core reset governance', () => {
         artifact_sha256: SEMANTIC_EXECUTION_PACKAGE.npm_artifact_sha256,
       },
       local_verification: {
-        focused_tests_passed: 143,
+        focused_tests_passed: 196,
         last_pre_cache_full_tests_passed: 722,
         candidate_full_suite_status:
           'all_761_unique_tests_passed_but_single_process_full_coverage_blocked_by_local_fork_worker_start_pressure',
