@@ -123,6 +123,21 @@ function publishedQueueKeys(
 }
 
 describe('canonical execution independent-review regressions', () => {
+  it('does not attribute binary-assigned deferred closures to their enclosing method', () => {
+    const source = `declare function persist(job: string): void
+export class Worker {
+  handler?: (job: string) => void
+  install(): void {
+    this.handler = (job) => persist(job)
+  }
+}
+`
+    const { nodes } = build({ 'src/deferred-property.ts': source })
+    const calls = facts(nodes, symbol(nodes, 'Worker.install'), 'call')
+    expect(calls.filter((fact) =>
+      fact.kind === 'call' && fact.callee === 'persist')).toEqual([])
+  })
+
   it('keeps unsupported Promise arrays queryable and their direct calls unscoped', () => {
     const oversized = Array.from(
       { length: 33 },

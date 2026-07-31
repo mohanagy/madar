@@ -80,6 +80,7 @@ function bounded(v: unknown, maxBytes: number): v is string {
 function safeInt(v: unknown, minimum = 0): v is number {
   return typeof v === 'number'
     && Number.isSafeInteger(v)
+    && !Object.is(v, -0)
     && v >= minimum
 }
 

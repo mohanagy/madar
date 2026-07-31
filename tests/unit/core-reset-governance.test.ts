@@ -432,22 +432,22 @@ const SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS = [
 ] as const
 const SEMANTIC_EXECUTION_SOURCE = {
   production_typescript_files: 44,
-  production_typescript_loc: 15_942,
-  production_loc_added: 3_675,
+  production_typescript_loc: 15_944,
+  production_loc_added: 3_677,
   production_loc_removed: 187,
-  production_loc_net: 3_488,
+  production_loc_net: 3_490,
 } as const
 const SEMANTIC_EXECUTION_PACKAGE = {
   npm_files: 102,
   npm_packed_bytes: 143_549,
-  npm_unpacked_bytes: 639_164,
-  npm_shasum: '590e27d375f95e5212374b7478e480f58199d702',
+  npm_unpacked_bytes: 639_217,
+  npm_shasum: 'fe83717734be8e1ae554e6e936dc2026c8c65245',
   npm_integrity:
-    'sha512-hN7chlybxfu1ZGZptit9rEP03eaYmBBGoFMornzenbbp9taNjjdl+Lj3DSjZQDhV9pJc5YdRPOlRVrccS1s6tA==',
-  npm_artifact_sha256: 'cf5a6c25c4fec77e2a2da03bfd7564ec394b238456eb4f38e738f6386d392e76',
+    'sha512-Eo9IyQucf9VN/UvRje9ABgID3FdH9Bdq2cxBBPz1ywhf9OOar4Tgfy1tYR5yxf5r8X9LbNUftBLRQaoET9eV1g==',
+  npm_artifact_sha256: '09af6e9193bd0033f0daeb3621f437852679b95f68b82e0cd346b79974185554',
 } as const
 const SEMANTIC_EXECUTION_DIFF_SHA256 =
-  '03023cece3f0cb641aa05971e903ca4b3904d613c614a994f6427c472d67f4f4'
+  'a7feb3f23afb0e2d19837b6ff3bdf980c6c2fecbfc70c189d8a8849db7c57481'
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
   '4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0'
 const CAPABILITY_VALIDATION_V2_ISSUE = 'https://github.com/mohanagy/madar/issues/612'
@@ -1931,7 +1931,7 @@ describe('core reset governance', () => {
         artifact_sha256: SEMANTIC_EXECUTION_PACKAGE.npm_artifact_sha256,
       },
       local_verification: {
-        focused_tests_passed: 162,
+        focused_tests_passed: 163,
         last_pre_cache_full_tests_passed: 722,
         candidate_full_suite_status: 'pending_clean_runner_after_local_host_memory_pressure',
         candidate_full_suite_local_attempts: 3,
@@ -1939,18 +1939,18 @@ describe('core reset governance', () => {
         graph_edges: 32_726,
         exact_queue_channels: 6,
         exact_channel_edges: 51,
-        graph_artifact_size_ratio: 1.2293214469979519,
+        graph_artifact_size_ratio: 1.2293169600080505,
         beta4_indexing_trials_seconds: [20.32, 21.33, 22.16, 22.51, 22.74],
         beta4_indexing_median_seconds: 22.16,
-        candidate_indexing_trials_seconds: [17.08, 15.08, 14.96, 13.82, 13.24],
-        candidate_indexing_median_seconds: 14.96,
-        indexing_median_ratio: 0.6750902527075813,
+        candidate_indexing_trials_seconds: [13.98, 14.54, 13.71, 13.27, 14.07],
+        candidate_indexing_median_seconds: 13.98,
+        indexing_median_ratio: 0.6308664259927798,
         warm_retrieval_samples: 100,
-        warm_retrieval_median_ms: 225.692208,
-        warm_retrieval_p95_ms: 253.599958,
-        warm_retrieval_max_ms: 300.229625,
+        warm_retrieval_median_ms: 233.9935625,
+        warm_retrieval_p95_ms: 276.41525,
+        warm_retrieval_max_ms: 301.64975,
         deterministic_graph_sha256:
-          '82469164dbdf1229195d6fb71d8220736c15c5a13093dd2f2fc6f2a633f73a36',
+          '1f993903a29bc5d523de173a1a86218c7ab304369ac159f282d75f67129d6076',
         beta4_retrieval_output_byte_identical: true,
         exact_head_ci: 'pending',
         independent_review: 'pending',

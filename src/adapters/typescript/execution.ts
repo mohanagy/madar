@@ -457,7 +457,7 @@ function ca(node: ts.SignatureDeclaration, file: FileContext, ctx: CollectionSta
                 : null;
         }
         return isBinary(parent)
-            ? ds(node, file, ctx)
+            ? ed(node, file, ctx)
             : null;
     }
     return ts.isFunctionDeclaration(node)
@@ -2023,15 +2023,16 @@ function at(ctx: CollectionState): void {
             symbol.body_facts = normalized;
         }
         catch (error) {
-            if (!(error instanceof IndexBodyFactBoundsError)) {
-                throw new Error(`Invalid execution facts for ${symbol.name}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-            }
+            const bounded = error instanceof IndexBodyFactBoundsError;
             ctx.diagnostics.push({
-                id: `canonical-index.execution.owner-bound.${hash(symbol.id).slice(0, 16)}`,
+                id: `canonical-index.execution.${bounded ? 'owner-bound' : 'invalid'}.${hash(symbol.id).slice(0, 16)}`,
                 level: 'error',
-                message: `Execution facts exceeded a per-owner safety bound for ${symbol.name}; body facts were omitted`,
+                message: bounded
+                    ? `Execution facts exceeded a per-owner safety bound for ${symbol.name}; body facts were omitted`
+                    : `Invalid execution facts for ${symbol.name}; body facts were omitted`,
                 evidence: { file_id: symbol.file_id, range: symbol.range },
             });
+            delete symbol.body_facts;
         }
     }
 }
