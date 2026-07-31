@@ -7,6 +7,14 @@ import { writeTextFileAtomically } from '../../shared/atomic-file.js'
 import { validateGraphPath } from '../../shared/security.js'
 const MAX_GRAPH_BYTES = 100 * 1024 * 1024
 const descriptorIdentity = (stats: ReturnType<typeof fstatSync>) => `${stats.dev}:${stats.ino}:${stats.ctimeMs}:${stats.mtimeMs}:${stats.size}`
+export function graphArtifactIdentity(graphPath: string): string {
+  const descriptor = openSync(validateGraphPath(graphPath), 'r')
+  try {
+    const stats = fstatSync(descriptor)
+    if (stats.size > MAX_GRAPH_BYTES) throw new Error(`Graph file too large: ${graphPath}`)
+    return descriptorIdentity(stats)
+  } finally { closeSync(descriptor) }
+}
 export function readBoundedUtf8(descriptor: number, maxBytes: number, tooLarge: string): string {
   const chunks: Buffer[] = []; let total = 0
   while (total <= maxBytes) {

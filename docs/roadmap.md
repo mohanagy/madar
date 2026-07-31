@@ -11,7 +11,7 @@ Madar is executing an accepted Core Reset. The roadmap is outcome-driven: work a
 - [Removal manifest](core-reset/removal-manifest.yml) — keep, rebuild, move, delete, and defer decisions
 - [Scorecard](core-reset/scorecard.md) — technical and business evidence gates
 
-The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, Evaluation Tooling Isolation, and the bounded retrieval repairs in [#618](https://github.com/mohanagy/madar/issues/618), [#622](https://github.com/mohanagy/madar/issues/622), and [#625](https://github.com/mohanagy/madar/issues/625) have passed. Capability Validation and the Native-vs-Graphify comparator are cancelled as release gates. `0.40.0-beta.3` remains immutable published history; `0.40.0-beta.4` release preparation is authorized against protected `next` under [#627](https://github.com/mohanagy/madar/issues/627). npm `latest`, stable release, MCP Registry publication, and `main` remain unauthorized.
+The RFC is **accepted**. Scope and baseline, Directed multigraph, Canonical TypeScript/JavaScript index, the combined legacy/non-code deletion, Generation and reconciliation, Evidence-path query, Thin Delivery, Evaluation Tooling Isolation, and the bounded retrieval repairs in [#618](https://github.com/mohanagy/madar/issues/618), [#622](https://github.com/mohanagy/madar/issues/622), and [#625](https://github.com/mohanagy/madar/issues/625) have passed. Capability Validation and the earlier Native-vs-Graphify campaign are cancelled history. `0.40.0-beta.4` is published from exact protected-`next` commit `9043320cfa08370e5cdd3911bfb9283005aa9912`; npm `latest` remains `0.32.0`. The semantic execution program is now dependency-ordered as active [#632](https://github.com/mohanagy/madar/issues/632), pending [#630](https://github.com/mohanagy/madar/issues/630), then pending [#631](https://github.com/mohanagy/madar/issues/631). Another beta, stable release, MCP Registry publication, and `main` remain unauthorized.
 
 ## Passed — directed multigraph
 
@@ -157,11 +157,25 @@ First PR head `eb664013a399bd4ef970915ce9382f841395ebfa` stopped in [run 3052779
 
 Final reviewed head `3d194b62aba3324e93bcf01c77cf508edea70a6f` and tree `15565d356d947b2b195e7e0ec4871094b60b8493` passed all six [exact-head CI jobs](https://github.com/mohanagy/madar/actions/runs/30533140531), [independent review](https://github.com/mohanagy/madar/pull/626#pullrequestreview-4817647772), CodeRabbit, and zero unresolved threads. Protected squash merge `b6562b715133304bd46e537b6f39008bc1e02095` preserved the reviewed tree. Issue #625 itself authorized no publication.
 
-## Ready — `0.40.0-beta.4`
+## Published — `0.40.0-beta.4`
 
-Release preparation starts from exact protected `next` commit `b6562b715133304bd46e537b6f39008bc1e02095` and tree `15565d356d947b2b195e7e0ec4871094b60b8493`. Scope is limited to governance completion, version/package metadata, changelog and release documentation, SBOM/Registry manifest alignment, release-workflow pins, and tests; it changes no production source or dependency.
+The release completed from exact protected `next` commit `9043320cfa08370e5cdd3911bfb9283005aa9912` and tree `f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc`. `@lubab/madar@0.40.0-beta.4` is published under npm dist-tag `next`; tag `v0.40.0-beta.4` and the matching [GitHub prerelease](https://github.com/mohanagy/madar/releases/tag/v0.40.0-beta.4) target that exact commit.
 
-The exact npm 12.0.1 candidate is 102 files / 159,937 packed / 639,875 unpacked bytes under the unchanged 102 / 165,000 / 640,000 ceilings. The release PR targets protected `next`, never `main`. Merge requires all six exact-head CI jobs, independent no-blocker review, honest CodeRabbit disposition, and zero unresolved threads. Only the exact merged `next` tip may be tagged `v0.40.0-beta.4` and published as npm `next` plus a matching GitHub prerelease. npm `latest`, stable release, MCP Registry publication, comparative claims, and `main` remain out of scope.
+The published npm artifact is 102 files / 159,937 packed / 639,875 unpacked bytes under the unchanged 102 / 165,000 / 640,000 ceilings. npm `latest` remains `0.32.0`; stable release, MCP Registry publication, new comparative claims, and `main` remain out of scope.
+
+## In progress — semantic execution index #632
+
+[#632](https://github.com/mohanagy/madar/issues/632) starts from exact protected `next` commit `9043320cfa08370e5cdd3911bfb9283005aa9912` and tree `f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc`, and its PR target is `next`. It adds compact authenticated body facts, numeric order and control, exact queue/job/event channel topology, bounded two-hop wrapper substitution, concurrency groups, and receiver/type-proven persistence. It does not cut retrieval output to v2.
+
+The active delivery limits are no more than four new production files, no more than 3,500 net new production lines, no more than 1.5x the beta.4 GoValidate graph size, indexing median no slower than 1.25x beta.4 on the same machine, warm retrieval p95 strictly below 500 ms, and the unchanged package ceilings of 102 files / 165,000 packed / 640,000 unpacked bytes. No dependency, provider activity, publication, GitHub Release, Registry metadata, tag, or `main` action is authorized. Three superseded PR heads remain stopped and unmerged. The current local correction is within every source, package, graph, indexing, warm-retrieval and deterministic-output ceiling; its exact measurements are recorded in the removal manifest. Exact-head CI, independent review, CodeRabbit completion, zero unresolved threads, merge, and publication receipts remain pending and must not be inferred from local work.
+
+## Pending — obligation-driven retrieval #630
+
+[#630](https://github.com/mohanagy/madar/issues/630) starts only after #632 completes. It owns explicit question obligations, graph-coherent workflow construction, at most two bounded recovery passes, exact-range hydration, strict answerability, and the `madar.retrieve` v2 dossier. It retains the 4,000-token / 12-file / 25-excerpt ceilings and cannot publish.
+
+## Pending — installed no-fallback qualification #631
+
+[#631](https://github.com/mohanagy/madar/issues/631) starts only after #632 and #630 complete. It owns installed-package parity and the frozen comparison against `0.32.0`, `0.40.0-beta.4`, one pinned Graphify commit, and a no-tool control. It requires one Madar retrieval and zero repository Read/Grep/Glob/Bash fallback calls in natural-client candidate runs. No provider traffic, spend, beta publication, release, Registry metadata, tag, stable/`latest`, or `main` authority exists without a separate owner authorization.
 
 ## Validation — release decision
 

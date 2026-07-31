@@ -3,7 +3,10 @@ import { resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { Transform, type Readable, type Writable } from 'node:stream'
 import { setTimeout as delay } from 'node:timers/promises'
-import { readGraphArtifactReceipt } from '../filesystem/graph-artifact.js'
+import {
+  graphArtifactIdentity,
+  readGraphArtifactReceipt,
+} from '../filesystem/graph-artifact.js'
 import { readBuildState } from '../../domain/index/build-state.js'
 import {
   failedQueryIndex,
@@ -107,28 +110,43 @@ function boundedLineInput(): Transform {
 function unavailableIndex(): QueryIndex {
   return failedQueryIndex('unavailable', UNAVAILABLE_SUBJECT)
 }
+type QueryIndexCache = {
+  identity: string
+  acceptedBuildId: string
+  index: QueryIndex
+}
 function readAcceptedQueryIndex(
   workspace: MadarWorkspace,
   controller: ReconciliationController,
-): QueryIndex {
+  cached: QueryIndexCache | null,
+): QueryIndexCache | { index: QueryIndex } {
   try {
+    const acceptedBuildId = controller.acceptedBuildId()
+    if (
+      cached
+      && cached.acceptedBuildId === acceptedBuildId
+      && cached.identity === graphArtifactIdentity(workspace.graphPath)
+    ) return cached
     const receipt = readGraphArtifactReceipt(workspace.graphPath)
     const index = inspectQueryIndex(receipt.graph)
-    if (index.state !== 'ready') return index
+    if (index.state !== 'ready') return { index }
     const build = readBuildState(receipt.graph)
     if (!build
-      || build.build_id !== controller.acceptedBuildId()
+      || !acceptedBuildId
+      || build.build_id !== acceptedBuildId
       || !samePath(index.root_path, workspace.rootPath)) {
-      return unavailableIndex()
+      return { index: unavailableIndex() }
     }
-    return index
+    return { identity: receipt.identity, acceptedBuildId, index }
   } catch (error) {
-    return failedQueryIndex(
-      unavailableGraphError(error) ? 'unavailable' : 'corrupt',
-      unavailableGraphError(error)
-        ? UNAVAILABLE_SUBJECT
-        : 'canonical graph artifact',
-    )
+    return {
+      index: failedQueryIndex(
+        unavailableGraphError(error) ? 'unavailable' : 'corrupt',
+        unavailableGraphError(error)
+          ? UNAVAILABLE_SUBJECT
+          : 'canonical graph artifact',
+      ),
+    }
   }
 }
 function settleBefore<T>(
@@ -181,6 +199,7 @@ class McpRuntime {
   #initialized = false
   #toolsListed = false
   #controller: ReconciliationController | null = null
+  #queryIndexCache: QueryIndexCache | null = null
   #startFailure: string | null = null
   #startPromise: Promise<ReconciliationController | null> | null = null
   constructor(
@@ -238,7 +257,11 @@ class McpRuntime {
       if (controller.failureReason()) return unavailableIndex()
       const state = controller.state()
       if (controller.startupComplete() && state === 'idle') {
-        return readAcceptedQueryIndex(this.#workspace, controller)
+        const result = readAcceptedQueryIndex(
+          this.#workspace, controller, this.#queryIndexCache,
+        )
+        this.#queryIndexCache = 'identity' in result ? result : null
+        return result.index
       }
       if (state === 'failed' || state === 'stopped') return unavailableIndex()
       await delay(Math.min(
