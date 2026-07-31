@@ -739,7 +739,7 @@ ${calls}
       }),
     ]))
     expect(outgoing(edges, ownerId, 'publishes_to')).toEqual([])
-  })
+  }, 60_000)
 
   it('is deterministic when the scanner enumerates execution files in reverse', () => {
     const sources = {

@@ -432,22 +432,22 @@ const SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS = [
 ] as const
 const SEMANTIC_EXECUTION_SOURCE = {
   production_typescript_files: 44,
-  production_typescript_loc: 15_944,
-  production_loc_added: 3_677,
+  production_typescript_loc: 15_934,
+  production_loc_added: 3_667,
   production_loc_removed: 187,
-  production_loc_net: 3_490,
+  production_loc_net: 3_480,
 } as const
 const SEMANTIC_EXECUTION_PACKAGE = {
   npm_files: 102,
-  npm_packed_bytes: 143_549,
-  npm_unpacked_bytes: 639_217,
-  npm_shasum: 'fe83717734be8e1ae554e6e936dc2026c8c65245',
+  npm_packed_bytes: 145_254,
+  npm_unpacked_bytes: 638_736,
+  npm_shasum: '9f0c66e663f703afbb9a5e68f6037f9e211cba58',
   npm_integrity:
-    'sha512-Eo9IyQucf9VN/UvRje9ABgID3FdH9Bdq2cxBBPz1ywhf9OOar4Tgfy1tYR5yxf5r8X9LbNUftBLRQaoET9eV1g==',
-  npm_artifact_sha256: '09af6e9193bd0033f0daeb3621f437852679b95f68b82e0cd346b79974185554',
+    'sha512-3yYpFxnym0r9DF66IfS8w1MI01DMLU+hX6uQi6aQoBQvbeu6jHn8j059N6ml3MwMx3wvlj41Y3yAMIX3D2N2Aw==',
+  npm_artifact_sha256: 'b49bf7a1eae2b230da4d0b7a778f6112e1bc9d986c083573bc3bd7296a99c670',
 } as const
 const SEMANTIC_EXECUTION_DIFF_SHA256 =
-  'a7feb3f23afb0e2d19837b6ff3bdf980c6c2fecbfc70c189d8a8849db7c57481'
+  'e712d06a2c43cc0223c2c4219691ddc860f2f05d26c689b19b8ade2d180c99a6'
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
   '4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0'
 const CAPABILITY_VALIDATION_V2_ISSUE = 'https://github.com/mohanagy/madar/issues/612'
@@ -1921,6 +1921,8 @@ describe('core reset governance', () => {
         removed: SEMANTIC_EXECUTION_SOURCE.production_loc_removed,
         net: SEMANTIC_EXECUTION_SOURCE.production_loc_net,
         diff_sha256: SEMANTIC_EXECUTION_DIFF_SHA256,
+        execution_source_sha256:
+          'cf43e183f9d001764f4fdd22b073bef8854f9d949fef5793905291b870d3404b',
       },
       package_measurement: {
         files: SEMANTIC_EXECUTION_PACKAGE.npm_files,
@@ -1931,27 +1933,49 @@ describe('core reset governance', () => {
         artifact_sha256: SEMANTIC_EXECUTION_PACKAGE.npm_artifact_sha256,
       },
       local_verification: {
-        focused_tests_passed: 163,
+        focused_tests_passed: 143,
         last_pre_cache_full_tests_passed: 722,
-        candidate_full_suite_status: 'pending_clean_runner_after_local_host_memory_pressure',
-        candidate_full_suite_local_attempts: 3,
+        candidate_full_suite_status:
+          'all_761_unique_tests_passed_but_single_process_full_coverage_blocked_by_local_fork_worker_start_pressure',
+        candidate_full_suite_local_attempts: 6,
+        default_fork_completed_test_files: 79,
+        default_fork_completed_tests_passed: 707,
+        default_fork_unstarted_file: 'tests/unit/retrieve-context.test.ts',
+        unstarted_file_isolated_tests_passed: 54,
+        unique_tests_passed_across_default_fork_runs: 761,
+        local_independent_review: 'no_blocker',
         graph_nodes: 12_313,
-        graph_edges: 32_726,
+        graph_edges: 32_717,
         exact_queue_channels: 6,
-        exact_channel_edges: 51,
-        graph_artifact_size_ratio: 1.2293169600080505,
+        exact_job_channels: 0,
+        exact_event_channels: 0,
+        exact_channel_edges: 42,
+        publishes_to_edges: 35,
+        consumed_by_edges: 7,
+        graph_artifact_bytes: 60_267_088,
+        graph_artifact_size_ratio: 1.2291718874663748,
         beta4_indexing_trials_seconds: [20.32, 21.33, 22.16, 22.51, 22.74],
         beta4_indexing_median_seconds: 22.16,
-        candidate_indexing_trials_seconds: [13.98, 14.54, 13.71, 13.27, 14.07],
-        candidate_indexing_median_seconds: 13.98,
-        indexing_median_ratio: 0.6308664259927798,
+        candidate_indexing_trials_seconds: [14.83, 12.99, 13.05, 14.16, 13.17],
+        candidate_indexing_median_seconds: 13.17,
+        indexing_median_ratio: 0.5943140794223827,
         warm_retrieval_samples: 100,
-        warm_retrieval_median_ms: 233.9935625,
-        warm_retrieval_p95_ms: 276.41525,
-        warm_retrieval_max_ms: 301.64975,
+        warm_retrieval_median_ms: 156.7398119999998,
+        warm_retrieval_p95_ms: 177.5851354499996,
+        warm_retrieval_max_ms: 183.07708300000013,
         deterministic_graph_sha256:
-          '1f993903a29bc5d523de173a1a86218c7ab304369ac159f282d75f67129d6076',
+          '77270a6f0330a3ce85fbc42b90e7a3e99f8bf37776f6e65f5da8aad1bad3caaf',
+        broad_retrieval_files: 10,
+        broad_retrieval_snippets: 10,
+        broad_retrieval_serialized_tokens: 3_669,
+        broad_retrieval_disconnected_boundaries: 4,
+        broad_retrieval_output_bytes: 13_376,
+        broad_retrieval_output_sha256:
+          'ca003cd8eb0be3273589b556ad0acaf2c49588a1d9e00dccf4e5f36da795b996',
         beta4_retrieval_output_byte_identical: true,
+        beta4_retrieval_output_bytes: 15_294,
+        beta4_retrieval_output_sha256:
+          '87b4ef75473834708b20f1d2580b31470a710d797d7bdf55eee1d0876827a173',
         exact_head_ci: 'pending',
         independent_review: 'pending',
       },

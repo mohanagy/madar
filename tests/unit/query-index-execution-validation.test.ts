@@ -571,6 +571,27 @@ describe('query execution index validation', () => {
     })
   })
 
+  it('rejects a re-sealed sparse persistence ordinal', () => {
+    const current = fixture()
+    mutateBodyFactWireRows(current.graph, current.runId, (rows) => {
+      const persistence = rowOfKind(rows, 6)
+      const evidence = persistence[5]
+      if (!Array.isArray(evidence) || typeof evidence[8] !== 'string') {
+        throw new Error('Expected persistence evidence')
+      }
+      persistence[4] = 9
+      persistence[0] = indexBodyFactId(
+        current.runId,
+        'persistence',
+        [persistence[2], 6, persistence[3], persistence[4]] as number[],
+        evidence[8],
+        persistence.slice(1),
+      )
+    })
+    resign(current.graph)
+    expect(inspectQueryIndex(current.graph)).toMatchObject({ state: 'corrupt' })
+  })
+
   it('authenticates selected-owner channel edge bytes before returning evidence', () => {
     const current = fixture()
     const edge = current.graph.edgeEntries().find(([from, , attributes]) =>

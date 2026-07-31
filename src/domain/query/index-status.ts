@@ -312,6 +312,10 @@ function buildMaps(view: KnowledgeGraph, files: ReadonlyMap<string, string>): Ex
         const bodyFacts = decodeIndexBodyFactTable(a.body_facts, id, fileId);
         if (!bodyFacts)
             fail('symbol body facts');
+        const ps = bodyFacts.filter((fact) => fact.kind === 'persistence');
+        const po = new Set(ps.map((fact) => fact.order[3]));
+        if (po.size !== ps.length || ps.some((_, index) => !po.has(index + 1)))
+            fail('persistence order');
         const orders = orderKeys.get(id) ?? new Set<string>();
         orderKeys.set(id, orders);
         for (const fact of bodyFacts) {
@@ -439,7 +443,6 @@ function buildMaps(view: KnowledgeGraph, files: ReadonlyMap<string, string>): Ex
                 || call.evidence.excerpt_sha256 !== fact.evidence.excerpt_sha256
                 || call.order[0] !== fact.order[0]
                 || call.order[2] !== fact.order[2]
-                || call.order[3] !== fact.order[3]
                 || JSON.stringify(call.control) !== JSON.stringify(fact.control)
                 || !bounded(fact.receiver_type, MAX_TEXT)) {
                 fail('persistence call reference');
