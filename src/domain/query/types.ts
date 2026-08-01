@@ -1,13 +1,13 @@
 import type { IndexBodyFact, IndexRange, IndexValue } from '../index/model.js'
 
-export const RETRIEVE_RESULT_SCHEMA = 'madar.retrieve' as const
-export const RETRIEVE_RESULT_VERSION = 2 as const
-export const DEFAULT_RETRIEVE_BUDGET = 4000
-export const MIN_RETRIEVE_BUDGET = 256
-export const MAX_RETRIEVE_BUDGET = 4000
-export const MAX_RETRIEVE_QUESTION_LENGTH = 512
-export const MAX_RETRIEVE_FILES = 12
-export const MAX_RETRIEVE_EXCERPTS = 25
+export const RETRIEVE_RESULT_SCHEMA = 'madar.retrieve' as const,
+  RETRIEVE_RESULT_VERSION = 2 as const,
+  DEFAULT_RETRIEVE_BUDGET = 4000,
+  MIN_RETRIEVE_BUDGET = 256,
+  MAX_RETRIEVE_BUDGET = 4000,
+  MAX_RETRIEVE_QUESTION_LENGTH = 512,
+  MAX_RETRIEVE_FILES = 12,
+  MAX_RETRIEVE_EXCERPTS = 25
 
 export function valueHas(
   value: IndexValue, test: (candidate: IndexValue) => boolean,
@@ -24,9 +24,10 @@ export interface NormalizedRetrieveRequest {
 }
 
 export type RetrieveIntent = 'locate' | 'explain' | 'workflow'
-type List<T> = readonly T[]
-type FailureState = 'stale' | 'unavailable' | 'corrupt'
-type EvidenceFailure = { state: FailureState; subject: string }
+type L<T> = readonly T[]
+type M<T> = ReadonlyMap<string, T>
+type FS = 'stale' | 'unavailable' | 'corrupt'
+type EF = { state: FS; subject: string }
 export type RetrieveObligationKind =
   | 'subject'
   | 'entry'
@@ -39,20 +40,20 @@ export type RetrieveState =
   | 'ready'
   | 'incomplete'
   | 'unsupported'
-  | FailureState
+  | FS
 
-type MetricKey = `${'budget' | 'serialized'}_tokens` | 'selected_files'
+type MK = `${'budget' | 'serialized'}_tokens` | 'selected_files'
   | 'authenticated_excerpts' | `${'required' | 'proven'}_obligations`
   | 'optional_bundles_omitted' | `${'root' | 'initial'}_candidates`
   | 'explored_nodes' | 'causal_hops' | 'recovery_frontier_nodes' | 'alternate_seeds'
-export type RetrieveMetrics = Record<MetricKey, number> & {
+export type RetrieveMetrics = Record<MK, number> & {
   recovery_passes: 0 | 1 | 2
 }
 
 export interface QuerySummary {
   intent: RetrieveIntent
   subject: string
-  terms: List<string>
+  terms: L<string>
 }
 export type QueryIntent = RetrieveIntent
 export type LocateAccess = 'read' | 'write'
@@ -61,15 +62,15 @@ export interface QueryObligation {
   id: `o${number}`; kind: ObligationKind; target: string; mandatory: boolean
 }
 export interface QueryPlan {
-  intent: QueryIntent; subject: string; terms: List<string>
-  obligations: List<QueryObligation>; access?: LocateAccess
+  intent: QueryIntent; subject: string; terms: L<string>
+  obligations: L<QueryObligation>; access?: LocateAccess
 }
 export type QuestionPlanResult = {
   status: 'supported'; plan: QueryPlan
 } | {
   status: 'unsupported'
   reason: 'unsupported_intent' | 'missing_subject'
-  terms: List<string>
+  terms: L<string>
 }
 
 export type RetrieveMissingCode =
@@ -88,46 +89,46 @@ export interface MissingRequirement {
   limit?: number
 }
 
-type StringFields<K extends PropertyKey> = Record<K, string>
-type Tagged<K extends string> = { kind: K }
-type DossierRow<K extends PropertyKey = never> = StringFields<'id' | K>
-type ProvenRow<K extends PropertyKey = never> = DossierRow<K> & {
-  proofs: List<string>
+type SF<K extends PropertyKey> = Record<K, string>
+type Tag<K extends string> = { kind: K }
+type DR<K extends PropertyKey = never> = SF<'id' | K>
+type PR<K extends PropertyKey = never> = DR<K> & {
+  proofs: L<string>
 }
-type OperationRefs = { operationIds: List<string> }
-type WorkflowRefs = OperationRefs & { symbolIds: List<string> }
+type OR = { operationIds: L<string> }
+type WR = OR & { symbolIds: L<string> }
 
 export type WorkflowRelation =
   | 'calls' | 'publishes_to' | 'routes_through' | 'consumed_by'
 export type WorkflowMissingCode = Extract<
   RetrieveMissingCode, `${string}_unproven` | 'selection_bound_reached'
 >
-export type WorkflowEdge = StringFields<'id' | 'fromId' | 'toId'> & {
+export type WorkflowEdge = SF<'id' | 'fromId' | 'toId'> & {
   relation: WorkflowRelation
 }
-export type WorkflowHandoff = OperationRefs & StringFields<'fromId' | 'toId'> & {
-  kind: 'direct' | 'channel'; edgeIds: List<string>
+export type WorkflowHandoff = OR & SF<'fromId' | 'toId'> & {
+  kind: 'direct' | 'channel'; edgeIds: L<string>
 }
-export type WorkflowControlGroup = WorkflowRefs & {
+export type WorkflowControlGroup = WR & {
   kind: 'branch' | 'loop' | 'parallel' | 'cycle' | 'sequence'
   controllerOperationId?: string; arm?: string
 }
-export type WorkflowObligationProof = WorkflowRefs & {
+export type WorkflowObligationProof = WR & {
   id: `o${number}`; kind: RetrieveObligationKind; target: string
-  mandatory: boolean; proven: boolean; edgeIds: List<string>
+  mandatory: boolean; proven: boolean; edgeIds: L<string>
 }
 export type WorkflowMissingReason = {
   code: WorkflowMissingCode; obligationId?: string; target: string
 }
-export type WorkflowSelection = WorkflowRefs & {
+export type WorkflowSelection = WR & {
   complete: boolean
-  rootSymbolIds: List<string>
-  terminalSymbolIds: List<string>
-  edges: List<WorkflowEdge>
-  links: List<WorkflowHandoff>
-  controlGroups: List<WorkflowControlGroup>
-  obligations: List<WorkflowObligationProof>
-  missing: List<WorkflowMissingReason>
+  rootSymbolIds: L<string>
+  terminalSymbolIds: L<string>
+  edges: L<WorkflowEdge>
+  links: L<WorkflowHandoff>
+  controlGroups: L<WorkflowControlGroup>
+  obligations: L<WorkflowObligationProof>
+  missing: L<WorkflowMissingReason>
   metrics: {
     candidateCount: number; rootCandidateCount: number
     actualNodeCount: number; causalRelationHops: number
@@ -135,111 +136,102 @@ export type WorkflowSelection = WorkflowRefs & {
   }
 }
 
-export type ProvenObligation = ProvenRow<'statement'> & {
+export type ProvenObligation = PR<'statement'> & {
   kind: RetrieveObligationKind
 }
 
-export type DossierFile = DossierRow<'path' | 'digest'>
+export type DossierFile = DR<'path' | 'digest'>
 
-export type DossierExcerpt = DossierRow<'file' | 'text'> & {
+export type DossierExcerpt = DR<'file' | 'text'> & {
   range: readonly [number, number, number, number]
 }
 
-export type DossierEntity = DossierRow & (Tagged<'symbol'> & StringFields<'label' | 'file'> & {
+export type DossierControl = DR<'file'> & {
+  ranges: L<readonly [number, number, number, number]>
+}
+
+export type DossierEntity = DR & (Tag<'symbol'> & SF<'label' | 'file'> & {
   node_kind?: string
   excerpt?: string
-} | Tagged<'channel'> & StringFields<'transport' | 'key'> & {
+} | Tag<'channel'> & SF<'transport' | 'key'> & {
   channel_kind: 'queue' | 'job' | 'event'
   parent?: string
   scope?: string
-} | Tagged<'operation'> & { excerpt: string } & (StringFields<'operation_kind' | 'owner'> & {
+} | Tag<'operation'> & { excerpt: string } & SF<'operation_kind' | 'owner'> & {
   detail: Readonly<Record<string, unknown>>
-  links?: never
-} | {
-  links: List<string>; order: List<number>
-  callee?: string
-  scheduling?: string
-}))
+})
 
-export type DossierProof = DossierRow<'excerpt' | 'from' | 'to' | 'relation'>
+export type DossierProof = DR<'from' | 'to' | 'relation'> & (
+  SF<'excerpt'> | { file: string; range: readonly [number, number, number, number] }
+)
 
-export type DossierLink = ProvenRow<'from' | 'to'> & {
+export type DossierLink = PR<'from' | 'to'> & {
   kind: 'direct' | 'channel'
 }
 
-export type DossierOrderGroup = ProvenRow & {
+export type DossierOrderGroup = DR & {
   kind: 'branch' | 'loop' | 'parallel' | 'cycle' | 'sequence'
   controller?: string
   arm?: string
-  depth?: number
   detail?: Readonly<Record<string, unknown>>
-  members: List<string>
+  depths?: L<number>
+  members: L<string>
+  proofs?: L<string>
 }
 
 export interface AnswerDossier {
   query: QuerySummary
-  obligations: List<ProvenObligation>
+  obligations: L<ProvenObligation>
   flow: {
-    roots: List<string>
-    terminals: List<string>
-    links: List<DossierLink>
-    order: List<DossierOrderGroup>
+    roots: L<string>
+    terminals: L<string>
+    links: L<DossierLink>
+    order: L<DossierOrderGroup>
   }
   evidence: {
     digest_algorithm: 'sha256-base64url'
-    files: List<DossierFile>
-    excerpts: List<DossierExcerpt>
-    entities: List<DossierEntity>
-    proofs: List<DossierProof>
+    files: L<DossierFile>
+    excerpts: L<DossierExcerpt>
+    controls: L<DossierControl>
+    entities: L<DossierEntity>
+    proofs: L<DossierProof>
   }
 }
 
-export type SelectedEvidenceEdge = DossierRow<'fromId' | 'toId'> & {
+export type SelectedEvidenceEdge = DR<'fromId' | 'toId'> & {
   relation?: string
 }
 
 export interface EvidenceHydrationTargets {
-  symbolIds: List<string>
-  declarationSymbolIds: List<string>
-  operationIds: List<string>
-  validationOperationIds?: List<string>
-  edges: List<SelectedEvidenceEdge>
+  symbolIds: L<string>
+  declarationSymbolIds: L<string>
+  operationIds: L<string>
+  validationOperationIds?: L<string>
+  edges: L<SelectedEvidenceEdge>
 }
 
-export type HydratedFile = readonly [alias: string, sha256: string]
-export type HydratedExcerpt = readonly [
-  alias: string, file: string, range: IndexRange, sha256: string, text: string,
-]
+export type HydratedFile = readonly [string, string]
+export type HydratedExcerpt = readonly [string, string, IndexRange, string, string]
+export type HydratedControl = readonly [string, IndexRange]
 export type HydratedEntity =
-  | readonly [
-    alias: string, kind: 'symbol', label: string, nodeKind: string, file: string,
-  ]
-  | readonly [
-    alias: string, kind: 'channel', channelKind: 'queue' | 'job' | 'event',
-    transport: string, key: string,
-    parentChannelId: string | undefined, scope: string | undefined,
-  ]
-  | readonly [
-    alias: string, kind: 'operation', owner: string, fact: IndexBodyFact,
-  ]
+  | readonly [string, 'symbol', string, string, string]
+  | readonly [string, 'channel', 'queue' | 'job' | 'event', string, string,
+    string | undefined, string | undefined]
+  | readonly [string, 'operation', string, IndexBodyFact]
 export type HydratedProof =
-  | readonly [
-    alias: string, kind: 'declaration' | 'operation',
-    subject: string, excerpt: string,
-  ]
-  | readonly [
-    alias: string, kind: 'edge', from: string, to: string,
-    relation: string, excerpt: string,
-  ]
+  | readonly [string, 'declaration' | 'operation', string, string]
+  | readonly [string, 'edge', string, string, string, string]
+  | readonly [string, 'edge_range', string, string, string, string, IndexRange]
 export type HydratedEvidenceResult = {
   state: 'ready'
-  files: ReadonlyMap<string, HydratedFile>
-  entities: ReadonlyMap<string, HydratedEntity>
-  excerpts: ReadonlyMap<string, HydratedExcerpt>
-  proofs: ReadonlyMap<string, HydratedProof>
-} | EvidenceFailure
+  files: M<HydratedFile>
+  controls: M<HydratedControl>
+  entities: M<HydratedEntity>
+  excerpts: M<HydratedExcerpt>
+  proofs: M<HydratedProof>
+} | EF
 
-interface RetrieveResultBase<S extends RetrieveState> {
+interface RB<S extends RetrieveState> {
   schema: typeof RETRIEVE_RESULT_SCHEMA
   version: typeof RETRIEVE_RESULT_VERSION
   state: S
@@ -247,17 +239,17 @@ interface RetrieveResultBase<S extends RetrieveState> {
 }
 
 export type RetrieveContextResult =
-  | RetrieveResultBase<'ready'> & { dossier: AnswerDossier }
-  | RetrieveResultBase<'incomplete'> & {
+  | RB<'ready'> & { dossier: AnswerDossier }
+  | RB<'incomplete'> & {
     query: QuerySummary
-    missing: List<MissingRequirement>
+    missing: L<MissingRequirement>
   }
-  | RetrieveResultBase<'unsupported'> & {
+  | RB<'unsupported'> & {
     reason: 'unsupported_intent' | 'missing_subject'
-    terms: List<string>
+    terms: L<string>
   }
-  | RetrieveResultBase<FailureState> & {
-    failures: List<EvidenceFailure>
+  | RB<FS> & {
+    failures: L<EF>
   }
 
 export function normalizeRetrieveRequest(value: unknown): NormalizedRetrieveRequest {

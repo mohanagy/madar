@@ -6,11 +6,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { generateIndex } from '../../src/application/generate-index.js'
 import { loadGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
+import { retrieveContext } from '../../src/application/retrieve-context.js'
+import { inspectQueryIndex } from '../../src/domain/query/index-status.js'
 import {
   evaluateRetrievalQuality,
   formatQualityReport,
   GOLD_QUESTIONS,
+  isGroundedDossierProofChain,
 } from '../../tools/eval/lib/infrastructure/benchmark/quality.js'
+import type { DossierProof } from '../../src/domain/query/types.js'
 
 const sandboxes: string[] = []
 
@@ -70,10 +74,22 @@ describe('Core Reset retrieval quality evaluator', () => {
     ]))
   })
 
-  it('grades only authenticated nodes returned by the one query', () => {
+  it('grounds workflow symbols through complete link proof chains without linked-call entities', () => {
     const { graphPath } = qualityWorkspace()
+    const graph = loadGraphArtifact(graphPath)
+    const retrieval = retrieveContext(inspectQueryIndex(graph), {
+      question: 'How does request flow end to end?', budget: 3_000,
+    })
+    expect(retrieval.state).toBe('ready')
+    if (retrieval.state !== 'ready') return
+    expect(retrieval.dossier.evidence.entities.some((entity) =>
+      entity.kind === 'operation' && 'links' in entity)).toBe(false)
+    expect(retrieval.dossier.flow.links).not.toHaveLength(0)
+    expect(retrieval.dossier.flow.links.every((link) =>
+      link.proofs.length > 0)).toBe(true)
+
     const report = evaluateRetrievalQuality(
-      loadGraphArtifact(graphPath),
+      graph,
       [{
         question: 'How does request flow end to end?',
         expected_labels: ['handleRequest()', 'persistRequest()'],
@@ -91,6 +107,43 @@ describe('Core Reset retrieval quality evaluator', () => {
     }))
     expect(report.questions[0]?.tokens_used).toBeGreaterThan(0)
     expect(report.questions[0]?.missing_labels).toEqual([])
+  })
+
+  it('grounds excerpt or file-range proofs while preserving contiguous chains', () => {
+    const excerptProof: DossierProof = {
+      id: 'p0', from: 'a', to: 'b', relation: 'calls', excerpt: 'e0',
+    }
+    const rangeProof: DossierProof = {
+      id: 'p1', from: 'b', to: 'c', relation: 'publishes_to',
+      file: 'f0', range: [2, 3, 4, 5],
+    }
+    const proofs = new Map([excerptProof, rangeProof].map((proof) => [proof.id, proof]))
+    const excerpts = new Set(['e0'])
+    const files = new Set(['f0'])
+
+    expect(isGroundedDossierProofChain(
+      { from: 'a', to: 'c', proofs: ['p0', 'p1'] }, proofs, excerpts, files,
+    )).toBe(true)
+    expect(isGroundedDossierProofChain(
+      { from: 'a', to: 'c', proofs: ['p1', 'p0'] }, proofs, excerpts, files,
+    )).toBe(false)
+    expect(isGroundedDossierProofChain(
+      { from: 'a', to: 'c', proofs: ['p0', 'p1'] }, proofs, excerpts, new Set(),
+    )).toBe(false)
+    expect(isGroundedDossierProofChain(
+      { from: 'a', to: 'c', proofs: ['p0', 'p1'] }, proofs, new Set(), files,
+    )).toBe(false)
+
+    const invalidRanges: Array<readonly [number, number, number, number]> = [
+      [0, 3, 4, 5], [2, -1, 4, 5], [4, 5, 2, 3], [2, 5, 2, 3],
+    ]
+    for (const range of invalidRanges) {
+      const invalid = new Map(proofs)
+      invalid.set('p1', { ...rangeProof, range })
+      expect(isGroundedDossierProofChain(
+        { from: 'a', to: 'c', proofs: ['p0', 'p1'] }, invalid, excerpts, files,
+      )).toBe(false)
+    }
   })
 
   it('does not credit substring or missing evidence', () => {

@@ -56,7 +56,8 @@ function assertPackageMeasurement(record, tarballPath) {
     'utf8',
   ))
   const evaluationTooling = manifest.items?.find((item) => item.id === 'evaluation-tooling')
-  const budget = evaluationTooling?.npm_package_budget
+  const activePhase = manifest.items?.find((item) => item.id === manifest.current?.active_phase)
+  const budget = activePhase?.npm_package_budget ?? evaluationTooling?.npm_package_budget
   const receipt = manifest.current
   const actual = {
     npm_files: requiredNumber(record.entryCount, 'npm pack entryCount'),
@@ -85,14 +86,14 @@ function assertPackageMeasurement(record, tarballPath) {
     )
   }
   if (
-    actual.npm_files > requiredNumber(budget?.files_max, 'Evaluation Tooling files_max')
+    actual.npm_files > requiredNumber(budget?.files_max, 'active files_max')
     || actual.npm_packed_bytes
-      > requiredNumber(budget?.packed_bytes_max, 'Evaluation Tooling packed_bytes_max')
+      > requiredNumber(budget?.packed_bytes_max, 'active packed_bytes_max')
     || actual.npm_unpacked_bytes
-      > requiredNumber(budget?.unpacked_bytes_max, 'Evaluation Tooling unpacked_bytes_max')
+      > requiredNumber(budget?.unpacked_bytes_max, 'active unpacked_bytes_max')
   ) {
     throw new Error(
-      `Fresh npm package exceeds Evaluation Tooling budgets: ${JSON.stringify(actual)}`,
+      `Fresh npm package exceeds the active package budget: ${JSON.stringify(actual)}`,
     )
   }
   return actual
@@ -240,11 +241,18 @@ function successfulRetrieve(response, label, expectedLabels) {
   } catch {
     throw new Error(`${label} did not return canonical JSON evidence`)
   }
-  if (result?.schema !== 'madar.retrieve' || result?.outcome !== 'evidence') {
-    throw new Error(`${label} did not complete successful evidence retrieval`)
+  if (
+    result?.schema !== 'madar.retrieve'
+    || result?.version !== 2
+    || result?.state !== 'ready'
+    || !result?.dossier?.evidence
+  ) {
+    throw new Error(`${label} did not complete a ready v2 dossier retrieval`)
   }
-  const labels = new Set((result.matched_nodes ?? []).map((node) =>
-    String(node.label ?? '').replaceAll(/[^a-z0-9]/gi, '').toLowerCase()))
+  const labels = new Set(result.dossier.evidence.entities
+    .filter((entity) => entity.kind === 'symbol')
+    .map((entity) => String(entity.label ?? '')
+      .replaceAll(/[^a-z0-9]/gi, '').toLowerCase()))
   for (const expected of expectedLabels) {
     if (!labels.has(expected.toLowerCase())) {
       throw new Error(
@@ -451,7 +459,7 @@ try {
       name: 'retrieve',
       arguments: {
         question: 'How is an idea report generated? Explain the pipeline flow from request to final report.',
-        budget: 8_000,
+        budget: 4_000,
       },
     },
   }
@@ -490,15 +498,14 @@ try {
   const flowResult = successfulRetrieve(packedFlow, 'Packed full-flow runtime', [
     'generatefromproblem',
     'startpipeline',
-    'enqueuejob',
     'plan',
     'researchsection',
     'assemblereport',
+    'savestructuredreport',
   ])
   const expectedFlowFiles = [
     'src/modules/ideas/interface/http/idea-generation.controller.ts',
     'src/modules/pipeline/api/pipeline-trigger.service.ts',
-    'src/modules/pipeline/api/queue-registry.service.ts',
     'src/modules/pipeline/workers/orchestrator.worker.ts',
     'src/modules/planning/planner.service.ts',
     'src/modules/research/workers/section-research.worker.ts',
@@ -507,26 +514,43 @@ try {
     'src/modules/reports/assembly.service.ts',
     'src/modules/pipeline/workers/db-sync.worker.ts',
   ]
-  const actualFlowFiles = flowResult.matched_nodes?.map((node) => node.source_file)
-  const expectedBoundaries = [
-    'src/modules/planning/planner.service.ts:L13-L16 -> src/modules/research/workers/section-research.worker.ts:L17-L19',
-    'src/modules/research/research-agent.service.ts:L10-L14 -> src/modules/pipeline/assembly/assembly.worker.ts:L17-L19',
-    'src/modules/reports/assembly.service.ts:L20-L31 -> src/modules/pipeline/workers/db-sync.worker.ts:L26-L35',
-  ]
-  const actualBoundaries = flowResult.boundaries
-    ?.filter((boundary) => boundary.kind === 'disconnected')
-    .map((boundary) => boundary.detail)
+  const actualFlowFiles = flowResult.dossier.evidence.files.map(({ path }) => path).sort()
+  const channelLinks = flowResult.dossier.flow.links.filter(({ kind }) => kind === 'channel')
+  const flowProofs = new Map(flowResult.dossier.evidence.proofs.map((proof) => [proof.id, proof]))
+  const obligationKinds = flowResult.dossier.obligations.map(({ kind }) => kind)
+  const hasPersistenceProof = flowResult.dossier.evidence.entities.some((entity) =>
+    entity.kind === 'operation' && entity.operation_kind === 'persistence')
   if (
-    JSON.stringify(actualFlowFiles) !== JSON.stringify(expectedFlowFiles)
-    || !expectedBoundaries.every((boundary) => actualBoundaries?.includes(boundary))
-    || flowResult.relationships?.length === 0
+    JSON.stringify(actualFlowFiles) !== JSON.stringify(expectedFlowFiles.sort())
+    || JSON.stringify(obligationKinds) !== JSON.stringify([
+      'subject', 'entry', 'stage', 'handoff', 'behavior', 'ordering', 'terminal',
+    ])
+    || flowResult.dossier.obligations.some(({ proofs }) => proofs.length === 0)
+    || channelLinks.length !== 4
+    || channelLinks.some(({ proofs }) => {
+      const relations = proofs.map((proof) => flowProofs.get(proof)?.relation)
+      const publishAt = relations.indexOf('publishes_to')
+      return publishAt < 0
+        || !relations.slice(0, publishAt).every((relation) => relation === 'calls')
+        || ![
+          JSON.stringify(['publishes_to', 'consumed_by']),
+          JSON.stringify(['publishes_to', 'routes_through', 'consumed_by']),
+        ].includes(JSON.stringify(relations.slice(publishAt)))
+    })
+    || flowResult.dossier.flow.terminals.length === 0
+    || !hasPersistenceProof
     || flowResult.metrics?.selected_files > 12
-    || flowResult.metrics?.snippets > 25
-    || flowResult.metrics?.closure_passes > 1
+    || flowResult.metrics?.authenticated_excerpts > 25
+    || flowResult.metrics?.root_candidates > 3
+    || flowResult.metrics?.initial_candidates > 32
+    || flowResult.metrics?.explored_nodes > 512
+    || flowResult.metrics?.causal_hops > 24
+    || flowResult.metrics?.recovery_passes > 2
+    || flowResult.metrics?.recovery_frontier_nodes > 64
+    || flowResult.metrics?.alternate_seeds > 3
     || flowResult.metrics?.serialized_tokens > 4_000
-    || flowResult.metrics?.truncated !== false
   ) {
-    throw new Error(`Packed full-flow evidence violated #622: ${JSON.stringify(flowResult)}`)
+    throw new Error(`Packed full-flow dossier violated #630: ${JSON.stringify(flowResult)}`)
   }
 
   const workerRoot = join(tempRoot, 'worker-workspace')
@@ -582,7 +606,7 @@ try {
     method: 'tools/call',
     params: {
       name: 'retrieve',
-      arguments: { question: 'What is value0?' },
+      arguments: { question: 'Where is value0 defined?' },
     },
   })}\n`)
   input.write(`${JSON.stringify({ jsonrpc: '2.0', id: 702, method: 'ping' })}\n`)

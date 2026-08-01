@@ -260,7 +260,7 @@ describe('Core Reset benchmark caller', () => {
     const success = await runBenchmark(
       graphPath,
       10_000,
-      ['process order'],
+      ['Where is process order defined?'],
       {
         execTemplate: 'runner {prompt_file}',
         outputDir: join(root, 'out', 'benchmark'),
@@ -302,7 +302,7 @@ describe('Core Reset benchmark caller', () => {
     const failure = await runBenchmark(
       graphPath,
       10_000,
-      ['process order'],
+      ['Where is process order defined?'],
       {
         execTemplate: 'runner {prompt_file}',
         outputDir: join(root, 'out', 'benchmark-failure'),
@@ -322,7 +322,7 @@ describe('Core Reset benchmark caller', () => {
       graphPath,
       10_000,
       [{
-        question: 'process order',
+        question: 'Where is process order defined?',
         expected_labels: ['processOrder()', 'MissingSymbol()'],
       }],
     ))
@@ -335,7 +335,8 @@ describe('Core Reset benchmark caller', () => {
       avg_reused_context_tokens: 1,
     })
     expect(localOutput).toContain('Unmatched: unmatched flow')
-    expect(localOutput).toContain('Missing evidence for process order: MissingSymbol()')
+    expect(localOutput)
+      .toContain('Missing evidence for Where is process order defined?: MissingSymbol()')
     expect(localOutput).toContain('Avg effective input tokens (cache-adjusted)')
     expect(localOutput).toContain('local cl100k_base estimate')
 
@@ -439,7 +440,7 @@ describe('Core Reset benchmark caller', () => {
   it('prints the retained benchmark metrics', () => {
     const { graphPath } = workspace()
     const result = requireSynchronousResult(
-      runBenchmark(graphPath, 10_000, ['process order']),
+      runBenchmark(graphPath, 10_000, ['Where is process order defined?']),
     )
     if ('error' in result) throw new Error(result.error)
     expect(printedBenchmark(result)).toContain('madar runner-backed benchmark')

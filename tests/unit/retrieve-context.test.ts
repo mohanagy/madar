@@ -144,10 +144,8 @@ describe('retrieveContext v2', () => {
     const declarations = first.dossier.evidence.entities.filter((entity) =>
       entity.kind === 'symbol' && entity.excerpt !== undefined)
     expect(declarations).toEqual([])
-    const links = new Map(first.dossier.flow.links.map((link) => [link.id, link]))
     const incident = new Set(first.dossier.evidence.entities.flatMap((entity) =>
-      entity.kind !== 'operation' ? [] : 'owner' in entity ? [entity.owner]
-        : entity.links.map((id) => links.get(id)!.from)).concat(
+      entity.kind !== 'operation' ? [] : [entity.owner]).concat(
       first.dossier.evidence.proofs.flatMap((proof) => [proof.from, proof.to]),
     ))
     expect(first.dossier.evidence.entities.filter((entity) =>
@@ -187,34 +185,84 @@ describe('retrieveContext v2', () => {
     expect(third.dossier.flow).toEqual(first.dossier.flow)
     expect(third.dossier.evidence).toEqual(first.dossier.evidence)
 
-    const links = new Map(first.dossier.flow.links.map((link) => [link.id, link]))
     const proofRows = new Map(first.dossier.evidence.proofs.map((proof) => [proof.id, proof]))
+    const excerptRows = new Map(first.dossier.evidence.excerpts.map((excerpt) => [
+      excerpt.id, excerpt.text,
+    ]))
     for (const link of first.dossier.flow.links) {
       const path = link.proofs.map((id) => proofRows.get(id)!)
       expect(path[0]?.from).toBe(link.from)
       expect(path.at(-1)?.to).toBe(link.to)
       path.slice(1).forEach((proof, index) => expect(path[index]!.to).toBe(proof.from))
-      expect(path.map(({ relation }) => relation)).toEqual(link.kind === 'direct'
-        ? ['calls'] : path.length === 2
-          ? ['publishes_to', 'consumed_by']
-          : ['publishes_to', 'routes_through', 'consumed_by'])
+      const relations = path.map(({ relation }) => relation)
+      if (link.kind === 'direct') {
+        expect(relations).toEqual(['calls'])
+      } else {
+        const publishAt = relations.indexOf('publishes_to')
+        expect(publishAt).toBeGreaterThanOrEqual(0)
+        expect(relations.slice(0, publishAt).every((relation) =>
+          relation === 'calls')).toBe(true)
+        expect(relations.slice(publishAt)).toEqual(
+          relations.length - publishAt === 2
+            ? ['publishes_to', 'consumed_by']
+            : ['publishes_to', 'routes_through', 'consumed_by'],
+        )
+      }
+    }
+    expect(first.dossier.flow.links.some((link) => {
+      if (link.kind !== 'channel') return false
+      const relations = link.proofs.map((id) => proofRows.get(id)?.relation)
+      return relations[0] === 'calls' && relations.includes('publishes_to')
+        && relations.at(-1) === 'consumed_by'
+    })).toBe(true)
+    const linkBundles = new Map(first.dossier.flow.links.map((link) => [
+      link.id, link.proofs,
+    ]))
+    const orderBundles = new Map(first.dossier.flow.order.map((group) => [
+      group.id, [
+        ...(group.controller ? [group.controller] : []),
+        ...group.members, ...(group.proofs ?? []),
+      ],
+    ]))
+    const evidenceIds = new Set([
+      ...first.dossier.evidence.entities.map(({ id }) => id),
+      ...first.dossier.evidence.proofs.map(({ id }) => id),
+    ])
+    for (const claim of first.dossier.obligations) {
+      for (const proof of claim.proofs) {
+        expect(evidenceIds.has(proof) || linkBundles.has(proof)
+          || orderBundles.has(proof)).toBe(true)
+      }
     }
     const behavior = first.dossier.obligations.find(({ kind }) => kind === 'behavior')!
-    const behaviorProofs = new Set(behavior.proofs)
+    const behaviorProofs = new Set(behavior.proofs.flatMap((proof) =>
+      linkBundles.get(proof) ?? orderBundles.get(proof) ?? [proof]))
     const stages = new Set(first.dossier.flow.links.flatMap(({ from, to }) => [from, to]))
     for (const stage of stages) {
       const outgoing = first.dossier.evidence.proofs.some((proof) =>
         proof.from === stage && behaviorProofs.has(proof.id))
       const operation = first.dossier.evidence.entities.some((entity) =>
         entity.kind === 'operation' && behaviorProofs.has(entity.id)
-        && ('owner' in entity ? entity.owner === stage
-          : entity.links.some((id) => links.get(id)?.from === stage)))
+        && entity.owner === stage)
       expect(outgoing || operation).toBe(true)
     }
-    expect(first.dossier.evidence.entities).toContainEqual(expect.objectContaining({
-      kind: 'operation', links: expect.any(Array), callee: 'enqueueJob',
-      scheduling: 'awaited', excerpt: expect.any(String),
-    }))
+    const awaitedEnqueueProof = first.dossier.evidence.proofs.find((proof) =>
+      proof.relation === 'publishes_to')
+    expect(awaitedEnqueueProof).toBeDefined()
+    if (awaitedEnqueueProof && 'excerpt' in awaitedEnqueueProof) {
+      expect(excerptRows.get(awaitedEnqueueProof.excerpt))
+        .toMatch(/\bawait\s+enqueueJob\s*\(/)
+    } else if (awaitedEnqueueProof) {
+      expect(first.dossier.evidence.files.some(({ id }) =>
+        id === awaitedEnqueueProof.file)).toBe(true)
+      expect(awaitedEnqueueProof.range).toEqual([
+        expect.any(Number), expect.any(Number), expect.any(Number), expect.any(Number),
+      ])
+    }
+    expect(first.dossier.flow.links.some((link) =>
+      link.kind === 'channel'
+      && awaitedEnqueueProof !== undefined
+      && link.proofs.includes(awaitedEnqueueProof.id))).toBe(true)
 
     for (let pass = 0; pass < 3; pass += 1) retrieveContext(index, active)
     const samples = Array.from({ length: 20 }, () => {
@@ -347,19 +395,23 @@ describe('retrieveContext v2', () => {
     ]))
     expect(symbols.find(({ label }) => label === 'saveOrder()'))
       .not.toHaveProperty('excerpt')
-    expect(result.dossier.evidence.proofs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ relation: 'calls' }),
-    ]))
-    const call = result.dossier.evidence.entities.find((entity) =>
-      entity.kind === 'operation' && 'links' in entity)
-    expect(call).toEqual(expect.objectContaining({
-      kind: 'operation', order: expect.any(Array),
-      links: expect.any(Array), excerpt: expect.any(String),
+    const submit = symbols.find(({ label }) => label === 'submitOrder()')
+    const save = symbols.find(({ label }) => label === 'saveOrder()')
+    const callLink = result.dossier.flow.links.find((link) =>
+      link.kind === 'direct' && link.from === submit?.id && link.to === save?.id)
+    expect(callLink).toEqual(expect.objectContaining({
+      kind: 'direct', proofs: [expect.any(String)],
     }))
-    expect(call).not.toHaveProperty('scheduling')
-    expect(call).not.toHaveProperty('callee')
-    expect(call).not.toHaveProperty('operation_kind')
-    expect(call).not.toHaveProperty('arguments')
+    const callProof = result.dossier.evidence.proofs.find((proof) =>
+      callLink?.proofs.includes(proof.id))
+    expect(callProof).toEqual(expect.objectContaining({
+      from: submit?.id, to: save?.id, relation: 'calls', excerpt: expect.any(String),
+    }))
+    const callExcerpt = callProof && 'excerpt' in callProof ? callProof.excerpt : undefined
+    expect(result.dossier.evidence.excerpts.find(({ id }) => id === callExcerpt)?.text)
+      .toContain('saveOrder(id)')
+    expect(result.dossier.evidence.entities.filter((entity) =>
+      entity.kind === 'operation')).toEqual([])
   })
 
   it('keeps linked-call arguments only in the exact authenticated excerpt', () => {
@@ -377,12 +429,18 @@ describe('retrieveContext v2', () => {
 
     expect(result.state).toBe('ready')
     if (result.state !== 'ready') return
-    const call = result.dossier.evidence.entities.find((entity) =>
-      entity.kind === 'operation' && 'links' in entity)
-    expect(call).toBeDefined()
-    if (!call || call.kind !== 'operation' || !('links' in call)) return
-    expect(call).not.toHaveProperty('arguments')
-    expect(result.dossier.evidence.excerpts.find(({ id }) => id === call?.excerpt)?.text)
+    const callLink = result.dossier.flow.links.find(({ kind }) => kind === 'direct')
+    expect(callLink).toBeDefined()
+    const callProof = result.dossier.evidence.proofs.find((proof) =>
+      callLink?.proofs.includes(proof.id))
+    expect(callProof).toEqual(expect.objectContaining({
+      relation: 'calls', excerpt: expect.any(String),
+    }))
+    expect(callProof).not.toHaveProperty('arguments')
+    expect(result.dossier.evidence.entities.some((entity) =>
+      entity.kind === 'operation' && 'arguments' in entity.detail)).toBe(false)
+    const callExcerpt = callProof && 'excerpt' in callProof ? callProof.excerpt : undefined
+    expect(result.dossier.evidence.excerpts.find(({ id }) => id === callExcerpt)?.text)
       .toContain("saveOrder('order-1')")
   })
 
@@ -406,14 +464,136 @@ async function persistIdeaReport(repository: MongoRepository<Row>, id: string) {
     if (result.state !== 'ready') return
     const sequence = result.dossier.flow.order.find(({ kind }) => kind === 'sequence')
     expect(sequence).toBeDefined()
-    expect(sequence?.members).toHaveLength(2)
-    expect(sequence?.proofs).toHaveLength(2)
-    sequence?.members.forEach((member, index) => {
-      expect(result.dossier.evidence.entities).toContainEqual(expect.objectContaining({
-        id: member, kind: 'operation', excerpt: expect.any(String),
+    if (!sequence) return
+    expect(sequence.members).toHaveLength(2)
+    expect(sequence).not.toHaveProperty('proofs')
+    const proofRows = new Map(result.dossier.evidence.proofs.map((proof) => [proof.id, proof]))
+    const excerptRows = new Map(result.dossier.evidence.excerpts.map((excerpt) => [
+      excerpt.id, excerpt.text,
+    ]))
+    const orderedExcerpts = sequence.members.map((member) => {
+      const proof = proofRows.get(member)
+      expect(proof).toEqual(expect.objectContaining({
+        relation: 'calls', excerpt: expect.any(String),
       }))
-      expect(sequence.proofs[index]).toBe(member)
+      return proof && 'excerpt' in proof ? excerptRows.get(proof.excerpt) : undefined
     })
+    expect(orderedExcerpts[0]).toContain("persistIdeaReport(repository, 'first')")
+    expect(orderedExcerpts[1]).toContain("persistIdeaReport(repository, 'second')")
+  })
+
+  it('keeps same-shaped controls separately controller-bound and authenticated', () => {
+    const index = workspace(`import type { MongoRepository } from 'typeorm'
+type Row = { id: string }
+export async function generateIdeaReport(
+  repository: MongoRepository<Row>, firstEnabled: boolean, secondEnabled: boolean,
+) {
+  if (firstEnabled) await firstIdeaReportStage(repository)
+  if (secondEnabled) await secondIdeaReportStage(repository)
+  return 'queued'
+}
+async function firstIdeaReportStage(repository: MongoRepository<Row>) {
+  return persistIdeaReport(repository, 'first')
+}
+async function secondIdeaReportStage(repository: MongoRepository<Row>) {
+  return persistIdeaReport(repository, 'second')
+}
+async function persistIdeaReport(repository: MongoRepository<Row>, id: string) {
+  await repository.update(id, { id })
+  return id
+}
+`).index
+    const result = retrieveContext(index, {
+      question: 'How is an idea report generated end to end?', budget: 4_000,
+    })
+
+    expect(result.state).toBe('ready')
+    if (result.state !== 'ready') return
+    const groups = result.dossier.flow.order.filter(({ kind, arm }) =>
+      kind === 'branch' && arm === 'then')
+    expect(groups).toHaveLength(2)
+
+    const entities = new Map(result.dossier.evidence.entities.map((entity) => [
+      entity.id, entity,
+    ]))
+    const controls = new Map(result.dossier.evidence.controls.map((control) => [
+      control.id, control,
+    ]))
+    const controllers = groups.map((group) => group.controller)
+    expect(new Set(controllers).size).toBe(2)
+    const controllerRanges: string[] = []
+    for (const group of groups) {
+      expect(group.controller).toMatch(/^c\d+:(?:\d+(?:-\d+)?|\d+(?:\.\d+)+)$/u)
+      expect(group).not.toHaveProperty('proofs')
+      const [catalogId, selector] = group.controller!.split(':')
+      const controller = controls.get(catalogId!)
+      expect(controller).toEqual(expect.objectContaining({
+        file: expect.any(String), ranges: expect.arrayContaining([expect.any(Array)]),
+      }))
+      expect(entities.has(group.controller!)).toBe(false)
+      expect(entities.has(catalogId!)).toBe(false)
+      if (!controller) continue
+      const indexes = selector!.includes('-')
+        ? (() => {
+          const [start, end] = selector!.split('-').map(Number)
+          expect(end).toBeGreaterThanOrEqual(start!)
+          return Array.from({ length: end! - start! + 1 }, (_, offset) => start! + offset)
+        })()
+        : selector!.split('.').map(Number)
+      expect(new Set(indexes).size).toBe(indexes.length)
+      for (const index of indexes) {
+        expect(index).toBeGreaterThanOrEqual(0)
+        expect(index).toBeLessThan(controller.ranges.length)
+        const [startLine, startColumn, endLine, endColumn] = controller.ranges[index]!
+        expect(startLine).toBeGreaterThan(0)
+        expect(startColumn).toBeGreaterThan(0)
+        expect(endLine).toBeGreaterThanOrEqual(startLine)
+        expect(endColumn).toBeGreaterThan(0)
+        controllerRanges.push(`${controller.file}:${controller.ranges[index]!.join(':')}`)
+      }
+    }
+    expect(result.dossier.evidence.controls).toHaveLength(1)
+    expect(controllerRanges).toHaveLength(2)
+    expect(new Set(controllerRanges).size).toBe(controllerRanges.length)
+  })
+
+  it.each([
+    ['string', "'complete'", 'case:string:"complete"'],
+    ['number', '7', 'case:number:7'],
+    ['boolean', 'true', 'case:boolean:true'],
+    ['string | null', 'null', 'case:null:null'],
+  ])('renders an authenticated %s switch arm as a typed JSON scalar', (
+    triggerType, caseValue, expectedArm,
+  ) => {
+    const index = workspace(`import type { MongoRepository } from 'typeorm'
+type Row = { id: string }
+export async function generateIdeaReport(
+  repository: MongoRepository<Row>, trigger: ${triggerType},
+) {
+  switch (trigger) {
+    case ${caseValue}: return persistIdeaReport(repository)
+    default: return 'queued'
+  }
+}
+async function persistIdeaReport(repository: MongoRepository<Row>) {
+  await repository.update('one', { id: 'one' })
+  return 'complete'
+}
+`).index
+    const result = retrieveContext(index, {
+      question: 'How is an idea report generated end to end?', budget: 4_000,
+    })
+
+    expect(result.state).toBe('ready')
+    if (result.state !== 'ready') return
+    const selected = result.dossier.flow.order.find((group) =>
+      group.kind === 'branch' && group.arm?.startsWith('case:'))
+    expect(selected).toEqual(expect.objectContaining({
+      arm: expectedArm,
+      controller: expect.stringMatching(/^c\d+:\d+(?:-\d+)?$/u),
+      members: [expect.any(String)],
+    }))
+    expect(selected).not.toHaveProperty('proofs')
   })
 
   it('keeps an exact imported-caller locator ahead of a called suffix match', () => {

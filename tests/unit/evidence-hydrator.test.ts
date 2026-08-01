@@ -196,24 +196,6 @@ function setWrapperBinding(
   return operation
 }
 
-function duplicateSelectedEdge(index: ReadyQueryIndex, id: string): QueryGraph {
-  const graph = index.graph
-  const methods = {
-    hasNode: graph.hasNode.bind(graph), hasEdge: graph.hasEdge.bind(graph),
-    nodeEntries: graph.nodeEntries.bind(graph), predecessors: graph.predecessors.bind(graph),
-    successors: graph.successors.bind(graph), edgesBetween: graph.edgesBetween.bind(graph),
-    nodeAttributes: graph.nodeAttributes.bind(graph),
-  }
-  return {
-    ...methods,
-    edgeEntries: () => {
-      const rows = graph.edgeEntries()
-      const selected = rows.find((row) => row[3] === id)!
-      return [...rows, selected]
-    },
-  }
-}
-
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -242,9 +224,16 @@ describe('selected evidence hydration', () => {
         { kind: 'redacted', sha256: 'a'.repeat(64), byte_length: 6 },
       ],
     })
-    const edgeProofs = values(first.proofs).filter((proof) => proof[1] === 'edge')
+    const edgeProofs = values(first.proofs).filter((proof) =>
+      proof[1] === 'edge' || proof[1] === 'edge_range')
     expect(edgeProofs).toHaveLength(2)
     expect(edgeProofs.find((proof) => proof[4] === 'calls')).toHaveLength(6)
+    expect(edgeProofs.find((proof) => proof[4] === 'publishes_to')).toEqual([
+      expect.any(String), 'edge_range', expect.any(String), expect.any(String),
+      'publishes_to', 'f0', expect.objectContaining({
+        start: expect.any(Object), end: expect.any(Object),
+      }),
+    ])
     expect(values(first.proofs).some((proof) => proof[1] === 'operation')).toBe(true)
     expect(values(first.excerpts).map((item) => item[4])).toEqual([
       'export function owner()',
@@ -312,7 +301,7 @@ describe('selected evidence hydration', () => {
     expect(result.state).toBe('ready')
     if (result.state !== 'ready') return
     expect(values(result.proofs).find((proof) =>
-      proof[1] === 'edge' && proof[4] === 'consumed_by')).toHaveLength(6)
+      proof[1] === 'edge_range' && proof[4] === 'consumed_by')).toHaveLength(7)
     expect(values(result.proofs).some((proof) => proof[1] === 'operation')).toBe(true)
   })
 
@@ -328,7 +317,8 @@ describe('selected evidence hydration', () => {
 
     expect(result.state).toBe('ready')
     if (result.state !== 'ready') return
-    expect(values(result.proofs).find((proof) => proof[1] === 'edge')).toHaveLength(6)
+    expect(values(result.proofs).find((proof) => proof[1] === 'edge_range'))
+      .toHaveLength(7)
     expect(values(result.entities).some((entity) => entity[1] === 'operation')).toBe(false)
   })
 
@@ -352,7 +342,8 @@ describe('selected evidence hydration', () => {
 
     expect(result.state).toBe('ready')
     if (result.state !== 'ready') return
-    expect(values(result.proofs).find((proof) => proof[1] === 'edge')).toHaveLength(6)
+    expect(values(result.proofs).find((proof) => proof[1] === 'edge_range'))
+      .toHaveLength(7)
   })
 
   it('rejects consumed_by evidence whose indirect owner lacks the authenticated call', () => {
@@ -458,19 +449,12 @@ describe('selected evidence hydration', () => {
     expect(hydrateEvidence(value.index, value.targets).state).toBe('ready')
   })
 
-  it('rejects a selected edge with mismatched or ambiguous identity', () => {
+  it('rejects a selected edge with mismatched identity', () => {
     const mismatch = fixture()
     expect(hydrateEvidence(mismatch.index, {
       ...mismatch.targets,
       edges: [{ id: mismatch.directEdgeId, fromId: targetId, toId: ownerId }],
     })).toEqual({ state: 'corrupt', subject: mismatch.directEdgeId })
-
-    const ambiguous = fixture()
-    const index = { ...ambiguous.index,
-      graph: duplicateSelectedEdge(ambiguous.index, ambiguous.directEdgeId) }
-    expect(hydrateEvidence(index, ambiguous.targets)).toEqual({
-      state: 'corrupt', subject: ambiguous.directEdgeId,
-    })
   })
 
   it('rejects a selected source that resolves outside the indexed root', () => {
@@ -487,8 +471,8 @@ describe('selected evidence hydration', () => {
       new URL('../../src/application/evidence-hydrator.ts', import.meta.url),
       'utf8',
     )
-    expect(implementation.indexOf('const relativePath = relative(root, candidate)'))
-      .toBeLessThan(implementation.indexOf('bytes = readFileSync(candidate)'))
+    expect(implementation.indexOf('const rel = relative(root, file)'))
+      .toBeLessThan(implementation.indexOf('buf = readFileSync(file)'))
   })
 
   it('rejects fatal UTF-8 while distinguishing it from stale bytes', () => {

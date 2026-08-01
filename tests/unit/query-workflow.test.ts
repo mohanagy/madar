@@ -953,6 +953,83 @@ describe('deterministic workflow selection', () => {
     expect(result.symbolIds).toContain('early')
   })
 
+  it('keeps the explicit wrapper call and drops its redundant channel shortcut', () => {
+    const fixture = new Fixture()
+      .symbol('entry', 'generateIdeaReport')
+      .symbol('dispatch', 'dispatchIdeaReport')
+      .symbol('enqueue', 'enqueueJob')
+      .symbol('terminal', 'persistIdeaReport')
+      .switchSelector('terminal', 'trigger')
+      .persistenceInCase('terminal', 'trigger', 'assembly_complete')
+      .channel({
+        id: 'queue', node_kind: 'channel', channel_kind: 'queue',
+        transport: 'bullmq', key: 'reports',
+      })
+      .publishWithNestedCall(
+        'entry', 'dispatch', 'enqueue', 'queue', 'outer-publish',
+        [triggerPayload('assembly_complete')], 0,
+      )
+      .publish(
+        'dispatch', 'enqueue', 'queue', 'inner-publish',
+        [triggerPayload('assembly_complete')], 0,
+      )
+      .edge('queue', 'terminal', 'consumed_by')
+
+    const result = selectWorkflow(fixture.index(), plan('workflow'))
+
+    expect(result.complete, JSON.stringify({
+      missing: result.missing, links: result.links, symbols: result.symbolIds,
+    })).toBe(true)
+    expect(result.links).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fromId: 'entry', toId: 'dispatch', kind: 'direct' }),
+      expect.objectContaining({ fromId: 'dispatch', toId: 'terminal', kind: 'channel' }),
+    ]))
+    expect(result.links).not.toContainEqual(expect.objectContaining({
+      fromId: 'entry', toId: 'terminal', kind: 'channel',
+    }))
+    expect(result.operationIds).toEqual(expect.arrayContaining([
+      'outer-publish', 'inner-publish',
+    ]))
+  })
+
+  it('keeps distinct same-channel publications at different execution depths', () => {
+    const fixture = new Fixture()
+      .symbol('entry', 'generateIdeaReport')
+      .symbol('middle', 'processIdeaReport')
+      .symbol('enqueue', 'enqueueJob')
+      .symbol('terminal', 'persistIdeaReport')
+      .switchSelector('terminal', 'trigger')
+      .persistenceInCase('terminal', 'trigger', 'assembly_complete')
+      .channel({
+        id: 'queue', node_kind: 'channel', channel_kind: 'queue',
+        transport: 'bullmq', key: 'reports',
+      })
+      .call('entry', 'middle')
+      .publish(
+        'entry', 'enqueue', 'queue', 'entry-publish',
+        [triggerPayload('assembly_complete')], 0,
+      )
+      .publish(
+        'middle', 'enqueue', 'queue', 'middle-publish',
+        [triggerPayload('assembly_complete')], 0,
+      )
+      .edge('queue', 'terminal', 'consumed_by')
+
+    const result = selectWorkflow(fixture.index(), plan('workflow'))
+
+    expect(result.complete, JSON.stringify({
+      missing: result.missing, links: result.links, symbols: result.symbolIds,
+    })).toBe(true)
+    expect(result.operationIds).toEqual(expect.arrayContaining([
+      'entry-publish', 'middle-publish',
+    ]))
+    expect(result.links).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fromId: 'entry', toId: 'middle', kind: 'direct' }),
+      expect.objectContaining({ fromId: 'entry', toId: 'terminal', kind: 'channel' }),
+      expect.objectContaining({ fromId: 'middle', toId: 'terminal', kind: 'channel' }),
+    ]))
+  })
+
   it('keeps a persisted channel consumer as a stage when a later final write exists', () => {
     const fixture = new Fixture()
       .symbol('entry', 'generateIdeaReport')

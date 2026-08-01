@@ -1,375 +1,229 @@
-import { createHash } from 'node:crypto'
 import { isUtf8 } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import type { GraphAttributes } from '../domain/graph/directed-multigraph.js'
-import type {
-  IndexBodyFact, IndexChannelNode, IndexRange, IndexValue,
-} from '../domain/index/model.js'
+import type { IndexBodyFact, IndexRange } from '../domain/index/model.js'
 import type { QueryIndex, ReadyQueryIndex } from '../domain/query/index-status.js'
-import {
-  type EvidenceHydrationTargets, type HydratedEntity,
-  type HydratedEvidenceResult, type HydratedExcerpt, type HydratedFile,
-  type HydratedProof, type SelectedEvidenceEdge,
+import type {
+  EvidenceHydrationTargets, HydratedControl, HydratedEntity, HydratedEvidenceResult,
+  HydratedExcerpt, HydratedFile, HydratedProof, SelectedEvidenceEdge,
 } from '../domain/query/types.js'
+
 type Failure = Extract<HydratedEvidenceResult, { subject: string }>
-type ReadySource = [
-  path: string, sha256: string, text: string,
-  starts: readonly number[], ends: readonly number[], file: string,
-]
-type FactProof = [owner: string, excerpt: string]
-type CallFact = Extract<IndexBodyFact, { kind: 'call' }>
-type EdgeRow = readonly [from: string, to: string, attrs: GraphAttributes, id: string]
-const SHA = /^[a-f0-9]{64}$/
-const channelFields: readonly (keyof IndexChannelNode)[] = [
-  'channel_kind', 'transport', 'key', 'parent_channel_id', 'scope',
-]
-const compare = (left: string, right: string): number =>
-  left < right ? -1 : left > right ? 1 : 0
+type Source = [string, string, string, number[], number[], string]
+type Call = Extract<IndexBodyFact, { kind: 'call' }>
 class Halt { constructor(readonly value: Failure) {} }
-function halt(state: Failure['state'], subject: string): never {
-  throw new Halt({ state, subject })
+function halt(state: Failure['state'], key: string): never {
+  throw new Halt({ state, subject: key })
 }
-function corrupt(subject: string): never { halt('corrupt', subject) }
-const nonEmpty = (value: unknown): value is string =>
-  typeof value === 'string' && value.length > 0 && !value.includes('\0')
-const populated = (value: unknown): boolean =>
-  Array.isArray(value) && value.length > 0
-const orderPos = (
-  left: IndexRange['start'], right: IndexRange['start'],
-): number => left.line - right.line || left.column - right.column
-function range(value: unknown): value is IndexRange {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as IndexRange
-  return [candidate.start, candidate.end].every((position) =>
-    position && typeof position === 'object'
-    && Number.isSafeInteger(position.line) && position.line > 0
-    && Number.isSafeInteger(position.column) && position.column > 0)
-    && orderPos(candidate.start, candidate.end) <= 0
-}
-const contains = (outer: IndexRange, inner: IndexRange): boolean =>
-  orderPos(outer.start, inner.start) <= 0
-  && orderPos(inner.end, outer.end) <= 0
-const sameRange = (left: IndexRange, right: IndexRange): boolean =>
-  orderPos(left.start, right.start) === 0
-  && orderPos(left.end, right.end) === 0
-const location = (value: IndexRange): string =>
-  `L${value.start.line}${value.start.line === value.end.line
-    ? '' : `-L${value.end.line}`}`
-function lineOffsets(text: string): [number[], number[]] {
-  const starts = [0]
-  const ends: number[] = []
+function bad(key: string): never { halt('corrupt', key) }
+const same = (a: IndexRange, b: IndexRange): boolean =>
+  a.start.line === b.start.line && a.start.column === b.start.column
+  && a.end.line === b.end.line && a.end.column === b.end.column
+
+function lines(text: string): [number[], number[]] {
+  const starts = [0], ends: number[] = []
   for (const match of text.matchAll(/\r\n|[\n\r\u2028\u2029]/g)) {
-    ends.push(match.index)
-    starts.push(match.index + match[0].length)
+    ends.push(match.index); starts.push(match.index + match[0].length)
   }
   ends.push(text.length)
   return [starts, ends]
 }
-function offset(source: ReadySource, line: number, column: number): number | null {
-  const start = source[3][line - 1], end = source[4][line - 1],
-    result = start === undefined ? 0 : start + column - 1
-  return start === undefined || end === undefined || result > end ? null : result
+
+function clip(src: Source, r: IndexRange): string | null {
+  const { start, end } = r ?? {}
+  if (!start || !end) return null
+  const a = src[3][start.line - 1], z = src[4][end.line - 1]
+  if (a === undefined || z === undefined) return null
+  const from = a + start.column - 1, to = src[3][end.line - 1]! + end.column - 1
+  return from <= z && to <= z && from <= to ? src[2].slice(from, to) : null
 }
-function excerpt(source: ReadySource, value: IndexRange): string | null {
-  const start = offset(source, value.start.line, value.start.column),
-    end = offset(source, value.end.line, value.end.column)
-  return start === null || end === null || end < start
-    ? null
-    : source[2].slice(start, end)
-}
-function ready(i: ReadyQueryIndex, input: EvidenceHydrationTargets): HydratedEvidenceResult {
-  const ids = (values: readonly string[], subject: string): string[] => {
-    if (!Array.isArray(values) || values.some((value) => !nonEmpty(value))) corrupt(subject)
-    return [...new Set(values)].sort(compare)
-  }
-  const symbols = ids(input.symbolIds, 'symbol targets')
-  const decls = ids(input.declarationSymbolIds, 'declaration targets')
-  const ops = ids(input.operationIds, 'operation targets')
-  const validations = ids(input.validationOperationIds ?? [], 'validation operation targets')
-  for (const id of decls) if (!symbols.includes(id)) corrupt(id)
-  if (!Array.isArray(input.edges)) corrupt('edge targets')
-  const edges = new Map<string, [
-    target: SelectedEvidenceEdge, row?: EdgeRow | null,
-  ]>()
-  for (const edge of input.edges) {
-    if (!edge || !nonEmpty(edge.id) || !nonEmpty(edge.fromId) || !nonEmpty(edge.toId)
-      || edge.relation !== undefined && !nonEmpty(edge.relation)) corrupt('edge targets')
-    const prior = edges.get(edge.id)?.[0]
-    if (prior && (prior.fromId !== edge.fromId || prior.toId !== edge.toId
-      || prior.relation !== edge.relation)) corrupt(edge.id)
-    if (!prior) edges.set(edge.id, [edge])
-  }
-  const d = new Set(decls), o = new Set([...ops, ...validations])
-  const s = new Map<string, ReadySource>(), f = new Map<string, HydratedFile>()
-  const e = new Map<string, HydratedEntity>(), x = new Map<string, HydratedExcerpt>()
-  const p = new Map<string, HydratedProof>(), u = new Set<string>()
-  function node(id: string): GraphAttributes {
-    if (!i.graph.hasNode(id)) corrupt(id)
+
+function ready(i: ReadyQueryIndex, q: EvidenceHydrationTargets): HydratedEvidenceResult {
+  const ids = (xs: readonly string[]): string[] => [...new Set(xs)].sort()
+  const nodes = ids(q.symbolIds), decls = ids(q.declarationSymbolIds),
+    ops = ids(q.operationIds), checks = ids(q.validationOperationIds ?? [])
+  if (decls.some((id) => !nodes.includes(id))) bad('declaration targets')
+  const edges: SelectedEvidenceEdge[] = [...q.edges]
+    .sort((a, b) => a.id < b.id ? -1 : Number(a.id > b.id))
+  const ds = new Set(decls), srcs = new Map<string, Source>(),
+    fs = new Map<string, HydratedFile>(), ctrls = new Map<string, HydratedControl>(),
+    ents = new Map<string, HydratedEntity>(),
+    cuts = new Map<string, HydratedExcerpt>(), refs = new Map<string, HydratedProof>(),
+    used = new Set<string>()
+
+  const node = (id: string) => {
+    if (!i.graph.hasNode(id)) bad(id)
     return i.graph.nodeAttributes(id)
   }
-  function src(path: string): ReadySource {
-    const cached = s.get(path)
-    if (cached) return cached
-    const expected = i.file_hashes.get(path)
-    if (expected === undefined) halt('stale', path)
-    if (!SHA.test(expected)) corrupt(path)
-    let root: string, candidate: string, bytes: Buffer
+  const load = (path: string): Source => {
+    const old = srcs.get(path)
+    if (old) return old
+    const hash = i.file_hashes.get(path)
+    if (hash === undefined) halt('stale', path)
+    let file: string, buf: Buffer
     try {
-      root = realpathSync(i.root_path)
-      candidate = realpathSync(resolve(root, path))
-      const rel = relative(root, candidate)
+      const root = realpathSync(i.root_path)
+      file = realpathSync(resolve(root, path))
+      const rel = relative(root, file)
       if (isAbsolute(path) || rel === '..'
         || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
         halt('unavailable', path)
       }
-      bytes = readFileSync(candidate)
-    } catch {
+      buf = readFileSync(file)
+    } catch (err) {
+      if (err instanceof Halt) throw err
       halt('unavailable', path)
     }
-    const actual = createHash('sha256').update(bytes).digest('hex')
-    if (actual !== expected) halt('stale', path)
-    if (!isUtf8(bytes)) corrupt(path)
-    const text = bytes.toString('utf8')
-    const file = `f${f.size}`
-    const result: ReadySource = [path, expected, text, ...lineOffsets(text), file]
-    f.set(path, [file, expected])
-    s.set(path, result)
-    return result
+    if (createHash('sha256').update(buf).digest('hex') !== hash) halt('stale', path)
+    if (!isUtf8(buf)) bad(path)
+    const text = buf.toString('utf8'), id = `f${fs.size}`
+    const row: Source = [path, hash, text, ...lines(text), id]
+    srcs.set(path, row); fs.set(path, [id, hash])
+    return row
   }
-  function proof(
-    source: ReadySource, value: IndexRange,
-    expected?: string, subject = source[0], store = true,
-  ): string {
-    const text = excerpt(source, value)
-    if (text === null) corrupt(subject)
-    const actual = createHash('sha256').update(text, 'utf8').digest('hex')
-    if (expected !== undefined && (!SHA.test(expected) || actual !== expected)) {
-      corrupt(subject)
-    }
-    if (!store) return ''
-    const key = `${source[1]}\0${value.start.line}:${value.start.column}:${value.end.line}:${value.end.column}\0${actual}`
-    const cached = x.get(key)
-    if (cached) return cached[0]
-    const alias = `x${x.size}`
-    x.set(key, [alias, source[5], value, actual, text])
-    return alias
+  const auth = (
+    src: Source, r: IndexRange, hash?: string,
+    key = src[0], keep = true,
+  ): string => {
+    const text = clip(src, r)
+    if (text === null) bad(key)
+    const sum = createHash('sha256').update(text).digest('hex')
+    if (hash !== undefined && sum !== hash) bad(key)
+    if (!keep) return ''
+    const sig = `${src[1]}\0${r.start.line}:${r.start.column}:${
+      r.end.line}:${r.end.column}\0${sum}`
+    const old = cuts.get(sig)
+    if (old) return old[0]
+    const id = `x${cuts.size}`
+    cuts.set(sig, [id, src[5], r, sum, text])
+    return id
   }
-  function entity(id: string, allowChannel = false): string {
-    const cached = e.get(id)
-    if (cached) {
-      if (!allowChannel && cached[1] === 'channel') corrupt(id)
-      return cached[0]
+  const ent = (id: string): string => {
+    const old = ents.get(id)
+    if (old) return old[0]
+    const a = node(id), ref = `e${ents.size}`, ch = i.channels_by_id.get(id)
+    if (ch) {
+      ents.set(id, [ref, 'channel', ch.channel_kind, ch.transport,
+        ch.key, ch.parent_channel_id, ch.scope])
+      if (ch.parent_channel_id) ent(ch.parent_channel_id)
+      return ref
     }
-    const attrs = node(id)
-    const alias = `e${e.size}`
-    if (attrs.node_kind === 'channel') {
-      if (!allowChannel) corrupt(id)
-      const channel = i.channels_by_id.get(id)
-      if (!channel || channelFields.some((field) => attrs[field] !== channel[field])) {
-        corrupt(id)
-      }
-      e.set(id, [
-        alias, 'channel', channel.channel_kind, channel.transport, channel.key,
-        channel.parent_channel_id, channel.scope,
-      ])
-      return alias
+    const path = a.source_file as string, label = a.label as string,
+      kind = a.node_kind as string, decl = a.declaration_range as IndexRange
+    if (kind === 'file') bad(id)
+    const src = load(path), proof = ds.has(id) ? auth(src, decl, undefined, id) : undefined
+    ents.set(id, [ref, 'symbol', label, kind, src[5]])
+    if (proof) {
+      refs.set(id, [`p${refs.size}`, 'declaration', ref, proof]); used.add(ref)
     }
-    const {
-      node_kind: nodeKind, label, source_file: path,
-      definition_range: definition, declaration_range: declaration,
-    } = attrs
-    if (!nonEmpty(nodeKind) || nodeKind === 'file'
-      || !nonEmpty(label) || !nonEmpty(path)
-      || !range(definition) || !range(declaration)
-      || !contains(definition, declaration)
-      || !populated(attrs.provenance)
-      || attrs.line_number !== definition.start.line
-      || attrs.end_line_number !== definition.end.line
-      || attrs.source_location !== location(definition)) {
-      corrupt(id)
-    }
-    const source = src(path)
-    if (excerpt(source, definition) === null) halt('stale', path)
-    const declProof = d.has(id) ? proof(source, declaration) : undefined
-    e.set(id, [alias, 'symbol', label, nodeKind, source[5]])
-    if (declProof) {
-      p.set(id, [`p${p.size}`, 'declaration', alias, declProof])
-      u.add(alias)
-    }
-    return alias
+    return ref
   }
-  function fact(value: IndexBodyFact, exactOnly: boolean, store = true): FactProof {
-    const { owner_symbol_id: ownerId, evidence } = value
-    const hadOwner = e.has(ownerId)
-    const ownerKey = entity(ownerId)
-    if ((!exactOnly || !store) && !hadOwner) e.delete(ownerId)
-    const targetId = value.kind === 'call' ? value.target_symbol_id : undefined
-    if (targetId && ['channel', 'file'].includes(String(node(targetId).node_kind))) {
-      corrupt(targetId)
+  const fact = (v: IndexBodyFact, exact: boolean, keep = true): [string, string] => {
+    const owner = v.owner_symbol_id, had = ents.has(owner), own = ent(owner)
+    if ((!exact || !keep) && !had) ents.delete(owner)
+    if (v.kind === 'call' && v.target_symbol_id) {
+      node(v.target_symbol_id)
+      if (ents.has(v.target_symbol_id)) used.add(ent(v.target_symbol_id))
     }
-    if (targetId && e.has(targetId)) u.add(entity(targetId))
-    const owner = node(ownerId)
-    const definition = owner.definition_range
-    if (!range(definition)) corrupt(value.id)
-    const file = i.graph.hasNode(evidence.file_id)
-      ? i.graph.nodeAttributes(evidence.file_id) : null
-    const path = owner.source_file
-    const owns = (id: string): boolean => {
-      const target = i.operation_by_id.get(id)
-      return (!exactOnly || o.has(id)) && target?.owner_symbol_id === ownerId
-    }
-    const invalidRefs = value.control.some((frame) =>
-      frame.kind !== 'exception' && !owns(frame.controller_fact_id))
-      || value.kind === 'parallel' && value.member_fact_ids.some((id) => !owns(id))
-      || value.kind === 'persistence' && !owns(value.call_fact_id)
-    if (!file || file.node_kind !== 'file'
-      || !nonEmpty(path) || file.source_file !== path
-      || file.content_hash !== i.file_hashes.get(path)
-      || !range(evidence.range) || !range(evidence.statement_range)
-      || !contains(definition, evidence.statement_range)
-      || !contains(evidence.statement_range, evidence.range)
-      || invalidRefs) {
-      corrupt(value.id)
-    }
-    const source = src(path)
-    const controlled = ['condition', 'loop', 'parallel'].includes(value.kind)
-    const statement = proof(
-      source, evidence.statement_range, evidence.excerpt_sha256, value.id,
-      store && !controlled,
-    )
-    return [ownerKey, controlled ? proof(source, evidence.range, undefined, value.id, store)
-      : statement]
+    const src = load(node(owner).source_file as string),
+      ctrl = ['condition', 'loop', 'parallel'].includes(v.kind)
+    const stmt = auth(src, v.evidence.statement_range,
+      v.evidence.excerpt_sha256, v.id, keep && !ctrl)
+    return [own, ctrl ? auth(src, v.evidence.range, undefined, v.id, keep) : stmt]
   }
-  function edge(target: SelectedEvidenceEdge, row: EdgeRow): void {
-    const [from, to, attrs, id] = row
-    const {
-      relation, source_file: path, evidence, execution_owner_id: ownerId,
-      source_location: sourceLocation,
-    } = attrs
-    if (id !== target.id || from !== target.fromId || to !== target.toId
-      || !nonEmpty(relation)
-      || target.relation !== undefined && relation !== target.relation) {
-      corrupt(target.id)
-    }
-    const fromKey = entity(from, true)
-    const toKey = entity(to, true)
-    if (!nonEmpty(path) || !populated(attrs.provenance)
-      || !evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
-      corrupt(id)
-    }
-    const raw = evidence as Record<string, unknown>
-    const {
-      range: at, source: proofKind, statement_range: statement,
-      excerpt_sha256: hash,
-    } = raw
-    if (![
-      'typescript-semantic', 'typescript-syntactic',
-      'framework-decorator', 'wrapper-summary',
-    ].includes(proofKind as string) || !range(at)) corrupt(id)
-    if (relation === 'calls') {
-      if (Object.keys(raw).length !== 2 || ownerId !== undefined
-        || sourceLocation !== location(at)) corrupt(id)
-      const excerptKey = selectedCall(id, from, (call) =>
-        call.target_symbol_id === to && sameRange(call.evidence.range, at)
-        && proofKind === (call.source === 'framework'
-          ? 'framework-decorator' : call.source))
-      if (path !== node(from).source_file) corrupt(id)
-      return record(id, fromKey, toKey, relation, excerptKey)
-    }
-    if (Object.keys(raw).length !== 4 || !range(statement)
-      || !contains(statement, at) || !nonEmpty(hash)
-      || sourceLocation !== location(statement)) corrupt(id)
-    if (!nonEmpty(ownerId)) corrupt(id)
-    const ownerAttrs = node(ownerId)
-    if (ownerAttrs.node_kind === 'channel' || ownerAttrs.node_kind === 'file'
-      || ownerAttrs.source_file !== path || !range(ownerAttrs.definition_range)
-      || !contains(ownerAttrs.definition_range, statement)) corrupt(id)
-    const fromChannel = i.channels_by_id.get(from)
-    const toChannel = i.channels_by_id.get(to)
-    const valid = relation === 'publishes_to'
-      ? ownerId === from && !fromChannel && !!toChannel
-      : relation === 'routes_through'
-        ? fromChannel?.channel_kind === 'job'
-        && toChannel?.channel_kind === 'queue'
-        && fromChannel.parent_channel_id === to
-        && fromChannel.transport === toChannel.transport
-        : relation === 'consumed_by'
-          && !!fromChannel && !toChannel
-    if (!valid) corrupt(id)
-    if (relation === 'consumed_by' && ownerId !== to) {
-      selectedCall(id, ownerId, (call) =>
-        sameRange(statement, call.evidence.statement_range)
-        && call.evidence.excerpt_sha256 === hash)
-    }
-    const source = src(path)
-    record(id, fromKey, toKey, relation, proof(source, statement, hash, id))
+  const callAt = (
+    edge: string, owner: string, ok: (v: Call) => boolean, keep = true,
+  ): string => {
+    const hits = (i.operations_by_owner.get(owner) ?? [])
+      .filter((v): v is Call => v.kind === 'call'
+        && v.owner_symbol_id === owner && ok(v))
+    if (hits.length !== 1) bad(edge)
+    const hit = hits[0]!
+    if (i.operation_by_id.get(hit.id) !== hit) bad(edge)
+    return fact(hit, false, keep)[1]
   }
-  function selectedCall(
-    edgeId: string, ownerId: string, accepts: (fact: CallFact) => boolean,
-  ): string {
-    const accepted = (call: CallFact): boolean =>
-      call.owner_symbol_id === ownerId && accepts(call)
-    const matches = (i.operations_by_owner.get(ownerId) ?? [])
-      .filter((value): value is CallFact => value.kind === 'call'
-        && accepted(value))
-    if (matches.length !== 1) corrupt(edgeId)
-    const match = matches[0]!
-    const indexed = i.operation_by_id.get(match.id)
-    if (indexed?.kind !== 'call' || !accepted(indexed)
-      || !sameRange(indexed.evidence.range, match.evidence.range)
-      || !sameRange(indexed.evidence.statement_range, match.evidence.statement_range)) {
-      corrupt(edgeId)
-    }
-    return fact(indexed, false)[1]
+  const link = (
+    id: string, from: string, to: string, rel: string, cut: string,
+  ): void => {
+    refs.set(id, [`p${refs.size}`, 'edge', from, to, rel, cut])
+    used.add(from); used.add(to)
   }
-  function record(
-    id: string, fromKey: string, toKey: string, relation: string, excerptKey: string,
-  ): void {
-    p.set(id, [`p${p.size}`, 'edge', fromKey, toKey, relation, excerptKey])
-    u.add(fromKey).add(toKey)
+  const ranged = (
+    id: string, from: string, to: string, rel: string,
+    file: string, range: IndexRange,
+  ): void => {
+    refs.set(id, [`p${refs.size}`, 'edge_range', from, to, rel, file, range])
+    used.add(from); used.add(to)
   }
-  for (const id of symbols) entity(id)
-  for (const id of validations) {
+
+  for (const id of nodes) {
+    if (i.channels_by_id.has(id)) bad(id)
+    ent(id)
+  }
+  for (const id of checks) {
     const value = i.operation_by_id.get(id)
-    if (!value || value.id !== id) corrupt(id)
+    if (!value) bad(id)
     fact(value, true, false)
+    if (['condition', 'loop', 'parallel'].includes(value.kind)) {
+      const src = load(node(value.owner_symbol_id).source_file as string)
+      ctrls.set(id, [src[5], value.evidence.range])
+    }
   }
   for (const id of ops) {
     const value = i.operation_by_id.get(id)
-    if (!value || value.id !== id) corrupt(id)
-    const hydrated = fact(value, true)
-    const alias = `e${e.size}`
-    e.set(id, [alias, 'operation', hydrated[0], value])
-    p.set(id, [`p${p.size}`, 'operation', alias, hydrated[1]])
-    u.add(hydrated[0])
+    if (!value) bad(id)
+    const [owner, excerpt] = fact(value, true), ref = `e${ents.size}`
+    ents.set(id, [ref, 'operation', owner, value])
+    refs.set(id, [`p${refs.size}`, 'operation', ref, excerpt]); used.add(owner)
   }
-  try {
-    for (const row of i.graph.edgeEntries()) {
-      const selected = edges.get(row[3])
-      if (selected) selected[1] = selected[1] === undefined ? row : null
+  for (const edge of edges) {
+    const hits = i.graph.edgesBetween(edge.fromId, edge.toId)
+      .filter((hit) => hit.id === edge.id)
+    if (hits.length !== 1) bad(edge.id)
+    const a = hits[0]!.attributes, rel = a.relation as string
+    if (edge.relation !== undefined && edge.relation !== rel) bad(edge.id)
+    const from = ent(edge.fromId), to = ent(edge.toId)
+    const ev = a.evidence as {
+      source: string; range: IndexRange; statement_range?: IndexRange; excerpt_sha256?: string
     }
-  } catch {
-    corrupt('selected edges')
+    if (rel === 'calls') {
+      const cut = callAt(edge.id, edge.fromId, (call) =>
+        call.target_symbol_id === edge.toId && same(call.evidence.range, ev.range)
+        && ev.source === (call.source === 'framework'
+          ? 'framework-decorator' : call.source))
+      link(edge.id, from, to, rel, cut)
+      continue
+    }
+    const owner = a.execution_owner_id as string,
+      stmt = ev.statement_range!, sum = ev.excerpt_sha256!, path = a.source_file as string
+    if (rel === 'consumed_by' && owner !== edge.toId) {
+      callAt(edge.id, owner, (call) =>
+        same(stmt, call.evidence.statement_range)
+        && call.evidence.excerpt_sha256 === sum, false)
+    }
+    const src = load(path)
+    auth(src, stmt, sum, edge.id, false)
+    auth(src, ev.range, undefined, edge.id, false)
+    ranged(edge.id, from, to, rel, src[5], ev.range)
   }
-  for (const [, [target, row]] of [...edges].sort((a, b) => compare(a[0], b[0]))) {
-    if (!row) corrupt(target.id)
-    edge(target, row)
+  for (const [id, entry] of ents) {
+    if (entry[1] === 'symbol' && !used.has(entry[0])) bad(id)
   }
-  for (const [id, entry] of e) {
-    if (entry[1] === 'symbol' && !u.has(entry[0])) corrupt(id)
+  return {
+    state: 'ready', files: fs, controls: ctrls,
+    excerpts: cuts, entities: ents, proofs: refs,
   }
-  return { state: 'ready', files: f, excerpts: x, entities: e, proofs: p }
 }
+
 export function hydrateEvidence(
-  index: QueryIndex,
-  input: EvidenceHydrationTargets,
+  index: QueryIndex, input: EvidenceHydrationTargets,
 ): HydratedEvidenceResult {
   try {
-    if (index.state !== 'ready') return { state: index.state, subject: index.subject }
-    return ready(index, input)
+    return index.state === 'ready' ? ready(index, input)
+      : { state: index.state, subject: index.subject }
   } catch (error) {
-    return error instanceof Halt
-      ? error.value : { state: 'corrupt', subject: 'evidence hydration' }
+    return error instanceof Halt ? error.value
+      : { state: 'corrupt', subject: 'evidence hydration' }
   }
 }

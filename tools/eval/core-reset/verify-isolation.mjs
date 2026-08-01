@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { parse } from "yaml"
+
 import {
   evaluationPackageBudget,
   evaluationLeakMarkers,
@@ -58,6 +60,14 @@ const ciWorkflow = readFileSync(
   resolve(repositoryRoot, ".github/workflows/ci.yml"),
   "utf8",
 ).replaceAll("\r\n", "\n")
+const manifest = parse(readFileSync(
+  resolve(repositoryRoot, "docs/core-reset/removal-manifest.yml"),
+  "utf8",
+))
+const activePhase = manifest.items?.find(
+  (item) => item.id === manifest.current?.active_phase,
+)
+const packageBudget = activePhase?.npm_package_budget ?? evaluationPackageBudget
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -90,7 +100,7 @@ const packageContentMarkers = loadBearingEvaluationMarkers(
   contract,
   performanceMarkers,
 )
-const packageMeasurement = inspectPackageContents(packageContentMarkers)
+const packageMeasurement = inspectPackageContents(packageContentMarkers, packageBudget)
 const publishedRoots = new Set(packageJson.files ?? [])
 const packageScripts = packageJson.scripts ?? {}
 
@@ -254,7 +264,7 @@ assert(
 )
 assert(
   packageMeasurement.target_passed,
-  `npm package exceeds the Evaluation Tooling ceilings: ${packageMeasurement.file_count}/${evaluationPackageBudget.files_max} files / ${packageMeasurement.packed_bytes}/${evaluationPackageBudget.packed_bytes_max} packed bytes / ${packageMeasurement.unpacked_bytes}/${evaluationPackageBudget.unpacked_bytes_max} unpacked bytes`,
+  `npm package exceeds the active ceilings: ${packageMeasurement.file_count}/${packageBudget.files_max} files / ${packageMeasurement.packed_bytes}/${packageBudget.packed_bytes_max} packed bytes / ${packageMeasurement.unpacked_bytes}/${packageBudget.unpacked_bytes_max} unpacked bytes`,
 )
 assert(
   !existsSync(resolve(repositoryRoot, "dist", "tools")),

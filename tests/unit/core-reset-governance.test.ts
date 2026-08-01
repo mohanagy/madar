@@ -448,6 +448,47 @@ const SEMANTIC_EXECUTION_PACKAGE = {
 } as const
 const SEMANTIC_EXECUTION_DIFF_SHA256 =
   '910d0e1835e54af5e7a36af0a7ffa612977fb9240e9985d0f1368532d4ca3a43'
+const SEMANTIC_EXECUTION_INDEX_REVIEWED_HEAD = 'da3e1ad360855c950cae6986a9774c45fcb527d0'
+const SEMANTIC_EXECUTION_INDEX_MERGE = 'c88823ecbeb6da6284cf74ecbd304e9315ffd4fa'
+const SEMANTIC_EXECUTION_INDEX_MERGE_TREE = 'b715764668b4296e9e8ab4da715374f47af137db'
+const SEMANTIC_EXECUTION_INDEX_CI =
+  'https://github.com/mohanagy/madar/actions/runs/30699876911'
+const OBLIGATION_RETRIEVAL_ID = 'obligation-driven-retrieval-630'
+const OBLIGATION_RETRIEVAL_BASE = SEMANTIC_EXECUTION_INDEX_MERGE
+const OBLIGATION_RETRIEVAL_BASE_TREE = SEMANTIC_EXECUTION_INDEX_MERGE_TREE
+const OBLIGATION_RETRIEVAL_FILES = [
+  'src/adapters/mcp/protocol.ts',
+  'src/application/evidence-hydrator.ts',
+  'src/application/retrieve-context.ts',
+  'src/domain/query/plan.ts',
+  'src/domain/query/rank.ts',
+  'src/domain/query/slice.ts',
+  'src/domain/query/traverse.ts',
+  'src/domain/query/types.ts',
+  'src/domain/query/workflow.ts',
+] as const
+const OBLIGATION_RETRIEVAL_SOURCE = {
+  production_typescript_files: 44,
+  production_typescript_loc: 15_770,
+  production_loc_added: 2_200,
+  production_loc_removed: 2_149,
+  production_loc_net: 51,
+} as const
+const OBLIGATION_RETRIEVAL_PACKAGE = {
+  npm_files: 102,
+  npm_packed_bytes: 154_210,
+  npm_unpacked_bytes: 649_915,
+  npm_shasum: 'a56d34339b674a117f986f987bd192232349c077',
+  npm_integrity:
+    'sha512-vvy6RxlvxLlP5e9Go/TqQvMn4M1K7uFxkEs5XteOT1uGiOVIamge00g94zyrZg8ytB7i//KqJ45Y93KI538KhQ==',
+  npm_artifact_sha256: '3d567b7763fab480cdd35ad39f965e9abe5cf872408b10cf586e9ac7143af27d',
+} as const
+const OBLIGATION_RETRIEVAL_DIFF_SHA256 =
+  '3c3374453f05cb221248dad07debffa8179f882c11ea9901408dcc707caa7f3a'
+const OBLIGATION_RETRIEVAL_STOP_RECEIPT =
+  'https://github.com/mohanagy/madar/issues/630#issuecomment-5153255732'
+const OBLIGATION_RETRIEVAL_AMENDMENT =
+  'https://github.com/mohanagy/madar/issues/630#issuecomment-5153369147'
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
   '4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0'
 const CAPABILITY_VALIDATION_V2_ISSUE = 'https://github.com/mohanagy/madar/issues/612'
@@ -698,6 +739,15 @@ function productionSourceDeltaBetween(
 const gitBlobSha256 = (revision: string, path: string): string =>
   createHash('sha256').update(execFileSync(git, ['show', `${revision}:${path}`])).digest('hex')
 
+const gitPathExists = (revision: string, path: string): boolean => {
+  try {
+    execFileSync(git, ['cat-file', '-e', `${revision}:${path}`])
+    return true
+  } catch {
+    return false
+  }
+}
+
 function importedRelativeTargets(
   importer: string,
   source: string,
@@ -856,8 +906,8 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Published — `0.40.0-beta.3`')
     expect(roadmap).toContain('## Passed — retrieval regression #625')
     expect(roadmap).toContain('## Published — `0.40.0-beta.4`')
-    expect(roadmap).toContain('## In progress — semantic execution index #632')
-    expect(roadmap).toContain('## Pending — obligation-driven retrieval #630')
+    expect(roadmap).toContain('## Completed — semantic execution index #632')
+    expect(roadmap).toContain('## In progress — obligation-driven retrieval #630')
     expect(roadmap).toContain('## Pending — installed no-fallback qualification #631')
     expect(roadmap).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
@@ -958,6 +1008,8 @@ describe('core reset governance', () => {
     expect(design).toContain('## Release amendment — `0.40.0-beta.3` published')
     expect(design).toContain('## Completed amendment — retrieval regression #625')
     expect(design).toContain('## Release amendment — `0.40.0-beta.4` ready')
+    expect(design).toContain('## Completed amendment — semantic execution correction #632')
+    expect(design).toContain('## Active amendment — obligation-driven retrieval #630')
     expect(design).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(design).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(design).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -1034,6 +1086,9 @@ describe('core reset governance', () => {
     expect(design).toContain(EVALUATION_TOOLING_CODERABBIT_RECEIPT)
     expect(design).toContain(EVALUATION_TOOLING_ISSUE_MERGE_RECEIPT)
     expect(design).toContain(EVALUATION_TOOLING_RFC_MERGE_RECEIPT)
+    expect(design).toContain(SEMANTIC_EXECUTION_INDEX_MERGE)
+    expect(design).toContain(SEMANTIC_EXECUTION_INDEX_MERGE_TREE)
+    expect(design).toContain('1,384 source LOC / 59,896 emitted bytes')
     expect(design).not.toContain('## Active amendment — generation and incremental index')
     expect(design).not.toContain('the phase remains active')
     expect(design).not.toContain('completion evidence remains open')
@@ -1052,10 +1107,8 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Retrieval regression #618 | **Passed**')
     expect(scorecard).toContain('| Retrieval regression #625 | **Passed**')
     expect(scorecard).toContain('| Beta release | **Published**')
-    expect(scorecard).toContain(
-      '| Semantic execution index #632 | **Reopened — corrective work in progress**',
-    )
-    expect(scorecard).toContain('| Obligation-driven retrieval #630 | **Pending**')
+    expect(scorecard).toContain('| Semantic execution index #632 | **Passed**')
+    expect(scorecard).toContain('| Obligation-driven retrieval #630 | **In progress**')
     expect(scorecard).toContain('| No-fallback qualification #631 | **Pending**')
     expect(scorecard).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(scorecard).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
@@ -1101,8 +1154,10 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('Identical normalized request plus identical canonical graph bytes')
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
     expect(scorecard).toContain('| Retrieval regression #622 | **Passed**')
-    expect(scorecard).toContain('Issues `#622` and `#625` are complete on `next`')
-    expect(scorecard).toContain('#632 active, then #630 pending, then #631 pending')
+    expect(scorecard).toContain('Issues `#622`, `#625`, and `#632` are complete on `next`')
+    expect(scorecard).toContain('supersedes its historical stop and reactivates it under exactly two amended ceilings')
+    expect(scorecard).toContain(SEMANTIC_EXECUTION_INDEX_MERGE)
+    expect(scorecard).toContain('1,384 source LOC / 59,896 emitted bytes')
     expect(scorecard).toContain(
       'accessor-backed `data` or discriminator properties—including destructured aliases and shorthand—fail closed',
     )
@@ -1342,16 +1397,16 @@ describe('core reset governance', () => {
     expect(manifest.schema_version).toBe(1)
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-08-01',
-      completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      updated_at: '2026-08-02',
+      completed_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      active_phase: OBLIGATION_RETRIEVAL_ID,
       ready_phase: null,
-      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
-      completed_phase_commit: EVIDENCE_SKELETON_RETRIEVAL_MERGE,
-      ...SEMANTIC_EXECUTION_SOURCE,
-      ...SEMANTIC_EXECUTION_PACKAGE,
+      base_commit: OBLIGATION_RETRIEVAL_BASE,
+      completed_phase_commit: SEMANTIC_EXECUTION_INDEX_MERGE,
+      ...OBLIGATION_RETRIEVAL_SOURCE,
+      ...OBLIGATION_RETRIEVAL_PACKAGE,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'semantic_execution_index_632_candidate',
+      snapshot_scope: 'obligation_driven_retrieval_630_candidate',
     })
     expect(manifest.current.release_candidate).toMatchObject({
       version: '0.40.0-beta.4',
@@ -1488,7 +1543,7 @@ describe('core reset governance', () => {
     expect(logicalLocAtCommit(legacyBase, deletionFiles)).toBe(20_951)
     const generation = manifest.items.find((item) => item.id === 'generation-and-incremental')
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
+      .toEqual([OBLIGATION_RETRIEVAL_ID])
     const retrievalRegression = manifest.items.find((item) => item.id === RETRIEVAL_REGRESSION_ID) as any
     expect(retrievalRegression).toMatchObject({
       disposition: 'keep',
@@ -1871,7 +1926,7 @@ describe('core reset governance', () => {
     ) as any
     expect(semanticExecution).toMatchObject({
       disposition: 'keep',
-      status: 'in_progress',
+      status: 'complete',
       destination: 'canonical JavaScript/TypeScript semantic execution index',
       modified_sources: [...SEMANTIC_EXECUTION_INDEX_FILES],
       activation: {
@@ -1920,6 +1975,18 @@ describe('core reset governance', () => {
         tag: 'forbidden',
         main_target: 'forbidden',
       },
+      completion: {
+        pull_request: 'https://github.com/mohanagy/madar/pull/634',
+        reviewed_head: SEMANTIC_EXECUTION_INDEX_REVIEWED_HEAD,
+        merge_commit: SEMANTIC_EXECUTION_INDEX_MERGE,
+        merge_tree: SEMANTIC_EXECUTION_INDEX_MERGE_TREE,
+        protected_parent: 'e7bd30ce384cf743dbda3e8ee7f15b171a0ea649',
+        ci_run: SEMANTIC_EXECUTION_INDEX_CI,
+        ci_matrix_jobs_passed: 6,
+        independent_review: 'passed',
+        unresolved_review_threads: 0,
+        coderabbit: 'passed',
+      },
     })
     expect(semanticExecution.notes).toContain(
       'accessor-backed data or discriminator properties, including destructured aliases and shorthand, fail closed',
@@ -1961,7 +2028,7 @@ describe('core reset governance', () => {
         coverage_lines_percent: 89.22,
         coverage_lines_covered: 6_481,
         coverage_lines_total: 7_264,
-        local_independent_review: 'pending_corrective_review',
+        local_independent_review: 'passed',
         pre_reopen_merge_commit: 'e7bd30ce384cf743dbda3e8ee7f15b171a0ea649',
         post_merge_acceptance_audit: 'failed_missing_exact_payload_and_discriminant_binding',
         corrective_real_graph_acceptance: 'passed',
@@ -2001,45 +2068,187 @@ describe('core reset governance', () => {
         beta4_retrieval_output_bytes: 15_294,
         beta4_retrieval_output_sha256:
           '87b4ef75473834708b20f1d2580b31470a710d797d7bdf55eee1d0876827a173',
-        exact_head_ci: 'pending',
-        independent_review: 'pending',
+        exact_head_ci: SEMANTIC_EXECUTION_INDEX_CI,
+        independent_review: 'passed',
       },
     })
-    expect(semanticExecution).not.toHaveProperty('completion')
-    const changedSemanticExecutionProduction = [
-      ...execFileSync(
-        git,
-        ['diff', '--name-only', SEMANTIC_EXECUTION_INDEX_BASE, '--', 'src'],
-        { encoding: 'utf8' },
-      ).trim().split('\n').filter(Boolean),
-      ...execFileSync(
-        git,
-        ['ls-files', '--others', '--exclude-standard', '--', 'src'],
-        { encoding: 'utf8' },
-      ).trim().split('\n').filter(Boolean),
-    ].sort()
+    const changedSemanticExecutionProduction = execFileSync(
+      git,
+      [
+        'diff',
+        '--name-only',
+        SEMANTIC_EXECUTION_INDEX_BASE,
+        SEMANTIC_EXECUTION_INDEX_MERGE,
+        '--',
+        'src',
+      ],
+      { encoding: 'utf8' },
+    ).trim().split('\n').filter(Boolean).sort()
     expect(changedSemanticExecutionProduction).toEqual([...SEMANTIC_EXECUTION_INDEX_FILES].sort())
     const semanticBaseFiles = new Set(productionTypeScriptFilesAtCommit(SEMANTIC_EXECUTION_INDEX_BASE))
     expect(SEMANTIC_EXECUTION_INDEX_FILES.filter((path) => !semanticBaseFiles.has(path)))
       .toHaveLength(1)
-    expect(productionSourceDelta(SEMANTIC_EXECUTION_INDEX_BASE).net).toBeLessThanOrEqual(3_500)
+    expect(productionSourceDeltaBetween(
+      SEMANTIC_EXECUTION_INDEX_BASE,
+      SEMANTIC_EXECUTION_INDEX_MERGE,
+    ).net).toBeLessThanOrEqual(3_500)
     expect(execFileSync(
       git,
       ['rev-parse', `${SEMANTIC_EXECUTION_INDEX_BASE}^{tree}`],
       { encoding: 'utf8' },
     ).trim()).toBe(SEMANTIC_EXECUTION_INDEX_BASE_TREE)
+    expect(execFileSync(
+      git,
+      ['rev-parse', `${SEMANTIC_EXECUTION_INDEX_MERGE}^{tree}`],
+      { encoding: 'utf8' },
+    ).trim()).toBe(SEMANTIC_EXECUTION_INDEX_MERGE_TREE)
     const obligationRetrieval = manifest.items.find(
       (item) => item.id === 'obligation-driven-retrieval-630',
     ) as any
     expect(obligationRetrieval).toMatchObject({
       disposition: 'keep',
-      status: 'planned',
+      status: 'in_progress',
       depends_on: [SEMANTIC_EXECUTION_INDEX_ID],
+      modified_sources: [...OBLIGATION_RETRIEVAL_FILES],
       activation: {
         issue: 'https://github.com/mohanagy/madar/issues/630',
-        protected_base: SEMANTIC_EXECUTION_INDEX_BASE,
-        protected_base_tree: SEMANTIC_EXECUTION_INDEX_BASE_TREE,
+        protected_base: OBLIGATION_RETRIEVAL_BASE,
+        protected_base_tree: OBLIGATION_RETRIEVAL_BASE_TREE,
         target_branch: 'next',
+      },
+      delivery_limits: {
+        new_production_files_max: 3,
+        net_production_loc_max: 235,
+        total_production_loc_max: 15_954,
+        replacement_source_loc_max: 1_500,
+        replacement_emitted_bytes_max: 61_000,
+        warm_retrieval_p95_ms_less_than: 500,
+      },
+      npm_package_budget: {
+        files_max: 102,
+        packed_bytes_max: 165_000,
+        unpacked_bytes_max: 655_000,
+      },
+      candidate: {
+        source_measurement: {
+          production_typescript_files: OBLIGATION_RETRIEVAL_SOURCE.production_typescript_files,
+          production_typescript_loc: OBLIGATION_RETRIEVAL_SOURCE.production_typescript_loc,
+          added: OBLIGATION_RETRIEVAL_SOURCE.production_loc_added,
+          removed: OBLIGATION_RETRIEVAL_SOURCE.production_loc_removed,
+          net: OBLIGATION_RETRIEVAL_SOURCE.production_loc_net,
+          diff_sha256: OBLIGATION_RETRIEVAL_DIFF_SHA256,
+        },
+        replacement_measurement: {
+          source_loc: 1_384,
+          emitted_bytes: 59_896,
+        },
+        package_measurement: {
+          files: OBLIGATION_RETRIEVAL_PACKAGE.npm_files,
+          packed_bytes: OBLIGATION_RETRIEVAL_PACKAGE.npm_packed_bytes,
+          unpacked_bytes: OBLIGATION_RETRIEVAL_PACKAGE.npm_unpacked_bytes,
+          shasum: OBLIGATION_RETRIEVAL_PACKAGE.npm_shasum,
+          integrity: OBLIGATION_RETRIEVAL_PACKAGE.npm_integrity,
+          artifact_sha256: OBLIGATION_RETRIEVAL_PACKAGE.npm_artifact_sha256,
+        },
+        local_verification: {
+          source_gate: 'passed',
+          replacement_source_loc_gate: 'passed',
+          replacement_gate: 'passed',
+          package_gate: 'passed',
+          focused_test_files_passed: 4,
+          focused_tests_passed: 159,
+          typecheck: 'passed',
+          build: 'passed',
+          build_eval: 'passed',
+          governance_tests_passed: 18,
+          packed_retrieval_parity: 'passed',
+          release_verify: 'passed',
+          registry_validate: 'passed',
+          isolation_verify: 'passed',
+          npm_audit_high: 'passed',
+          ci_eval_regression: 'passed',
+          ci_eval_regression_questions_passed: 5,
+          ci_eval_regression_questions_total: 5,
+          ci_eval_regression_recall_percent: 95,
+          ci_eval_regression_mrr: 1,
+          ci_eval_regression_snippet_precision_percent: 100,
+          ci_eval_regression_grounded_percent: 95,
+          final_full_suite: 'passed',
+          full_test_files_passed: 83,
+          full_tests_passed: 865,
+          coverage: 'passed',
+          coverage_statements_percent: 85.47,
+          coverage_statements_covered: 7_696,
+          coverage_statements_total: 9_004,
+          coverage_branches_percent: 79.76,
+          coverage_branches_covered: 7_169,
+          coverage_branches_total: 8_988,
+          coverage_functions_percent: 91.91,
+          coverage_functions_covered: 1_341,
+          coverage_functions_total: 1_459,
+          coverage_lines_percent: 88.97,
+          coverage_lines_covered: 6_430,
+          coverage_lines_total: 7_227,
+          frozen_govalidate_acceptance: 'passed',
+          frozen_govalidate: {
+            prompts: 5,
+            ready_results: 5,
+            files_per_result: 9,
+            excerpts_per_result: 12,
+            links_per_result: 12,
+            order_groups_per_result: 15,
+            entities_per_result: 21,
+            proofs_per_result: 20,
+            required_queues: [
+              'orchestration-queue',
+              'section-research-queue',
+              'assembly-queue',
+              'db-sync-queue',
+            ],
+            serialized_tokens: [3_977, 3_977, 3_979, 3_977, 3_977],
+          },
+          frozen_govalidate_all_variants: {
+            prompts: 14,
+            ready_results: 14,
+            serialized_tokens_min: 3_965,
+            serialized_tokens_max: 3_998,
+            all_four_required_queues: true,
+            flow_sha256: 'c34295432be3a54ce7506c2019fd17f3e2ca631c78d578b696234cf981c8592b',
+            evidence_sha256: 'd52e4db48b4a5346b3cf54113406b37894f27c04288561d5fe1286050bde848d',
+          },
+          warm_retrieval_reference_gate: 'passed',
+          warm_retrieval_reference: {
+            warmups: 3,
+            measured_queries: 100,
+            median_ms: 50.795208,
+            p95_ms: 53.452208,
+            max_ms: 56.98625,
+          },
+          independent_review: 'pending',
+          exact_head_ci: 'pending',
+        },
+        historical_stop: {
+          receipt: OBLIGATION_RETRIEVAL_STOP_RECEIPT,
+          reason: 'replacement_emitted_and_package_unpacked_ceilings_failed',
+          frozen_local_candidate_only: true,
+          branch_pushed: false,
+          pull_request_opened: false,
+          protected_next_changed: false,
+          merged: false,
+          npm_published: false,
+          github_release_created: false,
+          registry_metadata_published: false,
+          tag_created: false,
+          main_targeted: false,
+        },
+        amendment: {
+          receipt: OBLIGATION_RETRIEVAL_AMENDMENT,
+          supersedes_stop_receipt: OBLIGATION_RETRIEVAL_STOP_RECEIPT,
+          state: 'active_authorized',
+          replacement_emitted_bytes_max: 61_000,
+          npm_unpacked_bytes_max: 655_000,
+          all_other_metrics_and_constraints: 'unchanged',
+        },
       },
     })
     const noFallbackQualification = manifest.items.find(
@@ -2475,18 +2684,18 @@ describe('core reset governance', () => {
       ['merge-base', '--is-ancestor', THIN_DELIVERY_IMPLEMENTATION_START, THIN_DELIVERY_MERGE],
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-08-01',
-      completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      updated_at: '2026-08-02',
+      completed_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      active_phase: OBLIGATION_RETRIEVAL_ID,
       ready_phase: null,
-      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
-      completed_phase_commit: EVIDENCE_SKELETON_RETRIEVAL_MERGE,
-      ...SEMANTIC_EXECUTION_SOURCE,
+      base_commit: OBLIGATION_RETRIEVAL_BASE,
+      completed_phase_commit: SEMANTIC_EXECUTION_INDEX_MERGE,
+      ...OBLIGATION_RETRIEVAL_SOURCE,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'semantic_execution_index_632_candidate',
+      snapshot_scope: 'obligation_driven_retrieval_630_candidate',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
+      .toEqual([OBLIGATION_RETRIEVAL_ID])
     expect(manifest.targets).toMatchObject({
       production_typescript_files_max: 80,
       production_typescript_loc_max: 35_000,
@@ -3288,6 +3497,7 @@ describe('core reset governance', () => {
       current: {
         completed_phase: string
         active_phase: string | null
+        stopped_phase?: string | null
         ready_phase: string | null
         base_commit: string
         completed_phase_commit: string
@@ -3338,18 +3548,18 @@ describe('core reset governance', () => {
       ['merge-base', '--is-ancestor', EVALUATION_TOOLING_ACTIVATION_MERGE, EVALUATION_TOOLING_MERGE],
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
-      completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      completed_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      active_phase: OBLIGATION_RETRIEVAL_ID,
       ready_phase: null,
-      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
-      completed_phase_commit: EVIDENCE_SKELETON_RETRIEVAL_MERGE,
-      ...SEMANTIC_EXECUTION_SOURCE,
-      npm_files: SEMANTIC_EXECUTION_PACKAGE.npm_files,
-      npm_packed_bytes: SEMANTIC_EXECUTION_PACKAGE.npm_packed_bytes,
-      npm_unpacked_bytes: SEMANTIC_EXECUTION_PACKAGE.npm_unpacked_bytes,
+      base_commit: OBLIGATION_RETRIEVAL_BASE,
+      completed_phase_commit: SEMANTIC_EXECUTION_INDEX_MERGE,
+      ...OBLIGATION_RETRIEVAL_SOURCE,
+      npm_files: OBLIGATION_RETRIEVAL_PACKAGE.npm_files,
+      npm_packed_bytes: OBLIGATION_RETRIEVAL_PACKAGE.npm_packed_bytes,
+      npm_unpacked_bytes: OBLIGATION_RETRIEVAL_PACKAGE.npm_unpacked_bytes,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
+      .toEqual([OBLIGATION_RETRIEVAL_ID])
 
     const evaluation = manifest.items.find((item) => item.id === 'evaluation-tooling')
     expect(evaluation).toMatchObject({
@@ -3657,11 +3867,7 @@ describe('core reset governance', () => {
       filesystemViolations: [],
     })
     expect(evaluatorFiles).toEqual([...evaluatorDestinations].sort())
-    expect(evaluatorFiles.reduce((total, path) => {
-      const source = read(path)
-      const lineFeeds = source.match(/\n/g)?.length ?? 0
-      return total + lineFeeds + (source.length > 0 && !source.endsWith('\n') ? 1 : 0)
-    }, 0)).toBe(4_698)
+    expect(logicalLocAtCommit(EVALUATION_TOOLING_MERGE, evaluatorDestinations)).toBe(4_698)
 
     const changedProduction = execFileSync(
       git,
@@ -3856,14 +4062,14 @@ describe('core reset governance', () => {
       })
       | undefined
     expect(manifest.current).toMatchObject({
-      completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      completed_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      active_phase: OBLIGATION_RETRIEVAL_ID,
       ready_phase: null,
-      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
-      ...SEMANTIC_EXECUTION_SOURCE,
+      base_commit: OBLIGATION_RETRIEVAL_BASE,
+      ...OBLIGATION_RETRIEVAL_SOURCE,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
+      .toEqual([OBLIGATION_RETRIEVAL_ID])
     expect(phase).toMatchObject({
       disposition: 'keep',
       status: 'stopped',
@@ -4110,14 +4316,14 @@ describe('core reset governance', () => {
       })
       | undefined
     expect(manifest.current).toMatchObject({
-      completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      completed_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      active_phase: OBLIGATION_RETRIEVAL_ID,
       ready_phase: null,
-      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
-      ...SEMANTIC_EXECUTION_SOURCE,
+      base_commit: OBLIGATION_RETRIEVAL_BASE,
+      ...OBLIGATION_RETRIEVAL_SOURCE,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
+      .toEqual([OBLIGATION_RETRIEVAL_ID])
     expect(phase).toMatchObject({
       disposition: 'keep',
       status: 'stopped',
@@ -4741,21 +4947,21 @@ describe('core reset governance', () => {
     expect(execFileSync(git, ['rev-parse', `${EVIDENCE_BASE}^{tree}`], { encoding: 'utf8' }).trim())
       .toBe(EVIDENCE_BASE_TREE)
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-08-01',
-      completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
-      active_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      updated_at: '2026-08-02',
+      completed_phase: SEMANTIC_EXECUTION_INDEX_ID,
+      active_phase: OBLIGATION_RETRIEVAL_ID,
       ready_phase: null,
-      base_commit: SEMANTIC_EXECUTION_INDEX_BASE,
-      completed_phase_commit: EVIDENCE_SKELETON_RETRIEVAL_MERGE,
-      ...SEMANTIC_EXECUTION_SOURCE,
-      npm_files: SEMANTIC_EXECUTION_PACKAGE.npm_files,
-      npm_packed_bytes: SEMANTIC_EXECUTION_PACKAGE.npm_packed_bytes,
-      npm_unpacked_bytes: SEMANTIC_EXECUTION_PACKAGE.npm_unpacked_bytes,
+      base_commit: OBLIGATION_RETRIEVAL_BASE,
+      completed_phase_commit: SEMANTIC_EXECUTION_INDEX_MERGE,
+      ...OBLIGATION_RETRIEVAL_SOURCE,
+      npm_files: OBLIGATION_RETRIEVAL_PACKAGE.npm_files,
+      npm_packed_bytes: OBLIGATION_RETRIEVAL_PACKAGE.npm_packed_bytes,
+      npm_unpacked_bytes: OBLIGATION_RETRIEVAL_PACKAGE.npm_unpacked_bytes,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'semantic_execution_index_632_candidate',
+      snapshot_scope: 'obligation_driven_retrieval_630_candidate',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
-      .toEqual([SEMANTIC_EXECUTION_INDEX_ID])
+      .toEqual([OBLIGATION_RETRIEVAL_ID])
 
     const evidence = manifest.items.find((item) => item.id === 'evidence-path-query')
     expect(evidence).toMatchObject({
@@ -5256,7 +5462,8 @@ describe('core reset governance', () => {
         .toHaveLength(1)
     }
     expect(EVIDENCE_REPLACEMENTS.every((path) => !baseFiles.includes(path))).toBe(true)
-    expect(EVIDENCE_REPLACEMENTS.every((path) => existsSync(resolve(path)))).toBe(true)
+    expect(EVIDENCE_REPLACEMENTS.every((path) => gitPathExists(EVIDENCE_IMPLEMENTATION, path)))
+      .toBe(true)
     expect(logicalLocAtCommit(EVIDENCE_IMPLEMENTATION, EVIDENCE_REPLACEMENTS)).toBe(1_812)
     expect(existsSync(resolve(EVIDENCE_PERFORMANCE_RECEIPT))).toBe(true)
     const implementationDelta = productionSourceDeltaBetween(EVIDENCE_BASE, EVIDENCE_IMPLEMENTATION)
@@ -5733,7 +5940,8 @@ describe('core reset governance', () => {
         ...observedSurvivingImporters.map((entry) => entry.path),
         'src/runtime/stdio/definitions.ts',
       ].sort())
-    expect(EVIDENCE_REPLACEMENTS.every((path) => existsSync(resolve(path)))).toBe(true)
+    expect(EVIDENCE_REPLACEMENTS.every((path) => gitPathExists(EVIDENCE_IMPLEMENTATION, path)))
+      .toBe(true)
   })
 
   it('publishes an exact hermetic generation mutation receipt', () => {
@@ -6323,8 +6531,8 @@ describe('core reset governance', () => {
     expect(governance).toContain('## Published — `0.40.0-beta.3`')
     expect(governance).toContain('## Passed — retrieval regression #625')
     expect(governance).toContain('## Published — `0.40.0-beta.4`')
-    expect(governance).toContain('## In progress — semantic execution index #632')
-    expect(governance).toContain('## Pending — obligation-driven retrieval #630')
+    expect(governance).toContain('## Completed — semantic execution index #632')
+    expect(governance).toContain('## In progress — obligation-driven retrieval #630')
     expect(governance).toContain('## Pending — installed no-fallback qualification #631')
     expect(governance).toContain('## Stopped amendment — capability validation v1')
     expect(governance).toContain('## Historical accepted amendment — capability validation v2')
@@ -6333,6 +6541,8 @@ describe('core reset governance', () => {
     expect(governance).toContain('## Passed — retrieval regression #622')
     expect(governance).toContain('## Completed amendment — retrieval regression #622')
     expect(governance).toContain('## Completed amendment — retrieval regression #625')
+    expect(governance).toContain('## Completed amendment — semantic execution correction #632')
+    expect(governance).toContain('## Active amendment — obligation-driven retrieval #630')
     expect(governance).toContain('Release amendment — `0.40.0-beta.3` published')
     expect(governance).toContain('Release amendment — `0.40.0-beta.4` ready')
     expect(governance).toContain('/compilerOptions/removeComments=true')

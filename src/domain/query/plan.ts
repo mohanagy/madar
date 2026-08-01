@@ -21,16 +21,16 @@ const BEHAVIOR = new Set(
 const IRREGULAR = new Map('built=build generation=generate got=get getting=get persistence=persist planned=plan planning=plan ran=run running=run setting=set written=write wrote=write'.split(' ').map((pair) => pair.split('=') as [string, string]))
 
 function canonical(value: string): string {
-  const irregular = IRREGULAR.get(value)
-  if (irregular) return irregular
+  const mapped = IRREGULAR.get(value)
+  if (mapped) return mapped
   const ing = value.endsWith('ing') ? value.slice(0, -3) : ''
   const past = value.endsWith('ed') ? value.slice(0, -2) : ''
-  const candidates = [value,
+  const forms = [value,
     /i(?:es|ed)$/u.test(value) ? `${value.slice(0, -3)}y` : '',
     ing, ing ? `${ing}e` : '', past, past ? `${past}e` : '',
     value.endsWith('es') ? value.slice(0, -2) : '',
     value.endsWith('s') ? value.slice(0, -1) : '']
-  const action = candidates.find((candidate) => ACTIONS.has(candidate))
+  const action = forms.find((candidate) => ACTIONS.has(candidate))
   if (action) return action
   if (value.length <= 4) return value
   if (value.endsWith('ies')) return `${value.slice(0, -3)}y`
@@ -38,11 +38,11 @@ function canonical(value: string): string {
 }
 
 export function lexicalTokens(value: string): string[] {
-  const normalized = value.normalize('NFKC')
+  const raw = value.normalize('NFKC')
     .replace(/([\p{Ll}\p{N}])([\p{Lu}])/gu, '$1 $2')
     .replace(/[’']s\b/giu, '')
     .toLowerCase()
-  return (normalized.match(/[\p{L}\p{N}]+/gu) ?? []).map(canonical)
+  return (raw.match(/[\p{L}\p{N}]+/gu) ?? []).map(canonical)
 }
 
 const [FW, LW, EW] =
@@ -53,72 +53,106 @@ const FN = 'flow|workflow|pipeline|lifecycle'
 const FV = 'generate|run|execute|create|build|produce|process'
 const OWNER = 'file|module|class|function|method|service|handler'
 
-const isNoise = (token: string, intent: QueryIntent): boolean =>
-  COMMON.has(token) || (intent === 'workflow' ? FLOW.has(token)
-    : intent === 'locate' ? LOCATE.has(token) : EXPLAIN.has(token))
-const useful = (
-  value: string, intent: QueryIntent, common = false,
+const isNoise = (token: string, mode: QueryIntent): boolean =>
+  COMMON.has(token) || (mode === 'workflow' ? FLOW.has(token)
+    : mode === 'locate' ? LOCATE.has(token) : EXPLAIN.has(token))
+const content = (
+  value: string, mode: QueryIntent, plain = false,
 ): string[] => [...new Set(lexicalTokens(value).filter((token) =>
-  !(common ? COMMON.has(token) : isNoise(token, intent))))]
+  !(plain ? COMMON.has(token) : isNoise(token, mode))))]
 
 function pick(
-  phrase: string, intent: QueryIntent, patterns: readonly RegExp[], common = false,
+  text: string, mode: QueryIntent, rules: readonly RegExp[], plain = false,
 ): string {
-  for (const pattern of patterns) {
-    const subject = useful(pattern.exec(phrase)?.[1] ?? '', intent, common).join(' ')
-    if (subject) return subject
+  for (const rule of rules) {
+    const topic = content(rule.exec(text)?.slice(1).join(' ') ?? '',
+      mode, plain).join(' ')
+    if (topic) return topic
   }
   return ''
 }
 
-type SubjectMatch = readonly [subject: string, ignored: readonly string[]]
+type SubjectMatch = readonly [topic: string, ignored: readonly string[]]
 
-function flowSubject(phrase: string): SubjectMatch {
-  const event = pick(phrase, 'workflow', [
+type CoordinatedFlow = {
+  subject: string; entry: string; stage?: string; handoff?: string
+  terminal: string; terms: string[]
+}
+function coordinatedFlow(text: string): CoordinatedFlow | undefined {
+  const entry = /\b(?:accept|receive|submit|handle) (.+?)(?= (?:schedule|enqueue|queue|dispatch|research|process|compose|assemble|render|write|save|store|persist)\b)/u
+      .exec(text),
+    end = /\b(?:write|save|store|persist) (.+)$/u.exec(text),
+    composed = /\b(compose|assemble|render) (.+?)(?= (?:and )?(?:write|save|store|persist)\b|$)/u
+      .exec(text)
+  if (!entry || !end) return undefined
+  const input = content(entry[1]!, 'workflow'),
+    output = content(composed?.[2] ?? end[1]!, 'workflow')
+  const first = input[0], rawLast = output.at(-1), last = composed
+    && /^(?:model|output|result)$/u.test(rawLast ?? '') ? 'report' : rawLast
+  if (!first || !last) return undefined
+  const handoff = /\b(?:schedule|enqueue|queue|dispatch|publish|emit)\b/u.test(text)
+      ? 'schedule' : undefined,
+    stages = [
+      /\b(?:research|investigate|discover)\b/u.test(text) ? 'research' : '',
+      /\b(?:compose|assemble|render|synthesize|merge)\b/u.test(text)
+        ? 'assemble' : '',
+    ].filter(Boolean)
+  return {
+    subject: first === last ? first : `${first} ${last}`,
+    entry: `request ${first}`, ...(stages.length ? { stage: stages.join(' ') } : {}),
+    ...(handoff ? { handoff } : {}), terminal: 'persistence',
+    terms: [...new Set([first, last, ...stages, ...(handoff ? [handoff] : [])])],
+  }
+}
+
+function flowSubject(text: string): SubjectMatch {
+  const direct = pick(text, 'workflow', [
     /\bwhat happen when (?:(?:a|an|the) )?(?:user|client|caller) (?:request|submit) (.+)$/,
-  ])
-  if (event) return [event, []]
-  const walked = pick(phrase, 'workflow', [
+  ]) || pick(text, 'workflow', [
     /\bwalk (?:me )?through (.+?)(?= from\b| via\b| to\b|$)/,
-  ])
-  if (walked) return [walked, []]
-  const traced = pick(phrase, 'workflow', [
+  ]) || pick(text, 'workflow', [
     /\btrace (?:the )?(.+)(?= from .+ (?:to|through|via)\b)/,
-  ], true)
-  if (traced) return [traced, []]
-  const passive = pick(phrase, 'workflow', [
+    /\bwhat \w+ (?:the )?(.+?) that/,
+  ], true) || pick(text, 'workflow', [
     RegExp(`\\bhow (?:is|are|was|were) (.+?) (?:${FW})\\b`),
     RegExp(`\\bhow (?:does|do|did) (.+?) get (?:${FW})\\b`),
   ])
-  if (passive) return [passive, []]
+  if (direct) return [direct, []]
   const active = RegExp(
     `\\bhow (?:(?:${AUX}) )?(.+?) (${FW}) (.+?)(?= (?:${CLAUSE})\\b| end to end\\b|$)`,
-  ).exec(phrase)
+  ).exec(text)
   if (active) {
-    const object = useful(active[3]!, 'workflow').join(' ')
-    if (object) return [object, useful(active[1]!, 'workflow', true)]
+    const object = content(active[3]!, 'workflow').join(' ')
+    if (object) return [object, content(active[1]!, 'workflow', true)]
   }
-  const subject = pick(phrase, 'workflow', [
+  const topic = pick(text, 'workflow', [
+    /^follow (?:\S+ )*?(\S+) from .+ until (?:\S+ )*?(\S+) is/,
+    /for (.+?) generate/,
     /\btrace (?:the )?(.+?)(?= through\b| via\b| to\b|$)/,
     RegExp(`\\b(?:${FN}) (?:of|for) (.+?)(?= from\\b|$)`),
     RegExp(`(.+?) (?:${FN})\\b`),
     RegExp(`\\bhow (?:(?:${AUX}) )?(.+?) (?:${FW})\\b`),
+    /\w+ (?:an?|the) (\S+)/,
   ])
-  return [subject || useful(phrase, 'workflow').join(' '), []]
+  return [topic || content(text, 'workflow').join(' '), []]
 }
 
 type FlowBounds = {
   entry?: string | undefined
   stage?: string | undefined
+  handoff?: string | undefined
   terminal?: string | undefined
 }
-function flowBounds(phrase: string): FlowBounds {
-  if (!/\b(?:from|through|via)\b/u.test(phrase)) return {}
-  const read = (pattern: RegExp): string | undefined => {
-    const value = useful(pattern.exec(phrase)?.[1] ?? '', 'workflow', true).join(' ')
+function flowBounds(text: string): FlowBounds {
+  if (/^follow /.test(text)
+    || !(/\b(?:from|via)\b/u.test(text) || /^(?:trace|walk)\b.*\bthrough\b/u
+      .test(text))) return {}
+  const read = (rule: RegExp): string | undefined => {
+    const value = lexicalTokens(rule.exec(text)?.[1] ?? '')
+      .filter((token) => !COMMON.has(token)).join(' ')
     return value || undefined
   }
-  const walked = /^walk (?:me )?through\b/u.test(phrase)
+  const walked = /^walk (?:me )?through\b/u.test(text)
   return {
     entry: read(/\bfrom (.+?)(?= (?:through(?: to)?|via|to)\b| how\b|$)/u),
     stage: read(/\bvia (.+?)(?= to\b| how\b|$)/u)
@@ -129,9 +163,9 @@ function flowBounds(phrase: string): FlowBounds {
   }
 }
 
-function simpleSubject(phrase: string, intent: 'locate' | 'explain'): string {
-  const locate = intent === 'locate'
-  const patterns = locate ? [
+function simpleSubject(text: string, mode: 'locate' | 'explain'): string {
+  const locate = mode === 'locate'
+  const rules = locate ? [
     RegExp(`\\bwhere (?:(?:${AUX}) )?(.+?)(?= (?:${LW})\\b| (?:${CLAUSE})\\b|$)`),
     RegExp(`\\b(?:which (?:${OWNER}) |what )(?:${LW}) (.+?)(?= (?:${CLAUSE})\\b|$)`),
     /\b(?:locate|find)(?: the)? (.+?)(?= (?:definition|declaration|implementation)\b|$)/,
@@ -143,73 +177,83 @@ function simpleSubject(phrase: string, intent: 'locate' | 'explain'): string {
     RegExp(`\\b(?:how|why|what) (?:(?:${AUX}) )?(.+?) (?:${EW})\\b`),
     /\b(?:explain|describe)(?: how)?(?: the)? (.+)$/,
   ]
-  return pick(phrase, intent, patterns, locate)
-    || useful(phrase, intent).join(' ')
+  return pick(text, mode, rules,
+    locate || /\b(?:call|invoke)\b/u.test(text))
+    || content(text, mode).join(' ')
 }
 
 export function planQuestion(request: NormalizedRetrieveRequest): QuestionPlanResult {
-  const phrase = lexicalTokens(request.question).join(' '),
-    qualified = /(?:^|[^\p{L}\p{N}_$])([\p{L}_$][\p{L}\p{N}_$]*\.[\p{L}_$][\p{L}\p{N}_$]*)/u
-      .exec(request.question.normalize('NFKC'))?.[1],
-    identifier = /\bwhere\s+(?:is|are|was|were)\s+[`'"]?([\p{L}_$][\p{L}\p{N}_$.-]*)[`'"]?\s+(?:defined|declared|implemented)\b/iu
-      .exec(request.question.normalize('NFKC'))?.[1]
-  const intent: QueryIntent | undefined =
-    /\b(?:end to end|what happen when)\b|\bfrom\b.+\b(?:through|via)\b.+\bto\b|\btrace\b.+\bfrom\b.+\bto\b/.test(phrase)
-      || !qualified && RegExp(`\\bhow (?:(?:${AUX}) (?!${FV}\\b)|(?!(?:${AUX}|${FV})\\b))\\S+(?: \\S+)*? (?:${FV})\\b`).test(phrase)
+  const raw = request.question.normalize('NFKC'),
+    text = lexicalTokens(request.question).join(' '),
+    names = [...raw.matchAll(/(?<![\p{L}\p{N}_$])([\p{L}_$][\p{L}\p{N}_$]*\.[\p{L}_$][\p{L}\p{N}_$]*)/gu)]
+      .map((match) => match[1]!),
+    ident = /\bwhere\s+(?:is|are|was|were)\s+[`'"]?([\p{L}_$][\p{L}\p{N}_$.-]*)[`'"]?\s+(?:defined|declared|implemented)\b/iu
+      .exec(raw)?.[1]
+  const mode: QueryIntent | undefined =
+    /\b(?:end to end|what happen when)\b|\bfrom\b.+\b(?:through|via)\b.+\bto\b|\btrace\b.+\bfrom\b.+\bto\b/.test(text)
+      || /^follow /.test(text)
+      || /^which .+\b(?:save|write)\b/.test(text)
+      || /\bhow\b[\s\S]*\bgenerat(?:e|ed|es|ing)\b/iu.test(raw)
+      || /\bhow\s+(?:(?:does|do|did|can|could|would|should|will)\s+)?(?!(?:does|do|did|can|could|would|should|will)\b)[\p{L}_$][\p{L}\p{N}_$]*\s+(?:generate|run|execute|create|build|produce|process)\b/iu.test(raw)
       ? 'workflow'
-      : /\b(?:where|locate|find|definition|declaration|implementation)\b/.test(phrase)
-        || RegExp(`\\bwhich (?:${OWNER}) (?:${LW})\\b`).test(phrase)
-        || RegExp(`\\bwhat (?:${LW})\\b`).test(phrase) ? 'locate'
-        : /^trace\b|\b(?:flow|workflow|pipeline|lifecycle)\b/.test(phrase) ? 'workflow'
+      : /\b(?:where|locate|find|definition|declaration|implementation)\b/.test(text)
+        || RegExp(`\\bwhich (?:${OWNER}) (?:${LW})\\b`).test(text)
+        || RegExp(`\\bwhat (?:${LW})\\b`).test(text) ? 'locate'
+        : /^trace\b|\b(?:flow|workflow|pipeline|lifecycle)\b/.test(text) ? 'workflow'
           : /\b(?:explain|describe|how|why|behavior)\b|\bwhat (?:does|do|is|are)\b/
-            .test(phrase)
+            .test(text)
             || RegExp(`\\b(?:what (?:${FW}|${EW})|which (?:${OWNER}))\\b`)
-              .test(phrase) ? 'explain' : undefined
-  if (!intent) {
+              .test(text) ? 'explain' : undefined
+  if (!mode) {
     return {
       status: 'unsupported', reason: 'unsupported_intent',
-      terms: [...new Set(phrase.split(' ').filter((token) => !COMMON.has(token)))].sort(),
+      terms: [...new Set(text.split(' ').filter((token) => !COMMON.has(token)))].sort(),
     }
   }
-  const [subject, ignored] = intent === 'workflow'
-    ? qualified ? [useful(qualified, 'workflow', true).join(' '), []]
-      : flowSubject(phrase)
-    : [qualified
-      ? useful(qualified, intent, true).join(' ')
-      : intent === 'locate' && identifier
-      ? useful(identifier, 'locate', true).join(' ')
-      : simpleSubject(phrase, intent), []]
-  const bounds = intent === 'workflow' ? flowBounds(phrase) : {}
-  const omitted = new Set(ignored)
-  const terms = new Set(lexicalTokens(phrase).filter((token) =>
-    !isNoise(token, intent) && !omitted.has(token)))
-  lexicalTokens(subject).forEach((token) => terms.add(token))
+  const coordinated = mode === 'workflow' ? coordinatedFlow(text) : undefined
+  const [topic, ignored] = mode === 'workflow'
+    ? coordinated ? [coordinated.subject, []] : flowSubject(text)
+    : [names[0]
+      ? content(names[0], mode, true).join(' ')
+      : mode === 'locate' && ident
+      ? content(ident, 'locate', true).join(' ')
+      : simpleSubject(text, mode), []]
+  const span: FlowBounds = coordinated
+    ?? (mode === 'workflow' ? flowBounds(text) : {})
+  if (mode === 'workflow' && names.length) {
+    span.stage = names.flatMap(lexicalTokens).join(' ')
+  }
+  const skip = new Set(ignored)
+  const terms = new Set((coordinated?.terms ?? lexicalTokens(text)).filter((token) =>
+    !isNoise(token, mode) && !skip.has(token)))
+  lexicalTokens(topic).forEach((token) => terms.add(token))
   const sorted = [...terms].sort()
-  if (!subject || sorted.length === 0) {
+  if (!topic || sorted.length === 0) {
     return { status: 'unsupported', reason: 'missing_subject', terms: sorted }
   }
-  const words = new Set(phrase.split(' '))
-  const access: LocateAccess | undefined = intent !== 'locate' ? undefined
+  const words = new Set(text.split(' '))
+  const access: LocateAccess | undefined = mode !== 'locate' ? undefined
     : ['read', 'find'].some((word) => words.has(word)) ? 'read'
       : ['write', 'save', 'set', 'update', 'persist', 'store']
         .some((word) => words.has(word)) ? 'write' : undefined
-  const kinds: readonly ObligationKind[] = intent === 'locate' ? ['subject']
-    : intent === 'explain' ? ['subject', 'behavior']
+  const kinds: readonly ObligationKind[] = mode === 'locate' ? ['subject']
+    : mode === 'explain' ? ['subject', 'behavior']
       : ['subject', 'entry', 'stage', 'handoff', 'behavior', 'ordering', 'terminal']
-  const residual = sorted.filter((token) => !lexicalTokens(subject).includes(token))
-  const actions = phrase.split(' ').filter((token) => BEHAVIOR.has(token))
-  const behavior = [...new Set(residual.length > 0 ? residual : actions)].join(' ')
+  const rest = sorted.filter((token) => !lexicalTokens(topic).includes(token))
+  const verbs = text.split(' ').filter((token) => BEHAVIOR.has(token))
+  const behavior = [...new Set(rest.length > 0 ? rest : verbs)].join(' ')
   return {
     status: 'supported',
     plan: {
-      intent, subject, terms: sorted,
+      intent: mode, subject: topic, terms: sorted,
       obligations: kinds.map((kind, index): QueryObligation => ({
         id: `o${index + 1}`, kind,
-        target: kind === 'entry' ? bounds.entry ?? subject
-          : kind === 'stage' ? bounds.stage ?? subject
-            : kind === 'terminal' ? bounds.terminal ?? subject
-              : kind === 'behavior' && intent === 'explain' && behavior
-                ? behavior : subject,
+        target: kind === 'entry' ? span.entry ?? topic
+          : kind === 'stage' ? span.stage ?? topic
+            : kind === 'handoff' ? span.handoff ?? topic
+            : kind === 'terminal' ? span.terminal ?? topic
+              : kind === 'behavior' && mode === 'explain' && behavior
+                ? behavior : topic,
         mandatory: true,
       })),
       ...(access ? { access } : {}),

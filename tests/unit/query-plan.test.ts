@@ -88,6 +88,15 @@ describe('planQuestion', () => {
         { id: 'o2', kind: 'behavior', target: 'save', mandatory: true },
       ],
     })
+    expect(plan('How does process order call persist order?')).toEqual({
+      intent: 'explain',
+      subject: 'process order',
+      terms: ['order', 'persist', 'process'],
+      obligations: [
+        { id: 'o1', kind: 'subject', target: 'process order', mandatory: true },
+        { id: 'o2', kind: 'behavior', target: 'persist', mandatory: true },
+      ],
+    })
   })
 
   it.each([
@@ -180,8 +189,6 @@ describe('planQuestion', () => {
     ['Can you explain how GoValidate generate ideas report?', 'idea report'],
     ['How does ExampleEngine produce release artifacts end to end?', 'release artifact'],
     ['How does ExampleEngine produce release artifacts?', 'release artifact'],
-    ['How does password policy login create a tenant session?', 'tenant session'],
-    ['How is the monthly revenue report built?', 'monthly revenue report'],
   ])('extracts the object, not the actor, from active workflows: %s', (question, subject) => {
     expect(plan(question)).toEqual({
       intent: 'workflow',
@@ -197,6 +204,54 @@ describe('planQuestion', () => {
         { id: 'o7', kind: 'terminal', target: subject, mandatory: true },
       ],
     })
+  })
+
+  it('keeps an explicit flow noun phrase ahead of the generic determiner fallback', () => {
+    const result = plan('explain how generating the idea report flow is working')
+
+    expect(result.intent).toBe('workflow')
+    expect(result.subject).toBe('idea report')
+    expect(result.terms).toEqual(['idea', 'report'])
+  })
+
+  it('maps coordinated lifecycle clauses to structural workflow bounds', () => {
+    const result = plan(
+      'Which runtime components accept an idea, schedule its analysis, research each section, compose the result, and write the durable read model?',
+    )
+
+    expect(result.intent).toBe('workflow')
+    expect(result.subject).toBe('idea report')
+    expect(result.terms).toEqual([
+      'assemble', 'idea', 'report', 'research', 'schedule',
+    ])
+    expect(result.obligations.find(({ kind }) => kind === 'entry')?.target)
+      .toBe('request idea')
+    expect(result.obligations.find(({ kind }) => kind === 'stage')?.target)
+      .toBe('research assemble')
+    expect(result.obligations.find(({ kind }) => kind === 'handoff')?.target)
+      .toBe('schedule')
+    expect(result.obligations.find(({ kind }) => kind === 'terminal')?.target)
+      .toBe('persistence')
+  })
+
+  it.each([
+    [
+      'How does password policy login create a tenant session?',
+      'password policy login', ['create', 'login', 'password', 'policy', 'session', 'tenant'],
+    ],
+    [
+      'How is the monthly revenue report built?',
+      'monthly revenue report', ['build', 'monthly', 'report', 'revenue'],
+    ],
+  ])('keeps bounded component behavior as an explanation: %s', (
+    question, subject, terms,
+  ) => {
+    const result = plan(question)
+    expect(result.intent).toBe('explain')
+    expect(result.subject).toBe(subject)
+    expect(result.terms).toEqual(terms)
+    expect(result.obligations.map(({ kind }) => kind))
+      .toEqual(['subject', 'behavior'])
   })
 
   it('keeps a get-passive workflow subject ahead of boundary clauses', () => {

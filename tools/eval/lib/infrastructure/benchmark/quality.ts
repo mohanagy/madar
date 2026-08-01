@@ -1,7 +1,11 @@
 import { KnowledgeGraph } from '../../../../../src/domain/graph/directed-multigraph.js'
 import { retrieveContext } from '../../../../../src/application/retrieve-context.js'
 import { inspectQueryIndex } from '../../../../../src/domain/query/index-status.js'
-import type { RetrieveContextResult } from '../../../../../src/domain/query/types.js'
+import type {
+  DossierLink,
+  DossierProof,
+  RetrieveContextResult,
+} from '../../../../../src/domain/query/types.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './corpus.js'
 import { normalizeBenchmarkQuestion, normalizeExpectedLabel, type BenchmarkQuestionSpec } from './questions.js'
 import { type PromptRunnerUsage } from '../prompt-runner.js'
@@ -199,6 +203,32 @@ function questionBucket(question: string): string {
   return 'general'
 }
 
+function hasValidProofRange(range: readonly number[]): boolean {
+  if (range.length !== 4 || range.some((value) => !Number.isSafeInteger(value) || value <= 0)) {
+    return false
+  }
+  const [startLine, startColumn, endLine, endColumn] = range as [number, number, number, number]
+  return startLine < endLine || (startLine === endLine && startColumn <= endColumn)
+}
+
+export function isGroundedDossierProofChain(
+  link: Pick<DossierLink, 'from' | 'to' | 'proofs'>,
+  proofs: ReadonlyMap<string, DossierProof>,
+  excerptIds: ReadonlySet<string>,
+  fileIds: ReadonlySet<string>,
+): boolean {
+  const chain = link.proofs.map((id) => proofs.get(id))
+  if (chain.length === 0 || chain.some((proof) => !proof || (
+    'excerpt' in proof
+      ? !excerptIds.has(proof.excerpt)
+      : !fileIds.has(proof.file) || !hasValidProofRange(proof.range)
+  ))) return false
+  const edges = chain.filter((proof): proof is DossierProof => proof !== undefined)
+  return edges[0]?.from === link.from
+    && edges.at(-1)?.to === link.to
+    && !edges.slice(1).some((proof, index) => edges[index]?.to !== proof.from)
+}
+
 function buildQualityResult(
   gold: GoldQuestion,
   result: RetrieveContextResult,
@@ -213,10 +243,12 @@ function buildQualityResult(
   const groundedSymbols = new Set<string>()
   if (result.state === 'ready') {
     const excerptIds = new Set(result.dossier.evidence.excerpts.map(({ id }) => id))
-    const links = new Map(result.dossier.flow.links.map((link) => [link.id, link]))
-    for (const proof of result.dossier.evidence.proofs) {
-      groundedSymbols.add(proof.from)
-      groundedSymbols.add(proof.to)
+    const fileIds = new Set(result.dossier.evidence.files.map(({ id }) => id))
+    const proofs = new Map(result.dossier.evidence.proofs.map((proof) => [proof.id, proof]))
+    for (const link of result.dossier.flow.links) {
+      if (!isGroundedDossierProofChain(link, proofs, excerptIds, fileIds)) continue
+      groundedSymbols.add(link.from)
+      groundedSymbols.add(link.to)
     }
     for (const entity of result.dossier.evidence.entities) {
       if (entity.kind === 'symbol' && entity.excerpt
@@ -224,8 +256,7 @@ function buildQualityResult(
         groundedSymbols.add(entity.id)
       }
       if (entity.kind === 'operation' && excerptIds.has(entity.excerpt)) {
-        if ('owner' in entity) groundedSymbols.add(entity.owner)
-        else entity.links.forEach((id) => groundedSymbols.add(links.get(id)!.from))
+        groundedSymbols.add(entity.owner)
       }
     }
   }

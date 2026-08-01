@@ -52,7 +52,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = Object.freeze([
   Object.freeze({
     name: 'retrieve',
     description:
-      'Return one deterministic authenticated answer dossier, or exact missing requirements, for a TypeScript or JavaScript codebase question.',
+      'Return an authenticated answer dossier or exact gaps.',
     inputSchema: Object.freeze({
       type: 'object',
       additionalProperties: false,
@@ -62,7 +62,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = Object.freeze([
           type: 'string',
           minLength: 1,
           maxLength: MAX_RETRIEVE_QUESTION_LENGTH,
-          description: 'A locate, explain, or workflow question to prove from the indexed graph.',
+          description: 'A locate, explain, or workflow question.',
         }),
         budget: Object.freeze({
           type: 'integer',
@@ -135,7 +135,7 @@ export async function handleMcpProtocolRequest(
           version: context.version,
         },
         instructions:
-          'Call retrieve once with the codebase question. State ready contains a complete authenticated dossier; every other state names the exact missing or terminal condition. Do not infer omitted workflow steps.',
+          'Call once. Ready is complete; otherwise report its exact condition.',
       })
     case 'ping':
       return success(id, {})

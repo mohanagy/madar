@@ -121,6 +121,10 @@ describe('development-only benchmark isolation', () => {
     expect(parity).toContain('server.serveMcpServer')
     expect(parity).toContain('requestWaitMs: 25_000')
     expect(parity).toContain('CLI query, and direct application bytes differ')
+    expect(parity).toContain("result?.version !== 2")
+    expect(parity).toContain("result?.state !== 'ready'")
+    expect(parity).toContain('channelLinks.length !== 4')
+    expect(parity).not.toContain('result?.outcome')
     expect(parity).not.toContain('serveGraphStdio')
     expect(parity).not.toContain('autoRefreshRequestWaitMs: 30_000')
     expect(workflow).toContain('npm run verify:pack-parity')
@@ -129,7 +133,8 @@ describe('development-only benchmark isolation', () => {
   it('keeps expected benchmark evidence out of production retrieval', () => {
     for (const path of [
       'src/application/retrieve-context.ts',
-      'src/domain/query/slice.ts',
+      'src/application/evidence-hydrator.ts',
+      'src/domain/query/workflow.ts',
       'src/adapters/mcp/protocol.ts',
     ]) {
       const source = read(path)
