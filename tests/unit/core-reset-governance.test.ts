@@ -432,22 +432,22 @@ const SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS = [
 ] as const
 const SEMANTIC_EXECUTION_SOURCE = {
   production_typescript_files: 44,
-  production_typescript_loc: 15_934,
-  production_loc_added: 3_667,
-  production_loc_removed: 187,
-  production_loc_net: 3_480,
+  production_typescript_loc: 15_719,
+  production_loc_added: 3_462,
+  production_loc_removed: 197,
+  production_loc_net: 3_265,
 } as const
 const SEMANTIC_EXECUTION_PACKAGE = {
   npm_files: 102,
-  npm_packed_bytes: 145_254,
-  npm_unpacked_bytes: 638_736,
-  npm_shasum: '9f0c66e663f703afbb9a5e68f6037f9e211cba58',
+  npm_packed_bytes: 149_453,
+  npm_unpacked_bytes: 639_867,
+  npm_shasum: '0d7e3f067d09d6db953ffc34356d2c1221cc7d08',
   npm_integrity:
-    'sha512-3yYpFxnym0r9DF66IfS8w1MI01DMLU+hX6uQi6aQoBQvbeu6jHn8j059N6ml3MwMx3wvlj41Y3yAMIX3D2N2Aw==',
-  npm_artifact_sha256: 'b49bf7a1eae2b230da4d0b7a778f6112e1bc9d986c083573bc3bd7296a99c670',
+    'sha512-ZC5vSq9MhdEzCmeddBn0LgTNshnN/AtHlwNhxEkeMS0eMqtyqu0haYif64lZBcI2/KS/2nLM/ksVmpjyc/BLaw==',
+  npm_artifact_sha256: 'fb1aa735fc8d3eb57c5771e9bf59b20c542afa9b96d43975a737e964d40743e6',
 } as const
 const SEMANTIC_EXECUTION_DIFF_SHA256 =
-  'e712d06a2c43cc0223c2c4219691ddc860f2f05d26c689b19b8ade2d180c99a6'
+  '910d0e1835e54af5e7a36af0a7ffa612977fb9240e9985d0f1368532d4ca3a43'
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
   '4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0'
 const CAPABILITY_VALIDATION_V2_ISSUE = 'https://github.com/mohanagy/madar/issues/612'
@@ -1007,6 +1007,9 @@ describe('core reset governance', () => {
     expect(design).toContain('At that #608 completion checkpoint no technical phase was active')
     expect(design).toContain('43 production TypeScript files / 11,956 LOC')
     expect(design).toContain('At the #606 boundary no valid blinded Native-vs-Graphify-vs-Madar capability runner existed')
+    expect(design).toContain(
+      'Accessor-backed `data` or discriminator properties—including destructured aliases and shorthand—also fail closed.',
+    )
     expect(design).toContain('exactly one tool, `retrieve`')
     expect(design).toContain('frozen 25,000 ms request-wait ceiling')
     expect(design).toContain('direct JSON-RPC testing is insufficient')
@@ -1049,7 +1052,9 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Retrieval regression #618 | **Passed**')
     expect(scorecard).toContain('| Retrieval regression #625 | **Passed**')
     expect(scorecard).toContain('| Beta release | **Published**')
-    expect(scorecard).toContain('| Semantic execution index #632 | **In progress**')
+    expect(scorecard).toContain(
+      '| Semantic execution index #632 | **Reopened — corrective work in progress**',
+    )
     expect(scorecard).toContain('| Obligation-driven retrieval #630 | **Pending**')
     expect(scorecard).toContain('| No-fallback qualification #631 | **Pending**')
     expect(scorecard).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
@@ -1098,6 +1103,9 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Retrieval regression #622 | **Passed**')
     expect(scorecard).toContain('Issues `#622` and `#625` are complete on `next`')
     expect(scorecard).toContain('#632 active, then #630 pending, then #631 pending')
+    expect(scorecard).toContain(
+      'accessor-backed `data` or discriminator properties—including destructured aliases and shorthand—fail closed',
+    )
     expect(scorecard).toContain('first-candidate stop receipt')
     expect(scorecard).toContain('102 entries / 159,980 packed / 639,930 unpacked bytes')
     expect(scorecard).toContain('/compilerOptions/removeComments=true')
@@ -1334,7 +1342,7 @@ describe('core reset governance', () => {
     expect(manifest.schema_version).toBe(1)
     expect(manifest.status).toBe('accepted')
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-31',
+      updated_at: '2026-08-01',
       completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
       active_phase: SEMANTIC_EXECUTION_INDEX_ID,
       ready_phase: null,
@@ -1913,6 +1921,9 @@ describe('core reset governance', () => {
         main_target: 'forbidden',
       },
     })
+    expect(semanticExecution.notes).toContain(
+      'accessor-backed data or discriminator properties, including destructured aliases and shorthand, fail closed',
+    )
     expect(semanticExecution.candidate).toMatchObject({
       source_measurement: {
         production_typescript_files: SEMANTIC_EXECUTION_SOURCE.production_typescript_files,
@@ -1922,7 +1933,7 @@ describe('core reset governance', () => {
         net: SEMANTIC_EXECUTION_SOURCE.production_loc_net,
         diff_sha256: SEMANTIC_EXECUTION_DIFF_SHA256,
         execution_source_sha256:
-          'cf43e183f9d001764f4fdd22b073bef8854f9d949fef5793905291b870d3404b',
+          '192f0eb505615dd5f62b340496b4515b2df8e8509240e960517f2a86fa09e034',
       },
       package_measurement: {
         files: SEMANTIC_EXECUTION_PACKAGE.npm_files,
@@ -1933,17 +1944,31 @@ describe('core reset governance', () => {
         artifact_sha256: SEMANTIC_EXECUTION_PACKAGE.npm_artifact_sha256,
       },
       local_verification: {
-        focused_tests_passed: 196,
-        last_pre_cache_full_tests_passed: 722,
-        candidate_full_suite_status:
-          'all_761_unique_tests_passed_but_single_process_full_coverage_blocked_by_local_fork_worker_start_pressure',
-        candidate_full_suite_local_attempts: 6,
-        default_fork_completed_test_files: 79,
-        default_fork_completed_tests_passed: 707,
-        default_fork_unstarted_file: 'tests/unit/retrieve-context.test.ts',
-        unstarted_file_isolated_tests_passed: 54,
-        unique_tests_passed_across_default_fork_runs: 761,
-        local_independent_review: 'no_blocker',
+        focused_tests_passed: 247,
+        candidate_full_suite_status: 'passed',
+        candidate_full_suite_local_attempts: 1,
+        candidate_full_suite_files_passed: 80,
+        candidate_full_suite_tests_passed: 785,
+        coverage_statements_percent: 85.85,
+        coverage_statements_covered: 7_715,
+        coverage_statements_total: 8_986,
+        coverage_branches_percent: 79.46,
+        coverage_branches_covered: 6_959,
+        coverage_branches_total: 8_757,
+        coverage_functions_percent: 92.37,
+        coverage_functions_covered: 1_369,
+        coverage_functions_total: 1_482,
+        coverage_lines_percent: 89.22,
+        coverage_lines_covered: 6_481,
+        coverage_lines_total: 7_264,
+        local_independent_review: 'pending_corrective_review',
+        pre_reopen_merge_commit: 'e7bd30ce384cf743dbda3e8ee7f15b171a0ea649',
+        post_merge_acceptance_audit: 'failed_missing_exact_payload_and_discriminant_binding',
+        corrective_real_graph_acceptance: 'passed',
+        frozen_govalidate_corpus_files: 6_889,
+        frozen_govalidate_corpus_bytes: 177_796_450,
+        frozen_govalidate_corpus_sha256:
+          '3fa9a0a3edc13cf1439d572292601fff43c43a94f7a50948349f9a69123fa7a7',
         graph_nodes: 12_313,
         graph_edges: 32_717,
         exact_queue_channels: 6,
@@ -1952,19 +1977,19 @@ describe('core reset governance', () => {
         exact_channel_edges: 42,
         publishes_to_edges: 35,
         consumed_by_edges: 7,
-        graph_artifact_bytes: 60_267_088,
-        graph_artifact_size_ratio: 1.2291718874663748,
+        graph_artifact_bytes: 60_271_172,
+        graph_artifact_size_ratio: 1.2292551823152718,
         beta4_indexing_trials_seconds: [20.32, 21.33, 22.16, 22.51, 22.74],
         beta4_indexing_median_seconds: 22.16,
-        candidate_indexing_trials_seconds: [14.83, 12.99, 13.05, 14.16, 13.17],
-        candidate_indexing_median_seconds: 13.17,
-        indexing_median_ratio: 0.5943140794223827,
+        candidate_indexing_trials_seconds: [13.71, 13.49, 13.41, 13.55, 13.45],
+        candidate_indexing_median_seconds: 13.49,
+        indexing_median_ratio: 0.608754512635379,
         warm_retrieval_samples: 100,
-        warm_retrieval_median_ms: 156.7398119999998,
-        warm_retrieval_p95_ms: 177.5851354499996,
-        warm_retrieval_max_ms: 183.07708300000013,
+        warm_retrieval_median_ms: 213.32806250000067,
+        warm_retrieval_p95_ms: 238.83405145000143,
+        warm_retrieval_max_ms: 256.85883300000205,
         deterministic_graph_sha256:
-          '77270a6f0330a3ce85fbc42b90e7a3e99f8bf37776f6e65f5da8aad1bad3caaf',
+          '569af2dcd681c4db48124a47bceac7036a94b344f2a2f88e8cb35f6120711610',
         broad_retrieval_files: 10,
         broad_retrieval_snippets: 10,
         broad_retrieval_serialized_tokens: 3_669,
@@ -2450,7 +2475,7 @@ describe('core reset governance', () => {
       ['merge-base', '--is-ancestor', THIN_DELIVERY_IMPLEMENTATION_START, THIN_DELIVERY_MERGE],
     )).not.toThrow()
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-31',
+      updated_at: '2026-08-01',
       completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
       active_phase: SEMANTIC_EXECUTION_INDEX_ID,
       ready_phase: null,
@@ -4716,7 +4741,7 @@ describe('core reset governance', () => {
     expect(execFileSync(git, ['rev-parse', `${EVIDENCE_BASE}^{tree}`], { encoding: 'utf8' }).trim())
       .toBe(EVIDENCE_BASE_TREE)
     expect(manifest.current).toMatchObject({
-      updated_at: '2026-07-31',
+      updated_at: '2026-08-01',
       completed_phase: EVIDENCE_SKELETON_RETRIEVAL_ID,
       active_phase: SEMANTIC_EXECUTION_INDEX_ID,
       ready_phase: null,

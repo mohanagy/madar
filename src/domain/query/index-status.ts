@@ -3,7 +3,7 @@ import {
   type GraphAttributes,
   type GraphEdge,
 } from '../graph/directed-multigraph.js'
-import { compareCodeUnits } from '../graph/canonical-json.js'
+import { compareCodeUnits as cc } from '../graph/canonical-json.js'
 import {
   CANONICAL_INDEX_FORMAT_VERSION,
   readBuildState,
@@ -46,577 +46,470 @@ const SHA256 = /^[a-f0-9]{64}$/
 const MAX_TEXT = 512
 const KINDS = new Set<IndexChannelKind>(['queue', 'job', 'event'])
 const TRANSPORTS = new Set<IndexChannelTransport>([
-  'bull',
-  'bullmq',
-  'node-event-emitter',
-  'nestjs-event-emitter',
-])
-const RELATIONS = new Set([
-  'publishes_to',
-  'routes_through',
-  'consumed_by',
-])
+  'bull', 'bullmq', 'node-event-emitter', 'nestjs-event-emitter'])
+const RELATIONS = new Set(['publishes_to', 'routes_through', 'consumed_by'])
 const EDGE_SOURCES = new Set([
-  'typescript-semantic',
-  'typescript-syntactic',
-  'framework-decorator',
-  'wrapper-summary',
-])
+  'typescript-semantic', 'typescript-syntactic', 'framework-decorator', 'wrapper-summary'])
+const CH = 'channel_kind', PH = 'parent_channel_id',
+  CO = 'condition_kind', SR = 'statement_range', EH = 'excerpt_sha256',
+  CF = 'controller_fact_id', OW = 'owner_symbol_id', NK = 'node_kind',
+  EV = 'evidence', TR = 'transport', SF = 'source_file',
+  MF = 'member_fact_ids', LC = 'lane_count', EO = 'execution_owner_id',
+  DR = 'definition_range', PL = 'parallel', CD = 'condition',
+  CR = 'corrupt', CA = 'call'
+const oh = Object.hasOwn, of = Object.freeze
 
 class IntegrityError extends Error {}
+function fl(s: string): never { throw new IntegrityError(`canonical ${s}`) }
+const ne = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && !v.includes('\0')
+const bd = (v: unknown, m: number): v is string => ne(v) && Buffer.byteLength(v, 'utf8') <= m
+const si = (v: unknown, m = 0): v is number => typeof v === 'number' && Number.isSafeInteger(v) && !Object.is(v, -0) && v >= m
+const ex = (v: unknown, k: readonly string[]): Record<string, unknown> | null => isRecord(v) && Object.keys(v).length === k.length && k.every((x) => oh(v, x)) ? v : null
+const pc = (a: IndexRange['start'], b: IndexRange['start']): number => a.line - b.line || a.column - b.column
 
-function fail(subject: string): never {
-  throw new IntegrityError(`canonical ${subject}`)
+function ro(v: unknown): IndexRange | null {
+  const r = ex(v, ['start', 'end']), s = ex(r?.start, ['line', 'column']),
+    e = ex(r?.end, ['line', 'column'])
+  if (!r || !s || !e || !si(s.line, 1) || !si(s.column, 1)
+    || !si(e.line, 1) || !si(e.column, 1)) return null
+  const p = { start: { line: s.line, column: s.column },
+    end: { line: e.line, column: e.column } }
+  return pc(p.start, p.end) <= 0 ? p : null
 }
 
-function nonEmpty(v: unknown): v is string {
-  return typeof v === 'string' && v.length > 0 && !v.includes('\0')
+const ct = (a: IndexRange, b: IndexRange): boolean => pc(a.start, b.start) <= 0 && pc(b.end, a.end) <= 0
+const ss = (a: IndexRange, b: IndexRange): boolean => pc(a.start, b.start) === 0 && pc(a.end, b.end) === 0
+
+function va(c: Extract<IndexBodyFact, { kind: 'condition' }>, a: string): boolean {
+  if (c[CO] === 'if') return ['then', 'else'].includes(a)
+  if (c[CO] === 'switch') return a === 'default'
+    || (a.startsWith('case:') && a.length > 5)
+  if (c[CO] === 'logical_and') return a === 'truthy'
+  if (c[CO] === 'logical_or') return a === 'falsy'
+  if (c[CO] === 'nullish') return a === 'nullish'
+  return (c[CO] === 'ternary' ? ['truthy', 'falsy'] : ['then', 'else']).includes(a)
 }
 
-function bounded(v: unknown, maxBytes: number): v is string {
-  return nonEmpty(v) && Buffer.byteLength(v, 'utf8') <= maxBytes
+function ep(a: GraphAttributes, f: ReadonlyMap<string, string>,
+  n: ReadonlyMap<string, GraphAttributes>, t: IndexChannelNode | undefined,
+  o: ReadonlyMap<string, readonly IndexBodyFact[]>): boolean {
+  const s = a[SF], i = a[EO], w = typeof i === 'string' ? n.get(i) : undefined
+  const p = ro(w?.[DR]), r = ex(a[EV],
+    ['source', 'range', 'statement_range', 'excerpt_sha256'])
+  const g = ro(r?.range), m = ro(r?.[SR]), d = a.dispatch_payload_argument
+  const q = !oh(a, 'dispatch_payload_argument')
+    || a.relation === 'publishes_to' && t?.[CH] !== 'event'
+    && si(d) && (o.get(String(i)) ?? []).filter((x) =>
+      x.kind === CA && d < x.arguments.length
+      && g !== null && ss(x[EV].range, g)
+      && m !== null && ss(x[EV][SR], m)
+      && x[EV][EH] === r?.[EH]).length === 1
+  return typeof s === 'string' && f.has(s) && typeof i === 'string'
+    && w?.[SF] === s && w?.[NK] !== 'file' && w?.[NK] !== 'channel'
+    && p !== null && r !== null && EDGE_SOURCES.has(String(r.source))
+    && g !== null && m !== null && ct(p, m) && ct(m, g)
+    && typeof r[EH] === 'string' && SHA256.test(r[EH]) && q
 }
 
-function safeInt(v: unknown, minimum = 0): v is number {
-  return typeof v === 'number'
-    && Number.isSafeInteger(v)
-    && !Object.is(v, -0)
-    && v >= minimum
-}
+const vh = (v: IndexValue, t: (candidate: IndexValue) => boolean): boolean => t(v) || v.kind === 'array' && v.elements.some((e) => vh(e, t)) || v.kind === 'object' && v.entries.some((e) => vh(e.value, t)) || v.kind === 'template' && v.parts.some((e) => vh(e, t))
 
-function exact(v: unknown, keys: readonly string[]): Record<string, unknown> | null {
-  return isRecord(v)
-    && Object.keys(v).length === keys.length
-    && keys.every((key) => Object.hasOwn(v, key))
-    ? v : null
-}
-
-function posCmp(a: IndexRange['start'], b: IndexRange['start']): number {
-  return a.line - b.line || a.column - b.column
-}
-
-function rangeOf(v: unknown): IndexRange | null {
-  const range = exact(v, ['start', 'end'])
-  const start = exact(range?.start, ['line', 'column'])
-  const end = exact(range?.end, ['line', 'column'])
-  if (!range || !start || !end
-    || !safeInt(start.line, 1) || !safeInt(start.column, 1)
-    || !safeInt(end.line, 1) || !safeInt(end.column, 1)) return null
-  const parsed = {
-    start: { line: start.line, column: start.column },
-    end: { line: end.line, column: end.column },
-  }
-  return posCmp(parsed.start, parsed.end) <= 0 ? parsed : null
-}
-
-function contains(outer: IndexRange, inner: IndexRange): boolean {
-  return posCmp(outer.start, inner.start) <= 0
-    && posCmp(inner.end, outer.end) <= 0
-}
-
-function sameSpan(a: IndexRange, b: IndexRange): boolean {
-  return posCmp(a.start, b.start) === 0
-    && posCmp(a.end, b.end) === 0
-}
-
-function validArm(
-  ctl: Extract<IndexBodyFact, { kind: 'condition' }>,
-  arm: string,
+function fh(
+  f: IndexBodyFact,
+  t: (candidate: IndexValue) => boolean,
 ): boolean {
-  if (ctl.condition_kind === 'if') return ['then', 'else'].includes(arm)
-  if (ctl.condition_kind === 'switch') {
-    return arm === 'default' || (arm.startsWith('case:') && arm.length > 5)
-  }
-  if (ctl.condition_kind === 'logical_and') return arm === 'truthy'
-  if (ctl.condition_kind === 'logical_or') return arm === 'falsy'
-  if (ctl.condition_kind === 'nullish') return arm === 'nullish'
-  return ctl.condition_kind === 'ternary'
-    ? ['truthy', 'falsy'].includes(arm)
-    : ['then', 'else'].includes(arm)
-}
-
-function edgeProof(a: GraphAttributes, files: ReadonlyMap<string, string>, nodes: ReadonlyMap<string, GraphAttributes>): boolean {
-    const source = a.source_file;
-    const ownerId = a.execution_owner_id;
-    const owner = typeof ownerId === 'string' ? nodes.get(ownerId) : undefined;
-    const span = rangeOf(owner?.definition_range);
-    const record = exact(a.evidence, ['source', 'range', 'statement_range', 'excerpt_sha256']);
-    const range = rangeOf(record?.range);
-    const statement = rangeOf(record?.statement_range);
-    return typeof source === 'string'
-        && files.has(source)
-        && typeof ownerId === 'string'
-        && owner?.source_file === source
-        && owner?.node_kind !== 'file'
-        && owner?.node_kind !== 'channel'
-        && span !== null
-        && record !== null
-        && EDGE_SOURCES.has(String(record.source))
-        && range !== null
-        && statement !== null
-        && contains(span, statement)
-        && contains(statement, range)
-        && typeof record.excerpt_sha256 === 'string'
-        && SHA256.test(record.excerpt_sha256);
-}
-
-function valueHas(v: IndexValue, test: (candidate: IndexValue) => boolean): boolean {
-  return test(v)
-    || v.kind === 'array' && v.elements.some((entry) => valueHas(entry, test))
-    || v.kind === 'object' && v.entries.some((entry) => valueHas(entry.value, test))
-    || v.kind === 'template' && v.parts.some((entry) => valueHas(entry, test))
-}
-
-function factHas(
-  fact: IndexBodyFact,
-  test: (candidate: IndexValue) => boolean,
-): boolean {
-  let xs: readonly IndexValue[]
-  switch (fact.kind) {
-    case 'call':
-      xs = fact.arguments; break
-    case 'literal':
-      xs = [fact.value]; break
-    case 'condition':
-    case 'loop':
-      xs = fact.test ? [fact.test] : []; break
-    case 'parallel':
-      xs = fact.input ? [fact.input] : []; break
+  let x: readonly IndexValue[]
+  switch (f.kind) {
+    case CA: x = f.arguments; break
+    case 'literal': x = [f.value]; break
+    case CD:
+    case 'loop': x = f.test ? [f.test] : []; break
+    case PL: x = f.input ? [f.input] : []; break
     case 'return':
     case 'throw':
-    case 'mutation':
-      xs = fact.value ? [fact.value] : []; break
-    case 'persistence':
-      xs = fact.resource ? [fact.resource] : []
+    case 'mutation': x = f.value ? [f.value] : []; break
+    case 'persistence': x = f.resource ? [f.resource] : []
   }
-  return xs.some((value) => valueHas(value, test))
+  return x.some((v) => vh(v, t))
 }
 
-function readChannel(id: string, a: GraphAttributes): IndexChannelNode | null {
-    if (!nonEmpty(id)
-        || !KINDS.has(a.channel_kind as IndexChannelKind)
-        || !TRANSPORTS.has(a.transport as IndexChannelTransport)
-        || !bounded(a.key, MAX_TEXT)
-        || (Object.hasOwn(a, 'parent_channel_id')
-            && !nonEmpty(a.parent_channel_id))
-        || (Object.hasOwn(a, 'scope')
-            && !bounded(a.scope, 512)))
-        return null;
-    const channel: IndexChannelNode = {
-        id,
-        node_kind: 'channel',
-        channel_kind: a.channel_kind as IndexChannelKind,
-        transport: a.transport as IndexChannelTransport,
-        key: a.key,
-        ...(typeof a.parent_channel_id === 'string'
-            ? { parent_channel_id: a.parent_channel_id }
-            : {}),
-        ...(typeof a.scope === 'string'
-            ? { scope: a.scope }
-            : {}),
+function rc(i: string, a: GraphAttributes): IndexChannelNode | null {
+  if (!ne(i) || !KINDS.has(a[CH] as IndexChannelKind)
+    || !TRANSPORTS.has(a[TR] as IndexChannelTransport) || !bd(a.key, MAX_TEXT)
+    || oh(a, 'parent_channel_id') && !ne(a[PH])
+    || oh(a, 'scope') && !bd(a.scope, 512)) return null
+  const c: IndexChannelNode = {
+    id: i, node_kind: 'channel', channel_kind: a[CH] as IndexChannelKind,
+    transport: a[TR] as IndexChannelTransport, key: a.key,
+    ...(typeof a[PH] === 'string' ? { parent_channel_id: a[PH] } : {}),
+    ...(typeof a.scope === 'string' ? { scope: a.scope } : {}),
+  }
+  return i === indexChannelId(c) ? c : null
+}
+
+function oc(a: readonly number[], b: readonly number[]): number { for (let i = 0; i < Math.min(a.length, b.length); i += 1) { const d = a[i]! - b[i]!; if (d !== 0) return d } return a.length - b.length }
+function fr<T>(v: T): T { if (v !== null && typeof v === 'object' && !Object.isFrozen(v)) { for (const e of Object.values(v)) fr(e); of(v) } return v }
+
+function sm<K, V>(e: Iterable<readonly [K, V]>): ReadonlyMap<K, V> {
+  const x = new Map(e); let v: ReadonlyMap<K, V>
+  v = {
+    get size() { return x.size }, get(k: K) { return x.get(k) },
+    has(k: K) { return x.has(k) }, entries() { return x.entries() },
+    keys() { return x.keys() }, values() { return x.values() },
+    forEach(c, t) { x.forEach((a, b) => c.call(t, a, b, v)) },
+    [Symbol.iterator]() { return x[Symbol.iterator]() },
+  }
+  return of(v)
+}
+
+const se = <V>(x: ReadonlyMap<string, V>): Array<readonly [string, V]> => [...x.entries()].sort(([a], [b]) => cc(a, b))
+
+type ExecutionIndexes = Pick<ReadyQueryIndex, 'operation_by_id' | 'operations_by_owner' | 'channels_by_id' | 'channels_by_key'>;
+
+function bm(v: KnowledgeGraph, l: ReadonlyMap<string, string>): ExecutionIndexes {
+    const n = v.nodeEntries();
+    const b = new Map(n);
+    const s = new Set<string>();
+    const f = new Map<string, IndexBodyFact>();
+    const o = new Map<string, IndexBodyFact[]>();
+    const c = new Map<string, IndexChannelNode>();
+    const k = new Map<string, IndexChannelNode[]>();
+    const q = new Map<string, Set<string>>();
+    for (const [i, a] of n) {
+        if (a[NK] === 'channel') {
+            if (oh(a, 'body_facts')) {
+                fl('channel body facts');
+            }
+            const h = rc(i, a);
+            if (!h)
+                fl('channel node');
+            c.set(i, h);
+            continue;
+        }
+        if (a[NK] === 'file') {
+            if (oh(a, 'body_facts')
+                || oh(a, 'channel_kind')
+                || oh(a, 'parent_channel_id')) {
+                fl('file-node execution metadata');
+            }
+            continue;
+        }
+        if (oh(a, 'channel_kind')
+            || oh(a, 'parent_channel_id')) {
+            fl('channel discriminator');
+        }
+        s.add(i);
+        if (!oh(a, 'body_facts'))
+            continue;
+        const u = a[SF];
+        const d = typeof u === 'string'
+            ? l.get(u)
+            : undefined;
+        const p = ro(a[DR]);
+        const w = d ? b.get(d) : undefined;
+        if (!d || !p || !w
+            || w[NK] !== 'file') {
+            fl('operation owner');
+        }
+        const x = decodeIndexBodyFactTable(a.body_facts, i, d);
+        if (!x)
+            fl('symbol body facts');
+        const y = x.filter((t) => t.kind === 'persistence');
+        const z = new Set(y.map((t) => t.order[3]));
+        if (z.size !== y.length || y.some((_, j) => !z.has(j + 1)))
+            fl('persistence order');
+        const e = q.get(i) ?? new Set<string>();
+        q.set(i, e);
+        for (const t of x) {
+            if (!ct(p, t[EV][SR])
+                || f.has(t.id)) {
+                fl('operation fact');
+            }
+            const g = t.order.join('.');
+            if (e.has(g))
+                fl('operation order');
+            e.add(g);
+            f.set(t.id, t);
+            const m = o.get(i) ?? [];
+            m.push(t);
+            o.set(i, m);
+        }
+    }
+    for (const h of c.values()) {
+        if (h[CH] === 'job') {
+            const p = h[PH]
+                ? c.get(h[PH])
+                : undefined;
+            if (!p || p[CH] !== 'queue'
+                || p[TR] !== h[TR]) {
+                fl('job parent channel');
+            }
+        }
+        else if (h[PH] !== undefined) {
+            fl('non-job parent channel');
+        }
+        if (h[CH] === 'event') {
+            if (!bd(h.scope, 512)) {
+                fl('event channel scope');
+            }
+        }
+        else if (h.scope !== undefined) {
+            fl('non-event channel scope');
+        }
+        const y = k.get(h.key) ?? [];
+        y.push(h);
+        k.set(h.key, y);
+    }
+    for (const t of f.values()) {
+        if (fh(t, (v) => v.kind === 'symbol' && !s.has(v.symbol_id))) {
+            fl('operation value reference');
+        }
+        if (t.kind === CA && t.target_symbol_id
+            && !s.has(t.target_symbol_id)) {
+            fl('call target');
+        }
+        const i = new Set<string>();
+        for (const d of t.control) {
+            if (d.kind === 'exception')
+                continue;
+            if (i.has(d[CF])) {
+                fl('duplicate control reference');
+            }
+            i.add(d[CF]);
+            const c = f.get(d[CF]);
+            const k = d.kind === 'branch'
+                ? CD
+                : d.kind;
+            const g = d.kind === 'branch'
+                && c?.kind === CD
+                && c[CO] === 'guard';
+            if (!c || c[OW] !== t[OW]
+                || c.kind !== k
+                || oc(c.order, t.order) >= 0
+                || (!g && !ct(d.kind === PL
+                    ? c[EV].range
+                    : c[EV][SR], t[EV].range))
+                || (d.kind === 'branch' && c.kind === CD
+                    && !va(c, d.arm))
+                || (d.kind === PL && c.kind === PL
+                    && (d.lane === 'each'
+                        ? c[LC] === 0
+                        : d.lane >= c[LC]))
+                || (t.kind === CA && d.kind === PL
+                    && c.kind === PL
+                    && !c[MF].includes(t.id))) {
+                fl('operation control reference');
+            }
+        }
+        if (fh(t, (v) => v.kind === 'parameter' && v.scope === 'iteration')
+            && !t.control.some((d) => {
+                const c = d.kind === 'loop'
+                    ? f.get(d[CF])
+                    : undefined;
+                return c?.kind === 'loop'
+                    && c.loop_kind === 'array_iteration';
+            })) {
+            fl('iteration parameter');
+        }
+        if (t.kind === PL) {
+            const l = t.input?.kind === 'array'
+                ? t.input.elements.length
+                : 0;
+            if (t[MF].some((i) => {
+                const m = f.get(i);
+                const r = m?.control.find((d): d is Extract<IndexControlFrame, {
+                    kind: 'parallel';
+                }> => d.kind === PL
+                    && d[CF] === t.id);
+                const p = r?.lane === 'each'
+                    ? m?.control.some((d) => {
+                        const c = d.kind === 'loop'
+                            ? f.get(d[CF])
+                            : undefined;
+                        return c?.kind === 'loop'
+                            && c.loop_kind === 'array_iteration';
+                    })
+                    : true;
+                return !m || m.kind !== CA || !r || !p
+                    || m[OW] !== t[OW];
+            }) || t[LC] !== l) {
+                fl('parallel member reference');
+            }
+        }
+        if (t.kind === 'persistence') {
+            const a = f.get(t.call_fact_id);
+            if (!a || a.kind !== CA
+                || a[OW] !== t[OW]
+                || !ss(a[EV].range, t[EV].range)
+                || !ss(a[EV][SR], t[EV][SR])
+                || a[EV][EH] !== t[EV][EH]
+                || a.order[0] !== t.order[0]
+                || a.order[2] !== t.order[2]
+                || JSON.stringify(a.control) !== JSON.stringify(t.control)
+                || !bd(t.receiver_type, MAX_TEXT)) {
+                fl('persistence call reference');
+            }
+        }
+    }
+    const r = new Map<string, number>();
+    for (const [u, t, a] of v.edgeEntries()) {
+        const e = a.relation;
+        const x = c.get(u);
+        const y = c.get(t);
+        const g = x !== undefined || y !== undefined;
+        if (oh(a, 'dispatch_payload_argument')
+            && (!g || e !== 'publishes_to'))
+            fl('dispatch payload relation');
+        if (!g && !RELATIONS.has(String(e)))
+            continue;
+        if (!RELATIONS.has(String(e))) {
+            fl('channel relation');
+        }
+        if (!ep(a, l, b, y, o)) {
+            fl('channel evidence');
+        }
+        const w = a[EO];
+        if (e === 'publishes_to') {
+            if (!s.has(u) || !y
+                || u !== w
+                || !['queue', 'job', 'event'].includes(y[CH])) {
+                fl('publishes_to endpoints');
+            }
+        }
+        else if (e === 'routes_through') {
+            if (!x || x[CH] !== 'job'
+                || !y || y[CH] !== 'queue'
+                || x[PH] !== t
+                || x[TR] !== y[TR]) {
+                fl('routes_through endpoints');
+            }
+            r.set(u, (r.get(u) ?? 0) + 1);
+        }
+        else if (e === 'consumed_by') {
+            if (!x || !s.has(t) || y) {
+                fl('consumed_by endpoints');
+            }
+        }
+    }
+    for (const h of c.values()) {
+        if (h[CH] === 'job'
+            && r.get(h.id) !== 1) {
+            fl('job routing');
+        }
+    }
+    for (const x of o.values()) {
+        x.sort((a, b) => oc(a.order, b.order) || cc(a.id, b.id));
+        x.forEach(fr);
+        of(x);
+    }
+    for (const x of k.values()) {
+        x.sort((a, b) => cc(a.id, b.id));
+        x.forEach(fr);
+        of(x);
+    }
+    f.forEach(fr);
+    c.forEach(fr);
+    return {
+        operation_by_id: sm(se(f)),
+        operations_by_owner: sm(se(o)),
+        channels_by_id: sm(se(c)),
+        channels_by_key: sm(se(k)),
     };
-    return id === indexChannelId(channel) ? channel : null;
 }
 
-function orderCmp(a: readonly number[], b: readonly number[]): number {
-  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
-    const difference = a[index]! - b[index]!
-    if (difference !== 0) return difference
+function cg(s: KnowledgeGraph): KnowledgeGraph {
+  const v = new KnowledgeGraph(s.graph)
+  for (const [i, a] of s.nodeEntries()) {
+    v.addNode(i, a)
   }
-  return a.length - b.length
-}
-
-function freeze<T>(v: T): T {
-  if (v !== null && typeof v === 'object' && !Object.isFrozen(v)) {
-    for (const entry of Object.values(v)) freeze(entry)
-    Object.freeze(v)
+  for (const [f, t, a, e] of s.edgeEntries()) {
+    const i = v.addEdge(f, t, a)
+    if (i !== e) {
+      throw new Error('Canonical graph edge identity changed while sealing query index')
+    }
   }
   return v
 }
 
-function sealMap<K, V>(entries: Iterable<readonly [
-    K,
-    V
-]>): ReadonlyMap<K, V> {
-    const xs = new Map(entries);
-    let view: ReadonlyMap<K, V>;
-    view = {
-        get size() { return xs.size; },
-        get(key: K) { return xs.get(key); },
-        has(key: K) { return xs.has(key); },
-        entries() { return xs.entries(); },
-        keys() { return xs.keys(); },
-        values() { return xs.values(); },
-        forEach(callback: (value: V, key: K, map: ReadonlyMap<K, V>) => void, thisArg?: unknown) {
-            xs.forEach((value, key) => callback.call(thisArg, value, key, view));
-        },
-        [Symbol.iterator]() { return xs[Symbol.iterator](); },
-    };
-    return Object.freeze(view);
-}
-
-function sortEntries<V>(
-  xs: ReadonlyMap<string, V>,
-): Array<readonly [string, V]> {
-  return [...xs.entries()]
-    .sort(([left], [right]) => compareCodeUnits(left, right))
-}
-
-type ExecutionIndexes = Pick<ReadyQueryIndex, 'operation_by_id' | 'operations_by_owner' | 'channels_by_id' | 'channels_by_key'>;
-
-function buildMaps(view: KnowledgeGraph, files: ReadonlyMap<string, string>): ExecutionIndexes {
-    const nodes = view.nodeEntries();
-    const byId = new Map(nodes);
-    const symbols = new Set<string>();
-    const facts = new Map<string, IndexBodyFact>();
-    const owned = new Map<string, IndexBodyFact[]>();
-    const chs = new Map<string, IndexChannelNode>();
-    const byKey = new Map<string, IndexChannelNode[]>();
-    const orderKeys = new Map<string, Set<string>>();
-    for (const [id, a] of nodes) {
-        if (a.node_kind === 'channel') {
-            if (Object.hasOwn(a, 'body_facts')) {
-                fail('channel body facts');
-            }
-            const ch = readChannel(id, a);
-            if (!ch)
-                fail('channel node');
-            chs.set(id, ch);
-            continue;
-        }
-        if (a.node_kind === 'file') {
-            if (Object.hasOwn(a, 'body_facts')
-                || Object.hasOwn(a, 'channel_kind')
-                || Object.hasOwn(a, 'parent_channel_id')) {
-                fail('file-node execution metadata');
-            }
-            continue;
-        }
-        if (Object.hasOwn(a, 'channel_kind')
-            || Object.hasOwn(a, 'parent_channel_id')) {
-            fail('channel discriminator');
-        }
-        symbols.add(id);
-        if (!Object.hasOwn(a, 'body_facts'))
-            continue;
-        const source = a.source_file;
-        const fileId = typeof source === 'string'
-            ? files.get(source)
-            : undefined;
-        const span = rangeOf(a.definition_range);
-        const ownerFile = fileId ? byId.get(fileId) : undefined;
-        if (!fileId || !span || !ownerFile
-            || ownerFile.node_kind !== 'file') {
-            fail('operation owner');
-        }
-        const bodyFacts = decodeIndexBodyFactTable(a.body_facts, id, fileId);
-        if (!bodyFacts)
-            fail('symbol body facts');
-        const ps = bodyFacts.filter((fact) => fact.kind === 'persistence');
-        const po = new Set(ps.map((fact) => fact.order[3]));
-        if (po.size !== ps.length || ps.some((_, index) => !po.has(index + 1)))
-            fail('persistence order');
-        const orders = orderKeys.get(id) ?? new Set<string>();
-        orderKeys.set(id, orders);
-        for (const fact of bodyFacts) {
-            if (!contains(span, fact.evidence.statement_range)
-                || facts.has(fact.id)) {
-                fail('operation fact');
-            }
-            const orderKey = fact.order.join('.');
-            if (orders.has(orderKey))
-                fail('operation order');
-            orders.add(orderKey);
-            facts.set(fact.id, fact);
-            const ownerFacts = owned.get(id) ?? [];
-            ownerFacts.push(fact);
-            owned.set(id, ownerFacts);
-        }
-    }
-    for (const ch of chs.values()) {
-        if (ch.channel_kind === 'job') {
-            const parent = ch.parent_channel_id
-                ? chs.get(ch.parent_channel_id)
-                : undefined;
-            if (!parent || parent.channel_kind !== 'queue'
-                || parent.transport !== ch.transport) {
-                fail('job parent channel');
-            }
-        }
-        else if (ch.parent_channel_id !== undefined) {
-            fail('non-job parent channel');
-        }
-        if (ch.channel_kind === 'event') {
-            if (!bounded(ch.scope, 512)) {
-                fail('event channel scope');
-            }
-        }
-        else if (ch.scope !== undefined) {
-            fail('non-event channel scope');
-        }
-        const keyed = byKey.get(ch.key) ?? [];
-        keyed.push(ch);
-        byKey.set(ch.key, keyed);
-    }
-    for (const fact of facts.values()) {
-        if (factHas(fact, (value) => value.kind === 'symbol' && !symbols.has(value.symbol_id))) {
-            fail('operation value reference');
-        }
-        if (fact.kind === 'call' && fact.target_symbol_id
-            && !symbols.has(fact.target_symbol_id)) {
-            fail('call target');
-        }
-        const controlIds = new Set<string>();
-        for (const f of fact.control) {
-            if (f.kind === 'exception')
-                continue;
-            if (controlIds.has(f.controller_fact_id)) {
-                fail('duplicate control reference');
-            }
-            controlIds.add(f.controller_fact_id);
-            const ctl = facts.get(f.controller_fact_id);
-            const expectedKind = f.kind === 'branch'
-                ? 'condition'
-                : f.kind;
-            const guardFallthrough = f.kind === 'branch'
-                && ctl?.kind === 'condition'
-                && ctl.condition_kind === 'guard';
-            if (!ctl || ctl.owner_symbol_id !== fact.owner_symbol_id
-                || ctl.kind !== expectedKind
-                || orderCmp(ctl.order, fact.order) >= 0
-                || (!guardFallthrough && !contains(f.kind === 'parallel'
-                    ? ctl.evidence.range
-                    : ctl.evidence.statement_range, fact.evidence.range))
-                || (f.kind === 'branch' && ctl.kind === 'condition'
-                    && !validArm(ctl, f.arm))
-                || (f.kind === 'parallel' && ctl.kind === 'parallel'
-                    && (f.lane === 'each'
-                        ? ctl.lane_count === 0
-                        : f.lane >= ctl.lane_count))
-                || (fact.kind === 'call' && f.kind === 'parallel'
-                    && ctl.kind === 'parallel'
-                    && !ctl.member_fact_ids.includes(fact.id))) {
-                fail('operation control reference');
-            }
-        }
-        if (factHas(fact, (value) => value.kind === 'parameter' && value.scope === 'iteration')
-            && !fact.control.some((f) => {
-                const ctl = f.kind === 'loop'
-                    ? facts.get(f.controller_fact_id)
-                    : undefined;
-                return ctl?.kind === 'loop'
-                    && ctl.loop_kind === 'array_iteration';
-            })) {
-            fail('iteration parameter');
-        }
-        if (fact.kind === 'parallel') {
-            const laneCount = fact.input?.kind === 'array'
-                ? fact.input.elements.length
-                : 0;
-            if (fact.member_fact_ids.some((id) => {
-                const member = facts.get(id);
-                const frame = member?.control.find((f): f is Extract<IndexControlFrame, {
-                    kind: 'parallel';
-                }> => f.kind === 'parallel'
-                    && f.controller_fact_id === fact.id);
-                const loop = frame?.lane === 'each'
-                    ? member?.control.some((f) => {
-                        const ctl = f.kind === 'loop'
-                            ? facts.get(f.controller_fact_id)
-                            : undefined;
-                        return ctl?.kind === 'loop'
-                            && ctl.loop_kind === 'array_iteration';
-                    })
-                    : true;
-                return !member || member.kind !== 'call' || !frame || !loop
-                    || member.owner_symbol_id !== fact.owner_symbol_id;
-            }) || fact.lane_count !== laneCount) {
-                fail('parallel member reference');
-            }
-        }
-        if (fact.kind === 'persistence') {
-            const call = facts.get(fact.call_fact_id);
-            if (!call || call.kind !== 'call'
-                || call.owner_symbol_id !== fact.owner_symbol_id
-                || !sameSpan(call.evidence.range, fact.evidence.range)
-                || !sameSpan(call.evidence.statement_range, fact.evidence.statement_range)
-                || call.evidence.excerpt_sha256 !== fact.evidence.excerpt_sha256
-                || call.order[0] !== fact.order[0]
-                || call.order[2] !== fact.order[2]
-                || JSON.stringify(call.control) !== JSON.stringify(fact.control)
-                || !bounded(fact.receiver_type, MAX_TEXT)) {
-                fail('persistence call reference');
-            }
-        }
-    }
-    const routes = new Map<string, number>();
-    for (const [source, target, a] of view.edgeEntries()) {
-        const relation = a.relation;
-        const srcCh = chs.get(source);
-        const dstCh = chs.get(target);
-        const usesChannel = srcCh !== undefined || dstCh !== undefined;
-        if (!usesChannel && !RELATIONS.has(String(relation)))
-            continue;
-        if (!RELATIONS.has(String(relation))) {
-            fail('channel relation');
-        }
-        if (!edgeProof(a, files, byId)) {
-            fail('channel evidence');
-        }
-        const edgeOwner = a.execution_owner_id;
-        if (relation === 'publishes_to') {
-            if (!symbols.has(source) || !dstCh
-                || source !== edgeOwner
-                || !['queue', 'job', 'event'].includes(dstCh.channel_kind)) {
-                fail('publishes_to endpoints');
-            }
-        }
-        else if (relation === 'routes_through') {
-            if (!srcCh || srcCh.channel_kind !== 'job'
-                || !dstCh || dstCh.channel_kind !== 'queue'
-                || srcCh.parent_channel_id !== target
-                || srcCh.transport !== dstCh.transport) {
-                fail('routes_through endpoints');
-            }
-            routes.set(source, (routes.get(source) ?? 0) + 1);
-        }
-        else if (relation === 'consumed_by') {
-            if (!srcCh || !symbols.has(target) || dstCh) {
-                fail('consumed_by endpoints');
-            }
-        }
-    }
-    for (const ch of chs.values()) {
-        if (ch.channel_kind === 'job'
-            && routes.get(ch.id) !== 1) {
-            fail('job routing');
-        }
-    }
-    for (const xs of owned.values()) {
-        xs.sort((a, b) => orderCmp(a.order, b.order) || compareCodeUnits(a.id, b.id));
-        xs.forEach(freeze);
-        Object.freeze(xs);
-    }
-    for (const xs of byKey.values()) {
-        xs.sort((a, b) => compareCodeUnits(a.id, b.id));
-        xs.forEach(freeze);
-        Object.freeze(xs);
-    }
-    facts.forEach(freeze);
-    chs.forEach(freeze);
-    return {
-        operation_by_id: sealMap(sortEntries(facts)),
-        operations_by_owner: sealMap(sortEntries(owned)),
-        channels_by_id: sealMap(sortEntries(chs)),
-        channels_by_key: sealMap(sortEntries(byKey)),
-    };
-}
-
-function copyGraph(source: KnowledgeGraph): KnowledgeGraph {
-  const view = new KnowledgeGraph(source.graph)
-  for (const [id, a] of source.nodeEntries()) {
-    view.addNode(id, a)
-  }
-  for (const [from, to, a, expectedId] of source.edgeEntries()) {
-    const id = view.addEdge(from, to, a)
-    if (id !== expectedId) {
-      throw new Error('Canonical graph edge identity changed while sealing query index')
-    }
-  }
-  return view
-}
-
-function sealGraph(view: KnowledgeGraph): QueryGraph {
-    return Object.freeze({
-        hasNode: (id: string) => view.hasNode(id),
-        hasEdge: (source: string, target: string) => view.hasEdge(source, target),
-        nodeEntries: () => view.nodeEntries(),
-        edgeEntries: () => view.edgeEntries(),
-        predecessors: (id: string) => view.predecessors(id),
-        successors: (id: string) => view.successors(id),
-        edgesBetween: (source: string, target: string) => view.edgesBetween(source, target),
-        nodeAttributes: (id: string) => view.nodeAttributes(id),
-    });
-}
-
-export function failedQueryIndex(
-  state: FailedQueryIndex['state'],
-  subject: string,
-): FailedQueryIndex {
-  return { state, subject }
-}
+const sg = (v: KnowledgeGraph): QueryGraph => of({
+  hasNode: (i: string) => v.hasNode(i), hasEdge: (s: string, t: string) => v.hasEdge(s, t),
+  nodeEntries: () => v.nodeEntries(), edgeEntries: () => v.edgeEntries(),
+  predecessors: (i: string) => v.predecessors(i), successors: (i: string) => v.successors(i),
+  edgesBetween: (s: string, t: string) => v.edgesBetween(s, t),
+  nodeAttributes: (i: string) => v.nodeAttributes(i),
+})
+export function failedQueryIndex(state: FailedQueryIndex['state'], subject: string): FailedQueryIndex { return { state, subject } }
 
 export function inspectQueryIndex(graph: KnowledgeGraph): QueryIndex {
-  let view: KnowledgeGraph
+  let v: KnowledgeGraph
   try {
-    view = copyGraph(graph)
+    v = cg(graph)
   } catch {
-    return failedQueryIndex('corrupt', 'canonical graph snapshot')
+    return failedQueryIndex(CR, 'canonical graph snapshot')
   }
-  const build = readBuildState(view)
-  const root = view.graph.root_path
-  if (!build || view.graph.canonical_typescript_index !== true
-    || view.graph.schema_version !== CANONICAL_INDEX_FORMAT_VERSION
-    || typeof root !== 'string' || root.trim().length === 0
-    || build.source_root.root_path !== root) {
-    return failedQueryIndex('corrupt', 'canonical TypeScript index metadata')
+  const b = readBuildState(v)
+  const r = v.graph.root_path
+  if (!b || v.graph.canonical_typescript_index !== true
+    || v.graph.schema_version !== CANONICAL_INDEX_FORMAT_VERSION
+    || typeof r !== 'string' || r.trim().length === 0
+    || b.source_root.root_path !== r) {
+    return failedQueryIndex(CR, 'canonical TypeScript index metadata')
   }
-  if (build.completeness.summary.state !== 'complete'
-    || build.completeness.supported_failures.length > 0) {
+  if (b.completeness.summary.state !== 'complete'
+    || b.completeness.supported_failures.length > 0) {
     return failedQueryIndex(
       'unavailable',
       'canonical TypeScript index incomplete',
     )
   }
 
-  const hashes = new Map<string, string>()
-  const fileIds = new Map<string, string>()
-  for (const [id, a] of view.nodeEntries()) {
-    if (a.node_kind !== 'file') continue
-    const source = a.source_file
-    const hash = a.content_hash
-    if (typeof source !== 'string' || typeof hash !== 'string'
-      || !SHA256.test(hash)) {
-      return failedQueryIndex('corrupt', 'canonical file-node hash')
+  const h = new Map<string, string>()
+  const f = new Map<string, string>()
+  for (const [i, a] of v.nodeEntries()) {
+    if (a[NK] !== 'file') continue
+    const s = a[SF]
+    const x = a.content_hash
+    if (typeof s !== 'string' || typeof x !== 'string'
+      || !SHA256.test(x)) {
+      return failedQueryIndex(CR, 'canonical file-node hash')
     }
-    if (hashes.has(source) || fileIds.has(source)) {
-      return failedQueryIndex('corrupt', source)
+    if (h.has(s) || f.has(s)) {
+      return failedQueryIndex(CR, s)
     }
-    hashes.set(source, hash)
-    fileIds.set(source, id)
+    h.set(s, x)
+    f.set(s, i)
   }
 
-  if (hashes.size !== build.sources.supported.length
-    || build.sources.supported.some((source) =>
-      hashes.get(source.path) !== source.hash)) {
-    return failedQueryIndex('corrupt', 'canonical file-node coverage')
+  if (h.size !== b.sources.supported.length
+    || b.sources.supported.some((s) =>
+      h.get(s.path) !== s.hash)) {
+    return failedQueryIndex(CR, 'canonical file-node coverage')
   }
 
-  let execution: ExecutionIndexes
+  let e: ExecutionIndexes
   try {
-    execution = buildMaps(view, fileIds)
-  } catch (error) {
+    e = bm(v, f)
+  } catch (x) {
     return failedQueryIndex(
-      'corrupt',
-      error instanceof IntegrityError
-        ? error.message
+      CR,
+      x instanceof IntegrityError
+        ? x.message
         : 'canonical execution index',
     )
   }
-  for (const [id, a] of view.nodeEntries()) {
-    if (!Object.hasOwn(a, 'body_facts')) continue
-    const { body_facts: _decoded, ...retained } = a
-    view.replaceNodeAttributes(id, retained)
+  for (const [i, a] of v.nodeEntries()) {
+    if (!oh(a, 'body_facts')) continue
+    const { body_facts: _, ...t } = a
+    v.replaceNodeAttributes(i, t)
   }
 
-  return Object.freeze({
+  return of({
     state: 'ready',
-    graph: sealGraph(view),
-    root_path: root,
-    file_hashes: sealMap(hashes),
-    unsupported_sources: Object.freeze(
-      build.sources.unsupported.map((source) => Object.freeze({ ...source })),
+    graph: sg(v),
+    root_path: r,
+    file_hashes: sm(h),
+    unsupported_sources: of(
+      b.sources.unsupported.map((s) => of({ ...s })),
     ),
-    ...execution,
+    ...e,
   })
 }

@@ -471,6 +471,21 @@ The CLI remains narrow and lazy-loaded:
 
 These six names are an allowlist, not a quota. Existing names are preserved only when their meaning remains valid; removed names do not survive as aliases.
 
+## 2026-07-31 semantic execution correction
+
+Issue #632 is the prerequisite index layer for obligation-driven retrieval. It authenticates operations inside function bodies, their numeric order and control context, shared queue/job/event channels, bounded wrapper substitution, concurrency groups, and receiver/type-proven persistence. Retrieval planning and the v2 response dossier remain owned by #630 and cannot begin while #632 is open.
+
+PR #633 merged as `e7bd30ce384cf743dbda3e8ee7f15b171a0ea649`, then the required real-GoValidate audit exposed an incomplete producer/consumer join. A wrapper publisher proved the queue channel but not which outer argument became the channel payload; a switch consumer proved cases but not the parameter/property selector consumed by those cases. #632 was reopened and #630 was dependency-stopped.
+
+The correction adds no schema version, compatibility alias, dependency, repository-specific map, or retrieval semantic. It reuses compact authenticated index values to record:
+
+- the exact outer dispatch payload argument on `publishes_to`;
+- a closed parameter-plus-property discriminant path for a switch;
+- typed case values, preserving the distinction between values such as string `"1"` and number `1`; and
+- an evidence range that includes safe destructuring aliases, so later mutation invalidates the proof.
+
+Direct selectors and immutable same-owner object destructuring are accepted. Reassignment, defaults, rest bindings, computed properties, dynamic cases, and duplicate typed cases fail closed. Accessor-backed `data` or discriminator properties—including destructured aliases and shorthand—also fail closed. On the frozen GoValidate corpus the corrected graph joins both db-sync publishers at argument 2 to the consumer selector parameter 0 `data.trigger`, including typed `section_complete`, `assembly_complete`, and `status_change` arms. The coverage suite passes 80 files / 785 tests at 85.85% statements (7,715/8,986), 79.46% branches (6,959/8,757), 92.37% functions (1,369/1,482), and 89.22% lines (6,481/7,264). #632 completes only after the corrective exact head passes every source, package, graph-size, performance, full-suite, independent-review, CI, and zero-thread gate.
+
 ## Migration and compatibility
 
 - `main` and `0.32.x` are maintenance-only while the RFC is active.

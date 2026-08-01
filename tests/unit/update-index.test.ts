@@ -9,6 +9,11 @@ import { generateIndex, IndexingCompletenessError } from '../../src/application/
 import { updateIndex } from '../../src/application/update-index.js'
 import { loadAcceptedIndex } from '../../src/adapters/filesystem/index-store.js'
 import { loadGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.js'
+import {
+  deserializeGraphArtifact,
+  serializeGraphArtifact,
+} from '../../src/domain/graph/artifact.js'
+import { computeBuildId } from '../../src/domain/index/build-state.js'
 
 const roots: string[] = []
 
@@ -94,6 +99,40 @@ describe('index updates', () => {
     expect(progress).toEqual(['detect'])
     expect([writeText, writeGraph, remove].every((operation) => operation.mock.calls.length === 0)).toBe(true)
     expect(artifactBytes(root)).toEqual(before)
+  })
+
+  it('fully regenerates an unchanged graph from the pre-correction engine', () => {
+    const root = fixture()
+    const generated = generateIndex(root)
+    const graph = deserializeGraphArtifact(graphBytes(root))
+    const state = graph.graph.index_build as unknown as {
+      engine_id: string
+      build_id: string
+    }
+    graph.graph.index_build = {
+      ...state,
+      engine_id: 'madar-typescript-index-v4',
+      build_id: '',
+    }
+    graph.graph.index_build = {
+      ...(graph.graph.index_build as object),
+      build_id: computeBuildId(graph),
+    }
+    writeFileSync(generated.graphPath, serializeGraphArtifact(graph), 'utf8')
+
+    const updated = updateIndex(root)
+
+    expect(updated.updateReceipt).toMatchObject({
+      mode: 'cold_reconcile',
+      parsed_files: 2,
+      reused_files: 0,
+      invalidated_files: 2,
+      dependency_closure_size: 2,
+      fallback_reason: 'cold_process',
+      publication_advanced: true,
+    })
+    expect(loadAcceptedIndex(updated.graphPath)?.state.engine_id)
+      .toBe('madar-typescript-index-v4-execution-1')
   })
 
   it('uses one truthful full reconcile for a private or exported source edit', () => {

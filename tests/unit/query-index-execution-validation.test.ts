@@ -14,6 +14,7 @@ import { generateIndex } from '../../src/application/generate-index.js'
 import { retrieveContext } from '../../src/application/retrieve-context.js'
 import { computeBuildId } from '../../src/domain/index/build-state.js'
 import {
+  encodeIndexBodyFactTable,
   indexBodyFactId,
   indexChannelId,
   type IndexBodyFact,
@@ -56,7 +57,14 @@ type Fixture = {
   dynamicQueueId: string
   jobId: string
   eventId: string
+  callArgumentCount: number
   operationIds: readonly string[]
+}
+
+type MarkerOptions = {
+  edge?: 'publish' | 'routes' | 'consumed' | 'event' | 'nonchannel'
+  matchCall?: boolean
+  value: unknown
 }
 
 function ready(value: ReturnType<typeof inspectQueryIndex>): ReadyQueryIndex {
@@ -66,7 +74,7 @@ function ready(value: ReturnType<typeof inspectQueryIndex>): ReadyQueryIndex {
   return value
 }
 
-function fixture(bom = false): Fixture {
+function fixture(bom = false, marker?: MarkerOptions): Fixture {
   const root = mkdtempSync(join(tmpdir(), 'madar-query-execution-'))
   roots.push(root)
   const source = `${bom ? '\uFEFF' : ''}import type { MongoRepository } from 'typeorm'
@@ -98,7 +106,14 @@ export async function run(
   if (!operations?.length) {
     throw new Error('Execution validation fixture has no generated operations')
   }
-  const proof = operations[0]!.evidence
+  const call = operations.find((operation) =>
+    operation.kind === 'call' && operation.arguments.length > 0)
+  if (!call || call.kind !== 'call') {
+    throw new Error('Execution validation fixture has no argument-bearing call')
+  }
+  const proof = marker?.matchCall === false
+    ? operations.find((operation) => operation.kind !== 'call')!.evidence
+    : marker ? call.evidence : operations[0]!.evidence
 
   const queueId = indexChannelId({
     channel_kind: 'queue',
@@ -158,9 +173,12 @@ export async function run(
       excerpt_sha256: proof.excerpt_sha256,
     },
   }
+  const mark = (edge: MarkerOptions['edge']) => marker && marker.edge === edge
+    ? { dispatch_payload_argument: marker.value } : {}
   graph.addEdge(runId, jobId, {
     relation: 'publishes_to',
     ...channelEvidence,
+    ...mark('publish'),
   })
   graph.addEdge(runId, dynamicQueueId, {
     relation: 'publishes_to',
@@ -169,18 +187,26 @@ export async function run(
   graph.addEdge(jobId, queueId, {
     relation: 'routes_through',
     ...channelEvidence,
+    ...mark('routes'),
   })
   graph.addEdge(queueId, runId, {
     relation: 'consumed_by',
     ...channelEvidence,
+    ...mark('consumed'),
   })
   graph.addEdge(runId, eventId, {
     relation: 'publishes_to',
     ...channelEvidence,
+    ...mark('event'),
   })
   graph.addEdge(eventId, runId, {
     relation: 'consumed_by',
     ...channelEvidence,
+  })
+  if (marker?.edge === 'nonchannel') graph.addEdge(runId, runId, {
+    relation: 'calls',
+    ...channelEvidence,
+    dispatch_payload_argument: marker.value,
   })
   resign(graph)
   return {
@@ -193,6 +219,7 @@ export async function run(
     dynamicQueueId,
     jobId,
     eventId,
+    callArgumentCount: call.arguments.length,
     operationIds: operations.map((operation) => operation.id),
   }
 }
@@ -317,6 +344,54 @@ describe('query execution index validation', () => {
       value.graph.nodeAttributes(current.runId),
       'body_facts',
     )).toBe(false)
+  })
+
+  it('accepts a dispatch marker authenticated by one exact call fact', () => {
+    const current = fixture(false, { edge: 'publish', value: 0 })
+    expect(ready(inspectQueryIndex(current.graph))).toBeDefined()
+    expect(current.callArgumentCount).toBeGreaterThan(0)
+  })
+
+  it.each([
+    ['negative', { edge: 'publish', value: -1 }],
+    ['fractional', { edge: 'publish', value: 0.5 }],
+    ['out-of-range', { edge: 'publish', value: 99 }],
+    ['nonmatching', { edge: 'publish', value: 0, matchCall: false }],
+    ['routes', { edge: 'routes', value: 0 }],
+    ['consumed', { edge: 'consumed', value: 0 }],
+    ['event', { edge: 'event', value: 0 }],
+    ['nonchannel', { edge: 'nonchannel', value: 0 }],
+  ] as const)('rejects a %s dispatch marker', (_name, marker) => {
+    const current = fixture(false, marker)
+    expect(inspectQueryIndex(current.graph)).toMatchObject({ state: 'corrupt' })
+  })
+
+  it('rejects a dispatch marker with two matching call proofs', () => {
+    const current = fixture(false, { edge: 'publish', value: 0 })
+    const index = ready(inspectQueryIndex(current.graph))
+    const operations = index.operations_by_owner.get(current.runId)!
+    const call = operations.find((operation) => operation.kind === 'call')
+    if (!call || call.kind !== 'call') throw new Error('Expected call proof')
+    const order = [...call.order]
+    order[0] = Math.max(...operations.map((operation) => operation.order[0] ?? 0)) + 1
+    order[2] = Math.max(...operations.map((operation) => operation.order[2] ?? 0)) + 1
+    order[3] = 0
+    const duplicate: IndexBodyFact = {
+      ...structuredClone(call),
+      id: indexBodyFactId(
+        current.runId,
+        'call',
+        order,
+        call.evidence.excerpt_sha256,
+      ),
+      order,
+    }
+    current.graph.replaceNodeAttributes(current.runId, {
+      ...current.graph.nodeAttributes(current.runId),
+      body_facts: encodeIndexBodyFactTable([...operations, duplicate]),
+    })
+    resign(current.graph)
+    expect(inspectQueryIndex(current.graph)).toMatchObject({ state: 'corrupt' })
   })
 
   it.each([
