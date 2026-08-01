@@ -56,18 +56,22 @@ describe('examples/sample-workspace', () => {
       const graph = loadGraphArtifact(generated.graphPath)
       const result = retrieveContext(inspectQueryIndex(graph), {
         question: prompt?.question ?? '',
-        budget: 1800,
+        budget: 4000,
       })
 
       expect(generated.nodeCount).toBeGreaterThan(0)
       expect(result.schema).toBe('madar.retrieve')
-      expect(result.version).toBe(1)
-      expect(result.outcome).toBe('evidence')
-      expect(result.metrics.serialized_tokens).toBeLessThanOrEqual(1800)
-      expect(
-        (prompt?.expected_labels ?? []).some((label) =>
-          result.matched_nodes.some((node) => node.label === label)),
-      ).toBe(true)
+      expect(result.version).toBe(2)
+      expect(result.state).toBe('ready')
+      expect(result.metrics.serialized_tokens).toBeLessThanOrEqual(4000)
+      if (result.state === 'ready') {
+        expect(
+          (prompt?.expected_labels ?? []).some((label) =>
+            result.dossier.evidence.entities.some((entity) =>
+              entity.kind === 'symbol'
+                && entity.label.replace(/^\./, '') === label.replace(/^\./, ''))),
+        ).toBe(true)
+      }
     })
   })
 

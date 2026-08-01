@@ -94,8 +94,8 @@ export interface QualityOptions {
  */
 export const GOLD_QUESTIONS: GoldQuestion[] = [
   {
-    question: 'how does the retrieve application rank query anchors',
-    expected_labels: ['retrievecontext', 'rankqueryanchors'],
+    question: 'how does retrieveContext plan a repository question',
+    expected_labels: ['retrievecontext', 'planquestion'],
   },
   {
     question: 'how does the retrieve MCP tool find relevant nodes',
@@ -106,12 +106,12 @@ export const GOLD_QUESTIONS: GoldQuestion[] = [
     expected_labels: ['retrievecontext'],
   },
   {
-    question: 'how does retrieval traverse directed evidence paths',
-    expected_labels: ['traverseevidencepaths'],
+    question: 'how does retrieval select an ordered workflow',
+    expected_labels: ['selectworkflow'],
   },
   {
-    question: 'how does retrieval fit evidence into the result budget',
-    expected_labels: ['sliceevidence'],
+    question: 'how does retrieval hydrate authenticated evidence for the answer dossier',
+    expected_labels: ['hydrateevidence'],
   },
   {
     question: 'how does canonical TypeScript indexing build graph nodes',
@@ -206,7 +206,29 @@ function buildQualityResult(
 ): QualityResult {
   const expectedLabels = gold.expected_labels
   const normalizedExpectedLabels = expectedLabels.map((label) => normalizeExpectedLabel(label))
-  const returnedLabels = result.matched_nodes.map((node) => normalizeExpectedLabel(node.label))
+  const returnedNodes = result.state === 'ready'
+    ? result.dossier.evidence.entities.filter((entity) => entity.kind === 'symbol')
+    : []
+  const returnedLabels = returnedNodes.map((node) => normalizeExpectedLabel(node.label))
+  const groundedSymbols = new Set<string>()
+  if (result.state === 'ready') {
+    const excerptIds = new Set(result.dossier.evidence.excerpts.map(({ id }) => id))
+    const links = new Map(result.dossier.flow.links.map((link) => [link.id, link]))
+    for (const proof of result.dossier.evidence.proofs) {
+      groundedSymbols.add(proof.from)
+      groundedSymbols.add(proof.to)
+    }
+    for (const entity of result.dossier.evidence.entities) {
+      if (entity.kind === 'symbol' && entity.excerpt
+        && excerptIds.has(entity.excerpt)) {
+        groundedSymbols.add(entity.id)
+      }
+      if (entity.kind === 'operation' && excerptIds.has(entity.excerpt)) {
+        if ('owner' in entity) groundedSymbols.add(entity.owner)
+        else entity.links.forEach((id) => groundedSymbols.add(links.get(id)!.from))
+      }
+    }
+  }
 
   const matchedLabels = expectedLabels.filter((expected) =>
     returnedLabels.some((returned) => isExactMatch(returned, normalizeExpectedLabel(expected))),
@@ -229,13 +251,12 @@ function buildQualityResult(
   const precision = returnedLabels.length > 0 ? matchedLabels.length / returnedLabels.length : 0
   const recall = expectedLabels.length > 0 ? matchedLabels.length / expectedLabels.length : 0
   const snippetCoverage =
-    result.matched_nodes.length > 0
-      ? result.matched_nodes.filter((node) => typeof node.snippet === 'string' && node.snippet.trim().length > 0).length / result.matched_nodes.length
+    returnedNodes.length > 0
+      ? returnedNodes.filter((node) => groundedSymbols.has(node.id)).length / returnedNodes.length
       : 0
-  const groundedMatches = result.matched_nodes.filter((node) => (
+  const groundedMatches = returnedNodes.filter((node) => (
     normalizedExpectedLabels.includes(normalizeExpectedLabel(node.label)) &&
-    typeof node.snippet === 'string' &&
-    node.snippet.trim().length > 0
+    groundedSymbols.has(node.id)
   )).length
   const groundedMatchRate = expectedLabels.length > 0 ? groundedMatches / expectedLabels.length : 0
 
@@ -243,7 +264,7 @@ function buildQualityResult(
     question: gold.question,
     bucket: questionBucket(gold.question),
     expected_labels: expectedLabels,
-    returned_labels: result.matched_nodes.map((node) => node.label),
+    returned_labels: returnedNodes.map((node) => node.label),
     matched_labels: matchedLabels,
     missing_labels: missingLabels,
     precision,

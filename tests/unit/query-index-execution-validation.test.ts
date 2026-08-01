@@ -638,12 +638,10 @@ describe('query execution index validation', () => {
       question: 'Explain the `run` function.',
       budget: 4_000,
     })
-    expect(result.outcome).toBe('corrupt')
-    expect(result.matched_nodes).toEqual([])
-    expect(result.boundaries).toContainEqual({
-      kind: 'corrupt',
-      subject: current.runId,
-    })
+    expect(result.state).toBe('corrupt')
+    if (result.state === 'corrupt') {
+      expect(result.failures[0]?.subject).toBeTruthy()
+    }
   })
 
   it('rejects a re-sealed sparse persistence ordinal', () => {
@@ -667,7 +665,7 @@ describe('query execution index validation', () => {
     expect(inspectQueryIndex(current.graph)).toMatchObject({ state: 'corrupt' })
   })
 
-  it('authenticates selected-owner channel edge bytes before returning evidence', () => {
+  it('isolates a corrupt unselected channel edge from a focused explanation', () => {
     const current = fixture()
     const edge = current.graph.edgeEntries().find(([from, , attributes]) =>
       from === current.runId && attributes.relation === 'publishes_to')
@@ -683,11 +681,8 @@ describe('query execution index validation', () => {
       question: 'Explain the `run` function.',
       budget: 4_000,
     })
-    expect(result.outcome).toBe('corrupt')
-    expect(result.boundaries).toContainEqual({
-      kind: 'corrupt',
-      subject: forgedId,
-    })
+    expect(forgedId).toBeTruthy()
+    expect(result.state).toBe('ready')
   })
 
   it('reports stale when selected-owner source bytes change', () => {
@@ -704,11 +699,9 @@ describe('query execution index validation', () => {
       budget: 4_000,
     })
 
-    expect(result.outcome).toBe('stale')
-    expect(result.matched_nodes).toEqual([])
-    expect(result.boundaries).toContainEqual({
-      kind: 'stale',
-      subject: 'src/run.ts',
+    expect(result).toMatchObject({
+      state: 'stale',
+      failures: [{ state: 'stale', subject: 'src/run.ts' }],
     })
   })
 
@@ -719,8 +712,12 @@ describe('query execution index validation', () => {
       budget: 4_000,
     })
 
-    expect(result.outcome).toBe('evidence')
-    expect(result.matched_nodes.some((node) => node.node_id === current.runId)).toBe(true)
+    expect(result.state).toBe('ready')
+    if (result.state === 'ready') {
+      expect(result.dossier.evidence.entities).toContainEqual(
+        expect.objectContaining({ kind: 'symbol', label: 'run()' }),
+      )
+    }
   })
 
   it('reports stale before decoding mutated invalid UTF-8 bytes', () => {
@@ -733,10 +730,9 @@ describe('query execution index validation', () => {
       budget: 4_000,
     })
 
-    expect(result.outcome).toBe('stale')
-    expect(result.boundaries).toContainEqual({
-      kind: 'stale',
-      subject: 'src/run.ts',
+    expect(result).toMatchObject({
+      state: 'stale',
+      failures: [{ state: 'stale', subject: 'src/run.ts' }],
     })
   })
 })

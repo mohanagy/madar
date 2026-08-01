@@ -1,3 +1,5 @@
+import { Queue, Worker, type Job } from 'bullmq'
+
 export type PipelineJobPayload = {
   userId: string
   problem: string
@@ -6,37 +8,55 @@ export type PipelineJobPayload = {
   report?: { content: string }
 }
 
-class PipelineQueue {
-  async add(
+export class QueueRegistryService {
+  private readonly queues = new Map<string, Queue<PipelineJobPayload>>()
+
+  constructor() {
+    this.queues.set(
+      'orchestration-queue',
+      new Queue<PipelineJobPayload>('orchestration-queue'),
+    )
+    this.queues.set(
+      'section-research-queue',
+      new Queue<PipelineJobPayload>('section-research-queue'),
+    )
+    this.queues.set(
+      'assembly-queue',
+      new Queue<PipelineJobPayload>('assembly-queue'),
+    )
+    this.queues.set(
+      'db-sync-queue',
+      new Queue<PipelineJobPayload>('db-sync-queue'),
+    )
+  }
+
+  addJob(
+    queueName: string,
     jobName: string,
     input: PipelineJobPayload,
-  ): Promise<{ id: string }> {
-    return {
-      id: `${jobName}:${input.ideaId}`,
-    }
+  ): Promise<Job<PipelineJobPayload>> {
+    const queue = this.queues.get(queueName)
+    if (!queue) throw new Error(`Queue not registered: ${queueName}`)
+    return queue.add(jobName, input)
+  }
+
+  registerWorker(
+    queueName: string,
+    processor: (job: Job<PipelineJobPayload>) => Promise<unknown>,
+  ): Worker<PipelineJobPayload> {
+    return new Worker<PipelineJobPayload>(queueName, processor)
   }
 }
 
-const pipelineQueue = new PipelineQueue()
-const workers = new Map<string, (input: PipelineJobPayload) => Promise<unknown>>()
-
-export function registerWorker(
-  queueName: string,
-  worker: (input: PipelineJobPayload) => Promise<unknown>,
-): void {
-  workers.set(queueName, worker)
-}
+export const queueRegistry = new QueueRegistryService()
 
 export async function enqueueJob(
-  queueOrInput: string | PipelineJobPayload,
-  suppliedInput?: PipelineJobPayload,
+  queueName: string,
+  jobName: string,
+  input: PipelineJobPayload,
 ): Promise<{ jobId: string }> {
-  if (typeof queueOrInput !== 'string') {
-    const job = await pipelineQueue.add('pipeline.orchestrator.process', queueOrInput)
-    return { jobId: job.id }
-  }
-  const job = await pipelineQueue.add(queueOrInput, suppliedInput!)
+  const job = await queueRegistry.addJob(queueName, jobName, input)
   return {
-    jobId: job.id,
+    jobId: String(job.id),
   }
 }

@@ -19,6 +19,10 @@ export class PlannerService {
     input: PipelineJobPayload,
     section: string,
   ): Promise<void> {
-    await enqueueJob('section-research-queue', { ...input, section })
+    await enqueueJob(
+      'section-research-queue',
+      'research.section.process',
+      { ...input, section },
+    )
   }
 }

@@ -20,6 +20,6 @@ export class ResearchAgentService {
   }
 
   private async checkAndDispatchNext(input: PipelineJobPayload): Promise<void> {
-    await enqueueJob('assembly-queue', input)
+    await enqueueJob('assembly-queue', 'assembly.report.process', input)
   }
 }

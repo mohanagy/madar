@@ -9,6 +9,7 @@ import { loadGraphArtifact } from '../../src/adapters/filesystem/graph-artifact.
 import {
   evaluateRetrievalQuality,
   formatQualityReport,
+  GOLD_QUESTIONS,
 } from '../../tools/eval/lib/infrastructure/benchmark/quality.js'
 
 const sandboxes: string[] = []
@@ -20,8 +21,15 @@ function qualityWorkspace(): { root: string; graphPath: string } {
   writeFileSync(
     join(root, 'src', 'events.ts'),
     [
-      'export function publishEvent(name: string): string {',
-      '  return `published:${name}`',
+      "import type { MongoRepository } from 'typeorm'",
+      '',
+      'type EventRecord = { id: string }',
+      '',
+      'export async function persistRequest(',
+      '  repository: MongoRepository<EventRecord>,',
+      '  id: string,',
+      '): Promise<void> {',
+      '  await repository.update(id, { id })',
       '}',
       '',
     ].join('\n'),
@@ -30,9 +38,15 @@ function qualityWorkspace(): { root: string; graphPath: string } {
   writeFileSync(
     join(root, 'src', 'handler.ts'),
     [
-      "import { publishEvent } from './events.js'",
-      'export function handleRequest(): string {',
-      "  return publishEvent('request.handled')",
+      "import type { MongoRepository } from 'typeorm'",
+      "import { persistRequest } from './events.js'",
+      '',
+      'type EventRecord = { id: string }',
+      '',
+      'export function handleRequest(',
+      '  repository: MongoRepository<EventRecord>,',
+      '): Promise<void> {',
+      "  return persistRequest(repository, 'request.handled')",
       '}',
       '',
     ].join('\n'),
@@ -46,13 +60,23 @@ afterEach(() => {
 })
 
 describe('Core Reset retrieval quality evaluator', () => {
+  it('targets the v2 planner, workflow selector and evidence hydrator', () => {
+    const labels = GOLD_QUESTIONS.flatMap((question) => question.expected_labels)
+    expect(labels).toEqual(expect.arrayContaining([
+      'planquestion', 'selectworkflow', 'hydrateevidence', 'retrievecontext',
+    ]))
+    expect(labels).not.toEqual(expect.arrayContaining([
+      'rankqueryanchors', 'traverseevidencepaths', 'sliceevidence',
+    ]))
+  })
+
   it('grades only authenticated nodes returned by the one query', () => {
     const { graphPath } = qualityWorkspace()
     const report = evaluateRetrievalQuality(
       loadGraphArtifact(graphPath),
       [{
-        question: 'How does handle request publish event?',
-        expected_labels: ['handleRequest()', 'publishEvent()'],
+        question: 'How does request flow end to end?',
+        expected_labels: ['handleRequest()', 'persistRequest()'],
       }],
       3_000,
       { graphPath },
@@ -73,7 +97,7 @@ describe('Core Reset retrieval quality evaluator', () => {
     const { graphPath } = qualityWorkspace()
     const report = evaluateRetrievalQuality(
       loadGraphArtifact(graphPath),
-      [{ question: 'publish event', expected_labels: ['publish'] }],
+      [{ question: 'Where is persistRequest defined?', expected_labels: ['persist'] }],
       3_000,
       { graphPath },
     )
@@ -81,12 +105,30 @@ describe('Core Reset retrieval quality evaluator', () => {
     expect(report.questions[0]?.matched_labels).toEqual([])
   })
 
+  it('does not grade a non-ready response as partial evidence', () => {
+    const { graphPath } = qualityWorkspace()
+    const report = evaluateRetrievalQuality(
+      loadGraphArtifact(graphPath),
+      [{
+        question: 'Should this architecture be rewritten?',
+        expected_labels: ['handleRequest()'],
+      }],
+      3_000,
+      { graphPath },
+    )
+
+    expect(report.questions[0]).toMatchObject({
+      returned_labels: [], matched_labels: [], recall: 0,
+      snippet_coverage: 0, grounded_match_rate: 0,
+    })
+  })
+
   it('skips unlabeled questions and renders a compact report', () => {
     const { graphPath } = qualityWorkspace()
     const report = evaluateRetrievalQuality(
       loadGraphArtifact(graphPath),
       [
-        { question: 'handle request', expected_labels: ['handleRequest()'] },
+        { question: 'Where is handleRequest defined?', expected_labels: ['handleRequest()'] },
         { question: 'unlabeled evaluation prompt' },
       ],
       3_000,

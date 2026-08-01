@@ -116,10 +116,13 @@ function queryEvidenceMatch(
   budget = 4_000,
 ): { queryTokens: number; labels: Set<string> } | null {
   const result = retrieveBenchmarkContext(graph, graphPath, question, budget)
-  if (result.outcome !== 'evidence' || result.matched_nodes.length === 0) return null
+  if (result.state !== 'ready') return null
+  const symbols = result.dossier.evidence.entities.filter((entity) =>
+    entity.kind === 'symbol')
+  if (symbols.length === 0) return null
   return {
     queryTokens: result.metrics.serialized_tokens,
-    labels: new Set(result.matched_nodes.map((node) => normalizeExpectedLabel(node.label))),
+    labels: new Set(symbols.map((node) => normalizeExpectedLabel(node.label))),
   }
 }
 
