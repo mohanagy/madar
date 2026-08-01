@@ -527,7 +527,7 @@ export const wrappedConditionalEvent =
 export const readyListener = events.on('ready', () => handleEvent())
 export const explodingListener = events.on('exploding',
   (event) => handleEvent(event, explode()))
-export const conditionalListener = events.on('conditional', () => true && handleEvent())
+export const conditionalListener = events.on('conditional-event', () => true && handleEvent())
 `
     const { nodes, edges } = build({ 'src/inline-consumers.ts': source })
     const handlerId = symbol(nodes, 'handle')[0]
@@ -558,7 +558,7 @@ export const conditionalListener = events.on('conditional', () => true && handle
       'wrapped-wrong',
       'wrapped-conditional',
       'wrapped-dead-tail',
-    ]) expect(consumes(key, handlerId)).toBe(false)
+    ]) expect(consumes(key, handlerId), key).toBe(false)
     for (const key of [
       'optional-element',
       'nested-optional',
@@ -579,7 +579,7 @@ export const conditionalListener = events.on('conditional', () => true && handle
     expect(consumes('ready', eventHandlerId)).toBe(true)
     expect(hasConsumer('exploding')).toBe(false)
     expect(consumes('wrapped-event', eventHandlerId)).toBe(true)
-    expect(consumes('conditional', eventHandlerId)).toBe(false)
+    expect(consumes('conditional-event', eventHandlerId)).toBe(false)
     expect(consumes('wrapped-conditional-event', eventHandlerId)).toBe(false)
   })
 
