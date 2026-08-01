@@ -106,11 +106,50 @@ function outgoing(
     source === from && attributes.relation === relation)
 }
 
+function decodeTypedCaseArm(
+  arm: unknown,
+): readonly [string, unknown] | null {
+  if (typeof arm !== 'string') return null
+  const match = /^case:([A-Za-z0-9_-]+)$/u.exec(arm)
+  if (!match) return null
+  try {
+    const decoded: unknown = JSON.parse(
+      Buffer.from(match[1]!, 'base64url').toString('utf8'),
+    )
+    return Array.isArray(decoded)
+      && decoded.length === 2
+      && typeof decoded[0] === 'string'
+      ? [decoded[0], decoded[1]]
+      : null
+  } catch {
+    return null
+  }
+}
+
+function typedCaseValues(
+  ownerFacts: readonly BodyFact[],
+  controllerId: string,
+): Array<readonly [string, unknown]> {
+  return ownerFacts.flatMap((fact) => {
+    const control = Array.isArray(fact.control) ? fact.control : []
+    return control.flatMap((rawFrame) => {
+      const frame = rawFrame as Record<string, unknown>
+      if (frame.kind !== 'branch'
+        || frame.controller_fact_id !== controllerId) return []
+      const value = decodeTypedCaseArm(frame.arm)
+      return value ? [value] : []
+    })
+  })
+}
+
 describe('canonical TypeScript execution hardening', () => {
   it('resolves GoValidate-style Map-backed queue wrappers and inline worker delegates exactly', () => {
     const source = `import { Queue, Worker, type Job } from 'bullmq'
 
-type AssemblyJobData = { ideaId: string }
+type AssemblyJobData = {
+  ideaId: string
+  trigger: 'section_complete' | 'assembly_complete'
+}
 const QUEUE_NAME = 'assembly-queue'
 const JOB_NAME = 'assemble_report'
 
@@ -146,7 +185,15 @@ class AssemblyWorker {
   }
 
   async process(job: Job<AssemblyJobData>): Promise<void> {
-    void job.data.ideaId
+    const { trigger } = job.data
+    switch (trigger) {
+      case 'section_complete':
+        void job.data.ideaId
+        return
+      case 'assembly_complete':
+        void job.data.ideaId
+        return
+    }
   }
 }
 
@@ -154,7 +201,10 @@ export function dispatch(
   registry: QueueRegistryService,
   ideaId: string,
 ) {
-  return registry.addJob(QUEUE_NAME, JOB_NAME, { ideaId })
+  return registry.addJob(QUEUE_NAME, JOB_NAME, {
+    ideaId,
+    trigger: 'assembly_complete',
+  })
 }
 `
     const { nodes, edges } = build({ 'src/queue-registry.ts': source })
@@ -176,6 +226,29 @@ export function dispatch(
     expect(hasEdge(edges, job[0]![0], queue[0]![0], 'routes_through')).toBe(true)
     expect(hasEdge(edges, queue[0]![0], processId, 'consumed_by')).toBe(true)
     expect(outgoing(edges, queue[0]![0], 'consumed_by')).toHaveLength(1)
+    const publishEdges = outgoing(edges, dispatchId, 'publishes_to')
+      .filter(([, target]) => target === job[0]![0])
+    expect(publishEdges).toHaveLength(1)
+    expect(publishEdges[0]![2]).toMatchObject({
+      dispatch_payload_argument: 2,
+    })
+
+    const processFacts = facts(nodes, symbol(nodes, 'AssemblyWorker.process'))
+    const condition = processFacts.find((fact) =>
+      fact.kind === 'condition' && fact.condition_kind === 'switch')
+    expect(condition?.test).toEqual({
+      kind: 'template',
+      parts: [
+        { kind: 'parameter', position: 0 },
+        { kind: 'literal', value: 'data' },
+        { kind: 'literal', value: 'trigger' },
+      ],
+    })
+    expect(new Set(typedCaseValues(processFacts, String(condition?.id))
+      .map((value) => JSON.stringify(value)))).toEqual(new Set([
+      JSON.stringify(['string', 'section_complete']),
+      JSON.stringify(['string', 'assembly_complete']),
+    ]))
   })
 
   it('expands two wrapper hops but never joins cycles, dynamics, or unmatched channel halves', () => {
@@ -267,6 +340,12 @@ export const consumerOnlyWorker =
     expect(consumerOnly).toHaveLength(1)
     expect(outgoing(edges, producerOnly[0]![0], 'consumed_by')).toEqual([])
     expect(hasEdge(edges, consumerOnly[0]![0], consumerOnlyId, 'consumed_by')).toBe(true)
+    const publishEdges = outgoing(edges, successId, 'publishes_to')
+      .filter(([, target]) => target === completeJob[0]![0])
+    expect(publishEdges).toHaveLength(1)
+    expect(publishEdges[0]![2]).toMatchObject({
+      dispatch_payload_argument: 2,
+    })
   })
 
   it('requires receiver proof for persistence and recognizes imported filesystem writes', () => {

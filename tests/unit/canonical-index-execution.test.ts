@@ -136,6 +136,38 @@ function hasRelation(
     && attributes.relation === relation)
 }
 
+function decodeTypedCaseArm(
+  arm: unknown,
+): readonly [string, unknown] | null {
+  if (typeof arm !== 'string') return null
+  const match = /^case:([A-Za-z0-9_-]+)$/u.exec(arm)
+  if (!match) return null
+  try {
+    const decoded: unknown = JSON.parse(
+      Buffer.from(match[1]!, 'base64url').toString('utf8'),
+    )
+    return Array.isArray(decoded)
+      && decoded.length === 2
+      && typeof decoded[0] === 'string'
+      ? [decoded[0], decoded[1]]
+      : null
+  } catch {
+    return null
+  }
+}
+
+function typedCaseValues(
+  facts: readonly BodyFact[],
+  controllerId: string,
+): Array<readonly [string, unknown]> {
+  return facts.flatMap((fact) => fact.control.flatMap((frame) => {
+    if (frame.kind !== 'branch'
+      || frame.controller_fact_id !== controllerId) return []
+    const value = decodeTypedCaseArm(frame.arm)
+    return value ? [value] : []
+  }))
+}
+
 describe('canonical TypeScript semantic execution facts', () => {
   it('stores selective authenticated facts with nested control and derivable Promise parallelism', () => {
     const source = `const METRIC_BATCHES = [
@@ -404,5 +436,61 @@ export function emitDynamic(eventName: string) {
     expect(edges.some(([source, , attributes]) =>
       source === emitDynamic
       && attributes.relation === 'publishes_to')).toBe(false)
+  })
+
+  it('binds an exact Bull payload argument to typed consumer switch cases', () => {
+    const source = `import { Queue, Worker } from 'bullmq'
+
+type SyncJob = { trigger: 'complete' | 'progress' | 1 }
+const queue = new Queue<SyncJob>('sync')
+
+export function dispatch(): Promise<unknown> {
+  return queue.add('persist', { trigger: 'complete' })
+}
+
+export async function process(job: { data: SyncJob }): Promise<void> {
+  switch (job.data.trigger) {
+    case 'complete':
+      return
+    case 'progress':
+      return
+    case 1:
+      return
+  }
+}
+
+export const worker = new Worker<SyncJob>('sync', process)
+`
+    const { nodes, edges } = build({ 'src/discriminator.ts': source })
+    const file = [...nodes].find(([, attributes]) =>
+      attributes.node_kind === 'file'
+      && attributes.source_file === 'src/discriminator.ts')
+    if (!file) throw new Error('Missing fixture file node src/discriminator.ts')
+    const [dispatchId] = named(nodes, 'dispatch')
+    const [processId, processNode] = named(nodes, 'process')
+    const processFacts = bodyFacts(processNode, processId, file[0])
+    const condition = processFacts.find((fact) =>
+      fact.kind === 'condition' && fact.condition_kind === 'switch')
+
+    const publishEdges = edges.filter(([source, , attributes]) =>
+      source === dispatchId && attributes.relation === 'publishes_to')
+    expect(publishEdges).toHaveLength(1)
+    expect(publishEdges[0]![2]).toMatchObject({
+      dispatch_payload_argument: 1,
+    })
+    expect(condition?.test).toEqual({
+      kind: 'template',
+      parts: [
+        { kind: 'parameter', position: 0 },
+        { kind: 'literal', value: 'data' },
+        { kind: 'literal', value: 'trigger' },
+      ],
+    })
+    expect(new Set(typedCaseValues(processFacts, String(condition?.id))
+      .map((value) => JSON.stringify(value)))).toEqual(new Set([
+      JSON.stringify(['string', 'complete']),
+      JSON.stringify(['string', 'progress']),
+      JSON.stringify(['number', 1]),
+    ]))
   })
 })

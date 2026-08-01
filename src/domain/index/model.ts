@@ -50,39 +50,24 @@ export type IndexPersistenceOperation =
   | 'read' | 'create' | 'update' | 'delete' | 'upsert' | 'transaction'
   | 'file_read' | 'file_write' | 'object_read' | 'object_write'
 type IndexUnknownReason = 'dynamic' | 'ambiguous' | 'unsupported'
-const KINDS = [
-  'condition', 'loop', 'parallel', 'call', 'literal',
-  'mutation', 'persistence', 'return', 'throw',
-] as const
-const LEVELS = ['high', 'medium', 'low'] as const
-const SOURCES = [
-  'typescript-semantic', 'typescript-syntactic', 'framework', 'wrapper-summary',
-] as const
-const TIMING = ['sync', 'awaited', 'fire_and_forget'] as const
-const ROLES = [
-  'argument', 'initializer', 'condition', 'return', 'channel', 'configuration',
-] as const
-const CONDITIONS = [
-  'if', 'switch', 'ternary', 'logical_and', 'logical_or', 'nullish', 'guard',
-] as const
-const LOOPS = [
-  'for', 'for_in', 'for_of', 'while', 'do_while', 'array_iteration',
-] as const
-const PROMISES = ['all', 'allSettled', 'any', 'race'] as const
-const COMPLETION = [
-  'all_or_first_rejection', 'all_settled', 'first_fulfilled', 'first_settled',
-] as const
-const MUTATIONS = [
-  'assign', 'increment', 'decrement', 'append', 'remove', 'delete',
-] as const
-const STORAGE = [
-  'read', 'create', 'update', 'delete', 'upsert', 'transaction',
-  'file_read', 'file_write', 'object_read', 'object_write',
-] as const
-const UNKNOWN = ['dynamic', 'ambiguous', 'unsupported'] as const
+const KS = ['condition', 'loop', 'parallel', 'call', 'literal',
+  'mutation', 'persistence', 'return', 'throw'] as const
+const LS = ['high', 'medium', 'low'] as const
+const SS = ['typescript-semantic', 'typescript-syntactic', 'framework', 'wrapper-summary'] as const
+const TM = ['sync', 'awaited', 'fire_and_forget'] as const
+const RS = ['argument', 'initializer', 'condition', 'return', 'channel', 'configuration'] as const
+const CS = ['if', 'switch', 'ternary', 'logical_and', 'logical_or', 'nullish', 'guard'] as const
+const LP = ['for', 'for_in', 'for_of', 'while', 'do_while', 'array_iteration'] as const
+const PM = ['all', 'allSettled', 'any', 'race'] as const
+const CP = ['all_or_first_rejection', 'all_settled', 'first_fulfilled', 'first_settled'] as const
+const MU = ['assign', 'increment', 'decrement', 'append', 'remove', 'delete'] as const
+const ST = ['read', 'create', 'update', 'delete', 'upsert', 'transaction',
+  'file_read', 'file_write', 'object_read', 'object_write'] as const
+const UK = ['dynamic', 'ambiguous', 'unsupported'] as const
 const SHA256 = /^[a-f0-9]{64}$/
-const MAX_ROWS = 8_192, MAX_ROW = 262_144, MAX_TABLE = 8_388_608
-const MAX_DEPTH = 5, MAX_ELEMENTS = 32, MAX_TEXT = 512
+const MR = 8_192, MB = 262_144, MT = 8_388_608
+const MD = 5, ME = 32, MX = 512
+const aa = Array.isArray, bl = Buffer.byteLength, js = JSON.stringify
 export type IndexFactEvidence = Immutable<{
   file_id: string
   /** Smallest expression or token range that proves the fact. */
@@ -174,296 +159,249 @@ export function indexBodyFactId(
 export type IndexBodyFactTable = readonly [version: 1, rows: readonly string[]]
 export const INDEX_BODY_FACT_CONTROL_LIMIT = 64
 export class IndexBodyFactBoundsError extends Error {}
-function ep(values: readonly string[], value: string): number {
-  const index = values.indexOf(value)
-  if (index < 0) throw new Error(`Unsupported execution value ${value}`)
-  return index
-}
-function oc(left: readonly number[], right: readonly number[]): number {
-  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
-    const difference = left[index]! - right[index]!
-    if (difference !== 0) return difference
-  }
-  return left.length - right.length
-}
-function dn(value: readonly unknown[]): boolean {
-  for (let index = 0; index < value.length; index += 1)
-    if (!Object.hasOwn(value, index)) return false
-  return true
-}
-function sc(value: unknown): value is IndexScalarValue {
-  return (value === null || ['string', 'number', 'boolean'].includes(typeof value))
-    && !(typeof value === 'number' && (!Number.isFinite(value) || Object.is(value, -0)))
-    && !(typeof value === 'string' && Buffer.byteLength(value, 'utf8') > MAX_TEXT)
-}
-function pv(value: IndexValue, depth = 0): unknown {
-  const nestedCount = value.kind === 'array' ? value.elements.length
-    : value.kind === 'object' ? value.entries.length
-      : value.kind === 'template' ? value.parts.length : 0
-  if (depth > MAX_DEPTH || (depth === MAX_DEPTH && nestedCount > 0))
-    return [7, ep(UNKNOWN, 'unsupported')]
-  switch (value.kind) {
+function ep(a: readonly string[], b: string): number { const i = a.indexOf(b); if (i < 0) throw new Error(`Unsupported execution value ${b}`); return i }
+function oc(a: readonly number[], b: readonly number[]): number { for (let i = 0; i < Math.min(a.length, b.length); i += 1) { const d = a[i]! - b[i]!; if (d !== 0) return d } return a.length - b.length }
+function dn(a: readonly unknown[]): boolean { for (let i = 0; i < a.length; i += 1) if (!Object.hasOwn(a, i)) return false; return true }
+const sc = (a: unknown): a is IndexScalarValue => (a === null || ['string', 'number', 'boolean'].includes(typeof a)) && !(typeof a === 'number' && (!Number.isFinite(a) || Object.is(a, -0))) && !(typeof a === 'string' && bl(a) > MX)
+function pv(a: IndexValue, d = 0): unknown {
+  const n = a.kind === 'array' ? a.elements.length
+    : a.kind === 'object' ? a.entries.length
+      : a.kind === 'template' ? a.parts.length : 0
+  if (d > MD || (d === MD && n > 0))
+    return [7, ep(UK, 'unsupported')]
+  switch (a.kind) {
     case 'literal':
-      if (!sc(value.value)) throw new Error('Execution literal is not JSON-lossless')
-      return [0, value.value]
+      if (!sc(a.value)) throw new Error('Execution literal is not JSON-lossless')
+      return [0, a.value]
     case 'symbol':
-      if (!vt(value.symbol_id, 1_024))
+      if (!vt(a.symbol_id, 1_024))
         throw new Error('Execution symbol reference is invalid')
-      return [1, value.symbol_id]
+      return [1, a.symbol_id]
     case 'parameter':
-      if (!si(value.position)
-        || (value.scope !== undefined && value.scope !== 'iteration'))
+      if (!si(a.position)
+        || (a.scope !== undefined && a.scope !== 'iteration'))
         throw new Error('Execution parameter position is invalid')
-      return value.scope === 'iteration'
-        ? [2, value.position, 1]
-        : [2, value.position]
+      return a.scope === 'iteration'
+        ? [2, a.position, 1]
+        : [2, a.position]
     case 'array':
-      if (value.elements.length > MAX_ELEMENTS || !dn(value.elements))
+      if (a.elements.length > ME || !dn(a.elements))
         throw new Error('Execution array exceeds its element bound')
-      return [3, value.elements.map((entry) => pv(entry, depth + 1))]
+      return [3, a.elements.map((e) => pv(e, d + 1))]
     case 'object': {
-      const keys = new Set<string>()
-      if (value.entries.length > MAX_ELEMENTS || !dn(value.entries))
+      const k = new Set<string>()
+      if (a.entries.length > ME || !dn(a.entries))
         throw new Error('Execution object exceeds its element bound')
-      for (const entry of value.entries) {
-        if (Buffer.byteLength(entry.key, 'utf8') > MAX_TEXT
-          || entry.key.includes('\0') || keys.has(entry.key))
+      for (const e of a.entries) {
+        if (bl(e.key) > MX || e.key.includes('\0') || k.has(e.key))
           throw new Error('Execution object key is invalid')
-        keys.add(entry.key)
+        k.add(e.key)
       }
-      return [4, value.entries.map((entry) => [
-        entry.key, pv(entry.value, depth + 1),
+      return [4, a.entries.map((e) => [
+        e.key, pv(e.value, d + 1),
       ])]
     }
     case 'template':
-      if (value.parts.length > MAX_ELEMENTS || !dn(value.parts))
+      if (a.parts.length > ME || !dn(a.parts))
         throw new Error('Execution template exceeds its element bound')
-      return [5, value.parts.map((entry) => pv(entry, depth + 1))]
+      return [5, a.parts.map((e) => pv(e, d + 1))]
     case 'redacted':
-      if (!SHA256.test(value.sha256) || !si(value.byte_length))
+      if (!SHA256.test(a.sha256) || !si(a.byte_length))
         throw new Error('Execution redaction is invalid')
-      return [6, value.sha256, value.byte_length]
-    case 'unknown': return [7, ep(UNKNOWN, value.reason)]
+      return [6, a.sha256, a.byte_length]
+    case 'unknown': return [7, ep(UK, a.reason)]
   }
   throw new Error('Unsupported execution value')
 }
-function pe(proof: IndexFactEvidence): unknown {
-  return [
-    proof.range.start.line, proof.range.start.column,
-    proof.range.end.line, proof.range.end.column,
-    proof.statement_range.start.line, proof.statement_range.start.column,
-    proof.statement_range.end.line, proof.statement_range.end.column, proof.excerpt_sha256,
-  ]
-}
+const pe = (a: IndexFactEvidence): unknown => [a.range.start.line, a.range.start.column, a.range.end.line, a.range.end.column, a.statement_range.start.line, a.statement_range.start.column, a.statement_range.end.line, a.statement_range.end.column, a.excerpt_sha256]
 export function encodeIndexBodyFactTable(
   facts: readonly IndexBodyFact[],
 ): IndexBodyFactTable {
-  if (facts.length === 0 || facts.length > MAX_ROWS) {
+  if (facts.length === 0 || facts.length > MR) {
     throw new IndexBodyFactBoundsError(
       'Execution fact table is outside its row bound',
     )
   }
   if (!dn(facts)) throw new Error('Execution fact table is sparse')
-  const ordered = [...facts].sort((left, right) =>
-    oc(left.order, right.order)
-    || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
-  const ordinals = new Map(ordered.map((fact, index) => [fact.id, index]))
-  if (ordinals.size !== ordered.length)
+  const a = [...facts].sort((l, r) =>
+    oc(l.order, r.order) || (l.id < r.id ? -1 : l.id > r.id ? 1 : 0))
+  const m = new Map(a.map((f, i) => [f.id, i]))
+  if (m.size !== a.length)
     throw new Error('Execution fact IDs are not unique')
-  const ordinal = (id: string): number => {
-    const value = ordinals.get(id)
-    if (value === undefined) throw new Error(`Missing execution fact reference ${id}`)
-    return value
+  const oi = (id: string): number => {
+    const v = m.get(id)
+    if (v === undefined) throw new Error(`Missing execution fact reference ${id}`)
+    return v
   }
-  const control = (frame: IndexControlFrame): unknown => {
-    if (frame.kind === 'branch') {
-      if (!vt(frame.arm, 96)
-        || (!['then', 'else', 'truthy', 'falsy', 'nullish', 'default'].includes(frame.arm)
-          && !(frame.arm.startsWith('case:') && frame.arm.length > 5))) {
+  const cf = (f: IndexControlFrame): unknown => {
+    if (f.kind === 'branch') {
+      if (!vt(f.arm, 96)
+        || (!['then', 'else', 'truthy', 'falsy', 'nullish', 'default'].includes(f.arm)
+          && !(f.arm.startsWith('case:') && f.arm.length > 5))) {
         throw new Error('Execution branch arm is invalid')
       }
-      return [0, ordinal(frame.controller_fact_id), frame.arm]
+      return [0, oi(f.controller_fact_id), f.arm]
     }
-    if (frame.kind === 'loop') return [1, ordinal(frame.controller_fact_id)]
-    if (frame.kind === 'parallel') {
-      if (frame.lane !== 'each' && !si(frame.lane))
+    if (f.kind === 'loop') return [1, oi(f.controller_fact_id)]
+    if (f.kind === 'parallel') {
+      if (f.lane !== 'each' && !si(f.lane))
         throw new Error('Execution parallel lane is invalid')
-      return [2, ordinal(frame.controller_fact_id), frame.lane]
+      return [2, oi(f.controller_fact_id), f.lane]
     }
-    if (frame.kind === 'exception')
-      return [3, ep(['try', 'catch', 'finally'], frame.arm)]
+    if (f.kind === 'exception')
+      return [3, ep(['try', 'catch', 'finally'], f.arm)]
     throw new Error('Unsupported execution control frame')
   }
-  let bytes = 0
-  const orderKeys = new Set<string>()
-  const rows = ordered.map((fact) => {
-    const orderKey = fact.order.join('.')
-    if (fact.order.length !== 4
-      || !dn(fact.order) || !fact.order.every((value) => si(value))
-      || !dn(fact.control)
-      || fact.control.length > INDEX_BODY_FACT_CONTROL_LIMIT
-      || fact.order[1] !== ep(KINDS, fact.kind)
-      || orderKeys.has(orderKey)) {
-      throw new Error(`Invalid execution fact identity ${fact.id}`)
+  let b = 0
+  const k = new Set<string>()
+  const r = a.map((f) => {
+    const o = f.order.join('.')
+    if (f.order.length !== 4
+      || !dn(f.order) || !f.order.every((v) => si(v))
+      || !dn(f.control)
+      || f.control.length > INDEX_BODY_FACT_CONTROL_LIMIT
+      || f.order[1] !== ep(KS, f.kind)
+      || k.has(o)) {
+      throw new Error(`Invalid execution fact identity ${f.id}`)
     }
-    orderKeys.add(orderKey)
-    let wire: unknown
-    switch (fact.kind) {
+    k.add(o)
+    let w: unknown
+    switch (f.kind) {
       case 'call':
-        if (!dn(fact.arguments)) throw new Error(`Sparse call arguments for ${fact.id}`)
-        wire = [
-          fact.callee, fact.target_symbol_id ?? null,
-          fact.arguments.map(pv), ep(TIMING, fact.scheduling),
+        if (!dn(f.arguments)) throw new Error(`Sparse call arguments for ${f.id}`)
+        w = [
+          f.callee, f.target_symbol_id ?? null,
+          f.arguments.map(pv), ep(TM, f.scheduling),
         ]
         break
       case 'literal':
-        wire = [pv(fact.value), ep(ROLES, fact.role)]
+        w = [pv(f.value), ep(RS, f.role)]
         break
       case 'condition':
-        wire = [
-          ep(CONDITIONS, fact.condition_kind),
-          fact.test ? pv(fact.test) : null,
+        w = [
+          ep(CS, f.condition_kind),
+          f.test ? pv(f.test) : null,
         ]
         break
       case 'loop':
-        wire = [
-          ep(LOOPS, fact.loop_kind),
-          fact.test ? pv(fact.test) : null,
+        w = [
+          ep(LP, f.loop_kind),
+          f.test ? pv(f.test) : null,
         ]
         break
       case 'parallel': {
-        const combinator = ep(PROMISES, fact.combinator)
-        if (fact.completion !== COMPLETION[combinator]
-          || !si(fact.lane_count)
-          || !dn(fact.member_fact_ids)
-          || new Set(fact.member_fact_ids).size !== fact.member_fact_ids.length)
-          throw new Error(`Invalid parallel completion ${fact.id}`)
-        wire = [
-          combinator, fact.input ? pv(fact.input) : null,
-          fact.member_fact_ids.map(ordinal), fact.lane_count,
+        const c = ep(PM, f.combinator)
+        if (f.completion !== CP[c]
+          || !si(f.lane_count)
+          || !dn(f.member_fact_ids)
+          || new Set(f.member_fact_ids).size !== f.member_fact_ids.length)
+          throw new Error(`Invalid parallel completion ${f.id}`)
+        w = [
+          c, f.input ? pv(f.input) : null,
+          f.member_fact_ids.map(oi), f.lane_count,
         ]
         break
       }
       case 'return':
       case 'throw':
-        wire = [fact.value ? pv(fact.value) : null]
+        w = [f.value ? pv(f.value) : null]
         break
       case 'mutation':
-        wire = [
-          ep(MUTATIONS, fact.operation), fact.target,
-          fact.value ? pv(fact.value) : null,
+        w = [
+          ep(MU, f.operation), f.target,
+          f.value ? pv(f.value) : null,
         ]
         break
       case 'persistence':
-        if (!vt(fact.receiver_type))
-          throw new Error(`Persistence proof is missing for ${fact.id}`)
-        wire = [
-          ep(STORAGE, fact.operation), ordinal(fact.call_fact_id),
-          fact.resource ? pv(fact.resource) : null,
-          fact.receiver_type,
+        if (!vt(f.receiver_type))
+          throw new Error(`Persistence proof is missing for ${f.id}`)
+        w = [
+          ep(ST, f.operation), oi(f.call_fact_id),
+          f.resource ? pv(f.resource) : null,
+          f.receiver_type,
         ]
         break
     }
-    const semantics = [
-      ep(KINDS, fact.kind),
-      fact.order[0], fact.order[2], fact.order[3], pe(fact.evidence),
-      fact.control.map(control), ep(LEVELS, fact.confidence),
-      ep(SOURCES, fact.source), wire,
+    const s = [
+      ep(KS, f.kind),
+      f.order[0], f.order[2], f.order[3], pe(f.evidence),
+      f.control.map(cf), ep(LS, f.confidence),
+      ep(SS, f.source), w,
     ]
-    const sealedId = indexBodyFactId(
-      fact.owner_symbol_id, fact.kind, fact.order,
-      fact.evidence.excerpt_sha256, semantics,
+    const id = indexBodyFactId(
+      f.owner_symbol_id, f.kind, f.order,
+      f.evidence.excerpt_sha256, s,
     )
-    if (fact.id !== sealedId && fact.id !== indexBodyFactId(
-      fact.owner_symbol_id, fact.kind, fact.order, fact.evidence.excerpt_sha256,
-    )) throw new Error(`Invalid execution fact identity ${fact.id}`)
-    const row = JSON.stringify([sealedId, ...semantics])
-    const rowBytes = Buffer.byteLength(row, 'utf8')
-    bytes += rowBytes
-    if (rowBytes > MAX_ROW || bytes > MAX_TABLE)
+    if (f.id !== id && f.id !== indexBodyFactId(
+      f.owner_symbol_id, f.kind, f.order, f.evidence.excerpt_sha256,
+    )) throw new Error(`Invalid execution fact identity ${f.id}`)
+    const x = js([id, ...s])
+    const z = bl(x)
+    b += z
+    if (z > MB || b > MT)
       throw new IndexBodyFactBoundsError(
-        `Execution fact table exceeds its byte bound at ${fact.id}`,
+        `Execution fact table exceeds its byte bound at ${f.id}`,
       )
-    return row
+    return x
   })
-  return [1, rows]
+  return [1, r]
 }
-function si(value: unknown, minimum = 0): value is number {
-  return typeof value === 'number'
-    && Number.isSafeInteger(value)
-    && !Object.is(value, -0)
-    && value >= minimum
-}
-function vt(value: unknown, maxBytes = MAX_TEXT): value is string {
-  return typeof value === 'string'
-    && value.length > 0
-    && !value.includes('\0')
-    && Buffer.byteLength(value, 'utf8') <= maxBytes
-}
-function tu(value: unknown, length: number): unknown[] | null {
-  return Array.isArray(value) && value.length === length ? value : null
-}
-function ev<T extends string>(values: readonly T[], value: unknown): T | null {
-  return si(value) && value < values.length ? values[value]! : null
-}
-function rv(value: unknown, depth = 0): IndexValue | null {
-  if (!Array.isArray(value)
-    || !si(value[0]) || value[0] > 7) return null
-  if (depth > MAX_DEPTH) return null
-  if (depth === MAX_DEPTH && [3, 4, 5].includes(value[0])
-    && (!Array.isArray(value[1]) || value[1].length > 0)) return null
-  switch (value[0]) {
+const si = (a: unknown, m = 0): a is number => typeof a === 'number' && Number.isSafeInteger(a) && !Object.is(a, -0) && a >= m
+const vt = (a: unknown, m = MX): a is string => typeof a === 'string' && a.length > 0 && !a.includes('\0') && bl(a) <= m
+const tu = (a: unknown, l: number): unknown[] | null => aa(a) && a.length === l ? a : null
+const ev = <T extends string>(a: readonly T[], b: unknown): T | null => si(b) && b < a.length ? a[b]! : null
+function rv(a: unknown, d = 0): IndexValue | null {
+  if (!aa(a) || !si(a[0]) || a[0] > 7) return null
+  if (d > MD) return null
+  if (d === MD && [3, 4, 5].includes(a[0])
+    && (!aa(a[1]) || a[1].length > 0)) return null
+  switch (a[0]) {
     case 0: {
-      return value.length === 2 && sc(value[1])
-        ? { kind: 'literal', value: value[1] } : null
+      return a.length === 2 && sc(a[1])
+        ? { kind: 'literal', value: a[1] } : null
     }
     case 1:
-      return value.length === 2 && vt(value[1], 1_024)
-        ? { kind: 'symbol', symbol_id: value[1] }
+      return a.length === 2 && vt(a[1], 1_024)
+        ? { kind: 'symbol', symbol_id: a[1] }
         : null
     case 2:
-      return (value.length === 2 || (value.length === 3 && value[2] === 1))
-        && si(value[1])
+      return (a.length === 2 || (a.length === 3 && a[2] === 1))
+        && si(a[1])
         ? {
             kind: 'parameter',
-            position: value[1],
-            ...(value[2] === 1 ? { scope: 'iteration' as const } : {}),
+            position: a[1],
+            ...(a[2] === 1 ? { scope: 'iteration' as const } : {}),
           }
         : null
     case 3:
     case 5: {
-      if (value.length !== 2 || !Array.isArray(value[1])
-        || value[1].length > MAX_ELEMENTS) return null
-      const values = value[1].map((entry) => rv(entry, depth + 1))
-      if (!values.every((entry): entry is IndexValue => entry !== null)) return null
-      return value[0] === 3
-        ? { kind: 'array', elements: values }
-        : { kind: 'template', parts: values }
+      if (a.length !== 2 || !aa(a[1]) || a[1].length > ME) return null
+      const v = a[1].map((e) => rv(e, d + 1))
+      if (!v.every((e): e is IndexValue => e !== null)) return null
+      return a[0] === 3
+        ? { kind: 'array', elements: v }
+        : { kind: 'template', parts: v }
     }
     case 4: {
-      if (value.length !== 2 || !Array.isArray(value[1])
-        || value[1].length > MAX_ELEMENTS) return null
-      const keys = new Set<string>()
-      const entries: IndexObjectEntry[] = []
-      for (const raw of value[1]) {
-        const entry = tu(raw, 2)
-        const decoded = entry ? rv(entry[1], depth + 1) : null
-        if (!entry || typeof entry[0] !== 'string' || entry[0].includes('\0')
-          || Buffer.byteLength(entry[0], 'utf8') > MAX_TEXT
-          || keys.has(entry[0]) || !decoded) return null
-        keys.add(entry[0])
-        entries.push({ key: entry[0], value: decoded })
+      if (a.length !== 2 || !aa(a[1]) || a[1].length > ME) return null
+      const k = new Set<string>(), e: IndexObjectEntry[] = []
+      for (const x of a[1]) {
+        const r = tu(x, 2), v = r ? rv(r[1], d + 1) : null
+        if (!r || typeof r[0] !== 'string' || r[0].includes('\0')
+          || bl(r[0]) > MX || k.has(r[0]) || !v) return null
+        k.add(r[0])
+        e.push({ key: r[0], value: v })
       }
-      return { kind: 'object', entries }
+      return { kind: 'object', entries: e }
     }
     case 6:
-      return value.length === 3 && typeof value[1] === 'string'
-        && SHA256.test(value[1]) && si(value[2])
-        ? { kind: 'redacted', sha256: value[1], byte_length: value[2] }
+      return a.length === 3 && typeof a[1] === 'string'
+        && SHA256.test(a[1]) && si(a[2])
+        ? { kind: 'redacted', sha256: a[1], byte_length: a[2] }
         : null
     case 7: {
-      const reason = ev(UNKNOWN, value[1])
-      return value.length === 2 && reason ? { kind: 'unknown', reason } : null
+      const r = ev(UK, a[1])
+      return a.length === 2 && r ? { kind: 'unknown', reason: r } : null
     }
   }
   return null
@@ -473,199 +411,171 @@ type DecodedRow = {
   evidence: IndexFactEvidence; control: readonly unknown[]
   confidence: IndexFactConfidence; source: IndexFactSource; payload: unknown
 }
-function re(value: unknown, file: string): IndexFactEvidence | null {
-  const row = tu(value, 9)
-  if (!row || !row.slice(0, 8).every((entry) => si(entry, 1))
-    || typeof row[8] !== 'string' || !SHA256.test(row[8])) return null
-  const range = {
-    start: { line: row[0] as number, column: row[1] as number },
-    end: { line: row[2] as number, column: row[3] as number },
-  }
-  const statement_range = {
-    start: { line: row[4] as number, column: row[5] as number },
-    end: { line: row[6] as number, column: row[7] as number },
-  }
-  const compare = (left: IndexPosition, right: IndexPosition): number =>
-    left.line - right.line || left.column - right.column
-  return compare(range.start, range.end) <= 0
-    && compare(statement_range.start, statement_range.end) <= 0
-    && compare(statement_range.start, range.start) <= 0
-    && compare(range.end, statement_range.end) <= 0
-    ? { file_id: file, range, statement_range, excerpt_sha256: row[8] }
+function re(a: unknown, f: string): IndexFactEvidence | null {
+  const r = tu(a, 9)
+  if (!r || !r.slice(0, 8).every((e) => si(e, 1))
+    || typeof r[8] !== 'string' || !SHA256.test(r[8])) return null
+  const g = { start: { line: r[0] as number, column: r[1] as number },
+    end: { line: r[2] as number, column: r[3] as number } }
+  const s = { start: { line: r[4] as number, column: r[5] as number },
+    end: { line: r[6] as number, column: r[7] as number } }
+  const c = (a: IndexPosition, b: IndexPosition): number =>
+    a.line - b.line || a.column - b.column
+  return c(g.start, g.end) <= 0 && c(s.start, s.end) <= 0
+    && c(s.start, g.start) <= 0 && c(g.end, s.end) <= 0
+    ? { file_id: f, range: g, statement_range: s, excerpt_sha256: r[8] }
     : null
 }
-function dr(value: string, owner: string, file: string): DecodedRow | null {
-  if (Buffer.byteLength(value, 'utf8') > MAX_ROW) return null
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(value)
-  } catch {
-    return null
-  }
-  if (JSON.stringify(parsed) !== value) return null
-  const row = tu(parsed, 10)
-  if (!row || !vt(row[0], 64)
-    || !si(row[1]) || row[1] >= KINDS.length
-    || !si(row[2]) || !si(row[3]) || !si(row[4])
-    || !Array.isArray(row[6])
-    || row[6].length > INDEX_BODY_FACT_CONTROL_LIMIT) return null
-  const kind = KINDS[row[1]]!
-  const proof = re(row[5], file)
-  const confidence = ev(LEVELS, row[7])
-  const source = ev(SOURCES, row[8])
-  const order = [row[2], row[1], row[3], row[4]] as number[]
-  if (!proof || !confidence || !source
-    || row[0] !== indexBodyFactId(
-      owner, kind, order, proof.excerpt_sha256, row.slice(1),
-    )) {
-    return null
-  }
-  return {
-    id: row[0], kind, order, evidence: proof, control: row[6], confidence, source,
-    payload: row[9],
-  }
+function dr(a: string, o: string, f: string): DecodedRow | null {
+  if (bl(a) > MB) return null
+  let p: unknown
+  try { p = JSON.parse(a) } catch { return null }
+  if (js(p) !== a) return null
+  const r = tu(p, 10)
+  if (!r || !vt(r[0], 64)
+    || !si(r[1]) || r[1] >= KS.length
+    || !si(r[2]) || !si(r[3]) || !si(r[4])
+    || !aa(r[6])
+    || r[6].length > INDEX_BODY_FACT_CONTROL_LIMIT) return null
+  const k = KS[r[1]]!, e = re(r[5], f), c = ev(LS, r[7]), s = ev(SS, r[8])
+  const q = [r[2], r[1], r[3], r[4]] as number[]
+  if (!e || !c || !s || r[0] !== indexBodyFactId(
+    o, k, q, e.excerpt_sha256, r.slice(1))) return null
+  return { id: r[0], kind: k, order: q, evidence: e, control: r[6],
+    confidence: c, source: s, payload: r[9] }
 }
 export function decodeIndexBodyFactTable(
   value: unknown,
   owner: string,
   file: string,
 ): readonly IndexBodyFact[] | null {
-  const table = tu(value, 2)
+  const t = tu(value, 2)
   if (!vt(owner, 1_024) || !vt(file, 128)
-    || !table || table[0] !== 1 || !Array.isArray(table[1])
-    || table[1].length === 0 || table[1].length > MAX_ROWS) return null
-  const decoded: DecodedRow[] = []
-  let bytes = 0
-  for (const value of table[1]) {
-    if (typeof value !== 'string') return null
-    bytes += Buffer.byteLength(value, 'utf8')
-    if (bytes > MAX_TABLE) return null
-    const row = dr(value, owner, file)
-    if (!row) return null
-    decoded.push(row)
+    || !t || t[0] !== 1 || !aa(t[1])
+    || t[1].length === 0 || t[1].length > MR) return null
+  const d: DecodedRow[] = []
+  let b = 0
+  for (const x of t[1]) {
+    if (typeof x !== 'string') return null
+    b += bl(x)
+    if (b > MT) return null
+    const r = dr(x, owner, file)
+    if (!r) return null
+    d.push(r)
   }
-  const ids = decoded.map((row) => row.id)
-  if (new Set(ids).size !== ids.length
-    || decoded.some((row, index) => index > 0
-      && oc(decoded[index - 1]!.order, row.order) >= 0)) {
+  const i = d.map((r) => r.id)
+  if (new Set(i).size !== i.length
+    || d.some((r, n) => n > 0 && oc(d[n - 1]!.order, r.order) >= 0)) {
     return null
   }
-  const idAt = (value: unknown): string | null =>
-    si(value) && value < ids.length ? ids[value]! : null
-  const control = (value: unknown): IndexControlFrame | null => {
-    if (!Array.isArray(value) || !si(value[0])) return null
-    const controller_fact_id = idAt(value[1])
-    if (value[0] === 0) {
-      return value.length === 3 && controller_fact_id
-        && vt(value[2], 96)
-        && (['then', 'else', 'truthy', 'falsy', 'nullish', 'default'].includes(value[2])
-          || (value[2].startsWith('case:') && value[2].length > 5))
-        ? { kind: 'branch', controller_fact_id, arm: value[2] as IndexBranchArm }
+  const ia = (v: unknown): string | null =>
+    si(v) && v < i.length ? i[v]! : null
+  const cf = (v: unknown): IndexControlFrame | null => {
+    if (!aa(v) || !si(v[0])) return null
+    const id = ia(v[1])
+    if (v[0] === 0) {
+      return v.length === 3 && id
+        && vt(v[2], 96)
+        && (['then', 'else', 'truthy', 'falsy', 'nullish', 'default'].includes(v[2])
+          || (v[2].startsWith('case:') && v[2].length > 5))
+        ? { kind: 'branch', controller_fact_id: id, arm: v[2] as IndexBranchArm }
         : null
     }
-    if (value[0] === 1) return value.length === 2 && controller_fact_id
-      ? { kind: 'loop', controller_fact_id } : null
-    if (value[0] === 2) return value.length === 3 && controller_fact_id
-      && (value[2] === 'each' || si(value[2]))
-      ? { kind: 'parallel', controller_fact_id, lane: value[2] } : null
-    const arm = ev(['try', 'catch', 'finally'] as const, value[1])
-    return value[0] === 3 && value.length === 2 && arm
-      ? { kind: 'exception', arm } : null
+    if (v[0] === 1) return v.length === 2 && id
+      ? { kind: 'loop', controller_fact_id: id } : null
+    if (v[0] === 2) return v.length === 3 && id
+      && (v[2] === 'each' || si(v[2]))
+      ? { kind: 'parallel', controller_fact_id: id, lane: v[2] } : null
+    const a = ev(['try', 'catch', 'finally'] as const, v[1])
+    return v[0] === 3 && v.length === 2 && a
+      ? { kind: 'exception', arm: a } : null
   }
-  const facts: IndexBodyFact[] = []
-  for (const row of decoded) {
-    const frames = row.control.map(control)
-    if (!frames.every((frame): frame is IndexControlFrame => frame !== null)) return null
-    const base = {
-      id: row.id, owner_symbol_id: owner, order: row.order,
-      evidence: row.evidence, control: frames,
-      confidence: row.confidence, source: row.source,
+  const f: IndexBodyFact[] = []
+  for (const r of d) {
+    const c = r.control.map(cf)
+    if (!c.every((x): x is IndexControlFrame => x !== null)) return null
+    const z = {
+      id: r.id, owner_symbol_id: owner, order: r.order,
+      evidence: r.evidence, control: c,
+      confidence: r.confidence, source: r.source,
     }
-    const wire = Array.isArray(row.payload) ? row.payload : null
-    let fact: IndexBodyFact | null = null
-    if (row.kind === 'call' && wire?.length === 4) {
-      const scheduling = ev(TIMING, wire[3])
-      const args = Array.isArray(wire[2])
-        ? wire[2].map((entry) => rv(entry))
+    const w = aa(r.payload) ? r.payload : null
+    let x: IndexBodyFact | null = null
+    if (r.kind === 'call' && w?.length === 4) {
+      const s = ev(TM, w[3])
+      const a = aa(w[2])
+        ? w[2].map((e) => rv(e))
         : []
-      if (vt(wire[0]) && scheduling
-        && (wire[1] === null || vt(wire[1], 1_024))
-        && Array.isArray(wire[2])
-        && args.every((entry): entry is IndexValue => entry !== null)) {
-        fact = {
-          ...base, kind: 'call', callee: wire[0],
-          ...(typeof wire[1] === 'string' ? { target_symbol_id: wire[1] } : {}),
-          arguments: args, scheduling,
+      if (vt(w[0]) && s
+        && (w[1] === null || vt(w[1], 1_024))
+        && aa(w[2])
+        && a.every((e): e is IndexValue => e !== null)) {
+        x = {
+          ...z, kind: 'call', callee: w[0],
+          ...(typeof w[1] === 'string' ? { target_symbol_id: w[1] } : {}),
+          arguments: a, scheduling: s,
         }
       }
-    } else if (row.kind === 'literal' && wire?.length === 2) {
-      const decoded = rv(wire[0])
-      const role = ev(ROLES, wire[1])
-      if (decoded && role) fact = { ...base, kind: 'literal', value: decoded, role }
-    } else if (row.kind === 'condition' && wire?.length === 2) {
-      const condition_kind = ev(CONDITIONS, wire[0])
-      const test = wire[1] === null ? undefined : rv(wire[1])
-      if (condition_kind && (wire[1] === null || test)) {
-        fact = { ...base, kind: 'condition', condition_kind, ...(test ? { test } : {}) }
+    } else if (r.kind === 'literal' && w?.length === 2) {
+      const v = rv(w[0]), o = ev(RS, w[1])
+      if (v && o) x = { ...z, kind: 'literal', value: v, role: o }
+    } else if (r.kind === 'condition' && w?.length === 2) {
+      const k = ev(CS, w[0]), t = w[1] === null ? undefined : rv(w[1])
+      if (k && (w[1] === null || t)) {
+        x = { ...z, kind: 'condition', condition_kind: k, ...(t ? { test: t } : {}) }
       }
-    } else if (row.kind === 'loop' && wire?.length === 2) {
-      const loop_kind = ev(LOOPS, wire[0])
-      const test = wire[1] === null ? undefined : rv(wire[1])
-      if (loop_kind && (wire[1] === null || test)) {
-        fact = { ...base, kind: 'loop', loop_kind, ...(test ? { test } : {}) }
+    } else if (r.kind === 'loop' && w?.length === 2) {
+      const k = ev(LP, w[0]), t = w[1] === null ? undefined : rv(w[1])
+      if (k && (w[1] === null || t)) {
+        x = { ...z, kind: 'loop', loop_kind: k, ...(t ? { test: t } : {}) }
       }
-    } else if (row.kind === 'parallel' && wire?.length === 4) {
-      const combinator = ev(PROMISES, wire[0])
-      const input = wire[1] === null ? undefined : rv(wire[1])
-      const members = Array.isArray(wire[2])
-        ? wire[2].map(idAt)
+    } else if (r.kind === 'parallel' && w?.length === 4) {
+      const q = ev(PM, w[0]), n = w[1] === null ? undefined : rv(w[1])
+      const m = aa(w[2])
+        ? w[2].map(ia)
         : []
-      if (combinator && (wire[1] === null || input)
-        && Array.isArray(wire[2])
-        && members.every((id): id is string => id !== null)
-        && new Set(members).size === members.length
-        && si(wire[3])) {
-        fact = {
-          ...base, kind: 'parallel', combinator,
-          completion: COMPLETION[PROMISES.indexOf(combinator)]!,
-          lane_count: wire[3],
-          ...(input ? { input } : {}),
-          member_fact_ids: members,
+      if (q && (w[1] === null || n)
+        && aa(w[2])
+        && m.every((id): id is string => id !== null)
+        && new Set(m).size === m.length
+        && si(w[3])) {
+        x = {
+          ...z, kind: 'parallel', combinator: q,
+          completion: CP[PM.indexOf(q)]!,
+          lane_count: w[3],
+          ...(n ? { input: n } : {}),
+          member_fact_ids: m,
         }
       }
-    } else if ((row.kind === 'return' || row.kind === 'throw')
-      && wire?.length === 1) {
-      const decoded = wire[0] === null ? undefined : rv(wire[0])
-      if (wire[0] === null || decoded) {
-        fact = { ...base, kind: row.kind, ...(decoded ? { value: decoded } : {}) }
+    } else if ((r.kind === 'return' || r.kind === 'throw')
+      && w?.length === 1) {
+      const v = w[0] === null ? undefined : rv(w[0])
+      if (w[0] === null || v) {
+        x = { ...z, kind: r.kind, ...(v ? { value: v } : {}) }
       }
-    } else if (row.kind === 'mutation' && wire?.length === 3) {
-      const operation = ev(MUTATIONS, wire[0])
-      const decoded = wire[2] === null ? undefined : rv(wire[2])
-      if (operation && vt(wire[1])
-        && (wire[2] === null || decoded)) {
-        fact = {
-          ...base, kind: 'mutation', operation, target: wire[1],
-          ...(decoded ? { value: decoded } : {}),
+    } else if (r.kind === 'mutation' && w?.length === 3) {
+      const o = ev(MU, w[0]), v = w[2] === null ? undefined : rv(w[2])
+      if (o && vt(w[1]) && (w[2] === null || v)) {
+        x = {
+          ...z, kind: 'mutation', operation: o, target: w[1],
+          ...(v ? { value: v } : {}),
         }
       }
-    } else if (row.kind === 'persistence' && wire?.length === 4) {
-      const operation = ev(STORAGE, wire[0])
-      const call_fact_id = idAt(wire[1])
-      const resource = wire[2] === null ? undefined : rv(wire[2])
-      if (operation && call_fact_id && (wire[2] === null || resource)
-        && vt(wire[3])) {
-        fact = {
-          ...base, kind: 'persistence', operation, call_fact_id,
-          ...(resource ? { resource } : {}),
-          receiver_type: wire[3],
+    } else if (r.kind === 'persistence' && w?.length === 4) {
+      const o = ev(ST, w[0]), id = ia(w[1])
+      const v = w[2] === null ? undefined : rv(w[2])
+      if (o && id && (w[2] === null || v) && vt(w[3])) {
+        x = {
+          ...z, kind: 'persistence', operation: o, call_fact_id: id,
+          ...(v ? { resource: v } : {}),
+          receiver_type: w[3],
         }
       }
     }
-    if (!fact) return null
-    facts.push(fact)
+    if (!x) return null
+    f.push(x)
   }
-  return facts
+  return f
 }
 export type IndexFrameworkRole =
   | 'nest_module'
