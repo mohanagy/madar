@@ -71,7 +71,8 @@ const obligationRetrieval = manifest.items?.find(
   (item) => item.id === "obligation-driven-retrieval-630",
 )
 const packageBudget = activePhase?.npm_package_budget ?? evaluationPackageBudget
-const replacementReceipt = activePhase?.corrective?.replacement_measurement
+const replacementReceipt = activePhase?.terminal_language_corrective?.replacement_measurement
+  ?? activePhase?.corrective?.replacement_measurement
   ?? obligationRetrieval?.candidate?.replacement_measurement
 
 function assert(condition, message) {
