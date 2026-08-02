@@ -6,7 +6,7 @@ Use this checklist when preparing a new `madar` release. Preparation and approva
 
 ## 1. Prepare the release commit
 
-1. Update the package version without creating a pre-merge tag. For this beta, run `npm version 0.40.0-beta.6 --no-git-tag-version`.
+1. Update the package version without creating a pre-merge tag. For this beta, run `npm version 0.40.0-beta.7 --no-git-tag-version`.
 2. Review `package.json` and `package-lock.json` to confirm the new version is correct.
 3. Update `CHANGELOG.md` with the user-visible changes in the release.
 4. Make sure any linked docs, examples, install flows, and `docs/mcp-registry/server.json` reflect the new behavior.
@@ -60,7 +60,7 @@ After the verification steps are green:
 
 1. Configure the npm package's trusted publisher for GitHub Actions workflow filename `release.yml`, repository `mohanagy/madar`, and no environment. The workflow uses GitHub OIDC and contains no registry token or no-provenance fallback. If trusted publishing or provenance is unavailable, stop before publication.
 2. Push and merge the verified release commit so the published README links already exist on the target release branch (`main` for stable releases, `next` for prereleases).
-3. For `0.40.0-beta.6`, `.github/workflows/release.yml` runs only when the versioned `package.json` reaches protected `next`. It requires the workflow SHA to equal the live protected `next` tip, reruns every release gate, and then runs `npm publish --tag next --access public --provenance` through npm Trusted Publishing.
+3. For `0.40.0-beta.7`, `.github/workflows/release.yml` runs only when the versioned `package.json` reaches protected `next`. It requires the workflow SHA to equal the live protected `next` tip, reruns every release gate, and then runs `npm publish --tag next --access public --provenance` through npm Trusted Publishing.
 4. The workflow verifies the exact npm version, immutable shasum and integrity, `next` dist-tag, unchanged `latest` dist-tag, Trusted Publishing provenance, and registry signatures. If publication succeeds but later verification is interrupted, the same exact-version path verifies the immutable artifact rather than attempting to overwrite it.
 5. This beta explicitly creates no git tag or GitHub Release and does not dispatch the separate **Publish MCP Registry metadata** workflow. Stable releases and later Registry publication require separate owner authorization and a separately reviewed workflow change.
 6. Before posting on npm/GitHub directories, social/news sites, or videos/blogs, complete the copied proof-first launch checklist from [`docs/launch-checklist.md`](./launch-checklist.md) so every public surface starts from a dated receipt plus caveats.

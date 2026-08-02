@@ -1,6 +1,6 @@
 {
     "name": "@lubab/madar",
-    "version": "0.40.0-beta.6",
+    "version": "0.40.0-beta.7",
     "mcpName": "io.github.mohanagy/madar",
     "description": "Give AI coding agents a small, authenticated evidence path through large TypeScript and JavaScript repositories.",
     "license": "MIT",

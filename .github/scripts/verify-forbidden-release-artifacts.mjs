@@ -77,13 +77,13 @@ function expectFailure(action, pattern) {
 }
 
 function selfTest() {
-  const tag = 'v0.40.0-beta.6'
+  const tag = 'v0.40.0-beta.7'
   expectFailure(
     () => assertTagAbsent({ status: 128, stdout: '', stderr: 'network error' }, tag),
     /Unable to prove forbidden git tag/,
   )
   expectFailure(
-    () => assertTagAbsent({ status: 0, stdout: 'deadbeef refs\/tags\/v0.40.0-beta.6\n', stderr: '' }, tag),
+    () => assertTagAbsent({ status: 0, stdout: 'deadbeef refs\/tags\/v0.40.0-beta.7\n', stderr: '' }, tag),
     /forbids git tag/,
   )
   expectFailure(

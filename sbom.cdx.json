@@ -19,14 +19,14 @@
       }
     ],
     "component": {
-      "bom-ref": "@lubab/madar@0.40.0-beta.6",
+      "bom-ref": "@lubab/madar@0.40.0-beta.7",
       "type": "library",
       "name": "@lubab/madar",
-      "version": "0.40.0-beta.6",
+      "version": "0.40.0-beta.7",
       "scope": "required",
       "author": "mohanagy",
       "description": "Give AI coding agents a small, authenticated evidence path through large TypeScript and JavaScript repositories.",
-      "purl": "pkg:npm/%40lubab/madar@0.40.0-beta.6",
+      "purl": "pkg:npm/%40lubab/madar@0.40.0-beta.7",
       "properties": [],
       "externalReferences": [
         {
@@ -3103,7 +3103,7 @@
   ],
   "dependencies": [
     {
-      "ref": "@lubab/madar@0.40.0-beta.6",
+      "ref": "@lubab/madar@0.40.0-beta.7",
       "dependsOn": [
         "gpt-tokenizer@3.4.0",
         "typescript@6.0.3",

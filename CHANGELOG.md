@@ -4,6 +4,12 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.40.0-beta.7] - 2026-08-02
+
+### Fixed
+
+- **Natural finished-report workflow questions now retain the complete authenticated corridor.** Complete, unquoted `finished report` and `done report` terminals normalize without changing identifiers, active persistence operations, compound terminals, locator semantics, graph/index/query schemas, CLI, MCP, dependencies, or retrieval budgets. Formal installed-package and comparator qualification remains open in #631.
+
 ## [0.40.0-beta.6] - 2026-08-02
 
 ### Fixed

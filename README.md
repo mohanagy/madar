@@ -12,14 +12,14 @@ The result is a complete, ordered answer dossier backed by exact source evidence
 
 MCP advertises only the tools capability. It exposes no resources or prompts.
 
-[![npm next](https://img.shields.io/npm/v/%40lubab%2Fmadar/next?label=npm%20next)](https://www.npmjs.com/package/@lubab/madar/v/0.40.0-beta.6)
+[![npm next](https://img.shields.io/npm/v/%40lubab%2Fmadar/next?label=npm%20next)](https://www.npmjs.com/package/@lubab/madar/v/0.40.0-beta.7)
 [![node >=20](https://img.shields.io/badge/node-%E2%89%A520-3c873a)](https://nodejs.org/)
 [![local first](https://img.shields.io/badge/local--first-no%20cloud%20required-0f766e)](#local-by-design)
 [![license MIT](https://img.shields.io/badge/license-MIT-16a34a)](https://github.com/mohanagy/madar/blob/next/LICENSE)
 
 ## What's new
 
-See [beta.6 changes](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0400-beta6---2026-08-02). This corrective manual-test candidate precedes #631 qualification; it makes no comparative performance or retention claim.
+See [beta.7 changes](https://github.com/mohanagy/madar/blob/next/CHANGELOG.md#0400-beta7---2026-08-02). This terminal-language corrective manual-test candidate precedes #631 qualification; it makes no comparative performance or retention claim.
 
 ## Start in three steps
 

@@ -23,7 +23,7 @@ review:
   disposition_changes: 11
   amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transferred graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activated the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. PR #608 completed the exact move without changing any surviving production TypeScript or dependency. First-stage owner-approved issue #610 governance activation merged at dcb52596a3efa89f9ef5d372231ce97a91ae5f9f, then independent review stopped its uncommitted implementation under conditions 7, 8, and 13 before any implementation PR, campaign lock, provider request, or spend. First-stage owner-approved issue #612 authorizes only an eight-path governance-only v2 candidate from that exact merge; its separate activation merge approval remains required. It changes no production ownership or disposition. Issue #625 modifies five existing evidence-path-query production paths and changes no ownership or disposition. Corrective #632 completed at c88823ecbeb6da6284cf74ecbd304e9315ffd4fa. Issue #630 added exactly three production-source owners for its planner, workflow builder and evidence hydrator and completed through protected-next merge 9703a7090fd3ef3600b4ab4e298b12f0faa05a1e; existing adapter and query surfaces retain their historical owners. Graph/index generation, schemas, CLI, MCP, and package dependencies remain unchanged by the beta.5 release preparation.'
   cancellation_amendment: 'On 2026-07-28 the owner closed Capability Validation issues #610, #612, #614, #615, and #616 as not planned and revoked every unconsumed preparation, activation, implementation, campaign, provider, spend, and target-execution authority. No campaign ran, no comparative result exists, provider requests remain zero, and spend remains USD 0. The governance-only v2 activation remains immutable history. Issue #618 is a separate bounded retrieval repair and does not revive Capability Validation or Graphify.'
-  release_amendment: 'Historical release receipt: @lubab/madar@0.40.0-beta.3 was published under npm dist-tag next and GitHub prerelease v0.40.0-beta.3 from exact protected-next commit ece7d0d02643ecec08bd91aa904a4514aa845f42. Issue #625 and PR #626 subsequently completed the generic evidence-skeleton repair on protected next at b6562b715133304bd46e537b6f39008bc1e02095. Issue #627 then published @lubab/madar@0.40.0-beta.4 under npm dist-tag next and the matching GitHub prerelease from exact protected-next commit 9043320cfa08370e5cdd3911bfb9283005aa9912 and tree f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc. After #630 completed, owner receipts 5155128419 and 5155128626 authorized exactly @lubab/madar@0.40.0-beta.5 under npm dist-tag next; it was published from protected-next merge 81045cc08f1df797ecb86748c9bce09db62aeebd by trusted-publishing run 30734176943. Corrective PR #637 then merged at protected-next commit 68729161699b7592bea6984e1aa22c7b4b0833e8 and tree 4500d416d0e890b1dc67c9228a2cbb49cf4220a3. Owner receipts 5157473339 and 5157473448 separately authorized exactly @lubab/madar@0.40.0-beta.6 under npm dist-tag next; it was published from protected-next merge 66b795e76a76c6946b85e5eb878e3f576b4e3dbb and tree ff57246a55e51459836946d6b5b9853d0cdcc372 by release workflow 30746816714. Installed-package receipt 5158293324 then recorded a blocking terminal-language and zero-fallback manual-qualification failure. npm latest remains 0.32.0. Stable 0.40.0, a GitHub Release, MCP Registry publication, any beta.6 tag, comparative claims, and main remain outside this release.'
+  release_amendment: 'Historical release receipt: @lubab/madar@0.40.0-beta.3 was published under npm dist-tag next and GitHub prerelease v0.40.0-beta.3 from exact protected-next commit ece7d0d02643ecec08bd91aa904a4514aa845f42. Issue #625 and PR #626 subsequently completed the generic evidence-skeleton repair on protected next at b6562b715133304bd46e537b6f39008bc1e02095. Issue #627 then published @lubab/madar@0.40.0-beta.4 under npm dist-tag next and the matching GitHub prerelease from exact protected-next commit 9043320cfa08370e5cdd3911bfb9283005aa9912 and tree f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc. After #630 completed, owner receipts 5155128419 and 5155128626 authorized exactly @lubab/madar@0.40.0-beta.5 under npm dist-tag next; it was published from protected-next merge 81045cc08f1df797ecb86748c9bce09db62aeebd by trusted-publishing run 30734176943. Corrective PR #637 then merged at protected-next commit 68729161699b7592bea6984e1aa22c7b4b0833e8 and tree 4500d416d0e890b1dc67c9228a2cbb49cf4220a3. Owner receipts 5157473339 and 5157473448 separately authorized exactly @lubab/madar@0.40.0-beta.6 under npm dist-tag next; it was published from protected-next merge 66b795e76a76c6946b85e5eb878e3f576b4e3dbb and tree ff57246a55e51459836946d6b5b9853d0cdcc372 by release workflow 30746816714. Installed-package receipt 5158293324 then recorded a blocking terminal-language and zero-fallback manual-qualification failure. Terminal-language corrective PR #641 passed all six exact-head CI jobs, independent review, CodeRabbit disposition and zero unresolved threads, then merged at protected-next commit e84d266734344397eec9a6bcd2e1a3a5070dc3ea with reviewed tree 5ffed3bc25cb537aafd3bb905ed9df08a7143d69. Owner receipts 5159641693 and 5159642279 authorize exactly @lubab/madar@0.40.0-beta.7 under npm dist-tag next from that anchor after the separate release candidate passes the same gates. Publication remains pending, #631 remains open and unqualified, and npm latest remains 0.32.0. Stable 0.40.0, a GitHub Release, MCP Registry publication, any beta.7 tag, comparative claims, and main remain outside this release.'
 
 current:
   updated_at: 2026-08-02
@@ -38,13 +38,13 @@ current:
   production_loc_removed: 2150
   production_loc_net: 152
   npm_files: 102
-  npm_packed_bytes: 155330
-  npm_unpacked_bytes: 654008
-  npm_shasum: c107e87c185c39e9acc0d3a33d55e4bbe2e8eb30
-  npm_integrity: sha512-/is0gABnCpimVQWLdvyFBtqhhrwSkuwgYtzQIp8FDBcSqAoLqXK4E5C3CTHqLxIWWKAtNUx8o90B7TOtMb9VCg==
-  npm_artifact_sha256: f341a2b3e36d074b7cdad2656bb4895393b82894223489778dad7ac623069621
+  npm_packed_bytes: 155339
+  npm_unpacked_bytes: 654026
+  npm_shasum: 1aafe5952aea2f353711d5af36fa564a147312f5
+  npm_integrity: sha512-K5CEUr2lRR1IoNCS9O74jMA7PDDgQMkdx3QM/cF+h17jyAj6Gt3Gpk8vkzKSz7SKFR44KgpnJeLkV5lXyzdgYw==
+  npm_artifact_sha256: f4b33dacda9261eb0af8fa9302d5e51dd47e07235a7af9072b4dbfe5a50a21ca
   measurement_state: source_and_package_exact
-  snapshot_scope: terminal_language_corrective_unpublished_candidate
+  snapshot_scope: terminal_language_beta7_unqualified_manual_test_package_candidate
   release_candidate:
     version: 0.40.0-beta.4
     protected_anchor_commit: 9043320cfa08370e5cdd3911bfb9283005aa9912
@@ -117,6 +117,28 @@ current:
       npm_shasum: 4c98dd99cd321e741cabd689f0803d99e519f389
       npm_integrity: sha512-o6L/BiJ1wrTWCaK537p60pGUC5i8zY0Zqz7NqD1zW4fJl/ewjF3cgysf4dbOkY4y49DkYDTG2qoUh1DGvq2Q0Q==
       npm_artifact_sha256: 12d8abe1ac3d0945c654f4df2582ac1de63f2aeee55d82d4bf5b053d92036074
+    stable_or_latest: forbidden
+    github_release: forbidden
+    registry_metadata_publication: forbidden
+    tag: forbidden
+    main_target: forbidden
+  terminal_language_manual_test_candidate:
+    version: 0.40.0-beta.7
+    preparation_anchor_commit: e84d266734344397eec9a6bcd2e1a3a5070dc3ea
+    preparation_anchor_tree: 5ffed3bc25cb537aafd3bb905ed9df08a7143d69
+    authorization_receipt: https://github.com/mohanagy/madar/issues/631#issuecomment-5159641693
+    parent_authorization_receipt: https://github.com/mohanagy/madar/issues/629#issuecomment-5159642279
+    target_branch: next
+    npm_dist_tag: next
+    publication_state: authorized_pending_protected_next_release_merge
+    qualification_state: unqualified_pending_owner_manual_test_and_formal_631_gate
+    package_candidate:
+      npm_files: 102
+      npm_packed_bytes: 155339
+      npm_unpacked_bytes: 654026
+      npm_shasum: 1aafe5952aea2f353711d5af36fa564a147312f5
+      npm_integrity: sha512-K5CEUr2lRR1IoNCS9O74jMA7PDDgQMkdx3QM/cF+h17jyAj6Gt3Gpk8vkzKSz7SKFR44KgpnJeLkV5lXyzdgYw==
+      npm_artifact_sha256: f4b33dacda9261eb0af8fa9302d5e51dd47e07235a7af9072b4dbfe5a50a21ca
     stable_or_latest: forbidden
     github_release: forbidden
     registry_metadata_publication: forbidden
@@ -2696,6 +2718,7 @@ items:
       provider_traffic_or_spend: requires_separate_owner_authorization
       beta_publication: authorized_exact_0.40.0-beta.5_by_receipt_5155128419
       corrective_beta_publication: published_exact_0.40.0-beta.6_by_receipt_5157856602
+      terminal_language_beta_publication: authorized_exact_0.40.0-beta.7_by_receipt_5159641693
       stable_or_latest_publication: forbidden
       github_release: forbidden
       registry_metadata_publication: forbidden
@@ -2742,11 +2765,20 @@ items:
         package_ceiling_change: forbidden
         publication: forbidden
     terminal_language_corrective:
-      status: local_candidate
+      status: merged_unpublished_candidate
       authorization_receipt: https://github.com/mohanagy/madar/issues/631#issuecomment-5158293324
       protected_base: 66b795e76a76c6946b85e5eb878e3f576b4e3dbb
       protected_base_tree: ff57246a55e51459836946d6b5b9853d0cdcc372
       target_branch: next
+      pull_request: https://github.com/mohanagy/madar/pull/641
+      reviewed_head: 8c21c687adce70a483073c5406e0e5b1356cfaea
+      reviewed_tree: 5ffed3bc25cb537aafd3bb905ed9df08a7143d69
+      merge_commit: e84d266734344397eec9a6bcd2e1a3a5070dc3ea
+      merge_tree: 5ffed3bc25cb537aafd3bb905ed9df08a7143d69
+      ci_run: https://github.com/mohanagy/madar/actions/runs/30753189853
+      independent_review: passed_no_blocker
+      coderabbit: passed_with_non_blocking_docstring_warning
+      unresolved_threads: 0
       modified_sources:
         - src/domain/query/plan.ts
       test_sources:
@@ -2822,7 +2854,29 @@ items:
       registry_metadata_publication: forbidden
       tag: forbidden
       main_target: forbidden
-    notes: 'Issues #632 and #630 are complete and beta.5 is immutable published manual-test history. The beta.5 owner test found one generic workflow-bound parser defect and one ready-state client-handoff defect before formal #631 qualification. Corrective receipt 5157008370 authorized exactly two zero-net production-source modifications plus the zero-fallback evaluator correction from protected next 81045cc08f1df797ecb86748c9bce09db62aeebd; PR #637 merged the reviewed correction at protected-next commit 68729161699b7592bea6984e1aa22c7b4b0833e8 and tree 4500d416d0e890b1dc67c9228a2cbb49cf4220a3. Owner receipts 5157473339 and 5157473448 authorized beta.6, which was published from protected-next merge 66b795e76a76c6946b85e5eb878e3f576b4e3dbb by workflow 30746816714. Installed-package receipt 5158293324 then recorded a blocking failure: the exact finished-report prompt was incomplete at 6/7 and the natural client fell back to repository tools. The focused local terminal-language corrective remains unpublished and is not the final ten-stage comparator or zero-fallback qualification. No comparative claim or provider campaign exists yet; stable/latest, GitHub Release, Registry publication, a tag and main remain forbidden.'
+    terminal_language_release:
+      version: 0.40.0-beta.7
+      preparation_anchor_commit: e84d266734344397eec9a6bcd2e1a3a5070dc3ea
+      preparation_anchor_tree: 5ffed3bc25cb537aafd3bb905ed9df08a7143d69
+      authorization_receipt: https://github.com/mohanagy/madar/issues/631#issuecomment-5159641693
+      parent_authorization_receipt: https://github.com/mohanagy/madar/issues/629#issuecomment-5159642279
+      target_branch: next
+      npm_dist_tag: next
+      publication_state: authorized_pending_protected_next_release_merge
+      qualification_state: unqualified_pending_owner_manual_test_and_formal_631_gate
+      package_candidate:
+        npm_files: 102
+        npm_packed_bytes: 155339
+        npm_unpacked_bytes: 654026
+        npm_shasum: 1aafe5952aea2f353711d5af36fa564a147312f5
+        npm_integrity: sha512-K5CEUr2lRR1IoNCS9O74jMA7PDDgQMkdx3QM/cF+h17jyAj6Gt3Gpk8vkzKSz7SKFR44KgpnJeLkV5lXyzdgYw==
+        npm_artifact_sha256: f4b33dacda9261eb0af8fa9302d5e51dd47e07235a7af9072b4dbfe5a50a21ca
+      stable_or_latest: forbidden
+      github_release: forbidden
+      registry_metadata_publication: forbidden
+      tag: forbidden
+      main_target: forbidden
+    notes: 'Issues #632 and #630 are complete and beta.5 and beta.6 are immutable published manual-test history. The beta.5 owner test found one generic workflow-bound parser defect and one ready-state client-handoff defect before formal #631 qualification. Corrective receipt 5157008370 authorized exactly two zero-net production-source modifications plus the zero-fallback evaluator correction from protected next 81045cc08f1df797ecb86748c9bce09db62aeebd; PR #637 merged the reviewed correction at protected-next commit 68729161699b7592bea6984e1aa22c7b4b0833e8 and tree 4500d416d0e890b1dc67c9228a2cbb49cf4220a3. Owner receipts 5157473339 and 5157473448 authorized beta.6, which was published from protected-next merge 66b795e76a76c6946b85e5eb878e3f576b4e3dbb by workflow 30746816714. Installed-package receipt 5158293324 then recorded a blocking failure: the exact finished-report prompt was incomplete at 6/7 and the natural client fell back to repository tools. Terminal-language corrective PR #641 passed all six exact-head CI jobs, independent review, CodeRabbit disposition and zero unresolved threads, then merged to protected next as e84d266734344397eec9a6bcd2e1a3a5070dc3ea with reviewed tree 5ffed3bc25cb537aafd3bb905ed9df08a7143d69. Owner receipts 5159641693 and 5159642279 authorize the exact beta.7 package under npm next for manual testing after its separate release PR passes every gate. Beta.7 is not the final ten-stage comparator or zero-fallback qualification, and #631 remains open and unqualified. No comparative claim or provider campaign exists yet; stable/latest, GitHub Release, Registry publication, a tag and main remain forbidden.'
     exit_gate: The installed exact-head package matches or beats the strongest frozen baseline, scores at least 90 mean with no run below 85 or critical error, makes one Madar retrieval with zero repository-tool fallback in natural-client runs, and passes closed-book, parity, budget, CI, independent-review, and zero-thread gates.
 
   - id: non-core-graph-products
