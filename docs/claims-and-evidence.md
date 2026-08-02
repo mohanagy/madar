@@ -22,7 +22,7 @@ Those experiments answer different questions. Neither is a universal claim about
 
 ## Beta boundary
 
-The completed Core Reset product path, semantic execution index #632, and obligation-driven retrieval #630 support a manual-test prerelease for JavaScript/TypeScript repositories. Capability Validation and the earlier Native-vs-Graphify comparator were cancelled before any campaign, provider request, paid spend, or result. `0.40.0-beta.5` is authorized for npm-`next` publication before #631 qualification and therefore makes no comparative correctness, token, latency, cost, activation, retention, or external-user claim.
+The completed Core Reset product path, semantic execution index #632, and obligation-driven retrieval #630 support manual-test prereleases for JavaScript/TypeScript repositories. Capability Validation and the earlier Native-vs-Graphify comparator were cancelled before any campaign, provider request, paid spend, or result. `0.40.0-beta.5` is immutable published manual-test history; its owner test led to the bounded correction merged in PR #637. `0.40.0-beta.6` is authorized under npm `next` so that correction can be tested before #631 qualification. Neither beta is comparative evidence, and beta.6 makes no comparative correctness, token, latency, cost, activation, retention, or external-user claim.
 
 The historical evaluation contracts remain development records. A future comparison or stable-release claim requires a new issue, fresh owner authorization, and new reproducible evidence.
 

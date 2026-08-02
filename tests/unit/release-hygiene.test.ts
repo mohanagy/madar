@@ -114,12 +114,12 @@ describe('release hygiene', () => {
     const releaseDoc = loadFile('docs/release.md')
 
     expect(releaseDoc).toContain('npm run release:verify')
-    expect(releaseDoc).toContain('npm version 0.40.0-beta.5 --no-git-tag-version')
+    expect(releaseDoc).toContain('npm version 0.40.0-beta.6 --no-git-tag-version')
     expect(releaseDoc).toContain('`main` for stable releases, `next` for prereleases')
     expect(releaseDoc).toContain('npm publish --tag next --access public --provenance')
   })
 
-  it('publishes beta.5 from a protected next push without a tag or GitHub Release', () => {
+  it('publishes beta.6 from a protected next push without a tag or GitHub Release', () => {
     const releaseWorkflow = loadFile('.github/workflows/release.yml')
 
     expect(releaseWorkflow).toContain('branches:')
@@ -148,15 +148,15 @@ describe('release hygiene', () => {
     expect(releaseWorkflow).toContain('test "$RELEASE_SHA" = "$GITHUB_SHA"')
     expect(releaseWorkflow).toContain('test "$GITHUB_REF" = "refs/heads/next"')
     expect(releaseWorkflow).toContain('verify_forbidden_release_artifacts_absent')
-    expect(releaseWorkflow).toContain('if [[ "$VERSION" != "0.40.0-beta.5" ]]')
+    expect(releaseWorkflow).toContain('if [[ "$VERSION" != "0.40.0-beta.6" ]]')
     expect(releaseWorkflow).toContain('npm run publish:next')
     expect(releaseWorkflow).toContain('dist.attestations.provenance')
     expect(releaseWorkflow).toContain('cd "$VERIFY_DIR"')
     expect(releaseWorkflow).toContain('npm audit signatures')
     expect(releaseWorkflow).not.toContain('npm --prefix "$VERIFY_DIR" init')
-    expect(releaseWorkflow).toContain('d637297412ec5b868586ba59142fbefdcfc0d5e0')
+    expect(releaseWorkflow).toContain('4c98dd99cd321e741cabd689f0803d99e519f389')
     expect(releaseWorkflow).toContain(
-      'sha512-HorzqtIvp2v5xMaYVGDzPDYtFBMaEVBkGXHBdTSVwC1DkQgmZaFuTU1Ff+7YByWN9FTQaVLTJsV7zKhEgSKxXw==',
+      'sha512-o6L/BiJ1wrTWCaK537p60pGUC5i8zY0Zqz7NqD1zW4fJl/ewjF3cgysf4dbOkY4y49DkYDTG2qoUh1DGvq2Q0Q==',
     )
     expect(releaseWorkflow).toContain('LATEST_VERSION" == "0.32.0"')
     expect(publishIndex).toBeGreaterThan(0)
@@ -164,7 +164,7 @@ describe('release hygiene', () => {
     expect(releaseWorkflow).not.toContain('--no-provenance')
   })
 
-  it('proves beta.5 has no tag or GitHub Release before and after publication', () => {
+  it('proves beta.6 has no tag or GitHub Release before and after publication', () => {
     const releaseWorkflow = loadFile('.github/workflows/release.yml')
     const absenceChecks = releaseWorkflow.match(
       /node \.github\/scripts\/verify-forbidden-release-artifacts\.mjs "\$TAG"/g,

@@ -511,6 +511,21 @@ const BETA_5_RELEASE_MERGE = '81045cc08f1df797ecb86748c9bce09db62aeebd'
 const BETA_5_RELEASE_TREE = '9d3d90fe7feb3e55042c4f38ac8925abca6e83d1'
 const BETA_5_PUBLICATION =
   'https://github.com/mohanagy/madar/issues/631#issuecomment-5155719419'
+const BETA_6_AUTHORIZATION =
+  'https://github.com/mohanagy/madar/issues/631#issuecomment-5157473339'
+const BETA_6_PARENT_AUTHORIZATION =
+  'https://github.com/mohanagy/madar/issues/629#issuecomment-5157473448'
+const BETA_6_PREPARATION_ANCHOR = '68729161699b7592bea6984e1aa22c7b4b0833e8'
+const BETA_6_PREPARATION_TREE = '4500d416d0e890b1dc67c9228a2cbb49cf4220a3'
+const BETA_6_PACKAGE = {
+  npm_files: 102,
+  npm_packed_bytes: 155_257,
+  npm_unpacked_bytes: 653_996,
+  npm_shasum: '4c98dd99cd321e741cabd689f0803d99e519f389',
+  npm_integrity:
+    'sha512-o6L/BiJ1wrTWCaK537p60pGUC5i8zY0Zqz7NqD1zW4fJl/ewjF3cgysf4dbOkY4y49DkYDTG2qoUh1DGvq2Q0Q==',
+  npm_artifact_sha256: '12d8abe1ac3d0945c654f4df2582ac1de63f2aeee55d82d4bf5b053d92036074',
+} as const
 const NO_FALLBACK_CORRECTIVE_AUTHORIZATION =
   'https://github.com/mohanagy/madar/issues/631#issuecomment-5157008370'
 const NO_FALLBACK_CORRECTIVE_PARENT =
@@ -949,8 +964,9 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Published — `0.40.0-beta.4`')
     expect(roadmap).toContain('## Completed — semantic execution index #632')
     expect(roadmap).toContain('## Completed — obligation-driven retrieval #630')
-    expect(roadmap).toContain('## Authorized manual-test candidate — `0.40.0-beta.5`')
-    expect(roadmap).toContain('## In progress — beta.5 publication and owner testing pending before no-fallback qualification #631')
+    expect(roadmap).toContain('## Published manual-test candidate — `0.40.0-beta.5`')
+    expect(roadmap).toContain('## Authorized corrective manual-test candidate — `0.40.0-beta.6`')
+    expect(roadmap).toContain('## In progress — beta.6 publication pending before no-fallback qualification #631')
     expect(roadmap).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -1052,7 +1068,8 @@ describe('core reset governance', () => {
     expect(design).toContain('## Release amendment — `0.40.0-beta.4` ready')
     expect(design).toContain('## Completed amendment — semantic execution correction #632')
     expect(design).toContain('## Completed amendment — obligation-driven retrieval #630')
-    expect(design).toContain('## Release amendment — `0.40.0-beta.5` manual-test candidate')
+    expect(design).toContain('## Release amendment — `0.40.0-beta.5` published manual-test candidate')
+    expect(design).toContain('## Release amendment — `0.40.0-beta.6` corrective manual-test candidate')
     expect(design).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(design).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(design).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -1149,10 +1166,10 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Capability validation v2 | **Stopped / not planned**')
     expect(scorecard).toContain('| Retrieval regression #618 | **Passed**')
     expect(scorecard).toContain('| Retrieval regression #625 | **Passed**')
-    expect(scorecard).toContain('| Beta release | **Beta.4 published / beta.5 authorized**')
+    expect(scorecard).toContain('| Beta release | **Beta.5 published / beta.6 authorized**')
     expect(scorecard).toContain('| Semantic execution index #632 | **Passed**')
     expect(scorecard).toContain('| Obligation-driven retrieval #630 | **Passed**')
-    expect(scorecard).toContain('| No-fallback qualification #631 | **In progress — publication pending**')
+    expect(scorecard).toContain('| No-fallback qualification #631 | **In progress — beta.6 publication pending**')
     expect(scorecard).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(scorecard).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(scorecard).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -1198,7 +1215,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
     expect(scorecard).toContain('| Retrieval regression #622 | **Passed**')
     expect(scorecard).toContain('Issues `#622`, `#625`, `#632`, and `#630` are complete on `next`')
-    expect(scorecard).toContain('beta.5 manual testing and later formal qualification')
+    expect(scorecard).toContain('beta.6 publication, owner testing, and later formal qualification')
     expect(scorecard).toContain(OBLIGATION_RETRIEVAL_MERGE)
     expect(scorecard).toContain('1,424 source LOC / 60,933 emitted bytes')
     expect(scorecard).toContain(
@@ -1314,6 +1331,30 @@ describe('core reset governance', () => {
           release_tree: string
           trusted_publishing_run: string
           published_at: string
+          qualification_state: string
+          package_candidate: {
+            npm_files: number
+            npm_packed_bytes: number
+            npm_unpacked_bytes: number
+            npm_shasum: string
+            npm_integrity: string
+            npm_artifact_sha256: string
+          }
+          stable_or_latest: string
+          github_release: string
+          registry_metadata_publication: string
+          tag: string
+          main_target: string
+        }
+        corrective_manual_test_candidate: {
+          version: string
+          preparation_anchor_commit: string
+          preparation_anchor_tree: string
+          authorization_receipt: string
+          parent_authorization_receipt: string
+          target_branch: string
+          npm_dist_tag: string
+          publication_state: string
           qualification_state: string
           package_candidate: {
             npm_files: number
@@ -1476,9 +1517,9 @@ describe('core reset governance', () => {
       base_commit: OBLIGATION_RETRIEVAL_BASE,
       completed_phase_commit: OBLIGATION_RETRIEVAL_MERGE,
       ...OBLIGATION_RETRIEVAL_SOURCE,
-      ...BETA_5_PACKAGE,
+      ...BETA_6_PACKAGE,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'obligation_driven_retrieval_630_source_and_beta5_manual_test_package_candidate',
+      snapshot_scope: 'no_fallback_corrective_beta6_manual_test_package_candidate',
     })
     expect(manifest.current.release_candidate).toMatchObject({
       version: '0.40.0-beta.4',
@@ -1516,6 +1557,23 @@ describe('core reset governance', () => {
       published_at: '2026-08-02T05:42:52Z',
       qualification_state: 'owner_manual_test_found_corrective_defects_formal_631_gate_pending',
       package_candidate: BETA_5_PACKAGE,
+      stable_or_latest: 'forbidden',
+      github_release: 'forbidden',
+      registry_metadata_publication: 'forbidden',
+      tag: 'forbidden',
+      main_target: 'forbidden',
+    })
+    expect(manifest.current.corrective_manual_test_candidate).toMatchObject({
+      version: '0.40.0-beta.6',
+      preparation_anchor_commit: BETA_6_PREPARATION_ANCHOR,
+      preparation_anchor_tree: BETA_6_PREPARATION_TREE,
+      authorization_receipt: BETA_6_AUTHORIZATION,
+      parent_authorization_receipt: BETA_6_PARENT_AUTHORIZATION,
+      target_branch: 'next',
+      npm_dist_tag: 'next',
+      publication_state: 'authorized_pending_protected_next_release_merge',
+      qualification_state: 'fixed_package_publication_pending_formal_631_gate_pending',
+      package_candidate: BETA_6_PACKAGE,
       stable_or_latest: 'forbidden',
       github_release: 'forbidden',
       registry_metadata_publication: 'forbidden',
@@ -2421,6 +2479,7 @@ describe('core reset governance', () => {
       constraints: {
         dependency_state: `satisfied_by_${OBLIGATION_RETRIEVAL_MERGE}`,
         beta_publication: 'authorized_exact_0.40.0-beta.5_by_receipt_5155128419',
+        corrective_beta_publication: 'authorized_exact_0.40.0-beta.6_by_receipt_5157473339',
         stable_or_latest_publication: 'forbidden',
         github_release: 'forbidden',
         registry_metadata_publication: 'forbidden',
@@ -2447,7 +2506,24 @@ describe('core reset governance', () => {
         replacement_measurement: { source_loc: 1_424, emitted_bytes: 60_983 },
         package_candidate: NO_FALLBACK_CORRECTIVE_PACKAGE,
       },
+      corrective_release: {
+        version: '0.40.0-beta.6',
+        preparation_anchor_commit: BETA_6_PREPARATION_ANCHOR,
+        preparation_anchor_tree: BETA_6_PREPARATION_TREE,
+        authorization_receipt: BETA_6_AUTHORIZATION,
+        parent_authorization_receipt: BETA_6_PARENT_AUTHORIZATION,
+        target_branch: 'next',
+        npm_dist_tag: 'next',
+        publication_state: 'authorized_pending_protected_next_release_merge',
+        package_candidate: BETA_6_PACKAGE,
+        stable_or_latest: 'forbidden',
+        github_release: 'forbidden',
+        registry_metadata_publication: 'forbidden',
+        tag: 'forbidden',
+        main_target: 'forbidden',
+      },
     })
+    expect(noFallbackQualification.corrective.constraints.publication).toBe('forbidden')
     const correctiveSources = execFileSync(
       git,
       ['diff', '--name-only', BETA_5_RELEASE_MERGE, '--', 'src'],
@@ -2462,7 +2538,15 @@ describe('core reset governance', () => {
     expect(correctiveEvaluatorSources).toEqual(['tools/eval/lib/infrastructure/compare.ts'])
     expect(() => execFileSync(
       git,
-      ['diff', '--exit-code', BETA_5_RELEASE_MERGE, '--', 'package.json', 'package-lock.json'],
+      [
+        'diff',
+        '--exit-code',
+        BETA_5_RELEASE_MERGE,
+        BETA_6_PREPARATION_ANCHOR,
+        '--',
+        'package.json',
+        'package-lock.json',
+      ],
     )).not.toThrow()
     expect(createHash('sha256').update(execFileSync(
       git,
@@ -2896,7 +2980,7 @@ describe('core reset governance', () => {
       completed_phase_commit: OBLIGATION_RETRIEVAL_MERGE,
       ...OBLIGATION_RETRIEVAL_SOURCE,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'obligation_driven_retrieval_630_source_and_beta5_manual_test_package_candidate',
+      snapshot_scope: 'no_fallback_corrective_beta6_manual_test_package_candidate',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([NO_FALLBACK_QUALIFICATION_ID])
@@ -3758,9 +3842,9 @@ describe('core reset governance', () => {
       base_commit: OBLIGATION_RETRIEVAL_BASE,
       completed_phase_commit: OBLIGATION_RETRIEVAL_MERGE,
       ...OBLIGATION_RETRIEVAL_SOURCE,
-      npm_files: BETA_5_PACKAGE.npm_files,
-      npm_packed_bytes: BETA_5_PACKAGE.npm_packed_bytes,
-      npm_unpacked_bytes: BETA_5_PACKAGE.npm_unpacked_bytes,
+      npm_files: BETA_6_PACKAGE.npm_files,
+      npm_packed_bytes: BETA_6_PACKAGE.npm_packed_bytes,
+      npm_unpacked_bytes: BETA_6_PACKAGE.npm_unpacked_bytes,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([NO_FALLBACK_QUALIFICATION_ID])
@@ -4168,7 +4252,7 @@ describe('core reset governance', () => {
     })
     expect(currentPackage).toEqual({
       ...implementationPackage,
-      version: '0.40.0-beta.5',
+      version: '0.40.0-beta.6',
       files: implementationPackage.files.filter(
         (path) => !SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS.includes(
           path as (typeof SEMANTIC_EXECUTION_PACKAGE_EXCLUSIONS)[number],
@@ -4192,12 +4276,12 @@ describe('core reset governance', () => {
     const currentLock = JSON.parse(read('package-lock.json')) as any
     expect(currentLock).toEqual({
       ...implementationLock,
-      version: '0.40.0-beta.5',
+      version: '0.40.0-beta.6',
       packages: {
         ...implementationLock.packages,
         '': {
           ...implementationLock.packages[''],
-          version: '0.40.0-beta.5',
+          version: '0.40.0-beta.6',
         },
       },
     })
@@ -5158,11 +5242,11 @@ describe('core reset governance', () => {
       base_commit: OBLIGATION_RETRIEVAL_BASE,
       completed_phase_commit: OBLIGATION_RETRIEVAL_MERGE,
       ...OBLIGATION_RETRIEVAL_SOURCE,
-      npm_files: BETA_5_PACKAGE.npm_files,
-      npm_packed_bytes: BETA_5_PACKAGE.npm_packed_bytes,
-      npm_unpacked_bytes: BETA_5_PACKAGE.npm_unpacked_bytes,
+      npm_files: BETA_6_PACKAGE.npm_files,
+      npm_packed_bytes: BETA_6_PACKAGE.npm_packed_bytes,
+      npm_unpacked_bytes: BETA_6_PACKAGE.npm_unpacked_bytes,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'obligation_driven_retrieval_630_source_and_beta5_manual_test_package_candidate',
+      snapshot_scope: 'no_fallback_corrective_beta6_manual_test_package_candidate',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([NO_FALLBACK_QUALIFICATION_ID])
@@ -6788,8 +6872,9 @@ describe('core reset governance', () => {
     expect(governance).toContain('## Published — `0.40.0-beta.4`')
     expect(governance).toContain('## Completed — semantic execution index #632')
     expect(governance).toContain('## Completed — obligation-driven retrieval #630')
-    expect(governance).toContain('## Authorized manual-test candidate — `0.40.0-beta.5`')
-    expect(governance).toContain('## In progress — beta.5 publication and owner testing pending before no-fallback qualification #631')
+    expect(governance).toContain('## Published manual-test candidate — `0.40.0-beta.5`')
+    expect(governance).toContain('## Authorized corrective manual-test candidate — `0.40.0-beta.6`')
+    expect(governance).toContain('## In progress — beta.6 publication pending before no-fallback qualification #631')
     expect(governance).toContain('## Stopped amendment — capability validation v1')
     expect(governance).toContain('## Historical accepted amendment — capability validation v2')
     expect(governance).toContain('## Cancelled amendment — capability validation')
@@ -6799,7 +6884,8 @@ describe('core reset governance', () => {
     expect(governance).toContain('## Completed amendment — retrieval regression #625')
     expect(governance).toContain('## Completed amendment — semantic execution correction #632')
     expect(governance).toContain('## Completed amendment — obligation-driven retrieval #630')
-    expect(governance).toContain('Release amendment — `0.40.0-beta.5` manual-test candidate')
+    expect(governance).toContain('Release amendment — `0.40.0-beta.5` published manual-test candidate')
+    expect(governance).toContain('Release amendment — `0.40.0-beta.6` corrective manual-test candidate')
     expect(governance).toContain('Release amendment — `0.40.0-beta.3` published')
     expect(governance).toContain('Release amendment — `0.40.0-beta.4` ready')
     expect(governance).toContain('/compilerOptions/removeComments=true')

@@ -58,7 +58,9 @@ function assertPackageMeasurement(record, tarballPath) {
   const evaluationTooling = manifest.items?.find((item) => item.id === 'evaluation-tooling')
   const activePhase = manifest.items?.find((item) => item.id === manifest.current?.active_phase)
   const budget = activePhase?.npm_package_budget ?? evaluationTooling?.npm_package_budget
-  const receipt = activePhase?.corrective?.package_candidate ?? manifest.current
+  const receipt = activePhase?.corrective_release?.package_candidate
+    ?? activePhase?.corrective?.package_candidate
+    ?? manifest.current
   const actual = {
     npm_files: requiredNumber(record.entryCount, 'npm pack entryCount'),
     npm_packed_bytes: requiredNumber(record.size, 'npm pack size'),

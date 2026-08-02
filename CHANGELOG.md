@@ -4,6 +4,12 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.40.0-beta.6] - 2026-08-02
+
+### Fixed
+
+- **Natural end-to-end workflow questions now converge on the authenticated execution dossier.** Generic workflow-bound parsing handles the saved-report phrasing reproduced against GoValidate, ready results explicitly instruct clients to answer from the dossier without repository-tool fallback, and zero-fallback evaluation covers the whole client trace. Formal installed-package and comparator qualification remains open in #631.
+
 ## [0.40.0-beta.5] - 2026-08-02
 
 ### Changed
