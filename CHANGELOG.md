@@ -4,6 +4,12 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.40.0-beta.5] - 2026-08-02
+
+### Changed
+
+- **Retrieval now returns a strict obligation-driven workflow dossier or exact missing obligations.** This manual-test beta includes authenticated execution ordering, asynchronous handoffs, terminal persistence, bounded recovery, and the `madar.retrieve` v2 response from #630. Formal no-fallback and comparator qualification remains open in #631.
+
 ## [0.40.0-beta.4] - 2026-07-30
 
 ### Fixed

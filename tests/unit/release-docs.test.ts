@@ -20,7 +20,7 @@ describe('release documentation', () => {
     expect(releaseDoc).toContain('npm pack --dry-run')
     expect(releaseDoc).toContain('npm sbom --sbom-format cyclonedx --package-lock-only')
     expect(releaseDoc).toContain('sbom.cdx.json')
-    expect(releaseDoc).toContain('npm publish --access public --provenance')
+    expect(releaseDoc).toContain('npm publish --tag next --access public --provenance')
     expect(releaseDoc).toContain('docs/security/mcp-threat-model.md')
     expect(releaseDoc).toContain('madar --version')
     expect(commandAllowlist).toEqual([

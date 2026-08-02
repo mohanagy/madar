@@ -21,30 +21,30 @@ review:
   unowned_files: 0
   overlapping_files: 0
   disposition_changes: 11
-  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transferred graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activated the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. PR #608 completed the exact move without changing any surviving production TypeScript or dependency. First-stage owner-approved issue #610 governance activation merged at dcb52596a3efa89f9ef5d372231ce97a91ae5f9f, then independent review stopped its uncommitted implementation under conditions 7, 8, and 13 before any implementation PR, campaign lock, provider request, or spend. First-stage owner-approved issue #612 authorizes only an eight-path governance-only v2 candidate from that exact merge; its separate activation merge approval remains required. It changes no production ownership or disposition. Issue #625 modifies five existing evidence-path-query production paths and changes no ownership or disposition. Corrective #632 completed at c88823ecbeb6da6284cf74ecbd304e9315ffd4fa. Active #630 adds exactly three new production-source owners for its planner, workflow builder and evidence hydrator; existing adapter and query surfaces retain their historical owners. Graph/index generation, schemas, CLI, MCP, package dependencies, publication surfaces, and main remain frozen.'
+  amendment: 'Source lists remain complete and de-overlapped. Issue #588 moved four guaranteed extraction orphans into the completed delete contract. Issue #592 transferred stage.ts, freshness.ts, and source-discovery.ts to evidence-path-query and doctor.ts to thin-delivery. Approved issues #596 and #599 combined the original 54-file / 29,441-LOC query closure with nine finalizer files / 3,590 LOC, yielding one completed 63-file / 33,031-LOC predecessor contract and 22 ownership transfers. proof-report.ts plus review-compare.ts remain move-to-delete changes; serve.ts changed from rebuild to delete, raising disposition_changes from 4 to 7. Owner-approved issue #602 removed stale thin-delivery ownership of deleted serve.ts, transferred package-metadata.ts and shell.ts from rebuild to evaluation-tooling move ownership, raising disposition_changes from 7 to 9, and absorbed the remaining non-core-graph-products and activation-and-extra-integrations production owners into one exact 16-file / 7,277-LOC thin-delivery deletion contract. PR #604 completed that contract without further ownership change. Owner-approved issue #606 transferred graph-source-root.ts and workspace-copy.ts from safe-workspace-primitives to evaluation-tooling, raising disposition_changes from 9 to 11, and activated the exact 20-file / 4,698-LOC move contract from protected base 317dda89f2ea5c75e7626a26b104ceca1bd04ce5. Governance activation merged at 452ad84890c012392c5e6af613e8bfeb17de45db without production source changes. PR #608 completed the exact move without changing any surviving production TypeScript or dependency. First-stage owner-approved issue #610 governance activation merged at dcb52596a3efa89f9ef5d372231ce97a91ae5f9f, then independent review stopped its uncommitted implementation under conditions 7, 8, and 13 before any implementation PR, campaign lock, provider request, or spend. First-stage owner-approved issue #612 authorizes only an eight-path governance-only v2 candidate from that exact merge; its separate activation merge approval remains required. It changes no production ownership or disposition. Issue #625 modifies five existing evidence-path-query production paths and changes no ownership or disposition. Corrective #632 completed at c88823ecbeb6da6284cf74ecbd304e9315ffd4fa. Issue #630 added exactly three production-source owners for its planner, workflow builder and evidence hydrator and completed through protected-next merge 9703a7090fd3ef3600b4ab4e298b12f0faa05a1e; existing adapter and query surfaces retain their historical owners. Graph/index generation, schemas, CLI, MCP, and package dependencies remain unchanged by the beta.5 release preparation.'
   cancellation_amendment: 'On 2026-07-28 the owner closed Capability Validation issues #610, #612, #614, #615, and #616 as not planned and revoked every unconsumed preparation, activation, implementation, campaign, provider, spend, and target-execution authority. No campaign ran, no comparative result exists, provider requests remain zero, and spend remains USD 0. The governance-only v2 activation remains immutable history. Issue #618 is a separate bounded retrieval repair and does not revive Capability Validation or Graphify.'
-  release_amendment: 'Historical release receipt: @lubab/madar@0.40.0-beta.3 was published under npm dist-tag next and GitHub prerelease v0.40.0-beta.3 from exact protected-next commit ece7d0d02643ecec08bd91aa904a4514aa845f42. Issue #625 and PR #626 subsequently completed the generic evidence-skeleton repair on protected next at b6562b715133304bd46e537b6f39008bc1e02095. Issue #627 then published @lubab/madar@0.40.0-beta.4 under npm dist-tag next and the matching GitHub prerelease from exact protected-next commit 9043320cfa08370e5cdd3911bfb9283005aa9912 and tree f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc. npm latest remains 0.32.0. Stable 0.40.0, MCP Registry publication, comparative claims, and main remain outside this release. Issue #632 authorizes no publication, release, Registry metadata, tag, or main action.'
+  release_amendment: 'Historical release receipt: @lubab/madar@0.40.0-beta.3 was published under npm dist-tag next and GitHub prerelease v0.40.0-beta.3 from exact protected-next commit ece7d0d02643ecec08bd91aa904a4514aa845f42. Issue #625 and PR #626 subsequently completed the generic evidence-skeleton repair on protected next at b6562b715133304bd46e537b6f39008bc1e02095. Issue #627 then published @lubab/madar@0.40.0-beta.4 under npm dist-tag next and the matching GitHub prerelease from exact protected-next commit 9043320cfa08370e5cdd3911bfb9283005aa9912 and tree f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc. After #630 completed, owner receipts 5155128419 and 5155128626 separately authorized exactly @lubab/madar@0.40.0-beta.5 under npm dist-tag next from the forthcoming protected-next release merge for manual testing before #631 qualification. npm latest remains 0.32.0. Stable 0.40.0, a GitHub Release, MCP Registry publication, any beta.5 tag, comparative claims, and main remain outside this release.'
 
 current:
   updated_at: 2026-08-02
-  completed_phase: semantic-execution-index-632
-  active_phase: obligation-driven-retrieval-630
+  completed_phase: obligation-driven-retrieval-630
+  active_phase: no-fallback-qualification-631
   ready_phase: null
   base_commit: c88823ecbeb6da6284cf74ecbd304e9315ffd4fa
-  completed_phase_commit: c88823ecbeb6da6284cf74ecbd304e9315ffd4fa
+  completed_phase_commit: 9703a7090fd3ef3600b4ab4e298b12f0faa05a1e
   production_typescript_files: 44
   production_typescript_loc: 15871
   production_loc_added: 2302
   production_loc_removed: 2150
   production_loc_net: 152
   npm_files: 102
-  npm_packed_bytes: 155124
-  npm_unpacked_bytes: 653497
-  npm_shasum: 77add32848cfd6f94be700dabe78efabf2bc3ed9
-  npm_integrity: sha512-mj2bYY6JbNS8iIxWnq0bZSuNqdkQWlb3bLbob0wAodCxpT6iuuYFc75hhuZM7ijesm9rx94mo5iZ8VoKEsEr+g==
-  npm_artifact_sha256: 1db61f9760fc933de44faa34543d97775548ac8e96fbe40cbae03623de20164a
+  npm_packed_bytes: 155157
+  npm_unpacked_bytes: 653565
+  npm_shasum: d637297412ec5b868586ba59142fbefdcfc0d5e0
+  npm_integrity: sha512-HorzqtIvp2v5xMaYVGDzPDYtFBMaEVBkGXHBdTSVwC1DkQgmZaFuTU1Ff+7YByWN9FTQaVLTJsV7zKhEgSKxXw==
+  npm_artifact_sha256: 6e20a4edc6fb10ed3853f69e599676a723d2d771078810693f3cd13fc6e032dc
   measurement_state: source_and_package_exact
-  snapshot_scope: obligation_driven_retrieval_630_candidate
+  snapshot_scope: obligation_driven_retrieval_630_source_and_beta5_manual_test_package_candidate
   release_candidate:
     version: 0.40.0-beta.4
     protected_anchor_commit: 9043320cfa08370e5cdd3911bfb9283005aa9912
@@ -66,6 +66,28 @@ current:
       npm_shasum: c5250a0d308b3d6df374851154ddb393a678a992
       npm_integrity: sha512-772P+n4Cx55nqC+CAx8A1aTJ2rY4yk1hUH45lAlxNMMw4YRj8hhswgDiCwczS5hx1S3a+Z+KUv2jma/zWjQZ6w==
       npm_artifact_sha256: 8bd8d501b8cd3546e16a5a1ddac1f7649434e685517e1171fbd5897515e76e6b
+  manual_test_candidate:
+    version: 0.40.0-beta.5
+    preparation_anchor_commit: 9703a7090fd3ef3600b4ab4e298b12f0faa05a1e
+    preparation_anchor_tree: 5db67cbe19a9479409192558ea40b0ac8e3add78
+    authorization_receipt: https://github.com/mohanagy/madar/issues/631#issuecomment-5155128419
+    parent_authorization_receipt: https://github.com/mohanagy/madar/issues/629#issuecomment-5155128626
+    target_branch: next
+    npm_dist_tag: next
+    publication_state: authorized_pending_protected_next_release_merge
+    qualification_state: pending_manual_test_and_formal_631_gate
+    package_candidate:
+      npm_files: 102
+      npm_packed_bytes: 155157
+      npm_unpacked_bytes: 653565
+      npm_shasum: d637297412ec5b868586ba59142fbefdcfc0d5e0
+      npm_integrity: sha512-HorzqtIvp2v5xMaYVGDzPDYtFBMaEVBkGXHBdTSVwC1DkQgmZaFuTU1Ff+7YByWN9FTQaVLTJsV7zKhEgSKxXw==
+      npm_artifact_sha256: 6e20a4edc6fb10ed3853f69e599676a723d2d771078810693f3cd13fc6e032dc
+    stable_or_latest: forbidden
+    github_release: forbidden
+    registry_metadata_publication: forbidden
+    tag: forbidden
+    main_target: forbidden
 
 targets:
   production_typescript_files_max: 80
@@ -2381,7 +2403,7 @@ items:
 
   - id: obligation-driven-retrieval-630
     disposition: keep
-    status: in_progress
+    status: complete
     sources:
       - src/application/evidence-hydrator.ts
       - src/domain/query/plan.ts
@@ -2564,8 +2586,8 @@ items:
           median_ms: 48.61237500000061
           p95_ms: 49.48099999999977
           max_ms: 50.91725000000042
-        independent_review: pending
-        exact_head_ci: pending
+        independent_review: passed_no_p0_p1_blocker
+        exact_head_ci: passed_six_required_jobs
       historical_stop:
         receipt: https://github.com/mohanagy/madar/issues/630#issuecomment-5153255732
         reason: replacement_emitted_and_package_unpacked_ceilings_failed
@@ -2582,10 +2604,21 @@ items:
       amendment:
         receipt: https://github.com/mohanagy/madar/issues/630#issuecomment-5153369147
         supersedes_stop_receipt: https://github.com/mohanagy/madar/issues/630#issuecomment-5153255732
-        state: active_authorized
+        state: completed_under_amended_ceilings
         replacement_emitted_bytes_max: 61000
         npm_unpacked_bytes_max: 655000
         all_other_metrics_and_constraints: unchanged
+    completion:
+      pull_request: https://github.com/mohanagy/madar/pull/635
+      reviewed_head: 5ec3fab427985e3385a94cff1f4ef08b292c3ad2
+      reviewed_tree: 5db67cbe19a9479409192558ea40b0ac8e3add78
+      merge_commit: 9703a7090fd3ef3600b4ab4e298b12f0faa05a1e
+      merge_tree: 5db67cbe19a9479409192558ea40b0ac8e3add78
+      ci_run: https://github.com/mohanagy/madar/actions/runs/30727068191
+      merge_gate_receipt: https://github.com/mohanagy/madar/pull/635#issuecomment-5154474708
+      issue_completion_receipt: https://github.com/mohanagy/madar/issues/630#issuecomment-5154478185
+      coderabbit: passed_exact_head_with_13_total_0_unresolved_threads
+      independent_review: passed_three_axes_no_p0_p1_blocker
     constraints:
       compatibility_fallback: forbidden
       repository_specific_rule: forbidden
@@ -2599,31 +2632,41 @@ items:
       tag: forbidden
       registry_metadata_publication: forbidden
       main_target: forbidden
-    notes: 'Issue #630 began from exact protected next commit c88823ecbeb6da6284cf74ecbd304e9315ffd4fa and tree b715764668b4296e9e8ab4da715374f47af137db after #632 completed. The current local candidate replaces rank/slice/traverse with one obligation planner, workflow builder and authenticated evidence hydrator, then returns a deterministic v2 dossier only when every mandatory stage, adjacent async handoff, terminal action and proof is complete. Its source inventory and delta pass. All five field-incident prompts return ready dossiers covering 9 files, 12 excerpts, 12 links, 15 order groups, 21 entities, 20 proofs and all four required queues at 3977 / 3977 / 3979 / 3977 / 3977 tokens; all 14 frozen GoValidate formulations are ready at 3970-3998 tokens with all four queues and stable flow/evidence hashes. The separate repository-portable CI oracle regenerates an exact attested 18-file committed corpus, returns 14/14 ready dossiers with seven mandatory obligations, a 9-node/8-link corridor, all four handoffs and terminal persistence, and rejects wrong-corpus, unknown-proof and missing-persistence mutations. The real-GoValidate audit passes 14/14 and 100 warm measurements at median 48.61237500000061 ms, p95 49.48099999999977 ms and max 50.91725000000042 ms. The 7-file focused suite passes 267 tests, the full suite and coverage pass 83 files / 899 tests at 85.6% statements, 79.94% branches, 92.02% functions and 89.07% lines, and typecheck, build, build-eval, governance, packed parity, release verification, registry validation, isolation, npm audit and CI evaluation regression pass. The replacement trio is 1424 source LOC / 60933 emitted bytes under the owner-amended 61000-byte ceiling; the exact package is 102 files / 155124 packed / 653497 unpacked bytes under the owner-amended 655000-byte unpacked ceiling. The historical stop receipt is https://github.com/mohanagy/madar/issues/630#issuecomment-5153255732; owner amendment https://github.com/mohanagy/madar/issues/630#issuecomment-5153369147 supersedes that stop and authorizes active continuation while changing only those two ceilings. All other metrics, constraints and prohibitions remain unchanged. Independent review, exact-head CI, CodeRabbit, zero-thread and merge gates remain pending; no publication, release, Registry metadata, tag or main action is authorized.'
+    notes: 'Issue #630 began from exact protected next commit c88823ecbeb6da6284cf74ecbd304e9315ffd4fa and tree b715764668b4296e9e8ab4da715374f47af137db after #632 completed. It replaces rank/slice/traverse with one obligation planner, workflow builder and authenticated evidence hydrator, then returns a deterministic v2 dossier only when every mandatory stage, adjacent async handoff, terminal action and proof is complete. All five field-incident prompts return ready dossiers covering 9 files, 12 excerpts, 12 links, 15 order groups, 21 entities, 20 proofs and all four required queues at 3977 / 3977 / 3979 / 3977 / 3977 tokens; all 14 frozen GoValidate formulations are ready at 3970-3998 tokens with all four queues and stable flow/evidence hashes. The separate repository-portable CI oracle regenerates an exact attested 18-file committed corpus, returns 14/14 ready dossiers with seven mandatory obligations, a 9-node/8-link corridor, all four handoffs and terminal persistence, and rejects wrong-corpus, unknown-proof and missing-persistence mutations. The real-GoValidate audit passes 14/14 and 100 warm measurements at median 48.61237500000061 ms, p95 49.48099999999977 ms and max 50.91725000000042 ms. The 7-file focused suite passes 267 tests, the full suite and coverage pass 83 files / 899 tests at 85.6% statements, 79.94% branches, 92.02% functions and 89.07% lines. The replacement trio is 1424 source LOC / 60933 emitted bytes under the owner-amended 61000-byte ceiling; the exact package is 102 files / 155124 packed / 653497 unpacked bytes under the owner-amended 655000-byte unpacked ceiling. Reviewed head 5ec3fab427985e3385a94cff1f4ef08b292c3ad2 passed all six required CI jobs, CodeRabbit, three independent review axes and 13/13 resolved threads. Protected squash merge 9703a7090fd3ef3600b4ab4e298b12f0faa05a1e preserved reviewed tree 5db67cbe19a9479409192558ea40b0ac8e3add78. #630 itself authorized no publication; beta.5 has separate exact owner authorization on #631 and #629.'
     exit_gate: Every mandatory question obligation is proven and packed into one non-truncated ready dossier, or the result returns the exact non-ready state and missing obligations within the unchanged file, excerpt, token, recovery, package, and latency ceilings.
 
   - id: no-fallback-qualification-631
     disposition: keep
-    status: planned
+    status: in_progress
     destination: installed-package no-fallback qualification against frozen comparators
     depends_on:
       - semantic-execution-index-632
       - obligation-driven-retrieval-630
     activation:
       issue: https://github.com/mohanagy/madar/issues/631
-      protected_base: 9043320cfa08370e5cdd3911bfb9283005aa9912
-      protected_base_tree: f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc
+      architecture_baseline: 9043320cfa08370e5cdd3911bfb9283005aa9912
+      architecture_baseline_tree: f51d6e75e3b806dec6caf9ff0be43fc2ab5713fc
+      protected_base: 9703a7090fd3ef3600b4ab4e298b12f0faa05a1e
+      protected_base_tree: 5db67cbe19a9479409192558ea40b0ac8e3add78
       target_branch: next
+    production_loc_budget:
+      added_max: 0
+      removed_min: 0
+      net_max: 0
+    npm_package_budget:
+      files_max: 102
+      packed_bytes_max: 165000
+      unpacked_bytes_max: 655000
     constraints:
-      work_before_dependency_completion: forbidden
+      dependency_state: satisfied_by_9703a7090fd3ef3600b4ab4e298b12f0faa05a1e
       provider_traffic_or_spend: requires_separate_owner_authorization
-      beta_publication: requires_separate_owner_authorization
+      beta_publication: authorized_exact_0.40.0-beta.5_by_receipt_5155128419
       stable_or_latest_publication: forbidden
       github_release: forbidden
       registry_metadata_publication: forbidden
       tag: forbidden
       main_target: forbidden
-    notes: 'Issue #632 is complete; issue #631 remains pending behind active #630. It will compare an installed reviewed candidate with 0.32.0, 0.40.0-beta.4, one pinned Graphify commit and a no-tool control. No comparative claim or provider campaign exists yet.'
+    notes: 'Issues #632 and #630 are complete. The owner separately authorized exactly @lubab/madar@0.40.0-beta.5 under npm next from the forthcoming protected-next release merge for manual testing before formal #631 qualification. #631 will compare that installed package with 0.32.0, 0.40.0-beta.4, one pinned Graphify commit and a no-tool control. No comparative claim or provider campaign exists yet; stable/latest, GitHub Release, Registry publication, a tag and main remain forbidden.'
     exit_gate: The installed exact-head package matches or beats the strongest frozen baseline, scores at least 90 mean with no run below 85 or critical error, makes one Madar retrieval with zero repository-tool fallback in natural-client runs, and passes closed-book, parity, budget, CI, independent-review, and zero-thread gates.
 
   - id: non-core-graph-products
