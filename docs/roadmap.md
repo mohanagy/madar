@@ -181,9 +181,9 @@ The completed implementation replaces the v1 rank/slice/traverse pipeline with o
 
 The owner receipts on [#631](https://github.com/mohanagy/madar/issues/631#issuecomment-5155128419) and [#629](https://github.com/mohanagy/madar/issues/629#issuecomment-5155128626) authorize preparation and npm-`next` publication of exactly `@lubab/madar@0.40.0-beta.5` from the forthcoming protected-`next` release merge so the owner can test it before formal qualification. The exact npm 12.0.1 candidate is 102 files / 155,157 packed / 653,565 unpacked bytes with shasum `d637297412ec5b868586ba59142fbefdcfc0d5e0`, within every amended package ceiling. The release creates no git tag or GitHub Release and does not publish Registry metadata, stable/`latest`, or `main`.
 
-## In progress — beta.5 manual testing before no-fallback qualification #631
+## In progress — beta.5 publication and owner testing pending before no-fallback qualification #631
 
-[#631](https://github.com/mohanagy/madar/issues/631) now has both implementation dependencies complete. Its active first step is the separately authorized beta.5 publication and owner manual test; the installed-package parity and frozen comparison against `0.32.0`, `0.40.0-beta.4`, one pinned Graphify commit, and a no-tool control have not started. Beta.5 is not a qualification result; provider traffic or spend, stable/`latest`, GitHub Release, Registry publication, tag, and `main` remain unauthorized.
+[#631](https://github.com/mohanagy/madar/issues/631) remains in progress with both implementation dependencies complete. Its authorized first step—beta.5 npm-`next` publication followed by owner manual testing—remains pending the protected-`next` release merge. The installed-package parity and frozen comparison against `0.32.0`, `0.40.0-beta.4`, one pinned Graphify commit, and a no-tool control have not started. Beta.5 is not a qualification result; provider traffic or spend, stable/`latest`, GitHub Release, Registry publication, tag, and `main` remain unauthorized.
 
 ## Validation — release decision
 
