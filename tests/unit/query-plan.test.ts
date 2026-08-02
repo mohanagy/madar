@@ -358,6 +358,20 @@ describe('planQuestion', () => {
       .toBe('report')
   })
 
+  it('normalizes the exact client finished-report workflow question', () => {
+    const result = plan(
+      'How does generating the report for an idea work? Explain the end-to-end pipeline flow from request to finished report.',
+    )
+
+    expect(result.intent).toBe('workflow')
+    expect(result.subject).toBe('report idea')
+    expect(result.obligations.map(({ kind }) => kind)).toEqual([
+      'subject', 'entry', 'stage', 'handoff', 'behavior', 'ordering', 'terminal',
+    ])
+    expect(result.obligations.find(({ kind }) => kind === 'terminal')?.target)
+      .toBe('report')
+  })
+
   it.each([
     'a saved report',
     'its saved report',
@@ -372,7 +386,44 @@ describe('planQuestion', () => {
   })
 
   it.each([
+    'finished',
+    'done',
+  ])('normalizes the complete %s-report terminal', (state) => {
+    const canonical = plan(
+      'How does generating the idea report work end to end from the generate request through the pipeline to the report',
+    )
+    const result = plan(
+      `How does generating the idea report work end to end from the generate request through the pipeline to the ${state} report`,
+    )
+
+    expect(result.intent).toBe(canonical.intent)
+    expect(result.subject).toBe(canonical.subject)
+    expect(result.obligations).toEqual(canonical.obligations)
+  })
+
+  it.each([
+    ['final report', 'report'],
+    ['completed report', 'report'],
+    ['saved report', 'report'],
+    ['store report', 'store report'],
+    ['persist report', 'persist report'],
+  ])('preserves the established complete terminal behavior: %s', (terminal, expected) => {
+    const result = plan(
+      `Trace the request from HTTP through the pipeline to ${terminal}`,
+    )
+
+    expect(result.obligations.find(({ kind }) => kind === 'terminal')?.target)
+      .toBe(expected)
+  })
+
+  it.each([
+    ['final settlement', 'settlement'],
+    ['completed transaction', 'transaction'],
+    ['finished goods', 'finished good'],
+    ['done callback', 'done callback'],
+    ['saved query', 'save query'],
     ['stored procedure', 'store procedure'],
+    ['persisted snapshot', 'persist snapshot'],
     ['store credit', 'store credit'],
     ['write concern', 'write concern'],
   ])('preserves a compound workflow terminal: %s', (terminal, expected) => {
@@ -382,6 +433,73 @@ describe('planQuestion', () => {
 
     expect(result.obligations.find(({ kind }) => kind === 'terminal')?.target)
       .toBe(expected)
+  })
+
+  it.each([
+    ['finished report archive', 'finished report archive'],
+    ['done report callback', 'done report callback'],
+    ['save report query', 'save report query'],
+    ['store report procedure', 'store report procedure'],
+    ['persist report snapshot', 'persist report snapshot'],
+  ])('does not collapse a compound report terminal: %s', (terminal, expected) => {
+    const result = plan(
+      `Trace the request from HTTP through the pipeline to ${terminal}`,
+    )
+
+    expect(result.obligations.find(({ kind }) => kind === 'terminal')?.target)
+      .toBe(expected)
+  })
+
+  it.each([
+    ['Where is the route to FinishedReport implemented?', 'locate'],
+    ['Where is the mapping to DoneReport defined?', 'locate'],
+    ['Which service reads the path to SavedReport?', 'locate'],
+    ['How does the adapter map input to FinishedReport?', 'explain'],
+  ] as const)('preserves non-workflow report identifiers: %s', (question, intent) => {
+    const result = plan(question)
+
+    expect(result.intent).toBe(intent)
+    expect(result.terms).toContain(question.includes('Done') ? 'done'
+      : question.includes('Saved') ? 'save' : 'finished')
+  })
+
+  it.each([
+    ['FinishedReport', 'finished report'],
+    ['DoneReport', 'done report'],
+    ['`FinishedReport`', 'finished report'],
+    ['`DoneReport`', 'done report'],
+    ['"finished report"', 'finished report'],
+    ['"done report"', 'done report'],
+  ])('preserves an explicit workflow terminal identifier: %s', (terminal, expected) => {
+    const result = plan(
+      `Trace the request from HTTP through the pipeline to ${terminal}`,
+    )
+
+    expect(result.obligations.find(({ kind }) => kind === 'terminal')?.target)
+      .toBe(expected)
+  })
+
+  it('keeps the observed compound recovery question in workflow planning', () => {
+    const result = plan(
+      'Where is the idea report generation pipeline orchestrated? List the pipeline stages and the entrypoint service.',
+    )
+
+    expect(result.intent).toBe('workflow')
+    expect(result.subject).toBe('idea report')
+    expect(result.obligations.map(({ kind }) => kind)).toEqual([
+      'subject', 'entry', 'stage', 'handoff', 'behavior', 'ordering', 'terminal',
+    ])
+    expect(result.obligations).toHaveLength(7)
+    expect(result.obligations.every(({ mandatory }) => mandatory)).toBe(true)
+  })
+
+  it.each([
+    'Where is allowlist stage entrypoint defined?',
+    'Where is blacklist stage entrypoint implemented?',
+    'Where is ReportPipeline defined? List its stages and entrypoint service.',
+    'Where is FinishedReport defined? List test stages and entrypoint examples.',
+  ])('keeps locator precedence outside the observed recovery wording: %s', (question) => {
+    expect(plan(question).intent).toBe('locate')
   })
 
   it('extracts the workflow object from event phrasing', () => {

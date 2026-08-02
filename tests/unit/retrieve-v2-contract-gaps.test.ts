@@ -93,6 +93,12 @@ const frozenQueries = (JSON.parse(readFileSync(
   distant_paraphrases: string[]
   field_incident_variants: string[]
 } }).queries
+const issue631Queries = [
+  'explain how generating the report for an idea is working ?',
+  ...['finished', 'done', 'final', 'completed', 'saved', 'stored', 'persisted']
+    .map((state) => `How does generating the report for an idea work? Explain the end-to-end pipeline flow from request to ${state} report.`),
+  'Where is the idea report generation pipeline orchestrated? List the pipeline stages and the entrypoint service.',
+]
 
 beforeAll(() => {
   const root = mkdtempSync(join(tmpdir(), 'madar-630-real-flow-'))
@@ -294,18 +300,27 @@ describe('retrieve v2 uncovered contract cases', () => {
     ...frozenQueries.clause_order_variants,
     ...frozenQueries.distant_paraphrases,
     ...frozenQueries.field_incident_variants,
+    ...issue631Queries,
   ])('converges the frozen broad prompt: %s', (question) => {
     const baseline = retrieveContext(reportFlow, {
       question: frozenQueries.beta_3_broad,
       budget: 4_000,
     })
     expect(baseline.state).toBe('ready')
+    expect(baseline.metrics).toMatchObject({
+      required_obligations: 7,
+      proven_obligations: 7,
+    })
     if (baseline.state !== 'ready') return
 
     const result = retrieveContext(reportFlow, { question, budget: 4_000 })
     const detail = result.state === 'incomplete'
       ? JSON.stringify(result.missing) : result.state
     expect(result.state, detail).toBe('ready')
+    expect(result.metrics).toMatchObject({
+      required_obligations: 7,
+      proven_obligations: 7,
+    })
     if (result.state !== 'ready') return
     expect(result.dossier.flow).toEqual(baseline.dossier.flow)
     expect(result.dossier.evidence).toEqual(baseline.dossier.evidence)

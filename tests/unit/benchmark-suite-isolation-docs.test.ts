@@ -124,6 +124,7 @@ describe('development-only benchmark isolation', () => {
     expect(parity).toContain("result?.version !== 2")
     expect(parity).toContain("result?.state !== 'ready'")
     expect(parity).toContain('channelLinks.length !== 4')
+    expect(parity).toContain('terminal_language_corrective?.package_candidate')
     expect(parity).not.toContain('result?.outcome')
     expect(parity).not.toContain('serveGraphStdio')
     expect(parity).not.toContain('autoRefreshRequestWaitMs: 30_000')

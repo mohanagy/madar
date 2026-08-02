@@ -517,6 +517,14 @@ const BETA_6_PARENT_AUTHORIZATION =
   'https://github.com/mohanagy/madar/issues/629#issuecomment-5157473448'
 const BETA_6_PREPARATION_ANCHOR = '68729161699b7592bea6984e1aa22c7b4b0833e8'
 const BETA_6_PREPARATION_TREE = '4500d416d0e890b1dc67c9228a2cbb49cf4220a3'
+const BETA_6_RELEASE_MERGE = '66b795e76a76c6946b85e5eb878e3f576b4e3dbb'
+const BETA_6_RELEASE_TREE = 'ff57246a55e51459836946d6b5b9853d0cdcc372'
+const BETA_6_PUBLICATION =
+  'https://github.com/mohanagy/madar/issues/631#issuecomment-5157856602'
+const TERMINAL_LANGUAGE_BASE = BETA_6_RELEASE_MERGE
+const TERMINAL_LANGUAGE_TREE = 'ff57246a55e51459836946d6b5b9853d0cdcc372'
+const TERMINAL_LANGUAGE_AUTHORIZATION =
+  'https://github.com/mohanagy/madar/issues/631#issuecomment-5158293324'
 const BETA_6_PACKAGE = {
   npm_files: 102,
   npm_packed_bytes: 155_257,
@@ -525,6 +533,15 @@ const BETA_6_PACKAGE = {
   npm_integrity:
     'sha512-o6L/BiJ1wrTWCaK537p60pGUC5i8zY0Zqz7NqD1zW4fJl/ewjF3cgysf4dbOkY4y49DkYDTG2qoUh1DGvq2Q0Q==',
   npm_artifact_sha256: '12d8abe1ac3d0945c654f4df2582ac1de63f2aeee55d82d4bf5b053d92036074',
+} as const
+const TERMINAL_LANGUAGE_PACKAGE = {
+  npm_files: 102,
+  npm_packed_bytes: 155_330,
+  npm_unpacked_bytes: 654_008,
+  npm_shasum: 'c107e87c185c39e9acc0d3a33d55e4bbe2e8eb30',
+  npm_integrity:
+    'sha512-/is0gABnCpimVQWLdvyFBtqhhrwSkuwgYtzQIp8FDBcSqAoLqXK4E5C3CTHqLxIWWKAtNUx8o90B7TOtMb9VCg==',
+  npm_artifact_sha256: 'f341a2b3e36d074b7cdad2656bb4895393b82894223489778dad7ac623069621',
 } as const
 const NO_FALLBACK_CORRECTIVE_AUTHORIZATION =
   'https://github.com/mohanagy/madar/issues/631#issuecomment-5157008370'
@@ -965,8 +982,8 @@ describe('core reset governance', () => {
     expect(roadmap).toContain('## Completed — semantic execution index #632')
     expect(roadmap).toContain('## Completed — obligation-driven retrieval #630')
     expect(roadmap).toContain('## Published manual-test candidate — `0.40.0-beta.5`')
-    expect(roadmap).toContain('## Authorized corrective manual-test candidate — `0.40.0-beta.6`')
-    expect(roadmap).toContain('## In progress — beta.6 publication pending before no-fallback qualification #631')
+    expect(roadmap).toContain('## Published corrective manual-test candidate — `0.40.0-beta.6`')
+    expect(roadmap).toContain('## In progress — beta.6 manual qualification failed; focused corrective #631')
     expect(roadmap).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(roadmap).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -1166,10 +1183,10 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('| Capability validation v2 | **Stopped / not planned**')
     expect(scorecard).toContain('| Retrieval regression #618 | **Passed**')
     expect(scorecard).toContain('| Retrieval regression #625 | **Passed**')
-    expect(scorecard).toContain('| Beta release | **Beta.5 published / beta.6 authorized**')
+    expect(scorecard).toContain('| Beta release | **Beta.5 and beta.6 published**')
     expect(scorecard).toContain('| Semantic execution index #632 | **Passed**')
     expect(scorecard).toContain('| Obligation-driven retrieval #630 | **Passed**')
-    expect(scorecard).toContain('| No-fallback qualification #631 | **In progress — beta.6 publication pending**')
+    expect(scorecard).toContain('| No-fallback qualification #631 | **In progress — beta.6 manual gate failed**')
     expect(scorecard).toContain(CAPABILITY_VALIDATION_PROPOSAL_SHA256)
     expect(scorecard).toContain(CAPABILITY_VALIDATION_OWNER_APPROVAL)
     expect(scorecard).toContain(CAPABILITY_VALIDATION_RFC_APPROVAL)
@@ -1215,7 +1232,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('every warmup/measured result must remain correct; an empty positive result fails')
     expect(scorecard).toContain('| Retrieval regression #622 | **Passed**')
     expect(scorecard).toContain('Issues `#622`, `#625`, `#632`, and `#630` are complete on `next`')
-    expect(scorecard).toContain('beta.6 publication, owner testing, and later formal qualification')
+    expect(scorecard).toContain('focused unpublished corrective before later formal qualification')
     expect(scorecard).toContain(OBLIGATION_RETRIEVAL_MERGE)
     expect(scorecard).toContain('1,424 source LOC / 60,933 emitted bytes')
     expect(scorecard).toContain(
@@ -1517,9 +1534,9 @@ describe('core reset governance', () => {
       base_commit: OBLIGATION_RETRIEVAL_BASE,
       completed_phase_commit: OBLIGATION_RETRIEVAL_MERGE,
       ...OBLIGATION_RETRIEVAL_SOURCE,
-      ...BETA_6_PACKAGE,
+      ...TERMINAL_LANGUAGE_PACKAGE,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'no_fallback_corrective_beta6_manual_test_package_candidate',
+      snapshot_scope: 'terminal_language_corrective_unpublished_candidate',
     })
     expect(manifest.current.release_candidate).toMatchObject({
       version: '0.40.0-beta.4',
@@ -1571,8 +1588,15 @@ describe('core reset governance', () => {
       parent_authorization_receipt: BETA_6_PARENT_AUTHORIZATION,
       target_branch: 'next',
       npm_dist_tag: 'next',
-      publication_state: 'authorized_pending_protected_next_release_merge',
-      qualification_state: 'fixed_package_publication_pending_formal_631_gate_pending',
+      publication_state: 'published_from_protected_next',
+      publication_receipt: BETA_6_PUBLICATION,
+      release_merge: BETA_6_RELEASE_MERGE,
+      release_tree: BETA_6_RELEASE_TREE,
+      trusted_publishing_run: 'https://github.com/mohanagy/madar/actions/runs/30746816714',
+      published_at: '2026-08-02T12:28:22Z',
+      qualification_state: 'owner_manual_test_failed_terminal_language_and_zero_fallback_formal_631_gate_pending',
+      manual_failure_receipt: TERMINAL_LANGUAGE_AUTHORIZATION,
+      frozen_graph_sha256: '1d4d10ff6e2ceac5291779303d791ac266118b299f5c4c314614076b1661707f',
       package_candidate: BETA_6_PACKAGE,
       stable_or_latest: 'forbidden',
       github_release: 'forbidden',
@@ -2479,7 +2503,7 @@ describe('core reset governance', () => {
       constraints: {
         dependency_state: `satisfied_by_${OBLIGATION_RETRIEVAL_MERGE}`,
         beta_publication: 'authorized_exact_0.40.0-beta.5_by_receipt_5155128419',
-        corrective_beta_publication: 'authorized_exact_0.40.0-beta.6_by_receipt_5157473339',
+        corrective_beta_publication: 'published_exact_0.40.0-beta.6_by_receipt_5157856602',
         stable_or_latest_publication: 'forbidden',
         github_release: 'forbidden',
         registry_metadata_publication: 'forbidden',
@@ -2506,6 +2530,42 @@ describe('core reset governance', () => {
         replacement_measurement: { source_loc: 1_424, emitted_bytes: 60_983 },
         package_candidate: NO_FALLBACK_CORRECTIVE_PACKAGE,
       },
+      terminal_language_corrective: {
+        status: 'local_candidate',
+        authorization_receipt: TERMINAL_LANGUAGE_AUTHORIZATION,
+        protected_base: TERMINAL_LANGUAGE_BASE,
+        protected_base_tree: TERMINAL_LANGUAGE_TREE,
+        target_branch: 'next',
+        modified_sources: ['src/domain/query/plan.ts'],
+        test_sources: [
+          'tests/unit/query-plan.test.ts',
+          'tests/unit/retrieve-v2-contract-gaps.test.ts',
+        ],
+        production_loc_change: 0,
+        production_loc_budget: { added_max: 68, removed_min: 68, net_max: 0 },
+        source_measurement: {
+          production_typescript_files: 44,
+          production_typescript_loc: 15_871,
+          added: 68,
+          removed: 68,
+          net: 0,
+          diff_sha256: '2a95f969db7c41bc5882ed1b252029150b0f6e4e9c407a0a37bc50bfbc03f201',
+        },
+        replacement_measurement: { source_loc: 1_424, emitted_bytes: 60_995 },
+        package_candidate: {
+          ...TERMINAL_LANGUAGE_PACKAGE,
+          parity_state: 'passed',
+        },
+        frozen_graph: {
+          sha256: '1d4d10ff6e2ceac5291779303d791ac266118b299f5c4c314614076b1661707f',
+          exact_prompt_state: 'ready',
+          required_obligations: 7,
+          proven_obligations: 7,
+          selected_files: 9,
+          authenticated_excerpts: 12,
+          causal_hops: 20,
+        },
+      },
       corrective_release: {
         version: '0.40.0-beta.6',
         preparation_anchor_commit: BETA_6_PREPARATION_ANCHOR,
@@ -2514,7 +2574,14 @@ describe('core reset governance', () => {
         parent_authorization_receipt: BETA_6_PARENT_AUTHORIZATION,
         target_branch: 'next',
         npm_dist_tag: 'next',
-        publication_state: 'authorized_pending_protected_next_release_merge',
+        publication_state: 'published_from_protected_next',
+        publication_receipt: BETA_6_PUBLICATION,
+        release_merge: BETA_6_RELEASE_MERGE,
+        release_tree: BETA_6_RELEASE_TREE,
+        trusted_publishing_run: 'https://github.com/mohanagy/madar/actions/runs/30746816714',
+        published_at: '2026-08-02T12:28:22Z',
+        qualification_state: 'owner_manual_test_failed_terminal_language_and_zero_fallback_formal_631_gate_pending',
+        manual_failure_receipt: TERMINAL_LANGUAGE_AUTHORIZATION,
         package_candidate: BETA_6_PACKAGE,
         stable_or_latest: 'forbidden',
         github_release: 'forbidden',
@@ -2526,13 +2593,15 @@ describe('core reset governance', () => {
     expect(noFallbackQualification.corrective.constraints.publication).toBe('forbidden')
     const correctiveSources = execFileSync(
       git,
-      ['diff', '--name-only', BETA_5_RELEASE_MERGE, '--', 'src'],
+      ['diff', '--name-only', BETA_5_RELEASE_MERGE, BETA_6_PREPARATION_ANCHOR,
+        '--', 'src'],
       { encoding: 'utf8' },
     ).trim().split('\n').filter(Boolean).sort()
     expect(correctiveSources).toEqual([...NO_FALLBACK_CORRECTIVE_SOURCES].sort())
     const correctiveEvaluatorSources = execFileSync(
       git,
-      ['diff', '--name-only', BETA_5_RELEASE_MERGE, '--', 'tools/eval/lib'],
+      ['diff', '--name-only', BETA_5_RELEASE_MERGE, BETA_6_PREPARATION_ANCHOR,
+        '--', 'tools/eval/lib'],
       { encoding: 'utf8' },
     ).trim().split('\n').filter(Boolean).sort()
     expect(correctiveEvaluatorSources).toEqual(['tools/eval/lib/infrastructure/compare.ts'])
@@ -2550,9 +2619,16 @@ describe('core reset governance', () => {
     )).not.toThrow()
     expect(createHash('sha256').update(execFileSync(
       git,
-      ['diff', '--binary', '--full-index', BETA_5_RELEASE_MERGE, '--',
+      ['diff', '--binary', '--full-index', BETA_5_RELEASE_MERGE,
+        BETA_6_PREPARATION_ANCHOR, '--',
         ...NO_FALLBACK_CORRECTIVE_SOURCES],
     )).digest('hex')).toBe(NO_FALLBACK_CORRECTIVE_DIFF_SHA256)
+    const terminalLanguageSources = execFileSync(
+      git,
+      ['diff', '--name-only', TERMINAL_LANGUAGE_BASE, '--', 'src'],
+      { encoding: 'utf8' },
+    ).trim().split('\n').filter(Boolean)
+    expect(terminalLanguageSources).toEqual(['src/domain/query/plan.ts'])
     const changedEvidenceSkeletonProduction = execFileSync(
       git,
       [
@@ -2980,7 +3056,7 @@ describe('core reset governance', () => {
       completed_phase_commit: OBLIGATION_RETRIEVAL_MERGE,
       ...OBLIGATION_RETRIEVAL_SOURCE,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'no_fallback_corrective_beta6_manual_test_package_candidate',
+      snapshot_scope: 'terminal_language_corrective_unpublished_candidate',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([NO_FALLBACK_QUALIFICATION_ID])
@@ -3842,9 +3918,9 @@ describe('core reset governance', () => {
       base_commit: OBLIGATION_RETRIEVAL_BASE,
       completed_phase_commit: OBLIGATION_RETRIEVAL_MERGE,
       ...OBLIGATION_RETRIEVAL_SOURCE,
-      npm_files: BETA_6_PACKAGE.npm_files,
-      npm_packed_bytes: BETA_6_PACKAGE.npm_packed_bytes,
-      npm_unpacked_bytes: BETA_6_PACKAGE.npm_unpacked_bytes,
+      npm_files: TERMINAL_LANGUAGE_PACKAGE.npm_files,
+      npm_packed_bytes: TERMINAL_LANGUAGE_PACKAGE.npm_packed_bytes,
+      npm_unpacked_bytes: TERMINAL_LANGUAGE_PACKAGE.npm_unpacked_bytes,
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([NO_FALLBACK_QUALIFICATION_ID])
@@ -5242,11 +5318,11 @@ describe('core reset governance', () => {
       base_commit: OBLIGATION_RETRIEVAL_BASE,
       completed_phase_commit: OBLIGATION_RETRIEVAL_MERGE,
       ...OBLIGATION_RETRIEVAL_SOURCE,
-      npm_files: BETA_6_PACKAGE.npm_files,
-      npm_packed_bytes: BETA_6_PACKAGE.npm_packed_bytes,
-      npm_unpacked_bytes: BETA_6_PACKAGE.npm_unpacked_bytes,
+      npm_files: TERMINAL_LANGUAGE_PACKAGE.npm_files,
+      npm_packed_bytes: TERMINAL_LANGUAGE_PACKAGE.npm_packed_bytes,
+      npm_unpacked_bytes: TERMINAL_LANGUAGE_PACKAGE.npm_unpacked_bytes,
       measurement_state: 'source_and_package_exact',
-      snapshot_scope: 'no_fallback_corrective_beta6_manual_test_package_candidate',
+      snapshot_scope: 'terminal_language_corrective_unpublished_candidate',
     })
     expect(manifest.items.filter((item) => item.status === 'in_progress').map((item) => item.id))
       .toEqual([NO_FALLBACK_QUALIFICATION_ID])
@@ -6407,6 +6483,19 @@ describe('core reset governance', () => {
             diff_sha256: string
           }
         }
+        terminal_language_corrective?: {
+          protected_base: string
+          modified_sources: string[]
+          production_loc_budget: { added_max: number; removed_min: number; net_max: number }
+          source_measurement: {
+            production_typescript_files: number
+            production_typescript_loc: number
+            added: number
+            removed: number
+            net: number
+            diff_sha256: string
+          }
+        }
         candidate_source?: {
           production_typescript_files: number
           production_typescript_loc: number
@@ -6419,7 +6508,8 @@ describe('core reset governance', () => {
     const { current } = manifest
     const activePhase = manifest.items.find((item) => item.id === current.active_phase)
     const completedPhase = manifest.items.find((item) => item.id === current.completed_phase)
-    const corrective = activePhase?.corrective
+    const corrective = activePhase?.terminal_language_corrective
+      ?? activePhase?.corrective
     if (corrective) {
       const baseline = corrective.protected_base
       expect(execFileSync(git, ['cat-file', '-t', `${baseline}^{commit}`], {
@@ -6873,8 +6963,8 @@ describe('core reset governance', () => {
     expect(governance).toContain('## Completed — semantic execution index #632')
     expect(governance).toContain('## Completed — obligation-driven retrieval #630')
     expect(governance).toContain('## Published manual-test candidate — `0.40.0-beta.5`')
-    expect(governance).toContain('## Authorized corrective manual-test candidate — `0.40.0-beta.6`')
-    expect(governance).toContain('## In progress — beta.6 publication pending before no-fallback qualification #631')
+    expect(governance).toContain('## Published corrective manual-test candidate — `0.40.0-beta.6`')
+    expect(governance).toContain('## In progress — beta.6 manual qualification failed; focused corrective #631')
     expect(governance).toContain('## Stopped amendment — capability validation v1')
     expect(governance).toContain('## Historical accepted amendment — capability validation v2')
     expect(governance).toContain('## Cancelled amendment — capability validation')
