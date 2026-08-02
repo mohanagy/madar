@@ -17,6 +17,8 @@ Use this checklist when preparing a new `madar` release. Preparation and approva
 
 From the repository root:
 
+Release preparation for this beta requires Node.js `22.22.3` or newer within the Node 22 release line. npm `12.0.1` does not support Node 20 or earlier Node 22 releases.
+
 ```bash
 npm install --global npm@12.0.1
 npm ci
