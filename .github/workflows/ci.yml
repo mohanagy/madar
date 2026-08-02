@@ -72,6 +72,10 @@ jobs:
       - name: Build evaluation tooling
         run: npm run build:eval
 
+      - name: Enforce frozen issue 630 obligation dossier benchmark
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
+        run: node tools/eval/core-reset/benchmark.mjs
+
       - name: Validate Core Reset evidence contract
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
         run: npx vitest run tests/unit/core-reset-baseline.test.ts

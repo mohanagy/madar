@@ -120,8 +120,8 @@ function ready(i: ReadyQueryIndex, q: EvidenceHydrationTargets): HydratedEvidenc
     return ref
   }
   const fact = (v: IndexBodyFact, exact: boolean, keep = true): [string, string] => {
-    const owner = v.owner_symbol_id, had = ents.has(owner), own = ent(owner)
-    if ((!exact || !keep) && !had) ents.delete(owner)
+    const owner = v.owner_symbol_id, own = ents.get(owner)?.[0]
+      ?? (exact && keep ? ent(owner) : '')
     if (v.kind === 'call' && v.target_symbol_id) {
       node(v.target_symbol_id)
       if (ents.has(v.target_symbol_id)) used.add(ent(v.target_symbol_id))

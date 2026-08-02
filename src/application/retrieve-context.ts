@@ -6,7 +6,7 @@ import {
 import { canonicalJsonString as json, compareCodeUnits as cmp } from '../domain/graph/canonical-json.js'
 import type { IndexBodyFact, IndexValue } from '../domain/index/model.js'
 import type { QueryIndex, ReadyQueryIndex } from '../domain/query/index-status.js'
-import { planQuestion } from '../domain/query/plan.js'
+import { lexicalTokens, planQuestion } from '../domain/query/plan.js'
 import {
   selectWorkflow,
 } from '../domain/query/workflow.js'
@@ -46,8 +46,11 @@ function stat(
   flow?: WorkflowSelection,
   auth?: ReadyHydration,
   gaps = new Set<string>(),
+  plan?: QueryPlan,
 ): RetrieveMetrics {
-  const must = flow?.obligations.filter(({ mandatory }) => mandatory) ?? []
+  const selected = flow?.obligations ?? []
+  const must = plan?.obligations.filter(({ mandatory }) => mandatory)
+    ?? selected.filter(({ mandatory }) => mandatory)
   const data = flow?.metrics
   const roots = data?.rootCandidateCount ?? 0
   return {
@@ -56,7 +59,10 @@ function stat(
     selected_files: auth?.files.size ?? 0,
     authenticated_excerpts: auth?.excerpts.size ?? 0,
     required_obligations: must.length,
-    proven_obligations: must.filter(({ proven, id }) => proven && !gaps.has(id)).length,
+    proven_obligations: must.filter((required) => !gaps.has(required.id)
+      && selected.some((candidate) => candidate.mandatory && candidate.proven
+        && candidate.id === required.id && candidate.kind === required.kind
+        && candidate.target === required.target)).length,
     optional_bundles_omitted: 0,
     root_candidates: roots,
     initial_candidates: data?.candidateCount ?? 0,
@@ -81,10 +87,11 @@ const base = <S extends RetrieveContextResult['state']>(
   flow?: WorkflowSelection,
   auth?: ReadyHydration,
   gaps?: Set<string>,
+  plan?: QueryPlan,
 ): { schema: typeof RETRIEVE_RESULT_SCHEMA; version: typeof RETRIEVE_RESULT_VERSION
     state: S; metrics: RetrieveMetrics } => ({
   schema: RETRIEVE_RESULT_SCHEMA, version: RETRIEVE_RESULT_VERSION,
-  state, metrics: stat(req, flow, auth, gaps),
+  state, metrics: stat(req, flow, auth, gaps, plan),
 })
 
 const ask = (plan: QueryPlan): QuerySummary =>
@@ -158,10 +165,53 @@ function miss(
   const gaps = new Set(missing.flatMap((entry) =>
     entry.obligation_id ? [entry.obligation_id] : []))
   return fit({
-    ...base('incomplete', req, flow, auth, gaps),
+    ...base('incomplete', req, flow, auth, gaps, plan),
     query: ask(plan),
     missing,
   }, req.budget)
+}
+
+function mandatoryObligationGaps(
+  plan: QueryPlan,
+  flow: WorkflowSelection,
+): MissingRequirement[] {
+  const required = plan.obligations.filter(({ mandatory }) => mandatory)
+  const selected = flow.obligations.filter(({ mandatory, proven }) => mandatory && proven)
+  const unmatched = new Set(selected.map((_, index) => index))
+  const missing: MissingRequirement[] = []
+  for (const obligation of required) {
+    const match = selected.findIndex((candidate, index) => unmatched.has(index)
+      && candidate.id === obligation.id && candidate.kind === obligation.kind
+      && candidate.target === obligation.target)
+    if (match >= 0) unmatched.delete(match)
+    else missing.push({
+      code: 'required_proof_missing', obligation_id: obligation.id,
+      target: obligation.target,
+    })
+  }
+  for (const index of unmatched) {
+    const obligation = selected[index]!
+    missing.push({
+      code: 'required_reference_missing', obligation_id: obligation.id,
+      target: obligation.target,
+    })
+  }
+  return missing
+}
+
+function unsupportedSubjectTerms(
+  index: ReadyQueryIndex,
+  plan: QueryPlan,
+  flow: WorkflowSelection,
+): string[] | undefined {
+  if (!flow.missing.some(({ code }) => code === 'subject_unproven')) return undefined
+  const subject = lexicalTokens(plan.subject)
+  if (subject.length === 0) return undefined
+  const matched = index.unsupported_sources.some(({ path }) => {
+    const tokens = new Set(lexicalTokens(path))
+    return subject.every((term) => tokens.has(term))
+  })
+  return matched ? [...new Set(subject)].sort(cmp) : undefined
 }
 
 const fail = (
@@ -563,6 +613,13 @@ export function retrieveContext(index: QueryIndex, input: unknown): RetrieveCont
   } catch {
     return fail(req, 'corrupt', 'workflow selection')
   }
+  const unsupportedTerms = unsupportedSubjectTerms(index, plan, flow)
+  if (unsupportedTerms) {
+    return fit({
+      ...base('unsupported', req, flow),
+      reason: 'unsupported_source', terms: unsupportedTerms,
+    }, req.budget)
+  }
   let auth: HydratedEvidenceResult
   try {
     auth = hydrateEvidence(index, select(plan, flow, index))
@@ -579,6 +636,10 @@ export function retrieveContext(index: QueryIndex, input: unknown): RetrieveCont
       ...(entry.target.length <= 96 ? { target: entry.target } : {}),
     })), flow, auth)
   }
+  const obligationGaps = mandatoryObligationGaps(plan, flow)
+  if (obligationGaps.length > 0) {
+    return miss(req, plan, obligationGaps, flow, auth)
+  }
   const over = auth.files.size > FILES
     ? ['required_file_limit', auth.files.size, FILES] as const
     : auth.excerpts.size > EXCERPTS
@@ -592,7 +653,7 @@ export function retrieveContext(index: QueryIndex, input: unknown): RetrieveCont
     if ('code' in built) return miss(
       req, plan, [built], flow, auth)
     const ready = seal({
-      ...base('ready', req, flow, auth),
+      ...base('ready', req, flow, auth, undefined, plan),
       dossier: built,
     })
     if (ready.metrics.serialized_tokens > req.budget) return miss(

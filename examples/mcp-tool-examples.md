@@ -10,7 +10,7 @@ Request:
 {
   "name": "retrieve",
   "arguments": {
-    "question": "How does payment processing work?"
+    "question": "Where is capturePayment defined?"
   }
 }
 ```
@@ -20,36 +20,43 @@ The server returns a text content item containing canonical JSON:
 ```json
 {
   "schema": "madar.retrieve",
-  "version": 1,
-  "outcome": "evidence",
-  "matched_nodes": [
-    {
-      "node_id": "payments_capturepayment",
-      "label": "capturePayment()",
-      "node_kind": "function",
-      "source_file": "src/payments/capture-payment.ts",
-      "source_location": "src/payments/capture-payment.ts:18-46",
-      "line_number": 18,
-      "end_line_number": 46,
-      "source_domain": "production",
-      "provenance": [{ "extractor": "typescript" }],
-      "content_hash": "8f9c...",
-      "snippet": "export async function capturePayment(...) { ... }"
+  "version": 2,
+  "state": "ready",
+  "dossier": {
+    "query": { "intent": "locate", "subject": "capture payment", "terms": ["capture", "payment"] },
+    "obligations": [
+      { "id": "o1", "kind": "subject", "statement": "capture payment.", "proofs": ["s1"] }
+    ],
+    "flow": { "roots": [], "terminals": [], "links": [], "order": [] },
+    "evidence": {
+      "digest_algorithm": "sha256-base64url",
+      "files": [{ "id": "f1", "path": "src/payments/capture-payment.ts", "digest": "..." }],
+      "excerpts": [{ "id": "x1", "file": "f1", "range": [18, 1, 46, 2], "text": "export async function capturePayment(...) { ... }" }],
+      "controls": [],
+      "entities": [{ "id": "s1", "kind": "symbol", "label": "capturePayment()", "file": "f1", "excerpt": "x1" }],
+      "proofs": []
     }
-  ],
-  "relationships": [],
-  "boundaries": [],
+  },
   "metrics": {
+    "budget_tokens": 4000,
+    "serialized_tokens": 350,
     "selected_files": 1,
-    "snippets": 1,
-    "closure_passes": 0,
-    "serialized_tokens": 318,
-    "truncated": false
+    "authenticated_excerpts": 1,
+    "required_obligations": 1,
+    "proven_obligations": 1,
+    "optional_bundles_omitted": 0,
+    "root_candidates": 1,
+    "initial_candidates": 1,
+    "explored_nodes": 1,
+    "causal_hops": 0,
+    "recovery_frontier_nodes": 0,
+    "alternate_seeds": 0,
+    "recovery_passes": 0
   }
 }
 ```
 
-Use the exact returned excerpts as evidence. Do not treat the illustrative ids or hashes above as real repository facts.
+Use the exact returned dossier as evidence. Do not treat the illustrative IDs, digest, or source text above as real repository facts.
 
 ## Bounded request
 
@@ -65,72 +72,34 @@ Use the exact returned excerpts as evidence. Do not treat the illustrative ids o
 
 The requested budget is optional and must be a positive integer. The effective serialized result is always capped at 4,000 tokens.
 
-## Partial evidence
+## Non-ready result
 
-A useful result can include a boundary:
+If the load-bearing worker is outside the JavaScript/TypeScript index, Madar does not return partial answer evidence. The following shows the relevant response fields; it is abridged, and the canonical response also contains the complete bounded `metrics` object:
 
 ```json
 {
   "schema": "madar.retrieve",
-  "version": 1,
-  "outcome": "evidence",
-  "matched_nodes": [
-    {
-      "node_id": "billing_enqueueSettlement",
-      "label": "enqueueSettlement()",
-      "node_kind": "function",
-      "source_file": "src/billing/enqueue-settlement.ts",
-      "source_location": "src/billing/enqueue-settlement.ts:12-30",
-      "line_number": 12,
-      "end_line_number": 30,
-      "source_domain": "production",
-      "provenance": [{ "extractor": "typescript" }],
-      "content_hash": "26a1...",
-      "snippet": "export async function enqueueSettlement(...) { ... }"
-    }
-  ],
-  "relationships": [],
-  "boundaries": [
-    {
-      "kind": "unsupported",
-      "subject": "worker/settlement.go",
-      "detail": "The load-bearing worker is outside the JavaScript/TypeScript index."
-    }
-  ],
-  "metrics": {
-    "selected_files": 1,
-    "snippets": 1,
-    "closure_passes": 0,
-    "serialized_tokens": 421,
-    "truncated": false
-  }
+  "version": 2,
+  "state": "unsupported",
+  "reason": "unsupported_source",
+  "terms": ["settlement", "worker"]
 }
 ```
 
-Preserve the returned evidence, state the unsupported boundary, and verify only the missing load-bearing phase.
+State the exact reason and verify only the missing load-bearing phase.
 
 ## Stale graph
+
+This is likewise an abridged view of the relevant response fields; the canonical response also contains the complete bounded `metrics` object:
 
 ```json
 {
   "schema": "madar.retrieve",
-  "version": 1,
-  "outcome": "stale",
-  "matched_nodes": [],
-  "relationships": [],
-  "boundaries": [
-    {
-      "kind": "stale",
-      "subject": "src/payments/capture-payment.ts"
-    }
-  ],
-  "metrics": {
-    "selected_files": 0,
-    "snippets": 0,
-    "closure_passes": 0,
-    "serialized_tokens": 96,
-    "truncated": false
-  }
+  "version": 2,
+  "state": "stale",
+  "failures": [
+    { "state": "stale", "subject": "src/payments/capture-payment.ts" }
+  ]
 }
 ```
 
@@ -139,7 +108,7 @@ Run `madar generate . --update`, then retry the same question.
 ## CLI equivalent
 
 ```bash
-madar query "How does payment processing work?"
+madar query "Where is capturePayment defined?"
 madar query "Trace invoice retry scheduling." --budget 2000
 ```
 

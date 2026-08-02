@@ -1,6 +1,6 @@
 # CLI and MCP reference
 
-Madar has one retrieval path. MCP clients call `retrieve`; terminal users call `madar query`. For the same accepted graph and normalized request, both return the same byte-identical `madar.retrieve` version 1 envelope.
+Madar has one retrieval path. MCP clients call `retrieve`; terminal users call `madar query`. For the same accepted graph and normalized request, both return the same byte-identical `madar.retrieve` version 2 envelope.
 
 ## Supported commands
 
@@ -48,7 +48,7 @@ madar query "what calls enqueueInvoice?" --budget 2000
 madar query "trace login" --graph out/graph.json
 ```
 
-`question` is required and limited to 512 characters. `budget` is an optional positive integer; the effective result is capped at 4,000 serialized tokens, 12 files, 25 snippets, and one directional closure pass.
+`question` is required and limited to 512 characters. `budget` is an optional positive integer; the effective result is capped at 4,000 serialized tokens, 12 files, and 25 authenticated excerpts. Planning and graph recovery remain bounded to three roots, 32 initial candidates, 512 explored nodes, 24 causal hops, and two recovery passes.
 
 ## MCP
 
@@ -56,7 +56,7 @@ madar query "trace login" --graph out/graph.json
 
 | Tool | Input | Result |
 | --- | --- | --- |
-| `retrieve` | `{ "question": string, "budget"?: positive integer }` | Authenticated nodes, directed relationships, explicit boundaries, and metrics |
+| `retrieve` | `{ "question": string, "budget"?: positive integer }` | Complete authenticated answer dossier, or an exact non-ready state and gaps |
 
 Extra input properties are rejected. There are no MCP resources or prompts.
 
@@ -74,18 +74,18 @@ Example call:
 
 The server completes initialization and `tools/list` before it loads reconciliation code. Listing the tool starts one background reconciler for the active repository or linked worktree. The first tool call waits at most 25 seconds for an accepted graph. If the graph is still unavailable, Madar returns the normal canonical `unavailable` result; it never asks the client to retry Madar.
 
-## Result outcomes
+## Result states
 
-`outcome` is one of:
+`state` is one of:
 
-- `evidence` — authenticated graph evidence survived selection
-- `missing` — the graph has no support for the question
-- `unsupported` — required source is outside the JavaScript/TypeScript index
-- `stale` — source bytes or ranges no longer match the accepted graph
+- `ready` — every mandatory obligation, adjacent workflow handoff, terminal effect, claim reference, and authenticated proof is present in one non-truncated dossier
+- `incomplete` — `missing` lists the exact unproven obligation or limit
+- `unsupported` — the intent, subject, or required source is unsupported
+- `stale` — selected source bytes or ranges no longer match the accepted graph
 - `unavailable` — required local source cannot be read safely
 - `corrupt` — required graph facts or provenance are malformed
 
-`boundaries` can additionally report `disconnected` and `truncated`. A result can contain useful evidence and boundaries at the same time. See [MCP response shape](../mcp-response-shape.md) for every field.
+A `ready` dossier carries proven obligations; roots, terminals, directed links, and ordering groups; authenticated files, excerpts, controls, entities, and proofs; and exact resource metrics. Non-ready results never expose partial evidence as answer-ready. See [MCP response shape](../mcp-response-shape.md) for every field.
 
 ## Diagnostics
 

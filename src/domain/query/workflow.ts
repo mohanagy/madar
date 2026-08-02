@@ -199,17 +199,20 @@ function buildView(i: ReadyQueryIndex): ExecutionView {
         pub[6] ? [pub[6], ...binding] : []])
     }
   }
-  const hidden = new Set<string>()
+  const d = new Set<string>(), c = new Set<string>()
+  for (const a of arcs) {
+    const k = `${a[0]}\0${a[1]}`
+    if (a[2] === 'channel') c.add(k)
+    else a[4].forEach((id) => d.add(`${k}\0${id}`))
+  }
+  const h = new Set<string>()
   arcs = arcs.filter((arc) => arc[2] !== 'channel' || !arc[4].some((id) => {
     const fact = i.operation_by_id.get(id)
     if (fact?.kind !== 'call' || !fact.target_symbol_id) return false
-    const redundant = arcs.some((direct) => direct[0] === arc[0]
-      && direct[1] === fact.target_symbol_id && direct[2] === 'direct'
-      && direct[4].includes(id))
-      && arcs.some((inner) => inner[0] === fact.target_symbol_id
-        && inner[1] === arc[1] && inner[2] === 'channel')
-    if (redundant) arc[3].forEach((edge) => hidden.add(edge[0]))
-    return redundant
+    const r = d.has(`${arc[0]}\0${fact.target_symbol_id}\0${id}`)
+      && c.has(`${fact.target_symbol_id}\0${arc[1]}`)
+    if (r) arc[3].forEach((edge) => h.add(edge[0]))
+    return r
   }))
   arcs.sort((a, b) => cmp(a[0], b[0]) || cmp(a[1], b[1])
     || cmp(a[3][0]![0], b[3][0]![0]))
@@ -217,7 +220,7 @@ function buildView(i: ReadyQueryIndex): ExecutionView {
   for (const arc of arcs) {
     append(outgoing, arc[0], arc); append(incoming, arc[1], arc)
   }
-  const used = new Set([...arcs.flatMap(idsOf), ...hidden]),
+  const used = new Set([...arcs.flatMap(idsOf), ...h]),
     blocked = new Set(pubs.filter((edge) => byId.has(edge[1])
       && !used.has(edge[0])).map((edge) => edge[1])),
     v: ExecutionView = [
@@ -387,45 +390,66 @@ function corridor(
     fwd[1], ends.length === 0 && (fwd[2] || chosen[2]) || pruned]
 }
 type PersistenceFact = Extract<IndexBodyFact, { kind: 'persistence' }>
+type SwitchFact = Extract<IndexBodyFact, { kind: 'condition' }>
+function incomingArm(
+  i: ReadyQueryIndex, a: Arc, c: SwitchFact,
+): string | undefined {
+  if (c.test?.kind !== 'template') return
+  const [root, ...path] = c.test.parts
+  if (root?.kind !== 'parameter' || root.position !== 0
+    || !path.every((p): p is Extract<IndexValue, { kind: 'literal' }> =>
+      p.kind === 'literal' && typeof p.value === 'string')) return
+  const pub = a[3][0]!, at = pub[7], call = i.operation_by_id.get(a[4][0]!),
+    ch = i.channels_by_id.get(pub[2])!
+  if (at === undefined || call?.kind !== 'call') return
+  let v: IndexValue | undefined = call.arguments[at]
+  if (ch.transport.startsWith('bull')) {
+    const key = path.shift()?.value
+    if (key === 'name' && ch.channel_kind === 'job' && !path[0])
+      v = { kind: 'literal', value: ch.key }
+    else if (key !== 'data') return
+  }
+  for (const p of path) v = v?.kind === 'object'
+    ? v.entries.find((e) => e.key === p.value)?.value : undefined
+  if (v?.kind !== 'literal') return
+  return `case:${Buffer.from(JSON.stringify([
+    typeof v.value, v.value,
+  ])).toString('base64url')}`
+}
 function endFacts(
-  i: ReadyQueryIndex, arc: Arc, options: readonly PersistenceFact[],
+  i: ReadyQueryIndex, arc: Arc, facts: readonly PersistenceFact[],
 ): PersistenceFact[] {
-  if (arc[2] !== 'channel') return [...options]
-  const pub = arc[3][0]!, position = pub[7]
-  if (position === undefined) return []
-  const call = i.operation_by_id.get(arc[4][0]!)
-  if (call?.kind !== 'call') return []
-  const transport = i.channels_by_id.get(pub[2])!.transport,
-    matches = (i.operations_by_owner.get(arc[1]) ?? []).flatMap((cond) => {
-    if (cond.kind !== 'condition' || cond.condition_kind !== 'switch'
-      || cond.test?.kind !== 'template') return []
-    const [parameter, ...rawPath] = cond.test.parts
-    if (parameter?.kind !== 'parameter' || parameter.position !== 0
-      || rawPath.some((part) => part.kind !== 'literal'
-        || typeof part.value !== 'string')) return []
-    const path = rawPath.map((part) => (part as Extract<IndexValue, {
-      kind: 'literal'
-    }>).value as string)
-    if (transport === 'bullmq' && path[0] === 'data') path.shift()
-    let value: IndexValue | undefined = call.arguments[position]
-    for (const key of path) value = value?.kind === 'object'
-      ? value.entries.find((entry) => entry.key === key)?.value : undefined
-    if (value?.kind !== 'literal') return []
-    const arm = `case:${Buffer.from(JSON.stringify([
-      typeof value.value, value.value,
-    ])).toString('base64url')}`
-    const eligible = options.filter((fact) => fact.control.some((frame) =>
+  const cases = (i.operations_by_owner.get(arc[1]) ?? []).filter(
+    (fact): fact is SwitchFact => fact.kind === 'condition'
+      && fact.condition_kind === 'switch',
+  )
+  if (!cases[0]) return facts.filter((fact) => !fact.control.length)
+  const hits = cases.flatMap((cond) => {
+    const arm = incomingArm(i, arc, cond)
+    if (!arm) return []
+    const valid = facts.filter((fact) => fact.control.some((frame) =>
       frame.kind === 'branch' && frame.controller_fact_id === cond.id
       && frame.arm === arm))
-    return eligible.length > 0 ? [eligible] : []
+    return valid[0] ? [valid] : []
   })
-  return matches.length === 1 ? matches[0]! : []
+  return hits.length === 1 ? hits[0]! : []
 }
 function controls(
   i: ReadyQueryIndex, arcs: readonly Arc[], ends: readonly string[],
   seeds: readonly string[],
 ): Control {
   const ops = i.operation_by_id
+  const ok = (a: Arc, b: Arc): boolean => b[4].every((id) => {
+    const op = ops.get(id)
+    return !op || op.owner_symbol_id !== b[0]
+      || op.control.every((f) => {
+      if (f.kind !== 'branch') return true
+      const ctl = ops.get(f.controller_fact_id)
+      if (ctl?.kind !== 'condition' || ctl.condition_kind !== 'switch') return true
+      const arm = incomingArm(i, a, ctl)
+      return arm === f.arm
+    })
+  })
   const factIds = [...new Set(arcs.flatMap((arc) => arc[4]))],
     core = new Set([...seeds, ...factIds])
   const endOps = new Set<string>()
@@ -448,6 +472,17 @@ function controls(
     seqs = new Map<string, Extract<IndexBodyFact, { kind: 'call' }>[]>()
   const need = new Set(core)
   let proven = true
+  const ins = arcs.filter((arc) => arc[2] === 'channel')
+  for (const left of ins) {
+    const outs = arcs.filter((right) => right[0] === left[1])
+    if (outs.length > 0 && !outs.some((right) => ok(left, right)))
+      proven = false
+  }
+  for (const right of arcs) {
+    const froms = ins.filter((left) => left[1] === right[0])
+    if (froms.length > 0 && !froms.some((left) => ok(left, right)))
+      proven = false
+  }
   for (const id of need) {
     const fact = ops.get(id)
     if (!fact) { proven = false; continue }
@@ -593,7 +628,7 @@ export function selectWorkflow(i: ReadyQueryIndex, plan: QueryPlan): WorkflowSel
     ])],
     lastBound = bound('terminal'),
     stageNeed = bound('stage'),
-    behaviorNeed = bound('behavior'),
+    bNeed = bound('behavior'),
     asyncNeed = words(bound('handoff') ?? '').some((word) =>
       /^(?:async|dispatch|emit|enqueue|event|job|publish|queue|schedule)$/u.test(word)),
     fail = goals.some((entry) =>
@@ -634,19 +669,18 @@ export function selectWorkflow(i: ReadyQueryIndex, plan: QueryPlan): WorkflowSel
     .slice(0, CANDIDATES),
     focus = ranks[0]?.[0][0]
   const entryNeed = bound('entry'),
+    eligibleRoots = (ids: readonly string[]): readonly string[] => entryNeed
+      ? pickIds(v, ids, entryNeed, 'entry') : ids,
     entryPool = isFlow ? ranks.filter((entry) => !v[5].has(entry[0][0])) : [],
     entryIds = entryNeed
-      ? new Set(pickIds(v, entryPool.map((entry) => entry[0][0]),
-        entryNeed, 'entry')) : undefined
+      ? new Set(eligibleRoots(entryPool.map((entry) => entry[0][0]))) : undefined
   let entries = entryPool.filter((entry) =>
     !entryIds || entryIds.has(entry[0][0])).slice(0, 3)
   let scan: ReturnType<typeof scanRoots> | undefined
   if (isFlow && ranks.length > 0 && (entries.length === 0
     || entries.every((entry) => entry[0][7] !== 'production'))) {
     scan = scanRoots(v, ranks, goals)
-    const eligible = entryNeed
-      ? new Set(pickIds(v, scan[0], entryNeed, 'entry')) : undefined
-    const recovered = scan[0].filter((id) => !eligible || eligible.has(id))
+    const recovered = eligibleRoots(scan[0])
       .map((id) => cand(v[1].get(id)!))
     entries = [...new Map([...recovered, ...entries].map((entry) =>
       [entry[0][0], entry])).values()].slice(0, 3)
@@ -724,11 +758,9 @@ export function selectWorkflow(i: ReadyQueryIndex, plan: QueryPlan): WorkflowSel
     scan[1].forEach((id) => { rec.add(id); seen.add(id) })
     bounded ||= scan[2]
     passes = 1
-    const eligible = entryNeed
-      ? new Set(pickIds(v, scan[0], entryNeed, 'entry')) : undefined
     const alternates = flow[2].length === 0 && !locked
-      ? scan[0].filter((id) => id !== roots[0]
-        && (!eligible || eligible.has(id))).slice(0, 3 - tries) : []
+      ? eligibleRoots(scan[0]).filter((id) => id !== roots[0])
+        .slice(0, 3 - tries) : []
     if (alternates.length > 0) passes = 2
     for (const id of alternates) {
       tries += 1
@@ -820,12 +852,17 @@ export function selectWorkflow(i: ReadyQueryIndex, plan: QueryPlan): WorkflowSel
         .filter((id) => chosenOps.has(id)).sort(cmp)
       : related(stageNodes, true) : ctl[0],
     stageEdges = stage ? [...new Set(stage[1].flatMap(idsOf))].sort(cmp) : edgeIds,
-    behaviorIds = behaviorNeed
-      ? pickIds(v, [...flow[0]], behaviorNeed, 'behavior') : behaviors,
-    allBehavior = related(behaviors),
-    behaviorOps = behaviorNeed ? related(behaviorIds, true) : allBehavior
+    aOps = related(behaviors),
+    bTerms = words(bNeed ?? ''),
+    bOps = bTerms[0] ? aOps.filter((id) => {
+      const fact = ops.get(id)
+      return fact?.kind === 'call' && bTerms.every((word) =>
+        words(fact.callee).includes(word)
+        || v[1].get(fact.target_symbol_id ?? '')?.[3].has(word))
+    }) : aOps,
+    bReady = !bTerms[0] || !!bOps[0]
   const inert = behaviors.filter((id) => !owners.has(id)
-    && !allBehavior.some((operation) =>
+    && !aOps.some((operation) =>
     ops.get(operation)?.owner_symbol_id === id))
   const gaps = causal.filter((id) => v[4].has(id))
   type ProofData = readonly [
@@ -839,11 +876,11 @@ export function selectWorkflow(i: ReadyQueryIndex, plan: QueryPlan): WorkflowSel
     stage: [stageNodes, stageOps,
       steps.length > 0 && (!stageNeed || stageNodes.length > 0)],
     handoff: [causal, isFlow ? arcOps : related(causal),
-      links.length > 0 && (!isFlow || gaps.length === 0)
+      links.length > 0 && ctl[2] && (!isFlow || gaps.length === 0)
       && (!asyncNeed || links.some((arc) => arc[2] === 'channel'))],
-    behavior: [behaviorIds, behaviorOps,
+    behavior: [bReady ? behaviors : [], bOps,
       behaviors.length > 0 && inert.length === 0
-      && (!behaviorNeed || behaviorIds.length > 0)],
+      && bReady],
     ordering: [steps, arcOps,
       links.length > 0 && gaps.length === 0 && ctl[2]
       && links.every((arc) => arc[4].length > 0)],

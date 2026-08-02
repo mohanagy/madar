@@ -3,10 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { KnowledgeGraph } from '../../src/domain/graph/directed-multigraph.js'
 import type {
   IndexBodyFact, IndexChannelNode, IndexControlFrame, IndexRange,
-  IndexScalarValue, IndexValue,
+  IndexChannelTransport, IndexScalarValue, IndexValue,
 } from '../../src/domain/index/model.js'
 import type { ReadyQueryIndex } from '../../src/domain/query/index-status.js'
-import type { QueryPlan } from '../../src/domain/query/types.js'
+import { planQuestion } from '../../src/domain/query/plan.js'
+import type { QueryObligation, QueryPlan } from '../../src/domain/query/types.js'
 import { selectWorkflow } from '../../src/domain/query/workflow.js'
 
 const evidence = {
@@ -28,7 +29,7 @@ function triggerPayload(value: IndexScalarValue): IndexValue {
 }
 
 function plan(intent: QueryPlan['intent'], subject = 'idea report'): QueryPlan {
-  const obligations = intent === 'workflow' ? [
+  const obligations: readonly QueryObligation[] = intent === 'workflow' ? [
     { id: 'o1', kind: 'subject', target: subject, mandatory: true },
     { id: 'o2', kind: 'entry', target: subject, mandatory: true },
     { id: 'o3', kind: 'stage', target: subject, mandatory: true },
@@ -40,7 +41,7 @@ function plan(intent: QueryPlan['intent'], subject = 'idea report'): QueryPlan {
     { id: 'o1', kind: 'subject', target: subject, mandatory: true },
     { id: 'o2', kind: 'behavior', target: subject, mandatory: true },
   ] : [{ id: 'o1', kind: 'subject', target: subject, mandatory: true }]
-  return { intent, subject, terms: subject.split(' ').sort(), obligations } as QueryPlan
+  return { intent, subject, terms: subject.split(' ').sort(), obligations }
 }
 
 class Fixture {
@@ -157,17 +158,18 @@ class Fixture {
 
   switchSelector(
     owner: string, id: string,
-    path: readonly string[] = ['data', 'trigger'],
+    path: readonly string[] | null = ['data', 'trigger'],
+    position = 0,
   ): this {
     this.add(owner, {
       ...this.base(owner, id), kind: 'condition', condition_kind: 'switch',
-      test: {
+      ...(path ? { test: {
         kind: 'template',
         parts: [
-          { kind: 'parameter', position: 0 },
+          { kind: 'parameter', position },
           ...path.map((value): IndexValue => ({ kind: 'literal', value })),
         ],
-      },
+      } } : {}),
     })
     return this
   }
@@ -222,8 +224,9 @@ class Fixture {
   publish(
     from: string, helper: string, channel: string, id: string,
     args: readonly IndexValue[] = [], dispatchPayloadArgument?: number,
+    control: readonly IndexControlFrame[] = [],
   ): this {
-    this.call(from, helper, id, [], args)
+    this.call(from, helper, id, control, args)
     const fact = this.facts.get(id)
     if (!fact) throw new Error(`Missing publish fact ${id}`)
     this.graph.addEdge(from, channel, {
@@ -532,6 +535,92 @@ describe('deterministic workflow selection', () => {
     expect(result.obligations.find(({ kind }) => kind === 'behavior')?.proven).toBe(true)
   })
 
+  it('does not let an input-only call prove an explicit validation behavior', () => {
+    const explained: QueryPlan = {
+      intent: 'explain', subject: 'generate invoice',
+      terms: ['generate', 'input', 'invoice', 'validate'],
+      obligations: [
+        { id: 'o1', kind: 'subject', target: 'generate invoice', mandatory: true },
+        { id: 'o2', kind: 'behavior', target: 'input validate', mandatory: true },
+      ],
+    }
+    const fixture = new Fixture()
+      .symbol('entry', 'generateInvoiceValidateInput')
+      .symbol('logger', 'logInput')
+      .call('entry', 'logger')
+
+    const result = selectWorkflow(fixture.index(), explained)
+
+    expect(result.complete).toBe(false)
+    expect(result.missing).toContainEqual({
+      code: 'behavior_unproven', target: 'input validate', obligationId: 'o2',
+    })
+  })
+
+  it('proves an explicit behavior from the selected operation fact', () => {
+    const explained: QueryPlan = {
+      intent: 'explain', subject: 'generate invoice',
+      terms: ['generate', 'input', 'invoice', 'validate'],
+      obligations: [
+        { id: 'o1', kind: 'subject', target: 'generate invoice', mandatory: true },
+        { id: 'o2', kind: 'behavior', target: 'input validate', mandatory: true },
+      ],
+    }
+    const fixture = new Fixture()
+      .symbol('entry', 'generateInvoice')
+      .symbol('validateInput', 'validateInput')
+      .call('entry', 'validateInput')
+
+    const result = selectWorkflow(fixture.index(), explained)
+
+    expect(result.complete).toBe(true)
+    expect(result.obligations.find(({ kind }) => kind === 'behavior')?.operationIds)
+      .toEqual(['entry-calls-validateInput'])
+  })
+
+  it('does not stitch an explicit behavior across unrelated operations', () => {
+    const explained: QueryPlan = {
+      intent: 'explain', subject: 'generate invoice',
+      terms: ['generate', 'input', 'invoice', 'validate'],
+      obligations: [
+        { id: 'o1', kind: 'subject', target: 'generate invoice', mandatory: true },
+        { id: 'o2', kind: 'behavior', target: 'input validate', mandatory: true },
+      ],
+    }
+    const fixture = new Fixture()
+      .symbol('entry', 'generateInvoice')
+      .symbol('validateOutput', 'validateOutput')
+      .symbol('logInput', 'logInput')
+      .call('entry', 'validateOutput')
+      .call('entry', 'logInput')
+
+    expect(selectWorkflow(fixture.index(), explained).complete).toBe(false)
+  })
+
+  it('proves a compound behavior within one call macro without cross-call stitching', () => {
+    const planned = planQuestion({
+      question: 'How does password policy login create a tenant session?',
+      budget: 4_000,
+    })
+    expect(planned.status).toBe('supported')
+    if (planned.status !== 'supported') throw new Error('expected a supported plan')
+
+    const positive = new Fixture()
+      .symbol('login', 'passwordPolicyLogin')
+      .symbol('create', 'createSession')
+      .call('login', 'create')
+      .literal('create', 'tenant-field', 'tenantId')
+    expect(selectWorkflow(positive.index(), planned.plan).complete).toBe(true)
+
+    const split = new Fixture()
+      .symbol('login', 'passwordPolicyLogin')
+      .symbol('audit', 'createAuditLog')
+      .symbol('log', 'logTenantSession')
+      .call('login', 'audit')
+      .call('login', 'log')
+    expect(selectWorkflow(split.index(), planned.plan).complete).toBe(false)
+  })
+
   it('selects only a complete exact job-to-queue channel macro', () => {
     const queue: IndexChannelNode = {
       id: 'queue', node_kind: 'channel', channel_kind: 'queue',
@@ -596,6 +685,174 @@ describe('deterministic workflow selection', () => {
     expect(result.terminalSymbolIds).toEqual([])
     expect(result.missing.map(({ code }) => code))
       .toContain('terminal_persistence_unproven')
+  })
+
+  it('accepts unconditional authenticated persistence in a terminal channel consumer', () => {
+    const fixture = new Fixture()
+      .symbol('entry', 'generateIdeaReport')
+      .symbol('enqueue', 'enqueueReportJob')
+      .symbol('terminal', 'persistIdeaReport')
+      .persistence('terminal')
+      .channel({
+        id: 'queue', node_kind: 'channel', channel_kind: 'queue',
+        transport: 'bullmq', key: 'reports',
+      })
+      .publish('entry', 'enqueue', 'queue', 'publish-report')
+      .edge('queue', 'terminal', 'consumed_by')
+
+    const result = selectWorkflow(fixture.index(), plan('workflow'))
+
+    expect(result.complete).toBe(true)
+    expect(result.terminalSymbolIds).toEqual(['terminal'])
+  })
+
+  it.each([
+    ['matching BullMQ', 'bullmq', 'assemble'],
+    ['mismatching BullMQ', 'bullmq', 'archive'],
+    ['matching Bull', 'bull', 'assemble'],
+    ['mismatching Bull', 'bull', 'archive'],
+  ] as const)('%s job.name terminal cases remain exact', (
+    _name, transport: IndexChannelTransport, branch,
+  ) => {
+    const fixture = new Fixture()
+      .symbol('entry', 'generateIdeaReport')
+      .symbol('enqueue', 'enqueueReportJob')
+      .symbol('terminal', 'persistIdeaReport')
+      .switchSelector('terminal', 'job-name', ['name'])
+      .persistenceInCase('terminal', 'job-name', branch)
+      .channel({
+        id: 'queue', node_kind: 'channel', channel_kind: 'queue',
+        transport, key: 'reports',
+      })
+      .channel({
+        id: 'job', node_kind: 'channel', channel_kind: 'job',
+        transport, key: 'assemble', parent_channel_id: 'queue',
+      })
+      .publish(
+        'entry', 'enqueue', 'job', 'publish-report',
+        [triggerPayload('assembly_complete')], 0,
+      )
+      .route('job', 'queue', 'entry', 'publish-report')
+      .edge('queue', 'terminal', 'consumed_by')
+
+    const result = selectWorkflow(fixture.index(), plan('workflow'))
+
+    expect(result.complete).toBe(branch === 'assemble')
+    expect(result.terminalSymbolIds).toEqual(
+      branch === 'assemble' ? ['terminal'] : [],
+    )
+  })
+
+  it('does not let legacy Bull payload data shadow job.name', () => {
+    const fixture = new Fixture()
+      .symbol('entry', 'generateIdeaReport')
+      .symbol('enqueue', 'enqueueReportJob')
+      .symbol('terminal', 'persistIdeaReport')
+      .switchSelector('terminal', 'job-name', ['name'])
+      .persistenceInCase('terminal', 'job-name', 'archive')
+      .channel({
+        id: 'queue', node_kind: 'channel', channel_kind: 'queue',
+        transport: 'bull', key: 'reports',
+      })
+      .channel({
+        id: 'job', node_kind: 'channel', channel_kind: 'job',
+        transport: 'bull', key: 'assemble', parent_channel_id: 'queue',
+      })
+      .publish('entry', 'enqueue', 'job', 'publish-report', [{
+        kind: 'object', entries: [{
+          key: 'name', value: { kind: 'literal', value: 'archive' },
+        }],
+      }], 0)
+      .route('job', 'queue', 'entry', 'publish-report')
+      .edge('queue', 'terminal', 'consumed_by')
+
+    expect(selectWorkflow(fixture.index(), plan('workflow')).complete).toBe(false)
+  })
+
+  it('rejects a non-name BullMQ job selector backed only by payload data', () => {
+    const fixture = new Fixture()
+      .symbol('entry', 'generateIdeaReport')
+      .symbol('enqueue', 'enqueueReportJob')
+      .symbol('terminal', 'persistIdeaReport')
+      .switchSelector('terminal', 'job-id', ['id'])
+      .persistenceInCase('terminal', 'job-id', 'archive')
+      .channel({
+        id: 'queue', node_kind: 'channel', channel_kind: 'queue',
+        transport: 'bullmq', key: 'reports',
+      })
+      .channel({
+        id: 'job', node_kind: 'channel', channel_kind: 'job',
+        transport: 'bullmq', key: 'assemble', parent_channel_id: 'queue',
+      })
+      .publish('entry', 'enqueue', 'job', 'publish-report', [{
+        kind: 'literal', value: 'archive',
+      }], 0)
+      .route('job', 'queue', 'entry', 'publish-report')
+      .edge('queue', 'terminal', 'consumed_by')
+
+    const result = selectWorkflow(fixture.index(), plan('workflow'))
+
+    expect(result.complete).toBe(false)
+    expect(result.terminalSymbolIds).toEqual([])
+  })
+
+  it('rejects an intermediate publication guarded by an incompatible payload case', () => {
+    const fixture = (
+      nextCase: string,
+      selector: readonly string[] | null = ['data', 'trigger'],
+      position = 0,
+    ) => new Fixture()
+      .symbol('entry', 'generateIdeaReport')
+      .symbol('enqueue-first', 'enqueueFirst')
+      .symbol('worker', 'processIdeaReport')
+      .switchSelector('worker', 'worker-trigger', selector, position)
+      .symbol('enqueue-second', 'enqueueSecond')
+      .symbol('terminal', 'persistIdeaReport')
+      .switchSelector('terminal', 'terminal-trigger')
+      .persistenceInCase('terminal', 'terminal-trigger', 'second_complete')
+      .channel({
+        id: 'first-queue', node_kind: 'channel', channel_kind: 'queue',
+        transport: 'bullmq', key: 'first',
+      })
+      .channel({
+        id: 'second-queue', node_kind: 'channel', channel_kind: 'queue',
+        transport: 'bullmq', key: 'second',
+      })
+      .publish(
+        'entry', 'enqueue-first', 'first-queue', 'publish-first',
+        [triggerPayload('first_complete')], 0,
+      )
+      .edge('first-queue', 'worker', 'consumed_by')
+      .publish(
+        'worker', 'enqueue-second', 'second-queue', 'publish-second',
+        [triggerPayload('second_complete')], 0, [{
+          kind: 'branch', controller_fact_id: 'worker-trigger',
+          arm: typedCase(nextCase),
+        }],
+      )
+      .edge('second-queue', 'terminal', 'consumed_by')
+
+    const result = selectWorkflow(
+      fixture('different_trigger').index(), plan('workflow'),
+    )
+    expect(result.complete).toBe(false)
+    expect(result.terminalSymbolIds).toEqual(['terminal'])
+    expect(result.missing.map(({ code }) => code))
+      .toEqual(expect.arrayContaining([
+        'adjacent_handoff_unproven', 'controller_dependency_unproven',
+      ]))
+    expect(selectWorkflow(
+      fixture('first_complete').index(), plan('workflow'),
+    ).complete).toBe(true)
+    const unresolved = selectWorkflow(
+      fixture('first_complete', null).index(), plan('workflow'),
+    )
+    expect(unresolved.complete).toBe(false)
+    expect(unresolved.missing.map(({ code }) => code))
+      .toContain('controller_dependency_unproven')
+    expect(selectWorkflow(
+      fixture('first_complete', ['data', 'trigger'], 1).index(), plan('workflow'),
+    ).complete).toBe(false)
   })
 
   it.each([

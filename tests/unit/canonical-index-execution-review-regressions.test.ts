@@ -2935,16 +2935,17 @@ export function outerNest(publisher: Publisher) {
     )).toMatchObject({ state: 'ready' })
   })
 
-  it('scopes unresolved import mutation authority to the exact module binding', () => {
-    const publisher = `import { Queue } from 'bullmq'
+  const unresolvedImportPublisher = `import { Queue } from 'bullmq'
 type Payload = { trigger: string }
 const queue = new Queue<Payload>('sync')
 export async function publish(data: Payload) {
   return await queue.add('persist', data)
 }
 `
+
+  it('scopes unresolved import mutation authority to the exact module binding', () => {
     const unrelated = build({
-      'src/publisher.ts': publisher,
+      'src/publisher.ts': unresolvedImportPublisher,
       'src/unrelated.ts': `import { Missing } from 'unresolved-package'
 Missing.value = 1
 `,
@@ -2956,7 +2957,7 @@ Missing.value = 1
     )).not.toEqual([])
 
     const patched = build({
-      'src/publisher.ts': publisher,
+      'src/publisher.ts': unresolvedImportPublisher,
       'src/patch.ts': `import { Queue } from 'bullmq'
 Queue.prototype.add = async function() { return {} as never }
 `,
@@ -2968,7 +2969,7 @@ Queue.prototype.add = async function() { return {} as never }
     )).toEqual([])
 
     const namespacePatched = build({
-      'src/publisher.ts': publisher,
+      'src/publisher.ts': unresolvedImportPublisher,
       'src/patch.ts': `import * as Bull from 'bullmq'
 const { Queue: Patched } = Bull
 Patched.prototype.add = async function() { return {} as never }
@@ -2979,9 +2980,10 @@ Patched.prototype.add = async function() { return {} as never }
       symbol(namespacePatched.nodes, 'publish')[0],
       'publishes_to',
     )).toEqual([])
+  })
 
-    for (const [name, patch] of [
-      ['shorthand', `import * as Bull from 'bullmq'
+  it.each([
+    ['shorthand', `import * as Bull from 'bullmq'
 const { Queue } = Bull
 Queue.prototype.add = async function() { return {} as never }
 `],
@@ -3021,9 +3023,11 @@ declare const key: string
 const { [key]: Patched } = Bull as Record<string, typeof Bull.Queue>
 Patched.prototype.add = async function() { return {} as never }
 `],
-    ] as const) {
+  ] as const)(
+    'fails closed for unresolved import mutation through the %s binding',
+    (name, patch) => {
       const graph = build({
-        'src/publisher.ts': publisher,
+        'src/publisher.ts': unresolvedImportPublisher,
         [`src/${name}.ts`]: patch,
       })
       expect(outgoing(
@@ -3031,10 +3035,12 @@ Patched.prototype.add = async function() { return {} as never }
         symbol(graph.nodes, 'publish')[0],
         'publishes_to',
       ), name).toEqual([])
-    }
+    },
+  )
 
+  it('does not attribute a different unresolved module member to Queue', () => {
     const otherMemberPatched = build({
-      'src/publisher.ts': publisher,
+      'src/publisher.ts': unresolvedImportPublisher,
       'src/patch.ts': `import * as Bull from 'bullmq'
 const { Worker: Patched } = Bull
 Patched.prototype.close = async function() {}

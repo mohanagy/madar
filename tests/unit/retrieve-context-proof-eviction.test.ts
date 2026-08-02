@@ -35,6 +35,7 @@ const obligation = {
   id: 'o1' as const, kind: 'subject' as const, target: 'report', mandatory: true,
   proven: true, symbolIds: ['symbol:report'], operationIds: [], edgeIds: [],
 }
+const readyIndex = { state: 'ready', operation_by_id: new Map() } as never
 
 function selection(): WorkflowSelection {
   return {
@@ -115,11 +116,18 @@ function wrapperSelection(withParallelPublisher: boolean): WorkflowSelection {
       }] : []),
     ],
     controlGroups: [],
-    obligations: [{
-      id: 'o1', kind: 'handoff', target: 'report handoff', mandatory: true,
-      proven: true, symbolIds: ['entry', 'wrapper', 'terminal'], operationIds: [],
-      edgeIds: edges.map(({ id }) => id),
-    }],
+    obligations: [
+      {
+        id: 'o1', kind: 'subject', target: 'report handoff', mandatory: true,
+        proven: true, symbolIds: ['entry', 'wrapper', 'terminal'], operationIds: [],
+        edgeIds: edges.map(({ id }) => id),
+      },
+      {
+        id: 'o2', kind: 'behavior', target: 'report handoff', mandatory: true,
+        proven: true, symbolIds: ['entry', 'wrapper', 'terminal'], operationIds: [],
+        edgeIds: edges.map(({ id }) => id),
+      },
+    ],
     missing: [], metrics: { ...metrics, causalRelationHops: edges.length },
   }
 }
@@ -161,7 +169,7 @@ describe('retrieve dossier eviction failures', () => {
     mocks.selection = selection()
     mocks.hydration = oversizedHydration(fileCount, excerptCount)
 
-    const result = retrieveContext({ state: 'ready' } as never, {
+    const result = retrieveContext(readyIndex, {
       question: 'Where is report defined?', budget: 4_000,
     })
 
@@ -175,13 +183,13 @@ describe('retrieve dossier eviction failures', () => {
   it('reports the full ready dossier token count without returning a partial dossier', () => {
     mocks.selection = selection()
     mocks.hydration = hydratedReport()
-    const full = retrieveContext({ state: 'ready' } as never, {
+    const full = retrieveContext(readyIndex, {
       question: 'Where is report defined?', budget: 4_000,
     })
     expect(full.state).toBe('ready')
     if (full.state !== 'ready') return
 
-    const constrained = retrieveContext({ state: 'ready' } as never, {
+    const constrained = retrieveContext(readyIndex, {
       question: 'Where is report defined?', budget: 256,
     })
 
@@ -215,7 +223,7 @@ describe('retrieve dossier eviction failures', () => {
       ]]),
     }
 
-    expect(retrieveContext({ state: 'ready' } as never, {
+    expect(retrieveContext(readyIndex, {
       question: 'Where is report defined?', budget: 4_000,
     })).toMatchObject({
       state: 'incomplete',
@@ -223,6 +231,51 @@ describe('retrieve dossier eviction failures', () => {
       metrics: { required_obligations: 1, proven_obligations: 0 },
     })
   })
+
+  it.each([
+    [
+      'drops',
+      [],
+      [{ code: 'required_proof_missing', obligation_id: 'o1', target: 'report' }],
+    ],
+    [
+      'changes the target of',
+      [{ ...obligation, target: 'unrelated' }],
+      [
+        { code: 'required_proof_missing', obligation_id: 'o1', target: 'report' },
+        { code: 'required_reference_missing', obligation_id: 'o1', target: 'unrelated' },
+      ],
+    ],
+    [
+      'changes the identity of',
+      [{ ...obligation, id: 'o2' as const }],
+      [
+        { code: 'required_proof_missing', obligation_id: 'o1', target: 'report' },
+        { code: 'required_reference_missing', obligation_id: 'o2', target: 'report' },
+      ],
+    ],
+    [
+      'changes the kind of',
+      [{ ...obligation, kind: 'behavior' as const }],
+      [
+        { code: 'required_proof_missing', obligation_id: 'o1', target: 'report' },
+        { code: 'required_reference_missing', obligation_id: 'o1', target: 'report' },
+      ],
+    ],
+  ] as const)(
+    'fails closed when selection %s a mandatory planned obligation',
+    (_name, obligations, missing) => {
+      mocks.selection = { ...selection(), obligations }
+      mocks.hydration = hydratedReport()
+
+      expect(retrieveContext(readyIndex, {
+        question: 'Where is report defined?', budget: 4_000,
+      })).toMatchObject({
+        state: 'incomplete', missing,
+        metrics: { required_obligations: 1, proven_obligations: 0 },
+      })
+    },
+  )
 
   it('keeps every bounded missing-obligation identity at the minimum budget', () => {
     mocks.selection = {
@@ -238,7 +291,7 @@ describe('retrieve dossier eviction failures', () => {
       entities: new Map(), proofs: new Map(),
     }
 
-    const result = retrieveContext({ state: 'ready' } as never, {
+    const result = retrieveContext(readyIndex, {
       question: 'How does report work?', budget: 256,
     })
     expect(result.state).toBe('incomplete')
@@ -263,7 +316,7 @@ describe('retrieve dossier eviction failures', () => {
       entities: new Map(), proofs: new Map(),
     }
 
-    const result = retrieveContext({ state: 'ready' } as never, {
+    const result = retrieveContext(readyIndex, {
       question: 'How does report work?', budget: 256,
     })
 
@@ -279,7 +332,7 @@ describe('retrieve dossier eviction failures', () => {
     mocks.selection = wrapperSelection(false)
     mocks.hydration = wrapperHydration(false)
 
-    const result = retrieveContext({ state: 'ready' } as never, {
+    const result = retrieveContext(readyIndex, {
       question: 'How does the report handoff work?', budget: 4_000,
     })
 
@@ -299,7 +352,7 @@ describe('retrieve dossier eviction failures', () => {
     mocks.selection = wrapperSelection(true)
     mocks.hydration = wrapperHydration(true)
 
-    const result = retrieveContext({ state: 'ready' } as never, {
+    const result = retrieveContext(readyIndex, {
       question: 'How does the report handoff work?', budget: 4_000,
     })
 

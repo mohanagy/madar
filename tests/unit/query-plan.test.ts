@@ -36,6 +36,24 @@ describe('planQuestion', () => {
     })
   })
 
+  it.each([
+    'Which worker writes retryCount?',
+    'Which component writes retryCount?',
+    'Which controller writes retryCount?',
+    'Which repository writes retryCount?',
+    'What function writes retryCount?',
+  ])('keeps ordinary owner-noun write questions focused: %s', (question) => {
+    expect(plan(question)).toEqual({
+      intent: 'locate',
+      subject: 'retry count',
+      terms: ['count', 'retry'],
+      access: 'write',
+      obligations: [
+        { id: 'o1', kind: 'subject', target: 'retry count', mandatory: true },
+      ],
+    })
+  })
+
   it('preserves action-shaped words inside captured identifier subjects', () => {
     expect(plan('Where is handleClick defined?').subject).toBe('handle click')
     expect(plan('Where is updateIndex defined?').subject).toBe('update index')
@@ -70,10 +88,10 @@ describe('planQuestion', () => {
     expect(plan('How does generateInvoice validate input?')).toEqual({
       intent: 'explain',
       subject: 'generate invoice',
-      terms: ['generate', 'input', 'invoice'],
+      terms: ['generate', 'input', 'invoice', 'validate'],
       obligations: [
         { id: 'o1', kind: 'subject', target: 'generate invoice', mandatory: true },
-        { id: 'o2', kind: 'behavior', target: 'input', mandatory: true },
+        { id: 'o2', kind: 'behavior', target: 'input validate', mandatory: true },
       ],
     })
   })
@@ -109,8 +127,11 @@ describe('planQuestion', () => {
       'What runs the monthly billing close?',
       'monthly billing close',
       ['billing', 'close', 'monthly', 'run'],
+      'monthly billing close',
     ],
-  ])('plans a bounded responsibility explanation: %s', (question, subject, terms) => {
+  ])('plans a bounded responsibility explanation: %s', (
+    question, subject, terms, behavior = 'send',
+  ) => {
     const result = plan(question)
 
     expect(result.intent).toBe('explain')
@@ -118,6 +139,7 @@ describe('planQuestion', () => {
     expect(result.terms).toEqual(terms)
     expect(result.obligations.map(({ kind }) => kind))
       .toEqual(['subject', 'behavior'])
+    expect(result.obligations[1]?.target).toBe(behavior)
   })
 
   it('plans every explicit workflow obligation', () => {
@@ -220,9 +242,9 @@ describe('planQuestion', () => {
     )
 
     expect(result.intent).toBe('workflow')
-    expect(result.subject).toBe('idea report')
+    expect(result.subject).toBe('idea')
     expect(result.terms).toEqual([
-      'assemble', 'idea', 'report', 'research', 'schedule',
+      'assemble', 'idea', 'research', 'schedule',
     ])
     expect(result.obligations.find(({ kind }) => kind === 'entry')?.target)
       .toBe('request idea')
@@ -234,17 +256,43 @@ describe('planQuestion', () => {
       .toBe('persistence')
   })
 
+  it('keeps a focused write locator out of workflow planning', () => {
+    expect(plan('Which method writes retryCount?')).toEqual({
+      intent: 'locate',
+      subject: 'retry count',
+      terms: ['count', 'retry'],
+      access: 'write',
+      obligations: [
+        { id: 'o1', kind: 'subject', target: 'retry count', mandatory: true },
+      ],
+    })
+  })
+
+  it('uses the stated terminal object instead of rewriting a generic result', () => {
+    const result = plan(
+      'Which runtime components accept an invoice, compose the result, and write the ledger?',
+    )
+
+    expect(result.intent).toBe('workflow')
+    expect(result.subject).toBe('invoice ledger')
+    expect(result.terms).toEqual(['assemble', 'invoice', 'ledger'])
+    expect(result.obligations.find(({ kind }) => kind === 'terminal')?.target)
+      .toBe('persistence')
+  })
+
   it.each([
     [
       'How does password policy login create a tenant session?',
       'password policy login', ['create', 'login', 'password', 'policy', 'session', 'tenant'],
+      'create session tenant',
     ],
     [
       'How is the monthly revenue report built?',
       'monthly revenue report', ['build', 'monthly', 'report', 'revenue'],
+      'monthly revenue report',
     ],
   ])('keeps bounded component behavior as an explanation: %s', (
-    question, subject, terms,
+    question, subject, terms, behavior,
   ) => {
     const result = plan(question)
     expect(result.intent).toBe('explain')
@@ -252,6 +300,7 @@ describe('planQuestion', () => {
     expect(result.terms).toEqual(terms)
     expect(result.obligations.map(({ kind }) => kind))
       .toEqual(['subject', 'behavior'])
+    expect(result.obligations[1]?.target).toBe(behavior)
   })
 
   it('keeps a get-passive workflow subject ahead of boundary clauses', () => {

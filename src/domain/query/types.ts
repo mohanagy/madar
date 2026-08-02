@@ -245,7 +245,7 @@ export type RetrieveContextResult =
     missing: L<MissingRequirement>
   }
   | RB<'unsupported'> & {
-    reason: 'unsupported_intent' | 'missing_subject'
+    reason: 'unsupported_intent' | 'missing_subject' | 'unsupported_source'
     terms: L<string>
   }
   | RB<FS> & {

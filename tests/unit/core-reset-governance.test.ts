@@ -469,22 +469,22 @@ const OBLIGATION_RETRIEVAL_FILES = [
 ] as const
 const OBLIGATION_RETRIEVAL_SOURCE = {
   production_typescript_files: 44,
-  production_typescript_loc: 15_770,
-  production_loc_added: 2_200,
-  production_loc_removed: 2_149,
-  production_loc_net: 51,
+  production_typescript_loc: 15_871,
+  production_loc_added: 2_302,
+  production_loc_removed: 2_150,
+  production_loc_net: 152,
 } as const
 const OBLIGATION_RETRIEVAL_PACKAGE = {
   npm_files: 102,
-  npm_packed_bytes: 154_210,
-  npm_unpacked_bytes: 649_915,
-  npm_shasum: 'a56d34339b674a117f986f987bd192232349c077',
+  npm_packed_bytes: 155_118,
+  npm_unpacked_bytes: 653_492,
+  npm_shasum: '6115dd200d5bfca6bfd322993f89c7f1f8bff20a',
   npm_integrity:
-    'sha512-vvy6RxlvxLlP5e9Go/TqQvMn4M1K7uFxkEs5XteOT1uGiOVIamge00g94zyrZg8ytB7i//KqJ45Y93KI538KhQ==',
-  npm_artifact_sha256: '3d567b7763fab480cdd35ad39f965e9abe5cf872408b10cf586e9ac7143af27d',
+    'sha512-anIx/G+SnAuTcl9yFw/h5KJY1g+Y/kU7YZ+OwcSDEIJ4+Npk6ybFB2sWouSU+3cW9kbgOmHUFeu+VtuZWrlscw==',
+  npm_artifact_sha256: '1fa88431a12a2ba00a415595002b99df599b9aa4670daeabeb9bfd8a2353c414',
 } as const
 const OBLIGATION_RETRIEVAL_DIFF_SHA256 =
-  '3c3374453f05cb221248dad07debffa8179f882c11ea9901408dcc707caa7f3a'
+  '0f6a9c0151156c8a75d0de8693d54979926a4774c818762d2deddd7d2a3b487f'
 const OBLIGATION_RETRIEVAL_STOP_RECEIPT =
   'https://github.com/mohanagy/madar/issues/630#issuecomment-5153255732'
 const OBLIGATION_RETRIEVAL_AMENDMENT =
@@ -1088,7 +1088,7 @@ describe('core reset governance', () => {
     expect(design).toContain(EVALUATION_TOOLING_RFC_MERGE_RECEIPT)
     expect(design).toContain(SEMANTIC_EXECUTION_INDEX_MERGE)
     expect(design).toContain(SEMANTIC_EXECUTION_INDEX_MERGE_TREE)
-    expect(design).toContain('1,384 source LOC / 59,896 emitted bytes')
+    expect(design).toContain('1,424 source LOC / 60,928 emitted bytes')
     expect(design).not.toContain('## Active amendment — generation and incremental index')
     expect(design).not.toContain('the phase remains active')
     expect(design).not.toContain('completion evidence remains open')
@@ -1157,7 +1157,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('Issues `#622`, `#625`, and `#632` are complete on `next`')
     expect(scorecard).toContain('supersedes its historical stop and reactivates it under exactly two amended ceilings')
     expect(scorecard).toContain(SEMANTIC_EXECUTION_INDEX_MERGE)
-    expect(scorecard).toContain('1,384 source LOC / 59,896 emitted bytes')
+    expect(scorecard).toContain('1,424 source LOC / 60,928 emitted bytes')
     expect(scorecard).toContain(
       'accessor-backed `data` or discriminator properties—including destructured aliases and shorthand—fail closed',
     )
@@ -2139,8 +2139,8 @@ describe('core reset governance', () => {
           diff_sha256: OBLIGATION_RETRIEVAL_DIFF_SHA256,
         },
         replacement_measurement: {
-          source_loc: 1_384,
-          emitted_bytes: 59_896,
+          source_loc: 1_424,
+          emitted_bytes: 60_928,
         },
         package_measurement: {
           files: OBLIGATION_RETRIEVAL_PACKAGE.npm_files,
@@ -2155,8 +2155,8 @@ describe('core reset governance', () => {
           replacement_source_loc_gate: 'passed',
           replacement_gate: 'passed',
           package_gate: 'passed',
-          focused_test_files_passed: 4,
-          focused_tests_passed: 159,
+          focused_test_files_passed: 7,
+          focused_tests_passed: 267,
           typecheck: 'passed',
           build: 'passed',
           build_eval: 'passed',
@@ -2175,20 +2175,41 @@ describe('core reset governance', () => {
           ci_eval_regression_grounded_percent: 95,
           final_full_suite: 'passed',
           full_test_files_passed: 83,
-          full_tests_passed: 865,
+          full_tests_passed: 899,
           coverage: 'passed',
-          coverage_statements_percent: 85.47,
-          coverage_statements_covered: 7_696,
-          coverage_statements_total: 9_004,
-          coverage_branches_percent: 79.76,
-          coverage_branches_covered: 7_169,
-          coverage_branches_total: 8_988,
-          coverage_functions_percent: 91.91,
-          coverage_functions_covered: 1_341,
-          coverage_functions_total: 1_459,
-          coverage_lines_percent: 88.97,
-          coverage_lines_covered: 6_430,
-          coverage_lines_total: 7_227,
+          coverage_statements_percent: 85.6,
+          coverage_statements_covered: 7_771,
+          coverage_statements_total: 9_078,
+          coverage_branches_percent: 79.93,
+          coverage_branches_covered: 7_228,
+          coverage_branches_total: 9_042,
+          coverage_functions_percent: 92.02,
+          coverage_functions_covered: 1_362,
+          coverage_functions_total: 1_480,
+          coverage_lines_percent: 89.07,
+          coverage_lines_covered: 6_488,
+          coverage_lines_total: 7_284,
+          portable_ci_oracle: {
+            corpus_files: 18,
+            corpus_sha256: '712dff25a9cebcfdb0eb39e8ae381ec2dd20519ca609dc02390eab9ecaf567d6',
+            source_fingerprint: '11025a70b79251745ceab23a9fe36baa81fbdafeede6f57b95c42cb9da1e3077',
+            prompts: 14,
+            ready_results: 14,
+            mandatory_obligations_per_prompt: 7,
+            corridor_nodes: 9,
+            flow_links: 8,
+            channel_handoffs: 4,
+            terminal_persistence: 'MongoRepository<StoredReport>.update',
+            flow_sha256: '6cca04d52e590ccccd48e6728ec0744fa7606334034ffbca0002e578a6dcca67',
+            evidence_sha256: '154efca16be4a163b24cb3812f85cf113c73696805d2de83734c252f8ce656f3',
+            serialized_tokens_min: 2_838,
+            serialized_tokens_max: 2_869,
+            negative_mutations_rejected: [
+              'wrong_corpus_attestation',
+              'unknown_proof_reference',
+              'missing_terminal_persistence',
+            ],
+          },
           frozen_govalidate_acceptance: 'passed',
           frozen_govalidate: {
             prompts: 5,
@@ -2210,7 +2231,7 @@ describe('core reset governance', () => {
           frozen_govalidate_all_variants: {
             prompts: 14,
             ready_results: 14,
-            serialized_tokens_min: 3_965,
+            serialized_tokens_min: 3_970,
             serialized_tokens_max: 3_998,
             all_four_required_queues: true,
             flow_sha256: 'c34295432be3a54ce7506c2019fd17f3e2ca631c78d578b696234cf981c8592b',
@@ -2220,9 +2241,9 @@ describe('core reset governance', () => {
           warm_retrieval_reference: {
             warmups: 3,
             measured_queries: 100,
-            median_ms: 50.795208,
-            p95_ms: 53.452208,
-            max_ms: 56.98625,
+            median_ms: 48.61237500000061,
+            p95_ms: 49.48099999999977,
+            max_ms: 50.91725000000042,
           },
           independent_review: 'pending',
           exact_head_ci: 'pending',
@@ -2251,6 +2272,29 @@ describe('core reset governance', () => {
         },
       },
     })
+    const limits = obligationRetrieval.delivery_limits
+    const packageBudget = obligationRetrieval.npm_package_budget
+    const candidate = obligationRetrieval.candidate
+    expect(candidate.replacement_measurement.emitted_bytes)
+      .toBeLessThanOrEqual(limits.replacement_emitted_bytes_max)
+    expect(candidate.replacement_measurement.source_loc)
+      .toBeLessThanOrEqual(limits.replacement_source_loc_max)
+    expect(candidate.source_measurement.production_typescript_loc)
+      .toBeLessThanOrEqual(limits.total_production_loc_max)
+    expect(candidate.source_measurement.net)
+      .toBeLessThanOrEqual(limits.net_production_loc_max)
+    expect(candidate.package_measurement.files)
+      .toBeLessThanOrEqual(packageBudget.files_max)
+    expect(candidate.package_measurement.packed_bytes)
+      .toBeLessThanOrEqual(packageBudget.packed_bytes_max)
+    expect(candidate.package_measurement.unpacked_bytes)
+      .toBeLessThanOrEqual(packageBudget.unpacked_bytes_max)
+    expect(limits.replacement_emitted_bytes_max)
+      .toBe(candidate.amendment.replacement_emitted_bytes_max)
+    expect(packageBudget.unpacked_bytes_max)
+      .toBe(candidate.amendment.npm_unpacked_bytes_max)
+    expect(obligationRetrieval.constraints.package_ceiling_change)
+      .toBe('forbidden_beyond_owner_amendment_5153369147')
     const noFallbackQualification = manifest.items.find(
       (item) => item.id === 'no-fallback-qualification-631',
     ) as any

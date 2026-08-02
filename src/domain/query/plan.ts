@@ -3,6 +3,7 @@ import type {
   QueryIntent, QueryObligation, QuestionPlanResult,
 } from './types.js'
 
+const OWNER = 'file|module|class|function|method|service|handler|worker|component|controller|repository'
 const sets = <T extends string[]>(...values: T): {
   [K in keyof T]: ReadonlySet<string>
 } => values.map((value) => new Set(value.split(' '))) as {
@@ -12,11 +13,11 @@ const [FLOW, LOCATE, EXPLAIN, COMMON] = sets(
   'flow workflow pipeline lifecycle generate run execute create build produce process work',
   'locate find define declare implement contain handle own write read save set update persist publish consume store use live',
   'explain describe work behave operate handle process validate resolve compute calculate score select update apply evaluate mean control do use choose return reject allow call invoke',
-  'a an the this that these those it its they them their we our you your i me my he she what which who where when why how does do did is are was were be been being can could would should will may might must get of for with without by in into on at as and or but if then than from through via to after before during while all every any some each please show trace explain describe end complete initial final full entire code repository file module class function method service handler definition declaration implementation behavior happen',
+  `a an the this that these those it its they them their we our you your i me my he she what which who where when why how does do did is are was were be been being can could would should will may might must get of for with without by in into on at as and or but if then than from through via to after before during while all every any some each please show trace explain describe end complete initial final full entire code ${OWNER.replaceAll('|', ' ')} definition declaration implementation behavior happen`,
 )
 const ACTIONS = new Set([...FLOW, ...LOCATE, ...EXPLAIN, 'complete', 'get', 'happen', 'plan'])
 const BEHAVIOR = new Set(
-  'apply allow calculate call choose compute consume control evaluate invoke persist publish read reject resolve return save score select store update validate write'.split(' '),
+  'apply allow calculate choose compute consume control evaluate persist publish read reject resolve return save score select store update validate write'.split(' '),
 )
 const IRREGULAR = new Map('built=build generation=generate got=get getting=get persistence=persist planned=plan planning=plan ran=run running=run setting=set written=write wrote=write'.split(' ').map((pair) => pair.split('=') as [string, string]))
 
@@ -50,12 +51,10 @@ const [FW, LW, EW] =
 const AUX = 'is|are|was|were|does|do|did|can|could|would|should|will'
 const CLAUSE = 'when|after|before|on|during|if|from|through|via'
 const FN = 'flow|workflow|pipeline|lifecycle'
-const FV = 'generate|run|execute|create|build|produce|process'
-const OWNER = 'file|module|class|function|method|service|handler'
-
 const isNoise = (token: string, mode: QueryIntent): boolean =>
   COMMON.has(token) || (mode === 'workflow' ? FLOW.has(token)
-    : mode === 'locate' ? LOCATE.has(token) : EXPLAIN.has(token))
+    : mode === 'locate' ? LOCATE.has(token)
+      : EXPLAIN.has(token) && !BEHAVIOR.has(token))
 const content = (
   value: string, mode: QueryIntent, plain = false,
 ): string[] => [...new Set(lexicalTokens(value).filter((token) =>
@@ -85,10 +84,12 @@ function coordinatedFlow(text: string): CoordinatedFlow | undefined {
     composed = /\b(compose|assemble|render) (.+?)(?= (?:and )?(?:write|save|store|persist)\b|$)/u
       .exec(text)
   if (!entry || !end) return undefined
-  const input = content(entry[1]!, 'workflow'),
-    output = content(composed?.[2] ?? end[1]!, 'workflow')
-  const first = input[0], rawLast = output.at(-1), last = composed
-    && /^(?:model|output|result)$/u.test(rawLast ?? '') ? 'report' : rawLast
+  const input = content(entry[1]!, 'workflow')
+  let output = content(composed?.[2] ?? end[1]!, 'workflow')
+  if (composed && /^(?:model|output|result)$/u.test(output.at(-1) ?? ''))
+    output = content(end[1]!, 'workflow')
+  const first = input[0], raw = output.at(-1),
+    last = /^(?:model|output|result)$/u.test(raw ?? '') ? first : raw
   if (!first || !last) return undefined
   const handoff = /\b(?:schedule|enqueue|queue|dispatch|publish|emit)\b/u.test(text)
       ? 'schedule' : undefined,
@@ -167,7 +168,7 @@ function simpleSubject(text: string, mode: 'locate' | 'explain'): string {
   const locate = mode === 'locate'
   const rules = locate ? [
     RegExp(`\\bwhere (?:(?:${AUX}) )?(.+?)(?= (?:${LW})\\b| (?:${CLAUSE})\\b|$)`),
-    RegExp(`\\b(?:which (?:${OWNER}) |what )(?:${LW}) (.+?)(?= (?:${CLAUSE})\\b|$)`),
+    RegExp(`\\b(?:(?:which|what) (?:${OWNER}) |what )(?:${LW}) (.+?)(?= (?:${CLAUSE})\\b|$)`),
     /\b(?:locate|find)(?: the)? (.+?)(?= (?:definition|declaration|implementation)\b|$)/,
     /\b(?:definition|declaration|implementation) (?:of|for) (.+)$/,
   ] : [
@@ -185,19 +186,21 @@ function simpleSubject(text: string, mode: 'locate' | 'explain'): string {
 export function planQuestion(request: NormalizedRetrieveRequest): QuestionPlanResult {
   const raw = request.question.normalize('NFKC'),
     text = lexicalTokens(request.question).join(' '),
+    tokens = text.split(' '),
     names = [...raw.matchAll(/(?<![\p{L}\p{N}_$])([\p{L}_$][\p{L}\p{N}_$]*\.[\p{L}_$][\p{L}\p{N}_$]*)/gu)]
       .map((match) => match[1]!),
     ident = /\bwhere\s+(?:is|are|was|were)\s+[`'"]?([\p{L}_$][\p{L}\p{N}_$.-]*)[`'"]?\s+(?:defined|declared|implemented)\b/iu
-      .exec(raw)?.[1]
+      .exec(raw)?.[1],
+    ownerQuery = RegExp(`\\b(?:which|what) (?:${OWNER}) (?:${LW})\\b`).test(text)
   const mode: QueryIntent | undefined =
-    /\b(?:end to end|what happen when)\b|\bfrom\b.+\b(?:through|via)\b.+\bto\b|\btrace\b.+\bfrom\b.+\bto\b/.test(text)
+    ownerQuery ? 'locate'
+    : /\b(?:end to end|what happen when)\b|\bfrom\b.+\b(?:through|via)\b.+\bto\b|\btrace\b.+\bfrom\b.+\bto\b/.test(text)
       || /^follow /.test(text)
       || /^which .+\b(?:save|write)\b/.test(text)
       || /\bhow\b[\s\S]*\bgenerat(?:e|ed|es|ing)\b/iu.test(raw)
       || /\bhow\s+(?:(?:does|do|did|can|could|would|should|will)\s+)?(?!(?:does|do|did|can|could|would|should|will)\b)[\p{L}_$][\p{L}\p{N}_$]*\s+(?:generate|run|execute|create|build|produce|process)\b/iu.test(raw)
       ? 'workflow'
       : /\b(?:where|locate|find|definition|declaration|implementation)\b/.test(text)
-        || RegExp(`\\bwhich (?:${OWNER}) (?:${LW})\\b`).test(text)
         || RegExp(`\\bwhat (?:${LW})\\b`).test(text) ? 'locate'
         : /^trace\b|\b(?:flow|workflow|pipeline|lifecycle)\b/.test(text) ? 'workflow'
           : /\b(?:explain|describe|how|why|behavior)\b|\bwhat (?:does|do|is|are)\b/
@@ -207,7 +210,7 @@ export function planQuestion(request: NormalizedRetrieveRequest): QuestionPlanRe
   if (!mode) {
     return {
       status: 'unsupported', reason: 'unsupported_intent',
-      terms: [...new Set(text.split(' ').filter((token) => !COMMON.has(token)))].sort(),
+      terms: [...new Set(tokens.filter((token) => !COMMON.has(token)))].sort(),
     }
   }
   const coordinated = mode === 'workflow' ? coordinatedFlow(text) : undefined
@@ -224,14 +227,14 @@ export function planQuestion(request: NormalizedRetrieveRequest): QuestionPlanRe
     span.stage = names.flatMap(lexicalTokens).join(' ')
   }
   const skip = new Set(ignored)
-  const terms = new Set((coordinated?.terms ?? lexicalTokens(text)).filter((token) =>
+  const terms = new Set((coordinated?.terms ?? tokens).filter((token) =>
     !isNoise(token, mode) && !skip.has(token)))
   lexicalTokens(topic).forEach((token) => terms.add(token))
   const sorted = [...terms].sort()
   if (!topic || sorted.length === 0) {
     return { status: 'unsupported', reason: 'missing_subject', terms: sorted }
   }
-  const words = new Set(text.split(' '))
+  const words = new Set(tokens)
   const access: LocateAccess | undefined = mode !== 'locate' ? undefined
     : ['read', 'find'].some((word) => words.has(word)) ? 'read'
       : ['write', 'save', 'set', 'update', 'persist', 'store']
@@ -239,9 +242,9 @@ export function planQuestion(request: NormalizedRetrieveRequest): QuestionPlanRe
   const kinds: readonly ObligationKind[] = mode === 'locate' ? ['subject']
     : mode === 'explain' ? ['subject', 'behavior']
       : ['subject', 'entry', 'stage', 'handoff', 'behavior', 'ordering', 'terminal']
-  const rest = sorted.filter((token) => !lexicalTokens(topic).includes(token))
-  const verbs = text.split(' ').filter((token) => BEHAVIOR.has(token))
-  const behavior = [...new Set(rest.length > 0 ? rest : verbs)].join(' ')
+  const rest = RegExp(`^(?:what (?:${FW})|how (?:is|are|was|were) .+ (?:${FW}))\\b`)
+    .test(text) ? []
+      : sorted.filter((token) => !lexicalTokens(topic).includes(token))
   return {
     status: 'supported',
     plan: {
@@ -252,8 +255,8 @@ export function planQuestion(request: NormalizedRetrieveRequest): QuestionPlanRe
           : kind === 'stage' ? span.stage ?? topic
             : kind === 'handoff' ? span.handoff ?? topic
             : kind === 'terminal' ? span.terminal ?? topic
-              : kind === 'behavior' && mode === 'explain' && behavior
-                ? behavior : topic,
+              : kind === 'behavior' && mode === 'explain' && rest.length
+                ? rest.join(' ') : topic,
         mandatory: true,
       })),
       ...(access ? { access } : {}),

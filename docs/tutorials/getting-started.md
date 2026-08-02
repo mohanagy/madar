@@ -23,9 +23,9 @@ cd examples/sample-workspace
 madar query "how does password reset request enqueue the reset email?"
 ```
 
-The result contains authenticated `matched_nodes`, directed `relationships`, explicit `boundaries`, and bounded `metrics`. It uses the same query application as MCP.
+The result contains a top-level `state` and bounded `metrics`. `ready` adds a `dossier` with the normalized query, proven obligations, ordered flow, and authenticated evidence. It uses the same query application as MCP.
 
-Madar returns at most 12 files, 25 snippets, and 4,000 serialized tokens. A smaller positive budget is optional:
+Madar returns at most 12 files, 25 authenticated excerpts, and 4,000 serialized tokens, with at most two bounded recovery passes. A smaller positive budget is optional:
 
 ```bash
 madar query "how does password reset request enqueue the reset email?" --budget 2000
@@ -65,15 +65,14 @@ Other MCP clients are Registry or manual targets. Register command `madar`, argu
 
 ## Expected result behavior
 
-- `outcome: "evidence"` means authenticated graph evidence survived selection.
-- `outcome: "missing"` means the graph has no support for the question.
-- `outcome: "unsupported"` means required source is outside the JavaScript/TypeScript index.
-- `outcome: "stale"` means source bytes or ranges no longer match the graph.
-- `outcome: "unavailable"` means required local source cannot be read safely.
-- `outcome: "corrupt"` means required graph facts are malformed.
-- `boundaries` may additionally report disconnected or truncated evidence.
+- `state: "ready"` means every mandatory claim and required workflow handoff or terminal is proven in one non-truncated dossier.
+- `state: "incomplete"` returns the exact missing obligation or limit.
+- `state: "unsupported"` means the intent, subject, or required source is unsupported.
+- `state: "stale"` means selected source bytes or ranges no longer match the graph.
+- `state: "unavailable"` means required local source cannot be read safely.
+- `state: "corrupt"` means required graph facts are malformed.
 
-Do not treat a partial path as complete. Use the returned evidence first, report its boundary, and make only the focused source read needed to verify what is missing.
+Do not treat a non-ready result as partial evidence. Report its exact missing requirement, reason, or failure and make only the focused source read needed to verify it.
 
 ## Refresh after changes
 
@@ -98,7 +97,7 @@ madar generate . --watch
 - **The MCP server is absent:** rerun `madar install claude` or `madar install codex`, restart the client, and inspect its MCP list.
 - **The installer reports a conflict:** preserve the existing user-owned registration and resolve ownership explicitly; Madar will not overwrite it.
 - **The result is unsupported:** confirm the load-bearing code is JavaScript or TypeScript.
-- **The result is truncated:** ask a narrower question; budgets above 4,000 do not increase the effective cap.
+- **The result is incomplete:** inspect its exact `missing` entries; ask a narrower question when the token or selection bound is named.
 
 ## Optional next steps
 

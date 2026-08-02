@@ -70,5 +70,5 @@ Fresh install, idempotent reinstall, and uninstall change zero repository bytes.
 - the running client lists the Madar MCP server.
 - the capability list contains tools only.
 - the tool list contains exactly `retrieve`.
-- one forced test question produces authenticated evidence or an explicit boundary.
-- the client does not present missing, unsupported, stale, unavailable, corrupt, disconnected, or truncated evidence as a complete answer.
+- one forced test question produces a `ready` dossier or an exact non-ready state.
+- the client never presents `incomplete`, `unsupported`, `stale`, `unavailable`, or `corrupt` as evidence or a complete answer.

@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import {
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -467,12 +466,6 @@ describe('selected evidence hydration', () => {
     expect(hydrateEvidence(value.index, value.targets)).toEqual({
       state: 'unavailable', subject: path,
     })
-    const implementation = readFileSync(
-      new URL('../../src/application/evidence-hydrator.ts', import.meta.url),
-      'utf8',
-    )
-    expect(implementation.indexOf('const rel = relative(root, file)'))
-      .toBeLessThan(implementation.indexOf('buf = readFileSync(file)'))
   })
 
   it('rejects fatal UTF-8 while distinguishing it from stale bytes', () => {

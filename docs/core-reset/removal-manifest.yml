@@ -33,16 +33,16 @@ current:
   base_commit: c88823ecbeb6da6284cf74ecbd304e9315ffd4fa
   completed_phase_commit: c88823ecbeb6da6284cf74ecbd304e9315ffd4fa
   production_typescript_files: 44
-  production_typescript_loc: 15770
-  production_loc_added: 2200
-  production_loc_removed: 2149
-  production_loc_net: 51
+  production_typescript_loc: 15871
+  production_loc_added: 2302
+  production_loc_removed: 2150
+  production_loc_net: 152
   npm_files: 102
-  npm_packed_bytes: 154210
-  npm_unpacked_bytes: 649915
-  npm_shasum: a56d34339b674a117f986f987bd192232349c077
-  npm_integrity: sha512-vvy6RxlvxLlP5e9Go/TqQvMn4M1K7uFxkEs5XteOT1uGiOVIamge00g94zyrZg8ytB7i//KqJ45Y93KI538KhQ==
-  npm_artifact_sha256: 3d567b7763fab480cdd35ad39f965e9abe5cf872408b10cf586e9ac7143af27d
+  npm_packed_bytes: 155118
+  npm_unpacked_bytes: 653492
+  npm_shasum: 6115dd200d5bfca6bfd322993f89c7f1f8bff20a
+  npm_integrity: sha512-anIx/G+SnAuTcl9yFw/h5KJY1g+Y/kU7YZ+OwcSDEIJ4+Npk6ybFB2sWouSU+3cW9kbgOmHUFeu+VtuZWrlscw==
+  npm_artifact_sha256: 1fa88431a12a2ba00a415595002b99df599b9aa4670daeabeb9bfd8a2353c414
   measurement_state: source_and_package_exact
   snapshot_scope: obligation_driven_retrieval_630_candidate
   release_candidate:
@@ -2455,28 +2455,28 @@ items:
     candidate:
       source_measurement:
         production_typescript_files: 44
-        production_typescript_loc: 15770
-        added: 2200
-        removed: 2149
-        net: 51
-        diff_sha256: 3c3374453f05cb221248dad07debffa8179f882c11ea9901408dcc707caa7f3a
+        production_typescript_loc: 15871
+        added: 2302
+        removed: 2150
+        net: 152
+        diff_sha256: 0f6a9c0151156c8a75d0de8693d54979926a4774c818762d2deddd7d2a3b487f
       replacement_measurement:
-        source_loc: 1384
-        emitted_bytes: 59896
+        source_loc: 1424
+        emitted_bytes: 60928
       package_measurement:
         files: 102
-        packed_bytes: 154210
-        unpacked_bytes: 649915
-        shasum: a56d34339b674a117f986f987bd192232349c077
-        integrity: sha512-vvy6RxlvxLlP5e9Go/TqQvMn4M1K7uFxkEs5XteOT1uGiOVIamge00g94zyrZg8ytB7i//KqJ45Y93KI538KhQ==
-        artifact_sha256: 3d567b7763fab480cdd35ad39f965e9abe5cf872408b10cf586e9ac7143af27d
+        packed_bytes: 155118
+        unpacked_bytes: 653492
+        shasum: 6115dd200d5bfca6bfd322993f89c7f1f8bff20a
+        integrity: sha512-anIx/G+SnAuTcl9yFw/h5KJY1g+Y/kU7YZ+OwcSDEIJ4+Npk6ybFB2sWouSU+3cW9kbgOmHUFeu+VtuZWrlscw==
+        artifact_sha256: 1fa88431a12a2ba00a415595002b99df599b9aa4670daeabeb9bfd8a2353c414
       local_verification:
         source_gate: passed
         replacement_source_loc_gate: passed
         replacement_gate: passed
         package_gate: passed
-        focused_test_files_passed: 4
-        focused_tests_passed: 159
+        focused_test_files_passed: 7
+        focused_tests_passed: 267
         typecheck: passed
         build: passed
         build_eval: passed
@@ -2495,20 +2495,39 @@ items:
         ci_eval_regression_grounded_percent: 95
         final_full_suite: passed
         full_test_files_passed: 83
-        full_tests_passed: 865
+        full_tests_passed: 899
         coverage: passed
-        coverage_statements_percent: 85.47
-        coverage_statements_covered: 7696
-        coverage_statements_total: 9004
-        coverage_branches_percent: 79.76
-        coverage_branches_covered: 7169
-        coverage_branches_total: 8988
-        coverage_functions_percent: 91.91
-        coverage_functions_covered: 1341
-        coverage_functions_total: 1459
-        coverage_lines_percent: 88.97
-        coverage_lines_covered: 6430
-        coverage_lines_total: 7227
+        coverage_statements_percent: 85.6
+        coverage_statements_covered: 7771
+        coverage_statements_total: 9078
+        coverage_branches_percent: 79.93
+        coverage_branches_covered: 7228
+        coverage_branches_total: 9042
+        coverage_functions_percent: 92.02
+        coverage_functions_covered: 1362
+        coverage_functions_total: 1480
+        coverage_lines_percent: 89.07
+        coverage_lines_covered: 6488
+        coverage_lines_total: 7284
+        portable_ci_oracle:
+          corpus_files: 18
+          corpus_sha256: 712dff25a9cebcfdb0eb39e8ae381ec2dd20519ca609dc02390eab9ecaf567d6
+          source_fingerprint: 11025a70b79251745ceab23a9fe36baa81fbdafeede6f57b95c42cb9da1e3077
+          prompts: 14
+          ready_results: 14
+          mandatory_obligations_per_prompt: 7
+          corridor_nodes: 9
+          flow_links: 8
+          channel_handoffs: 4
+          terminal_persistence: MongoRepository<StoredReport>.update
+          flow_sha256: 6cca04d52e590ccccd48e6728ec0744fa7606334034ffbca0002e578a6dcca67
+          evidence_sha256: 154efca16be4a163b24cb3812f85cf113c73696805d2de83734c252f8ce656f3
+          serialized_tokens_min: 2838
+          serialized_tokens_max: 2869
+          negative_mutations_rejected:
+            - wrong_corpus_attestation
+            - unknown_proof_reference
+            - missing_terminal_persistence
         frozen_govalidate_acceptance: passed
         frozen_govalidate:
           prompts: 5
@@ -2533,7 +2552,7 @@ items:
         frozen_govalidate_all_variants:
           prompts: 14
           ready_results: 14
-          serialized_tokens_min: 3965
+          serialized_tokens_min: 3970
           serialized_tokens_max: 3998
           all_four_required_queues: true
           flow_sha256: c34295432be3a54ce7506c2019fd17f3e2ca631c78d578b696234cf981c8592b
@@ -2542,9 +2561,9 @@ items:
         warm_retrieval_reference:
           warmups: 3
           measured_queries: 100
-          median_ms: 50.795208
-          p95_ms: 53.452208
-          max_ms: 56.98625
+          median_ms: 48.61237500000061
+          p95_ms: 49.48099999999977
+          max_ms: 50.91725000000042
         independent_review: pending
         exact_head_ci: pending
       historical_stop:
@@ -2573,14 +2592,14 @@ items:
       query_specific_rule: forbidden
       second_retrieval_engine: forbidden
       dependency_change: forbidden
-      package_ceiling_change: forbidden
+      package_ceiling_change: forbidden_beyond_owner_amendment_5153369147
       graph_index_or_query_semantics_widening: forbidden
       npm_publication: forbidden
       github_release: forbidden
       tag: forbidden
       registry_metadata_publication: forbidden
       main_target: forbidden
-    notes: 'Issue #630 began from exact protected next commit c88823ecbeb6da6284cf74ecbd304e9315ffd4fa and tree b715764668b4296e9e8ab4da715374f47af137db after #632 completed. The current local candidate replaces rank/slice/traverse with one obligation planner, workflow builder and authenticated evidence hydrator, then returns a deterministic v2 dossier only when every mandatory stage, adjacent async handoff, terminal action and proof is complete. Its source inventory and delta pass. All five field-incident prompts return ready dossiers covering 9 files, 12 excerpts, 12 links, 15 order groups, 21 entities, 20 proofs and all four required queues at 3977 / 3977 / 3979 / 3977 / 3977 tokens; all 14 frozen GoValidate formulations are ready at 3965-3998 tokens with all four queues and stable flow/evidence hashes. The portable real-GoValidate runner passes 14/14 and 100 warm measurements at median 50.795208 ms, p95 53.452208 ms and max 56.98625 ms. The 4-file focused suite passes 159 tests, the full suite and coverage pass 83 files / 865 tests at 85.47% statements, 79.76% branches, 91.91% functions and 88.97% lines, and typecheck, build, build-eval, governance, packed parity, release verification, registry validation, isolation, npm audit and CI evaluation regression pass. The replacement trio is 1384 source LOC / 59896 emitted bytes under the owner-amended 61000-byte ceiling; the exact package is 102 files / 154210 packed / 649915 unpacked bytes under the owner-amended 655000-byte unpacked ceiling. The historical stop receipt is https://github.com/mohanagy/madar/issues/630#issuecomment-5153255732; owner amendment https://github.com/mohanagy/madar/issues/630#issuecomment-5153369147 supersedes that stop and authorizes active continuation while changing only those two ceilings. All other metrics, constraints and prohibitions remain unchanged. Independent review, exact-head CI, CodeRabbit, zero-thread and merge gates remain pending; no publication, release, Registry metadata, tag or main action is authorized.'
+    notes: 'Issue #630 began from exact protected next commit c88823ecbeb6da6284cf74ecbd304e9315ffd4fa and tree b715764668b4296e9e8ab4da715374f47af137db after #632 completed. The current local candidate replaces rank/slice/traverse with one obligation planner, workflow builder and authenticated evidence hydrator, then returns a deterministic v2 dossier only when every mandatory stage, adjacent async handoff, terminal action and proof is complete. Its source inventory and delta pass. All five field-incident prompts return ready dossiers covering 9 files, 12 excerpts, 12 links, 15 order groups, 21 entities, 20 proofs and all four required queues at 3977 / 3977 / 3979 / 3977 / 3977 tokens; all 14 frozen GoValidate formulations are ready at 3970-3998 tokens with all four queues and stable flow/evidence hashes. The separate repository-portable CI oracle regenerates an exact attested 18-file committed corpus, returns 14/14 ready dossiers with seven mandatory obligations, a 9-node/8-link corridor, all four handoffs and terminal persistence, and rejects wrong-corpus, unknown-proof and missing-persistence mutations. The real-GoValidate audit passes 14/14 and 100 warm measurements at median 48.61237500000061 ms, p95 49.48099999999977 ms and max 50.91725000000042 ms. The 7-file focused suite passes 267 tests, the full suite and coverage pass 83 files / 899 tests at 85.6% statements, 79.93% branches, 92.02% functions and 89.07% lines, and typecheck, build, build-eval, governance, packed parity, release verification, registry validation, isolation, npm audit and CI evaluation regression pass. The replacement trio is 1424 source LOC / 60928 emitted bytes under the owner-amended 61000-byte ceiling; the exact package is 102 files / 155118 packed / 653492 unpacked bytes under the owner-amended 655000-byte unpacked ceiling. The historical stop receipt is https://github.com/mohanagy/madar/issues/630#issuecomment-5153255732; owner amendment https://github.com/mohanagy/madar/issues/630#issuecomment-5153369147 supersedes that stop and authorizes active continuation while changing only those two ceilings. All other metrics, constraints and prohibitions remain unchanged. Independent review, exact-head CI, CodeRabbit, zero-thread and merge gates remain pending; no publication, release, Registry metadata, tag or main action is authorized.'
     exit_gate: Every mandatory question obligation is proven and packed into one non-truncated ready dossier, or the result returns the exact non-ready state and missing obligations within the unchanged file, excerpt, token, recovery, package, and latency ceilings.
 
   - id: no-fallback-qualification-631
