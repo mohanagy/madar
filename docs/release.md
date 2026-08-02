@@ -18,14 +18,15 @@ Use this checklist when preparing a new `madar` release. Preparation and approva
 From the repository root:
 
 ```bash
+npm install --global npm@12.0.1
 npm ci
 npm run release:verify
 npm run registry:validate
 npm run typecheck
 npm run build
+npm sbom --sbom-format cyclonedx --package-lock-only > sbom.cdx.json
 npm run test:run
 npm pack --dry-run
-npm sbom --sbom-format cyclonedx --package-lock-only > sbom.cdx.json
 ```
 
 `npm run release:verify` locks the public package metadata, changelog version entry, and npm-visible README links before publish so repository/documentation drift is caught in one pass.

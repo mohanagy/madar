@@ -121,11 +121,19 @@ describe('release hygiene', () => {
 
   it('documents the release verification command in the release checklist', () => {
     const releaseDoc = loadFile('docs/release.md')
+    const npmPinIndex = releaseDoc.indexOf('npm install --global npm@12.0.1')
+    const sbomIndex = releaseDoc.indexOf(
+      'npm sbom --sbom-format cyclonedx --package-lock-only > sbom.cdx.json',
+    )
+    const testIndex = releaseDoc.indexOf('npm run test:run')
 
     expect(releaseDoc).toContain('npm run release:verify')
     expect(releaseDoc).toContain('npm version 0.40.0-beta.7 --no-git-tag-version')
     expect(releaseDoc).toContain('`main` for stable releases, `next` for prereleases')
     expect(releaseDoc).toContain('npm publish --tag next --access public --provenance')
+    expect(npmPinIndex).toBeGreaterThan(0)
+    expect(sbomIndex).toBeGreaterThan(npmPinIndex)
+    expect(testIndex).toBeGreaterThan(sbomIndex)
   })
 
   it('keeps a regenerated beta.7 SBOM newer than the corrective merge anchor', () => {
