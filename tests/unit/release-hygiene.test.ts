@@ -9,6 +9,15 @@ interface PackageManifest {
   scripts?: Record<string, string>
 }
 
+interface CycloneDxSbom {
+  serialNumber: string
+  metadata: {
+    timestamp: string
+    tools: Array<{ vendor: string; name: string; version: string }>
+    component: { name: string; version: string; purl: string }
+  }
+}
+
 function loadFile(path: string): string {
   return readFileSync(join(process.cwd(), path), 'utf8')
 }
@@ -117,6 +126,22 @@ describe('release hygiene', () => {
     expect(releaseDoc).toContain('npm version 0.40.0-beta.7 --no-git-tag-version')
     expect(releaseDoc).toContain('`main` for stable releases, `next` for prereleases')
     expect(releaseDoc).toContain('npm publish --tag next --access public --provenance')
+  })
+
+  it('keeps a regenerated beta.7 SBOM newer than the corrective merge anchor', () => {
+    const sbom = JSON.parse(loadFile('sbom.cdx.json')) as CycloneDxSbom
+
+    expect(sbom.serialNumber).toMatch(/^urn:uuid:[0-9a-f-]{36}$/)
+    expect(sbom.serialNumber).not.toBe('urn:uuid:c6b28dd1-6a13-44c0-9c26-c431364c2402')
+    expect(Date.parse(sbom.metadata.timestamp)).toBeGreaterThan(
+      Date.parse('2026-08-02T15:09:37Z'),
+    )
+    expect(sbom.metadata.tools).toContainEqual({ vendor: 'npm', name: 'cli', version: '12.0.1' })
+    expect(sbom.metadata.component).toMatchObject({
+      name: '@lubab/madar',
+      version: '0.40.0-beta.7',
+      purl: 'pkg:npm/%40lubab/madar@0.40.0-beta.7',
+    })
   })
 
   it('publishes beta.7 from a protected next push without a tag or GitHub Release', () => {
