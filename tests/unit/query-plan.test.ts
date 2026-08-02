@@ -344,6 +344,46 @@ describe('planQuestion', () => {
     expect(suffix).toEqual(prefix)
   })
 
+  it('keeps end-to-end wording separate from explicit workflow bounds', () => {
+    const result = plan(
+      'How does generating the idea report work end to end — from the generate request through the pipeline to the saved report?',
+    )
+
+    expect(result.subject).toBe('idea report')
+    expect(result.obligations.find(({ kind }) => kind === 'entry')?.target)
+      .toBe('generate request')
+    expect(result.obligations.find(({ kind }) => kind === 'stage')?.target)
+      .toBe('pipeline')
+    expect(result.obligations.find(({ kind }) => kind === 'terminal')?.target)
+      .toBe('report')
+  })
+
+  it.each([
+    'a saved report',
+    'its saved report',
+    'the final saved report',
+  ])('normalizes a saved-report terminal after determiners: %s', (terminal) => {
+    const result = plan(
+      `How does generating the idea report work end to end from the generate request through the pipeline to ${terminal}`,
+    )
+
+    expect(result.obligations.find(({ kind }) => kind === 'terminal')?.target)
+      .toBe('report')
+  })
+
+  it.each([
+    ['stored procedure', 'store procedure'],
+    ['store credit', 'store credit'],
+    ['write concern', 'write concern'],
+  ])('preserves a compound workflow terminal: %s', (terminal, expected) => {
+    const result = plan(
+      `Trace the transaction workflow from request through database to ${terminal}`,
+    )
+
+    expect(result.obligations.find(({ kind }) => kind === 'terminal')?.target)
+      .toBe(expected)
+  })
+
   it('extracts the workflow object from event phrasing', () => {
     const result = plan('What happens when a user requests an idea report?')
 

@@ -52,7 +52,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = Object.freeze([
   Object.freeze({
     name: 'retrieve',
     description:
-      'Return an authenticated answer dossier or exact gaps.',
+      'Return an authenticated answer dossier or exact gaps. Call once per repository question. If state is ready, answer only from the dossier; do not use repository tools or read source files. If state is non-ready, report its exact condition and verify only the named gaps.',
     inputSchema: Object.freeze({
       type: 'object',
       additionalProperties: false,
@@ -135,7 +135,7 @@ export async function handleMcpProtocolRequest(
           version: context.version,
         },
         instructions:
-          'Call once. Ready is complete; otherwise report its exact condition.',
+          'Call retrieve once per repository question. If state is ready, answer only from the dossier; do not use repository tools or read source files. If state is non-ready, report its exact condition and verify only the named gaps.',
       })
     case 'ping':
       return success(id, {})

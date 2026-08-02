@@ -71,6 +71,8 @@ const obligationRetrieval = manifest.items?.find(
   (item) => item.id === "obligation-driven-retrieval-630",
 )
 const packageBudget = activePhase?.npm_package_budget ?? evaluationPackageBudget
+const replacementReceipt = activePhase?.corrective?.replacement_measurement
+  ?? obligationRetrieval?.candidate?.replacement_measurement
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -299,10 +301,10 @@ assert(
 assert(
   replacementSources.length === 3
     && replacementMeasurement.source_loc
-      === obligationRetrieval?.candidate?.replacement_measurement?.source_loc
+      === replacementReceipt?.source_loc
     && replacementMeasurement.emitted_bytes
-      === obligationRetrieval?.candidate?.replacement_measurement?.emitted_bytes,
-  `#630 replacement receipt drifted: ${replacementMeasurement.source_loc} source LOC / ${replacementMeasurement.emitted_bytes} emitted bytes`,
+      === replacementReceipt?.emitted_bytes,
+  `active replacement receipt drifted: ${replacementMeasurement.source_loc} source LOC / ${replacementMeasurement.emitted_bytes} emitted bytes`,
 )
 assert(
   replacementMeasurement.source_loc

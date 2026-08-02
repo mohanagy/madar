@@ -195,13 +195,19 @@ function isMadarTool(name: string): boolean {
 }
 
 function isRepositoryTool(name: string): boolean {
-  return /^(?:Read|Glob|Grep|Bash|Agent|Search|WebSearch)$/i.test(name)
+  return /^(?:Read|Glob|Grep|Bash|Agent|Search|WebSearch|list|shell-read-only)$/i.test(name)
+}
+
+function isNeutralDiscoveryTool(name: string): boolean {
+  return /^ToolSearch$/i.test(name)
 }
 
 function extractAttribution(stdout: string): {
   madarCallCount: number
   firstMadarToolName: string | null
+  repositoryCallCount: number
   repositoryCallsBeforeMadar: number
+  unclassifiedCallCount: number
   counts: NativeAgentToolCallCountsEntry
 } | undefined {
   const records = parseJsonRecords(stdout)
@@ -219,7 +225,10 @@ function extractAttribution(stdout: string): {
   return {
     madarCallCount: madarUses.length,
     firstMadarToolName: firstMadar ? canonicalToolName(firstMadar) : null,
+    repositoryCallCount: uses.filter(isRepositoryTool).length,
     repositoryCallsBeforeMadar,
+    unclassifiedCallCount: uses.filter((name) =>
+      !isMadarTool(name) && !isRepositoryTool(name) && !isNeutralDiscoveryTool(name)).length,
     counts: {
       total: uses.length,
       read: uses.filter((name) => name === 'Read').length,
@@ -401,7 +410,9 @@ export async function executeNativeAgentCompare(
       : baselineTrace.madarCallCount === 0 &&
           madarTrace.madarCallCount === 1 &&
           madarTrace.firstMadarToolName === 'retrieve' &&
-          madarTrace.repositoryCallsBeforeMadar === 0
+          madarTrace.repositoryCallsBeforeMadar === 0 &&
+          madarTrace.repositoryCallCount === 0 &&
+          madarTrace.unclassifiedCallCount === 0
         ? 'verified'
         : 'violated'
   const report: NativeAgentCompareReport = {

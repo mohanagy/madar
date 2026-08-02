@@ -176,6 +176,10 @@ describe('MCP tools-only protocol', () => {
     expect(Object.keys(
       result(initialized!).capabilities as Record<string, unknown>,
     )).toEqual(['tools'])
+    expect(result(initialized!).instructions).toContain('state is ready')
+    expect(result(initialized!).instructions).toContain('answer only from the dossier')
+    expect(result(initialized!).instructions).toContain('do not use repository tools')
+    expect(result(initialized!).instructions).toContain('named gaps')
     expect(result(listed!).tools?.map((tool) => tool.name)).toEqual(['retrieve'])
     expect(result(listed!).tools?.[0]).toMatchObject({
       description: expect.stringContaining('authenticated answer dossier'),

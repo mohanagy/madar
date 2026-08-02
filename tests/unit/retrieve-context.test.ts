@@ -168,21 +168,37 @@ describe('retrieveContext v2', () => {
       question: 'How does GoValidate generate an idea report end to end?',
       budget: 4_000,
     }
+    const manualIncident = {
+      question: 'How does generating the idea report work end to end — from the generate request through the pipeline to the saved report?',
+      budget: 4_000,
+    }
+    const manualControl = {
+      question: 'Explain the report generation pipeline stages and how the idea report is produced',
+      budget: 4_000,
+    }
     const first = retrieveContext(index, active)
     const second = retrieveContext(index, passive)
     const third = retrieveContext(index, named)
+    const fourth = retrieveContext(index, manualIncident)
+    const fifth = retrieveContext(index, manualControl)
 
     expect(first.state).toBe('ready')
     expect(second.state).toBe('ready')
     expect(third.state).toBe('ready')
+    expect(fourth.state).toBe('ready')
+    expect(fifth.state).toBe('ready')
     if (first.state !== 'ready' || second.state !== 'ready'
-      || third.state !== 'ready') return
+      || third.state !== 'ready' || fourth.state !== 'ready'
+      || fifth.state !== 'ready') return
     expect(second.dossier.query.subject).toBe(first.dossier.query.subject)
     expect(second.dossier.flow).toEqual(first.dossier.flow)
     expect(second.dossier.evidence).toEqual(first.dossier.evidence)
     expect(third.dossier.query.subject).toBe(first.dossier.query.subject)
     expect(third.dossier.flow).toEqual(first.dossier.flow)
     expect(third.dossier.evidence).toEqual(first.dossier.evidence)
+    expect(fourth.dossier.query.subject).toBe(first.dossier.query.subject)
+    expect(fourth.dossier.flow).toEqual(fifth.dossier.flow)
+    expect(fourth.dossier.evidence).toEqual(fifth.dossier.evidence)
 
     const proofRows = new Map(first.dossier.evidence.proofs.map((proof) => [proof.id, proof]))
     const excerptRows = new Map(first.dossier.evidence.excerpts.map((excerpt) => [
