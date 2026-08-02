@@ -58,16 +58,16 @@ function assertPackageMeasurement(record, tarballPath) {
   const evaluationTooling = manifest.items?.find((item) => item.id === 'evaluation-tooling')
   const activePhase = manifest.items?.find((item) => item.id === manifest.current?.active_phase)
   const budget = activePhase?.npm_package_budget ?? evaluationTooling?.npm_package_budget
-  const receipt = manifest.current
+  const receipt = activePhase?.corrective?.package_candidate ?? manifest.current
   const actual = {
     npm_files: requiredNumber(record.entryCount, 'npm pack entryCount'),
     npm_packed_bytes: requiredNumber(record.size, 'npm pack size'),
     npm_unpacked_bytes: requiredNumber(record.unpackedSize, 'npm pack unpackedSize'),
   }
   for (const [field, value] of Object.entries(actual)) {
-    if (requiredNumber(receipt?.[field], `current release package receipt ${field}`) !== value) {
+    if (requiredNumber(receipt?.[field], `active package receipt ${field}`) !== value) {
       throw new Error(
-        `Current release package receipt is stale: ${field}=${receipt?.[field]}, freshly packed artifact=${value}`,
+        `Active package receipt is stale: ${field}=${receipt?.[field]}, freshly packed artifact=${value}`,
       )
     }
   }
@@ -76,13 +76,13 @@ function assertPackageMeasurement(record, tarballPath) {
     || receipt?.npm_integrity !== record.integrity
   ) {
     throw new Error(
-      'Current release artifact identity is stale for the freshly packed artifact',
+      'Active package artifact identity is stale for the freshly packed artifact',
     )
   }
   const artifactSha256 = createHash('sha256').update(readFileSync(tarballPath)).digest('hex')
   if (receipt?.npm_artifact_sha256 !== artifactSha256) {
     throw new Error(
-      'Current release SHA-256 is stale for the freshly packed artifact',
+      'Active package SHA-256 is stale for the freshly packed artifact',
     )
   }
   if (

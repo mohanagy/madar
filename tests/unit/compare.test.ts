@@ -159,6 +159,21 @@ describe('compare command contract', () => {
     )
   })
 
+  it('allows neutral tool discovery before the single retrieve', async () => {
+    const { graphPath } = fixture()
+    const result = await executeNativeAgentCompare(
+      {
+        graphPath,
+        question: 'Trace login',
+        outputDir: 'out/compare',
+        execTemplate: 'runner {prompt_file}',
+      },
+      { runner: runnerFor({ madarTools: ['ToolSearch', 'mcp__madar__retrieve'] }) },
+    )
+
+    expect(result.report.attribution_status).toBe('verified')
+  })
+
   it('fails attribution when repository exploration precedes retrieve', async () => {
     const { graphPath } = fixture()
     const result = await executeNativeAgentCompare(
@@ -173,6 +188,28 @@ describe('compare command contract', () => {
     expect(result.report).toMatchObject({
       attribution_status: 'violated',
     })
+  })
+
+  it.each([
+    'Read',
+    'read',
+    'search',
+    'list',
+    'shell-read-only',
+    'mcp__filesystem__read_file',
+  ])('fails attribution when %s follows retrieve', async (tool) => {
+    const { graphPath } = fixture()
+    const result = await executeNativeAgentCompare(
+      {
+        graphPath,
+        question: 'Trace login',
+        outputDir: 'out/compare',
+        execTemplate: 'runner {prompt_file}',
+      },
+      { runner: runnerFor({ madarTools: ['mcp__madar__retrieve', tool] }) },
+    )
+
+    expect(result.report.attribution_status).toBe('violated')
   })
 
   it.each([

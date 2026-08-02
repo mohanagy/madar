@@ -74,8 +74,13 @@ current:
     parent_authorization_receipt: https://github.com/mohanagy/madar/issues/629#issuecomment-5155128626
     target_branch: next
     npm_dist_tag: next
-    publication_state: authorized_pending_protected_next_release_merge
-    qualification_state: pending_manual_test_and_formal_631_gate
+    publication_state: published_from_protected_next
+    publication_receipt: https://github.com/mohanagy/madar/issues/631#issuecomment-5155719419
+    release_merge: 81045cc08f1df797ecb86748c9bce09db62aeebd
+    release_tree: 9d3d90fe7feb3e55042c4f38ac8925abca6e83d1
+    trusted_publishing_run: https://github.com/mohanagy/madar/actions/runs/30734176943
+    published_at: 2026-08-02T05:42:52Z
+    qualification_state: owner_manual_test_found_corrective_defects_formal_631_gate_pending
     package_candidate:
       npm_files: 102
       npm_packed_bytes: 155157
@@ -2666,7 +2671,47 @@ items:
       registry_metadata_publication: forbidden
       tag: forbidden
       main_target: forbidden
-    notes: 'Issues #632 and #630 are complete. The owner separately authorized exactly @lubab/madar@0.40.0-beta.5 under npm next from the forthcoming protected-next release merge for manual testing before formal #631 qualification. #631 will compare that installed package with 0.32.0, 0.40.0-beta.4, one pinned Graphify commit and a no-tool control. No comparative claim or provider campaign exists yet; stable/latest, GitHub Release, Registry publication, a tag and main remain forbidden.'
+    corrective:
+      authorization_receipt: https://github.com/mohanagy/madar/issues/631#issuecomment-5157008370
+      parent_receipt: https://github.com/mohanagy/madar/issues/629#issuecomment-5157009594
+      protected_base: 81045cc08f1df797ecb86748c9bce09db62aeebd
+      protected_base_tree: 9d3d90fe7feb3e55042c4f38ac8925abca6e83d1
+      target_branch: next
+      modified_sources:
+        - src/adapters/mcp/protocol.ts
+        - src/domain/query/plan.ts
+      evaluation_sources:
+        - tools/eval/lib/infrastructure/compare.ts
+      production_loc_budget:
+        added_max: 8
+        removed_min: 8
+        net_max: 0
+      source_measurement:
+        production_typescript_files: 44
+        production_typescript_loc: 15871
+        added: 8
+        removed: 8
+        net: 0
+        diff_sha256: 51a23988d596afd5d060d603ad98f83903ed06c8bf6cf6bcba0bac66a59e12fe
+      replacement_measurement:
+        source_loc: 1424
+        emitted_bytes: 60983
+      package_candidate:
+        npm_files: 102
+        npm_packed_bytes: 155253
+        npm_unpacked_bytes: 653988
+        npm_shasum: fe8d482e4bbca13df65a4eb4efd45fde1c35f4a4
+        npm_integrity: sha512-8vuEuekerfMzLeIky14BCZa0CUBT34vL8eL1D/ees90u04TGnPdHra1dAsV47AnsiEp3UAPiAsnLKUVpEc1FEg==
+        npm_artifact_sha256: f63056b7bce91beb59dcdbb341092100500234ff859caac6199c1e84706f0b8e
+      constraints:
+        new_production_files: forbidden
+        dependency_or_lock_change: forbidden
+        graph_or_index_change: forbidden
+        query_result_schema_change: forbidden
+        retrieval_budget_change: forbidden
+        package_ceiling_change: forbidden
+        publication: forbidden
+    notes: 'Issues #632 and #630 are complete and beta.5 is immutable published manual-test history. The beta.5 owner test found one generic workflow-bound parser defect and one ready-state client-handoff defect before formal #631 qualification. Corrective receipt 5157008370 authorizes exactly two zero-net production-source modifications plus the zero-fallback evaluator correction from protected next 81045cc08f1df797ecb86748c9bce09db62aeebd. Both exact owner prompts now return ready 7/7 against the same real-GoValidate flow/evidence corridor without changing graph, index, selection, result schema, dependencies, retrieval budgets, or package ceilings. No comparative claim or provider campaign exists yet; publication, stable/latest, GitHub Release, Registry publication, a tag and main remain forbidden.'
     exit_gate: The installed exact-head package matches or beats the strongest frozen baseline, scores at least 90 mean with no run below 85 or critical error, makes one Madar retrieval with zero repository-tool fallback in natural-client runs, and passes closed-book, parity, budget, CI, independent-review, and zero-thread gates.
 
   - id: non-core-graph-products

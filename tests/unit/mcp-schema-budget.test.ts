@@ -40,6 +40,15 @@ describe('MCP schema budget', () => {
       .toEqual(['question', 'budget'])
   })
 
+  it('makes ready terminal and scopes non-ready verification to named gaps', () => {
+    const description = MCP_TOOLS[0]?.description ?? ''
+
+    expect(description).toContain('state is ready')
+    expect(description).toContain('answer only from the dossier')
+    expect(description).toContain('do not use repository tools')
+    expect(description).toContain('named gaps')
+  })
+
   it('seals the public schema against runtime mutation', () => {
     expect(Object.isFrozen(MCP_TOOLS)).toBe(true)
     expect(Object.isFrozen(MCP_TOOLS[0])).toBe(true)

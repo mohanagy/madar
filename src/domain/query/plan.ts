@@ -119,12 +119,12 @@ function flowSubject(text: string): SubjectMatch {
     RegExp(`\\bhow (?:does|do|did) (.+?) get (?:${FW})\\b`),
   ])
   if (direct) return [direct, []]
-  const active = RegExp(
-    `\\bhow (?:(?:${AUX}) )?(.+?) (${FW}) (.+?)(?= (?:${CLAUSE})\\b| end to end\\b|$)`,
+  const match = RegExp(
+    `\\bhow (?:(?:${AUX}) )?(.+?) (${FW}) (.*?)(?=(?:${CLAUSE})\\b|end to end\\b|$)`,
   ).exec(text)
-  if (active) {
-    const object = content(active[3]!, 'workflow').join(' ')
-    if (object) return [object, content(active[1]!, 'workflow', true)]
+  if (match) {
+    const object = content((match[3] || match[1])!, 'workflow').join(' ')
+    if (object) return [object, content(match[1]!, 'workflow', true)]
   }
   const topic = pick(text, 'workflow', [
     /^follow (?:\S+ )*?(\S+) from .+ until (?:\S+ )*?(\S+) is/,
@@ -160,7 +160,7 @@ function flowBounds(text: string): FlowBounds {
       ?? read(/\bfrom .+?\bthrough (?!to\b)(.+?)(?= to\b| how\b|$)/u)
       ?? (walked ? undefined
         : read(/\bthrough (?!to\b)(.+?)(?= to\b| how\b|$)/u)),
-    terminal: read(/\b(?:through to|to) (.+?)(?= how\b|$)/u),
+    terminal: read(/(?<!end )\b(?:through )?to (.+?)(?= how\b|$)/u)?.replace(/^save (?=report$)/u, ''),
   }
 }
 

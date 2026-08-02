@@ -507,6 +507,29 @@ const BETA_5_AUTHORIZATION =
   'https://github.com/mohanagy/madar/issues/631#issuecomment-5155128419'
 const BETA_5_PARENT_AUTHORIZATION =
   'https://github.com/mohanagy/madar/issues/629#issuecomment-5155128626'
+const BETA_5_RELEASE_MERGE = '81045cc08f1df797ecb86748c9bce09db62aeebd'
+const BETA_5_RELEASE_TREE = '9d3d90fe7feb3e55042c4f38ac8925abca6e83d1'
+const BETA_5_PUBLICATION =
+  'https://github.com/mohanagy/madar/issues/631#issuecomment-5155719419'
+const NO_FALLBACK_CORRECTIVE_AUTHORIZATION =
+  'https://github.com/mohanagy/madar/issues/631#issuecomment-5157008370'
+const NO_FALLBACK_CORRECTIVE_PARENT =
+  'https://github.com/mohanagy/madar/issues/629#issuecomment-5157009594'
+const NO_FALLBACK_CORRECTIVE_SOURCES = [
+  'src/adapters/mcp/protocol.ts',
+  'src/domain/query/plan.ts',
+] as const
+const NO_FALLBACK_CORRECTIVE_DIFF_SHA256 =
+  '51a23988d596afd5d060d603ad98f83903ed06c8bf6cf6bcba0bac66a59e12fe'
+const NO_FALLBACK_CORRECTIVE_PACKAGE = {
+  npm_files: 102,
+  npm_packed_bytes: 155_253,
+  npm_unpacked_bytes: 653_988,
+  npm_shasum: 'fe8d482e4bbca13df65a4eb4efd45fde1c35f4a4',
+  npm_integrity:
+    'sha512-8vuEuekerfMzLeIky14BCZa0CUBT34vL8eL1D/ees90u04TGnPdHra1dAsV47AnsiEp3UAPiAsnLKUVpEc1FEg==',
+  npm_artifact_sha256: 'f63056b7bce91beb59dcdbb341092100500234ff859caac6199c1e84706f0b8e',
+} as const
 const CAPABILITY_VALIDATION_V2_PROPOSAL_SHA256 =
   '4906405cbb806c850c0612305ef460e023e2060b5338734ae0af12303901cbd0'
 const CAPABILITY_VALIDATION_V2_ISSUE = 'https://github.com/mohanagy/madar/issues/612'
@@ -1286,6 +1309,11 @@ describe('core reset governance', () => {
           target_branch: string
           npm_dist_tag: string
           publication_state: string
+          publication_receipt: string
+          release_merge: string
+          release_tree: string
+          trusted_publishing_run: string
+          published_at: string
           qualification_state: string
           package_candidate: {
             npm_files: number
@@ -1480,8 +1508,13 @@ describe('core reset governance', () => {
       parent_authorization_receipt: BETA_5_PARENT_AUTHORIZATION,
       target_branch: 'next',
       npm_dist_tag: 'next',
-      publication_state: 'authorized_pending_protected_next_release_merge',
-      qualification_state: 'pending_manual_test_and_formal_631_gate',
+      publication_state: 'published_from_protected_next',
+      publication_receipt: BETA_5_PUBLICATION,
+      release_merge: BETA_5_RELEASE_MERGE,
+      release_tree: BETA_5_RELEASE_TREE,
+      trusted_publishing_run: 'https://github.com/mohanagy/madar/actions/runs/30734176943',
+      published_at: '2026-08-02T05:42:52Z',
+      qualification_state: 'owner_manual_test_found_corrective_defects_formal_631_gate_pending',
       package_candidate: BETA_5_PACKAGE,
       stable_or_latest: 'forbidden',
       github_release: 'forbidden',
@@ -2394,12 +2427,48 @@ describe('core reset governance', () => {
         tag: 'forbidden',
         main_target: 'forbidden',
       },
+      corrective: {
+        authorization_receipt: NO_FALLBACK_CORRECTIVE_AUTHORIZATION,
+        parent_receipt: NO_FALLBACK_CORRECTIVE_PARENT,
+        protected_base: BETA_5_RELEASE_MERGE,
+        protected_base_tree: BETA_5_RELEASE_TREE,
+        target_branch: 'next',
+        modified_sources: [...NO_FALLBACK_CORRECTIVE_SOURCES],
+        evaluation_sources: ['tools/eval/lib/infrastructure/compare.ts'],
+        production_loc_budget: { added_max: 8, removed_min: 8, net_max: 0 },
+        source_measurement: {
+          production_typescript_files: 44,
+          production_typescript_loc: 15_871,
+          added: 8,
+          removed: 8,
+          net: 0,
+          diff_sha256: NO_FALLBACK_CORRECTIVE_DIFF_SHA256,
+        },
+        replacement_measurement: { source_loc: 1_424, emitted_bytes: 60_983 },
+        package_candidate: NO_FALLBACK_CORRECTIVE_PACKAGE,
+      },
     })
-    expect(execFileSync(
+    const correctiveSources = execFileSync(
       git,
-      ['diff', '--name-only', OBLIGATION_RETRIEVAL_MERGE, '--', 'src'],
+      ['diff', '--name-only', BETA_5_RELEASE_MERGE, '--', 'src'],
       { encoding: 'utf8' },
-    ).trim()).toBe('')
+    ).trim().split('\n').filter(Boolean).sort()
+    expect(correctiveSources).toEqual([...NO_FALLBACK_CORRECTIVE_SOURCES].sort())
+    const correctiveEvaluatorSources = execFileSync(
+      git,
+      ['diff', '--name-only', BETA_5_RELEASE_MERGE, '--', 'tools/eval/lib'],
+      { encoding: 'utf8' },
+    ).trim().split('\n').filter(Boolean).sort()
+    expect(correctiveEvaluatorSources).toEqual(['tools/eval/lib/infrastructure/compare.ts'])
+    expect(() => execFileSync(
+      git,
+      ['diff', '--exit-code', BETA_5_RELEASE_MERGE, '--', 'package.json', 'package-lock.json'],
+    )).not.toThrow()
+    expect(createHash('sha256').update(execFileSync(
+      git,
+      ['diff', '--binary', '--full-index', BETA_5_RELEASE_MERGE, '--',
+        ...NO_FALLBACK_CORRECTIVE_SOURCES],
+    )).digest('hex')).toBe(NO_FALLBACK_CORRECTIVE_DIFF_SHA256)
     const changedEvidenceSkeletonProduction = execFileSync(
       git,
       [
@@ -6241,6 +6310,19 @@ describe('core reset governance', () => {
             diff_sha256: string
           }
         }
+        corrective?: {
+          protected_base: string
+          modified_sources: string[]
+          production_loc_budget: { added_max: number; removed_min: number; net_max: number }
+          source_measurement: {
+            production_typescript_files: number
+            production_typescript_loc: number
+            added: number
+            removed: number
+            net: number
+            diff_sha256: string
+          }
+        }
         candidate_source?: {
           production_typescript_files: number
           production_typescript_loc: number
@@ -6253,6 +6335,39 @@ describe('core reset governance', () => {
     const { current } = manifest
     const activePhase = manifest.items.find((item) => item.id === current.active_phase)
     const completedPhase = manifest.items.find((item) => item.id === current.completed_phase)
+    const corrective = activePhase?.corrective
+    if (corrective) {
+      const baseline = corrective.protected_base
+      expect(execFileSync(git, ['cat-file', '-t', `${baseline}^{commit}`], {
+        encoding: 'utf8',
+      }).trim()).toBe('commit')
+      expect(() => execFileSync(
+        git, ['merge-base', '--is-ancestor', baseline, 'HEAD'],
+      )).not.toThrow()
+      const inventory = sourceInventory()
+      const delta = productionSourceDelta(baseline)
+      expect(inventory.filesystemViolations).toEqual([])
+      expect(delta.added).toBeLessThanOrEqual(corrective.production_loc_budget.added_max)
+      expect(delta.removed).toBeGreaterThanOrEqual(corrective.production_loc_budget.removed_min)
+      expect(delta.net).toBeLessThanOrEqual(corrective.production_loc_budget.net_max)
+      const { diff_sha256: expectedDiffSha256, ...sourceMeasurement } =
+        corrective.source_measurement
+      expect({
+        production_typescript_files: inventory.files,
+        production_typescript_loc: inventory.loc,
+        ...delta,
+      }).toEqual(sourceMeasurement)
+      const changedProduction = execFileSync(
+        git, ['diff', '--name-only', baseline, '--', 'src'], { encoding: 'utf8' },
+      ).trim().split('\n').filter(Boolean).sort()
+      expect(changedProduction).toEqual([...corrective.modified_sources].sort())
+      const diffSha256 = createHash('sha256').update(execFileSync(
+        git,
+        ['diff', '--binary', '--full-index', baseline, '--', ...corrective.modified_sources],
+      )).digest('hex')
+      expect(diffSha256).toBe(expectedDiffSha256)
+      return
+    }
     const candidatePhase = activePhase?.candidate?.source_measurement
       ? activePhase
       : completedPhase
