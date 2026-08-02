@@ -22,7 +22,7 @@ Those experiments answer different questions. Neither is a universal claim about
 
 ## Beta boundary
 
-The completed Core Reset product path, package gates, and bounded #618, #622, and #625 retrieval repairs support a prerelease for JavaScript/TypeScript repositories. Capability Validation and the Native-vs-Graphify comparator were cancelled before any campaign, provider request, paid spend, or result. `0.40.0-beta.4` therefore makes no comparative correctness, token, latency, cost, activation, retention, or external-user claim.
+The completed Core Reset product path, semantic execution index #632, and obligation-driven retrieval #630 support a manual-test prerelease for JavaScript/TypeScript repositories. Capability Validation and the earlier Native-vs-Graphify comparator were cancelled before any campaign, provider request, paid spend, or result. `0.40.0-beta.5` is authorized for npm-`next` publication before #631 qualification and therefore makes no comparative correctness, token, latency, cost, activation, retention, or external-user claim.
 
 The historical evaluation contracts remain development records. A future comparison or stable-release claim requires a new issue, fresh owner authorization, and new reproducible evidence.
 

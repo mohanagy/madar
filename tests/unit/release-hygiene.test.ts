@@ -21,6 +21,10 @@ function releaseVerifyScriptPath(): string {
   return join(process.cwd(), '.github/scripts/verify-release-hygiene.mjs')
 }
 
+function forbiddenReleaseArtifactsScriptPath(): string {
+  return join(process.cwd(), '.github/scripts/verify-forbidden-release-artifacts.mjs')
+}
+
 function collectMarkdownLinkTargets(markdown: string): string[] {
   return [...markdown.matchAll(/\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)].map((match) => match[1] ?? '')
 }
@@ -110,25 +114,26 @@ describe('release hygiene', () => {
     const releaseDoc = loadFile('docs/release.md')
 
     expect(releaseDoc).toContain('npm run release:verify')
-    expect(releaseDoc).toContain('npm version 0.40.0-beta.4 --no-git-tag-version')
+    expect(releaseDoc).toContain('npm version 0.40.0-beta.5 --no-git-tag-version')
     expect(releaseDoc).toContain('`main` for stable releases, `next` for prereleases')
     expect(releaseDoc).toContain('npm publish --tag next --access public --provenance')
   })
 
-  it('creates hyphenated GitHub releases as prereleases without moving latest', () => {
+  it('publishes beta.5 from a protected next push without a tag or GitHub Release', () => {
     const releaseWorkflow = loadFile('.github/workflows/release.yml')
 
-    expect(releaseWorkflow).toContain('if [[ "$VERSION" == *-* ]]')
-    expect(releaseWorkflow).toContain('RELEASE_FLAGS+=(--prerelease --latest=false)')
-    expect(releaseWorkflow).toContain('--verify-tag')
+    expect(releaseWorkflow).toContain('branches:')
+    expect(releaseWorkflow).toContain('- next')
+    expect(releaseWorkflow).toContain('- package.json')
+    expect(releaseWorkflow).not.toContain('tags:')
+    expect(releaseWorkflow).not.toContain('gh release create')
+    expect(releaseWorkflow).not.toContain('contents: write')
   })
 
   it('publishes the beta only from the exact next tip through OIDC provenance', () => {
     const releaseWorkflow = loadFile('.github/workflows/release.yml')
     const publishIndex = releaseWorkflow.indexOf('npm run publish:next')
-    const githubReleaseIndex = releaseWorkflow.indexOf('gh release create')
     const nextFetches = releaseWorkflow.match(/git fetch --no-tags origin next/g) ?? []
-    const remoteTagChecks = releaseWorkflow.match(/git ls-remote origin/g) ?? []
     const protectionChecks = releaseWorkflow.match(/verify_next_protection/g) ?? []
 
     expect(existsSync(join(process.cwd(), '.github/workflows/publish-npm.yml'))).toBe(false)
@@ -136,39 +141,50 @@ describe('release hygiene', () => {
     expect(releaseWorkflow).toContain('persist-credentials: false')
     expect(releaseWorkflow).toContain('package-manager-cache: false')
     expect(releaseWorkflow).not.toContain('cache: npm')
-    expect(nextFetches.length).toBeGreaterThanOrEqual(4)
-    expect(remoteTagChecks.length).toBeGreaterThanOrEqual(3)
+    expect(nextFetches.length).toBeGreaterThanOrEqual(3)
     expect(releaseWorkflow).toContain('if [[ "$RELEASE_SHA" != "$NEXT_SHA" ]]')
     expect(releaseWorkflow).toContain("branches/next\" --jq '.protected'")
     expect(protectionChecks.length).toBeGreaterThanOrEqual(3)
     expect(releaseWorkflow).toContain('test "$RELEASE_SHA" = "$GITHUB_SHA"')
-    expect(releaseWorkflow).toContain('verify_remote_tag')
-    expect(releaseWorkflow).toContain('if [[ "$VERSION" != "0.40.0-beta.4" ]]')
+    expect(releaseWorkflow).toContain('test "$GITHUB_REF" = "refs/heads/next"')
+    expect(releaseWorkflow).toContain('verify_forbidden_release_artifacts_absent')
+    expect(releaseWorkflow).toContain('if [[ "$VERSION" != "0.40.0-beta.5" ]]')
     expect(releaseWorkflow).toContain('npm run publish:next')
     expect(releaseWorkflow).toContain('dist.attestations.provenance')
-    expect(releaseWorkflow).toContain('npm --prefix "$VERIFY_DIR" audit signatures')
-    expect(releaseWorkflow).toContain('c5250a0d308b3d6df374851154ddb393a678a992')
+    expect(releaseWorkflow).toContain('cd "$VERIFY_DIR"')
+    expect(releaseWorkflow).toContain('npm audit signatures')
+    expect(releaseWorkflow).not.toContain('npm --prefix "$VERIFY_DIR" init')
+    expect(releaseWorkflow).toContain('d637297412ec5b868586ba59142fbefdcfc0d5e0')
     expect(releaseWorkflow).toContain(
-      'sha512-772P+n4Cx55nqC+CAx8A1aTJ2rY4yk1hUH45lAlxNMMw4YRj8hhswgDiCwczS5hx1S3a+Z+KUv2jma/zWjQZ6w==',
+      'sha512-HorzqtIvp2v5xMaYVGDzPDYtFBMaEVBkGXHBdTSVwC1DkQgmZaFuTU1Ff+7YByWN9FTQaVLTJsV7zKhEgSKxXw==',
     )
     expect(releaseWorkflow).toContain('LATEST_VERSION" == "0.32.0"')
     expect(publishIndex).toBeGreaterThan(0)
-    expect(githubReleaseIndex).toBeGreaterThan(publishIndex)
     expect(releaseWorkflow).not.toContain('NPM_TOKEN')
     expect(releaseWorkflow).not.toContain('--no-provenance')
   })
 
-  it('verifies an existing or newly created GitHub prerelease without moving latest', () => {
+  it('proves beta.5 has no tag or GitHub Release before and after publication', () => {
     const releaseWorkflow = loadFile('.github/workflows/release.yml')
+    const absenceChecks = releaseWorkflow.match(
+      /node \.github\/scripts\/verify-forbidden-release-artifacts\.mjs "\$TAG"/g,
+    ) ?? []
+    const absenceScript = loadFile('.github/scripts/verify-forbidden-release-artifacts.mjs')
 
-    expect(releaseWorkflow).toContain('git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}"')
-    expect(releaseWorkflow).toContain('test "$REMOTE_TAG_SHA" = "$GITHUB_SHA"')
-    expect(releaseWorkflow).toContain('--target "$GITHUB_SHA"')
-    expect(releaseWorkflow).toContain("'.target_commitish'")
-    expect(releaseWorkflow).toContain("'.prerelease'")
-    expect(releaseWorkflow).toContain("'.draft'")
-    expect(releaseWorkflow).toContain('releases/latest')
-    expect(releaseWorkflow).toContain('"v0.32.0"')
+    expect(absenceChecks.length).toBeGreaterThanOrEqual(3)
+    expect(absenceScript).toContain("'ls-remote'")
+    expect(absenceScript).toContain("'--include'")
+    expect(absenceScript).toContain('finalStatus !== 404')
+    expect(absenceScript).toContain('Unable to prove forbidden git tag')
+    expect(absenceScript).toContain('Unable to prove forbidden GitHub Release')
+    expect(() => execFileSync(
+      process.execPath,
+      [forbiddenReleaseArtifactsScriptPath(), '--self-test'],
+      { encoding: 'utf8', stdio: 'pipe' },
+    )).not.toThrow()
+    expect(releaseWorkflow).not.toContain('refs/tags/$TAG^{commit}')
+    expect(releaseWorkflow).not.toContain('gh release view')
+    expect(releaseWorkflow).not.toContain('GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}')
   })
 
   it('requires prerelease README changelog links to target next', () => {
