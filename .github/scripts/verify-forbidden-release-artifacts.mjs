@@ -9,7 +9,7 @@ function assertTagAbsent(result, tag) {
     fail(`Unable to prove forbidden git tag ${tag} is absent`)
   }
   if (result.stdout.trim() !== '') {
-    fail(`Beta.5 publication forbids git tag ${tag}`)
+    fail(`This prerelease publication forbids git tag ${tag}`)
   }
 }
 
@@ -24,7 +24,7 @@ function assertGithubReleaseAbsent(result, tag) {
     fail(`Unable to prove forbidden GitHub Release ${tag} is absent`)
   }
   if (result.status === 0) {
-    fail(`Beta.5 publication forbids GitHub Release ${tag}`)
+    fail(`This prerelease publication forbids GitHub Release ${tag}`)
   }
 
   const statusCodes = githubStatusCodes(result)
@@ -77,13 +77,13 @@ function expectFailure(action, pattern) {
 }
 
 function selfTest() {
-  const tag = 'v0.40.0-beta.5'
+  const tag = 'v0.40.0-beta.6'
   expectFailure(
     () => assertTagAbsent({ status: 128, stdout: '', stderr: 'network error' }, tag),
     /Unable to prove forbidden git tag/,
   )
   expectFailure(
-    () => assertTagAbsent({ status: 0, stdout: 'deadbeef refs\/tags\/v0.40.0-beta.5\n', stderr: '' }, tag),
+    () => assertTagAbsent({ status: 0, stdout: 'deadbeef refs\/tags\/v0.40.0-beta.6\n', stderr: '' }, tag),
     /forbids git tag/,
   )
   expectFailure(
