@@ -39,6 +39,7 @@ const EXPECTED_FLOW_SHA256 =
   "6cca04d52e590ccccd48e6728ec0744fa7606334034ffbca0002e578a6dcca67"
 const EXPECTED_EVIDENCE_SHA256 =
   "154efca16be4a163b24cb3812f85cf113c73696805d2de83734c252f8ce656f3"
+const CONTROLLER_SELECTOR = /^([^:]+):(\d+(?:-\d+|\.\d+(?:\.\d+)*)?)$/u
 
 const expectedChannelOrder = [
   "orchestration-queue",
@@ -70,6 +71,13 @@ const expectedObligationKinds = [
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+for (const selector of ["c1:0", "c1:0-3", "c1:0.2.5"]) {
+  assert(CONTROLLER_SELECTOR.test(selector), `valid controller selector rejected: ${selector}`)
+}
+for (const selector of ["c1:", "c1:0-", "c1:0..2", "c1:0:2"]) {
+  assert(!CONTROLLER_SELECTOR.test(selector), `invalid controller selector accepted: ${selector}`)
 }
 
 function hash(value) {
@@ -262,9 +270,9 @@ function assertReferencesAndCorridor(result, plan, mandatory, question) {
       )
     }
     if (group.controller) {
-      const [control, ordinal] = group.controller.split(":")
-      assert(controls.has(control), `${question}: order ${group.id} has unknown controller`)
-      assert(Number.isSafeInteger(Number(ordinal)), `${question}: invalid controller ordinal`)
+      const match = CONTROLLER_SELECTOR.exec(group.controller)
+      assert(match, `${question}: invalid controller selector ${group.controller}`)
+      assert(controls.has(match[1]), `${question}: order ${group.id} has unknown controller`)
     }
     for (const proof of group.proofs ?? []) {
       assert(proofs.has(proof), `${question}: order ${group.id} has unknown proof ${proof}`)

@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 describe('MCP response documentation', () => {
   it('documents the deterministic retrieve v2 dossier and its hard boundaries', () => {
     const doc = readFileSync(resolve('docs/mcp-response-shape.md'), 'utf8')
+    const pipeline = readFileSync(resolve('docs/concepts/pipelines.md'), 'utf8')
+    const reference = readFileSync(resolve('docs/reference/cli-and-mcp.md'), 'utf8')
 
     expect(doc).toContain('# MCP response shape')
     expect(doc).toContain('"schema": "madar.retrieve"')
@@ -35,5 +37,10 @@ describe('MCP response documentation', () => {
     expect(doc).toContain('at most two recovery passes')
     expect(doc).not.toContain('"version": 1')
     expect(doc).not.toContain('matched_nodes')
+    for (const publicDoc of [pipeline, reference]) {
+      expect(publicDoc).toContain('64 total recovery-frontier nodes')
+      expect(publicDoc).toContain('three alternate seeds')
+    }
+    expect(reference).toContain('missing requirements, reason, or failures')
   })
 })

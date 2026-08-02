@@ -48,7 +48,7 @@ madar query "what calls enqueueInvoice?" --budget 2000
 madar query "trace login" --graph out/graph.json
 ```
 
-`question` is required and limited to 512 characters. `budget` is an optional positive integer; the effective result is capped at 4,000 serialized tokens, 12 files, and 25 authenticated excerpts. Planning and graph recovery remain bounded to three roots, 32 initial candidates, 512 explored nodes, 24 causal hops, and two recovery passes.
+`question` is required and limited to 512 characters. `budget` is an optional positive integer; the effective result is capped at 4,000 serialized tokens, 12 files, and 25 authenticated excerpts. Planning and graph recovery remain bounded to three roots, 32 initial candidates, 512 explored nodes, 24 causal hops, two recovery passes sharing 64 total recovery-frontier nodes, and three alternate seeds per missing obligation.
 
 ## MCP
 
@@ -56,7 +56,7 @@ madar query "trace login" --graph out/graph.json
 
 | Tool | Input | Result |
 | --- | --- | --- |
-| `retrieve` | `{ "question": string, "budget"?: positive integer }` | Complete authenticated answer dossier, or an exact non-ready state and gaps |
+| `retrieve` | `{ "question": string, "budget"?: positive integer }` | Complete authenticated answer dossier, or an exact non-ready state with its missing requirements, reason, or failures |
 
 Extra input properties are rejected. There are no MCP resources or prompts.
 

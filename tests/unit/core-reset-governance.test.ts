@@ -476,15 +476,15 @@ const OBLIGATION_RETRIEVAL_SOURCE = {
 } as const
 const OBLIGATION_RETRIEVAL_PACKAGE = {
   npm_files: 102,
-  npm_packed_bytes: 155_118,
-  npm_unpacked_bytes: 653_492,
-  npm_shasum: '6115dd200d5bfca6bfd322993f89c7f1f8bff20a',
+  npm_packed_bytes: 155_124,
+  npm_unpacked_bytes: 653_497,
+  npm_shasum: '77add32848cfd6f94be700dabe78efabf2bc3ed9',
   npm_integrity:
-    'sha512-anIx/G+SnAuTcl9yFw/h5KJY1g+Y/kU7YZ+OwcSDEIJ4+Npk6ybFB2sWouSU+3cW9kbgOmHUFeu+VtuZWrlscw==',
-  npm_artifact_sha256: '1fa88431a12a2ba00a415595002b99df599b9aa4670daeabeb9bfd8a2353c414',
+    'sha512-mj2bYY6JbNS8iIxWnq0bZSuNqdkQWlb3bLbob0wAodCxpT6iuuYFc75hhuZM7ijesm9rx94mo5iZ8VoKEsEr+g==',
+  npm_artifact_sha256: '1db61f9760fc933de44faa34543d97775548ac8e96fbe40cbae03623de20164a',
 } as const
 const OBLIGATION_RETRIEVAL_DIFF_SHA256 =
-  '0f6a9c0151156c8a75d0de8693d54979926a4774c818762d2deddd7d2a3b487f'
+  '76340caade75454a96e546117c55128e1a69d15720dc60d1a800f5ceb4971693'
 const OBLIGATION_RETRIEVAL_STOP_RECEIPT =
   'https://github.com/mohanagy/madar/issues/630#issuecomment-5153255732'
 const OBLIGATION_RETRIEVAL_AMENDMENT =
@@ -1088,7 +1088,7 @@ describe('core reset governance', () => {
     expect(design).toContain(EVALUATION_TOOLING_RFC_MERGE_RECEIPT)
     expect(design).toContain(SEMANTIC_EXECUTION_INDEX_MERGE)
     expect(design).toContain(SEMANTIC_EXECUTION_INDEX_MERGE_TREE)
-    expect(design).toContain('1,424 source LOC / 60,928 emitted bytes')
+    expect(design).toContain('1,424 source LOC / 60,933 emitted bytes')
     expect(design).not.toContain('## Active amendment — generation and incremental index')
     expect(design).not.toContain('the phase remains active')
     expect(design).not.toContain('completion evidence remains open')
@@ -1157,7 +1157,7 @@ describe('core reset governance', () => {
     expect(scorecard).toContain('Issues `#622`, `#625`, and `#632` are complete on `next`')
     expect(scorecard).toContain('supersedes its historical stop and reactivates it under exactly two amended ceilings')
     expect(scorecard).toContain(SEMANTIC_EXECUTION_INDEX_MERGE)
-    expect(scorecard).toContain('1,424 source LOC / 60,928 emitted bytes')
+    expect(scorecard).toContain('1,424 source LOC / 60,933 emitted bytes')
     expect(scorecard).toContain(
       'accessor-backed `data` or discriminator properties—including destructured aliases and shorthand—fail closed',
     )
@@ -2140,7 +2140,7 @@ describe('core reset governance', () => {
         },
         replacement_measurement: {
           source_loc: 1_424,
-          emitted_bytes: 60_928,
+          emitted_bytes: 60_933,
         },
         package_measurement: {
           files: OBLIGATION_RETRIEVAL_PACKAGE.npm_files,
@@ -2180,7 +2180,7 @@ describe('core reset governance', () => {
           coverage_statements_percent: 85.6,
           coverage_statements_covered: 7_771,
           coverage_statements_total: 9_078,
-          coverage_branches_percent: 79.93,
+          coverage_branches_percent: 79.94,
           coverage_branches_covered: 7_228,
           coverage_branches_total: 9_042,
           coverage_functions_percent: 92.02,

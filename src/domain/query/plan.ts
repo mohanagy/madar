@@ -187,7 +187,7 @@ export function planQuestion(request: NormalizedRetrieveRequest): QuestionPlanRe
   const raw = request.question.normalize('NFKC'),
     text = lexicalTokens(request.question).join(' '),
     tokens = text.split(' '),
-    names = [...raw.matchAll(/(?<![\p{L}\p{N}_$])([\p{L}_$][\p{L}\p{N}_$]*\.[\p{L}_$][\p{L}\p{N}_$]*)/gu)]
+    names = [...raw.matchAll(/(?<![\p{L}\p{N}_$])([\p{L}_$][\p{L}\p{N}_$]*(?:\.[\p{L}_$][\p{L}\p{N}_$]*)+)/gu)]
       .map((match) => match[1]!),
     ident = /\bwhere\s+(?:is|are|was|were)\s+[`'"]?([\p{L}_$][\p{L}\p{N}_$.-]*)[`'"]?\s+(?:defined|declared|implemented)\b/iu
       .exec(raw)?.[1],

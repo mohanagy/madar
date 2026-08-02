@@ -76,6 +76,12 @@ function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
+assert(
+  obligationRetrieval?.delivery_limits !== undefined
+    && obligationRetrieval?.candidate !== undefined,
+  "removal manifest is missing the obligation-driven-retrieval-630 candidate",
+)
+
 function physicalLines(path) {
   const text = readFileSync(path, "utf8")
   return text.length === 0 ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0)

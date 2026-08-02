@@ -30,7 +30,7 @@ question
 
 The retrieval pipeline has one deterministic planner, workflow builder, and evidence hydrator. It has no profile, LLM reranker, fallback search, second retrieval engine, session state, or task-specific product wrapper.
 
-Its hard output limits are 12 files, 25 authenticated excerpts, three roots, 32 initial candidates, 512 explored nodes, 24 causal hops, two recovery passes, and 4,000 serialized tokens.
+Its hard output limits are 12 files, 25 authenticated excerpts, three roots, 32 initial candidates, 512 explored nodes, 24 causal hops, two recovery passes sharing 64 total recovery-frontier nodes, three alternate seeds per missing obligation, and 4,000 serialized tokens.
 
 CLI `query`, direct application use, and MCP `retrieve` serialize byte-identical results for the same accepted graph and normalized request. MCP advertises only the tools capability, exactly one tool, and no resources or prompts.
 

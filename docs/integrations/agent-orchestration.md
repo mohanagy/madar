@@ -63,6 +63,8 @@ A good split is:
 
 Do not treat every continuation message as a new retrieval task. A clarification about already-returned evidence can remain in the current agent context.
 
+If an implementation worker changes an indexed source file, run `madar generate .` and a fresh `retrieve` before reusing dossier claims about changed files. Continuation reuse remains valid only while the indexed sources behind those claims are unchanged.
+
 ## Non-ready states
 
 When Madar reports `incomplete`, `unsupported`, `stale`, `unavailable`, or `corrupt`:

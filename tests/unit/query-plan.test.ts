@@ -59,6 +59,8 @@ describe('planQuestion', () => {
     expect(plan('Where is updateIndex defined?').subject).toBe('update index')
     expect(plan('Where is generateIdeaReport defined?').subject).toBe('generate idea report')
     expect(plan('Where is generateFromProblem defined?').subject).toBe('generate problem')
+    expect(plan('Where is api.client.fetch defined?').subject).toBe('api client fetch')
+    expect(plan('Where is api.client.fetch defined?').terms).toEqual(['api', 'client', 'fetch'])
   })
 
   it('keeps an explicit workflow-named definition question as a locator', () => {

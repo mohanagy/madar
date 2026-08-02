@@ -15,7 +15,7 @@ Request:
 }
 ```
 
-The server returns a text content item containing canonical JSON:
+The server returns a text content item containing canonical JSON. The envelope below is pretty-printed for readability; JSON key order is not semantically significant:
 
 ```json
 {

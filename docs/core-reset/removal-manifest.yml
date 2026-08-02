@@ -38,11 +38,11 @@ current:
   production_loc_removed: 2150
   production_loc_net: 152
   npm_files: 102
-  npm_packed_bytes: 155118
-  npm_unpacked_bytes: 653492
-  npm_shasum: 6115dd200d5bfca6bfd322993f89c7f1f8bff20a
-  npm_integrity: sha512-anIx/G+SnAuTcl9yFw/h5KJY1g+Y/kU7YZ+OwcSDEIJ4+Npk6ybFB2sWouSU+3cW9kbgOmHUFeu+VtuZWrlscw==
-  npm_artifact_sha256: 1fa88431a12a2ba00a415595002b99df599b9aa4670daeabeb9bfd8a2353c414
+  npm_packed_bytes: 155124
+  npm_unpacked_bytes: 653497
+  npm_shasum: 77add32848cfd6f94be700dabe78efabf2bc3ed9
+  npm_integrity: sha512-mj2bYY6JbNS8iIxWnq0bZSuNqdkQWlb3bLbob0wAodCxpT6iuuYFc75hhuZM7ijesm9rx94mo5iZ8VoKEsEr+g==
+  npm_artifact_sha256: 1db61f9760fc933de44faa34543d97775548ac8e96fbe40cbae03623de20164a
   measurement_state: source_and_package_exact
   snapshot_scope: obligation_driven_retrieval_630_candidate
   release_candidate:
@@ -2459,17 +2459,17 @@ items:
         added: 2302
         removed: 2150
         net: 152
-        diff_sha256: 0f6a9c0151156c8a75d0de8693d54979926a4774c818762d2deddd7d2a3b487f
+        diff_sha256: 76340caade75454a96e546117c55128e1a69d15720dc60d1a800f5ceb4971693
       replacement_measurement:
         source_loc: 1424
-        emitted_bytes: 60928
+        emitted_bytes: 60933
       package_measurement:
         files: 102
-        packed_bytes: 155118
-        unpacked_bytes: 653492
-        shasum: 6115dd200d5bfca6bfd322993f89c7f1f8bff20a
-        integrity: sha512-anIx/G+SnAuTcl9yFw/h5KJY1g+Y/kU7YZ+OwcSDEIJ4+Npk6ybFB2sWouSU+3cW9kbgOmHUFeu+VtuZWrlscw==
-        artifact_sha256: 1fa88431a12a2ba00a415595002b99df599b9aa4670daeabeb9bfd8a2353c414
+        packed_bytes: 155124
+        unpacked_bytes: 653497
+        shasum: 77add32848cfd6f94be700dabe78efabf2bc3ed9
+        integrity: sha512-mj2bYY6JbNS8iIxWnq0bZSuNqdkQWlb3bLbob0wAodCxpT6iuuYFc75hhuZM7ijesm9rx94mo5iZ8VoKEsEr+g==
+        artifact_sha256: 1db61f9760fc933de44faa34543d97775548ac8e96fbe40cbae03623de20164a
       local_verification:
         source_gate: passed
         replacement_source_loc_gate: passed
@@ -2500,7 +2500,7 @@ items:
         coverage_statements_percent: 85.6
         coverage_statements_covered: 7771
         coverage_statements_total: 9078
-        coverage_branches_percent: 79.93
+        coverage_branches_percent: 79.94
         coverage_branches_covered: 7228
         coverage_branches_total: 9042
         coverage_functions_percent: 92.02
@@ -2599,7 +2599,7 @@ items:
       tag: forbidden
       registry_metadata_publication: forbidden
       main_target: forbidden
-    notes: 'Issue #630 began from exact protected next commit c88823ecbeb6da6284cf74ecbd304e9315ffd4fa and tree b715764668b4296e9e8ab4da715374f47af137db after #632 completed. The current local candidate replaces rank/slice/traverse with one obligation planner, workflow builder and authenticated evidence hydrator, then returns a deterministic v2 dossier only when every mandatory stage, adjacent async handoff, terminal action and proof is complete. Its source inventory and delta pass. All five field-incident prompts return ready dossiers covering 9 files, 12 excerpts, 12 links, 15 order groups, 21 entities, 20 proofs and all four required queues at 3977 / 3977 / 3979 / 3977 / 3977 tokens; all 14 frozen GoValidate formulations are ready at 3970-3998 tokens with all four queues and stable flow/evidence hashes. The separate repository-portable CI oracle regenerates an exact attested 18-file committed corpus, returns 14/14 ready dossiers with seven mandatory obligations, a 9-node/8-link corridor, all four handoffs and terminal persistence, and rejects wrong-corpus, unknown-proof and missing-persistence mutations. The real-GoValidate audit passes 14/14 and 100 warm measurements at median 48.61237500000061 ms, p95 49.48099999999977 ms and max 50.91725000000042 ms. The 7-file focused suite passes 267 tests, the full suite and coverage pass 83 files / 899 tests at 85.6% statements, 79.93% branches, 92.02% functions and 89.07% lines, and typecheck, build, build-eval, governance, packed parity, release verification, registry validation, isolation, npm audit and CI evaluation regression pass. The replacement trio is 1424 source LOC / 60928 emitted bytes under the owner-amended 61000-byte ceiling; the exact package is 102 files / 155118 packed / 653492 unpacked bytes under the owner-amended 655000-byte unpacked ceiling. The historical stop receipt is https://github.com/mohanagy/madar/issues/630#issuecomment-5153255732; owner amendment https://github.com/mohanagy/madar/issues/630#issuecomment-5153369147 supersedes that stop and authorizes active continuation while changing only those two ceilings. All other metrics, constraints and prohibitions remain unchanged. Independent review, exact-head CI, CodeRabbit, zero-thread and merge gates remain pending; no publication, release, Registry metadata, tag or main action is authorized.'
+    notes: 'Issue #630 began from exact protected next commit c88823ecbeb6da6284cf74ecbd304e9315ffd4fa and tree b715764668b4296e9e8ab4da715374f47af137db after #632 completed. The current local candidate replaces rank/slice/traverse with one obligation planner, workflow builder and authenticated evidence hydrator, then returns a deterministic v2 dossier only when every mandatory stage, adjacent async handoff, terminal action and proof is complete. Its source inventory and delta pass. All five field-incident prompts return ready dossiers covering 9 files, 12 excerpts, 12 links, 15 order groups, 21 entities, 20 proofs and all four required queues at 3977 / 3977 / 3979 / 3977 / 3977 tokens; all 14 frozen GoValidate formulations are ready at 3970-3998 tokens with all four queues and stable flow/evidence hashes. The separate repository-portable CI oracle regenerates an exact attested 18-file committed corpus, returns 14/14 ready dossiers with seven mandatory obligations, a 9-node/8-link corridor, all four handoffs and terminal persistence, and rejects wrong-corpus, unknown-proof and missing-persistence mutations. The real-GoValidate audit passes 14/14 and 100 warm measurements at median 48.61237500000061 ms, p95 49.48099999999977 ms and max 50.91725000000042 ms. The 7-file focused suite passes 267 tests, the full suite and coverage pass 83 files / 899 tests at 85.6% statements, 79.94% branches, 92.02% functions and 89.07% lines, and typecheck, build, build-eval, governance, packed parity, release verification, registry validation, isolation, npm audit and CI evaluation regression pass. The replacement trio is 1424 source LOC / 60933 emitted bytes under the owner-amended 61000-byte ceiling; the exact package is 102 files / 155124 packed / 653497 unpacked bytes under the owner-amended 655000-byte unpacked ceiling. The historical stop receipt is https://github.com/mohanagy/madar/issues/630#issuecomment-5153255732; owner amendment https://github.com/mohanagy/madar/issues/630#issuecomment-5153369147 supersedes that stop and authorizes active continuation while changing only those two ceilings. All other metrics, constraints and prohibitions remain unchanged. Independent review, exact-head CI, CodeRabbit, zero-thread and merge gates remain pending; no publication, release, Registry metadata, tag or main action is authorized.'
     exit_gate: Every mandatory question obligation is proven and packed into one non-truncated ready dossier, or the result returns the exact non-ready state and missing obligations within the unchanged file, excerpt, token, recovery, package, and latency ceilings.
 
   - id: no-fallback-qualification-631
