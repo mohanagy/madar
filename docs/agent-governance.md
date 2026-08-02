@@ -3,10 +3,10 @@
 Madar governance is intentionally small:
 
 1. call `retrieve` once for a repository question, preserving the user's question
-2. use only authenticated nodes, exact excerpts, and directed relationships as Madar evidence
-3. state every returned evidence boundary
-4. make focused source reads only where the result cannot carry the task
-5. never convert a partial or unsupported path into a complete claim
+2. use a `ready` dossier's obligations, flow, and authenticated evidence as Madar evidence
+3. state every exact non-ready `missing`, `reason`, or `failure`
+4. make focused source reads only for the named gap
+5. never convert a non-ready result into a complete claim
 
 The same rules apply to `madar query`, which is the CLI transport for the same retrieval contract.
 

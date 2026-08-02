@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { parse } from "yaml"
+
 import {
   evaluationPackageBudget,
   evaluationLeakMarkers,
@@ -58,9 +60,36 @@ const ciWorkflow = readFileSync(
   resolve(repositoryRoot, ".github/workflows/ci.yml"),
   "utf8",
 ).replaceAll("\r\n", "\n")
+const manifest = parse(readFileSync(
+  resolve(repositoryRoot, "docs/core-reset/removal-manifest.yml"),
+  "utf8",
+))
+const activePhase = manifest.items?.find(
+  (item) => item.id === manifest.current?.active_phase,
+)
+const obligationRetrieval = manifest.items?.find(
+  (item) => item.id === "obligation-driven-retrieval-630",
+)
+const packageBudget = activePhase?.npm_package_budget ?? evaluationPackageBudget
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+assert(
+  obligationRetrieval?.delivery_limits !== undefined
+    && obligationRetrieval?.candidate !== undefined,
+  "removal manifest is missing the obligation-driven-retrieval-630 candidate",
+)
+
+function physicalLines(path) {
+  const text = readFileSync(path, "utf8")
+  return text.length === 0 ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0)
+}
+
+function replacementOutputs(source) {
+  const stem = source.replace(/^src\//u, "").replace(/\.ts$/u, "")
+  return [`dist/src/${stem}.js`, `dist/src/${stem}.d.ts`]
 }
 
 const inventory = sourceInventory()
@@ -90,7 +119,18 @@ const packageContentMarkers = loadBearingEvaluationMarkers(
   contract,
   performanceMarkers,
 )
-const packageMeasurement = inspectPackageContents(packageContentMarkers)
+const packageMeasurement = inspectPackageContents(packageContentMarkers, packageBudget)
+const replacementSources = obligationRetrieval?.sources ?? []
+const replacementMeasurement = {
+  source_loc: replacementSources.reduce(
+    (total, source) => total + physicalLines(resolve(repositoryRoot, source)),
+    0,
+  ),
+  emitted_bytes: replacementSources.flatMap(replacementOutputs).reduce(
+    (total, output) => total + readFileSync(resolve(repositoryRoot, output)).byteLength,
+    0,
+  ),
+}
 const publishedRoots = new Set(packageJson.files ?? [])
 const packageScripts = packageJson.scripts ?? {}
 
@@ -254,7 +294,22 @@ assert(
 )
 assert(
   packageMeasurement.target_passed,
-  `npm package exceeds the Evaluation Tooling ceilings: ${packageMeasurement.file_count}/${evaluationPackageBudget.files_max} files / ${packageMeasurement.packed_bytes}/${evaluationPackageBudget.packed_bytes_max} packed bytes / ${packageMeasurement.unpacked_bytes}/${evaluationPackageBudget.unpacked_bytes_max} unpacked bytes`,
+  `npm package exceeds the selected ceilings: ${packageMeasurement.file_count}/${packageBudget.files_max} files / ${packageMeasurement.packed_bytes}/${packageBudget.packed_bytes_max} packed bytes / ${packageMeasurement.unpacked_bytes}/${packageBudget.unpacked_bytes_max} unpacked bytes`,
+)
+assert(
+  replacementSources.length === 3
+    && replacementMeasurement.source_loc
+      === obligationRetrieval?.candidate?.replacement_measurement?.source_loc
+    && replacementMeasurement.emitted_bytes
+      === obligationRetrieval?.candidate?.replacement_measurement?.emitted_bytes,
+  `#630 replacement receipt drifted: ${replacementMeasurement.source_loc} source LOC / ${replacementMeasurement.emitted_bytes} emitted bytes`,
+)
+assert(
+  replacementMeasurement.source_loc
+    <= obligationRetrieval.delivery_limits.replacement_source_loc_max
+    && replacementMeasurement.emitted_bytes
+      <= obligationRetrieval.delivery_limits.replacement_emitted_bytes_max,
+  `#630 replacement exceeds its ceilings: ${replacementMeasurement.source_loc}/${obligationRetrieval.delivery_limits.replacement_source_loc_max} source LOC / ${replacementMeasurement.emitted_bytes}/${obligationRetrieval.delivery_limits.replacement_emitted_bytes_max} emitted bytes`,
 )
 assert(
   !existsSync(resolve(repositoryRoot, "dist", "tools")),
@@ -275,6 +330,7 @@ process.stdout.write(
     `- Moved evaluation outputs absent from production dist: ${40 - toolingLayout.present_production_outputs.length}/40`,
     `- Moved evaluation outputs present in dist-eval: ${40 - toolingLayout.missing_evaluation_outputs.length}/40`,
     `- Package: ${packageMeasurement.file_count} files / ${packageMeasurement.packed_bytes} packed bytes / ${packageMeasurement.unpacked_bytes} unpacked bytes`,
+    `- #630 replacement: ${replacementMeasurement.source_loc} source LOC / ${replacementMeasurement.emitted_bytes} emitted bytes`,
     `- Exact moved modules or outputs in package: 0/${evaluationToolingMoves.length * 6} forbidden paths`,
     "- tools/** and dist-eval/** paths in package: 0",
     "- Evaluation assets in package: 0",

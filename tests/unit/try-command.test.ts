@@ -43,14 +43,22 @@ describe('runTryCommand', () => {
     const [, ...serialized] = output.split('\n')
     const result = JSON.parse(serialized.join('\n')) as {
       schema: string
-      outcome: string
-      matched_nodes: Array<{ label: string }>
+      version: number
+      state: string
+      dossier?: {
+        evidence: {
+          entities: Array<{ kind: string; label?: string }>
+        }
+      }
     }
 
     expect(output).toContain('[madar try] Built ')
     expect(result.schema).toBe('madar.retrieve')
-    expect(result.outcome).toBe('evidence')
-    expect(result.matched_nodes.map((node) => node.label)).toEqual(
+    expect(result.version).toBe(2)
+    expect(result.state).toBe('ready')
+    expect(result.dossier?.evidence.entities
+      .filter((entity) => entity.kind === 'symbol')
+      .map((entity) => entity.label)).toEqual(
       expect.arrayContaining(['submitOrder()', 'saveOrder()']),
     )
   })

@@ -1,16 +1,18 @@
 import { ResearchAgentService } from '../research-agent.service.js'
 import {
-  registerWorker,
+  type QueueRegistryService,
   type PipelineJobPayload,
 } from '../../pipeline/api/queue-registry.service.js'
 
 export class SectionResearchWorker {
   private readonly researchAgent = new ResearchAgentService()
 
+  constructor(private readonly registry: QueueRegistryService) {}
+
   onModuleInit(): void {
-    registerWorker(
+    this.registry.registerWorker(
       'section-research-queue',
-      async (input) => this.process(input),
+      async (job) => this.process(job.data),
     )
   }
 

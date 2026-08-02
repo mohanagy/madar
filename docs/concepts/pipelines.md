@@ -20,16 +20,17 @@ source scan
 
 ```text
 question
-  -> lexical graph anchors
-  -> one bounded directional closure
+  -> locate, explain, or workflow obligation plan
+  -> bounded graph-coherent corridor selection
+  -> at most two structural/evidence recovery passes
   -> source hash and range authentication
-  -> deterministic bounded slice
-  -> evidence or explicit boundary
+  -> atomic required-claim and proof packing
+  -> ready dossier or exact non-ready state
 ```
 
-The retrieval pipeline has no profile, planner, recovery engine, semantic reranker, session state, or task-specific product wrapper.
+The retrieval pipeline has one deterministic planner, workflow builder, and evidence hydrator. It has no profile, LLM reranker, fallback search, second retrieval engine, session state, or task-specific product wrapper.
 
-Its hard output limits are 12 files, 25 snippets, one closure pass, and 4,000 serialized tokens.
+Its hard output limits are 12 files, 25 authenticated excerpts, three roots, 32 initial candidates, 512 explored nodes, 24 causal hops, two recovery passes sharing 64 total recovery-frontier nodes, three alternate seeds per missing obligation, and 4,000 serialized tokens.
 
 CLI `query`, direct application use, and MCP `retrieve` serialize byte-identical results for the same accepted graph and normalized request. MCP advertises only the tools capability, exactly one tool, and no resources or prompts.
 
@@ -42,4 +43,4 @@ An excerpt is evidence only when:
 - current file bytes match the canonical SHA-256 hash
 - the graph line range exists exactly in those bytes
 
-Failures become missing, unsupported, stale, unavailable, corrupt, disconnected, or truncated boundaries. They are never converted into confidence scores.
+Missing proof or a selection/budget limit becomes `incomplete`; unsupported intent/source, stale bytes, unavailable source, and corrupt facts retain their exact states. A non-ready response never exposes a partial dossier as answer-ready evidence or converts a gap into a confidence score.

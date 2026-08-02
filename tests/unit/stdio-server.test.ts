@@ -178,6 +178,7 @@ describe('MCP tools-only protocol', () => {
     )).toEqual(['tools'])
     expect(result(listed!).tools?.map((tool) => tool.name)).toEqual(['retrieve'])
     expect(result(listed!).tools?.[0]).toMatchObject({
+      description: expect.stringContaining('authenticated answer dossier'),
       inputSchema: {
         properties: {
           budget: {
@@ -358,12 +359,19 @@ describe('MCP reconciliation lifecycle', () => {
 
     expect(JSON.parse(text)).toMatchObject({
       schema: 'madar.retrieve',
-      outcome: 'unavailable',
-      boundaries: [{
-        kind: 'unavailable',
+      version: 2,
+      state: 'unavailable',
+      failures: [{
+        state: 'unavailable',
         subject: 'canonical graph for current workspace',
       }],
+      metrics: {
+        selected_files: 0,
+        authenticated_excerpts: 0,
+      },
     })
+    expect(JSON.parse(text)).not.toHaveProperty('dossier')
+    expect(JSON.parse(text)).not.toHaveProperty('missing')
     expect(text.toLowerCase()).not.toContain('retry')
     expect(response?.error).toBeUndefined()
     expect(starter).toHaveBeenCalledTimes(1)
@@ -421,13 +429,32 @@ describe('MCP reconciliation lifecycle', () => {
       .map((line) => JSON.parse(line) as JsonRpcResponse)
       .find((entry) => entry.id === 3)
     const retrieved = JSON.parse(textResult(response!)) as {
-      outcome: string
-      matched_nodes: Array<{ source_file: string }>
+      schema: string
+      version: number
+      state: string
+      dossier?: {
+        obligations: Array<{ proofs: string[] }>
+        evidence: {
+          files: Array<{ path: string }>
+          entities: Array<{ kind: string; label?: string }>
+        }
+      }
     }
-    expect(retrieved.outcome).toBe('evidence')
-    expect(retrieved.matched_nodes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ source_file: 'src/payment-retry.ts' }),
+    expect(retrieved).toMatchObject({
+      schema: 'madar.retrieve',
+      version: 2,
+      state: 'ready',
+    })
+    expect(retrieved).not.toHaveProperty('missing')
+    expect(retrieved.dossier?.evidence.files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'src/payment-retry.ts' }),
     ]))
+    expect(retrieved.dossier?.evidence.entities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'symbol', label: 'retryPayment()' }),
+    ]))
+    expect(retrieved.dossier?.obligations.length).toBeGreaterThan(0)
+    expect(retrieved.dossier?.obligations.every((claim) => claim.proofs.length > 0))
+      .toBe(true)
   }, 30_000)
 
   it('keeps the stream alive after parse and oversized-line errors', async () => {

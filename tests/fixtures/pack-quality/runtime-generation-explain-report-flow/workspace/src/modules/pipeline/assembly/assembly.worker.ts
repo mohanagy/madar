@@ -1,5 +1,5 @@
 import {
-  registerWorker,
+  type QueueRegistryService,
   type PipelineJobPayload,
 } from '../api/queue-registry.service.js'
 import { AssemblyService } from '../../reports/assembly.service.js'
@@ -7,10 +7,12 @@ import { AssemblyService } from '../../reports/assembly.service.js'
 export class AssemblyWorker {
   private readonly assembly = new AssemblyService()
 
+  constructor(private readonly registry: QueueRegistryService) {}
+
   onModuleInit(): void {
-    registerWorker(
+    this.registry.registerWorker(
       'assembly-queue',
-      async (input) => this.process(input),
+      async (job) => this.process(job.data),
     )
   }
 

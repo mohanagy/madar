@@ -8,7 +8,7 @@ Madar builds a local graph for a JavaScript or TypeScript repository. Its MCP se
 retrieve(question, budget?)
 ```
 
-The result is a small set of exact source excerpts and directed relationships, or an explicit boundary explaining why evidence could not be returned. There are no tool profiles or alternate retrieval modes to choose.
+The result is a complete, ordered answer dossier backed by exact source evidence, or an exact non-ready state naming what could not be proven. There are no tool profiles, fallback searches, or alternate retrieval modes to choose.
 
 MCP advertises only the tools capability. It exposes no resources or prompts.
 
@@ -60,9 +60,9 @@ madar query "what calls enqueueInvoice?" --budget 2000
 
 ## What the result means
 
-Results contain authenticated nodes and excerpts, directed relationships, explicit boundaries, and size metrics. `evidence` means the returned path is usable; other outcomes name the focused verification needed instead of implying a path Madar did not prove.
+`ready` contains a non-truncated dossier: the normalized query, proven obligations, roots and terminals, direct or channel links, partial-order groups, and SHA-256-authenticated files, excerpts, controls, entities, and proofs. `incomplete`, `unsupported`, `stale`, `unavailable`, and `corrupt` name the exact condition instead of implying a path Madar did not prove.
 
-Results include at most 12 files, 25 snippets, one directional closure pass, and 4,000 serialized tokens. See [MCP response shape](https://github.com/mohanagy/madar/blob/next/docs/mcp-response-shape.md) for the exact envelope.
+Results include at most 12 files, 25 authenticated excerpts, two bounded recovery passes, and 4,000 serialized tokens. See [MCP response shape](https://github.com/mohanagy/madar/blob/next/docs/mcp-response-shape.md) for the exact envelope.
 
 ## How it works
 
@@ -76,7 +76,7 @@ JavaScript / TypeScript repository
  retrieve(question, budget?)
               |
               v
- exact excerpts + directed relationships
+ ordered claims + authenticated proof
 ```
 
 `madar generate .` uses one canonical compiler-backed path for `.js`, `.jsx`, `.ts`, and `.tsx`. Other source languages and non-code formats produce no graph facts and are reported as unsupported when they matter to a question.

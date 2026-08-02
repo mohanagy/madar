@@ -69,8 +69,8 @@ Supplying either threshold enables strict mode; unspecified allowances default t
 
 ## Effect on retrieval
 
-`retrieve` authenticates the accepted graph's embedded completeness before ranking any evidence. If the supported JavaScript/TypeScript index is not `complete`, retrieval returns an `unavailable` outcome with a `canonical TypeScript index incomplete` boundary and no graph evidence. It does not calculate confidence or answerability scores.
+`retrieve` authenticates the accepted graph's embedded completeness before planning evidence. If the supported JavaScript/TypeScript index is not `complete`, retrieval returns `state: "unavailable"` with a failure subject of `canonical TypeScript index incomplete` and no dossier. It does not calculate confidence or answerability scores.
 
-For an accepted complete index, a recognized unsupported source that matches the question can appear as an `unsupported` boundary beside useful JavaScript/TypeScript evidence. Policy skips and safety exclusions remain visible in the indexing diagnostics; they are not converted into confidence signals.
+For an accepted complete index, a recognized unsupported source required by the question returns `state: "unsupported"` rather than mixing unsupported material with a partial dossier. Policy skips and safety exclusions remain visible in the indexing diagnostics; they are not converted into confidence signals.
 
-Completeness is still static evidence, not a runtime trace or a guarantee that every possible answer is present. When a returned boundary identifies unsupported or otherwise unavailable evidence, the agent should state that limitation and perform only the focused verification needed to continue.
+Completeness is still static evidence, not a runtime trace or a guarantee that every possible answer is present. When a non-ready state identifies unsupported or otherwise unavailable evidence, the agent should state that limitation and perform only the focused verification needed to continue.

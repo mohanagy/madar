@@ -6,13 +6,13 @@ Large repositories make coding agents spend early turns rediscovering routes, se
 
 ```text
 madar generate .
-madar <agent> install
+madar install claude
 retrieve(question, budget?)
 ```
 
-For one repository question, Madar ranks graph anchors, follows one bounded directed closure, verifies source bytes against the canonical graph, and returns exact excerpts plus relationships.
+For one repository question, Madar plans explicit locate, explain, or workflow obligations; selects a graph-coherent corridor; performs at most two bounded recovery passes; verifies exact source bytes and ranges; and atomically packs required claims with their proof.
 
-The same call can return explicit missing, disconnected, unsupported, stale, unavailable, corrupt, or truncated boundaries. That is more useful than hiding an incomplete path behind a confidence label.
+The same call returns either one complete, non-truncated `ready` dossier or the exact `incomplete`, `unsupported`, `stale`, `unavailable`, or `corrupt` state. That is more useful than hiding a gap behind a confidence label or presenting partial evidence as complete.
 
 ## What it does not do
 

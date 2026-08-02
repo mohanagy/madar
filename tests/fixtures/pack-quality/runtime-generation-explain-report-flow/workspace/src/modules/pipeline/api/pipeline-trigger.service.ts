@@ -5,5 +5,9 @@ export async function startPipeline(
   problem: string,
   ideaId: string,
 ): Promise<{ jobId: string }> {
-  return enqueueJob({ userId, problem, ideaId })
+  return enqueueJob(
+    'orchestration-queue',
+    'pipeline.orchestrator.process',
+    { userId, problem, ideaId },
+  )
 }

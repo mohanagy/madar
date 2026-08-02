@@ -4,15 +4,18 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('agent governance documentation', () => {
-  it('requires one retrieve call, authenticated evidence, and explicit boundaries', () => {
+  it('requires one retrieve call, a ready dossier, and exact non-ready gaps', () => {
     const doc = readFileSync(resolve('docs/agent-governance.md'), 'utf8')
+    const orchestration = readFileSync(resolve('docs/integrations/agent-orchestration.md'), 'utf8')
 
     expect(doc).toContain('call `retrieve` once')
-    expect(doc).toContain('authenticated nodes')
-    expect(doc).toContain('directed relationships')
-    expect(doc).toContain('state every returned evidence boundary')
+    expect(doc).toContain('`ready` dossier')
+    expect(doc).toContain('authenticated evidence')
+    expect(doc).toContain('exact non-ready `missing`, `reason`, or `failure`')
     expect(doc).toContain('guidance, not enforcement')
     expect(doc).not.toContain('context_pack')
     expect(doc).not.toContain('pack_confidence')
+    expect(orchestration).toContain('run `madar generate .` and a fresh `retrieve`')
+    expect(orchestration).toContain('only while the indexed sources')
   })
 })

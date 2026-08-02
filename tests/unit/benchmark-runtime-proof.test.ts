@@ -44,14 +44,16 @@ describe('benchmark retrieval adapter', () => {
     const result = retrieveBenchmarkContext(
       graph,
       generated.graphPath,
-      'How does process invoice call store invoice?',
+      'Where is processInvoice defined?',
       4_000,
     )
 
     expect(process.cwd()).toBe(originalCwd)
-    expect(result.outcome).toBe('evidence')
-    expect(result.matched_nodes.map((node) => node.label)).toEqual(
-      expect.arrayContaining(['processInvoice()', 'storeInvoice()']),
-    )
+    expect(result.state).toBe('ready')
+    if (result.state === 'ready') {
+      expect(result.dossier.evidence.entities).toContainEqual(
+        expect.objectContaining({ kind: 'symbol', label: 'processInvoice()' }),
+      )
+    }
   })
 })

@@ -52,7 +52,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = Object.freeze([
   Object.freeze({
     name: 'retrieve',
     description:
-      'Return the smallest deterministic evidence path for a TypeScript or JavaScript codebase question.',
+      'Return an authenticated answer dossier or exact gaps.',
     inputSchema: Object.freeze({
       type: 'object',
       additionalProperties: false,
@@ -62,7 +62,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = Object.freeze([
           type: 'string',
           minLength: 1,
           maxLength: MAX_RETRIEVE_QUESTION_LENGTH,
-          description: 'The codebase question to answer from authenticated graph evidence.',
+          description: 'A locate, explain, or workflow question.',
         }),
         budget: Object.freeze({
           type: 'integer',
@@ -135,7 +135,7 @@ export async function handleMcpProtocolRequest(
           version: context.version,
         },
         instructions:
-          'Call retrieve once with the codebase question. Madar returns one deterministic authenticated evidence path or a terminal evidence boundary.',
+          'Call once. Ready is complete; otherwise report its exact condition.',
       })
     case 'ping':
       return success(id, {})

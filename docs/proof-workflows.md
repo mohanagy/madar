@@ -54,6 +54,6 @@ No injected MCP configuration, manual override, or direct JSON-RPC substitute pr
 
 - A single good result is a case study, not a universal win.
 - A failed activation says the integration did not engage; it is not a retrieval-speed result.
-- A partial evidence result must preserve its boundary.
+- A non-ready result must preserve its exact missing requirement, reason, or failure and never masquerade as partial evidence.
 - Historical benchmark receipts remain valid for their named version and setup even when their recorded command no longer exists.
 - Share-safe artifacts are best-effort redactions and must be reviewed before publication.

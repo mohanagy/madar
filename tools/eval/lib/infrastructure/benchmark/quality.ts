@@ -1,7 +1,11 @@
 import { KnowledgeGraph } from '../../../../../src/domain/graph/directed-multigraph.js'
 import { retrieveContext } from '../../../../../src/application/retrieve-context.js'
 import { inspectQueryIndex } from '../../../../../src/domain/query/index-status.js'
-import type { RetrieveContextResult } from '../../../../../src/domain/query/types.js'
+import type {
+  DossierLink,
+  DossierProof,
+  RetrieveContextResult,
+} from '../../../../../src/domain/query/types.js'
 import { formatTokenRatio, resolveCorpusBaseline, type CorpusBaselineSource } from './corpus.js'
 import { normalizeBenchmarkQuestion, normalizeExpectedLabel, type BenchmarkQuestionSpec } from './questions.js'
 import { type PromptRunnerUsage } from '../prompt-runner.js'
@@ -94,8 +98,8 @@ export interface QualityOptions {
  */
 export const GOLD_QUESTIONS: GoldQuestion[] = [
   {
-    question: 'how does the retrieve application rank query anchors',
-    expected_labels: ['retrievecontext', 'rankqueryanchors'],
+    question: 'how does retrieveContext plan a repository question',
+    expected_labels: ['retrievecontext', 'planquestion'],
   },
   {
     question: 'how does the retrieve MCP tool find relevant nodes',
@@ -106,12 +110,12 @@ export const GOLD_QUESTIONS: GoldQuestion[] = [
     expected_labels: ['retrievecontext'],
   },
   {
-    question: 'how does retrieval traverse directed evidence paths',
-    expected_labels: ['traverseevidencepaths'],
+    question: 'how does retrieval select an ordered workflow',
+    expected_labels: ['selectworkflow'],
   },
   {
-    question: 'how does retrieval fit evidence into the result budget',
-    expected_labels: ['sliceevidence'],
+    question: 'how does retrieval hydrate authenticated evidence for the answer dossier',
+    expected_labels: ['hydrateevidence'],
   },
   {
     question: 'how does canonical TypeScript indexing build graph nodes',
@@ -199,6 +203,32 @@ function questionBucket(question: string): string {
   return 'general'
 }
 
+function hasValidProofRange(range: readonly number[]): boolean {
+  if (range.length !== 4 || range.some((value) => !Number.isSafeInteger(value) || value <= 0)) {
+    return false
+  }
+  const [startLine, startColumn, endLine, endColumn] = range as [number, number, number, number]
+  return startLine < endLine || (startLine === endLine && startColumn <= endColumn)
+}
+
+export function isGroundedDossierProofChain(
+  link: Pick<DossierLink, 'from' | 'to' | 'proofs'>,
+  proofs: ReadonlyMap<string, DossierProof>,
+  excerptIds: ReadonlySet<string>,
+  fileIds: ReadonlySet<string>,
+): boolean {
+  const chain = link.proofs.map((id) => proofs.get(id))
+  if (chain.length === 0 || chain.some((proof) => !proof || (
+    'excerpt' in proof
+      ? !excerptIds.has(proof.excerpt)
+      : !fileIds.has(proof.file) || !hasValidProofRange(proof.range)
+  ))) return false
+  const edges = chain.filter((proof): proof is DossierProof => proof !== undefined)
+  return edges[0]?.from === link.from
+    && edges.at(-1)?.to === link.to
+    && !edges.slice(1).some((proof, index) => edges[index]?.to !== proof.from)
+}
+
 function buildQualityResult(
   gold: GoldQuestion,
   result: RetrieveContextResult,
@@ -206,7 +236,30 @@ function buildQualityResult(
 ): QualityResult {
   const expectedLabels = gold.expected_labels
   const normalizedExpectedLabels = expectedLabels.map((label) => normalizeExpectedLabel(label))
-  const returnedLabels = result.matched_nodes.map((node) => normalizeExpectedLabel(node.label))
+  const returnedNodes = result.state === 'ready'
+    ? result.dossier.evidence.entities.filter((entity) => entity.kind === 'symbol')
+    : []
+  const returnedLabels = returnedNodes.map((node) => normalizeExpectedLabel(node.label))
+  const groundedSymbols = new Set<string>()
+  if (result.state === 'ready') {
+    const excerptIds = new Set(result.dossier.evidence.excerpts.map(({ id }) => id))
+    const fileIds = new Set(result.dossier.evidence.files.map(({ id }) => id))
+    const proofs = new Map(result.dossier.evidence.proofs.map((proof) => [proof.id, proof]))
+    for (const link of result.dossier.flow.links) {
+      if (!isGroundedDossierProofChain(link, proofs, excerptIds, fileIds)) continue
+      groundedSymbols.add(link.from)
+      groundedSymbols.add(link.to)
+    }
+    for (const entity of result.dossier.evidence.entities) {
+      if (entity.kind === 'symbol' && entity.excerpt
+        && excerptIds.has(entity.excerpt)) {
+        groundedSymbols.add(entity.id)
+      }
+      if (entity.kind === 'operation' && excerptIds.has(entity.excerpt)) {
+        groundedSymbols.add(entity.owner)
+      }
+    }
+  }
 
   const matchedLabels = expectedLabels.filter((expected) =>
     returnedLabels.some((returned) => isExactMatch(returned, normalizeExpectedLabel(expected))),
@@ -229,13 +282,12 @@ function buildQualityResult(
   const precision = returnedLabels.length > 0 ? matchedLabels.length / returnedLabels.length : 0
   const recall = expectedLabels.length > 0 ? matchedLabels.length / expectedLabels.length : 0
   const snippetCoverage =
-    result.matched_nodes.length > 0
-      ? result.matched_nodes.filter((node) => typeof node.snippet === 'string' && node.snippet.trim().length > 0).length / result.matched_nodes.length
+    returnedNodes.length > 0
+      ? returnedNodes.filter((node) => groundedSymbols.has(node.id)).length / returnedNodes.length
       : 0
-  const groundedMatches = result.matched_nodes.filter((node) => (
+  const groundedMatches = returnedNodes.filter((node) => (
     normalizedExpectedLabels.includes(normalizeExpectedLabel(node.label)) &&
-    typeof node.snippet === 'string' &&
-    node.snippet.trim().length > 0
+    groundedSymbols.has(node.id)
   )).length
   const groundedMatchRate = expectedLabels.length > 0 ? groundedMatches / expectedLabels.length : 0
 
@@ -243,7 +295,7 @@ function buildQualityResult(
     question: gold.question,
     bucket: questionBucket(gold.question),
     expected_labels: expectedLabels,
-    returned_labels: result.matched_nodes.map((node) => node.label),
+    returned_labels: returnedNodes.map((node) => node.label),
     matched_labels: matchedLabels,
     missing_labels: missingLabels,
     precision,

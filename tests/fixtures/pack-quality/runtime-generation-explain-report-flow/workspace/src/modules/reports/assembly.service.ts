@@ -31,6 +31,6 @@ export class AssemblyService {
   }
 
   private async dispatchPersistence(input: PipelineJobPayload): Promise<void> {
-    await enqueueJob('db-sync-queue', input)
+    await enqueueJob('db-sync-queue', 'db.sync.process', input)
   }
 }

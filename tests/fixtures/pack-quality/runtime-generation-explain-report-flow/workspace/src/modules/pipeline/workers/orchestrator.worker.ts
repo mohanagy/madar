@@ -1,5 +1,5 @@
 import {
-  registerWorker,
+  type QueueRegistryService,
   type PipelineJobPayload,
 } from '../api/queue-registry.service.js'
 import { PlannerService } from '../../planning/planner.service.js'
@@ -20,10 +20,12 @@ function Process(_jobName: string): any {
 export class OrchestratorWorker {
   private readonly planner = new PlannerService()
 
+  constructor(private readonly registry: QueueRegistryService) {}
+
   onModuleInit(): void {
-    registerWorker(
+    this.registry.registerWorker(
       'orchestration-queue',
-      async (input) => this.process({ data: input }),
+      async (job) => this.process(job),
     )
   }
 

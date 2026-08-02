@@ -18,7 +18,7 @@ Relevant threats include prompt injection in repository content, path traversal,
 
 - MCP advertises only the tools capability and exactly one tool, `retrieve`. It exposes no resources or prompts.
 - Requests are line-bounded and schema-validated. `question` is required and capped at 512 characters; `budget` must be a positive integer.
-- Results are capped at 4,000 serialized tokens, 12 files, 25 snippets, and one directional closure pass.
+- Results are capped at 4,000 serialized tokens, 12 files, 25 authenticated excerpts, and two bounded recovery passes.
 - Excerpts are authenticated and returned only when current source bytes match the canonical graph hash and exact range.
 - Graph and source paths must resolve beneath the accepted exact workspace.
 - Sensitive path classes are excluded during discovery. This is a path policy, not a content-level secret scanner.

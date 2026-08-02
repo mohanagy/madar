@@ -397,7 +397,10 @@ export function packageContentLeaks(paths, markers, root = repositoryRoot) {
   return violations
 }
 
-export function inspectPackageContents(markers = []) {
+export function inspectPackageContents(
+  markers = [],
+  budget = evaluationPackageBudget,
+) {
   const record = parseNpmPackJson(
     run(npmCommand, [
       "pack",
@@ -442,9 +445,9 @@ export function inspectPackageContents(markers = []) {
     packed_bytes: packedBytes,
     unpacked_bytes: unpackedBytes,
     target_passed:
-      fileCount <= evaluationPackageBudget.files_max &&
-      packedBytes <= evaluationPackageBudget.packed_bytes_max &&
-      unpackedBytes <= evaluationPackageBudget.unpacked_bytes_max,
+      fileCount <= budget.files_max &&
+      packedBytes <= budget.packed_bytes_max &&
+      unpackedBytes <= budget.unpacked_bytes_max,
     forbidden_paths: paths.filter((path) =>
       forbiddenPackagePrefixes.some((prefix) => path.startsWith(prefix)),
     ),

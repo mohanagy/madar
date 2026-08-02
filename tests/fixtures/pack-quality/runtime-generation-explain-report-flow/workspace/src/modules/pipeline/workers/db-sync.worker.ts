@@ -1,4 +1,12 @@
-import { registerWorker } from '../api/queue-registry.service.js'
+import type { QueueRegistryService } from '../api/queue-registry.service.js'
+import type { MongoRepository } from 'typeorm'
+
+type StoredReport = {
+  id: string
+  content: string
+}
+
+declare const reportRepository: MongoRepository<StoredReport>
 
 function hasIdeaId(ideaId: string): boolean {
   return ideaId.length > 0
@@ -12,14 +20,18 @@ export async function saveStructuredReport(
   ideaId: string,
   report: { content: string },
 ): Promise<{ saved: boolean }> {
-  return { saved: hasIdeaId(ideaId) && hasReportContent(report) }
+  if (!hasIdeaId(ideaId) || !hasReportContent(report)) return { saved: false }
+  await reportRepository.update(ideaId, { id: ideaId, content: report.content })
+  return { saved: true }
 }
 
 export class DbSyncWorker {
+  constructor(private readonly registry: QueueRegistryService) {}
+
   onModuleInit(): void {
-    registerWorker(
+    this.registry.registerWorker(
       'db-sync-queue',
-      async (input) => this.process(input),
+      async (job) => this.process(job.data),
     )
   }
 
