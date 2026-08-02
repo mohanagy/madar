@@ -304,7 +304,7 @@ assert(
       === replacementReceipt?.source_loc
     && replacementMeasurement.emitted_bytes
       === replacementReceipt?.emitted_bytes,
-  `active replacement receipt drifted: ${replacementMeasurement.source_loc} source LOC / ${replacementMeasurement.emitted_bytes} emitted bytes`,
+  `replacement receipt drifted: ${replacementMeasurement.source_loc} source LOC / ${replacementMeasurement.emitted_bytes} emitted bytes`,
 )
 assert(
   replacementMeasurement.source_loc
