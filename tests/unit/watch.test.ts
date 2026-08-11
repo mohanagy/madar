@@ -850,18 +850,12 @@ describe('watch', () => {
     await withTempDirAsync(async (tempDir) => {
       const controller = new AbortController()
       let rebuildAttempts = 0
-      let stateAfterFailure: ReturnType<typeof readWatcherStateForGraph> = null
       const rebuild = vi.fn(() => {
         rebuildAttempts += 1
-        if (rebuildAttempts === 1) {
-          return false
-        }
-        controller.abort()
-        return true
+        return rebuildAttempts > 1
       })
-      const notify = vi.fn(() => {
-        stateAfterFailure = readWatcherStateForGraph(join(tempDir, 'out', 'graph.json'))
-      })
+      const notify = vi.fn()
+      const graphPath = join(tempDir, 'out', 'graph.json')
 
       writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
       const watcher = watch(tempDir, 0.2, {
@@ -872,31 +866,43 @@ describe('watch', () => {
         notifyOnly: notify,
         logger: { log() {}, error() {} },
       })
-      const timeout = setTimeout(() => controller.abort(), 2_000)
+      const timeout = setTimeout(() => controller.abort(), 5_000)
 
       try {
-        await delay(30)
+        await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
         writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 2\n', 'utf8')
 
-        await waitFor(() => rebuild.mock.calls.length === 1)
-        expect(stateAfterFailure).toMatchObject({
+        await waitFor(() => {
+          const watcherState = readWatcherStateForGraph(graphPath)
+          return watcherState?.status === 'failed'
+            && watcherState.coverage === 'failed'
+            && watcherState.failure_reason?.includes('retry is scheduled automatically') === true
+        })
+        expect(rebuild).toHaveBeenCalledTimes(1)
+        expect(readWatcherStateForGraph(graphPath)).toMatchObject({
           status: 'failed',
           coverage: 'failed',
           failure_reason: expect.stringContaining('retry is scheduled automatically'),
         })
 
-        await delay(50)
-        expect(readWatcherStateForGraph(join(tempDir, 'out', 'graph.json'))).toMatchObject({
-          status: 'failed',
-          coverage: 'failed',
-          failure_reason: expect.stringContaining('retry is scheduled automatically'),
+        await waitFor(() => {
+          const watcherState = readWatcherStateForGraph(graphPath)
+          return rebuild.mock.calls.length === 2
+            && watcherState?.status === 'idle'
+            && watcherState.coverage === 'complete'
+            && watcherState.failure_reason === null
         })
-
-        await watcher
-
         expect(rebuild).toHaveBeenCalledTimes(2)
         expect(notify).toHaveBeenCalledTimes(1)
-        expect(readWatcherStateForGraph(join(tempDir, 'out', 'graph.json'))).toMatchObject({
+        expect(readWatcherStateForGraph(graphPath)).toMatchObject({
+          status: 'idle',
+          coverage: 'complete',
+          failure_reason: null,
+        })
+
+        controller.abort()
+        await watcher
+        expect(readWatcherStateForGraph(graphPath)).toMatchObject({
           status: 'stopped',
           coverage: 'complete',
           failure_reason: null,
