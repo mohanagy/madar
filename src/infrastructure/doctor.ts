@@ -453,10 +453,10 @@ function readGraphCheck(graphPath: string, now: number, projectDir: string): Gra
   }
 }
 
-function agentStatusFromFlags(flags: boolean[]): AgentStatus {
+function agentStatusFromFlags(flags: boolean[], attempted = false): AgentStatus {
   const positives = flags.filter(Boolean).length
   if (positives === 0) {
-    return 'missing'
+    return attempted ? 'partial' : 'missing'
   }
   if (positives === flags.length) {
     return 'configured'
@@ -655,17 +655,23 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const agents: AgentCheck[] = [
     {
       label: 'claude',
-      status: agentStatusFromFlags([claudeRuleConfigured, claudeHookConfigured, claudeMcpConfigured]),
+      status: agentStatusFromFlags(
+        [claudeRuleConfigured, claudeHookConfigured, claudeMcpConfigured],
+        claudeMcp.status === 'stale',
+      ),
       detail: `rules=${claudeRuleConfigured ? 'yes' : 'no'}, hook=${claudeHookConfigured ? 'yes' : 'no'}, mcp=${claudeMcp.status}`,
     },
     {
       label: 'cursor',
-      status: agentStatusFromFlags([cursorRuleConfigured, cursorMcpConfigured]),
+      status: agentStatusFromFlags([cursorRuleConfigured, cursorMcpConfigured], cursorMcp.status === 'stale'),
       detail: `rules=${cursorRuleConfigured ? 'yes' : 'no'}, mcp=${cursorMcp.status}`,
     },
     {
       label: 'gemini',
-      status: agentStatusFromFlags([geminiRuleConfigured, geminiHookConfigured, geminiMcpConfigured]),
+      status: agentStatusFromFlags(
+        [geminiRuleConfigured, geminiHookConfigured, geminiMcpConfigured],
+        geminiMcp.status === 'stale',
+      ),
       detail: `rules=${geminiRuleConfigured ? 'yes' : 'no'}, hook=${geminiHookConfigured ? 'yes' : 'no'}, mcp=${geminiMcp.status}`,
     },
     {

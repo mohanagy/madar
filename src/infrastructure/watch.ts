@@ -1024,8 +1024,11 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
 
     while (!options.signal?.aborted) {
       const now = Date.now()
+      const retryingFailedRebuild = state.status === 'failed' && pending
       const rebuildAt = pending ? lastTriggerAt + debounceMs : Number.POSITIVE_INFINITY
-      const reconcileAt = eventDirty ? now : nextReconciliationAt
+      const reconcileAt = retryingFailedRebuild
+        ? Number.POSITIVE_INFINITY
+        : eventDirty ? now : nextReconciliationAt
       const nextActionAt = Math.min(rebuildAt, reconcileAt)
       await loopSignal.wait(Number.isFinite(nextActionAt) ? Math.max(0, nextActionAt - now) : currentIntervalMs, options.signal)
       if (options.signal?.aborted) {
@@ -1033,7 +1036,7 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
       }
 
       const actionAt = Date.now()
-      if (eventDirty || actionAt >= nextReconciliationAt) {
+      if (!retryingFailedRebuild && (eventDirty || actionAt >= nextReconciliationAt)) {
         const trigger: WatchReconciliationMetrics['trigger'] = eventDirty ? 'event' : 'periodic'
         eventDirty = false
         state.status = 'reconciling'
@@ -1100,10 +1103,13 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
         }
         if (!rebuilt) {
           state.status = 'failed'
+          state.coverage = 'failed'
           state.failure_reason = 'Automatic graph rebuild failed; the graph must not be treated as fresh. A retry is scheduled automatically.'
           const retryDelayMs = Math.max(10, Math.min(1_000, Math.max(debounceMs, minimumIntervalMs)))
-          lastTriggerAt = Date.now() + retryDelayMs - debounceMs
-          state.next_reconciliation_at = new Date(Date.now() + retryDelayMs).toISOString()
+          const retryAt = Date.now() + retryDelayMs
+          lastTriggerAt = retryAt - debounceMs
+          nextReconciliationAt = retryAt + Math.max(1, minimumIntervalMs)
+          state.next_reconciliation_at = new Date(nextReconciliationAt).toISOString()
           persistState()
           runNotify(resolvedWatchPath, output)
           continue
