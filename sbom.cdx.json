@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:184d19a4-cdcf-4d54-bdb2-7948c1d2c353",
+  "serialNumber": "urn:uuid:f7a0d815-7c0f-4da6-98e8-7349160f2ed5",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-16T05:07:00.859Z",
+    "timestamp": "2026-08-11T15:41:26.904Z",
     "lifecycles": [
       {
         "phase": "build"
@@ -19,14 +19,14 @@
       }
     ],
     "component": {
-      "bom-ref": "@lubab/madar@0.31.2",
+      "bom-ref": "@lubab/madar@0.32.1",
       "type": "library",
       "name": "@lubab/madar",
-      "version": "0.31.2",
+      "version": "0.32.1",
       "scope": "required",
       "author": "mohanagy",
       "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
-      "purl": "pkg:npm/%40lubab/madar@0.31.2",
+      "purl": "pkg:npm/%40lubab/madar@0.32.1",
       "properties": [],
       "externalReferences": [
         {
@@ -300,14 +300,14 @@
       ]
     },
     {
-      "bom-ref": "@oxc-project/types@0.139.0",
+      "bom-ref": "@oxc-project/types@0.143.0",
       "type": "library",
       "name": "@oxc-project/types",
-      "version": "0.139.0",
+      "version": "0.143.0",
       "scope": "required",
       "author": "Boshen and oxc contributors",
       "description": "Types for Oxc AST nodes",
-      "purl": "pkg:npm/%40oxc-project/types@0.139.0",
+      "purl": "pkg:npm/%40oxc-project/types@0.143.0",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -317,7 +317,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@oxc-project/types/-/types-0.139.0.tgz"
+          "url": "https://registry.npmjs.org/@oxc-project/types/-/types-0.143.0.tgz"
         },
         {
           "type": "vcs",
@@ -331,7 +331,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "afd807a61b42b3ed4cec9d29c3a4a7fe187f5a96bf890ace3a4acd02554b17f807abefc22661c858a2945217568dc0fa0886bc89d6abb290ac012897097bc553"
+          "content": "bba25974b0532e8b6b342f5577abcfb2c20d773702ce578a007e8424a22641bec6b58bd7e6478dd9dc64a0ae38b2d09ce2d7df13a41046d6535d54b3b0b52558"
         }
       ],
       "licenses": [
@@ -343,13 +343,13 @@
       ]
     },
     {
-      "bom-ref": "@rolldown/binding-darwin-arm64@1.1.5",
+      "bom-ref": "@rolldown/binding-darwin-arm64@1.2.3",
       "type": "library",
       "name": "@rolldown/binding-darwin-arm64",
-      "version": "1.1.5",
+      "version": "1.2.3",
       "scope": "optional",
       "description": "Fast JavaScript/TypeScript bundler in Rust with Rollup-compatible API.",
-      "purl": "pkg:npm/%40rolldown/binding-darwin-arm64@1.1.5",
+      "purl": "pkg:npm/%40rolldown/binding-darwin-arm64@1.2.3",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -359,7 +359,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@rolldown/binding-darwin-arm64/-/binding-darwin-arm64-1.1.5.tgz"
+          "url": "https://registry.npmjs.org/@rolldown/binding-darwin-arm64/-/binding-darwin-arm64-1.2.3.tgz"
         },
         {
           "type": "vcs",
@@ -373,7 +373,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "e75067c7da4d88c44a49436d05fc9290d27dbcc53d1e1dc8d68cc377a8323cf63369709f9e9b547046715c66059feba5d9db5c3148aa191d586a2d8ad74ba84f"
+          "content": "89e22289b542a74b57ed32eed9c69fa0d3eff30272622d357a45e96dff2ada3ec5e2b1808615dbfde421ee07bd0d1058efc1b099142dbe3643bb1ec40db03c90"
         }
       ],
       "licenses": [
@@ -590,13 +590,13 @@
       ]
     },
     {
-      "bom-ref": "@types/node@26.1.1",
+      "bom-ref": "@types/node@26.2.0",
       "type": "library",
       "name": "@types/node",
-      "version": "26.1.1",
+      "version": "26.2.0",
       "scope": "required",
       "description": "TypeScript definitions for node",
-      "purl": "pkg:npm/%40types/node@26.1.1",
+      "purl": "pkg:npm/%40types/node@26.2.0",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -606,7 +606,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@types/node/-/node-26.1.1.tgz"
+          "url": "https://registry.npmjs.org/@types/node/-/node-26.2.0.tgz"
         },
         {
           "type": "vcs",
@@ -620,7 +620,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "9f1024452564375634242d56f24cbf7d37e41ac32672b46c6f1fb75e8644fab30e5fbd642d84d5edf2d7a6ab9dd46a5ba4fe53b9f7d716a7d7edf1f61a065113"
+          "content": "e48be2ba54d9791369daf009e75e1c73f1d4958e6767d7c26eaf433320b9d81ae1159002a379c8d11eea0718509a8fdddbb3457bdeaeaff6fb5b0c6495d6be92"
         }
       ],
       "licenses": [
@@ -1377,8 +1377,18 @@
       ],
       "externalReferences": [
         {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz"
+        },
+        {
           "type": "vcs",
           "url": "git://github.com/lovell/detect-libc.git"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "06d8f604e38ef37a375b21f9f5ef0c817b3111055c6ab9143a9118aee6c1d2eaf09cdd74c90dfae2bb22072535d67665a966199b4e62fe87fb8a8e26ce2841b5"
         }
       ],
       "licenses": [
@@ -1534,14 +1544,14 @@
       ]
     },
     {
-      "bom-ref": "fast-uri@3.1.2",
+      "bom-ref": "fast-uri@3.1.5",
       "type": "library",
       "name": "fast-uri",
-      "version": "3.1.2",
+      "version": "3.1.5",
       "scope": "required",
       "author": "Vincent Le Goff <vince.legoff@gmail.com> (https://github.com/zekth)",
       "description": "Dependency-free RFC 3986 URI toolbox",
-      "purl": "pkg:npm/fast-uri@3.1.2",
+      "purl": "pkg:npm/fast-uri@3.1.5",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -1551,7 +1561,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.2.tgz"
+          "url": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.5.tgz"
         },
         {
           "type": "vcs",
@@ -1569,7 +1579,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "ad58dfec0ac6dcb4e4f854ba630f355750cbb999756d16cdadebfa4e677ff516aba1e791449840b7b8e0ffa605c5bbc04175026af4a86613cf8faa0ec7ee4a8d"
+          "content": "807c00d4ef4b0c870aba730a84e6d2fc78a6c2d7a13b59cf50408a02ee53a4a81a3b5f5f716125e1b96259ed635b1545bc85f3b498e34382fc5d0d4453d7fb27"
         }
       ],
       "licenses": [
@@ -2011,13 +2021,13 @@
       ]
     },
     {
-      "bom-ref": "lightningcss@1.32.0",
+      "bom-ref": "lightningcss@1.33.0",
       "type": "library",
       "name": "lightningcss",
-      "version": "1.32.0",
+      "version": "1.33.0",
       "scope": "required",
       "description": "A CSS parser, transformer, and minifier written in Rust",
-      "purl": "pkg:npm/lightningcss@1.32.0",
+      "purl": "pkg:npm/lightningcss@1.33.0",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2027,7 +2037,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/lightningcss/-/lightningcss-1.32.0.tgz"
+          "url": "https://registry.npmjs.org/lightningcss/-/lightningcss-1.33.0.tgz"
         },
         {
           "type": "vcs",
@@ -2037,7 +2047,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "357601ce29cdadb95fada3c6cab6cfa03d7d0b587d95f23fd66ce0598bd75137b8d781b3fd7d450f65c165264ceeb453acc03c24bdceb4068689fac82a1439c9"
+          "content": "5a4503ae88ee26cd3192019fdae756c5adf21814713edc54901efd8ba68264b46073b3ccf1f65ef53a2c7cf0dcbc4a5065bb850129c762644b04b51b98b38820"
         }
       ],
       "licenses": [
@@ -2049,13 +2059,13 @@
       ]
     },
     {
-      "bom-ref": "lightningcss-darwin-arm64@1.32.0",
+      "bom-ref": "lightningcss-darwin-arm64@1.33.0",
       "type": "library",
       "name": "lightningcss-darwin-arm64",
-      "version": "1.32.0",
+      "version": "1.33.0",
       "scope": "optional",
       "description": "A CSS parser, transformer, and minifier written in Rust",
-      "purl": "pkg:npm/lightningcss-darwin-arm64@1.32.0",
+      "purl": "pkg:npm/lightningcss-darwin-arm64@1.33.0",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2065,7 +2075,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/lightningcss-darwin-arm64/-/lightningcss-darwin-arm64-1.32.0.tgz"
+          "url": "https://registry.npmjs.org/lightningcss-darwin-arm64/-/lightningcss-darwin-arm64-1.33.0.tgz"
         },
         {
           "type": "vcs",
@@ -2075,7 +2085,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "473786f49bb96da83606fd7f97095526f044deae93b57b247592cb0b27e0e69b7e1cbcfd06a94808eecb64ced51cd4d39ffe4f4611c50528e4e65738726b1c3d"
+          "content": "49c89acfc79e9cd4ca9fd6f7b7bfb1af48a94e9f58c4a418e27a704379ab46e2f404054704bc99c687e168a04056dce6b5167fcd3ca8d3fb68e01d6e586fc38e"
         }
       ],
       "licenses": [
@@ -2173,14 +2183,14 @@
       ]
     },
     {
-      "bom-ref": "nanoid@3.3.16",
+      "bom-ref": "nanoid@3.3.18",
       "type": "library",
       "name": "nanoid",
-      "version": "3.3.16",
+      "version": "3.3.18",
       "scope": "required",
       "author": "Andrey Sitnik <andrey@sitnik.ru>",
       "description": "A tiny (116 bytes), secure URL-friendly unique string ID generator",
-      "purl": "pkg:npm/nanoid@3.3.16",
+      "purl": "pkg:npm/nanoid@3.3.18",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2190,13 +2200,13 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.16.tgz"
+          "url": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.18.tgz"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "6f394a4f2349efe2dd188230cbc8a316922a11022f69f6a157b798ca427c0af878d8474978e0e827a814257a5026f7a3d4175d1fc3aa4d764d13f29f6d602ef1"
+          "content": "0d38383096c631691f8ba55915d36ddbf71a31b432e0ebbe3a9fe1250bc611672755fa00d5003ec7344a033c3d8c3ebe19538e798aff98872e0d276e83a17afb"
         }
       ],
       "licenses": [
@@ -2475,14 +2485,14 @@
       ]
     },
     {
-      "bom-ref": "postcss@8.5.17",
+      "bom-ref": "postcss@8.5.26",
       "type": "library",
       "name": "postcss",
-      "version": "8.5.17",
+      "version": "8.5.26",
       "scope": "required",
       "author": "Andrey Sitnik <andrey@sitnik.es>",
       "description": "Tool for transforming styles with JS plugins",
-      "purl": "pkg:npm/postcss@8.5.17",
+      "purl": "pkg:npm/postcss@8.5.26",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2492,7 +2502,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/postcss/-/postcss-8.5.17.tgz"
+          "url": "https://registry.npmjs.org/postcss/-/postcss-8.5.26.tgz"
         },
         {
           "type": "website",
@@ -2506,7 +2516,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "27b105fbc5fe0b344f6893cebfd0a4db035626f1a79e5dcf70d3c074683a1932e3c95a72434c804cc497445455d3506f893ffd1b0b9cdeb8c4c896c3246f5ae3"
+          "content": "bbcd8def82c5cc6f1c6be743f29b8f9e99535e8187e1f4cfa551ae21bb77e86deabcd964bdf0f49440194b16a5cb7297f134bf2f503582c0849af2a605c55b91"
         }
       ],
       "licenses": [
@@ -2553,13 +2563,13 @@
       ]
     },
     {
-      "bom-ref": "rolldown@1.1.5",
+      "bom-ref": "rolldown@1.2.3",
       "type": "library",
       "name": "rolldown",
-      "version": "1.1.5",
+      "version": "1.2.3",
       "scope": "required",
       "description": "Fast JavaScript/TypeScript bundler in Rust with Rollup-compatible API.",
-      "purl": "pkg:npm/rolldown@1.1.5",
+      "purl": "pkg:npm/rolldown@1.2.3",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2569,7 +2579,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/rolldown/-/rolldown-1.1.5.tgz"
+          "url": "https://registry.npmjs.org/rolldown/-/rolldown-1.2.3.tgz"
         },
         {
           "type": "vcs",
@@ -2583,7 +2593,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "b7dcf6f5c2635dffefc50f1dca1092a6de87e9a4b01d393c713e48de2cba48c5ee169939981e8f2fa5df0bc3c2c2b3d3c7ddee7702949bd1d1b5e0254c604b88"
+          "content": "ae7f70a66c6994b7fb34b3720a4f45c9687714ce370db63c8cecc27443f31fbb9f9614dfb516c2129aa2e8bcb6a2c82853c3b039bb666af31b58b696cb82d7ec"
         }
       ],
       "licenses": [
@@ -3129,14 +3139,14 @@
       ]
     },
     {
-      "bom-ref": "vite@8.1.4",
+      "bom-ref": "vite@8.2.1",
       "type": "library",
       "name": "vite",
-      "version": "8.1.4",
+      "version": "8.2.1",
       "scope": "required",
       "author": "Evan You",
       "description": "Native-ESM powered web dev build tool",
-      "purl": "pkg:npm/vite@8.1.4",
+      "purl": "pkg:npm/vite@8.2.1",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -3146,7 +3156,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/vite/-/vite-8.1.4.tgz"
+          "url": "https://registry.npmjs.org/vite/-/vite-8.2.1.tgz"
         },
         {
           "type": "vcs",
@@ -3164,7 +3174,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "6d34fd3ec7563be31030d1bd65720ffea33dc06877ec31714d5fec3eaf5c1691ebdf0e2392079fd37d8f9002fd8c0aa1937373f0d430dcef27ebfc4592a3b841"
+          "content": "114fde4bb047dd744e1e1d989c179f8cce8304a03a65e31911841b8fb34b5a0e701d896107c07f31ac9de57b205aaf8d15871c0ce4de991a5d113591e8a6bf97"
         }
       ],
       "licenses": [
@@ -3292,11 +3302,50 @@
           }
         }
       ]
+    },
+    {
+      "bom-ref": "yaml@2.9.0",
+      "type": "library",
+      "name": "yaml",
+      "version": "2.9.0",
+      "scope": "required",
+      "author": "Eemeli Aro <eemeli@gmail.com>",
+      "description": "JavaScript parser and stringifier for YAML",
+      "purl": "pkg:npm/yaml@2.9.0",
+      "properties": [
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/yaml/-/yaml-2.9.0.tgz"
+        },
+        {
+          "type": "website",
+          "url": "https://eemeli.org/yaml/"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d80be1357de66fccdde99cbb20d4ed4a9975175e475ba5a7aa3d2cad696428b729625fe03083098b2b86ab629e236605c543e376507edcb735d2c78c2ed2f870"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "ISC"
+          }
+        }
+      ]
     }
   ],
   "dependencies": [
     {
-      "ref": "@lubab/madar@0.31.2",
+      "ref": "@lubab/madar@0.32.1",
       "dependsOn": [
         "@vscode/tree-sitter-wasm@0.3.1",
         "fflate@0.8.3",
@@ -3304,12 +3353,13 @@
         "neo4j-driver@6.2.0",
         "typescript@6.0.3",
         "web-tree-sitter@0.26.11",
-        "@types/node@26.1.1",
+        "@types/node@26.2.0",
         "@vitest/coverage-v8@4.1.10",
         "ajv@8.20.0",
         "ajv-formats@3.0.1",
-        "vite@8.1.4",
-        "vitest@4.1.10"
+        "vite@8.2.1",
+        "vitest@4.1.10",
+        "yaml@2.9.0"
       ]
     },
     {
@@ -3353,11 +3403,11 @@
       ]
     },
     {
-      "ref": "@oxc-project/types@0.139.0",
+      "ref": "@oxc-project/types@0.143.0",
       "dependsOn": []
     },
     {
-      "ref": "@rolldown/binding-darwin-arm64@1.1.5",
+      "ref": "@rolldown/binding-darwin-arm64@1.2.3",
       "dependsOn": []
     },
     {
@@ -3384,7 +3434,7 @@
       "dependsOn": []
     },
     {
-      "ref": "@types/node@26.1.1",
+      "ref": "@types/node@26.2.0",
       "dependsOn": [
         "undici-types@8.3.0"
       ]
@@ -3465,7 +3515,7 @@
       "ref": "ajv@8.20.0",
       "dependsOn": [
         "fast-deep-equal@3.1.3",
-        "fast-uri@3.1.2",
+        "fast-uri@3.1.5",
         "json-schema-traverse@1.0.0",
         "require-from-string@2.0.2"
       ]
@@ -3530,7 +3580,7 @@
       "dependsOn": []
     },
     {
-      "ref": "fast-uri@3.1.2",
+      "ref": "fast-uri@3.1.5",
       "dependsOn": []
     },
     {
@@ -3589,14 +3639,14 @@
       "dependsOn": []
     },
     {
-      "ref": "lightningcss@1.32.0",
+      "ref": "lightningcss@1.33.0",
       "dependsOn": [
         "detect-libc@2.1.2",
-        "lightningcss-darwin-arm64@1.32.0"
+        "lightningcss-darwin-arm64@1.33.0"
       ]
     },
     {
-      "ref": "lightningcss-darwin-arm64@1.32.0",
+      "ref": "lightningcss-darwin-arm64@1.33.0",
       "dependsOn": []
     },
     {
@@ -3620,7 +3670,7 @@
       ]
     },
     {
-      "ref": "nanoid@3.3.16",
+      "ref": "nanoid@3.3.18",
       "dependsOn": []
     },
     {
@@ -3660,9 +3710,9 @@
       "dependsOn": []
     },
     {
-      "ref": "postcss@8.5.17",
+      "ref": "postcss@8.5.26",
       "dependsOn": [
-        "nanoid@3.3.16",
+        "nanoid@3.3.18",
         "picocolors@1.1.1",
         "source-map-js@1.2.1"
       ]
@@ -3672,11 +3722,11 @@
       "dependsOn": []
     },
     {
-      "ref": "rolldown@1.1.5",
+      "ref": "rolldown@1.2.3",
       "dependsOn": [
-        "@oxc-project/types@0.139.0",
+        "@oxc-project/types@0.143.0",
         "@rolldown/pluginutils@1.0.1",
-        "@rolldown/binding-darwin-arm64@1.1.5"
+        "@rolldown/binding-darwin-arm64@1.2.3"
       ]
     },
     {
@@ -3753,12 +3803,12 @@
       "dependsOn": []
     },
     {
-      "ref": "vite@8.1.4",
+      "ref": "vite@8.2.1",
       "dependsOn": [
-        "lightningcss@1.32.0",
+        "lightningcss@1.33.0",
         "picomatch@4.0.5",
-        "postcss@8.5.17",
-        "rolldown@1.1.5",
+        "postcss@8.5.26",
+        "rolldown@1.2.3",
         "tinyglobby@0.2.17",
         "fsevents@2.3.3"
       ]
@@ -3777,7 +3827,7 @@
         "tinyexec@1.1.1",
         "tinyglobby@0.2.17",
         "tinyrainbow@3.1.0",
-        "vite@8.1.4",
+        "vite@8.2.1",
         "why-is-node-running@2.3.0",
         "@vitest/expect@4.1.10",
         "@vitest/mocker@4.1.10",
@@ -3798,6 +3848,10 @@
         "siginfo@2.0.0",
         "stackback@0.0.2"
       ]
+    },
+    {
+      "ref": "yaml@2.9.0",
+      "dependsOn": []
     }
   ]
 }
