@@ -260,6 +260,59 @@ describe('doctor command', () => {
     })
   })
 
+  test('reports a healthy Claude-only setup without requiring optional clients', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'main.ts'), 'export const value = 1\n')
+      generateGraph(sandboxDir, { noHtml: true })
+      claudeInstall(sandboxDir)
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+      const status = runStatusCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('[madar doctor] healthy')
+      expect(doctor).toContain('claude: configured')
+      expect(doctor).toContain('cursor: missing')
+      expect(doctor).toContain('gemini: missing')
+      expect(doctor).toContain('copilot: missing')
+      expect(doctor).toContain('next commands: none')
+      expect(status).toContain('[madar status] healthy')
+      expect(status).toContain('next none')
+    })
+  })
+
+  test('keeps a stale attempted Gemini integration actionable beside healthy Claude', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'main.ts'), 'export const value = 1\n')
+      generateGraph(sandboxDir, { noHtml: true })
+      claudeInstall(sandboxDir)
+      writeJson(resolve(sandboxDir, '.gemini', 'settings.json'), {
+        mcpServers: {
+          madar: {
+            command: 'madar',
+            args: ['serve', '--stdio'],
+          },
+        },
+      })
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('[madar doctor] attention needed')
+      expect(doctor).toContain('claude: configured')
+      expect(doctor).toContain('gemini: partial')
+      expect(doctor).toContain('gemini: stale')
+      expect(doctor).toContain('madar gemini install')
+    })
+  })
+
   test('recognizes the current Claude UserPromptSubmit hook as configured', () => {
     withSandbox((sandboxDir) => {
       writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')

@@ -453,10 +453,10 @@ function readGraphCheck(graphPath: string, now: number, projectDir: string): Gra
   }
 }
 
-function agentStatusFromFlags(flags: boolean[]): AgentStatus {
+function agentStatusFromFlags(flags: boolean[], attempted = false): AgentStatus {
   const positives = flags.filter(Boolean).length
   if (positives === 0) {
-    return 'missing'
+    return attempted ? 'partial' : 'missing'
   }
   if (positives === flags.length) {
     return 'configured'
@@ -528,9 +528,17 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
 
   const agentByLabel = new Map(report.agents.map((entry) => [entry.label, entry]))
   const mcpByLabel = new Map(report.mcpChecks.map((entry) => [entry.label, entry]))
+  const configuredOrAttemptedAgents = report.agents.filter((agent) => agent.status !== 'missing')
+
+  if (configuredOrAttemptedAgents.length === 0) {
+    nextCommands.add('madar claude install')
+    nextCommands.add('madar cursor install')
+    nextCommands.add('madar gemini install')
+    nextCommands.add('madar copilot install')
+  }
 
   const claude = agentByLabel.get('claude')
-  if (claude && claude.status !== 'configured') {
+  if (claude?.status === 'partial') {
     nextCommands.add('madar claude install')
   } else {
     const claudeMcp = mcpByLabel.get('claude')
@@ -540,7 +548,7 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
   }
 
   const cursor = agentByLabel.get('cursor')
-  if (cursor && cursor.status !== 'configured') {
+  if (cursor?.status === 'partial') {
     nextCommands.add('madar cursor install')
   } else {
     const cursorMcp = mcpByLabel.get('cursor')
@@ -550,12 +558,12 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
   }
 
   const gemini = agentByLabel.get('gemini')
-  if (gemini && gemini.status !== 'configured') {
+  if (gemini?.status === 'partial') {
     nextCommands.add('madar gemini install')
   }
 
   const copilot = agentByLabel.get('copilot')
-  if (copilot && copilot.status !== 'configured') {
+  if (copilot?.status === 'partial') {
     nextCommands.add('madar copilot install')
   } else {
     const copilotMcp = mcpByLabel.get('copilot')
@@ -647,17 +655,23 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const agents: AgentCheck[] = [
     {
       label: 'claude',
-      status: agentStatusFromFlags([claudeRuleConfigured, claudeHookConfigured, claudeMcpConfigured]),
+      status: agentStatusFromFlags(
+        [claudeRuleConfigured, claudeHookConfigured, claudeMcpConfigured],
+        claudeMcp.status === 'stale',
+      ),
       detail: `rules=${claudeRuleConfigured ? 'yes' : 'no'}, hook=${claudeHookConfigured ? 'yes' : 'no'}, mcp=${claudeMcp.status}`,
     },
     {
       label: 'cursor',
-      status: agentStatusFromFlags([cursorRuleConfigured, cursorMcpConfigured]),
+      status: agentStatusFromFlags([cursorRuleConfigured, cursorMcpConfigured], cursorMcp.status === 'stale'),
       detail: `rules=${cursorRuleConfigured ? 'yes' : 'no'}, mcp=${cursorMcp.status}`,
     },
     {
       label: 'gemini',
-      status: agentStatusFromFlags([geminiRuleConfigured, geminiHookConfigured, geminiMcpConfigured]),
+      status: agentStatusFromFlags(
+        [geminiRuleConfigured, geminiHookConfigured, geminiMcpConfigured],
+        geminiMcp.status === 'stale',
+      ),
       detail: `rules=${geminiRuleConfigured ? 'yes' : 'no'}, hook=${geminiHookConfigured ? 'yes' : 'no'}, mcp=${geminiMcp.status}`,
     },
     {
@@ -718,13 +732,17 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
       || watcherStateBlocksGraphReads(graph.watcherState)
       || graph.watcherPolicyMatchesPublished === false
     )
+  const configuredOrAttemptedAgents = agents.filter((agent) => agent.status !== 'missing')
+  const configuredOrAttemptedLabels = new Set(configuredOrAttemptedAgents.map((agent) => agent.label))
+  const configuredOrAttemptedMcpChecks = mcpChecks.filter((check) => configuredOrAttemptedLabels.has(check.label))
   const healthy = graph.exists
     && graph.freshness === 'fresh'
     && !indexingRequiresAttention
     && graph.generationPolicy.match !== false
     && !watcherRequiresAttention
-    && agents.every((agent) => agent.status === 'configured')
-    && mcpChecks.every((check) => check.status === 'ok')
+    && configuredOrAttemptedAgents.length > 0
+    && configuredOrAttemptedAgents.every((agent) => agent.status === 'configured')
+    && configuredOrAttemptedMcpChecks.every((check) => check.status === 'ok')
 
   return {
     ...partialReport,
