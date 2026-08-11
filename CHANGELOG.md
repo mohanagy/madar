@@ -4,6 +4,8 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-08-11
+
 ### Fixed
 
 - **Automatic refresh recovers after transient rebuild races**: watched rebuild failures such as a source file disappearing during a Git branch change keep the watcher alive, preserve fail-closed graph reads, retry automatically, and clear the recorded failure after the next successful rebuild. Closes #645.
