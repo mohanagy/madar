@@ -846,6 +846,45 @@ describe('watch', () => {
     })
   })
 
+  test('retries a transient watched rebuild failure and clears the failure after success', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      const controller = new AbortController()
+      let rebuildAttempts = 0
+      const rebuild = vi.fn(() => {
+        rebuildAttempts += 1
+        if (rebuildAttempts === 1) {
+          return false
+        }
+        controller.abort()
+        return true
+      })
+      const notify = vi.fn()
+
+      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
+      const watcher = watch(tempDir, 0.02, {
+        signal: controller.signal,
+        pollIntervalMs: 10,
+        maxPollIntervalMs: 10,
+        rebuildCode: rebuild,
+        notifyOnly: notify,
+        logger: { log() {}, error() {} },
+      })
+
+      await delay(30)
+      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 2\n', 'utf8')
+
+      await watcher
+
+      expect(rebuild).toHaveBeenCalledTimes(2)
+      expect(notify).toHaveBeenCalledTimes(1)
+      expect(readWatcherStateForGraph(join(tempDir, 'out', 'graph.json'))).toMatchObject({
+        status: 'stopped',
+        coverage: 'complete',
+        failure_reason: null,
+      })
+    })
+  })
+
   test('triggers rebuild for supported non-code changes', async () => {
     await withTempDirAsync(async (tempDir) => {
       const controller = new AbortController()

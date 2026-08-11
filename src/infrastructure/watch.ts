@@ -1100,10 +1100,13 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
         }
         if (!rebuilt) {
           state.status = 'failed'
-          state.failure_reason = 'Automatic graph rebuild failed; the graph must not be treated as fresh.'
+          state.failure_reason = 'Automatic graph rebuild failed; the graph must not be treated as fresh. A retry is scheduled automatically.'
+          const retryDelayMs = Math.max(10, Math.min(1_000, Math.max(debounceMs, minimumIntervalMs)))
+          lastTriggerAt = Date.now() + retryDelayMs - debounceMs
+          state.next_reconciliation_at = new Date(Date.now() + retryDelayMs).toISOString()
           persistState()
           runNotify(resolvedWatchPath, output)
-          return
+          continue
         }
 
         pending = false

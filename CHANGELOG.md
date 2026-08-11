@@ -4,6 +4,11 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Automatic refresh recovers after transient rebuild races**: watched rebuild failures such as a source file disappearing during a Git branch change keep the watcher alive, preserve fail-closed graph reads, retry automatically, and clear the recorded failure after the next successful rebuild. Closes #645.
+- **Doctor treats uninstalled agent clients as optional**: a complete graph with one correctly configured agent now reports healthy even when other supported clients were never installed, while partial or stale attempted integrations remain actionable. Closes #619.
+
 ## [0.32.0] - 2026-07-19
 
 ### Added

@@ -260,6 +260,32 @@ describe('doctor command', () => {
     })
   })
 
+  test('reports a healthy Claude-only setup without requiring optional clients', () => {
+    withSandbox((sandboxDir) => {
+      writeText(resolve(sandboxDir, 'main.ts'), 'export const value = 1\n')
+      generateGraph(sandboxDir, { noHtml: true })
+      claudeInstall(sandboxDir)
+
+      const doctor = runDoctorCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+      const status = runStatusCommand({
+        projectDir: sandboxDir,
+        now: Date.now(),
+      })
+
+      expect(doctor).toContain('[madar doctor] healthy')
+      expect(doctor).toContain('claude: configured')
+      expect(doctor).toContain('cursor: missing')
+      expect(doctor).toContain('gemini: missing')
+      expect(doctor).toContain('copilot: missing')
+      expect(doctor).toContain('next commands: none')
+      expect(status).toContain('[madar status] healthy')
+      expect(status).toContain('next none')
+    })
+  })
+
   test('recognizes the current Claude UserPromptSubmit hook as configured', () => {
     withSandbox((sandboxDir) => {
       writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
