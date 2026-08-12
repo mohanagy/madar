@@ -82,11 +82,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # No dependency cache: `release` holds `contents: write` and runs `npm ci`, tests, and
+      # build, the same privileged-job shape as `publish-next.yml`'s `validate` job, which
+      # documents why a release-pipeline job must never restore a cache an untrusted PR job
+      # could have poisoned. This job restructures release.yml and moves `contents: write`
+      # onto itself, so it must hold itself to the same policy it asserts elsewhere.
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
-          cache: npm
 
       - name: Require stable release tag
         run: node .github/scripts/classify-release-tag.mjs --tag "$GITHUB_REF_NAME" --expect stable

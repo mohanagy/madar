@@ -227,6 +227,11 @@ describe('next release state guards', () => {
       execFileSync('git', ['init', '-b', 'next'], { cwd: fixtureDir, stdio: 'pipe' })
       execFileSync('git', ['config', 'user.email', 'madar@example.com'], { cwd: fixtureDir })
       execFileSync('git', ['config', 'user.name', 'Madar Test'], { cwd: fixtureDir })
+      // Pinned so this fixture does not depend on the host's global git config: a developer
+      // with `commit.gpgsign=true` set globally would otherwise see `git commit` here hang on
+      // (or fail without) a GPG passphrase prompt for an environmental reason unrelated to the
+      // assertion under test.
+      execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: fixtureDir })
       writeFileSync(join(fixtureDir, 'fixture.txt'), 'base\n')
       execFileSync('git', ['add', 'fixture.txt'], { cwd: fixtureDir })
       execFileSync('git', ['commit', '-m', 'base'], { cwd: fixtureDir, stdio: 'pipe' })

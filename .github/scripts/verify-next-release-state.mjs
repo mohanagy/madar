@@ -79,6 +79,15 @@ function gitCommitIsAncestor(commit, branch) {
     stdio: 'pipe',
   })
 
+  // spawnSync does not throw when the command itself cannot be launched (e.g. `git` missing
+  // from PATH) -- it returns a result with `.error` set and `status: null`. Left unchecked,
+  // that null status falls through to the generic "failed with status null" message below,
+  // misreporting a missing git as an ordinary non-ancestor verification failure instead of an
+  // environment problem.
+  if (result.error) {
+    fail(`Failed to run git merge-base: ${result.error.message}`)
+  }
+
   if (result.status === 0) {
     return true
   }
@@ -86,7 +95,7 @@ function gitCommitIsAncestor(commit, branch) {
     return false
   }
 
-  fail(result.stderr.trim() || `git merge-base failed with status ${String(result.status)}`)
+  fail((result.stderr && result.stderr.trim()) || `git merge-base failed with status ${String(result.status)}`)
 }
 
 export function runCli(args) {

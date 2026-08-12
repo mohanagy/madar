@@ -537,23 +537,44 @@ jobs:
         run: |
           set -euo pipefail
           verified=false
+          last_error=""
           for attempt in {1..12}; do
-            if npm view "$PACKAGE_NAME" dist-tags --json > "$RUNNER_TEMP/npm-dist-tags-after.json" \
-              && npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version --json > "$RUNNER_TEMP/npm-resolved-version.json" \
-              && node .github/scripts/verify-next-release-state.mjs \
-                --verify-publish \
-                --version "$PACKAGE_VERSION" \
-                --before "$RUNNER_TEMP/npm-dist-tags-before.json" \
-                --after "$RUNNER_TEMP/npm-dist-tags-after.json" \
-                --resolved-version "$RUNNER_TEMP/npm-resolved-version.json" >/dev/null 2>&1; then
+            # Each attempt truncates npm-dist-tags-after.json / npm-resolved-version.json before
+            # writing. If `npm view` itself fails on the final attempt (registry error, network
+            # blip, DNS), the file is left empty and the fallback JSON parse below would
+            # otherwise surface only "Unexpected end of JSON input" -- true, but useless for an
+            # operator trying to find the actual cause. Capture and report the real npm error
+            # instead of letting it be masked by that downstream parse failure.
+            if ! npm view "$PACKAGE_NAME" dist-tags --json > "$RUNNER_TEMP/npm-dist-tags-after.json" 2>"$RUNNER_TEMP/npm-view-error.log"; then
+              last_error="npm view $PACKAGE_NAME dist-tags failed: $(cat "$RUNNER_TEMP/npm-view-error.log")"
+              echo "Waiting for npm registry propagation (attempt $attempt of 12): $last_error"
+              sleep 10
+              continue
+            fi
+            if ! npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version --json > "$RUNNER_TEMP/npm-resolved-version.json" 2>"$RUNNER_TEMP/npm-view-error.log"; then
+              last_error="npm view $PACKAGE_NAME@$PACKAGE_VERSION version failed: $(cat "$RUNNER_TEMP/npm-view-error.log")"
+              echo "Waiting for npm registry propagation (attempt $attempt of 12): $last_error"
+              sleep 10
+              continue
+            fi
+            if node .github/scripts/verify-next-release-state.mjs \
+              --verify-publish \
+              --version "$PACKAGE_VERSION" \
+              --before "$RUNNER_TEMP/npm-dist-tags-before.json" \
+              --after "$RUNNER_TEMP/npm-dist-tags-after.json" \
+              --resolved-version "$RUNNER_TEMP/npm-resolved-version.json" >/dev/null 2>&1; then
               verified=true
               break
             fi
+            last_error="dist-tags/version have not propagated to reflect this publish yet"
             echo "Waiting for npm registry propagation (attempt $attempt of 12)"
             sleep 10
           done
 
           if [[ "$verified" != true ]]; then
+            if [[ -n "$last_error" ]]; then
+              echo "::error::$last_error"
+            fi
             node .github/scripts/verify-next-release-state.mjs \
               --verify-publish \
               --version "$PACKAGE_VERSION" \

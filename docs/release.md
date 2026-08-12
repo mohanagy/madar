@@ -54,6 +54,12 @@ npm sbom --sbom-format cyclonedx > sbom.cdx.json
 
 Run `npm run qualify:validate` when that script is present. Its failure is a release blocker; when it is absent, record that qualification was unavailable rather than presenting it as passed.
 
+The release pipeline's qualification gate (`.github/scripts/check-qualification-gate.mjs`) actually has three outcomes, not two, and the third is intentional:
+
+- **script present** → runs `qualify:validate` for real; a non-zero exit blocks the release.
+- **script and its `docs/qualification/` contract both absent** → records a notice and skips; this is today's ordinary pre-qualification state.
+- **`docs/qualification/` present but `qualify:validate` is missing from `package.json`** → **hard fails**, deliberately. Once the qualification contract has landed, its validator disappearing (a bad refactor, a lost merge, a dependency bump rewriting `package.json`) must never be read as "not applicable yet" and quietly fall back to a skip. If a release run blocks on this, the fix is to restore `qualify:validate`, not to treat the block as a bug.
+
 `npm run release:verify` locks the public package metadata, changelog version entry, and npm-visible README links before publish. `npm pack --dry-run` records the package boundary, and `sbom.cdx.json` is the checked supply-chain inventory snapshot. If the change touches packaging, installer behavior, or public MCP Registry metadata, keep those outputs with the release pull request. Review [`docs/security/mcp-threat-model.md`](./security/mcp-threat-model.md) before publishing changes that affect MCP installs, share-safe artifacts, prompt handling, or local file boundaries.
 
 Any new public claim requires a reproducible artifact under `docs/benchmarks/suite/` and a matching update to `docs/claims-and-evidence.md` before the README or release notes can say it publicly. For an external announcement, copy the proof block and channel tracker from [`docs/launch-checklist.md`](./launch-checklist.md) into the release pull request or working notes before drafting copy.
