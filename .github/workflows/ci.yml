@@ -52,8 +52,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
         run: npm run release:verify
 
+      # Runs on every lane on purpose. The qualification freeze is a byte-exact
+      # guarantee, so it has to be verified on every platform the repository
+      # supports — a reproducible gate that only reproduces on Linux is not one.
+      # The default mode is pure local file I/O with no network and no spend.
       - name: Validate qualification contract
-        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
         run: npm run qualify:validate
 
       - name: Typecheck

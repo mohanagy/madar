@@ -126,10 +126,18 @@ for (const target of corpus.targets) {
     }
 
     if (patch) {
-      if (!patch.startsWith('diff --git ')) {
+      // Parse against normalized text so a CRLF checkout cannot capture a stray
+      // carriage return into a path. The digest check further down still reads raw
+      // bytes; only this structural parse is representation-independent.
+      const patchText = patch.replace(/\r\n/g, '\n')
+
+      if (!patchText.startsWith('diff --git ')) {
         fail(`patch ${target.patch} is not a unified git diff`)
       }
-      const touched = [...patch.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((match) => match[1])
+      if (patch.includes('\r\n')) {
+        fail(`patch ${target.patch} contains CRLF line endings; it must stay LF so \`git apply\` accepts it`)
+      }
+      const touched = [...patchText.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((match) => match[1])
       if (touched.length === 0) {
         fail(`patch ${target.patch} does not modify any file`)
       }
@@ -459,7 +467,12 @@ if (WRITE) {
       if (!(path in freeze.files)) {
         fail(`${path} is not covered by freeze.json`)
       } else if (freeze.files[path] !== digest) {
-        fail(`${path} content changed since it was frozen (expected ${freeze.files[path]}, actual ${digest})`)
+        const crlf = readFileSync(resolve(path)).includes('\r\n')
+        const hint = crlf
+          ? ' — the file contains CRLF, so this is a checkout line-ending problem, not a content change.'
+            + ' Fix the checkout (see `docs/qualification/** text eol=lf` in .gitattributes); do NOT regenerate freeze.json.'
+          : ''
+        fail(`${path} content changed since it was frozen (expected ${freeze.files[path]}, actual ${digest})${hint}`)
       }
     }
     for (const path of Object.keys(freeze.files)) {

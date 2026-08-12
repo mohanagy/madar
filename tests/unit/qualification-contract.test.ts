@@ -13,8 +13,22 @@ const addFormats = createRequire(import.meta.url)('ajv-formats') as (ajv: Ajv) =
 
 const ROOT = 'docs/qualification'
 
+/**
+ * Reads a contract document for *semantic* assertions. Line endings are
+ * normalized so the assertions test content rather than checkout representation:
+ * `.gitattributes` pins this tree to LF, but a test that only passes because of a
+ * checkout setting is testing the setting, not the document.
+ *
+ * The byte-exact freeze contract is deliberately NOT read through here — it uses
+ * the raw Buffer below, because that guarantee is about bytes.
+ */
 function readDoc(relativePath: string): string {
-  return readFileSync(resolve(relativePath), 'utf8')
+  return readFileSync(resolve(relativePath), 'utf8').replace(/\r\n/g, '\n')
+}
+
+/** Raw bytes, for the freeze digest contract only. Never normalized. */
+function readBytes(relativePath: string): Buffer {
+  return readFileSync(resolve(relativePath))
 }
 
 function readJson<T>(relativePath: string): T {
@@ -460,8 +474,23 @@ describe('qualification freeze', () => {
     expect(paths).toContain(`${ROOT}/patches/hono-compose-reentrancy-guard.patch`)
     expect(paths).toContain(`${ROOT}/patches/hono-error-message-disclosure.patch`)
 
+    // Raw bytes on purpose. If a checkout converts line endings, this must fail
+    // rather than be normalized into passing — that is the whole point of the freeze.
     for (const [path, digest] of Object.entries(freeze.files)) {
-      expect(digest).toBe(createHash('sha256').update(readFileSync(resolve(path))).digest('hex'))
+      expect(digest).toBe(createHash('sha256').update(readBytes(path)).digest('hex'))
+    }
+  })
+
+  it('pins the contract tree to LF so the byte-exact freeze survives a Windows checkout', () => {
+    const attributes = readDoc('.gitattributes')
+
+    expect(attributes).toContain('docs/qualification/** text eol=lf')
+    expect(attributes).toContain('docs/qualification/patches/*.patch -text')
+  })
+
+  it('holds no CRLF in any frozen file, whatever the checkout did', () => {
+    for (const path of Object.keys(freeze.files)) {
+      expect(readBytes(path).includes('\r\n')).toBe(false)
     }
   })
 
