@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
 interface WorkflowStep {
+  id?: string
+  if?: string
   name?: string
   run?: string
   uses?: string
@@ -18,6 +20,7 @@ interface WorkflowJob {
   environment?: string
   if?: string
   needs?: string | string[]
+  outputs?: Record<string, unknown>
   permissions?: Record<string, string>
   steps?: WorkflowStep[]
 }
@@ -622,5 +625,311 @@ describe('release workflow policy', () => {
     expect(releaseDoc).toContain('not cross-platform proof')
     expect(contributing).toContain('Issue branches')
     expect(contributing).toContain('reviewed `next` → `main` pull request')
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// A: job outputs must map from step outputs, never from `env.*`. `env.PACKAGE_VERSION` and
+// `env.RELEASE_COMMIT` are written at runtime via `>> "$GITHUB_ENV"`, which does not reliably
+// populate `jobs.<id>.outputs` -- `publish` could receive empty version/commit. These tests
+// prove the dataflow itself, not just that an `outputs:` block exists.
+// ---------------------------------------------------------------------------------------------
+describe('validate job output dataflow', () => {
+  function assertOutputMapsFromStep(
+    workflow: Workflow,
+    jobName: string,
+    outputName: string,
+    expectedStepId: string,
+  ): void {
+    const targetJob = job(workflow, jobName)
+    const rawValue = String(targetJob.outputs?.[outputName] ?? '').trim()
+
+    expect(rawValue, `${jobName}.outputs.${outputName} must not be empty`).not.toBe('')
+    expect(rawValue, `${jobName}.outputs.${outputName} must not read from env.*`).not.toMatch(/env\./)
+    expect(
+      rawValue,
+      `${jobName}.outputs.${outputName} must map from steps.${expectedStepId}.outputs.*`,
+    ).toMatch(new RegExp(`^\\$\\{\\{\\s*steps\\.${expectedStepId}\\.outputs\\.[\\w-]+\\s*\\}\\}$`))
+
+    const producingStep = (targetJob.steps ?? []).find((step) => step.id === expectedStepId)
+    expect(producingStep, `${jobName} must have a step with id "${expectedStepId}"`).toBeDefined()
+  }
+
+  function assertStepWritesOutputKey(step: WorkflowStep, key: string): void {
+    const run = step.run ?? ''
+    expect(run, `step "${step.name}" must write to $GITHUB_OUTPUT`).toMatch(/GITHUB_OUTPUT/)
+    // Negative lookbehind for a word character rules out matching "tag_commit=" as a false
+    // positive for the "commit=" key, while still matching `key=value`, `echo "key=$value"`,
+    // and `{ echo "key=..." ; }` forms.
+    expect(run, `step "${step.name}" must write the "${key}=" key`).toMatch(new RegExp(`(?<!\\w)${key}=`))
+  }
+
+  it('maps version and tag from the release-meta step output, not env.*', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    assertOutputMapsFromStep(workflow, 'validate', 'version', 'release-meta')
+    assertOutputMapsFromStep(workflow, 'validate', 'tag', 'release-meta')
+  })
+
+  it('maps commit from the release-commit step output, not env.*', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    assertOutputMapsFromStep(workflow, 'validate', 'commit', 'release-commit')
+  })
+
+  it('has the release-meta step write version and tag to $GITHUB_OUTPUT', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const step = workflowStep(workflow, 'validate', 'Validate prerelease tag and release files')
+    expect(step.id).toBe('release-meta')
+    assertStepWritesOutputKey(step, 'version')
+    assertStepWritesOutputKey(step, 'tag')
+  })
+
+  it('has the release-commit step write commit to $GITHUB_OUTPUT', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const step = workflowStep(workflow, 'validate', 'Prove exact tag commit and next ancestry')
+    expect(step.id).toBe('release-commit')
+    assertStepWritesOutputKey(step, 'commit')
+  })
+
+  it('still keeps tarball_name, tarball_sha256, artifact_name, and qualification_status mapped from their existing step outputs', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    assertOutputMapsFromStep(workflow, 'validate', 'tarball_name', 'pack')
+    assertOutputMapsFromStep(workflow, 'validate', 'tarball_sha256', 'pack')
+    assertOutputMapsFromStep(workflow, 'validate', 'artifact_name', 'pack')
+    assertOutputMapsFromStep(workflow, 'validate', 'qualification_status', 'qualification')
+  })
+
+  it('has publish and post_publish consume validate metadata exclusively through needs.validate.outputs', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const publishEnv = (job(workflow, 'publish') as { env?: Record<string, unknown> }).env ?? {}
+    const postPublishEnv = (job(workflow, 'post_publish') as { env?: Record<string, unknown> }).env ?? {}
+
+    expect(String(publishEnv.PACKAGE_VERSION)).toBe('${{ needs.validate.outputs.version }}')
+    expect(String(publishEnv.RELEASE_COMMIT)).toBe('${{ needs.validate.outputs.commit }}')
+    expect(String(publishEnv.RELEASE_TAG)).toBe('${{ needs.validate.outputs.tag }}')
+    expect(String(postPublishEnv.PACKAGE_VERSION)).toBe('${{ needs.validate.outputs.version }}')
+    expect(String(postPublishEnv.RELEASE_COMMIT)).toBe('${{ needs.validate.outputs.commit }}')
+    expect(String(postPublishEnv.RELEASE_TAG)).toBe('${{ needs.validate.outputs.tag }}')
+  })
+
+  it('rejects empty version/commit metadata before the publish job can act on it', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const verifyStep = workflowStep(workflow, 'publish', "Verify downloaded artifact against the validate job's receipt")
+
+    // If validate ever emitted an empty version or commit, the receipt written in the same job
+    // would carry that same empty value, and this comparison in `publish` would still catch it
+    // because the empty EXPECTED_TARBALL_SHA256 / receipt fields could never match a real
+    // artifact's real sha256/version/commit.
+    expect(verifyStep.run).toContain('receipt.version !== process.env.PACKAGE_VERSION')
+    expect(verifyStep.run).toContain('receipt.sourceCommit !== process.env.RELEASE_COMMIT')
+    expect(verifyStep.run).toContain('receipt.tarballSha256 !== process.env.EXPECTED_TARBALL_SHA256')
+  })
+
+  it('detects a synthetic fixture job whose output maps from env.* instead of a step output', () => {
+    const brokenWorkflow: Workflow = {
+      jobs: {
+        validate: {
+          outputs: { version: '${{ env.PACKAGE_VERSION }}' },
+          steps: [{ name: 'set env', run: 'printf \'PACKAGE_VERSION=1.2.3\\n\' >> "$GITHUB_ENV"' }],
+        },
+      },
+    }
+
+    expect(() => assertOutputMapsFromStep(brokenWorkflow, 'validate', 'version', 'release-meta')).toThrow()
+  })
+
+  it('detects a synthetic fixture step that declares an id but never writes the expected key to $GITHUB_OUTPUT', () => {
+    const brokenStep: WorkflowStep = {
+      id: 'release-meta',
+      name: 'Validate prerelease tag and release files',
+      run: 'printf \'PACKAGE_VERSION=1.2.3\\n\' >> "$GITHUB_ENV"',
+    }
+
+    expect(() => assertStepWritesOutputKey(brokenStep, 'version')).toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// B: `release.yml` classify/release split. `classify` runs for every `v*` tag (including
+// malformed/unapproved forms) and fails visibly on anything that is not a stable or approved
+// prerelease tag; `release` only runs for a classified-stable tag.
+// ---------------------------------------------------------------------------------------------
+describe('release.yml classify/release split', () => {
+  it('defines exactly the two jobs classify and release', () => {
+    const workflow = parseWorkflow('.github/workflows/release.yml')
+    expect(Object.keys(workflow.jobs ?? {}).sort()).toEqual(['classify', 'release'])
+  })
+
+  it('has no workflow-level contents: write permission', () => {
+    const workflow = parseWorkflow('.github/workflows/release.yml')
+    expect(workflow.permissions).toEqual({ contents: 'read' })
+  })
+
+  it('gives classify read-only permissions and no environment', () => {
+    const workflow = parseWorkflow('.github/workflows/release.yml')
+    const classifyJob = job(workflow, 'classify')
+    expect(classifyJob.permissions).toEqual({ contents: 'read' })
+    expect(classifyJob.environment).toBeUndefined()
+  })
+
+  it('maps the classify job output from the classify step, never hardcoded or from env', () => {
+    const workflow = parseWorkflow('.github/workflows/release.yml')
+    const classifyOutputs = job(workflow, 'classify').outputs
+    expect(String(classifyOutputs?.channel)).toBe('${{ steps.classify.outputs.channel }}')
+  })
+
+  it('makes release depend on classify, require success and the stable channel, and hold contents: write', () => {
+    const workflow = parseWorkflow('.github/workflows/release.yml')
+    const releaseJob = job(workflow, 'release')
+    expect(releaseJob.needs).toBe('classify')
+    expect(releaseJob.if).toBe("success() && needs.classify.outputs.channel == 'stable'")
+    expect(releaseJob.permissions).toEqual({ contents: 'write' })
+  })
+
+  it('pins every action in release.yml to a 40-character SHA with a version comment', () => {
+    const raw = readFileSync(resolve('.github/workflows/release.yml'), 'utf8')
+    const usesLines = raw.split('\n').map((line) => line.trim()).filter((line) => line.startsWith('uses:'))
+
+    expect(usesLines.length).toBeGreaterThan(0)
+    for (const line of usesLines) {
+      expect(line, line).not.toMatch(/@(v\d+|main|master)(\s|$)/)
+      const match = line.match(/uses:\s*([^@]+)@([0-9a-f]{40})(?:\s+#\s*(v[\w.]+))?/)
+      expect(match, `${line} must pin a 40-character SHA with a # vX.Y.Z comment`).not.toBeNull()
+      expect(match?.[3], `${line} must have a readable version comment`).toBeTruthy()
+    }
+  })
+})
+
+describe('release.yml classify step behavior across all four tag classes', () => {
+  function runClassifyStep(tag: string): { status: number | null; stderr: string; outputContents: string } {
+    const workflow = parseWorkflow('.github/workflows/release.yml')
+    const step = workflowStep(workflow, 'classify', 'Classify release tag')
+
+    const outputDir = mkdtempSync(join(tmpdir(), 'madar-classify-output-'))
+    const outputFile = join(outputDir, 'github-output')
+    writeFileSync(outputFile, '')
+
+    try {
+      const result = spawnSync('bash', ['-c', step.run ?? ''], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        env: { ...process.env, GITHUB_REF_NAME: tag, GITHUB_OUTPUT: outputFile },
+      })
+      return {
+        status: result.status,
+        stderr: result.stderr ?? '',
+        outputContents: readFileSync(outputFile, 'utf8'),
+      }
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true })
+    }
+  }
+
+  it('classifies a stable tag as channel=stable and exits 0', () => {
+    const { status, outputContents } = runClassifyStep('v0.33.0')
+    expect(status).toBe(0)
+    expect(outputContents).toContain('channel=stable')
+  })
+
+  it.each(['v0.33.0-beta.1', 'v0.33.0-rc.1', 'v0.33.0-next.1'])(
+    'classifies the approved prerelease tag %s as channel=prerelease and exits 0, so release skips cleanly',
+    (tag) => {
+      const { status, outputContents } = runClassifyStep(tag)
+      expect(status).toBe(0)
+      expect(outputContents).toContain('channel=prerelease')
+      expect(outputContents).not.toContain('channel=stable')
+    },
+  )
+
+  it.each(['v0.33.0-alpha.1', 'v0.33.0-preview.1', 'v0.33.0-beta', 'v0.33.0-beta.01'])(
+    'fails the classify step visibly for the unsupported tag %s and emits no channel',
+    (tag) => {
+      const { status, stderr, outputContents } = runClassifyStep(tag)
+      expect(status).not.toBe(0)
+      expect(outputContents).not.toContain('channel=')
+      expect(stderr).toContain('Release tag validation failed:')
+    },
+  )
+})
+
+// ---------------------------------------------------------------------------------------------
+// C: a green vitest summary is not sufficient release evidence. These tests prove the raw-log
+// gate is actually wired into `validate` for both test:run and test:coverage, that both statuses
+// are captured explicitly (not `&&`), that the scanner runs even when the test command fails,
+// and that the tarball is only ever built after both gates pass.
+// ---------------------------------------------------------------------------------------------
+describe('vitest raw-log gate wiring in validate', () => {
+  it('scans both the test:run and test:coverage logs with the scanner script', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const testRunStep = workflowStep(workflow, 'validate', 'Run tests')
+    const coverageStep = workflowStep(workflow, 'validate', 'Run tests with coverage thresholds')
+
+    expect(testRunStep.run).toContain('npm run test:run')
+    expect(testRunStep.run).toContain('.github/scripts/assert-clean-vitest-log.mjs')
+    expect(testRunStep.run).toContain('test-run.log')
+
+    expect(coverageStep.run).toContain('npm run test:coverage')
+    expect(coverageStep.run).toContain('.github/scripts/assert-clean-vitest-log.mjs')
+    expect(coverageStep.run).toContain('test-coverage.log')
+  })
+
+  it('captures both the test command and scanner exit status explicitly, not via &&', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    for (const stepName of ['Run tests', 'Run tests with coverage thresholds']) {
+      const run = workflowStep(workflow, 'validate', stepName).run ?? ''
+      expect(run, stepName).toContain('PIPESTATUS[0]')
+      expect(run, stepName).toContain('test_status=')
+      expect(run, stepName).toContain('scanner_status=$?')
+      expect(run, stepName).not.toMatch(/test:(run|coverage)[^\n]*&&[^\n]*assert-clean-vitest-log/)
+    }
+  })
+
+  it('disables -e so a failing test command cannot short-circuit the scanner', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    for (const stepName of ['Run tests', 'Run tests with coverage thresholds']) {
+      expect(workflowStep(workflow, 'validate', stepName).run, stepName).toContain('set +e')
+    }
+  })
+
+  it('fails the step when either the test command or the scanner reports non-zero', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    for (const stepName of ['Run tests', 'Run tests with coverage thresholds']) {
+      const run = workflowStep(workflow, 'validate', stepName).run ?? ''
+      expect(run, stepName).toContain('if [ "$test_status" -ne 0 ] || [ "$scanner_status" -ne 0 ]')
+      expect(run, stepName).toContain('exit 1')
+    }
+  })
+
+  it('uploads raw vitest logs only on failure, with bounded retention and a unique run/attempt name', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const uploadStep = workflowStep(workflow, 'validate', 'Upload raw vitest logs on failure')
+
+    expect(uploadStep.if).toBe('failure()')
+    expect(String(uploadStep.with?.name)).toContain('github.run_id')
+    expect(String(uploadStep.with?.name)).toContain('github.run_attempt')
+    expect(uploadStep.with).toHaveProperty('retention-days')
+    expect(Number(uploadStep.with?.['retention-days'])).toBeLessThanOrEqual(14)
+    expect(String(uploadStep.uses)).toMatch(/^actions\/upload-artifact@[0-9a-f]{40}$/)
+  })
+
+  it('builds the release tarball only after both vitest gate steps have run', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const steps = allSteps(workflow, 'validate')
+    const testRunIndex = steps.findIndex((step) => step.name === 'Run tests')
+    const coverageIndex = steps.findIndex((step) => step.name === 'Run tests with coverage thresholds')
+    const packIndex = steps.findIndex((step) => step.name === 'Build release tarball and receipt')
+
+    expect(testRunIndex).toBeGreaterThanOrEqual(0)
+    expect(coverageIndex).toBeGreaterThan(testRunIndex)
+    expect(packIndex).toBeGreaterThan(coverageIndex)
+  })
+
+  it('never lets publish download or otherwise consume the diagnostic vitest-log artifact', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    for (const step of allSteps(workflow, 'publish')) {
+      if (step.uses?.includes('actions/download-artifact')) {
+        expect(String(step.with?.name)).not.toContain('vitest-diagnostic-logs')
+      }
+      expect(step.run ?? '').not.toContain('vitest-diagnostic-logs')
+    }
   })
 })

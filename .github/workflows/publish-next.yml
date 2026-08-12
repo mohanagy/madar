@@ -36,9 +36,9 @@ jobs:
       RELEASE_TAG: ${{ github.ref_name }}
 
     outputs:
-      version: ${{ env.PACKAGE_VERSION }}
-      commit: ${{ env.RELEASE_COMMIT }}
-      tag: ${{ env.RELEASE_TAG }}
+      version: ${{ steps.release-meta.outputs.version }}
+      commit: ${{ steps.release-commit.outputs.commit }}
+      tag: ${{ steps.release-meta.outputs.tag }}
       tarball_name: ${{ steps.pack.outputs.tarball }}
       tarball_sha256: ${{ steps.pack.outputs.sha256 }}
       artifact_name: ${{ steps.pack.outputs.artifact_name }}
@@ -62,7 +62,13 @@ jobs:
       - name: Install pinned npm Trusted Publishing client
         run: npm install --global --ignore-scripts --no-audit --no-fund --cache "$RUNNER_TEMP/npm-cli-bootstrap-cache" npm@12.0.2
 
+      # Stable id so the job `outputs:` block can map version/tag from `steps.release-meta.
+      # outputs.*` instead of `env.*`. Values written at runtime via `>> "$GITHUB_ENV"` do not
+      # reliably populate `jobs.<id>.outputs`, so those two paths are kept for different
+      # purposes here: `$GITHUB_ENV` for later steps in this same job, `$GITHUB_OUTPUT` for the
+      # job-level output other jobs consume through `needs.validate.outputs`.
       - name: Validate prerelease tag and release files
+        id: release-meta
         shell: bash
         run: |
           set -euo pipefail
@@ -78,8 +84,15 @@ jobs:
 
           version="${RELEASE_TAG#v}"
           printf 'PACKAGE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+          {
+            echo "version=$version"
+            echo "tag=$RELEASE_TAG"
+          } >> "$GITHUB_OUTPUT"
 
+      # Stable id so `outputs.commit` maps from `steps.release-commit.outputs.commit` -- see the
+      # note on the `release-meta` step above for why this must not be `env.RELEASE_COMMIT`.
       - name: Prove exact tag commit and next ancestry
+        id: release-commit
         shell: bash
         run: |
           set -euo pipefail
@@ -101,6 +114,7 @@ jobs:
             --commit "$head_commit" \
             --branch origin/next
           printf 'RELEASE_COMMIT=%s\n' "$head_commit" >> "$GITHUB_ENV"
+          echo "commit=$head_commit" >> "$GITHUB_OUTPUT"
 
       - name: Verify version is not already published
         shell: bash
@@ -118,11 +132,71 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # A green vitest summary is not sufficient release evidence on its own: the forks pool
+      # (maxWorkers: 4, no retry configured) can respawn a worker mid-run when one fails to
+      # start or stops responding, and the run's own tally can still count the respawned
+      # worker's files as passed. Capture the raw output, then scan the raw text independently
+      # of vitest's own exit code and summary. `set -e` is deliberately off in this step so a
+      # non-zero `test:run` exit does not short-circuit before the scanner runs: both statuses
+      # are captured explicitly and the step fails if either one is non-zero.
       - name: Run tests
-        run: npm run test:run
+        shell: bash
+        run: |
+          set +e
+          set -u
+          set -o pipefail
+          npm run test:run 2>&1 | tee "$RUNNER_TEMP/test-run.log"
+          test_status=${PIPESTATUS[0]}
+
+          node .github/scripts/assert-clean-vitest-log.mjs "$RUNNER_TEMP/test-run.log"
+          scanner_status=$?
+
+          if [ "$test_status" -ne 0 ]; then
+            echo "::error::npm run test:run exited $test_status"
+          fi
+          if [ "$scanner_status" -ne 0 ]; then
+            echo "::error::vitest log scan detected an absorbed worker-start failure signature in test-run.log"
+          fi
+          if [ "$test_status" -ne 0 ] || [ "$scanner_status" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Run tests with coverage thresholds
-        run: npm run test:coverage
+        shell: bash
+        run: |
+          set +e
+          set -u
+          set -o pipefail
+          npm run test:coverage 2>&1 | tee "$RUNNER_TEMP/test-coverage.log"
+          test_status=${PIPESTATUS[0]}
+
+          node .github/scripts/assert-clean-vitest-log.mjs "$RUNNER_TEMP/test-coverage.log"
+          scanner_status=$?
+
+          if [ "$test_status" -ne 0 ]; then
+            echo "::error::npm run test:coverage exited $test_status"
+          fi
+          if [ "$scanner_status" -ne 0 ]; then
+            echo "::error::vitest log scan detected an absorbed worker-start failure signature in test-coverage.log"
+          fi
+          if [ "$test_status" -ne 0 ] || [ "$scanner_status" -ne 0 ]; then
+            exit 1
+          fi
+
+      # Diagnostic only: captures the raw logs for post-mortem when either test step above
+      # failed (a real test failure or a detected worker-start signature). Short, bounded
+      # retention and a name unique to this run/attempt -- this is not release evidence to keep
+      # around, only a debugging aid. `publish` never downloads this artifact.
+      - name: Upload raw vitest logs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vitest-diagnostic-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/test-run.log
+            ${{ runner.temp }}/test-coverage.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build
         run: npm run build
