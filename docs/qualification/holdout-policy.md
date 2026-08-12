@@ -10,6 +10,11 @@ they catch regressions — but they cannot detect the failure mode this policy e
 production behaviour drifting toward the qualification corpus itself. Only a target the
 rule author has never seen can measure that.
 
+Naturalness and hiddenness are separate properties and neither substitutes for the other.
+Every open target in this corpus is a real externally authored repository, which removes
+the risk that the target was shaped around its own answer. It does not remove the risk that
+production rules are shaped around the target once it is known.
+
 ## Classes
 
 | Class | Meaning |
@@ -54,7 +59,8 @@ The same limitation makes two other artifacts unavailable:
 
 To satisfy this policy, a person other than the production-rule author must:
 
-1. select and pin one TypeScript/Node repository not named anywhere in this repository;
+1. select and pin one real, permissively licensed TypeScript/Node repository not named
+   anywhere in this repository;
 2. author two to four task prompts and their independent truth for it, without reading
    Madar output;
 3. author the hidden acceptance test for the bounded-implementation task;
@@ -72,6 +78,8 @@ report derived from it must carry this exact line:
 - A sealed target, prompt, path, or symbol must never appear in production retrieval,
   ranking, claim, or configuration code.
 - A sealed target must never be added to the repository's test fixtures.
+- A sealed slot must never be filled with a self-authored fixture workspace. That would
+  satisfy neither naturalness nor hiddenness while appearing to satisfy both.
 - A failing sealed cell must never be resolved by editing the sealed truth.
 - The rule author must never request the sealed prompts "just to check whether they are
   fair". Fairness disputes are resolved by the holder retiring the task, not by disclosure.

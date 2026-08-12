@@ -1,15 +1,14 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import { createRequire } from 'node:module'
+import { resolve } from 'node:path'
 
 import { Ajv } from 'ajv'
 import { describe, expect, it } from 'vitest'
 
-// ajv-formats ships CommonJS whose default export is not callable under
-// NodeNext type resolution. Load it the same way the CI validator does so the
-// test and `npm run qualify:validate` compile the schema identically.
+// ajv-formats ships CommonJS whose default export is not callable under NodeNext type
+// resolution. Load it the same way the CI validator does so the test and
+// `npm run qualify:validate` compile the schema identically.
 const addFormats = createRequire(import.meta.url)('ajv-formats') as (ajv: Ajv) => void
 
 const ROOT = 'docs/qualification'
@@ -25,9 +24,25 @@ function readJson<T>(relativePath: string): T {
 interface Provenance {
   authored_by: string
   authored_at: string
+  derived_from: string[]
   madar_derived_sources_used: string[]
   inspected_madar_output_before_freeze: boolean
   independent_of_production_rule_author: boolean
+}
+
+interface Target {
+  id: string
+  kind: string
+  natural?: boolean
+  status: string
+  license?: string
+  holdout_class?: string
+  prepare?: string[]
+  patch?: string
+  base_target?: string
+  source?: { url: string; ref: string }
+  cited_blobs?: Record<string, string>
+  production_coupling?: { level: string; consequence?: string }
 }
 
 interface Task {
@@ -43,19 +58,22 @@ interface Task {
 
 const corpus = readJson<{
   contract_version: string
-  targets: Array<{ id: string; tier: number; kind: string; status: string; holdout_class?: string; source?: { ref: string } }>
+  targets: Target[]
+  proxy_targets: unknown[]
+  forbidden_target_symbols: Record<string, unknown>
 }>(`${ROOT}/corpus.json`)
 
 const tasks = readJson<{ contract_version: string; tasks: Task[] }>(`${ROOT}/tasks.json`)
 const rubrics = readJson<{
-  dimensions: Record<string, { gating: boolean; tiers: number[]; scored_by: string }>
+  dimensions: Record<string, { gating: boolean }>
   methods: Record<string, unknown>
   blinding: { current_status: string }
 }>(`${ROOT}/rubrics.json`)
 const tier1 = readJson<{
-  properties: { deterministic: boolean; requires_network: boolean; requires_api_spend: boolean }
+  properties: { deterministic: boolean; requires_model_provider: boolean; requires_api_spend: boolean }
+  preparation: { steps: string[]; on_preparation_failure: string }
   cells: Array<{ task_id: string; target_id: string }>
-  negative_trust_probes: Array<{ id: string; prompt: { text: string; sha256: string } }>
+  negative_trust_probes: Array<{ id: string; target_id: string; prompt: { text: string; sha256: string } }>
   gate: { forbidden_remedies: string[] }
   calibration_status: { state: string }
 }>(`${ROOT}/tier1.json`)
@@ -63,25 +81,66 @@ const tier2 = readJson<{ status: string; dimensions: { trials_per_cell: number }
 const receiptSchema = readJson<Record<string, unknown>>(`${ROOT}/receipt-schema.json`)
 const freeze = readJson<{ contract_version: string; files: Record<string, string> }>(`${ROOT}/freeze.json`)
 
+const evaluationTargets = corpus.targets.filter((target) => target.kind !== 'sealed')
+
 describe('qualification corpus manifest', () => {
-  it('pins every target with an immutable revision or a frozen digest', () => {
-    for (const target of corpus.targets) {
-      if (target.kind === 'git') {
-        expect(target.source?.ref).toMatch(/^[0-9a-f]{40}$/)
-      }
-      if (target.kind === 'fixture') {
-        expect(target.status).toBe('frozen')
+  it('uses only natural externally authored targets, with no fixture proxies', () => {
+    expect(evaluationTargets.length).toBeGreaterThan(0)
+    expect(corpus.proxy_targets).toEqual([])
+
+    for (const target of evaluationTargets) {
+      expect(target.natural).toBe(true)
+      expect(target.kind === 'git' || target.kind === 'git_patched').toBe(true)
+    }
+  })
+
+  it('pins every target at an immutable commit with a license and prepare steps', () => {
+    for (const target of evaluationTargets) {
+      expect(target.source?.ref).toMatch(/^[0-9a-f]{40}$/)
+      expect(target.source?.url).toMatch(/^https:\/\//)
+      expect(target.license).toBeTruthy()
+      expect(target.prepare?.length).toBeGreaterThan(0)
+      expect(target.status).toBe('frozen')
+    }
+  })
+
+  it('records a frozen blob digest for every path its truth may cite', () => {
+    for (const target of evaluationTargets) {
+      const blobs = Object.entries(target.cited_blobs ?? {})
+
+      expect(blobs.length).toBeGreaterThan(0)
+      for (const [, blob] of blobs) {
+        expect(blob).toMatch(/^[0-9a-f]{40}$/)
       }
     }
   })
 
-  it('keeps Tier 2 git targets marked as having no independent truth yet', () => {
-    const gitTargets = corpus.targets.filter((target) => target.kind === 'git')
+  it('seeds defects as patches against the pinned commit of a real repository', () => {
+    const patched = corpus.targets.filter((target) => target.kind === 'git_patched')
 
-    expect(gitTargets.length).toBeGreaterThan(0)
-    for (const target of gitTargets) {
-      expect(target.status).toBe('pinned_no_truth')
+    expect(patched.length).toBeGreaterThan(0)
+    for (const target of patched) {
+      const base = corpus.targets.find((candidate) => candidate.id === target.base_target)
+      expect(base?.source?.ref).toBe(target.source?.ref)
+
+      const patch = readDoc(`${ROOT}/${target.patch}`)
+      expect(patch.startsWith('diff --git ')).toBe(true)
+
+      const touched = [...patch.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((match) => match[1])
+      expect(touched.length).toBeGreaterThan(0)
+      for (const path of touched) {
+        expect(Object.keys(target.cited_blobs ?? {})).toContain(path)
+      }
     }
+  })
+
+  it('discloses where a target overlaps a shipped framework adapter', () => {
+    const hono = corpus.targets.find((target) => target.id === 'hono')
+    const unstorage = corpus.targets.find((target) => target.id === 'unstorage')
+
+    expect(hono?.production_coupling?.level).toBe('declared_framework_adapter')
+    expect(hono?.production_coupling?.consequence).toContain('not evidence about frameworks that have no adapter')
+    expect(unstorage?.production_coupling?.level).toBe('none_found')
   })
 
   it('keeps the sealed holdout slot visible and explicitly unsatisfied', () => {
@@ -112,16 +171,56 @@ describe('qualification task definitions', () => {
     }
   })
 
-  it('records a truth owner and asserts no Madar-derived source for every task', () => {
+  it('never names the coupled framework inside a prompt for that target', () => {
+    const coupled = tasks.tasks.filter((task) => task.target.startsWith('hono'))
+
+    expect(coupled.length).toBeGreaterThan(0)
+    for (const task of coupled) {
+      expect(task.prompt.text.toLowerCase()).not.toContain('hono')
+    }
+  })
+
+  it('records a truth owner, a real derivation source, and no Madar-derived source', () => {
     for (const task of tasks.tasks) {
       const truth = readJson<{ provenance: Provenance }>(`${ROOT}/${task.truth_ref}`)
 
       for (const provenance of [task.truth_provenance, truth.provenance]) {
         expect(provenance.authored_by.length).toBeGreaterThan(0)
         expect(provenance.authored_at.length).toBeGreaterThan(0)
+        expect(provenance.derived_from.length).toBeGreaterThan(0)
         expect(provenance.madar_derived_sources_used).toEqual([])
         expect(provenance.inspected_madar_output_before_freeze).toBe(false)
         expect(provenance.independent_of_production_rule_author).toBe(false)
+      }
+    }
+  })
+
+  it('cites only paths recorded in the target blob manifest', () => {
+    for (const task of tasks.tasks) {
+      const truth = readJson<Record<string, unknown>>(`${ROOT}/${task.truth_ref}`)
+      const target = corpus.targets.find((candidate) => candidate.id === task.target)
+      const cited = new Set<string>()
+
+      const collect = (node: unknown): void => {
+        if (Array.isArray(node)) {
+          node.forEach(collect)
+          return
+        }
+        if (node && typeof node === 'object') {
+          for (const [key, value] of Object.entries(node)) {
+            if (key === 'path' && typeof value === 'string') {
+              cited.add(value)
+            } else if (key !== 'new_path') {
+              collect(value)
+            }
+          }
+        }
+      }
+      collect(truth)
+
+      expect(cited.size).toBeGreaterThan(0)
+      for (const path of cited) {
+        expect(Object.keys(target?.cited_blobs ?? {})).toContain(path)
       }
     }
   })
@@ -158,9 +257,18 @@ describe('qualification receipt schema', () => {
   const validTier1 = readJson<Record<string, unknown>>(`${ROOT}/examples/receipt-tier1-valid.json`)
   const invalidTier2 = readJson<Record<string, unknown>>(`${ROOT}/examples/receipt-tier2-invalid-no-madar-call.json`)
 
-  it('accepts the published examples', () => {
+  it('accepts the published examples and ties them to frozen prompts', () => {
     expect(validate(validTier1)).toBe(true)
     expect(validate(invalidTier2)).toBe(true)
+
+    for (const receipt of [validTier1, invalidTier2] as Array<{
+      task_id: string
+      identity: { prompts: { user_prompt_sha256: string } }
+    }>) {
+      const task = tasks.tasks.find((candidate) => candidate.id === receipt.task_id)
+      expect(task).toBeTruthy()
+      expect(receipt.identity.prompts.user_prompt_sha256).toBe(task?.prompt.sha256)
+    }
   })
 
   it('keeps every quality dimension not_measured on an invalid run', () => {
@@ -191,6 +299,19 @@ describe('qualification receipt schema', () => {
     expect(validate(mutated)).toBe(false)
   })
 
+  it('can invalidate a run whose seeded patch did not apply', () => {
+    const reasons = (
+      receiptSchema as {
+        properties: {
+          validity: { properties: { invalidation_reasons: { items: { enum: string[] } } } }
+        }
+      }
+    ).properties.validity.properties.invalidation_reasons.items.enum
+
+    expect(reasons).toContain('patch_application_failure')
+    expect(reasons).toContain('target_revision_mismatch')
+  })
+
   it('keeps indexing, context building, and agent cost in separate accounts', () => {
     const costs = (validTier1 as { costs: Record<string, { measured: boolean }> }).costs
 
@@ -200,10 +321,15 @@ describe('qualification receipt schema', () => {
 })
 
 describe('qualification Tier 1 subset', () => {
-  it('is deterministic and runnable in a pull request without spend', () => {
+  it('is deterministic and runnable in a pull request without model spend', () => {
     expect(tier1.properties.deterministic).toBe(true)
-    expect(tier1.properties.requires_network).toBe(false)
+    expect(tier1.properties.requires_model_provider).toBe(false)
     expect(tier1.properties.requires_api_spend).toBe(false)
+  })
+
+  it('fails a cell whose target could not be prepared instead of skipping it', () => {
+    expect(tier1.preparation.steps.length).toBeGreaterThan(0)
+    expect(tier1.preparation.on_preparation_failure).toContain('never silently skipped')
   })
 
   it('covers every frozen task and freezes each negative-trust probe prompt', () => {
@@ -212,15 +338,17 @@ describe('qualification Tier 1 subset', () => {
     expect(tier1.negative_trust_probes.length).toBeGreaterThan(0)
     for (const probe of tier1.negative_trust_probes) {
       expect(createHash('sha256').update(probe.prompt.text, 'utf8').digest('hex')).toBe(probe.prompt.sha256)
+      expect(corpus.targets.some((target) => target.id === probe.target_id)).toBe(true)
     }
   })
 
-  it('forbids clearing a failure by editing the contract or the production rules', () => {
+  it('forbids clearing a failure by editing the contract or swapping in a fixture', () => {
     const remedies = tier1.gate.forbidden_remedies.join('\n')
 
     expect(remedies).toContain('Adding a qualification path, symbol, prompt, or repository name to production')
     expect(remedies).toContain('Relaxing a truth file to match observed output')
     expect(remedies).toContain('Marking a failing cell not_measured')
+    expect(remedies).toContain('Replacing a natural target with a self-authored fixture')
   })
 
   it('states that the thresholds are pre-registered and uncalibrated', () => {
@@ -251,16 +379,25 @@ describe('qualification policy documents', () => {
     expect(policy).toContain('## Current status: unsatisfied')
     expect(policy).toContain('### Human action required')
     expect(policy).toContain('sealed holdout unsatisfied; results measure regression only')
+    expect(policy).toContain('Naturalness and hiddenness are separate properties')
   })
 
-  it('labels synthetic and package-parity artifacts as non-outcome evidence', () => {
+  it('separates target naturalness from evidence class', () => {
     const categories = readDoc(`${ROOT}/evidence-categories.md`)
 
+    expect(categories).toContain('## Target naturalness qualifies the evidence')
     expect(categories).toContain('### E1 — Product outcome evidence')
     expect(categories).toContain('**Currently held: none.**')
-    expect(categories).toContain('### E4 — Synthetic or fixture receipts')
-    expect(categories).toContain('### E5 — Package and parity checks')
     expect(categories).toContain('E4 proves the reporting pipeline works. It is never agent-outcome evidence.')
+    expect(categories).toContain('five are in-repo proxies')
+    expect(categories).toContain('six are git-backed and\ndo pin a URL together with an immutable commit SHA')
+  })
+
+  it('records the unenforced retrieval/grader boundary in runtime-proof.json', () => {
+    const categories = readDoc(`${ROOT}/evidence-categories.md`)
+
+    expect(categories).toContain('Open enforcement gap in E3')
+    expect(categories).toContain('That isolation is asserted in\nprose. No test, lint rule, or CI check enforces it')
   })
 
   it('defines transcript and receipt retention', () => {
@@ -269,6 +406,7 @@ describe('qualification policy documents', () => {
     expect(rules).toContain('at least **24 months**')
     expect(rules).toContain('the raw agent transcript (Tier 2) or the context artifact (Tier 1)')
     expect(rules).toContain('`not_measured` describes a run that could not be measured')
+    expect(rules).toContain('`patch_application_failure`')
   })
 
   it('records which receipt fields v0.32.1 does not emit yet', () => {
@@ -280,7 +418,7 @@ describe('qualification policy documents', () => {
 })
 
 describe('qualification freeze', () => {
-  it('covers every contract and fixture file with a digest', () => {
+  it('covers every contract file with a digest', () => {
     expect(freeze.contract_version).toBe(corpus.contract_version)
 
     const paths = Object.keys(freeze.files)
@@ -288,8 +426,8 @@ describe('qualification freeze', () => {
     expect(paths).toContain(`${ROOT}/tasks.json`)
     expect(paths).toContain(`${ROOT}/rubrics.json`)
     expect(paths).toContain(`${ROOT}/receipt-schema.json`)
-    expect(paths).toContain(`${ROOT}/fixtures/ledger-service/src/service/ledger-service.ts`)
-    expect(paths).toContain(`${ROOT}/fixtures/plugin-host/src/host/plugin-host.ts`)
+    expect(paths).toContain(`${ROOT}/patches/hono-compose-reentrancy-guard.patch`)
+    expect(paths).toContain(`${ROOT}/patches/hono-error-message-disclosure.patch`)
 
     for (const [path, digest] of Object.entries(freeze.files)) {
       expect(digest).toBe(createHash('sha256').update(readFileSync(resolve(path))).digest('hex'))

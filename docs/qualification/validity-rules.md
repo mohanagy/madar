@@ -16,7 +16,8 @@ to `validity.invalidation_reasons`:
 | `missing_attributable_madar_call` | The task contract sets `requires_attributable_madar_call` and the transcript shows no attributable Madar call in the Madar arm. |
 | `prompt_contract_failure` | The prompt actually delivered to the agent does not hash-match the frozen prompt, or the two arms received different prompts. |
 | `answer_contract_failure` | The arm produced no answer, a permission request instead of an answer, or a truncated answer. |
-| `target_revision_mismatch` | The checked-out target revision or fixture digest differs from `corpus.json`. |
+| `target_revision_mismatch` | The checked-out target commit differs from `corpus.json`, or a cited blob digest in the prepared tree does not match the recorded `cited_blobs` entry. |
+| `patch_application_failure` | A seeded-defect target's patch did not apply cleanly to the pinned commit, or applied with fuzz. |
 | `package_revision_mismatch` | The Madar commit, package version, or tarball digest differs from the pinned identity. |
 | `dependency_lock_mismatch` | The dependency lock digest differs from the pinned identity, or the install used `npm install` rather than `npm ci`. |
 | `isolation_failure` | `environment.isolation` is false, or the run used a `MADAR_BENCH_CLI_PATH`-style development override. |

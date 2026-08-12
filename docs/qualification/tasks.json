@@ -4,20 +4,20 @@
   "prompt_hash_algorithm": "sha256 over the exact UTF-8 prompt text, no trailing newline",
   "tasks": [
     {
-      "id": "arch-plugin-host-extension-seam",
-      "name": "Explain the extension architecture and its dependency direction",
+      "id": "arch-unstorage-driver-seam",
+      "name": "Explain the driver extension seam and mount resolution",
       "category": "architecture-understanding",
-      "target": "qual-plugin-host",
+      "target": "unstorage",
       "tiers": [
         1,
         2
       ],
       "status": "frozen",
       "prompt": {
-        "text": "Describe the extension architecture of this workspace. What is the stable extension surface, what are the module layers and the allowed dependency direction between them, and does any module currently depend in the wrong direction?",
-        "sha256": "3f4837829b97f6bdd273a9f751ee31141b928e7d77c5bfe850ed1fb2ff05bfd8"
+        "text": "Describe this library's extension architecture. What is the stable surface a new backend has to implement, how is a backend selected for a given key at call time, and what work does the core do that a backend never sees?",
+        "sha256": "5c3722d182b5c36478ecabd2d1fb24f4f3eb40eba6e12032da89bebf12ef1d9f"
       },
-      "truth_ref": "truth/arch-plugin-host-extension-seam.json",
+      "truth_ref": "truth/arch-unstorage-driver-seam.json",
       "scoring": {
         "tier1_method": "evidence_obligation_recall",
         "tier2_method": "blinded_rubric",
@@ -33,7 +33,7 @@
         "author_role": "benchmark author",
         "authored_at": "2026-08-12",
         "derived_from": [
-          "fixture source authored in the same change, read directly"
+          "unjs/unstorage @ e6be6135832f350ca16f9a77432e1d4f0aa85ed7, read directly from the pinned checkout"
         ],
         "madar_derived_sources_used": [],
         "inspected_madar_output_before_freeze": false,
@@ -42,20 +42,20 @@
       }
     },
     {
-      "id": "flow-ledger-post-entry",
-      "name": "Trace the post-entry execution flow to every durable side effect",
+      "id": "flow-hono-request-dispatch",
+      "name": "Trace the request lifecycle from entry point to response",
       "category": "execution-flow-explanation",
-      "target": "qual-ledger-service",
+      "target": "hono",
       "tiers": [
         1,
         2
       ],
       "status": "frozen",
       "prompt": {
-        "text": "Trace what happens when a client posts a new ledger entry. Follow the path from the HTTP handler through to every durable side effect and every downstream consumer, and say which step each side effect happens in.",
-        "sha256": "4f727f2d70f0df36aa08fc208a27d6dcf1b1ed0a8b26a05b1e1dde32b57e29aa"
+        "text": "Trace what happens to an incoming request from the application's entry point until a response is returned. Cover how the path is resolved, how a route is matched, how handlers and middleware are run, and how errors and unmatched routes are handled. Say which steps are skipped in the fast path.",
+        "sha256": "c276d363f0b10c00b75df925f2e658f3ee7af085872bcbcc64a7a4252c7b3b35"
       },
-      "truth_ref": "truth/flow-ledger-post-entry.json",
+      "truth_ref": "truth/flow-hono-request-dispatch.json",
       "scoring": {
         "tier1_method": "evidence_obligation_recall",
         "tier2_method": "ordered_path_rubric",
@@ -71,7 +71,7 @@
         "author_role": "benchmark author",
         "authored_at": "2026-08-12",
         "derived_from": [
-          "fixture source authored in the same change, read directly"
+          "honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796, read directly from the pinned checkout"
         ],
         "madar_derived_sources_used": [],
         "inspected_madar_output_before_freeze": false,
@@ -80,20 +80,20 @@
       }
     },
     {
-      "id": "impact-ledger-drop-outbox-publish",
-      "name": "Impact of dropping outbox publication on the write path",
+      "id": "impact-hono-drop-router-fallback",
+      "name": "Impact of removing the router fallback strategy",
       "category": "impact-analysis",
-      "target": "qual-ledger-service",
+      "target": "hono",
       "tiers": [
         1,
         2
       ],
       "status": "frozen",
       "prompt": {
-        "text": "What breaks if the write path stops emitting outbox events after a ledger entry is appended? List every module whose behaviour changes and say whether the failure is loud or silent.",
-        "sha256": "9ccbea6fc04c64b868676c858d2f34c0e808bca307e3481ccda62e3c9713cb6c"
+        "text": "What breaks if the default router is replaced by the regular-expression router alone, with no fallback to another router implementation? List every module whose behaviour changes, say which modules are unaffected and why, and say whether each failure is loud or silent.",
+        "sha256": "4d05391549ee28a142a9f24960e43e415cf6c831c29dce720aa74e72c7ab9ac2"
       },
-      "truth_ref": "truth/impact-ledger-drop-outbox-publish.json",
+      "truth_ref": "truth/impact-hono-drop-router-fallback.json",
       "scoring": {
         "tier1_method": "evidence_obligation_recall",
         "tier2_method": "affected_set_precision_recall",
@@ -109,7 +109,7 @@
         "author_role": "benchmark author",
         "authored_at": "2026-08-12",
         "derived_from": [
-          "fixture source authored in the same change, read directly"
+          "honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796, read directly from the pinned checkout"
         ],
         "madar_derived_sources_used": [],
         "inspected_madar_output_before_freeze": false,
@@ -118,20 +118,20 @@
       }
     },
     {
-      "id": "rootcause-ledger-duplicate-entries",
-      "name": "Root-cause a duplicate entry under retried requests",
+      "id": "rootcause-hono-middleware-rerun",
+      "name": "Root-cause downstream middleware running twice",
       "category": "bug-root-cause-investigation",
-      "target": "qual-ledger-service",
+      "target": "hono-seeded-compose",
       "tiers": [
         1,
         2
       ],
       "status": "frozen",
       "prompt": {
-        "text": "Under load, a client that retries a request with the same idempotency key sometimes ends up with two ledger entries instead of one. Find the root cause and explain the exact ordering of operations that produces the duplicate.",
-        "sha256": "3d6f2f70a3b21508c17637cce0d9d94ccbea241adaeb2223192664c8d9856164"
+        "text": "A middleware that awaits the next function twice used to fail loudly with an error. It now silently runs the rest of the chain a second time, so downstream handlers execute twice for one request. Find the root cause and explain the exact mechanism that produces the second execution.",
+        "sha256": "637cd655712c2e7d96a3566ed0b311d9d7dcfe0d9cfb8b699f5f1c52a721eaf0"
       },
-      "truth_ref": "truth/rootcause-ledger-duplicate-entries.json",
+      "truth_ref": "truth/rootcause-hono-middleware-rerun.json",
       "scoring": {
         "tier1_method": "evidence_obligation_recall",
         "tier2_method": "single_root_cause_adjudication",
@@ -147,7 +147,7 @@
         "author_role": "benchmark author",
         "authored_at": "2026-08-12",
         "derived_from": [
-          "seeded defect introduced deliberately while authoring the fixture"
+          "seeded defect deliberately injected into honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796 via patches/hono-compose-reentrancy-guard.patch"
         ],
         "madar_derived_sources_used": [],
         "inspected_madar_output_before_freeze": false,
@@ -156,20 +156,20 @@
       }
     },
     {
-      "id": "plan-plugin-host-object-storage-plugin",
-      "name": "Plan a bounded new built-in plugin",
+      "id": "plan-unstorage-add-driver",
+      "name": "Plan a bounded new backend implementation",
       "category": "implementation-planning",
-      "target": "qual-plugin-host",
+      "target": "unstorage",
       "tiers": [
         1,
         2
       ],
       "status": "frozen",
       "prompt": {
-        "text": "Plan the change needed to add a new built-in export plugin that writes batches to object storage. Do not widen the extension surface and do not change host modules that are unrelated to registering a plugin. List the files you would add or change and why each one is required.",
-        "sha256": "b031c780c0810bf79463045b1b7494ec431860173514c87a2572918a7603674f"
+        "text": "Plan the change needed to add a new built-in storage backend for an S3-compatible object store. Do not widen the public extension interface and do not change modules unrelated to adding a backend. List the files you would add or change, the ones you must not hand-edit, and why for each.",
+        "sha256": "b8a0a2b4a0593346d1333d96ada6c339a0763611df1ddab51079369e0c62c7ff"
       },
-      "truth_ref": "truth/plan-plugin-host-object-storage-plugin.json",
+      "truth_ref": "truth/plan-unstorage-add-driver.json",
       "scoring": {
         "tier1_method": "evidence_obligation_recall",
         "tier2_method": "blinded_rubric",
@@ -190,7 +190,7 @@
         "author_role": "benchmark author",
         "authored_at": "2026-08-12",
         "derived_from": [
-          "fixture source authored in the same change, read directly"
+          "unjs/unstorage @ e6be6135832f350ca16f9a77432e1d4f0aa85ed7, read directly from the pinned checkout"
         ],
         "madar_derived_sources_used": [],
         "inspected_madar_output_before_freeze": false,
@@ -199,20 +199,20 @@
       }
     },
     {
-      "id": "review-ledger-http-authorization",
-      "name": "Review the ledger HTTP surface for authorization defects",
+      "id": "review-hono-error-handling",
+      "name": "Review the framework error path for disclosure defects",
       "category": "review-security",
-      "target": "qual-ledger-service",
+      "target": "hono-seeded-error-disclosure",
       "tiers": [
         1,
         2
       ],
       "status": "frozen",
       "prompt": {
-        "text": "Review the ledger HTTP surface for authorization defects before merge. For each defect, name the handler, say what an attacker can do, and cite the code that proves it.",
-        "sha256": "d9a634a7bc95d610223b7d0d3c827b514d14f7871e1b248cc46285821f37ea73"
+        "text": "Review this framework's default error-handling path before merge. Identify anything that could expose internal information to a client, name the exact function, say what an attacker learns, and cite the code that proves it.",
+        "sha256": "722278ed3fa2386f1e407b4fd53a7d4b89272f2adba4297f878ad3fd645d8e47"
       },
-      "truth_ref": "truth/review-ledger-http-authorization.json",
+      "truth_ref": "truth/review-hono-error-handling.json",
       "scoring": {
         "tier1_method": "evidence_obligation_recall",
         "tier2_method": "seeded_defect_detection",
@@ -228,7 +228,7 @@
         "author_role": "benchmark author",
         "authored_at": "2026-08-12",
         "derived_from": [
-          "seeded defect introduced deliberately while authoring the fixture"
+          "seeded defect deliberately injected into honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796 via patches/hono-error-message-disclosure.patch"
         ],
         "madar_derived_sources_used": [],
         "inspected_madar_output_before_freeze": false,

@@ -1,0 +1,99 @@
+{
+  "contract_version": "1.0.0",
+  "task_id": "rootcause-hono-middleware-rerun",
+  "target": "hono-seeded-compose",
+  "category": "bug-root-cause-investigation",
+  "provenance": {
+    "authored_by": "madar-655-qualification-agent",
+    "authored_at": "2026-08-12",
+    "derived_from": [
+      "seeded defect deliberately injected into honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796 via patches/hono-compose-reentrancy-guard.patch"
+    ],
+    "madar_derived_sources_used": [],
+    "inspected_madar_output_before_freeze": false,
+    "independent_of_production_rule_author": false,
+    "review_status": "unreviewed"
+  },
+  "seeded_defect": {
+    "id": "seeded-compose-reentrancy-guard",
+    "path": "src/compose.ts",
+    "symbol": "compose.dispatch",
+    "patch": "patches/hono-compose-reentrancy-guard.patch",
+    "root_cause": "The re-entrancy guard at the top of dispatch was weakened from `i <= index` to `i < index`. `index` holds the highest index dispatched so far, so a second call to next() from the same middleware re-enters dispatch with the same argument i+1 while index already equals i+1. Under `<=` that comparison is true and the guard throws; under `<` it is false and the guard is bypassed, so the entire downstream chain runs again.",
+    "required_ordering_statement": "index is assigned immediately after the guard, so the guard must reject an index that is less than OR equal to the last dispatched index. Restoring `<=` restores the single-entry invariant.",
+    "observable_condition": "Only reachable when two or more handlers match, because the single-handler fast path in #dispatch never calls compose."
+  },
+  "critical_facts": [
+    {
+      "id": "guard-is-the-cause",
+      "statement": "The cause is the comparison in the re-entrancy guard inside compose's dispatch function, not the middleware that calls next twice.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/compose.ts", "symbol": "compose.dispatch" }]
+    },
+    {
+      "id": "index-semantics",
+      "statement": "index tracks the highest index already dispatched and is written on every entry, so an equal index is exactly the repeated-next case the guard exists to reject.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/compose.ts", "symbol": "compose" }]
+    },
+    {
+      "id": "next-closure",
+      "statement": "Each handler is invoked as handler(context, () => dispatch(i + 1)), so calling next twice issues two dispatch calls with the identical argument.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/compose.ts", "symbol": "compose.dispatch" }]
+    },
+    {
+      "id": "fast-path-exclusion",
+      "statement": "The single-matched-handler fast path in #dispatch bypasses compose entirely, so the defect cannot manifest on routes with only one handler.",
+      "criticality": "supporting",
+      "evidence": [{ "path": "src/hono-base.ts", "symbol": "Hono.#dispatch" }]
+    }
+  ],
+  "correct_uncertainty": [
+    {
+      "id": "no-other-protection",
+      "requirement": "The guard is the only re-entrancy protection in the composition chain. There is no per-request lock, no idempotency key, and no downstream check. A correct answer must not suggest that some other layer would have caught the second run."
+    },
+    {
+      "id": "response-assignment-nuance",
+      "requirement": "Whether the duplicated run is visible in the response depends on context.finalized: the composed result is only assigned when finalized is false or an error was handled. The duplicated side effects still happen either way. An answer that concludes 'no visible effect' because the response is unchanged has missed the defect."
+    }
+  ],
+  "unsupported_claim_traps": [
+    {
+      "id": "middleware-is-buggy",
+      "claim": "The application middleware is at fault for calling next twice.",
+      "why_false": "Calling next twice is exactly the condition the framework guard is written to reject with 'next() called multiple times'. The framework silently permitting it is the regression."
+    },
+    {
+      "id": "finalized-flag",
+      "claim": "The cause is the context.finalized flag not being set.",
+      "why_false": "finalized governs whether the composed response is assigned. It never gated entry into dispatch and does not control chain re-entry."
+    },
+    {
+      "id": "fast-path-cause",
+      "claim": "The fast path in #dispatch runs the handler an extra time.",
+      "why_false": "The fast path invokes exactly one handler and is only taken when the match result has length one; it does not enter compose at all."
+    },
+    {
+      "id": "error-handler-retry",
+      "claim": "The error handler retries the chain after a failure.",
+      "why_false": "onError produces a response; it never re-invokes dispatch."
+    }
+  ],
+  "tier1_obligations": {
+    "required_evidence_paths": ["src/compose.ts", "src/hono-base.ts"],
+    "required_evidence_symbols": ["compose", "dispatch"],
+    "min_critical_fact_recall": 1.0,
+    "must_not_report_ready_when": [
+      "src/compose.ts is absent from the evidence set",
+      "the call from the dispatch entry point into compose is missing from the graph"
+    ]
+  },
+  "tier2_scoring": {
+    "method": "single_root_cause_adjudication",
+    "accepted_root_cause_ids": ["seeded-compose-reentrancy-guard"],
+    "critical_facts_required_for_pass": ["guard-is-the-cause", "index-semantics", "next-closure"],
+    "uncertainty_required_for_pass": ["no-other-protection"]
+  }
+}

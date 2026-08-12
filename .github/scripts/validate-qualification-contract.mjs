@@ -1,5 +1,7 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 
 import Ajv from 'ajv'
@@ -9,6 +11,7 @@ const ROOT = resolve('docs/qualification')
 const FREEZE_PATH = join(ROOT, 'freeze.json')
 const PRODUCTION_ROOT = resolve('src')
 const WRITE = process.argv.includes('--write')
+const VERIFY_CORPUS = process.argv.includes('--verify-corpus')
 
 const failures = []
 
@@ -62,28 +65,80 @@ for (const [name, doc] of [
 }
 
 // ---------------------------------------------------------------------------
-// 2. Targets
+// 2. Targets must be natural and pinned
 // ---------------------------------------------------------------------------
 
 const targetsById = new Map(corpus.targets.map((target) => [target.id, target]))
-const fixtureTargets = corpus.targets.filter((target) => target.kind === 'fixture')
 
-for (const target of fixtureTargets) {
-  try {
-    if (!statSync(resolve(target.path)).isDirectory()) {
-      fail(`target ${target.id} path ${target.path} is not a directory`)
-    }
-  } catch {
-    fail(`target ${target.id} path ${target.path} does not exist`)
-  }
+if (!Array.isArray(corpus.proxy_targets)) {
+  fail('corpus.json must declare a proxy_targets list, even when empty')
 }
 
 for (const target of corpus.targets) {
-  if (target.kind === 'git' && !/^[0-9a-f]{40}$/.test(target.source?.ref ?? '')) {
-    fail(`git target ${target.id} must pin an immutable 40-character commit SHA`)
+  if (target.kind === 'sealed') {
+    if (target.status !== 'unsatisfied') {
+      fail(`sealed target ${target.id} must stay unsatisfied until a second person fills it`)
+    }
+    continue
   }
-  if (target.status === 'pinned_no_truth' && target.tier === 1) {
-    fail(`target ${target.id} is Tier 1 but has no independent truth`)
+
+  if (target.natural !== true) {
+    fail(`target ${target.id} is not marked natural; a fixture proxy must be declared in proxy_targets, not in targets`)
+  }
+  if (!/^[0-9a-f]{40}$/.test(target.source?.ref ?? '')) {
+    fail(`target ${target.id} must pin an immutable 40-character commit SHA`)
+  }
+  if (!target.source?.url?.startsWith('https://')) {
+    fail(`target ${target.id} must record an https repository URL`)
+  }
+  if (!target.license) {
+    fail(`target ${target.id} must record a license`)
+  }
+  if (!Array.isArray(target.prepare) || target.prepare.length === 0) {
+    fail(`target ${target.id} must record reproducible prepare steps`)
+  }
+  if (!target.dependency_lock) {
+    fail(`target ${target.id} must record a dependency lock policy`)
+  }
+  if (!target.cited_blobs || Object.keys(target.cited_blobs).length === 0) {
+    fail(`target ${target.id} must record cited_blobs so truth citations can be checked offline`)
+  }
+  for (const [path, blob] of Object.entries(target.cited_blobs ?? {})) {
+    if (!/^[0-9a-f]{40}$/.test(blob)) {
+      fail(`target ${target.id} cited_blobs["${path}"] is not a git blob SHA`)
+    }
+  }
+
+  if (target.kind === 'git_patched') {
+    const base = targetsById.get(target.base_target)
+    if (!base) {
+      fail(`patched target ${target.id} references unknown base_target ${target.base_target}`)
+    } else if (base.source.ref !== target.source.ref) {
+      fail(`patched target ${target.id} must pin the same commit as its base target`)
+    }
+
+    const patchPath = join(ROOT, target.patch ?? '')
+    let patch
+    try {
+      patch = readFileSync(patchPath, 'utf8')
+    } catch {
+      fail(`patched target ${target.id} references missing patch ${target.patch}`)
+    }
+
+    if (patch) {
+      if (!patch.startsWith('diff --git ')) {
+        fail(`patch ${target.patch} is not a unified git diff`)
+      }
+      const touched = [...patch.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((match) => match[1])
+      if (touched.length === 0) {
+        fail(`patch ${target.patch} does not modify any file`)
+      }
+      for (const path of touched) {
+        if (!(path in (target.cited_blobs ?? {}))) {
+          fail(`patch ${target.patch} touches ${path}, which is not recorded in ${target.id} cited_blobs`)
+        }
+      }
+    }
   }
 }
 
@@ -143,12 +198,16 @@ for (const task of tasks.tasks) {
     if (!provenance.authored_by || !provenance.authored_at) {
       fail(`task ${task.id} truth provenance must record who authored the truth and when`)
     }
+    if (!Array.isArray(provenance.derived_from) || provenance.derived_from.length === 0) {
+      fail(`task ${task.id} truth provenance must record what the truth was derived from`)
+    }
     if (!('independent_of_production_rule_author' in provenance)) {
       fail(`task ${task.id} truth provenance must state whether the author is independent of the production-rule author`)
     }
   }
 
-  // Every cited evidence path must exist inside the target workspace.
+  // Every cited evidence path must be recorded in the target's frozen blob map.
+  // `new_path` is used for files a plan proposes creating and is intentionally exempt.
   const citedPaths = new Set()
   const collect = (node) => {
     if (Array.isArray(node)) {
@@ -158,18 +217,15 @@ for (const task of tasks.tasks) {
     if (node && typeof node === 'object') {
       for (const [key, value] of Object.entries(node)) {
         if (key === 'path' && typeof value === 'string') citedPaths.add(value)
-        else collect(value)
+        else if (key !== 'new_path') collect(value)
       }
     }
   }
   collect(truth)
 
   for (const cited of citedPaths) {
-    const full = resolve(target.path, cited)
-    try {
-      statSync(full)
-    } catch {
-      fail(`${task.truth_ref} cites ${cited}, which does not exist in target ${target.id}`)
+    if (!(cited in (target.cited_blobs ?? {}))) {
+      fail(`${task.truth_ref} cites ${cited}, which is not recorded in target ${target.id} cited_blobs`)
     }
   }
 
@@ -180,9 +236,8 @@ for (const task of tasks.tasks) {
     fail(`${task.truth_ref} must declare at least one must_not_report_ready_when condition`)
   }
 
-  const rubricMethod = task.scoring.tier2_method
-  if (!rubrics.methods[rubricMethod]) {
-    fail(`task ${task.id} references unknown rubric method ${rubricMethod}`)
+  if (!rubrics.methods[task.scoring.tier2_method]) {
+    fail(`task ${task.id} references unknown rubric method ${task.scoring.tier2_method}`)
   }
   if (!rubrics.methods[task.scoring.tier1_method]) {
     fail(`task ${task.id} references unknown tier1 method ${task.scoring.tier1_method}`)
@@ -245,19 +300,27 @@ const ajv = new Ajv({ allErrors: true, strict: false })
 addFormats(ajv)
 const validateReceipt = ajv.compile(receiptSchema)
 
-const examplesDir = join(ROOT, 'examples')
-for (const path of walk(examplesDir)) {
+for (const path of walk(join(ROOT, 'examples'))) {
   const receipt = readJson(path)
+  const label = relative(process.cwd(), path)
+
   if (!validateReceipt(receipt)) {
-    fail(`${relative(process.cwd(), path)} does not satisfy receipt-schema.json: ${ajv.errorsText(validateReceipt.errors)}`)
+    fail(`${label} does not satisfy receipt-schema.json: ${ajv.errorsText(validateReceipt.errors)}`)
   }
   if (receipt.validity.status !== 'valid' && receipt.validity.aggregatable !== false) {
-    fail(`${relative(process.cwd(), path)} is not valid but is marked aggregatable`)
+    fail(`${label} is not valid but is marked aggregatable`)
   }
   for (const [name, score] of Object.entries(receipt.scores)) {
     if (score.measured === false && score.value !== null) {
-      fail(`${relative(process.cwd(), path)} score ${name} is not measured but carries a value`)
+      fail(`${label} score ${name} is not measured but carries a value`)
     }
+  }
+
+  const task = tasksById.get(receipt.task_id)
+  if (!task) {
+    fail(`${label} references unknown task ${receipt.task_id}`)
+  } else if (receipt.identity.prompts.user_prompt_sha256 !== task.prompt.sha256) {
+    fail(`${label} records a prompt hash that does not match the frozen prompt for ${receipt.task_id}`)
   }
 }
 
@@ -265,21 +328,17 @@ for (const path of walk(examplesDir)) {
 // 7. Benchmark independence: no qualification literal may reach production code
 // ---------------------------------------------------------------------------
 
+// Bare target ids are deliberately NOT forbidden. A target id may legitimately equal the
+// name of a framework Madar declares generic support for — `hono` is one — and banning the
+// word would confuse a declared adapter with a benchmark-specific special case. Those
+// couplings are disclosed per target in corpus.json#/targets/*/production_coupling instead.
+// What is forbidden here is every literal that could only have come from this contract.
 const FORBIDDEN_LITERALS = [
-  ...corpus.targets.map((target) => target.id),
-  ...fixtureTargets.map((target) => target.path),
+  ...corpus.targets.flatMap((target) => (target.source?.url ? [target.source.url, target.source.ref] : [])),
   ...tasks.tasks.map((task) => task.id),
   ...tasks.tasks.map((task) => task.prompt.text),
   ...tier1.negative_trust_probes.map((probe) => probe.prompt.text),
-  'LedgerService',
-  'IdempotencyStore',
-  'OutboxPublisher',
-  'BalanceProjection',
-  'assertAccountAccess',
-  'CsvExportPlugin',
-  'WebhookExportPlugin',
-  'runExportLifecycle',
-  'builtInPlugins',
+  ...Object.values(corpus.forbidden_target_symbols ?? {}).flat(),
 ]
 
 for (const path of walk(PRODUCTION_ROOT)) {
@@ -292,7 +351,51 @@ for (const path of walk(PRODUCTION_ROOT)) {
 }
 
 // ---------------------------------------------------------------------------
-// 8. Freeze digests
+// 8. Optional network verification of the pinned corpus
+// ---------------------------------------------------------------------------
+
+if (VERIFY_CORPUS) {
+  for (const target of corpus.targets) {
+    if (target.kind === 'sealed') {
+      continue
+    }
+
+    const dir = mkdtempSync(join(tmpdir(), `qualify-${target.id}-`))
+    try {
+      const git = (...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim()
+
+      execFileSync('git', ['init', '--quiet', dir], { stdio: 'ignore' })
+      git('remote', 'add', 'origin', target.source.url)
+      git('fetch', '--quiet', '--depth', '1', 'origin', target.source.ref)
+      git('checkout', '--quiet', 'FETCH_HEAD')
+
+      const head = git('rev-parse', 'HEAD')
+      if (head !== target.source.ref) {
+        fail(`corpus verification: ${target.id} resolved to ${head}, expected ${target.source.ref}`)
+      }
+
+      for (const [path, blob] of Object.entries(target.cited_blobs)) {
+        const actual = git('rev-parse', `HEAD:${path}`)
+        if (actual !== blob) {
+          fail(`corpus verification: ${target.id} ${path} blob is ${actual}, expected ${blob}`)
+        }
+      }
+
+      if (target.kind === 'git_patched') {
+        execFileSync('git', ['-C', dir, 'apply', '--check', join(ROOT, target.patch)], { stdio: 'pipe' })
+      }
+
+      console.log(`corpus verification: ${target.id} ok`)
+    } catch (error) {
+      fail(`corpus verification failed for ${target.id}: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 9. Freeze digests
 // ---------------------------------------------------------------------------
 
 const frozenFiles = walk(ROOT)
@@ -351,9 +454,11 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
+const naturalTargets = corpus.targets.filter((target) => target.kind !== 'sealed')
+
 console.log(
   `qualification contract v${CONTRACT_VERSION} is consistent: ` +
-    `${corpus.targets.length} targets, ${tasks.tasks.length} tasks, ` +
-    `${tier1.cells.length} Tier 1 cells, ${tier1.negative_trust_probes.length} negative-trust probes, ` +
-    `${frozenFiles.length} frozen files.`,
+    `${naturalTargets.length} pinned natural targets, ${corpus.proxy_targets.length} proxy targets, ` +
+    `${tasks.tasks.length} tasks, ${tier1.cells.length} Tier 1 cells, ` +
+    `${tier1.negative_trust_probes.length} negative-trust probes, ${frozenFiles.length} frozen files.`,
 )

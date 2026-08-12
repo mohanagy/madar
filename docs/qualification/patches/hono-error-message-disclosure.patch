@@ -1,0 +1,13 @@
+diff --git a/src/hono-base.ts b/src/hono-base.ts
+index e6a7278..6af89b0 100644
+--- a/src/hono-base.ts
++++ b/src/hono-base.ts
+@@ -38,7 +38,7 @@ const errorHandler: ErrorHandler = (err, c) => {
+     return c.newResponse(res.body, res)
+   }
+   console.error(err)
+-  return c.text('Internal Server Error', 500)
++  return c.text(`Internal Server Error: ${err.stack ?? err.message}`, 500)
+ }
+ 
+ type GetPath<E extends Env> = (request: Request, options?: { env?: E['Bindings'] }) => string

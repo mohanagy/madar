@@ -196,6 +196,7 @@
               "prompt_contract_failure",
               "answer_contract_failure",
               "target_revision_mismatch",
+              "patch_application_failure",
               "package_revision_mismatch",
               "dependency_lock_mismatch",
               "isolation_failure",

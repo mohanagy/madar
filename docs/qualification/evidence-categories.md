@@ -6,6 +6,34 @@ Madar's repository already contains several kinds of artifact that look like mea
 They are not interchangeable. Every published statement must name the category of evidence
 it rests on.
 
+## Target naturalness qualifies the evidence
+
+An evidence class says how a measurement was produced. It does not say what the measurement
+was produced against, and both matter.
+
+- **Natural target** — a real, externally authored project pinned at an immutable commit,
+  optionally with a recorded seeded-defect patch. Every target in
+  [`corpus.json`](./corpus.json) is natural.
+- **Proxy target** — a workspace authored inside this repository to stand in for one.
+
+A result measured against a proxy can support a regression statement and nothing more. It
+can never support a statement about behaviour on real repositories, because a proxy is
+shaped by the same hands as the production rules it is meant to test.
+
+Recorded finding, 2026-08-12, measured against
+[`docs/benchmarks/suite/repos.json`](../benchmarks/suite/repos.json) at
+`06b373a447acfce895412ac10eb4e5228c5df0b7`: of eleven rows, **five are in-repo proxies**
+keyed by `path` — `ts-small` (`examples/sample-workspace`), `nestjs-mid` and
+`ts-monorepo-large` (both `tests/fixtures/pack-quality/**/workspace`), `python-service` and
+`go-service` (both fixture directories under the suite). The other **six are git-backed and
+do pin a URL together with an immutable commit SHA** — `documenso`, `formbricks`, `dub`,
+`twenty`, `cal-diy`, `novu`.
+
+So the existing corpus is mixed, not entirely proxy-based. What matters for evidence
+labelling is that the five proxy rows are the ones backing the checked-in deterministic
+fixture bundles, and any citation of those receipts must be labelled proxy-target as well
+as E4.
+
 ## Categories
 
 ### E1 — Product outcome evidence
@@ -38,6 +66,18 @@ The June 10 2026 receipts under `docs/benchmarks/suite/results/` are E3: the ans
 prompts included proof checklists and the checkout could load expected files and functions
 from `docs/benchmarks/suite/runtime-proof.json`. They are genuine measurements of the setup
 they describe. They are **not** evidence of untuned behaviour, and they are **not** E1.
+
+Open enforcement gap in E3, recorded 2026-08-12 and not addressed here:
+`docs/benchmarks/suite/runtime-proof.json` carries per-repository expected symbols and
+paths — for example `sendDocument()` and `server-only/document/send-document.ts` under
+`documenso-explain-runtime`. `docs/benchmarks/suite/methodology.md` asserts that this file
+is grader input only, that it "is not passed into retrieval", and that its obligation
+checklist "is not written into the answering agent's prompt". That isolation is asserted in
+prose. No test, lint rule, or CI check enforces it, and nothing fails if a future change
+reads the manifest from retrieval or splices its obligations into a prompt. Until an
+enforcement check exists, every E3 citation must state that the retrieval/grader boundary
+is documented rather than proven. This is a separate linked issue and bears directly on
+[#660](https://github.com/mohanagy/madar/issues/660).
 
 ### E4 — Synthetic or fixture receipts
 

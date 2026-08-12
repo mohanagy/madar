@@ -1,0 +1,143 @@
+{
+  "contract_version": "1.0.0",
+  "task_id": "arch-unstorage-driver-seam",
+  "target": "unstorage",
+  "category": "architecture-understanding",
+  "provenance": {
+    "authored_by": "madar-655-qualification-agent",
+    "authored_at": "2026-08-12",
+    "derived_from": [
+      "unjs/unstorage @ e6be6135832f350ca16f9a77432e1d4f0aa85ed7, read directly from the pinned checkout"
+    ],
+    "madar_derived_sources_used": [],
+    "inspected_madar_output_before_freeze": false,
+    "independent_of_production_rule_author": false,
+    "review_status": "unreviewed"
+  },
+  "critical_facts": [
+    {
+      "id": "driver-interface",
+      "statement": "The stable extension surface is the Driver interface in src/types.ts. Exactly three members are required — hasItem, getItem, getKeys. Everything else (setItem, setItems, setItemRaw, getItems, getItemRaw, removeItem, getMeta, clear, dispose, watch, name, flags, options, getInstance) is optional.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/types.ts", "symbol": "Driver" }]
+    },
+    {
+      "id": "driver-factory",
+      "statement": "Drivers are authored as a DriverFactory — a function taking options and returning a Driver — declared in src/drivers/utils/index.ts and default-exported from each driver module.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/drivers/utils/index.ts", "symbol": "DriverFactory" },
+        { "path": "src/drivers/memory.ts", "symbol": "driver" }
+      ]
+    },
+    {
+      "id": "mount-registry",
+      "statement": "createStorage holds a StorageCTX with mounts (base -> Driver) and mountpoints (the list of bases). The root mount is the empty string and defaults to the in-memory driver when no driver option is supplied.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/storage.ts", "symbol": "createStorage" },
+        { "path": "src/drivers/memory.ts", "symbol": "driver" }
+      ]
+    },
+    {
+      "id": "longest-prefix-resolution",
+      "statement": "getMount resolves a key by scanning mountpoints and returning the first base for which key.startsWith(base). mount() pushes the new base and re-sorts mountpoints by descending length, so the longest matching prefix wins; an unmatched key falls back to the root mount.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/storage.ts", "symbol": "getMount" }]
+    },
+    {
+      "id": "relative-key-stripping",
+      "statement": "The core strips the mount base before calling the driver — relativeKey is key.slice(base.length) — so a driver never sees the mountpoint it is mounted under.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/storage.ts", "symbol": "getMount" }]
+    },
+    {
+      "id": "core-only-work",
+      "statement": "Work the core does that a driver never sees: key normalization (normalizeKey / normalizeBaseKey / joinKeys in src/utils.ts), value serialization on write (stringify) and deserialization on read (destr), wrapping every driver call in asyncCall, grouping multi-key operations per mount in runBatch, and fanning watch events out to registered listeners through onChange.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/utils.ts", "symbol": "normalizeKey" },
+        { "path": "src/_utils.ts", "symbol": "asyncCall" },
+        { "path": "src/storage.ts", "symbol": "runBatch" }
+      ]
+    },
+    {
+      "id": "optional-method-fallbacks",
+      "statement": "Optional driver methods are feature-detected, not required: a driver with no setItem is silently treated as read-only, getItemRaw falls back to getItem plus deserializeRaw, and getItems/setItems fall back to per-item calls.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/storage.ts", "symbol": "setItem" },
+        { "path": "src/storage.ts", "symbol": "getItemRaw" }
+      ]
+    },
+    {
+      "id": "generated-driver-index",
+      "statement": "src/_drivers.ts is generated, not hand-maintained. Its header says \"Auto-generated using scripts/gen-drivers. Do not manually edit!\", and the build script runs gen-drivers before bundling.",
+      "criticality": "supporting",
+      "evidence": [
+        { "path": "src/_drivers.ts", "symbol": "module header" },
+        { "path": "scripts/gen-drivers.ts", "symbol": "driverEntries" }
+      ]
+    }
+  ],
+  "correct_uncertainty": [
+    {
+      "id": "structural-contract-only",
+      "requirement": "The Driver contract is enforced only by TypeScript structural typing. Nothing validates a driver object at runtime, which is why a driver missing an optional method degrades silently instead of failing. An answer that presents the contract as runtime-enforced is wrong."
+    },
+    {
+      "id": "static-hypothesis",
+      "requirement": "All of this is read from static source. No runtime trace exists, so claims about which driver actually serves a key in a deployed system are hypotheses."
+    }
+  ],
+  "unsupported_claim_traps": [
+    {
+      "id": "exact-mount-match",
+      "claim": "A key is matched to a mount by exact equality with the mountpoint.",
+      "why_false": "getMount uses key.startsWith(base) over a list sorted by descending length in mount(), so resolution is longest-prefix, not exact."
+    },
+    {
+      "id": "readonly-throws",
+      "claim": "Writing through a driver that does not implement setItem raises an error.",
+      "why_false": "storage.setItem returns early with a `// Readonly` comment. The write is silently discarded."
+    },
+    {
+      "id": "core-encrypts",
+      "claim": "The core encrypts, hashes, or otherwise protects values before handing them to a driver.",
+      "why_false": "The only transformation on write is stringify; on read it is destr. There is no cryptography anywhere in src/."
+    },
+    {
+      "id": "hand-edit-driver-index",
+      "claim": "Registering a new driver means adding an entry to src/_drivers.ts.",
+      "why_false": "That file is generated by scripts/gen-drivers.ts during the build and is explicitly marked do-not-edit."
+    },
+    {
+      "id": "root-unmountable",
+      "claim": "The root mount can be unmounted like any other.",
+      "why_false": "unmount returns immediately when the normalized base is empty, so the root driver cannot be removed."
+    }
+  ],
+  "tier1_obligations": {
+    "required_evidence_paths": [
+      "src/types.ts",
+      "src/storage.ts",
+      "src/drivers/utils/index.ts",
+      "src/utils.ts"
+    ],
+    "required_evidence_symbols": ["Driver", "createStorage", "getMount", "DriverFactory"],
+    "min_critical_fact_recall": 1.0,
+    "must_not_report_ready_when": [
+      "any required_evidence_path is absent from the evidence set",
+      "the relationship between createStorage and the Driver interface is neither present in the graph nor declared as unresolved"
+    ]
+  },
+  "tier2_scoring": {
+    "method": "blinded_rubric",
+    "critical_facts_required_for_pass": [
+      "driver-interface",
+      "mount-registry",
+      "longest-prefix-resolution",
+      "core-only-work"
+    ]
+  }
+}

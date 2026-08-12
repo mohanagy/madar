@@ -1,75 +1,84 @@
 {
   "contract_version": "1.0.0",
   "frozen_at": "2026-08-12",
-  "purpose": "The deterministic subset that a pull request can run. It measures whether the evidence needed to answer each frozen task was present in the context artifact, and whether readiness was refused when it should have been. It never scores answer quality and never runs an agent.",
+  "purpose": "The small deterministic subset that a pull request can run. It measures whether the evidence needed to answer each frozen task was present in the context artifact, and whether readiness was correctly refused on the negative-trust probes. It never scores answer quality and never runs an agent.",
   "properties": {
     "deterministic": true,
-    "requires_network": false,
+    "requires_network": true,
+    "requires_network_reason": "Targets are natural external repositories pinned at immutable commits. Preparing a cell means cloning at the pinned SHA and, for the two seeded targets, applying the recorded patch. A local mirror or a warm clone cache satisfies this without changing the result, because the SHA and the patch fix the content exactly.",
     "requires_model_provider": false,
     "requires_api_spend": false,
     "trials_per_cell": 1,
     "trials_rationale": "One trial is sufficient because no sampling occurs. If a Tier 1 cell is ever observed to be non-deterministic, that is itself a defect and the cell must be reported as invalid, not retried until it passes."
   },
+  "preparation": {
+    "steps": [
+      "For each distinct target, clone the pinned repository and check out the recorded ref.",
+      "For a git_patched target, apply the recorded patch with `git apply` and fail the cell if the patch does not apply cleanly.",
+      "Verify each target's cited_blobs against the prepared tree with `git rev-parse <ref>:<path>` before the cell runs."
+    ],
+    "on_preparation_failure": "The cell is invalid with reason `target_revision_mismatch` (or `incomplete_receipt` if verification could not run). It is never silently skipped and never counted as a pass."
+  },
   "cells": [
     {
-      "task_id": "arch-plugin-host-extension-seam",
-      "target_id": "qual-plugin-host",
+      "task_id": "arch-unstorage-driver-seam",
+      "target_id": "unstorage",
       "method": "evidence_obligation_recall"
     },
     {
-      "task_id": "flow-ledger-post-entry",
-      "target_id": "qual-ledger-service",
+      "task_id": "flow-hono-request-dispatch",
+      "target_id": "hono",
       "method": "evidence_obligation_recall"
     },
     {
-      "task_id": "impact-ledger-drop-outbox-publish",
-      "target_id": "qual-ledger-service",
+      "task_id": "impact-hono-drop-router-fallback",
+      "target_id": "hono",
       "method": "evidence_obligation_recall"
     },
     {
-      "task_id": "rootcause-ledger-duplicate-entries",
-      "target_id": "qual-ledger-service",
+      "task_id": "rootcause-hono-middleware-rerun",
+      "target_id": "hono-seeded-compose",
       "method": "evidence_obligation_recall"
     },
     {
-      "task_id": "plan-plugin-host-object-storage-plugin",
-      "target_id": "qual-plugin-host",
+      "task_id": "plan-unstorage-add-driver",
+      "target_id": "unstorage",
       "method": "evidence_obligation_recall"
     },
     {
-      "task_id": "review-ledger-http-authorization",
-      "target_id": "qual-ledger-service",
+      "task_id": "review-hono-error-handling",
+      "target_id": "hono-seeded-error-disclosure",
       "method": "evidence_obligation_recall"
     }
   ],
   "negative_trust_probes": [
     {
-      "id": "neg-ledger-absent-feature",
-      "target_id": "qual-ledger-service",
+      "id": "neg-unstorage-absent-encryption",
+      "target_id": "unstorage",
       "prompt": {
-        "text": "How does this service enforce per-currency spending limits before an entry is accepted?",
-        "sha256": "306a894807d16ea4167cf85826dad35504cf9594a93b1ef286b6682dc278efe2"
+        "text": "How does this library encrypt values at rest before writing them through a backend, and where are the keys managed?",
+        "sha256": "cab0b45defcdcaf0b88c5613384f84b237c1d365e0a1f3b3bbd16543fe6db37d"
       },
-      "ground_truth": "No spending-limit logic exists anywhere in the workspace. The only validation on the write path is bearer-token authentication, account membership on the post route, and type checks on amountMinor, currency, and idempotencyKey.",
+      "ground_truth": "There is no cryptography anywhere in src/. The only transformation applied on write is stringify, and on read destr. No key management exists.",
       "required_behaviour": [
         "The artifact must not report a ready state.",
-        "The artifact must declare that the requested behaviour was not found rather than presenting the nearest validation code as if it implemented limits.",
+        "The artifact must declare that the requested behaviour was not found rather than presenting stringify, destr, or a driver's own storage as encryption.",
         "No fabricated path or symbol may appear in the evidence set."
       ],
       "failure_is": "false_ready"
     },
     {
-      "id": "neg-plugin-host-absent-loader",
-      "target_id": "qual-plugin-host",
+      "id": "neg-hono-absent-matcher-persistence",
+      "target_id": "hono",
       "prompt": {
-        "text": "Where does the host load third-party plugins from disk at runtime, and how are they sandboxed?",
-        "sha256": "bd88479cb5d0b2d190d681cfe5f31123cbe4c72d09c064c153aee1e70c802209"
+        "text": "Where does this framework persist its compiled route matchers to disk so they survive a process restart, and how is that cache invalidated?",
+        "sha256": "6a173a57d204d86260380b3f9fedcb4dcc5c90962258e849b508fddaa3e07116"
       },
-      "ground_truth": "There is no dynamic loading and no sandboxing. builtInPlugins() returns a hardcoded array, and registerPlugin accepts an already-constructed object from the caller.",
+      "ground_truth": "Nothing in the routing path touches the filesystem. The only reuse is in-process: SmartRouter rebinds its match method to the winning router and drops its route buffer after the first match. There is no disk cache and therefore no invalidation.",
       "required_behaviour": [
         "The artifact must not report a ready state.",
-        "The artifact must state that no dynamic loading or sandboxing mechanism exists.",
-        "Presenting resolveHostConfig or PluginRegistry as a loader counts as a false-ready failure."
+        "The artifact must state that no on-disk matcher cache exists.",
+        "Presenting the in-memory memoization in SmartRouter as a persistent cache counts as a false-ready failure."
       ],
       "failure_is": "false_ready"
     }
@@ -82,12 +91,13 @@
       "Adding a qualification path, symbol, prompt, or repository name to production retrieval, ranking, or claim logic.",
       "Relaxing a truth file to match observed output.",
       "Lowering min_critical_fact_recall to make a cell pass.",
-      "Marking a failing cell not_measured. not_measured is for runs that could not be measured, never for runs that were measured and failed."
+      "Marking a failing cell not_measured. not_measured is for runs that could not be measured, never for runs that were measured and failed.",
+      "Replacing a natural target with a self-authored fixture that is easier to satisfy."
     ]
   },
   "calibration_status": {
     "state": "pre_registered_uncalibrated",
-    "explanation": "The thresholds in the truth files were written from the fixture source before Madar was ever run against these fixtures, and the author did not inspect Madar output before freezing. No cell in this subset has a recorded pass or fail yet, so it is unknown how many currently pass.",
+    "explanation": "The thresholds in the truth files were written from the pinned repository sources before Madar was ever run against them, and the author did not inspect Madar output before freezing. No cell in this subset has a recorded pass or fail yet, so it is unknown how many currently pass. Pre-registering the threshold before calibrating against observed output is the correct order, not a shortfall — calibrating first would make the threshold a description of current behaviour rather than a test of it.",
     "consequence": "The first execution of this subset (issue #661) is a measurement, not a regression check. A failing cell on first execution is a product finding to be filed as a linked issue, not a reason to edit this contract."
   }
 }
