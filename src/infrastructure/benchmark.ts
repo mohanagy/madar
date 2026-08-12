@@ -121,7 +121,7 @@ function finalizeBenchmarkResult(
     corpus_words: baseline.words,
     corpus_source: baseline.source,
     nodes: graph.numberOfNodes(),
-    edges: graph.numberOfEdges(),
+    edges: graph.numberOfFacts(),
     structure_signals: structureSignals,
     question_count: benchmarkQuestions.length,
     matched_question_count: perQuestion.length,

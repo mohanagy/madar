@@ -11,13 +11,10 @@ function edgeKey(left: string, right: string): string {
 }
 
 function edgeWeight(graph: KnowledgeGraph, source: string, target: string): number {
-  try {
-    const attributes = graph.edgeAttributes(source, target)
+  return graph.factsBetween(source, target).reduce((total, attributes) => {
     const weight = attributes.weight
-    return typeof weight === 'number' && Number.isFinite(weight) && weight > 0 ? weight : 1
-  } catch {
-    return 1
-  }
+    return total + (typeof weight === 'number' && Number.isFinite(weight) && weight > 0 ? weight : 1)
+  }, 0)
 }
 
 interface LouvainState {
@@ -48,7 +45,7 @@ function buildLouvainState(graph: KnowledgeGraph): LouvainState {
 
   // Build adjacency with weights
   let totalWeight = 0
-  for (const [source, target] of graph.edgeEntries()) {
+  for (const { source, target } of graph.endpointEntries()) {
     const weight = edgeWeight(graph, source, target)
     totalWeight += weight
 
@@ -185,7 +182,7 @@ function louvainPass(state: LouvainState): boolean {
 }
 
 function louvain(graph: KnowledgeGraph): Map<string, number> {
-  if (graph.numberOfNodes() === 0 || graph.numberOfEdges() === 0) {
+  if (graph.numberOfNodes() === 0 || graph.numberOfEndpointPairs() === 0) {
     const result = new Map<string, number>()
     const nodeIds = [...graph.nodeIds()].sort()
     for (let index = 0; index < nodeIds.length; index += 1) {
@@ -218,13 +215,13 @@ function subClusterLargeCommunity(graph: KnowledgeGraph, nodeIds: string[], dept
     subgraph.addNode(nodeId, graph.nodeAttributes(nodeId))
   }
 
-  for (const [source, target, attributes] of graph.edgeEntries()) {
+  for (const [source, target, attributes] of graph.factEntries()) {
     if (nodeSet.has(source) && nodeSet.has(target)) {
       subgraph.addEdge(source, target, attributes)
     }
   }
 
-  if (subgraph.numberOfEdges() === 0) {
+  if (subgraph.numberOfEndpointPairs() === 0) {
     return [nodeIds]
   }
 
@@ -263,7 +260,7 @@ export function cluster(graph: KnowledgeGraph): Communities {
     return {}
   }
 
-  if (graph.numberOfEdges() === 0) {
+  if (graph.numberOfEndpointPairs() === 0) {
     return Object.fromEntries([...graph.nodeIds()].sort().map((nodeId, index) => [index, [nodeId]]))
   }
 
@@ -305,7 +302,7 @@ export function cohesionScore(graph: KnowledgeGraph, communityNodes: string[]): 
 
   const communitySet = new Set(communityNodes)
   const actualEdges = new Set<string>()
-  for (const [source, target] of graph.edgeEntries()) {
+  for (const { source, target } of graph.endpointEntries()) {
     if (communitySet.has(source) && communitySet.has(target)) {
       actualEdges.add(edgeKey(source, target))
     }

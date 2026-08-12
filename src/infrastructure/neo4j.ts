@@ -189,7 +189,7 @@ export async function pushGraphToNeo4j(graph: KnowledgeGraph, options: Neo4jPush
         })
       }
 
-      for (const [source, target, attributes] of graph.edgeEntries()) {
+      for (const [source, target, attributes] of graph.factEntries()) {
         const relation = sanitizeNeo4jRelation(String(attributes.relation ?? 'RELATED_TO'))
         await tx.run(`MATCH (a {id: $src}), (b {id: $tgt}) MERGE (a)-[r:${relation}]->(b) SET r += $props`, {
           src: source,
@@ -216,6 +216,6 @@ export async function pushGraphToNeo4j(graph: KnowledgeGraph, options: Neo4jPush
     uri: config.uri,
     database: config.database,
     nodes: graph.numberOfNodes(),
-    edges: graph.numberOfEdges(),
+    edges: graph.numberOfFacts(),
   }
 }

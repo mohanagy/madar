@@ -216,7 +216,7 @@ function safeName(label: string): string {
 
 function dominantConfidence(graph: KnowledgeGraph, nodeId: string): string {
   const counts = new Map<string, number>()
-  for (const [source, target, attributes] of graph.edgeEntries()) {
+  for (const [source, target, attributes] of graph.factEntries()) {
     if (source !== nodeId && target !== nodeId) {
       continue
     }
@@ -248,7 +248,7 @@ function nodeConnections(graph: KnowledgeGraph, nodeId: string): NodeConnection[
   const directionForUndirected = 'undirected' as const
   const connections: NodeConnection[] = []
 
-  for (const [source, target, attributes] of graph.edgeEntries()) {
+  for (const [source, target, attributes] of graph.factEntries()) {
     if (source === nodeId) {
       connections.push({
         neighborId: target,
@@ -320,11 +320,11 @@ function buildHtmlPayload(graph: KnowledgeGraph, communities: Communities, commu
         question: String(attributes.question ?? ''),
         arxiv_id: String(attributes.arxiv_id ?? ''),
         file_type: String(attributes.file_type ?? ''),
-        degree: graph.degree(id),
+        degree: graph.uniqueNeighborDegree(id),
         confidence: dominantConfidence(graph, id),
       }
     }),
-    edges: graph.edgeEntries().map(([source, target, attributes]) => ({
+    edges: graph.factEntries().map(([source, target, attributes]) => ({
       from: source,
       to: target,
       label: String(attributes.relation ?? ''),
@@ -342,7 +342,7 @@ function buildHtmlPayload(graph: KnowledgeGraph, communities: Communities, commu
       .sort((left, right) => left.cid - right.cid),
     stats: {
       nodes: graph.numberOfNodes(),
-      edges: graph.numberOfEdges(),
+      edges: graph.numberOfFacts(),
       communities: Object.keys(communities).length,
     },
   }
@@ -427,7 +427,7 @@ export function toJson(
       ...attributes,
       community: nodeCommunity[id] ?? -1,
     })),
-    links: graph.edgeEntries().map(([source, target, attributes]) => ({
+    links: graph.factEntries().map(([source, target, attributes]) => ({
       source,
       target,
       ...exportableEdgeAttributes(attributes),
@@ -454,7 +454,7 @@ function subgraphFromNodes(graph: KnowledgeGraph, nodeIds: string[]): KnowledgeG
     subgraph.addNode(nodeId, graph.nodeAttributes(nodeId))
   }
 
-  for (const [source, target, attributes] of graph.edgeEntries()) {
+  for (const [source, target, attributes] of graph.factEntries()) {
     if (selectedNodeIds.has(source) && selectedNodeIds.has(target)) {
       subgraph.addEdge(source, target, attributes)
     }
@@ -1942,7 +1942,7 @@ export function toCypher(graph: KnowledgeGraph, outputPath: string): void {
   }
 
   lines.push('')
-  for (const [source, target, attributes] of graph.edgeEntries()) {
+  for (const [source, target, attributes] of graph.factEntries()) {
     const relation =
       String(attributes.relation ?? 'RELATES_TO')
         .toUpperCase()
@@ -1972,7 +1972,7 @@ export function toGraphml(graph: KnowledgeGraph, communities: Communities, outpu
   }
 
   let edgeIndex = 0
-  for (const [source, target, attributes] of graph.edgeEntries()) {
+  for (const [source, target, attributes] of graph.factEntries()) {
     lines.push(`    <edge id="e${edgeIndex}" source="${escapeXml(source)}" target="${escapeXml(target)}">`)
     lines.push(`      <data key="relation">${escapeXml(String(attributes.relation ?? ''))}</data>`)
     lines.push(`      <data key="confidence">${escapeXml(String(attributes.confidence ?? 'EXTRACTED'))}</data>`)
@@ -2000,7 +2000,7 @@ export function toSvg(graph: KnowledgeGraph, communities: Communities, outputPat
   const rows = Math.max(1, Math.ceil(totalCommunities / columns))
   const width = SVG_LAYOUT.padding * 2 + columns * SVG_LAYOUT.cellWidth + SVG_LAYOUT.legendWidth
   const height = SVG_LAYOUT.padding * 2 + rows * SVG_LAYOUT.cellHeight
-  const degreeByNode = new Map(graph.nodeIds().map((nodeId) => [nodeId, graph.degree(nodeId)]))
+  const degreeByNode = new Map(graph.nodeIds().map((nodeId) => [nodeId, graph.uniqueNeighborDegree(nodeId)]))
   const maxDegree = Math.max(...degreeByNode.values(), 1)
   const positions = new Map<string, { x: number; y: number }>()
 
@@ -2040,7 +2040,7 @@ export function toSvg(graph: KnowledgeGraph, communities: Communities, outputPat
     ].join('\n')
   })
 
-  const edgeElements = graph.edgeEntries().map(([source, target, attributes]) => {
+  const edgeElements = graph.factEntries().map(([source, target, attributes]) => {
     const sourcePosition = positions.get(source)
     const targetPosition = positions.get(target)
     if (!sourcePosition || !targetPosition) {
@@ -2266,7 +2266,7 @@ export function toObsidian(
     interCommunityEdges[communityId] = {}
   }
 
-  for (const [sourceNodeId, targetNodeId] of graph.edgeEntries()) {
+  for (const { source: sourceNodeId, target: targetNodeId } of graph.endpointEntries()) {
     const sourceCommunity = nodeCommunity[sourceNodeId]
     const targetCommunity = nodeCommunity[targetNodeId]
     if (sourceCommunity === undefined || targetCommunity === undefined || sourceCommunity === targetCommunity) {
@@ -2326,7 +2326,7 @@ export function toObsidian(
     }
 
     const bridgeNodes = [...nodeIds]
-      .map((nodeId) => ({ nodeId, degree: graph.degree(nodeId), reach: communityReach(nodeId) }))
+      .map((nodeId) => ({ nodeId, degree: graph.uniqueNeighborDegree(nodeId), reach: communityReach(nodeId) }))
       .filter((entry) => entry.reach > 0)
       .sort((left, right) => right.reach - left.reach || right.degree - left.degree)
       .slice(0, 5)

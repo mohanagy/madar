@@ -1,5 +1,22 @@
 export type GraphAttributes = Record<string, unknown>
 
+export type GraphRelationshipView = Readonly<GraphAttributes>
+
+export type GraphRelationshipEntry = readonly [
+  source: string,
+  target: string,
+  attributes: GraphRelationshipView,
+]
+
+export interface GraphEndpointEntry {
+  readonly source: string
+  readonly target: string
+}
+
+export interface FactsBetweenOptions {
+  readonly relations?: readonly string[]
+}
+
 export interface KnowledgeGraphOptions {
   directed?: boolean
 }
@@ -8,6 +25,39 @@ interface StoredEdge {
   source: string
   target: string
   attributes: GraphAttributes
+}
+
+function immutableGraphValue(value: unknown, clones = new WeakMap<object, unknown>()): unknown {
+  if (value === null || typeof value !== 'object') {
+    return value
+  }
+
+  const existing = clones.get(value)
+  if (existing !== undefined) {
+    return existing
+  }
+
+  if (Array.isArray(value)) {
+    const clone: unknown[] = []
+    clones.set(value, clone)
+    clone.push(...value.map((item) => immutableGraphValue(item, clones)))
+    return Object.freeze(clone)
+  }
+
+  if (value instanceof Date || value instanceof Map || value instanceof Set || ArrayBuffer.isView(value)) {
+    return structuredClone(value)
+  }
+
+  const clone: Record<string, unknown> = {}
+  clones.set(value, clone)
+  for (const [key, item] of Object.entries(value)) {
+    clone[key] = immutableGraphValue(item, clones)
+  }
+  return Object.freeze(clone)
+}
+
+function immutableGraphAttributes(attributes: GraphAttributes): GraphRelationshipView {
+  return immutableGraphValue(attributes) as GraphRelationshipView
 }
 
 export class KnowledgeGraph {
@@ -77,10 +127,22 @@ export class KnowledgeGraph {
     return this.nodeMap.size
   }
 
-  numberOfEdges(): number {
+  /** Returns the number of semantic relationships represented by the current store. */
+  numberOfFacts(): number {
     return this.edgeMap.size
   }
 
+  /** Returns the number of unique endpoint pairs represented by the current store. */
+  numberOfEndpointPairs(): number {
+    return this.edgeMap.size
+  }
+
+  /** @deprecated Use numberOfFacts() or numberOfEndpointPairs() to state the intended semantics. */
+  numberOfEdges(): number {
+    return this.numberOfFacts()
+  }
+
+  /** Returns whether at least one relationship exists between the endpoints. */
   hasEdge(source: string, target: string): boolean {
     return this.edgeMap.has(this.edgeKey(source, target))
   }
@@ -93,18 +155,39 @@ export class KnowledgeGraph {
     return [...this.nodeMap.entries()].map(([id, attributes]) => [id, { ...attributes }])
   }
 
+  /**
+   * Returns every semantic relationship in deterministic insertion order.
+   * Relationship views and the returned collection cannot mutate graph state.
+   */
+  factEntries(): readonly GraphRelationshipEntry[] {
+    return Object.freeze([...this.edgeMap.values()].map(({ source, target, attributes }) => Object.freeze([
+      source,
+      target,
+      immutableGraphAttributes(attributes),
+    ] as const)))
+  }
+
+  /** Returns unique endpoint pairs in deterministic insertion order. */
+  endpointEntries(): readonly GraphEndpointEntry[] {
+    return Object.freeze([...this.edgeMap.values()].map(({ source, target }) => Object.freeze({ source, target })))
+  }
+
+  /** @deprecated Use factEntries() for relationships or endpointEntries() for topology. */
   edgeEntries(): Array<[string, string, GraphAttributes]> {
     return [...this.edgeMap.values()].map(({ source, target, attributes }) => [source, target, { ...attributes }])
   }
 
+  /** Returns unique outgoing neighbors in stable insertion order. */
   neighbors(id: string): string[] {
     return [...(this.successorMap.get(id) ?? [])]
   }
 
+  /** Returns unique successors in stable insertion order. */
   successors(id: string): string[] {
     return this.neighbors(id)
   }
 
+  /** Returns unique predecessors in stable insertion order. */
   predecessors(id: string): string[] {
     return [...(this.predecessorMap.get(id) ?? [])]
   }
@@ -152,8 +235,14 @@ export class KnowledgeGraph {
     return neighbors
   }
 
-  degree(id: string): number {
+  /** Returns the number of unique incident neighbors for a node. */
+  uniqueNeighborDegree(id: string): number {
     return this.incidentNeighbors(id).length
+  }
+
+  /** @deprecated Use uniqueNeighborDegree() to state the intended topology semantics. */
+  degree(id: string): number {
+    return this.uniqueNeighborDegree(id)
   }
 
   nodeAttributes(id: string): GraphAttributes {
@@ -164,6 +253,38 @@ export class KnowledgeGraph {
     return { ...attributes }
   }
 
+  /**
+   * Returns every semantic relationship between two endpoints.
+   * The current endpoint-keyed store projects zero or one item; callers must accept many.
+   */
+  factsBetween(
+    source: string,
+    target: string,
+    options: FactsBetweenOptions = {},
+  ): readonly GraphRelationshipView[] {
+    const edge = this.edgeMap.get(this.edgeKey(source, target))
+    if (!edge) {
+      return Object.freeze([])
+    }
+
+    const relation = String(edge.attributes.relation ?? '')
+    if (options.relations && !new Set(options.relations).has(relation)) {
+      return Object.freeze([])
+    }
+
+    return Object.freeze([immutableGraphAttributes(edge.attributes)])
+  }
+
+  /** Returns unique relation values between two endpoints in stable fact order. */
+  relationsBetween(source: string, target: string): readonly string[] {
+    const relations = new Set<string>()
+    for (const fact of this.factsBetween(source, target)) {
+      relations.add(String(fact.relation ?? ''))
+    }
+    return Object.freeze([...relations])
+  }
+
+  /** @deprecated Use factsBetween() and process every returned relationship explicitly. */
   edgeAttributes(source: string, target: string): GraphAttributes {
     const edge = this.edgeMap.get(this.edgeKey(source, target))
     if (!edge) {

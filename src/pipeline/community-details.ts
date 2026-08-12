@@ -71,7 +71,7 @@ export function communityDetailsMicro(
     .map(([communityIdRaw, nodeIds]) => {
       const communityId = Number(communityIdRaw)
       const topNodes = [...nodeIds]
-        .sort((a, b) => graph.degree(b) - graph.degree(a))
+        .sort((a, b) => graph.uniqueNeighborDegree(b) - graph.uniqueNeighborDegree(a))
         .slice(0, 3)
         .map((id) => nodeLabel(graph, id))
 
@@ -102,7 +102,7 @@ export function communityDetailsMid(
   // Count internal edges
   let edgeCount = 0
   const seenEdges = new Set<string>()
-  for (const [source, target] of graph.edgeEntries()) {
+  for (const { source, target } of graph.endpointEntries()) {
     if (nodeSet.has(source) && nodeSet.has(target)) {
       const key = edgeKey(source, target)
       if (!seenEdges.has(key)) {
@@ -161,11 +161,11 @@ export function communityDetailsMid(
 
   // Key nodes by degree
   const keyNodes = [...nodeIds]
-    .sort((a, b) => graph.degree(b) - graph.degree(a))
+    .sort((a, b) => graph.uniqueNeighborDegree(b) - graph.uniqueNeighborDegree(a))
     .slice(0, 5)
     .map((nodeId) => ({
       label: nodeLabel(graph, nodeId),
-      degree: graph.degree(nodeId),
+      degree: graph.uniqueNeighborDegree(nodeId),
       node_kind: String(graph.nodeAttributes(nodeId).node_kind ?? ''),
     }))
 
@@ -212,7 +212,7 @@ export function communityDetailsMacro(
       label: String(attributes.label ?? nodeId),
       source_file: String(attributes.source_file ?? ''),
       node_kind: String(attributes.node_kind ?? ''),
-      degree: graph.degree(nodeId),
+      degree: graph.uniqueNeighborDegree(nodeId),
     }
   }).sort((a, b) => b.degree - a.degree)
 
@@ -220,14 +220,17 @@ export function communityDetailsMacro(
   const crossCommunityEdges: CommunityDetailsMacro['cross_community_edges'] = []
   const seenEdges = new Set<string>()
 
-  for (const [source, target, attributes] of graph.edgeEntries()) {
+  for (const { source, target } of graph.endpointEntries()) {
     const sourceIn = nodeSet.has(source)
     const targetIn = nodeSet.has(target)
 
     if (sourceIn && targetIn) {
       const key = edgeKey(source, target)
-      if (!seenEdges.has(key)) {
-        seenEdges.add(key)
+      if (seenEdges.has(key)) {
+        continue
+      }
+      seenEdges.add(key)
+      for (const attributes of graph.factsBetween(source, target)) {
         internalEdges.push({
           from: nodeLabel(graph, source),
           to: nodeLabel(graph, target),
@@ -236,20 +239,24 @@ export function communityDetailsMacro(
       }
     } else if (sourceIn && !targetIn) {
       const targetCommunity = nodeCommunityMap.get(target)
-      crossCommunityEdges.push({
-        from: nodeLabel(graph, source),
-        to: nodeLabel(graph, target),
-        relation: String(attributes.relation ?? 'related_to'),
-        target_community: targetCommunity !== undefined ? (communityLabels[targetCommunity] ?? `Community ${targetCommunity}`) : 'unknown',
-      })
+      for (const attributes of graph.factsBetween(source, target)) {
+        crossCommunityEdges.push({
+          from: nodeLabel(graph, source),
+          to: nodeLabel(graph, target),
+          relation: String(attributes.relation ?? 'related_to'),
+          target_community: targetCommunity !== undefined ? (communityLabels[targetCommunity] ?? `Community ${targetCommunity}`) : 'unknown',
+        })
+      }
     } else if (!sourceIn && targetIn) {
       const sourceCommunity = nodeCommunityMap.get(source)
-      crossCommunityEdges.push({
-        from: nodeLabel(graph, source),
-        to: nodeLabel(graph, target),
-        relation: String(attributes.relation ?? 'related_to'),
-        target_community: sourceCommunity !== undefined ? (communityLabels[sourceCommunity] ?? `Community ${sourceCommunity}`) : 'unknown',
-      })
+      for (const attributes of graph.factsBetween(source, target)) {
+        crossCommunityEdges.push({
+          from: nodeLabel(graph, source),
+          to: nodeLabel(graph, target),
+          relation: String(attributes.relation ?? 'related_to'),
+          target_community: sourceCommunity !== undefined ? (communityLabels[sourceCommunity] ?? `Community ${sourceCommunity}`) : 'unknown',
+        })
+      }
     }
   }
 

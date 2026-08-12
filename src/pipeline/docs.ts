@@ -123,7 +123,7 @@ function generateCommunityDoc(
 
   // Code snippets for top 3 nodes
   const topNodes = [...nodeIds]
-    .sort((a, b) => graph.degree(b) - graph.degree(a))
+    .sort((a, b) => graph.uniqueNeighborDegree(b) - graph.uniqueNeighborDegree(a))
     .slice(0, 3)
 
   const snippets: Array<{ label: string; file: string; snippet: string }> = []

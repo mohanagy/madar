@@ -156,7 +156,7 @@ function formatSuggestedQuestionLines(context: PromptContext): string {
 
 function graphSnapshotLines(context: PromptContext): string[] {
   return [
-    `Graph snapshot: ${formatCount(context.graph.numberOfNodes(), 'node')}, ${formatCount(context.graph.numberOfEdges(), 'edge')}, ${formatCount(Object.keys(context.communities).length, 'community')}.`,
+    `Graph snapshot: ${formatCount(context.graph.numberOfNodes(), 'node')}, ${formatCount(context.graph.numberOfFacts(), 'edge')}, ${formatCount(Object.keys(context.communities).length, 'community')}.`,
     `Top communities: ${formatTopCommunitySummary(context)}`,
     `God nodes: ${formatGodNodeSummary(context)}`,
   ]
@@ -246,7 +246,7 @@ function communityMemberLabels(context: PromptContext, communityId: number): str
   return [...(context.communities[communityId] ?? [])]
     .sort(
       (left, right) =>
-        context.graph.degree(right) - context.graph.degree(left) ||
+        context.graph.uniqueNeighborDegree(right) - context.graph.uniqueNeighborDegree(left) ||
         String(context.graph.nodeAttributes(left).label ?? left).localeCompare(String(context.graph.nodeAttributes(right).label ?? right)),
     )
     .map((nodeId) => String(context.graph.nodeAttributes(nodeId).label ?? nodeId))
@@ -486,7 +486,7 @@ function graphNodeLabels(graph: ReturnType<typeof loadGraph>): string[] {
 
 function graphRelations(graph: ReturnType<typeof loadGraph>): string[] {
   return graph
-    .edgeEntries()
+    .factEntries()
     .map(([, , attributes]) => String(attributes.relation ?? '').trim())
     .filter(Boolean)
 }

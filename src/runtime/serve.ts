@@ -304,7 +304,7 @@ export function scoreNodes(graph: KnowledgeGraph, terms: string[], options: Pick
       const source = String(attributes.source_file ?? '').toLowerCase()
       const score = normalizedTerms.reduce((total, term) => total + (label.includes(term) ? 1 : 0) + (source.includes(term) ? 0.5 : 0), 0)
       return {
-        degree: graph.degree(nodeId),
+        degree: graph.uniqueNeighborDegree(nodeId),
         nodeId,
         score,
       }
@@ -438,7 +438,7 @@ export function subgraphToText(graph: KnowledgeGraph, nodes: Set<string>, edges:
   const charBudget = tokenBudget * QUERY_CHARS_PER_TOKEN
   const lines: string[] = []
 
-  const sortedNodes = [...nodes].filter((nodeId) => graph.hasNode(nodeId)).sort((left, right) => graph.degree(right) - graph.degree(left) || left.localeCompare(right))
+  const sortedNodes = [...nodes].filter((nodeId) => graph.hasNode(nodeId)).sort((left, right) => graph.uniqueNeighborDegree(right) - graph.uniqueNeighborDegree(left) || left.localeCompare(right))
   for (const nodeId of sortedNodes) {
     const attributes = graph.nodeAttributes(nodeId)
     lines.push(
@@ -454,10 +454,11 @@ export function subgraphToText(graph: KnowledgeGraph, nodes: Set<string>, edges:
       continue
     }
 
-    const attributes = graph.edgeAttributes(source, target)
-    lines.push(
-      `EDGE ${sanitizeLabel(String(graph.nodeAttributes(source).label ?? source))} --${String(attributes.relation ?? '')} [${String(attributes.confidence ?? '')}]--> ${sanitizeLabel(String(graph.nodeAttributes(target).label ?? target))}`,
-    )
+    for (const attributes of graph.factsBetween(source, target)) {
+      lines.push(
+        `EDGE ${sanitizeLabel(String(graph.nodeAttributes(source).label ?? source))} --${String(attributes.relation ?? '')} [${String(attributes.confidence ?? '')}]--> ${sanitizeLabel(String(graph.nodeAttributes(target).label ?? target))}`,
+      )
+    }
   }
 
   const output = lines.join('\n')
@@ -538,7 +539,7 @@ export function getNode(graph: KnowledgeGraph, label: string): string {
     `  Source: ${String(attributes.source_file ?? '')} ${String(attributes.source_location ?? '')}`.trimEnd(),
     `  Type: ${String(attributes.file_type ?? '')}`,
     `  Community: ${String(attributes.community ?? '')}`,
-    `  Degree: ${graph.degree(match)}`,
+    `  Degree: ${graph.uniqueNeighborDegree(match)}`,
   ]
 
   const bridge = workspaceBridgeMap(graph).get(match)
@@ -558,12 +559,13 @@ export function getNeighbors(graph: KnowledgeGraph, label: string, relationFilte
   const normalizedFilter = relationFilter.toLowerCase()
   const lines = [`Neighbors of ${String(graph.nodeAttributes(match).label ?? match)}:`]
   for (const neighbor of graph.neighbors(match)) {
-    const edgeAttributes = graph.edgeAttributes(match, neighbor)
-    const relation = String(edgeAttributes.relation ?? '')
-    if (normalizedFilter && !relation.toLowerCase().includes(normalizedFilter)) {
-      continue
+    for (const edgeAttributes of graph.factsBetween(match, neighbor)) {
+      const relation = String(edgeAttributes.relation ?? '')
+      if (normalizedFilter && !relation.toLowerCase().includes(normalizedFilter)) {
+        continue
+      }
+      lines.push(`  --> ${String(graph.nodeAttributes(neighbor).label ?? neighbor)} [${relation}] [${String(edgeAttributes.confidence ?? '')}]`)
     }
-    lines.push(`  --> ${String(graph.nodeAttributes(neighbor).label ?? neighbor)} [${relation}] [${String(edgeAttributes.confidence ?? '')}]`)
   }
   return lines.join('\n')
 }
@@ -583,11 +585,11 @@ export function getCommunity(graph: KnowledgeGraph, communities: Communities, co
 }
 
 export function graphStats(graph: KnowledgeGraph, communities: Communities = communitiesFromGraph(graph)): string {
-  const confidences = graph.edgeEntries().map(([, , attributes]) => String(attributes.confidence ?? 'EXTRACTED'))
+  const confidences = graph.factEntries().map(([, , attributes]) => String(attributes.confidence ?? 'EXTRACTED'))
   const total = confidences.length || 1
   return [
     `Nodes: ${graph.numberOfNodes()}`,
-    `Edges: ${graph.numberOfEdges()}`,
+    `Edges: ${graph.numberOfFacts()}`,
     `Communities: ${Object.keys(communities).length}`,
     `EXTRACTED: ${Math.round((confidences.filter((confidence) => confidence === 'EXTRACTED').length / total) * 100)}%`,
     `INFERRED: ${Math.round((confidences.filter((confidence) => confidence === 'INFERRED').length / total) * 100)}%`,
@@ -731,10 +733,12 @@ export function shortestPath(graph: KnowledgeGraph, source: string, target: stri
     if (!sourceNodeId || !targetNodeId) {
       continue
     }
-    const edgeAttributes = graph.edgeAttributes(sourceNodeId, targetNodeId)
-    const confidence = String(edgeAttributes.confidence ?? '')
+    const relationshipLabels = graph.factsBetween(sourceNodeId, targetNodeId).map((edgeAttributes) => {
+      const confidence = String(edgeAttributes.confidence ?? '')
+      return `${String(edgeAttributes.relation ?? '')}${confidence ? ` [${confidence}]` : ''}`
+    })
     segments.push(
-      `--${String(edgeAttributes.relation ?? '')}${confidence ? ` [${confidence}]` : ''}--> ${String(graph.nodeAttributes(targetNodeId).label ?? targetNodeId)}`,
+      `--${relationshipLabels.join(' | ')}--> ${String(graph.nodeAttributes(targetNodeId).label ?? targetNodeId)}`,
     )
   }
 

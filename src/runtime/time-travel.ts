@@ -288,7 +288,7 @@ export function compareTimeTravelGraphs(
     summary: {
       headline: `Graph changed from ${fromRef} to ${toRef}: ${diff.summary}`,
       whyItMatters: [
-        `Before: ${beforeGraph.numberOfNodes()} nodes / ${beforeGraph.numberOfEdges()} edges; after: ${afterGraph.numberOfNodes()} nodes / ${afterGraph.numberOfEdges()} edges.`,
+        `Before: ${beforeGraph.numberOfNodes()} nodes / ${beforeGraph.numberOfFacts()} edges; after: ${afterGraph.numberOfNodes()} nodes / ${afterGraph.numberOfFacts()} edges.`,
         changedCommunities.length > 0
           ? `Changed communities: ${changedCommunities.map((community) => communityName(communityLabels, community.community)).join(', ')}.`
           : 'No community-level drift detected.',

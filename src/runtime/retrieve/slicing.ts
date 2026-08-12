@@ -365,6 +365,23 @@ function runtimeFlowRelationPriority(
   return value
 }
 
+function graphRelationsBetween(graph: KnowledgeGraph, sourceId: string, targetId: string): readonly string[] {
+  return [...new Set(graph.relationsBetween(sourceId, targetId).map((relation) => relation || 'related_to'))]
+}
+
+function strongestRuntimeFlowPriority(
+  graph: KnowledgeGraph,
+  sourceId: string,
+  targetId: string,
+  node: SliceScoredNode,
+  runtimeFlowOnly: boolean,
+): number {
+  return graphRelationsBetween(graph, sourceId, targetId).reduce(
+    (strongest, relation) => Math.max(strongest, runtimeFlowRelationPriority(relation, node, runtimeFlowOnly)),
+    0,
+  )
+}
+
 function displayRenderingAnchorValue(node: SliceScoredNode): number {
   const lower = `${node.label} ${node.nodeKind ?? ''} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
   let value = 0
@@ -407,7 +424,7 @@ function shouldSuppressNode(
     return true
   }
 
-  return graph.degree(node.id) >= 40
+  return graph.uniqueNeighborDegree(node.id) >= 40
 }
 
 function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[], options: SliceOptions): ContextPackSliceAnchor[] {
@@ -590,27 +607,25 @@ function traverseDirection(
     const orderedNeighbors = [...neighbors].sort((leftId, rightId) => {
       const leftSourceId = direction === 'forward' ? current.id : leftId
       const leftTargetId = direction === 'forward' ? leftId : current.id
-      const leftRelation = String(graph.edgeAttributes(leftSourceId, leftTargetId).relation ?? 'related_to')
       const leftNode = scoredById.get(leftId) ?? sliceNodeFromGraph(graph, leftId)
       scoredById.set(leftId, leftNode)
 
       const rightSourceId = direction === 'forward' ? current.id : rightId
       const rightTargetId = direction === 'forward' ? rightId : current.id
-      const rightRelation = String(graph.edgeAttributes(rightSourceId, rightTargetId).relation ?? 'related_to')
       const rightNode = scoredById.get(rightId) ?? sliceNodeFromGraph(graph, rightId)
       scoredById.set(rightId, rightNode)
 
-      return runtimeFlowRelationPriority(rightRelation, rightNode, runtimeFlowOnly)
-        - runtimeFlowRelationPriority(leftRelation, leftNode, runtimeFlowOnly)
+      return strongestRuntimeFlowPriority(graph, rightSourceId, rightTargetId, rightNode, runtimeFlowOnly)
+        - strongestRuntimeFlowPriority(graph, leftSourceId, leftTargetId, leftNode, runtimeFlowOnly)
         || rightNode.score - leftNode.score
-        || graph.degree(rightId) - graph.degree(leftId)
+        || graph.uniqueNeighborDegree(rightId) - graph.uniqueNeighborDegree(leftId)
     })
 
     for (const neighborId of orderedNeighbors) {
       const sourceId = direction === 'forward' ? current.id : neighborId
       const targetId = direction === 'forward' ? neighborId : current.id
-      const relation = String(graph.edgeAttributes(sourceId, targetId).relation ?? 'related_to')
-      if (!relations.has(relation)) {
+      const qualifyingRelations = graphRelationsBetween(graph, sourceId, targetId).filter((relation) => relations.has(relation))
+      if (qualifyingRelations.length === 0) {
         continue
       }
 
@@ -639,14 +654,16 @@ function traverseDirection(
         orderedIds.push(neighborId)
       }
 
-      recordPath(selectedPaths, pathSeen, {
-        from_id: sourceId,
-        from: direction === 'forward' ? currentNode?.label ?? sourceId : neighbor.label,
-        to_id: targetId,
-        to: direction === 'forward' ? neighbor.label : currentNode?.label ?? targetId,
-        relation,
-        direction,
-      })
+      for (const relation of qualifyingRelations) {
+        recordPath(selectedPaths, pathSeen, {
+          from_id: sourceId,
+          from: direction === 'forward' ? currentNode?.label ?? sourceId : neighbor.label,
+          to_id: targetId,
+          to: direction === 'forward' ? neighbor.label : currentNode?.label ?? targetId,
+          relation,
+          direction,
+        })
+      }
 
       if (!seen.has(neighborId)) {
         seen.add(neighborId)
@@ -669,7 +686,7 @@ function highValueRuntimeExpansionNode(node: SliceScoredNode): boolean {
 
 function sharedHubLikeNode(graph: KnowledgeGraph, node: SliceScoredNode): boolean {
   const lower = `${node.label} ${node.frameworkRole ?? ''}`.toLowerCase()
-  return graph.degree(node.id) >= 12
+  return graph.uniqueNeighborDegree(node.id) >= 12
     || /requireideasuserid|addjob|callllm|resolve|logger|\.info\(\)|\.error\(\)|\.warn\(\)|planenforcement/.test(lower)
 }
 
@@ -718,8 +735,8 @@ function addHelperNeighbors(
     }
 
     for (const neighborId of graph.successors(currentId)) {
-      const relation = String(graph.edgeAttributes(currentId, neighborId).relation ?? 'related_to')
-      if (!helperRelations.has(relation)) {
+      const qualifyingRelations = graphRelationsBetween(graph, currentId, neighborId).filter((relation) => helperRelations.has(relation))
+      if (qualifyingRelations.length === 0) {
         continue
       }
 
@@ -734,14 +751,16 @@ function addHelperNeighbors(
         orderedIds.push(neighborId)
       }
 
-      recordPath(selectedPaths, pathSeen, {
-        from_id: currentId,
-        from: currentNode.label,
-        to_id: neighborId,
-        to: neighbor.label,
-        relation,
-        direction: 'forward',
-      })
+      for (const relation of qualifyingRelations) {
+        recordPath(selectedPaths, pathSeen, {
+          from_id: currentId,
+          from: currentNode.label,
+          to_id: neighborId,
+          to: neighbor.label,
+          relation,
+          direction: 'forward',
+        })
+      }
     }
   }
 }
@@ -763,8 +782,8 @@ function addAnchorPredecessors(
     scoredById.set(anchorId, anchorNode)
 
     for (const predecessorId of graph.predecessors(anchorId)) {
-      const relation = String(graph.edgeAttributes(predecessorId, anchorId).relation ?? 'related_to')
-      if (!relations.has(relation)) {
+      const qualifyingRelations = graphRelationsBetween(graph, predecessorId, anchorId).filter((relation) => relations.has(relation))
+      if (qualifyingRelations.length === 0) {
         continue
       }
 
@@ -787,14 +806,16 @@ function addAnchorPredecessors(
         orderedIds.push(predecessorId)
       }
 
-      recordPath(selectedPaths, pathSeen, {
-        from_id: predecessorId,
-        from: predecessor.label,
-        to_id: anchorId,
-        to: anchorNode.label,
-        relation,
-        direction: 'backward',
-      })
+      for (const relation of qualifyingRelations) {
+        recordPath(selectedPaths, pathSeen, {
+          from_id: predecessorId,
+          from: predecessor.label,
+          to_id: anchorId,
+          to: anchorNode.label,
+          relation,
+          direction: 'backward',
+        })
+      }
     }
   }
 }

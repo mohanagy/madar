@@ -163,7 +163,7 @@ function representativeNodeLabel(graph: KnowledgeGraph, nodeIds: string[]): stri
   const labels = nodeIds
     .map((nodeId) => ({
       label: humanize(String(graph.nodeAttributes(nodeId).label ?? nodeId)),
-      degree: graph.degree(nodeId),
+      degree: graph.uniqueNeighborDegree(nodeId),
     }))
     .filter((entry) => entry.label.length > 0)
     .sort((left, right) => right.degree - left.degree || left.label.localeCompare(right.label))

@@ -747,7 +747,7 @@ function baselinePromptSections(graph: KnowledgeGraph, corpusBody: string, mode:
       title: 'Project graph summary',
       body: [
         `- Nodes: ${graph.numberOfNodes()}`,
-        `- Edges: ${graph.numberOfEdges()}`,
+        `- Edges: ${graph.numberOfFacts()}`,
       ].join('\n'),
     },
     {
@@ -2245,7 +2245,7 @@ function trimCompareRetrieval(graph: KnowledgeGraph, retrieval: RetrieveResult, 
     const rightId = compareMatchedNodeId(right)
     return (
       relevanceBandPriority(right.relevance_band) - relevanceBandPriority(left.relevance_band) ||
-      (rightId ? graph.degree(rightId) : 0) - (leftId ? graph.degree(leftId) : 0) ||
+      (rightId ? graph.uniqueNeighborDegree(rightId) : 0) - (leftId ? graph.uniqueNeighborDegree(leftId) : 0) ||
       right.match_score - left.match_score
     )
   })
@@ -2321,7 +2321,7 @@ function createCompareRetrievalGraph(
     }
   }
 
-  for (const [source, target, attributes] of graph.edgeEntries()) {
+  for (const [source, target, attributes] of graph.factEntries()) {
     retrievalGraph.addEdge(source, target, attributes)
   }
 

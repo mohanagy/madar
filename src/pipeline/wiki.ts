@@ -30,7 +30,7 @@ function nodeConnections(graph: KnowledgeGraph, nodeId: string): NodeConnection[
   const directionForUndirected = 'undirected' as const
   const connections: NodeConnection[] = []
 
-  for (const [source, target, attributes] of graph.edgeEntries()) {
+  for (const [source, target, attributes] of graph.factEntries()) {
     if (source === nodeId) {
       connections.push({
         neighborId: target,
@@ -81,7 +81,7 @@ export function crossCommunityLinks(graph: KnowledgeGraph, nodes: string[], ownC
 }
 
 export function communityArticle(graph: KnowledgeGraph, communityId: number, nodes: string[], label: string, labels: Record<number, string>, cohesion?: number): string {
-  const topNodes = [...nodes].sort((left, right) => graph.degree(right) - graph.degree(left) || left.localeCompare(right)).slice(0, 25)
+  const topNodes = [...nodes].sort((left, right) => graph.uniqueNeighborDegree(right) - graph.uniqueNeighborDegree(left) || left.localeCompare(right)).slice(0, 25)
   const crossLinks = crossCommunityLinks(graph, nodes, communityId, labels)
   const confidenceCounts = new Map<string, number>()
 
@@ -108,7 +108,7 @@ export function communityArticle(graph: KnowledgeGraph, communityId: number, nod
     const attributes = graph.nodeAttributes(nodeId)
     const nodeLabel = String(attributes.label ?? nodeId)
     const sourceFile = String(attributes.source_file ?? '')
-    lines.push(`- **${nodeLabel}** (${graph.degree(nodeId)} connections)${sourceFile ? ` — \`${sourceFile}\`` : ''}`)
+    lines.push(`- **${nodeLabel}** (${graph.uniqueNeighborDegree(nodeId)} connections)${sourceFile ? ` — \`${sourceFile}\`` : ''}`)
   }
 
   const remaining = nodes.length - topNodes.length
@@ -154,7 +154,7 @@ export function godNodeArticle(graph: KnowledgeGraph, nodeId: string, labels: Re
   const byRelation = new Map<string, string[]>()
 
   for (const connection of [...nodeConnections(graph, nodeId)].sort((left, right) => {
-    return graph.degree(right.neighborId) - graph.degree(left.neighborId) || left.neighborId.localeCompare(right.neighborId)
+    return graph.uniqueNeighborDegree(right.neighborId) - graph.uniqueNeighborDegree(left.neighborId) || left.neighborId.localeCompare(right.neighborId)
   })) {
     const neighborAttributes = graph.nodeAttributes(connection.neighborId)
     const relation = String(connection.attributes.relation ?? 'related')
@@ -163,7 +163,7 @@ export function godNodeArticle(graph: KnowledgeGraph, nodeId: string, labels: Re
     byRelation.set(relation, [...(byRelation.get(relation) ?? []), target])
   }
 
-  const lines = [`# ${nodeLabel}`, '', `> God node · ${graph.degree(nodeId)} connections · \`${sourceFile}\``, '']
+  const lines = [`# ${nodeLabel}`, '', `> God node · ${graph.uniqueNeighborDegree(nodeId)} connections · \`${sourceFile}\``, '']
 
   if (communityName) {
     lines.push(`**Community:** [[${communityName}]]`, '')
@@ -245,6 +245,6 @@ export function toWiki(graph: KnowledgeGraph, communities: Record<number, string
     count += 1
   }
 
-  writeFileSync(join(outputDir, 'index.md'), indexMd(communities, labels, godNodes, graph.numberOfNodes(), graph.numberOfEdges()), 'utf8')
+  writeFileSync(join(outputDir, 'index.md'), indexMd(communities, labels, godNodes, graph.numberOfNodes(), graph.numberOfFacts()), 'utf8')
   return count
 }

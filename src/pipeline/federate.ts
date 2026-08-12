@@ -155,7 +155,7 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
     }
 
     // Add all edges with repo prefix
-    for (const [sourceNode, target, attributes] of source.graph.edgeEntries()) {
+    for (const [sourceNode, target, attributes] of source.graph.factEntries()) {
       const prefixedSource = prefixNodeId(repoName, sourceNode)
       const prefixedTarget = prefixNodeId(repoName, target)
       federatedGraph.addEdge(prefixedSource, prefixedTarget, {
@@ -215,7 +215,7 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
     reportPath,
     repos: sources.map((s) => s.repoName),
     totalNodes: federatedGraph.numberOfNodes(),
-    totalEdges: federatedGraph.numberOfEdges(),
+    totalEdges: federatedGraph.numberOfFacts(),
     crossRepoEdges,
     communityCount: Object.keys(communities).length,
   }

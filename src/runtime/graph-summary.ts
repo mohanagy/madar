@@ -217,7 +217,7 @@ function buildNodeSummaries(graph: KnowledgeGraph, communityLabels: Record<numbe
       id: nodeId,
       label: nodeLabel(graph, nodeId, communityLabels),
       sourceFile: normalizeString(attributes.source_file),
-      degree: graph.degree(nodeId),
+      degree: graph.uniqueNeighborDegree(nodeId),
       predecessors: graph.predecessors(nodeId),
       successors: graph.successors(nodeId),
       explicitEntrySignal: isExplicitEntrypoint(attributes),
@@ -475,10 +475,13 @@ function bestRuntimeTraversals(
       .sort(compareNodeIdentity)
 
     for (const neighbor of neighbors) {
-      const edge = graph.edgeAttributes(nodeId, neighbor.id)
+      const edgeRelationScore = graph.factsBetween(nodeId, neighbor.id).reduce(
+        (strongest, fact) => Math.max(strongest, relationQualityScore(fact.relation)),
+        0,
+      )
       const candidate: RuntimeTraversal = {
         hops: traversal.hops + 1,
-        relationScore: traversal.relationScore + relationQualityScore(edge.relation),
+        relationScore: traversal.relationScore + edgeRelationScore,
         minDomainScore: Math.min(traversal.minDomainScore, sourceDomainScore(neighbor.sourceDomain)),
       }
       const existing = traversals.get(neighbor.id)
@@ -591,7 +594,7 @@ export function buildGraphSummary(graph: KnowledgeGraph): GraphSummary {
   const runtimePathsSummary = runtimePaths(graph, nodes)
   const summary: GraphSummary = {
     node_count: graph.numberOfNodes(),
-    edge_count: graph.numberOfEdges(),
+    edge_count: graph.numberOfFacts(),
     file_count: fileCount,
     community_count: Object.keys(communities).length,
     source_domains: sourceDomains,

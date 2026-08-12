@@ -1354,8 +1354,9 @@ function diversifyAnchors(
         .flatMap((nodeId) => {
           const anchor = rankedById.get(nodeId)
           if (!anchor) return []
-          const relation = String(graph.edgeAttributes(nodeId, boundaryOwner.id).relation ?? '')
-          return /^(?:calls|dispatches|emits|enqueues|invokes|publishes|triggers)$/.test(relation)
+          const isBoundaryCall = graph.relationsBetween(nodeId, boundaryOwner.id)
+            .some((relation) => /^(?:calls|dispatches|emits|enqueues|invokes|publishes|triggers)$/.test(relation))
+          return isBoundaryCall
             ? [anchor]
             : []
         })

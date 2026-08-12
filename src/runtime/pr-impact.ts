@@ -667,6 +667,13 @@ function relationWeight(relation: string): number {
   return 0.75
 }
 
+function strongestRelationWeight(graph: KnowledgeGraph, source: string, target: string): number {
+  return graph.relationsBetween(source, target).reduce(
+    (strongest, relation) => Math.max(strongest, relationWeight(relation)),
+    relationWeight('related_to'),
+  )
+}
+
 function portablePath(path: string): string {
   return path.replaceAll('\\', '/')
 }
@@ -839,8 +846,8 @@ function buildReviewBundle(
   const firstHopIds = new Set<string>()
   for (const seedNode of seedNodes) {
     for (const predecessor of graph.predecessors(seedNode.node_id)) {
-      const relation = String(graph.edgeAttributes(predecessor, seedNode.node_id).relation ?? 'related_to')
-      candidateScores.set(predecessor, Math.max(candidateScores.get(predecessor) ?? 0, 6 + relationWeight(relation)))
+      const weight = strongestRelationWeight(graph, predecessor, seedNode.node_id)
+      candidateScores.set(predecessor, Math.max(candidateScores.get(predecessor) ?? 0, 6 + weight))
       if (!candidateKinds.has(predecessor)) {
         candidateKinds.set(predecessor, 'first_hop')
       }
@@ -848,8 +855,8 @@ function buildReviewBundle(
     }
 
     for (const successor of graph.successors(seedNode.node_id)) {
-      const relation = String(graph.edgeAttributes(seedNode.node_id, successor).relation ?? 'related_to')
-      candidateScores.set(successor, Math.max(candidateScores.get(successor) ?? 0, 5 + relationWeight(relation)))
+      const weight = strongestRelationWeight(graph, seedNode.node_id, successor)
+      candidateScores.set(successor, Math.max(candidateScores.get(successor) ?? 0, 5 + weight))
       if (!candidateKinds.has(successor)) {
         candidateKinds.set(successor, 'first_hop')
       }
@@ -861,7 +868,7 @@ function buildReviewBundle(
     .filter((nodeId) => !seedIds.has(nodeId))
     .sort((left, right) =>
       (candidateScores.get(right) ?? 0) - (candidateScores.get(left) ?? 0)
-      || graph.degree(right) - graph.degree(left)
+      || graph.uniqueNeighborDegree(right) - graph.uniqueNeighborDegree(left)
       || left.localeCompare(right),
     )
     .slice(0, MAX_SECOND_HOP_CANDIDATES)
@@ -884,7 +891,7 @@ function buildReviewBundle(
     .sort((left, right) =>
       right[1].parentScore - left[1].parentScore
       || right[1].paths - left[1].paths
-      || graph.degree(right[0]) - graph.degree(left[0])
+      || graph.uniqueNeighborDegree(right[0]) - graph.uniqueNeighborDegree(left[0])
       || left[0].localeCompare(right[0]),
     )
     .slice(0, MAX_SECOND_HOP_CANDIDATES)) {
@@ -900,7 +907,7 @@ function buildReviewBundle(
     const kindScore = (kind: typeof leftKind): number => kind === 'seed' ? 2 : kind === 'first_hop' ? 1 : 0
     return kindScore(rightKind) - kindScore(leftKind)
       || (candidateScores.get(right) ?? 0) - (candidateScores.get(left) ?? 0)
-      || graph.degree(right) - graph.degree(left)
+      || graph.uniqueNeighborDegree(right) - graph.uniqueNeighborDegree(left)
       || left.localeCompare(right)
   })
 
