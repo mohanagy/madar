@@ -22,14 +22,11 @@ function publishedVersionList(value) {
 }
 
 export function assertPublishEventAllowed(eventName, ref) {
-  if (eventName === 'workflow_dispatch') {
-    return
-  }
   if (eventName === 'push' && ref.startsWith('refs/tags/')) {
     return
   }
 
-  fail(`Publishing is not allowed for ${eventName} on ${ref}; use an approved prerelease tag or workflow_dispatch`)
+  fail(`Publishing is not allowed for ${eventName} on ${ref}; only pushing an approved prerelease tag triggers this pipeline`)
 }
 
 export function assertVersionIsUnpublished(version, publishedVersions) {

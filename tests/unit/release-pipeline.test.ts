@@ -11,6 +11,15 @@ interface WorkflowStep {
   run?: string
   uses?: string
   with?: Record<string, unknown>
+  env?: Record<string, unknown>
+}
+
+interface WorkflowJob {
+  environment?: string
+  if?: string
+  needs?: string | string[]
+  permissions?: Record<string, string>
+  steps?: WorkflowStep[]
 }
 
 interface Workflow {
@@ -23,15 +32,12 @@ interface Workflow {
     workflow_dispatch?: unknown
   }
   permissions?: Record<string, string>
-  jobs?: Record<string, {
-    environment?: string
-    if?: string
-    steps?: WorkflowStep[]
-  }>
+  jobs?: Record<string, WorkflowJob>
 }
 
 const classifierPath = resolve('.github/scripts/classify-release-tag.mjs')
 const nextReleaseStatePath = resolve('.github/scripts/verify-next-release-state.mjs')
+const publishNextWorkflowPath = '.github/workflows/publish-next.yml'
 
 function runNode(script: string, args: string[], cwd = process.cwd()) {
   return spawnSync(process.execPath, [script, ...args], {
@@ -45,12 +51,24 @@ function parseWorkflow(path: string): Workflow {
   return parse(readFileSync(resolve(path), 'utf8')) as Workflow
 }
 
+function job(workflow: Workflow, jobName: string): WorkflowJob {
+  const target = workflow.jobs?.[jobName]
+  if (!target) {
+    throw new Error(`Missing job: ${jobName}`)
+  }
+  return target
+}
+
 function workflowStep(workflow: Workflow, jobName: string, stepName: string): WorkflowStep {
-  const step = workflow.jobs?.[jobName]?.steps?.find((candidate) => candidate.name === stepName)
+  const step = job(workflow, jobName).steps?.find((candidate) => candidate.name === stepName)
   if (!step) {
     throw new Error(`Missing ${jobName} workflow step: ${stepName}`)
   }
   return step
+}
+
+function allSteps(workflow: Workflow, jobName: string): WorkflowStep[] {
+  return job(workflow, jobName).steps ?? []
 }
 
 function withReleaseFixture(
@@ -158,6 +176,28 @@ describe('next release state guards', () => {
     expect(result.stderr).toContain('Publishing is not allowed')
   })
 
+  it('rejects workflow_dispatch now that manual dispatch is removed from the pipeline', () => {
+    const result = runNode(nextReleaseStatePath, [
+      '--assert-event',
+      '--event', 'workflow_dispatch',
+      '--ref', 'refs/heads/next',
+    ])
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('Publishing is not allowed')
+  })
+
+  it('allows a prerelease tag push', () => {
+    const result = runNode(nextReleaseStatePath, [
+      '--assert-event',
+      '--event', 'push',
+      '--ref', 'refs/tags/v1.2.3-beta.1',
+    ])
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('event=allowed')
+  })
+
   it('rejects a tagged commit outside next', () => {
     const fixtureDir = mkdtempSync(join(tmpdir(), 'madar-next-ancestor-'))
 
@@ -251,57 +291,190 @@ describe('release workflow policy', () => {
   it('parses every release workflow as YAML', () => {
     expect(() => parseWorkflow('.github/workflows/ci.yml')).not.toThrow()
     expect(() => parseWorkflow('.github/workflows/release.yml')).not.toThrow()
-    expect(() => parseWorkflow('.github/workflows/publish-next.yml')).not.toThrow()
+    expect(() => parseWorkflow(publishNextWorkflowPath)).not.toThrow()
   })
 
-  it('allows prerelease publication only from prerelease tags or manual dispatch', () => {
-    const workflow = parseWorkflow('.github/workflows/publish-next.yml')
+  it('has no workflow_dispatch trigger and no dispatch inputs', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
 
+    expect(workflow.on?.workflow_dispatch).toBeUndefined()
+    expect(workflow.on?.pull_request).toBeUndefined()
     expect(workflow.on?.push?.branches).toBeUndefined()
+  })
+
+  it('triggers only on approved prerelease tag pushes', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+
     expect(workflow.on?.push?.tags).toEqual([
       'v*-beta.*',
       'v*-rc.*',
       'v*-next.*',
     ])
-    expect(workflow.on?.pull_request).toBeUndefined()
-    expect(workflow.on?.workflow_dispatch).toBeDefined()
-    expect(workflow.jobs?.publish?.if).toContain("github.event_name == 'workflow_dispatch'")
-    expect(workflow.jobs?.publish?.if).toContain("startsWith(github.ref, 'refs/tags/')")
   })
 
-  it('uses protected OIDC publication without a privileged dependency cache', () => {
-    const workflow = parseWorkflow('.github/workflows/publish-next.yml')
-    const checkout = workflowStep(workflow, 'publish', 'Check out exact prerelease commit')
+  it('derives the release tag solely from github.ref_name', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const validateJob = job(workflow, 'validate')
+
+    expect(validateJob.if).toBe("startsWith(github.ref, 'refs/tags/')")
+    expect(String((validateJob as { env?: Record<string, unknown> }).env?.RELEASE_TAG))
+      .toBe('${{ github.ref_name }}')
+  })
+
+  it('defines exactly the three jobs validate, publish, post_publish with the right needs', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+
+    expect(Object.keys(workflow.jobs ?? {}).sort()).toEqual(['post_publish', 'publish', 'validate'])
+    expect(job(workflow, 'validate').needs).toBeUndefined()
+    expect(job(workflow, 'publish').needs).toBe('validate')
+    expect(job(workflow, 'post_publish').needs).toEqual(['validate', 'publish'])
+  })
+
+  it('grants the npm-next protected environment only to the publish job', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+
+    expect(job(workflow, 'validate').environment).toBeUndefined()
+    expect(job(workflow, 'publish').environment).toBe('npm-next')
+    expect(job(workflow, 'post_publish').environment).toBeUndefined()
+  })
+
+  it('has no workflow-level id-token or contents: write permission', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+
+    expect(workflow.permissions).toEqual({ contents: 'read' })
+  })
+
+  it('grants each job exactly the permissions it needs, and never combines id-token: write with contents: write', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+
+    expect(job(workflow, 'validate').permissions).toEqual({ contents: 'read' })
+    expect(job(workflow, 'publish').permissions).toEqual({ contents: 'read', 'id-token': 'write' })
+    expect(job(workflow, 'post_publish').permissions).toEqual({ contents: 'write' })
+
+    for (const [jobName, jobDef] of Object.entries(workflow.jobs ?? {})) {
+      const permissions = jobDef.permissions ?? {}
+      const hasIdToken = permissions['id-token'] === 'write'
+      const hasContentsWrite = permissions.contents === 'write'
+      expect(hasIdToken && hasContentsWrite, `${jobName} must not combine id-token: write with contents: write`).toBe(false)
+    }
+  })
+
+  it('keeps the publish job free of checkout, npm ci, tests, build, and repository scripts', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const steps = allSteps(workflow, 'publish')
+
+    for (const step of steps) {
+      expect(step.uses ?? '', 'publish must not use actions/checkout').not.toMatch(/actions\/checkout/)
+      expect(step.run ?? '').not.toContain('npm ci')
+      expect(step.run ?? '').not.toContain('npm run test')
+      expect(step.run ?? '').not.toContain('npm run build')
+      expect(step.run ?? '').not.toMatch(/\.github\/scripts\//)
+    }
+  })
+
+  it('never runs a dependency cache in the publish job\'s Node setup', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
     const setupNode = workflowStep(workflow, 'publish', 'Set up Node.js')
-    const npmClient = workflowStep(workflow, 'publish', 'Install pinned npm Trusted Publishing client')
+
+    expect(setupNode.with).not.toHaveProperty('cache')
+  })
+
+  it('has no live publish command in validate or post_publish, only dry runs', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+
+    for (const jobName of ['validate', 'post_publish']) {
+      const steps = allSteps(workflow, jobName)
+      for (const step of steps) {
+        const run = step.run ?? ''
+        if (run.includes('npm publish')) {
+          expect(run, `${jobName} step "${step.name}" must be a dry run`).toContain('--dry-run')
+        }
+      }
+    }
+  })
+
+  it('runs exactly one live publish command, in the publish job, as its final substantive step', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const allJobNames = Object.keys(workflow.jobs ?? {})
+
+    const livePublishSteps: { jobName: string; index: number; step: WorkflowStep }[] = []
+    for (const jobName of allJobNames) {
+      const steps = allSteps(workflow, jobName)
+      steps.forEach((step, index) => {
+        const run = step.run ?? ''
+        if (run.includes('npm publish') && !run.includes('--dry-run')) {
+          livePublishSteps.push({ jobName, index, step })
+        }
+      })
+    }
+
+    expect(livePublishSteps).toHaveLength(1)
+    const found = livePublishSteps[0]
+    if (!found) {
+      throw new Error('expected exactly one live publish step')
+    }
+    const { jobName, index, step } = found
+    expect(jobName).toBe('publish')
+    expect(step.name).toBe('Publish prerelease with npm Trusted Publishing')
+    expect(index).toBe(allSteps(workflow, 'publish').length - 1)
+    expect(step.run).toContain('npm publish "release-artifact/$TARBALL_NAME" --tag next --access public --provenance')
+    expect(step.run).not.toContain('npm publish --access public')
+    expect(step.run).not.toContain('NODE_AUTH_TOKEN')
+  })
+
+  it('publishes the exact downloaded tarball, never the working directory', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
     const publish = workflowStep(workflow, 'publish', 'Publish prerelease with npm Trusted Publishing')
 
-    expect(workflow.permissions).toEqual({ contents: 'write', 'id-token': 'write' })
-    expect(workflow.jobs?.publish?.environment).toBe('npm-next')
-    expect(checkout.with).toMatchObject({
-      'fetch-depth': 0,
-      'persist-credentials': false,
-    })
-    // Ref injection guard: checkout runs before any validation, so a ref derived from
-    // workflow_dispatch input could supply its own validation scripts and pass every gate.
-    // The ref must come from github.sha, which GitHub resolves from the workflow ref.
-    expect(checkout.with?.ref).toBe('${{ github.sha }}')
-    expect(String(checkout.with?.ref)).not.toContain('inputs.')
-    // The published artifact must be validated on a Node version the CI matrix tests.
-    expect(['20', '22']).toContain(String(setupNode.with?.['node-version']))
-    expect(setupNode.with).not.toHaveProperty('cache')
-    expect(npmClient.run).toContain('npm@12.0.2')
-    expect(npmClient.run).toContain('--ignore-scripts')
-    expect(npmClient.run).not.toContain('npm@latest')
-    expect(publish.run).toContain('npm publish --tag next --access public --provenance')
-    expect(publish.run).not.toContain('npm publish --access public')
-    expect(publish.run).not.toContain('NODE_AUTH_TOKEN')
+    expect(publish.run).not.toMatch(/npm publish\s+\.\s/)
+    expect(publish.run).not.toMatch(/npm publish\s+--tag/)
+    expect(publish.run).toContain('"release-artifact/$TARBALL_NAME"')
   })
 
-  it('keeps every required prerelease validation gate before publication', () => {
-    const workflow = parseWorkflow('.github/workflows/publish-next.yml')
-    const steps = workflow.jobs?.publish?.steps ?? []
-    const publishIndex = steps.findIndex((step) => step.name === 'Publish prerelease with npm Trusted Publishing')
+  it('records and verifies the release artifact SHA-256 across validate, publish, and post_publish', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const packStep = workflowStep(workflow, 'validate', 'Build release tarball and receipt')
+    const verifyStep = workflowStep(workflow, 'publish', "Verify downloaded artifact against the validate job's receipt")
+
+    expect(packStep.run).toContain('sha256sum')
+    expect(job(workflow, 'validate').steps?.map((step) => step.name)).toContain('Upload release tarball artifact')
+    expect(verifyStep.run).toContain('EXPECTED_TARBALL_SHA256')
+    expect(verifyStep.run).toContain('sha256sum -c')
+
+    const validateOutputs = (job(workflow, 'validate') as { outputs?: Record<string, unknown> }).outputs
+    expect(String(validateOutputs?.tarball_sha256)).toContain('steps.pack.outputs.sha256')
+  })
+
+  it('names the uploaded artifact with the run id, run attempt, version, and commit', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const packStep = workflowStep(workflow, 'validate', 'Build release tarball and receipt')
+
+    expect(packStep.run).toContain('github.run_id')
+    expect(packStep.run).toContain('github.run_attempt')
+    expect(packStep.run).toContain('PACKAGE_VERSION')
+    expect(packStep.run).toContain('RELEASE_COMMIT')
+
+    const uploadStep = workflowStep(workflow, 'validate', 'Upload release tarball artifact')
+    expect(uploadStep.with?.name).toBe('${{ steps.pack.outputs.artifact_name }}')
+    expect(uploadStep.with).toHaveProperty('retention-days')
+  })
+
+  it('captures pre-publish dist-tags in publish and preserves latest in post_publish', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const captureStep = workflowStep(workflow, 'publish', 'Capture pre-publish npm dist-tags')
+    const verifyStep = workflowStep(workflow, 'post_publish', 'Verify published version and dist-tags')
+
+    expect(captureStep.run).toContain('npm view "$PACKAGE_NAME" dist-tags --json')
+    const publishOutputs = (job(workflow, 'publish') as { outputs?: Record<string, unknown> }).outputs
+    expect(String(publishOutputs?.pre_publish_dist_tags)).toContain('steps.capture-dist-tags.outputs.json')
+    expect(verifyStep.run).toContain('verify-next-release-state.mjs')
+    expect(verifyStep.run).toContain('--verify-publish')
+  })
+
+  it('keeps every required validation gate in validate before the release tarball is built', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const steps = allSteps(workflow, 'validate')
+    const packIndex = steps.findIndex((step) => step.name === 'Build release tarball and receipt')
     const requiredCommands = [
       'npm ci',
       'npm run typecheck',
@@ -315,27 +488,66 @@ describe('release workflow policy', () => {
       'npm publish --dry-run --tag next',
     ]
 
-    expect(publishIndex).toBeGreaterThan(0)
+    expect(packIndex).toBeGreaterThan(0)
     for (const command of requiredCommands) {
       const commandIndex = steps.findIndex((step) => step.run?.includes(command))
       expect(commandIndex, command).toBeGreaterThanOrEqual(0)
-      expect(commandIndex, command).toBeLessThan(publishIndex)
+      expect(commandIndex, command).toBeLessThan(packIndex)
     }
-    expect(workflowStep(workflow, 'publish', 'Run qualification validation when available').run)
+    expect(workflowStep(workflow, 'validate', 'Run qualification validation when available').run)
       .toContain('npm run qualify:validate')
+  })
+
+  it('runs qualify:validate deterministically: hard failure when present, notice when absent', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const step = workflowStep(workflow, 'validate', 'Run qualification validation when available')
+
+    // The branch is chosen purely from whether qualify:validate exists in the checked-out
+    // commit's package.json -- there is no separate flag or date to flip. Once #681 merges
+    // qualify:validate onto next, the very next tag push takes the hard-fail branch.
+    expect(step.run).toContain("scripts['qualify:validate']")
+    expect(step.run).toContain('npm run qualify:validate')
+    expect(step.run).toContain("echo 'status=passed' >> \"$GITHUB_OUTPUT\"")
+    expect(step.run).toContain('qualify:validate is not present on this tag')
   })
 
   it('classifies the GitHub releases on the correct channels', () => {
     const stableWorkflow = parseWorkflow('.github/workflows/release.yml')
-    const nextWorkflow = parseWorkflow('.github/workflows/publish-next.yml')
+    const nextWorkflow = parseWorkflow(publishNextWorkflowPath)
     const stableClassifier = workflowStep(stableWorkflow, 'release', 'Require stable release tag')
-    const prereleaseClassifier = workflowStep(nextWorkflow, 'publish', 'Validate prerelease tag and release files')
-    const githubPrerelease = workflowStep(nextWorkflow, 'publish', 'Create or update GitHub prerelease')
+    const prereleaseClassifier = workflowStep(nextWorkflow, 'validate', 'Validate prerelease tag and release files')
+    const githubPrerelease = workflowStep(nextWorkflow, 'post_publish', 'Create or update GitHub prerelease')
 
     expect(stableClassifier.run).toContain('--expect stable')
     expect(prereleaseClassifier.run).toContain('--expect prerelease')
     expect(githubPrerelease.run).toContain('--prerelease')
     expect(workflowStep(stableWorkflow, 'release', 'Create GitHub release').run).not.toContain('--prerelease')
+  })
+
+  it('uses a 40-character commit SHA with a version comment for every action in the privileged workflow, and rejects mutable refs', () => {
+    const workflow = parseWorkflow(publishNextWorkflowPath)
+    const raw = readFileSync(resolve(publishNextWorkflowPath), 'utf8')
+    const usesLines = raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('uses:'))
+
+    expect(usesLines.length).toBeGreaterThan(0)
+
+    const mutableRefPattern = /@(v\d+|main|master)(\s|$)/
+    for (const line of usesLines) {
+      expect(line, line).not.toMatch(mutableRefPattern)
+      const match = line.match(/uses:\s*([^@]+)@([0-9a-f]{40})(?:\s+#\s*(v[\w.]+))?/)
+      expect(match, `${line} must pin a 40-character SHA with a # vX.Y.Z comment`).not.toBeNull()
+      expect(match?.[3], `${line} must have a readable version comment`).toBeTruthy()
+    }
+
+    for (const jobDef of Object.values(workflow.jobs ?? {})) {
+      for (const step of jobDef.steps ?? []) {
+        if (!step.uses) continue
+        expect(step.uses).toMatch(/@[0-9a-f]{40}$/)
+      }
+    }
   })
 
   it('keeps release documentation consistent with both channels', () => {
