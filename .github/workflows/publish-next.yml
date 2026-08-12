@@ -47,19 +47,13 @@ jobs:
 
       # Never restore setup-node's npm cache in this privileged job: an untrusted
       # pull-request job could poison a shared cache that later executes during publish.
-      #
-      # Node 22 is used deliberately: the published artifact must be validated on a Node
-      # version the CI matrix actually tests (20 and 22). Validating on an untested runtime
-      # risks both false failures that block a good release and false passes that ship a
-      # build broken for supported users. npm is upgraded separately below because
-      # Trusted Publishing needs npm >= 11.5.1, which Node 22 does not ship by default.
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: '22'
 
-      - name: Upgrade npm for Trusted Publishing support
-        run: npm install --global npm@latest
+      - name: Install pinned npm Trusted Publishing client
+        run: npm install --global --ignore-scripts --no-audit --no-fund --cache "$RUNNER_TEMP/npm-cli-bootstrap-cache" npm@12.0.2
 
       - name: Validate prerelease tag and release files
         shell: bash

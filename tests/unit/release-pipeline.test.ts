@@ -273,6 +273,7 @@ describe('release workflow policy', () => {
     const workflow = parseWorkflow('.github/workflows/publish-next.yml')
     const checkout = workflowStep(workflow, 'publish', 'Check out exact prerelease commit')
     const setupNode = workflowStep(workflow, 'publish', 'Set up Node.js')
+    const npmClient = workflowStep(workflow, 'publish', 'Install pinned npm Trusted Publishing client')
     const publish = workflowStep(workflow, 'publish', 'Publish prerelease with npm Trusted Publishing')
 
     expect(workflow.permissions).toEqual({ contents: 'write', 'id-token': 'write' })
@@ -289,6 +290,9 @@ describe('release workflow policy', () => {
     // The published artifact must be validated on a Node version the CI matrix tests.
     expect(['20', '22']).toContain(String(setupNode.with?.['node-version']))
     expect(setupNode.with).not.toHaveProperty('cache')
+    expect(npmClient.run).toContain('npm@12.0.2')
+    expect(npmClient.run).toContain('--ignore-scripts')
+    expect(npmClient.run).not.toContain('npm@latest')
     expect(publish.run).toContain('npm publish --tag next --access public --provenance')
     expect(publish.run).not.toContain('npm publish --access public')
     expect(publish.run).not.toContain('NODE_AUTH_TOKEN')
