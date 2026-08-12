@@ -333,12 +333,38 @@ for (const path of walk(join(ROOT, 'examples'))) {
 // word would confuse a declared adapter with a benchmark-specific special case. Those
 // couplings are disclosed per target in corpus.json#/targets/*/production_coupling instead.
 // What is forbidden here is every literal that could only have come from this contract.
+//
+// `_`-prefixed keys in forbidden_target_symbols are documentation, not symbols. Folding a
+// prose note into this list would make the guard fail production files the moment that note
+// were shortened to something short or common, so the keys are skipped and every remaining
+// entry is required to be an array of plausible identifiers.
+const targetSymbols = []
+for (const [key, value] of Object.entries(corpus.forbidden_target_symbols ?? {})) {
+  if (key.startsWith('_')) {
+    continue
+  }
+  if (!Array.isArray(value)) {
+    fail(`corpus.json forbidden_target_symbols["${key}"] must be an array of symbols`)
+    continue
+  }
+  for (const symbol of value) {
+    if (typeof symbol !== 'string' || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(symbol)) {
+      fail(`corpus.json forbidden_target_symbols["${key}"] contains ${JSON.stringify(symbol)}, which is not an identifier`)
+      continue
+    }
+    targetSymbols.push(symbol)
+  }
+  if (!targetsById.has(key)) {
+    fail(`corpus.json forbidden_target_symbols["${key}"] does not name a corpus target`)
+  }
+}
+
 const FORBIDDEN_LITERALS = [
   ...corpus.targets.flatMap((target) => (target.source?.url ? [target.source.url, target.source.ref] : [])),
   ...tasks.tasks.map((task) => task.id),
   ...tasks.tasks.map((task) => task.prompt.text),
   ...tier1.negative_trust_probes.map((probe) => probe.prompt.text),
-  ...Object.values(corpus.forbidden_target_symbols ?? {}).flat(),
+  ...targetSymbols,
 ]
 
 for (const path of walk(PRODUCTION_ROOT)) {

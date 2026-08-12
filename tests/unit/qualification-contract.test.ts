@@ -143,6 +143,23 @@ describe('qualification corpus manifest', () => {
     expect(unstorage?.production_coupling?.level).toBe('none_found')
   })
 
+  it('keeps the forbidden-symbol map free of prose that would poison the guard', () => {
+    // A non-array value here folds a whole documentation string into the literal list, which
+    // starts failing production files the moment that string is shortened to something common.
+    for (const [key, value] of Object.entries(corpus.forbidden_target_symbols)) {
+      if (key.startsWith('_')) {
+        expect(typeof value).toBe('string')
+        continue
+      }
+
+      expect(Array.isArray(value)).toBe(true)
+      expect(corpus.targets.some((target) => target.id === key)).toBe(true)
+      for (const symbol of value as string[]) {
+        expect(symbol).toMatch(/^[A-Za-z_$][A-Za-z0-9_$]*$/)
+      }
+    }
+  })
+
   it('keeps the sealed holdout slot visible and explicitly unsatisfied', () => {
     const sealed = corpus.targets.filter((target) => target.holdout_class === 'sealed')
 
