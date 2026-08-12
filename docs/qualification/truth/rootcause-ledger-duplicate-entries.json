@@ -1,0 +1,101 @@
+{
+  "contract_version": "1.0.0",
+  "task_id": "rootcause-ledger-duplicate-entries",
+  "target": "qual-ledger-service",
+  "category": "bug-root-cause-investigation",
+  "provenance": {
+    "authored_by": "madar-655-qualification-agent",
+    "authored_at": "2026-08-12",
+    "derived_from": ["seeded defect introduced deliberately while authoring the fixture"],
+    "madar_derived_sources_used": [],
+    "inspected_madar_output_before_freeze": false,
+    "independent_of_production_rule_author": false,
+    "review_status": "unreviewed"
+  },
+  "seeded_defect": {
+    "id": "seeded-idempotency-ordering",
+    "path": "src/service/ledger-service.ts",
+    "symbol": "LedgerService.postEntry",
+    "root_cause": "The idempotency key is reserved after the ledger append instead of before it. IdempotencyStore.find and IdempotencyStore.reserve form a check-then-act pair with a state mutation in between, so two concurrent requests carrying the same key can both observe no reservation and both call LedgerStore.appendEntry.",
+    "required_ordering_statement": "read reservation (find) -> append entry -> write reservation (reserve). The append must move after the reservation, or the reservation and the append must become one atomic operation.",
+    "also_present_in": [
+      { "path": "src/service/ledger-service.ts", "symbol": "LedgerService.reverseEntry" }
+    ]
+  },
+  "critical_facts": [
+    {
+      "id": "ordering-is-the-cause",
+      "statement": "The cause is the ordering of reserve relative to appendEntry inside LedgerService.postEntry, not a defect in either store.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/service/ledger-service.ts", "symbol": "LedgerService.postEntry" }]
+    },
+    {
+      "id": "check-then-act",
+      "statement": "find and reserve are separate operations with a mutation between them, so the window between them is the race window.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/store/idempotency-store.ts", "symbol": "IdempotencyStore.find" },
+        { "path": "src/store/idempotency-store.ts", "symbol": "IdempotencyStore.reserve" }
+      ]
+    },
+    {
+      "id": "append-unconditional",
+      "statement": "LedgerStore.appendEntry always allocates a new entryId; it has no uniqueness constraint that could reject the second write.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/store/ledger-store.ts", "symbol": "LedgerStore.appendEntry" }]
+    },
+    {
+      "id": "same-shape-in-reversal",
+      "statement": "reverseEntry repeats the same ordering, so the fix must cover both commands.",
+      "criticality": "supporting",
+      "evidence": [{ "path": "src/service/ledger-service.ts", "symbol": "LedgerService.reverseEntry" }]
+    }
+  ],
+  "correct_uncertainty": [
+    {
+      "id": "single-thread-caveat",
+      "requirement": "The stores are synchronous in-memory Maps, so within one Node thread the find/append/reserve sequence cannot actually be interleaved. The ordering is still wrong, and it becomes observable as soon as either store performs real I/O or the process is replicated. A correct answer names the ordering defect AND states that the duplicate is not reproducible against the current in-memory implementation without introducing an await or a second process."
+    }
+  ],
+  "unsupported_claim_traps": [
+    {
+      "id": "reserve-is-buggy",
+      "claim": "IdempotencyStore.reserve is the bug because it overwrites or fails to detect an existing key.",
+      "why_false": "reserve returns the existing record unchanged when the key is present. It is correct in isolation."
+    },
+    {
+      "id": "sequence-collision",
+      "claim": "The duplicate comes from the entryId sequence counter colliding.",
+      "why_false": "The counter is incremented before each id is built and never reused; the duplicates have distinct entryIds."
+    },
+    {
+      "id": "missing-validation",
+      "claim": "The route fails to validate idempotencyKey.",
+      "why_false": "requireString rejects a missing or empty idempotencyKey before the service runs."
+    },
+    {
+      "id": "outbox-replay",
+      "claim": "The outbox republishes the event and the consumer creates a second entry.",
+      "why_false": "BalanceProjection never writes to LedgerStore; consumers cannot create entries."
+    }
+  ],
+  "tier1_obligations": {
+    "required_evidence_paths": [
+      "src/service/ledger-service.ts",
+      "src/store/idempotency-store.ts",
+      "src/store/ledger-store.ts"
+    ],
+    "required_evidence_symbols": ["LedgerService", "IdempotencyStore", "LedgerStore"],
+    "min_critical_fact_recall": 1.0,
+    "must_not_report_ready_when": [
+      "src/service/ledger-service.ts is absent from the evidence set",
+      "the call from LedgerService.postEntry to IdempotencyStore.reserve is missing from the graph"
+    ]
+  },
+  "tier2_scoring": {
+    "method": "single_root_cause_adjudication",
+    "accepted_root_cause_ids": ["seeded-idempotency-ordering"],
+    "critical_facts_required_for_pass": ["ordering-is-the-cause", "check-then-act"],
+    "uncertainty_required_for_pass": ["single-thread-caveat"]
+  }
+}

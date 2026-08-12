@@ -1,0 +1,118 @@
+{
+  "contract_version": "1.0.0",
+  "task_id": "review-ledger-http-authorization",
+  "target": "qual-ledger-service",
+  "category": "review-security",
+  "provenance": {
+    "authored_by": "madar-655-qualification-agent",
+    "authored_at": "2026-08-12",
+    "derived_from": ["seeded defect introduced deliberately while authoring the fixture"],
+    "madar_derived_sources_used": [],
+    "inspected_madar_output_before_freeze": false,
+    "independent_of_production_rule_author": false,
+    "review_status": "unreviewed"
+  },
+  "seeded_defect": {
+    "id": "seeded-reversal-authorization",
+    "path": "src/http/ledger-routes.ts",
+    "symbol": "createLedgerRouter.reverseLedgerEntry",
+    "description": "reverseLedgerEntry authenticates the caller but never authorizes them against the account that owns entryId. postLedgerEntry calls assertAccountAccess; the reversal handler does not.",
+    "attacker_capability": "Any principal holding a valid token can reverse a ledger entry belonging to an account they do not own, which writes a negative entry, emits ledger.entry.reversed, and corrupts the other tenant's derived balance.",
+    "proving_evidence": [
+      { "path": "src/http/ledger-routes.ts", "symbol": "createLedgerRouter.reverseLedgerEntry", "note": "no assertAccountAccess call" },
+      { "path": "src/http/ledger-routes.ts", "symbol": "createLedgerRouter.postLedgerEntry", "note": "the same check is present here, showing the omission is asymmetric" },
+      { "path": "src/service/ledger-service.ts", "symbol": "LedgerService.reverseEntry", "note": "reads the original entry and its accountId without any principal check" },
+      { "path": "src/auth/request-context.ts", "symbol": "assertAccountAccess", "note": "the check that exists and is not applied" }
+    ],
+    "corroborating_signal": {
+      "path": "src/service/ledger-service.ts",
+      "symbol": "LedgerService.findEntryForAuthorization",
+      "note": "This helper exists precisely to let a caller resolve the owning account before authorizing, and it has no callers."
+    }
+  },
+  "critical_facts": [
+    {
+      "id": "missing-authz-on-reversal",
+      "statement": "reverseLedgerEntry performs authentication but no account-level authorization.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/http/ledger-routes.ts", "symbol": "createLedgerRouter.reverseLedgerEntry" }]
+    },
+    {
+      "id": "cross-tenant-impact",
+      "statement": "The consequence is cross-tenant write access: a reversal entry is appended to another account and its balance projection is corrupted.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/service/ledger-service.ts", "symbol": "LedgerService.reverseEntry" },
+        { "path": "src/projections/balance-projection.ts", "symbol": "BalanceProjection.applyReversed" }
+      ]
+    },
+    {
+      "id": "check-exists-unused",
+      "statement": "assertAccountAccess already exists and is applied on the post route, so the fix is to apply it after resolving the entry's owning account.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/auth/request-context.ts", "symbol": "assertAccountAccess" }]
+    }
+  ],
+  "acceptable_additional_findings": [
+    {
+      "id": "unused-authorization-helper",
+      "statement": "LedgerService.findEntryForAuthorization has no callers.",
+      "scored_as": "supporting, not required"
+    },
+    {
+      "id": "unchecked-scopes",
+      "statement": "Principal.scopes is never read anywhere in the workspace, so scope-based authorization is declared but not enforced.",
+      "scored_as": "supporting, not required"
+    },
+    {
+      "id": "generated-request-id",
+      "statement": "resolveRequestContext generates a random requestId when the x-request-id header is absent, which weakens audit correlation.",
+      "scored_as": "supporting, not required, and not a security defect on its own"
+    }
+  ],
+  "correct_uncertainty": [
+    {
+      "id": "token-directory-opaque",
+      "requirement": "TokenDirectory is an interface with no implementation in this workspace. Claims about token strength, expiry, or revocation are unsupported."
+    }
+  ],
+  "unsupported_claim_traps": [
+    {
+      "id": "post-route-also-unauthorized",
+      "claim": "postLedgerEntry is also missing an authorization check.",
+      "why_false": "It calls assertAccountAccess with the path accountId before invoking the service.",
+      "counts_as": "false_positive"
+    },
+    {
+      "id": "no-authentication",
+      "claim": "The HTTP surface has no authentication at all.",
+      "why_false": "Both handlers call resolveRequestContext, which throws UnauthenticatedError on a missing or unknown bearer token.",
+      "counts_as": "false_positive"
+    },
+    {
+      "id": "sql-injection",
+      "claim": "The handlers are vulnerable to injection through request parameters.",
+      "why_false": "Both stores are in-memory Maps; there is no query language anywhere in the workspace.",
+      "counts_as": "false_positive"
+    }
+  ],
+  "tier1_obligations": {
+    "required_evidence_paths": [
+      "src/http/ledger-routes.ts",
+      "src/auth/request-context.ts",
+      "src/service/ledger-service.ts"
+    ],
+    "required_evidence_symbols": ["reverseLedgerEntry", "postLedgerEntry", "assertAccountAccess"],
+    "min_critical_fact_recall": 1.0,
+    "must_not_report_ready_when": [
+      "src/http/ledger-routes.ts is absent from the evidence set",
+      "only one of the two route handlers is present, since the defect is only visible by comparing them"
+    ]
+  },
+  "tier2_scoring": {
+    "method": "seeded_defect_detection",
+    "required_detections": ["seeded-reversal-authorization"],
+    "false_positive_set": ["post-route-also-unauthorized", "no-authentication", "sql-injection"],
+    "critical_facts_required_for_pass": ["missing-authz-on-reversal", "cross-tenant-impact"]
+  }
+}

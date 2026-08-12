@@ -1,0 +1,129 @@
+{
+  "contract_version": "1.0.0",
+  "task_id": "plan-plugin-host-object-storage-plugin",
+  "target": "qual-plugin-host",
+  "category": "implementation-planning",
+  "provenance": {
+    "authored_by": "madar-655-qualification-agent",
+    "authored_at": "2026-08-12",
+    "derived_from": ["fixture source authored in the same change, read directly"],
+    "madar_derived_sources_used": [],
+    "inspected_madar_output_before_freeze": false,
+    "independent_of_production_rule_author": false,
+    "review_status": "unreviewed"
+  },
+  "reference_plan": {
+    "files_to_add": [
+      {
+        "new_path": "src/plugins/object-storage-export-plugin.ts",
+        "why": "New ExportPlugin implementation. Must import from ../contracts/plugin.js only and read bucket/prefix/endpoint from PluginContext.settings."
+      }
+    ],
+    "files_to_change": [
+      {
+        "path": "src/host/plugin-host.ts",
+        "why": "builtInPlugins() is the single registration point for built-in plugins; the new plugin is constructed and returned there."
+      }
+    ],
+    "files_that_must_not_change": [
+      {
+        "path": "src/contracts/plugin.ts",
+        "why": "Adding an object-storage-specific method or field widens the extension surface, which the prompt forbids."
+      },
+      {
+        "path": "src/host/registry.ts",
+        "why": "Registration is name-based and already generic; a new plugin needs no registry change."
+      },
+      {
+        "path": "src/host/lifecycle.ts",
+        "why": "init/export/dispose ordering is already generic."
+      },
+      {
+        "path": "src/host/config.ts",
+        "why": "Enablement flows through HostConfig.enabledPlugins and the EXPORT_PLUGINS environment override, both of which are already name-driven."
+      }
+    ],
+    "enablement": "The plugin runs only when its name appears in HostConfig.enabledPlugins or in the EXPORT_PLUGINS environment override. No code change is required to make that possible.",
+    "optional": [
+      "Implement dispose() to flush or close the storage client, since runExportLifecycle calls dispose on every initialized plugin."
+    ]
+  },
+  "critical_facts": [
+    {
+      "id": "single-registration-point",
+      "statement": "builtInPlugins() in src/host/plugin-host.ts is the only place a built-in plugin is registered.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/host/plugin-host.ts", "symbol": "builtInPlugins" }]
+    },
+    {
+      "id": "contract-only-dependency",
+      "statement": "The new plugin must depend on src/contracts/plugin.ts only, following CsvExportPlugin rather than WebhookExportPlugin.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/plugins/csv-export-plugin.ts", "symbol": "CsvExportPlugin" },
+        { "path": "src/contracts/plugin.ts", "symbol": "ExportPlugin" }
+      ]
+    },
+    {
+      "id": "settings-through-context",
+      "statement": "Plugin configuration arrives through PluginContext.settings, which PluginHost.contextFor scopes per plugin name.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/host/plugin-host.ts", "symbol": "PluginHost.contextFor" }]
+    },
+    {
+      "id": "no-surface-widening",
+      "statement": "src/contracts/plugin.ts must not change.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/contracts/plugin.ts", "symbol": "ExportPlugin" }]
+    }
+  ],
+  "correct_uncertainty": [
+    {
+      "id": "no-object-storage-dependency",
+      "requirement": "The workspace has no object-storage client and no runtime dependencies at all. A plan must either introduce one explicitly as a new dependency or state that the transport is left abstract; silently assuming an SDK is already available is wrong."
+    },
+    {
+      "id": "no-tests-present",
+      "requirement": "The workspace contains no test files, so a plan that claims existing tests will cover the change is unsupported."
+    }
+  ],
+  "unsupported_claim_traps": [
+    {
+      "id": "extend-contract",
+      "claim": "Add an ObjectStorage-specific method, option, or field to the ExportPlugin interface.",
+      "why_false": "That widens the extension surface, which the prompt forbids, and would force every existing plugin to change."
+    },
+    {
+      "id": "registry-change",
+      "claim": "PluginRegistry must be modified to know about the new plugin.",
+      "why_false": "register() and resolve() are name-based and already generic."
+    },
+    {
+      "id": "copy-webhook",
+      "claim": "Follow WebhookExportPlugin and read host configuration directly with resolveHostConfig.",
+      "why_false": "That is the seeded boundary violation; copying it reintroduces a wrong-direction dependency."
+    }
+  ],
+  "tier1_obligations": {
+    "required_evidence_paths": [
+      "src/contracts/plugin.ts",
+      "src/host/plugin-host.ts",
+      "src/plugins/csv-export-plugin.ts"
+    ],
+    "required_evidence_symbols": ["ExportPlugin", "builtInPlugins", "PluginContext"],
+    "min_critical_fact_recall": 1.0,
+    "must_not_report_ready_when": [
+      "src/host/plugin-host.ts is absent from the evidence set"
+    ]
+  },
+  "tier2_scoring": {
+    "method": "blinded_rubric",
+    "critical_facts_required_for_pass": ["single-registration-point", "contract-only-dependency", "no-surface-widening"],
+    "hidden_acceptance_test": {
+      "required": true,
+      "status": "unavailable",
+      "blocking_reason": "An executable hidden acceptance test must be authored and held by a person other than the production-rule author. In the current single-author context it cannot be produced credibly. Until it exists the bounded-implementation score for this task is not_measured and only the plan rubric is scored.",
+      "human_action_required": "A second maintainer authors an acceptance test asserting that a new plugin can be added by touching exactly src/plugins/<new>.ts and builtInPlugins(), and stores it outside this repository per holdout-policy.md."
+    }
+  }
+}

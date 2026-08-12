@@ -1,0 +1,91 @@
+{
+  "contract_version": "1.0.0",
+  "run_id": "example-tier2-invalid-0001",
+  "tier": 2,
+  "task_id": "flow-ledger-post-entry",
+  "target_id": "qual-ledger-service",
+  "arm": "madar",
+  "trial": 1,
+  "cache_mode": "warm",
+  "identity": {
+    "target_revision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "dependency_lock_sha256": "6328bf95a901590814ff70ed570e0fc474c05ae162d6ac690cf3c812380828ab",
+    "madar_commit": "06b373a447acfce895412ac10eb4e5228c5df0b7",
+    "madar_package_version": "0.32.1",
+    "madar_package_tarball_sha256": "e42a5bc1434e84291ba23ddc9da90a2f9c591e6e2bd163adedf647d0c1f711ba",
+    "madar_runtime_source": "npm_pack",
+    "madar_config_sha256": "c6dcdf9130e3ef5503caead4fe07f1b465b429adfa6e43309166d8f650a33caf",
+    "agent": {
+      "host": "claude-code",
+      "host_version": "0.0.0-example",
+      "model_id": "example-model-id"
+    },
+    "prompts": {
+      "system_prompt_sha256": "21da86de37b6595841807f54b44945498ad599cf682a40391a36d833dca35132",
+      "user_prompt_sha256": "4f727f2d70f0df36aa08fc208a27d6dcf1b1ed0a8b26a05b1e1dde32b57e29aa",
+      "user_prompt_text": "Trace what happens when a client posts a new ledger entry. Follow the path from the HTTP handler through to every durable side effect and every downstream consumer, and say which step each side effect happens in."
+    },
+    "tool_permissions": ["Read", "Grep", "Glob", "mcp__madar__retrieve"],
+    "cache_mode": "warm"
+  },
+  "environment": {
+    "isolation": true,
+    "host_os": "darwin",
+    "node_version": "v22.0.0",
+    "claude_code_version": "0.0.0-example",
+    "mcp_servers_active": ["madar"],
+    "skills_loaded": [],
+    "plugins_active": [],
+    "user_claude_md_hash": null,
+    "project_claude_md_hash": null,
+    "hooks_active": {
+      "user_prompt_submit": [],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    },
+    "drift": { "detected": false, "fields": [] }
+  },
+  "adoption": {
+    "status": "absent",
+    "attributable_madar_calls": 0,
+    "first_madar_call_tool": null,
+    "broad_fallback_operations_after_first_call": 0,
+    "trace_status": "trace_available"
+  },
+  "costs": {
+    "indexing": { "measured": true, "wall_ms": 4120, "usd": 0, "source": "locally_timed" },
+    "context_build": { "measured": false, "source": "not_applicable" },
+    "agent": {
+      "measured": true,
+      "input_tokens": 41233,
+      "output_tokens": 1902,
+      "wall_ms": 61204,
+      "usd": 0.19,
+      "source": "provider_reported"
+    }
+  },
+  "scores": {
+    "correctness": { "measured": false, "value": null, "method": "blinded_rubric", "not_measured_reason": "run is invalid: no attributable Madar call" },
+    "critical_fact_completeness": { "measured": false, "value": null, "method": "blinded_rubric", "not_measured_reason": "run is invalid: no attributable Madar call" },
+    "unsupported_claims": { "measured": false, "value": null, "method": "blinded_rubric", "not_measured_reason": "run is invalid: no attributable Madar call" },
+    "correct_uncertainty": { "measured": false, "value": null, "method": "blinded_rubric", "not_measured_reason": "run is invalid: no attributable Madar call" },
+    "evidence_support": { "measured": false, "value": null, "method": "blinded_rubric", "not_measured_reason": "run is invalid: no attributable Madar call" }
+  },
+  "validity": {
+    "status": "invalid",
+    "invalidation_reasons": ["missing_attributable_madar_call"],
+    "aggregatable": false
+  },
+  "retention": {
+    "raw_transcript": { "retained": true, "path": "raw/transcript.jsonl", "sha256": "8afad96d88f459209acacc66728718b270aa3e2df59fb8e92d5fc85475b3272c" },
+    "answer_text": { "retained": true, "path": "raw/answer.txt", "sha256": "95967dd7cc113d0df15f5dd7b3d2185f7755a3da9b4db4b71805cd646434d7b6" },
+    "context_artifact": { "retained": false, "path": null, "sha256": null },
+    "retention_policy": "Raw transcripts, answers, and context artifacts are retained for at least 24 months alongside the receipt; see validity-rules.md."
+  },
+  "notes": [
+    "Illustrative example only. The agent never called Madar, so every quality dimension stays not_measured and the recorded costs may not be cited as a cost comparison.",
+    "The costs block is still populated because adoption failure must be diagnosable, but aggregatable is false so nothing here can enter a headline."
+  ],
+  "started_at": "2026-08-12T09:00:00.000Z",
+  "completed_at": "2026-08-12T09:01:05.324Z"
+}

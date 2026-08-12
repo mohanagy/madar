@@ -1,0 +1,10 @@
+{
+  "name": "qualification-fixture-ledger-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Qualification fixture only. Not published, not imported by Madar sources.",
+  "engines": {
+    "node": ">=20"
+  }
+}

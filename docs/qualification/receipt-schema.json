@@ -1,0 +1,317 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/mohanagy/madar/docs/qualification/receipt-schema.json",
+  "title": "Madar qualification run receipt",
+  "description": "Environment and run receipt for a single qualification cell. One receipt describes one arm of one trial of one task against one target.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "run_id",
+    "tier",
+    "task_id",
+    "target_id",
+    "arm",
+    "trial",
+    "identity",
+    "environment",
+    "adoption",
+    "costs",
+    "scores",
+    "validity",
+    "retention",
+    "started_at",
+    "completed_at"
+  ],
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "tier": { "type": "integer", "enum": [1, 2] },
+    "task_id": { "type": "string", "minLength": 1 },
+    "target_id": { "type": "string", "minLength": 1 },
+    "arm": { "type": "string", "enum": ["native", "madar"] },
+    "trial": { "type": "integer", "minimum": 1 },
+    "cache_mode": { "type": "string", "enum": ["cold", "warm"] },
+
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The full experimental identity. Every field is required; a missing field invalidates the run.",
+      "required": [
+        "target_revision",
+        "dependency_lock_sha256",
+        "madar_commit",
+        "madar_package_version",
+        "madar_runtime_source",
+        "madar_config_sha256",
+        "agent",
+        "prompts",
+        "tool_permissions",
+        "cache_mode"
+      ],
+      "properties": {
+        "target_revision": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Git SHA for a git target, or the frozen content digest for a fixture target."
+        },
+        "dependency_lock_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "madar_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "madar_package_version": { "type": "string", "minLength": 1 },
+        "madar_package_tarball_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "madar_runtime_source": { "type": "string", "enum": ["npm_pack", "checkout"] },
+        "madar_config_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["host", "host_version", "model_id"],
+          "properties": {
+            "host": { "type": "string", "minLength": 1 },
+            "host_version": { "type": ["string", "null"] },
+            "model_id": { "type": "string", "minLength": 1 }
+          }
+        },
+        "prompts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["system_prompt_sha256", "user_prompt_sha256", "user_prompt_text"],
+          "properties": {
+            "system_prompt_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+            "user_prompt_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "user_prompt_text": { "type": "string", "minLength": 1 }
+          }
+        },
+        "tool_permissions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Exact allowed-tool list given to the agent. Both arms of a cell must record the same list apart from Madar tools."
+        },
+        "cache_mode": { "type": "string", "enum": ["cold", "warm"] }
+      }
+    },
+
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isolation",
+        "host_os",
+        "node_version",
+        "mcp_servers_active",
+        "skills_loaded",
+        "plugins_active",
+        "hooks_active",
+        "drift"
+      ],
+      "properties": {
+        "isolation": { "type": "boolean" },
+        "host_os": { "type": "string", "minLength": 1 },
+        "node_version": { "type": "string", "minLength": 1 },
+        "claude_code_version": { "type": ["string", "null"] },
+        "mcp_servers_active": { "type": "array", "items": { "type": "string" } },
+        "skills_loaded": { "type": "array", "items": { "type": "string" } },
+        "plugins_active": { "type": "array", "items": { "type": "string" } },
+        "user_claude_md_hash": { "type": ["string", "null"] },
+        "project_claude_md_hash": { "type": ["string", "null"] },
+        "hooks_active": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["user_prompt_submit", "pre_tool_use", "post_tool_use"],
+          "properties": {
+            "user_prompt_submit": { "type": "array", "items": { "type": "string" } },
+            "pre_tool_use": { "type": "array", "items": { "type": "string" } },
+            "post_tool_use": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "drift": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["detected", "fields"],
+          "properties": {
+            "detected": { "type": "boolean" },
+            "fields": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+
+    "adoption": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Behaviour measurement. Never folded into a quality score.",
+      "required": ["status", "attributable_madar_calls", "broad_fallback_operations_after_first_call"],
+      "properties": {
+        "status": { "type": "string", "enum": ["adopted", "late", "absent", "not_applicable"] },
+        "attributable_madar_calls": { "type": "integer", "minimum": 0 },
+        "first_madar_call_tool": { "type": ["string", "null"] },
+        "broad_fallback_operations_after_first_call": { "type": "integer", "minimum": 0 },
+        "trace_status": { "type": "string", "enum": ["trace_available", "trace_partial", "trace_missing"] }
+      }
+    },
+
+    "costs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Indexing, context building, and agent execution are separate accounts and must never be summed into a single headline.",
+      "required": ["indexing", "context_build", "agent"],
+      "properties": {
+        "indexing": { "$ref": "#/definitions/costAccount" },
+        "context_build": { "$ref": "#/definitions/costAccount" },
+        "agent": { "$ref": "#/definitions/costAccount" }
+      }
+    },
+
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "correctness",
+        "critical_fact_completeness",
+        "unsupported_claims",
+        "correct_uncertainty",
+        "evidence_support"
+      ],
+      "properties": {
+        "correctness": { "$ref": "#/definitions/score" },
+        "critical_fact_completeness": { "$ref": "#/definitions/score" },
+        "unsupported_claims": { "$ref": "#/definitions/score" },
+        "correct_uncertainty": { "$ref": "#/definitions/score" },
+        "evidence_support": { "$ref": "#/definitions/score" },
+        "tier1_obligation_recall": { "$ref": "#/definitions/score" }
+      }
+    },
+
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "invalidation_reasons", "aggregatable"],
+      "properties": {
+        "status": { "type": "string", "enum": ["valid", "degraded", "invalid"] },
+        "invalidation_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "missing_attributable_madar_call",
+              "prompt_contract_failure",
+              "answer_contract_failure",
+              "target_revision_mismatch",
+              "package_revision_mismatch",
+              "dependency_lock_mismatch",
+              "isolation_failure",
+              "incomplete_transcript",
+              "incomplete_receipt",
+              "judge_failure",
+              "environment_mismatch",
+              "quality_gate_failure",
+              "truth_unavailable",
+              "blinding_unavailable"
+            ]
+          }
+        },
+        "aggregatable": {
+          "type": "boolean",
+          "description": "MUST be false whenever status is not valid. A false value forbids this receipt from entering any cost, latency, or quality aggregate."
+        }
+      }
+    },
+
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_transcript", "answer_text", "context_artifact", "retention_policy"],
+      "properties": {
+        "raw_transcript": { "$ref": "#/definitions/artifactRef" },
+        "answer_text": { "$ref": "#/definitions/artifactRef" },
+        "context_artifact": { "$ref": "#/definitions/artifactRef" },
+        "retention_policy": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "notes": { "type": "array", "items": { "type": "string" } },
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": { "type": "string", "format": "date-time" }
+  },
+
+  "allOf": [
+    {
+      "description": "A run that is not valid can never be aggregatable.",
+      "if": {
+        "properties": { "validity": { "properties": { "status": { "enum": ["degraded", "invalid"] } }, "required": ["status"] } },
+        "required": ["validity"]
+      },
+      "then": {
+        "properties": { "validity": { "properties": { "aggregatable": { "const": false } } } }
+      }
+    },
+    {
+      "description": "An invalid run must give a reason.",
+      "if": {
+        "properties": { "validity": { "properties": { "status": { "const": "invalid" } }, "required": ["status"] } },
+        "required": ["validity"]
+      },
+      "then": {
+        "properties": { "validity": { "properties": { "invalidation_reasons": { "minItems": 1 } } } }
+      }
+    }
+  ],
+
+  "definitions": {
+    "costAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measured"],
+      "properties": {
+        "measured": { "type": "boolean" },
+        "input_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "output_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "cache_creation_input_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "wall_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "usd": { "type": ["number", "null"], "minimum": 0 },
+        "source": {
+          "type": "string",
+          "enum": ["provider_reported", "locally_timed", "unknown", "not_applicable"]
+        }
+      }
+    },
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measured", "value", "method"],
+      "properties": {
+        "measured": { "type": "boolean" },
+        "value": {
+          "type": ["number", "string", "null"],
+          "description": "MUST be null whenever measured is false. A not_measured dimension never carries a number."
+        },
+        "method": { "type": "string", "minLength": 1 },
+        "scored_by": { "type": ["string", "null"] },
+        "blinded": { "type": ["boolean", "null"] },
+        "truth_version": { "type": ["string", "null"] },
+        "not_measured_reason": { "type": ["string", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "measured": { "const": false } }, "required": ["measured"] },
+          "then": {
+            "properties": {
+              "value": { "type": "null" },
+              "not_measured_reason": { "type": "string", "minLength": 1 }
+            },
+            "required": ["not_measured_reason"]
+          }
+        }
+      ]
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retained", "path", "sha256"],
+      "properties": {
+        "retained": { "type": "boolean" },
+        "path": { "type": ["string", "null"] },
+        "sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "contract_version": "1.0.0",
+  "frozen_at": "2026-08-12",
+  "frozen_for_issue": 655,
+  "frozen_against": {
+    "madar_commit": "06b373a447acfce895412ac10eb4e5228c5df0b7",
+    "madar_package_version": "0.32.1",
+    "dependency_lock": "package-lock.json at the pinned commit; runs must use `npm ci`, never `npm install`"
+  },
+  "support_corridor": "typescript-node",
+  "targets": [
+    {
+      "id": "qual-ledger-service",
+      "name": "Ledger service qualification fixture",
+      "tier": 1,
+      "kind": "fixture",
+      "path": "docs/qualification/fixtures/ledger-service",
+      "language": "typescript",
+      "shape": "layered-http-service",
+      "dependency_lock": "none — the fixture has no runtime dependencies",
+      "holdout_class": "open",
+      "status": "frozen",
+      "digest_ref": "freeze.json#/fixtures/docs~1qualification~1fixtures~1ledger-service"
+    },
+    {
+      "id": "qual-plugin-host",
+      "name": "Plugin host qualification fixture",
+      "tier": 1,
+      "kind": "fixture",
+      "path": "docs/qualification/fixtures/plugin-host",
+      "language": "typescript",
+      "shape": "extension-host",
+      "dependency_lock": "none — the fixture has no runtime dependencies",
+      "holdout_class": "open",
+      "status": "frozen",
+      "digest_ref": "freeze.json#/fixtures/docs~1qualification~1fixtures~1plugin-host"
+    },
+    {
+      "id": "qual-unkey",
+      "name": "Unkey public repository",
+      "tier": 2,
+      "kind": "git",
+      "source": {
+        "url": "https://github.com/unkeyed/unkey",
+        "ref": "47e64533d56ff13dc2af673a203bc625ef34cf8a"
+      },
+      "language": "typescript",
+      "shape": "api-key-and-rate-limit-platform",
+      "dependency_lock": "repository lockfile at the pinned ref; install with the repository's own frozen-lockfile command",
+      "holdout_class": "open",
+      "status": "pinned_no_truth",
+      "selection_rationale": "Deliberately outside docs/benchmarks/suite/repos.json so Tier 2 qualification does not inherit repositories that existing production heuristics or published receipts were shaped around."
+    },
+    {
+      "id": "qual-payload",
+      "name": "Payload CMS public repository",
+      "tier": 2,
+      "kind": "git",
+      "source": {
+        "url": "https://github.com/payloadcms/payload",
+        "ref": "c6e79520e3ea70afc2a001b7cf8ec32683246c57"
+      },
+      "language": "typescript",
+      "shape": "headless-cms-monorepo",
+      "dependency_lock": "repository lockfile at the pinned ref; install with the repository's own frozen-lockfile command",
+      "holdout_class": "open",
+      "status": "pinned_no_truth",
+      "selection_rationale": "Deliberately outside docs/benchmarks/suite/repos.json so Tier 2 qualification does not inherit repositories that existing production heuristics or published receipts were shaped around."
+    },
+    {
+      "id": "qual-sealed-a",
+      "name": "Sealed holdout target A",
+      "tier": 2,
+      "kind": "sealed",
+      "language": "typescript",
+      "shape": "undisclosed",
+      "dependency_lock": "recorded in the sealed manifest, not in this repository",
+      "holdout_class": "sealed",
+      "status": "unsatisfied",
+      "unsatisfied_reason": "Requires a second person to author and hold the target and its truth. See holdout-policy.md; the slot stays visible and explicitly unsatisfied rather than being filled with a self-authored placeholder."
+    }
+  ],
+  "status_meaning": {
+    "frozen": "Target content is digest-pinned in freeze.json and may be used as measurable Tier 1 evidence.",
+    "pinned_no_truth": "Repository and revision are pinned, but no independent truth exists yet. Runs against this target can produce receipts and MUST report not_measured for every quality dimension.",
+    "unsatisfied": "The slot is specified but cannot be filled in the current single-author context. It must never be counted as evidence, present or absent."
+  }
+}

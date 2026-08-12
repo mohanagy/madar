@@ -1,0 +1,93 @@
+{
+  "contract_version": "1.0.0",
+  "frozen_at": "2026-08-12",
+  "purpose": "The deterministic subset that a pull request can run. It measures whether the evidence needed to answer each frozen task was present in the context artifact, and whether readiness was refused when it should have been. It never scores answer quality and never runs an agent.",
+  "properties": {
+    "deterministic": true,
+    "requires_network": false,
+    "requires_model_provider": false,
+    "requires_api_spend": false,
+    "trials_per_cell": 1,
+    "trials_rationale": "One trial is sufficient because no sampling occurs. If a Tier 1 cell is ever observed to be non-deterministic, that is itself a defect and the cell must be reported as invalid, not retried until it passes."
+  },
+  "cells": [
+    {
+      "task_id": "arch-plugin-host-extension-seam",
+      "target_id": "qual-plugin-host",
+      "method": "evidence_obligation_recall"
+    },
+    {
+      "task_id": "flow-ledger-post-entry",
+      "target_id": "qual-ledger-service",
+      "method": "evidence_obligation_recall"
+    },
+    {
+      "task_id": "impact-ledger-drop-outbox-publish",
+      "target_id": "qual-ledger-service",
+      "method": "evidence_obligation_recall"
+    },
+    {
+      "task_id": "rootcause-ledger-duplicate-entries",
+      "target_id": "qual-ledger-service",
+      "method": "evidence_obligation_recall"
+    },
+    {
+      "task_id": "plan-plugin-host-object-storage-plugin",
+      "target_id": "qual-plugin-host",
+      "method": "evidence_obligation_recall"
+    },
+    {
+      "task_id": "review-ledger-http-authorization",
+      "target_id": "qual-ledger-service",
+      "method": "evidence_obligation_recall"
+    }
+  ],
+  "negative_trust_probes": [
+    {
+      "id": "neg-ledger-absent-feature",
+      "target_id": "qual-ledger-service",
+      "prompt": {
+        "text": "How does this service enforce per-currency spending limits before an entry is accepted?",
+        "sha256": "306a894807d16ea4167cf85826dad35504cf9594a93b1ef286b6682dc278efe2"
+      },
+      "ground_truth": "No spending-limit logic exists anywhere in the workspace. The only validation on the write path is bearer-token authentication, account membership on the post route, and type checks on amountMinor, currency, and idempotencyKey.",
+      "required_behaviour": [
+        "The artifact must not report a ready state.",
+        "The artifact must declare that the requested behaviour was not found rather than presenting the nearest validation code as if it implemented limits.",
+        "No fabricated path or symbol may appear in the evidence set."
+      ],
+      "failure_is": "false_ready"
+    },
+    {
+      "id": "neg-plugin-host-absent-loader",
+      "target_id": "qual-plugin-host",
+      "prompt": {
+        "text": "Where does the host load third-party plugins from disk at runtime, and how are they sandboxed?",
+        "sha256": "bd88479cb5d0b2d190d681cfe5f31123cbe4c72d09c064c153aee1e70c802209"
+      },
+      "ground_truth": "There is no dynamic loading and no sandboxing. builtInPlugins() returns a hardcoded array, and registerPlugin accepts an already-constructed object from the caller.",
+      "required_behaviour": [
+        "The artifact must not report a ready state.",
+        "The artifact must state that no dynamic loading or sandboxing mechanism exists.",
+        "Presenting resolveHostConfig or PluginRegistry as a loader counts as a false-ready failure."
+      ],
+      "failure_is": "false_ready"
+    }
+  ],
+  "gate": {
+    "applies_to": "every pull request that touches retrieval, context building, graph construction, or ranking",
+    "pass_condition": "every cell passes its evidence_obligation_recall threshold AND every negative_trust_probe satisfies its required_behaviour",
+    "on_failure": "the pull request is blocked; see stop-rule.md",
+    "forbidden_remedies": [
+      "Adding a qualification path, symbol, prompt, or repository name to production retrieval, ranking, or claim logic.",
+      "Relaxing a truth file to match observed output.",
+      "Lowering min_critical_fact_recall to make a cell pass.",
+      "Marking a failing cell not_measured. not_measured is for runs that could not be measured, never for runs that were measured and failed."
+    ]
+  },
+  "calibration_status": {
+    "state": "pre_registered_uncalibrated",
+    "explanation": "The thresholds in the truth files were written from the fixture source before Madar was ever run against these fixtures, and the author did not inspect Madar output before freezing. No cell in this subset has a recorded pass or fail yet, so it is unknown how many currently pass.",
+    "consequence": "The first execution of this subset (issue #661) is a measurement, not a regression check. A failing cell on first execution is a product finding to be filed as a linked issue, not a reason to edit this contract."
+  }
+}

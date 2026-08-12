@@ -1,0 +1,143 @@
+{
+  "contract_version": "1.0.0",
+  "frozen_at": "2026-08-12",
+  "dimensions": {
+    "correctness": {
+      "definition": "Every assertion the answer makes about the target is true of the pinned source.",
+      "scale": { "0": "contains a false assertion about the target", "1": "no false assertions, but material gaps", "2": "no false assertions" },
+      "scored_by": "blinded_human",
+      "tiers": [2],
+      "gating": true
+    },
+    "critical_fact_completeness": {
+      "definition": "Fraction of the truth file's critical facts that the answer states. Facts marked supporting do not count in the denominator.",
+      "scale": "ratio in [0,1] with the per-task critical_facts_required_for_pass set treated as mandatory",
+      "scored_by": "blinded_human",
+      "tiers": [2],
+      "gating": true
+    },
+    "unsupported_claims": {
+      "definition": "Count of assertions matching the task's unsupported_claim_traps, plus any other assertion a blinded reviewer cannot trace to the pinned source.",
+      "scale": "non-negative integer; lower is better",
+      "scored_by": "blinded_human",
+      "tiers": [2],
+      "gating": true
+    },
+    "correct_uncertainty": {
+      "definition": "Fraction of the task's correct_uncertainty requirements the answer honours. Both directions are penalised: asserting something the source cannot support, and hedging something the source states plainly.",
+      "scale": "ratio in [0,1]",
+      "scored_by": "blinded_human",
+      "tiers": [2],
+      "gating": true
+    },
+    "evidence_support": {
+      "definition": "Fraction of critical assertions accompanied by a citation to a real path and symbol in the pinned target that actually contains the cited content.",
+      "scale": "ratio in [0,1]",
+      "scored_by": "both",
+      "tiers": [1, 2],
+      "gating": true,
+      "note": "The path/symbol existence half is deterministic. Whether the cited code supports the assertion is blinded-human only."
+    },
+    "intended_tool_adoption": {
+      "definition": "Whether the run made an attributable Madar call before broad repository exploration, when the task contract requires one.",
+      "scale": { "adopted": "attributable Madar call precedes broad exploration", "late": "attributable call occurred after broad exploration", "absent": "no attributable Madar call" },
+      "scored_by": "deterministic",
+      "tiers": [2],
+      "gating": false,
+      "note": "Adoption is a behaviour measurement, NOT a context-quality measurement. It is reported in its own column and must never be folded into a quality score. absent makes the run invalid for quality comparison; it is not a quality loss."
+    },
+    "broad_fallback_exploration": {
+      "definition": "Count of broad repository operations (directory-wide search, unscoped glob, full-file reads outside the evidence set) performed after the first Madar call.",
+      "scale": "non-negative integer; lower is better",
+      "scored_by": "deterministic",
+      "tiers": [2],
+      "gating": false,
+      "note": "Reported separately from quality and from cost. A high value with a passing quality score means the context pack was insufficient, not that the answer was bad."
+    }
+  },
+  "methods": {
+    "evidence_obligation_recall": {
+      "tier": 1,
+      "deterministic": true,
+      "inputs": ["the context artifact produced for the frozen prompt", "the task truth file's tier1_obligations"],
+      "procedure": [
+        "Collect the evidence set (paths and symbols) the artifact presents as supporting material.",
+        "required_evidence_paths recall must be >= min_critical_fact_recall.",
+        "required_evidence_symbols recall must be >= min_critical_fact_recall.",
+        "Every path cited by the artifact must exist in the pinned target.",
+        "If any must_not_report_ready_when condition holds, the artifact must not report a ready state."
+      ],
+      "outcome": ["pass", "fail", "not_measured"],
+      "explicitly_not_measured": "Answer quality. Tier 1 measures whether the evidence needed to answer was present, not whether an agent answered well."
+    },
+    "blinded_rubric": {
+      "tier": 2,
+      "deterministic": false,
+      "procedure": [
+        "The reviewer receives the answer text, the task prompt, and the truth file.",
+        "The reviewer does NOT receive the arm label, the token counts, the latency, or the transcript.",
+        "The reviewer scores correctness, critical_fact_completeness, unsupported_claims, correct_uncertainty, and evidence_support.",
+        "Arm labels are revealed only after every answer in the cell is scored."
+      ],
+      "pass_condition": "correctness == 2 AND every id in critical_facts_required_for_pass is present AND unsupported_claims == 0"
+    },
+    "ordered_path_rubric": {
+      "tier": 2,
+      "deterministic": false,
+      "extends": "blinded_rubric",
+      "additional_procedure": [
+        "For each pair in order_sensitive_pairs, the answer must place the first element before the second.",
+        "An answer that names every step but inverts an order_sensitive_pair fails correctness."
+      ]
+    },
+    "affected_set_precision_recall": {
+      "tier": 2,
+      "deterministic": false,
+      "extends": "blinded_rubric",
+      "additional_procedure": [
+        "recall = |named ∩ recall_denominator| / |recall_denominator|",
+        "Each member of precision_penalty_set named as affected counts as one unsupported claim.",
+        "The loud-vs-silent judgement is scored under correctness, not under recall."
+      ]
+    },
+    "single_root_cause_adjudication": {
+      "tier": 2,
+      "deterministic": false,
+      "extends": "blinded_rubric",
+      "additional_procedure": [
+        "The answer passes only if it names a cause in accepted_root_cause_ids as THE cause.",
+        "Listing the correct cause among several candidate causes without committing scores as a partial: critical_fact_completeness credit, correctness 1, no pass.",
+        "Every id in uncertainty_required_for_pass must be honoured."
+      ]
+    },
+    "seeded_defect_detection": {
+      "tier": 2,
+      "deterministic": false,
+      "extends": "blinded_rubric",
+      "additional_procedure": [
+        "Every id in required_detections must be reported with a citation that proves it.",
+        "Each reported finding matching false_positive_set counts as one unsupported claim.",
+        "Findings in acceptable_additional_findings are neither required nor penalised."
+      ]
+    }
+  },
+  "blinding": {
+    "required_for_tier": 2,
+    "rules": [
+      "Answers are stripped of arm labels, tool traces, and cost data before review.",
+      "Answers from both arms of a cell are shuffled and reviewed in one pass.",
+      "The reviewer must not be the person who authored the change under evaluation.",
+      "Reviewer identity, review date, and the truth file version are recorded on every score."
+    ],
+    "current_status": "unsatisfied",
+    "current_status_reason": "Single-author repository. See holdout-policy.md; Tier 2 scores produced without an independent reviewer must be labelled self_reviewed and are not publishable evidence."
+  },
+  "aggregation": {
+    "rules": [
+      "Quality dimensions are aggregated per task and per repo. There is no blended cross-task headline.",
+      "Runs whose validity is not valid contribute to no aggregate other than the invalid-run count.",
+      "Adoption and broad_fallback_exploration are reported as their own columns and never merged into a quality score.",
+      "Cost and latency are reported only for cells whose gating quality dimensions passed."
+    ]
+  }
+}
