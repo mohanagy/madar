@@ -14,6 +14,11 @@ concurrency:
 
 jobs:
   release:
+    # Stable channel only. A SemVer prerelease tag always contains '-', so beta/rc/next
+    # tags skip this job cleanly and are handled by publish-next.yml instead. Skipping
+    # rather than failing keeps every legitimate prerelease from leaving a red run in the
+    # Actions history; malformed stable tags still fail loudly in the step below.
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -28,6 +33,9 @@ jobs:
         with:
           node-version: '20'
           cache: npm
+
+      - name: Require stable release tag
+        run: node .github/scripts/classify-release-tag.mjs --tag "$GITHUB_REF_NAME" --expect stable
 
       - name: Validate tag, package version, and changelog
         run: |

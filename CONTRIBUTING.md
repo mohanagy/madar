@@ -52,6 +52,19 @@ Before opening a pull request:
 
 If your change affects extraction behavior, prefer adding a small fixture and a targeted test under `tests/unit/` or `tests/fixtures/`.
 
+### Branch and release policy
+
+| Branch or change | Role | Pull request target | npm dist-tag |
+| --- | --- | --- | --- |
+| `main` | Stable release line | Reviewed stable promotions only | `latest` |
+| `next` | Prerelease integration line | Issue, roadmap, and release-preparation work | `next` |
+| Issue branches | Focused fixes or improvements branched from `next` | `next` | None |
+| Roadmap pull requests | Planned work branched from `next` | `next` | None |
+
+Create Issue branches from `next`, and target `next` for ordinary and roadmap pull requests. A stable release reaches `main` only through a reviewed `next` → `main` pull request; do not bypass that promotion trail with an equivalent main-based branch.
+
+Pushes to `main` and `next`, plus pull requests, run the six-job Ubuntu/macOS/Windows and Node 20/22 CI matrix. Path-sensitive checks that remain single-lane are follow-up work, not cross-platform proof.
+
 ## Data, benchmarks, and private material
 
 Do not include private repositories, private corpora, proprietary prompts, API keys, tokens, credentials, customer data, or raw logs that may contain sensitive data.

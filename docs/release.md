@@ -1,74 +1,92 @@
-# Release checklist
+# Release channels and checklist
 
-Use this checklist when preparing a new `madar` release. It is intentionally manual: the goal is to keep each version easy to verify without hiding the release steps behind automation.
+Madar uses two release channels. `main` carries stable releases on npm's `latest` dist-tag, while `next` carries approved prereleases on the `next` dist-tag. Release versions and tags must match exactly: stable tags look like `v0.33.0`, and approved prerelease tags look like `v0.33.0-beta.1`, `v0.33.0-rc.1`, or `v0.33.0-next.1`.
 
-## 1. Prepare the release commit
+## Install a release channel
 
-1. Update the package version with `npm version <patch|minor|major>`.
-2. Review `package.json` and `package-lock.json` to confirm the new version is correct.
-3. Update `CHANGELOG.md` with the user-visible changes in the release.
-4. Make sure any linked docs, examples, install flows, and `docs/mcp-registry/server.json` reflect the new behavior.
-5. Any new public claim requires a reproducible artifact under `docs/benchmarks/suite/` and a matching update to `docs/claims-and-evidence.md` before the README or release notes can say it publicly.
-6. If this release will be announced outside the repo, copy the proof block and channel tracker from [`docs/launch-checklist.md`](./launch-checklist.md) into the release PR, release notes draft, or other working notes before drafting external copy.
-
-## 2. Run the required verification commands
-
-From the repository root:
+Install the current stable release:
 
 ```bash
-npm install
+npm install -g @lubab/madar
+```
+
+Install the current beta / prerelease selected by the `next` dist-tag:
+
+```bash
+npm install -g @lubab/madar@next
+```
+
+Install an exact beta for reproducible testing:
+
+```bash
+npm install -g @lubab/madar@0.33.0-beta.1
+```
+
+## Branch policy
+
+| Branch or change | Purpose | npm channel | Pull request policy |
+| --- | --- | --- | --- |
+| `main` | Stable releases only | `latest` | Receives stable promotion through a reviewed `next` → `main` pull request |
+| `next` | Prerelease integration and qualification | `next` | Receives reviewed issue and roadmap pull requests |
+| Issue branches | One focused issue or improvement | None | Branch from `next` and target `next` |
+| Roadmap changes | Planned product work | None | Branch from `next` and target `next` |
+
+In short, use `main` for stable releases, `next` for prereleases. Do not bypass the reviewed promotion pull request to move integration work directly onto `main`.
+
+CI runs its six Ubuntu/macOS/Windows and Node 20/22 jobs for pushes to both long-lived branches and for pull requests. That is broad repository-level validation. Path-sensitive checks that remain single-lane are follow-up work, not cross-platform proof.
+
+## Required release verification
+
+Run the applicable commands from the repository root on the exact commit proposed for release:
+
+```bash
+npm ci
 npm run release:verify
 npm run registry:validate
 npm run typecheck
-npm run build
 npm run test:run
+npm run test:coverage
+npm run build
+npm run verify:pack-parity
 npm pack --dry-run
 npm sbom --sbom-format cyclonedx > sbom.cdx.json
 ```
 
-`npm run release:verify` locks the public package metadata, changelog version entry, and npm-visible README links before publish so repository/documentation drift is caught in one pass.
+Run `npm run qualify:validate` when that script is present. Its failure is a release blocker; when it is absent, record that qualification was unavailable rather than presenting it as passed.
 
-If the change touches packaging, installer behavior, or public MCP Registry metadata, keep the `npm pack --dry-run` output with the release notes or pull request for easy review. Keep the generated `sbom.cdx.json` alongside the release PR or release notes as the checked supply-chain inventory snapshot for that version. Review [`docs/security/mcp-threat-model.md`](./security/mcp-threat-model.md) before publishing changes that affect MCP installs, share-safe artifacts, prompt handling, or local file boundaries.
+`npm run release:verify` locks the public package metadata, changelog version entry, and npm-visible README links before publish. `npm pack --dry-run` records the package boundary, and `sbom.cdx.json` is the checked supply-chain inventory snapshot. If the change touches packaging, installer behavior, or public MCP Registry metadata, keep those outputs with the release pull request. Review [`docs/security/mcp-threat-model.md`](./security/mcp-threat-model.md) before publishing changes that affect MCP installs, share-safe artifacts, prompt handling, or local file boundaries.
 
-## 3. Run manual CLI smoke checks
+Any new public claim requires a reproducible artifact under `docs/benchmarks/suite/` and a matching update to `docs/claims-and-evidence.md` before the README or release notes can say it publicly. For an external announcement, copy the proof block and channel tracker from [`docs/launch-checklist.md`](./launch-checklist.md) into the release pull request or working notes before drafting copy.
 
-These checks verify that the published surface still matches the docs and changelog:
+## Beta preparation (10 steps)
 
-```bash
-madar --version
-madar generate .
-madar claude install
-madar codex install
-```
+1. Create the issue or roadmap branch from current `next`; keep the change focused and do not branch release work from `main`.
+2. Implement the change, add focused tests and fixtures, update user-facing documentation, and run the relevant local checks.
+3. Open the pull request against `next`, obtain review, and wait for the full CI matrix. Treat any path-sensitive single-lane result as targeted evidence, not cross-platform proof.
+4. Merge the reviewed change into `next`, then choose the next approved version such as `0.33.0-beta.1`, `0.33.0-rc.1`, or `0.33.0-next.1`.
+5. On a short release-preparation branch from `next`, run `npm version 0.33.0-beta.1 --no-git-tag-version` (substituting the chosen version), verify both `package.json` and `package-lock.json`, and add the exact dated `CHANGELOG.md` section.
+6. Review linked docs, examples, install flows, claims, and limitations. Do not change `docs/mcp-registry/server.json` merely to publish a prerelease; MCP Registry publication remains a separate explicitly scoped operation.
+7. Run every command under [Required release verification](#required-release-verification), including mandatory qualification when available, and retain the pack and SBOM evidence.
+8. Run manual CLI smoke checks, open the release-preparation pull request back to `next`, obtain review, merge it, and confirm the intended release commit is now contained in `origin/next`.
+9. Create the exact `v<version>` tag on that merged commit and push only the tag. Approve the protected `npm-next` environment after reviewing the tag, commit, changelog, and validation plan. The workflow uses npm Trusted Publishing with OIDC and provenance; if that trust policy is unavailable, it fails without using a token or dropping provenance.
+10. Confirm `@lubab/madar@<version>` resolves, `@lubab/madar@next` installs that exact version, `latest` did not move, both installed binaries pass the temporary-workspace smoke, and the GitHub release is marked as a prerelease with qualification and remediation notes.
 
-Recommended follow-up checks:
+The protected workflow runs `npm publish --tag next --access public --provenance` only after all gates pass. npm versions are immutable: remediate a bad beta by deprecating it, moving `next` back to a known-good prerelease, documenting the gap, and publishing a new prerelease number. Never move `latest` as part of prerelease remediation.
 
-- confirm `madar --version` prints the version you are about to publish
-- confirm `madar generate .` completes and refreshes `out/graph.json`
-- confirm install commands write the expected project files and instructions
-- for Codex, confirm `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and this workspace's block in `~/.codex/config.toml` exist, and that it contains `startup_timeout_sec = 180` plus `tool_timeout_sec = 60`; only in a trusted repository, restart or open a new session, use `/hooks` to review/trust the project hook, then use `/mcp` or `codex mcp list` to verify the local MCP server
-- uninstall any agent profile you enabled during the smoke test so the workspace returns to a clean state
+## Stable promotion (8 steps)
 
-## 4. Publish and tag
+1. Select a qualified commit on `next`; confirm its beta feedback, known limitations, changelog, public claims, pack evidence, and launch checklist are ready for stable users.
+2. Prepare the stable promotion commit on `next` with `npm version 0.33.0 --no-git-tag-version` (substituting the intended stable version), keep `package.json` and `package-lock.json` aligned, and convert the changelog entry into the exact dated stable section.
+3. Run every command under [Required release verification](#required-release-verification), the manual CLI smoke checks below, and any present qualification command against that exact promotion commit.
+4. Open the stable promotion as a reviewed `next` → `main` pull request. Do not recreate the changes on a main-based branch; the reviewed promotion is the audit trail for what graduates.
+5. Wait for required review and CI, merge into `main`, and verify the merged commit is the reviewed content with no release-file drift.
+6. Create and push the exact stable tag on the merged `main` commit. `.github/workflows/release.yml` rejects prerelease tags, revalidates the stable release, and creates the ordinary GitHub release.
+7. From an authorized provenance-capable environment checked out at that exact tag, verify that the version is unpublished and run `npm publish --access public --provenance`. This publishes to npm's default `latest` dist-tag; never use `--tag next` for stable promotion.
+8. Confirm the exact version and `latest` resolve, install and smoke-test the published package in a clean workspace, confirm the prerelease history and `next` status remain intentional, record channel status in the release notes, and then reopen `next` for the next prerelease cycle.
 
-After the verification steps are green:
+## Manual CLI smoke checks
 
-1. Push and merge the verified release commit so the published README links already exist on the target release branch (`main` for stable releases, `next` for prereleases).
-2. Publish from that merged release commit:
-   - stable releases: `npm publish --access public --provenance`
-   - prereleases / `next`: `npm publish --tag next --access public --provenance`
-   If the release environment does not support npm provenance attestations, rerun the same command without `--provenance`.
-3. Create the matching Git tag if `npm version` did not already do so in your workflow.
-4. After npm confirms the matching public version, run the **Publish MCP Registry metadata** GitHub Actions workflow with that `vX.Y.Z` tag. It uses GitHub OIDC (no registry secret), verifies the published package has `mcpName: "io.github.mohanagy/madar"`, publishes the checked-in manifest, and verifies the Registry API result.
-5. Draft or publish the GitHub release notes from the changelog entry.
-6. Before posting on npm/GitHub directories, social/news sites, or videos/blogs, complete the copied proof-first launch checklist from [`docs/launch-checklist.md`](./launch-checklist.md) so every public surface starts from a dated receipt plus caveats.
-
-## 5. Post-release verification
-
-After the package is live:
-
-1. Confirm the new version appears on npm.
-2. Install the released version in a clean shell and re-run:
+Before publication, exercise the built CLI:
 
 ```bash
 madar --version
@@ -77,6 +95,12 @@ madar claude install
 madar codex install
 ```
 
-3. Verify the README, changelog, and install docs still describe the released behavior accurately.
-4. If anything is wrong, document the gap immediately and prepare a follow-up patch release instead of silently relying on tribal knowledge.
-5. Record the completed channel statuses in the release PR, release notes draft, or other working notes you copied from [`docs/launch-checklist.md`](./launch-checklist.md) so distribution work stays explicit without mutating the canonical template.
+Confirm `madar --version` prints the version about to be published, generation refreshes `out/graph.json`, and install commands write the expected project files and instructions. For Codex, confirm `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and this workspace's block in `~/.codex/config.toml` exist with `startup_timeout_sec = 180` and `tool_timeout_sec = 60`. Only in a trusted repository, restart or open a new session, use `/hooks` to review and trust the project hook, then use `/mcp` or `codex mcp list` to verify the local MCP server. Uninstall any agent profile enabled solely for the smoke test.
+
+## Post-release verification
+
+After publication, install the exact public version in a clean temporary workspace and repeat the relevant `madar --version` and `madar generate .` checks against the installed binary, not the repository checkout.
+
+If stable package metadata should be published to the official MCP Registry, run the separate **Publish MCP Registry metadata** workflow only after npm confirms the matching public version. It uses GitHub OIDC, validates the checked-in manifest, and verifies the Registry API result. Neither npm release workflow mutates MCP Registry metadata.
+
+Before posting to npm/GitHub directories, social/news sites, or videos/blogs, complete the copied proof-first checklist from [`docs/launch-checklist.md`](./launch-checklist.md). If anything is wrong after release, document it immediately and prepare a new version instead of silently relying on tribal knowledge.

@@ -1,0 +1,350 @@
+name: Publish next prerelease
+
+on:
+  push:
+    tags:
+      - 'v*-beta.*'
+      - 'v*-rc.*'
+      - 'v*-next.*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Exact prerelease tag; select this same tag as the workflow ref when dispatching
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: publish-next
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: npm-next
+    env:
+      PACKAGE_NAME: '@lubab/madar'
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+
+    steps:
+      # Check out github.sha rather than deriving a ref from workflow_dispatch input.
+      # Untrusted input must never reach actions/checkout's `ref:`: checkout happens before
+      # any validation runs, so a crafted ref could supply its own validation scripts and
+      # then "pass" every gate below. github.sha is resolved by GitHub from the workflow ref,
+      # so dispatching REQUIRES selecting the prerelease tag itself as the workflow ref --
+      # which the tag/commit assertion below enforces and its error message documents.
+      - name: Check out exact prerelease commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Never restore setup-node's npm cache in this privileged job: an untrusted
+      # pull-request job could poison a shared cache that later executes during publish.
+      #
+      # Node 22 is used deliberately: the published artifact must be validated on a Node
+      # version the CI matrix actually tests (20 and 22). Validating on an untested runtime
+      # risks both false failures that block a good release and false passes that ship a
+      # build broken for supported users. npm is upgraded separately below because
+      # Trusted Publishing needs npm >= 11.5.1, which Node 22 does not ship by default.
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Upgrade npm for Trusted Publishing support
+        run: npm install --global npm@latest
+
+      - name: Validate prerelease tag and release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/scripts/verify-next-release-state.mjs \
+            --assert-event \
+            --event "$GITHUB_EVENT_NAME" \
+            --ref "$GITHUB_REF"
+          node .github/scripts/classify-release-tag.mjs \
+            --tag "$RELEASE_TAG" \
+            --expect prerelease \
+            --verify-package-version \
+            --verify-changelog
+
+          version="${RELEASE_TAG#v}"
+          printf 'PACKAGE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+
+      - name: Prove exact tag commit and next ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/next:refs/remotes/origin/next
+
+          head_commit="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          if [[ "$head_commit" != "$tag_commit" ]]; then
+            echo "::error::Checked out commit $head_commit does not match $RELEASE_TAG at $tag_commit"
+            exit 1
+          fi
+          if [[ "$head_commit" != "$GITHUB_SHA" ]]; then
+            echo "::error::The workflow event commit $GITHUB_SHA is not the tagged commit $head_commit. For workflow_dispatch, select $RELEASE_TAG as the workflow ref."
+            exit 1
+          fi
+
+          node .github/scripts/verify-next-release-state.mjs \
+            --assert-ancestor \
+            --commit "$head_commit" \
+            --branch origin/next
+          printf 'RELEASE_COMMIT=%s\n' "$head_commit" >> "$GITHUB_ENV"
+
+      - name: Verify version is not already published
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm view "$PACKAGE_NAME" versions --json > "$RUNNER_TEMP/npm-published-versions.json"
+          node .github/scripts/verify-next-release-state.mjs \
+            --assert-unpublished \
+            --version "$PACKAGE_VERSION" \
+            --versions-file "$RUNNER_TEMP/npm-published-versions.json"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm run test:run
+
+      - name: Run tests with coverage thresholds
+        run: npm run test:coverage
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify checkout and packed retrieval parity
+        run: npm run verify:pack-parity
+
+      - name: Validate MCP Registry metadata
+        run: npm run registry:validate
+
+      - name: Verify release hygiene
+        run: npm run release:verify
+
+      - name: Run qualification validation when available
+        id: qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          if node -e "const scripts = require('./package.json').scripts ?? {}; process.exit(scripts['qualify:validate'] ? 0 : 1)"; then
+            npm run qualify:validate
+            echo 'status=passed' >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice title=Qualification validation::qualify:validate is not present on this tag; qualification was skipped.'
+            echo 'status=skipped (script not present)' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate npm package contents
+        run: npm pack --dry-run
+
+      - name: Dry-run next publication
+        run: npm publish --dry-run --tag next
+
+      - name: Capture pre-publish npm dist-tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm view "$PACKAGE_NAME" versions --json > "$RUNNER_TEMP/npm-published-versions.json"
+          node .github/scripts/verify-next-release-state.mjs \
+            --assert-unpublished \
+            --version "$PACKAGE_VERSION" \
+            --versions-file "$RUNNER_TEMP/npm-published-versions.json"
+          npm view "$PACKAGE_NAME" dist-tags --json > "$RUNNER_TEMP/npm-dist-tags-before.json"
+          node -e "const tags = require(process.argv[1]); if (!tags || typeof tags !== 'object' || Array.isArray(tags)) throw new Error('npm returned invalid dist-tags JSON')" "$RUNNER_TEMP/npm-dist-tags-before.json"
+
+      - name: Persist pre-publish npm dist-tags
+        uses: actions/upload-artifact@v6
+        with:
+          name: npm-dist-tags-before-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/npm-dist-tags-before.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Require tokenless npm Trusted Publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${NODE_AUTH_TOKEN:-}" || -n "${NPM_TOKEN:-}" ]]; then
+            echo '::error::Long-lived npm tokens are forbidden. Remove NODE_AUTH_TOKEN/NPM_TOKEN and configure npm Trusted Publishing for this GitHub environment.'
+            exit 1
+          fi
+
+          user_config="$(npm config get userconfig)"
+          global_config="$(npm config get globalconfig)"
+          NPM_USER_CONFIG="$user_config" NPM_GLOBAL_CONFIG="$global_config" node --input-type=module <<'NODE'
+          import { existsSync, readFileSync } from 'node:fs'
+          import { resolve } from 'node:path'
+
+          const credentialEnvironmentKeys = Object.keys(process.env).filter((key) =>
+            /^(?:NODE_AUTH_TOKEN|NPM_TOKEN)$/i.test(key)
+              || /^NPM_CONFIG_.*(?:AUTH|TOKEN|PASSWORD)/i.test(key),
+          )
+          if (credentialEnvironmentKeys.length > 0) {
+            throw new Error(`npm credential environment variables are forbidden: ${credentialEnvironmentKeys.join(', ')}`)
+          }
+
+          const configPaths = [
+            resolve('.npmrc'),
+            process.env.NPM_USER_CONFIG,
+            process.env.NPM_GLOBAL_CONFIG,
+          ].filter(Boolean)
+          for (const configPath of configPaths) {
+            if (existsSync(configPath) && /(?:_authToken|_auth|_password)\s*=/i.test(readFileSync(configPath, 'utf8'))) {
+              throw new Error(`npm token credentials are forbidden in ${configPath}`)
+            }
+          }
+          NODE
+
+          npm_version="$(npm --version)"
+          node -e "const [major, minor, patch] = process.argv[1].split('.').map(Number); const supported = major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1))); if (!supported) { console.error('npm ' + process.argv[1] + ' cannot use Trusted Publishing; npm >=11.5.1 is required'); process.exit(1) }" "$npm_version"
+          if [[ "$(npm config get registry)" != 'https://registry.npmjs.org/' ]]; then
+            echo '::error::Trusted Publishing must target https://registry.npmjs.org/.'
+            exit 1
+          fi
+
+      - name: Publish prerelease with npm Trusted Publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_log="$RUNNER_TEMP/npm-publish.log"
+          if ! npm publish --tag next --access public --provenance >"$publish_log" 2>&1; then
+            sed -E 's/(npm_[A-Za-z0-9]{20,}|Bearer[[:space:]]+[A-Za-z0-9._-]+)/[redacted]/g' "$publish_log" >&2
+            echo '::error::Publication failed. Confirm the version is still unpublished and configure @lubab/madar Trusted Publishing for this GitHub repository, publish-next.yml, and the npm-next environment; do not add an npm token or remove provenance.'
+            exit 1
+          fi
+          sed -E 's/(npm_[A-Za-z0-9]{20,}|Bearer[[:space:]]+[A-Za-z0-9._-]+)/[redacted]/g' "$publish_log"
+
+      - name: Verify published version and dist-tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          verified=false
+          for attempt in {1..12}; do
+            if npm view "$PACKAGE_NAME" dist-tags --json > "$RUNNER_TEMP/npm-dist-tags-after.json" \
+              && npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version --json > "$RUNNER_TEMP/npm-resolved-version.json" \
+              && node .github/scripts/verify-next-release-state.mjs \
+                --verify-publish \
+                --version "$PACKAGE_VERSION" \
+                --before "$RUNNER_TEMP/npm-dist-tags-before.json" \
+                --after "$RUNNER_TEMP/npm-dist-tags-after.json" \
+                --resolved-version "$RUNNER_TEMP/npm-resolved-version.json" >/dev/null 2>&1; then
+              verified=true
+              break
+            fi
+            echo "Waiting for npm registry propagation (attempt $attempt of 12)"
+            sleep 10
+          done
+
+          if [[ "$verified" != true ]]; then
+            node .github/scripts/verify-next-release-state.mjs \
+              --verify-publish \
+              --version "$PACKAGE_VERSION" \
+              --before "$RUNNER_TEMP/npm-dist-tags-before.json" \
+              --after "$RUNNER_TEMP/npm-dist-tags-after.json" \
+              --resolved-version "$RUNNER_TEMP/npm-resolved-version.json"
+            exit 1
+          fi
+
+          npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.integrity --json > "$RUNNER_TEMP/npm-integrity.json"
+          integrity="$(node -p "require(process.argv[1])" "$RUNNER_TEMP/npm-integrity.json")"
+          printf 'PACKAGE_INTEGRITY=%s\n' "$integrity" >> "$GITHUB_ENV"
+
+      - name: Smoke-test exact and next global installs
+        shell: bash
+        run: |
+          set -euo pipefail
+          exact_prefix="$(mktemp -d "$RUNNER_TEMP/madar-exact-prefix.XXXXXX")"
+          next_prefix="$(mktemp -d "$RUNNER_TEMP/madar-next-prefix.XXXXXX")"
+
+          npm install --global --prefix "$exact_prefix" --cache "$RUNNER_TEMP/npm-smoke-cache-exact" --prefer-online "$PACKAGE_NAME@$PACKAGE_VERSION"
+          npm install --global --prefix "$next_prefix" --cache "$RUNNER_TEMP/npm-smoke-cache-next" --prefer-online "$PACKAGE_NAME@next"
+
+          exact_binary="$exact_prefix/bin/madar"
+          next_binary="$next_prefix/bin/madar"
+          [[ "$("$exact_binary" --version)" == "$PACKAGE_VERSION" ]]
+          [[ "$("$next_binary" --version)" == "$PACKAGE_VERSION" ]]
+
+          for channel in exact next; do
+            workspace="$(mktemp -d "$RUNNER_TEMP/madar-$channel-workspace.XXXXXX")"
+            mkdir -p "$workspace/src"
+            printf '{"name":"madar-published-smoke","private":true,"type":"module"}\n' > "$workspace/package.json"
+            printf 'export function greet(name: string): string { return `hello ${name}` }\n' > "$workspace/src/index.ts"
+
+            if [[ "$channel" == exact ]]; then
+              binary="$exact_binary"
+            else
+              binary="$next_binary"
+            fi
+            (cd "$workspace" && "$binary" generate . --no-html)
+            test -s "$workspace/out/graph.json"
+          done
+
+      - name: Create or update GitHub prerelease
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUALIFICATION_STATUS: ${{ steps.qualification.outputs.status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_notes="$RUNNER_TEMP/github-prerelease-notes.md"
+          RELEASE_NOTES_PATH="$release_notes" node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs'
+
+          const {
+            PACKAGE_INTEGRITY: integrity,
+            PACKAGE_VERSION: version,
+            QUALIFICATION_STATUS: qualification,
+            RELEASE_COMMIT: commit,
+            RELEASE_NOTES_PATH: notesPath,
+          } = process.env
+          const provenanceUrl = `https://www.npmjs.com/package/@lubab/madar/v/${version}#provenance`
+          const body = [
+            '## Prerelease publication',
+            '',
+            `- Version: \`${version}\``,
+            `- Commit: \`${commit}\``,
+            '- npm dist-tag: `next`',
+            `- Install: \`npm install -g @lubab/madar@${version}\``,
+            `- Provenance: ${provenanceUrl}`,
+            `- Integrity: \`${integrity}\``,
+            `- Qualification: ${qualification}`,
+            '',
+            '## Known limitations',
+            '',
+            'Path-sensitive checks that remain single-lane are follow-up work and are not cross-platform proof.',
+            '',
+            '## Rollback and remediation',
+            '',
+            'npm versions are immutable. If this prerelease is defective, deprecate the exact version, move `next` back to the last-known-good prerelease with `npm dist-tag add @lubab/madar@<last-known-good> next`, document the incident, and publish a new prerelease number. Do not move `latest` during prerelease remediation.',
+            '',
+          ].join('\n')
+          writeFileSync(notesPath, body)
+          NODE
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --target "$RELEASE_COMMIT" \
+              --prerelease \
+              --notes-file "$release_notes"
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --target "$RELEASE_COMMIT" \
+              --prerelease \
+              --notes-file "$release_notes"
+          fi
