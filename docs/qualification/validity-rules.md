@@ -26,7 +26,7 @@ to `validity.invalidation_reasons`:
 | `judge_failure` | A deterministic grader errored, or a blinded reviewer could not score the answer. |
 | `environment_mismatch` | `environment.drift.detected` is true and the drift was not resolved before the cell ran. |
 | `quality_gate_failure` | A gate failed in a way that prevents comparison at all — not a gate the arm simply lost. |
-| `truth_unavailable` | The target/task pair has no independent truth (`status: "pinned_no_truth"`). |
+| `truth_unavailable` | The target/task pair has no independent truth — for example a target added to the manifest before its truth file exists, or the unsatisfied sealed-holdout slot. |
 | `blinding_unavailable` | A Tier 2 quality dimension was scored without an independent blinded reviewer. |
 
 `degraded` is reserved for runs that are attributable and complete but weaker than the

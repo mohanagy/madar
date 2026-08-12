@@ -362,6 +362,20 @@ describe('qualification Tier 1 subset', () => {
 })
 
 describe('qualification policy documents', () => {
+  it('states the no-measured-evidence limitation prominently at the top of the README', () => {
+    const readme = readDoc(`${ROOT}/README.md`)
+    const heading = '## Read this first — what this contract does and does not give you today'
+
+    expect(readme).toContain(heading)
+    // "Prominent" is load-bearing: the limitation must appear before the corpus is described,
+    // not be inferable only by cross-referencing target entries further down.
+    expect(readme.indexOf(heading)).toBeLessThan(readme.indexOf('## Why a separate corpus exists'))
+    expect(readme).toContain('This contract has never been executed. It currently produces no measured evidence of')
+    expect(readme).toContain('Regression only, never generalization.')
+    expect(readme).toContain('Thresholds are pre-registered, not calibrated.')
+    expect(readme).toContain('**Tier 1 needs network access**')
+  })
+
   it('states an objective stop rule with a pre-registered non-inferiority margin', () => {
     const stopRule = readDoc(`${ROOT}/stop-rule.md`)
 

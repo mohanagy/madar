@@ -4,12 +4,12 @@
   "algorithm": "sha256 over raw file bytes",
   "note": "Regenerate deliberately with `npm run qualify:validate -- --write` and say why in the pull request. A silent digest change is a contract change.",
   "files": {
-    "docs/qualification/README.md": "4261326a246885f0fe50fbbd382d845af6b71b63d472fde5b1bd2e0320307020",
+    "docs/qualification/README.md": "7f4920abbac662f13ec2deea6756edac13bd19090953387209a3df8ee97eea5f",
     "docs/qualification/corpus.json": "faa4511d5d255357fdc6c0b5b28b7f139a84871456b914c8425cb1cf1688ee03",
     "docs/qualification/evidence-categories.md": "1f75b04229b805050584eadda201bc67906224d34f562afa2098558296a952cd",
     "docs/qualification/examples/receipt-tier1-valid.json": "6bb66edfaeaba4ccb97af33b0d9d5fcada2a5c5a686ebd919e46049722f825dc",
     "docs/qualification/examples/receipt-tier2-invalid-no-madar-call.json": "d20124547ba9839c8254e150d3aa06c8961e423e593b5893cbab36e77e829ad8",
-    "docs/qualification/holdout-policy.md": "92dee1bc216d69f6a651750cf2c95f7f7736df9b1a9c29cc566d8ffeae1894d0",
+    "docs/qualification/holdout-policy.md": "f5671c4cd5f5487e21dcb44e34fa98b5520a7b9ec58391ce1f086ebd33e23616",
     "docs/qualification/patches/hono-compose-reentrancy-guard.patch": "9355c5bbb05cd5ae4d998ace18d6381f0cba4fd080203d4d02579da3dcf6dea4",
     "docs/qualification/patches/hono-error-message-disclosure.patch": "edb79059b72b4f27f5dc8341ba2d9a3617901c402da9ef1f9daf5503e6528d6f",
     "docs/qualification/receipt-schema.json": "2266deb3afee2c2bc352dc7ee584b37472f2c240d2e5a233b44fc946ab645994",
@@ -24,6 +24,6 @@
     "docs/qualification/truth/plan-unstorage-add-driver.json": "e6332e047475f88ff41358b17211a22b3096be992a3f523673362163ea9f37f2",
     "docs/qualification/truth/review-hono-error-handling.json": "5e0653e0fa613cc7a4ee72aad1175d7a95ccce603aaf68afe5cc59b2e15854dd",
     "docs/qualification/truth/rootcause-hono-middleware-rerun.json": "6e2005ced5ba7ff768d1b9b3135eb909e98d6c1ead04712bc1b0185c480e429d",
-    "docs/qualification/validity-rules.md": "a8dba75f71462fdf6bf9cda41fe5ded2b1541cb2eb6e8897d4f318a05d38133c"
+    "docs/qualification/validity-rules.md": "8624a0b99af25b0f03dede1fa055736212e7d7db7197a43f42a98617a34c927e"
   }
 }

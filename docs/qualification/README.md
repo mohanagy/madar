@@ -7,6 +7,29 @@ This directory is the independent evaluation contract used to decide whether a r
 change is safe to ship. It is deliberately separate from
 [`docs/benchmarks/suite/`](../benchmarks/suite/), which is the product benchmark suite.
 
+## Read this first — what this contract does and does not give you today
+
+> **This contract has never been executed. It currently produces no measured evidence of
+> any kind.** Every target is a real external repository pinned at an immutable commit and
+> every task has independent truth, so the corpus *can* produce evidence about natural
+> code — but nothing has been run against Madar yet. Executing the Tier 1 subset is
+> [#661](https://github.com/mohanagy/madar/issues/661).
+
+Three further limits apply the moment it *is* executed, and none of them is fixed by
+running it:
+
+1. **Regression only, never generalization.** The sealed holdout slot is `unsatisfied`
+   because Madar has one author. Every result from this corpus must carry the line
+   `sealed holdout unsatisfied; results measure regression only`. See
+   [`holdout-policy.md`](./holdout-policy.md).
+2. **Thresholds are pre-registered, not calibrated.** Nobody knows how many Tier 1 cells
+   currently pass. That is the correct order — a threshold fitted to observed output would
+   describe current behaviour instead of testing it — but it means the first run is a
+   measurement, not a pass/fail gate.
+3. **Tier 1 needs network access** to clone the pinned targets. It is still deterministic:
+   the commit SHA and the patch fix the content exactly, and a warm clone cache or local
+   mirror satisfies it without changing any result.
+
 ## Why a separate corpus exists
 
 Two properties are required, and the existing benchmark suite has neither.

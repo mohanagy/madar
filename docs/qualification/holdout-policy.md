@@ -45,14 +45,14 @@ production rules are shaped around the target once it is known.
 
 **Madar has one author.** There is no second person to author or hold a sealed target, and
 no meaningful sense in which a target can be hidden from the person who writes both the
-production rules and the corpus. The `qual-sealed-a` slot in `corpus.json` is therefore
-marked `status: "unsatisfied"` rather than being filled with a self-authored target that
+production rules and the corpus. The `sealed-holdout-a` slot in `corpus.json` is therefore
+marked `status: "unsatisfied"` rather than being filled with a self-selected target that
 would look like a holdout and prove nothing.
 
 The same limitation makes two other artifacts unavailable:
 
-- the hidden acceptance test for `plan-plugin-host-object-storage-plugin`
-  (see `truth/plan-plugin-host-object-storage-plugin.json`);
+- the hidden acceptance test for `plan-unstorage-add-driver`
+  (see `truth/plan-unstorage-add-driver.json`);
 - blinded Tier 2 review (see `rubrics.json#/blinding/current_status`).
 
 ### Human action required
