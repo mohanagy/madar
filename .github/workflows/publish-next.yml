@@ -136,26 +136,34 @@ jobs:
       - name: Verify release hygiene
         run: npm run release:verify
 
-      # qualify:validate is deterministic, not a standing optional gate. It runs and hard-fails
-      # this job whenever the script exists on the checked-out commit. Right now it does not
-      # exist on `next`, so this records a notice instead. That absence is the *only* thing
-      # standing between this branch and a required run: qualify:validate lands with #681, and
-      # from the very next tag push that includes that merge, package.json on this exact
-      # commit will contain the script, `npm run qualify:validate` will execute for real, and a
-      # non-zero exit here fails the job via `set -euo pipefail`. Nothing else has to change --
-      # no flag, no date, no follow-up PR to flip a switch.
+      # qualify:validate has two independent signals, not one, so absence can never silently
+      # stay optional forever. check-qualification-gate.mjs compares docs/qualification/ (the
+      # qualification *contract*, landing with #681) against whether package.json still
+      # defines the qualify:validate script (the contract's *validator*), and fails closed if
+      # the contract exists without its validator instead of downgrading to a notice. See that
+      # script for the full decision table. Because both land together in #681, the very next
+      # tag push that is an ancestor of that merge takes the hard-fail-when-missing branch
+      # automatically -- no flag, no date, no follow-up PR to flip a switch.
       - name: Run qualification validation when available
         id: qualification
         shell: bash
         run: |
           set -euo pipefail
-          if node -e "const scripts = require('./package.json').scripts ?? {}; process.exit(scripts['qualify:validate'] ? 0 : 1)"; then
-            npm run qualify:validate
-            echo 'status=passed' >> "$GITHUB_OUTPUT"
-          else
-            echo '::notice title=Qualification validation::qualify:validate is not present on this tag; qualification was skipped.'
-            echo 'status=skipped (script not present)' >> "$GITHUB_OUTPUT"
-          fi
+          decision="$(node .github/scripts/check-qualification-gate.mjs)"
+          case "$decision" in
+            decision=run)
+              npm run qualify:validate
+              echo 'status=passed' >> "$GITHUB_OUTPUT"
+              ;;
+            decision=notice)
+              echo '::notice title=Qualification validation::qualify:validate is not present on this tag; qualification was skipped.'
+              echo 'status=skipped (script not present)' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unexpected qualification gate decision: $decision"
+              exit 1
+              ;;
+          esac
 
       - name: Validate npm package contents
         run: npm pack --dry-run

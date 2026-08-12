@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -37,6 +37,7 @@ interface Workflow {
 
 const classifierPath = resolve('.github/scripts/classify-release-tag.mjs')
 const nextReleaseStatePath = resolve('.github/scripts/verify-next-release-state.mjs')
+const qualificationGatePath = resolve('.github/scripts/check-qualification-gate.mjs')
 const publishNextWorkflowPath = '.github/workflows/publish-next.yml'
 
 function runNode(script: string, args: string[], cwd = process.cwd()) {
@@ -69,6 +70,24 @@ function workflowStep(workflow: Workflow, jobName: string, stepName: string): Wo
 
 function allSteps(workflow: Workflow, jobName: string): WorkflowStep[] {
   return job(workflow, jobName).steps ?? []
+}
+
+function withQualificationFixture(
+  { contractPresent, scriptPresent }: { contractPresent: boolean; scriptPresent: boolean },
+  runAssertion: (fixtureDir: string) => void,
+): void {
+  const fixtureDir = mkdtempSync(join(tmpdir(), 'madar-qualification-gate-'))
+
+  try {
+    const scripts = scriptPresent ? { 'qualify:validate': 'node -e "process.exit(0)"' } : {}
+    writeFileSync(join(fixtureDir, 'package.json'), JSON.stringify({ scripts }))
+    if (contractPresent) {
+      mkdirSync(join(fixtureDir, 'docs', 'qualification'), { recursive: true })
+    }
+    runAssertion(fixtureDir)
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true })
+  }
 }
 
 function withReleaseFixture(
@@ -287,6 +306,45 @@ describe('next release state guards', () => {
   })
 })
 
+describe('qualification gate', () => {
+  it('runs when the qualify:validate script is present, regardless of the contract', () => {
+    withQualificationFixture({ contractPresent: false, scriptPresent: true }, (fixtureDir) => {
+      const result = runNode(qualificationGatePath, [], fixtureDir)
+
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('decision=run')
+    })
+  })
+
+  it('records a notice when neither the qualification contract nor its script are present', () => {
+    withQualificationFixture({ contractPresent: false, scriptPresent: false }, (fixtureDir) => {
+      const result = runNode(qualificationGatePath, [], fixtureDir)
+
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('decision=notice')
+    })
+  })
+
+  it('hard-fails when the qualification contract exists but its validator script is missing', () => {
+    withQualificationFixture({ contractPresent: true, scriptPresent: false }, (fixtureDir) => {
+      const result = runNode(qualificationGatePath, [], fixtureDir)
+
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('docs/qualification/')
+      expect(result.stderr).toContain('is present on this commit, but the qualify:validate script is missing')
+    })
+  })
+
+  it('still runs when both the contract and the script are present', () => {
+    withQualificationFixture({ contractPresent: true, scriptPresent: true }, (fixtureDir) => {
+      const result = runNode(qualificationGatePath, [], fixtureDir)
+
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('decision=run')
+    })
+  })
+})
+
 describe('release workflow policy', () => {
   it('parses every release workflow as YAML', () => {
     expect(() => parseWorkflow('.github/workflows/ci.yml')).not.toThrow()
@@ -498,16 +556,18 @@ describe('release workflow policy', () => {
       .toContain('npm run qualify:validate')
   })
 
-  it('runs qualify:validate deterministically: hard failure when present, notice when absent', () => {
+  it('delegates the qualification gate decision to check-qualification-gate.mjs and acts on all three outcomes', () => {
     const workflow = parseWorkflow(publishNextWorkflowPath)
     const step = workflowStep(workflow, 'validate', 'Run qualification validation when available')
 
-    // The branch is chosen purely from whether qualify:validate exists in the checked-out
-    // commit's package.json -- there is no separate flag or date to flip. Once #681 merges
-    // qualify:validate onto next, the very next tag push takes the hard-fail branch.
-    expect(step.run).toContain("scripts['qualify:validate']")
+    // The gate's own present/missing/notice decision table is exercised directly against
+    // check-qualification-gate.mjs in the "qualification gate" describe block above; this test
+    // only asserts the workflow step wires that decision to the right action.
+    expect(step.run).toContain('check-qualification-gate.mjs')
+    expect(step.run).toContain('decision=run')
     expect(step.run).toContain('npm run qualify:validate')
     expect(step.run).toContain("echo 'status=passed' >> \"$GITHUB_OUTPUT\"")
+    expect(step.run).toContain('decision=notice')
     expect(step.run).toContain('qualify:validate is not present on this tag')
   })
 
