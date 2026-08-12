@@ -475,6 +475,7 @@ function bestRuntimeTraversals(
       .sort(compareNodeIdentity)
 
     for (const neighbor of neighbors) {
+      // Runtime traversal exposes one relationship-quality score, so retain the strongest fact score.
       const edgeRelationScore = graph.factsBetween(nodeId, neighbor.id).reduce(
         (strongest, fact) => Math.max(strongest, relationQualityScore(fact.relation)),
         0,

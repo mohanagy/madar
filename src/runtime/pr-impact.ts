@@ -667,6 +667,7 @@ function relationWeight(relation: string): number {
   return 0.75
 }
 
+/** Review ranking exposes one edge weight, so project all facts to the strongest deterministic weight. */
 function strongestRelationWeight(graph: KnowledgeGraph, source: string, target: string): number {
   return graph.relationsBetween(source, target).reduce(
     (strongest, relation) => Math.max(strongest, relationWeight(relation)),

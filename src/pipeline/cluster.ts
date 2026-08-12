@@ -10,10 +10,19 @@ function edgeKey(left: string, right: string): string {
   return [left, right].sort().join('\u0000')
 }
 
-function edgeWeight(graph: KnowledgeGraph, source: string, target: string): number {
-  return graph.factsBetween(source, target).reduce((total, attributes) => {
+/**
+ * Louvain clustering operates on unique endpoint-pair topology, not fact multiplicity: the ADR
+ * requires topology weight to stay independent of how many parallel facts a pair carries. This
+ * projects every fact between an endpoint pair to one non-additive weight — the strongest valid
+ * positive weight, defaulting to 1 — instead of summing, so fact multiplicity introduced by #657
+ * cannot inflate a unique endpoint pair's Louvain weight. Behaviorally identical today because the
+ * current store returns at most one fact per pair (max over one item equals that item).
+ */
+export function _edgeWeight(graph: KnowledgeGraph, source: string, target: string): number {
+  return graph.factsBetween(source, target).reduce((strongest, attributes) => {
     const weight = attributes.weight
-    return total + (typeof weight === 'number' && Number.isFinite(weight) && weight > 0 ? weight : 1)
+    const validWeight = typeof weight === 'number' && Number.isFinite(weight) && weight > 0 ? weight : 1
+    return Math.max(strongest, validWeight)
   }, 0)
 }
 
@@ -46,7 +55,7 @@ function buildLouvainState(graph: KnowledgeGraph): LouvainState {
   // Build adjacency with weights
   let totalWeight = 0
   for (const { source, target } of graph.endpointEntries()) {
-    const weight = edgeWeight(graph, source, target)
+    const weight = _edgeWeight(graph, source, target)
     totalWeight += weight
 
     const sourceNeighbors = neighborWeights.get(source)

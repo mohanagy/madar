@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -10,6 +10,12 @@ function sourceFiles(directory: string): string[] {
     const path = join(directory, entry.name)
     return entry.isDirectory() ? sourceFiles(path) : entry.name.endsWith('.ts') ? [path] : []
   })
+}
+
+// relative() returns backslash-separated paths on Windows; the assertions below
+// compare against forward-slash paths, so normalize before comparing.
+function relativePosixPath(from: string, to: string): string {
+  return relative(from, to).split(sep).join('/')
 }
 
 function makeDirectedGraph(): KnowledgeGraph {
@@ -171,7 +177,7 @@ describe('graph API architecture boundary', () => {
     const usages = sourceFiles(sourceRoot).flatMap((path) => {
       const lines = readFileSync(path, 'utf8').split('\n')
       return lines.flatMap((line, index) => line.includes('edgeAttributes(')
-        ? [`${relative(process.cwd(), path)}:${index + 1}:${line.trim()}`]
+        ? [`${relativePosixPath(process.cwd(), path)}:${index + 1}:${line.trim()}`]
         : [])
     })
 
@@ -186,7 +192,7 @@ describe('graph API architecture boundary', () => {
       const selectsByIndex = /factsBetween\s*\([^)]*\)\s*(?:\[\s*(?:0|-1)\s*\]|\.at\(\s*(?:0|-1)\s*\))/g
       const destructuresFirst = /(?:const|let|var)\s*\[\s*[^,\]]+\s*\]\s*=\s*[^;\n]*factsBetween\s*\(/g
       return [...source.matchAll(selectsByIndex), ...source.matchAll(destructuresFirst)]
-        .map((match) => `${relative(process.cwd(), path)}:${match[0]}`)
+        .map((match) => `${relativePosixPath(process.cwd(), path)}:${match[0]}`)
     })
 
     expect(violations).toEqual([])

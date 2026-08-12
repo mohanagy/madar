@@ -369,6 +369,7 @@ function graphRelationsBetween(graph: KnowledgeGraph, sourceId: string, targetId
   return [...new Set(graph.relationsBetween(sourceId, targetId).map((relation) => relation || 'related_to'))]
 }
 
+/** Neighbor ordering is scalar, so rank each endpoint pair by its strongest qualifying fact priority. */
 function strongestRuntimeFlowPriority(
   graph: KnowledgeGraph,
   sourceId: string,
