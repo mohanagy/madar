@@ -15,3 +15,4 @@ CLAUDE.md
 .vscode
 .mcp.json
 .test-artifacts/
+.issue-654-artifacts/

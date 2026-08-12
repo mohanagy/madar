@@ -9,9 +9,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { handleStdioRequest, serveGraphStdio } from '../../src/runtime/stdio-server.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
+import { startGraphAutoRefresh } from '../../src/infrastructure/watch.js'
 import { readWatcherStateForGraph, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
 
-async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
+async function waitFor(
+  condition: () => boolean,
+  timeoutMs = 5_000,
+  timeoutDetail: string | (() => string) = 'expected condition',
+): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     if (condition()) {
@@ -19,7 +24,8 @@ async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<voi
     }
     await delay(10)
   }
-  throw new Error('Timed out waiting for expected condition')
+  const detail = typeof timeoutDetail === 'function' ? timeoutDetail() : timeoutDetail
+  throw new Error(`Timed out waiting for ${detail}`)
 }
 
 function createGraphFixtureRoot(): string {
@@ -2679,6 +2685,11 @@ describe('stdio runtime', () => {
       autoRefresh: true,
       workspaceRoot: root,
       autoRefreshDebounceSeconds: 0.02,
+      autoRefreshStarter: (watchPath, debounceSeconds, options) => startGraphAutoRefresh(
+        watchPath,
+        debounceSeconds,
+        { ...options, pollIntervalMs: 10, maxPollIntervalMs: 20 },
+      ),
       input,
       output,
       errorOutput,
@@ -2701,7 +2712,7 @@ describe('stdio runtime', () => {
       await waitFor(() => {
         const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
         return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
-      })
+      }, 5_000, () => `auto-refresh graph to include added.ts; watcher state: ${JSON.stringify(readWatcherStateForGraph(graphPath))}`)
 
       input.end(`${JSON.stringify({ id: 2, method: 'stats' })}\n`)
       await serverPromise
@@ -2719,6 +2730,7 @@ describe('stdio runtime', () => {
       expect(after?.result).toContain(`Nodes: ${refreshedGraph.nodes?.length ?? 0}`)
       expect(after?.result).not.toBe(before?.result)
     } finally {
+      input.end()
       input.destroy()
       await serverPromise.catch(() => {})
       rmSync(root, { recursive: true, force: true })
