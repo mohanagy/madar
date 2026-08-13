@@ -140,7 +140,18 @@ export function createPhaseRun(options: PhaseRunOptions): PhaseRun {
   }
 
   const cleanup = (name: string, run: () => void): void => {
-    reserveName(name)
+    if (names.has(name)) {
+      const error = new Error(`${options.label}: duplicate phase name "${name}"`)
+      failures.push(new PhaseFailure(`${options.label}: cleanup duplicate phase name "${name}"`, {
+        cause: error,
+        phase: name,
+        kind: 'cleanup',
+        durationMs: 0,
+        timeline: records,
+      }))
+      return
+    }
+    names.add(name)
     const startedAtMs = now()
     try {
       run()
@@ -165,6 +176,7 @@ export function createPhaseRun(options: PhaseRunOptions): PhaseRun {
   const timeline = (): readonly PhaseRecord[] => records.slice()
   const cleanupErrors = (): readonly PhaseFailure[] => failures.slice()
   const format = (): string => {
+    // Nested phase durations overlap, so their sum can exceed wall-clock elapsed time.
     const totalMs = records.reduce((total, record) => total + record.durationMs, 0)
     const lines = [`[phase-run] ${options.label} total=${totalMs}ms`]
     records.forEach((record, index) => {

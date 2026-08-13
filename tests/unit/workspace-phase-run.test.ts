@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'vitest'
+import { afterAll, describe, expect, onTestFinished, test, vi } from 'vitest'
 
-import { createPhaseRun, PhaseDeadlock, PhaseFailure } from './helpers/phase-run.js'
+import { createPhaseRun, PhaseDeadlock, PhaseFailure, usePhaseRun } from './helpers/phase-run.js'
 
 function injectedClock(...values: number[]): () => number {
   let index = 0
@@ -218,16 +218,126 @@ describe('workspace phase runs', () => {
     expect((markedCaught as PhaseDeadlock).phase).toBe('worktree-add')
   })
 
-  test('rejects duplicate phase names before running them again', () => {
+  test('records duplicate cleanup names but still rejects duplicate work phases', () => {
     const phases = createPhaseRun({ label: 'duplicates', now: injectedClock(0, 1) })
-    let ranAgain = false
+    let cleanupRan = false
+    let phaseRan = false
 
     phases.phase('same-name', () => undefined)
 
     expect(() => phases.cleanup('same-name', () => {
-      ranAgain = true
+      cleanupRan = true
+    })).not.toThrow()
+    expect(cleanupRan).toBe(false)
+    expect(phases.cleanupErrors()).toHaveLength(1)
+    expect(phases.cleanupErrors()[0]).toMatchObject({
+      phase: 'same-name',
+      kind: 'cleanup',
+      durationMs: 0,
+    })
+    expect(phases.cleanupErrors()[0]?.message).toContain('duplicate phase name "same-name"')
+    expect(phases.timeline()).toHaveLength(1)
+
+    expect(() => phases.phase('same-name', () => {
+      phaseRan = true
     })).toThrow('duplicates: duplicate phase name "same-name"')
-    expect(ranAgain).toBe(false)
+    expect(phaseRan).toBe(false)
+  })
+
+  test('preserves an in-flight work failure when cleanup reuses its phase name', () => {
+    const original = new Error('original work failure')
+    const phases = createPhaseRun({ label: 'duplicate-cleanup-finally', now: injectedClock(0, 4) })
+    let workFailure: unknown
+    let cleanupRan = false
+
+    const propagated = captureThrown(() => {
+      try {
+        try {
+          phases.phase('work', () => {
+            throw original
+          })
+        } catch (error) {
+          workFailure = error
+          throw error
+        }
+      } finally {
+        phases.cleanup('work', () => {
+          cleanupRan = true
+        })
+      }
+    })
+
+    expect(propagated).toBe(workFailure)
+    expect(propagated).toBeInstanceOf(PhaseFailure)
+    expect((propagated as PhaseFailure).cause).toBe(original)
+    expect(cleanupRan).toBe(false)
+    expect(phases.cleanupErrors()).toHaveLength(1)
+    expect(phases.cleanupErrors()[0]?.message).toContain('duplicate phase name "work"')
+  })
+
+  test('emits a passing timeline when the enclosing test failed', () => {
+    const reports: string[] = []
+    const phases = createPhaseRun({
+      label: 'failed-test',
+      now: injectedClock(0, 8),
+      report: (text) => reports.push(text),
+    })
+
+    phases.phase('passing-phase', () => undefined)
+    phases.emit(true)
+
+    expect(reports).toEqual([phases.format()])
+    expect(reports[0]).toContain('[phase-run] failed-test 1. work passing-phase ok 8ms')
+  })
+
+  test('emits a cleanup-only failure with its cleanup-error line', () => {
+    const reports: string[] = []
+    const phases = createPhaseRun({
+      label: 'cleanup-only-failure',
+      now: injectedClock(0, 6),
+      report: (text) => reports.push(text),
+    })
+
+    phases.cleanup('remove-temp-root', () => {
+      throw new Error('cleanup exploded')
+    })
+    phases.emit()
+
+    expect(reports).toEqual([phases.format()])
+    expect(reports[0]).toContain('[phase-run] cleanup-only-failure cleanup-error remove-temp-root: cleanup exploded')
+  })
+
+  describe('usePhaseRun failure lifecycle', () => {
+    let observation: { readonly state: string | undefined, readonly reports: readonly unknown[][] } | undefined
+
+    afterAll(() => {
+      expect(observation?.state).toBe('fail')
+      expect(observation?.reports).toHaveLength(1)
+      expect(observation?.reports[0]?.[0]).toContain('[phase-run] lifecycle-failure')
+      expect(observation?.reports[0]?.[0]).toContain('work passing-phase ok')
+    })
+
+    // `usePhaseRun` only emits when its test fails, so the sole way to observe
+    // that path is to let a test genuinely fail. `test.fails` alone would be a
+    // weak assertion -- it passes on any throw -- so the observation is captured
+    // here and asserted in `afterAll`, where a lost emission fails the file.
+    // The observer is registered *before* `usePhaseRun` because Vitest runs
+    // `onTestFinished` callbacks in reverse order, so this one runs last and
+    // sees the emission. That ordering was verified empirically, not assumed.
+    test.fails('usePhaseRun emits through console.log when its test fails', () => {
+      const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+      onTestFinished((context) => {
+        observation = {
+          state: context.task.result?.state,
+          reports: consoleLog.mock.calls.map((call) => [...call]),
+        }
+        consoleLog.mockRestore()
+      })
+
+      const phases = usePhaseRun('lifecycle-failure')
+      phases.phase('passing-phase', () => undefined)
+      expect(true).toBe(false)
+    })
   })
 
   test('formats deterministically and emits nothing for a successful run', () => {
