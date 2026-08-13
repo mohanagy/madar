@@ -1,0 +1,303 @@
+# Diagnostics-only workflow for issue #693. Not part of normal CI and must not merge.
+# Runs the frozen qualification commit on fresh GitHub-hosted macOS 26 arm64 VMs to
+# determine whether the workstation's Vitest worker-start failures reproduce on the
+# same OS and architecture. Refs #693. Related parent: #654. #654 remains open.
+name: issue-693 macOS 26 arm64 qualification
+
+on:
+  push:
+    branches:
+      - roadmap/693-macos26-arm64-qualification
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-693-macos26-arm64-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FROZEN_COMMIT: b1300f8fcc2758404abc5e6064433c4d8b2ab40b
+  EXPECTED_LOCK_SHA256: 0144eb0ddf92f78c69f10089d0e0414485594966ff5be4f36f655c7aa5cff53e
+  EXPECTED_NODE: 22.22.3
+  EXPECTED_NPM: 12.0.2
+
+jobs:
+  qualify:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        attempt: [1, 2, 3]
+    runs-on: macos-26
+    timeout-minutes: 180
+
+    steps:
+      - name: Record workflow-control versus tested identity
+        run: |
+          set -euo pipefail
+          echo "workflow-control commit: ${GITHUB_SHA}"
+          echo "tested source commit (expected): ${FROZEN_COMMIT}"
+
+      - name: Check out the frozen qualification commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: b1300f8fcc2758404abc5e6064433c4d8b2ab40b
+          persist-credentials: false
+
+      - name: Assert runner is Darwin 25 arm64 and freeze VM identity
+        id: identity
+        run: |
+          set -euo pipefail
+          EV="$RUNNER_TEMP/issue-693-evidence"
+          mkdir -p "$EV"
+          echo "EVIDENCE_DIR=$EV" >> "$GITHUB_ENV"
+
+          uname -a            | tee "$EV/uname.txt"
+          sw_vers             | tee "$EV/sw_vers.txt"
+          ulimit -a           | tee "$EV/ulimit.txt"
+          vm_stat             | tee "$EV/vm_stat.before.txt"
+          ps -axo pid,ppid,pcpu,pmem,command > "$EV/ps.start.txt"
+
+          ARCH="$(uname -m)"
+          DARWIN_MAJOR="$(sysctl -n kern.osrelease | cut -d. -f1)"
+          NCPU="$(sysctl -n hw.logicalcpu)"
+          MEM="$(sysctl -n hw.memsize)"
+          echo "arch=$ARCH darwin_major=$DARWIN_MAJOR logicalcpu=$NCPU memsize=$MEM" | tee "$EV/identity.txt"
+          echo "ncpu=$NCPU" >> "$GITHUB_OUTPUT"
+
+          if [ "$ARCH" != "arm64" ]; then
+            echo "::error::Runner architecture is $ARCH, expected arm64. Same-architecture comparison is required."
+            exit 1
+          fi
+          if [ "$DARWIN_MAJOR" != "25" ]; then
+            echo "::error::Runner Darwin major is $DARWIN_MAJOR, expected 25 (macOS 26). Same-OS comparison is required."
+            exit 1
+          fi
+
+          TESTED="$(git rev-parse HEAD)"
+          echo "tested source commit: $TESTED" | tee -a "$EV/identity.txt"
+          if [ "$TESTED" != "$FROZEN_COMMIT" ]; then
+            echo "::error::Tested commit $TESTED does not match the frozen qualification commit $FROZEN_COMMIT."
+            exit 1
+          fi
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.3
+
+      - name: Pin npm and install dependencies without cache
+        run: |
+          set -euo pipefail
+          npm install --global --ignore-scripts --no-audit --no-fund "npm@${EXPECTED_NPM}"
+          node --version | tee "$EVIDENCE_DIR/node-version.txt"
+          npm --version  | tee "$EVIDENCE_DIR/npm-version.txt"
+
+          ACTUAL_NODE="$(node --version | tr -d v)"
+          ACTUAL_NPM="$(npm --version)"
+          [ "$ACTUAL_NODE" = "$EXPECTED_NODE" ] || { echo "::error::Node $ACTUAL_NODE != $EXPECTED_NODE"; exit 1; }
+          [ "$ACTUAL_NPM"  = "$EXPECTED_NPM"  ] || { echo "::error::npm $ACTUAL_NPM != $EXPECTED_NPM"; exit 1; }
+
+          LOCK="$(shasum -a 256 package-lock.json | cut -d' ' -f1)"
+          echo "lock sha256: $LOCK" | tee "$EVIDENCE_DIR/lock.txt"
+          [ "$LOCK" = "$EXPECTED_LOCK_SHA256" ] || { echo "::error::lock checksum $LOCK != $EXPECTED_LOCK_SHA256"; exit 1; }
+
+          npm ci
+
+          LOCK_AFTER="$(shasum -a 256 package-lock.json | cut -d' ' -f1)"
+          [ "$LOCK_AFTER" = "$EXPECTED_LOCK_SHA256" ] || { echo "::error::npm ci mutated the lockfile"; exit 1; }
+          DIRTY="$(git status --short | wc -l | tr -d ' ')"
+          echo "git dirty files after npm ci: $DIRTY" | tee -a "$EVIDENCE_DIR/lock.txt"
+          [ "$DIRTY" = "0" ] || { echo "::error::npm ci mutated the checkout"; git status --short; exit 1; }
+
+      - name: Prove the raw-log scanner is active (positive control)
+        run: |
+          set -euo pipefail
+          CTL="$EVIDENCE_DIR/positive-control.log"
+          {
+            echo "stdout | tests/unit/fake.test.ts"
+            echo "Error: [vitest-pool]: Failed to start forks worker for test files fake.test.ts"
+            echo "Caused by: Error: [vitest-pool-runner]: Timeout waiting for worker to respond"
+            echo " Test Files  1 passed (1)"
+          } > "$CTL"
+
+          set +e
+          node .github/scripts/assert-clean-vitest-log.mjs "$CTL" > "$EVIDENCE_DIR/positive-control.result.txt" 2>&1
+          SCANNER_STATUS=$?
+          set -e
+          echo "scanner exit on poisoned log: $SCANNER_STATUS" | tee -a "$EVIDENCE_DIR/positive-control.result.txt"
+          [ "$SCANNER_STATUS" -ne 0 ] || { echo "::error::Positive control failed: scanner accepted a poisoned log"; exit 1; }
+
+          A="$(grep -c 'Failed to start forks worker' "$CTL")"
+          B="$(grep -c 'Timeout waiting for worker to respond' "$CTL")"
+          echo "control direct counts: forks=$A handshake=$B" | tee -a "$EVIDENCE_DIR/positive-control.result.txt"
+          [ "$A" -ge 1 ] && [ "$B" -ge 1 ] || { echo "::error::Positive control counting failed"; exit 1; }
+
+      - name: Write condition helpers
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/idle-load.mjs" <<'JS'
+          const seconds = Number(process.argv[2] || 3600)
+          const ballast = Buffer.alloc(1024 * 256, 1)
+          setTimeout(() => { void ballast; process.exit(0) }, seconds * 1000)
+          JS
+          cat > "$RUNNER_TEMP/busy-load.mjs" <<'JS'
+          const seconds = Number(process.argv[2] || 3600)
+          const end = Date.now() + seconds * 1000
+          while (Date.now() < end) { Math.sqrt(Math.random()) }
+          JS
+          cat > "$RUNNER_TEMP/run-condition.sh" <<'SH'
+          #!/bin/bash
+          # usage: run-condition.sh <label> <npm-script>
+          set -uo pipefail
+          LABEL="$1"; SCRIPT="$2"
+          EV="$EVIDENCE_DIR"
+          OUTER="$EV/${LABEL}.log"
+          GUARD="$EV/${LABEL}.guard.log"
+
+          {
+            echo "condition=$LABEL"
+            echo "script=$SCRIPT"
+            echo "start=$(date -u +%FT%TZ)"
+            echo "procs_total_before=$(ps ax | wc -l | tr -d ' ')"
+            echo "procs_node_before=$(ps -eo command | grep -ci '[n]ode')"
+            echo "procs_vitest_before=$(ps -eo command | grep -ci '[v]itest')"
+            echo "node_cpu_before=$(ps -eo pcpu,command | grep -i '[n]ode' | awk '{s+=$1} END {printf "%.1f", s}')"
+          } > "$EV/${LABEL}.meta.txt"
+          vm_stat > "$EV/${LABEL}.vm_stat.before.txt"
+          ps -axo pid,ppid,pcpu,pmem,command > "$EV/${LABEL}.ps.before.txt"
+
+          S=$(date +%s)
+          VITEST_GUARD_LOG_PATH="$GUARD" npm run "$SCRIPT" 2>&1 | tee "$OUTER"
+          STATUS=${PIPESTATUS[0]}
+          E=$(date +%s)
+
+          FORKS=$(grep -c 'Failed to start forks worker' "$OUTER" || true)
+          HAND=$(grep -c 'Timeout waiting for worker to respond' "$OUTER" || true)
+          READABLE=$(grep -c 'Test Files' "$OUTER" || true)
+
+          {
+            echo "end=$(date -u +%FT%TZ)"
+            echo "duration_s=$((E-S))"
+            echo "command_status=$STATUS"
+            echo "forks_signatures=${FORKS:-0}"
+            echo "handshake_signatures=${HAND:-0}"
+            echo "readable_marker=${READABLE:-0}"
+            echo "procs_total_after=$(ps ax | wc -l | tr -d ' ')"
+            echo "procs_node_after=$(ps -eo command | grep -ci '[n]ode')"
+            echo "outer_log_sha256=$(shasum -a 256 "$OUTER" | cut -d' ' -f1)"
+          } >> "$EV/${LABEL}.meta.txt"
+          vm_stat > "$EV/${LABEL}.vm_stat.after.txt"
+          ps -axo pid,ppid,pcpu,pmem,command > "$EV/${LABEL}.ps.after.txt"
+
+          echo "::notice title=$LABEL::status=$STATUS forks=${FORKS:-0} handshake=${HAND:-0} duration=$((E-S))s"
+          cat "$EV/${LABEL}.meta.txt"
+          exit "$STATUS"
+          SH
+          chmod +x "$RUNNER_TEMP/run-condition.sh"
+
+      - name: Condition A — fresh quiet baseline (test:run)
+        id: cond_a_run
+        run: "$RUNNER_TEMP/run-condition.sh A-quiet-testrun test:run"
+
+      - name: Condition A — fresh quiet baseline (coverage, attempt 1 only)
+        if: matrix.attempt == 1
+        run: "$RUNNER_TEMP/run-condition.sh A-quiet-coverage test:coverage"
+
+      - name: Condition B1 — 64 idle Node processes
+        id: cond_b1
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          : > "$RUNNER_TEMP/b1.pids"
+          for i in $(seq 1 64); do
+            node "$RUNNER_TEMP/idle-load.mjs" 3600 &
+            echo $! >> "$RUNNER_TEMP/b1.pids"
+          done
+          sleep 5
+          LIVE=$(wc -l < "$RUNNER_TEMP/b1.pids" | tr -d ' ')
+          echo "b1_spawned=$LIVE" | tee "$EVIDENCE_DIR/B1.load.txt"
+          echo "node_cpu=$(ps -eo pcpu,command | grep -i '[n]ode' | awk '{s+=$1} END {printf "%.1f", s}')" | tee -a "$EVIDENCE_DIR/B1.load.txt"
+          vm_stat | tee -a "$EVIDENCE_DIR/B1.load.txt"
+          set +e
+          "$RUNNER_TEMP/run-condition.sh" B1-idle64 test:run
+          echo "B1_STATUS=$?" | tee -a "$EVIDENCE_DIR/B1.load.txt"
+          set -e
+          while read -r p; do kill -9 "$p" 2>/dev/null || true; done < "$RUNNER_TEMP/b1.pids"
+          sleep 3
+          echo "b1_survivors=$(pgrep -f 'idle-load.mjs' | wc -l | tr -d ' ')" | tee -a "$EVIDENCE_DIR/B1.load.txt"
+
+      - name: Condition B2 — CPU-saturating Node load
+        id: cond_b2
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          N="${{ steps.identity.outputs.ncpu }}"
+          : > "$RUNNER_TEMP/b2.pids"
+          for i in $(seq 1 "$N"); do
+            node "$RUNNER_TEMP/busy-load.mjs" 3600 &
+            echo $! >> "$RUNNER_TEMP/b2.pids"
+          done
+          sleep 10
+          echo "b2_spawned=$(wc -l < "$RUNNER_TEMP/b2.pids" | tr -d ' ') ncpu=$N" | tee "$EVIDENCE_DIR/B2.load.txt"
+          echo "node_cpu=$(ps -eo pcpu,command | grep -i '[n]ode' | awk '{s+=$1} END {printf "%.1f", s}')" | tee -a "$EVIDENCE_DIR/B2.load.txt"
+          uptime | tee -a "$EVIDENCE_DIR/B2.load.txt"
+          set +e
+          "$RUNNER_TEMP/run-condition.sh" B2-cpusat test:run
+          echo "B2_STATUS=$?" | tee -a "$EVIDENCE_DIR/B2.load.txt"
+          set -e
+          while read -r p; do kill -9 "$p" 2>/dev/null || true; done < "$RUNNER_TEMP/b2.pids"
+          sleep 3
+          echo "b2_survivors=$(pgrep -f 'busy-load.mjs' | wc -l | tr -d ' ')" | tee -a "$EVIDENCE_DIR/B2.load.txt"
+
+      - name: Verify load cleanup before recovery
+        run: |
+          set -euo pipefail
+          IDLE=$(pgrep -f 'idle-load.mjs' | wc -l | tr -d ' ')
+          BUSY=$(pgrep -f 'busy-load.mjs' | wc -l | tr -d ' ')
+          echo "surviving idle=$IDLE busy=$BUSY" | tee "$EVIDENCE_DIR/cleanup.txt"
+          uptime | tee -a "$EVIDENCE_DIR/cleanup.txt"
+          if [ "$IDLE" != "0" ] || [ "$BUSY" != "0" ]; then
+            echo "::error::Qualification load processes survived cleanup; recovery condition would be invalid."
+            exit 1
+          fi
+
+      - name: Condition D — recovery (test:run)
+        run: "$RUNNER_TEMP/run-condition.sh D-recovery-testrun test:run"
+
+      - name: Condition D — recovery (coverage, attempt 1 only)
+        if: matrix.attempt == 1
+        run: "$RUNNER_TEMP/run-condition.sh D-recovery-coverage test:coverage"
+
+      - name: Historical affected files, run alone
+        if: always()
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          for f in compare-native-agent watch stdio-server retrieve extract-frameworks; do
+            set +e
+            npx vitest run "tests/unit/$f.test.ts" > "$EVIDENCE_DIR/isolated-$f.log" 2>&1
+            echo "isolated_${f}_status=$?" >> "$EVIDENCE_DIR/isolated.summary.txt"
+            set -e
+            echo "isolated_${f}_forks=$(grep -c 'Failed to start forks worker' "$EVIDENCE_DIR/isolated-$f.log" || true)" >> "$EVIDENCE_DIR/isolated.summary.txt"
+          done
+          cat "$EVIDENCE_DIR/isolated.summary.txt"
+
+      - name: Checksum evidence
+        if: always()
+        run: |
+          set -uo pipefail
+          cd "$EVIDENCE_DIR"
+          shasum -a 256 ./* > SHA256SUMS.txt 2>/dev/null || true
+          ls -la
+          cat SHA256SUMS.txt || true
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-693-macos26-arm64-run${{ github.run_id }}-attempt${{ github.run_attempt }}-m${{ matrix.attempt }}-darwin25-arm64-b1300f8f
+          path: ${{ runner.temp }}/issue-693-evidence
+          if-no-files-found: error
+          retention-days: 30
