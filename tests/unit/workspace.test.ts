@@ -38,6 +38,8 @@ const GIT_DEADLOCK_LIMIT_MS = 30_000
 // close to the ~2.3x margin that already failed once.
 const NON_GATING_ELAPSED_CEILING_MS = 60_000
 
+const BASELINE_FEATURE_SOURCE = 'export function worktreeOnlyFeature() { return 2 }\n'
+
 interface GitProcessError {
   readonly code?: unknown
   readonly signal?: unknown
@@ -109,6 +111,21 @@ function throwCleanupErrors(label: string, phases: ReturnType<typeof createPhase
   }
 }
 
+function attachCleanupErrors(error: unknown, cleanupErrors: readonly PhaseFailure[]): void {
+  if (cleanupErrors.length === 0 || (typeof error !== 'object' && typeof error !== 'function') || error === null) {
+    return
+  }
+  try {
+    Object.defineProperty(error, 'cleanupErrors', {
+      configurable: true,
+      value: cleanupErrors,
+    })
+  } catch {
+    // The phase report still makes these cleanup failures visible without
+    // risking replacement of the original setup failure.
+  }
+}
+
 describe('worktree artifact routing', () => {
   test('keeps a nested source root in a primary checkout local', () => {
     const phases = usePhaseRun('primary-workspace')
@@ -147,6 +164,7 @@ describe('linked worktree artifact routing', () => {
   let primaryWorkspace: Workspace | undefined
   let linkedWorkspace: Workspace | undefined
   let scopedWorkspace: Workspace | undefined
+  let setupFailure: unknown
 
   const fixturePaths = (): { tempDir: string; primary: string; linked: string } => {
     if (!tempDir || !primary || !linked) {
@@ -179,30 +197,47 @@ describe('linked worktree artifact routing', () => {
       phases.phase('git-commit', () => git(createdPrimary, ['commit', '-m', 'initial']))
       phases.phase('worktree-add', () => git(createdPrimary, ['worktree', 'add', '-b', 'feature/worktree-routing', createdLinked]))
       phases.phase('mkdir-linked-src', () => mkdirSync(join(createdLinked, 'src')))
-    } finally {
+
+      const resolvedPrimary = phases.phase('resolve-primary-workspace', () => resolveMadarWorkspace(createdPrimary))
+      const resolvedLinked = phases.phase('resolve-linked-workspace', () => resolveMadarWorkspace(createdLinked))
+      const resolvedScoped = phases.phase('resolve-scoped-workspace', () => resolveMadarWorkspace(join(createdLinked, 'src')))
+      phases.phase('write-feature', () => writeFileSync(join(createdLinked, 'feature.ts'), BASELINE_FEATURE_SOURCE, 'utf8'))
+      phases.phase('generate-graph', () => generateGraph(createdLinked, { noHtml: true }))
+
+      primaryWorkspace = resolvedPrimary
+      linkedWorkspace = resolvedLinked
+      scopedWorkspace = resolvedScoped
+    } catch (error) {
+      setupFailure = error
+      phases.cleanup('worktree-remove', () => {
+        if (primary && linked && existsSync(primary) && existsSync(linked)) {
+          git(primary, ['worktree', 'remove', '--force', linked])
+        }
+      })
+      phases.cleanup('remove-temp-root', () => {
+        if (tempDir) {
+          rmSync(tempDir, { recursive: true, force: true })
+        }
+      })
+      attachCleanupErrors(error, phases.cleanupErrors())
       phases.emit()
+      throw error
     }
   }, NON_GATING_ELAPSED_CEILING_MS)
 
   test('resolves the linked worktree to the primary Git common directory', () => {
     const phases = usePhaseRun('linked-worktree-resolve')
     const paths = fixturePaths()
-
-    const resolvedPrimary = phases.phase('resolve-primary-workspace', () => resolveMadarWorkspace(paths.primary))
-    const resolvedLinked = phases.phase('resolve-linked-workspace', () => resolveMadarWorkspace(paths.linked))
-    const resolvedScoped = phases.phase('resolve-scoped-workspace', () => resolveMadarWorkspace(join(paths.linked, 'src')))
-    primaryWorkspace = resolvedPrimary
-    linkedWorkspace = resolvedLinked
-    scopedWorkspace = resolvedScoped
+    const workspaces = resolvedWorkspaces()
 
     phases.phase('assert-routing', () => {
-      expect(resolvedPrimary.isLinkedWorktree).toBe(false)
-      expect(resolvedPrimary.graphPath).toBe(join(resolve(paths.primary), 'out', 'graph.json'))
-      expect(resolvedLinked.isLinkedWorktree).toBe(true)
-      expect(canonicalPhysicalPath(resolvedLinked.gitCommonDir ?? '')).toBe(canonicalPhysicalPath(join(paths.primary, '.git')))
-      expect(resolvedLinked.graphPath).not.toBe(resolvedPrimary.graphPath)
-      expect(isInside(resolvedLinked.graphPath, paths.linked)).toBe(false)
-      expect(resolvedScoped.graphPath).not.toBe(resolvedLinked.graphPath)
+      expect(workspaces.primary.isLinkedWorktree).toBe(false)
+      expect(workspaces.primary.graphPath).toBe(join(resolve(paths.primary), 'out', 'graph.json'))
+      expect(workspaces.linked.isLinkedWorktree).toBe(true)
+      expect(canonicalPhysicalPath(workspaces.linked.gitCommonDir ?? '')).toBe(canonicalPhysicalPath(join(paths.primary, '.git')))
+      expect(workspaces.linked.graphPath).not.toBe(workspaces.primary.graphPath)
+      expect(isInside(workspaces.linked.graphPath, paths.linked)).toBe(false)
+      expect(workspaces.scoped.graphPath).not.toBe(workspaces.linked.graphPath)
     })
   }, NON_GATING_ELAPSED_CEILING_MS)
 
@@ -228,7 +263,6 @@ describe('linked worktree artifact routing', () => {
     const paths = fixturePaths()
     const workspace = resolvedWorkspaces().linked
 
-    phases.phase('write-feature', () => writeFileSync(join(paths.linked, 'feature.ts'), 'export function worktreeOnlyFeature() { return 2 }\n', 'utf8'))
     const result = phases.phase('generate-graph', () => generateGraph(paths.linked, { noHtml: true }))
     const graph = phases.phase('read-graph', () => JSON.parse(readFileSync(result.graphPath, 'utf8')) as { root_path?: string; nodes?: Array<{ source_file?: string }> })
 
@@ -245,12 +279,20 @@ describe('linked worktree artifact routing', () => {
     const phases = usePhaseRun('linked-worktree-update')
     const paths = fixturePaths()
     const workspace = resolvedWorkspaces().linked
-
-    phases.phase('write-feature-update', () => writeFileSync(join(paths.linked, 'feature.ts'), 'export function worktreeOnlyFeature() { return 3 }\n', 'utf8'))
-    const update = phases.phase('generate-update', () => generateGraph(paths.linked, { update: true, noHtml: true }))
-    phases.phase('assert-update', () => {
-      expect(update.outputDir).toBe(workspace.outputDir)
-    })
+    let workSucceeded = false
+    try {
+      phases.phase('write-feature-update', () => writeFileSync(join(paths.linked, 'feature.ts'), 'export function worktreeOnlyFeature() { return 3 }\n', 'utf8'))
+      const update = phases.phase('generate-update', () => generateGraph(paths.linked, { update: true, noHtml: true }))
+      phases.phase('assert-update', () => {
+        expect(update.outputDir).toBe(workspace.outputDir)
+      })
+      workSucceeded = true
+    } finally {
+      phases.cleanup('restore-feature', () => writeFileSync(join(paths.linked, 'feature.ts'), BASELINE_FEATURE_SOURCE, 'utf8'))
+      if (workSucceeded) {
+        throwCleanupErrors('linked-worktree-update', phases)
+      }
+    }
   }, NON_GATING_ELAPSED_CEILING_MS)
 
   test('keeps the SPI cache outside the linked source checkout', () => {
@@ -285,7 +327,11 @@ describe('linked worktree artifact routing', () => {
       }
     })
     phases.emit()
-    throwCleanupErrors('linked-worktree', phases)
+    if (setupFailure === undefined) {
+      throwCleanupErrors('linked-worktree', phases)
+    } else {
+      attachCleanupErrors(setupFailure, phases.cleanupErrors())
+    }
   }, NON_GATING_ELAPSED_CEILING_MS)
 })
 

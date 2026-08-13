@@ -123,6 +123,21 @@ describe('workspace phase runs', () => {
     expect(phases.timeline().map((record) => record.name)).toEqual(['work', 'cleanup'])
   })
 
+  test('carries cleanup records that ran after the failure was thrown', () => {
+    const phases = createPhaseRun({ label: 'live-failure-timeline', now: injectedClock(0, 7, 7, 11) })
+    const caught = captureThrown(() => phases.phase('work', () => {
+      throw new Error('work failed')
+    }))
+
+    expect(caught).toBeInstanceOf(PhaseFailure)
+    phases.cleanup('remove-temp-root', () => undefined)
+
+    expect((caught as PhaseFailure).timeline.map(({ name, kind, durationMs }) => ({ name, kind, durationMs }))).toEqual([
+      { name: 'work', kind: 'work', durationMs: 7 },
+      { name: 'remove-temp-root', kind: 'cleanup', durationMs: 4 },
+    ])
+  })
+
   test('runs cleanup after a simulated graph-generation failure', () => {
     const generatorError = new Error('graph generator failed')
     const generateGraphStub = (): never => {
