@@ -129,7 +129,18 @@ jobs:
         run: npm run typecheck
 
       - name: Run tests
+        env:
+          VITEST_GUARD_LOG_PATH: ${{ runner.temp }}/vitest-guard-test-run-ubuntu-latest-node20.log
         run: npm run test:run
+
+      - name: Upload raw vitest logs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vitest-guard-logs-${{ github.run_id }}-${{ github.run_attempt }}-release-ubuntu-latest-node20
+          path: ${{ runner.temp }}/vitest-guard-test-run-ubuntu-latest-node20.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build
         run: npm run build

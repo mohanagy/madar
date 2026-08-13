@@ -52,6 +52,8 @@ npm pack --dry-run
 npm sbom --sbom-format cyclonedx > sbom.cdx.json
 ```
 
+The `npm run test:run` and `npm run test:coverage` commands are guarded and fail when their raw logs contain an absorbed Vitest forks-worker startup failure, even if Vitest reports a green summary.
+
 Run `npm run qualify:validate` when that script is present. Its failure is a release blocker; when it is absent, record that qualification was unavailable rather than presenting it as passed.
 
 The release pipeline's qualification gate (`.github/scripts/check-qualification-gate.mjs`) actually has three outcomes, not two, and the third is intentional:

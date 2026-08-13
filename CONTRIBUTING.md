@@ -32,6 +32,8 @@ npm run test:run
 npm run build
 ```
 
+Both `npm run test:run` and `npm run test:coverage` are guarded: they fail on an absorbed Vitest forks-worker startup failure even when Vitest itself prints a green summary.
+
 For documentation-only changes, still run `npm run typecheck` and `npm run build` when practical so broken links in generated docs or TypeScript examples do not slip through. If a command is not relevant or cannot be run locally, note that in the pull request.
 
 If you are changing packaging or install behavior, also run:
