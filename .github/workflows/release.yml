@@ -5,29 +5,95 @@ on:
     tags:
       - 'v*'
 
+# No workflow-level `contents: write`. `classify` only reads the repository to determine which
+# channel a tag belongs to and must never hold a credential that could create or edit a release;
+# `release` declares `contents: write` for itself, and only runs once `classify` has already
+# proven the tag is a well-formed stable tag.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  # Runs for every `v*` tag, including malformed and unapproved forms -- that is the point.
+  # Before this job existed, a job-level `if: !contains(github.ref_name, '-')` made an
+  # unsupported prerelease form like `v0.33.0-alpha.1` match this workflow's `v*` trigger, get
+  # silently skipped here because it contains a hyphen, and then match no trigger in
+  # `publish-next.yml` either (that workflow only matches `-beta.*`/`-rc.*`/`-next.*`). The tag
+  # vanished with no failed run anywhere. `classify` closes that gap: it is the one job that
+  # always runs on a `v*` push, and it fails loudly on anything classify-release-tag.mjs does
+  # not recognize as either a stable or an approved prerelease tag.
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      channel: ${{ steps.classify.outputs.channel }}
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Classify release tag
+        id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$(node .github/scripts/classify-release-tag.mjs --tag "$GITHUB_REF_NAME")"
+          channel="$(printf '%s\n' "$output" | sed -n 's/^channel=//p')"
+          if [[ -z "$channel" ]]; then
+            echo "::error::classify-release-tag.mjs did not emit a channel for $GITHUB_REF_NAME"
+            exit 1
+          fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+  # Stable channel only. Skips cleanly (not a failure) for an approved prerelease tag, which
+  # `publish-next.yml` handles instead. `classify` above already rejected anything that is
+  # neither a stable nor an approved prerelease tag, so reaching this `if` with `channel ==
+  # 'stable'` false always means a legitimate prerelease, never a silently-ignored malformed tag.
+  #
+  # `success()` is explicit and required here: a job's own `if:` condition replaces the implicit
+  # "only run when every job in `needs` succeeded" check rather than adding to it, so without
+  # this a `classify` failure would not, by itself, stop `release` from evaluating (an empty
+  # `outputs.channel` would just compare false against 'stable' -- accidentally safe here, but
+  # not a guarantee worth relying on).
   release:
+    needs: classify
+    if: success() && needs.classify.outputs.channel == 'stable'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
+      # No dependency cache: `release` holds `contents: write` and runs `npm ci`, tests, and
+      # build, the same privileged-job shape as `publish-next.yml`'s `validate` job, which
+      # documents why a release-pipeline job must never restore a cache an untrusted PR job
+      # could have poisoned. This job restructures release.yml and moves `contents: write`
+      # onto itself, so it must hold itself to the same policy it asserts elsewhere.
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
-          cache: npm
+
+      - name: Require stable release tag
+        run: node .github/scripts/classify-release-tag.mjs --tag "$GITHUB_REF_NAME" --expect stable
 
       - name: Validate tag, package version, and changelog
         run: |
