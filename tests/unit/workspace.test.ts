@@ -11,14 +11,21 @@ import { resolveMadarWorkspace, resolveWorkspaceGraphPath, resolveWorkspaceOutpu
 
 import { createPhaseRun, PhaseFailure, usePhaseRun } from './helpers/phase-run.js'
 
-// The slowest Git command in the six-lane matrix was 177 ms. This 30 s limit
-// is roughly 170x that value and is deadlock protection, not a correctness bound.
+// The only real hang protection available here. `execFileSync`'s `timeout`
+// kills the child and returns control; Vitest cannot interrupt a synchronous
+// test body, so no per-test bound can ever rescue a wedged Git process. The
+// slowest Git command across the six-lane matrix was 177 ms, so 30 s is ~170x
+// that value and can only fire on a genuine hang, never on ordinary slowness.
 const GIT_DEADLOCK_LIMIT_MS = 30_000
 
-// The slowest measured phase was 4,102 ms and the slowest healthy total was
-// 8,707 ms. This 60 s timeout is only a deadlock alarm (Git hangs are interrupted
-// above); elapsed time is never asserted as a correctness criterion.
-const TEST_DEADLOCK_LIMIT_MS = 60_000
+// Vitest requires a per-test bound. This is neither a correctness criterion nor
+// the deadlock mechanism -- the Git limit above is the mechanism. It is parked
+// far outside the measured envelope so it cannot act as a gate. The slowest unit
+// across six lanes was 3,617 ms and the same unit varies 2.9x between lanes, so
+// 60 s leaves ~17x. The override is kept rather than dropped because the config
+// default off Windows is 15 s, which would leave only ~4x on the coverage lane --
+// close to the ~2.3x margin that already failed once.
+const NON_GATING_ELAPSED_CEILING_MS = 60_000
 
 interface GitProcessError {
   readonly code?: unknown
@@ -164,7 +171,7 @@ describe('linked worktree artifact routing', () => {
     } finally {
       phases.emit()
     }
-  }, TEST_DEADLOCK_LIMIT_MS)
+  }, NON_GATING_ELAPSED_CEILING_MS)
 
   test('resolves the linked worktree to the primary Git common directory', () => {
     const phases = usePhaseRun('linked-worktree-resolve')
@@ -186,7 +193,7 @@ describe('linked worktree artifact routing', () => {
       expect(isInside(resolvedLinked.graphPath, paths.linked)).toBe(false)
       expect(resolvedScoped.graphPath).not.toBe(resolvedLinked.graphPath)
     })
-  }, TEST_DEADLOCK_LIMIT_MS)
+  }, NON_GATING_ELAPSED_CEILING_MS)
 
   test('routes conventional out paths outside the linked source checkout', () => {
     const phases = usePhaseRun('linked-worktree-conventional-paths')
@@ -203,7 +210,7 @@ describe('linked worktree artifact routing', () => {
       expect(resolveWorkspaceOutputPath('out\\compare', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
       expect(validateGraphOutputPath('out\\compare', 'out', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
     })
-  }, TEST_DEADLOCK_LIMIT_MS)
+  }, NON_GATING_ELAPSED_CEILING_MS)
 
   test('writes generated graph artifacts outside the linked source checkout', () => {
     const phases = usePhaseRun('linked-worktree-graph')
@@ -221,7 +228,7 @@ describe('linked worktree artifact routing', () => {
       expect(graph.root_path).toBe(resolve(paths.linked))
       expect(graph.nodes?.some((node) => node.source_file?.endsWith('feature.ts'))).toBe(true)
     })
-  }, TEST_DEADLOCK_LIMIT_MS)
+  }, NON_GATING_ELAPSED_CEILING_MS)
 
   test('keeps an incremental update routed to the linked artifact directory', () => {
     const phases = usePhaseRun('linked-worktree-update')
@@ -233,7 +240,7 @@ describe('linked worktree artifact routing', () => {
     phases.phase('assert-update', () => {
       expect(update.outputDir).toBe(workspace.outputDir)
     })
-  }, TEST_DEADLOCK_LIMIT_MS)
+  }, NON_GATING_ELAPSED_CEILING_MS)
 
   test('keeps the SPI cache outside the linked source checkout', () => {
     const phases = usePhaseRun('linked-worktree-spi')
@@ -246,7 +253,7 @@ describe('linked worktree artifact routing', () => {
       expect(existsSync(join(paths.linked, 'out'))).toBe(false)
       expect(existsSync(join(workspace.outputDir, '.spi-cache'))).toBe(true)
     })
-  }, TEST_DEADLOCK_LIMIT_MS)
+  }, NON_GATING_ELAPSED_CEILING_MS)
 
   afterAll(() => {
     const phases = createPhaseRun({ label: 'linked-worktree-cleanup' })
@@ -268,7 +275,7 @@ describe('linked worktree artifact routing', () => {
     })
     phases.emit()
     throwCleanupErrors('linked-worktree', phases)
-  }, TEST_DEADLOCK_LIMIT_MS)
+  }, NON_GATING_ELAPSED_CEILING_MS)
 })
 
 test('names the worktree-add phase when linked worktree creation fails', () => {
@@ -318,7 +325,7 @@ test('names the worktree-add phase when linked worktree creation fails', () => {
       throwCleanupErrors('worktree-add-failure', phases)
     }
   }
-}, TEST_DEADLOCK_LIMIT_MS)
+}, NON_GATING_ELAPSED_CEILING_MS)
 
 test('leaves no stale linked worktree registration after removal', () => {
   const phases = usePhaseRun('worktree-registration-removal')
@@ -351,4 +358,4 @@ test('leaves no stale linked worktree registration after removal', () => {
       throwCleanupErrors('worktree-registration-removal', phases)
     }
   }
-}, TEST_DEADLOCK_LIMIT_MS)
+}, NON_GATING_ELAPSED_CEILING_MS)
