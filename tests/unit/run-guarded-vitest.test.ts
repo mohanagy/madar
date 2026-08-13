@@ -190,13 +190,22 @@ describe('guarded vitest CLI', () => {
     expect(result.stdout).toContain('EXITED_CHILD_KILL_CALL_COUNT=0')
   })
 
-  it('delivers exactly one real signal to a still-alive child when the wrapper itself is signaled', async () => {
-    // End-to-end proof, with a real OS signal, of the exact scenario CodeRabbit flagged: signal
-    // the wrapper process itself (as an external supervisor or an interactive `kill <pid>` would)
-    // while its child is still running, and confirm the child receives that signal exactly once
-    // -- not zero (forwarding must work) and not two (the shared-process-group double-delivery
-    // bug). The child fixture stays alive across a delivery window instead of dying from the
-    // first signal, so any accidental second delivery would be observable.
+  // POSIX only, deliberately, not a coverage gap: this end-to-end mechanism -- a target process
+  // catching a signal via `process.on('SIGTERM', ...)` instead of dying from it -- does not exist
+  // on Windows for either hop. `child.kill('SIGTERM')` there forcibly terminates the target
+  // (Node's own documented Windows behavior; there is no catchable delivery to bypass), so
+  // sending it to the wrapper never lets the wrapper's own handler run at all, and the wrapper
+  // forwarding a signal to the fixture would behave the same way -- there is no Windows-native
+  // "caught, stayed alive, logged it" outcome this test could assert instead, for any wrapper
+  // implementation, correct or buggy. Confirmed empirically: this test failed on both Windows CI
+  // lanes with zero deliveries observed, because the wrapper process was terminated before its
+  // own SIGTERM handler could run, not because forwarding was broken. The platform-independent
+  // proof of the actual fix (the one-shot latch itself, exercised as pure logic against a fake
+  // child, no real signal delivery involved) is the preceding test, which passes on every
+  // platform including both Windows lanes -- that is where the regression coverage that matters
+  // cross-platform lives; this test adds real-signal, real-process-group confirmation on the
+  // platforms where that confirmation is actually obtainable.
+  it.skipIf(process.platform === 'win32')('delivers exactly one real signal to a still-alive child when the wrapper itself is signaled', async () => {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       VITEST_GUARD_EXEC_OVERRIDE: signalCounterChildPath,
