@@ -150,10 +150,21 @@ describe('guarded vitest CLI', () => {
         VITEST_GUARD_LOG_PATH: logPath,
       })
 
-      // Windows signal delivery and numeric exit-code conventions differ from POSIX, so this
-      // assertion verifies the portable contract: failure plus the named terminating cause.
+      // Windows has no POSIX signals: `child.kill('SIGTERM')` there terminates the process via
+      // TerminateProcess, so Node reports `signal: null` with a numeric exit code instead of a
+      // signal name. The wrapper's signal-reporting branch is never reached in that case, and it
+      // correctly falls through to its exit-code failure branch instead -- that is the wrapper
+      // behaving correctly, not a defect. Assert the platform-correct observable behavior on each
+      // OS rather than one POSIX-shaped assertion for both: termination must still be reported as
+      // a failure with the retained log path printed on every platform. Do not collapse this back
+      // into a single unconditional assertion -- that already hid this exact platform gap once.
       expect(result.status).not.toBe(0)
-      expect(result.stderr).toContain('CHILD PROCESS FAILURE (signal SIGTERM)')
+      if (process.platform === 'win32') {
+        expect(result.stderr).toMatch(/CHILD PROCESS FAILURE \(exit code \d+\)/)
+      } else {
+        expect(result.stderr).toContain('CHILD PROCESS FAILURE (signal SIGTERM)')
+      }
+      expect(result.stderr).toContain('Retained vitest log path:')
       expect(existsSync(logPath)).toBe(true)
     } finally {
       rmSync(dir, { recursive: true, force: true })
