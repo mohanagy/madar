@@ -406,7 +406,12 @@ jobs:
           set -uo pipefail
           for f in compare-native-agent watch stdio-server retrieve extract-frameworks; do
             set +e
-            npx vitest run "tests/unit/$f.test.ts" > "$EVIDENCE_DIR/isolated-$f.log" 2>&1
+            # Routed through the guarded runner rather than raw vitest: the repository's own
+            # policy test (tests/unit/vitest-guard-policy.test.ts) forbids a raw complete-suite
+            # invocation in any workflow, and it correctly flagged an earlier revision of this
+            # file. Forwarding a single path keeps the run isolated while still applying the
+            # canonical signature scan.
+            npm run test:run -- "tests/unit/$f.test.ts" > "$EVIDENCE_DIR/isolated-$f.log" 2>&1
             echo "isolated_${f}_status=$?" >> "$EVIDENCE_DIR/isolated.summary.txt"
             set -e
             {
