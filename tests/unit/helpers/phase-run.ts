@@ -3,6 +3,8 @@
  * cannot interrupt a synchronous test body when its per-test timeout expires.
  */
 
+import { onTestFinished } from 'vitest'
+
 export interface PhaseRecord {
   readonly name: string
   readonly kind: 'work' | 'cleanup'
@@ -26,7 +28,7 @@ export interface PhaseRun {
   timeline(): readonly PhaseRecord[]
   cleanupErrors(): readonly PhaseFailure[]
   format(): string
-  emit(): void
+  emit(testFailed?: boolean): void
 }
 
 export class PhaseFailure extends Error {
@@ -54,12 +56,35 @@ export class PhaseFailure extends Error {
   }
 }
 
+export class PhaseDeadlock extends PhaseFailure {
+  constructor(
+    message: string,
+    options: {
+      cause: unknown
+      phase: string
+      kind: 'work' | 'cleanup'
+      durationMs: number
+      timeline: readonly PhaseRecord[]
+    },
+  ) {
+    super(message, options)
+    this.name = 'PhaseDeadlock'
+  }
+}
+
 function causeMessage(failure: PhaseFailure): string {
   const { cause } = failure
   if (typeof cause === 'object' && cause !== null && 'message' in cause && typeof cause.message === 'string') {
     return cause.message
   }
   return failure.message
+}
+
+function isDeadlock(error: unknown): boolean {
+  if ((typeof error !== 'object' || error === null) && typeof error !== 'function') {
+    return false
+  }
+  return ('isDeadlock' in error && Boolean(error.isDeadlock)) || ('code' in error && error.code === 'ETIMEDOUT')
 }
 
 export function createPhaseRun(options: PhaseRunOptions): PhaseRun {
@@ -91,7 +116,11 @@ export function createPhaseRun(options: PhaseRunOptions): PhaseRun {
       if (error instanceof PhaseFailure) {
         throw error
       }
-      throw new PhaseFailure(`${options.label}: phase "${name}" failed after ${durationMs} ms`, {
+      const Failure = isDeadlock(error) ? PhaseDeadlock : PhaseFailure
+      const message = isDeadlock(error)
+        ? `${options.label}: phase "${name}" exceeded its deadlock limit after ${durationMs} ms`
+        : `${options.label}: phase "${name}" failed after ${durationMs} ms`
+      throw new Failure(message, {
         cause: error,
         phase: name,
         kind: 'work',
@@ -110,7 +139,11 @@ export function createPhaseRun(options: PhaseRunOptions): PhaseRun {
     } catch (error) {
       const durationMs = durationSince(startedAtMs)
       records.push({ name, kind: 'cleanup', status: 'failed', startedAtMs, durationMs, error })
-      failures.push(new PhaseFailure(`${options.label}: cleanup phase "${name}" failed after ${durationMs} ms`, {
+      const Failure = isDeadlock(error) ? PhaseDeadlock : PhaseFailure
+      const message = isDeadlock(error)
+        ? `${options.label}: cleanup phase "${name}" exceeded its deadlock limit after ${durationMs} ms`
+        : `${options.label}: cleanup phase "${name}" failed after ${durationMs} ms`
+      failures.push(new Failure(message, {
         cause: error,
         phase: name,
         kind: 'cleanup',
@@ -140,6 +173,18 @@ export function createPhaseRun(options: PhaseRunOptions): PhaseRun {
     timeline,
     cleanupErrors,
     format,
-    emit: () => report(format()),
+    emit: (testFailed = false) => {
+      if (testFailed || records.some((record) => record.status === 'failed') || failures.length > 0) {
+        report(format())
+      }
+    },
   }
+}
+
+export function usePhaseRun(label: string): PhaseRun {
+  const phases = createPhaseRun({ label })
+  onTestFinished((context) => {
+    phases.emit(context.task.result?.state === 'fail')
+  })
+  return phases
 }
