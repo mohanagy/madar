@@ -147,6 +147,54 @@ jobs:
           const end = Date.now() + seconds * 1000
           while (Date.now() < end) { Math.sqrt(Math.random()) }
           JS
+
+          # Shared helpers. Never use `pgrep ... | wc -l` in an assignment under
+          # `set -euo pipefail`: pgrep exits 1 when it correctly finds nothing, pipefail
+          # propagates that, and the assignment aborts the step precisely when cleanup
+          # SUCCEEDED. That defect made condition D unreachable in run 31718841614.
+          cat > "$RUNNER_TEMP/helpers.sh" <<'SH'
+          count_live_pids() {
+            local pid_file="$1"
+            local live_file="$2"
+            : > "$live_file"
+            if [ -f "$pid_file" ]; then
+              while read -r pid; do
+                if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                  echo "$pid" >> "$live_file"
+                fi
+              done < "$pid_file"
+            fi
+            wc -l < "$live_file" | tr -d ' '
+          }
+
+          cleanup_pid_file() {
+            local pid_file="$1"
+            [ -f "$pid_file" ] || return 0
+            while read -r pid; do
+              [ -n "$pid" ] || continue
+              kill "$pid" 2>/dev/null || true
+            done < "$pid_file"
+            sleep 1
+            while read -r pid; do
+              [ -n "$pid" ] || continue
+              if kill -0 "$pid" 2>/dev/null; then
+                kill -9 "$pid" 2>/dev/null || true
+              fi
+            done < "$pid_file"
+            while read -r pid; do
+              [ -n "$pid" ] || continue
+              wait "$pid" 2>/dev/null || true
+            done < "$pid_file"
+          }
+
+          count_pattern_survivors() {
+            local pattern="$1"
+            local out_file="$2"
+            pgrep -f "$pattern" > "$out_file" 2>/dev/null || true
+            wc -l < "$out_file" | tr -d ' '
+          }
+          SH
+
           cat > "$RUNNER_TEMP/run-condition.sh" <<'SH'
           #!/bin/bash
           # usage: run-condition.sh <label> <npm-script>
@@ -173,29 +221,54 @@ jobs:
           STATUS=${PIPESTATUS[0]}
           E=$(date +%s)
 
-          FORKS=$(grep -c 'Failed to start forks worker' "$OUTER" || true)
-          HAND=$(grep -c 'Timeout waiting for worker to respond' "$OUTER" || true)
+          # Signature counts come from the RAW guard log when it survives. On a dirty run the
+          # wrapper echoes matching lines into its own diagnostic report, so counting the outer
+          # transcript would double-count the underlying raw events. On a clean run the guard
+          # deletes its log, so the outer transcript is the only remaining source.
+          if [ -f "$GUARD" ]; then
+            SIG_SRC="guard_log"
+            FORKS=$(grep -c 'Failed to start forks worker' "$GUARD" || true)
+            HAND=$(grep -c 'Timeout waiting for worker to respond' "$GUARD" || true)
+            GUARD_SHA=$(shasum -a 256 "$GUARD" | cut -d' ' -f1)
+          else
+            SIG_SRC="outer_log"
+            FORKS=$(grep -c 'Failed to start forks worker' "$OUTER" || true)
+            HAND=$(grep -c 'Timeout waiting for worker to respond' "$OUTER" || true)
+            GUARD_SHA="absent"
+          fi
+          OUTER_FORKS=$(grep -c 'Failed to start forks worker' "$OUTER" || true)
+          OUTER_HAND=$(grep -c 'Timeout waiting for worker to respond' "$OUTER" || true)
           READABLE=$(grep -c 'Test Files' "$OUTER" || true)
 
           {
             echo "end=$(date -u +%FT%TZ)"
             echo "duration_s=$((E-S))"
             echo "command_status=$STATUS"
+            echo "signature_source=$SIG_SRC"
             echo "forks_signatures=${FORKS:-0}"
             echo "handshake_signatures=${HAND:-0}"
+            echo "outer_forks_signatures=${OUTER_FORKS:-0}"
+            echo "outer_handshake_signatures=${OUTER_HAND:-0}"
             echo "readable_marker=${READABLE:-0}"
             echo "procs_total_after=$(ps ax | wc -l | tr -d ' ')"
             echo "procs_node_after=$(ps -eo command | grep -ci '[n]ode')"
             echo "outer_log_sha256=$(shasum -a 256 "$OUTER" | cut -d' ' -f1)"
+            echo "guard_log_sha256=$GUARD_SHA"
           } >> "$EV/${LABEL}.meta.txt"
           vm_stat > "$EV/${LABEL}.vm_stat.after.txt"
           ps -axo pid,ppid,pcpu,pmem,command > "$EV/${LABEL}.ps.after.txt"
 
-          echo "::notice title=$LABEL::status=$STATUS forks=${FORKS:-0} handshake=${HAND:-0} duration=$((E-S))s"
+          echo "::notice title=$LABEL::status=$STATUS src=$SIG_SRC forks=${FORKS:-0} handshake=${HAND:-0} duration=$((E-S))s"
           cat "$EV/${LABEL}.meta.txt"
           exit "$STATUS"
           SH
           chmod +x "$RUNNER_TEMP/run-condition.sh"
+
+          bash -n "$RUNNER_TEMP/run-condition.sh"
+          bash -n "$RUNNER_TEMP/helpers.sh"
+          node --check "$RUNNER_TEMP/idle-load.mjs"
+          node --check "$RUNNER_TEMP/busy-load.mjs"
+          echo "all generated helpers pass syntax checks"
 
       - name: Condition A — fresh quiet baseline (test:run)
         id: cond_a_run
@@ -210,58 +283,114 @@ jobs:
         continue-on-error: true
         run: |
           set -uo pipefail
-          : > "$RUNNER_TEMP/b1.pids"
-          for i in $(seq 1 64); do
+          source "$RUNNER_TEMP/helpers.sh"
+          PIDF="$RUNNER_TEMP/b1.pids"
+          LIVEF="$RUNNER_TEMP/b1.live"
+          cleanup() { cleanup_pid_file "$PIDF"; }
+          trap cleanup EXIT INT TERM
+
+          EXPECTED=64
+          : > "$PIDF"
+          for i in $(seq 1 "$EXPECTED"); do
             node "$RUNNER_TEMP/idle-load.mjs" 3600 &
-            echo $! >> "$RUNNER_TEMP/b1.pids"
+            echo $! >> "$PIDF"
           done
           sleep 5
-          LIVE=$(wc -l < "$RUNNER_TEMP/b1.pids" | tr -d ' ')
-          echo "b1_spawned=$LIVE" | tee "$EVIDENCE_DIR/B1.load.txt"
-          echo "node_cpu=$(ps -eo pcpu,command | grep -i '[n]ode' | awk '{s+=$1} END {printf "%.1f", s}')" | tee -a "$EVIDENCE_DIR/B1.load.txt"
-          vm_stat | tee -a "$EVIDENCE_DIR/B1.load.txt"
+
+          LIVE="$(count_live_pids "$PIDF" "$LIVEF")"
+          {
+            echo "b1_expected=$EXPECTED"
+            echo "b1_live=$LIVE"
+            echo "b1_live_pids=$(tr '\n' ' ' < "$LIVEF")"
+            echo "node_cpu=$(ps -eo pcpu,command | grep -i '[n]ode' | awk '{s+=$1} END {printf "%.1f", s}')"
+            echo "procs_total=$(ps ax | wc -l | tr -d ' ')"
+          } | tee "$EVIDENCE_DIR/B1.load.txt"
+          vm_stat >> "$EVIDENCE_DIR/B1.load.txt"
+
+          if [ "$LIVE" != "$EXPECTED" ]; then
+            echo "b1_condition_valid=false" | tee -a "$EVIDENCE_DIR/B1.load.txt"
+            echo "::warning title=B1 invalid::intended $EXPECTED idle processes, only $LIVE live; not causal evidence"
+          else
+            echo "b1_condition_valid=true" | tee -a "$EVIDENCE_DIR/B1.load.txt"
+          fi
+
           set +e
           "$RUNNER_TEMP/run-condition.sh" B1-idle64 test:run
           echo "B1_STATUS=$?" | tee -a "$EVIDENCE_DIR/B1.load.txt"
           set -e
-          while read -r p; do kill -9 "$p" 2>/dev/null || true; done < "$RUNNER_TEMP/b1.pids"
-          sleep 3
-          echo "b1_survivors=$(pgrep -f 'idle-load.mjs' | wc -l | tr -d ' ')" | tee -a "$EVIDENCE_DIR/B1.load.txt"
+
+          cleanup
+          trap - EXIT INT TERM
+          AFTER="$(count_live_pids "$PIDF" "$LIVEF")"
+          echo "b1_live_after_cleanup=$AFTER" | tee -a "$EVIDENCE_DIR/B1.load.txt"
 
       - name: Condition B2 — CPU-saturating Node load
         id: cond_b2
         continue-on-error: true
         run: |
           set -uo pipefail
-          N="${{ steps.identity.outputs.ncpu }}"
-          : > "$RUNNER_TEMP/b2.pids"
-          for i in $(seq 1 "$N"); do
+          source "$RUNNER_TEMP/helpers.sh"
+          PIDF="$RUNNER_TEMP/b2.pids"
+          LIVEF="$RUNNER_TEMP/b2.live"
+          cleanup() { cleanup_pid_file "$PIDF"; }
+          trap cleanup EXIT INT TERM
+
+          EXPECTED="${{ steps.identity.outputs.ncpu }}"
+          : > "$PIDF"
+          for i in $(seq 1 "$EXPECTED"); do
             node "$RUNNER_TEMP/busy-load.mjs" 3600 &
-            echo $! >> "$RUNNER_TEMP/b2.pids"
+            echo $! >> "$PIDF"
           done
           sleep 10
-          echo "b2_spawned=$(wc -l < "$RUNNER_TEMP/b2.pids" | tr -d ' ') ncpu=$N" | tee "$EVIDENCE_DIR/B2.load.txt"
-          echo "node_cpu=$(ps -eo pcpu,command | grep -i '[n]ode' | awk '{s+=$1} END {printf "%.1f", s}')" | tee -a "$EVIDENCE_DIR/B2.load.txt"
-          uptime | tee -a "$EVIDENCE_DIR/B2.load.txt"
+
+          LIVE="$(count_live_pids "$PIDF" "$LIVEF")"
+          {
+            echo "b2_expected=$EXPECTED"
+            echo "b2_live=$LIVE"
+            echo "b2_live_pids=$(tr '\n' ' ' < "$LIVEF")"
+            echo "node_cpu=$(ps -eo pcpu,command | grep -i '[n]ode' | awk '{s+=$1} END {printf "%.1f", s}')"
+            echo "uptime=$(uptime)"
+          } | tee "$EVIDENCE_DIR/B2.load.txt"
+
+          if [ "$LIVE" != "$EXPECTED" ]; then
+            echo "b2_condition_valid=false" | tee -a "$EVIDENCE_DIR/B2.load.txt"
+            echo "::warning title=B2 invalid::intended $EXPECTED busy processes, only $LIVE live; not causal evidence"
+          else
+            echo "b2_condition_valid=true" | tee -a "$EVIDENCE_DIR/B2.load.txt"
+          fi
+
           set +e
           "$RUNNER_TEMP/run-condition.sh" B2-cpusat test:run
           echo "B2_STATUS=$?" | tee -a "$EVIDENCE_DIR/B2.load.txt"
           set -e
-          while read -r p; do kill -9 "$p" 2>/dev/null || true; done < "$RUNNER_TEMP/b2.pids"
-          sleep 3
-          echo "b2_survivors=$(pgrep -f 'busy-load.mjs' | wc -l | tr -d ' ')" | tee -a "$EVIDENCE_DIR/B2.load.txt"
+
+          cleanup
+          trap - EXIT INT TERM
+          AFTER="$(count_live_pids "$PIDF" "$LIVEF")"
+          echo "b2_live_after_cleanup=$AFTER" | tee -a "$EVIDENCE_DIR/B2.load.txt"
 
       - name: Verify load cleanup before recovery
         run: |
           set -euo pipefail
-          IDLE=$(pgrep -f 'idle-load.mjs' | wc -l | tr -d ' ')
-          BUSY=$(pgrep -f 'busy-load.mjs' | wc -l | tr -d ' ')
-          echo "surviving idle=$IDLE busy=$BUSY" | tee "$EVIDENCE_DIR/cleanup.txt"
-          uptime | tee -a "$EVIDENCE_DIR/cleanup.txt"
+          source "$RUNNER_TEMP/helpers.sh"
+          # `count_pattern_survivors` redirects pgrep to a file and swallows its exit code, so a
+          # correct zero-survivor result cannot abort this step. The previous implementation used
+          # `pgrep ... | wc -l` inside an assignment, which under pipefail failed exactly when
+          # cleanup had succeeded and left condition D unreachable.
+          IDLE="$(count_pattern_survivors 'idle-load.mjs' "$RUNNER_TEMP/idle-survivors.txt")"
+          BUSY="$(count_pattern_survivors 'busy-load.mjs' "$RUNNER_TEMP/busy-survivors.txt")"
+          {
+            echo "surviving_idle=$IDLE"
+            echo "surviving_busy=$BUSY"
+            echo "uptime=$(uptime)"
+            echo "procs_total=$(ps ax | wc -l | tr -d ' ')"
+            echo "procs_node=$(ps -eo command | grep -ci '[n]ode')"
+          } | tee "$EVIDENCE_DIR/cleanup.txt"
           if [ "$IDLE" != "0" ] || [ "$BUSY" != "0" ]; then
-            echo "::error::Qualification load processes survived cleanup; recovery condition would be invalid."
+            echo "::error::Qualification load processes survived cleanup; condition D would be invalid."
             exit 1
           fi
+          echo "cleanup verified: no qualification load processes remain"
 
       - name: Condition D — recovery (test:run)
         run: "$RUNNER_TEMP/run-condition.sh D-recovery-testrun test:run"
@@ -280,7 +409,11 @@ jobs:
             npx vitest run "tests/unit/$f.test.ts" > "$EVIDENCE_DIR/isolated-$f.log" 2>&1
             echo "isolated_${f}_status=$?" >> "$EVIDENCE_DIR/isolated.summary.txt"
             set -e
-            echo "isolated_${f}_forks=$(grep -c 'Failed to start forks worker' "$EVIDENCE_DIR/isolated-$f.log" || true)" >> "$EVIDENCE_DIR/isolated.summary.txt"
+            {
+              echo "isolated_${f}_forks=$(grep -c 'Failed to start forks worker' "$EVIDENCE_DIR/isolated-$f.log" || true)"
+              echo "isolated_${f}_handshake=$(grep -c 'Timeout waiting for worker to respond' "$EVIDENCE_DIR/isolated-$f.log" || true)"
+              echo "isolated_${f}_readable=$(grep -c 'Test Files' "$EVIDENCE_DIR/isolated-$f.log" || true)"
+            } >> "$EVIDENCE_DIR/isolated.summary.txt"
           done
           cat "$EVIDENCE_DIR/isolated.summary.txt"
 
