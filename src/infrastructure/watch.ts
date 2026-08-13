@@ -156,7 +156,10 @@ function resolveWatchPath(watchPath: string): string {
   return resolve(watchPath)
 }
 
-/** Activity resets to the minimum; an idle reconciliation doubles the current interval, clamped to [minimum, maximum]. */
+/**
+ * @internal Exported for deterministic testing of the adaptive backoff policy.
+ * Activity resets to the minimum; an idle reconciliation doubles the current interval, clamped to [minimum, maximum].
+ */
 export function nextReconciliationIntervalMs(input: {
   currentIntervalMs: number
   minimumIntervalMs: number
