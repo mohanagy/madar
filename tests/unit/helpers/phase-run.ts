@@ -35,6 +35,15 @@ export class PhaseFailure extends Error {
   readonly phase: string
   readonly kind: 'work' | 'cleanup'
   readonly durationMs: number
+  /**
+   * Live reference to the run's records, deliberately not a snapshot. The
+   * asymmetry with `timeline()`, which copies, is intentional: a failure needs
+   * to carry the cleanup phases that ran *after* it, since whether cleanup
+   * succeeded is part of diagnosing the failure. Snapshotting at throw time
+   * would discard exactly the evidence a post-hoc timeout verdict already
+   * fails to produce. `timeline()` copies because its callers are reading a
+   * finished run rather than holding a handle to one still in progress.
+   */
   readonly timeline: readonly PhaseRecord[]
 
   constructor(

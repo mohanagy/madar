@@ -172,10 +172,11 @@ describe('workspace phase runs', () => {
     expect(phases.cleanupErrors()[0]?.cause).toBe(cleanupError)
   })
 
-  test('classifies a timed-out phase as a deadlock', () => {
+  test('classifies a timed-out phase as a deadlock and retains its diagnostics', () => {
     const timedOut = Object.assign(new Error('spawn timed out'), { code: 'ETIMEDOUT' })
-    const phases = createPhaseRun({ label: 'deadlock', now: injectedClock(0, 30_000) })
+    const phases = createPhaseRun({ label: 'deadlock', now: injectedClock(0, 120, 120, 30_120) })
 
+    phases.phase('git-init', () => undefined)
     const caught = captureThrown(() => phases.phase('git-commit', () => {
       throw timedOut
     }))
@@ -184,6 +185,14 @@ describe('workspace phase runs', () => {
     expect((caught as PhaseDeadlock).phase).toBe('git-commit')
     expect((caught as PhaseDeadlock).message).toBe('deadlock: phase "git-commit" exceeded its deadlock limit after 30000 ms')
     expect((caught as PhaseDeadlock).cause).toBe(timedOut)
+
+    // The failure must carry the diagnostics, not merely the phase name: every
+    // completed phase and its duration travels with the thrown error, so a
+    // reader of the failure alone can see what ran and how long it took.
+    expect((caught as PhaseDeadlock).timeline.map(({ name, status, durationMs }) => ({ name, status, durationMs }))).toEqual([
+      { name: 'git-init', status: 'ok', durationMs: 120 },
+      { name: 'git-commit', status: 'failed', durationMs: 30_000 },
+    ])
 
     const markedDeadlock = Object.assign(new Error('child received a signal'), { isDeadlock: true })
     const markedPhases = createPhaseRun({ label: 'marked-deadlock', now: injectedClock(0, 1) })
