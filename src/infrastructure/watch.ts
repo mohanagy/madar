@@ -137,7 +137,8 @@ export interface GraphAutoRefreshController {
   completed: Promise<void>
 }
 
-interface WatchLoopSignal {
+/** @internal Exported for deterministic testing of wait/wake/abort semantics. */
+export interface WatchLoopSignal {
   wait(delayMs: number, signal?: AbortSignal): Promise<void>
   wake(): void
 }
@@ -155,7 +156,24 @@ function resolveWatchPath(watchPath: string): string {
   return resolve(watchPath)
 }
 
-function createWatchLoopSignal(): WatchLoopSignal {
+/**
+ * @internal Exported for deterministic testing of the adaptive backoff policy.
+ * Activity resets to the minimum; an idle reconciliation doubles the current interval, clamped to [minimum, maximum].
+ */
+export function nextReconciliationIntervalMs(input: {
+  currentIntervalMs: number
+  minimumIntervalMs: number
+  maximumIntervalMs: number
+  changedCount: number
+}): number {
+  const { currentIntervalMs, minimumIntervalMs, maximumIntervalMs, changedCount } = input
+  return changedCount > 0
+    ? minimumIntervalMs
+    : Math.min(maximumIntervalMs, Math.max(minimumIntervalMs, currentIntervalMs * 2))
+}
+
+/** @internal Exported for deterministic testing of wait/wake/abort semantics. */
+export function createWatchLoopSignal(): WatchLoopSignal {
   let wakePending = false
   let wakeResolver: (() => void) | null = null
 
@@ -1052,9 +1070,12 @@ export async function watch(watchPath: string, debounce = 3, options: WatchOptio
         )
         const changedBatch = diffSnapshots(previousSnapshot.fingerprints, nextSnapshot.fingerprints)
         previousSnapshot = nextSnapshot
-        currentIntervalMs = changedBatch.length > 0
-          ? minimumIntervalMs
-          : Math.min(maximumIntervalMs, Math.max(minimumIntervalMs, currentIntervalMs * 2))
+        currentIntervalMs = nextReconciliationIntervalMs({
+          currentIntervalMs,
+          minimumIntervalMs,
+          maximumIntervalMs,
+          changedCount: changedBatch.length,
+        })
         nextReconciliationAt = Date.now() + currentIntervalMs
         recordSuccessfulReconciliation(state, nextSnapshot, currentIntervalMs, nextReconciliationAt)
         updateWatcherPolicyState(state, resolvedWatchPath, options, gitVisibilityCache)

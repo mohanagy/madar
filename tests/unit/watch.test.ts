@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { describe, expect, test, vi } from 'vitest'
 
-import { WATCHED_EXTENSIONS, hasNonCode, notifyOnly, rebuildCode, startGraphAutoRefresh, watch, type WatchReconciliationMetrics } from '../../src/infrastructure/watch.js'
+import { WATCHED_EXTENSIONS, hasNonCode, nextReconciliationIntervalMs, notifyOnly, rebuildCode, startGraphAutoRefresh, watch, type WatchReconciliationMetrics } from '../../src/infrastructure/watch.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { parseGenerationPolicy } from '../../src/contracts/generation-policy.js'
 import { readWatcherStateForGraph } from '../../src/infrastructure/watcher-state.js'
@@ -469,15 +469,98 @@ describe('watch', () => {
         logger: { log() {}, error() {} },
       })
 
-      await delay(190)
-      controller.abort()
-      await watcher
+      try {
+        await waitFor(() => reconciliations.some((metrics) => metrics.nextIntervalMs === 80), 10_000)
+      } finally {
+        controller.abort()
+        await watcher
+      }
 
       expect(reconciliations[0]).toMatchObject({ trigger: 'initial', fileCount: 1, nextIntervalMs: 20 })
-      expect(reconciliations.some((metrics) => metrics.nextIntervalMs === 40)).toBe(true)
-      expect(reconciliations.some((metrics) => metrics.nextIntervalMs === 80)).toBe(true)
-      expect(reconciliations.length).toBeLessThanOrEqual(5)
+
+      // Every observed transition must equal what the pure policy prescribes for the
+      // observed activity. This ties the integration path to the deterministic policy
+      // tests and holds regardless of host speed or concurrent filesystem activity.
+      for (let index = 1; index < reconciliations.length; index += 1) {
+        const previous = reconciliations[index - 1]
+        const current = reconciliations[index]
+        if (!previous || !current || current.trigger === 'post-rebuild') {
+          continue
+        }
+        expect({ at: index, nextIntervalMs: current.nextIntervalMs }).toEqual({
+          at: index,
+          nextIntervalMs: nextReconciliationIntervalMs({
+            currentIntervalMs: previous.nextIntervalMs,
+            minimumIntervalMs: 20,
+            maximumIntervalMs: 80,
+            changedCount: current.changedCount,
+          }),
+        })
+      }
+
+      const intervals = reconciliations.map((metrics) => metrics.nextIntervalMs)
+      expect(intervals).toContain(40)
+      expect(intervals).toContain(80)
+      expect(intervals.every((interval) => interval >= 20 && interval <= 80)).toBe(true)
       expect(reconciliations.every((metrics) => metrics.durationMs >= 0 && metrics.directoryCount >= 1)).toBe(true)
+    })
+  })
+
+  test('resets the reconciliation interval after activity', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const idle = true\n', 'utf8')
+      const controller = new AbortController()
+      const reconciliations: WatchReconciliationMetrics[] = []
+      const watcher = watch(tempDir, 0.02, {
+        signal: controller.signal,
+        pollIntervalMs: 20,
+        maxPollIntervalMs: 80,
+        onReconciliation: (metrics) => reconciliations.push(metrics),
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await waitFor(() => reconciliations.some((metrics) => metrics.nextIntervalMs === 80), 10_000)
+        writeFileSync(join(tempDir, 'activity.ts'), 'export const activity = true\n', 'utf8')
+        await waitFor(() => reconciliations.some((metrics) => (
+          metrics.changedCount > 0 && metrics.nextIntervalMs === 20
+        )), 10_000)
+      } finally {
+        controller.abort()
+        await watcher
+      }
+
+      expect(reconciliations.some((metrics) => (
+        metrics.changedCount > 0 && metrics.nextIntervalMs === 20
+      ))).toBe(true)
+    })
+  })
+
+  test('emits no further reconciliation after the watcher stops', async () => {
+    await withTempDirAsync(async (tempDir) => {
+      writeFileSync(join(tempDir, 'main.ts'), 'export const idle = true\n', 'utf8')
+      const controller = new AbortController()
+      const reconciliations: WatchReconciliationMetrics[] = []
+      const watcher = watch(tempDir, 0.02, {
+        signal: controller.signal,
+        pollIntervalMs: 20,
+        maxPollIntervalMs: 80,
+        onReconciliation: (metrics) => reconciliations.push(metrics),
+        logger: { log() {}, error() {} },
+      })
+
+      try {
+        await waitFor(() => reconciliations.some((metrics) => metrics.nextIntervalMs === 80), 10_000)
+      } finally {
+        controller.abort()
+        await watcher
+      }
+
+      const reconciliationCountAfterStop = reconciliations.length
+      await delay(150)
+
+      expect(reconciliations).toHaveLength(reconciliationCountAfterStop)
+      expect(readWatcherStateForGraph(join(tempDir, 'out', 'graph.json'))?.status).toBe('stopped')
     })
   })
 
@@ -729,18 +812,25 @@ describe('watch', () => {
       try {
         const { watch: watchWithMockedGit } = await import('../../src/infrastructure/watch.js')
         const controller = new AbortController()
+        const reconciliations: WatchReconciliationMetrics[] = []
         const watcher = watchWithMockedGit(tempDir, 0.02, {
           signal: controller.signal,
           pollIntervalMs: 10,
           respectGitignore: true,
+          onReconciliation: (metrics) => reconciliations.push(metrics),
           logger: { log() {}, error() {} },
         })
 
-        await delay(100)
-        controller.abort()
-        await watcher
+        try {
+          await waitFor(() => reconciliations.length >= 3, 5_000)
+        } finally {
+          controller.abort()
+          await watcher
+        }
 
-        expect(collectGitVisibleFiles).toHaveBeenCalledTimes(1)
+        expect(collectGitVisibleFiles).toHaveBeenCalled()
+        // Fewer Git snapshots than reconciliation polls proves cache reuse without depending on crossing its 500 ms window.
+        expect(collectGitVisibleFiles.mock.calls.length).toBeLessThan(reconciliations.length)
       } finally {
         vi.doUnmock('../../src/shared/git.js')
         vi.resetModules()
