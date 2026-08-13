@@ -16,6 +16,17 @@ import { createPhaseRun, PhaseFailure, usePhaseRun } from './helpers/phase-run.j
 // test body, so no per-test bound can ever rescue a wedged Git process. The
 // slowest Git command across the six-lane matrix was 177 ms, so 30 s is ~170x
 // that value and can only fire on a genuine hang, never on ordinary slowness.
+//
+// Scope, stated precisely because the difference matters: this bounds only the
+// Git commands the fixture invokes directly through `git()` below. Git reached
+// *indirectly* is NOT bounded -- `gitPath()` in `src/shared/workspace.ts` sets
+// no `timeout`, so the three spawns behind every `resolveMadarWorkspace()` call,
+// and everything `generateGraph()` resolves through it, can still hang the
+// synchronous worker. For those paths the elapsed ceiling below is a post-hoc
+// report, not protection. That is a pre-existing production gap, not one this
+// test introduced, and closing it would change production behavior (a wedged
+// Git would start returning `null` instead of hanging), so it is deliberately
+// out of scope for #695.
 const GIT_DEADLOCK_LIMIT_MS = 30_000
 
 // Vitest requires a per-test bound. This is neither a correctness criterion nor
