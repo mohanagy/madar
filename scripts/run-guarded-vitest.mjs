@@ -59,6 +59,30 @@ export function signalExitCode(signal) {
   return typeof signalNumber === 'number' ? 128 + signalNumber : 1
 }
 
+// Forwards at most one signal to `child`, ever, regardless of how many times the returned
+// function is invoked or how quickly. This is a one-shot latch, not a per-signal-type guard:
+// once we have decided to forward a termination signal, the child is already on its way down,
+// and a second delivery only risks Vitest treating it as an escalation (a second SIGINT/SIGTERM
+// typically forces a hard stop instead of a graceful one). The `forwarded` flag is set
+// synchronously, in the same tick as the check, so a second signal arriving before Node has
+// updated `child.exitCode`/`child.signalCode` cannot slip past the guard the way a check against
+// only those two fields could -- that race is exactly what let two rapid signals both pass the
+// old exitCode/signalCode-only check and each call `child.kill()`.
+export function createSignalForwarder(child) {
+  let forwarded = false
+  return (signal) => {
+    if (forwarded) {
+      return false
+    }
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return false
+    }
+    forwarded = true
+    child.kill(signal)
+    return true
+  }
+}
+
 function waitForReadable(stream) {
   return new Promise((resolveDone) => {
     if (stream.readableEnded || stream.destroyed) {
@@ -155,11 +179,27 @@ export async function runGuardedVitest(forwardedArgs, env = process.env) {
   }
   const { stream: logStream, getWriteError } = log
 
+  // POSIX only: give the child its own process group instead of inheriting ours. Without this,
+  // an interactive Ctrl-C sends SIGINT to the whole foreground process group -- the child
+  // receives it directly from the terminal at the same moment our own SIGINT handler below also
+  // fires and explicitly forwards a second SIGINT via `child.kill()`. Vitest (like most tools)
+  // treats a second termination signal as an escalation to a forced stop, so one Ctrl-C could
+  // silently turn into a hard kill. Detaching the child's process group makes this wrapper's
+  // explicit forward the only delivery path, on every platform behavior source (interactive
+  // terminal or a targeted `kill <pid>`), so the one-shot latch below is the single point of
+  // truth for whether the child has been signaled. Trade-off, accepted deliberately: an
+  // uncatchable process-group-wide signal (e.g. `kill -9 -<pgid>`, or Ctrl-\ SIGQUIT) sent to the
+  // original group no longer automatically reaches the now-detached child, so it could be
+  // orphaned in that specific, rare case; SIGKILL/SIGQUIT can never be forwarded by any wrapper
+  // design (they cannot be caught), and this only changes what happens to an already-uncatchable
+  // signal, not whether SIGINT/SIGTERM are handled. Not applied on Windows, which has no
+  // equivalent POSIX process-group signal semantics for `spawn` to isolate against.
   let child
   try {
     child = spawn(process.execPath, [vitestEntryPath, ...forwardedArgs], {
       cwd: process.cwd(),
       stdio: ['inherit', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
     })
   } catch (error) {
     logStream.end()
@@ -176,11 +216,7 @@ export async function runGuardedVitest(forwardedArgs, env = process.env) {
   child.stderr.pipe(logStream, { end: false })
 
   const outputDone = Promise.all([waitForReadable(child.stdout), waitForReadable(child.stderr)])
-  const forwardSignal = (signal) => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill(signal)
-    }
-  }
+  const forwardSignal = createSignalForwarder(child)
   const forwardSigint = () => forwardSignal('SIGINT')
   const forwardSigterm = () => forwardSignal('SIGTERM')
   process.on('SIGINT', forwardSigint)

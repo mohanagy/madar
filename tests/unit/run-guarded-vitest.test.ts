@@ -9,6 +9,8 @@ const runnerPath = resolve('scripts/run-guarded-vitest.mjs')
 const controlledChildPath = resolve('tests/fixtures/vitest-guard/controlled-child.mjs')
 const delayedOutputChildPath = resolve('tests/fixtures/vitest-guard/delayed-output.mjs')
 const echoArgsChildPath = resolve('tests/fixtures/vitest-guard/echo-args.mjs')
+const signalCounterChildPath = resolve('tests/fixtures/vitest-guard/signal-counter.mjs')
+const exerciseSignalForwarderPath = resolve('tests/fixtures/vitest-guard/exercise-signal-forwarder.mjs')
 
 const CLEAN_OUTPUT = [
   ' RUN  v4.1.5 /repo',
@@ -169,6 +171,62 @@ describe('guarded vitest CLI', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  it('forwards a signal to the child at most once, even when called twice before exitCode/signalCode could update', () => {
+    // Deterministic, no real OS signals or timing involved: exercises createSignalForwarder
+    // directly against a fake child via a subprocess, matching this file's established pattern
+    // of treating scripts/*.mjs as opaque CLIs rather than statically importing them into
+    // typechecked test code (see the sibling assert-clean-vitest-log.test.ts for the same
+    // rationale -- the repo's tsconfig has no allowJs).
+    const result = spawnSync(process.execPath, [exerciseSignalForwarderPath], { encoding: 'utf8' })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('FIRST_FORWARD_RESULT=true')
+    expect(result.stdout).toContain('SECOND_FORWARD_RESULT=false')
+    expect(result.stdout).toContain('KILL_CALL_COUNT=1')
+    expect(result.stdout).toContain('KILL_CALLS=["SIGTERM"]')
+    expect(result.stdout).toContain('EXITED_CHILD_FORWARD_RESULT=false')
+    expect(result.stdout).toContain('EXITED_CHILD_KILL_CALL_COUNT=0')
+  })
+
+  it('delivers exactly one real signal to a still-alive child when the wrapper itself is signaled', async () => {
+    // End-to-end proof, with a real OS signal, of the exact scenario CodeRabbit flagged: signal
+    // the wrapper process itself (as an external supervisor or an interactive `kill <pid>` would)
+    // while its child is still running, and confirm the child receives that signal exactly once
+    // -- not zero (forwarding must work) and not two (the shared-process-group double-delivery
+    // bug). The child fixture stays alive across a delivery window instead of dying from the
+    // first signal, so any accidental second delivery would be observable.
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      VITEST_GUARD_EXEC_OVERRIDE: signalCounterChildPath,
+    }
+    delete env.VITEST_GUARD_LOG_PATH
+
+    const wrapper = spawn(process.execPath, [runnerPath, 'run'], {
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    let stdout = ''
+    const ready = new Promise<void>((resolveReady) => {
+      wrapper.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8')
+        if (stdout.includes('SIGNAL_COUNTER_READY')) {
+          resolveReady()
+        }
+      })
+    })
+    await ready
+
+    wrapper.kill('SIGTERM')
+
+    await new Promise<void>((resolveClose) => {
+      wrapper.once('close', () => resolveClose())
+    })
+
+    const deliveries = stdout.match(/SIGNAL_RECEIVED SIGTERM/g) ?? []
+    expect(deliveries.length).toBe(1)
   })
 
   it('fails closed when the retained log disappears before scanning', () => {
