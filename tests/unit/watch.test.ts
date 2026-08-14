@@ -224,8 +224,8 @@ describe('watch', () => {
         expect(refresh.startupComplete?.()).toBe(true)
         expect(refresh.initialRebuilt).toBe(false)
         expect(rebuild).not.toHaveBeenCalled()
-        await waitForWatcherStatus(generated.graphPath, 'idle')
-        expect(readWatcherStateForGraph(generated.graphPath)).toMatchObject({
+        const settled = await waitForWatcherStatus(generated.graphPath, 'idle')
+        expect(settled).toMatchObject({
           status: 'idle',
           coverage: 'complete',
           policy_match: true,
@@ -258,8 +258,8 @@ describe('watch', () => {
         expect(refresh.startupComplete?.()).toBe(true)
         expect(refresh.initialRebuilt).toBe(false)
         expect(rebuild).not.toHaveBeenCalled()
-        await waitForWatcherStatus(generated.graphPath, 'idle')
-        expect(readWatcherStateForGraph(generated.graphPath)).toMatchObject({
+        const settled = await waitForWatcherStatus(generated.graphPath, 'idle')
+        expect(settled).toMatchObject({
           status: 'idle',
           coverage: 'complete',
           policy_match: true,
@@ -584,10 +584,20 @@ describe('watch', () => {
       })
 
       writeFileSync(join(tempDir, 'main.ts'), 'export const changed = true\n', 'utf8')
-      await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'pending')
-      const pending = readWatcherStateForGraph(graphPath)
-      expect(pending).toMatchObject({ coverage: 'complete', policy_match: true })
-      expect(pending?.pending_since).toMatch(/^\d{4}-/)
+      // Capture the state the wait observed. Re-reading afterwards samples a live poll loop
+      // again: the debounce can fire between the two reads, advancing status away from
+      // `pending` and clearing `pending_since` to null.
+      const observed: { state?: ReturnType<typeof readWatcherStateForGraph> } = {}
+      await waitFor(() => {
+        const watcherState = readWatcherStateForGraph(graphPath)
+        if (watcherState?.status !== 'pending') {
+          return false
+        }
+        observed.state = watcherState
+        return true
+      }, 5_000, () => `watcher status 'pending' (last observed '${readWatcherStateForGraph(graphPath)?.status ?? 'none'}')`)
+      expect(observed.state).toMatchObject({ coverage: 'complete', policy_match: true })
+      expect(observed.state?.pending_since).toMatch(/^\d{4}-/)
 
       controller.abort()
       await watcher
@@ -969,29 +979,43 @@ describe('watch', () => {
         await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
         writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 2\n', 'utf8')
 
+        // Capture the state the wait observed. The failure schedules an automatic retry, so a
+        // second read can land after the retry has already advanced the watcher past `failed`.
+        const observedFailure: { state?: ReturnType<typeof readWatcherStateForGraph> } = {}
         await waitFor(() => {
           const watcherState = readWatcherStateForGraph(graphPath)
-          return watcherState?.status === 'failed'
+          const matched = watcherState?.status === 'failed'
             && watcherState.coverage === 'failed'
             && watcherState.failure_reason?.includes('retry is scheduled automatically') === true
+          if (matched) {
+            observedFailure.state = watcherState
+          }
+          return matched
         })
         expect(rebuild).toHaveBeenCalledTimes(1)
-        expect(readWatcherStateForGraph(graphPath)).toMatchObject({
+        expect(observedFailure.state).toMatchObject({
           status: 'failed',
           coverage: 'failed',
           failure_reason: expect.stringContaining('retry is scheduled automatically'),
         })
 
+        // Same capture rule: the watcher is still running with a 10ms reconcile interval, so a
+        // periodic reconcile can move it off `idle` between the wait and a second read.
+        const observedRecovery: { state?: ReturnType<typeof readWatcherStateForGraph> } = {}
         await waitFor(() => {
           const watcherState = readWatcherStateForGraph(graphPath)
-          return rebuild.mock.calls.length === 2
+          const matched = rebuild.mock.calls.length === 2
             && watcherState?.status === 'idle'
             && watcherState.coverage === 'complete'
             && watcherState.failure_reason === null
+          if (matched) {
+            observedRecovery.state = watcherState
+          }
+          return matched
         })
         expect(rebuild).toHaveBeenCalledTimes(2)
         expect(notify).toHaveBeenCalledTimes(1)
-        expect(readWatcherStateForGraph(graphPath)).toMatchObject({
+        expect(observedRecovery.state).toMatchObject({
           status: 'idle',
           coverage: 'complete',
           failure_reason: null,
@@ -1297,10 +1321,25 @@ async function waitFor(
  * depends on the platform's filesystem-event timing. Wait for the required status
  * instead, and name the last observed one when the wait times out.
  */
-async function waitForWatcherStatus(graphPath: string, expected: string): Promise<void> {
+async function waitForWatcherStatus(
+  graphPath: string,
+  expected: string,
+): Promise<NonNullable<ReturnType<typeof readWatcherStateForGraph>>> {
+  // Returns the state the wait actually observed. Callers must assert on this value rather
+  // than reading again: the watcher keeps running, so a periodic reconcile can move it off
+  // `expected` between the wait succeeding and a second read.
+  const observed: { state?: ReturnType<typeof readWatcherStateForGraph> } = {}
   await waitFor(
-    () => readWatcherStateForGraph(graphPath)?.status === expected,
+    () => {
+      const watcherState = readWatcherStateForGraph(graphPath)
+      if (watcherState?.status !== expected) {
+        return false
+      }
+      observed.state = watcherState
+      return true
+    },
     5_000,
     () => `watcher status '${expected}' (last observed '${readWatcherStateForGraph(graphPath)?.status ?? 'none'}')`,
   )
+  return observed.state as NonNullable<ReturnType<typeof readWatcherStateForGraph>>
 }
