@@ -1,0 +1,118 @@
+{
+  "contract_version": "1.0.0",
+  "task_id": "review-hono-error-handling",
+  "target": "hono-seeded-error-disclosure",
+  "category": "review-security",
+  "provenance": {
+    "authored_by": "madar-655-qualification-agent",
+    "authored_at": "2026-08-12",
+    "derived_from": [
+      "seeded defect deliberately injected into honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796 via patches/hono-error-message-disclosure.patch"
+    ],
+    "madar_derived_sources_used": [],
+    "inspected_madar_output_before_freeze": false,
+    "independent_of_production_rule_author": false,
+    "review_status": "unreviewed"
+  },
+  "seeded_defect": {
+    "id": "seeded-error-message-disclosure",
+    "path": "src/hono-base.ts",
+    "symbol": "errorHandler",
+    "patch": "patches/hono-error-message-disclosure.patch",
+    "description": "The framework's default error handler builds the 500 response body from the thrown error's stack, falling back to its message, instead of returning a fixed 'Internal Server Error' string.",
+    "attacker_capability": "Any request that triggers an unhandled error returns a stack trace to the client. That discloses absolute filesystem paths, the internal module layout, dependency names and versions, and often the failing query, identifier, or credential fragment embedded in the error message. It turns every unhandled error into reconnaissance.",
+    "proving_evidence": [
+      { "path": "src/hono-base.ts", "symbol": "errorHandler", "note": "the patched line builds the body from err.stack ?? err.message" },
+      { "path": "src/hono-base.ts", "symbol": "Hono.#handleError", "note": "the non-composed path routes every Error into this same handler" },
+      { "path": "src/compose.ts", "symbol": "compose", "note": "inside the composed chain the handler's return value is assigned to context.res even when the context was already finalized" }
+    ],
+    "reachability": "Reachable from both dispatch paths: #handleError for the fast path and for post-chain failures, and the onError branch inside compose for errors raised by middleware or handlers."
+  },
+  "critical_facts": [
+    {
+      "id": "default-handler-leaks",
+      "statement": "The default error handler returns internal error detail in the response body.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/hono-base.ts", "symbol": "errorHandler" }]
+    },
+    {
+      "id": "reachable-from-both-paths",
+      "statement": "Both the composed chain's onError branch and #handleError converge on the same default handler, so the disclosure is not confined to one route shape.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/compose.ts", "symbol": "compose" },
+        { "path": "src/hono-base.ts", "symbol": "Hono.#handleError" }
+      ]
+    },
+    {
+      "id": "fix-is-fixed-string",
+      "statement": "The fix is to return a constant message with status 500 and keep the detail in the server-side log that the handler already writes.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/hono-base.ts", "symbol": "errorHandler" }]
+    }
+  ],
+  "acceptable_additional_findings": [
+    {
+      "id": "override-dependency",
+      "statement": "An application that installs its own onError replaces this handler, so real-world exposure depends on the application not overriding the default.",
+      "scored_as": "supporting, not required"
+    },
+    {
+      "id": "server-side-logging",
+      "statement": "The handler also writes the full error to the server log. That is appropriate, not a client-facing disclosure.",
+      "scored_as": "supporting, not required"
+    },
+    {
+      "id": "finalized-override",
+      "statement": "In compose, the error handler's response is applied even when the context was already finalized, so a partially written response can be replaced by the error body.",
+      "scored_as": "supporting, not required"
+    }
+  ],
+  "correct_uncertainty": [
+    {
+      "id": "message-content-unknown",
+      "requirement": "What a stack trace actually reveals depends on the deployment — bundling, source maps, and working directory. A correct answer states the class of information disclosed rather than asserting that specific secrets are always present."
+    }
+  ],
+  "unsupported_claim_traps": [
+    {
+      "id": "http-exception-leaks",
+      "claim": "The HTTPException branch is the disclosure, because it returns the exception's message to the client.",
+      "why_false": "HTTPException.getResponse builds its response from a message the application author supplied deliberately. That is intended behaviour and is unchanged from the upstream code.",
+      "counts_as": "false_positive"
+    },
+    {
+      "id": "not-found-leaks",
+      "claim": "The not-found handler discloses the requested path.",
+      "why_false": "The default not-found handler returns the fixed string '404 Not Found' with status 404 and echoes nothing from the request.",
+      "counts_as": "false_positive"
+    },
+    {
+      "id": "compose-is-the-defect",
+      "claim": "compose is the defect because it passes the raw error onward.",
+      "why_false": "compose hands the error to whatever onError is configured. Passing the error to a handler is correct; the disclosure is in what the default handler does with it.",
+      "counts_as": "false_positive"
+    },
+    {
+      "id": "rethrow-is-a-leak",
+      "claim": "#handleError re-throwing non-Error values leaks internals to the client.",
+      "why_false": "A re-thrown non-Error propagates out of fetch to the host runtime; it does not construct a response body.",
+      "counts_as": "false_positive"
+    }
+  ],
+  "tier1_obligations": {
+    "required_evidence_paths": ["src/hono-base.ts", "src/compose.ts", "src/http-exception.ts"],
+    "required_evidence_symbols": ["errorHandler", "compose", "HTTPException"],
+    "min_critical_fact_recall": 1.0,
+    "must_not_report_ready_when": [
+      "src/hono-base.ts is absent from the evidence set",
+      "only one of the two error paths is present, since the reachability claim needs both"
+    ]
+  },
+  "tier2_scoring": {
+    "method": "seeded_defect_detection",
+    "required_detections": ["seeded-error-message-disclosure"],
+    "false_positive_set": ["http-exception-leaks", "not-found-leaks", "compose-is-the-defect", "rethrow-is-a-leak"],
+    "critical_facts_required_for_pass": ["default-handler-leaks", "reachable-from-both-paths"]
+  }
+}

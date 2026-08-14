@@ -1,0 +1,195 @@
+{
+  "contract_version": "1.0.0",
+  "frozen_at": "2026-08-12",
+  "frozen_for_issue": 655,
+  "frozen_against": {
+    "madar_commit": "06b373a447acfce895412ac10eb4e5228c5df0b7",
+    "madar_package_version": "0.32.1",
+    "dependency_lock": "package-lock.json at the pinned commit; runs must use `npm ci`, never `npm install`"
+  },
+  "support_corridor": "typescript-node",
+  "naturalness_rule": "Every qualification target is a real, externally authored software project pinned at an immutable commit. Self-authored fixture workspaces are not part of this corpus. A corpus of self-made proxies cannot detect production behaviour drifting toward benchmark-shaped repositories, which is the failure mode this contract exists to catch.",
+  "forbidden_target_symbols": {
+    "_note": "Distinctive symbols from the pinned targets. Their appearance in src/ would mean production behaviour had been shaped around a qualification repository. Checked by `npm run qualify:validate`. Target ids are deliberately excluded from this check — see production_coupling below.",
+    "hono": ["SmartRouter", "UnsupportedPathError", "RegExpRouter", "TrieRouter"],
+    "unstorage": ["createStorage", "DriverFactory", "createRequiredError"]
+  },
+  "patch_path_base": "docs/qualification/",
+  "patch_path_base_note": "Every `patch` value in this file, and every `patches/...` reference in the truth files and in tasks.json, is resolved against this directory and nowhere else — not against the repository root and not against the file that mentions it. `npm run qualify:validate` resolves them this way. The base is stated because validity-rules.md invalidates a run whose patch fails to apply, so an ambiguous base would turn a path convention into an invalidation.",
+  "proxy_targets": [],
+  "proxy_targets_note": "This list is intentionally empty. A fixture proxy is permitted only where a natural repository genuinely cannot supply a task category; all six required categories are supplied by the natural targets below. Any future entry here must be labelled a proxy and must carry the statement that proxies cannot satisfy the naturalness property.",
+  "targets": [
+    {
+      "id": "hono",
+      "name": "Hono web framework",
+      "tier": 1,
+      "kind": "git",
+      "natural": true,
+      "source": {
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "committed_at": "2026-08-10T01:20:29Z"
+      },
+      "license": "MIT",
+      "language": "typescript",
+      "shape": "http-framework",
+      "dependency_lock": "the repository's own lockfile at the pinned ref",
+      "prepare": [
+        "git clone --filter=blob:none --no-checkout https://github.com/honojs/hono.git <dir>",
+        "git -C <dir> checkout 26de73133b8552f56ba72e025ecd82b08900d796"
+      ],
+      "install": "not required — every frozen task is answered from source; no build or dependency install is needed to read the code",
+      "holdout_class": "open",
+      "status": "frozen",
+      "selection_rationale": "Real, externally authored, permissively licensed TypeScript with a genuine layered request lifecycle (entry point, router abstraction with multiple implementations, middleware composition, context, error handling). Deliberately absent from docs/benchmarks/suite/repos.json so qualification does not inherit repositories that existing production heuristics or published receipts were shaped around.",
+      "production_coupling": {
+        "level": "declared_framework_adapter",
+        "detail": "Madar ships a generic Hono adapter at src/pipeline/spi/framework-hono.ts and Hono-aware query classification in src/runtime/retrieve.ts (an explicit-Hono token check and hono_route / hono_middleware roles). This is declared support for a framework in the TypeScript/Node corridor, not a repository-specific special case, so it is not a #660 contamination finding.",
+        "consequence": "A result on this target partly measures the shipped Hono adapter. It is not evidence about frameworks that have no adapter, and it must never be generalized to them.",
+        "mitigation": "The frozen prompts for this target deliberately never name the framework — they say 'this framework' and 'the application's entry point' — so the query classifier is not handed the framework identity in the prompt text. The unstorage target is a plain library with no corresponding adapter and acts as the uncoupled contrast.",
+        "verified_at": "2026-08-12 against 06b373a447acfce895412ac10eb4e5228c5df0b7"
+      },
+      "cited_blobs": {
+        "src/hono.ts": "c9472202a710231b8151e06cc812290bf53bd3ab",
+        "src/hono-base.ts": "e6a7278dd293aa03a1021d3c639b3bda5bd4c23d",
+        "src/compose.ts": "b1d4508ffe490fe4eaf1fa25a182c95f486685e5",
+        "src/context.ts": "3553dd181b4a718177a09874ba584c76f4cd54c5",
+        "src/router.ts": "ec12588ab651a7ffe0d0178b37099edf21833ee0",
+        "src/router/smart-router/router.ts": "9ec464da8c25dfc2dacaee9ea13174a7d0020ec6",
+        "src/router/reg-exp-router/router.ts": "6020851a696ff51b3b65adfe80d3daccf5156f3d",
+        "src/router/trie-router/router.ts": "65b9978861688858f640f7618161b3c0bb8d009c",
+        "src/utils/url.ts": "ea92ff9355c64340e4d342831aadfc9bb91d7f64",
+        "src/http-exception.ts": "8fe9c2bb3d078787cfd233634ef8905b5b5d2ccf",
+        "src/request.ts": "ae5c04076a178319c8af1304bba6b603d235a8f2"
+      }
+    },
+    {
+      "id": "unstorage",
+      "name": "unstorage key-value abstraction",
+      "tier": 1,
+      "kind": "git",
+      "natural": true,
+      "source": {
+        "url": "https://github.com/unjs/unstorage",
+        "ref": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "committed_at": "2026-06-29T17:46:43Z"
+      },
+      "license": "MIT",
+      "language": "typescript",
+      "shape": "driver-based-storage-abstraction",
+      "dependency_lock": "the repository's own lockfile at the pinned ref",
+      "prepare": [
+        "git clone --filter=blob:none --no-checkout https://github.com/unjs/unstorage.git <dir>",
+        "git -C <dir> checkout e6be6135832f350ca16f9a77432e1d4f0aa85ed7"
+      ],
+      "install": "not required — every frozen task is answered from source; no build or dependency install is needed to read the code",
+      "holdout_class": "open",
+      "status": "frozen",
+      "selection_rationale": "Real, externally authored, permissively licensed TypeScript with a genuine extension seam (a Driver interface, 34 shipped drivers, mount-prefix resolution, a code-generated driver index). A different architectural shape from the framework target, and deliberately absent from docs/benchmarks/suite/repos.json.",
+      "production_coupling": {
+        "level": "none_found",
+        "detail": "No framework adapter in src/pipeline/spi corresponds to this library, and no symbol from it appears in src/. It is a plain TypeScript library outside every declared adapter.",
+        "consequence": "This target is the uncoupled contrast to the framework target: a result here exercises generic retrieval and context building rather than a shipped adapter.",
+        "verified_at": "2026-08-12 against 06b373a447acfce895412ac10eb4e5228c5df0b7"
+      },
+      "cited_blobs": {
+        "src/index.ts": "748a6b72cb67bffdcc43a50ed5e9cb73eb42a0d3",
+        "src/types.ts": "1f11e02f4036312f7e56abcda04ef7fd79e14ddf",
+        "src/storage.ts": "0c25ad8d0afe9f1ad8e2f44af8ba6b8d5f1f75cd",
+        "src/utils.ts": "2477c70c5a518de8c5a65302ee2f1a33f8dc7ea8",
+        "src/_utils.ts": "b7c765ebacfcfb7823b7bf9517584d0da8695393",
+        "src/_drivers.ts": "c42493aa41b95156edff2bcb938787570a2f49d3",
+        "src/drivers/utils/index.ts": "e4ec594a87fd96a80d52c37ed3fd2c2da417e431",
+        "src/drivers/memory.ts": "8a82465046d8da4565e31ed39a5633cc6a3e58a7",
+        "scripts/gen-drivers.ts": "0d5c1ec69a45f3d19e747cf7327f7f2234315bc0",
+        "package.json": "be04ccb74412b208d39ee3646a29c4ab165a036d"
+      }
+    },
+    {
+      "id": "hono-seeded-compose",
+      "name": "Hono with a seeded middleware re-entrancy defect",
+      "tier": 1,
+      "kind": "git_patched",
+      "natural": true,
+      "base_target": "hono",
+      "source": {
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "committed_at": "2026-08-10T01:20:29Z"
+      },
+      "patch": "patches/hono-compose-reentrancy-guard.patch",
+      "patch_summary": "One-character change to the re-entrancy guard in the middleware dispatch loop of src/compose.ts.",
+      "license": "MIT",
+      "language": "typescript",
+      "shape": "http-framework",
+      "dependency_lock": "the repository's own lockfile at the pinned ref",
+      "prepare": [
+        "git clone --filter=blob:none --no-checkout https://github.com/honojs/hono.git <dir>",
+        "git -C <dir> checkout 26de73133b8552f56ba72e025ecd82b08900d796",
+        "git -C <dir> apply <corpus>/patches/hono-compose-reentrancy-guard.patch"
+      ],
+      "install": "not required",
+      "holdout_class": "open",
+      "status": "frozen",
+      "selection_rationale": "The issue lists seeded defects as a preferred independent truth source. The defect is injected into real externally authored code at a pinned commit rather than being surrounded by a synthetic workspace built to make it findable.",
+      "cited_blobs": {
+        "src/compose.ts": "b1d4508ffe490fe4eaf1fa25a182c95f486685e5",
+        "src/hono-base.ts": "e6a7278dd293aa03a1021d3c639b3bda5bd4c23d",
+        "src/context.ts": "3553dd181b4a718177a09874ba584c76f4cd54c5"
+      },
+      "cited_blobs_note": "Blob SHAs are for the UNPATCHED pinned tree. The patch changes src/compose.ts; every other cited blob is unchanged."
+    },
+    {
+      "id": "hono-seeded-error-disclosure",
+      "name": "Hono with a seeded error-message disclosure defect",
+      "tier": 1,
+      "kind": "git_patched",
+      "natural": true,
+      "base_target": "hono",
+      "source": {
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "committed_at": "2026-08-10T01:20:29Z"
+      },
+      "patch": "patches/hono-error-message-disclosure.patch",
+      "patch_summary": "Changes the framework default error handler in src/hono-base.ts to return the thrown error's stack or message in the 500 response body.",
+      "license": "MIT",
+      "language": "typescript",
+      "shape": "http-framework",
+      "dependency_lock": "the repository's own lockfile at the pinned ref",
+      "prepare": [
+        "git clone --filter=blob:none --no-checkout https://github.com/honojs/hono.git <dir>",
+        "git -C <dir> checkout 26de73133b8552f56ba72e025ecd82b08900d796",
+        "git -C <dir> apply <corpus>/patches/hono-error-message-disclosure.patch"
+      ],
+      "install": "not required",
+      "holdout_class": "open",
+      "status": "frozen",
+      "selection_rationale": "A security-shaped defect seeded into real externally authored code, so the review task is a review of a natural codebase rather than of a workspace authored around its own answer.",
+      "cited_blobs": {
+        "src/hono-base.ts": "e6a7278dd293aa03a1021d3c639b3bda5bd4c23d",
+        "src/http-exception.ts": "8fe9c2bb3d078787cfd233634ef8905b5b5d2ccf",
+        "src/context.ts": "3553dd181b4a718177a09874ba584c76f4cd54c5",
+        "src/compose.ts": "b1d4508ffe490fe4eaf1fa25a182c95f486685e5"
+      },
+      "cited_blobs_note": "Blob SHAs are for the UNPATCHED pinned tree. The patch changes src/hono-base.ts; every other cited blob is unchanged."
+    },
+    {
+      "id": "sealed-holdout-a",
+      "name": "Sealed holdout target A",
+      "tier": 2,
+      "kind": "sealed",
+      "natural": true,
+      "language": "typescript",
+      "shape": "undisclosed",
+      "dependency_lock": "recorded in the sealed manifest, not in this repository",
+      "holdout_class": "sealed",
+      "status": "unsatisfied",
+      "unsatisfied_reason": "Requires a second person to select the repository and author its truth. See holdout-policy.md; the slot stays visible and explicitly unsatisfied rather than being filled with a self-selected target."
+    }
+  ],
+  "status_meaning": {
+    "frozen": "Repository, revision, and (where applicable) patch are pinned, cited blob SHAs are recorded, and independent truth exists. Usable as measurable evidence.",
+    "unsatisfied": "The slot is specified but cannot be filled in the current single-author context. It must never be counted as evidence, present or absent."
+  }
+}

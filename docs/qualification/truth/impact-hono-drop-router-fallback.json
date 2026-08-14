@@ -1,0 +1,140 @@
+{
+  "contract_version": "1.0.0",
+  "task_id": "impact-hono-drop-router-fallback",
+  "target": "hono",
+  "category": "impact-analysis",
+  "provenance": {
+    "authored_by": "madar-655-qualification-agent",
+    "authored_at": "2026-08-12",
+    "derived_from": [
+      "honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796, read directly from the pinned checkout"
+    ],
+    "madar_derived_sources_used": [],
+    "inspected_madar_output_before_freeze": false,
+    "independent_of_production_rule_author": false,
+    "review_status": "unreviewed"
+  },
+  "change_under_analysis": "In src/hono.ts, replace `new SmartRouter({ routers: [new RegExpRouter(), new TrieRouter()] })` with a bare `new RegExpRouter()`.",
+  "affected_set": [
+    {
+      "id": "construction-site",
+      "path": "src/hono.ts",
+      "symbols": ["Hono.constructor"],
+      "effect": "The change site. The default router becomes a single implementation with no alternative.",
+      "failure_mode": "n/a",
+      "criticality": "critical"
+    },
+    {
+      "id": "smart-router-unused",
+      "path": "src/router/smart-router/router.ts",
+      "symbols": ["SmartRouter.match", "SmartRouter.activeRouter"],
+      "effect": "The catch-and-continue loop over UnsupportedPathError, the memoizing rebind of this.match, and the activeRouter accessor stop being exercised by the default path.",
+      "failure_mode": "silent",
+      "criticality": "critical"
+    },
+    {
+      "id": "regexp-router-throws-escape",
+      "path": "src/router/reg-exp-router/router.ts",
+      "symbols": ["RegExpRouter.add", "RegExpRouter.#insertPath"],
+      "effect": "UnsupportedPathError, raised by #insertPath for a path the trie cannot express, no longer has anything to catch it and propagates to the caller.",
+      "failure_mode": "loud",
+      "criticality": "critical"
+    },
+    {
+      "id": "trie-router-unreachable",
+      "path": "src/router/trie-router/router.ts",
+      "symbols": ["TrieRouter"],
+      "effect": "Stops being reachable as the default fallback. It remains importable and usable if an application passes it explicitly via the router option.",
+      "failure_mode": "silent",
+      "criticality": "critical"
+    }
+  ],
+  "timing_fact": {
+    "statement": "The failure also moves in time. Under SmartRouter, route registration only buffers routes and the adds are replayed inside the first match call, so an unsupported path surfaces on the first request. With a bare RegExpRouter, #addRoute calls router.add immediately, so #insertPath runs during route registration and the error surfaces while the application is being defined.",
+    "criticality": "critical",
+    "evidence": [
+      { "path": "src/hono-base.ts", "symbol": "Hono.#addRoute" },
+      { "path": "src/router/smart-router/router.ts", "symbol": "SmartRouter.add" },
+      { "path": "src/router/reg-exp-router/router.ts", "symbol": "RegExpRouter.add" }
+    ]
+  },
+  "unaffected_set": [
+    {
+      "path": "src/hono-base.ts",
+      "reason": "#dispatch depends only on the Router<T> interface, not on any implementation. Its own logic is unchanged — though see timing_fact for when #addRoute now raises."
+    },
+    {
+      "path": "src/compose.ts",
+      "reason": "Composition runs after matching and never inspects the router."
+    },
+    {
+      "path": "src/context.ts",
+      "reason": "The Context receives a match result; the identity of the router that produced it is irrelevant."
+    },
+    {
+      "path": "src/router.ts",
+      "reason": "The Router interface and the UnsupportedPathError class are unchanged; only who catches the error changes."
+    },
+    {
+      "path": "src/request.ts",
+      "reason": "Request parameter access reads from the match result and is independent of the matcher implementation."
+    }
+  ],
+  "correct_uncertainty": [
+    {
+      "id": "which-paths-are-unsupported",
+      "requirement": "Which concrete route patterns RegExpRouter rejects is not determined by the modules under analysis — it depends on the trie insertion rules in the reg-exp-router package. A correct answer says that some patterns are rejected and points at #insertPath, without inventing a specific list of rejected patterns it did not read."
+    }
+  ],
+  "unsupported_claim_traps": [
+    {
+      "id": "silent-404",
+      "claim": "Unsupported route patterns would quietly stop matching and return 404.",
+      "why_false": "UnsupportedPathError is thrown, not swallowed. Nothing converts it into a not-found response."
+    },
+    {
+      "id": "handled-as-500",
+      "claim": "The error would be caught and returned as a 500 by the framework error handler.",
+      "why_false": "router.match in #dispatch is not inside the try block that guards handler execution, and with a bare RegExpRouter the throw happens during route registration, before any request exists."
+    },
+    {
+      "id": "performance-only",
+      "claim": "The change only affects matching performance.",
+      "why_false": "It removes the only mechanism that recovers from an unsupported path, converting a recoverable condition into a hard failure."
+    },
+    {
+      "id": "compose-affected",
+      "claim": "Middleware composition changes because the router changed.",
+      "why_false": "compose consumes the match result and has no dependency on the router implementation."
+    }
+  ],
+  "tier1_obligations": {
+    "required_evidence_paths": [
+      "src/hono.ts",
+      "src/router/smart-router/router.ts",
+      "src/router/reg-exp-router/router.ts",
+      "src/router/trie-router/router.ts"
+    ],
+    "required_evidence_symbols": ["SmartRouter", "RegExpRouter", "TrieRouter", "UnsupportedPathError"],
+    "min_critical_fact_recall": 1.0,
+    "must_not_report_ready_when": [
+      "the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved"
+    ]
+  },
+  "tier2_scoring": {
+    "method": "affected_set_precision_recall",
+    "recall_denominator": [
+      "construction-site",
+      "smart-router-unused",
+      "regexp-router-throws-escape",
+      "trie-router-unreachable"
+    ],
+    "precision_penalty_set": [
+      "src/compose.ts",
+      "src/context.ts",
+      "src/request.ts",
+      "src/router.ts"
+    ],
+    "critical_facts_required_for_pass": ["regexp-router-throws-escape", "trie-router-unreachable"]
+  }
+}

@@ -1,0 +1,354 @@
+{
+  "contract_version": "1.0.0",
+  "frozen_at": "2026-08-12",
+  "prompt_hash_algorithm": "sha256 over the exact UTF-8 prompt text, no trailing newline",
+  "tasks": [
+    {
+      "id": "arch-unstorage-driver-seam",
+      "name": "Explain the driver extension seam and mount resolution",
+      "category": "architecture-understanding",
+      "target": "unstorage",
+      "tiers": [
+        1,
+        2
+      ],
+      "status": "frozen",
+      "prompt": {
+        "text": "Describe this library's extension architecture. What is the stable surface a new backend has to implement, how is a backend selected for a given key at call time, and what work does the core do that a backend never sees?",
+        "sha256": "5c3722d182b5c36478ecabd2d1fb24f4f3eb40eba6e12032da89bebf12ef1d9f"
+      },
+      "truth_ref": "truth/arch-unstorage-driver-seam.json",
+      "scoring": {
+        "tier1_method": "evidence_obligation_recall",
+        "tier2_method": "blinded_rubric",
+        "rubric_ref": "rubrics.json#/methods/blinded_rubric"
+      },
+      "validity_requirements": {
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
+      },
+      "truth_provenance": {
+        "authored_by": "madar-655-qualification-agent",
+        "author_role": "benchmark author",
+        "authored_at": "2026-08-12",
+        "derived_from": [
+          "unjs/unstorage @ e6be6135832f350ca16f9a77432e1d4f0aa85ed7, read directly from the pinned checkout"
+        ],
+        "madar_derived_sources_used": [],
+        "inspected_madar_output_before_freeze": false,
+        "independent_of_production_rule_author": false,
+        "review_status": "unreviewed"
+      }
+    },
+    {
+      "id": "flow-hono-request-dispatch",
+      "name": "Trace the request lifecycle from entry point to response",
+      "category": "execution-flow-explanation",
+      "target": "hono",
+      "tiers": [
+        1,
+        2
+      ],
+      "status": "frozen",
+      "prompt": {
+        "text": "Trace what happens to an incoming request from the application's entry point until a response is returned. Cover how the path is resolved, how a route is matched, how handlers and middleware are run, and how errors and unmatched routes are handled. Say which steps are skipped in the fast path.",
+        "sha256": "c276d363f0b10c00b75df925f2e658f3ee7af085872bcbcc64a7a4252c7b3b35"
+      },
+      "truth_ref": "truth/flow-hono-request-dispatch.json",
+      "scoring": {
+        "tier1_method": "evidence_obligation_recall",
+        "tier2_method": "ordered_path_rubric",
+        "rubric_ref": "rubrics.json#/methods/ordered_path_rubric"
+      },
+      "validity_requirements": {
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
+      },
+      "truth_provenance": {
+        "authored_by": "madar-655-qualification-agent",
+        "author_role": "benchmark author",
+        "authored_at": "2026-08-12",
+        "derived_from": [
+          "honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796, read directly from the pinned checkout"
+        ],
+        "madar_derived_sources_used": [],
+        "inspected_madar_output_before_freeze": false,
+        "independent_of_production_rule_author": false,
+        "review_status": "unreviewed"
+      }
+    },
+    {
+      "id": "impact-hono-drop-router-fallback",
+      "name": "Impact of removing the router fallback strategy",
+      "category": "impact-analysis",
+      "target": "hono",
+      "tiers": [
+        1,
+        2
+      ],
+      "status": "frozen",
+      "prompt": {
+        "text": "What breaks if the default router is replaced by the regular-expression router alone, with no fallback to another router implementation? List every module whose behaviour changes, say which modules are unaffected and why, and say whether each failure is loud or silent.",
+        "sha256": "4d05391549ee28a142a9f24960e43e415cf6c831c29dce720aa74e72c7ab9ac2"
+      },
+      "truth_ref": "truth/impact-hono-drop-router-fallback.json",
+      "scoring": {
+        "tier1_method": "evidence_obligation_recall",
+        "tier2_method": "affected_set_precision_recall",
+        "rubric_ref": "rubrics.json#/methods/affected_set_precision_recall"
+      },
+      "validity_requirements": {
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
+      },
+      "truth_provenance": {
+        "authored_by": "madar-655-qualification-agent",
+        "author_role": "benchmark author",
+        "authored_at": "2026-08-12",
+        "derived_from": [
+          "honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796, read directly from the pinned checkout"
+        ],
+        "madar_derived_sources_used": [],
+        "inspected_madar_output_before_freeze": false,
+        "independent_of_production_rule_author": false,
+        "review_status": "unreviewed"
+      }
+    },
+    {
+      "id": "rootcause-hono-middleware-rerun",
+      "name": "Root-cause downstream middleware running twice",
+      "category": "bug-root-cause-investigation",
+      "target": "hono-seeded-compose",
+      "tiers": [
+        1,
+        2
+      ],
+      "status": "frozen",
+      "prompt": {
+        "text": "A middleware that awaits the next function twice used to fail loudly with an error. It now silently runs the rest of the chain a second time, so downstream handlers execute twice for one request. Find the root cause and explain the exact mechanism that produces the second execution.",
+        "sha256": "637cd655712c2e7d96a3566ed0b311d9d7dcfe0d9cfb8b699f5f1c52a721eaf0"
+      },
+      "truth_ref": "truth/rootcause-hono-middleware-rerun.json",
+      "scoring": {
+        "tier1_method": "evidence_obligation_recall",
+        "tier2_method": "single_root_cause_adjudication",
+        "rubric_ref": "rubrics.json#/methods/single_root_cause_adjudication"
+      },
+      "validity_requirements": {
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
+      },
+      "truth_provenance": {
+        "authored_by": "madar-655-qualification-agent",
+        "author_role": "benchmark author",
+        "authored_at": "2026-08-12",
+        "derived_from": [
+          "seeded defect deliberately injected into honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796 via patches/hono-compose-reentrancy-guard.patch"
+        ],
+        "madar_derived_sources_used": [],
+        "inspected_madar_output_before_freeze": false,
+        "independent_of_production_rule_author": false,
+        "review_status": "unreviewed"
+      }
+    },
+    {
+      "id": "plan-unstorage-add-driver",
+      "name": "Plan a bounded new backend implementation",
+      "category": "implementation-planning",
+      "target": "unstorage",
+      "tiers": [
+        1,
+        2
+      ],
+      "status": "frozen",
+      "prompt": {
+        "text": "Plan the change needed to add a new built-in storage backend for an S3-compatible object store. Do not widen the public extension interface and do not change modules unrelated to adding a backend. List the files you would add or change, the ones you must not hand-edit, and why for each.",
+        "sha256": "b8a0a2b4a0593346d1333d96ada6c339a0763611df1ddab51079369e0c62c7ff"
+      },
+      "truth_ref": "truth/plan-unstorage-add-driver.json",
+      "scoring": {
+        "tier1_method": "evidence_obligation_recall",
+        "tier2_method": "blinded_rubric",
+        "rubric_ref": "rubrics.json#/methods/blinded_rubric",
+        "hidden_acceptance_test": {
+          "required": true,
+          "status": "unavailable",
+          "reason": "A hidden acceptance test must be authored and held by someone other than the production-rule author. See holdout-policy.md. Until it exists, this task's Tier 2 implementation score is not_measured and only the plan rubric applies."
+        }
+      },
+      "validity_requirements": {
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
+      },
+      "truth_provenance": {
+        "authored_by": "madar-655-qualification-agent",
+        "author_role": "benchmark author",
+        "authored_at": "2026-08-12",
+        "derived_from": [
+          "unjs/unstorage @ e6be6135832f350ca16f9a77432e1d4f0aa85ed7, read directly from the pinned checkout"
+        ],
+        "madar_derived_sources_used": [],
+        "inspected_madar_output_before_freeze": false,
+        "independent_of_production_rule_author": false,
+        "review_status": "unreviewed"
+      }
+    },
+    {
+      "id": "review-hono-error-handling",
+      "name": "Review the framework error path for disclosure defects",
+      "category": "review-security",
+      "target": "hono-seeded-error-disclosure",
+      "tiers": [
+        1,
+        2
+      ],
+      "status": "frozen",
+      "prompt": {
+        "text": "Review this framework's default error-handling path before merge. Identify anything that could expose internal information to a client, name the exact function, say what an attacker learns, and cite the code that proves it.",
+        "sha256": "722278ed3fa2386f1e407b4fd53a7d4b89272f2adba4297f878ad3fd645d8e47"
+      },
+      "truth_ref": "truth/review-hono-error-handling.json",
+      "scoring": {
+        "tier1_method": "evidence_obligation_recall",
+        "tier2_method": "seeded_defect_detection",
+        "rubric_ref": "rubrics.json#/methods/seeded_defect_detection"
+      },
+      "validity_requirements": {
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
+      },
+      "truth_provenance": {
+        "authored_by": "madar-655-qualification-agent",
+        "author_role": "benchmark author",
+        "authored_at": "2026-08-12",
+        "derived_from": [
+          "seeded defect deliberately injected into honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796 via patches/hono-error-message-disclosure.patch"
+        ],
+        "madar_derived_sources_used": [],
+        "inspected_madar_output_before_freeze": false,
+        "independent_of_production_rule_author": false,
+        "review_status": "unreviewed"
+      }
+    }
+  ]
+}

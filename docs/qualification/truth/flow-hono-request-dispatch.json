@@ -1,0 +1,178 @@
+{
+  "contract_version": "1.0.0",
+  "task_id": "flow-hono-request-dispatch",
+  "target": "hono",
+  "category": "execution-flow-explanation",
+  "provenance": {
+    "authored_by": "madar-655-qualification-agent",
+    "authored_at": "2026-08-12",
+    "derived_from": [
+      "honojs/hono @ 26de73133b8552f56ba72e025ecd82b08900d796, read directly from the pinned checkout"
+    ],
+    "madar_derived_sources_used": [],
+    "inspected_madar_output_before_freeze": false,
+    "independent_of_production_rule_author": false,
+    "review_status": "unreviewed"
+  },
+  "ordered_path": [
+    {
+      "step": 1,
+      "id": "entrypoint",
+      "statement": "fetch is the entry point. It forwards to the private #dispatch, passing the execution context and the environment bindings.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/hono-base.ts", "symbol": "Hono.fetch" }]
+    },
+    {
+      "step": 2,
+      "id": "head-recursion",
+      "statement": "A HEAD request is handled by re-entering #dispatch with the method forced to GET and wrapping the result in a new Response with a null body. There is no separate HEAD route matching.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/hono-base.ts", "symbol": "Hono.#dispatch" }]
+    },
+    {
+      "step": 3,
+      "id": "path-resolution",
+      "statement": "The request path is produced by this.getPath, bound at construction to getPath or getPathNoStrict from src/utils/url.ts depending on the strict option.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/hono-base.ts", "symbol": "Hono.constructor" },
+        { "path": "src/utils/url.ts", "symbol": "getPath" }
+      ]
+    },
+    {
+      "step": 4,
+      "id": "route-match",
+      "statement": "router.match(method, path) returns the match result. With the default SmartRouter the first call replays every buffered route into each candidate router in order, skips any router that throws UnsupportedPathError, then rebinds this.match to the winner and discards the route buffer so later requests go straight to that router.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/router/smart-router/router.ts", "symbol": "SmartRouter.match" },
+        { "path": "src/hono.ts", "symbol": "Hono.constructor" }
+      ]
+    },
+    {
+      "step": 5,
+      "id": "context-construction",
+      "statement": "A Context is constructed after matching, receiving the resolved path, the match result, the environment, the execution context, and the not-found handler.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/context.ts", "symbol": "Context" }]
+    },
+    {
+      "step": 6,
+      "id": "fast-path",
+      "statement": "When exactly one handler matched, compose is skipped entirely. The handler is invoked directly with a next that assigns the not-found handler's response to c.res, and the promise/synchronous result is normalized inline.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/hono-base.ts", "symbol": "Hono.#dispatch" }]
+    },
+    {
+      "step": 7,
+      "id": "compose-chain",
+      "statement": "With two or more matched handlers, compose builds a recursive dispatch loop. Handler i receives a next closure that calls dispatch(i + 1), and context.req.routeIndex is set to the current index before each handler runs.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/compose.ts", "symbol": "compose" }]
+    },
+    {
+      "step": 8,
+      "id": "not-found",
+      "statement": "Inside the composed chain, when no handler remains and context.finalized is still false, the not-found handler runs and its response becomes the result. The framework default returns the text '404 Not Found' with status 404.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/compose.ts", "symbol": "compose" },
+        { "path": "src/hono-base.ts", "symbol": "notFoundHandler" }
+      ]
+    },
+    {
+      "step": 9,
+      "id": "error-path",
+      "statement": "A thrown Error inside the composed chain is caught by dispatch, recorded on context.error, and passed to the app error handler; its response is applied even though the context may already be finalized. Outside the chain, #handleError re-throws anything that is not an Error and otherwise delegates to the same handler.",
+      "criticality": "critical",
+      "evidence": [
+        { "path": "src/compose.ts", "symbol": "compose" },
+        { "path": "src/hono-base.ts", "symbol": "Hono.#handleError" }
+      ]
+    },
+    {
+      "step": 10,
+      "id": "finalization-check",
+      "statement": "After the composed chain resolves, #dispatch throws 'Context is not finalized' if context.finalized is false. That throw is caught by the surrounding try and routed through #handleError, so a forgotten return surfaces as a handled error rather than a hang.",
+      "criticality": "critical",
+      "evidence": [{ "path": "src/hono-base.ts", "symbol": "Hono.#dispatch" }]
+    },
+    {
+      "step": 11,
+      "id": "response",
+      "statement": "The response returned is context.res.",
+      "criticality": "supporting",
+      "evidence": [{ "path": "src/context.ts", "symbol": "Context" }]
+    }
+  ],
+  "correct_uncertainty": [
+    {
+      "id": "router-not-statically-determined",
+      "requirement": "Which concrete router serves a match is not decidable from the source alone. SmartRouter selects the first router that does not reject the application's actual route set, at the first match call, and then memoizes it. An answer that states the regular-expression router is always used is over-claiming."
+    },
+    {
+      "id": "static-hypothesis",
+      "requirement": "The path is reconstructed from static call sites, not from an observed runtime trace."
+    }
+  ],
+  "unsupported_claim_traps": [
+    {
+      "id": "always-compose",
+      "claim": "Every request is processed through the middleware composition function.",
+      "why_false": "#dispatch takes a fast path when the match result contains exactly one handler and never calls compose."
+    },
+    {
+      "id": "head-separate-route",
+      "claim": "HEAD requests are matched against their own routes.",
+      "why_false": "#dispatch recurses with the method rewritten to GET and returns a Response with a null body built from the GET result."
+    },
+    {
+      "id": "smart-router-per-request",
+      "claim": "The router strategy is re-evaluated on every request.",
+      "why_false": "SmartRouter.match rebinds this.match to the winning router and sets its route buffer to undefined after the first successful match."
+    },
+    {
+      "id": "all-throws-become-500",
+      "claim": "Anything thrown by a handler is converted into a 500 response.",
+      "why_false": "#handleError re-throws values that are not Error instances; only Error instances reach the error handler."
+    },
+    {
+      "id": "env-third-argument",
+      "claim": "fetch takes the request, the execution context, then the environment.",
+      "why_false": "fetch is (request, env, executionCtx) and forwards them to #dispatch as (request, rest[1], rest[0], method) — the environment is the second argument."
+    }
+  ],
+  "tier1_obligations": {
+    "required_evidence_paths": [
+      "src/hono-base.ts",
+      "src/compose.ts",
+      "src/context.ts",
+      "src/router/smart-router/router.ts",
+      "src/utils/url.ts"
+    ],
+    "required_evidence_symbols": ["fetch", "compose", "Context", "SmartRouter", "getPath"],
+    "min_critical_fact_recall": 1.0,
+    "must_not_report_ready_when": [
+      "any required_evidence_path is absent from the evidence set",
+      "the call from the dispatch entry point into compose is neither present in the graph nor declared as unresolved"
+    ]
+  },
+  "tier2_scoring": {
+    "method": "ordered_path_rubric",
+    "order_sensitive_pairs": [
+      ["path-resolution", "route-match"],
+      ["route-match", "context-construction"],
+      ["compose-chain", "not-found"],
+      ["compose-chain", "finalization-check"]
+    ],
+    "critical_facts_required_for_pass": [
+      "entrypoint",
+      "path-resolution",
+      "route-match",
+      "context-construction",
+      "fast-path",
+      "compose-chain",
+      "error-path"
+    ]
+  }
+}

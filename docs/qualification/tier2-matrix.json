@@ -1,0 +1,60 @@
+{
+  "contract_version": "1.0.0",
+  "frozen_at": "2026-08-12",
+  "status": "planned",
+  "status_meaning": "The matrix shape, arms, repeat count, and reporting rules are frozen now so they cannot be chosen after seeing results. No Tier 2 cell has been executed under this contract.",
+  "blocked_by": [
+    "Blinded review is unavailable in a single-author context (rubrics.json#/blinding/current_status).",
+    "The sealed holdout slot is unsatisfied (holdout-policy.md).",
+    "No truth file has been reviewed by a second person; every one carries review_status: unreviewed."
+  ],
+  "dimensions": {
+    "targets": [
+      "hono",
+      "unstorage",
+      "hono-seeded-compose",
+      "hono-seeded-error-disclosure",
+      "sealed-holdout-a"
+    ],
+    "tasks": [
+      "arch-unstorage-driver-seam",
+      "flow-hono-request-dispatch",
+      "impact-hono-drop-router-fallback",
+      "rootcause-hono-middleware-rerun",
+      "plan-unstorage-add-driver",
+      "review-hono-error-handling"
+    ],
+    "arms": ["native", "madar"],
+    "cache_modes": ["cold", "warm"],
+    "trials_per_cell": 5
+  },
+  "cells": [
+    { "task_id": "arch-unstorage-driver-seam", "target_id": "unstorage" },
+    { "task_id": "flow-hono-request-dispatch", "target_id": "hono" },
+    { "task_id": "impact-hono-drop-router-fallback", "target_id": "hono" },
+    { "task_id": "rootcause-hono-middleware-rerun", "target_id": "hono-seeded-compose" },
+    { "task_id": "plan-unstorage-add-driver", "target_id": "unstorage" },
+    { "task_id": "review-hono-error-handling", "target_id": "hono-seeded-error-disclosure" }
+  ],
+  "sealed_holdout_note": "sealed-holdout-a contributes cells through the external sealed manifest, not through this file.",
+  "trial_rationale": "Five trials per cell is the smallest count that lets a per-cell median be reported with a visible min/max spread while keeping a full sweep affordable. It is not powered for a small effect size. Any claim that depends on a difference smaller than the observed per-cell spread must be reported as not established, whatever the medians say.",
+  "pairing": "Both arms of a cell run against the same prepared target tree — same commit, same applied patch, same verified blob digests — with the same prompt text, the same tool permission list apart from Madar tools, the same cache mode, and the same trial index. A cell where the two arms differ in any identity field is invalid, not a result.",
+  "reporting": {
+    "unit": "one row per target per task per cache mode",
+    "statistics": ["median", "min", "max", "n_valid", "n_invalid"],
+    "forbidden": [
+      "A blended cross-target or cross-task headline number.",
+      "Reporting cost or latency for a cell whose gating quality dimensions did not pass.",
+      "Dropping invalid runs silently; n_invalid is published next to n_valid on every row.",
+      "Reporting a win for a cell where the Madar arm had adoption status absent."
+    ]
+  },
+  "ordering_rule": "Quality gates are evaluated first. Cost, token, and latency columns are populated only for cells that already passed correctness and critical-fact completeness. This ordering is part of the contract, not a presentation choice.",
+  "execution_prerequisites": [
+    "Every task in the sweep has a truth file with review_status other than unreviewed.",
+    "A reviewer who did not author the change under evaluation is available for blinded scoring.",
+    "Isolation mode is active and the environment receipt matches the pinned contract.",
+    "Every prepared target tree has had its cited_blobs verified against the pinned ref.",
+    "The sealed holdout slot is either filled or the sweep is published with the holdout column explicitly marked unsatisfied."
+  ]
+}

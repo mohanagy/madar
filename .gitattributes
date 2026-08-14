@@ -1,1 +1,12 @@
 docs/benchmarks/suite/isolation/.claude/CLAUDE.md text eol=lf
+
+# The qualification contract is frozen by SHA-256 over raw file bytes
+# (docs/qualification/freeze.json). A CRLF checkout would change those bytes and
+# break the freeze on Windows, so the whole tree is pinned to LF in the working
+# copy on every platform. Do not relax this to make a platform failure disappear:
+# the freeze is meaningful precisely because it is byte-exact.
+docs/qualification/** text eol=lf
+
+# Seeded-defect patches must reach `git apply` byte-for-byte, so they are marked
+# non-text and are never line-ending converted in either direction.
+docs/qualification/patches/*.patch -text

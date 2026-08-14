@@ -1,0 +1,160 @@
+{
+  "contract_version": "1.0.0",
+  "run_id": "example-tier1-valid-0001",
+  "tier": 1,
+  "task_id": "rootcause-hono-middleware-rerun",
+  "target_id": "hono-seeded-compose",
+  "arm": "madar",
+  "trial": 1,
+  "identity": {
+    "target_revision": "26de73133b8552f56ba72e025ecd82b08900d796",
+    "dependency_lock_sha256": "6328bf95a901590814ff70ed570e0fc474c05ae162d6ac690cf3c812380828ab",
+    "madar_commit": "06b373a447acfce895412ac10eb4e5228c5df0b7",
+    "madar_package_version": "0.32.1",
+    "madar_package_tarball_sha256": null,
+    "madar_runtime_source": "checkout",
+    "madar_config_sha256": "c6dcdf9130e3ef5503caead4fe07f1b465b429adfa6e43309166d8f650a33caf",
+    "agent": {
+      "host": "none",
+      "host_version": null,
+      "model_id": "not-applicable-tier1-deterministic"
+    },
+    "prompts": {
+      "system_prompt_sha256": null,
+      "user_prompt_sha256": "637cd655712c2e7d96a3566ed0b311d9d7dcfe0d9cfb8b699f5f1c52a721eaf0",
+      "user_prompt_text": "A middleware that awaits the next function twice used to fail loudly with an error. It now silently runs the rest of the chain a second time, so downstream handlers execute twice for one request. Find the root cause and explain the exact mechanism that produces the second execution."
+    },
+    "tool_permissions": [],
+    "cache_mode": "cold"
+  },
+  "environment": {
+    "isolation": true,
+    "host_os": "darwin",
+    "node_version": "v22.0.0",
+    "claude_code_version": null,
+    "mcp_servers_active": [],
+    "skills_loaded": [],
+    "plugins_active": [],
+    "user_claude_md_hash": null,
+    "project_claude_md_hash": null,
+    "hooks_active": {
+      "user_prompt_submit": [],
+      "pre_tool_use": [],
+      "post_tool_use": []
+    },
+    "drift": {
+      "detected": false,
+      "fields": []
+    }
+  },
+  "adoption": {
+    "status": "not_applicable",
+    "attributable_madar_calls": 1,
+    "first_madar_call_tool": "context_pack",
+    "broad_fallback_operations_after_first_call": 0,
+    "trace_status": "trace_available"
+  },
+  "costs": {
+    "indexing": {
+      "measured": true,
+      "wall_ms": 380,
+      "usd": 0,
+      "source": "locally_timed"
+    },
+    "context_build": {
+      "measured": true,
+      "wall_ms": 96,
+      "usd": 0,
+      "source": "locally_timed"
+    },
+    "agent": {
+      "measured": false,
+      "source": "not_applicable"
+    }
+  },
+  "scores": {
+    "correctness": {
+      "measured": false,
+      "value": null,
+      "method": "blinded_rubric",
+      "not_measured_reason": "Tier 1 does not score answer quality; no agent answer exists."
+    },
+    "critical_fact_completeness": {
+      "measured": false,
+      "value": null,
+      "method": "blinded_rubric",
+      "not_measured_reason": "Tier 1 does not score answer quality; no agent answer exists."
+    },
+    "unsupported_claims": {
+      "measured": false,
+      "value": null,
+      "method": "blinded_rubric",
+      "not_measured_reason": "Tier 1 does not score answer quality; no agent answer exists."
+    },
+    "correct_uncertainty": {
+      "measured": false,
+      "value": null,
+      "method": "blinded_rubric",
+      "not_measured_reason": "Tier 1 does not score answer quality; no agent answer exists."
+    },
+    "evidence_support": {
+      "measured": true,
+      "value": 1,
+      "method": "evidence_obligation_recall",
+      "scored_by": "deterministic",
+      "blinded": null,
+      "truth_version": "1.0.0"
+    },
+    "tier1_obligation_recall": {
+      "measured": true,
+      "value": 1,
+      "method": "evidence_obligation_recall",
+      "scored_by": "deterministic",
+      "truth_version": "1.0.0"
+    }
+  },
+  "validity": {
+    "status": "valid",
+    "invalidation_reasons": [],
+    "aggregatable": true
+  },
+  "retention": {
+    "raw_transcript": {
+      "retained": false,
+      "path": null,
+      "sha256": null
+    },
+    "answer_text": {
+      "retained": false,
+      "path": null,
+      "sha256": null
+    },
+    "context_artifact": {
+      "retained": true,
+      "path": "raw/context-pack.json",
+      "sha256": "76cae19d9787ab64fb7c0d4be597efe26c4453c855d0d2dea18e6eaa8b83ac7e"
+    },
+    "prompt_text": {
+      "retained": true,
+      "path": "raw/prompt.txt",
+      "sha256": "637cd655712c2e7d96a3566ed0b311d9d7dcfe0d9cfb8b699f5f1c52a721eaf0"
+    },
+    "environment_receipt": {
+      "retained": true,
+      "path": "raw/environment.json",
+      "sha256": "cb6043e8b14160ad7ce30ac3dcc967ccfc5a79fa75f55cc12e6de12048f60e32"
+    },
+    "truth_file": {
+      "retained": true,
+      "path": "truth/rootcause-hono-middleware-rerun.json",
+      "sha256": "6e2005ced5ba7ff768d1b9b3135eb909e98d6c1ead04712bc1b0185c480e429d"
+    },
+    "retention_policy": "Tier 1 retains the context artifact, prompt text, environment receipt, and truth file for at least 24 months; there is no agent transcript or answer because no agent runs."
+  },
+  "notes": [
+    "Illustrative example only. Tier 1 measures whether the evidence needed to answer was present, never whether an answer was good.",
+    "The agent cost account is deliberately not_measured rather than zero."
+  ],
+  "started_at": "2026-08-12T09:10:00.000Z",
+  "completed_at": "2026-08-12T09:10:00.476Z"
+}
