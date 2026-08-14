@@ -176,6 +176,7 @@
         "unsupported_claims": { "$ref": "#/definitions/score" },
         "correct_uncertainty": { "$ref": "#/definitions/score" },
         "evidence_support": { "$ref": "#/definitions/score" },
+        "implementation": { "$ref": "#/definitions/score" },
         "tier1_obligation_recall": { "$ref": "#/definitions/score" }
       }
     },
@@ -219,7 +220,7 @@
     "retention": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "One slot per artifact named in validity-rules.md, Retention. Previously prompt_text, environment_receipt and truth_file had no slot at all, so a receipt that followed the prose failed this schema and was then classified incomplete_receipt by the same document that demanded it. They are expressible but not yet required: which artifacts each tier must retain is the open tier-specific question tracked on #655, and answering it here would decide that question by accident.",
+      "$comment": "One slot per artifact named in validity-rules.md, Retention. The Tier 1 set is required by the tier-conditional rule below; the full artifact list is not required in general.",
       "required": [
         "raw_transcript",
         "answer_text",
@@ -261,6 +262,26 @@
       },
       "then": {
         "properties": { "validity": { "properties": { "invalidation_reasons": { "minItems": 1 } } } }
+      }
+    },
+    {
+      "description": "A Tier 1 receipt must retain the four artifacts needed to reproduce deterministic evaluation without an agent run.",
+      "if": {
+        "properties": { "tier": { "const": 1 } },
+        "required": ["tier"]
+      },
+      "then": {
+        "properties": {
+          "retention": {
+            "required": ["context_artifact", "prompt_text", "environment_receipt", "truth_file"],
+            "properties": {
+              "context_artifact": { "properties": { "retained": { "const": true } }, "required": ["retained"] },
+              "prompt_text": { "properties": { "retained": { "const": true } }, "required": ["retained"] },
+              "environment_receipt": { "properties": { "retained": { "const": true } }, "required": ["retained"] },
+              "truth_file": { "properties": { "retained": { "const": true } }, "required": ["retained"] }
+            }
+          }
+        }
       }
     }
   ],

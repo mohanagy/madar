@@ -24,9 +24,28 @@
         "rubric_ref": "rubrics.json#/methods/blinded_rubric"
       },
       "validity_requirements": {
-        "requires_attributable_madar_call": true,
-        "requires_answer_within_prompt_contract": true,
-        "requires_complete_transcript": true
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
       },
       "truth_provenance": {
         "authored_by": "madar-655-qualification-agent",
@@ -62,9 +81,28 @@
         "rubric_ref": "rubrics.json#/methods/ordered_path_rubric"
       },
       "validity_requirements": {
-        "requires_attributable_madar_call": true,
-        "requires_answer_within_prompt_contract": true,
-        "requires_complete_transcript": true
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
       },
       "truth_provenance": {
         "authored_by": "madar-655-qualification-agent",
@@ -100,9 +138,28 @@
         "rubric_ref": "rubrics.json#/methods/affected_set_precision_recall"
       },
       "validity_requirements": {
-        "requires_attributable_madar_call": true,
-        "requires_answer_within_prompt_contract": true,
-        "requires_complete_transcript": true
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
       },
       "truth_provenance": {
         "authored_by": "madar-655-qualification-agent",
@@ -138,9 +195,28 @@
         "rubric_ref": "rubrics.json#/methods/single_root_cause_adjudication"
       },
       "validity_requirements": {
-        "requires_attributable_madar_call": true,
-        "requires_answer_within_prompt_contract": true,
-        "requires_complete_transcript": true
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
       },
       "truth_provenance": {
         "authored_by": "madar-655-qualification-agent",
@@ -181,9 +257,28 @@
         }
       },
       "validity_requirements": {
-        "requires_attributable_madar_call": true,
-        "requires_answer_within_prompt_contract": true,
-        "requires_complete_transcript": true
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
       },
       "truth_provenance": {
         "authored_by": "madar-655-qualification-agent",
@@ -219,9 +314,28 @@
         "rubric_ref": "rubrics.json#/methods/seeded_defect_detection"
       },
       "validity_requirements": {
-        "requires_attributable_madar_call": true,
-        "requires_answer_within_prompt_contract": true,
-        "requires_complete_transcript": true
+        "tier1": {
+          "rationale": "Tier 1 requires the context artifact, prompt text, environment receipt, and truth file because deterministic evaluation must be reproducible without running an agent.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": false,
+          "requires_answer_within_prompt_contract": false,
+          "requires_complete_transcript": false,
+          "requires_attributable_madar_call": false
+        },
+        "tier2": {
+          "rationale": "Tier 2 requires the same four artifacts plus the raw transcript, answer text, and attributable Madar call because the agent run and its comparison must be auditable.",
+          "requires_context_artifact": true,
+          "requires_prompt_text": true,
+          "requires_environment_receipt": true,
+          "requires_truth_file": true,
+          "requires_answer_text": true,
+          "requires_answer_within_prompt_contract": true,
+          "requires_complete_transcript": true,
+          "requires_attributable_madar_call": true
+        }
       },
       "truth_provenance": {
         "authored_by": "madar-655-qualification-agent",

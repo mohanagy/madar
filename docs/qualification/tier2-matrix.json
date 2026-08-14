@@ -28,6 +28,15 @@
     "cache_modes": ["cold", "warm"],
     "trials_per_cell": 5
   },
+  "cells": [
+    { "task_id": "arch-unstorage-driver-seam", "target_id": "unstorage" },
+    { "task_id": "flow-hono-request-dispatch", "target_id": "hono" },
+    { "task_id": "impact-hono-drop-router-fallback", "target_id": "hono" },
+    { "task_id": "rootcause-hono-middleware-rerun", "target_id": "hono-seeded-compose" },
+    { "task_id": "plan-unstorage-add-driver", "target_id": "unstorage" },
+    { "task_id": "review-hono-error-handling", "target_id": "hono-seeded-error-disclosure" }
+  ],
+  "sealed_holdout_note": "sealed-holdout-a contributes cells through the external sealed manifest, not through this file.",
   "trial_rationale": "Five trials per cell is the smallest count that lets a per-cell median be reported with a visible min/max spread while keeping a full sweep affordable. It is not powered for a small effect size. Any claim that depends on a difference smaller than the observed per-cell spread must be reported as not established, whatever the medians say.",
   "pairing": "Both arms of a cell run against the same prepared target tree — same commit, same applied patch, same verified blob digests — with the same prompt text, the same tool permission list apart from Madar tools, the same cache mode, and the same trial index. A cell where the two arms differ in any identity field is invalid, not a result.",
   "reporting": {

@@ -134,7 +134,22 @@
       "path": "raw/context-pack.json",
       "sha256": "76cae19d9787ab64fb7c0d4be597efe26c4453c855d0d2dea18e6eaa8b83ac7e"
     },
-    "retention_policy": "Tier 1 retains the context artifact only; there is no agent transcript because no agent runs."
+    "prompt_text": {
+      "retained": true,
+      "path": "raw/prompt.txt",
+      "sha256": "637cd655712c2e7d96a3566ed0b311d9d7dcfe0d9cfb8b699f5f1c52a721eaf0"
+    },
+    "environment_receipt": {
+      "retained": true,
+      "path": "raw/environment.json",
+      "sha256": "cb6043e8b14160ad7ce30ac3dcc967ccfc5a79fa75f55cc12e6de12048f60e32"
+    },
+    "truth_file": {
+      "retained": true,
+      "path": "truth/rootcause-hono-middleware-rerun.json",
+      "sha256": "6e2005ced5ba7ff768d1b9b3135eb909e98d6c1ead04712bc1b0185c480e429d"
+    },
+    "retention_policy": "Tier 1 retains the context artifact, prompt text, environment receipt, and truth file for at least 24 months; there is no agent transcript or answer because no agent runs."
   },
   "notes": [
     "Illustrative example only. Tier 1 measures whether the evidence needed to answer was present, never whether an answer was good.",

@@ -275,6 +275,27 @@ for (const category of REQUIRED_CATEGORIES) {
 // 4. Tier 1 subset and negative-trust probes
 // ---------------------------------------------------------------------------
 
+const gateActivation = tier1.gate?.activation
+if (gateActivation?.active === true) {
+  const activationEvent = gateActivation.activation_event
+  if (
+    activationEvent === null
+    || typeof activationEvent !== 'object'
+    || Array.isArray(activationEvent)
+    || activationEvent.run_id == null
+    || activationEvent.run_url == null
+    || activationEvent.date == null
+  ) {
+    fail(
+      'tier1 gate activation is active but activation_event must name the baseline with non-null '
+        + 'run_id, run_url, and date',
+    )
+  }
+}
+if (gateActivation?.active === false && gateActivation.state !== 'pre_baseline') {
+  fail('tier1 inactive gate activation must have state "pre_baseline"')
+}
+
 for (const cell of tier1.cells) {
   const task = tasksById.get(cell.task_id)
   if (!task) {
@@ -309,6 +330,25 @@ for (const id of tier2.dimensions.targets) {
 for (const id of tier2.dimensions.tasks) {
   if (!tasksById.has(id)) fail(`tier2 matrix references unknown task ${id}`)
 }
+
+const cellPair = (cell) => JSON.stringify({
+  task_id: cell?.task_id ?? null,
+  target_id: cell?.target_id ?? null,
+})
+const tier1CellPairs = new Set((Array.isArray(tier1.cells) ? tier1.cells : []).map(cellPair))
+const tier2CellPairs = new Set((Array.isArray(tier2.cells) ? tier2.cells : []).map(cellPair))
+
+for (const pair of tier1CellPairs) {
+  if (!tier2CellPairs.has(pair)) {
+    fail(`tier2-matrix.json#/cells is missing pair ${pair} present in tier1.json#/cells`)
+  }
+}
+for (const pair of tier2CellPairs) {
+  if (!tier1CellPairs.has(pair)) {
+    fail(`tier1.json#/cells is missing pair ${pair} present in tier2-matrix.json#/cells`)
+  }
+}
+
 if (tier2.status !== 'planned') {
   fail('tier2-matrix.json must stay planned until its execution prerequisites are met')
 }
@@ -346,6 +386,24 @@ for (const path of walk(join(ROOT, 'examples'))) {
     fail(`${label} references unknown task ${receipt.task_id}`)
   } else if (receipt.identity.prompts.user_prompt_sha256 !== task.prompt.sha256) {
     fail(`${label} records a prompt hash that does not match the frozen prompt for ${receipt.task_id}`)
+  }
+
+  if (receipt.tier === 2 && task?.scoring?.hidden_acceptance_test?.required === true) {
+    const implementation = receipt.scores?.implementation
+    if (
+      implementation === null
+      || typeof implementation !== 'object'
+      || Array.isArray(implementation)
+      || implementation.measured !== false
+      || implementation.value !== null
+      || typeof implementation.not_measured_reason !== 'string'
+      || implementation.not_measured_reason.length === 0
+    ) {
+      fail(
+        `${label} Tier 2 task ${receipt.task_id} requires scores.implementation to be not_measured `
+          + '(measured false, value null, with a not_measured_reason)',
+      )
+    }
   }
 }
 

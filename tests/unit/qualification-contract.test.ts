@@ -1,7 +1,9 @@
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 import { Ajv } from 'ajv'
 import { describe, expect, it } from 'vitest'
@@ -353,6 +355,55 @@ describe('qualification receipt schema', () => {
     expect(Object.keys(costs).sort()).toEqual(['agent', 'context_build', 'indexing'])
     expect(costs.agent?.measured).toBe(false)
   })
+
+  it('rejects a measured implementation score when the task requires a hidden acceptance test', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+      const freezePath = resolve(sandbox, `${ROOT}/freeze.json`)
+      const freezeBefore = readFileSync(freezePath, 'utf8')
+
+      const task = tasks.tasks.find((candidate) => candidate.id === 'plan-unstorage-add-driver')
+      const mutated = JSON.parse(JSON.stringify(invalidTier2)) as {
+        task_id: string
+        target_id: string
+        identity: { prompts: { user_prompt_sha256: string; user_prompt_text: string } }
+        scores: Record<string, unknown>
+      }
+      mutated.task_id = task!.id
+      mutated.target_id = task!.target
+      mutated.identity.prompts.user_prompt_sha256 = task!.prompt.sha256
+      mutated.identity.prompts.user_prompt_text = task!.prompt.text
+      mutated.scores.implementation = {
+        measured: true,
+        value: 1,
+        method: 'hidden_acceptance_test',
+      }
+      writeFileSync(
+        resolve(sandbox, `${ROOT}/examples/receipt-tier2-invalid-no-madar-call.json`),
+        `${JSON.stringify(mutated, null, 2)}\n`,
+      )
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(readFileSync(freezePath, 'utf8')).toBe(freezeBefore)
+      expect(result.stderr).toContain(
+        'docs/qualification/examples/receipt-tier2-invalid-no-madar-call.json Tier 2 task '
+          + 'plan-unstorage-add-driver requires scores.implementation to be not_measured '
+          + '(measured false, value null, with a not_measured_reason)',
+      )
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('qualification Tier 1 subset', () => {
@@ -360,6 +411,68 @@ describe('qualification Tier 1 subset', () => {
     expect(tier1.properties.deterministic).toBe(true)
     expect(tier1.properties.requires_model_provider).toBe(false)
     expect(tier1.properties.requires_api_spend).toBe(false)
+  })
+
+  it('rejects an active Tier 1 gate that does not name its baseline activation event', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+
+      const mutated = JSON.parse(JSON.stringify(tier1)) as {
+        gate: {
+          activation: {
+            active: boolean
+            activation_event: { run_id: string | null; run_url: string | null; date: string | null }
+          }
+        }
+      }
+      mutated.gate.activation.active = true
+      writeFileSync(resolve(sandbox, `${ROOT}/tier1.json`), `${JSON.stringify(mutated, null, 2)}\n`)
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(
+        'tier1 gate activation is active but activation_event must name the baseline with non-null '
+          + 'run_id, run_url, and date',
+      )
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects an inactive Tier 1 gate outside the pre_baseline state', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+
+      const mutated = JSON.parse(JSON.stringify(tier1)) as {
+        gate: { activation: { active: boolean; state: string } }
+      }
+      mutated.gate.activation.state = 'active'
+      writeFileSync(resolve(sandbox, `${ROOT}/tier1.json`), `${JSON.stringify(mutated, null, 2)}\n`)
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('tier1 inactive gate activation must have state "pre_baseline"')
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
   })
 
   it('fails a cell whose target could not be prepared instead of skipping it', () => {
@@ -393,6 +506,42 @@ describe('qualification Tier 1 subset', () => {
   it('keeps the Tier 2 matrix planned with a repeated-run count', () => {
     expect(tier2.status).toBe('planned')
     expect(tier2.dimensions.trials_per_cell).toBeGreaterThan(1)
+  })
+
+  it('rejects Tier 2 cells that drift from the Tier 1 task-target pairs', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+
+      const mutated = JSON.parse(JSON.stringify(tier2)) as {
+        cells: Array<{ task_id: string; target_id: string }>
+      }
+      mutated.cells[0]!.target_id = 'hono'
+      writeFileSync(resolve(sandbox, `${ROOT}/tier2-matrix.json`), `${JSON.stringify(mutated, null, 2)}\n`)
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(
+        'tier2-matrix.json#/cells is missing pair '
+          + '{"task_id":"arch-unstorage-driver-seam","target_id":"unstorage"} '
+          + 'present in tier1.json#/cells',
+      )
+      expect(result.stderr).toContain(
+        'tier1.json#/cells is missing pair '
+          + '{"task_id":"arch-unstorage-driver-seam","target_id":"hono"} '
+          + 'present in tier2-matrix.json#/cells',
+      )
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
   })
 })
 

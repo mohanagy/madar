@@ -63,14 +63,16 @@ They are never summed into a single number, and an unmeasured account is
 
 ## Retention
 
-For every run, whether valid or not, the following are retained alongside the receipt for
-at least **24 months**:
+For every run, whether valid or not, the tier-specific artifacts below are retained
+alongside the receipt for at least **24 months**. The execution artifact is
+the raw agent transcript (Tier 2) or the context artifact (Tier 1).
 
-- the raw agent transcript (Tier 2) or the context artifact (Tier 1);
-- the answer text of both arms (Tier 2);
-- the exact prompt text delivered to each arm;
-- the environment receipt;
-- the truth file version used for scoring.
+- Tier 1 retains the context artifact, exact prompt text, environment receipt, and truth
+  file because deterministic evaluation must be reproducible without running an agent. It
+  does not require an agent answer, a raw transcript, or an attributable Madar call.
+- Tier 2 retains everything Tier 1 retains, plus the raw agent transcript and the answer
+  text of both arms, because the agent run and its comparison must be auditable. Where the
+  task requires an attributable Madar call, the transcript must establish it.
 
 Each retained artifact is recorded in `retention` with its path and SHA-256. A run whose
 artifacts were not retained is `incomplete_receipt`.

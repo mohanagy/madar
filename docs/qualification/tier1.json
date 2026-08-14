@@ -85,6 +85,16 @@
   ],
   "gate": {
     "applies_to": "every pull request that touches retrieval, context building, graph construction, or ranking",
+    "activation": {
+      "state": "pre_baseline",
+      "active": false,
+      "activation_rule": "The gate activates only once a baseline run exists.",
+      "activation_event": {
+        "run_id": null,
+        "run_url": null,
+        "date": null
+      }
+    },
     "pass_condition": "every cell passes its evidence_obligation_recall threshold AND every negative_trust_probe satisfies its required_behaviour",
     "on_failure": "the pull request is blocked; see stop-rule.md",
     "forbidden_remedies": [
