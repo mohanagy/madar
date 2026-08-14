@@ -12,7 +12,6 @@ function loadExtraction(): unknown {
     edges: Array<{ relation: string }>
   }
   for (const edge of extraction.edges) {
-    if (edge.relation === 'implements') edge.relation = 'inherits'
     if (edge.relation === 'referenced') edge.relation = 'references'
   }
   return extraction
