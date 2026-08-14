@@ -2,7 +2,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
-import { assertNeo4jExportableFacts } from '../infrastructure/neo4j.js'
+import { assertNeo4jExportableFacts, sanitizeNeo4jRelation } from '../infrastructure/neo4j.js'
 import { validateUrl } from '../shared/security.js'
 import { _nodeCommunityMap, type SemanticAnomaly, type WorkspaceBridge, workspaceBridges } from './analyze.js'
 import type { Communities } from './cluster.js'
@@ -1946,10 +1946,7 @@ export function toCypher(graph: KnowledgeGraph, outputPath: string): void {
 
   lines.push('')
   for (const [source, target, attributes] of factEntries) {
-    const relation =
-      String(attributes.relation ?? 'RELATES_TO')
-        .toUpperCase()
-        .replace(/[^A-Z0-9_]/g, '_') || 'RELATES_TO'
+    const relation = sanitizeNeo4jRelation(attributes.relation)
     const confidence = escapeCypher(String(attributes.confidence ?? 'EXTRACTED'))
     lines.push(`MATCH (a {id: '${escapeCypher(source)}'}), (b {id: '${escapeCypher(target)}'}) MERGE (a)-[:${relation} {confidence: '${confidence}'}]->(b);`)
   }

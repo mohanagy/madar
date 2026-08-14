@@ -589,7 +589,7 @@ export function graphStats(graph: KnowledgeGraph, communities: Communities = com
   const total = confidences.length || 1
   return [
     `Nodes: ${graph.numberOfNodes()}`,
-    `Edges: ${graph.numberOfFacts()}`,
+    `Facts: ${graph.numberOfFacts()}`,
     `Communities: ${Object.keys(communities).length}`,
     `EXTRACTED: ${Math.round((confidences.filter((confidence) => confidence === 'EXTRACTED').length / total) * 100)}%`,
     `INFERRED: ${Math.round((confidences.filter((confidence) => confidence === 'INFERRED').length / total) * 100)}%`,

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -84,6 +84,23 @@ describe('export', () => {
     })
   })
 
+  it('uses the Neo4j relation canonicalizer for missing, empty, and normalized Cypher relations', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addEdge('missing-source', 'missing-target', {})
+    graph.addEdge('empty-source', 'empty-target', { relation: '' })
+    graph.addEdge('normalized-source', 'normalized-target', { relation: ' depends---on ' })
+
+    withTempDir((tempDir) => {
+      const outputPath = join(tempDir, 'graph.cypher')
+      toCypher(graph, outputPath)
+      const content = readFileSync(outputPath, 'utf8')
+
+      expect(content.match(/\[:RELATED_TO /g)).toHaveLength(2)
+      expect(content).toContain("MATCH (a {id: 'normalized-source'}), (b {id: 'normalized-target'}) MERGE (a)-[:DEPENDS_ON ")
+      expect(content).not.toContain('RELATES_TO')
+    })
+  })
+
   it('refuses to write cypher that would collapse multiple facts into one MERGE relationship', () => {
     const unsupportedGraph = {
       nodeEntries: () => [
@@ -97,9 +114,16 @@ describe('export', () => {
     } as unknown as KnowledgeGraph
 
     withTempDir((tempDir) => {
-      expect(() => toCypher(unsupportedGraph, join(tempDir, 'graph.cypher'))).toThrow(
-        Neo4jUnsupportedFactMultiplicityError,
-      )
+      const outputPath = join(tempDir, 'graph.cypher')
+      let thrown: unknown
+      try {
+        toCypher(unsupportedGraph, outputPath)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(Neo4jUnsupportedFactMultiplicityError)
+      expect(existsSync(outputPath)).toBe(false)
     })
   })
 

@@ -46,6 +46,7 @@ export interface Neo4jDependencies {
 }
 
 const DEFAULT_NEO4J_DATABASE = 'neo4j'
+const DEFAULT_NEO4J_RELATION = 'RELATED_TO'
 const ALLOWED_NEO4J_PROTOCOLS = new Set(['bolt:', 'bolt+s:', 'bolt+ssc:', 'neo4j:', 'neo4j+s:', 'neo4j+ssc:'])
 
 function capitalize(value: string): string {
@@ -107,12 +108,12 @@ export function sanitizeNeo4jLabel(value: string): string {
   return sanitized
 }
 
-export function sanitizeNeo4jRelation(value: string): string {
-  const sanitized = identifierSegments(value)
+export function sanitizeNeo4jRelation(value: unknown): string {
+  const sanitized = identifierSegments(String(value ?? ''))
     .map((segment) => segment.toUpperCase())
     .join('_')
 
-  return sanitized.length > 0 ? sanitized : 'RELATED_TO'
+  return sanitized.length > 0 ? sanitized : DEFAULT_NEO4J_RELATION
 }
 
 export function validateNeo4jUri(value: string): string {
@@ -199,7 +200,7 @@ export function assertNeo4jExportableFacts(entries: readonly GraphRelationshipEn
   const counts = new Map<string, { source: string; target: string; relation: string; count: number }>()
 
   for (const [source, target, attributes] of entries) {
-    const relation = sanitizeNeo4jRelation(String(attributes.relation ?? 'RELATED_TO'))
+    const relation = sanitizeNeo4jRelation(attributes.relation)
     const key = `${source}\u0000${target}\u0000${relation}`
     const existing = counts.get(key)
     counts.set(key, { source, target, relation, count: (existing?.count ?? 0) + 1 })
@@ -245,7 +246,7 @@ export async function pushGraphToNeo4j(graph: KnowledgeGraph, options: Neo4jPush
       }
 
       for (const [source, target, attributes] of factEntries) {
-        const relation = sanitizeNeo4jRelation(String(attributes.relation ?? 'RELATED_TO'))
+        const relation = sanitizeNeo4jRelation(attributes.relation)
         await tx.run(`MATCH (a {id: $src}), (b {id: $tgt}) MERGE (a)-[r:${relation}]->(b) SET r += $props`, {
           src: source,
           tgt: target,

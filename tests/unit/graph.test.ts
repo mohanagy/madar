@@ -97,15 +97,31 @@ describe('KnowledgeGraph plural semantic projections', () => {
     expect(graph.factsBetween('alpha', 'beta')[0]?.metadata).toEqual({ reason: 'direct invocation' })
   })
 
-  it('refuses to project function-valued attributes by reference', () => {
+  it('rejects function-valued node and edge attributes without changing the graph', () => {
     const graph = new KnowledgeGraph({ directed: true })
     const callback = () => 'live closure'
-    graph.addEdge('alpha', 'beta', { relation: 'calls', callback })
+
+    expect(() => graph.addEdge('alpha', 'beta', { relation: 'calls', metadata: { callback } })).toThrow(
+      'Graph attribute "metadata.callback" cannot contain a function value',
+    )
+    expect(graph.numberOfNodes()).toBe(0)
+    expect(graph.numberOfFacts()).toBe(0)
+
+    expect(() => graph.addNode('alpha', { formatter: callback })).toThrow(
+      'Graph attribute "formatter" cannot contain a function value',
+    )
+    expect(graph.numberOfNodes()).toBe(0)
+  })
+
+  it('keeps a read-time backstop for function values introduced after validation', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    const metadata: Record<string, unknown> = {}
+    graph.addEdge('alpha', 'beta', { relation: 'calls', metadata })
+    metadata.callback = () => 'late mutation'
 
     expect(() => graph.factsBetween('alpha', 'beta')).toThrow(
       'Cannot create an immutable graph projection for a function-valued attribute',
     )
-    expect(graph.edgeAttributes('alpha', 'beta').callback).toBe(callback)
   })
 
   it('isolates SharedArrayBuffer-backed views from returned relationship values', () => {

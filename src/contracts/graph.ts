@@ -27,6 +27,79 @@ interface StoredEdge {
   attributes: GraphAttributes
 }
 
+function functionValuePath(
+  value: unknown,
+  path: string,
+  seen = new WeakSet<object>(),
+): string | null {
+  if (typeof value === 'function') {
+    return path
+  }
+  if (value === null || typeof value !== 'object' || seen.has(value)) {
+    return null
+  }
+  seen.add(value)
+
+  if (
+    value instanceof Date
+    || ArrayBuffer.isView(value)
+    || value instanceof ArrayBuffer
+    || value instanceof SharedArrayBuffer
+  ) {
+    return null
+  }
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const match = functionValuePath(value[index], `${path}[${index}]`, seen)
+      if (match !== null) {
+        return match
+      }
+    }
+    return null
+  }
+  if (value instanceof Map) {
+    let index = 0
+    for (const [key, item] of value) {
+      const keyMatch = functionValuePath(key, `${path}.<map-key:${index}>`, seen)
+      if (keyMatch !== null) {
+        return keyMatch
+      }
+      const valueMatch = functionValuePath(item, `${path}.<map-value:${index}>`, seen)
+      if (valueMatch !== null) {
+        return valueMatch
+      }
+      index += 1
+    }
+    return null
+  }
+  if (value instanceof Set) {
+    let index = 0
+    for (const item of value) {
+      const match = functionValuePath(item, `${path}.<set-value:${index}>`, seen)
+      if (match !== null) {
+        return match
+      }
+      index += 1
+    }
+    return null
+  }
+
+  for (const [key, item] of Object.entries(value)) {
+    const match = functionValuePath(item, path ? `${path}.${key}` : key, seen)
+    if (match !== null) {
+      return match
+    }
+  }
+  return null
+}
+
+function assertGraphAttributesWritable(attributes: GraphAttributes): void {
+  const offendingKey = functionValuePath(attributes, '')
+  if (offendingKey !== null) {
+    throw new TypeError(`Graph attribute "${offendingKey}" cannot contain a function value`)
+  }
+}
+
 function isolatedArrayBufferView(value: ArrayBufferView): ArrayBufferView {
   if (!(value.buffer instanceof SharedArrayBuffer)) {
     return structuredClone(value)
@@ -149,6 +222,7 @@ export class KnowledgeGraph {
   }
 
   addNode(id: string, attributes: GraphAttributes): void {
+    assertGraphAttributesWritable(attributes)
     this.nodeMap.set(id, { ...attributes })
     if (!this.successorMap.has(id)) {
       this.successorMap.set(id, new Set())
@@ -159,6 +233,7 @@ export class KnowledgeGraph {
   }
 
   addEdge(source: string, target: string, attributes: GraphAttributes): void {
+    assertGraphAttributesWritable(attributes)
     if (!this.nodeMap.has(source)) {
       this.addNode(source, {})
     }
