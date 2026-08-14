@@ -14,7 +14,11 @@ import {
   type SemanticDiscriminator,
 } from './relation-discriminator.js'
 import type {
+  ConfidenceObservation,
+  EvidenceOccurrence,
   EvidenceOccurrenceId,
+  EvidenceOccurrenceOwner,
+  EvidenceProvenance,
   SemanticFact,
   SemanticFactDirection,
   SemanticFactId,
@@ -71,6 +75,22 @@ export interface SemanticFactInput extends SemanticFactIdentityInput {
   readonly annotations?: SemanticFact['annotations']
 }
 
+export interface EvidenceOccurrenceInput {
+  readonly factId: SemanticFactId
+  readonly owner: EvidenceOccurrenceOwner
+  readonly sourceFile?: string
+  readonly sourceRange?: SourceRange
+  readonly targetFile?: string
+  readonly targetRange?: SourceRange
+  readonly siteKind?: string
+  readonly adapterEvidenceKey?: string
+  readonly provenance?: readonly EvidenceProvenance[]
+  readonly confidenceObservations?: readonly ConfidenceObservation[]
+  readonly metadata?: EvidenceOccurrence['metadata']
+}
+
+export type EvidenceOccurrenceDraft = Omit<EvidenceOccurrenceInput, 'factId'>
+
 export function canonicalEndpointPair(source: string, target: string): readonly [string, string] {
   const sorted = [source, target].sort()
   return Object.freeze([sorted[0]!, sorted[1]!] as const)
@@ -105,11 +125,12 @@ function assertDiscriminatorMatchesRegistry(
   if (discriminator.completeness !== policy.completeness) {
     throw new SemanticIdentityInvariantError(`discriminator completeness does not match relation ${relation}`)
   }
+  const canonicalValue = serializeCanonicalJson(discriminator.canonicalValue, { arraySemantics: 'ordered' })
   if (
-    serializeCanonicalJson(discriminator.canonicalValue, { arraySemantics: 'ordered' })
-    !== serializeCanonicalJson(policy.canonicalValue, { arraySemantics: 'ordered' })
+    policy.completeness === 'endpoint_only'
+    && canonicalValue !== serializeCanonicalJson(policy.canonicalValue, { arraySemantics: 'ordered' })
   ) {
-    throw new SemanticIdentityInvariantError(`canonical discriminator value does not match relation ${relation}`)
+    throw new SemanticIdentityInvariantError(`endpoint-only relation ${relation} cannot carry discriminator data`)
   }
   if (
     discriminator.reasons.length !== policy.reasons.length
@@ -245,6 +266,65 @@ export function createSemanticFactId(input: SemanticFactIdentityInput): Semantic
 
 export function createEvidenceOccurrenceId(input: EvidenceOccurrenceIdentityInput): EvidenceOccurrenceId {
   return DEFAULT_IDENTITY_FACTORY.createEvidenceOccurrenceId(input)
+}
+
+/** Builds a detached occurrence model and derives its ID only from evidence-site identity. */
+export function createEvidenceOccurrence(input: EvidenceOccurrenceInput): EvidenceOccurrence {
+  const sourceFile = input.sourceFile ?? input.owner.sourceFile
+  const id = createEvidenceOccurrenceId({
+    factId: input.factId,
+    adapterId: input.owner.adapterId,
+    strategy: input.owner.strategy,
+    repositoryRelativeSourceFile: sourceFile ?? null,
+    sourceRange: input.sourceRange ?? null,
+    repositoryRelativeTargetFile: input.targetFile ?? null,
+    targetRange: input.targetRange ?? null,
+    siteKind: input.siteKind ?? null,
+    adapterEvidenceKey: input.adapterEvidenceKey ?? null,
+  })
+
+  return Object.freeze({
+    id,
+    factId: input.factId,
+    owner: Object.freeze({ ...input.owner }),
+    ...(sourceFile !== undefined ? { sourceFile } : {}),
+    ...(input.sourceRange !== undefined ? { sourceRange: Object.freeze({
+      start: Object.freeze({ ...input.sourceRange.start }),
+      end: Object.freeze({ ...input.sourceRange.end }),
+    }) } : {}),
+    ...(input.targetFile !== undefined ? { targetFile: input.targetFile } : {}),
+    ...(input.targetRange !== undefined ? { targetRange: Object.freeze({
+      start: Object.freeze({ ...input.targetRange.start }),
+      end: Object.freeze({ ...input.targetRange.end }),
+    }) } : {}),
+    ...(input.siteKind !== undefined ? { siteKind: input.siteKind } : {}),
+    ...(input.adapterEvidenceKey !== undefined ? { adapterEvidenceKey: input.adapterEvidenceKey } : {}),
+    provenance: Object.freeze([...(input.provenance ?? [])].map((entry) => Object.freeze({ ...entry }))),
+    confidenceObservations: Object.freeze(
+      [...(input.confidenceObservations ?? [])].map((entry) => Object.freeze({ ...entry })),
+    ),
+    metadata: Object.freeze({ ...(input.metadata ?? {}) }),
+  })
+}
+
+/** Rebinds one evidence site when a graph transform intentionally changes its owning fact ID. */
+export function rebindEvidenceOccurrence(
+  occurrence: EvidenceOccurrence,
+  factId: SemanticFactId,
+): EvidenceOccurrence {
+  return createEvidenceOccurrence({
+    factId,
+    owner: occurrence.owner,
+    ...(occurrence.sourceFile !== undefined ? { sourceFile: occurrence.sourceFile } : {}),
+    ...(occurrence.sourceRange !== undefined ? { sourceRange: occurrence.sourceRange } : {}),
+    ...(occurrence.targetFile !== undefined ? { targetFile: occurrence.targetFile } : {}),
+    ...(occurrence.targetRange !== undefined ? { targetRange: occurrence.targetRange } : {}),
+    ...(occurrence.siteKind !== undefined ? { siteKind: occurrence.siteKind } : {}),
+    ...(occurrence.adapterEvidenceKey !== undefined ? { adapterEvidenceKey: occurrence.adapterEvidenceKey } : {}),
+    provenance: occurrence.provenance,
+    confidenceObservations: occurrence.confidenceObservations,
+    metadata: occurrence.metadata,
+  })
 }
 
 function orientedQualification(

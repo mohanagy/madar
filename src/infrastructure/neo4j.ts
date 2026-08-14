@@ -218,7 +218,7 @@ export function assertNeo4jExportableFacts(entries: readonly GraphRelationshipEn
  * graph holds — but this does not mean the resulting Neo4j graph is fact-preserving: relationships
  * are written with `MERGE (a)-[r:REL]->(b)`, which keys only on (endpoints, relation type), not on
  * a per-fact identity. See {@link assertNeo4jExportableFacts}, called below, for the guard that
- * keeps this honest until #657 gives export something more specific to key on.
+ * keeps this honest until Neo4j export keys relationships by SemanticFactId.
  */
 export async function pushGraphToNeo4j(graph: KnowledgeGraph, options: Neo4jPushOptions, dependencies: Neo4jDependencies = {}): Promise<Neo4jPushResult> {
   const config = resolveNeo4jPushConfig(options)

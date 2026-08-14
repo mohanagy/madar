@@ -8,7 +8,14 @@ import { toJson } from '../../src/pipeline/export.js'
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 function loadExtraction(): unknown {
-  return JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8'))
+  const extraction = JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')) as {
+    edges: Array<{ relation: string }>
+  }
+  for (const edge of extraction.edges) {
+    if (edge.relation === 'implements') edge.relation = 'inherits'
+    if (edge.relation === 'referenced') edge.relation = 'references'
+  }
+  return extraction
 }
 
 describe('build', () => {
@@ -27,7 +34,7 @@ describe('build', () => {
         ],
         edges: [
           { source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.py' },
-          { source: 'n2', target: 'n1', relation: 'returns_to', confidence: 'INFERRED', source_file: 'b.py' },
+          { source: 'n2', target: 'n1', relation: 'references', confidence: 'INFERRED', source_file: 'b.py' },
         ],
       },
       { directed: true },
@@ -38,10 +45,10 @@ describe('build', () => {
     expect(graph.neighbors('n1')).toEqual(['n2'])
     expect(graph.neighbors('n2')).toEqual(['n1'])
     expect(graph.edgeAttributes('n1', 'n2').relation).toBe('calls')
-    expect(graph.edgeAttributes('n2', 'n1').relation).toBe('returns_to')
+    expect(graph.edgeAttributes('n2', 'n1').relation).toBe('references')
   })
 
-  it('keeps undirected builds backward compatible when opposite directions appear', () => {
+  it('retains distinct facts when opposite extraction directions collapse to one undirected pair', () => {
     const graph = buildFromJson({
       nodes: [
         { id: 'n1', label: 'A', file_type: 'code', source_file: 'a.py' },
@@ -49,12 +56,13 @@ describe('build', () => {
       ],
       edges: [
         { source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.py' },
-        { source: 'n2', target: 'n1', relation: 'returns_to', confidence: 'INFERRED', source_file: 'b.py' },
+        { source: 'n2', target: 'n1', relation: 'references', confidence: 'INFERRED', source_file: 'b.py' },
       ],
     })
 
     expect(graph.isDirected()).toBe(false)
-    expect(graph.numberOfEdges()).toBe(1)
+    expect(graph.numberOfEdges()).toBe(2)
+    expect(graph.numberOfEndpointPairs()).toBe(1)
     expect(graph.neighbors('n1')).toEqual(['n2'])
     expect(graph.neighbors('n2')).toEqual(['n1'])
   })
@@ -161,7 +169,7 @@ describe('build', () => {
         },
         {
           nodes: [],
-          edges: [{ source: 'n2', target: 'n1', relation: 'responds_to', confidence: 'INFERRED', source_file: 'b.py' }],
+          edges: [{ source: 'n2', target: 'n1', relation: 'references', confidence: 'INFERRED', source_file: 'b.py' }],
           input_tokens: 0,
           output_tokens: 0,
         },
@@ -172,7 +180,7 @@ describe('build', () => {
     expect(graph.isDirected()).toBe(true)
     expect(graph.numberOfEdges()).toBe(2)
     expect(graph.edgeAttributes('n1', 'n2').relation).toBe('calls')
-    expect(graph.edgeAttributes('n2', 'n1').relation).toBe('responds_to')
+    expect(graph.edgeAttributes('n2', 'n1').relation).toBe('references')
   })
 
   it('rebuilds derived edge metadata from pruned graph artifacts while preserving non-default weights', () => {
@@ -202,11 +210,13 @@ describe('build', () => {
         links: Array<Record<string, unknown>>
       }
 
-      expect(artifact.links[0]).not.toHaveProperty('_src')
-      expect(artifact.links[0]).not.toHaveProperty('_tgt')
-      expect(artifact.links[0]).not.toHaveProperty('confidence_score')
-      expect(artifact.links[0]).not.toHaveProperty('weight')
-      expect(artifact.links[1]?.weight).toBe(0.5)
+      const calls = artifact.links.find((link) => link.relation === 'calls')
+      const references = artifact.links.find((link) => link.relation === 'references')
+      expect(calls).not.toHaveProperty('_src')
+      expect(calls).not.toHaveProperty('_tgt')
+      expect(calls).not.toHaveProperty('confidence_score')
+      expect(calls).not.toHaveProperty('weight')
+      expect(references?.weight).toBe(0.5)
 
       const rebuilt = buildFromJson(
         {

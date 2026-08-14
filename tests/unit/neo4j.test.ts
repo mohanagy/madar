@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { resolveRelationDiscriminator } from '../../src/contracts/relation-discriminator.js'
 import {
   assertNeo4jExportableFacts,
   type Neo4jDependencies,
@@ -28,7 +29,7 @@ function makeGraph(): KnowledgeGraph {
   const graph = new KnowledgeGraph()
   graph.addNode('auth', { label: 'AuthService', file_type: 'code', source_file: 'main.py', community: 1 })
   graph.addNode('client', { label: 'HttpClient', file_type: 'code', source_file: 'client.py', community: 1 })
-  graph.addEdge('auth', 'client', { relation: 'depends on', confidence: 'EXTRACTED' })
+  graph.addEdge('auth', 'client', { relation: 'depends_on', confidence: 'EXTRACTED' })
   return graph
 }
 
@@ -185,8 +186,9 @@ describe('neo4j integration helpers', () => {
 
   test('exports endpoint pairs that only collide under a space-joined multiplicity key', async () => {
     const graph = new KnowledgeGraph({ directed: true })
-    graph.addEdge('a', 'b c', { relation: 'CALLS' })
-    graph.addEdge('a b', 'c', { relation: 'CALLS' })
+    for (const nodeId of ['a', 'b c', 'a b', 'c']) graph.addNode(nodeId, {})
+    graph.addEdge('a', 'b c', { relation: 'calls' })
+    graph.addEdge('a b', 'c', { relation: 'calls' })
 
     const run = vi.fn().mockResolvedValue({})
     const createDriver: NonNullable<Neo4jDependencies['createDriver']> = async () => ({
@@ -214,20 +216,52 @@ describe('neo4j integration helpers', () => {
     )
   })
 
+  test('pushes every fact when one endpoint pair has different relation identities', async () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addNode('source', {})
+    graph.addNode('target', {})
+    graph.addEdge('source', 'target', { relation: 'injects' })
+    graph.addEdge('source', 'target', { relation: 'calls' })
+
+    const run = vi.fn().mockResolvedValue({})
+    const createDriver: NonNullable<Neo4jDependencies['createDriver']> = async () => ({
+      session: () => ({
+        executeWrite: async (work) => work({ run }),
+        close: async () => undefined,
+      }),
+      close: async () => undefined,
+    })
+
+    await expect(pushGraphToNeo4j(
+      graph,
+      { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'super-secret' },
+      { createDriver },
+    )).resolves.toMatchObject({ edges: 2 })
+    const relationshipQueries = run.mock.calls
+      .map(([query]) => String(query))
+      .filter((query) => query.includes('MERGE (a)-[r:'))
+    expect(relationshipQueries).toHaveLength(2)
+    expect(relationshipQueries).toEqual(expect.arrayContaining([
+      expect.stringContaining('[r:CALLS]'),
+      expect.stringContaining('[r:INJECTS]'),
+    ]))
+  })
+
   test('pushGraphToNeo4j refuses to write a graph it cannot export without collapsing facts, before touching the driver', async () => {
-    // The real KnowledgeGraph store cannot yet hold two facts for one endpoint pair
-    // (that lands in #657); stub only the surface pushGraphToNeo4j reads to exercise
-    // that future shape against today's guard.
-    const unsupportedGraph = {
-      nodeEntries: () => [
-        ['auth', { label: 'AuthService', file_type: 'code' }],
-        ['client', { label: 'HttpClient', file_type: 'code' }],
-      ],
-      factEntries: () => [
-        ['auth', 'client', { relation: 'depends on', confidence: 'EXTRACTED' }],
-        ['auth', 'client', { relation: 'depends on', confidence: 'INFERRED' }],
-      ],
-    } as unknown as KnowledgeGraph
+    const unsupportedGraph = new KnowledgeGraph({ directed: true })
+    unsupportedGraph.addNode('auth', { label: 'AuthService', file_type: 'code' })
+    unsupportedGraph.addNode('client', { label: 'HttpClient', file_type: 'code' })
+    const call = resolveRelationDiscriminator('calls', { invocation_kind: 'call' })
+    const construct = resolveRelationDiscriminator('calls', { invocation_kind: 'construct' })
+    if (call.status !== 'registered' || construct.status !== 'registered') {
+      throw new Error('calls must be registered')
+    }
+    unsupportedGraph.addEdge('auth', 'client', { relation: 'calls', confidence: 'EXTRACTED' }, {
+      discriminator: call.discriminator,
+    })
+    unsupportedGraph.addEdge('auth', 'client', { relation: 'calls', confidence: 'INFERRED' }, {
+      discriminator: construct.discriminator,
+    })
 
     const createDriver = vi.fn()
 

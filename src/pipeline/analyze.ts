@@ -305,19 +305,8 @@ function analysisCommunityNodeIds(graph: KnowledgeGraph, nodeIds: string[]): str
 }
 
 function analysisGraph(graph: KnowledgeGraph): KnowledgeGraph {
-  const entityGraph = new KnowledgeGraph(graph.isDirected())
   const nodeIds = analysisNodeIds(graph)
-  const nodeIdSet = new Set(nodeIds)
-  for (const nodeId of nodeIds) {
-    entityGraph.addNode(nodeId, graph.nodeAttributes(nodeId))
-  }
-  for (const [sourceNodeId, targetNodeId, attributes] of graph.factEntries()) {
-    if (!nodeIdSet.has(sourceNodeId) || !nodeIdSet.has(targetNodeId)) {
-      continue
-    }
-    entityGraph.addEdge(sourceNodeId, targetNodeId, attributes)
-  }
-  return entityGraph
+  return graph.subgraph(nodeIds)
 }
 
 function lowCohesionCommunities(
@@ -967,27 +956,26 @@ export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): G
   const newNodesList = [...newNodes].filter((nodeId) => !oldNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(newGraph, nodeId) }))
   const removedNodesList = [...oldNodes].filter((nodeId) => !newNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(oldGraph, nodeId) }))
 
-  // #657 precondition: re-key graphDiff by stable fact identity so same-relation facts cannot collapse.
-  const oldEdges = new Set(oldGraph.factEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), oldGraph.isDirected())))
-  const newEdges = new Set(newGraph.factEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), newGraph.isDirected())))
+  const oldFactIds = new Set(oldGraph.factRecords().map(({ fact }) => fact.id))
+  const newFactIds = new Set(newGraph.factRecords().map(({ fact }) => fact.id))
 
   const newEdgesList = newGraph
-    .factEntries()
-    .filter(([source, target, attrs]) => !oldEdges.has(edgeKey(source, target, String(attrs.relation ?? ''), newGraph.isDirected())))
-    .map(([source, target, attrs]) => ({
-      source,
-      target,
-      relation: String(attrs.relation ?? ''),
-      confidence: String(attrs.confidence ?? ''),
+    .factRecords()
+    .filter(({ fact }) => !oldFactIds.has(fact.id))
+    .map(({ fact, attributes }) => ({
+      source: fact.source,
+      target: fact.target,
+      relation: fact.relation,
+      confidence: String(attributes.confidence ?? ''),
     }))
   const removedEdgesList = oldGraph
-    .factEntries()
-    .filter(([source, target, attrs]) => !newEdges.has(edgeKey(source, target, String(attrs.relation ?? ''), oldGraph.isDirected())))
-    .map(([source, target, attrs]) => ({
-      source,
-      target,
-      relation: String(attrs.relation ?? ''),
-      confidence: String(attrs.confidence ?? ''),
+    .factRecords()
+    .filter(({ fact }) => !newFactIds.has(fact.id))
+    .map(({ fact, attributes }) => ({
+      source: fact.source,
+      target: fact.target,
+      relation: fact.relation,
+      confidence: String(attributes.confidence ?? ''),
     }))
 
   const summaryParts: string[] = []

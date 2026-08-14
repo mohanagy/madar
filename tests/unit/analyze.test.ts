@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { resolveRelationDiscriminator } from '../../src/contracts/relation-discriminator.js'
 import { buildFromJson } from '../../src/pipeline/build.js'
 import {
   _fileCategory,
@@ -20,7 +21,14 @@ import { cluster } from '../../src/pipeline/cluster.js'
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 function makeGraph(): KnowledgeGraph {
-  return buildFromJson(JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')))
+  const extraction = JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')) as {
+    edges: Array<{ relation: string }>
+  }
+  for (const edge of extraction.edges) {
+    if (edge.relation === 'implements') edge.relation = 'inherits'
+    if (edge.relation === 'referenced') edge.relation = 'references'
+  }
+  return buildFromJson(extraction)
 }
 
 function makeSimpleGraph(nodes: Array<[string, string]>, edges: Array<[string, string, string, string]>): KnowledgeGraph {
@@ -115,7 +123,7 @@ describe('analyze', () => {
   it('excludes concept nodes from surprising connections', () => {
     const graph = makeGraph()
     graph.addNode('concept_x', { label: 'Abstract Concept', file_type: 'document', source_file: '' })
-    graph.addEdge('n_transformer', 'concept_x', { relation: 'relates_to', confidence: 'INFERRED', source_file: '', weight: 0.5 })
+    graph.addEdge('n_transformer', 'concept_x', { relation: 'references', confidence: 'INFERRED', source_file: '', weight: 0.5 })
 
     const surprises = surprisingConnections(graph, cluster(graph))
     const labels = surprises.flatMap((surprise) => [surprise.source, surprise.target])
@@ -230,8 +238,11 @@ describe('analyze', () => {
     const graph = new KnowledgeGraph(true)
     for (let index = 1; index <= 15; index += 1) {
       const nodeId = `n${index}`
-      const nextNodeId = `n${index === 15 ? 1 : index + 1}`
       graph.addNode(nodeId, { label: `Node ${index}`, source_file: `module-${index}.ts`, file_type: 'code' })
+    }
+    for (let index = 1; index <= 15; index += 1) {
+      const nodeId = `n${index}`
+      const nextNodeId = `n${index === 15 ? 1 : index + 1}`
       graph.addEdge(nodeId, nextNodeId, { relation: 'calls', confidence: 'EXTRACTED', source_file: `module-${index}.ts` })
     }
     graph.addNode('file', { label: 'module-1.ts', source_file: 'module-1.ts', file_type: 'code' })
@@ -256,8 +267,11 @@ describe('analyze', () => {
     for (const prefix of ['a', 'b'] as const) {
       for (let index = 1; index <= 8; index += 1) {
         const nodeId = `${prefix}${index}`
-        const nextNodeId = `${prefix}${index === 8 ? 1 : index + 1}`
         graph.addNode(nodeId, { label: `${prefix.toUpperCase()} Node ${index}`, source_file: `${nodeId}.ts`, file_type: 'code' })
+      }
+      for (let index = 1; index <= 8; index += 1) {
+        const nodeId = `${prefix}${index}`
+        const nextNodeId = `${prefix}${index === 8 ? 1 : index + 1}`
         graph.addEdge(nodeId, nextNodeId, { relation: 'calls', confidence: 'EXTRACTED', source_file: `${nodeId}.ts` })
       }
     }
@@ -347,6 +361,36 @@ describe('analyze', () => {
     )
 
     expect(graphDiff(graphA, graphB).summary).toBe('no changes')
+  })
+
+  it('detects a new fact that differs only by discriminator', () => {
+    const oldGraph = new KnowledgeGraph(true)
+    const newGraph = new KnowledgeGraph(true)
+    for (const graph of [oldGraph, newGraph]) {
+      graph.addNode('caller', {})
+      graph.addNode('callee', {})
+    }
+    const ordinary = resolveRelationDiscriminator('calls', { invocation_kind: 'call' })
+    const construct = resolveRelationDiscriminator('calls', { invocation_kind: 'construct' })
+    if (ordinary.status !== 'registered' || construct.status !== 'registered') {
+      throw new Error('calls must be registered')
+    }
+
+    oldGraph.addEdge('caller', 'callee', { relation: 'calls', confidence: 'EXTRACTED' }, {
+      discriminator: ordinary.discriminator,
+    })
+    newGraph.addEdge('caller', 'callee', { relation: 'calls', confidence: 'EXTRACTED' }, {
+      discriminator: ordinary.discriminator,
+    })
+    newGraph.addEdge('caller', 'callee', { relation: 'calls', confidence: 'EXTRACTED' }, {
+      discriminator: construct.discriminator,
+    })
+
+    const diff = graphDiff(oldGraph, newGraph)
+    expect(diff.new_edges).toEqual([
+      { source: 'caller', target: 'callee', relation: 'calls', confidence: 'EXTRACTED' },
+    ])
+    expect(diff.removed_edges).toEqual([])
   })
 
   it('detects bridge, cross-boundary, and low-cohesion anomalies', () => {
@@ -439,9 +483,9 @@ describe('analyze', () => {
       ['b4', 'b5', 'calls', 'EXTRACTED'],
       ['a3', 'bridge', 'calls', 'EXTRACTED'],
       ['bridge', 'b3', 'calls', 'EXTRACTED'],
-      ['bridge', 'a5', 'explains', 'INFERRED'],
-      ['bridge', 'b5', 'explains', 'INFERRED'],
-      ['a1', 'b1', 'relates_to', 'AMBIGUOUS'],
+      ['bridge', 'a5', 'references', 'INFERRED'],
+      ['bridge', 'b5', 'references', 'INFERRED'],
+      ['a1', 'b1', 'uses', 'AMBIGUOUS'],
       ['c1', 'c2', 'calls', 'EXTRACTED'],
     ] as const) {
       graph.addEdge(source, target, { relation, confidence, source_file: 'test.py' })
@@ -475,8 +519,11 @@ describe('analyze', () => {
     const graph = new KnowledgeGraph()
     for (let index = 0; index < 15; index += 1) {
       const nodeId = `n${index}`
-      const nextNodeId = `n${index === 14 ? 0 : index + 1}`
       graph.addNode(nodeId, { label: `Cycle ${index}`, source_file: `cycle-${index}.ts`, file_type: 'code' })
+    }
+    for (let index = 0; index < 15; index += 1) {
+      const nodeId = `n${index}`
+      const nextNodeId = `n${index === 14 ? 0 : index + 1}`
       graph.addEdge(nodeId, nextNodeId, { relation: 'calls', confidence: 'EXTRACTED', source_file: `cycle-${index}.ts` })
     }
     graph.addNode('file', { label: 'cycle-0.ts', source_file: 'cycle-0.ts', file_type: 'code' })

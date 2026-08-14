@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
+import { rebindEvidenceOccurrence } from '../contracts/semantic-identity.js'
 import type { ExtractionMode } from '../contracts/generation-policy.js'
 import type {
   ExtractionFallbackReason,
@@ -343,14 +344,29 @@ function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectRe
 }
 
 function copyGraphWithDirection(graph: KnowledgeGraph, directed: boolean): KnowledgeGraph {
+  if (graph.isDirected() === directed) {
+    return graph.copy()
+  }
   const copied = new KnowledgeGraph({ directed })
   Object.assign(copied.graph, graph.graph, { directed })
 
   for (const [nodeId, attributes] of graph.nodeEntries()) {
-    copied.addNode(nodeId, attributes)
+    copied.addNode(nodeId, {
+      ...attributes,
+      endpointIdentity: graph.nodeEndpointIdentity(nodeId),
+    })
   }
-  for (const [source, target, attributes] of graph.factEntries()) {
-    copied.addEdge(source, target, attributes)
+  for (const { fact, attributes } of graph.factRecords()) {
+    const admission = copied.addEdge(fact.source, fact.target, { ...attributes }, {
+      discriminator: fact.discriminator,
+      recordOccurrence: false,
+    })
+    if (admission.status !== 'stored') {
+      throw new Error(`Direction-changing copy could not admit relation ${fact.relation}`)
+    }
+    for (const occurrence of graph.occurrencesForFact(fact.id)) {
+      copied.addOccurrence(rebindEvidenceOccurrence(occurrence, admission.factId))
+    }
   }
 
   return copied

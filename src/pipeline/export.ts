@@ -446,26 +446,14 @@ export function toJson(
 
 function subgraphFromNodes(graph: KnowledgeGraph, nodeIds: string[]): KnowledgeGraph {
   const selectedNodeIds = new Set(nodeIds)
-  const subgraph = new KnowledgeGraph({ directed: graph.isDirected() })
-
-  for (const nodeId of nodeIds) {
-    if (!graph.hasNode(nodeId)) {
-      continue
-    }
-    subgraph.addNode(nodeId, graph.nodeAttributes(nodeId))
-  }
-
-  for (const [source, target, attributes] of graph.factEntries()) {
-    if (selectedNodeIds.has(source) && selectedNodeIds.has(target)) {
-      subgraph.addEdge(source, target, attributes)
-    }
-  }
+  const subgraph = graph.subgraph(nodeIds)
 
   const hyperedges = (Array.isArray(graph.graph.hyperedges) ? graph.graph.hyperedges : []).filter((hyperedge) => {
     return Array.isArray((hyperedge as { nodes?: unknown[] }).nodes)
       ? (hyperedge as { nodes: unknown[] }).nodes.every((nodeId) => typeof nodeId === 'string' && selectedNodeIds.has(nodeId))
       : false
   })
+  delete subgraph.graph.hyperedges
   if (hyperedges.length > 0) {
     subgraph.graph.hyperedges = hyperedges
   }

@@ -83,6 +83,20 @@ function buildLouvainState(graph: KnowledgeGraph): LouvainState {
   return { nodeIds, community, neighborWeights, nodeDegree, communityInternalWeight, communityTotalDegree, totalWeight }
 }
 
+/** Graph-domain inspection seam for the #657 endpoint-pair multiplicity gate. */
+export function _louvainTopologyMetrics(graph: KnowledgeGraph): Readonly<{
+  totalWeight: number
+  nodeDegree: Readonly<Record<string, number>>
+}> {
+  const state = buildLouvainState(graph)
+  return Object.freeze({
+    totalWeight: state.totalWeight,
+    nodeDegree: Object.freeze(Object.fromEntries([...state.nodeDegree.entries()].sort(([left], [right]) => (
+      left < right ? -1 : left > right ? 1 : 0
+    )))),
+  })
+}
+
 function modularityGain(
   state: LouvainState,
   nodeId: string,
@@ -218,18 +232,7 @@ function subClusterLargeCommunity(graph: KnowledgeGraph, nodeIds: string[], dept
   }
 
   // Build a subgraph with only the community's nodes
-  const nodeSet = new Set(nodeIds)
-  const subgraph = new KnowledgeGraph()
-
-  for (const nodeId of nodeIds) {
-    subgraph.addNode(nodeId, graph.nodeAttributes(nodeId))
-  }
-
-  for (const [source, target, attributes] of graph.factEntries()) {
-    if (nodeSet.has(source) && nodeSet.has(target)) {
-      subgraph.addEdge(source, target, attributes)
-    }
-  }
+  const subgraph = graph.subgraph(nodeIds)
 
   if (subgraph.numberOfEndpointPairs() === 0) {
     return [nodeIds]

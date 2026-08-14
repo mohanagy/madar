@@ -121,6 +121,13 @@ function validateEndpoint(
   return Object.freeze({ status, reasons: Object.freeze(reasons) })
 }
 
+/** Validates one node's stored endpoint-identity qualification. */
+export function validateEndpointIdentityEndpointQualification(
+  value: unknown,
+): EndpointIdentityEndpointQualification {
+  return validateEndpoint(value, 'source')
+}
+
 /** Validates both endpoints and rejects every impossible status/reason combination. */
 export function validateEndpointIdentityQualification(value: unknown): EndpointIdentityQualification {
   if (!isRecord(value)) {
@@ -137,6 +144,23 @@ function undeclaredEndpoint(): EndpointIdentityEndpointQualification {
     status: 'unknown',
     reasons: Object.freeze(['identity_policy_not_declared'] as const),
   })
+}
+
+/**
+ * Node compatibility normalization mirrors fact qualification normalization:
+ * only an omitted own property becomes explicitly unknown. Present malformed
+ * values always fail validation.
+ */
+export function normalizeNodeEndpointIdentityQualification(
+  owner: unknown,
+): EndpointIdentityEndpointQualification {
+  if (!isRecord(owner)) {
+    throw new EndpointIdentityInvariantError('qualification owner must be an object')
+  }
+  if (!Object.prototype.hasOwnProperty.call(owner, 'endpointIdentity')) {
+    return undeclaredEndpoint()
+  }
+  return validateEndpointIdentityEndpointQualification(owner.endpointIdentity)
 }
 
 /**

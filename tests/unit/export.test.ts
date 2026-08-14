@@ -11,7 +11,13 @@ import { toCypher, toGraphml, toHtml, toJson, toObsidian, toSvg } from '../../sr
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 function makeGraph() {
-  return buildFromJson(JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')))
+  const extraction = JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')) as {
+    edges: Array<{ relation: string }>
+  }
+  for (const edge of extraction.edges) {
+    if (edge.relation === 'referenced') edge.relation = 'references'
+  }
+  return buildFromJson(extraction)
 }
 
 describe('export', () => {
@@ -50,7 +56,7 @@ describe('export', () => {
         ],
         edges: [
           { source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.py' },
-          { source: 'n2', target: 'n1', relation: 'returns_to', confidence: 'INFERRED', source_file: 'b.py' },
+          { source: 'n2', target: 'n1', relation: 'references', confidence: 'INFERRED', source_file: 'b.py' },
         ],
       },
       { directed: true },
@@ -66,9 +72,26 @@ describe('export', () => {
       expect(data.links).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ source: 'n1', target: 'n2', relation: 'calls' }),
-          expect.objectContaining({ source: 'n2', target: 'n1', relation: 'returns_to' }),
+          expect.objectContaining({ source: 'n2', target: 'n1', relation: 'references' }),
         ]),
       )
+    })
+  })
+
+  it('writes every semantic fact when one endpoint pair has N > 1', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addNode('source', { label: 'Source' })
+    graph.addNode('target', { label: 'Target' })
+    graph.addEdge('source', 'target', { relation: 'injects' })
+    graph.addEdge('source', 'target', { relation: 'calls' })
+
+    withTempDir((tempDir) => {
+      const outputPath = join(tempDir, 'graph.json')
+      toJson(graph, { 0: ['source', 'target'] }, outputPath)
+      const data = JSON.parse(readFileSync(outputPath, 'utf8')) as {
+        links: Array<{ relation: string }>
+      }
+      expect(data.links.map(({ relation }) => relation).sort()).toEqual(['calls', 'injects'])
     })
   })
 
@@ -85,10 +108,14 @@ describe('export', () => {
   })
 
   it('uses the Neo4j relation canonicalizer for missing, empty, and normalized Cypher relations', () => {
-    const graph = new KnowledgeGraph({ directed: true })
-    graph.addEdge('missing-source', 'missing-target', {})
-    graph.addEdge('empty-source', 'empty-target', { relation: '' })
-    graph.addEdge('normalized-source', 'normalized-target', { relation: ' depends---on ' })
+    const graph = {
+      nodeEntries: () => [],
+      factEntries: () => [
+        ['missing-source', 'missing-target', {}],
+        ['empty-source', 'empty-target', { relation: '' }],
+        ['normalized-source', 'normalized-target', { relation: ' depends---on ' }],
+      ],
+    } as unknown as KnowledgeGraph
 
     withTempDir((tempDir) => {
       const outputPath = join(tempDir, 'graph.cypher')
@@ -151,7 +178,7 @@ describe('export', () => {
         ],
         edges: [
           { source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.py' },
-          { source: 'n2', target: 'n1', relation: 'returns_to', confidence: 'INFERRED', source_file: 'b.py' },
+          { source: 'n2', target: 'n1', relation: 'references', confidence: 'INFERRED', source_file: 'b.py' },
         ],
       },
       { directed: true },
@@ -219,7 +246,7 @@ describe('export', () => {
         ],
         edges: [
           { source: 'alpha', target: 'beta', relation: 'calls', confidence: 'EXTRACTED', source_file: '/repo/src/infrastructure/install.ts' },
-          { source: 'beta', target: 'alpha', relation: 'returns_to', confidence: 'INFERRED', source_file: '/repo/src/infrastructure/install.ts' },
+          { source: 'beta', target: 'alpha', relation: 'references', confidence: 'INFERRED', source_file: '/repo/src/infrastructure/install.ts' },
         ],
       },
       { directed: true },
@@ -564,7 +591,7 @@ describe('export', () => {
         ],
         edges: [
           { source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.py' },
-          { source: 'n2', target: 'n1', relation: 'returns_to', confidence: 'INFERRED', source_file: 'b.py' },
+          { source: 'n2', target: 'n1', relation: 'references', confidence: 'INFERRED', source_file: 'b.py' },
         ],
       },
       { directed: true },
@@ -576,7 +603,7 @@ describe('export', () => {
 
       const note = readFileSync(join(outputPath, 'Alpha.md'), 'utf8')
       expect(note).toContain('→ [[Beta]] - `calls` [EXTRACTED]')
-      expect(note).toContain('← [[Beta]] - `returns\\_to` [INFERRED]')
+      expect(note).toContain('← [[Beta]] - `references` [INFERRED]')
     })
   })
 

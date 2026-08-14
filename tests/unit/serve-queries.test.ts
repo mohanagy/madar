@@ -26,6 +26,15 @@ function makeDirectedGraph(): KnowledgeGraph {
   return graph
 }
 
+function makeParallelFactGraph(): KnowledgeGraph {
+  const graph = new KnowledgeGraph(true)
+  graph.addNode('src', { label: 'source', file_type: 'code' })
+  graph.addNode('sink', { label: 'sink', file_type: 'code' })
+  graph.addEdge('src', 'sink', { relation: 'injects', confidence: 'INFERRED' })
+  graph.addEdge('src', 'sink', { relation: 'calls', confidence: 'EXTRACTED' })
+  return graph
+}
+
 const COMMUNITIES = { 0: ['n1', 'n2'], 1: ['n3', 'n4'], 2: ['n5'] }
 
 describe('queryGraph', () => {
@@ -95,6 +104,12 @@ describe('getNeighbors', () => {
     expect(result).toContain('sink')
     expect(result).not.toContain('source')
   })
+
+  test('lists every fact on one outgoing endpoint pair', () => {
+    const result = getNeighbors(makeParallelFactGraph(), 'source')
+    expect(result).toContain('[calls] [EXTRACTED]')
+    expect(result).toContain('[injects] [INFERRED]')
+  })
 })
 
 describe('getCommunity', () => {
@@ -115,6 +130,13 @@ describe('graphStats', () => {
     expect(result).toContain('Communities: 3')
     expect(result).toContain('EXTRACTED')
     expect(result).toContain('INFERRED')
+  })
+
+  test('uses semantic fact counts and observations when one pair has N > 1', () => {
+    const result = graphStats(makeParallelFactGraph(), {})
+    expect(result).toContain('Facts: 2')
+    expect(result).toContain('EXTRACTED: 50%')
+    expect(result).toContain('INFERRED: 50%')
   })
 })
 
@@ -143,5 +165,11 @@ describe('shortestPath', () => {
   test('respects edge direction when searching for shortest paths', () => {
     const result = shortestPath(makeDirectedGraph(), 'sink', 'source')
     expect(result).toContain('No path found')
+  })
+
+  test('renders all relationship labels for an N > 1 path segment', () => {
+    const result = shortestPath(makeParallelFactGraph(), 'source', 'sink')
+    expect(result).toContain('calls [EXTRACTED]')
+    expect(result).toContain('injects [INFERRED]')
   })
 })

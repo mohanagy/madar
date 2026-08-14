@@ -2314,6 +2314,7 @@ function createCompareRetrievalGraph(
 
     retrievalGraph.addNode(id, {
       ...nodeAttributes,
+      endpointIdentity: graph.nodeEndpointIdentity(id),
       ...(retrievalSourceFile !== sourceFile ? { source_file: retrievalSourceFile } : {}),
     })
     if (retrievalSourceFile !== sourceFile) {
@@ -2321,8 +2322,17 @@ function createCompareRetrievalGraph(
     }
   }
 
-  for (const [source, target, attributes] of graph.factEntries()) {
-    retrievalGraph.addEdge(source, target, attributes)
+  for (const { fact, attributes } of graph.factRecords()) {
+    const admission = retrievalGraph.addEdge(fact.source, fact.target, { ...attributes }, {
+      discriminator: fact.discriminator,
+      recordOccurrence: false,
+    })
+    if (admission.status !== 'stored' || admission.factId !== fact.id) {
+      throw new Error(`Compare graph copy changed semantic fact identity ${fact.id}`)
+    }
+    for (const occurrence of graph.occurrencesForFact(fact.id)) {
+      retrievalGraph.addOccurrence(occurrence)
+    }
   }
 
   return { graph: retrievalGraph, originalSourceFiles }

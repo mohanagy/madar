@@ -12,6 +12,7 @@ import { classifyTaskContract, compactContextPack } from '../../src/runtime/cont
 import {
   compactRetrieveResult,
   compactRetrieveResultForStdio,
+  collectRelationships,
   contextPackFromRetrieveResult,
   reciprocalRankFuse,
   retrieveContext,
@@ -275,7 +276,7 @@ describe('retrieve', () => {
         source_file: '/src/auth/guard.ts',
       })
       graph.addEdge('auth_policy', 'session_policy', {
-        relation: 'defines',
+        relation: 'declares',
         confidence: 'EXTRACTED',
         source_file: '/src/auth/policy.ts',
       })
@@ -386,7 +387,7 @@ describe('retrieve', () => {
               {
                 source: `${semanticSliceNode!.id}__authSlice`,
                 target: `${semanticSliceNode!.id}__authReducer`,
-                relation: 'defines',
+                relation: 'declares',
                 confidence: 'INFERRED',
                 source_file: authSliceBinding.sourceFile,
                 line_number: authReducerBinding.line,
@@ -2164,6 +2165,19 @@ describe('retrieve', () => {
       const callsEdge = result.relationships.find((r) => r.from === 'authenticateUser' && r.to === 'SessionManager')
       expect(callsEdge).toBeDefined()
       expect(callsEdge?.relation).toBe('calls')
+    })
+
+    it('collects every fact when one included endpoint pair has N > 1', () => {
+      const graph = new KnowledgeGraph({ directed: true })
+      graph.addNode('source', { label: 'Source' })
+      graph.addNode('target', { label: 'Target' })
+      graph.addEdge('source', 'target', { relation: 'injects' })
+      graph.addEdge('source', 'target', { relation: 'calls' })
+
+      expect(collectRelationships(graph, new Set(['source', 'target']))).toEqual([
+        { from_id: 'source', from: 'Source', to_id: 'target', to: 'Target', relation: 'calls' },
+        { from_id: 'source', from: 'Source', to_id: 'target', to: 'Target', relation: 'injects' },
+      ])
     })
 
     it('includes community context for matched nodes', () => {

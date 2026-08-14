@@ -1,4 +1,5 @@
 import { KnowledgeGraph } from '../contracts/graph.js'
+import { classifyLegacyEndpoint } from '../contracts/endpoint-identity.js'
 import type { ExtractionData, ExtractionSchemaVersion } from '../contracts/types.js'
 import { validateExtraction } from '../contracts/extraction.js'
 import { normalizeExtractionData } from '../core/schema/normalize.js'
@@ -79,10 +80,13 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
   }
 
   const nodes = normalized.nodes
+  const legacyQualification = normalized.schema_version === 1 ? classifyLegacyEndpoint() : null
   for (const node of nodes) {
     const { id, ...attributes } = node
     if (typeof id === 'string') {
-      graph.addNode(id, attributes)
+      graph.addNode(id, legacyQualification === null
+        ? attributes
+        : { ...attributes, endpointIdentity: legacyQualification })
     }
   }
 

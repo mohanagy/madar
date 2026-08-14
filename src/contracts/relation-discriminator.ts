@@ -1,4 +1,4 @@
-import type { CanonicalJson } from './canonical-json.js'
+import { normalizeCanonicalJson, serializeCanonicalJson, type CanonicalJson } from './canonical-json.js'
 
 export const RELATION_DISCRIMINATOR_REGISTRY_ID = 'madar.relation-discriminator-registry/1' as const
 
@@ -21,13 +21,16 @@ export const REGISTERED_RELATIONS = Object.freeze([
   'calls',
   'depends_on',
   'enqueues_job',
+  'extends',
   'handles_route',
+  'implements',
   'imports',
   'imports_from',
   'injects',
   'middleware',
   'mounts_router',
   'registered_in_store',
+  'registers_controller',
   'registers_route',
   'updates_slice',
   'uses',
@@ -53,6 +56,13 @@ export interface SemanticDiscriminator {
   readonly completeness: SemanticDiscriminatorCompleteness
   readonly canonicalValue: CanonicalJson
   readonly reasons: readonly string[]
+}
+
+export class RelationDiscriminatorInvariantError extends Error {
+  constructor(message: string) {
+    super(`Relation discriminator invariant failed: ${message}`)
+    this.name = 'RelationDiscriminatorInvariantError'
+  }
 }
 
 function endpointOnly(relation: RegisteredRelation): RelationDiscriminatorPolicy {
@@ -86,12 +96,15 @@ export const RELATION_DISCRIMINATOR_REGISTRY_V1: Readonly<Record<RegisteredRelat
   declares_controller: endpointOnly('declares_controller'),
   defines_action: endpointOnly('defines_action'),
   defines_selector: endpointOnly('defines_selector'),
+  extends: endpointOnly('extends'),
+  implements: endpointOnly('implements'),
   inherits: endpointOnly('inherits'),
   loads_route: endpointOnly('loads_route'),
   method: endpointOnly('method'),
   provides: endpointOnly('provides'),
   rationale_for: endpointOnly('rationale_for'),
   references: endpointOnly('references'),
+  registers_controller: endpointOnly('registers_controller'),
   renders: endpointOnly('renders'),
   shared_across_repos: endpointOnly('shared_across_repos'),
   submits_route: endpointOnly('submits_route'),
@@ -221,7 +234,10 @@ export type RelationDiscriminatorResolution =
  * facts and are not topology-eligible in this slice; later accounting can
  * persist the returned degraded reason without inventing endpoint-only identity.
  */
-export function resolveRelationDiscriminator(relation: string): RelationDiscriminatorResolution {
+export function resolveRelationDiscriminator(
+  relation: string,
+  canonicalValue?: CanonicalJson,
+): RelationDiscriminatorResolution {
   if (!isRegisteredRelation(relation)) {
     return Object.freeze({
       status: 'unregistered' as const,
@@ -233,11 +249,24 @@ export function resolveRelationDiscriminator(relation: string): RelationDiscrimi
   }
 
   const policy = RELATION_DISCRIMINATOR_REGISTRY_V1[relation]
+  const normalizedValue = normalizeCanonicalJson(
+    canonicalValue ?? policy.canonicalValue,
+    { arraySemantics: 'ordered' },
+  )
+  if (
+    policy.completeness === 'endpoint_only'
+    && serializeCanonicalJson(normalizedValue, { arraySemantics: 'ordered' })
+      !== serializeCanonicalJson(policy.canonicalValue, { arraySemantics: 'ordered' })
+  ) {
+    throw new RelationDiscriminatorInvariantError(
+      `endpoint-only relation ${relation} cannot carry a discriminator value`,
+    )
+  }
   const discriminator: SemanticDiscriminator = Object.freeze({
     registryId: RELATION_DISCRIMINATOR_REGISTRY_ID,
     policyVersion: policy.policyVersion,
     completeness: policy.completeness,
-    canonicalValue: policy.canonicalValue,
+    canonicalValue: normalizedValue,
     reasons: policy.reasons,
   })
   return Object.freeze({

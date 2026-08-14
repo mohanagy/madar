@@ -39,7 +39,7 @@ function makeRankedGraph(): KnowledgeGraph {
   graph.addEdge('hub', 'leaf', { relation: 'calls', confidence: 'EXTRACTED' })
   graph.addEdge('hub', 'other1', { relation: 'calls', confidence: 'EXTRACTED' })
   graph.addEdge('hub', 'other2', { relation: 'calls', confidence: 'EXTRACTED' })
-  graph.addEdge('leaf', 'guide', { relation: 'documents', confidence: 'EXTRACTED' })
+  graph.addEdge('leaf', 'guide', { relation: 'references', confidence: 'EXTRACTED' })
   return graph
 }
 
@@ -171,7 +171,7 @@ describe('bfs', () => {
     graph.addNode('b', { label: 'B' })
     graph.addNode('c', { label: 'C' })
     graph.addEdge('a', 'b', { relation: 'calls', confidence: 'EXTRACTED' })
-    graph.addEdge('c', 'a', { relation: 'feeds', confidence: 'EXTRACTED' })
+    graph.addEdge('c', 'a', { relation: 'calls', confidence: 'EXTRACTED' })
 
     const { visited } = bfs(graph, ['a'], 2)
 
@@ -186,7 +186,7 @@ describe('bfs', () => {
     graph.addNode('method', { label: 'method()' })
     graph.addNode('effect', { label: 'Effect' })
     graph.addEdge('owner', 'method', { relation: 'contains', confidence: 'EXTRACTED' })
-    graph.addEdge('method', 'owner', { relation: 'reports_to', confidence: 'EXTRACTED' })
+    graph.addEdge('method', 'owner', { relation: 'references', confidence: 'EXTRACTED' })
     graph.addEdge('method', 'effect', { relation: 'calls', confidence: 'EXTRACTED' })
 
     const { visited, edges } = bfs(graph, ['method'], 1, undefined, 'incident')
@@ -238,6 +238,19 @@ describe('subgraphToText', () => {
   test('truncates at the token budget', () => {
     const text = subgraphToText(makeGraph(), new Set(['n1', 'n2', 'n3', 'n4']), [['n1', 'n2']], 1)
     expect(text).toContain('truncated')
+  })
+
+  test('renders every semantic fact when one traversed pair has N > 1', () => {
+    const graph = new KnowledgeGraph(true)
+    graph.addNode('source', { label: 'Source' })
+    graph.addNode('target', { label: 'Target' })
+    graph.addEdge('source', 'target', { relation: 'injects', confidence: 'INFERRED' })
+    graph.addEdge('source', 'target', { relation: 'calls', confidence: 'EXTRACTED' })
+
+    const text = subgraphToText(graph, new Set(['source', 'target']), [['source', 'target']])
+    expect(text.match(/^EDGE /gm)).toHaveLength(2)
+    expect(text).toContain('--calls [EXTRACTED]-->')
+    expect(text).toContain('--injects [INFERRED]-->')
   })
 })
 
