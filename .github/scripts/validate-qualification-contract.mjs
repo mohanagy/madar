@@ -148,7 +148,7 @@ for (const target of corpus.targets) {
       fail(`patched target ${target.id} references missing patch ${target.patch}`)
     }
 
-    if (patch) {
+    if (patch !== undefined) {
       // Parse against normalized text so a CRLF checkout cannot capture a stray
       // carriage return into a path. The digest check further down still reads raw
       // bytes; only this structural parse is representation-independent.
@@ -199,9 +199,33 @@ for (const task of tasks.tasks) {
     continue
   }
 
-  const actualHash = sha256(task.prompt.text)
-  if (actualHash !== task.prompt.sha256) {
-    fail(`task ${task.id} prompt hash mismatch: recorded ${task.prompt.sha256}, actual ${actualHash}`)
+  const prompt = task.prompt
+  if (
+    prompt === null
+    || typeof prompt !== 'object'
+    || Array.isArray(prompt)
+    || typeof prompt.text !== 'string'
+    || typeof prompt.sha256 !== 'string'
+  ) {
+    fail(`task ${task.id} must declare prompt text and sha256`)
+    continue
+  }
+
+  const actualHash = sha256(prompt.text)
+  if (actualHash !== prompt.sha256) {
+    fail(`task ${task.id} prompt hash mismatch: recorded ${prompt.sha256}, actual ${actualHash}`)
+  }
+
+  const scoring = task.scoring
+  if (
+    scoring === null
+    || typeof scoring !== 'object'
+    || Array.isArray(scoring)
+    || typeof scoring.tier1_method !== 'string'
+    || typeof scoring.tier2_method !== 'string'
+  ) {
+    fail(`task ${task.id} must declare tier1 and tier2 scoring methods`)
+    continue
   }
 
   const truthPath = join(ROOT, task.truth_ref)
@@ -263,11 +287,11 @@ for (const task of tasks.tasks) {
     fail(`${task.truth_ref} must declare at least one must_not_report_ready_when condition`)
   }
 
-  if (!rubrics.methods[task.scoring.tier2_method]) {
-    fail(`task ${task.id} references unknown rubric method ${task.scoring.tier2_method}`)
+  if (!rubrics.methods[scoring.tier2_method]) {
+    fail(`task ${task.id} references unknown rubric method ${scoring.tier2_method}`)
   }
-  if (!rubrics.methods[task.scoring.tier1_method]) {
-    fail(`task ${task.id} references unknown tier1 method ${task.scoring.tier1_method}`)
+  if (!rubrics.methods[scoring.tier1_method]) {
+    fail(`task ${task.id} references unknown tier1 method ${scoring.tier1_method}`)
   }
 }
 
@@ -282,7 +306,23 @@ for (const category of REQUIRED_CATEGORIES) {
 // ---------------------------------------------------------------------------
 
 const gateActivation = tier1.gate?.activation
-if (gateActivation?.active === true) {
+const hasGateActivation = gateActivation !== null
+  && typeof gateActivation === 'object'
+  && !Array.isArray(gateActivation)
+if (!hasGateActivation) {
+  fail('tier1 gate.activation block must exist')
+}
+if (hasGateActivation && typeof gateActivation.active !== 'boolean') {
+  fail('tier1 gate.activation.active must be a boolean')
+}
+if (
+  hasGateActivation
+  && gateActivation.active === true
+  && (typeof gateActivation.state !== 'string' || gateActivation.state.length === 0 || gateActivation.state === 'pre_baseline')
+) {
+  fail('tier1 active gate activation must declare a non-pre_baseline state')
+}
+if (hasGateActivation && gateActivation.active === true) {
   const activationEvent = gateActivation.activation_event
   if (
     activationEvent === null
@@ -298,11 +338,12 @@ if (gateActivation?.active === true) {
     )
   }
 }
-if (gateActivation?.active === false && gateActivation.state !== 'pre_baseline') {
+if (hasGateActivation && gateActivation.active === false && gateActivation.state !== 'pre_baseline') {
   fail('tier1 inactive gate activation must have state "pre_baseline"')
 }
 
-for (const cell of tier1.cells) {
+const tier1Cells = Array.isArray(tier1.cells) ? tier1.cells : []
+for (const cell of tier1Cells) {
   const task = tasksById.get(cell.task_id)
   if (!task) {
     fail(`tier1 cell references unknown task ${cell.task_id}`)
@@ -341,7 +382,7 @@ const cellPair = (cell) => JSON.stringify({
   task_id: cell?.task_id ?? null,
   target_id: cell?.target_id ?? null,
 })
-const tier1CellPairs = new Set((Array.isArray(tier1.cells) ? tier1.cells : []).map(cellPair))
+const tier1CellPairs = new Set(tier1Cells.map(cellPair))
 const tier2CellPairs = new Set((Array.isArray(tier2.cells) ? tier2.cells : []).map(cellPair))
 
 for (const pair of tier1CellPairs) {
@@ -390,7 +431,7 @@ for (const path of walk(join(ROOT, 'examples'))) {
   const task = tasksById.get(receipt.task_id)
   if (!task) {
     fail(`${label} references unknown task ${receipt.task_id}`)
-  } else if (receipt.identity.prompts.user_prompt_sha256 !== task.prompt.sha256) {
+  } else if (receipt.identity.prompts.user_prompt_sha256 !== task.prompt?.sha256) {
     fail(`${label} records a prompt hash that does not match the frozen prompt for ${receipt.task_id}`)
   }
 
@@ -451,7 +492,7 @@ for (const [key, value] of Object.entries(corpus.forbidden_target_symbols ?? {})
 const FORBIDDEN_LITERALS = [
   ...corpus.targets.flatMap((target) => (target.source?.url ? [target.source.url, target.source.ref] : [])),
   ...tasks.tasks.map((task) => task.id),
-  ...tasks.tasks.map((task) => task.prompt.text),
+  ...tasks.tasks.flatMap((task) => (typeof task.prompt?.text === 'string' ? [task.prompt.text] : [])),
   ...tier1.negative_trust_probes.map((probe) => probe.prompt.text),
   ...targetSymbols,
 ]
@@ -587,6 +628,6 @@ const naturalTargets = corpus.targets.filter((target) => !isSealedTarget(target)
 console.log(
   `qualification contract v${CONTRACT_VERSION} is consistent: ` +
     `${naturalTargets.length} pinned natural targets, ${corpus.proxy_targets.length} proxy targets, ` +
-    `${tasks.tasks.length} tasks, ${tier1.cells.length} Tier 1 cells, ` +
+    `${tasks.tasks.length} tasks, ${tier1Cells.length} Tier 1 cells, ` +
     `${tier1.negative_trust_probes.length} negative-trust probes, ${frozenFiles.length} frozen files.`,
 )

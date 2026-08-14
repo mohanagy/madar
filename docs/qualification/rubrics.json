@@ -31,6 +31,7 @@
       "gating": false,
       "not_gating_reason": "No threshold for this dimension has been calibrated; gating on an uncalibrated threshold manufactures confidence and invites the threshold to be tuned to whatever passes.",
       "becomes_gating_when": "A baseline distribution over the natural corpus must exist, and the threshold must be derived and recorded BEFORE any target is scored against it.",
+      "method_gate_boundary": "The ratio dimension remains non-gating. methods.single_root_cause_adjudication gates only the explicit, pre-registered ids in uncertainty_required_for_pass; honouring that enumerated id list is deliberately not a calibrated threshold.",
       "reported": true,
       "reporting_reason": "The dimension is still scored and recorded on every receipt, because an exemption that also stops measurement can never end."
     },
@@ -118,7 +119,8 @@
         "The answer passes only if it names a cause in accepted_root_cause_ids as THE cause.",
         "Listing the correct cause among several candidate causes without committing scores as a partial: critical_fact_completeness credit, correctness 1, no pass.",
         "Every id in uncertainty_required_for_pass must be honoured."
-      ]
+      ],
+      "uncertainty_gate_note": "This method gates uncertainty by the explicit, pre-registered ids in uncertainty_required_for_pass. Honouring an enumerated id list is checkable without calibration and is deliberately not a threshold on dimensions.correct_uncertainty, which remains non-gating."
     },
     "seeded_defect_detection": {
       "tier": 2,

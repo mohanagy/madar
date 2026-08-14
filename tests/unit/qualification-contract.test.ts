@@ -157,6 +157,29 @@ describe('qualification corpus manifest', () => {
     }
   })
 
+  it('rejects an empty seeded-defect patch', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+      writeFileSync(resolve(sandbox, `${ROOT}/patches/hono-compose-reentrancy-guard.patch`), '')
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('patch patches/hono-compose-reentrancy-guard.patch is not a unified git diff')
+      expect(result.stderr).toContain('patch patches/hono-compose-reentrancy-guard.patch does not modify any file')
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
   it('discloses where a target overlaps a shipped framework adapter', () => {
     const hono = corpus.targets.find((target) => target.id === 'hono')
     const unstorage = corpus.targets.find((target) => target.id === 'unstorage')
@@ -211,6 +234,62 @@ describe('qualification task definitions', () => {
     }
   })
 
+  it('reports a task with no prompt instead of throwing', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+
+      const mutated = JSON.parse(JSON.stringify(tasks)) as {
+        tasks: Array<{ id: string; prompt?: unknown }>
+      }
+      const task = mutated.tasks.find((candidate) => candidate.id === 'rootcause-hono-middleware-rerun')!
+      delete task.prompt
+      writeFileSync(resolve(sandbox, `${ROOT}/tasks.json`), `${JSON.stringify(mutated, null, 2)}\n`)
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('task rootcause-hono-middleware-rerun must declare prompt text and sha256')
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
+  it('reports a task with no scoring block instead of throwing', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+
+      const mutated = JSON.parse(JSON.stringify(tasks)) as {
+        tasks: Array<{ id: string; scoring?: unknown }>
+      }
+      const task = mutated.tasks.find((candidate) => candidate.id === 'rootcause-hono-middleware-rerun')!
+      delete task.scoring
+      writeFileSync(resolve(sandbox, `${ROOT}/tasks.json`), `${JSON.stringify(mutated, null, 2)}\n`)
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('task rootcause-hono-middleware-rerun must declare tier1 and tier2 scoring methods')
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
   it('never names the coupled framework inside a prompt for that target', () => {
     const coupled = tasks.tasks.filter((task) => task.target.startsWith('hono'))
 
@@ -230,18 +309,16 @@ describe('qualification task definitions', () => {
         expect(provenance.derived_from.length).toBeGreaterThan(0)
         expect(provenance.madar_derived_sources_used).toEqual([])
         expect(provenance.inspected_madar_output_before_freeze).toBe(false)
-        // The contract requires this to be *stated*, not to hold a particular value. Pinning
-        // it to false would fail the moment a second author closes the independence gap,
-        // which is an improvement, not a regression.
-        expect(typeof provenance.independent_of_production_rule_author).toBe('boolean')
       }
     }
   })
 
-  it('records the current independence state, which a second author is expected to change', () => {
+  it('snapshots the current single-author independence state', () => {
     for (const task of tasks.tasks) {
       const truth = readJson<{ provenance: Provenance }>(`${ROOT}/${task.truth_ref}`)
       for (const provenance of [task.truth_provenance, truth.provenance]) {
+        // Closing the independence gap requires updating this current-state expectation in
+        // the same change that records the second author's review.
         expect(provenance.independent_of_production_rule_author).toBe(false)
       }
     }
@@ -413,7 +490,125 @@ describe('qualification Tier 1 subset', () => {
     expect(tier1.properties.requires_api_spend).toBe(false)
   })
 
+  it('reports a missing Tier 1 cell array instead of throwing', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+
+      const mutated = JSON.parse(JSON.stringify(tier1)) as { cells: unknown }
+      mutated.cells = null
+      writeFileSync(resolve(sandbox, `${ROOT}/tier1.json`), `${JSON.stringify(mutated, null, 2)}\n`)
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(
+        'tier1.json#/cells is missing pair '
+          + '{"task_id":"arch-unstorage-driver-seam","target_id":"unstorage"} '
+          + 'present in tier2-matrix.json#/cells',
+      )
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a missing Tier 1 gate activation block', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+
+      const mutated = JSON.parse(JSON.stringify(tier1)) as { gate: { activation?: unknown } }
+      delete mutated.gate.activation
+      writeFileSync(resolve(sandbox, `${ROOT}/tier1.json`), `${JSON.stringify(mutated, null, 2)}\n`)
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('tier1 gate.activation block must exist')
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a non-boolean Tier 1 gate activation flag', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+
+      const mutated = JSON.parse(JSON.stringify(tier1)) as {
+        gate: { activation: { active: unknown } }
+      }
+      mutated.gate.activation.active = 'false'
+      writeFileSync(resolve(sandbox, `${ROOT}/tier1.json`), `${JSON.stringify(mutated, null, 2)}\n`)
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('tier1 gate.activation.active must be a boolean')
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
   it('rejects an active Tier 1 gate that does not name its baseline activation event', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
+
+    try {
+      mkdirSync(resolve(sandbox, 'docs'), { recursive: true })
+      cpSync(resolve(ROOT), resolve(sandbox, ROOT), { recursive: true })
+      mkdirSync(resolve(sandbox, 'src'))
+
+      const mutated = JSON.parse(JSON.stringify(tier1)) as {
+        gate: {
+          activation: {
+            active: boolean
+            state: string
+            activation_event: { run_id: string | null; run_url: string | null; date: string | null }
+          }
+        }
+      }
+      mutated.gate.activation.active = true
+      mutated.gate.activation.state = 'active'
+      writeFileSync(resolve(sandbox, `${ROOT}/tier1.json`), `${JSON.stringify(mutated, null, 2)}\n`)
+
+      const result = spawnSync(
+        process.execPath,
+        [resolve('.github/scripts/validate-qualification-contract.mjs'), '--write'],
+        { cwd: sandbox, encoding: 'utf8' },
+      )
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(
+        'tier1 gate activation is active but activation_event must name the baseline with non-null '
+          + 'run_id, run_url, and date',
+      )
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects an active Tier 1 gate in the pre_baseline state', () => {
     const sandbox = mkdtempSync(join(tmpdir(), 'madar-qualification-contract-'))
 
     try {
@@ -430,6 +625,11 @@ describe('qualification Tier 1 subset', () => {
         }
       }
       mutated.gate.activation.active = true
+      mutated.gate.activation.activation_event = {
+        run_id: 'baseline-0001',
+        run_url: 'https://example.invalid/runs/baseline-0001',
+        date: '2026-08-14',
+      }
       writeFileSync(resolve(sandbox, `${ROOT}/tier1.json`), `${JSON.stringify(mutated, null, 2)}\n`)
 
       const result = spawnSync(
@@ -439,10 +639,7 @@ describe('qualification Tier 1 subset', () => {
       )
 
       expect(result.status).toBe(1)
-      expect(result.stderr).toContain(
-        'tier1 gate activation is active but activation_event must name the baseline with non-null '
-          + 'run_id, run_url, and date',
-      )
+      expect(result.stderr).toContain('tier1 active gate activation must declare a non-pre_baseline state')
     } finally {
       rmSync(sandbox, { recursive: true, force: true })
     }

@@ -13,7 +13,7 @@
     "docs/qualification/patches/hono-compose-reentrancy-guard.patch": "9355c5bbb05cd5ae4d998ace18d6381f0cba4fd080203d4d02579da3dcf6dea4",
     "docs/qualification/patches/hono-error-message-disclosure.patch": "edb79059b72b4f27f5dc8341ba2d9a3617901c402da9ef1f9daf5503e6528d6f",
     "docs/qualification/receipt-schema.json": "e849ba4b28c0cad119a8a23fda82bf39a91f2d53ac6b6900806d0157ac91f0be",
-    "docs/qualification/rubrics.json": "377a1f72ef64ef7bab03261dea26c8c118792017cf466ef084abbe7d927ce6ba",
+    "docs/qualification/rubrics.json": "bf176381b6d6df5da41c4a3685bfaf8bf31f0767feef571ee7b85ce4644eba6f",
     "docs/qualification/stop-rule.md": "36246356a456d5839e0670b298ee7c34a80e89f47481991eb791d029b972e1c9",
     "docs/qualification/tasks.json": "c941088446f21e4f233185794821639ba8095ba3f9984f9cd24a9fc039cbc02b",
     "docs/qualification/tier1.json": "967e3d3bafdd646288660c10184d97414d2867948285d062513b8f5d5bcb6ac9",
