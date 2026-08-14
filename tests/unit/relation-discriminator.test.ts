@@ -144,3 +144,22 @@ describe('registry completeness against real producers', () => {
     expect(unregistered, `unregistered SPI relations: ${unregistered.join(', ')}`).toEqual([])
   })
 })
+
+describe('registry completeness against non-SPI producers', () => {
+  it('registers every relation present in the committed extraction fixture', () => {
+    // The SPI mapping guard above only covers the projector. Legacy and framework
+    // extractors emit relations through createEdge literals, which no single table
+    // lists — so pin them against real committed extraction output instead of a grep.
+    const fixture = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../fixtures/extraction.json'), 'utf8'),
+    ) as { edges?: Array<{ relation?: unknown }> }
+
+    const emitted = [...new Set((fixture.edges ?? [])
+      .map((edge) => edge.relation)
+      .filter((relation): relation is string => typeof relation === 'string'))]
+    expect(emitted.length).toBeGreaterThan(0)
+
+    const unregistered = emitted.filter((relation) => !isRegisteredRelation(relation))
+    expect(unregistered, `unregistered fixture relations: ${unregistered.join(', ')}`).toEqual([])
+  })
+})

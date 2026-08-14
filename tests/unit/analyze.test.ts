@@ -24,9 +24,6 @@ function makeGraph(): KnowledgeGraph {
   const extraction = JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')) as {
     edges: Array<{ relation: string }>
   }
-  for (const edge of extraction.edges) {
-    if (edge.relation === 'referenced') edge.relation = 'references'
-  }
   return buildFromJson(extraction)
 }
 
