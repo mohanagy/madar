@@ -1420,14 +1420,15 @@ export function collectRelationships(graph: KnowledgeGraph, includedIds: Readonl
       }
       seen.add(key)
 
-      const attributes = graph.edgeAttributes(source, target)
-      relationships.push({
-        from_id: source,
-        from: String(graph.nodeAttributes(source).label ?? source),
-        to_id: target,
-        to: String(graph.nodeAttributes(target).label ?? target),
-        relation: String(attributes.relation ?? 'related_to'),
-      })
+      for (const attributes of graph.factsBetween(source, target)) {
+        relationships.push({
+          from_id: source,
+          from: String(graph.nodeAttributes(source).label ?? source),
+          to_id: target,
+          to: String(graph.nodeAttributes(target).label ?? target),
+          relation: String(attributes.relation ?? 'related_to'),
+        })
+      }
     }
   }
 
@@ -2113,7 +2114,7 @@ function compareScoredNodes(graph: KnowledgeGraph, left: ScoredNode, right: Scor
     right.frameworkBoost - left.frameworkBoost ||
     right.score - left.score ||
     Number(left.fileNodeLike) - Number(right.fileNodeLike) ||
-    graph.degree(right.id) - graph.degree(left.id) ||
+    graph.uniqueNeighborDegree(right.id) - graph.uniqueNeighborDegree(left.id) ||
     compareStableText(left.label, right.label) ||
     compareStableText(left.sourceFile, right.sourceFile) ||
     compareStableText(left.id, right.id)
@@ -2338,7 +2339,7 @@ function rankedSeedCandidateIds(
     .sort((left, right) => (
       scoreForCandidate(right) - scoreForCandidate(left) ||
       right.seedScore.total - left.seedScore.total ||
-      graph.degree(right.id) - graph.degree(left.id) ||
+      graph.uniqueNeighborDegree(right.id) - graph.uniqueNeighborDegree(left.id) ||
       compareStableText(left.label, right.label) ||
       compareStableText(left.sourceFile, right.sourceFile) ||
       compareStableText(left.id, right.id)
@@ -2369,6 +2370,35 @@ function relationWeight(relation: string): number {
     default:
       return 0.35
   }
+}
+
+function relationshipRelations(
+  graph: KnowledgeGraph,
+  sourceId: string,
+  targetId: string,
+  fallback = 'related_to',
+): readonly string[] {
+  const relations = [...new Set(graph.relationsBetween(sourceId, targetId).map((relation) => relation || fallback))]
+  return relations.length > 0 ? relations : [fallback]
+}
+
+/** Scalar pack fields use the highest-priority relationship, with lexical tie-breaking. */
+function strongestRelationshipRelation(
+  graph: KnowledgeGraph,
+  sourceId: string,
+  targetId: string,
+  priority: (relation: string) => number,
+  fallback = 'related_to',
+): string {
+  return relationshipRelations(graph, sourceId, targetId, fallback).reduce<string | null>((selected, relation) => {
+    if (selected === null) {
+      return relation
+    }
+    const priorityDelta = priority(relation) - priority(selected)
+    return priorityDelta > 0 || (priorityDelta === 0 && compareStableText(relation, selected) < 0)
+      ? relation
+      : selected
+  }, null) ?? fallback
 }
 
 function includesAnyToken(tokens: readonly string[], candidates: readonly string[]): boolean {
@@ -2918,8 +2948,8 @@ function augmentSliceCandidateIdsForDebug(
     const anchorCommunity = parseCommunityId(graph.nodeAttributes(anchor.node_id).community)
 
     for (const predecessorId of graph.predecessors(anchor.node_id)) {
-      const relation = String(graph.edgeAttributes(predecessorId, anchor.node_id).relation ?? 'related_to')
-      if (!['calls', 'controller_route', 'route_handler'].includes(relation)) {
+      if (!relationshipRelations(graph, predecessorId, anchor.node_id)
+        .some((relation) => ['calls', 'controller_route', 'route_handler'].includes(relation))) {
         continue
       }
 
@@ -2941,8 +2971,7 @@ function augmentSliceCandidateIdsForDebug(
       }
 
       for (const helperId of graph.successors(predecessorId)) {
-        const helperRelation = String(graph.edgeAttributes(predecessorId, helperId).relation ?? 'related_to')
-        if (!helperRelations.has(helperRelation) || seen.has(helperId)) {
+        if (!relationshipRelations(graph, predecessorId, helperId).some((relation) => helperRelations.has(relation)) || seen.has(helperId)) {
           continue
         }
         seen.add(helperId)
@@ -3175,14 +3204,12 @@ function collectExecutionSliceScope(
 
     for (const nodeId of [...orderedIds]) {
       for (const successorId of graph.successors(nodeId)) {
-        const relation = String(graph.edgeAttributes(nodeId, successorId).relation ?? 'related_to')
-        if (helperRelations.has(relation) && wantsRequestedHelper(successorId)) {
+        if (relationshipRelations(graph, nodeId, successorId).some((relation) => helperRelations.has(relation)) && wantsRequestedHelper(successorId)) {
           addNodeId(successorId)
         }
       }
       for (const predecessorId of graph.predecessors(nodeId)) {
-        const relation = String(graph.edgeAttributes(predecessorId, nodeId).relation ?? 'related_to')
-        if (helperRelations.has(relation) && wantsRequestedHelper(predecessorId)) {
+        if (relationshipRelations(graph, predecessorId, nodeId).some((relation) => helperRelations.has(relation)) && wantsRequestedHelper(predecessorId)) {
           addNodeId(predecessorId)
         }
       }
@@ -3211,12 +3238,12 @@ function collectExecutionSliceScope(
       continue
     }
     for (const predecessorId of graph.predecessors(nodeId)) {
-      if (executionSliceFlowRelation(String(graph.edgeAttributes(predecessorId, nodeId).relation ?? 'related_to'))) {
+      if (relationshipRelations(graph, predecessorId, nodeId).some(executionSliceFlowRelation)) {
         enqueueNeighbor(predecessorId, depth + 1)
       }
     }
     for (const successorId of graph.successors(nodeId)) {
-      if (executionSliceFlowRelation(String(graph.edgeAttributes(nodeId, successorId).relation ?? 'related_to'))) {
+      if (relationshipRelations(graph, nodeId, successorId).some(executionSliceFlowRelation)) {
         enqueueNeighbor(successorId, depth + 1)
       }
     }
@@ -3618,12 +3645,15 @@ function executionFlowAdjacency(
     const reverseExists = graph.successors(toId).includes(fromId)
     const normalizedFromId = !forwardExists && reverseExists ? toId : fromId
     const normalizedToId = !forwardExists && reverseExists ? fromId : toId
-    const relation = String(
-      (graph.successors(normalizedFromId).includes(normalizedToId)
-        ? graph.edgeAttributes(normalizedFromId, normalizedToId).relation
-        : undefined)
-      ?? path.relation,
-    )
+    const relation = graph.successors(normalizedFromId).includes(normalizedToId)
+      ? strongestRelationshipRelation(
+          graph,
+          normalizedFromId,
+          normalizedToId,
+          executionSliceEdgePriority,
+          path.relation,
+        )
+      : path.relation
     record({ fromId: normalizedFromId, toId: normalizedToId, relation })
     selectedFlowEdges.add(`${normalizedFromId}:${relation}:${normalizedToId}`)
   }
@@ -3647,9 +3677,12 @@ function executionFlowAdjacency(
         if (!idSet.has(toId)) {
           continue
         }
-        const relation = String(graph.edgeAttributes(fromId, toId).relation ?? 'related_to')
-        if (helperRelations.has(relation) && wantsRequestedHelper(toId)) {
-          record({ fromId, toId, relation })
+        if (wantsRequestedHelper(toId)) {
+          for (const relation of relationshipRelations(graph, fromId, toId)) {
+            if (helperRelations.has(relation)) {
+              record({ fromId, toId, relation })
+            }
+          }
         }
       }
     }
@@ -3660,17 +3693,18 @@ function executionFlowAdjacency(
       if (!idSet.has(toId)) {
         continue
       }
-      const relation = String(graph.edgeAttributes(fromId, toId).relation ?? 'related_to')
-      if (!executionSliceFlowRelation(relation)) {
-        continue
+      for (const relation of relationshipRelations(graph, fromId, toId)) {
+        if (!executionSliceFlowRelation(relation)) {
+          continue
+        }
+        if (
+          selectedFlowEdges.has(`${fromId}:${relation}:${toId}`)
+          || selectedFlowEdges.has(`${toId}:${relation}:${fromId}`)
+        ) {
+          continue
+        }
+        record({ fromId, toId, relation })
       }
-      if (
-        selectedFlowEdges.has(`${fromId}:${relation}:${toId}`)
-        || selectedFlowEdges.has(`${toId}:${relation}:${fromId}`)
-      ) {
-        continue
-      }
-      record({ fromId, toId, relation })
     }
   }
 
@@ -4011,11 +4045,11 @@ function walkExecutionSlice(
       .filter((candidateId) =>
         idSet.has(candidateId)
         && !seen.has(candidateId)
-        && executionSliceFlowRelation(String(graph.edgeAttributes(currentId!, candidateId).relation ?? 'related_to')),
+        && relationshipRelations(graph, currentId!, candidateId).some(executionSliceFlowRelation),
       )
       .sort((left, right) => {
-        const leftRelation = String(graph.edgeAttributes(currentId!, left).relation ?? 'related_to')
-        const rightRelation = String(graph.edgeAttributes(currentId!, right).relation ?? 'related_to')
+        const leftRelation = strongestRelationshipRelation(graph, currentId!, left, executionSliceEdgePriority)
+        const rightRelation = strongestRelationshipRelation(graph, currentId!, right, executionSliceEdgePriority)
         const leftStep = nodeById.get(left)
         const rightStep = nodeById.get(right)
         return executionSliceEdgePriority(rightRelation) - executionSliceEdgePriority(leftRelation)
@@ -5113,7 +5147,7 @@ function buildRetrieveResultFromOrderedCandidates(
       ...(node.framework ? { framework: node.framework } : {}),
       ...(node.frameworkRole ? { framework_role: node.frameworkRole } : {}),
       ...(graphSignal ? { graph_signal: graphSignal } : {}),
-      graph_degree: graph.degree(node.id),
+      graph_degree: graph.uniqueNeighborDegree(node.id),
       ...(node.storedSnippet !== null ? { snippet: node.storedSnippet } : {}),
       evidence_class: evidenceClass,
       expandable_ref: {
@@ -5618,11 +5652,11 @@ function retrieveContextPass(
         if (expansionSeedIds.has(neighborId)) {
           continue
         }
-        const relation = String(graph.edgeAttributes(seed.id, neighborId).relation ?? 'related_to')
-        if (!relationAllowedForPolicy(expansionPolicy.hop1_relations, relation)) {
-          continue
+        for (const relation of relationshipRelations(graph, seed.id, neighborId)) {
+          if (relationAllowedForPolicy(expansionPolicy.hop1_relations, relation)) {
+            recordHop(neighborId, relation, seed.score, 1)
+          }
         }
-        recordHop(neighborId, relation, seed.score, 1)
       }
 
       if (expansionPolicy.predecessor_mode !== 'none') {
@@ -5630,22 +5664,22 @@ function retrieveContextPass(
           if (expansionSeedIds.has(predecessorId)) {
             continue
           }
-          const relation = String(graph.edgeAttributes(predecessorId, seed.id).relation ?? 'related_to')
           const predecessorCommunity = parseCommunityId(graph.nodeAttributes(predecessorId).community)
           // File/container ownership is exact extractor evidence, so it must
           // not disappear merely because community detection placed the file
           // node and its symbol in adjacent clusters. Keeping this owner hop
           // also lets hop two reach the symbol's imported collaborators.
-          if (
-            !predecessorIsStructuralOwner(relation)
-            && !predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)
-          ) {
-            continue
+          for (const relation of relationshipRelations(graph, predecessorId, seed.id)) {
+            if (
+              !predecessorIsStructuralOwner(relation)
+              && !predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)
+            ) {
+              continue
+            }
+            if (relationAllowedForPolicy(expansionPolicy.hop1_relations, relation)) {
+              recordHop(predecessorId, relation, seed.score, 1)
+            }
           }
-          if (!relationAllowedForPolicy(expansionPolicy.hop1_relations, relation)) {
-            continue
-          }
-          recordHop(predecessorId, relation, seed.score, 1)
         }
       }
     }
@@ -5684,13 +5718,14 @@ function retrieveContextPass(
         if (seedIds.has(hop2Id) || hop1Ids.has(hop2Id)) {
           continue
         }
-        const relation = String(graph.edgeAttributes(hop1Id, hop2Id).relation ?? 'related_to')
-        if (!relationAllowedForPolicy(expansionPolicy.hop2_relations, relation)) {
-          continue
-        }
-        const hop2Score = hop1Score * 0.5 * relationWeight(relation)
-        if (hop2Score > (hop2Scores.get(hop2Id) ?? 0)) {
-          hop2Scores.set(hop2Id, hop2Score)
+        for (const relation of relationshipRelations(graph, hop1Id, hop2Id)) {
+          if (!relationAllowedForPolicy(expansionPolicy.hop2_relations, relation)) {
+            continue
+          }
+          const hop2Score = hop1Score * 0.5 * relationWeight(relation)
+          if (hop2Score > (hop2Scores.get(hop2Id) ?? 0)) {
+            hop2Scores.set(hop2Id, hop2Score)
+          }
         }
       }
 
@@ -5699,27 +5734,28 @@ function retrieveContextPass(
           if (seedIds.has(predecessorId) || hop1Ids.has(predecessorId)) {
             continue
           }
-          const relation = String(graph.edgeAttributes(predecessorId, hop1Id).relation ?? 'related_to')
           const predecessorCommunity = parseCommunityId(graph.nodeAttributes(predecessorId).community)
-          if (
-            !predecessorIsStructuralOwner(relation)
-            && !predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)
-          ) {
-            continue
-          }
-          if (!relationAllowedForPolicy(expansionPolicy.hop2_relations, relation)) {
-            continue
-          }
-          const hop2Score = hop1Score * 0.5 * relationWeight(relation)
-          if (hop2Score > (hop2Scores.get(predecessorId) ?? 0)) {
-            hop2Scores.set(predecessorId, hop2Score)
+          for (const relation of relationshipRelations(graph, predecessorId, hop1Id)) {
+            if (
+              !predecessorIsStructuralOwner(relation)
+              && !predecessorAllowedForPolicy(expansionPolicy.predecessor_mode, seedCommunity, predecessorCommunity)
+            ) {
+              continue
+            }
+            if (!relationAllowedForPolicy(expansionPolicy.hop2_relations, relation)) {
+              continue
+            }
+            const hop2Score = hop1Score * 0.5 * relationWeight(relation)
+            if (hop2Score > (hop2Scores.get(predecessorId) ?? 0)) {
+              hop2Scores.set(predecessorId, hop2Score)
+            }
           }
         }
       }
     }
 
     for (const [hop2Id, hop2Score] of [...hop2Scores.entries()]
-      .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || graph.degree(rightId) - graph.degree(leftId))
+      .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || graph.uniqueNeighborDegree(rightId) - graph.uniqueNeighborDegree(leftId))
       .slice(0, expansionPolicy.max_second_hop_adds)) {
       hopScores.set(hop2Id, Math.max(hopScores.get(hop2Id) ?? 0, hop2Score))
       hopDistances.set(hop2Id, 2)

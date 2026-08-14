@@ -107,10 +107,11 @@ describe('getCommunity', () => {
 })
 
 describe('graphStats', () => {
-  test('summarizes node, edge, and confidence counts', () => {
+  test('summarizes node, fact, and confidence counts', () => {
     const result = graphStats(makeGraph(), COMMUNITIES)
     expect(result).toContain('Nodes: 5')
-    expect(result).toContain('Edges: 3')
+    expect(result).toContain('Facts: 3')
+    expect(result).not.toContain('Edges:')
     expect(result).toContain('Communities: 3')
     expect(result).toContain('EXTRACTED')
     expect(result).toContain('INFERRED')

@@ -38,7 +38,7 @@ export function buildOverviewTopNodes(
     .map((nodeId) => ({
       id: nodeId,
       label: String(graph.nodeAttributes(nodeId).label ?? nodeId),
-      degree: graph.degree(nodeId),
+      degree: graph.uniqueNeighborDegree(nodeId),
       href: overviewNodeHref(communityPagesDirname, communityId, nodeId, pageMode),
     }))
     .sort((left, right) => right.degree - left.degree || left.label.localeCompare(right.label))

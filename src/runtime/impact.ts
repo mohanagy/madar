@@ -119,15 +119,21 @@ function impactNeighbors(graph: KnowledgeGraph, nodeId: string, edgeTypes: strin
   const candidates = new Map<string, TraversalCandidate>()
 
   for (const dependentId of graph.predecessors(nodeId)) {
-    const relation = edgeRelation(graph, dependentId, nodeId)
-    if (matchesEdgeType(relation, edgeTypes)) {
+    const relation = projectedImpactRelation(
+      edgeRelations(graph, dependentId, nodeId),
+      (candidate) => matchesEdgeType(candidate, edgeTypes),
+    )
+    if (relation !== null) {
       candidates.set(`pred:${dependentId}`, { neighborId: dependentId, relation })
     }
   }
 
   for (const successorId of graph.successors(nodeId)) {
-    const relation = edgeRelation(graph, nodeId, successorId)
-    if (forwardImpactRelation(relation) && matchesEdgeType(relation, edgeTypes)) {
+    const relation = projectedImpactRelation(
+      edgeRelations(graph, nodeId, successorId),
+      (candidate) => forwardImpactRelation(candidate) && matchesEdgeType(candidate, edgeTypes),
+    )
+    if (relation !== null) {
       candidates.set(`succ:${successorId}`, { neighborId: successorId, relation })
     }
   }
@@ -166,16 +172,26 @@ function parseCommunityId(raw: unknown): number | null {
   return null
 }
 
-function edgeRelation(graph: KnowledgeGraph, source: string, target: string): string {
-  try {
-    return String(graph.edgeAttributes(source, target).relation ?? 'related_to')
-  } catch {
-    try {
-      return String(graph.edgeAttributes(target, source).relation ?? 'related_to')
-    } catch {
-      return 'related_to'
-    }
+function edgeRelations(graph: KnowledgeGraph, source: string, target: string): readonly string[] {
+  const direct = [...new Set(graph.relationsBetween(source, target).map((relation) => relation || 'related_to'))]
+  if (direct.length > 0) {
+    return direct
   }
+  const reverse = [...new Set(graph.relationsBetween(target, source).map((relation) => relation || 'related_to'))]
+  return reverse.length > 0 ? reverse : ['related_to']
+}
+
+/** Impact nodes expose one relation, so project all eligible facts by a stable lexical policy. */
+function projectedImpactRelation(
+  relations: readonly string[],
+  eligible: (relation: string) => boolean,
+): string | null {
+  return relations.reduce<string | null>((selected, relation) => {
+    if (!eligible(relation)) {
+      return selected
+    }
+    return selected === null || relation.localeCompare(selected) < 0 ? relation : selected
+  }, null)
 }
 
 function matchesEdgeType(relation: string, edgeTypes: string[] | undefined): boolean {
@@ -398,8 +414,7 @@ export function callChains(
         continue
       }
 
-      const relation = edgeRelation(graph, current, neighbor)
-      if (!matchesEdgeType(relation, edgeTypes)) {
+      if (!edgeRelations(graph, current, neighbor).some((relation) => matchesEdgeType(relation, edgeTypes))) {
         continue
       }
 

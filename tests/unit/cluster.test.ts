@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import type { GraphRelationshipView } from '../../src/contracts/graph.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { buildFromJson } from '../../src/pipeline/build.js'
-import { cluster, cohesionScore, scoreAll } from '../../src/pipeline/cluster.js'
+import { _edgeWeight, cluster, cohesionScore, scoreAll } from '../../src/pipeline/cluster.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
@@ -101,5 +102,52 @@ describe('cluster', () => {
     const communities = cluster(graph)
     const scores = scoreAll(graph, communities)
     expect(new Set(Object.keys(scores))).toEqual(new Set(Object.keys(communities)))
+  })
+})
+
+// A stub satisfying only the `factsBetween` surface `_edgeWeight` reads. The real
+// KnowledgeGraph store cannot yet hold more than one fact per endpoint pair (that
+// lands in #657), so this simulates the future multi-fact shape directly to prove
+// `_edgeWeight` stays non-additive ahead of that migration.
+function graphWithFacts(facts: readonly Partial<GraphRelationshipView>[]): KnowledgeGraph {
+  return {
+    factsBetween: () => facts as readonly GraphRelationshipView[],
+  } as unknown as KnowledgeGraph
+}
+
+describe('_edgeWeight fact-multiplicity topology weight', () => {
+  it('does not inflate weight when multiple facts share one endpoint pair', () => {
+    const graph = graphWithFacts([{ weight: 2 }, { weight: 5 }, { weight: 3 }])
+    // A summing implementation would return 10; topology weight must stay the
+    // strongest single valid weight regardless of how many parallel facts exist.
+    expect(_edgeWeight(graph, 'a', 'b')).toBe(5)
+  })
+
+  it('ignores invalid weights among multiple facts and still returns the strongest valid one', () => {
+    const graph = graphWithFacts([{ weight: -1 }, { weight: Number.NaN }, { weight: 'bad' as unknown as number }, { weight: 4 }])
+    expect(_edgeWeight(graph, 'a', 'b')).toBe(4)
+  })
+
+  it('defaults every invalid or missing weight to 1 without summing them', () => {
+    const graph = graphWithFacts([{}, { weight: -1 }, { weight: 0 }])
+    // Three facts each defaulting to 1 must not sum to 3.
+    expect(_edgeWeight(graph, 'a', 'b')).toBe(1)
+  })
+
+  it('returns 0 for an endpoint pair with no facts', () => {
+    const graph = graphWithFacts([])
+    expect(_edgeWeight(graph, 'a', 'b')).toBe(0)
+  })
+
+  it('matches current single-fact behavior for a real endpoint pair with an explicit weight', () => {
+    const graph = new KnowledgeGraph()
+    graph.addEdge('a', 'b', { relation: 'calls', weight: 2.5 })
+    expect(_edgeWeight(graph, 'a', 'b')).toBe(2.5)
+  })
+
+  it('matches current single-fact behavior for a real endpoint pair with no weight attribute', () => {
+    const graph = new KnowledgeGraph()
+    graph.addEdge('a', 'b', { relation: 'calls' })
+    expect(_edgeWeight(graph, 'a', 'b')).toBe(1)
   })
 })

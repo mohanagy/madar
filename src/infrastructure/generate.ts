@@ -301,7 +301,7 @@ function retainedExtractionFromGraph(graph: KnowledgeGraph, removedSourceFiles: 
 
   const nodeIds = new Set(nodes.map((node) => node.id))
   const edges: ExtractionEdge[] = graph
-    .edgeEntries()
+    .factEntries()
     .filter(([source, target, attributes]) => {
       const sourceFile = sourceFileKey(attributes.source_file)
       return nodeIds.has(source) && nodeIds.has(target) && (!sourceFile || !removedSourceFiles.has(sourceFile))
@@ -349,7 +349,7 @@ function copyGraphWithDirection(graph: KnowledgeGraph, directed: boolean): Knowl
   for (const [nodeId, attributes] of graph.nodeEntries()) {
     copied.addNode(nodeId, attributes)
   }
-  for (const [source, target, attributes] of graph.edgeEntries()) {
+  for (const [source, target, attributes] of graph.factEntries()) {
     copied.addEdge(source, target, attributes)
   }
 
@@ -870,7 +870,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     }
   }
 
-  progress?.({ step: 'build', message: `Built graph: ${graph.numberOfNodes()} nodes, ${graph.numberOfEdges()} edges` })
+  progress?.({ step: 'build', message: `Built graph: ${graph.numberOfNodes()} nodes, ${graph.numberOfFacts()} edges` })
 
   progress?.({ step: 'cluster', message: 'Clustering communities...' })
   const communities = cluster(graph)
@@ -985,7 +985,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     extractedFiles,
     totalWords: detected.total_words,
     nodeCount: graph.numberOfNodes(),
-    edgeCount: graph.numberOfEdges(),
+    edgeCount: graph.numberOfFacts(),
     communityCount: Object.keys(communities).length,
     semanticAnomalyCount: semanticAnomalyList.length,
     changedFiles,

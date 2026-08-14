@@ -64,8 +64,8 @@ export function diffGraphs(baselineGraph: KnowledgeGraph, currentGraph: Knowledg
   const diff = graphDiff(baselineGraph, currentGraph)
   const lines = [
     `Graph diff: ${diff.summary}`,
-    `Before: ${pluralize(baselineGraph.numberOfNodes(), 'node')}, ${pluralize(baselineGraph.numberOfEdges(), 'edge')}`,
-    `After: ${pluralize(currentGraph.numberOfNodes(), 'node')}, ${pluralize(currentGraph.numberOfEdges(), 'edge')}`,
+    `Before: ${pluralize(baselineGraph.numberOfNodes(), 'node')}, ${pluralize(baselineGraph.numberOfFacts(), 'edge')}`,
+    `After: ${pluralize(currentGraph.numberOfNodes(), 'node')}, ${pluralize(currentGraph.numberOfFacts(), 'edge')}`,
   ]
 
   const sections = [

@@ -61,12 +61,12 @@ export function generate(
   root: string,
   suggestedQuestions: Array<{ type: string; question: string | null; why: string }> = [],
 ): string {
-  const confidences = graph.edgeEntries().map(([, , attributes]) => String(attributes.confidence ?? 'EXTRACTED'))
+  const confidences = graph.factEntries().map(([, , attributes]) => String(attributes.confidence ?? 'EXTRACTED'))
   const totalEdges = confidences.length || 1
   const extractedPercent = Math.round((confidences.filter((confidence) => confidence === 'EXTRACTED').length / totalEdges) * 100)
   const inferredPercent = Math.round((confidences.filter((confidence) => confidence === 'INFERRED').length / totalEdges) * 100)
   const ambiguousPercent = Math.round((confidences.filter((confidence) => confidence === 'AMBIGUOUS').length / totalEdges) * 100)
-  const inferredEdges = graph.edgeEntries().filter(([, , attributes]) => String(attributes.confidence ?? 'EXTRACTED') === 'INFERRED')
+  const inferredEdges = graph.factEntries().filter(([, , attributes]) => String(attributes.confidence ?? 'EXTRACTED') === 'INFERRED')
   const inferredScores = inferredEdges.map(([, , attributes]) => attributes.confidence_score).filter((value): value is number => typeof value === 'number')
   const inferredAverage = inferredScores.length > 0 ? Math.round((inferredScores.reduce((sum, value) => sum + value, 0) / inferredScores.length) * 100) / 100 : null
   const structure = graphStructureMetrics(graph)
@@ -105,7 +105,7 @@ export function generate(
 
   lines.push('')
   lines.push('## Summary')
-  lines.push(`- ${graph.numberOfNodes()} nodes · ${graph.numberOfEdges()} edges · ${Object.keys(communities).length} communities detected`)
+  lines.push(`- ${graph.numberOfNodes()} nodes · ${graph.numberOfFacts()} edges · ${Object.keys(communities).length} communities detected`)
   lines.push(
     `- Extraction: ${extractedPercent}% EXTRACTED · ${inferredPercent}% INFERRED · ${ambiguousPercent}% AMBIGUOUS` +
       (inferredAverage !== null ? ` · INFERRED: ${inferredEdges.length} edges (avg confidence: ${inferredAverage})` : ''),
@@ -200,7 +200,7 @@ export function generate(
     lines.push(`Nodes (${realNodes.length}): ${display.join(', ')}${suffix}`)
   }
 
-  const ambiguousEdges = graph.edgeEntries().filter(([, , attributes]) => String(attributes.confidence ?? 'EXTRACTED') === 'AMBIGUOUS')
+  const ambiguousEdges = graph.factEntries().filter(([, , attributes]) => String(attributes.confidence ?? 'EXTRACTED') === 'AMBIGUOUS')
   if (ambiguousEdges.length > 0) {
     lines.push('')
     lines.push('## Ambiguous Edges')

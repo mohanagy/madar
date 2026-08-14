@@ -98,12 +98,12 @@ function nodeSourceFile(graph: KnowledgeGraph, nodeId: string): string {
 }
 
 function nodeDegreeMap(graph: KnowledgeGraph): Map<string, number> {
-  return new Map(graph.nodeIds().map((nodeId) => [nodeId, graph.degree(nodeId)]))
+  return new Map(graph.nodeIds().map((nodeId) => [nodeId, graph.uniqueNeighborDegree(nodeId)]))
 }
 
 function edgeBetweenness(graph: KnowledgeGraph): Map<string, number> {
   const scores = new Map<string, number>()
-  for (const [source, target] of graph.edgeEntries()) {
+  for (const { source, target } of graph.endpointEntries()) {
     scores.set(edgePairKey(source, target), 0)
   }
 
@@ -258,7 +258,7 @@ export function _isFileNode(graph: KnowledgeGraph, nodeId: string): boolean {
     return true
   }
 
-  if (label.endsWith('()') && graph.degree(nodeId) <= 1) {
+  if (label.endsWith('()') && graph.uniqueNeighborDegree(nodeId) <= 1) {
     return true
   }
 
@@ -311,7 +311,7 @@ function analysisGraph(graph: KnowledgeGraph): KnowledgeGraph {
   for (const nodeId of nodeIds) {
     entityGraph.addNode(nodeId, graph.nodeAttributes(nodeId))
   }
-  for (const [sourceNodeId, targetNodeId, attributes] of graph.edgeEntries()) {
+  for (const [sourceNodeId, targetNodeId, attributes] of graph.factEntries()) {
     if (!nodeIdSet.has(sourceNodeId) || !nodeIdSet.has(targetNodeId)) {
       continue
     }
@@ -433,8 +433,8 @@ export function _surpriseScore(
     reasons.push('semantically similar concepts with no structural link')
   }
 
-  const sourceDegree = graph.degree(sourceNodeId)
-  const targetDegree = graph.degree(targetNodeId)
+  const sourceDegree = graph.uniqueNeighborDegree(sourceNodeId)
+  const targetDegree = graph.uniqueNeighborDegree(targetNodeId)
   if (Math.min(sourceDegree, targetDegree) <= 2 && Math.max(sourceDegree, targetDegree) >= 5) {
     score += 1
     const peripheralId = sourceDegree <= 2 ? sourceNodeId : targetNodeId
@@ -448,12 +448,12 @@ export function _surpriseScore(
 export function godNodes(graph: KnowledgeGraph, topN = 10): GodNode[] {
   return [...graph.nodeIds()]
     .filter((nodeId) => isAnalysisEntityNode(graph, nodeId))
-    .sort((left, right) => graph.degree(right) - graph.degree(left) || nodeLabel(graph, left).localeCompare(nodeLabel(graph, right)))
+    .sort((left, right) => graph.uniqueNeighborDegree(right) - graph.uniqueNeighborDegree(left) || nodeLabel(graph, left).localeCompare(nodeLabel(graph, right)))
     .slice(0, topN)
     .map((nodeId) => ({
       id: nodeId,
       label: nodeLabel(graph, nodeId),
-      edges: graph.degree(nodeId),
+      edges: graph.uniqueNeighborDegree(nodeId),
     }))
 }
 
@@ -513,8 +513,8 @@ export function graphStructureMetrics(graph: KnowledgeGraph): GraphStructureMetr
 
   const largestComponentNodes = Math.max(...componentSizes)
   const entityEdges = graph
-    .edgeEntries()
-    .filter(([sourceNodeId, targetNodeId]) => nodeIdSet.has(sourceNodeId) && nodeIdSet.has(targetNodeId)).length
+    .endpointEntries()
+    .filter(({ source, target }) => nodeIdSet.has(source) && nodeIdSet.has(target)).length
   const lowCohesionSignals = lowCohesionEntityCommunities(graph)
   const largestLowCohesionCommunity = lowCohesionSignals[0]
   return {
@@ -537,7 +537,7 @@ export function workspaceBridges(
   communityLabels: Record<number, string> = {},
   topN = 6,
 ): WorkspaceBridge[] {
-  if (topN <= 0 || graph.numberOfEdges() === 0 || Object.keys(communities).length === 0) {
+  if (topN <= 0 || graph.numberOfEndpointPairs() === 0 || Object.keys(communities).length === 0) {
     return []
   }
 
@@ -615,7 +615,7 @@ export function workspaceBridges(
 function crossFileSurprises(graph: KnowledgeGraph, communities: Communities, topN: number): SurprisingConnection[] {
   const nodeCommunity = _nodeCommunityMap(communities)
   const candidates = graph
-    .edgeEntries()
+    .factEntries()
     .map(([sourceNodeId, targetNodeId, edgeData]) => {
       const relation = String(edgeData.relation ?? '')
       if (relation === 'imports' || relation === 'imports_from' || relation === 'contains' || relation === 'method') {
@@ -658,7 +658,7 @@ function crossCommunitySurprises(graph: KnowledgeGraph, communities: Communities
   if (Object.keys(communities).length === 0) {
     const scores = edgeBetweenness(graph)
     return graph
-      .edgeEntries()
+      .factEntries()
       .map(([sourceNodeId, targetNodeId, edgeData]) => ({
         score: scores.get(edgePairKey(sourceNodeId, targetNodeId)) ?? 0,
         connection: {
@@ -685,7 +685,7 @@ function crossCommunitySurprises(graph: KnowledgeGraph, communities: Communities
   ])
 
   const candidates: Array<{ pair: string; priority: number; connection: SurprisingConnection }> = []
-  for (const [sourceNodeId, targetNodeId, edgeData] of graph.edgeEntries()) {
+  for (const [sourceNodeId, targetNodeId, edgeData] of graph.factEntries()) {
     const sourceCommunity = nodeCommunity[sourceNodeId]
     const targetCommunity = nodeCommunity[targetNodeId]
     const relation = String(edgeData.relation ?? '')
@@ -768,7 +768,7 @@ export function semanticAnomalies(graph: KnowledgeGraph, communities: Communitie
   const nodeCommunity = _nodeCommunityMap(communities)
   const candidates: SemanticAnomaly[] = []
 
-  if (graph.numberOfEdges() > 0 && graph.numberOfNodes() <= MAX_BETWEENNESS_ANALYSIS_NODES) {
+  if (graph.numberOfEndpointPairs() > 0 && graph.numberOfNodes() <= MAX_BETWEENNESS_ANALYSIS_NODES) {
     const bridges = [...nodeBetweenness(graph).entries()]
       .filter(([nodeId, score]) => isAnalysisEntityNode(graph, nodeId) && score > 0)
       .sort((left, right) => right[1] - left[1] || nodeLabel(graph, left[0]).localeCompare(nodeLabel(graph, right[0])))
@@ -854,7 +854,7 @@ export function suggestQuestions(graph: KnowledgeGraph, communities: Communities
   const questions: SuggestedQuestion[] = []
   const nodeCommunity = _nodeCommunityMap(communities)
 
-  for (const [sourceNodeId, targetNodeId, edgeData] of graph.edgeEntries()) {
+  for (const [sourceNodeId, targetNodeId, edgeData] of graph.factEntries()) {
     if (String(edgeData.confidence ?? 'EXTRACTED') !== 'AMBIGUOUS') {
       continue
     }
@@ -866,7 +866,7 @@ export function suggestQuestions(graph: KnowledgeGraph, communities: Communities
     })
   }
 
-  if (graph.numberOfEdges() > 0 && graph.numberOfNodes() <= MAX_BETWEENNESS_ANALYSIS_NODES) {
+  if (graph.numberOfEndpointPairs() > 0 && graph.numberOfNodes() <= MAX_BETWEENNESS_ANALYSIS_NODES) {
     const bridges = [...nodeBetweenness(graph).entries()]
       .filter(([nodeId, score]) => isAnalysisEntityNode(graph, nodeId) && score > 0)
       .sort((left, right) => right[1] - left[1] || nodeLabel(graph, left[0]).localeCompare(nodeLabel(graph, right[0])))
@@ -897,11 +897,11 @@ export function suggestQuestions(graph: KnowledgeGraph, communities: Communities
 
   const topNodes = [...graph.nodeIds()]
     .filter((nodeId) => isAnalysisEntityNode(graph, nodeId))
-    .sort((left, right) => graph.degree(right) - graph.degree(left) || nodeLabel(graph, left).localeCompare(nodeLabel(graph, right)))
+    .sort((left, right) => graph.uniqueNeighborDegree(right) - graph.uniqueNeighborDegree(left) || nodeLabel(graph, left).localeCompare(nodeLabel(graph, right)))
     .slice(0, 5)
 
   for (const nodeId of topNodes) {
-    const inferred = graph.edgeEntries().filter(([sourceNodeId, targetNodeId, edgeData]) => {
+    const inferred = graph.factEntries().filter(([sourceNodeId, targetNodeId, edgeData]) => {
       if (String(edgeData.confidence ?? 'EXTRACTED') !== 'INFERRED') {
         return false
       }
@@ -967,11 +967,12 @@ export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): G
   const newNodesList = [...newNodes].filter((nodeId) => !oldNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(newGraph, nodeId) }))
   const removedNodesList = [...oldNodes].filter((nodeId) => !newNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(oldGraph, nodeId) }))
 
-  const oldEdges = new Set(oldGraph.edgeEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), oldGraph.isDirected())))
-  const newEdges = new Set(newGraph.edgeEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), newGraph.isDirected())))
+  // #657 precondition: re-key graphDiff by stable fact identity so same-relation facts cannot collapse.
+  const oldEdges = new Set(oldGraph.factEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), oldGraph.isDirected())))
+  const newEdges = new Set(newGraph.factEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), newGraph.isDirected())))
 
   const newEdgesList = newGraph
-    .edgeEntries()
+    .factEntries()
     .filter(([source, target, attrs]) => !oldEdges.has(edgeKey(source, target, String(attrs.relation ?? ''), newGraph.isDirected())))
     .map(([source, target, attrs]) => ({
       source,
@@ -980,7 +981,7 @@ export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): G
       confidence: String(attrs.confidence ?? ''),
     }))
   const removedEdgesList = oldGraph
-    .edgeEntries()
+    .factEntries()
     .filter(([source, target, attrs]) => !newEdges.has(edgeKey(source, target, String(attrs.relation ?? ''), oldGraph.isDirected())))
     .map(([source, target, attrs]) => ({
       source,

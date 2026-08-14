@@ -5,7 +5,15 @@ import { join } from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { type Neo4jDependencies, pushGraphToNeo4j, resolveNeo4jPushConfig, sanitizeNeo4jLabel, sanitizeNeo4jRelation } from '../../src/infrastructure/neo4j.js'
+import {
+  assertNeo4jExportableFacts,
+  type Neo4jDependencies,
+  Neo4jUnsupportedFactMultiplicityError,
+  pushGraphToNeo4j,
+  resolveNeo4jPushConfig,
+  sanitizeNeo4jLabel,
+  sanitizeNeo4jRelation,
+} from '../../src/infrastructure/neo4j.js'
 
 function withTempDir<T>(callback: (tempDir: string) => T): T {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-neo4j-'))
@@ -137,6 +145,100 @@ describe('neo4j integration helpers', () => {
     })
     expect(sessionClose).toHaveBeenCalledTimes(1)
     expect(driverClose).toHaveBeenCalledTimes(1)
+  })
+
+  test('assertNeo4jExportableFacts accepts current one-fact-per-pair entries unchanged', () => {
+    expect(() =>
+      assertNeo4jExportableFacts([
+        ['auth', 'client', { relation: 'depends on' }],
+        ['auth', 'db', { relation: 'depends on' }],
+        // Same endpoints, different relation type: two distinct Neo4j relationship
+        // types, not a collision on the (endpoints, relation) MERGE key.
+        ['auth', 'client', { relation: 'calls' }],
+      ]),
+    ).not.toThrow()
+  })
+
+  test('assertNeo4jExportableFacts rejects multiple facts sharing endpoints and relation type', () => {
+    expect(() =>
+      assertNeo4jExportableFacts([
+        ['auth', 'client', { relation: 'depends on', confidence: 'EXTRACTED' }],
+        ['auth', 'client', { relation: 'depends on', confidence: 'INFERRED' }],
+      ]),
+    ).toThrow(Neo4jUnsupportedFactMultiplicityError)
+    expect(() =>
+      assertNeo4jExportableFacts([
+        ['auth', 'client', { relation: 'depends on' }],
+        ['auth', 'client', { relation: 'depends on' }],
+      ]),
+    ).toThrow('found 2 facts for auth -[DEPENDS_ON]-> client')
+  })
+
+  test('assertNeo4jExportableFacts rejects distinct raw relations that collide after normalization', () => {
+    expect(() =>
+      assertNeo4jExportableFacts([
+        ['auth', 'client', { relation: 'depends on' }],
+        ['auth', 'client', { relation: 'DEPENDS_ON' }],
+      ]),
+    ).toThrow('found 2 facts for auth -[DEPENDS_ON]-> client')
+  })
+
+  test('exports endpoint pairs that only collide under a space-joined multiplicity key', async () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addEdge('a', 'b c', { relation: 'CALLS' })
+    graph.addEdge('a b', 'c', { relation: 'CALLS' })
+
+    const run = vi.fn().mockResolvedValue({})
+    const createDriver: NonNullable<Neo4jDependencies['createDriver']> = async () => ({
+      session: () => ({
+        executeWrite: async (work) => work({ run }),
+        close: async () => undefined,
+      }),
+      close: async () => undefined,
+    })
+
+    await expect(
+      pushGraphToNeo4j(
+        graph,
+        { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'super-secret' },
+        { createDriver },
+      ),
+    ).resolves.toMatchObject({ nodes: 4, edges: 2 })
+    expect(run).toHaveBeenCalledWith(
+      expect.stringContaining('MERGE (a)-[r:CALLS]->(b)'),
+      expect.objectContaining({ src: 'a', tgt: 'b c' }),
+    )
+    expect(run).toHaveBeenCalledWith(
+      expect.stringContaining('MERGE (a)-[r:CALLS]->(b)'),
+      expect.objectContaining({ src: 'a b', tgt: 'c' }),
+    )
+  })
+
+  test('pushGraphToNeo4j refuses to write a graph it cannot export without collapsing facts, before touching the driver', async () => {
+    // The real KnowledgeGraph store cannot yet hold two facts for one endpoint pair
+    // (that lands in #657); stub only the surface pushGraphToNeo4j reads to exercise
+    // that future shape against today's guard.
+    const unsupportedGraph = {
+      nodeEntries: () => [
+        ['auth', { label: 'AuthService', file_type: 'code' }],
+        ['client', { label: 'HttpClient', file_type: 'code' }],
+      ],
+      factEntries: () => [
+        ['auth', 'client', { relation: 'depends on', confidence: 'EXTRACTED' }],
+        ['auth', 'client', { relation: 'depends on', confidence: 'INFERRED' }],
+      ],
+    } as unknown as KnowledgeGraph
+
+    const createDriver = vi.fn()
+
+    await expect(
+      pushGraphToNeo4j(
+        unsupportedGraph,
+        { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'super-secret', database: 'madar' },
+        { createDriver },
+      ),
+    ).rejects.toThrow(Neo4jUnsupportedFactMultiplicityError)
+    expect(createDriver).not.toHaveBeenCalled()
   })
 
   test('wraps connection failures with actionable neo4j context', async () => {

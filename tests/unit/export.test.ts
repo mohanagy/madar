@@ -1,8 +1,10 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { buildFromJson } from '../../src/pipeline/build.js'
+import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { Neo4jUnsupportedFactMultiplicityError } from '../../src/infrastructure/neo4j.js'
 import { cluster } from '../../src/pipeline/cluster.js'
 import { toCypher, toGraphml, toHtml, toJson, toObsidian, toSvg } from '../../src/pipeline/export.js'
 
@@ -79,6 +81,49 @@ describe('export', () => {
       const content = readFileSync(outputPath, 'utf8')
 
       expect(content).toContain('MERGE')
+    })
+  })
+
+  it('uses the Neo4j relation canonicalizer for missing, empty, and normalized Cypher relations', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addEdge('missing-source', 'missing-target', {})
+    graph.addEdge('empty-source', 'empty-target', { relation: '' })
+    graph.addEdge('normalized-source', 'normalized-target', { relation: ' depends---on ' })
+
+    withTempDir((tempDir) => {
+      const outputPath = join(tempDir, 'graph.cypher')
+      toCypher(graph, outputPath)
+      const content = readFileSync(outputPath, 'utf8')
+
+      expect(content.match(/\[:RELATED_TO /g)).toHaveLength(2)
+      expect(content).toContain("MATCH (a {id: 'normalized-source'}), (b {id: 'normalized-target'}) MERGE (a)-[:DEPENDS_ON ")
+      expect(content).not.toContain('RELATES_TO')
+    })
+  })
+
+  it('refuses to write cypher that would collapse multiple facts into one MERGE relationship', () => {
+    const unsupportedGraph = {
+      nodeEntries: () => [
+        ['auth', { label: 'AuthService', file_type: 'code' }],
+        ['client', { label: 'HttpClient', file_type: 'code' }],
+      ],
+      factEntries: () => [
+        ['auth', 'client', { relation: 'depends on', confidence: 'EXTRACTED' }],
+        ['auth', 'client', { relation: 'depends on', confidence: 'INFERRED' }],
+      ],
+    } as unknown as KnowledgeGraph
+
+    withTempDir((tempDir) => {
+      const outputPath = join(tempDir, 'graph.cypher')
+      let thrown: unknown
+      try {
+        toCypher(unsupportedGraph, outputPath)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(Neo4jUnsupportedFactMultiplicityError)
+      expect(existsSync(outputPath)).toBe(false)
     })
   })
 

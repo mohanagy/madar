@@ -1,5 +1,22 @@
 export type GraphAttributes = Record<string, unknown>
 
+export type GraphRelationshipView = Readonly<GraphAttributes>
+
+export type GraphRelationshipEntry = readonly [
+  source: string,
+  target: string,
+  attributes: GraphRelationshipView,
+]
+
+export interface GraphEndpointEntry {
+  readonly source: string
+  readonly target: string
+}
+
+export interface FactsBetweenOptions {
+  readonly relations?: readonly string[]
+}
+
 export interface KnowledgeGraphOptions {
   directed?: boolean
 }
@@ -8,6 +25,179 @@ interface StoredEdge {
   source: string
   target: string
   attributes: GraphAttributes
+}
+
+function functionValuePath(
+  value: unknown,
+  path: string,
+  seen = new WeakSet<object>(),
+): string | null {
+  if (typeof value === 'function') {
+    return path
+  }
+  if (value === null || typeof value !== 'object' || seen.has(value)) {
+    return null
+  }
+  seen.add(value)
+
+  if (
+    value instanceof Date
+    || ArrayBuffer.isView(value)
+    || value instanceof ArrayBuffer
+    || value instanceof SharedArrayBuffer
+  ) {
+    return null
+  }
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const match = functionValuePath(value[index], `${path}[${index}]`, seen)
+      if (match !== null) {
+        return match
+      }
+    }
+    return null
+  }
+  if (value instanceof Map) {
+    let index = 0
+    for (const [key, item] of value) {
+      const keyMatch = functionValuePath(key, `${path}.<map-key:${index}>`, seen)
+      if (keyMatch !== null) {
+        return keyMatch
+      }
+      const valueMatch = functionValuePath(item, `${path}.<map-value:${index}>`, seen)
+      if (valueMatch !== null) {
+        return valueMatch
+      }
+      index += 1
+    }
+    return null
+  }
+  if (value instanceof Set) {
+    let index = 0
+    for (const item of value) {
+      const match = functionValuePath(item, `${path}.<set-value:${index}>`, seen)
+      if (match !== null) {
+        return match
+      }
+      index += 1
+    }
+    return null
+  }
+
+  for (const [key, item] of Object.entries(value)) {
+    const match = functionValuePath(item, path ? `${path}.${key}` : key, seen)
+    if (match !== null) {
+      return match
+    }
+  }
+  return null
+}
+
+function assertGraphAttributesWritable(attributes: GraphAttributes): void {
+  const offendingKey = functionValuePath(attributes, '')
+  if (offendingKey !== null) {
+    throw new TypeError(`Graph attribute "${offendingKey}" cannot contain a function value`)
+  }
+}
+
+function isolatedArrayBufferView(value: ArrayBufferView): ArrayBufferView {
+  if (!(value.buffer instanceof SharedArrayBuffer)) {
+    return structuredClone(value)
+  }
+
+  const buffer = new ArrayBuffer(value.buffer.byteLength)
+  new Uint8Array(buffer).set(new Uint8Array(value.buffer))
+  if (value instanceof DataView) {
+    return new DataView(buffer, value.byteOffset, value.byteLength)
+  }
+
+  const TypedArray = value.constructor as new (
+    buffer: ArrayBuffer,
+    byteOffset: number,
+    length: number,
+  ) => ArrayBufferView
+  const bytesPerElement = (value as unknown as { readonly BYTES_PER_ELEMENT: number }).BYTES_PER_ELEMENT
+  return new TypedArray(buffer, value.byteOffset, value.byteLength / bytesPerElement)
+}
+
+/**
+ * Builds a detached projection of supported graph values. Functions are refused because an
+ * arbitrary closure cannot be cloned without retaining live state from the stored value.
+ */
+function immutableGraphValue(value: unknown, clones = new WeakMap<object, unknown>()): unknown {
+  if (typeof value === 'function') {
+    throw new TypeError('Cannot create an immutable graph projection for a function-valued attribute')
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return value
+  }
+
+  const existing = clones.get(value)
+  if (existing !== undefined) {
+    return existing
+  }
+
+  if (Array.isArray(value)) {
+    const clone: unknown[] = []
+    clones.set(value, clone)
+    clone.push(...value.map((item) => immutableGraphValue(item, clones)))
+    return Object.freeze(clone)
+  }
+
+  if (value instanceof Date) {
+    const clone = new Date(value)
+    clones.set(value, clone)
+    return clone
+  }
+
+  if (value instanceof Map) {
+    const clone = new Map<unknown, unknown>()
+    clones.set(value, clone)
+    for (const [key, item] of value) {
+      clone.set(immutableGraphValue(key, clones), immutableGraphValue(item, clones))
+    }
+    return clone
+  }
+
+  if (value instanceof Set) {
+    const clone = new Set<unknown>()
+    clones.set(value, clone)
+    for (const item of value) {
+      clone.add(immutableGraphValue(item, clones))
+    }
+    return clone
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    const clone = isolatedArrayBufferView(value)
+    clones.set(value, clone)
+    return clone
+  }
+
+  if (value instanceof ArrayBuffer) {
+    const clone = value.slice(0)
+    clones.set(value, clone)
+    return clone
+  }
+
+  if (value instanceof SharedArrayBuffer) {
+    const clone = new ArrayBuffer(value.byteLength)
+    new Uint8Array(clone).set(new Uint8Array(value))
+    clones.set(value, clone)
+    return clone
+  }
+
+  const clone: Record<string, unknown> = {}
+  clones.set(value, clone)
+  for (const [key, item] of Object.entries(value)) {
+    clone[key] = immutableGraphValue(item, clones)
+  }
+  return Object.freeze(clone)
+}
+
+function immutableGraphAttributes(attributes: GraphAttributes): GraphRelationshipView {
+  return immutableGraphValue(attributes) as GraphRelationshipView
 }
 
 export class KnowledgeGraph {
@@ -32,6 +222,7 @@ export class KnowledgeGraph {
   }
 
   addNode(id: string, attributes: GraphAttributes): void {
+    assertGraphAttributesWritable(attributes)
     this.nodeMap.set(id, { ...attributes })
     if (!this.successorMap.has(id)) {
       this.successorMap.set(id, new Set())
@@ -42,6 +233,7 @@ export class KnowledgeGraph {
   }
 
   addEdge(source: string, target: string, attributes: GraphAttributes): void {
+    assertGraphAttributesWritable(attributes)
     if (!this.nodeMap.has(source)) {
       this.addNode(source, {})
     }
@@ -77,10 +269,22 @@ export class KnowledgeGraph {
     return this.nodeMap.size
   }
 
-  numberOfEdges(): number {
+  /** Returns the number of semantic relationships represented by the current store. */
+  numberOfFacts(): number {
     return this.edgeMap.size
   }
 
+  /** Returns the number of unique endpoint pairs represented by the current store. */
+  numberOfEndpointPairs(): number {
+    return this.edgeMap.size
+  }
+
+  /** @deprecated Use numberOfFacts() or numberOfEndpointPairs() to state the intended semantics. */
+  numberOfEdges(): number {
+    return this.numberOfFacts()
+  }
+
+  /** Returns whether at least one relationship exists between the endpoints. */
   hasEdge(source: string, target: string): boolean {
     return this.edgeMap.has(this.edgeKey(source, target))
   }
@@ -93,18 +297,40 @@ export class KnowledgeGraph {
     return [...this.nodeMap.entries()].map(([id, attributes]) => [id, { ...attributes }])
   }
 
+  /**
+   * Returns every semantic relationship in deterministic insertion order.
+   * Relationship views and the returned collection cannot mutate graph state.
+   */
+  factEntries(): readonly GraphRelationshipEntry[] {
+    // #657 precondition: re-run N>1 characterization across every plural fact consumer.
+    return Object.freeze([...this.edgeMap.values()].map(({ source, target, attributes }) => Object.freeze([
+      source,
+      target,
+      immutableGraphAttributes(attributes),
+    ] as const)))
+  }
+
+  /** Returns unique endpoint pairs in deterministic insertion order. */
+  endpointEntries(): readonly GraphEndpointEntry[] {
+    return Object.freeze([...this.edgeMap.values()].map(({ source, target }) => Object.freeze({ source, target })))
+  }
+
+  /** @deprecated Use factEntries() for relationships or endpointEntries() for topology. */
   edgeEntries(): Array<[string, string, GraphAttributes]> {
     return [...this.edgeMap.values()].map(({ source, target, attributes }) => [source, target, { ...attributes }])
   }
 
+  /** Returns unique outgoing neighbors in stable insertion order. */
   neighbors(id: string): string[] {
     return [...(this.successorMap.get(id) ?? [])]
   }
 
+  /** Returns unique successors in stable insertion order. */
   successors(id: string): string[] {
     return this.neighbors(id)
   }
 
+  /** Returns unique predecessors in stable insertion order. */
   predecessors(id: string): string[] {
     return [...(this.predecessorMap.get(id) ?? [])]
   }
@@ -152,8 +378,14 @@ export class KnowledgeGraph {
     return neighbors
   }
 
-  degree(id: string): number {
+  /** Returns the number of unique incident neighbors for a node. */
+  uniqueNeighborDegree(id: string): number {
     return this.incidentNeighbors(id).length
+  }
+
+  /** @deprecated Use uniqueNeighborDegree() to state the intended topology semantics. */
+  degree(id: string): number {
+    return this.uniqueNeighborDegree(id)
   }
 
   nodeAttributes(id: string): GraphAttributes {
@@ -164,6 +396,39 @@ export class KnowledgeGraph {
     return { ...attributes }
   }
 
+  /**
+   * Returns every semantic relationship between two endpoints.
+   * The current endpoint-keyed store projects zero or one item; callers must accept many.
+   */
+  factsBetween(
+    source: string,
+    target: string,
+    options: FactsBetweenOptions = {},
+  ): readonly GraphRelationshipView[] {
+    const edge = this.edgeMap.get(this.edgeKey(source, target))
+    if (!edge) {
+      return Object.freeze([])
+    }
+
+    const relation = String(edge.attributes.relation ?? '')
+    if (options.relations && !new Set(options.relations).has(relation)) {
+      return Object.freeze([])
+    }
+
+    return Object.freeze([immutableGraphAttributes(edge.attributes)])
+  }
+
+  /** Returns unique relation values between two endpoints in stable fact order. */
+  relationsBetween(source: string, target: string): readonly string[] {
+    // #657 precondition: re-verify stable relation order against the new fact-ordering contract.
+    const relations = new Set<string>()
+    for (const fact of this.factsBetween(source, target)) {
+      relations.add(String(fact.relation ?? ''))
+    }
+    return Object.freeze([...relations])
+  }
+
+  /** @deprecated Use factsBetween() and process every returned relationship explicitly. */
   edgeAttributes(source: string, target: string): GraphAttributes {
     const edge = this.edgeMap.get(this.edgeKey(source, target))
     if (!edge) {
