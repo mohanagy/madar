@@ -224,6 +224,7 @@ describe('watch', () => {
         expect(refresh.startupComplete?.()).toBe(true)
         expect(refresh.initialRebuilt).toBe(false)
         expect(rebuild).not.toHaveBeenCalled()
+        await waitForWatcherStatus(generated.graphPath, 'idle')
         expect(readWatcherStateForGraph(generated.graphPath)).toMatchObject({
           status: 'idle',
           coverage: 'complete',
@@ -257,6 +258,7 @@ describe('watch', () => {
         expect(refresh.startupComplete?.()).toBe(true)
         expect(refresh.initialRebuilt).toBe(false)
         expect(rebuild).not.toHaveBeenCalled()
+        await waitForWatcherStatus(generated.graphPath, 'idle')
         expect(readWatcherStateForGraph(generated.graphPath)).toMatchObject({
           status: 'idle',
           coverage: 'complete',
@@ -367,7 +369,10 @@ describe('watch', () => {
         await refresh.startupSettled
         expect(refresh.startupComplete?.()).toBe(true)
         expect(refresh.initialRebuilt).toBe(true)
-        expect(readWatcherStateForGraph(generated.graphPath)?.status).toBe('idle')
+        // `startupSettled` is a promise about startup, not about the watcher having
+        // quiesced. Contention must resolve to a settled `idle`; requiring it to be
+        // idle the instant startup settles asserts scheduling, not behaviour.
+        await waitForWatcherStatus(generated.graphPath, 'idle')
       } finally {
         releaseOwner?.()
         refresh.stop()
@@ -400,7 +405,9 @@ describe('watch', () => {
         expect(existsSync(workspace.graphPath)).toBe(true)
         expect(existsSync(join(workspace.outputDir, 'watcher-state.json'))).toBe(true)
         expect(existsSync(join(linked, 'out'))).toBe(false)
-        expect(readWatcherStateForGraph(workspace.graphPath)?.status).toBe('idle')
+        // `git worktree add` has just written the whole linked checkout, so the watcher
+        // may still observe that activity when it attaches. Wait for the settled state.
+        await waitForWatcherStatus(workspace.graphPath, 'idle')
 
         writeFileSync(join(linked, 'added.ts'), 'export const linkedValue = 2\n', 'utf8')
         await waitFor(() => {
@@ -1268,7 +1275,11 @@ async function withTempDirAsync(callback: (tempDir: string) => Promise<void>): P
   }
 }
 
-async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
+async function waitFor(
+  condition: () => boolean,
+  timeoutMs = 5_000,
+  describe: () => string = () => 'graph refresh',
+): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     if (condition()) {
@@ -1276,5 +1287,20 @@ async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<voi
     }
     await delay(25)
   }
-  throw new Error('Timed out waiting for graph refresh')
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for ${describe()}`)
+}
+
+/**
+ * The persisted watcher status is written by a live poll loop, so reading it once is
+ * a sample rather than an assertion. A change observed during startup legitimately
+ * persists `pending` before the watcher settles, and whether such a change is observed
+ * depends on the platform's filesystem-event timing. Wait for the required status
+ * instead, and name the last observed one when the wait times out.
+ */
+async function waitForWatcherStatus(graphPath: string, expected: string): Promise<void> {
+  await waitFor(
+    () => readWatcherStateForGraph(graphPath)?.status === expected,
+    5_000,
+    () => `watcher status '${expected}' (last observed '${readWatcherStateForGraph(graphPath)?.status ?? 'none'}')`,
+  )
 }
