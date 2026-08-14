@@ -13,6 +13,12 @@ export interface CanonicalJsonOptions {
    * order is semantic or the array represents a set.
    */
   readonly arraySemantics?: CanonicalArraySemantics
+  /**
+   * Exceptional schema-declared object orders. An order is used only when an
+   * object's keys exactly match the declared key set; every other object keeps
+   * the canonical Unicode code-point order.
+   */
+  readonly fixedObjectKeyOrders?: readonly (readonly string[])[]
 }
 
 const ARRAY_SEMANTICS = Symbol('madar.canonical-json.array-semantics')
@@ -59,21 +65,37 @@ function canonicalArray(
   values: readonly unknown[],
   semantics: CanonicalArraySemantics,
   ancestors: ReadonlySet<object>,
+  options: CanonicalJsonOptions,
 ): readonly CanonicalJson[] {
-  const normalized = values.map((value) => normalizeCanonicalJson(value, { arraySemantics: semantics }, ancestors))
+  const normalized = values.map((value) => normalizeCanonicalJson(value, {
+    ...options,
+    arraySemantics: semantics,
+  }, ancestors))
   if (semantics === 'ordered') {
     return normalized
   }
 
   const unique = new Map<string, { readonly bytes: Buffer; readonly value: CanonicalJson }>()
   for (const value of normalized) {
-    const bytes = Buffer.from(serializeNormalizedCanonicalJson(value), 'utf8')
+    const bytes = Buffer.from(serializeNormalizedCanonicalJson(value, options), 'utf8')
     unique.set(bytes.toString('hex'), { bytes, value })
   }
 
   return [...unique.values()]
     .sort((left, right) => Buffer.compare(left.bytes, right.bytes))
     .map((entry) => entry.value)
+}
+
+function orderedObjectKeys(keys: readonly string[], options: CanonicalJsonOptions): readonly string[] {
+  for (const declaredOrder of options.fixedObjectKeyOrders ?? []) {
+    if (
+      declaredOrder.length === keys.length
+      && declaredOrder.every((key) => keys.includes(key))
+    ) {
+      return declaredOrder
+    }
+  }
+  return [...keys].sort(compareUnicodeCodePoints)
 }
 
 function assertPlainJsonObject(value: object): asserts value is Record<string, unknown> {
@@ -124,13 +146,13 @@ export function normalizeCanonicalJson(
   nextAncestors.add(value)
 
   if (isCanonicalArrayInput(value)) {
-    return canonicalArray(value.values, value[ARRAY_SEMANTICS], nextAncestors)
+    return canonicalArray(value.values, value[ARRAY_SEMANTICS], nextAncestors, options)
   }
   if (Array.isArray(value)) {
     if (options.arraySemantics === undefined) {
       throw new TypeError('Canonical JSON arrays require explicit ordered or set-like semantics')
     }
-    return canonicalArray(value, options.arraySemantics, nextAncestors)
+    return canonicalArray(value, options.arraySemantics, nextAncestors, options)
   }
 
   assertPlainJsonObject(value)
@@ -144,7 +166,7 @@ export function normalizeCanonicalJson(
   }
 
   const normalized: Record<string, CanonicalJson> = Object.create(null) as Record<string, CanonicalJson>
-  for (const key of [...normalizedEntries.keys()].sort(compareUnicodeCodePoints)) {
+  for (const key of orderedObjectKeys([...normalizedEntries.keys()], options)) {
     const item = normalizedEntries.get(key)
     if (item !== undefined) {
       normalized[key] = item
@@ -153,22 +175,22 @@ export function normalizeCanonicalJson(
   return normalized
 }
 
-function serializeNormalizedCanonicalJson(value: CanonicalJson): string {
+function serializeNormalizedCanonicalJson(value: CanonicalJson, options: CanonicalJsonOptions): string {
   if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
     return JSON.stringify(value)
   }
   if (Array.isArray(value)) {
-    return `[${value.map(serializeNormalizedCanonicalJson).join(',')}]`
+    return `[${value.map((item) => serializeNormalizedCanonicalJson(item, options)).join(',')}]`
   }
 
   const object = value as { readonly [key: string]: CanonicalJson }
-  const keys = Object.keys(object).sort(compareUnicodeCodePoints)
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${serializeNormalizedCanonicalJson(object[key]!)}`).join(',')}}`
+  const keys = orderedObjectKeys(Object.keys(object), options)
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${serializeNormalizedCanonicalJson(object[key]!, options)}`).join(',')}}`
 }
 
 /** Returns deterministic canonical JSON text without a trailing newline. */
 export function serializeCanonicalJson(value: unknown, options: CanonicalJsonOptions = {}): string {
-  return serializeNormalizedCanonicalJson(normalizeCanonicalJson(value, options))
+  return serializeNormalizedCanonicalJson(normalizeCanonicalJson(value, options), options)
 }
 
 /** Returns deterministic UTF-8 bytes for the canonical JSON representation. */

@@ -66,6 +66,8 @@ export interface GraphAddEdgeOptions {
   readonly discriminator?: SemanticDiscriminator
   readonly recordOccurrence?: boolean
   readonly occurrence?: EvidenceOccurrenceDraft
+  /** @internal Only the artifact compatibility loader may admit legacy discriminators. */
+  readonly legacyCompatibility?: 'v1-artifact-loader'
 }
 
 export type GraphEdgeAdmissionResult =
@@ -425,15 +427,26 @@ export class KnowledgeGraph {
 
     const relation = typeof attributes.relation === 'string' ? attributes.relation : ''
     const resolution = resolveRelationDiscriminator(relation)
-    if (resolution.status === 'unregistered') {
+    const legacyDiscriminator = options.discriminator?.legacy === true ? options.discriminator : null
+    if (legacyDiscriminator !== null && options.legacyCompatibility !== 'v1-artifact-loader') {
+      throw new GraphAdmissionError('Legacy semantic facts may only enter through the v1 artifact compatibility path')
+    }
+    if (resolution.status === 'unregistered' && legacyDiscriminator === null) {
       return Object.freeze({
         status: 'unresolved_degraded' as const,
         relation,
         reasons: resolution.reasons,
       })
     }
-    if (!isRegisteredRelation(relation)) {
+    if (!isRegisteredRelation(relation) && legacyDiscriminator === null) {
       throw new GraphAdmissionError(`Registered discriminator resolution disagrees for relation ${JSON.stringify(relation)}`)
+    }
+
+    const discriminator = legacyDiscriminator
+      ?? options.discriminator
+      ?? (resolution.status === 'registered' ? resolution.discriminator : null)
+    if (discriminator === null) {
+      throw new GraphAdmissionError('Legacy discriminator resolution failed')
     }
 
     const fact = createSemanticFact({
@@ -441,7 +454,7 @@ export class KnowledgeGraph {
       source,
       target,
       relation,
-      discriminator: options.discriminator ?? resolution.discriminator,
+      discriminator,
       endpointIdentity: {
         source: endpointQualifications[0]!,
         target: endpointQualifications[1]!,

@@ -1,6 +1,6 @@
 import type { CanonicalJson } from './canonical-json.js'
 import type { EndpointIdentityQualification } from './endpoint-identity.js'
-import type { RegisteredRelation, SemanticDiscriminator } from './relation-discriminator.js'
+import type { SemanticDiscriminator } from './relation-discriminator.js'
 
 export type NodeId = string
 export type SemanticFactId = `sf_${string}`
@@ -22,7 +22,8 @@ export interface SemanticFact {
   readonly direction: SemanticFactDirection
   readonly source: NodeId
   readonly target: NodeId
-  readonly relation: RegisteredRelation
+  /** Native facts use a registered relation; v1 compatibility facts may retain a historical relation string. */
+  readonly relation: string
   readonly discriminator: SemanticDiscriminator
   readonly endpointIdentity: EndpointIdentityQualification
   readonly occurrenceIds: readonly EvidenceOccurrenceId[]

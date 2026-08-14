@@ -115,6 +115,13 @@ function validateEndpoint(
     }
     reasons.push(reason as EndpointIdentityReason)
   }
+  const stableReasons = [...new Set(reasons)].sort()
+  if (
+    reasons.length !== stableReasons.length
+    || reasons.some((reason, index) => reason !== stableReasons[index])
+  ) {
+    throw new EndpointIdentityInvariantError(`${endpoint} reasons must be stable-sorted and unique`)
+  }
 
   const status = value.status as EndpointIdentityStatus
   assertEndpointStatusConsistency(endpoint, status, reasons)

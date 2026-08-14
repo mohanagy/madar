@@ -1,6 +1,8 @@
 import { normalizeCanonicalJson, serializeCanonicalJson, type CanonicalJson } from './canonical-json.js'
 
 export const RELATION_DISCRIMINATOR_REGISTRY_ID = 'madar.relation-discriminator-registry/1' as const
+export const LEGACY_RELATION_DISCRIMINATOR_POLICY_VERSION = 0 as const
+export const LEGACY_PARALLEL_FACTS_UNRECOVERABLE = 'legacy_parallel_facts_unrecoverable' as const
 
 export const REGISTERED_RELATIONS = Object.freeze([
   'cites',
@@ -56,6 +58,31 @@ export interface SemanticDiscriminator {
   readonly completeness: SemanticDiscriminatorCompleteness
   readonly canonicalValue: CanonicalJson
   readonly reasons: readonly string[]
+  /** Present only on facts converted independently from a v1 link. */
+  readonly legacy?: true
+}
+
+export function createLegacyRelationDiscriminator(
+  linkFingerprint: string,
+  duplicateOrdinal: number,
+): SemanticDiscriminator {
+  if (!/^[a-f0-9]{64}$/.test(linkFingerprint)) {
+    throw new RelationDiscriminatorInvariantError('legacy link fingerprint must be full lowercase SHA-256 hex')
+  }
+  if (!Number.isSafeInteger(duplicateOrdinal) || duplicateOrdinal < 0) {
+    throw new RelationDiscriminatorInvariantError('legacy duplicate ordinal must be a non-negative safe integer')
+  }
+  return Object.freeze({
+    registryId: RELATION_DISCRIMINATOR_REGISTRY_ID,
+    policyVersion: LEGACY_RELATION_DISCRIMINATOR_POLICY_VERSION,
+    completeness: 'partial' as const,
+    canonicalValue: Object.freeze({
+      legacy_link_fingerprint: linkFingerprint,
+      legacy_duplicate_ordinal: duplicateOrdinal,
+    }),
+    reasons: Object.freeze([LEGACY_PARALLEL_FACTS_UNRECOVERABLE]),
+    legacy: true as const,
+  })
 }
 
 export class RelationDiscriminatorInvariantError extends Error {

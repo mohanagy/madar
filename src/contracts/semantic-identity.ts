@@ -7,10 +7,11 @@ import {
   type EndpointIdentityQualification,
 } from './endpoint-identity.js'
 import {
+  LEGACY_PARALLEL_FACTS_UNRECOVERABLE,
+  LEGACY_RELATION_DISCRIMINATOR_POLICY_VERSION,
   RELATION_DISCRIMINATOR_REGISTRY_ID,
   RELATION_DISCRIMINATOR_REGISTRY_V1,
   isRegisteredRelation,
-  type RegisteredRelation,
   type SemanticDiscriminator,
 } from './relation-discriminator.js'
 import type {
@@ -51,7 +52,7 @@ export interface SemanticFactIdentityInput {
   readonly direction: SemanticFactDirection
   readonly source: string
   readonly target: string
-  readonly relation: RegisteredRelation
+  readonly relation: string
   readonly discriminator: SemanticDiscriminator
   readonly [excludedFromIdentity: string]: unknown
 }
@@ -111,9 +112,33 @@ function normalizedEndpoints(input: Pick<SemanticFactIdentityInput, 'direction' 
 function assertDiscriminatorMatchesRegistry(
   relation: string,
   discriminator: SemanticDiscriminator,
-): asserts relation is RegisteredRelation {
+): void {
+  if (discriminator.legacy === true) {
+    const canonicalValue = discriminator.canonicalValue
+    const legacyValue = canonicalValue as { readonly [key: string]: unknown }
+    if (
+      discriminator.registryId !== RELATION_DISCRIMINATOR_REGISTRY_ID
+      || discriminator.policyVersion !== LEGACY_RELATION_DISCRIMINATOR_POLICY_VERSION
+      || discriminator.completeness !== 'partial'
+      || discriminator.reasons.length !== 1
+      || discriminator.reasons[0] !== LEGACY_PARALLEL_FACTS_UNRECOVERABLE
+      || canonicalValue === null
+      || typeof canonicalValue !== 'object'
+      || Array.isArray(canonicalValue)
+      || !/^[a-f0-9]{64}$/.test(String(legacyValue.legacy_link_fingerprint ?? ''))
+      || !Number.isSafeInteger(legacyValue.legacy_duplicate_ordinal)
+      || (legacyValue.legacy_duplicate_ordinal as number) < 0
+      || Object.keys(canonicalValue).sort().join(',') !== 'legacy_duplicate_ordinal,legacy_link_fingerprint'
+    ) {
+      throw new SemanticIdentityInvariantError('legacy discriminator is malformed')
+    }
+    return
+  }
   if (!isRegisteredRelation(relation)) {
     throw new SemanticIdentityInvariantError(`relation ${JSON.stringify(relation)} is not registered`)
+  }
+  if (discriminator.legacy !== undefined) {
+    throw new SemanticIdentityInvariantError('discriminator legacy marker must be true when present')
   }
   const policy = RELATION_DISCRIMINATOR_REGISTRY_V1[relation]
   if (discriminator.registryId !== RELATION_DISCRIMINATOR_REGISTRY_ID) {
@@ -156,6 +181,7 @@ function semanticFactPayload(input: SemanticFactIdentityInput): Buffer {
     discriminatorPolicyVersion: input.discriminator.policyVersion,
     discriminatorCompleteness: input.discriminator.completeness,
     discriminatorValue: input.discriminator.canonicalValue,
+    ...(input.discriminator.legacy === true ? { discriminatorLegacy: true } : {}),
   }, { arraySemantics: 'ordered' })
 }
 
