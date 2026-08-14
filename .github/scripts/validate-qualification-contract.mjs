@@ -74,8 +74,21 @@ if (!Array.isArray(corpus.proxy_targets)) {
   fail('corpus.json must declare a proxy_targets list, even when empty')
 }
 
+// `kind` and `holdout_class` describe the same distinction and are read by different
+// consumers — this validator used `kind`, the contract test used `holdout_class`. A target
+// that sets only one of them would be classified differently by each, so require both and
+// require them to agree, and derive the single predicate from that pair.
+const isSealedTarget = (target) => target.kind === 'sealed' || target.holdout_class === 'sealed'
+
 for (const target of corpus.targets) {
-  if (target.kind === 'sealed') {
+  if ((target.kind === 'sealed') !== (target.holdout_class === 'sealed')) {
+    fail(
+      `target ${target.id} disagrees with itself: kind=${JSON.stringify(target.kind)} but `
+        + `holdout_class=${JSON.stringify(target.holdout_class)}; a sealed target must declare both`,
+    )
+  }
+
+  if (isSealedTarget(target)) {
     if (target.status !== 'unsatisfied') {
       fail(`sealed target ${target.id} must stay unsatisfied until a second person fills it`)
     }
@@ -196,7 +209,17 @@ for (const task of tasks.tasks) {
   if (truth.contract_version !== CONTRACT_VERSION) fail(`${task.truth_ref} declares contract_version ${truth.contract_version}`)
 
   // Independence: truth must not be derived from Madar output.
-  for (const provenance of [task.truth_provenance, truth.provenance]) {
+  // Record a failure rather than dereferencing an absent block: this validator exists to
+  // print the complete list of contract problems, and a TypeError here would replace that
+  // list with a stack trace on exactly the malformed documents it is meant to describe.
+  for (const [source, provenance] of [
+    [`task ${task.id} truth_provenance`, task.truth_provenance],
+    [`${task.truth_ref} provenance`, truth.provenance],
+  ]) {
+    if (provenance === null || typeof provenance !== 'object') {
+      fail(`${source} is missing; truth independence cannot be established`)
+      continue
+    }
     if (provenance.inspected_madar_output_before_freeze !== false) {
       fail(`task ${task.id} truth provenance claims Madar output was inspected before freezing`)
     }
@@ -312,8 +335,12 @@ for (const path of walk(join(ROOT, 'examples'))) {
   const receipt = readJson(path)
   const label = relative(process.cwd(), path)
 
+  // A receipt that failed schema validation has no guaranteed shape, so reading
+  // `receipt.validity` or `receipt.scores` below would throw before the collected failures
+  // are printed. Report the schema failure and move on to the next receipt.
   if (!validateReceipt(receipt)) {
     fail(`${label} does not satisfy receipt-schema.json: ${ajv.errorsText(validateReceipt.errors)}`)
+    continue
   }
   if (receipt.validity.status !== 'valid' && receipt.validity.aggregatable !== false) {
     fail(`${label} is not valid but is marked aggregatable`)
@@ -390,7 +417,7 @@ for (const path of walk(PRODUCTION_ROOT)) {
 
 if (VERIFY_CORPUS) {
   for (const target of corpus.targets) {
-    if (target.kind === 'sealed') {
+    if (isSealedTarget(target)) {
       continue
     }
 
@@ -441,17 +468,10 @@ const digests = Object.fromEntries(
   frozenFiles.map((path) => [path, sha256(readFileSync(resolve(path)))]),
 )
 
-if (WRITE) {
-  const freeze = {
-    contract_version: CONTRACT_VERSION,
-    frozen_at: corpus.frozen_at,
-    algorithm: 'sha256 over raw file bytes',
-    note: 'Regenerate deliberately with `npm run qualify:validate -- --write` and say why in the pull request. A silent digest change is a contract change.',
-    files: digests,
-  }
-  writeFileSync(FREEZE_PATH, `${JSON.stringify(freeze, null, 2)}\n`)
-  console.log(`wrote ${relative(process.cwd(), FREEZE_PATH)} with ${frozenFiles.length} entries`)
-} else {
+// The freeze map is only computed here. Writing it is deferred until after the failure
+// gate below, so that `--write` on a contract with problems cannot leave a freeze.json on
+// disk that blesses the inconsistent state and then reads back clean on the next plain run.
+if (!WRITE) {
   let freeze
   try {
     freeze = readJson(FREEZE_PATH)
@@ -490,10 +510,25 @@ if (failures.length > 0) {
   for (const failure of failures) {
     console.error(`  - ${failure}`)
   }
+  if (WRITE) {
+    console.error(`freeze.json was NOT written: a freeze must only ever record a consistent contract.`)
+  }
   process.exit(1)
 }
 
-const naturalTargets = corpus.targets.filter((target) => target.kind !== 'sealed')
+if (WRITE) {
+  const freeze = {
+    contract_version: CONTRACT_VERSION,
+    frozen_at: corpus.frozen_at,
+    algorithm: 'sha256 over raw file bytes',
+    note: 'Regenerate deliberately with `npm run qualify:validate -- --write` and say why in the pull request. A silent digest change is a contract change.',
+    files: digests,
+  }
+  writeFileSync(FREEZE_PATH, `${JSON.stringify(freeze, null, 2)}\n`)
+  console.log(`wrote ${relative(process.cwd(), FREEZE_PATH)} with ${frozenFiles.length} entries`)
+}
+
+const naturalTargets = corpus.targets.filter((target) => !isSealedTarget(target))
 
 console.log(
   `qualification contract v${CONTRACT_VERSION} is consistent: ` +
