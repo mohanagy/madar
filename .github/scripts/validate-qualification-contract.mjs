@@ -23,6 +23,12 @@ function fail(message) {
   failures.push(message)
 }
 
+// Validator output must be byte-identical across platforms: it is compared in tests and
+// read in CI logs, and `relative()` yields backslashes on Windows. Normalise once, here.
+function relPath(path) {
+  return relative(process.cwd(), path).split('\\').join('/')
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'))
 }
@@ -363,7 +369,7 @@ const validateReceipt = ajv.compile(receiptSchema)
 
 for (const path of walk(join(ROOT, 'examples'))) {
   const receipt = readJson(path)
-  const label = relative(process.cwd(), path)
+  const label = relPath(path)
 
   // A receipt that failed schema validation has no guaranteed shape, so reading
   // `receipt.validity` or `receipt.scores` below would throw before the collected failures
@@ -454,7 +460,7 @@ for (const path of walk(PRODUCTION_ROOT)) {
   const content = readFileSync(path, 'utf8')
   for (const literal of FORBIDDEN_LITERALS) {
     if (content.includes(literal)) {
-      fail(`production file ${relative(process.cwd(), path)} contains qualification literal "${literal}"`)
+      fail(`production file ${relPath(path)} contains qualification literal "${literal}"`)
     }
   }
 }
@@ -509,7 +515,7 @@ if (VERIFY_CORPUS) {
 
 const frozenFiles = walk(ROOT)
   .filter((path) => path !== FREEZE_PATH)
-  .map((path) => relative(process.cwd(), path).split('\\').join('/'))
+  .map((path) => relPath(path))
   .sort()
 
 const digests = Object.fromEntries(
@@ -573,7 +579,7 @@ if (WRITE) {
     files: digests,
   }
   writeFileSync(FREEZE_PATH, `${JSON.stringify(freeze, null, 2)}\n`)
-  console.log(`wrote ${relative(process.cwd(), FREEZE_PATH)} with ${frozenFiles.length} entries`)
+  console.log(`wrote ${relPath(FREEZE_PATH)} with ${frozenFiles.length} entries`)
 }
 
 const naturalTargets = corpus.targets.filter((target) => !isSealedTarget(target))
