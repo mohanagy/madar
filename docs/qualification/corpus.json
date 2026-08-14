@@ -14,6 +14,8 @@
     "hono": ["SmartRouter", "UnsupportedPathError", "RegExpRouter", "TrieRouter"],
     "unstorage": ["createStorage", "DriverFactory", "createRequiredError"]
   },
+  "patch_path_base": "docs/qualification/",
+  "patch_path_base_note": "Every `patch` value in this file, and every `patches/...` reference in the truth files and in tasks.json, is resolved against this directory and nowhere else — not against the repository root and not against the file that mentions it. `npm run qualify:validate` resolves them this way. The base is stated because validity-rules.md invalidates a run whose patch fails to apply, so an ambiguous base would turn a path convention into an invalidation.",
   "proxy_targets": [],
   "proxy_targets_note": "This list is intentionally empty. A fixture proxy is permitted only where a natural repository genuinely cannot supply a task category; all six required categories are supplied by the natural targets below. Any future entry here must be labelled a proxy and must carry the statement that proxies cannot satisfy the naturalness property.",
   "targets": [

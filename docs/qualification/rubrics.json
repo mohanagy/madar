@@ -4,7 +4,7 @@
   "dimensions": {
     "correctness": {
       "definition": "Every assertion the answer makes about the target is true of the pinned source.",
-      "scale": { "0": "contains a false assertion about the target", "1": "no false assertions, but material gaps", "2": "no false assertions" },
+      "scale": { "0": "contains a false assertion about the target", "1": "no false assertions, but at least one assertion a blinded reviewer cannot verify either way against the pinned source", "2": "no false assertions, and every assertion is verifiable against the pinned source" },
       "scored_by": "blinded_human",
       "tiers": [2],
       "gating": true
@@ -62,8 +62,8 @@
       "inputs": ["the context artifact produced for the frozen prompt", "the task truth file's tier1_obligations"],
       "procedure": [
         "Collect the evidence set (paths and symbols) the artifact presents as supporting material.",
-        "required_evidence_paths recall must be >= min_critical_fact_recall.",
-        "required_evidence_symbols recall must be >= min_critical_fact_recall.",
+        "required_evidence_paths recall must be >= min_critical_fact_recall. Paths are compared as exact repository-relative strings.",
+        "required_evidence_symbols recall must be >= min_critical_fact_recall. Symbols are compared on their LAST dot-separated segment, case-sensitively, after stripping a leading '#': the truth files record obligations bare (`fetch`, `dispatch`, `Context`) while evidence entries qualify them by owner (`Hono.fetch`, `Hono.#dispatch`, `compose.dispatch`), and an exact-string comparison would never match those pairs. `Hono.fetch` therefore satisfies the obligation `fetch`; `getPath` satisfies `getPath`. Two different owners exposing the same member name are treated as one obligation, which is accepted: the obligation asks whether the evidence for that member was surfaced at all.",
         "Every path cited by the artifact must exist in the pinned target.",
         "If any must_not_report_ready_when condition holds, the artifact must not report a ready state."
       ],

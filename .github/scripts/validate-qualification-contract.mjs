@@ -7,6 +7,10 @@ import { join, relative, resolve } from 'node:path'
 import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
 
+import citedPathCollector from './lib/collect-cited-paths.cjs'
+
+const { collectCitedPaths } = citedPathCollector
+
 const ROOT = resolve('docs/qualification')
 const FREEZE_PATH = join(ROOT, 'freeze.json')
 const PRODUCTION_ROOT = resolve('src')
@@ -238,23 +242,9 @@ for (const task of tasks.tasks) {
   }
 
   // Every cited evidence path must be recorded in the target's frozen blob map.
-  // `new_path` is used for files a plan proposes creating and is intentionally exempt.
-  const citedPaths = new Set()
-  const collect = (node) => {
-    if (Array.isArray(node)) {
-      node.forEach(collect)
-      return
-    }
-    if (node && typeof node === 'object') {
-      for (const [key, value] of Object.entries(node)) {
-        if (key === 'path' && typeof value === 'string') citedPaths.add(value)
-        else if (key !== 'new_path') collect(value)
-      }
-    }
-  }
-  collect(truth)
-
-  for (const cited of citedPaths) {
+  // The traversal, including the `new_path` exemption, is shared with
+  // tests/unit/qualification-contract.test.ts so the two cannot drift apart.
+  for (const cited of collectCitedPaths(truth)) {
     if (!(cited in (target.cited_blobs ?? {}))) {
       fail(`${task.truth_ref} cites ${cited}, which is not recorded in target ${target.id} cited_blobs`)
     }

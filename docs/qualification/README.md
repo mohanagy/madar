@@ -71,7 +71,7 @@ recreated inside a synthetic workspace built around the answer.
 | [`corpus.json`](./corpus.json) | Versioned corpus manifest: repositories, commits, licenses, prepare commands, patches, cited blob digests, holdout class. |
 | [`tasks.json`](./tasks.json) | Versioned task definitions: frozen prompts with hashes, categories, scoring method, truth provenance. |
 | [`truth/`](./truth/) | Independent truth and rubric input, one file per task. |
-| [`patches/`](./patches/) | Seeded-defect patches applied to the pinned commit. |
+| [`patches/`](./patches/) | Seeded-defect patches applied to the pinned commit. Every `patches/...` reference in `corpus.json`, `tasks.json` and the truth files resolves against this directory — `docs/qualification/` — as recorded by `patch_path_base` in `corpus.json`. |
 | [`rubrics.json`](./rubrics.json) | Scoring dimensions, per-category scoring methods, blinding rules, aggregation rules. |
 | [`receipt-schema.json`](./receipt-schema.json) | Environment and run receipt schema. |
 | [`examples/`](./examples/) | Two illustrative receipts: a valid Tier 1 run and an invalid Tier 2 run that stays `not_measured`. |
@@ -116,8 +116,10 @@ npm run qualify:validate
 - every Tier 1 cell and negative-trust probe resolves, and every probe prompt hash matches;
 - both example receipts validate against `receipt-schema.json`, and no unmeasured score
   carries a value;
-- **no qualification target id, task id, prompt string, or pinned-repository symbol appears
-  anywhere in `src/`**;
+- **no qualification task id, prompt string, or pinned-repository symbol appears anywhere in
+  `src/`**. Target ids are deliberately outside this scan — see `forbidden_target_symbols._note`
+  and `production_coupling` in `corpus.json` — because a target id is the name of a real public
+  project and its appearance in production code is not by itself evidence of coupling;
 - every file in this directory matches its frozen digest.
 
 To additionally confirm the pinned commits and blob digests against the real repositories

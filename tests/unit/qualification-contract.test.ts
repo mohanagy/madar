@@ -11,6 +11,13 @@ import { describe, expect, it } from 'vitest'
 // `npm run qualify:validate` compile the schema identically.
 const addFormats = createRequire(import.meta.url)('ajv-formats') as (ajv: Ajv) => void
 
+// The cited-path traversal is the shipped validator's own, not a copy of it. It is loaded
+// through createRequire for the same reason as ajv-formats: it is CommonJS living under
+// .github/, which tsconfig does not include.
+const { collectCitedPaths } = createRequire(import.meta.url)(
+  '../../.github/scripts/lib/collect-cited-paths.cjs',
+) as { collectCitedPaths: (node: unknown) => Set<string> }
+
 const ROOT = 'docs/qualification'
 
 /**
@@ -221,6 +228,18 @@ describe('qualification task definitions', () => {
         expect(provenance.derived_from.length).toBeGreaterThan(0)
         expect(provenance.madar_derived_sources_used).toEqual([])
         expect(provenance.inspected_madar_output_before_freeze).toBe(false)
+        // The contract requires this to be *stated*, not to hold a particular value. Pinning
+        // it to false would fail the moment a second author closes the independence gap,
+        // which is an improvement, not a regression.
+        expect(typeof provenance.independent_of_production_rule_author).toBe('boolean')
+      }
+    }
+  })
+
+  it('records the current independence state, which a second author is expected to change', () => {
+    for (const task of tasks.tasks) {
+      const truth = readJson<{ provenance: Provenance }>(`${ROOT}/${task.truth_ref}`)
+      for (const provenance of [task.truth_provenance, truth.provenance]) {
         expect(provenance.independent_of_production_rule_author).toBe(false)
       }
     }
@@ -230,24 +249,9 @@ describe('qualification task definitions', () => {
     for (const task of tasks.tasks) {
       const truth = readJson<Record<string, unknown>>(`${ROOT}/${task.truth_ref}`)
       const target = corpus.targets.find((candidate) => candidate.id === task.target)
-      const cited = new Set<string>()
-
-      const collect = (node: unknown): void => {
-        if (Array.isArray(node)) {
-          node.forEach(collect)
-          return
-        }
-        if (node && typeof node === 'object') {
-          for (const [key, value] of Object.entries(node)) {
-            if (key === 'path' && typeof value === 'string') {
-              cited.add(value)
-            } else if (key !== 'new_path') {
-              collect(value)
-            }
-          }
-        }
-      }
-      collect(truth)
+      // Shared with the shipped validator rather than reimplemented, so the `new_path`
+      // exemption cannot drift between the guard and the test that covers it.
+      const cited = collectCitedPaths(truth)
 
       expect(cited.size).toBeGreaterThan(0)
       for (const path of cited) {

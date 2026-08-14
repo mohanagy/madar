@@ -6,7 +6,6 @@
   "target_id": "hono",
   "arm": "madar",
   "trial": 1,
-  "cache_mode": "warm",
   "identity": {
     "target_revision": "26de73133b8552f56ba72e025ecd82b08900d796",
     "dependency_lock_sha256": "6328bf95a901590814ff70ed570e0fc474c05ae162d6ac690cf3c812380828ab",

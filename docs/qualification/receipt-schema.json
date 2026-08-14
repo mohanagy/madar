@@ -31,7 +31,6 @@
     "target_id": { "type": "string", "minLength": 1 },
     "arm": { "type": "string", "enum": ["native", "madar"] },
     "trial": { "type": "integer", "minimum": 1 },
-    "cache_mode": { "type": "string", "enum": ["cold", "warm"] },
 
     "identity": {
       "type": "object",
@@ -220,11 +219,20 @@
     "retention": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["raw_transcript", "answer_text", "context_artifact", "retention_policy"],
+      "$comment": "One slot per artifact named in validity-rules.md, Retention. Previously prompt_text, environment_receipt and truth_file had no slot at all, so a receipt that followed the prose failed this schema and was then classified incomplete_receipt by the same document that demanded it. They are expressible but not yet required: which artifacts each tier must retain is the open tier-specific question tracked on #655, and answering it here would decide that question by accident.",
+      "required": [
+        "raw_transcript",
+        "answer_text",
+        "context_artifact",
+        "retention_policy"
+      ],
       "properties": {
         "raw_transcript": { "$ref": "#/definitions/artifactRef" },
         "answer_text": { "$ref": "#/definitions/artifactRef" },
         "context_artifact": { "$ref": "#/definitions/artifactRef" },
+        "prompt_text": { "$ref": "#/definitions/artifactRef" },
+        "environment_receipt": { "$ref": "#/definitions/artifactRef" },
+        "truth_file": { "$ref": "#/definitions/artifactRef" },
         "retention_policy": { "type": "string", "minLength": 1 }
       }
     },
@@ -273,7 +281,22 @@
           "type": "string",
           "enum": ["provider_reported", "locally_timed", "unknown", "not_applicable"]
         }
-      }
+      },
+      "allOf": [
+        {
+          "$comment": "validity-rules.md, Cost separation: an unmeasured account is measured: false, never 0. Without this branch a receipt could report measured: false alongside a 0 for every figure, which is exactly the interchange the rule forbids.",
+          "if": { "properties": { "measured": { "const": false } }, "required": ["measured"] },
+          "then": {
+            "properties": {
+              "input_tokens": { "type": "null" },
+              "output_tokens": { "type": "null" },
+              "cache_creation_input_tokens": { "type": "null" },
+              "wall_ms": { "type": "null" },
+              "usd": { "type": "null" }
+            }
+          }
+        }
+      ]
     },
     "score": {
       "type": "object",
@@ -301,6 +324,11 @@
             },
             "required": ["not_measured_reason"]
           }
+        },
+        {
+          "$comment": "The complement of the branch above. validity-rules.md keeps a score of 0 and a score of not_measured distinct; a measured score carrying null is indistinguishable from not_measured, so it is rejected here rather than left to the reader.",
+          "if": { "properties": { "measured": { "const": true } }, "required": ["measured"] },
+          "then": { "properties": { "value": { "type": ["number", "string"] } } }
         }
       ]
     },
@@ -312,7 +340,19 @@
         "retained": { "type": "boolean" },
         "path": { "type": ["string", "null"] },
         "sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
-      }
+      },
+      "allOf": [
+        {
+          "$comment": "validity-rules.md, Retention: each retained artifact is recorded with its path and SHA-256. Nullable types alone let retained: true carry no path and no digest, which records a retention claim that cannot be checked.",
+          "if": { "properties": { "retained": { "const": true } }, "required": ["retained"] },
+          "then": {
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        }
+      ]
     }
   }
 }
