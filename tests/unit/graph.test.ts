@@ -96,6 +96,31 @@ describe('KnowledgeGraph plural semantic projections', () => {
     expect(graph.relationsBetween('alpha', 'beta')).toEqual(['calls'])
     expect(graph.factsBetween('alpha', 'beta')[0]?.metadata).toEqual({ reason: 'direct invocation' })
   })
+
+  it('refuses to project function-valued attributes by reference', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    const callback = () => 'live closure'
+    graph.addEdge('alpha', 'beta', { relation: 'calls', callback })
+
+    expect(() => graph.factsBetween('alpha', 'beta')).toThrow(
+      'Cannot create an immutable graph projection for a function-valued attribute',
+    )
+    expect(graph.edgeAttributes('alpha', 'beta').callback).toBe(callback)
+  })
+
+  it('isolates SharedArrayBuffer-backed views from returned relationship values', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    const sharedView = new Uint8Array(new SharedArrayBuffer(3))
+    sharedView.set([1, 2, 3])
+    graph.addEdge('alpha', 'beta', { relation: 'calls', bytes: sharedView })
+
+    const returnedView = graph.factsBetween('alpha', 'beta')[0]?.bytes as Uint8Array
+    returnedView[0] = 99
+
+    const freshView = graph.factsBetween('alpha', 'beta')[0]?.bytes as Uint8Array
+    expect([...freshView]).toEqual([1, 2, 3])
+    expect(freshView.buffer).toBeInstanceOf(ArrayBuffer)
+  })
 })
 
 describe('KnowledgeGraph semantic entries', () => {

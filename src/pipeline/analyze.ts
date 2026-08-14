@@ -967,6 +967,7 @@ export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): G
   const newNodesList = [...newNodes].filter((nodeId) => !oldNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(newGraph, nodeId) }))
   const removedNodesList = [...oldNodes].filter((nodeId) => !newNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(oldGraph, nodeId) }))
 
+  // #657 precondition: re-key graphDiff by stable fact identity so same-relation facts cannot collapse.
   const oldEdges = new Set(oldGraph.factEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), oldGraph.isDirected())))
   const newEdges = new Set(newGraph.factEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), newGraph.isDirected())))
 

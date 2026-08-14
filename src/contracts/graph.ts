@@ -27,7 +27,35 @@ interface StoredEdge {
   attributes: GraphAttributes
 }
 
+function isolatedArrayBufferView(value: ArrayBufferView): ArrayBufferView {
+  if (!(value.buffer instanceof SharedArrayBuffer)) {
+    return structuredClone(value)
+  }
+
+  const buffer = new ArrayBuffer(value.buffer.byteLength)
+  new Uint8Array(buffer).set(new Uint8Array(value.buffer))
+  if (value instanceof DataView) {
+    return new DataView(buffer, value.byteOffset, value.byteLength)
+  }
+
+  const TypedArray = value.constructor as new (
+    buffer: ArrayBuffer,
+    byteOffset: number,
+    length: number,
+  ) => ArrayBufferView
+  const bytesPerElement = (value as unknown as { readonly BYTES_PER_ELEMENT: number }).BYTES_PER_ELEMENT
+  return new TypedArray(buffer, value.byteOffset, value.byteLength / bytesPerElement)
+}
+
+/**
+ * Builds a detached projection of supported graph values. Functions are refused because an
+ * arbitrary closure cannot be cloned without retaining live state from the stored value.
+ */
 function immutableGraphValue(value: unknown, clones = new WeakMap<object, unknown>()): unknown {
+  if (typeof value === 'function') {
+    throw new TypeError('Cannot create an immutable graph projection for a function-valued attribute')
+  }
+
   if (value === null || typeof value !== 'object') {
     return value
   }
@@ -44,8 +72,47 @@ function immutableGraphValue(value: unknown, clones = new WeakMap<object, unknow
     return Object.freeze(clone)
   }
 
-  if (value instanceof Date || value instanceof Map || value instanceof Set || ArrayBuffer.isView(value)) {
-    return structuredClone(value)
+  if (value instanceof Date) {
+    const clone = new Date(value)
+    clones.set(value, clone)
+    return clone
+  }
+
+  if (value instanceof Map) {
+    const clone = new Map<unknown, unknown>()
+    clones.set(value, clone)
+    for (const [key, item] of value) {
+      clone.set(immutableGraphValue(key, clones), immutableGraphValue(item, clones))
+    }
+    return clone
+  }
+
+  if (value instanceof Set) {
+    const clone = new Set<unknown>()
+    clones.set(value, clone)
+    for (const item of value) {
+      clone.add(immutableGraphValue(item, clones))
+    }
+    return clone
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    const clone = isolatedArrayBufferView(value)
+    clones.set(value, clone)
+    return clone
+  }
+
+  if (value instanceof ArrayBuffer) {
+    const clone = value.slice(0)
+    clones.set(value, clone)
+    return clone
+  }
+
+  if (value instanceof SharedArrayBuffer) {
+    const clone = new ArrayBuffer(value.byteLength)
+    new Uint8Array(clone).set(new Uint8Array(value))
+    clones.set(value, clone)
+    return clone
   }
 
   const clone: Record<string, unknown> = {}
@@ -160,6 +227,7 @@ export class KnowledgeGraph {
    * Relationship views and the returned collection cannot mutate graph state.
    */
   factEntries(): readonly GraphRelationshipEntry[] {
+    // #657 precondition: re-run N>1 characterization across every plural fact consumer.
     return Object.freeze([...this.edgeMap.values()].map(({ source, target, attributes }) => Object.freeze([
       source,
       target,
@@ -277,6 +345,7 @@ export class KnowledgeGraph {
 
   /** Returns unique relation values between two endpoints in stable fact order. */
   relationsBetween(source: string, target: string): readonly string[] {
+    // #657 precondition: re-verify stable relation order against the new fact-ordering contract.
     const relations = new Set<string>()
     for (const fact of this.factsBetween(source, target)) {
       relations.add(String(fact.relation ?? ''))

@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { buildFromJson } from '../../src/pipeline/build.js'
+import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { Neo4jUnsupportedFactMultiplicityError } from '../../src/infrastructure/neo4j.js'
 import { cluster } from '../../src/pipeline/cluster.js'
 import { toCypher, toGraphml, toHtml, toJson, toObsidian, toSvg } from '../../src/pipeline/export.js'
 
@@ -79,6 +81,25 @@ describe('export', () => {
       const content = readFileSync(outputPath, 'utf8')
 
       expect(content).toContain('MERGE')
+    })
+  })
+
+  it('refuses to write cypher that would collapse multiple facts into one MERGE relationship', () => {
+    const unsupportedGraph = {
+      nodeEntries: () => [
+        ['auth', { label: 'AuthService', file_type: 'code' }],
+        ['client', { label: 'HttpClient', file_type: 'code' }],
+      ],
+      factEntries: () => [
+        ['auth', 'client', { relation: 'depends on', confidence: 'EXTRACTED' }],
+        ['auth', 'client', { relation: 'depends on', confidence: 'INFERRED' }],
+      ],
+    } as unknown as KnowledgeGraph
+
+    withTempDir((tempDir) => {
+      expect(() => toCypher(unsupportedGraph, join(tempDir, 'graph.cypher'))).toThrow(
+        Neo4jUnsupportedFactMultiplicityError,
+      )
     })
   })
 

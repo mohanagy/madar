@@ -174,6 +174,37 @@ describe('neo4j integration helpers', () => {
     ).toThrow('found 2 facts for auth -[DEPENDS_ON]-> client')
   })
 
+  test('exports endpoint pairs that only collide under a space-joined multiplicity key', async () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addEdge('a', 'b c', { relation: 'CALLS' })
+    graph.addEdge('a b', 'c', { relation: 'CALLS' })
+
+    const run = vi.fn().mockResolvedValue({})
+    const createDriver: NonNullable<Neo4jDependencies['createDriver']> = async () => ({
+      session: () => ({
+        executeWrite: async (work) => work({ run }),
+        close: async () => undefined,
+      }),
+      close: async () => undefined,
+    })
+
+    await expect(
+      pushGraphToNeo4j(
+        graph,
+        { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'super-secret' },
+        { createDriver },
+      ),
+    ).resolves.toMatchObject({ nodes: 4, edges: 2 })
+    expect(run).toHaveBeenCalledWith(
+      expect.stringContaining('MERGE (a)-[r:CALLS]->(b)'),
+      expect.objectContaining({ src: 'a', tgt: 'b c' }),
+    )
+    expect(run).toHaveBeenCalledWith(
+      expect.stringContaining('MERGE (a)-[r:CALLS]->(b)'),
+      expect.objectContaining({ src: 'a b', tgt: 'c' }),
+    )
+  })
+
   test('pushGraphToNeo4j refuses to write a graph it cannot export without collapsing facts, before touching the driver', async () => {
     // The real KnowledgeGraph store cannot yet hold two facts for one endpoint pair
     // (that lands in #657); stub only the surface pushGraphToNeo4j reads to exercise

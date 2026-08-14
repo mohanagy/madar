@@ -54,6 +54,7 @@ function buildLouvainState(graph: KnowledgeGraph): LouvainState {
 
   // Build adjacency with weights
   let totalWeight = 0
+  // #657 precondition: re-verify this additive loop still consumes each endpoint pair exactly once.
   for (const { source, target } of graph.endpointEntries()) {
     const weight = _edgeWeight(graph, source, target)
     totalWeight += weight

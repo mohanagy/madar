@@ -200,7 +200,7 @@ export function assertNeo4jExportableFacts(entries: readonly GraphRelationshipEn
 
   for (const [source, target, attributes] of entries) {
     const relation = sanitizeNeo4jRelation(String(attributes.relation ?? 'RELATED_TO'))
-    const key = `${source} ${target} ${relation}`
+    const key = `${source}\u0000${target}\u0000${relation}`
     const existing = counts.get(key)
     counts.set(key, { source, target, relation, count: (existing?.count ?? 0) + 1 })
   }
