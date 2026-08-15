@@ -11,6 +11,29 @@ import {
   resolveRelationDiscriminator,
 } from '../../src/contracts/relation-discriminator.js'
 
+// Relations recovered by the authoritative producer inventory are listed
+// individually alongside the originals: the guard stays exhaustive per relation
+// rather than collapsing into a count that any future omission could satisfy.
+const RECOVERED_ENDPOINT_ONLY = [
+  'covered_by',
+  'guards',
+  'intercepts',
+  'module_exports',
+  'module_imports',
+  'module_provides',
+  'pipes',
+  'related_to',
+  'return_type',
+] as const
+
+const RECOVERED_PARTIAL = [
+  'changed_in',
+  'controller_route',
+  'exports',
+  'param_type',
+  'route_handler',
+] as const
+
 const ENDPOINT_ONLY = [
   'cites',
   'contains',
@@ -52,11 +75,25 @@ const PARTIAL = [
 ] as const
 
 describe('relation discriminator registry v1', () => {
-  it('registers exactly all 34 Stage 1 relations under the required identifier', () => {
+  it('registers exactly the 48 producer relations under the required identifier', () => {
+    // The identifier stays /1: artifact v2 has not shipped, and no previously
+    // registered relation changed policy, so no stored fact identity moves.
     expect(RELATION_DISCRIMINATOR_REGISTRY_ID).toBe('madar.relation-discriminator-registry/1')
-    expect([...REGISTERED_RELATIONS].sort()).toEqual([...ENDPOINT_ONLY, ...PARTIAL].sort())
+    expect([...REGISTERED_RELATIONS].sort()).toEqual(
+      [...ENDPOINT_ONLY, ...PARTIAL, ...RECOVERED_ENDPOINT_ONLY, ...RECOVERED_PARTIAL].sort(),
+    )
     expect(Object.keys(RELATION_DISCRIMINATOR_REGISTRY_V1).sort()).toEqual([...REGISTERED_RELATIONS].sort())
-    expect(REGISTERED_RELATIONS).toHaveLength(34)
+    expect(REGISTERED_RELATIONS).toHaveLength(48)
+  })
+
+  it('gives every recovered relation the completeness its producer supports', () => {
+    for (const relation of RECOVERED_ENDPOINT_ONLY) {
+      expect(RELATION_DISCRIMINATOR_REGISTRY_V1[relation].completeness).toBe('endpoint_only')
+    }
+    for (const relation of RECOVERED_PARTIAL) {
+      expect(RELATION_DISCRIMINATOR_REGISTRY_V1[relation].completeness).toBe('partial')
+      expect(RELATION_DISCRIMINATOR_REGISTRY_V1[relation].reasons.length).toBeGreaterThan(0)
+    }
   })
 
   it('marks the 18 structural relations as explicit endpoint-only policies', () => {

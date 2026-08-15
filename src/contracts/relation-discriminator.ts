@@ -39,6 +39,26 @@ export const REGISTERED_RELATIONS = Object.freeze([
   'uses_guard',
   'uses_interceptor',
   'uses_pipe',
+
+  // Producer relations recovered by the authoritative inventory. Every one is
+  // emitted by an in-repository producer; eight reach their `kind` slot through
+  // an argument, a mapping table or a type union rather than a literal, which is
+  // why two grep-based enumerations and one AST pass all missed them. They are
+  // now derived from SPI_EDGE_KINDS, which is the declaration itself.
+  'changed_in',
+  'controller_route',
+  'covered_by',
+  'exports',
+  'guards',
+  'intercepts',
+  'module_exports',
+  'module_imports',
+  'module_provides',
+  'param_type',
+  'pipes',
+  'related_to',
+  'return_type',
+  'route_handler',
 ] as const)
 
 export type RegisteredRelation = (typeof REGISTERED_RELATIONS)[number]
@@ -135,6 +155,25 @@ export const RELATION_DISCRIMINATOR_REGISTRY_V1: Readonly<Record<RegisteredRelat
   renders: endpointOnly('renders'),
   shared_across_repos: endpointOnly('shared_across_repos'),
   submits_route: endpointOnly('submits_route'),
+  // Structural registration and coverage links: the pair is the whole fact.
+  covered_by: endpointOnly('covered_by'),
+  guards: endpointOnly('guards'),
+  intercepts: endpointOnly('intercepts'),
+  pipes: endpointOnly('pipes'),
+  module_exports: endpointOnly('module_exports'),
+  module_imports: endpointOnly('module_imports'),
+  module_provides: endpointOnly('module_provides'),
+  // A function has one return type per referenced type, so the pair is unique.
+  return_type: endpointOnly('return_type'),
+  /**
+   * Generic structural fallback. Every current in-repository use is a
+   * presentation default (`edge.label || 'related_to'` in the interactive
+   * payload, `attributes.relation ?? 'related_to'` in community details) that
+   * carries no behavior-defining data, so endpoint-only is the accurate
+   * policy rather than a partial with invented missing fields. It is
+   * registered because it also arrives as compatibility input.
+   */
+  related_to: endpointOnly('related_to'),
 
   calls: partial('calls', [
     'dispatch_kind_missing',
@@ -172,6 +211,39 @@ export const RELATION_DISCRIMINATOR_REGISTRY_V1: Readonly<Record<RegisteredRelat
     'import_form_missing',
     'module_specifier_missing',
     'resolution_state_missing',
+  ]),
+  // Route registration edges carry the decorator site but not the route
+  // behavior; HTTP method and normalized path live on the symbol's framework
+  // metadata, not on the edge.
+  controller_route: partial('controller_route', [
+    'http_method_missing',
+    'normalized_route_path_missing',
+    'registration_origin_missing',
+  ]),
+  route_handler: partial('route_handler', [
+    'http_method_missing',
+    'normalized_route_path_missing',
+    'registration_origin_missing',
+  ]),
+  // File-layer export self-edge. Symbol-level export identity is explicitly
+  // deferred by the producer, so the binding is genuinely absent.
+  exports: partial('exports', [
+    'exported_binding_missing',
+    'export_form_missing',
+    'module_specifier_missing',
+    'resolution_state_missing',
+  ]),
+  // Two parameters of one function can reference the same type; without the
+  // parameter position those edges are not distinguishable.
+  param_type: partial('param_type', [
+    'parameter_position_missing',
+    'type_reference_form_missing',
+  ]),
+  // Diff-overlay edges name no revision, so "changed in A" and "changed in B"
+  // are the same pair.
+  changed_in: partial('changed_in', [
+    'revision_identity_missing',
+    'change_kind_missing',
   ]),
   injects: partial('injects', [
     'injection_token_missing',

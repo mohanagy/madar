@@ -96,7 +96,7 @@ const PROJECTABLE_SYMBOL_KINDS: ReadonlySet<SpiSymbolKind> = new Set([
   'namespace',
 ])
 
-const SPI_TO_EXTRACTION_RELATION: Partial<Record<SpiEdge['kind'], string>> = {
+export const SPI_TO_EXTRACTION_RELATION: Partial<Record<SpiEdge['kind'], string>> = {
   imports: 'imports_from',
   calls: 'calls',
   injects: 'injects',

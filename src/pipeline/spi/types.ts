@@ -172,36 +172,48 @@ export type SpiSymbol = {
   framework_metadata?: SpiFrameworkMetadata
 }
 
-export type SpiEdgeKind =
+/**
+ * The SPI edge vocabulary, addressable at runtime.
+ *
+ * This is the authoritative declaration and `SpiEdgeKind` is derived from it,
+ * so the two cannot drift. A parallel hand-maintained list is what let five
+ * producer relations reach storage unregistered: the registry completeness
+ * guard read the projector's mapping table, which does not contain every kind
+ * declared here.
+ */
+export const SPI_EDGE_KINDS = [
   // file layer
-  | 'imports'
-  | 'exports'
+  'imports',
+  'exports',
   // symbol layer
-  | 'declares'
-  | 'references'
+  'declares',
+  'references',
   // call layer
-  | 'calls'
-  | 'enqueues_job'
+  'calls',
+  'enqueues_job',
   // type layer
-  | 'extends'
-  | 'implements'
-  | 'param_type'
-  | 'return_type'
+  'extends',
+  'implements',
+  'param_type',
+  'return_type',
   // test layer
-  | 'covered_by'
+  'covered_by',
   // diff overlay
-  | 'changed_in'
+  'changed_in',
   // framework layer (NestJS v1)
-  | 'module_provides'
-  | 'module_imports'
-  | 'module_exports'
-  | 'controller_route'
-  | 'route_handler'
-  | 'registers_controller'
-  | 'injects'
-  | 'guards'
-  | 'intercepts'
-  | 'pipes'
+  'module_provides',
+  'module_imports',
+  'module_exports',
+  'controller_route',
+  'route_handler',
+  'registers_controller',
+  'injects',
+  'guards',
+  'intercepts',
+  'pipes',
+] as const
+
+export type SpiEdgeKind = typeof SPI_EDGE_KINDS[number]
 
 export type SpiEdgeConfidence = 'high' | 'medium' | 'low'
 
