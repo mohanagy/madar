@@ -412,6 +412,8 @@ export class KnowledgeGraph {
    * unresolved candidates remains #658's responsibility.
    */
   private readonly unregisteredRelationAdmissions = new Map<string, number>()
+  /** Invalidated by every endpoint-pair mutation; see endpointEntries(). */
+  private endpointEntriesCache: readonly GraphEndpointEntry[] | null = null
 
   constructor(options: KnowledgeGraphOptions | boolean = {}) {
     this.directed = typeof options === 'boolean' ? options : options.directed === true
@@ -461,6 +463,7 @@ export class KnowledgeGraph {
         target: fact.target,
         factIds: new Set([fact.id]),
       })
+      this.endpointEntriesCache = null
     } else {
       pairEntry.factIds.add(fact.id)
     }
@@ -837,11 +840,23 @@ export class KnowledgeGraph {
   }
 
   /** Returns unique endpoint pairs in deterministic insertion order. */
+  /**
+   * Unique endpoint pairs in deterministic key order.
+   *
+   * Memoized because the ordering is what makes it expensive. Stage 2 added
+   * the sort to guarantee determinism -- correct, but `cohesionScore` calls
+   * this once per community, so on the self-graph that became 5,609 sorts of
+   * 17,940 keys and 45% of total generation time. The sort is kept; it just
+   * happens once per mutation instead of once per caller.
+   */
   endpointEntries(): readonly GraphEndpointEntry[] {
-    return Object.freeze([...this.endpointPairIndex.keys()].sort().map((key) => {
+    if (this.endpointEntriesCache !== null) return this.endpointEntriesCache
+    const entries = Object.freeze([...this.endpointPairIndex.keys()].sort().map((key) => {
       const pair = this.endpointPairIndex.get(key)!
       return Object.freeze({ source: pair.source, target: pair.target })
     }))
+    this.endpointEntriesCache = entries
+    return entries
   }
 
   /** @deprecated Use factEntries() for relationships or endpointEntries() for topology. */

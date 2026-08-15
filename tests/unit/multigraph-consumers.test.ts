@@ -165,3 +165,47 @@ describe('Cypher export keys on semantic fact identity', () => {
     expect((cypher(graph).match(/MERGE \(a\)-\[/g) ?? [])).toHaveLength(1)
   })
 })
+
+describe('endpointEntries memoization stays correct', () => {
+  it('returns the same content on repeated calls', () => {
+    const graph = many()
+
+    expect(graph.endpointEntries()).toEqual(graph.endpointEntries())
+  })
+
+  it('reflects a new endpoint pair after the cache was populated', () => {
+    const graph = many()
+    expect(graph.endpointEntries()).toHaveLength(1)
+
+    // Populate the cache, then mutate: a stale cache would still say 1.
+    graph.addNode('c', { label: 'Gamma', community: 0 })
+    graph.addEdge('a', 'c', { relation: 'calls', confidence: 'EXTRACTED' })
+
+    expect(graph.endpointEntries()).toHaveLength(2)
+    expect(graph.endpointEntries().map(({ target }) => target).sort()).toEqual(['b', 'c'])
+  })
+
+  it('is not invalidated by an extra fact on an existing pair', () => {
+    const graph = graphWith(['calls'])
+    const before = graph.endpointEntries()
+    graph.addEdge('a', 'b', { relation: 'injects', confidence: 'EXTRACTED' })
+
+    expect(graph.endpointEntries()).toEqual(before)
+    expect(graph.numberOfFacts()).toBe(2)
+  })
+
+  it('keeps deterministic ordering', () => {
+    const forward = new KnowledgeGraph({ directed: true })
+    const reverse = new KnowledgeGraph({ directed: true })
+    for (const id of ['a', 'b', 'c']) {
+      forward.addNode(id, {})
+      reverse.addNode(id, {})
+    }
+    forward.addEdge('a', 'b', { relation: 'calls' })
+    forward.addEdge('a', 'c', { relation: 'calls' })
+    reverse.addEdge('a', 'c', { relation: 'calls' })
+    reverse.addEdge('a', 'b', { relation: 'calls' })
+
+    expect(forward.endpointEntries()).toEqual(reverse.endpointEntries())
+  })
+})
