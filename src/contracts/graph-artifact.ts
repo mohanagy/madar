@@ -1226,9 +1226,30 @@ export function loadGraphArtifactFromPath(
     && !currentText.startsWith('MADAR_GRAPH_MOVED/')
   ) {
     const v2Path = join(dirname(graphPath), 'graph.madar')
-    if (existsSync(v2Path)) return loadGraphArtifact(readFileSync(v2Path), options)
+    if (existsSync(v2Path)) return withLocalRootPath(loadGraphArtifact(readFileSync(v2Path), options), v2Path)
   }
-  return loadGraphArtifact(currentBytes, options)
+  return withLocalRootPath(loadGraphArtifact(currentBytes, options), graphPath)
+}
+
+/**
+ * Restores the machine-local workspace root from the sidecar.
+ *
+ * `root_path` is deliberately absent from the portable artifact, but the v1
+ * loader has always set `graph.root_path` and consumers relativize file paths
+ * against it. Without this a v2 load silently emits absolute paths where the
+ * repository-relative form was expected -- which is how pack fixtures started
+ * reporting `/var/folders/.../src/services/auth-service.ts`.
+ *
+ * Only the path-based loader can do this; `loadGraphArtifact(bytes)` has no
+ * location to resolve the sidecar against.
+ */
+function withLocalRootPath(loaded: LoadedGraphArtifact, artifactPath: string): LoadedGraphArtifact {
+  if (typeof loaded.graph.graph.root_path === 'string' && loaded.graph.graph.root_path.length > 0) {
+    return loaded
+  }
+  const rootPath = readLocalSidecarRootPath(artifactPath)
+  if (rootPath !== null) loaded.graph.graph.root_path = rootPath
+  return loaded
 }
 
 /** Untracked, machine-local companion to the portable artifact. */

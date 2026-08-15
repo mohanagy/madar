@@ -790,8 +790,28 @@ export class KnowledgeGraph {
    * Returns every semantic relationship in deterministic insertion order.
    * Relationship views and the returned collection cannot mutate graph state.
    */
+  /**
+   * Facts in a deterministic, meaningful order: source, then target, then
+   * relation, with the fact id only as a final tie-break.
+   *
+   * Sorting by fact id alone is deterministic but arbitrary -- the id is a
+   * content hash -- and that arbitrariness reaches users. It decided which of
+   * three equally-weighted "high-risk shared boundary" candidates a pack
+   * reported, so a pure hash reordering silently changed guidance output.
+   */
+  private orderedFactIds(): SemanticFactId[] {
+    return [...this.factMap.keys()].sort((left, right) => {
+      const a = this.factMap.get(left)!.fact
+      const b = this.factMap.get(right)!.fact
+      return a.source.localeCompare(b.source)
+        || a.target.localeCompare(b.target)
+        || String(a.relation).localeCompare(String(b.relation))
+        || left.localeCompare(right)
+    })
+  }
+
   factEntries(): readonly GraphRelationshipEntry[] {
-    return Object.freeze([...this.factMap.keys()].sort().map((factId) => {
+    return Object.freeze(this.orderedFactIds().map((factId) => {
       const stored = this.factMap.get(factId)!
       return Object.freeze([
         stored.fact.source,
@@ -803,7 +823,7 @@ export class KnowledgeGraph {
 
   /** Returns semantic facts with their stable IDs and immutable compatibility attributes. */
   factRecords(): readonly GraphFactRecord[] {
-    return Object.freeze([...this.factMap.keys()].sort().map((factId) => {
+    return Object.freeze(this.orderedFactIds().map((factId) => {
       const stored = this.factMap.get(factId)!
       return Object.freeze({
         fact: this.materializedFact(factId),
