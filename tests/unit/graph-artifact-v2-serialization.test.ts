@@ -256,3 +256,42 @@ describe('graph artifact v2 serialization', () => {
     expect(graphArtifactDigest(fixture)).toBe('1e8e0a73703c2e1a4f1e905057876f49eb56085b179bdaae15af76d8af2052c0')
   })
 })
+
+describe('graph artifact v2 undefined handling', () => {
+  it('drops undefined attributes exactly as JSON.stringify does', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addNode('a', { label: 'A', snippet: undefined })
+    graph.addNode('b', { label: 'B' })
+    graph.addEdge('a', 'b', { relation: 'calls', line: undefined })
+
+    // Producer attributes carry unset optional fields. v1 dropped them on
+    // write; canonical JSON refuses undefined outright, so v2 must drop the
+    // key rather than fail. Only a real corpus exposes this.
+    const text = serialize(graph).toString('utf8')
+
+    expect(text).not.toContain('undefined')
+    expect(text).toContain('"label":"A"')
+    expect(text).not.toContain('snippet')
+  })
+
+  it('turns undefined array holes into null, as JSON.stringify does', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addNode('a', { label: 'A', tags: ['x', undefined, 'y'] })
+    graph.addNode('b', { label: 'B' })
+    graph.addEdge('a', 'b', { relation: 'calls' })
+
+    expect(serialize(graph).toString('utf8')).toContain('["x",null,"y"]')
+  })
+
+  it('stays deterministic with undefined present', () => {
+    const build = (): KnowledgeGraph => {
+      const graph = new KnowledgeGraph({ directed: true })
+      graph.addNode('a', { label: 'A', snippet: undefined })
+      graph.addNode('b', { label: 'B' })
+      graph.addEdge('a', 'b', { relation: 'calls', line: undefined })
+      return graph
+    }
+
+    expect(serialize(build())).toEqual(serialize(build()))
+  })
+})

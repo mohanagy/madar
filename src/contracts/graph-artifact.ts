@@ -369,9 +369,35 @@ function nodePayload(graph: KnowledgeGraph): readonly unknown[] {
     .map(([id, attributes]) => ({
       id,
       endpoint_identity: graph.nodeEndpointIdentity(id),
-      attributes,
+      attributes: withoutUndefined(attributes),
     }))
     .sort((left, right) => left.id.localeCompare(right.id))
+}
+
+/**
+ * Drops `undefined`-valued properties, exactly as JSON.stringify does.
+ *
+ * Canonical JSON refuses `undefined` rather than silently discarding it, which
+ * is right for a format that must be byte-reproducible. But producer
+ * attributes carry optional fields left `undefined`, and v1 has always dropped
+ * them on write. `undefined` has no JSON representation at all, so omitting the
+ * key is the only faithful serialization and it keeps v2 byte-comparable with
+ * what v1 recorded. Array holes become null, again matching JSON.stringify.
+ *
+ * Only surfaced by generating a real corpus: a unit fixture never carries an
+ * optional attribute that happens to be unset.
+ */
+function withoutUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => (item === undefined ? null : withoutUndefined(item))) as unknown as T
+  }
+  if (value === null || typeof value !== 'object' || value instanceof Date) {
+    return value
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, item]) => item !== undefined)
+    .map(([key, item]) => [key, withoutUndefined(item)] as const)
+  return Object.fromEntries(entries) as unknown as T
 }
 
 function factPayload(fact: SemanticFact, attributes: GraphAttributes): unknown {
@@ -384,8 +410,8 @@ function factPayload(fact: SemanticFact, attributes: GraphAttributes): unknown {
     discriminator: fact.discriminator,
     endpoint_identity: fact.endpointIdentity,
     occurrence_ids: [...fact.occurrenceIds].sort(),
-    annotations: fact.annotations,
-    attributes,
+    annotations: withoutUndefined(fact.annotations),
+    attributes: withoutUndefined(attributes),
   }
 }
 
@@ -428,7 +454,7 @@ function canonicalProvenance(provenance: GraphArtifactProvenance | undefined): R
     throw new GraphArtifactInvariantError('provenance must not carry root_path; it belongs in the local sidecar')
   }
   const entries = Object.entries(provenance).filter(([, value]) => value !== undefined)
-  return Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right)))
+  return withoutUndefined(Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right))))
 }
 
 function canonicalHyperedge(value: unknown): Record<string, unknown> {
