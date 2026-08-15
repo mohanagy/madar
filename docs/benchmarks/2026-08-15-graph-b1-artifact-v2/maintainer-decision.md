@@ -93,3 +93,27 @@ validation, graph hydration, generation hot paths, serialization, workspace
 output resolution, or endpoint-pair enumeration invalidates the receipt and
 requires a new candidate SHA, a complete fresh six-run A/B sequence, a new
 receipt, and a new decision if any ratio exceeds 2×.
+
+## Remeasurement at the final head
+
+`61f3609c` changed `graph-artifact.ts` (v2 load now restores graph-level
+provenance) and `relation-discriminator.ts` (three consumed relations
+registered). Both sit inside the invalidating set above, so the harness was
+re-run from scratch rather than carrying the acceptance across them.
+
+Same frozen harness `7e8f51ca…`, six new input worktrees, order
+`a1 → b1 → b2 → a2 → a3 → b3`.
+
+| Metric | Base median | Candidate median | Ratio | At `b2adeec6` |
+|---|---:|---:|---:|---:|
+| Generation wall (s) | 27.75 | 26.77 | 0.965× | 0.995× |
+| Peak RSS (MB) | 961.20 | 1144.90 | 1.191× | 1.160× |
+| Load latency (ms) | 306.01 | 672.03 | **2.196×** | 2.192× |
+| Canonical artifact (MB) | 20.78 | 39.35 | 1.894× | 1.894× |
+| Transitional total output (MB) | 33 | 72 | 2.182× | 2.182× |
+
+Load moved from 2.192× to 2.196× — within run-to-run noise, no material
+change. Semantic counts identical within each arm, attribution controls
+passed, no base run produced a `graph.madar`.
+
+**The acceptance recorded above stands at `61f3609c`.**
