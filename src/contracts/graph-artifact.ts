@@ -15,7 +15,7 @@ import {
   type EndpointIdentityReason,
   type EndpointIdentityStatus,
 } from './endpoint-identity.js'
-import { KnowledgeGraph, type GraphAttributes } from './graph.js'
+import { KnowledgeGraph, type GraphAttributes, type StorageBoundaryAdmissionSummary } from './graph.js'
 import {
   canonicalEndpointPair,
   createEvidenceOccurrence,
@@ -45,6 +45,12 @@ export const GRAPH_ARTIFACT_V2_TOMBSTONE = [
 ].join('\n')
 export const GRAPH_ARTIFACT_VERSION = 2 as const
 export const GRAPH_ARTIFACT_RECEIPT_STORAGE_SCHEMA_VERSION = 1 as const
+export const UNREGISTERED_RELATION_AT_STORAGE_BOUNDARY = 'unregistered_relation_at_storage_boundary' as const
+
+const EMPTY_ADMISSION_SUMMARY: StorageBoundaryAdmissionSummary = Object.freeze({
+  unresolvedUnregisteredRelationCandidates: 0,
+  unregisteredRelationCounts: Object.freeze({}),
+})
 
 export class GraphArtifactInvariantError extends Error {
   constructor(message: string) {
@@ -79,6 +85,15 @@ export interface GraphArtifactStorageReceipt {
      * endpoint reasons contributes once to every applicable reason counter.
      */
     readonly reason_fact_counts: Readonly<Partial<Record<EndpointIdentityReason, number>>>
+  }
+  /**
+   * Storage-boundary admissions refused because the relation is unregistered.
+   * Present on every receipt so a zero is an asserted zero rather than an
+   * absent field. Not full terminal accounting -- that is #658.
+   */
+  readonly storage_admission: {
+    readonly unresolved_unregistered_relation_candidates: number
+    readonly unregistered_relation_counts: Readonly<Record<string, number>>
   }
   readonly reserved: Readonly<Record<string, never>>
 }
@@ -176,7 +191,10 @@ function emptyStatusCounts(): Record<EndpointIdentityStatus, number> {
   }
 }
 
-function buildStorageReceipt(facts: readonly SemanticFact[]): GraphArtifactStorageReceipt {
+function buildStorageReceipt(
+  facts: readonly SemanticFact[],
+  admission: StorageBoundaryAdmissionSummary = EMPTY_ADMISSION_SUMMARY,
+): GraphArtifactStorageReceipt {
   const pairCounts: Record<EndpointIdentityStatus, Record<EndpointIdentityStatus, number>> = {
     stable: emptyStatusCounts(),
     context_bound: emptyStatusCounts(),
@@ -215,6 +233,9 @@ function buildStorageReceipt(facts: readonly SemanticFact[]): GraphArtifactStora
   if (facts.some((fact) => fact.discriminator.legacy === true)) {
     receiptReasons.add('regeneration_recommended')
   }
+  if (admission.unresolvedUnregisteredRelationCandidates > 0) {
+    receiptReasons.add(UNREGISTERED_RELATION_AT_STORAGE_BOUNDARY)
+  }
 
   return Object.freeze({
     accounting_scope: 'storage_only' as const,
@@ -230,13 +251,31 @@ function buildStorageReceipt(facts: readonly SemanticFact[]): GraphArtifactStora
       }),
       reason_fact_counts: Object.freeze(Object.fromEntries([...reasonFactCounts.entries()].sort())),
     }),
+    storage_admission: Object.freeze({
+      unresolved_unregistered_relation_candidates: admission.unresolvedUnregisteredRelationCandidates,
+      unregistered_relation_counts: Object.freeze(
+        Object.fromEntries(
+          Object.entries(admission.unregisteredRelationCounts)
+            .sort(([left], [right]) => left.localeCompare(right)),
+        ),
+      ),
+    }),
     reserved: Object.freeze({}),
+  })
+}
+
+/** Re-reads the summary back off a parsed receipt so a load can re-derive it. */
+function receiptAdmissionSummary(receipt: GraphArtifactStorageReceipt): StorageBoundaryAdmissionSummary {
+  return Object.freeze({
+    unresolvedUnregisteredRelationCandidates: receipt.storage_admission.unresolved_unregistered_relation_candidates,
+    unregisteredRelationCounts: receipt.storage_admission.unregistered_relation_counts,
   })
 }
 
 function assertReceiptMatchesFacts(
   receipt: GraphArtifactStorageReceipt,
   facts: readonly SemanticFact[],
+  admission: StorageBoundaryAdmissionSummary = EMPTY_ADMISSION_SUMMARY,
 ): void {
   if (receipt.accounting_scope !== 'storage_only' || receipt.status !== 'degraded') {
     throw new GraphArtifactInvariantError('storage receipt must remain degraded with storage_only scope')
@@ -251,7 +290,7 @@ function assertReceiptMatchesFacts(
     throw new GraphArtifactInvariantError('endpoint status order does not match the declared four-state policy')
   }
 
-  const expected = buildStorageReceipt(facts)
+  const expected = buildStorageReceipt(facts, admission)
   const expectedReasons = expected.reasons
   if (
     receipt.reasons.length !== expectedReasons.length
@@ -261,6 +300,14 @@ function assertReceiptMatchesFacts(
   }
   if (Object.keys(receipt.reserved).length !== 0) {
     throw new GraphArtifactInvariantError('storage receipt reserved fields must remain empty')
+  }
+  const admissionEntries = Object.entries(receipt.storage_admission.unregistered_relation_counts)
+  const admissionSum = admissionEntries.reduce((total, [, count]) => total + count, 0)
+  if (receipt.storage_admission.unresolved_unregistered_relation_candidates !== admissionSum) {
+    throw new GraphArtifactInvariantError('storage admission total disagrees with its per-relation counts')
+  }
+  if (admissionEntries.some(([, count]) => !Number.isSafeInteger(count) || count < 1)) {
+    throw new GraphArtifactInvariantError('storage admission counts must be positive safe integers')
   }
   let matrixSum = 0
   for (const sourceStatus of ENDPOINT_IDENTITY_STATUSES) {
@@ -386,8 +433,10 @@ export function serializeGraphArtifactV2(input: SerializeGraphArtifactV2Input): 
       && !Array.isArray(input.graph.graph.community_labels)
       ? input.graph.graph.community_labels as Record<string, string>
       : {})
-  const integrityReceipt = input.integrityReceipt ?? buildStorageReceipt(facts.map(({ fact }) => fact))
-  assertReceiptMatchesFacts(integrityReceipt, facts.map(({ fact }) => fact))
+  const admission = input.graph.storageAdmissionSummary()
+  const integrityReceipt = input.integrityReceipt
+    ?? buildStorageReceipt(facts.map(({ fact }) => fact), admission)
+  assertReceiptMatchesFacts(integrityReceipt, facts.map(({ fact }) => fact), admission)
 
   const payload = {
     versions: {
@@ -582,6 +631,35 @@ function parseReceipt(value: unknown): GraphArtifactStorageReceipt {
   }
   assertEmptyReserved(receipt.reserved, 'integrity_receipt.reserved')
 
+  // Absent on nothing we write; a missing field means a foreign or truncated
+  // artifact, so it is rejected rather than defaulted to a comfortable zero.
+  const rawAdmission = record(receipt.storage_admission, 'integrity_receipt.storage_admission')
+  const rawAdmissionCounts = record(
+    rawAdmission.unregistered_relation_counts,
+    'integrity_receipt.storage_admission.unregistered_relation_counts',
+  )
+  const admissionKeys = Object.keys(rawAdmissionCounts)
+  assertSortedUnique(admissionKeys, 'integrity_receipt.storage_admission.unregistered_relation_counts')
+  const admissionCounts: Record<string, number> = {}
+  let admissionSum = 0
+  for (const [relation, count] of Object.entries(rawAdmissionCounts)) {
+    if (!Number.isSafeInteger(count) || (count as number) < 1) {
+      throw new GraphArtifactInvariantError('unregistered relation counts must be positive safe integers')
+    }
+    admissionCounts[relation] = count as number
+    admissionSum += count as number
+  }
+  const admissionTotal = rawAdmission.unresolved_unregistered_relation_candidates
+  if (!Number.isSafeInteger(admissionTotal) || (admissionTotal as number) < 0) {
+    throw new GraphArtifactInvariantError('unresolved unregistered relation candidates must be a non-negative safe integer')
+  }
+  if (admissionTotal !== admissionSum) {
+    throw new GraphArtifactInvariantError('unresolved unregistered relation total disagrees with its per-relation counts')
+  }
+  if (admissionSum > 0 && !reasons.includes(UNREGISTERED_RELATION_AT_STORAGE_BOUNDARY)) {
+    throw new GraphArtifactInvariantError('receipt records unregistered admissions without disclosing the reason')
+  }
+
   return {
     accounting_scope: receipt.accounting_scope as GraphArtifactStorageReceipt['accounting_scope'],
     status: receipt.status as GraphArtifactStorageReceipt['status'],
@@ -590,6 +668,10 @@ function parseReceipt(value: unknown): GraphArtifactStorageReceipt {
       statuses: statuses as unknown as typeof ENDPOINT_IDENTITY_STATUSES,
       fact_pair_counts: matrix,
       reason_fact_counts: reasonFactCounts,
+    },
+    storage_admission: {
+      unresolved_unregistered_relation_candidates: admissionTotal as number,
+      unregistered_relation_counts: admissionCounts,
     },
     reserved: {},
   }
@@ -774,7 +856,7 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
   }
 
   const receipt = parseReceipt(payload.integrity_receipt)
-  assertReceiptMatchesFacts(receipt, graph.factRecords().map(({ fact }) => fact))
+  assertReceiptMatchesFacts(receipt, graph.factRecords().map(({ fact }) => fact), receiptAdmissionSummary(receipt))
   const hyperedges = validateHyperedges(payload.hyperedges)
   graph.graph.hyperedges = [...hyperedges]
   graph.graph.community_labels = { ...payload.community_labels }
@@ -914,8 +996,8 @@ function loadLegacyGraphArtifact(
       Object.entries(legacy.community_labels).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
     )
   }
-  const receipt = buildStorageReceipt(graph.factRecords().map(({ fact }) => fact))
-  assertReceiptMatchesFacts(receipt, graph.factRecords().map(({ fact }) => fact))
+  const receipt = buildStorageReceipt(graph.factRecords().map(({ fact }) => fact), graph.storageAdmissionSummary())
+  assertReceiptMatchesFacts(receipt, graph.factRecords().map(({ fact }) => fact), graph.storageAdmissionSummary())
   graph.graph.artifact_integrity_receipt = receipt
   graph.graph.artifact_version = 1
   graph.graph.artifact_diagnostics = [LEGACY_PARALLEL_FACTS_UNRECOVERABLE]

@@ -253,6 +253,6 @@ describe('graph artifact v2 serialization', () => {
   it('keeps the artifact digest stable for unchanged input', () => {
     const fixture = readFileSync(new URL('../fixtures/graph-artifact-v2-empty.madar', import.meta.url))
 
-    expect(graphArtifactDigest(fixture)).toBe('e5ae447e2ed85254c10a0e66f5e88c25c79dafdb47b0e8e0bbb68f12856fdc4f')
+    expect(graphArtifactDigest(fixture)).toBe('4f5da0b827d457ae928631bf0289631bba4774203baf2598708a18bf1a34324c')
   })
 })

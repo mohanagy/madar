@@ -33,6 +33,16 @@ export type GraphRelationshipEntry = readonly [
   attributes: GraphRelationshipView,
 ]
 
+/**
+ * Minimal storage-boundary admission diagnostic for PR B. It proves an
+ * admission was attempted and refused without inventing a source, target,
+ * topology entry or occurrence. #658 owns the full terminal-state records.
+ */
+export interface StorageBoundaryAdmissionSummary {
+  readonly unresolvedUnregisteredRelationCandidates: number
+  readonly unregisteredRelationCounts: Readonly<Record<string, number>>
+}
+
 export interface GraphEndpointEntry {
   readonly source: string
   readonly target: string
@@ -371,6 +381,16 @@ export class KnowledgeGraph {
   private readonly factOccurrenceIndex = new Map<SemanticFactId, Set<EvidenceOccurrenceId>>()
   private readonly successorMap = new Map<string, Set<string>>()
   private readonly predecessorMap = new Map<string, Set<string>>()
+  /**
+   * Counts unregistered relations refused at the storage boundary, keyed by
+   * relation. Recorded here rather than left to the caller: the original defect
+   * was that `addEdge` returned an accurate refusal and every caller ignored it,
+   * so five producer relations vanished with no trace anywhere in the system.
+   * This is a storage-boundary diagnostic, not a graph fact -- it creates no
+   * node, pair, occurrence or traversable edge. Exact terminal accounting for
+   * unresolved candidates remains #658's responsibility.
+   */
+  private readonly unregisteredRelationAdmissions = new Map<string, number>()
 
   constructor(options: KnowledgeGraphOptions | boolean = {}) {
     this.directed = typeof options === 'boolean' ? options : options.directed === true
@@ -432,6 +452,10 @@ export class KnowledgeGraph {
       throw new GraphAdmissionError('Legacy semantic facts may only enter through the v1 artifact compatibility path')
     }
     if (resolution.status === 'unregistered' && legacyDiscriminator === null) {
+      this.unregisteredRelationAdmissions.set(
+        relation,
+        (this.unregisteredRelationAdmissions.get(relation) ?? 0) + 1,
+      )
       return Object.freeze({
         status: 'unresolved_degraded' as const,
         relation,
@@ -837,6 +861,20 @@ export class KnowledgeGraph {
     }
   }
 
+  /**
+   * Detached, immutable projection of the storage-boundary admission counters.
+   * Relation keys are lexically ordered and the total equals the sum of the
+   * per-relation counts, so the summary is deterministic and self-checking.
+   */
+  storageAdmissionSummary(): StorageBoundaryAdmissionSummary {
+    const counts = [...this.unregisteredRelationAdmissions.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+    return Object.freeze({
+      unresolvedUnregisteredRelationCandidates: counts.reduce((total, [, count]) => total + count, 0),
+      unregisteredRelationCounts: Object.freeze(Object.fromEntries(counts)),
+    })
+  }
+
   copy(): KnowledgeGraph {
     return this.copySelectedNodes(new Set(this.nodeIds()))
   }
@@ -848,6 +886,11 @@ export class KnowledgeGraph {
   private copySelectedNodes(selectedNodeIds: ReadonlySet<string>): KnowledgeGraph {
     const copied = new KnowledgeGraph({ directed: this.directed })
     Object.assign(copied.graph, this.graph)
+    // A copy must never look cleaner than its source; dropping these would let
+    // any copy() launder away the degradation the summary exists to report.
+    for (const [relation, count] of this.unregisteredRelationAdmissions) {
+      copied.unregisteredRelationAdmissions.set(relation, count)
+    }
 
     for (const [nodeId, attributes] of this.nodeMap) {
       if (!selectedNodeIds.has(nodeId)) continue
