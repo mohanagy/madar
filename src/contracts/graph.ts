@@ -999,6 +999,14 @@ export class KnowledgeGraph {
       const admission = copied.addEdge(fact.source, fact.target, { ...attributes }, {
         discriminator: fact.discriminator,
         recordOccurrence: false,
+        // A legacy discriminator may only enter through the v1 compatibility
+        // path. Copying re-admits facts that already passed that gate once, so
+        // carrying the marker preserves the restriction rather than widening
+        // it: without it, copy() and subgraph() throw on every v1-loaded graph,
+        // which is every graph until #705 completes the cutover.
+        ...(fact.discriminator.legacy === true
+          ? { legacyCompatibility: 'v1-artifact-loader' as const }
+          : {}),
       })
       if (admission.status !== 'stored' || admission.factId !== fact.id) {
         throw new GraphAdmissionError(`Copy changed semantic fact identity ${fact.id}`)
