@@ -27,15 +27,22 @@ describe('self-graph relation vocabulary', () => {
    * that no inventory predicted cannot pass silently.
    */
   /**
-   * Deliberately extracts 400 real production files. The corpus size is the
-   * control -- a smaller sample would stop being evidence about the shipped
-   * producer vocabulary -- so the budget is raised rather than the corpus cut.
+   * Extracts every production source file under src/ -- 189 of them today.
    *
-   * Observed: ~11 s locally, ~21-22 s on protected runners, against an
-   * inherited 15 s default that this exceeded on every CI lane. 90 s is
-   * headroom, not a performance assertion: nothing here measures speed, and a
-   * lane approaching this ceiling means something changed and should be
-   * investigated rather than the number raised again.
+   * This previously said "400 real production files" and sliced to 400. src/
+   * has never held that many, so the slice was inert and the number was simply
+   * wrong wherever it was quoted. The corpus is the whole tree, and the count
+   * is asserted below rather than described, because a corpus claim that
+   * nothing checks is how the wrong number survived in the first place.
+   *
+   * Budget: this test could not run on Windows at all until the file-URL path
+   * defect was fixed, so every earlier observation excluded the slowest
+   * platform. Measured now: ~19-27 s macOS, ~24-41 s Linux, ~81-86 s Windows,
+   * where TypeScript extraction over many small files is several times slower.
+   * 90 s left Windows at 96% of its ceiling, so 180 s restores real headroom.
+   * That is not the number being raised to hide a regression -- it is the first
+   * budget set with Windows data in it. Runtime scales with the corpus, so a
+   * substantially larger src/ means revisiting this rather than trimming files.
    *
    * `extract()` is synchronous, so this timeout is a post-hoc scheduling
    * allowance. It cannot interrupt a wedged extraction and is not a deadlock
@@ -43,7 +50,12 @@ describe('self-graph relation vocabulary', () => {
    */
   it('admits every relation the real extractor emits, with zero refusals', () => {
     const started = Date.now()
-    const files = sources(SRC).slice(0, 400)
+    const files = sources(SRC)
+    // The corpus is the control. A scan that collapsed to a handful of files --
+    // a bad root, an excluded directory, a platform path quirk -- would still
+    // emit relations and still pass every assertion below. A floor rather than
+    // an exact count so adding a source file does not fail the build.
+    expect(files.length, 'the self-graph corpus collapsed').toBeGreaterThan(150)
     const extraction = extract(files) as unknown as {
       edges: readonly { relation?: unknown }[]
     }
@@ -68,9 +80,9 @@ describe('self-graph relation vocabulary', () => {
     })
     expect(graph.numberOfFacts()).toBeGreaterThan(0)
 
-    // Recorded so a reviewer can see the real cost against the 90 s budget.
+    // Recorded so a reviewer can see the real cost against the 180 s budget.
     console.log(`[self-graph audit] ${files.length} files, ${emitted.size} relations, ${Date.now() - started} ms`)
-  }, 90_000)
+  }, 180_000)
 
   it('still degrades a deliberately injected unknown relation', () => {
     const graph = new KnowledgeGraph({ directed: true })
