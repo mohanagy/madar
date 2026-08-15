@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { serializeCanonicalJson } from './canonical-json.js'
@@ -1362,7 +1362,47 @@ const ABSENT_METADATA: GraphArtifactMetadata = Object.freeze({
  * tombstoned graph.json whose sibling graph.madar carries the real payload.
  * Never throws: the format field carries the failure instead.
  */
-export function readGraphArtifactMetadata(graphPath: string): GraphArtifactMetadata {
+/** Signals a policy limit, not a corrupt file; callers report it as unreadable. */
+class GraphArtifactTooLargeError extends Error {
+  constructor(path: string, size: number, maxBytes: number) {
+    super(`Graph artifact ${path} is ${size} bytes, over the ${maxBytes} byte metadata limit`)
+    this.name = 'GraphArtifactTooLargeError'
+  }
+}
+
+/**
+ * Reads an artifact only if it is within the caller's limit.
+ *
+ * The size is checked on the path actually being read. Canonical-sibling
+ * preference and tombstone redirection both switch the file out from under the
+ * caller, so a limit applied to the path the caller passed in says nothing
+ * about the bytes that get loaded: a small graph.json beside a huge
+ * graph.madar sailed past the guard entirely.
+ *
+ * Checked twice on purpose. The stat avoids reading an oversized file at all;
+ * the post-read length catches a file that grew between the two calls.
+ */
+function readArtifactWithinLimit(path: string, maxBytes: number | undefined): string {
+  if (maxBytes !== undefined) {
+    const { size } = statSync(path)
+    if (size > maxBytes) throw new GraphArtifactTooLargeError(path, size, maxBytes)
+  }
+  const bytes = readFileSync(path)
+  if (maxBytes !== undefined && bytes.byteLength > maxBytes) {
+    throw new GraphArtifactTooLargeError(path, bytes.byteLength, maxBytes)
+  }
+  return decodeArtifactBytes(bytes)
+}
+
+export interface GraphArtifactMetadataOptions {
+  /** Maximum bytes the resolved artifact may occupy before it is refused. */
+  readonly maxBytes?: number
+}
+
+export function readGraphArtifactMetadata(
+  graphPath: string,
+  options: GraphArtifactMetadataOptions = {},
+): GraphArtifactMetadata {
   // eslint-disable-next-line no-param-reassign -- canonical-artifact preference
   let text: string
   let resolvedPath = graphPath
@@ -1378,12 +1418,12 @@ export function readGraphArtifactMetadata(graphPath: string): GraphArtifactMetad
         graphPath = canonical
       }
     }
-    text = decodeArtifactBytes(readFileSync(graphPath))
+    text = readArtifactWithinLimit(graphPath, options.maxBytes)
     if (text === GRAPH_ARTIFACT_V2_TOMBSTONE || text.startsWith('MADAR_GRAPH_MOVED/')) {
       const sibling = join(dirname(graphPath), 'graph.madar')
       if (!existsSync(sibling)) return { ...ABSENT_METADATA, format: 'unreadable' }
       resolvedPath = sibling
-      text = decodeArtifactBytes(readFileSync(sibling))
+      text = readArtifactWithinLimit(sibling, options.maxBytes)
     }
   } catch {
     return { ...ABSENT_METADATA, format: 'unreadable' }

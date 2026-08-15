@@ -298,7 +298,10 @@ export function readDiscoverySafetyMetadata(graphPath: string): DiscoverySafetyM
     if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
       return cached.value
     }
-    const metadata = readGraphArtifactMetadata(graphPath)
+    // The stat above covers the path handed in. Metadata resolution may switch
+    // to a sibling graph.madar, so the limit has to travel with the request or
+    // a small graph.json beside a huge canonical artifact reads unbounded.
+    const metadata = readGraphArtifactMetadata(graphPath, { maxBytes: MAX_GRAPH_ARTIFACT_BYTES })
     if (metadata.format === 'absent' || metadata.format === 'unreadable') {
       return null
     }
