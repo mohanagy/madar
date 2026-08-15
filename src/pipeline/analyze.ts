@@ -85,7 +85,15 @@ export class GraphDirectionMismatchError extends Error {
 
 export interface GraphStructureMetrics {
   total_nodes: number
+  /**
+   * Compatibility alias for `total_endpoint_pairs`. This metric has always
+   * counted unique endpoint pairs among analysis-entity nodes -- a topology
+   * measure -- so the meaning is preserved rather than switched to facts.
+   * Always equal to `total_endpoint_pairs`.
+   */
   total_edges: number
+  /** Unique endpoint pairs among analysis-entity nodes. */
+  total_endpoint_pairs: number
   weakly_connected_components: number
   singleton_components: number
   isolated_nodes: number
@@ -494,6 +502,7 @@ export function graphStructureMetrics(graph: KnowledgeGraph): GraphStructureMetr
     return {
       total_nodes: 0,
       total_edges: 0,
+      total_endpoint_pairs: 0,
       weakly_connected_components: 0,
       singleton_components: 0,
       isolated_nodes: 0,
@@ -550,6 +559,7 @@ export function graphStructureMetrics(graph: KnowledgeGraph): GraphStructureMetr
   return {
     total_nodes: nodeIds.length,
     total_edges: entityEdges,
+      total_endpoint_pairs: entityEdges,
     weakly_connected_components: componentSizes.length,
     singleton_components: componentSizes.filter((size) => size === 1).length,
     isolated_nodes: nodeIds.filter((nodeId) => analysisEntityDegree(graph, nodeId) === 0).length,

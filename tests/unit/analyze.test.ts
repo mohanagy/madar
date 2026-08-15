@@ -219,6 +219,7 @@ describe('analyze', () => {
     expect(graphStructureMetrics(graph)).toEqual({
       total_nodes: 6,
       total_edges: 3,
+      total_endpoint_pairs: 3,
       weakly_connected_components: 3,
       singleton_components: 1,
       isolated_nodes: 1,
@@ -247,6 +248,7 @@ describe('analyze', () => {
     expect(graphStructureMetrics(graph)).toEqual({
       total_nodes: 15,
       total_edges: 15,
+      total_endpoint_pairs: 15,
       weakly_connected_components: 1,
       singleton_components: 0,
       isolated_nodes: 0,
@@ -279,6 +281,7 @@ describe('analyze', () => {
     expect(graphStructureMetrics(graph)).toEqual({
       total_nodes: 16,
       total_edges: 16,
+      total_endpoint_pairs: 16,
       weakly_connected_components: 2,
       singleton_components: 0,
       isolated_nodes: 0,
@@ -299,6 +302,7 @@ describe('analyze', () => {
     expect(graphStructureMetrics(graph)).toEqual({
       total_nodes: 0,
       total_edges: 0,
+      total_endpoint_pairs: 0,
       weakly_connected_components: 0,
       singleton_components: 0,
       isolated_nodes: 0,

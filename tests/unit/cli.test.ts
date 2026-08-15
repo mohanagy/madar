@@ -111,6 +111,7 @@ function createDependencies(): CliTestDependencies {
       structure_signals: {
         total_nodes: 10,
         total_edges: 20,
+        total_endpoint_pairs: 20,
         weakly_connected_components: 2,
         singleton_components: 0,
         isolated_nodes: 0,
@@ -3178,6 +3179,9 @@ describe('summary command', () => {
       generated_at: '2026-05-12T10:00:00.000Z',
       node_count: 3,
       edge_count: 2,
+      fact_count: 2,
+      endpoint_pair_count: 2,
+      occurrence_count: 0,
       file_count: 3,
       community_count: 2,
       source_domains: { production: 3 },
@@ -3204,7 +3208,7 @@ describe('summary command', () => {
     let capturedGraphPath: string | undefined
     dependencies.runGraphSummary = (graphPath: string) => {
       capturedGraphPath = graphPath
-      return { node_count: 0, edge_count: 0, file_count: 0, community_count: 0, source_domains: {}, top_modules: [], entrypoints: [], frameworks: [], runtime_paths: [] }
+      return { node_count: 0, edge_count: 0, fact_count: 0, endpoint_pair_count: 0, occurrence_count: 0, file_count: 0, community_count: 0, source_domains: {}, top_modules: [], entrypoints: [], frameworks: [], runtime_paths: [] }
     }
 
     const exitCode = await executeCli(['summary'], io, dependencies)

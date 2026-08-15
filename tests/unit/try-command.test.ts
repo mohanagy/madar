@@ -28,6 +28,9 @@ function createGraphSummary(nodeCount: number): GraphSummary {
   return {
     node_count: nodeCount,
     edge_count: Math.max(nodeCount - 1, 0),
+    fact_count: Math.max(nodeCount - 1, 0),
+    endpoint_pair_count: Math.max(nodeCount - 1, 0),
+    occurrence_count: 0,
     file_count: Math.max(nodeCount, 1),
     community_count: Math.max(Math.min(nodeCount, 3), 1),
     source_domains: { production: Math.max(nodeCount, 1) },
