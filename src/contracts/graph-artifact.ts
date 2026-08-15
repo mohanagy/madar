@@ -15,7 +15,14 @@ import {
   type EndpointIdentityReason,
   type EndpointIdentityStatus,
 } from './endpoint-identity.js'
-import { KnowledgeGraph, type GraphAttributes, type StorageBoundaryAdmissionSummary } from './graph.js'
+import {
+  KnowledgeGraph,
+  artifactHydrationToken,
+  type GraphAttributes,
+  type StorageBoundaryAdmissionSummary,
+} from './graph.js'
+
+const HYDRATION_TOKEN = artifactHydrationToken('graph-artifact-loader')
 import {
   canonicalEndpointPair,
   createEvidenceOccurrence,
@@ -288,10 +295,82 @@ function receiptAdmissionSummary(receipt: GraphArtifactStorageReceipt): StorageB
   })
 }
 
-function assertReceiptMatchesFacts(
+/**
+ * Structural invariants that hold regardless of which facts produced them.
+ *
+ * Used when we built the receipt ourselves: comparing an accumulation to
+ * itself proves nothing, but the shape rules still must hold.
+ */
+function assertReceiptShape(receipt: GraphArtifactStorageReceipt, factCount: number): void {
+  if (receipt.accounting_scope !== 'storage_only' || receipt.status !== 'degraded') {
+    throw new GraphArtifactInvariantError('storage receipt must remain degraded with storage_only scope')
+  }
+  if (!receipt.reasons.includes('full_emission_accounting_not_available')) {
+    throw new GraphArtifactInvariantError('storage receipt must disclose unavailable full emission accounting')
+  }
+  if (
+    receipt.endpoint_identity.statuses.length !== ENDPOINT_IDENTITY_STATUSES.length
+    || receipt.endpoint_identity.statuses.some((status, index) => status !== ENDPOINT_IDENTITY_STATUSES[index])
+  ) {
+    throw new GraphArtifactInvariantError('endpoint status order does not match the declared four-state policy')
+  }
+  if (Object.keys(receipt.reserved).length !== 0) {
+    throw new GraphArtifactInvariantError('storage receipt reserved fields must remain empty')
+  }
+  const admissionEntries = Object.entries(receipt.storage_admission.unregistered_relation_counts)
+  const admissionSum = admissionEntries.reduce((total, [, count]) => total + count, 0)
+  if (receipt.storage_admission.unresolved_unregistered_relation_candidates !== admissionSum) {
+    throw new GraphArtifactInvariantError('storage admission total disagrees with its per-relation counts')
+  }
+  if (admissionEntries.some(([, count]) => !Number.isSafeInteger(count) || count < 1)) {
+    throw new GraphArtifactInvariantError('storage admission counts must be positive safe integers')
+  }
+  let matrixSum = 0
+  for (const sourceStatus of ENDPOINT_IDENTITY_STATUSES) {
+    const row = receipt.endpoint_identity.fact_pair_counts[sourceStatus]
+    if (row === null || typeof row !== 'object') {
+      throw new GraphArtifactInvariantError(`endpoint receipt matrix is missing ${sourceStatus} row`)
+    }
+    for (const targetStatus of ENDPOINT_IDENTITY_STATUSES) {
+      const count = row[targetStatus]
+      if (!Number.isSafeInteger(count) || count < 0) {
+        throw new GraphArtifactInvariantError('endpoint receipt matrix counts must be non-negative safe integers')
+      }
+      matrixSum += count
+    }
+    if (Object.keys(row).some((status) => !ENDPOINT_IDENTITY_STATUSES.includes(status as EndpointIdentityStatus))) {
+      throw new GraphArtifactInvariantError('endpoint receipt matrix contains an unsupported target status')
+    }
+  }
+  if (matrixSum !== factCount) {
+    throw new GraphArtifactInvariantError(
+      `endpoint receipt partition sums to ${matrixSum}, expected ${factCount}`,
+    )
+  }
+  if (Object.keys(receipt.endpoint_identity.fact_pair_counts).some((status) => (
+    !ENDPOINT_IDENTITY_STATUSES.includes(status as EndpointIdentityStatus)
+  ))) {
+    throw new GraphArtifactInvariantError('endpoint receipt matrix contains an unsupported source status')
+  }
+}
+
+/**
+ * Validates a receipt against an accumulation that the caller already made.
+ *
+ * This previously took the fact list and called `buildStorageReceipt` itself,
+ * so every path accumulated the same facts twice: once to produce the receipt
+ * and once to produce an expected receipt to compare it against. On the
+ * self-graph that is a second pass over 17,940 facts for no additional
+ * assurance -- the comparison is exactly as strong when the expected receipt is
+ * the one the caller already built.
+ *
+ * Every cell, reason and admission invariant is still checked individually.
+ * This is not a totals-only comparison.
+ */
+function assertReceiptMatchesAccumulated(
   receipt: GraphArtifactStorageReceipt,
-  facts: readonly SemanticFact[],
-  admission: StorageBoundaryAdmissionSummary = EMPTY_ADMISSION_SUMMARY,
+  expected: GraphArtifactStorageReceipt,
+  factCount: number,
 ): void {
   if (receipt.accounting_scope !== 'storage_only' || receipt.status !== 'degraded') {
     throw new GraphArtifactInvariantError('storage receipt must remain degraded with storage_only scope')
@@ -306,7 +385,6 @@ function assertReceiptMatchesFacts(
     throw new GraphArtifactInvariantError('endpoint status order does not match the declared four-state policy')
   }
 
-  const expected = buildStorageReceipt(facts, admission)
   const expectedReasons = expected.reasons
   if (
     receipt.reasons.length !== expectedReasons.length
@@ -347,9 +425,9 @@ function assertReceiptMatchesFacts(
       throw new GraphArtifactInvariantError('endpoint receipt matrix contains an unsupported target status')
     }
   }
-  if (matrixSum !== facts.length) {
+  if (matrixSum !== factCount) {
     throw new GraphArtifactInvariantError(
-      `endpoint receipt partition sums to ${matrixSum}, expected ${facts.length}`,
+      `endpoint receipt partition sums to ${matrixSum}, expected ${factCount}`,
     )
   }
   if (Object.keys(receipt.endpoint_identity.fact_pair_counts).some((status) => (
@@ -490,9 +568,17 @@ export function serializeGraphArtifactV2(input: SerializeGraphArtifactV2Input): 
       ? input.graph.graph.community_labels as Record<string, string>
       : {})
   const admission = input.graph.storageAdmissionSummary()
-  const integrityReceipt = input.integrityReceipt
-    ?? buildStorageReceipt(facts.map(({ fact }) => fact), admission)
-  assertReceiptMatchesFacts(integrityReceipt, facts.map(({ fact }) => fact), admission)
+  // One accumulation. When we built the receipt ourselves there is nothing to
+  // compare it against but itself, so only its shape is validated; a
+  // caller-supplied receipt is compared against this same accumulation.
+  const factList = facts.map(({ fact }) => fact)
+  const accumulated = buildStorageReceipt(factList, admission)
+  const integrityReceipt = input.integrityReceipt ?? accumulated
+  if (input.integrityReceipt !== undefined) {
+    assertReceiptMatchesAccumulated(integrityReceipt, accumulated, factList.length)
+  } else {
+    assertReceiptShape(integrityReceipt, factList.length)
+  }
 
   const payload = {
     versions: {
@@ -609,19 +695,31 @@ function canonicalRecord(value: unknown): string {
   return serializeCanonicalJson(value, { arraySemantics: 'ordered' })
 }
 
+/**
+ * De-duplicates records by id, rejecting a repeated id whose payload differs.
+ *
+ * Canonical serialization is deferred until a duplicate id actually appears.
+ * The previous version serialized every record up front purely to have
+ * something to compare, which on the self-graph meant ~48,000 canonical
+ * serializations to detect a condition that normally never occurs. The
+ * guarantee is unchanged: a repeated id with a differing payload still fails,
+ * and it is still compared canonically rather than by reference.
+ */
 function recordsByUniqueId(values: readonly unknown[], kind: string): readonly Record<string, unknown>[] {
-  const byId = new Map<string, { readonly payload: string; readonly value: Record<string, unknown> }>()
+  const byId = new Map<string, Record<string, unknown>>()
   for (const rawValue of values) {
     const value = record(rawValue, kind)
     const id = stringField(value.id, `${kind}.id`)
-    const payload = canonicalRecord(value)
     const existing = byId.get(id)
-    if (existing !== undefined && existing.payload !== payload) {
+    if (existing === undefined) {
+      byId.set(id, value)
+      continue
+    }
+    if (canonicalRecord(existing) !== canonicalRecord(value)) {
       throw new GraphArtifactInvariantError(`duplicate ${kind} ID ${id} has a different payload`)
     }
-    if (existing === undefined) byId.set(id, { payload, value })
   }
-  return [...byId.values()].map(({ value }) => value)
+  return [...byId.values()]
 }
 
 function stringArray(value: unknown, field: string): readonly string[] {
@@ -878,16 +976,10 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
     if (!qualificationEqual(endpointIdentity, nodeQualification)) {
       throw new GraphArtifactInvariantError(`fact ${id} endpoint qualification disagrees with its nodes`)
     }
-    const admission = graph.addEdge(source, target, record(factValue.attributes, 'fact.attributes'), {
-      discriminator: rebuilt.discriminator,
-      recordOccurrence: false,
-      ...(rebuilt.discriminator.legacy === true
-        ? { legacyCompatibility: 'v1-artifact-loader' as const }
-        : {}),
-    })
-    if (admission.status !== 'stored' || admission.factId !== id) {
-      throw new GraphArtifactInvariantError(`fact ${id} could not be rebuilt with the same identity`)
-    }
+    // `rebuilt` was derived from the canonical payload and compared with the
+    // stored id above. Going through addEdge would derive that same id a
+    // second time; hydration inserts the already-verified fact instead.
+    graph.hydrateVerifiedFact(HYDRATION_TOKEN, rebuilt, record(factValue.attributes, 'fact.attributes'))
     expectedOccurrencesByFact.set(id, new Set(occurrenceIds))
   }
 
@@ -902,7 +994,7 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
     if (!expected.has(occurrence.id)) {
       throw new GraphArtifactInvariantError(`occurrence ${occurrence.id} is not listed by fact ${factId}`)
     }
-    graph.addOccurrence(occurrence)
+    graph.hydrateVerifiedOccurrence(HYDRATION_TOKEN, occurrence)
     seenOccurrenceIds.add(occurrence.id)
   }
   for (const [factId, expectedIds] of expectedOccurrencesByFact) {
@@ -914,7 +1006,12 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
   }
 
   const receipt = parseReceipt(payload.integrity_receipt)
-  assertReceiptMatchesFacts(receipt, graph.factRecords().map(({ fact }) => fact), receiptAdmissionSummary(receipt))
+  const loadedFacts = graph.factRecords().map(({ fact }) => fact)
+  assertReceiptMatchesAccumulated(
+    receipt,
+    buildStorageReceipt(loadedFacts, receiptAdmissionSummary(receipt)),
+    loadedFacts.length,
+  )
   const hyperedges = validateHyperedges(payload.hyperedges)
   graph.graph.hyperedges = [...hyperedges]
   graph.graph.community_labels = { ...payload.community_labels }
@@ -1054,8 +1151,9 @@ function loadLegacyGraphArtifact(
       Object.entries(legacy.community_labels).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
     )
   }
-  const receipt = buildStorageReceipt(graph.factRecords().map(({ fact }) => fact), graph.storageAdmissionSummary())
-  assertReceiptMatchesFacts(receipt, graph.factRecords().map(({ fact }) => fact), graph.storageAdmissionSummary())
+  const legacyFacts = graph.factRecords().map(({ fact }) => fact)
+  const receipt = buildStorageReceipt(legacyFacts, graph.storageAdmissionSummary())
+  assertReceiptShape(receipt, legacyFacts.length)
   graph.graph.artifact_integrity_receipt = receipt
   graph.graph.artifact_version = 1
   graph.graph.artifact_diagnostics = [LEGACY_PARALLEL_FACTS_UNRECOVERABLE]

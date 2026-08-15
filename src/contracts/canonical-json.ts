@@ -38,7 +38,35 @@ export function setLikeCanonicalArray(values: readonly unknown[]): CanonicalArra
   return Object.freeze({ [ARRAY_SEMANTICS]: 'set-like' as const, values })
 }
 
+/**
+ * True when a string contains a surrogate code unit, i.e. a character outside
+ * the Basic Multilingual Plane.
+ */
+function hasSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index)
+    if (unit >= 0xd800 && unit <= 0xdfff) return true
+  }
+  return false
+}
+
+/**
+ * Orders strings by Unicode code point.
+ *
+ * The fast path is exact rather than approximate: UTF-16 code-unit order and
+ * code-point order differ only where surrogate pairs are involved, so for
+ * strings with no surrogates `<` already gives code-point order. Almost every
+ * JSON key qualifies.
+ *
+ * The slow path materialised two arrays per comparison. Inside an O(n log n)
+ * key sort run once per object, that allocation dominated artifact loading --
+ * 15.9% of load time in the comparator plus much of the 9.7% spent in GC.
+ */
 function compareUnicodeCodePoints(left: string, right: string): number {
+  if (!hasSurrogate(left) && !hasSurrogate(right)) {
+    return left < right ? -1 : left > right ? 1 : 0
+  }
+
   const leftPoints = [...left]
   const rightPoints = [...right]
   const length = Math.min(leftPoints.length, rightPoints.length)

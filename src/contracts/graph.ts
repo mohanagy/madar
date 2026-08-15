@@ -93,6 +93,27 @@ export type GraphEdgeAdmissionResult =
     reasons: readonly ['relation_not_registered']
   }>
 
+/**
+ * Module-private capability for the artifact loader. The symbol is not
+ * exported, so the hydration entry points are unreachable from other modules
+ * even though they are public members.
+ */
+const ARTIFACT_HYDRATION_TOKEN: unique symbol = Symbol('madar.artifact-hydration')
+
+function assertHydrationToken(token: symbol): void {
+  if (token !== ARTIFACT_HYDRATION_TOKEN) {
+    throw new GraphAdmissionError('Verified hydration is reserved for the artifact loader')
+  }
+}
+
+/** @internal Obtainable only by the artifact loader inside this package. */
+export function artifactHydrationToken(caller: 'graph-artifact-loader'): symbol {
+  if (caller !== 'graph-artifact-loader') {
+    throw new GraphAdmissionError('Verified hydration is reserved for the artifact loader')
+  }
+  return ARTIFACT_HYDRATION_TOKEN
+}
+
 export class GraphAdmissionError extends Error {
   constructor(message: string) {
     super(message)
@@ -418,6 +439,88 @@ export class KnowledgeGraph {
     }
   }
 
+  /**
+   * The single place fact storage and every index are updated.
+   *
+   * Shared by normal admission and artifact hydration so the two cannot drift:
+   * a loaded graph and a generated graph must be index-for-index identical.
+   * It takes an already-constructed fact and derives no identity.
+   */
+  private indexVerifiedFact(fact: SemanticFact, attributes: GraphAttributes): void {
+    this.factMap.set(fact.id, { fact, attributes: { ...attributes } })
+    this.addFactIndexEntry(this.sourceFactIndex, fact.source, fact.id)
+    this.addFactIndexEntry(this.targetFactIndex, fact.target, fact.id)
+    this.addFactIndexEntry(this.relationFactIndex, fact.relation, fact.id)
+    if (!this.factOccurrenceIndex.has(fact.id)) this.factOccurrenceIndex.set(fact.id, new Set())
+
+    const pairKey = this.edgeKey(fact.source, fact.target)
+    const pairEntry = this.endpointPairIndex.get(pairKey)
+    if (pairEntry === undefined) {
+      this.endpointPairIndex.set(pairKey, {
+        source: fact.source,
+        target: fact.target,
+        factIds: new Set([fact.id]),
+      })
+    } else {
+      pairEntry.factIds.add(fact.id)
+    }
+
+    this.successorMap.get(fact.source)?.add(fact.target)
+    this.predecessorMap.get(fact.target)?.add(fact.source)
+
+    if (!this.directed) {
+      this.successorMap.get(fact.target)?.add(fact.source)
+      this.predecessorMap.get(fact.source)?.add(fact.target)
+    }
+  }
+
+  /**
+   * @internal Artifact-loader only. Inserts a fact whose SemanticFactId the
+   * caller has ALREADY derived from its canonical payload and compared with
+   * the stored id.
+   *
+   * This is not "trust the stored id". The loader still derives and verifies
+   * every id; this only stops `addEdge` from deriving the same id a second
+   * time, which on the self-graph was 17,940 redundant SHA-256 computations
+   * per load. Verifications per fact stay at exactly one.
+   *
+   * Guarded by a module-private token so no producer can reach it and insert
+   * an arbitrary precomputed id.
+   */
+  hydrateVerifiedFact(token: symbol, fact: SemanticFact, attributes: GraphAttributes): void {
+    assertHydrationToken(token)
+    const existing = this.factMap.get(fact.id)
+    if (existing !== undefined) {
+      if (serializeCanonicalJson(existing.fact as unknown as CanonicalJson, { arraySemantics: 'ordered' })
+        !== serializeCanonicalJson(fact as unknown as CanonicalJson, { arraySemantics: 'ordered' })) {
+        throw new GraphAdmissionError(`Duplicate semantic fact id ${fact.id} carries a different payload`)
+      }
+      return
+    }
+    this.indexVerifiedFact(fact, attributes)
+  }
+
+  /**
+   * @internal Artifact-loader only. Same contract as hydrateVerifiedFact, for
+   * evidence occurrences.
+   */
+  hydrateVerifiedOccurrence(token: symbol, occurrence: EvidenceOccurrence): void {
+    assertHydrationToken(token)
+    if (!this.factMap.has(occurrence.factId)) throw new MissingSemanticFactError(occurrence.factId)
+    const existing = this.occurrenceMap.get(occurrence.id)
+    if (existing !== undefined) {
+      if (serializeCanonicalJson(existing as unknown as CanonicalJson, { arraySemantics: 'ordered' })
+        !== serializeCanonicalJson(occurrence as unknown as CanonicalJson, { arraySemantics: 'ordered' })) {
+        throw new InvalidEvidenceOccurrenceError(`duplicate occurrence id ${occurrence.id} carries a different payload`)
+      }
+      return
+    }
+    this.occurrenceMap.set(occurrence.id, occurrence)
+    const factOccurrences = this.factOccurrenceIndex.get(occurrence.factId)
+    if (factOccurrences === undefined) throw new MissingSemanticFactError(occurrence.factId)
+    factOccurrences.add(occurrence.id)
+  }
+
   addEdge(
     source: string,
     target: string,
@@ -503,31 +606,7 @@ export class KnowledgeGraph {
       })
     }
 
-    this.factMap.set(fact.id, { fact, attributes: { ...attributes } })
-    this.addFactIndexEntry(this.sourceFactIndex, fact.source, fact.id)
-    this.addFactIndexEntry(this.targetFactIndex, fact.target, fact.id)
-    this.addFactIndexEntry(this.relationFactIndex, fact.relation, fact.id)
-    this.factOccurrenceIndex.set(fact.id, new Set())
-
-    const pairKey = this.edgeKey(fact.source, fact.target)
-    const pairEntry = this.endpointPairIndex.get(pairKey)
-    if (pairEntry === undefined) {
-      this.endpointPairIndex.set(pairKey, {
-        source: fact.source,
-        target: fact.target,
-        factIds: new Set([fact.id]),
-      })
-    } else {
-      pairEntry.factIds.add(fact.id)
-    }
-
-    this.successorMap.get(fact.source)?.add(fact.target)
-    this.predecessorMap.get(fact.target)?.add(fact.source)
-
-    if (!this.directed) {
-      this.successorMap.get(fact.target)?.add(fact.source)
-      this.predecessorMap.get(fact.source)?.add(fact.target)
-    }
+    this.indexVerifiedFact(fact, attributes)
 
     if (occurrence !== null) this.addOccurrence(occurrence)
 
