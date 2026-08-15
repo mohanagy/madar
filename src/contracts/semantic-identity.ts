@@ -185,6 +185,23 @@ function semanticFactPayload(input: SemanticFactIdentityInput): Buffer {
   }, { arraySemantics: 'ordered' })
 }
 
+/**
+ * The single repository-relative path contract for occurrence identity v1.
+ *
+ * Exported so no caller has to reimplement it. A second implementation already
+ * existed in the graph compatibility adapter with subtly different rules: it
+ * kept empty and "." segments, and its drive-letter test matched only a single
+ * letter, so it accepted "https://host/a.ts" and handed it here to be thrown
+ * out. Divergent copies of an identity rule are how a path becomes acceptable
+ * to one layer and fatal to the next.
+ *
+ * These are exactly the v1 rules. Changing any of them changes occurrence ids
+ * and is owned by #704, not by this function.
+ */
+export function normalizeIdentityRepositoryPath(value: string | null | undefined, field: string): string | null {
+  return normalizeRepositoryRelativePath(value, field)
+}
+
 function normalizeRepositoryRelativePath(value: string | null | undefined, field: string): string | null {
   if (value === null || value === undefined) {
     return null
@@ -296,14 +313,33 @@ export function createEvidenceOccurrenceId(input: EvidenceOccurrenceIdentityInpu
 
 /** Builds a detached occurrence model and derives its ID only from evidence-site identity. */
 export function createEvidenceOccurrence(input: EvidenceOccurrenceInput): EvidenceOccurrence {
-  const sourceFile = input.sourceFile ?? input.owner.sourceFile
+  // Normalize once, then derive the id from the canonical values AND store
+  // those same values. Previously the id normalized the path while the stored
+  // payload kept whatever spelling arrived, so "src\a.ts", "src//a.ts" and
+  // "src/./a.ts" all produced one id with three different recorded paths.
+  const normalizedSource = normalizeRepositoryRelativePath(input.sourceFile ?? null, 'sourceFile')
+  const normalizedOwnerSource = normalizeRepositoryRelativePath(input.owner.sourceFile ?? null, 'owner.sourceFile')
+  if (
+    normalizedSource !== null
+    && normalizedOwnerSource !== null
+    && normalizedSource !== normalizedOwnerSource
+  ) {
+    // Silently preferring one and storing the other is what produced an
+    // occurrence carrying two conflicting source paths.
+    throw new SemanticIdentityInvariantError(
+      `sourceFile ${JSON.stringify(normalizedSource)} conflicts with owner.sourceFile ${JSON.stringify(normalizedOwnerSource)}`,
+    )
+  }
+  const sourceFile = normalizedSource ?? normalizedOwnerSource ?? undefined
+  const targetFile = normalizeRepositoryRelativePath(input.targetFile ?? null, 'targetFile') ?? undefined
+
   const id = createEvidenceOccurrenceId({
     factId: input.factId,
     adapterId: input.owner.adapterId,
     strategy: input.owner.strategy,
     repositoryRelativeSourceFile: sourceFile ?? null,
     sourceRange: input.sourceRange ?? null,
-    repositoryRelativeTargetFile: input.targetFile ?? null,
+    repositoryRelativeTargetFile: targetFile ?? null,
     targetRange: input.targetRange ?? null,
     siteKind: input.siteKind ?? null,
     adapterEvidenceKey: input.adapterEvidenceKey ?? null,
@@ -312,13 +348,18 @@ export function createEvidenceOccurrence(input: EvidenceOccurrenceInput): Eviden
   return Object.freeze({
     id,
     factId: input.factId,
-    owner: Object.freeze({ ...input.owner }),
+    owner: Object.freeze({
+      ...input.owner,
+      // A present owner.sourceFile always normalizes to a string or throws, so
+      // a null here means it was absent and must stay absent.
+      ...(normalizedOwnerSource !== null ? { sourceFile: normalizedOwnerSource } : {}),
+    }),
     ...(sourceFile !== undefined ? { sourceFile } : {}),
     ...(input.sourceRange !== undefined ? { sourceRange: Object.freeze({
       start: Object.freeze({ ...input.sourceRange.start }),
       end: Object.freeze({ ...input.sourceRange.end }),
     }) } : {}),
-    ...(input.targetFile !== undefined ? { targetFile: input.targetFile } : {}),
+    ...(targetFile !== undefined ? { targetFile } : {}),
     ...(input.targetRange !== undefined ? { targetRange: Object.freeze({
       start: Object.freeze({ ...input.targetRange.start }),
       end: Object.freeze({ ...input.targetRange.end }),

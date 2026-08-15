@@ -8,6 +8,8 @@ import {
 import {
   createEvidenceOccurrence,
   createSemanticFact,
+  normalizeIdentityRepositoryPath,
+  SemanticIdentityInvariantError,
   type EvidenceOccurrenceDraft,
 } from './semantic-identity.js'
 import {
@@ -189,13 +191,27 @@ function isSourceRange(value: unknown): value is NonNullable<EvidenceOccurrenceD
     && Number.isFinite(value.end.column)
 }
 
+/**
+ * Non-throwing compatibility wrapper over the one identity path contract.
+ *
+ * The adapter accepts loose attribute data, so an unusable path is omitted
+ * rather than converted into a repository-relative identity. It must use the
+ * identity layer's rules, not its own: the previous local copy kept "." and
+ * empty segments and accepted "https://host/a.ts", which the identity layer
+ * then rejected -- a path this adapter had already approved could still crash
+ * occurrence creation further down.
+ *
+ * Only the identity-path validation error is caught. A programmer error from
+ * the identity layer must still surface.
+ */
 function repositoryRelativeFile(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.length === 0) return undefined
-  const normalized = value.replaceAll('\\', '/')
-  if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized) || normalized.split('/').includes('..')) {
-    return undefined
+  try {
+    return normalizeIdentityRepositoryPath(value, 'source_file') ?? undefined
+  } catch (error) {
+    if (error instanceof SemanticIdentityInvariantError) return undefined
+    throw error
   }
-  return normalized
 }
 
 function canonicalUnion<T>(left: readonly T[], right: readonly T[]): readonly T[] {
