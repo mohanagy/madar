@@ -78,7 +78,18 @@ function writeDurableTemporaryFile(path: string, bytes: Uint8Array | string): vo
   }
 }
 
+/**
+ * Flushes the directory entry so a completed rename survives a crash.
+ *
+ * This is a POSIX guarantee and is kept fail-closed there: a directory that
+ * cannot be flushed means the rename is not durable, which the caller must
+ * hear about. Windows exposes no directory-flush API at all — a directory
+ * cannot even be opened as a file, so the call fails with EPERM. Skipping it
+ * there is the honest reading; swallowing the error on every platform would
+ * silently delete the POSIX guarantee to make one platform quiet.
+ */
 function syncDirectory(path: string): void {
+  if (process.platform === 'win32') return
   const descriptor = openSync(path, 'r')
   try {
     fsyncSync(descriptor)

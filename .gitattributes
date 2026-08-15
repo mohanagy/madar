@@ -10,3 +10,10 @@ docs/qualification/** text eol=lf
 # Seeded-defect patches must reach `git apply` byte-for-byte, so they are marked
 # non-text and are never line-ending converted in either direction.
 docs/qualification/patches/*.patch -text
+
+# A graph artifact is a canonical byte sequence: its identity IS its bytes, and
+# its digest is asserted exactly. A CRLF checkout rewrote the two newlines in
+# the v2 header and trailer, so the committed fixture no longer matched what the
+# serializer produces and no longer hashed to its pinned digest. Marked non-text
+# so the bytes are identical on every platform.
+*.madar -text

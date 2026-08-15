@@ -57,9 +57,12 @@ export interface TransitionalGraphArtifactResult {
 }
 
 function writeDurable(path: string, contents: Uint8Array | string): void {
-  writeFileSync(path, contents)
-  const handle = openSync(path, 'r')
+  // Write and flush through one writable handle. Reopening read-only to fsync
+  // is portable on POSIX but not on Windows, where FlushFileBuffers requires a
+  // handle with write access and fails the whole publication with EPERM.
+  const handle = openSync(path, 'w')
   try {
+    writeFileSync(handle, contents)
     fsyncSync(handle)
   } finally {
     closeSync(handle)

@@ -1,5 +1,6 @@
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
@@ -7,7 +8,10 @@ import { resolveRelationDiscriminator } from '../../src/contracts/relation-discr
 import { extract } from '../../src/pipeline/extract.js'
 import { buildFromJson } from '../../src/pipeline/build.js'
 
-const SRC = new URL('../../src', import.meta.url).pathname
+// fileURLToPath, not .pathname: on Windows a file URL's pathname is
+// "/D:/repo/src", and the leading slash makes join/readdir resolve it against
+// the current drive as "D:\\D:\\repo\\src", which does not exist.
+const SRC = fileURLToPath(new URL('../../src', import.meta.url))
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
