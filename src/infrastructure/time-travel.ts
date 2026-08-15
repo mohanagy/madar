@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 import type { KnowledgeGraph } from '../contracts/graph.js'
 import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
@@ -10,7 +10,7 @@ import { compareTimeTravelGraphs, type CompareTimeTravelGraphsOptions, type Time
 import { validateGraphOutputPath } from '../shared/security.js'
 import { resolveMadarOutputDirectory, resolveMadarWorkspace } from '../shared/workspace.js'
 import { generateGraph, loadGraphExtractorVersion, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
-import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
+import { GRAPH_LOCAL_SIDECAR_BASENAME, readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -180,6 +180,22 @@ function persistSnapshot(rootDir: string, ref: string, commitSha: string, genera
 
   try {
     copyFileSync(generated.graphPath, tempGraphPath)
+
+    /*
+     * The snapshot must contain the canonical artifact, not only the mirror.
+     * graph.json is a v1 mirror and is lossy by construction -- it cannot
+     * represent parallel facts -- so a snapshot holding only the mirror
+     * silently drops every v2-only fact the moment it is read back. Copying
+     * graph.madar beside it is enough for the read path to prefer v2, because
+     * both loadGraph and readGraphArtifactMetadata already resolve a canonical
+     * sibling. The machine-local sidecar travels too so a restored snapshot
+     * still knows its root path.
+     */
+    const sourceDir = dirname(generated.graphPath)
+    for (const basename of ['graph.madar', GRAPH_LOCAL_SIDECAR_BASENAME]) {
+      const source = join(sourceDir, basename)
+      if (existsSync(source)) copyFileSync(source, join(tempDir, basename))
+    }
 
     if (generated.reportPath && existsSync(generated.reportPath)) {
       copyFileSync(generated.reportPath, tempReportPath)
