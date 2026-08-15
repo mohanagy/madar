@@ -128,6 +128,12 @@ export interface SerializeGraphArtifactV2Input {
   readonly communityLabels?: Readonly<Record<string | number, string>>
   readonly integrityReceipt?: GraphArtifactStorageReceipt
   readonly provenance?: GraphArtifactProvenance
+  /**
+   * Node id to community id. v1 injects this at write time from the clustering
+   * result rather than storing it on the graph, so v2 has to be handed the
+   * same map or the assignment is simply lost on round trip.
+   */
+  readonly nodeCommunities?: Readonly<Record<string, number>>
 }
 
 export interface ParsedGraphArtifactV2 {
@@ -442,12 +448,22 @@ function assertReceiptMatchesAccumulated(
   }
 }
 
-function nodePayload(graph: KnowledgeGraph): readonly unknown[] {
+function nodePayload(
+  graph: KnowledgeGraph,
+  nodeCommunities: Readonly<Record<string, number>> = {},
+): readonly unknown[] {
   return graph.nodeEntries()
     .map(([id, attributes]) => ({
       id,
       endpoint_identity: graph.nodeEndpointIdentity(id),
-      attributes: withoutUndefined(attributes),
+      // Mirrors toJson: community is a clustering result, not a stored node
+      // attribute, and consumers read it from the node. Omitting it made a v2
+      // load return community-less nodes, which changed retrieval scoring.
+      attributes: withoutUndefined(
+        nodeCommunities[id] === undefined && attributes.community === undefined
+          ? attributes
+          : { ...attributes, community: attributes.community ?? nodeCommunities[id] },
+      ),
     }))
     .sort((left, right) => left.id.localeCompare(right.id))
 }
@@ -593,7 +609,7 @@ export function serializeGraphArtifactV2(input: SerializeGraphArtifactV2Input): 
     generation_mode: input.generationMode,
     generated_at: input.generatedAt,
     directed: input.graph.isDirected(),
-    nodes: nodePayload(input.graph),
+    nodes: nodePayload(input.graph, input.nodeCommunities ?? {}),
     facts: facts.map(({ fact, attributes }) => factPayload(fact, attributes)),
     occurrences: occurrences.map(occurrencePayload),
     hyperedges,

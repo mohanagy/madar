@@ -439,6 +439,7 @@ function publishGraphArtifacts(
     generationMode: graph.graph.spi_mode === true ? 'spi' : 'legacy',
     generatedAt: new Date().toISOString(),
     communityLabels,
+    nodeCommunities: nodeCommunityMap(communities),
     provenance: {
       schema_version: graph.graph.schema_version === 2 ? 2 : 1,
       ...(typeof EXTRACTOR_CACHE_VERSION === 'number' ? { extractor_version: EXTRACTOR_CACHE_VERSION } : {}),
@@ -467,6 +468,15 @@ function publishGraphArtifacts(
     ...(rootPath.length > 0 ? { rootPath } : {}),
   })
   void workspaceRoot
+}
+
+/** Node id to community id, matching what toJson injects into the v1 payload. */
+function nodeCommunityMap(communities: Communities): Record<string, number> {
+  const assignment: Record<string, number> = {}
+  for (const [communityId, nodeIds] of Object.entries(communities)) {
+    for (const nodeId of nodeIds) assignment[nodeId] = Number(communityId)
+  }
+  return assignment
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
