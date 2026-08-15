@@ -110,6 +110,60 @@ describe('hydration is not reachable as a bypass', () => {
   })
 })
 
+/**
+ * Surgical tampers that ONLY identity verification can catch.
+ *
+ * The earlier string tampers were caught by format validation and by the
+ * matrix-sum check, so they passed even with identity verification disabled.
+ * A mutation run proved that; these replace them.
+ */
+describe('identity verification is load-bearing', () => {
+  const reserialize = (mutate: (payload: Record<string, unknown>) => void): (() => unknown) => {
+    const text = artifact(graphWith(['calls', 'injects'])).toString('utf8')
+    const newline = text.indexOf('\n')
+    const payload = JSON.parse(text.slice(newline + 1)) as Record<string, unknown>
+    mutate(payload)
+    const mutated = `${text.slice(0, newline + 1)}${JSON.stringify(payload)}\n`
+    return () => loadGraphArtifact(mutated)
+  }
+
+  const flipLastHex = (id: string): string =>
+    id.slice(0, -1) + (id.at(-1) === '0' ? '1' : '0')
+
+  it('rejects a fact id that is well-formed but not derived from its payload', () => {
+    // Same sf_ prefix, same length, still 64 hex characters -- so format
+    // validation passes and only the derived-vs-stored comparison fails.
+    expect(reserialize((payload) => {
+      const facts = payload.facts as { id: string }[]
+      facts[0]!.id = flipLastHex(facts[0]!.id)
+    })).toThrow(/does not match its canonical payload/)
+  })
+
+  it('rejects an occurrence id that is well-formed but not derived from its payload', () => {
+    expect(reserialize((payload) => {
+      const occurrences = payload.occurrences as { id: string }[]
+      occurrences[0]!.id = flipLastHex(occurrences[0]!.id)
+    })).toThrow(/does not match its canonical payload/)
+  })
+
+  it('rejects a matrix cell moved between cells with the total preserved', () => {
+    // The sum check cannot see this; only the per-cell comparison can.
+    expect(reserialize((payload) => {
+      const receipt = payload.integrity_receipt as {
+        endpoint_identity: { fact_pair_counts: Record<string, Record<string, number>> }
+      }
+      const cells = receipt.endpoint_identity.fact_pair_counts
+      const from = Object.entries(cells)
+        .flatMap(([row, cols]) => Object.entries(cols).map(([col, n]) => ({ row, col, n })))
+        .find(({ n }) => n > 0)
+      if (from === undefined) throw new Error('fixture has no populated cell')
+      const target = from.col === 'stable' ? 'legacy' : 'stable'
+      cells[from.row]![from.col] = from.n - 1
+      cells[from.row]![target] = (cells[from.row]![target] ?? 0) + 1
+    })).toThrow(/partition disagrees at/)
+  })
+})
+
 describe('artifact tampering still fails after the optimization', () => {
   const tamper = (from: string, to: string): (() => unknown) => {
     const bytes = artifact(graphWith(['calls', 'injects']))
