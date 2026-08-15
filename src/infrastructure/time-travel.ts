@@ -10,6 +10,7 @@ import { compareTimeTravelGraphs, type CompareTimeTravelGraphsOptions, type Time
 import { validateGraphOutputPath } from '../shared/security.js'
 import { resolveMadarOutputDirectory, resolveMadarWorkspace } from '../shared/workspace.js'
 import { generateGraph, loadGraphExtractorVersion, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -130,21 +131,11 @@ function snapshotTempDir(rootDir: string, commitSha: string): string {
 }
 
 function readGraphSchemaVersion(graphPath: string): number | null {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { schema_version?: unknown }
-    return typeof parsed.schema_version === 'number' && Number.isFinite(parsed.schema_version) ? parsed.schema_version : null
-  } catch {
-    return null
-  }
+  return readGraphArtifactMetadata(graphPath).schemaVersion
 }
 
 function graphIsDirected(graphPath: string): boolean {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { directed?: unknown }
-    return parsed.directed === true
-  } catch {
-    return false
-  }
+  return readGraphArtifactMetadata(graphPath).directed === true
 }
 
 function readSnapshotMetadata(rootDir: string, commitSha: string): SnapshotMetadata | null {

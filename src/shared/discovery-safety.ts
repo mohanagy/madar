@@ -1,5 +1,6 @@
 import { readFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, relative, sep } from 'node:path'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 export type DiscoveryExclusionKind = 'sensitive' | 'unreadable'
 
@@ -297,11 +298,11 @@ export function readDiscoverySafetyMetadata(graphPath: string): DiscoverySafetyM
     if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
       return cached.value
     }
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const metadata = readGraphArtifactMetadata(graphPath)
+    if (metadata.format === 'absent' || metadata.format === 'unreadable') {
       return null
     }
-    const value = parseDiscoverySafetyMetadata((parsed as Record<string, unknown>).discovery_safety)
+    const value = parseDiscoverySafetyMetadata(metadata.discoverySafety)
     discoveryMetadataCache.set(graphPath, { mtimeMs: stats.mtimeMs, size: stats.size, value })
     while (discoveryMetadataCache.size > MAX_METADATA_CACHE_ENTRIES) {
       const oldestKey = discoveryMetadataCache.keys().next().value as string | undefined

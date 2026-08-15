@@ -38,6 +38,7 @@ import {
   loadBenchmarkRuntimeProofProfiles,
   matchBenchmarkRuntimeProofProfile,
 } from './benchmark/runtime-proof.js'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 export type CompareBaselineMode = 'full' | 'bounded' | 'pack_only' | 'native_agent'
 export type CompareRunMode = 'baseline' | 'madar'
@@ -2417,20 +2418,7 @@ function suggestBenchmarkGraphScope(graphPath: string, sourceFiles: readonly str
 }
 
 function graphPathHasSpiMode(graphPath: string): boolean {
-  if (!existsSync(graphPath)) {
-    return false
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return false
-    }
-
-    return (parsed as { spi_mode?: unknown }).spi_mode === true
-  } catch {
-    return false
-  }
+  return readGraphArtifactMetadata(graphPath).spiMode
 }
 
 function benchmarkReadinessSeverity(current: BenchmarkReadinessStatus, next: BenchmarkReadinessStatus): BenchmarkReadinessStatus {

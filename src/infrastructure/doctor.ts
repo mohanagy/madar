@@ -41,6 +41,7 @@ import {
   type DiscoveryExclusion,
   type DiscoverySafetySummary,
 } from '../shared/discovery-safety.js'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 const MADAR_SECTION_MARKER = '## madar'
 
@@ -351,14 +352,8 @@ function readMcpCheck(
 }
 
 function graphRootPath(graphPath: string, fallback: string): string {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { root_path?: unknown }
-    return typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0
-      ? resolve(parsed.root_path)
-      : resolve(fallback)
-  } catch {
-    return resolve(fallback)
-  }
+  const { rootPath } = readGraphArtifactMetadata(graphPath)
+  return rootPath === null ? resolve(fallback) : resolve(rootPath)
 }
 
 function watcherProcessIsLive(state: WatcherStateV1 | null): boolean {

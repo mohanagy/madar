@@ -64,6 +64,7 @@ import {
   type DiscoveryExclusion,
   type DiscoverySafetyMetadata,
 } from '../shared/discovery-safety.js'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 export type ProgressStep =
   | { step: 'detect'; message: string }
@@ -406,17 +407,7 @@ function missingCodeExtractionError(totalFiles: number, discoverySafety?: Discov
 }
 
 export function loadGraphExtractorVersion(graphPath: string): number | null {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return null
-    }
-
-    const extractorVersion = (parsed as { extractor_version?: unknown }).extractor_version
-    return typeof extractorVersion === 'number' && Number.isFinite(extractorVersion) ? extractorVersion : null
-  } catch {
-    return null
-  }
+  return readGraphArtifactMetadata(graphPath).extractorVersion
 }
 
 export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}): GenerateGraphResult {

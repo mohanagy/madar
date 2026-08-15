@@ -13,6 +13,7 @@ import {
 import type { IndexingStrictThresholds } from '../contracts/indexing.js'
 import { loadManifestMetadata } from '../pipeline/detect.js'
 import { DEFAULT_HARD_IGNORE_GLOBS } from '../shared/source-discovery.js'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 export interface BuildGenerationPolicyOptions {
   directed?: boolean
@@ -182,12 +183,7 @@ export function generationOptionsFromPolicy(policy: GenerationPolicy): StoredPol
 }
 
 export function readGraphGenerationPolicy(graphPath: string): GenerationPolicy | null {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { generation_policy?: unknown }
-    return parseGenerationPolicy(parsed.generation_policy)
-  } catch {
-    return null
-  }
+  return parseGenerationPolicy(readGraphArtifactMetadata(graphPath).generationPolicy)
 }
 
 export function readStoredGenerationPolicy(graphPath: string, manifestPath?: string): GenerationPolicy | null {

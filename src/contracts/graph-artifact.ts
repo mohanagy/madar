@@ -98,6 +98,20 @@ export interface GraphArtifactStorageReceipt {
   readonly reserved: Readonly<Record<string, never>>
 }
 
+/**
+ * Portable graph-level provenance. Deliberately excludes `root_path`: an
+ * absolute checkout path is machine-local, so it travels in the untracked
+ * `graph.local.json` sidecar instead of the publishable artifact.
+ */
+export interface GraphArtifactProvenance {
+  readonly schema_version: number
+  readonly extractor_version?: number
+  readonly spi_mode?: boolean
+  readonly generation_policy?: Readonly<Record<string, unknown>>
+  readonly graph_build_freshness?: unknown
+  readonly discovery_safety?: unknown
+}
+
 export interface SerializeGraphArtifactV2Input {
   readonly graph: KnowledgeGraph
   readonly repositoryRevision: string
@@ -106,6 +120,7 @@ export interface SerializeGraphArtifactV2Input {
   readonly hyperedges?: readonly unknown[]
   readonly communityLabels?: Readonly<Record<string | number, string>>
   readonly integrityReceipt?: GraphArtifactStorageReceipt
+  readonly provenance?: GraphArtifactProvenance
 }
 
 export interface ParsedGraphArtifactV2 {
@@ -120,6 +135,7 @@ export interface ParsedGraphArtifactV2 {
   readonly hyperedges: readonly unknown[]
   readonly community_labels: Readonly<Record<string, unknown>>
   readonly integrity_receipt: unknown
+  readonly provenance: Readonly<Record<string, unknown>>
   readonly reserved: Readonly<Record<string, never>>
 }
 
@@ -401,6 +417,20 @@ function canonicalCommunityLabels(labels: Readonly<Record<string | number, strin
   return Object.fromEntries(Object.entries(labels).sort(([left], [right]) => left.localeCompare(right)))
 }
 
+/**
+ * Provenance is portable by construction. `root_path` is rejected rather than
+ * dropped: silently discarding a field the caller asked to publish would make
+ * the sidecar boundary depend on nobody ever making that mistake.
+ */
+function canonicalProvenance(provenance: GraphArtifactProvenance | undefined): Record<string, unknown> {
+  if (provenance === undefined) return {}
+  if ('root_path' in provenance) {
+    throw new GraphArtifactInvariantError('provenance must not carry root_path; it belongs in the local sidecar')
+  }
+  const entries = Object.entries(provenance).filter(([, value]) => value !== undefined)
+  return Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right)))
+}
+
 function canonicalHyperedge(value: unknown): Record<string, unknown> {
   const hyperedge = record(value, 'hyperedge')
   const nodes = arrayField(hyperedge.nodes, 'hyperedge.nodes')
@@ -457,6 +487,7 @@ export function serializeGraphArtifactV2(input: SerializeGraphArtifactV2Input): 
     hyperedges,
     community_labels: canonicalCommunityLabels(communityLabels),
     integrity_receipt: integrityReceipt,
+    provenance: canonicalProvenance(input.provenance),
     reserved: {},
   }
 
@@ -543,6 +574,7 @@ export function parseGraphArtifactV2(bytes: Uint8Array | string): ParsedGraphArt
     hyperedges: arrayField(payload.hyperedges, 'hyperedges'),
     community_labels: communityLabels,
     integrity_receipt: payload.integrity_receipt,
+    provenance: payload.provenance === undefined ? {} : record(payload.provenance, 'provenance'),
     reserved: assertEmptyReserved(payload.reserved, 'reserved'),
   })
 }
@@ -1049,6 +1081,144 @@ export function loadGraphArtifactFromPath(
     if (existsSync(v2Path)) return loadGraphArtifact(readFileSync(v2Path), options)
   }
   return loadGraphArtifact(currentBytes, options)
+}
+
+/** Untracked, machine-local companion to the portable artifact. */
+export const GRAPH_LOCAL_SIDECAR_BASENAME = 'graph.local.json'
+
+export type GraphArtifactMetadataFormat = 'v2' | 'v1' | 'absent' | 'unreadable'
+
+/**
+ * Graph-level metadata resolved without constructing a KnowledgeGraph.
+ *
+ * Eleven callers previously reached for these fields with a bare
+ * `JSON.parse(readFileSync(graphPath))`, ten of them inside a catch that
+ * returned a plausible-looking default. Against a v2 artifact every one of
+ * those would have degraded silently, so `format` is non-optional here:
+ * a caller must be able to tell "the graph says no" from "I could not read
+ * the graph".
+ */
+export interface GraphArtifactMetadata {
+  readonly format: GraphArtifactMetadataFormat
+  readonly schemaVersion: number | null
+  readonly extractorVersion: number | null
+  readonly spiMode: boolean
+  readonly directed: boolean | null
+  readonly generationPolicy: Readonly<Record<string, unknown>> | null
+  readonly graphBuildFreshness: unknown
+  readonly discoverySafety: unknown
+  readonly communityLabels: Readonly<Record<string, unknown>>
+  /** Machine-local; sourced from the sidecar for v2 and inline for v1. */
+  readonly rootPath: string | null
+  /** Distinct `source_file` values across nodes, in artifact order. */
+  readonly nodeSourceFiles: readonly string[]
+}
+
+function finiteNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function nonEmptyStringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+function optionalRecord(value: unknown): Readonly<Record<string, unknown>> | null {
+  return isRecord(value) ? value : null
+}
+
+function distinctSourceFiles(nodes: unknown): readonly string[] {
+  if (!Array.isArray(nodes)) return []
+  const seen = new Set<string>()
+  for (const node of nodes) {
+    if (!isRecord(node)) continue
+    const sourceFile = node.source_file
+    if (typeof sourceFile === 'string' && sourceFile.length > 0) seen.add(sourceFile)
+  }
+  return Object.freeze([...seen])
+}
+
+function readLocalSidecarRootPath(artifactPath: string): string | null {
+  try {
+    const sidecar = join(dirname(artifactPath), GRAPH_LOCAL_SIDECAR_BASENAME)
+    if (!existsSync(sidecar)) return null
+    return nonEmptyStringOrNull((JSON.parse(readFileSync(sidecar, 'utf8')) as { root_path?: unknown }).root_path)
+  } catch {
+    return null
+  }
+}
+
+const ABSENT_METADATA: GraphArtifactMetadata = Object.freeze({
+  format: 'absent',
+  schemaVersion: null,
+  extractorVersion: null,
+  spiMode: false,
+  directed: null,
+  generationPolicy: null,
+  graphBuildFreshness: undefined,
+  discoverySafety: undefined,
+  communityLabels: Object.freeze({}),
+  rootPath: null,
+  nodeSourceFiles: Object.freeze([]),
+})
+
+/**
+ * Reads graph-level metadata from a v2 artifact, a v1 graph.json, or a
+ * tombstoned graph.json whose sibling graph.madar carries the real payload.
+ * Never throws: the format field carries the failure instead.
+ */
+export function readGraphArtifactMetadata(graphPath: string): GraphArtifactMetadata {
+  let text: string
+  let resolvedPath = graphPath
+  try {
+    if (!existsSync(graphPath)) return ABSENT_METADATA
+    text = decodeArtifactBytes(readFileSync(graphPath))
+    if (text === GRAPH_ARTIFACT_V2_TOMBSTONE || text.startsWith('MADAR_GRAPH_MOVED/')) {
+      const sibling = join(dirname(graphPath), 'graph.madar')
+      if (!existsSync(sibling)) return { ...ABSENT_METADATA, format: 'unreadable' }
+      resolvedPath = sibling
+      text = decodeArtifactBytes(readFileSync(sibling))
+    }
+  } catch {
+    return { ...ABSENT_METADATA, format: 'unreadable' }
+  }
+
+  try {
+    if (text.startsWith(GRAPH_ARTIFACT_V2_HEADER)) {
+      const parsed = parseGraphArtifactV2(text)
+      const provenance = parsed.provenance
+      return Object.freeze({
+        format: 'v2' as const,
+        schemaVersion: finiteNumberOrNull(provenance.schema_version),
+        extractorVersion: finiteNumberOrNull(provenance.extractor_version),
+        spiMode: provenance.spi_mode === true,
+        directed: parsed.directed,
+        generationPolicy: optionalRecord(provenance.generation_policy),
+        graphBuildFreshness: provenance.graph_build_freshness,
+        discoverySafety: provenance.discovery_safety,
+        communityLabels: parsed.community_labels,
+        rootPath: readLocalSidecarRootPath(resolvedPath),
+        nodeSourceFiles: distinctSourceFiles(parsed.nodes),
+      })
+    }
+
+    const payload = JSON.parse(text) as Record<string, unknown>
+    if (!isRecord(payload)) return { ...ABSENT_METADATA, format: 'unreadable' }
+    return Object.freeze({
+      format: 'v1' as const,
+      schemaVersion: finiteNumberOrNull(payload.schema_version),
+      extractorVersion: finiteNumberOrNull(payload.extractor_version),
+      spiMode: payload.spi_mode === true,
+      directed: typeof payload.directed === 'boolean' ? payload.directed : null,
+      generationPolicy: optionalRecord(payload.generation_policy),
+      graphBuildFreshness: payload.graph_build_freshness,
+      discoverySafety: payload.discovery_safety,
+      communityLabels: optionalRecord(payload.community_labels) ?? {},
+      rootPath: nonEmptyStringOrNull(payload.root_path) ?? readLocalSidecarRootPath(resolvedPath),
+      nodeSourceFiles: distinctSourceFiles(payload.nodes),
+    })
+  } catch {
+    return { ...ABSENT_METADATA, format: 'unreadable' }
+  }
 }
 
 const GRAPH_ARTIFACT_CACHE_IDENTITY_FIELDS = Object.freeze([
