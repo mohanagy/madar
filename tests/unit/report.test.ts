@@ -27,13 +27,17 @@ function makeInputs() {
 
 function makeLowCohesionInputs() {
   const graph = new KnowledgeGraph(true)
+  // Nodes first: addEdge no longer auto-creates endpoints, and this cycle
+  // links n15 back to n1, so the original interleaved loop referenced a node
+  // that did not exist yet.
   for (let index = 1; index <= 15; index += 1) {
-    const nodeId = `n${index}`
-    const nextNodeId = `n${index === 15 ? 1 : index + 1}`
-    graph.addNode(nodeId, { label: `Node ${index}`, source_file: `module-${index}.ts`, file_type: 'code' })
-    graph.addEdge(nodeId, nextNodeId, { relation: 'calls', confidence: 'EXTRACTED', source_file: `module-${index}.ts` })
+    graph.addNode(`n${index}`, { label: `Node ${index}`, source_file: `module-${index}.ts`, file_type: 'code' })
   }
   graph.addNode('file', { label: 'module-1.ts', source_file: 'module-1.ts', file_type: 'code' })
+  for (let index = 1; index <= 15; index += 1) {
+    const nextNodeId = `n${index === 15 ? 1 : index + 1}`
+    graph.addEdge(`n${index}`, nextNodeId, { relation: 'calls', confidence: 'EXTRACTED', source_file: `module-${index}.ts` })
+  }
   graph.addEdge('file', 'n1', { relation: 'contains', confidence: 'EXTRACTED', source_file: 'module-1.ts' })
 
   const communities = cluster(graph)

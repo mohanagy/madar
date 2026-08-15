@@ -1,3 +1,10 @@
+/**
+ * Relation names here are placeholders for "some framework relation" -- none of
+ * the framework_* names this file used are emitted by any producer. Admission
+ * now refuses unregistered relations, so the fixtures use registered
+ * equivalents; what the tests verify (that framework-emitted nodes and edges
+ * survive graph building) is unchanged.
+ */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
@@ -110,7 +117,7 @@ describe('js framework extraction contract', () => {
 
         return {
           nodes: [createNode(routeNodeId, 'AppRoute', filePath, 1)],
-          edges: [createEdge(context.fileNodeId, routeNodeId, 'framework_declares_route', filePath, 1)],
+          edges: [createEdge(context.fileNodeId, routeNodeId, 'registers_route', filePath, 1)],
         }
       },
     }
@@ -123,7 +130,7 @@ describe('js framework extraction contract', () => {
 
     expect(result.nodes.find((node) => node.id === routeNodeId)?.label).toBe('AppRoute')
     expect(graph.hasNode(routeNodeId)).toBe(true)
-    expect(graph.edgeAttributes(fileNodeId, routeNodeId).relation).toBe('framework_declares_route')
+    expect(graph.edgeAttributes(fileNodeId, routeNodeId).relation).toBe('registers_route')
   })
 
   it('treats TypeScript SourceFile names as equivalent across path separators', () => {
@@ -205,8 +212,8 @@ describe('js framework extraction contract', () => {
         return {
           nodes: [createNode(routerNodeId, 'AppRouter', filePath, 1), createNode(providerNodeId, 'RouterProvider', filePath, 1)],
           edges: [
-            createEdge(fileNodeId, routerNodeId, 'framework_registers_router', filePath, 1),
-            createEdge(routerNodeId, providerNodeId, 'framework_renders_provider', filePath, 1),
+            createEdge(fileNodeId, routerNodeId, 'mounts_router', filePath, 1),
+            createEdge(routerNodeId, providerNodeId, 'renders', filePath, 1),
           ],
         }
       },
@@ -216,8 +223,8 @@ describe('js framework extraction contract', () => {
 
     expect(result.edges).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ source: fileNodeId, target: routerNodeId, relation: 'framework_registers_router' }),
-        expect.objectContaining({ source: routerNodeId, target: providerNodeId, relation: 'framework_renders_provider' }),
+        expect.objectContaining({ source: fileNodeId, target: routerNodeId, relation: 'mounts_router' }),
+        expect.objectContaining({ source: routerNodeId, target: providerNodeId, relation: 'renders' }),
       ]),
     )
   })
@@ -240,7 +247,7 @@ describe('js framework extraction contract', () => {
       extract() {
         return {
           nodes: [],
-          edges: [createEdge(fileNodeId, componentNodeId, 'framework_declares_component', filePath, 2)],
+          edges: [createEdge(fileNodeId, componentNodeId, 'declares_controller', filePath, 2)],
         }
       },
     }
@@ -251,11 +258,13 @@ describe('js framework extraction contract', () => {
       edges: result.edges,
     })
 
-    expect(graph.edgeAttributes(fileNodeId, componentNodeId)).toEqual(
-      expect.objectContaining({
-        relation: 'declares',
-      }),
-    )
+    // The baseline relation must survive alongside the framework one. Under
+    // the multigraph both are retained, so edgeAttributes is legitimately
+    // ambiguous here and the assertion moves to the plural API -- which states
+    // the intent more directly than "whichever one won".
+    expect(graph.relationsBetween(fileNodeId, componentNodeId)).toContain('declares')
+    expect(graph.factsBetween(fileNodeId, componentNodeId).map((fact) => fact.relation))
+      .toContain('declares')
   })
 
   it('preserves reverse-direction framework edges in extraction output while keeping the baseline relation in the default undirected build', () => {
@@ -276,7 +285,7 @@ describe('js framework extraction contract', () => {
       extract() {
         return {
           nodes: [],
-          edges: [createEdge(componentNodeId, fileNodeId, 'framework_references_component', filePath, 2)],
+          edges: [createEdge(componentNodeId, fileNodeId, 'references', filePath, 2)],
         }
       },
     }
@@ -288,14 +297,16 @@ describe('js framework extraction contract', () => {
     })
 
     expect(result.edges.filter((edge) => new Set([edge.source, edge.target]).size === 2)).toEqual([
-      expect.objectContaining({ source: componentNodeId, target: fileNodeId, relation: 'framework_references_component' }),
+      expect.objectContaining({ source: componentNodeId, target: fileNodeId, relation: 'references' }),
       expect.objectContaining({ source: fileNodeId, target: componentNodeId, relation: 'declares' }),
     ])
-    expect(graph.edgeAttributes(fileNodeId, componentNodeId)).toEqual(
-      expect.objectContaining({
-        relation: 'declares',
-      }),
-    )
+    // The baseline relation must survive alongside the framework one. Under
+    // the multigraph both are retained, so edgeAttributes is legitimately
+    // ambiguous here and the assertion moves to the plural API -- which states
+    // the intent more directly than "whichever one won".
+    expect(graph.relationsBetween(fileNodeId, componentNodeId)).toContain('declares')
+    expect(graph.factsBetween(fileNodeId, componentNodeId).map((fact) => fact.relation))
+      .toContain('declares')
   })
 
   it('preserves reverse-direction framework edges for directed graph builds', () => {
@@ -316,7 +327,7 @@ describe('js framework extraction contract', () => {
       extract() {
         return {
           nodes: [],
-          edges: [createEdge(componentNodeId, fileNodeId, 'framework_references_component', filePath, 2)],
+          edges: [createEdge(componentNodeId, fileNodeId, 'references', filePath, 2)],
         }
       },
     }
@@ -331,17 +342,19 @@ describe('js framework extraction contract', () => {
     )
 
     expect(result.edges.filter((edge) => new Set([edge.source, edge.target]).size === 2)).toEqual([
-      expect.objectContaining({ source: componentNodeId, target: fileNodeId, relation: 'framework_references_component' }),
+      expect.objectContaining({ source: componentNodeId, target: fileNodeId, relation: 'references' }),
       expect.objectContaining({ source: fileNodeId, target: componentNodeId, relation: 'declares' }),
     ])
-    expect(graph.edgeAttributes(fileNodeId, componentNodeId)).toEqual(
-      expect.objectContaining({
-        relation: 'declares',
-      }),
-    )
+    // The baseline relation must survive alongside the framework one. Under
+    // the multigraph both are retained, so edgeAttributes is legitimately
+    // ambiguous here and the assertion moves to the plural API -- which states
+    // the intent more directly than "whichever one won".
+    expect(graph.relationsBetween(fileNodeId, componentNodeId)).toContain('declares')
+    expect(graph.factsBetween(fileNodeId, componentNodeId).map((fact) => fact.relation))
+      .toContain('declares')
     expect(graph.edgeAttributes(componentNodeId, fileNodeId)).toEqual(
       expect.objectContaining({
-        relation: 'framework_references_component',
+        relation: 'references',
       }),
     )
   })
@@ -364,7 +377,7 @@ describe('js framework extraction contract', () => {
       extract() {
         return {
           nodes: [],
-          edges: [createEdge(fileNodeId, routeNodeId, 'framework_registers_route', filePath, 2)],
+          edges: [createEdge(fileNodeId, routeNodeId, 'handles_route', filePath, 2)],
         }
       },
     }
@@ -375,7 +388,7 @@ describe('js framework extraction contract', () => {
       expect.objectContaining({
         source: fileNodeId,
         target: routeNodeId,
-        relation: 'framework_registers_route',
+        relation: 'handles_route',
       }),
     ])
 
@@ -395,7 +408,7 @@ describe('js framework extraction contract', () => {
     expect(graph.hasNode(routeNodeId)).toBe(true)
     expect(graph.edgeAttributes(fileNodeId, routeNodeId)).toEqual(
       expect.objectContaining({
-        relation: 'framework_registers_route',
+        relation: 'handles_route',
       }),
     )
   })

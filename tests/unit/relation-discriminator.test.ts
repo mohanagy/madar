@@ -26,6 +26,13 @@ const RECOVERED_ENDPOINT_ONLY = [
   'return_type',
 ] as const
 
+// Relations no producer emits but production consumers dispatch on by name.
+const CONSUMED_ENDPOINT_ONLY = [
+  'guarded_by',
+  'reads_env',
+  'uses_config',
+] as const
+
 const RECOVERED_PARTIAL = [
   'changed_in',
   'controller_route',
@@ -75,19 +82,19 @@ const PARTIAL = [
 ] as const
 
 describe('relation discriminator registry v1', () => {
-  it('registers exactly the 48 producer relations under the required identifier', () => {
+  it('registers exactly the 51 producer and consumer relations under the required identifier', () => {
     // The identifier stays /1: artifact v2 has not shipped, and no previously
     // registered relation changed policy, so no stored fact identity moves.
     expect(RELATION_DISCRIMINATOR_REGISTRY_ID).toBe('madar.relation-discriminator-registry/1')
     expect([...REGISTERED_RELATIONS].sort()).toEqual(
-      [...ENDPOINT_ONLY, ...PARTIAL, ...RECOVERED_ENDPOINT_ONLY, ...RECOVERED_PARTIAL].sort(),
+      [...ENDPOINT_ONLY, ...PARTIAL, ...RECOVERED_ENDPOINT_ONLY, ...RECOVERED_PARTIAL, ...CONSUMED_ENDPOINT_ONLY].sort(),
     )
     expect(Object.keys(RELATION_DISCRIMINATOR_REGISTRY_V1).sort()).toEqual([...REGISTERED_RELATIONS].sort())
-    expect(REGISTERED_RELATIONS).toHaveLength(48)
+    expect(REGISTERED_RELATIONS).toHaveLength(51)
   })
 
   it('gives every recovered relation the completeness its producer supports', () => {
-    for (const relation of RECOVERED_ENDPOINT_ONLY) {
+    for (const relation of [...RECOVERED_ENDPOINT_ONLY, ...CONSUMED_ENDPOINT_ONLY]) {
       expect(RELATION_DISCRIMINATOR_REGISTRY_V1[relation].completeness).toBe('endpoint_only')
     }
     for (const relation of RECOVERED_PARTIAL) {

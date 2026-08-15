@@ -30,6 +30,17 @@ const RECOVERED_RELATIONS = [
   'route_handler',
 ] as const
 
+/**
+ * Relations no in-repository producer emits, but that production consumers
+ * dispatch on by name. The producer inventory could not find these; only
+ * reading the consumer allowlists did.
+ */
+const CONSUMED_RELATIONS = [
+  'guarded_by',
+  'reads_env',
+  'uses_config',
+] as const
+
 const registered = (relation: string): boolean =>
   (resolveRelationDiscriminator(relation as never) as { status: string }).status === 'registered'
 
@@ -93,6 +104,25 @@ describe('relation registry completeness', () => {
       expect(RELATION_DISCRIMINATOR_REGISTRY_V1[relation].relation).toBe(relation)
     }
     expect(Object.keys(RELATION_DISCRIMINATOR_REGISTRY_V1).length).toBe(REGISTERED_RELATIONS.length)
+  })
+
+  it('registers every relation a production consumer dispatches on', () => {
+    // Pack config/env resolution, the retrieval helper-relation set and the
+    // structural relationship diagnostic all match these by name. Refusing
+    // them at admission would make those features permanently dead.
+    for (const relation of CONSUMED_RELATIONS) {
+      expect(registered(relation), `${relation} must be registered`).toBe(true)
+    }
+  })
+
+  it('keeps the consumer allowlists inside the registry', () => {
+    // Guards against a consumer gaining a relation the registry never learns
+    // about, which is exactly how uses_config and reads_env were missed.
+    const helperRelations = ['uses_guard', 'guarded_by', 'reads_env', 'uses_config', 'depends_on', 'covered_by', 'injects']
+    const structuralRelations = ['calls', 'injects', 'depends_on', 'reads_env', 'uses_config']
+    const missing = [...new Set([...helperRelations, ...structuralRelations])].filter((r) => !registered(r))
+
+    expect(missing, `consumer relations missing from the registry: ${missing.join(', ')}`).toEqual([])
   })
 
   it('still refuses a relation nobody registered', () => {

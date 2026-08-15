@@ -59,6 +59,16 @@ export const REGISTERED_RELATIONS = Object.freeze([
   'related_to',
   'return_type',
   'route_handler',
+
+  // Consumed vocabulary. These are not emitted by an in-repository producer
+  // today, but production consumers dispatch on them by name -- Pack config
+  // and env resolution, the retrieval helper-relation set, and the structural
+  // relationship diagnostic. Refusing them at admission means those features
+  // can never receive data, so they belong in the registry even though the
+  // producer inventory alone would not have found them.
+  'guarded_by',
+  'reads_env',
+  'uses_config',
 ] as const)
 
 export type RegisteredRelation = (typeof REGISTERED_RELATIONS)[number]
@@ -174,6 +184,11 @@ export const RELATION_DISCRIMINATOR_REGISTRY_V1: Readonly<Record<RegisteredRelat
    * registered because it also arrives as compatibility input.
    */
   related_to: endpointOnly('related_to'),
+  // Symbol -> config key, environment variable, or guard. The pair is the
+  // whole fact; no behaviour-defining data rides on the edge.
+  uses_config: endpointOnly('uses_config'),
+  reads_env: endpointOnly('reads_env'),
+  guarded_by: endpointOnly('guarded_by'),
 
   calls: partial('calls', [
     'dispatch_kind_missing',

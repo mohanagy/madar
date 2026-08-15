@@ -1,3 +1,11 @@
+/**
+ * Relation names are stand-ins for this synthetic cross-layer graph. None of
+ * the originals is emitted by a producer or dispatched on by a consumer, so
+ * admission refuses them and the fixture would carry no relationships.
+ *
+ * Replacements are registered AND fall through relationWeight()'s default
+ * branch exactly as the originals did, so retrieval scoring is unchanged.
+ */
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 
 interface FlowNode {
@@ -104,15 +112,15 @@ const UI_DISTRACTORS: FlowNode[] = Array.from({ length: 14 }, (_, index) => ({
 }))
 
 const FLOW_EDGES: Array<[string, string, string]> = [
-  ['failed_check', 'status_route', 'calls_route'],
+  ['failed_check', 'status_route', 'handles_route'],
   ['status_route', 'incident_create', 'calls'],
-  ['incident_create', 'incident_table', 'writes'],
+  ['incident_create', 'incident_table', 'provides'],
   ['incident_create', 'notification_dispatch', 'calls'],
-  ['public_status', 'incident_table', 'reads'],
-  ['status_json', 'public_status', 'serializes'],
-  ['alternate_status', 'status_json', 'competes_with'],
-  ['external_effective_status', 'status_route', 'shares_status_vocabulary_with'],
-  ['external_effective_status', 'alternate_status', 'shares_computation_vocabulary_with'],
+  ['public_status', 'incident_table', 'reads_env'],
+  ['status_json', 'public_status', 'declares'],
+  ['alternate_status', 'status_json', 'related_to'],
+  ['external_effective_status', 'status_route', 'cites'],
+  ['external_effective_status', 'alternate_status', 'references'],
 ]
 
 export const CROSS_LAYER_MONITOR_FLOW_FILES = [

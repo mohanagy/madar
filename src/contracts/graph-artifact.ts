@@ -1018,6 +1018,30 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
   graph.graph.artifact_integrity_receipt = receipt
   graph.graph.artifact_version = GRAPH_ARTIFACT_VERSION
 
+  // Restore graph-level provenance. The v1 loader has always rehydrated these
+  // onto graph.graph, and callers read them from there; without this a v2 load
+  // silently returns a graph with no generation policy, no schema version and
+  // no SPI mode, which reads as "the graph says no" rather than "v2 dropped
+  // it". root_path is deliberately absent -- it is machine-local and lives in
+  // the sidecar.
+  const provenance = payload.provenance
+  if (typeof provenance.schema_version === 'number') {
+    graph.graph.schema_version = provenance.schema_version
+  }
+  if (provenance.spi_mode === true) graph.graph.spi_mode = true
+  if (isRecord(provenance.generation_policy)) {
+    graph.graph.generation_policy = provenance.generation_policy
+  }
+  if (provenance.graph_build_freshness !== undefined) {
+    graph.graph.graph_build_freshness = provenance.graph_build_freshness
+  }
+  if (provenance.discovery_safety !== undefined) {
+    graph.graph.discovery_safety = provenance.discovery_safety
+  }
+  if (typeof provenance.extractor_version === 'number') {
+    graph.graph.extractor_version = provenance.extractor_version
+  }
+
   return Object.freeze({
     format: 'v2' as const,
     graph,
