@@ -9,8 +9,11 @@ import {
   createEvidenceOccurrence,
   createSemanticFact,
   normalizeIdentityRepositoryPath,
+  SemanticIdentityFactory,
   SemanticIdentityInvariantError,
   type EvidenceOccurrenceDraft,
+  type EvidenceOccurrenceInput,
+  type SemanticFactInput,
 } from './semantic-identity.js'
 import {
   isRegisteredRelation,
@@ -173,6 +176,22 @@ export class InvalidEvidenceOccurrenceError extends GraphAdmissionError {
     super(`Cannot admit evidence occurrence: ${message}`)
     this.name = 'InvalidEvidenceOccurrenceError'
   }
+}
+
+/**
+ * Factory-first wrappers so every identity derivation inside a graph visibly
+ * names the collision scope it belongs to. An id derived without one would
+ * silently get a single-call scope and detect nothing.
+ */
+function createSemanticFactScoped(identity: SemanticIdentityFactory, input: SemanticFactInput): SemanticFact {
+  return createSemanticFact(input, identity)
+}
+
+function createEvidenceOccurrenceScoped(
+  identity: SemanticIdentityFactory,
+  input: EvidenceOccurrenceInput,
+): EvidenceOccurrence {
+  return createEvidenceOccurrence(input, identity)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -409,6 +428,14 @@ export class KnowledgeGraph {
 
   private readonly nodeMap = new Map<string, GraphAttributes>()
   private readonly nodeEndpointIdentityMap = new Map<string, EndpointIdentityEndpointQualification>()
+  /**
+   * This graph's collision scope. Every id derived while building or loading
+   * this graph goes through one factory, so a digest collision between any two
+   * of its facts or occurrences is still fatal. It dies with the graph, which
+   * is what stops witnesses accumulating for the life of a serve/watch process.
+   */
+  private readonly identity = new SemanticIdentityFactory()
+
   private readonly factMap = new Map<SemanticFactId, StoredFact>()
   private readonly occurrenceMap = new Map<EvidenceOccurrenceId, EvidenceOccurrence>()
   private readonly sourceFactIndex = new Map<string, Set<SemanticFactId>>()
@@ -595,7 +622,7 @@ export class KnowledgeGraph {
       throw new GraphAdmissionError('Legacy discriminator resolution failed')
     }
 
-    const fact = createSemanticFact({
+    const fact = createSemanticFactScoped(this.identity, {
       direction: this.directed ? 'directed' : 'undirected',
       source,
       target,
@@ -610,7 +637,7 @@ export class KnowledgeGraph {
     })
     const occurrence = options.recordOccurrence === false
       ? null
-      : createEvidenceOccurrence({
+      : createEvidenceOccurrenceScoped(this.identity, {
         factId: fact.id,
         ...(options.occurrence ?? this.compatibilityOccurrenceDraft(attributes)),
       })
@@ -694,7 +721,7 @@ export class KnowledgeGraph {
     if (!this.factMap.has(occurrence.factId)) {
       throw new MissingSemanticFactError(occurrence.factId)
     }
-    const rebuilt = createEvidenceOccurrence({
+    const rebuilt = createEvidenceOccurrenceScoped(this.identity, {
       factId: occurrence.factId,
       owner: occurrence.owner,
       ...(occurrence.sourceFile !== undefined ? { sourceFile: occurrence.sourceFile } : {}),
@@ -714,7 +741,7 @@ export class KnowledgeGraph {
     const existing = this.occurrenceMap.get(occurrence.id)
     const stored = existing === undefined
       ? rebuilt
-      : createEvidenceOccurrence({
+      : createEvidenceOccurrenceScoped(this.identity, {
         factId: existing.factId,
         owner: canonicalChoice(existing.owner, rebuilt.owner),
         ...(existing.sourceFile !== undefined ? { sourceFile: existing.sourceFile } : {}),

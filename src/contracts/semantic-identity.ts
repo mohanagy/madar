@@ -276,6 +276,17 @@ export class SemanticIdentityFactory {
 
   constructor(private readonly hash: IdentityHashFunction = sha256) {}
 
+  /**
+   * Number of distinct payloads this scope is currently witnessing.
+   *
+   * Exposed so the non-accumulation guarantee is observable as a count rather
+   * than argued from memory graphs or timings. A fresh operation must start at
+   * zero; that is what stops the previous process-global map from returning.
+   */
+  get witnessCount(): number {
+    return this.payloadByDigest.size
+  }
+
   private contentAddress(prefix: 'sf_' | 'eo_', payload: Buffer): string {
     const digest = this.hash(payload)
     if (!/^[a-f0-9]{64}$/.test(digest)) {
@@ -301,18 +312,41 @@ export class SemanticIdentityFactory {
   }
 }
 
-const DEFAULT_IDENTITY_FACTORY = new SemanticIdentityFactory()
-
-export function createSemanticFactId(input: SemanticFactIdentityInput): SemanticFactId {
-  return DEFAULT_IDENTITY_FACTORY.createSemanticFactId(input)
+/**
+ * Collision witnesses live on a factory instance, so the factory IS the
+ * collision scope. There is deliberately no module-level default instance: one
+ * existed, every graph build and artifact load shared it, and it retained a
+ * payload copy for every distinct fact and occurrence ever derived in the
+ * process. Under `serve` and `watch`, which rebuild repeatedly for the life of
+ * the daemon, that grew without bound.
+ *
+ * Callers that own an operation -- a graph, an artifact load -- pass their own
+ * factory so a collision anywhere inside that operation is still fatal. These
+ * unscoped helpers allocate a single-call factory instead, which cannot detect
+ * a collision against anything outside that one call. That is an explicit
+ * limitation, not an oversight: correctness of graph construction and artifact
+ * hydration must not depend on hidden process-global state, so neither path
+ * uses these.
+ */
+export function createSemanticFactId(
+  input: SemanticFactIdentityInput,
+  identity?: SemanticIdentityFactory,
+): SemanticFactId {
+  return (identity ?? new SemanticIdentityFactory()).createSemanticFactId(input)
 }
 
-export function createEvidenceOccurrenceId(input: EvidenceOccurrenceIdentityInput): EvidenceOccurrenceId {
-  return DEFAULT_IDENTITY_FACTORY.createEvidenceOccurrenceId(input)
+export function createEvidenceOccurrenceId(
+  input: EvidenceOccurrenceIdentityInput,
+  identity?: SemanticIdentityFactory,
+): EvidenceOccurrenceId {
+  return (identity ?? new SemanticIdentityFactory()).createEvidenceOccurrenceId(input)
 }
 
 /** Builds a detached occurrence model and derives its ID only from evidence-site identity. */
-export function createEvidenceOccurrence(input: EvidenceOccurrenceInput): EvidenceOccurrence {
+export function createEvidenceOccurrence(
+  input: EvidenceOccurrenceInput,
+  identity?: SemanticIdentityFactory,
+): EvidenceOccurrence {
   // Normalize once, then derive the id from the canonical values AND store
   // those same values. Previously the id normalized the path while the stored
   // payload kept whatever spelling arrived, so "src\a.ts", "src//a.ts" and
@@ -343,7 +377,7 @@ export function createEvidenceOccurrence(input: EvidenceOccurrenceInput): Eviden
     targetRange: input.targetRange ?? null,
     siteKind: input.siteKind ?? null,
     adapterEvidenceKey: input.adapterEvidenceKey ?? null,
-  })
+  }, identity)
 
   return Object.freeze({
     id,
@@ -410,7 +444,10 @@ function orientedQualification(
 }
 
 /** Builds the Stage 1 model while making qualification explicit on every fact. */
-export function createSemanticFact(input: SemanticFactInput): SemanticFact {
+export function createSemanticFact(
+  input: SemanticFactInput,
+  identity?: SemanticIdentityFactory,
+): SemanticFact {
   if (input.direction !== 'directed' && input.direction !== 'undirected') {
     throw new SemanticIdentityInvariantError('direction must be directed or undirected')
   }
@@ -431,7 +468,7 @@ export function createSemanticFact(input: SemanticFactInput): SemanticFact {
   }
 
   return Object.freeze({
-    id: createSemanticFactId(identityInput),
+    id: createSemanticFactId(identityInput, identity),
     direction: input.direction,
     source,
     target,

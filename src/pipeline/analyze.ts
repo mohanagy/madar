@@ -1,4 +1,5 @@
 import { KnowledgeGraph } from '../contracts/graph.js'
+import { serializeCanonicalJson } from '../contracts/canonical-json.js'
 import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from './detect.js'
 import { cluster, cohesionScore, type Communities } from './cluster.js'
 import type { SemanticFactId } from '../contracts/semantic-graph.js'
@@ -66,6 +67,46 @@ export interface GraphDiffResult {
  * answer: the alternative is to silently reinterpret one graph under the
  * other's model, which would weaken fact identity to make a report look tidy.
  */
+/**
+ * Two graphs disagree about what one SemanticFactId means.
+ *
+ * Fact identity is content-derived, so a shared id must describe identical
+ * endpoints, direction, relation and discriminator. Until collision witnesses
+ * were scoped per operation, a process-global map happened to catch this when
+ * both graphs were built in one process. That was incidental, not a contract:
+ * it never protected graphs loaded in different processes. The invariant now
+ * lives at the boundary that actually combines them.
+ */
+/** The exact fields that determine a SemanticFactId, canonically serialized. */
+function factIdentityProjection(fact: {
+  readonly direction: string
+  readonly source: string
+  readonly target: string
+  readonly relation: string
+  readonly discriminator: unknown
+}): string {
+  return serializeCanonicalJson({
+    direction: fact.direction,
+    source: fact.source,
+    target: fact.target,
+    relation: fact.relation,
+    discriminator: fact.discriminator,
+  }, { arraySemantics: 'ordered' })
+}
+
+export class GraphFactIdentityConflictError extends Error {
+  readonly factId: SemanticFactId
+
+  constructor(factId: SemanticFactId) {
+    super(
+      `Cannot compare graphs: semantic fact ${factId} describes different content in each graph. `
+      + 'A content-derived identity must not describe two different facts.',
+    )
+    this.name = 'GraphFactIdentityConflictError'
+    this.factId = factId
+  }
+}
+
 export class GraphDirectionMismatchError extends Error {
   readonly beforeDirected: boolean
   readonly afterDirected: boolean
@@ -1011,8 +1052,18 @@ export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): G
   const newNodesList = [...newNodes].filter((nodeId) => !oldNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(newGraph, nodeId) }))
   const removedNodesList = [...oldNodes].filter((nodeId) => !newNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(oldGraph, nodeId) }))
 
-  const oldFactIds = new Set(oldGraph.factRecords().map(({ fact }) => fact.id))
+  const oldFactsById = new Map(oldGraph.factRecords().map(({ fact }) => [fact.id, fact]))
+  const oldFactIds = new Set(oldFactsById.keys())
   const newFactIds = new Set(newGraph.factRecords().map(({ fact }) => fact.id))
+
+  // A shared id must mean the same fact in both graphs, or every "unchanged"
+  // row below is a lie about content that silently differs.
+  for (const { fact } of newGraph.factRecords()) {
+    const previous = oldFactsById.get(fact.id)
+    if (previous !== undefined && factIdentityProjection(previous) !== factIdentityProjection(fact)) {
+      throw new GraphFactIdentityConflictError(fact.id)
+    }
+  }
 
   const newEdgesList = newGraph
     .factRecords()

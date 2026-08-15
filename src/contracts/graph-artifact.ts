@@ -27,6 +27,7 @@ import {
   canonicalEndpointPair,
   createEvidenceOccurrence,
   createSemanticFact,
+  SemanticIdentityFactory,
   EVIDENCE_OCCURRENCE_IDENTITY_SCHEMA_VERSION,
   SEMANTIC_FACT_IDENTITY_SCHEMA_VERSION,
 } from './semantic-identity.js'
@@ -869,7 +870,10 @@ function parseSourceRange(value: unknown, field: string): SourceRange {
   }
 }
 
-function parseOccurrence(value: Record<string, unknown>): EvidenceOccurrence {
+function parseOccurrence(
+  value: Record<string, unknown>,
+  identity: SemanticIdentityFactory,
+): EvidenceOccurrence {
   const owner = record(value.owner, 'occurrence.owner')
   const provenance = arrayField(value.provenance, 'occurrence.provenance')
   const confidenceObservations = arrayField(
@@ -915,7 +919,7 @@ function parseOccurrence(value: Record<string, unknown>): EvidenceOccurrence {
     provenance: provenance as readonly EvidenceProvenance[],
     confidenceObservations: confidenceObservations as readonly ConfidenceObservation[],
     metadata: record(value.metadata, 'occurrence.metadata') as EvidenceOccurrence['metadata'],
-  })
+  }, identity)
   if (occurrence.id !== value.id) {
     throw new GraphArtifactInvariantError(
       `occurrence identity ${String(value.id)} does not match its canonical payload ${occurrence.id}`,
@@ -942,6 +946,11 @@ function validateHyperedges(values: readonly unknown[]): readonly unknown[] {
 
 function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifact {
   const graph = new KnowledgeGraph({ directed: payload.directed })
+  // One collision scope for this whole load. Every fact and occurrence id is
+  // re-derived and compared with the stored id through this factory, so two
+  // records inside one artifact that hash alike stay fatal, and the witnesses
+  // are released when the load finishes instead of outliving the process.
+  const identity = new SemanticIdentityFactory()
   for (const node of recordsByUniqueId(payload.nodes, 'node')) {
     const id = stringField(node.id, 'node.id')
     const endpointIdentity = validateEndpointIdentityEndpointQualification(node.endpoint_identity)
@@ -978,7 +987,7 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
       endpointIdentity,
       occurrenceIds: occurrenceIds as SemanticFact['occurrenceIds'],
       annotations: record(factValue.annotations, 'fact.annotations') as SemanticFact['annotations'],
-    })
+    }, identity)
     if (rebuilt.id !== id) {
       throw new GraphArtifactInvariantError(`fact identity ${id} does not match its canonical payload ${rebuilt.id}`)
     }
@@ -1006,7 +1015,7 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
     if (expected === undefined) {
       throw new GraphArtifactInvariantError(`occurrence references unknown fact ${factId}`)
     }
-    const occurrence = parseOccurrence(occurrenceValue)
+    const occurrence = parseOccurrence(occurrenceValue, identity)
     if (!expected.has(occurrence.id)) {
       throw new GraphArtifactInvariantError(`occurrence ${occurrence.id} is not listed by fact ${factId}`)
     }
