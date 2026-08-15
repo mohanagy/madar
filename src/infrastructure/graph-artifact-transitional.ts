@@ -16,17 +16,38 @@ import { GRAPH_LOCAL_SIDECAR_BASENAME, parseGraphArtifactV2 } from '../contracts
  * NOT performed here; `activateGraphArtifactV2` remains a prepared migration
  * primitive that no production path calls until then.
  *
- * The two artifacts are committed together. Publishing them through
- * independent writes would let a crash between the two leave a current
- * `graph.json` beside a stale `graph.madar` -- two files describing different
- * revisions, with nothing to indicate which one a reader should distrust.
+ * Publication contract, stated precisely because two filesystem paths cannot
+ * be renamed as one transaction:
+ *
+ * - On successful completion both files come from the same graph and the same
+ *   generation run.
+ * - Candidate validation happens before either rename, so an unparseable
+ *   artifact never reaches the output directory.
+ * - A recoverable synchronous failure unwinds in reverse and leaves the
+ *   previous usable state.
+ * - An abrupt process or machine termination between the two renames may leave
+ *   a new `graph.madar` beside the previous `graph.json`. The canonical
+ *   artifact can therefore advance ahead of the mirror; the mirror can lag.
+ *
+ * That asymmetry is deliberate and is why the canonical artifact is renamed
+ * FIRST. A lagging mirror is safe because no current reader treats it as the
+ * source of truth -- they prefer a valid `graph.madar`. The reverse order would
+ * let an advanced mirror be the newest thing on disk, which old readers would
+ * consume as authoritative.
+ *
+ * This is an explicit transitional limitation, allowed on `next` only, and it
+ * is removed by the cutover in #705.
  */
+export type TransitionalPublicationStep = 'stage' | 'rename_canonical' | 'rename_mirror'
+
 export interface TransitionalGraphArtifactInput {
   readonly outputDir: string
   readonly artifactBytes: Uint8Array
   readonly legacyJson: string
   /** Absolute machine-local workspace root; omitted when unknown. */
   readonly rootPath?: string
+  /** Filesystem-boundary fault injection used by the publication safety suite. */
+  readonly beforeStep?: (step: TransitionalPublicationStep) => void
 }
 
 export interface TransitionalGraphArtifactResult {
@@ -58,7 +79,8 @@ function restore(path: string, previous: Uint8Array | null): void {
 }
 
 /**
- * Validates the candidate, stages every file, then commits by rename.
+ * Validates the candidate, stages every file, then publishes canonical-first
+ * by rename.
  *
  * Validation happens before anything is staged: an artifact that cannot be
  * parsed must never reach the output directory, even briefly.
@@ -84,21 +106,25 @@ export function publishTransitionalGraphArtifacts(
 
   let artifactCommitted = false
   try {
+    input.beforeStep?.('stage')
     writeDurable(artifactTemp, input.artifactBytes)
     writeDurable(legacyTemp, input.legacyJson)
     if (sidecarTemp !== null && sidecarPath !== null) {
       writeDurable(sidecarTemp, `${JSON.stringify({ root_path: input.rootPath }, null, 2)}\n`)
     }
 
+    input.beforeStep?.('rename_canonical')
     renameSync(artifactTemp, artifactPath)
     artifactCommitted = true
+    input.beforeStep?.('rename_mirror')
     renameSync(legacyTemp, legacyMirrorPath)
     if (sidecarTemp !== null && sidecarPath !== null) {
       renameSync(sidecarTemp, sidecarPath)
     }
   } catch (error) {
-    // Unwind in reverse so the pair never survives half-committed. The sidecar
-    // is machine-local and derived, so it is not restored.
+    // Best-effort reverse unwind for catchable failures. This cannot protect
+    // against abrupt termination -- see the publication contract above.
+    // The sidecar is machine-local and derived, so it is not restored.
     if (artifactCommitted) restore(artifactPath, previousArtifact)
     restore(legacyMirrorPath, previousLegacy)
     for (const temp of [artifactTemp, legacyTemp, sidecarTemp]) {
