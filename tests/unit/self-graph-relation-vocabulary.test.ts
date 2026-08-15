@@ -22,7 +22,23 @@ describe('self-graph relation vocabulary', () => {
    * asserts the shipped pipeline agrees with it, so a relation reaching storage
    * that no inventory predicted cannot pass silently.
    */
+  /**
+   * Deliberately extracts 400 real production files. The corpus size is the
+   * control -- a smaller sample would stop being evidence about the shipped
+   * producer vocabulary -- so the budget is raised rather than the corpus cut.
+   *
+   * Observed: ~11 s locally, ~21-22 s on protected runners, against an
+   * inherited 15 s default that this exceeded on every CI lane. 90 s is
+   * headroom, not a performance assertion: nothing here measures speed, and a
+   * lane approaching this ceiling means something changed and should be
+   * investigated rather than the number raised again.
+   *
+   * `extract()` is synchronous, so this timeout is a post-hoc scheduling
+   * allowance. It cannot interrupt a wedged extraction and is not a deadlock
+   * guard.
+   */
   it('admits every relation the real extractor emits, with zero refusals', () => {
+    const started = Date.now()
     const files = sources(SRC).slice(0, 400)
     const extraction = extract(files) as unknown as {
       edges: readonly { relation?: unknown }[]
@@ -47,7 +63,10 @@ describe('self-graph relation vocabulary', () => {
       unregisteredRelationCounts: {},
     })
     expect(graph.numberOfFacts()).toBeGreaterThan(0)
-  })
+
+    // Recorded so a reviewer can see the real cost against the 90 s budget.
+    console.log(`[self-graph audit] ${files.length} files, ${emitted.size} relations, ${Date.now() - started} ms`)
+  }, 90_000)
 
   it('still degrades a deliberately injected unknown relation', () => {
     const graph = new KnowledgeGraph({ directed: true })
