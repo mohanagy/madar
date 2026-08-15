@@ -38,6 +38,10 @@ function createGraphFixtureRoot(): string {
   writeFileSync(
     join(root, 'baseline.graph.json'),
     JSON.stringify({
+      // Must match the generated graph's direction mode: direction is part of
+      // semantic fact identity, so an undirected baseline would make the same
+      // edge appear both removed and added.
+      directed: true,
       nodes: [
         { id: 'auth', label: 'AuthService', source_file: 'auth.ts', source_location: '1', file_type: 'code', community: 0 },
         { id: 'client', label: 'HttpClient', source_file: 'client.ts', source_location: '2', file_type: 'code', community: 0 },

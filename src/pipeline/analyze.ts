@@ -1,6 +1,7 @@
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from './detect.js'
 import { cluster, cohesionScore, type Communities } from './cluster.js'
+import type { SemanticFactId } from '../contracts/semantic-graph.js'
 
 export interface GodNode {
   id: string
@@ -34,12 +35,52 @@ export interface SemanticAnomaly {
   why: string
 }
 
+/**
+ * A diff row. `fact_id` is additive: two facts can share source, target and
+ * relation while differing in discriminator, so the visible fields alone
+ * cannot tell them apart. Existing required fields are unchanged.
+ */
+export interface GraphDiffEdgeRow {
+  source: string
+  target: string
+  relation: string
+  confidence: string
+  fact_id: SemanticFactId
+}
+
 export interface GraphDiffResult {
   new_nodes: Array<{ id: string; label: string }>
   removed_nodes: Array<{ id: string; label: string }>
-  new_edges: Array<{ source: string; target: string; relation: string; confidence: string }>
-  removed_edges: Array<{ source: string; target: string; relation: string; confidence: string }>
+  new_edges: GraphDiffEdgeRow[]
+  removed_edges: GraphDiffEdgeRow[]
   summary: string
+}
+
+/**
+ * Raised when two graphs are compared under different direction modes.
+ *
+ * Direction is part of semantic fact identity, so the same visible edge has a
+ * different fact ID in a directed graph than in an undirected one. Diffing
+ * across modes therefore produces a plausible-looking result in which every
+ * fact appears both removed and added. Failing closed is the only honest
+ * answer: the alternative is to silently reinterpret one graph under the
+ * other's model, which would weaken fact identity to make a report look tidy.
+ */
+export class GraphDirectionMismatchError extends Error {
+  readonly beforeDirected: boolean
+  readonly afterDirected: boolean
+
+  constructor(beforeDirected: boolean, afterDirected: boolean) {
+    super(
+      'Cannot compare graphs with different direction modes: '
+      + `before=${beforeDirected ? 'directed' : 'undirected'}, `
+      + `after=${afterDirected ? 'directed' : 'undirected'}. `
+      + 'Regenerate or load both graphs under the same graph-direction contract.',
+    )
+    this.name = 'GraphDirectionMismatchError'
+    this.beforeDirected = beforeDirected
+    this.afterDirected = afterDirected
+  }
 }
 
 export interface GraphStructureMetrics {
@@ -950,6 +991,10 @@ export function suggestQuestions(graph: KnowledgeGraph, communities: Communities
 }
 
 export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): GraphDiffResult {
+  if (oldGraph.isDirected() !== newGraph.isDirected()) {
+    throw new GraphDirectionMismatchError(oldGraph.isDirected(), newGraph.isDirected())
+  }
+
   const oldNodes = new Set(oldGraph.nodeIds())
   const newNodes = new Set(newGraph.nodeIds())
 
@@ -967,6 +1012,7 @@ export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): G
       target: fact.target,
       relation: fact.relation,
       confidence: String(attributes.confidence ?? ''),
+      fact_id: fact.id,
     }))
   const removedEdgesList = oldGraph
     .factRecords()
@@ -976,6 +1022,7 @@ export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): G
       target: fact.target,
       relation: fact.relation,
       confidence: String(attributes.confidence ?? ''),
+      fact_id: fact.id,
     }))
 
   const summaryParts: string[] = []

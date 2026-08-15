@@ -384,7 +384,15 @@ describe('analyze', () => {
 
     const diff = graphDiff(oldGraph, newGraph)
     expect(diff.new_edges).toEqual([
-      { source: 'caller', target: 'callee', relation: 'calls', confidence: 'EXTRACTED' },
+        {
+          source: 'caller',
+          target: 'callee',
+          relation: 'calls',
+          confidence: 'EXTRACTED',
+          // Additive: the visible fields match the retained fact exactly,
+          // so only the fact id tells the two apart.
+          fact_id: expect.stringMatching(/^sf_[0-9a-f]{64}$/),
+        },
     ])
     expect(diff.removed_edges).toEqual([])
   })
@@ -440,8 +448,8 @@ describe('analyze', () => {
 
     const diff = graphDiff(oldGraph, newGraph)
 
-    expect(diff.new_edges).toEqual([{ source: 'n2', target: 'n1', relation: 'calls', confidence: 'EXTRACTED' }])
-    expect(diff.removed_edges).toEqual([{ source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED' }])
+    expect(diff.new_edges).toEqual([{ source: 'n2', target: 'n1', relation: 'calls', confidence: 'EXTRACTED', fact_id: expect.stringMatching(/^sf_[0-9a-f]{64}$/) }])
+    expect(diff.removed_edges).toEqual([{ source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', fact_id: expect.stringMatching(/^sf_[0-9a-f]{64}$/) }])
   })
 
   it('generates suggested questions from graph signals', () => {
