@@ -168,63 +168,20 @@ export function resolveNeo4jPushConfig(options: Neo4jPushOptions, env: NodeJS.Pr
 }
 
 /**
- * Thrown by {@link assertNeo4jExportableFacts} when a graph carries more than one fact between
- * the same endpoints with the same relation type. See that function's doc comment for why this
- * exists: the current Neo4j export is not yet fact-preserving.
- */
-export class Neo4jUnsupportedFactMultiplicityError extends Error {
-  constructor(source: string, target: string, relation: string, factCount: number) {
-    super(
-      `Neo4j export does not yet support multiple facts between the same endpoints with the same ` +
-        `relation type (found ${factCount} facts for ${source} -[${relation}]-> ${target}). Neo4j export ` +
-        `iterates every fact, but the external store still MERGEs by (endpoints, relation type) only, so ` +
-        `writing this graph would silently collapse these facts into one relationship and let the last ` +
-        `write's properties overwrite the earlier ones. This is deferred to #657, which will introduce a ` +
-        `stable per-fact identity that Neo4j export can key on instead of (endpoints, relation type).`,
-    )
-    this.name = 'Neo4jUnsupportedFactMultiplicityError'
-  }
-}
-
-/**
- * Neo4j export iterates every semantic fact via {@link KnowledgeGraph.factEntries}, but that does
- * NOT mean the external Neo4j store preserves facts: each `MERGE (a)-[r:REL]->(b)` keys only on
- * (endpoints, relation type), so two distinct facts sharing both would collapse into one Neo4j
- * relationship, with the second write's properties silently overwriting the first's. Under the
- * current endpoint-keyed store this can never actually happen (at most one fact exists per
- * endpoint pair today), so this guard is inert now and exists to fail loudly — instead of
- * corrupting data silently — the moment #657 introduces real fact multiplicity, until Neo4j
- * export is upgraded with a stable per-fact identity to MERGE on.
- */
-export function assertNeo4jExportableFacts(entries: readonly GraphRelationshipEntry[]): void {
-  const counts = new Map<string, { source: string; target: string; relation: string; count: number }>()
-
-  for (const [source, target, attributes] of entries) {
-    const relation = sanitizeNeo4jRelation(attributes.relation)
-    const key = `${source}\u0000${target}\u0000${relation}`
-    const existing = counts.get(key)
-    counts.set(key, { source, target, relation, count: (existing?.count ?? 0) + 1 })
-  }
-
-  for (const { source, target, relation, count } of counts.values()) {
-    if (count > 1) {
-      throw new Neo4jUnsupportedFactMultiplicityError(source, target, relation, count)
-    }
-  }
-}
-
-/**
- * Pushes nodes and every semantic fact to Neo4j. Iterates `graph.factEntries()` — every fact the
- * graph holds — but this does not mean the resulting Neo4j graph is fact-preserving: relationships
- * are written with `MERGE (a)-[r:REL]->(b)`, which keys only on (endpoints, relation type), not on
- * a per-fact identity. See {@link assertNeo4jExportableFacts}, called below, for the guard that
- * keeps this honest until Neo4j export keys relationships by SemanticFactId.
+ * Pushes nodes and every semantic fact to Neo4j.
+ *
+ * Relationships MERGE on `SemanticFactId`, so two facts sharing endpoints and
+ * relation type but differing in discriminator stay two relationships, and the
+ * same fact pushed twice stays one. Occurrences are evidence and create none.
+ *
+ * This replaces `assertNeo4jExportableFacts`, a guard that refused to write
+ * rather than let (endpoints, relation) keying silently collapse parallel
+ * facts. It was correct to fail loudly while the export could not represent
+ * them; fact-safe keying makes refusing the wrong answer.
  */
 export async function pushGraphToNeo4j(graph: KnowledgeGraph, options: Neo4jPushOptions, dependencies: Neo4jDependencies = {}): Promise<Neo4jPushResult> {
   const config = resolveNeo4jPushConfig(options)
   const createDriver = dependencies.createDriver ?? defaultCreateDriver
-  const factEntries = graph.factEntries()
-  assertNeo4jExportableFacts(factEntries)
   let driver: Neo4jDriverLike | null = null
   let session: Neo4jSessionLike | null = null
 
@@ -245,13 +202,20 @@ export async function pushGraphToNeo4j(graph: KnowledgeGraph, options: Neo4jPush
         })
       }
 
-      for (const [source, target, attributes] of factEntries) {
-        const relation = sanitizeNeo4jRelation(attributes.relation)
-        await tx.run(`MATCH (a {id: $src}), (b {id: $tgt}) MERGE (a)-[r:${relation}]->(b) SET r += $props`, {
-          src: source,
-          tgt: target,
-          props: primitiveProperties(attributes),
-        })
+      for (const { fact, attributes } of graph.factRecords()) {
+        const relation = sanitizeNeo4jRelation(fact.relation)
+        // fact_id belongs in the MERGE pattern, not in the SET: as a property
+        // it would be overwritten on match and two facts differing only by
+        // discriminator would still collapse into one relationship.
+        await tx.run(
+          `MATCH (a {id: $src}), (b {id: $tgt}) MERGE (a)-[r:${relation} {fact_id: $factId}]->(b) SET r += $props`,
+          {
+            src: fact.source,
+            tgt: fact.target,
+            factId: fact.id,
+            props: primitiveProperties(attributes),
+          },
+        )
       }
     })
   } catch (error) {
