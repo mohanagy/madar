@@ -17,6 +17,7 @@ import {
   parseGraphArtifactV2,
 } from '../contracts/graph-artifact.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
+import { syncDirectory, temporaryPath, writeDurableTemporaryFile } from './durable-file.js'
 
 export { GRAPH_ARTIFACT_V2_TOMBSTONE }
 
@@ -58,43 +59,6 @@ export class GraphArtifactBackupConflictError extends Error {
   constructor(readonly backupPath: string) {
     super(`Refusing to overwrite a different preserved legacy graph artifact at ${backupPath}`)
     this.name = 'GraphArtifactBackupConflictError'
-  }
-}
-
-function temporaryPath(outputDir: string, label: string): string {
-  return join(
-    outputDir,
-    `.madar-${label}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`,
-  )
-}
-
-function writeDurableTemporaryFile(path: string, bytes: Uint8Array | string): void {
-  const descriptor = openSync(path, 'wx', 0o600)
-  try {
-    writeFileSync(descriptor, bytes)
-    fsyncSync(descriptor)
-  } finally {
-    closeSync(descriptor)
-  }
-}
-
-/**
- * Flushes the directory entry so a completed rename survives a crash.
- *
- * This is a POSIX guarantee and is kept fail-closed there: a directory that
- * cannot be flushed means the rename is not durable, which the caller must
- * hear about. Windows exposes no directory-flush API at all — a directory
- * cannot even be opened as a file, so the call fails with EPERM. Skipping it
- * there is the honest reading; swallowing the error on every platform would
- * silently delete the POSIX guarantee to make one platform quiet.
- */
-function syncDirectory(path: string): void {
-  if (process.platform === 'win32') return
-  const descriptor = openSync(path, 'r')
-  try {
-    fsyncSync(descriptor)
-  } finally {
-    closeSync(descriptor)
   }
 }
 

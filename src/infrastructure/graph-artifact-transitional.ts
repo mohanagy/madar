@@ -1,7 +1,8 @@
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, fsyncSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { GRAPH_LOCAL_SIDECAR_BASENAME, parseGraphArtifactV2 } from '../contracts/graph-artifact.js'
+import { syncDirectory, temporaryPath, writeDurableTemporaryFile } from './durable-file.js'
 
 /**
  * Transitional dual-artifact publish for PR B1.
@@ -56,29 +57,30 @@ export interface TransitionalGraphArtifactResult {
   readonly sidecarPath: string | null
 }
 
-function writeDurable(path: string, contents: Uint8Array | string): void {
-  // Write and flush through one writable handle. Reopening read-only to fsync
-  // is portable on POSIX but not on Windows, where FlushFileBuffers requires a
-  // handle with write access and fails the whole publication with EPERM.
-  const handle = openSync(path, 'w')
-  try {
-    writeFileSync(handle, contents)
-    fsyncSync(handle)
-  } finally {
-    closeSync(handle)
-  }
-}
-
 function snapshot(path: string): Uint8Array | null {
   return existsSync(path) ? readFileSync(path) : null
 }
 
-function restore(path: string, previous: Uint8Array | null): void {
+/**
+ * Puts a file back through the same staged-and-renamed route used to publish
+ * it. Writing the previous bytes directly over the live path would leave a
+ * torn file visible if the restore itself failed -- during an unwind, which is
+ * already the failure path.
+ */
+function restore(outputDir: string, path: string, previous: Uint8Array | null): void {
   if (previous === null) {
     rmSync(path, { force: true })
+    syncDirectory(outputDir)
     return
   }
-  writeDurable(path, previous)
+  const temporary = temporaryPath(outputDir, 'restore')
+  try {
+    writeDurableTemporaryFile(temporary, previous)
+    renameSync(temporary, path)
+    syncDirectory(outputDir)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
 }
 
 /**
@@ -100,9 +102,12 @@ export function publishTransitionalGraphArtifacts(
     ? join(input.outputDir, GRAPH_LOCAL_SIDECAR_BASENAME)
     : null
 
-  const artifactTemp = `${artifactPath}.publishing`
-  const legacyTemp = `${legacyMirrorPath}.publishing`
-  const sidecarTemp = sidecarPath === null ? null : `${sidecarPath}.publishing`
+  // Unique per process and per run. A fixed ".publishing" suffix meant two
+  // concurrent generations into one output directory staged over each other,
+  // and the winner renamed the loser's bytes into place as its own.
+  const artifactTemp = temporaryPath(input.outputDir, 'graph-madar')
+  const legacyTemp = temporaryPath(input.outputDir, 'graph-json')
+  const sidecarTemp = sidecarPath === null ? null : temporaryPath(input.outputDir, 'graph-local')
 
   const previousArtifact = snapshot(artifactPath)
   const previousLegacy = snapshot(legacyMirrorPath)
@@ -110,26 +115,29 @@ export function publishTransitionalGraphArtifacts(
   let artifactCommitted = false
   try {
     input.beforeStep?.('stage')
-    writeDurable(artifactTemp, input.artifactBytes)
-    writeDurable(legacyTemp, input.legacyJson)
+    writeDurableTemporaryFile(artifactTemp, input.artifactBytes)
+    writeDurableTemporaryFile(legacyTemp, input.legacyJson)
     if (sidecarTemp !== null && sidecarPath !== null) {
-      writeDurable(sidecarTemp, `${JSON.stringify({ root_path: input.rootPath }, null, 2)}\n`)
+      writeDurableTemporaryFile(sidecarTemp, `${JSON.stringify({ root_path: input.rootPath }, null, 2)}\n`)
     }
 
     input.beforeStep?.('rename_canonical')
     renameSync(artifactTemp, artifactPath)
     artifactCommitted = true
+    syncDirectory(input.outputDir)
     input.beforeStep?.('rename_mirror')
     renameSync(legacyTemp, legacyMirrorPath)
+    syncDirectory(input.outputDir)
     if (sidecarTemp !== null && sidecarPath !== null) {
       renameSync(sidecarTemp, sidecarPath)
+      syncDirectory(input.outputDir)
     }
   } catch (error) {
     // Best-effort reverse unwind for catchable failures. This cannot protect
     // against abrupt termination -- see the publication contract above.
     // The sidecar is machine-local and derived, so it is not restored.
-    if (artifactCommitted) restore(artifactPath, previousArtifact)
-    restore(legacyMirrorPath, previousLegacy)
+    if (artifactCommitted) restore(input.outputDir, artifactPath, previousArtifact)
+    restore(input.outputDir, legacyMirrorPath, previousLegacy)
     for (const temp of [artifactTemp, legacyTemp, sidecarTemp]) {
       if (temp !== null) rmSync(temp, { force: true })
     }
