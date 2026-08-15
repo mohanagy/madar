@@ -1131,7 +1131,9 @@ function distinctSourceFiles(nodes: unknown): readonly string[] {
   const seen = new Set<string>()
   for (const node of nodes) {
     if (!isRecord(node)) continue
-    const sourceFile = node.source_file
+    // v2 nests producer attributes; v1 carries source_file at the top level.
+    const attributes = isRecord(node.attributes) ? node.attributes : node
+    const sourceFile = attributes.source_file
     if (typeof sourceFile === 'string' && sourceFile.length > 0) seen.add(sourceFile)
   }
   return Object.freeze([...seen])
@@ -1167,10 +1169,21 @@ const ABSENT_METADATA: GraphArtifactMetadata = Object.freeze({
  * Never throws: the format field carries the failure instead.
  */
 export function readGraphArtifactMetadata(graphPath: string): GraphArtifactMetadata {
+  // eslint-disable-next-line no-param-reassign -- canonical-artifact preference
   let text: string
   let resolvedPath = graphPath
   try {
     if (!existsSync(graphPath)) return ABSENT_METADATA
+    // Same canonical preference as the graph loader: during the transitional
+    // dual-artifact state a valid v1 mirror sits beside the canonical v2, and
+    // metadata must describe the artifact readers actually use.
+    if (basename(graphPath) === 'graph.json') {
+      const canonical = join(dirname(graphPath), 'graph.madar')
+      if (existsSync(canonical)) {
+        resolvedPath = canonical
+        graphPath = canonical
+      }
+    }
     text = decodeArtifactBytes(readFileSync(graphPath))
     if (text === GRAPH_ARTIFACT_V2_TOMBSTONE || text.startsWith('MADAR_GRAPH_MOVED/')) {
       const sibling = join(dirname(graphPath), 'graph.madar')

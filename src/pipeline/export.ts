@@ -401,6 +401,30 @@ export function toJson(
   semanticAnomalies: SemanticAnomaly[] = [],
   extractorVersion?: number,
 ): void {
+  // MCP readers can reload this file while a watcher rebuilds. Publishing the
+  // completed JSON with a same-directory rename prevents a reader from ever
+  // observing a truncated graph.
+  writeFileAtomically(
+    outputPath,
+    serializeGraphJsonPayload(graph, communities, communityLabels, semanticAnomalies, extractorVersion),
+  )
+}
+
+/**
+ * Serializes the v1 payload without writing it.
+ *
+ * Split out so the transitional dual-artifact publish can stage the v1 mirror
+ * and the v2 artifact together: writing them through independent calls would
+ * let a failure between the two leave graph.json and graph.madar describing
+ * different revisions.
+ */
+export function serializeGraphJsonPayload(
+  graph: KnowledgeGraph,
+  communities: Communities,
+  communityLabels: Record<number, string> = {},
+  semanticAnomalies: SemanticAnomaly[] = [],
+  extractorVersion?: number,
+): string {
   const nodeCommunity = _nodeCommunityMap(communities)
   const data = {
     schema_version: graph.graph.schema_version === 2 ? 2 : 1,
@@ -438,10 +462,7 @@ export function toJson(
     semantic_anomalies: semanticAnomalies,
   }
 
-  // MCP readers can reload this file while a watcher rebuilds. Publishing the
-  // completed JSON with a same-directory rename prevents a reader from ever
-  // observing a truncated graph.
-  writeFileAtomically(outputPath, `${JSON.stringify(data, null, 2)}\n`)
+  return `${JSON.stringify(data, null, 2)}\n`
 }
 
 function subgraphFromNodes(graph: KnowledgeGraph, nodeIds: string[]): KnowledgeGraph {

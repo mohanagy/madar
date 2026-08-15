@@ -4560,6 +4560,10 @@ describe('generateGraph', () => {
       staleGraphData.nodes = staleGraphData.nodes.filter((node) => node.label !== 'default()')
       staleGraphData.links = staleGraphData.links.filter((edge) => edge.target !== 'auth_default')
       writeFileSync(initial.graphPath, `${JSON.stringify(staleGraphData, null, 2)}\n`, 'utf8')
+      // Seeding an older graph means seeding a v1-only workspace: since B1 a
+      // current reader prefers the canonical graph.madar, so rewriting only the
+      // v1 mirror no longer simulates a graph produced by a previous binary.
+      rmSync(join(tempDir, 'out', 'graph.madar'), { force: true })
 
       const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
@@ -4621,6 +4625,10 @@ describe('generateGraph', () => {
       staleGraphData.nodes = staleGraphData.nodes.filter((node) => node.label !== 'default()')
       staleGraphData.links = staleGraphData.links.filter((edge) => edge.target !== 'auth_default')
       writeFileSync(initial.graphPath, `${JSON.stringify(staleGraphData, null, 2)}\n`, 'utf8')
+      // Seeding an older graph means seeding a v1-only workspace: since B1 a
+      // current reader prefers the canonical graph.madar, so rewriting only the
+      // v1 mirror no longer simulates a graph produced by a previous binary.
+      rmSync(join(tempDir, 'out', 'graph.madar'), { force: true })
 
       const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       const updatedGraphData = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
@@ -4777,6 +4785,10 @@ describe('generateGraph', () => {
           : node,
       )
       writeFileSync(initial.graphPath, `${JSON.stringify(graphData, null, 2)}\n`, 'utf8')
+      // Seeding an older graph means seeding a v1-only workspace: since B1 a
+      // current reader prefers the canonical graph.madar, so rewriting only the
+      // v1 mirror no longer simulates a graph produced by a previous binary.
+      rmSync(join(tempDir, 'out', 'graph.madar'), { force: true })
 
       await delay(10)
       writeFileSync(sourcePath, 'def greet():\n    return helper()\n\ndef other():\n    return greet()\n', 'utf8')

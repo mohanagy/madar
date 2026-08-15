@@ -1,4 +1,5 @@
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 
 import { countTokens } from 'gpt-tokenizer/encoding/cl100k_base'
 
@@ -11,6 +12,9 @@ import { isRecord } from '../shared/guards.js'
 import { sanitizeLabel, validateGraphPath } from '../shared/security.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { parseGenerationPolicy } from '../contracts/generation-policy.js'
+import { GRAPH_ARTIFACT_V2_HEADER, loadGraphArtifactFromPath } from '../contracts/graph-artifact.js'
+
+const GRAPH_ARTIFACT_MOVED_PREFIX = 'MADAR_GRAPH_MOVED/'
 
 const MAX_GRAPH_BYTES = 100 * 1024 * 1024
 const MAX_TRAVERSAL_DEPTH = 6
@@ -211,9 +215,34 @@ export function loadGraph(graphPath: string): KnowledgeGraph {
     throw new Error(`Graph file too large: ${safePath}`)
   }
 
+  // Artifact v2 first. This is the canonical structured loader with thirty
+  // callers, so if it stayed JSON-only, activating v2 would break every one of
+  // them with "graph.json is corrupted" against a perfectly valid tombstone.
+  const head = readFileSync(safePath)
+  if (head.subarray(0, GRAPH_ARTIFACT_V2_HEADER.length).toString('utf8') === GRAPH_ARTIFACT_V2_HEADER) {
+    return loadGraphArtifactFromPath(safePath).graph
+  }
+  if (head.subarray(0, GRAPH_ARTIFACT_MOVED_PREFIX.length).toString('utf8') === GRAPH_ARTIFACT_MOVED_PREFIX) {
+    // The tombstone is addressed to old readers. This is a current reader, so
+    // it follows the pointer instead of reporting the graph as unavailable.
+    const sibling = join(dirname(safePath), 'graph.madar')
+    if (!existsSync(sibling)) {
+      throw new Error('out/graph.json has moved but out/graph.madar is missing. Re-run madar to rebuild.')
+    }
+    return loadGraphArtifactFromPath(sibling).graph
+  }
+  // Transitional dual-artifact state: graph.json is still a valid v1 mirror,
+  // but v2 is canonical. A current reader must never settle for the mirror
+  // just because it was the path it was handed -- the mirror cannot represent
+  // parallel facts, so preferring it would silently lose relationships.
+  if (basename(safePath) === 'graph.json') {
+    const canonical = join(dirname(safePath), 'graph.madar')
+    if (existsSync(canonical)) return loadGraphArtifactFromPath(canonical).graph
+  }
+
   let parsed: unknown
   try {
-    parsed = JSON.parse(readFileSync(safePath, 'utf8'))
+    parsed = JSON.parse(head.toString('utf8'))
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new Error(`graph.json is corrupted (${error.message}). Re-run madar to rebuild.`)
