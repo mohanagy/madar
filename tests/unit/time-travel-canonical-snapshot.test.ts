@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { serializeGraphArtifactV2 } from '../../src/contracts/graph-artifact.js'
 import { publishTransitionalGraphArtifacts } from '../../src/infrastructure/graph-artifact-transitional.js'
 import { loadGraph } from '../../src/runtime/serve.js'
+import { loadOrBuildSnapshot } from '../../src/infrastructure/time-travel.js'
 
 /**
  * Two facts between one endpoint pair. The v1 mirror cannot represent this --
@@ -67,48 +68,54 @@ describe('the transitional output really is lossy in the mirror', () => {
 })
 
 describe('a snapshot preserves the canonical artifact', () => {
-  /** Mirrors what persistSnapshot copies into a snapshot directory. */
-  const snapshot = (root: string, outputDir: string): string => {
-    // loadGraph resolves an out/ base and refuses anything outside it, so the
-    // snapshot fixture has to use the same layout a real snapshot does.
-    const target = join(mkdtempSync(join(root, 'snapshot-')), 'out')
-    mkdirSync(target, { recursive: true })
-    for (const basename of ['graph.json', 'graph.madar', 'graph.local.json']) {
-      const source = join(outputDir, basename)
-      if (existsSync(source)) writeFileSync(join(target, basename), readFileSync(source))
-    }
-    return target
+  /**
+   * Drives the real persistSnapshot through loadOrBuildSnapshot. An earlier
+   * version of this suite copied the files itself and asserted on its own copy,
+   * so it passed while production copied nothing -- a mutation deleting the
+   * canonical copy survived it untouched.
+   */
+  const build = async (): Promise<{ root: string; snapshotDir: string }> => {
+    const { root, outputDir } = publishedWorkspace()
+    const snapshot = await loadOrBuildSnapshot({ ref: 'HEAD' }, {
+      rootDir: root,
+      git: {
+        resolveRef: () => 'c'.repeat(40),
+        createDetachedWorktree: () => undefined,
+        removeWorktree: () => undefined,
+      },
+      generateGraph: () => ({ graphPath: join(outputDir, 'graph.json'), reportPath: '' }),
+      loadGraphExtractorVersion: () => 1,
+    })
+    return { root, snapshotDir: dirname(snapshot.graphPath) }
   }
 
-  it('round-trips both parallel facts through a snapshot', () => {
-    const { root, outputDir } = publishedWorkspace()
-    const target = snapshot(root, outputDir)
+  it('round-trips both parallel facts through a real snapshot', async () => {
+    const { root, snapshotDir } = await build()
     try {
       // Read through graph.json exactly as the snapshot reader does; canonical
-      // sibling preference must pick up graph.madar.
-      expect(loadGraph(join(target, 'graph.json')).numberOfFacts()).toBe(2)
+      // sibling preference must pick up the copied graph.madar.
+      expect(loadGraph(join(snapshotDir, 'graph.json')).numberOfFacts()).toBe(2)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it('carries the canonical artifact and the machine-local sidecar', () => {
-    const { root, outputDir } = publishedWorkspace()
-    const target = snapshot(root, outputDir)
+  it('carries the canonical artifact and the machine-local sidecar', async () => {
+    const { root, snapshotDir } = await build()
     try {
-      expect(existsSync(join(target, 'graph.madar'))).toBe(true)
-      expect(existsSync(join(target, 'graph.local.json'))).toBe(true)
-      expect(JSON.parse(readFileSync(join(target, 'graph.local.json'), 'utf8'))).toEqual({ root_path: root })
+      expect(existsSync(join(snapshotDir, 'graph.madar'))).toBe(true)
+      expect(existsSync(join(snapshotDir, 'graph.local.json'))).toBe(true)
+      expect(JSON.parse(readFileSync(join(snapshotDir, 'graph.local.json'), 'utf8')))
+        .toEqual({ root_path: root })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it('keeps the transitional mirror available for old readers', () => {
-    const { root, outputDir } = publishedWorkspace()
-    const target = snapshot(root, outputDir)
+  it('keeps the transitional mirror available for old readers', async () => {
+    const { root, snapshotDir } = await build()
     try {
-      const mirror = JSON.parse(readFileSync(join(target, 'graph.json'), 'utf8')) as { schema_version: number }
+      const mirror = JSON.parse(readFileSync(join(snapshotDir, 'graph.json'), 'utf8')) as { schema_version: number }
 
       expect(mirror.schema_version).toBe(1)
     } finally {
@@ -116,15 +123,14 @@ describe('a snapshot preserves the canonical artifact', () => {
     }
   })
 
-  it('degrades explicitly to the mirror when no canonical artifact was captured', () => {
-    const { root, outputDir } = publishedWorkspace()
-    const target = snapshot(root, outputDir)
+  it('degrades explicitly to the mirror when no canonical artifact was captured', async () => {
+    const { root, snapshotDir } = await build()
     try {
-      rmSync(join(target, 'graph.madar'), { force: true })
+      rmSync(join(snapshotDir, 'graph.madar'), { force: true })
 
       // A snapshot taken before v2 existed is still readable; it is simply the
       // lossy view, and it says so by having one fact instead of two.
-      expect(loadGraph(join(target, 'graph.json')).numberOfFacts()).toBe(1)
+      expect(loadGraph(join(snapshotDir, 'graph.json')).numberOfFacts()).toBe(1)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
