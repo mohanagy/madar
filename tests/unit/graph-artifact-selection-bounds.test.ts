@@ -11,10 +11,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
  */
 const understatedSize = { bytes: null as number | null }
 
+/** Every path passed to readFileSync, so a whole-file read cannot hide. */
+const wholeFileReads: string[] = []
+
 vi.mock('node:fs', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs')>()
   return {
     ...real,
+    readFileSync: (path: Parameters<typeof real.readFileSync>[0], ...rest: unknown[]) => {
+      if (typeof path === 'string') wholeFileReads.push(path)
+      return (real.readFileSync as (...args: unknown[]) => ReturnType<typeof real.readFileSync>)(path, ...rest)
+    },
     // Passes through untouched unless a test arms it, so every other suite
     // and the fixture helpers below keep the real filesystem.
     statSync: (path: Parameters<typeof real.statSync>[0], ...rest: unknown[]) => {
@@ -29,12 +36,45 @@ vi.mock('node:fs', async (importOriginal) => {
   }
 })
 
-const { GraphArtifactTooLargeError, readArtifactWithinBound } = await import(
+const { GraphArtifactTooLargeError, classifyWorkspaceGraph, readArtifactWithinBound } = await import(
   '../../src/contracts/graph-artifact-selection.js'
 )
+const { GRAPH_ARTIFACT_V2_TOMBSTONE } = await import('../../src/contracts/graph-artifact.js')
 
 afterEach(() => {
   understatedSize.bytes = null
+  wholeFileReads.length = 0
+})
+
+describe('classification never reads a whole artifact', () => {
+  const LIVE_V1 = JSON.stringify({ schema_version: 1, directed: true, nodes: [], links: [] })
+
+  function outputDir(files: Partial<Record<'canonical' | 'legacy' | 'backup', string>>): string {
+    const root = mkdtempSync(join(tmpdir(), 'classify-reads-'))
+    const out = join(root, 'out')
+    mkdirSync(out, { recursive: true })
+    if (files.canonical !== undefined) writeFileSync(join(out, 'graph.madar'), files.canonical)
+    if (files.legacy !== undefined) writeFileSync(join(out, 'graph.json'), files.legacy)
+    if (files.backup !== undefined) writeFileSync(join(out, 'graph.v1.json'), files.backup)
+    return out
+  }
+
+  it.each([
+    ['live v1 and a backup', { legacy: LIVE_V1, backup: LIVE_V1 }],
+    ['a tombstone and a backup', { legacy: GRAPH_ARTIFACT_V2_TOMBSTONE, backup: LIVE_V1 }],
+  ])('classifies %s without a whole-file read of either', (_label, files) => {
+    const out = outputDir(files)
+    try {
+      classifyWorkspaceGraph(out)
+
+      // Classification needs a short prefix of each. Pulling a whole legacy
+      // artifact or backup into memory on every call is the defect.
+      expect(wholeFileReads).not.toContain(join(out, 'graph.json'))
+      expect(wholeFileReads).not.toContain(join(out, 'graph.v1.json'))
+    } finally {
+      rmSync(join(out, '..'), { recursive: true, force: true })
+    }
+  })
 })
 
 describe('post-read bound', () => {

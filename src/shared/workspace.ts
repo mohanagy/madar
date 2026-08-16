@@ -228,6 +228,9 @@ export function resolveWorkspaceGraphArtifact(
   const selection = resolveGraphArtifact(physicalRequest, {
     intent: options.intent,
     ...(options.maxBytes === undefined ? {} : { maxBytes: options.maxBytes }),
+    // Also governs refusals, which is where a linked worktree's private
+    // directory would otherwise surface.
+    ...(treatAsWorkspaceDefault ? { logicalOutputDir: 'out' } : {}),
   })
 
   if (!treatAsWorkspaceDefault) return { ...selection, requestedPath }

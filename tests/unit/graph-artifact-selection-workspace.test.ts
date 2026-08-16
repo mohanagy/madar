@@ -142,6 +142,41 @@ describe('workspace-aware artifact selection', () => {
     expect(selection.selectedLogicalPath).toBe(explicitPath)
   })
 
+  it.each([
+    ['mixed', { canonical: canonicalArtifact(), legacy: LIVE_V1 }],
+    ['moved without canonical', { legacy: GRAPH_ARTIFACT_V2_TOMBSTONE }],
+    ['invalid canonical', { canonical: 'broken', legacy: GRAPH_ARTIFACT_V2_TOMBSTONE }],
+    ['missing', {}],
+  ])('keeps the private worktree path out of the %s refusal', (_label, files) => {
+    writeWorkspaceArtifacts(files as never)
+
+    let thrown: GraphArtifactStateError | undefined
+    try {
+      resolveWorkspaceGraphArtifact({ intent: 'default', workspaceRoot: linked })
+    } catch (error) {
+      thrown = error as GraphArtifactStateError
+    }
+
+    expect(thrown).toBeInstanceOf(GraphArtifactStateError)
+    const error = thrown as GraphArtifactStateError
+
+    // Refusals are the states an operator most needs to read, so this is
+    // exactly where the redirected physical directory must not appear.
+    const fields = [
+      error.message,
+      error.tombstonePath ?? '',
+      error.expectedCanonicalPath ?? '',
+      error.legacyBackupPath ?? '',
+    ]
+    for (const field of fields) {
+      expect(field).not.toContain(workspace.outputDir)
+      expect(field).not.toContain('worktrees')
+      expect(field).not.toContain('.git')
+    }
+    expect(error.expectedCanonicalPath).toBe('out/graph.madar')
+    expect(error.tombstonePath).toBe('out/graph.json')
+  })
+
   it('separates default and explicit intent for the identical path text', () => {
     writeWorkspaceArtifacts({ canonical: canonicalArtifact(), legacy: LIVE_V1 })
 

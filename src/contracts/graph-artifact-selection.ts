@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import {
@@ -127,22 +127,46 @@ export function readArtifactWithinBound(path: string, maxBytes = MAX_GRAPH_ARTIF
   return bytes
 }
 
+const TOMBSTONE_BYTES = Buffer.byteLength(GRAPH_ARTIFACT_V2_TOMBSTONE, 'utf8')
+
 /** Just enough bytes to tell the four shapes apart, never the whole file. */
 const CLASSIFY_PREFIX_BYTES = Math.max(
-  GRAPH_ARTIFACT_V2_HEADER.length,
-  GRAPH_ARTIFACT_V2_TOMBSTONE.length,
+  Buffer.byteLength(GRAPH_ARTIFACT_V2_HEADER, 'utf8'),
+  TOMBSTONE_BYTES,
 ) + 8
+
+/**
+ * Reads at most `byteCount` bytes from the front of a file.
+ *
+ * Classification must never load a whole artifact. `readFileSync(...).subarray()`
+ * looks bounded but is not: it pulls the entire file into memory first and only
+ * then discards the tail, so a large legacy artifact or backup would be read in
+ * full on every classification.
+ */
+function readPrefix(path: string, byteCount: number): Buffer | null {
+  let handle: number
+  try {
+    handle = openSync(path, 'r')
+  } catch {
+    return null
+  }
+  try {
+    const buffer = Buffer.allocUnsafe(byteCount)
+    return buffer.subarray(0, readSync(handle, buffer, 0, byteCount, 0))
+  } catch {
+    return null
+  } finally {
+    closeSync(handle)
+  }
+}
 
 type ArtifactShape = 'v2_header' | 'exact_tombstone' | 'json_like' | 'unknown' | 'absent'
 
 function shapeOf(path: string): ArtifactShape {
   if (!existsSync(path)) return 'absent'
-  let prefix: string
-  try {
-    prefix = readFileSync(path).subarray(0, CLASSIFY_PREFIX_BYTES).toString('utf8')
-  } catch {
-    return 'unknown'
-  }
+  const bytes = readPrefix(path, CLASSIFY_PREFIX_BYTES)
+  if (bytes === null) return 'unknown'
+  const prefix = bytes.toString('utf8')
   if (prefix.startsWith(GRAPH_ARTIFACT_V2_HEADER)) return 'v2_header'
   if (prefix.startsWith(GRAPH_ARTIFACT_V2_TOMBSTONE)) return 'exact_tombstone'
   if (/^\s*\{/.test(prefix)) return 'json_like'
@@ -151,12 +175,12 @@ function shapeOf(path: string): ArtifactShape {
 
 /** True only for a byte-exact tombstone, not merely the moved prefix. */
 function isExactTombstone(path: string): boolean {
-  if (!existsSync(path)) return false
-  try {
-    return readFileSync(path, 'utf8') === GRAPH_ARTIFACT_V2_TOMBSTONE
-  } catch {
-    return false
-  }
+  // One byte past the tombstone is all it takes to separate "equal" from
+  // "starts with", so a longer file is rejected without ever being read.
+  const bytes = readPrefix(path, TOMBSTONE_BYTES + 1)
+  return bytes !== null
+    && bytes.byteLength === TOMBSTONE_BYTES
+    && bytes.toString('utf8') === GRAPH_ARTIFACT_V2_TOMBSTONE
 }
 
 function canonicalIsValid(path: string, maxBytes: number): boolean {
@@ -224,13 +248,26 @@ export interface ResolveGraphArtifactOptions {
   readonly maxBytes?: number
   /** Logical path to report publicly when it differs from the physical one. */
   readonly logicalPath?: string
+  /**
+   * Directory spelling to show in diagnostics instead of the physical one.
+   *
+   * Refusals are the states an operator most needs to read, and for a linked
+   * worktree the physical directory is private. Sanitizing here rather than in
+   * the caller keeps the split intact for every caller, including ones that
+   * only ever see the thrown error.
+   */
+  readonly logicalOutputDir?: string
 }
 
-function refuse(classification: WorkspaceGraphClassification, message: string): never {
+function refuse(
+  classification: WorkspaceGraphClassification,
+  display: (path: string) => string,
+  message: string,
+): never {
   throw new GraphArtifactStateError(classification.state, message, {
-    tombstonePath: classification.legacyPath,
-    expectedCanonicalPath: classification.canonicalPath,
-    ...(classification.hasBackup ? { legacyBackupPath: classification.backupPath } : {}),
+    tombstonePath: display(classification.legacyPath),
+    expectedCanonicalPath: display(classification.canonicalPath),
+    ...(classification.hasBackup ? { legacyBackupPath: display(classification.backupPath) } : {}),
   })
 }
 
@@ -251,12 +288,17 @@ export function resolveGraphArtifact(
   const classification = classifyWorkspaceGraph(outputDir, maxBytes)
   const logicalPath = options.logicalPath ?? requestedPath
 
+  const displayDir = options.logicalOutputDir
+  const display = (path: string): string =>
+    displayDir === undefined ? path : join(displayDir, basename(path))
+  const displayOutputDir = displayDir ?? outputDir
+
   const common = { requestedPath, intent: options.intent } as const
 
   if (options.intent === 'explicit') {
     if (name === LEGACY_BACKUP_BASENAME) {
       if (!classification.hasBackup) {
-        refuse(classification, `No readable legacy backup at ${classification.backupPath}.`)
+        refuse(classification, display, `No readable legacy backup at ${display(classification.backupPath)}.`)
       }
       return {
         ...common,
@@ -270,7 +312,7 @@ export function resolveGraphArtifact(
 
     if (name === CANONICAL_ARTIFACT_BASENAME) {
       if (!canonicalIsValid(classification.canonicalPath, maxBytes)) {
-        refuse(classification, `Canonical artifact ${classification.canonicalPath} is missing or not a valid v2 artifact.`)
+        refuse(classification, display, `Canonical artifact ${display(classification.canonicalPath)} is missing or not a valid v2 artifact.`)
       }
       return {
         ...common,
@@ -286,7 +328,7 @@ export function resolveGraphArtifact(
     // loads degraded. Neither silently becomes the other.
     if (isExactTombstone(requestedPath)) {
       if (!canonicalIsValid(classification.canonicalPath, maxBytes)) {
-        refuse(classification, `${requestedPath} has moved but ${classification.canonicalPath} is missing or invalid.`)
+        refuse(classification, display, `${requestedPath} has moved but ${display(classification.canonicalPath)} is missing or invalid.`)
       }
       return {
         ...common,
@@ -307,7 +349,7 @@ export function resolveGraphArtifact(
         selection: 'explicit_legacy',
       }
     }
-    refuse(classification, `${requestedPath} is not a readable graph artifact.`)
+    refuse(classification, display, `${requestedPath} is not a readable graph artifact.`)
   }
 
   switch (classification.state) {
@@ -332,7 +374,8 @@ export function resolveGraphArtifact(
     case 'mixed_v2_and_live_v1':
       refuse(
         classification,
-        `A valid ${CANONICAL_ARTIFACT_BASENAME} and a live v1 ${LEGACY_ARTIFACT_BASENAME} exist together in ${outputDir}. `
+        display,
+        `A valid ${CANONICAL_ARTIFACT_BASENAME} and a live v1 ${LEGACY_ARTIFACT_BASENAME} exist together in ${displayOutputDir}. `
         + 'This may be an interrupted cutover, a transitional workspace, or a rollback state, and Madar cannot tell '
         + 'them apart safely. Run the current `madar generate .` to complete the v2 cutover, or select '
         + `${CANONICAL_ARTIFACT_BASENAME} or the legacy artifact explicitly for diagnostics.`,
@@ -340,18 +383,20 @@ export function resolveGraphArtifact(
     case 'moved_without_canonical':
       refuse(
         classification,
-        `${classification.legacyPath} has moved but ${classification.canonicalPath} is missing. `
+        display,
+        `${display(classification.legacyPath)} has moved but ${display(classification.canonicalPath)} is missing. `
         + 'Run the current `madar generate .` to rebuild it.',
       )
     case 'invalid_current_v2':
       refuse(
         classification,
-        `${classification.canonicalPath} exists but is not a readable v2 artifact. `
+        display,
+        `${display(classification.canonicalPath)} exists but is not a readable v2 artifact. `
         + 'Run the current `madar generate .` to rebuild it.',
       )
     case 'missing':
-      refuse(classification, `No graph artifact found in ${outputDir}. Run \`madar generate .\` first.`)
+      refuse(classification, display, `No graph artifact found in ${displayOutputDir}. Run \`madar generate .\` first.`)
     default:
-      refuse(classification, `The graph artifact in ${outputDir} is unreadable.`)
+      refuse(classification, display, `The graph artifact in ${displayOutputDir} is unreadable.`)
   }
 }
