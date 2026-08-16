@@ -45,26 +45,21 @@ import type {
   SourceRange,
 } from './semantic-graph.js'
 
-export const GRAPH_ARTIFACT_V2_HEADER = 'MADAR_GRAPH_ARTIFACT/2\n' as const
-export const GRAPH_ARTIFACT_V2_TOMBSTONE = [
-  'MADAR_GRAPH_MOVED/2',
-  'Use out/graph.madar with Madar >= the v2-supporting version.',
-  '',
-].join('\n')
-/**
- * Magic that marks a legacy path as moved, whatever version wrote it.
- *
- * Write the exact tombstone above; accept any `MADAR_GRAPH_MOVED/<n>`. Nothing
- * else writes this magic, so a different version -- or trailing bytes from a
- * partial write -- still unambiguously means the artifact moved. Reporting that
- * is more actionable than calling the file corrupt, and it keeps a future
- * tombstone readable by today's binary.
- */
-export const GRAPH_ARTIFACT_MOVED_PREFIX = 'MADAR_GRAPH_MOVED/'
+import {
+  GRAPH_ARTIFACT_MOVED_PREFIX,
+  GRAPH_ARTIFACT_V2_HEADER,
+  GRAPH_ARTIFACT_V2_TOMBSTONE,
+  isMovedMarkerText,
+} from './graph-artifact-format.js'
+import { classifyWorkspaceGraph } from './graph-artifact-selection.js'
 
-/** True for any versioned moved marker, current or not. */
-export function isMovedMarkerText(text: string): boolean {
-  return text.startsWith(GRAPH_ARTIFACT_MOVED_PREFIX)
+// Re-exported so the many existing importers of this module keep working; the
+// markers themselves live in a leaf module the classifier can also import.
+export {
+  GRAPH_ARTIFACT_MOVED_PREFIX,
+  GRAPH_ARTIFACT_V2_HEADER,
+  GRAPH_ARTIFACT_V2_TOMBSTONE,
+  isMovedMarkerText,
 }
 
 export const GRAPH_ARTIFACT_VERSION = 2 as const
@@ -1433,18 +1428,25 @@ export function readGraphArtifactMetadata(
   let resolvedPath = graphPath
   try {
     if (!existsSync(graphPath)) return ABSENT_METADATA
-    // Same canonical preference as the graph loader: during the transitional
-    // dual-artifact state a valid v1 mirror sits beside the canonical v2, and
-    // metadata must describe the artifact readers actually use.
+    // Same resolution the graph loader uses, through the same classifier
+    // rather than restated here. Metadata must describe the artifact readers
+    // actually consume: during a B1-era dual-artifact state a live v1 sits
+    // beside the canonical v2, and after the cutover the legacy path holds
+    // only a moved marker.
     if (basename(graphPath) === 'graph.json') {
-      const canonical = join(dirname(graphPath), 'graph.madar')
-      if (existsSync(canonical)) {
-        resolvedPath = canonical
-        graphPath = canonical
+      const classification = classifyWorkspaceGraph(dirname(graphPath))
+      if (classification.state === 'moved_without_canonical') {
+        return { ...ABSENT_METADATA, format: 'unreadable' }
+      }
+      if (existsSync(classification.canonicalPath) && classification.state !== 'invalid_current_v2') {
+        resolvedPath = classification.canonicalPath
+        graphPath = classification.canonicalPath
       }
     }
     text = readArtifactWithinLimit(graphPath, options.maxBytes)
     if (isMovedMarkerText(text)) {
+      // Reached only for a marker outside the conventional legacy path, where
+      // the classifier above does not apply.
       const sibling = join(dirname(graphPath), 'graph.madar')
       if (!existsSync(sibling)) return { ...ABSENT_METADATA, format: 'unreadable' }
       resolvedPath = sibling

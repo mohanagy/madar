@@ -6,7 +6,7 @@ import {
   GRAPH_ARTIFACT_V2_HEADER,
   GRAPH_ARTIFACT_V2_TOMBSTONE,
   isMovedMarkerText,
-} from './graph-artifact.js'
+} from './graph-artifact-format.js'
 
 /**
  * One place that decides which graph artifact a request actually means.
