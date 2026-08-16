@@ -151,7 +151,18 @@ describe('the graph compatibility adapter agrees with the identity layer', () =>
     // The adapter previously used its own looser rules, so a url-like path was
     // approved here and then thrown out inside createEvidenceOccurrence.
     expect(() => admit(sourceFile)).not.toThrow()
-    expect(admit(sourceFile).numberOfFacts()).toBe(1)
+
+    const graph = admit(sourceFile)
+    expect(graph.numberOfFacts()).toBe(1)
+
+    // Assert the omission the name claims. Without this the test passes even
+    // if the unusable path is stored verbatim on the occurrence, which is the
+    // outcome the adapter exists to prevent.
+    const record = graph.factRecords()[0]
+    if (record === undefined) throw new Error('no fact stored')
+    for (const occurrence of graph.occurrencesForFact(record.fact.id)) {
+      expect(occurrence.sourceFile).toBeUndefined()
+    }
   })
 
   it('passes a valid path through in canonical form', () => {

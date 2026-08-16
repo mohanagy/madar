@@ -136,3 +136,47 @@ describe('a snapshot preserves the canonical artifact', () => {
     }
   })
 })
+
+describe('a retried snapshot does not inherit the previous attempt', () => {
+  it('drops a stale canonical artifact when the new source has none', async () => {
+    const { root, outputDir } = publishedWorkspace()
+    try {
+      const snapshot = await loadOrBuildSnapshot({ ref: 'HEAD' }, {
+        rootDir: root,
+        git: {
+          resolveRef: () => 'd'.repeat(40),
+          createDetachedWorktree: () => undefined,
+          removeWorktree: () => undefined,
+        },
+        generateGraph: () => ({ graphPath: join(outputDir, 'graph.json'), reportPath: '' }),
+        loadGraphExtractorVersion: () => 1,
+      })
+      expect(existsSync(join(dirname(snapshot.graphPath), 'graph.madar'))).toBe(true)
+
+      // Regenerate with no canonical artifact and no sidecar, as a pre-v2
+      // workspace or an interrupted publication would leave things.
+      rmSync(join(outputDir, 'graph.madar'), { force: true })
+      rmSync(join(outputDir, 'graph.local.json'), { force: true })
+
+      const retried = await loadOrBuildSnapshot({ ref: 'HEAD', refresh: true }, {
+        rootDir: root,
+        git: {
+          resolveRef: () => 'd'.repeat(40),
+          createDetachedWorktree: () => undefined,
+          removeWorktree: () => undefined,
+        },
+        generateGraph: () => ({ graphPath: join(outputDir, 'graph.json'), reportPath: '' }),
+        loadGraphExtractorVersion: () => 1,
+      })
+
+      // Keeping the old file would leave a snapshot whose canonical artifact
+      // describes a different run than its mirror, and readers prefer the
+      // canonical one.
+      const dir = dirname(retried.graphPath)
+      expect(existsSync(join(dir, 'graph.madar'))).toBe(false)
+      expect(existsSync(join(dir, 'graph.local.json'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})

@@ -32,7 +32,7 @@ within each arm.
 
 ## Generation
 
-```
+```text
 base       44.05  45.13  44.23   mean 44.47s   spread 2.4%   ok
 candidate  43.94  43.50  43.36   mean 43.60s   spread 1.3%   ok
 ```
@@ -114,7 +114,7 @@ implies more precision than the instrument has.
 
 ## Verdict
 
-```
+```text
 generation   0.980x   pass
 RSS          1.250x   pass
 artifact     1.899x   pass, near the 1.90x band

@@ -194,7 +194,14 @@ function persistSnapshot(rootDir: string, ref: string, commitSha: string, genera
     const sourceDir = dirname(generated.graphPath)
     for (const basename of ['graph.madar', GRAPH_LOCAL_SIDECAR_BASENAME]) {
       const source = join(sourceDir, basename)
-      if (existsSync(source)) copyFileSync(source, join(tempDir, basename))
+      const destination = join(tempDir, basename)
+      // Remove first. tempDir survives an interrupted run, so copying only when
+      // the source exists would let a stale graph.madar from a previous attempt
+      // ride into this snapshot and be preferred over the mirror -- a snapshot
+      // silently describing a different commit. The report below already clears
+      // itself the same way.
+      rmSync(destination, { force: true })
+      if (existsSync(source)) copyFileSync(source, destination)
     }
 
     if (generated.reportPath && existsSync(generated.reportPath)) {

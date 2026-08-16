@@ -1306,6 +1306,15 @@ export interface GraphArtifactMetadata {
   readonly rootPath: string | null
   /** Distinct `source_file` values across nodes, in artifact order. */
   readonly nodeSourceFiles: readonly string[]
+  /**
+   * The artifact this metadata actually describes.
+   *
+   * Differs from the requested path whenever canonical-sibling preference or
+   * tombstone redirection switched files. Exposed so a caller caching this
+   * result can key on what was read rather than on what it asked for -- and so
+   * nobody has to reimplement the resolution rules to find out.
+   */
+  readonly resolvedPath: string | null
 }
 
 function finiteNumberOrNull(value: unknown): number | null {
@@ -1355,6 +1364,7 @@ const ABSENT_METADATA: GraphArtifactMetadata = Object.freeze({
   communityLabels: Object.freeze({}),
   rootPath: null,
   nodeSourceFiles: Object.freeze([]),
+  resolvedPath: null,
 })
 
 /**
@@ -1444,6 +1454,7 @@ export function readGraphArtifactMetadata(
         discoverySafety: provenance.discovery_safety,
         communityLabels: parsed.community_labels,
         rootPath: readLocalSidecarRootPath(resolvedPath),
+        resolvedPath,
         nodeSourceFiles: distinctSourceFiles(parsed.nodes),
       })
     }
@@ -1461,6 +1472,7 @@ export function readGraphArtifactMetadata(
       discoverySafety: payload.discovery_safety,
       communityLabels: optionalRecord(payload.community_labels) ?? {},
       rootPath: nonEmptyStringOrNull(payload.root_path) ?? readLocalSidecarRootPath(resolvedPath),
+      resolvedPath,
       nodeSourceFiles: distinctSourceFiles(payload.nodes),
     })
   } catch {

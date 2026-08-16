@@ -240,3 +240,71 @@ describe('the limit does not blur absent or unreadable', () => {
     }
   })
 })
+
+describe('the cache describes what was read, not what was asked for', () => {
+  it('does not serve a value cached under a different ceiling', () => {
+    const dir = workspace()
+    try {
+      reset()
+      const graphJson = join(dir, 'graph.json')
+      const canonical = join(dir, 'graph.madar')
+      writeFileSync(graphJson, LEGACY)
+      writeFileSync(canonical, canonicalBytes())
+
+      // Warm the cache under the default ceiling, then ask under a tiny one.
+      readDiscoverySafetyMetadata(graphJson)
+      control.metadataCalls = []
+
+      expect(readDiscoverySafetyMetadata(graphJson, { maxBytes: 64 })).toBeNull()
+      // A cache keyed only on the path would have answered from the first call
+      // and reported a value that the second ceiling forbids.
+      expect(control.metadataCalls).toHaveLength(1)
+      expect(control.metadataCalls[0]?.maxBytes).toBe(64)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('re-reads when the canonical sibling changes but the mirror does not', () => {
+    const dir = workspace()
+    try {
+      reset()
+      const graphJson = join(dir, 'graph.json')
+      const canonical = join(dir, 'graph.madar')
+      writeFileSync(graphJson, LEGACY)
+      writeFileSync(canonical, canonicalBytes())
+
+      readDiscoverySafetyMetadata(graphJson)
+      control.metadataCalls = []
+
+      // graph.json is untouched; only the artifact actually read changes.
+      writeFileSync(canonical, Buffer.concat([canonicalBytes(), Buffer.from('\n')]))
+      readDiscoverySafetyMetadata(graphJson)
+
+      // Keyed on the mirror's stat, this would have returned stale metadata
+      // describing an artifact that no longer exists on disk.
+      expect(control.metadataCalls).toHaveLength(1)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('serves a genuine repeat from cache', () => {
+    const dir = workspace()
+    try {
+      reset()
+      const graphJson = join(dir, 'graph.json')
+      writeFileSync(graphJson, LEGACY)
+      writeFileSync(join(dir, 'graph.madar'), canonicalBytes())
+
+      readDiscoverySafetyMetadata(graphJson)
+      control.metadataCalls = []
+      readDiscoverySafetyMetadata(graphJson)
+
+      // The fix must not turn the cache off; nothing changed, so no re-read.
+      expect(control.metadataCalls).toEqual([])
+    } finally {
+      cleanup(dir)
+    }
+  })
+})

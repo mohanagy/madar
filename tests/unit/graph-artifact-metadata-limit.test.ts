@@ -66,12 +66,31 @@ describe('the size limit follows the artifact actually read', () => {
   it('refuses an oversized sibling reached through a tombstone', () => {
     const dir = outputDir()
     try {
-      writeFileSync(join(dir, 'graph.json'), GRAPH_ARTIFACT_V2_TOMBSTONE)
+      // Deliberately not graph.json. A graph.json request resolves straight to
+      // the canonical sibling before the tombstone is ever parsed, so naming
+      // this file graph.json exercised the sibling hop twice and left the
+      // tombstone redirect -- a genuinely separate unbounded read -- untested.
+      const tombstone = join(dir, 'graph.snapshot')
+      writeFileSync(tombstone, GRAPH_ARTIFACT_V2_TOMBSTONE)
       writeFileSync(join(dir, 'graph.madar'), canonicalBytes())
 
-      // The tombstone redirect is a second unbounded hop, not the same one.
-      expect(readGraphArtifactMetadata(join(dir, 'graph.json'), { maxBytes: 64 }).format)
-        .toBe('unreadable')
+      expect(readGraphArtifactMetadata(tombstone, { maxBytes: 64 }).format).toBe('unreadable')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('follows a tombstone to a within-limit sibling', () => {
+    const dir = outputDir()
+    try {
+      const tombstone = join(dir, 'graph.snapshot')
+      writeFileSync(tombstone, GRAPH_ARTIFACT_V2_TOMBSTONE)
+      writeFileSync(join(dir, 'graph.madar'), canonicalBytes())
+
+      // Proves the redirect is actually taken, so the refusal above is a size
+      // refusal rather than the tombstone simply failing to parse.
+      expect(readGraphArtifactMetadata(tombstone, { maxBytes: 10 * 1024 * 1024 }).format)
+        .toBe('v2')
     } finally {
       cleanup(dir)
     }
@@ -139,9 +158,10 @@ describe('the limit does not blur the other outcomes', () => {
   it('reports unreadable for a tombstone whose sibling is missing', () => {
     const dir = outputDir()
     try {
-      writeFileSync(join(dir, 'graph.json'), GRAPH_ARTIFACT_V2_TOMBSTONE)
+      const tombstone = join(dir, 'graph.snapshot')
+      writeFileSync(tombstone, GRAPH_ARTIFACT_V2_TOMBSTONE)
 
-      expect(readGraphArtifactMetadata(join(dir, 'graph.json'), { maxBytes: 10 * 1024 * 1024 }).format)
+      expect(readGraphArtifactMetadata(tombstone, { maxBytes: 10 * 1024 * 1024 }).format)
         .toBe('unreadable')
     } finally {
       cleanup(dir)
