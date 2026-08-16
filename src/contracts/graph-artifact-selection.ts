@@ -2,6 +2,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import { basename, dirname, join } from 'node:path'
 
 import {
+  GRAPH_ARTIFACT_MOVED_PREFIX,
   GRAPH_ARTIFACT_V2_HEADER,
   GRAPH_ARTIFACT_V2_TOMBSTONE,
   isMovedMarkerText,
@@ -129,7 +130,7 @@ export function readArtifactWithinBound(path: string, maxBytes = MAX_GRAPH_ARTIF
 }
 
 const TOMBSTONE_BYTES = Buffer.byteLength(GRAPH_ARTIFACT_V2_TOMBSTONE, 'utf8')
-const GRAPH_ARTIFACT_MOVED_PREFIX_BYTES = Buffer.byteLength('MADAR_GRAPH_MOVED/', 'utf8')
+const GRAPH_ARTIFACT_MOVED_PREFIX_BYTES = Buffer.byteLength(GRAPH_ARTIFACT_MOVED_PREFIX, 'utf8')
 
 /** Just enough bytes to tell the four shapes apart, never the whole file. */
 const CLASSIFY_PREFIX_BYTES = Math.max(

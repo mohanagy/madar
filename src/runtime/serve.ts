@@ -12,9 +12,11 @@ import { isRecord } from '../shared/guards.js'
 import { sanitizeLabel, validateGraphPath } from '../shared/security.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { parseGenerationPolicy } from '../contracts/generation-policy.js'
-import { GRAPH_ARTIFACT_V2_HEADER, loadGraphArtifactFromPath } from '../contracts/graph-artifact.js'
-
-const GRAPH_ARTIFACT_MOVED_PREFIX = 'MADAR_GRAPH_MOVED/'
+import {
+  GRAPH_ARTIFACT_MOVED_PREFIX,
+  GRAPH_ARTIFACT_V2_HEADER,
+  loadGraphArtifactFromPath,
+} from '../contracts/graph-artifact.js'
 
 const MAX_GRAPH_BYTES = 100 * 1024 * 1024
 const MAX_TRAVERSAL_DEPTH = 6
