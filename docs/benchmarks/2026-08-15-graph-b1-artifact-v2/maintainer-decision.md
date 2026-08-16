@@ -1,6 +1,12 @@
 # Maintainer decision — accept the B1 load-latency ratio
 
-Companion to the two measurement receipts in this directory. Neither is
+> **Superseded for the final head.** The decision below applied to `b2adeec6`
+> and was carried to `61f3609c`. It does **not** apply to the production code
+> head this PR ships. See
+> [Superseding decision for `c4f65972`](#superseding-decision-for-c4f65972) at
+> the end of this file. The earlier text is kept verbatim as record.
+
+Companion to the measurement receipts in this directory. Neither is
 modified by this decision; the raw numbers stand as recorded.
 
 - Initial failed gate: [`README.md`](./README.md)
@@ -117,3 +123,95 @@ change. Semantic counts identical within each arm, attribution controls
 passed, no base run produced a `graph.madar`.
 
 **The acceptance recorded above stands at `61f3609c`.**
+
+---
+
+## Superseding decision for `c4f65972`
+
+The remediation batch changed semantic identity, graph construction, artifact
+loading, metadata loading, publication and snapshots -- all inside the
+invalidating set above -- so the acceptance recorded earlier in this file does
+not travel to this head. The experiment was re-run from scratch and a new
+decision taken.
+
+### Heads
+
+| Role | SHA |
+|---|---|
+| Base | `ee2115a2465c86306735494f526dca8baf0383bc` |
+| **Production code head** | **`c4f65972a19ae272e37d9e9dcfd3e93bfb32d619`** |
+| Branch/documentation head | recorded in the PR body; documentation-only commits follow the code head and do not re-open this decision |
+
+The production code head and the branch head are deliberately separate. Only
+the former is what this decision accepts.
+
+### Accepted measurement
+
+Two independent sessions, interleaved, behind the quiescence gate:
+
+| Session | Base median | Candidate median | Ratio |
+|---|---:|---:|---:|
+| 1 (n=9) | 298.98 ms | 673.92 ms | 2.254× |
+| 2 (n=11) | 296.99 ms | 679.46 ms | 2.288× |
+
+**Accepted range: 2.25×–2.29×.** The sessions agree to within about 1.5%, so
+the exception is reproducible rather than a single unlucky sample. A range is
+recorded instead of one decimal because the instrument does not support more
+precision than that.
+
+Absolute candidate medians: **673.92 ms** and **679.46 ms**.
+
+The other formal ratios at this head pass: generation 0.980×, peak RSS 1.250×,
+canonical artifact 1.899×, transitional total output 2.212× (disclosure).
+
+### The remediation did not cause this
+
+Both binaries were pointed at the same 41,545,432-byte artifact and interleaved:
+
+| Binary | Median |
+|---|---:|
+| `8bd76f39` pre-remediation | 682.74 ms |
+| `c4f65972` final | 678.18 ms |
+| **final / pre-remediation** | **0.993×** |
+
+The batch is flat on load. The residual cost is the standing B1 cost of parsing
+a larger canonical artifact, verifying every semantic fact identity, verifying
+every evidence occurrence identity, and preserving the exact receipt and
+collision invariants.
+
+### Scope
+
+Accepted **only** for: PR B1 / #707, production code head `c4f65972`, the frozen
+reference corpus, the recorded Node/npm/lockfile environment, the current
+artifact-v2 identity-verification contract, and the recorded process-isolated
+load protocol.
+
+It establishes none of the following: that artifact v2 is load-optimal; that
+the ratio holds at any other repository size; that large-repository scalability
+is proven; that identity verification may be skipped; that stored ids may be
+trusted blindly; or that the transitional dual-artifact footprint is
+release-ready.
+
+### Constraints that remain binding
+
+Identity and receipt verification stay **mandatory**. Every fact and every
+occurrence derives its canonical payload on load and must reproduce its stored
+id exactly, in the default path. There is no sampling, no `trustStoredIds`, and
+no qualification-only mode. The receipt matrix remains an exact partition.
+
+**#705 remains required** before #657 can complete and before any prerelease.
+The transitional dual-artifact state is permitted on `next` only.
+
+**#706** remains the non-blocking owner of load optimization.
+
+### Re-measurement rule at this head
+
+Documentation, PR-body text, issue comments, review replies, and tests that do
+not change runtime behaviour do **not** invalidate this decision.
+
+A new full six-run experiment **is** required before declaring the PR ready if a
+later production change touches semantic identity, graph construction or
+hydration, artifact parsing or loading, receipt validation, canonical
+serialization, metadata loading, publication, generation hot paths, or
+endpoint-pair caching. If a review finding forces such a change, the rule
+applies before any ready claim.
