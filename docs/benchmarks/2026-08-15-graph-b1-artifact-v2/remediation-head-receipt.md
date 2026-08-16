@@ -96,13 +96,29 @@ Measured on the candidate only, resolving `graph.json` to the canonical sibling:
 The new size check costs **+5.88 ms (1.037×)** and, in exchange, an oversized
 canonical sibling is refused without being read at all.
 
+## Independent confirmation of the load ratio
+
+A gate decision resting on one measurement session is a gate decision resting
+on one machine state, so the load comparison was repeated end to end in a
+second session, interleaved, eleven samples per arm, behind the quiescence gate
+(load 1.97 of a 4.0 limit).
+
+| Session | Base median | Candidate median | Ratio |
+|---|---:|---:|---:|
+| 1 (n=9) | 298.98 ms | 673.92 ms | 2.254× |
+| 2 (n=11) | 296.99 ms | 679.46 ms | 2.288× |
+
+Both sessions are above the gate, and the two agree to within 1.5%. The
+reportable figure is a band of **2.25×–2.29×**, not a single decimal that
+implies more precision than the instrument has.
+
 ## Verdict
 
 ```
 generation   0.980x   pass
 RSS          1.250x   pass
 artifact     1.899x   pass, near the 1.90x band
-load         2.254x   ABOVE THE 2.00x GATE
+load         2.25x-2.29x   ABOVE THE 2.00x GATE (two sessions)
 ```
 
 Three of four ratios pass. Load does not, and the previously accepted exception
