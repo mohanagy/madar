@@ -34,6 +34,7 @@ import {
   acquireRefreshLeaseWithoutBlocking,
   tryAcquireRefreshLease,
 } from './refresh-lease.js'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 export const WATCHED_EXTENSIONS = new Set([
   ...CODE_EXTENSIONS,
@@ -267,14 +268,8 @@ function sameFilesystemPath(left: string, right: string): boolean {
 }
 
 function graphBelongsToWorkspace(graphPath: string, workspaceRoot: string): boolean {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { root_path?: unknown }
-    return typeof parsed.root_path === 'string'
-      && parsed.root_path.trim().length > 0
-      && sameFilesystemPath(parsed.root_path, workspaceRoot)
-  } catch {
-    return false
-  }
+  const { rootPath } = readGraphArtifactMetadata(graphPath)
+  return rootPath !== null && sameFilesystemPath(rootPath, workspaceRoot)
 }
 
 function canReuseFreshGraphOnStart(

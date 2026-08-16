@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
+import { rebindEvidenceOccurrence } from '../contracts/semantic-identity.js'
 import { buildFromJson } from './build.js'
 import { cluster, scoreAll } from './cluster.js'
 import { buildCommunityLabels } from './community-naming.js'
@@ -149,19 +150,29 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
       const prefixedId = prefixNodeId(repoName, nodeId)
       federatedGraph.addNode(prefixedId, {
         ...attributes,
+        endpointIdentity: source.graph.nodeEndpointIdentity(nodeId),
         source_repo: repoName,
         original_id: nodeId,
       })
     }
 
     // Add all edges with repo prefix
-    for (const [sourceNode, target, attributes] of source.graph.factEntries()) {
-      const prefixedSource = prefixNodeId(repoName, sourceNode)
-      const prefixedTarget = prefixNodeId(repoName, target)
-      federatedGraph.addEdge(prefixedSource, prefixedTarget, {
+    for (const { fact, attributes } of source.graph.factRecords()) {
+      const prefixedSource = prefixNodeId(repoName, fact.source)
+      const prefixedTarget = prefixNodeId(repoName, fact.target)
+      const admission = federatedGraph.addEdge(prefixedSource, prefixedTarget, {
         ...attributes,
         source_repo: repoName,
+      }, {
+        discriminator: fact.discriminator,
+        recordOccurrence: false,
       })
+      if (admission.status !== 'stored') {
+        throw new Error(`Federation could not admit relation ${fact.relation}`)
+      }
+      for (const occurrence of source.graph.occurrencesForFact(fact.id)) {
+        federatedGraph.addOccurrence(rebindEvidenceOccurrence(occurrence, admission.factId))
+      }
     }
   }
 

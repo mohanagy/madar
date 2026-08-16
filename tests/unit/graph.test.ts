@@ -33,7 +33,7 @@ function makeDirectedGraph(): KnowledgeGraph {
     metadata: { reason: 'direct invocation' },
   })
   graph.addEdge('beta', 'alpha', {
-    relation: 'returns_to',
+    relation: 'references',
     confidence: 'INFERRED',
     source_file: 'src/beta.ts',
   })
@@ -50,7 +50,7 @@ describe('KnowledgeGraph plural semantic projections', () => {
     expect(Object.isFrozen(facts)).toBe(true)
   })
 
-  it('returns one complete relationship view for the current one-per-pair store', () => {
+  it('returns one complete relationship view when the pair has one fact', () => {
     const graph = makeDirectedGraph()
 
     expect(graph.factsBetween('alpha', 'beta')).toEqual([
@@ -116,6 +116,8 @@ describe('KnowledgeGraph plural semantic projections', () => {
   it('keeps a read-time backstop for function values introduced after validation', () => {
     const graph = new KnowledgeGraph({ directed: true })
     const metadata: Record<string, unknown> = {}
+    graph.addNode('alpha', {})
+    graph.addNode('beta', {})
     graph.addEdge('alpha', 'beta', { relation: 'calls', metadata })
     metadata.callback = () => 'late mutation'
 
@@ -128,6 +130,8 @@ describe('KnowledgeGraph plural semantic projections', () => {
     const graph = new KnowledgeGraph({ directed: true })
     const sharedView = new Uint8Array(new SharedArrayBuffer(3))
     sharedView.set([1, 2, 3])
+    graph.addNode('alpha', {})
+    graph.addNode('beta', {})
     graph.addEdge('alpha', 'beta', { relation: 'calls', bytes: sharedView })
 
     const returnedView = graph.factsBetween('alpha', 'beta')[0]?.bytes as Uint8Array
@@ -140,13 +144,13 @@ describe('KnowledgeGraph plural semantic projections', () => {
 })
 
 describe('KnowledgeGraph semantic entries', () => {
-  it('preserves current edge entry attributes and insertion order', () => {
+  it('preserves complete edge attributes in deterministic fact-ID order', () => {
     const graph = makeDirectedGraph()
 
     expect(graph.factEntries()).toEqual(graph.edgeEntries())
     expect(graph.factEntries()).toEqual([
+      ['beta', 'alpha', expect.objectContaining({ relation: 'references', confidence: 'INFERRED' })],
       ['alpha', 'beta', expect.objectContaining({ relation: 'calls', source_location: 'L12' })],
-      ['beta', 'alpha', expect.objectContaining({ relation: 'returns_to', confidence: 'INFERRED' })],
     ])
   })
 })
@@ -161,16 +165,20 @@ describe('KnowledgeGraph explicit topology', () => {
     ])
   })
 
-  it('preserves the inserted orientation of an undirected endpoint pair', () => {
+  it('uses canonical orientation for an undirected endpoint pair', () => {
     const graph = new KnowledgeGraph()
+    graph.addNode('beta', {})
+    graph.addNode('alpha', {})
     graph.addEdge('beta', 'alpha', { relation: 'calls' })
 
-    expect(graph.endpointEntries()).toEqual([{ source: 'beta', target: 'alpha' }])
+    expect(graph.endpointEntries()).toEqual([{ source: 'alpha', target: 'beta' }])
     expect(graph.hasEdge('alpha', 'beta')).toBe(true)
   })
 
   it('keeps successor, predecessor, and neighbor collections unique', () => {
     const graph = new KnowledgeGraph({ directed: true })
+    graph.addNode('alpha', {})
+    graph.addNode('beta', {})
     graph.addEdge('alpha', 'beta', { relation: 'calls' })
     graph.addEdge('alpha', 'beta', { relation: 'imports' })
 
@@ -197,6 +205,23 @@ describe('KnowledgeGraph explicit counts', () => {
     expect(graph.numberOfFacts()).toBe(2)
     expect(graph.numberOfEndpointPairs()).toBe(2)
     expect(graph.numberOfNodes()).toBe(3)
+  })
+
+  it('keeps fact, endpoint-pair, occurrence, entry, and relation counts distinct at N > 1', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addNode('alpha', {})
+    graph.addNode('beta', {})
+    graph.addEdge('alpha', 'beta', { relation: 'injects' })
+    graph.addEdge('alpha', 'beta', { relation: 'calls' })
+
+    expect(graph.factsBetween('alpha', 'beta')).toHaveLength(2)
+    expect(graph.relationsBetween('alpha', 'beta')).toEqual(['calls', 'injects'])
+    expect(graph.factEntries()).toHaveLength(2)
+    expect(graph.endpointEntries()).toEqual([{ source: 'alpha', target: 'beta' }])
+    expect(graph.numberOfFacts()).toBe(2)
+    expect(graph.numberOfEdges()).toBe(2)
+    expect(graph.numberOfOccurrences()).toBe(2)
+    expect(graph.numberOfEndpointPairs()).toBe(1)
   })
 })
 

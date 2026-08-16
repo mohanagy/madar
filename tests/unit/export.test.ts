@@ -4,14 +4,16 @@ import { join } from 'node:path'
 
 import { buildFromJson } from '../../src/pipeline/build.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { Neo4jUnsupportedFactMultiplicityError } from '../../src/infrastructure/neo4j.js'
 import { cluster } from '../../src/pipeline/cluster.js'
 import { toCypher, toGraphml, toHtml, toJson, toObsidian, toSvg } from '../../src/pipeline/export.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
 function makeGraph() {
-  return buildFromJson(JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')))
+  const extraction = JSON.parse(readFileSync(join(FIXTURES_DIR, 'extraction.json'), 'utf8')) as {
+    edges: Array<{ relation: string }>
+  }
+  return buildFromJson(extraction)
 }
 
 describe('export', () => {
@@ -50,7 +52,7 @@ describe('export', () => {
         ],
         edges: [
           { source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.py' },
-          { source: 'n2', target: 'n1', relation: 'returns_to', confidence: 'INFERRED', source_file: 'b.py' },
+          { source: 'n2', target: 'n1', relation: 'references', confidence: 'INFERRED', source_file: 'b.py' },
         ],
       },
       { directed: true },
@@ -66,9 +68,26 @@ describe('export', () => {
       expect(data.links).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ source: 'n1', target: 'n2', relation: 'calls' }),
-          expect.objectContaining({ source: 'n2', target: 'n1', relation: 'returns_to' }),
+          expect.objectContaining({ source: 'n2', target: 'n1', relation: 'references' }),
         ]),
       )
+    })
+  })
+
+  it('writes every semantic fact when one endpoint pair has N > 1', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.addNode('source', { label: 'Source' })
+    graph.addNode('target', { label: 'Target' })
+    graph.addEdge('source', 'target', { relation: 'injects' })
+    graph.addEdge('source', 'target', { relation: 'calls' })
+
+    withTempDir((tempDir) => {
+      const outputPath = join(tempDir, 'graph.json')
+      toJson(graph, { 0: ['source', 'target'] }, outputPath)
+      const data = JSON.parse(readFileSync(outputPath, 'utf8')) as {
+        links: Array<{ relation: string }>
+      }
+      expect(data.links.map(({ relation }) => relation).sort()).toEqual(['calls', 'injects'])
     })
   })
 
@@ -85,47 +104,51 @@ describe('export', () => {
   })
 
   it('uses the Neo4j relation canonicalizer for missing, empty, and normalized Cypher relations', () => {
-    const graph = new KnowledgeGraph({ directed: true })
-    graph.addEdge('missing-source', 'missing-target', {})
-    graph.addEdge('empty-source', 'empty-target', { relation: '' })
-    graph.addEdge('normalized-source', 'normalized-target', { relation: ' depends---on ' })
+    const graph = {
+      nodeEntries: () => [],
+      // Cypher keys MERGE on semantic fact identity, so the double exposes
+      // factRecords rather than the collapsed tuple view.
+      factRecords: () => [
+        { fact: { id: 'sf_a', source: 'missing-source', target: 'missing-target' }, attributes: {} },
+        { fact: { id: 'sf_b', source: 'empty-source', target: 'empty-target', relation: '' }, attributes: { relation: '' } },
+        {
+          fact: { id: 'sf_c', source: 'normalized-source', target: 'normalized-target', relation: ' depends---on ' },
+          attributes: { relation: ' depends---on ' },
+        },
+      ],
+    } as unknown as KnowledgeGraph
 
     withTempDir((tempDir) => {
       const outputPath = join(tempDir, 'graph.cypher')
       toCypher(graph, outputPath)
       const content = readFileSync(outputPath, 'utf8')
 
-      expect(content.match(/\[:RELATED_TO /g)).toHaveLength(2)
-      expect(content).toContain("MATCH (a {id: 'normalized-source'}), (b {id: 'normalized-target'}) MERGE (a)-[:DEPENDS_ON ")
+      expect(content.match(/\[r:RELATED_TO /g)).toHaveLength(2)
+      expect(content).toContain("MATCH (a {id: 'normalized-source'}), (b {id: 'normalized-target'}) MERGE (a)-[r:DEPENDS_ON ")
       expect(content).not.toContain('RELATES_TO')
     })
   })
 
-  it('refuses to write cypher that would collapse multiple facts into one MERGE relationship', () => {
-    const unsupportedGraph = {
-      nodeEntries: () => [
-        ['auth', { label: 'AuthService', file_type: 'code' }],
-        ['client', { label: 'HttpClient', file_type: 'code' }],
-      ],
-      factEntries: () => [
-        ['auth', 'client', { relation: 'depends on', confidence: 'EXTRACTED' }],
-        ['auth', 'client', { relation: 'depends on', confidence: 'INFERRED' }],
-      ],
-    } as unknown as KnowledgeGraph
+    it('writes one Cypher relationship per fact when two share endpoints and relation', () => {
+      // Was: toCypher threw Neo4jUnsupportedFactMultiplicityError here. MERGE
+      // now keys on SemanticFactId, so both facts are exported instead of the
+      // export refusing to run.
+      const graph = new KnowledgeGraph({ directed: true })
+      graph.addNode('auth', { label: 'AuthService', file_type: 'code' })
+      graph.addNode('client', { label: 'HttpClient', file_type: 'code' })
+      graph.addEdge('auth', 'client', { relation: 'calls', confidence: 'EXTRACTED' })
+      graph.addEdge('auth', 'client', { relation: 'injects', confidence: 'INFERRED' })
 
-    withTempDir((tempDir) => {
-      const outputPath = join(tempDir, 'graph.cypher')
-      let thrown: unknown
-      try {
-        toCypher(unsupportedGraph, outputPath)
-      } catch (error) {
-        thrown = error
-      }
+      withTempDir((tempDir) => {
+        const outputPath = join(tempDir, 'graph.cypher')
+        toCypher(graph, outputPath)
+        const content = readFileSync(outputPath, 'utf8')
 
-      expect(thrown).toBeInstanceOf(Neo4jUnsupportedFactMultiplicityError)
-      expect(existsSync(outputPath)).toBe(false)
+        expect(existsSync(outputPath)).toBe(true)
+        expect(content.match(/MERGE \(a\)-\[r:/g)).toHaveLength(2)
+        expect(new Set(content.match(/fact_id: '(sf_[0-9a-f]{64})'/g) ?? []).size).toBe(2)
+      })
     })
-  })
 
   it('writes graphml with node and community fields', () => {
     const graph = makeGraph()
@@ -151,7 +174,7 @@ describe('export', () => {
         ],
         edges: [
           { source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.py' },
-          { source: 'n2', target: 'n1', relation: 'returns_to', confidence: 'INFERRED', source_file: 'b.py' },
+          { source: 'n2', target: 'n1', relation: 'references', confidence: 'INFERRED', source_file: 'b.py' },
         ],
       },
       { directed: true },
@@ -219,7 +242,7 @@ describe('export', () => {
         ],
         edges: [
           { source: 'alpha', target: 'beta', relation: 'calls', confidence: 'EXTRACTED', source_file: '/repo/src/infrastructure/install.ts' },
-          { source: 'beta', target: 'alpha', relation: 'returns_to', confidence: 'INFERRED', source_file: '/repo/src/infrastructure/install.ts' },
+          { source: 'beta', target: 'alpha', relation: 'references', confidence: 'INFERRED', source_file: '/repo/src/infrastructure/install.ts' },
         ],
       },
       { directed: true },
@@ -564,7 +587,7 @@ describe('export', () => {
         ],
         edges: [
           { source: 'n1', target: 'n2', relation: 'calls', confidence: 'EXTRACTED', source_file: 'a.py' },
-          { source: 'n2', target: 'n1', relation: 'returns_to', confidence: 'INFERRED', source_file: 'b.py' },
+          { source: 'n2', target: 'n1', relation: 'references', confidence: 'INFERRED', source_file: 'b.py' },
         ],
       },
       { directed: true },
@@ -576,7 +599,7 @@ describe('export', () => {
 
       const note = readFileSync(join(outputPath, 'Alpha.md'), 'utf8')
       expect(note).toContain('→ [[Beta]] - `calls` [EXTRACTED]')
-      expect(note).toContain('← [[Beta]] - `returns\\_to` [INFERRED]')
+      expect(note).toContain('← [[Beta]] - `references` [INFERRED]')
     })
   })
 

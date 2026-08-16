@@ -6,6 +6,7 @@ import { MCP_PROMPTS, type McpPromptDefinition } from './definitions.js'
 import { communitiesFromGraph, loadGraph } from '../serve.js'
 import { validateGraphPath } from '../../shared/security.js'
 import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
+import { readGraphArtifactMetadata } from '../../contracts/graph-artifact.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -49,8 +50,7 @@ export function readStoredCommunityLabels(graphPath: string): Record<number, str
   const safeGraphPath = validateGraphPath(graphPath)
 
   try {
-    const parsed = JSON.parse(readFileSync(safeGraphPath, 'utf8')) as { community_labels?: unknown }
-    const rawLabels = parsed.community_labels
+    const rawLabels = readGraphArtifactMetadata(safeGraphPath).communityLabels
     if (!rawLabels || typeof rawLabels !== 'object' || Array.isArray(rawLabels)) {
       return {}
     }

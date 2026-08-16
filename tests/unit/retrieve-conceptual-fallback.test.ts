@@ -57,8 +57,8 @@ function conceptualWorkflowGraph(): KnowledgeGraph {
   addNode(graph, 'observer', 'ChangeObserver.reconcileModifications', '/src/refresh/change-observer.ts')
   addNode(graph, 'coordinator', 'RefreshCoordinator.run', '/src/refresh/coordinator.ts')
   addNode(graph, 'distractor', 'CurrentTopologyFormatter', '/src/ui/current-topology-formatter.ts')
-  graph.addEdge('coordinator', 'snapshot', { relation: 'coordinates' })
-  graph.addEdge('coordinator', 'observer', { relation: 'coordinates' })
+  graph.addEdge('coordinator', 'snapshot', { relation: 'calls' })
+  graph.addEdge('coordinator', 'observer', { relation: 'calls' })
   return graph
 }
 
@@ -337,9 +337,9 @@ describe('conceptual-query fallback planner', () => {
       framework_role: 'watcher',
       framework_metadata: { runtime_boundary: 'change reconciliation' },
     })
-    graph.addEdge('exported', 'module', { relation: 'coordinates' })
+    graph.addEdge('exported', 'module', { relation: 'calls' })
     graph.addEdge('module', 'docs', { relation: 'references' })
-    graph.addEdge('docs', 'framework', { relation: 'describes' })
+    graph.addEdge('docs', 'framework', { relation: 'references' })
 
     const proposal = planConceptualFallback(graph, {
       question: 'Explain topology refresh reconciliation watcher lifecycle',
@@ -387,8 +387,8 @@ describe('conceptual-query fallback planner', () => {
     addNode(graph, 'sync', 'SearchProjectionSynchronizer', '/services/search/projection-sync.ts', { community: 7 })
     addNode(graph, 'publish', 'ProductListingPublisher', '/services/search/listing-publisher.ts', { community: 7 })
     addNode(graph, 'badge', 'SearchStatusBadge', '/ui/search-status-badge.ts', { community: 9 })
-    graph.addEdge('sync', 'orders', { relation: 'consumes' })
-    graph.addEdge('sync', 'publish', { relation: 'publishes' })
+    graph.addEdge('sync', 'orders', { relation: 'depends_on' })
+    graph.addEdge('sync', 'publish', { relation: 'provides' })
 
     const result = retrieveContext(graph, {
       question: 'How are product search listings kept current when orders change?',
@@ -422,8 +422,8 @@ describe('conceptual-query fallback planner', () => {
     graph.addEdge('http-checker', 'status-update', { relation: 'calls' })
     graph.addEdge('status-update', 'incident', { relation: 'calls' })
     graph.addEdge('incident', 'notifications', { relation: 'calls' })
-    graph.addEdge('public-status', 'incident', { relation: 'reads' })
-    graph.addEdge('alternate-status', 'public-status', { relation: 'competes_with' })
+    graph.addEdge('public-status', 'incident', { relation: 'uses' })
+    graph.addEdge('alternate-status', 'public-status', { relation: 'references' })
 
     const proposal = planConceptualFallback(graph, {
       question: 'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify inconsistent status-computation paths.',
@@ -449,8 +449,8 @@ describe('conceptual-query fallback planner', () => {
     graph.addEdge('http-checker', 'status-update', { relation: 'calls' })
     graph.addEdge('status-update', 'incident-owner', { relation: 'calls' })
     graph.addEdge('incident-owner', 'delivery-owner', { relation: 'calls' })
-    graph.addEdge('public-status', 'incident-owner', { relation: 'reads' })
-    graph.addEdge('overall-status', 'public-status', { relation: 'competes_with' })
+    graph.addEdge('public-status', 'incident-owner', { relation: 'uses' })
+    graph.addEdge('overall-status', 'public-status', { relation: 'references' })
 
     const proposal = planConceptualFallback(graph, {
       question: 'Explain the path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every overall-status computation. Read-only: do not modify files.',
@@ -477,11 +477,11 @@ describe('conceptual-query fallback planner', () => {
     addNode(graph, 'incident-owner', 'createIncident()', '/apps/workflows/src/checker/incident.ts')
     addNode(graph, 'notification-owner', 'triggerNotifications()', '/apps/workflows/src/checker/alerting.ts')
     graph.addEdge('public-json-route', 'status-json', { relation: 'calls' })
-    graph.addEdge('status-json', 'public-status', { relation: 'serializes' })
-    graph.addEdge('overall-status', 'public-status', { relation: 'competes_with' })
+    graph.addEdge('status-json', 'public-status', { relation: 'provides' })
+    graph.addEdge('overall-status', 'public-status', { relation: 'references' })
     graph.addEdge('failed-check', 'incident-owner', { relation: 'calls' })
     graph.addEdge('incident-owner', 'notification-owner', { relation: 'calls' })
-    graph.addEdge('incident-owner', 'public-status', { relation: 'affects' })
+    graph.addEdge('incident-owner', 'public-status', { relation: 'updates_slice' })
 
     const proposal = planConceptualFallback(graph, {
       question: 'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify inconsistent status-computation paths.',
@@ -499,13 +499,13 @@ describe('conceptual-query fallback planner', () => {
     addNode(graph, 'snapshot', 'TopologySnapshot', '/runtime/topology/snapshot.ts')
     addNode(graph, 'observer', 'ModificationObserver', '/runtime/topology/modification-observer.ts')
     addNode(graph, 'hub', 'TopologyRefreshCoordinator', '/runtime/topology/refresh-coordinator.ts')
-    graph.addEdge('snapshot', 'hub', { relation: 'publishes' })
+    graph.addEdge('snapshot', 'hub', { relation: 'provides' })
     for (let index = 0; index < 2_000; index += 1) {
       const id = `noise-${index}`
       addNode(graph, id, `UnrelatedBranch${index}`, `/runtime/noise/${index}.ts`)
-      graph.addEdge('hub', id, { relation: 'routes' })
+      graph.addEdge('hub', id, { relation: 'calls' })
     }
-    graph.addEdge('hub', 'observer', { relation: 'notifies' })
+    graph.addEdge('hub', 'observer', { relation: 'enqueues_job' })
     const neighborSpy = vi.spyOn(graph, 'incidentNeighbors')
     const started = performance.now()
 

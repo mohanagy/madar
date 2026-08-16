@@ -38,6 +38,7 @@ import {
   loadBenchmarkRuntimeProofProfiles,
   matchBenchmarkRuntimeProofProfile,
 } from './benchmark/runtime-proof.js'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 export type CompareBaselineMode = 'full' | 'bounded' | 'pack_only' | 'native_agent'
 export type CompareRunMode = 'baseline' | 'madar'
@@ -2314,6 +2315,7 @@ function createCompareRetrievalGraph(
 
     retrievalGraph.addNode(id, {
       ...nodeAttributes,
+      endpointIdentity: graph.nodeEndpointIdentity(id),
       ...(retrievalSourceFile !== sourceFile ? { source_file: retrievalSourceFile } : {}),
     })
     if (retrievalSourceFile !== sourceFile) {
@@ -2321,8 +2323,17 @@ function createCompareRetrievalGraph(
     }
   }
 
-  for (const [source, target, attributes] of graph.factEntries()) {
-    retrievalGraph.addEdge(source, target, attributes)
+  for (const { fact, attributes } of graph.factRecords()) {
+    const admission = retrievalGraph.addEdge(fact.source, fact.target, { ...attributes }, {
+      discriminator: fact.discriminator,
+      recordOccurrence: false,
+    })
+    if (admission.status !== 'stored' || admission.factId !== fact.id) {
+      throw new Error(`Compare graph copy changed semantic fact identity ${fact.id}`)
+    }
+    for (const occurrence of graph.occurrencesForFact(fact.id)) {
+      retrievalGraph.addOccurrence(occurrence)
+    }
   }
 
   return { graph: retrievalGraph, originalSourceFiles }
@@ -2407,20 +2418,7 @@ function suggestBenchmarkGraphScope(graphPath: string, sourceFiles: readonly str
 }
 
 function graphPathHasSpiMode(graphPath: string): boolean {
-  if (!existsSync(graphPath)) {
-    return false
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return false
-    }
-
-    return (parsed as { spi_mode?: unknown }).spi_mode === true
-  } catch {
-    return false
-  }
+  return readGraphArtifactMetadata(graphPath).spiMode
 }
 
 function benchmarkReadinessSeverity(current: BenchmarkReadinessStatus, next: BenchmarkReadinessStatus): BenchmarkReadinessStatus {

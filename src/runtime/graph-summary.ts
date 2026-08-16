@@ -41,7 +41,18 @@ export interface GraphSummary {
   graph_version?: string
   generated_at?: string
   node_count: number
+  /**
+   * Compatibility alias for `fact_count`. Historically "edges" meant semantic
+   * relationships here, and consumers read it that way, so the meaning is
+   * preserved rather than redefined. Always equal to `fact_count`.
+   */
   edge_count: number
+  /** Semantic facts. Diverges from endpoint pairs once any pair carries two. */
+  fact_count: number
+  /** Unique endpoint pairs — the topology count. */
+  endpoint_pair_count: number
+  /** Evidence occurrences. Never affects topology or fact counts. */
+  occurrence_count: number
   file_count: number
   community_count: number
   source_domains: Record<string, number>
@@ -596,6 +607,9 @@ export function buildGraphSummary(graph: KnowledgeGraph): GraphSummary {
   const summary: GraphSummary = {
     node_count: graph.numberOfNodes(),
     edge_count: graph.numberOfFacts(),
+    fact_count: graph.numberOfFacts(),
+    endpoint_pair_count: graph.numberOfEndpointPairs(),
+    occurrence_count: graph.numberOfOccurrences(),
     file_count: fileCount,
     community_count: Object.keys(communities).length,
     source_domains: sourceDomains,

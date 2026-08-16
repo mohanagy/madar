@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 
 import { resolveWorkspaceGraphPath } from './workspace.js'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 interface GraphRootCarrier {
   graph?: {
@@ -27,10 +28,8 @@ export function resolveGraphSourceRoot(graphPath: string, graph?: GraphRootCarri
 /** Reads just enough of graph.json to resolve its recorded source workspace. */
 export function readGraphSourceRoot(graphPath: string): string {
   const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
-  try {
-    const parsed = JSON.parse(readFileSync(resolvedGraphPath, 'utf8')) as { root_path?: unknown }
-    return resolveGraphSourceRoot(resolvedGraphPath, { graph: { root_path: parsed.root_path } })
-  } catch {
-    return resolveGraphSourceRoot(resolvedGraphPath)
-  }
+  const { rootPath } = readGraphArtifactMetadata(resolvedGraphPath)
+  return rootPath === null
+    ? resolveGraphSourceRoot(resolvedGraphPath)
+    : resolveGraphSourceRoot(resolvedGraphPath, { graph: { root_path: rootPath } })
 }

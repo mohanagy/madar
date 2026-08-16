@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
+import { rebindEvidenceOccurrence } from '../contracts/semantic-identity.js'
 import type { ExtractionMode } from '../contracts/generation-policy.js'
 import type {
   ExtractionFallbackReason,
@@ -27,7 +28,7 @@ import {
   writeManifestSnapshot,
 } from '../pipeline/detect.js'
 import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
-import { toCypher, toGraphml, toHtml, toJson, toObsidian, toSvg } from '../pipeline/export.js'
+import { serializeGraphJsonPayload, toCypher, toGraphml, toHtml, toObsidian, toSvg } from '../pipeline/export.js'
 import { extract, EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
 import { createFileStemMap } from '../pipeline/extract/core.js'
 import {
@@ -63,6 +64,10 @@ import {
   type DiscoveryExclusion,
   type DiscoverySafetyMetadata,
 } from '../shared/discovery-safety.js'
+import { readGraphArtifactMetadata, serializeGraphArtifactV2 } from '../contracts/graph-artifact.js'
+import { publishTransitionalGraphArtifacts } from './graph-artifact-transitional.js'
+import type { Communities } from '../pipeline/cluster.js'
+import type { SemanticAnomaly } from '../pipeline/analyze.js'
 
 export type ProgressStep =
   | { step: 'detect'; message: string }
@@ -343,14 +348,29 @@ function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectRe
 }
 
 function copyGraphWithDirection(graph: KnowledgeGraph, directed: boolean): KnowledgeGraph {
+  if (graph.isDirected() === directed) {
+    return graph.copy()
+  }
   const copied = new KnowledgeGraph({ directed })
   Object.assign(copied.graph, graph.graph, { directed })
 
   for (const [nodeId, attributes] of graph.nodeEntries()) {
-    copied.addNode(nodeId, attributes)
+    copied.addNode(nodeId, {
+      ...attributes,
+      endpointIdentity: graph.nodeEndpointIdentity(nodeId),
+    })
   }
-  for (const [source, target, attributes] of graph.factEntries()) {
-    copied.addEdge(source, target, attributes)
+  for (const { fact, attributes } of graph.factRecords()) {
+    const admission = copied.addEdge(fact.source, fact.target, { ...attributes }, {
+      discriminator: fact.discriminator,
+      recordOccurrence: false,
+    })
+    if (admission.status !== 'stored') {
+      throw new Error(`Direction-changing copy could not admit relation ${fact.relation}`)
+    }
+    for (const occurrence of graph.occurrencesForFact(fact.id)) {
+      copied.addOccurrence(rebindEvidenceOccurrence(occurrence, admission.factId))
+    }
   }
 
   return copied
@@ -389,18 +409,82 @@ function missingCodeExtractionError(totalFiles: number, discoverySafety?: Discov
   )
 }
 
-export function loadGraphExtractorVersion(graphPath: string): number | null {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return null
-    }
+/**
+ * Publishes the canonical v2 artifact alongside a fresh v1 mirror.
+ *
+ * Transitional PR B1 contract: `graph.madar` is canonical and new readers
+ * prefer it, while `graph.json` remains a current v1 artifact regenerated from
+ * this same graph on this same run. The legacy path is not tombstoned here --
+ * that cutover changes a large public and test contract and is owned by the
+ * artifact-cutover issue.
+ *
+ * The v1 mirror is lossy by construction: v1 cannot represent parallel facts
+ * between one endpoint pair, so an old binary reading it sees one relationship
+ * where v2 records several. That is a documented transitional limitation, not
+ * a storage defect.
+ */
+function publishGraphArtifacts(
+  graph: KnowledgeGraph,
+  workspaceRoot: string,
+  outputDir: string,
+  communities: Communities,
+  communityLabels: Record<number, string>,
+  semanticAnomalies: SemanticAnomaly[],
+): void {
+  const bytes = serializeGraphArtifactV2({
+    graph,
+    repositoryRevision: typeof graph.graph.repository_revision === 'string'
+      ? graph.graph.repository_revision
+      : 'unavailable',
+    generationMode: graph.graph.spi_mode === true ? 'spi' : 'legacy',
+    generatedAt: new Date().toISOString(),
+    communityLabels,
+    nodeCommunities: nodeCommunityMap(communities),
+    provenance: {
+      schema_version: graph.graph.schema_version === 2 ? 2 : 1,
+      ...(typeof EXTRACTOR_CACHE_VERSION === 'number' ? { extractor_version: EXTRACTOR_CACHE_VERSION } : {}),
+      ...(graph.graph.spi_mode === true ? { spi_mode: true } : {}),
+      ...(isPlainRecord(graph.graph.generation_policy) ? { generation_policy: graph.graph.generation_policy } : {}),
+      ...(graph.graph.graph_build_freshness !== undefined
+        ? { graph_build_freshness: graph.graph.graph_build_freshness }
+        : {}),
+      ...(graph.graph.discovery_safety !== undefined
+        ? { discovery_safety: graph.graph.discovery_safety }
+        : {}),
+    },
+  })
 
-    const extractorVersion = (parsed as { extractor_version?: unknown }).extractor_version
-    return typeof extractorVersion === 'number' && Number.isFinite(extractorVersion) ? extractorVersion : null
-  } catch {
-    return null
+  const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path.trim() : ''
+  publishTransitionalGraphArtifacts({
+    outputDir,
+    artifactBytes: bytes,
+    legacyJson: serializeGraphJsonPayload(
+      graph,
+      communities,
+      communityLabels,
+      semanticAnomalies,
+      EXTRACTOR_CACHE_VERSION,
+    ),
+    ...(rootPath.length > 0 ? { rootPath } : {}),
+  })
+  void workspaceRoot
+}
+
+/** Node id to community id, matching what toJson injects into the v1 payload. */
+function nodeCommunityMap(communities: Communities): Record<string, number> {
+  const assignment: Record<string, number> = {}
+  for (const [communityId, nodeIds] of Object.entries(communities)) {
+    for (const nodeId of nodeIds) assignment[nodeId] = Number(communityId)
   }
+  return assignment
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+export function loadGraphExtractorVersion(graphPath: string): number | null {
+  return readGraphArtifactMetadata(graphPath).extractorVersion
 }
 
 export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}): GenerateGraphResult {
@@ -920,7 +1004,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   progress?.({ step: 'export', message: 'Writing outputs...' })
   writeTextFileAtomically(reportPath, `${report}\n`)
-  toJson(graph, communities, graphPath, communityLabels, semanticAnomalyList, EXTRACTOR_CACHE_VERSION)
+  publishGraphArtifacts(graph, resolvedRootPath, resolvedOutputDir, communities, communityLabels, semanticAnomalyList)
   if (!options.noHtml) {
     const htmlResult = toHtml(graph, communities, htmlPath, communityLabels, {
       mode: options.htmlMode ?? 'auto',

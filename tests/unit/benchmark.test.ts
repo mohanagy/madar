@@ -367,6 +367,7 @@ describe('runBenchmark', () => {
         expect(result.structure_signals).toEqual({
           total_nodes: 7,
           total_edges: 4,
+          total_endpoint_pairs: 4,
           weakly_connected_components: 3,
           singleton_components: 0,
           isolated_nodes: 0,
@@ -397,6 +398,7 @@ describe('runBenchmark', () => {
       expect(benchmark.structure_signals).toEqual({
         total_nodes: 6,
         total_edges: 3,
+        total_endpoint_pairs: 3,
         weakly_connected_components: 3,
         singleton_components: 2,
         isolated_nodes: 2,
@@ -798,6 +800,7 @@ describe('printBenchmark', () => {
       structure_signals: {
         total_nodes: 5,
         total_edges: 4,
+        total_endpoint_pairs: 4,
         weakly_connected_components: 2,
         singleton_components: 1,
         isolated_nodes: 1,
@@ -1065,6 +1068,7 @@ describe('printBenchmark', () => {
       structure_signals: {
         total_nodes: 5,
         total_edges: 4,
+        total_endpoint_pairs: 4,
         weakly_connected_components: 2,
         singleton_components: 1,
         isolated_nodes: 1,

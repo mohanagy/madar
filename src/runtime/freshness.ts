@@ -15,6 +15,7 @@ import { diffGitFilesBetweenCommits, readGitSnapshot } from '../shared/git.js'
 import { readPackageVersion } from '../shared/package-metadata.js'
 import { validateGraphPath } from '../shared/security.js'
 import { isDiscoveryPathIgnored, loadMadarignorePatterns } from '../shared/source-discovery.js'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 export interface GraphFreshnessMetadata {
   graphVersion: string
@@ -241,24 +242,18 @@ function indexedSourceFilesFromGraph(
 }
 
 function indexedSourceFilesFromGraphJson(graphPath: string): IndexedSourceFiles {
-  const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as {
-    root_path?: unknown
-    graph_build_freshness?: unknown
-    nodes?: Array<{ source_file?: unknown }>
-  }
-  const rootPath = typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0
-    ? parsed.root_path.trim()
-    : dirname(graphPath)
+  const metadata = readGraphArtifactMetadata(graphPath)
+  const rootPath = metadata.rootPath ?? dirname(graphPath)
   const sourceFiles = [...new Set(
-    (Array.isArray(parsed.nodes) ? parsed.nodes : [])
-      .map((node) => typeof node?.source_file === 'string' ? normalizeFreshnessSourceFile(rootPath, node.source_file) : '')
+    metadata.nodeSourceFiles
+      .map((sourceFile) => normalizeFreshnessSourceFile(rootPath, sourceFile))
       .filter((sourceFile) => sourceFile.length > 0),
   )]
 
   return {
     rootPath,
     sourceFiles,
-    buildFreshness: graphBuildFreshnessFromValue(parsed.graph_build_freshness),
+    buildFreshness: graphBuildFreshnessFromValue(metadata.graphBuildFreshness),
   }
 }
 

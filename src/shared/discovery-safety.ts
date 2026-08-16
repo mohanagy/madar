@@ -1,5 +1,6 @@
 import { readFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, relative, sep } from 'node:path'
+import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 export type DiscoveryExclusionKind = 'sensitive' | 'unreadable'
 
@@ -125,14 +126,42 @@ const RELEVANCE_TOKEN_ALIASES: Readonly<Record<string, string>> = {
   tokens: 'token',
 }
 const ENVIRONMENT_CONFIG_INTENT_PATTERN = /(?:^|[^a-z0-9])\.env(?:[^a-z0-9]|$)|\b(?:config(?:uration)?|credentials?|deploy(?:ment)?|environment|key|password|runtime\s+variable|secret|settings|token)\b/i
-const MAX_GRAPH_ARTIFACT_BYTES = 100 * 1024 * 1024
+/**
+ * Ceiling for any graph artifact this module will read.
+ *
+ * Exported so the limit that actually reaches the artifact reader can be
+ * asserted, rather than assumed from reading the call site.
+ */
+export const MAX_GRAPH_ARTIFACT_BYTES = 100 * 1024 * 1024
 const MAX_STORED_EXCLUSIONS = 10_000
 const MAX_METADATA_CACHE_ENTRIES = 16
+/**
+ * Keyed by requested path AND byte bound; validated against the artifact that
+ * was actually read.
+ *
+ * Both halves matter. Metadata resolution may switch from the requested
+ * graph.json to a sibling graph.madar, so keying on the requested path's stat
+ * returns stale data whenever the canonical artifact changes and the mirror
+ * does not. And the bound is per-call, so a value produced under one ceiling
+ * must not be served to a caller asking under a different one.
+ */
 const discoveryMetadataCache = new Map<string, {
+  resolvedPath: string
   mtimeMs: number
   size: number
   value: DiscoverySafetyMetadata | null
 }>()
+
+/** True when the cached artifact is still byte-for-byte what was cached. */
+function freshAgainst(path: string, mtimeMs: number, size: number): boolean {
+  try {
+    const stats = statSync(path)
+    return stats.mtimeMs === mtimeMs && stats.size === size
+  } catch {
+    // The artifact moved or vanished; the cached value describes nothing.
+    return false
+  }
+}
 
 function toPosixPath(path: string): string {
   return path.split(sep).join('/')
@@ -287,22 +316,49 @@ export function parseDiscoverySafetyMetadata(value: unknown): DiscoverySafetyMet
   return buildDiscoverySafetyMetadata(exclusions)
 }
 
-export function readDiscoverySafetyMetadata(graphPath: string): DiscoverySafetyMetadata | null {
+export interface ReadDiscoverySafetyMetadataOptions {
+  /**
+   * Overrides the artifact ceiling. Defaults to MAX_GRAPH_ARTIFACT_BYTES.
+   *
+   * A caller may want a stricter bound than the global one, and a test needs
+   * one: proving the post-read byte-length check fires against the 100 MB
+   * default would require a 100 MB fixture, which is a worse thing to commit
+   * than a parameter.
+   */
+  readonly maxBytes?: number
+}
+
+export function readDiscoverySafetyMetadata(
+  graphPath: string,
+  options: ReadDiscoverySafetyMetadataOptions = {},
+): DiscoverySafetyMetadata | null {
+  const maxBytes = options.maxBytes ?? MAX_GRAPH_ARTIFACT_BYTES
   try {
     const stats = statSync(graphPath)
-    if (stats.size > MAX_GRAPH_ARTIFACT_BYTES) {
+    if (stats.size > maxBytes) {
       return null
     }
-    const cached = discoveryMetadataCache.get(graphPath)
-    if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
+    const cacheKey = `${graphPath}\u0000${maxBytes}`
+    const cached = discoveryMetadataCache.get(cacheKey)
+    if (cached !== undefined && freshAgainst(cached.resolvedPath, cached.mtimeMs, cached.size)) {
       return cached.value
     }
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    // The stat above covers the path handed in. Metadata resolution may switch
+    // to a sibling graph.madar, so the limit has to travel with the request or
+    // a small graph.json beside a huge canonical artifact reads unbounded.
+    const metadata = readGraphArtifactMetadata(graphPath, { maxBytes })
+    if (metadata.format === 'absent' || metadata.format === 'unreadable') {
       return null
     }
-    const value = parseDiscoverySafetyMetadata((parsed as Record<string, unknown>).discovery_safety)
-    discoveryMetadataCache.set(graphPath, { mtimeMs: stats.mtimeMs, size: stats.size, value })
+    const value = parseDiscoverySafetyMetadata(metadata.discoverySafety)
+    const resolvedPath = metadata.resolvedPath ?? graphPath
+    const resolvedStats = statSync(resolvedPath)
+    discoveryMetadataCache.set(cacheKey, {
+      resolvedPath,
+      mtimeMs: resolvedStats.mtimeMs,
+      size: resolvedStats.size,
+      value,
+    })
     while (discoveryMetadataCache.size > MAX_METADATA_CACHE_ENTRIES) {
       const oldestKey = discoveryMetadataCache.keys().next().value as string | undefined
       if (!oldestKey) break

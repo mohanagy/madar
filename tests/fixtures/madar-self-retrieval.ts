@@ -1,3 +1,14 @@
+/**
+ * Relation names are stand-ins for this synthetic self-graph. None of the
+ * originals (coordinates, writes_state, configures, controls, defines) is
+ * emitted by any producer, so admission refuses them and the fixture would
+ * build a graph with no relationships at all.
+ *
+ * The replacements are chosen to be registered AND to fall through
+ * relationWeight()'s default branch exactly as the originals did, so retrieval
+ * scoring is unchanged. Picking higher-weighted relations such as `calls`
+ * silently altered precision.
+ */
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 
 interface FixtureNode {
@@ -42,21 +53,21 @@ const NODES: FixtureNode[] = [
 ]
 
 const EDGES: Array<[string, string, string]> = [
-  ['generation_bridge', 'generate_command', 'coordinates'],
-  ['generation_bridge', 'detect_sources', 'coordinates'],
-  ['generation_bridge', 'extract_sources', 'coordinates'],
-  ['watch_reconcile', 'watch_graph', 'coordinates'],
-  ['watch_reconcile', 'watch_edits', 'coordinates'],
-  ['watch_reconcile', 'watch_state', 'writes_state'],
-  ['evidence_bridge', 'evidence_contract', 'coordinates'],
-  ['evidence_bridge', 'quality_signals', 'coordinates'],
-  ['evidence_bridge', 'confidence_decision', 'coordinates'],
-  ['install_profiles', 'mcp_profiles', 'defines'],
-  ['install_profiles', 'install_routing', 'configures'],
-  ['install_routing', 'stdio_tools', 'controls'],
-  ['impact_bridge', 'impact_analysis', 'coordinates'],
-  ['impact_bridge', 'dependency_walk', 'coordinates'],
-  ['impact_bridge', 'direction_guard', 'coordinates'],
+  ['generation_bridge', 'generate_command', 'provides'],
+  ['generation_bridge', 'detect_sources', 'provides'],
+  ['generation_bridge', 'extract_sources', 'provides'],
+  ['watch_reconcile', 'watch_graph', 'provides'],
+  ['watch_reconcile', 'watch_edits', 'provides'],
+  ['watch_reconcile', 'watch_state', 'references'],
+  ['evidence_bridge', 'evidence_contract', 'provides'],
+  ['evidence_bridge', 'quality_signals', 'provides'],
+  ['evidence_bridge', 'confidence_decision', 'provides'],
+  ['install_profiles', 'mcp_profiles', 'declares'],
+  ['install_profiles', 'install_routing', 'injects'],
+  ['install_routing', 'stdio_tools', 'uses_guard'],
+  ['impact_bridge', 'impact_analysis', 'provides'],
+  ['impact_bridge', 'dependency_walk', 'provides'],
+  ['impact_bridge', 'direction_guard', 'provides'],
 ]
 
 export function buildMadarSelfRetrievalFixture(): KnowledgeGraph {

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 import type { KnowledgeGraph } from '../contracts/graph.js'
 import { EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
@@ -10,6 +10,7 @@ import { compareTimeTravelGraphs, type CompareTimeTravelGraphsOptions, type Time
 import { validateGraphOutputPath } from '../shared/security.js'
 import { resolveMadarOutputDirectory, resolveMadarWorkspace } from '../shared/workspace.js'
 import { generateGraph, loadGraphExtractorVersion, type GenerateGraphOptions, type GenerateGraphResult } from './generate.js'
+import { GRAPH_LOCAL_SIDECAR_BASENAME, readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -130,21 +131,11 @@ function snapshotTempDir(rootDir: string, commitSha: string): string {
 }
 
 function readGraphSchemaVersion(graphPath: string): number | null {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { schema_version?: unknown }
-    return typeof parsed.schema_version === 'number' && Number.isFinite(parsed.schema_version) ? parsed.schema_version : null
-  } catch {
-    return null
-  }
+  return readGraphArtifactMetadata(graphPath).schemaVersion
 }
 
 function graphIsDirected(graphPath: string): boolean {
-  try {
-    const parsed = JSON.parse(readFileSync(graphPath, 'utf8')) as { directed?: unknown }
-    return parsed.directed === true
-  } catch {
-    return false
-  }
+  return readGraphArtifactMetadata(graphPath).directed === true
 }
 
 function readSnapshotMetadata(rootDir: string, commitSha: string): SnapshotMetadata | null {
@@ -189,6 +180,29 @@ function persistSnapshot(rootDir: string, ref: string, commitSha: string, genera
 
   try {
     copyFileSync(generated.graphPath, tempGraphPath)
+
+    /*
+     * The snapshot must contain the canonical artifact, not only the mirror.
+     * graph.json is a v1 mirror and is lossy by construction -- it cannot
+     * represent parallel facts -- so a snapshot holding only the mirror
+     * silently drops every v2-only fact the moment it is read back. Copying
+     * graph.madar beside it is enough for the read path to prefer v2, because
+     * both loadGraph and readGraphArtifactMetadata already resolve a canonical
+     * sibling. The machine-local sidecar travels too so a restored snapshot
+     * still knows its root path.
+     */
+    const sourceDir = dirname(generated.graphPath)
+    for (const basename of ['graph.madar', GRAPH_LOCAL_SIDECAR_BASENAME]) {
+      const source = join(sourceDir, basename)
+      const destination = join(tempDir, basename)
+      // Remove first. tempDir survives an interrupted run, so copying only when
+      // the source exists would let a stale graph.madar from a previous attempt
+      // ride into this snapshot and be preferred over the mirror -- a snapshot
+      // silently describing a different commit. The report below already clears
+      // itself the same way.
+      rmSync(destination, { force: true })
+      if (existsSync(source)) copyFileSync(source, destination)
+    }
 
     if (generated.reportPath && existsSync(generated.reportPath)) {
       copyFileSync(generated.reportPath, tempReportPath)

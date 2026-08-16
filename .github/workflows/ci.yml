@@ -62,6 +62,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # The old-reader proof extracts the released v0.32.1 loader from the
+      # in-repository tag. The default shallow checkout carries no tags, so the
+      # proof cannot run without this. One pinned ref is fetched, not full
+      # history, and a tag resolving to any other commit fails the lane.
+      - name: Provision the pinned v0.32.1 compatibility ref
+        run: node .github/scripts/ensure-v0321-compat-ref.mjs
+
       - name: Run tests
         if: matrix.os != 'ubuntu-latest' || matrix.node-version != '22'
         env:

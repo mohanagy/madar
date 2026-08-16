@@ -57,7 +57,7 @@
         {
             "source": "n_layernorm",
             "target": "n_concept_attn",
-            "relation": "referenced",
+            "relation": "references",
             "confidence": "AMBIGUOUS",
             "source_file": "paper.md",
             "weight": 0.5

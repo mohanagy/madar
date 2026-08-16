@@ -1,6 +1,8 @@
 import { KnowledgeGraph } from '../contracts/graph.js'
+import { serializeCanonicalJson } from '../contracts/canonical-json.js'
 import { AUDIO_EXTENSIONS, CODE_EXTENSIONS, DOC_EXTENSIONS, IMAGE_EXTENSIONS, PAPER_EXTENSIONS, VIDEO_EXTENSIONS } from './detect.js'
 import { cluster, cohesionScore, type Communities } from './cluster.js'
+import type { SemanticFactId } from '../contracts/semantic-graph.js'
 
 export interface GodNode {
   id: string
@@ -34,17 +36,105 @@ export interface SemanticAnomaly {
   why: string
 }
 
+/**
+ * A diff row. `fact_id` is additive: two facts can share source, target and
+ * relation while differing in discriminator, so the visible fields alone
+ * cannot tell them apart. Existing required fields are unchanged.
+ */
+export interface GraphDiffEdgeRow {
+  source: string
+  target: string
+  relation: string
+  confidence: string
+  fact_id: SemanticFactId
+}
+
 export interface GraphDiffResult {
   new_nodes: Array<{ id: string; label: string }>
   removed_nodes: Array<{ id: string; label: string }>
-  new_edges: Array<{ source: string; target: string; relation: string; confidence: string }>
-  removed_edges: Array<{ source: string; target: string; relation: string; confidence: string }>
+  new_edges: GraphDiffEdgeRow[]
+  removed_edges: GraphDiffEdgeRow[]
   summary: string
+}
+
+/**
+ * Raised when two graphs are compared under different direction modes.
+ *
+ * Direction is part of semantic fact identity, so the same visible edge has a
+ * different fact ID in a directed graph than in an undirected one. Diffing
+ * across modes therefore produces a plausible-looking result in which every
+ * fact appears both removed and added. Failing closed is the only honest
+ * answer: the alternative is to silently reinterpret one graph under the
+ * other's model, which would weaken fact identity to make a report look tidy.
+ */
+/**
+ * Two graphs disagree about what one SemanticFactId means.
+ *
+ * Fact identity is content-derived, so a shared id must describe identical
+ * endpoints, direction, relation and discriminator. Until collision witnesses
+ * were scoped per operation, a process-global map happened to catch this when
+ * both graphs were built in one process. That was incidental, not a contract:
+ * it never protected graphs loaded in different processes. The invariant now
+ * lives at the boundary that actually combines them.
+ */
+/** The exact fields that determine a SemanticFactId, canonically serialized. */
+function factIdentityProjection(fact: {
+  readonly direction: string
+  readonly source: string
+  readonly target: string
+  readonly relation: string
+  readonly discriminator: unknown
+}): string {
+  return serializeCanonicalJson({
+    direction: fact.direction,
+    source: fact.source,
+    target: fact.target,
+    relation: fact.relation,
+    discriminator: fact.discriminator,
+  }, { arraySemantics: 'ordered' })
+}
+
+export class GraphFactIdentityConflictError extends Error {
+  readonly factId: SemanticFactId
+
+  constructor(factId: SemanticFactId) {
+    super(
+      `Cannot compare graphs: semantic fact ${factId} describes different content in each graph. `
+      + 'A content-derived identity must not describe two different facts.',
+    )
+    this.name = 'GraphFactIdentityConflictError'
+    this.factId = factId
+  }
+}
+
+export class GraphDirectionMismatchError extends Error {
+  readonly beforeDirected: boolean
+  readonly afterDirected: boolean
+
+  constructor(beforeDirected: boolean, afterDirected: boolean) {
+    super(
+      'Cannot compare graphs with different direction modes: '
+      + `before=${beforeDirected ? 'directed' : 'undirected'}, `
+      + `after=${afterDirected ? 'directed' : 'undirected'}. `
+      + 'Regenerate or load both graphs under the same graph-direction contract.',
+    )
+    this.name = 'GraphDirectionMismatchError'
+    this.beforeDirected = beforeDirected
+    this.afterDirected = afterDirected
+  }
 }
 
 export interface GraphStructureMetrics {
   total_nodes: number
+  /**
+   * Compatibility alias for `total_endpoint_pairs`. This metric has always
+   * counted unique endpoint pairs among analysis-entity nodes -- a topology
+   * measure -- so the meaning is preserved rather than switched to facts.
+   * Always equal to `total_endpoint_pairs`.
+   */
   total_edges: number
+  /** Unique endpoint pairs among analysis-entity nodes. */
+  total_endpoint_pairs: number
   weakly_connected_components: number
   singleton_components: number
   isolated_nodes: number
@@ -305,19 +395,8 @@ function analysisCommunityNodeIds(graph: KnowledgeGraph, nodeIds: string[]): str
 }
 
 function analysisGraph(graph: KnowledgeGraph): KnowledgeGraph {
-  const entityGraph = new KnowledgeGraph(graph.isDirected())
   const nodeIds = analysisNodeIds(graph)
-  const nodeIdSet = new Set(nodeIds)
-  for (const nodeId of nodeIds) {
-    entityGraph.addNode(nodeId, graph.nodeAttributes(nodeId))
-  }
-  for (const [sourceNodeId, targetNodeId, attributes] of graph.factEntries()) {
-    if (!nodeIdSet.has(sourceNodeId) || !nodeIdSet.has(targetNodeId)) {
-      continue
-    }
-    entityGraph.addEdge(sourceNodeId, targetNodeId, attributes)
-  }
-  return entityGraph
+  return graph.subgraph(nodeIds)
 }
 
 function lowCohesionCommunities(
@@ -464,6 +543,7 @@ export function graphStructureMetrics(graph: KnowledgeGraph): GraphStructureMetr
     return {
       total_nodes: 0,
       total_edges: 0,
+      total_endpoint_pairs: 0,
       weakly_connected_components: 0,
       singleton_components: 0,
       isolated_nodes: 0,
@@ -520,6 +600,7 @@ export function graphStructureMetrics(graph: KnowledgeGraph): GraphStructureMetr
   return {
     total_nodes: nodeIds.length,
     total_edges: entityEdges,
+      total_endpoint_pairs: entityEdges,
     weakly_connected_components: componentSizes.length,
     singleton_components: componentSizes.filter((size) => size === 1).length,
     isolated_nodes: nodeIds.filter((nodeId) => analysisEntityDegree(graph, nodeId) === 0).length,
@@ -961,33 +1042,48 @@ export function suggestQuestions(graph: KnowledgeGraph, communities: Communities
 }
 
 export function graphDiff(oldGraph: KnowledgeGraph, newGraph: KnowledgeGraph): GraphDiffResult {
+  if (oldGraph.isDirected() !== newGraph.isDirected()) {
+    throw new GraphDirectionMismatchError(oldGraph.isDirected(), newGraph.isDirected())
+  }
+
   const oldNodes = new Set(oldGraph.nodeIds())
   const newNodes = new Set(newGraph.nodeIds())
 
   const newNodesList = [...newNodes].filter((nodeId) => !oldNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(newGraph, nodeId) }))
   const removedNodesList = [...oldNodes].filter((nodeId) => !newNodes.has(nodeId)).map((nodeId) => ({ id: nodeId, label: nodeLabel(oldGraph, nodeId) }))
 
-  // #657 precondition: re-key graphDiff by stable fact identity so same-relation facts cannot collapse.
-  const oldEdges = new Set(oldGraph.factEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), oldGraph.isDirected())))
-  const newEdges = new Set(newGraph.factEntries().map(([source, target, attrs]) => edgeKey(source, target, String(attrs.relation ?? ''), newGraph.isDirected())))
+  const oldFactsById = new Map(oldGraph.factRecords().map(({ fact }) => [fact.id, fact]))
+  const oldFactIds = new Set(oldFactsById.keys())
+  const newFactIds = new Set(newGraph.factRecords().map(({ fact }) => fact.id))
+
+  // A shared id must mean the same fact in both graphs, or every "unchanged"
+  // row below is a lie about content that silently differs.
+  for (const { fact } of newGraph.factRecords()) {
+    const previous = oldFactsById.get(fact.id)
+    if (previous !== undefined && factIdentityProjection(previous) !== factIdentityProjection(fact)) {
+      throw new GraphFactIdentityConflictError(fact.id)
+    }
+  }
 
   const newEdgesList = newGraph
-    .factEntries()
-    .filter(([source, target, attrs]) => !oldEdges.has(edgeKey(source, target, String(attrs.relation ?? ''), newGraph.isDirected())))
-    .map(([source, target, attrs]) => ({
-      source,
-      target,
-      relation: String(attrs.relation ?? ''),
-      confidence: String(attrs.confidence ?? ''),
+    .factRecords()
+    .filter(({ fact }) => !oldFactIds.has(fact.id))
+    .map(({ fact, attributes }) => ({
+      source: fact.source,
+      target: fact.target,
+      relation: fact.relation,
+      confidence: String(attributes.confidence ?? ''),
+      fact_id: fact.id,
     }))
   const removedEdgesList = oldGraph
-    .factEntries()
-    .filter(([source, target, attrs]) => !newEdges.has(edgeKey(source, target, String(attrs.relation ?? ''), oldGraph.isDirected())))
-    .map(([source, target, attrs]) => ({
-      source,
-      target,
-      relation: String(attrs.relation ?? ''),
-      confidence: String(attrs.confidence ?? ''),
+    .factRecords()
+    .filter(({ fact }) => !newFactIds.has(fact.id))
+    .map(({ fact, attributes }) => ({
+      source: fact.source,
+      target: fact.target,
+      relation: fact.relation,
+      confidence: String(attributes.confidence ?? ''),
+      fact_id: fact.id,
     }))
 
   const summaryParts: string[] = []

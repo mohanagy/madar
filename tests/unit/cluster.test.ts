@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { GraphRelationshipView } from '../../src/contracts/graph.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { buildFromJson } from '../../src/pipeline/build.js'
-import { _edgeWeight, cluster, cohesionScore, scoreAll } from '../../src/pipeline/cluster.js'
+import { _edgeWeight, _louvainTopologyMetrics, cluster, cohesionScore, scoreAll } from '../../src/pipeline/cluster.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
@@ -141,13 +141,37 @@ describe('_edgeWeight fact-multiplicity topology weight', () => {
 
   it('matches current single-fact behavior for a real endpoint pair with an explicit weight', () => {
     const graph = new KnowledgeGraph()
+    graph.addNode('a', {})
+    graph.addNode('b', {})
     graph.addEdge('a', 'b', { relation: 'calls', weight: 2.5 })
     expect(_edgeWeight(graph, 'a', 'b')).toBe(2.5)
   })
 
   it('matches current single-fact behavior for a real endpoint pair with no weight attribute', () => {
     const graph = new KnowledgeGraph()
+    graph.addNode('a', {})
+    graph.addNode('b', {})
     graph.addEdge('a', 'b', { relation: 'calls' })
     expect(_edgeWeight(graph, 'a', 'b')).toBe(1)
+  })
+
+  it('keeps endpoint-pair count, total Louvain weight, and node degree unchanged for parallel facts', () => {
+    const single = new KnowledgeGraph()
+    const parallel = new KnowledgeGraph()
+    for (const graph of [single, parallel]) {
+      graph.addNode('a', {})
+      graph.addNode('b', {})
+      graph.addEdge('a', 'b', { relation: 'calls', weight: 2 })
+    }
+    parallel.addEdge('a', 'b', { relation: 'injects', weight: 2 })
+
+    expect(parallel.numberOfFacts()).toBe(2)
+    expect(parallel.numberOfEndpointPairs()).toBe(1)
+    expect(parallel.endpointEntries()).toEqual([{ source: 'a', target: 'b' }])
+    expect(_louvainTopologyMetrics(parallel)).toEqual(_louvainTopologyMetrics(single))
+    expect(_louvainTopologyMetrics(parallel)).toEqual({
+      totalWeight: 2,
+      nodeDegree: { a: 2, b: 2 },
+    })
   })
 })
