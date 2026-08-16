@@ -139,7 +139,8 @@ decision taken.
 | Role | SHA |
 |---|---|
 | Base | `ee2115a2465c86306735494f526dca8baf0383bc` |
-| **Production code head** | **`c4f65972a19ae272e37d9e9dcfd3e93bfb32d619`** |
+| Head the exception was accepted at | `c4f65972a19ae272e37d9e9dcfd3e93bfb32d619` |
+| **Current production code head** | **`677ba81d498c1d23dd74285e2515917df4448cc8`** |
 | Branch/documentation head | recorded in the PR body; documentation-only commits follow the code head and do not re-open this decision |
 
 The production code head and the branch head are deliberately separate. Only
@@ -215,3 +216,29 @@ hydration, artifact parsing or loading, receipt validation, canonical
 serialization, metadata loading, publication, generation hot paths, or
 endpoint-pair caching. If a review finding forces such a change, the rule
 applies before any ready claim.
+
+### Carried to `677ba81d`
+
+The CodeRabbit re-review required production fixes to metadata loading, which
+is inside the invalidating set above, so the experiment was re-run rather than
+this acceptance being assumed to carry. See
+[`review-fix-head-receipt.md`](./review-fix-head-receipt.md).
+
+| Metric | Ratio at `677ba81d` | Ratio at `c4f65972` |
+|---|---:|---:|
+| Generation wall | 0.988× | 0.980× |
+| Peak RSS | 1.350× | 1.250× |
+| Canonical artifact | 1.899× | 1.899× |
+| **Load latency** | **2.256×** | 2.25×–2.29× |
+| Transitional output | 2.212× | 2.212× |
+
+**Load measures 2.256×, inside the accepted range, so the exception describes
+this head.** It carries because the measurement falls within what was accepted,
+not because acceptance was treated as travelling with the branch.
+
+Peak RSS moved from 1.250× to 1.350×. It passes either way and is not caused by
+the review fixes -- witness scoping, the only plausible mechanism, landed before
+`c4f65972`, and the delta between the two heads is one string field and a cache
+key. This run's candidate arm spread is 1.6% against 12.5% previously, so
+1.350× is the better-supported figure. RSS is approximate throughout these
+receipts; the validator gates wall time only.
