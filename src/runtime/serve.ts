@@ -13,10 +13,11 @@ import { sanitizeLabel, validateGraphPath } from '../shared/security.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { parseGenerationPolicy } from '../contracts/generation-policy.js'
 import {
-  GRAPH_ARTIFACT_MOVED_PREFIX,
   GRAPH_ARTIFACT_V2_HEADER,
+  isMovedMarkerText,
   loadGraphArtifactFromPath,
 } from '../contracts/graph-artifact.js'
+import { classifyWorkspaceGraph } from '../contracts/graph-artifact-selection.js'
 
 const MAX_GRAPH_BYTES = 100 * 1024 * 1024
 const MAX_TRAVERSAL_DEPTH = 6
@@ -224,22 +225,32 @@ export function loadGraph(graphPath: string): KnowledgeGraph {
   if (head.subarray(0, GRAPH_ARTIFACT_V2_HEADER.length).toString('utf8') === GRAPH_ARTIFACT_V2_HEADER) {
     return loadGraphArtifactFromPath(safePath).graph
   }
-  if (head.subarray(0, GRAPH_ARTIFACT_MOVED_PREFIX.length).toString('utf8') === GRAPH_ARTIFACT_MOVED_PREFIX) {
-    // The tombstone is addressed to old readers. This is a current reader, so
-    // it follows the pointer instead of reporting the graph as unavailable.
-    const sibling = join(dirname(safePath), 'graph.madar')
-    if (!existsSync(sibling)) {
+  if (basename(safePath) === 'graph.json') {
+    // One classification instead of two ad-hoc sibling checks. The rules it
+    // encodes are unchanged:
+    //
+    // - A moved marker is addressed to old readers. This is a current reader,
+    //   so it follows the pointer rather than reporting the graph unavailable.
+    // - A live v1 beside a valid canonical is a B1-era workspace. A current
+    //   reader must never settle for the v1 just because that is the path it
+    //   was handed: v1 cannot represent parallel facts, so preferring it would
+    //   silently drop relationships.
+    //
+    // Note this keeps reading a mixed workspace rather than failing closed the
+    // way default intent does. loadGraph is an internal reader with many
+    // callers and no intent of its own, and refusing here would stop Madar
+    // reading any B1-era workspace until it was regenerated. That is a
+    // migration policy decision, not one to make silently inside a loader.
+    const classification = classifyWorkspaceGraph(dirname(safePath))
+    if (classification.state === 'moved_without_canonical') {
       throw new Error('out/graph.json has moved but out/graph.madar is missing. Re-run madar to rebuild.')
     }
-    return loadGraphArtifactFromPath(sibling).graph
-  }
-  // Transitional dual-artifact state: graph.json is still a valid v1 mirror,
-  // but v2 is canonical. A current reader must never settle for the mirror
-  // just because it was the path it was handed -- the mirror cannot represent
-  // parallel facts, so preferring it would silently lose relationships.
-  if (basename(safePath) === 'graph.json') {
-    const canonical = join(dirname(safePath), 'graph.madar')
-    if (existsSync(canonical)) return loadGraphArtifactFromPath(canonical).graph
+    if (existsSync(classification.canonicalPath) && classification.state !== 'invalid_current_v2') {
+      return loadGraphArtifactFromPath(classification.canonicalPath).graph
+    }
+    if (isMovedMarkerText(head.toString('utf8'))) {
+      throw new Error('out/graph.json has moved but out/graph.madar is missing. Re-run madar to rebuild.')
+    }
   }
 
   let parsed: unknown
