@@ -13,6 +13,7 @@ import { join } from 'node:path'
 
 import {
   GRAPH_ARTIFACT_V2_TOMBSTONE,
+  GRAPH_LOCAL_SIDECAR_BASENAME,
   loadGraphArtifact,
   parseGraphArtifactV2,
 } from '../contracts/graph-artifact.js'
@@ -27,12 +28,16 @@ export interface GraphArtifactActivationResult {
   readonly legacyBackupPath: string
   readonly tombstonePath: string
   readonly legacyBackupCreated: boolean
+  /** Null when no source root was supplied. */
+  readonly sidecarPath: string | null
 }
 
 export type GraphArtifactActivationStep =
   | 'write_v2_temp'
   | 'write_v1_backup_temp'
   | 'write_tombstone_temp'
+  | 'write_sidecar_temp'
+  | 'rename_sidecar'
   | 'rename_v2'
   | 'rename_v1_backup'
   | 'rename_tombstone'
@@ -40,6 +45,13 @@ export type GraphArtifactActivationStep =
 export type GraphArtifactActivationPhase = 'v2_activated' | 'v1_preserved'
 
 export interface GraphArtifactActivationOptions {
+  /**
+   * Absolute machine-local source root recorded in the sidecar.
+   *
+   * Omitted when unknown, in which case no sidecar is published. The sidecar
+   * is derived, machine-local data, so it is never restored during an unwind.
+   */
+  readonly sidecarRootPath?: string
   /** Filesystem-boundary fault injection used by the activation safety suite. */
   readonly beforeStep?: (step: GraphArtifactActivationStep) => void
   /** Simulates an acknowledgement failure after an atomic rename is visible. */
@@ -121,9 +133,15 @@ export function activateGraphArtifactV2(
   const artifactSnapshot = snapshot(artifactPath)
   const legacyBackupSnapshot = snapshot(legacyBackupPath)
   const tombstoneSnapshot = snapshot(tombstonePath)
+  const sidecarRootPath = options.sidecarRootPath?.trim()
+  const sidecarPath = sidecarRootPath !== undefined && sidecarRootPath.length > 0
+    ? join(outputDir, GRAPH_LOCAL_SIDECAR_BASENAME)
+    : null
+
   const artifactTemp = temporaryPath(outputDir, 'graph-v2')
   const legacyBackupTemp = createLegacyBackup ? temporaryPath(outputDir, 'graph-v1-backup') : null
   const tombstoneTemp = temporaryPath(outputDir, 'graph-tombstone')
+  const sidecarTemp = sidecarPath === null ? null : temporaryPath(outputDir, 'graph-local')
 
   let artifactActivated = false
   let legacyBackupActivated = false
@@ -137,18 +155,34 @@ export function activateGraphArtifactV2(
     }
     options.beforeStep?.('write_tombstone_temp')
     writeDurableTemporaryFile(tombstoneTemp, GRAPH_ARTIFACT_V2_TOMBSTONE)
+    if (sidecarTemp !== null) {
+      options.beforeStep?.('write_sidecar_temp')
+      writeDurableTemporaryFile(sidecarTemp, `${JSON.stringify({ root_path: sidecarRootPath }, null, 2)}\n`)
+    }
 
     /*
      * Activation order and crash contract:
-     *   1. Rename and directory-fsync graph.madar.
-     *   2. Preserve and directory-fsync graph.v1.json when a valid prior v1 exists.
-     *   3. Rename and directory-fsync the graph.json tombstone last.
-     * All bytes are staged before step 1. Ordinary failures roll steps 1/2
-     * back to their exact snapshots. A process interruption after step 1 or 2
+     *   1. Rename and directory-fsync the machine-local sidecar, when present.
+     *   2. Rename and directory-fsync graph.madar.
+     *   3. Preserve and directory-fsync graph.v1.json when a valid prior v1 exists.
+     *   4. Rename and directory-fsync the graph.json tombstone last.
+     * All bytes are staged before step 1. Ordinary failures roll steps 2/3
+     * back to their exact snapshots. A process interruption after step 2 or 3
      * is independently safe: old readers still see legacy JSON, while the new
      * path loader prefers the already-durable sibling graph.madar. The only
      * legacy graph.json is never replaced before its backup is durable.
+     *
+     * The sidecar goes first because it only records where the source root is.
+     * It is derived and machine-local, so an early sidecar cannot mislead a
+     * reader about graph content, and it is deliberately not rolled back.
      */
+    if (sidecarTemp !== null && sidecarPath !== null) {
+      options.beforeStep?.('rename_sidecar')
+      renameSync(sidecarTemp, sidecarPath)
+      options.afterRename?.('rename_sidecar')
+      syncDirectory(outputDir)
+    }
+
     options.beforeStep?.('rename_v2')
     renameSync(artifactTemp, artifactPath)
     artifactActivated = true
@@ -191,6 +225,7 @@ export function activateGraphArtifactV2(
     rmSync(artifactTemp, { force: true })
     if (legacyBackupTemp !== null) rmSync(legacyBackupTemp, { force: true })
     rmSync(tombstoneTemp, { force: true })
+    if (sidecarTemp !== null) rmSync(sidecarTemp, { force: true })
   }
 
   return {
@@ -199,5 +234,6 @@ export function activateGraphArtifactV2(
     legacyBackupPath,
     tombstonePath,
     legacyBackupCreated: createLegacyBackup,
+    sidecarPath,
   }
 }

@@ -28,7 +28,7 @@ import {
   writeManifestSnapshot,
 } from '../pipeline/detect.js'
 import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
-import { serializeGraphJsonPayload, toCypher, toGraphml, toHtml, toObsidian, toSvg } from '../pipeline/export.js'
+import { toCypher, toGraphml, toHtml, toObsidian, toSvg } from '../pipeline/export.js'
 import { extract, EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
 import { createFileStemMap } from '../pipeline/extract/core.js'
 import {
@@ -65,7 +65,7 @@ import {
   type DiscoverySafetyMetadata,
 } from '../shared/discovery-safety.js'
 import { readGraphArtifactMetadata, serializeGraphArtifactV2 } from '../contracts/graph-artifact.js'
-import { publishTransitionalGraphArtifacts } from './graph-artifact-transitional.js'
+import { activateGraphArtifactV2 } from './graph-artifact-activation.js'
 import type { Communities } from '../pipeline/cluster.js'
 import type { SemanticAnomaly } from '../pipeline/analyze.js'
 
@@ -451,23 +451,25 @@ function publishGraphArtifacts(
       ...(graph.graph.discovery_safety !== undefined
         ? { discovery_safety: graph.graph.discovery_safety }
         : {}),
+      // Carried by the v1 payload but missing from v2 provenance until the
+      // cutover exposed it: while graph.json was still a live mirror these
+      // reached readers through it, so dropping them here was invisible.
+      // graph.madar is now the only published graph, and losing extraction
+      // provenance would make a generated graph unauditable.
+      ...(isPlainRecord(graph.graph.indexing_completeness)
+        ? { indexing_completeness: graph.graph.indexing_completeness }
+        : {}),
+      ...(isPlainRecord(graph.graph.extraction_receipt)
+        ? { extraction_receipt: graph.graph.extraction_receipt }
+        : {}),
     },
   })
 
   const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path.trim() : ''
-  publishTransitionalGraphArtifacts({
-    outputDir,
-    artifactBytes: bytes,
-    legacyJson: serializeGraphJsonPayload(
-      graph,
-      communities,
-      communityLabels,
-      semanticAnomalies,
-      EXTRACTOR_CACHE_VERSION,
-    ),
-    ...(rootPath.length > 0 ? { rootPath } : {}),
+  activateGraphArtifactV2(workspaceRoot, bytes, {
+    ...(rootPath.length > 0 ? { sidecarRootPath: rootPath } : {}),
   })
-  void workspaceRoot
+  void outputDir
 }
 
 /** Node id to community id, matching what toJson injects into the v1 payload. */
@@ -494,7 +496,14 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   const resolvedRootPath = resolve(rootPath)
   const resolvedOutputDir = outputDirectory(resolvedRootPath)
-  const graphPath = join(resolvedOutputDir, 'graph.json')
+  // What this run publishes. After the #705 cutover the canonical artifact is
+  // the only active graph, so it is what callers are handed back.
+  const graphPath = join(resolvedOutputDir, 'graph.madar')
+  // What this run reads. A workspace being upgraded still has only a v1
+  // artifact, and collapsing these two would make its first `--update` look
+  // like a workspace with no graph at all and silently re-extract everything.
+  const legacyGraphPath = join(resolvedOutputDir, 'graph.json')
+  const existingGraphPath = existsSync(graphPath) ? graphPath : legacyGraphPath
   const reportPath = join(resolvedOutputDir, 'GRAPH_REPORT.md')
   const htmlPath = join(resolvedOutputDir, 'graph.html')
   const wikiPath = options.wiki ? join(resolvedOutputDir, 'wiki') : null
@@ -508,7 +517,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const progress = options.onProgress
 
   progress?.({ step: 'detect', message: 'Scanning files...' })
-  const graphGenerationPolicy = existsSync(graphPath) ? readGraphGenerationPolicy(graphPath) : null
+  const graphGenerationPolicy = existsSync(existingGraphPath) ? readGraphGenerationPolicy(existingGraphPath) : null
   if (options.clusterOnly && !graphGenerationPolicy) {
     throw new Error(
       '--cluster-only requires valid generation-policy metadata. Run `madar generate . --update` to migrate and re-extract the graph first.',
@@ -553,13 +562,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const manifestGenerationPolicy = existsSync(manifestPath) ? loadManifestMetadata(manifestPath).generation_policy ?? null : null
   const storedPolicyMatches = graphGenerationPolicy?.fingerprint === generationPolicy.fingerprint
     && manifestGenerationPolicy?.fingerprint === generationPolicy.fingerprint
-  const generationPolicyMismatch = options.update === true && existsSync(graphPath) && !storedPolicyMatches
+  const generationPolicyMismatch = options.update === true && existsSync(existingGraphPath) && !storedPolicyMatches
   const detectionOptions = detectOptions(corpusOptions, gitVisibleFiles)
   const detected = options.update && !generationPolicyMismatch
     ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions)
     : detect(resolvedRootPath, detectionOptions)
   const discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
-  const previousIndexingManifest = readIndexingManifestForGraph(graphPath)
+  const previousIndexingManifest = readIndexingManifestForGraph(existingGraphPath)
   const indexingOutcomes: IndexingOutcome[] = (detected.indexing_outcomes ?? []).map((outcome) => ({
     ...outcome,
     extraction_strategy: outcome.extraction_strategy ?? 'not_extracted',
@@ -673,8 +682,8 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
 
-  const loadedExistingGraph = options.clusterOnly || (options.update && existsSync(graphPath)) ? loadGraph(graphPath) : null
-  const existingGraphExtractorVersion = options.update && existsSync(graphPath) ? loadGraphExtractorVersion(graphPath) : null
+  const loadedExistingGraph = options.clusterOnly || (options.update && existsSync(existingGraphPath)) ? loadGraph(existingGraphPath) : null
+  const existingGraphExtractorVersion = options.update && existsSync(existingGraphPath) ? loadGraphExtractorVersion(existingGraphPath) : null
   const directed = options.directed !== false
   const generationPolicyToPublish = generationPolicy
   const upgradingLegacyDirection = loadedExistingGraph?.isDirected() === false && directed

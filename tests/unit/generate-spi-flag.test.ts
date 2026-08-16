@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, test } from 'vitest'
 
 import { parseGenerateArgs } from '../../src/cli/parser.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
+import { readGeneratedGraphJson } from './helpers/generated-graph.js'
 
 function mkSandbox(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -72,7 +73,7 @@ describe('generateGraph capability-aware auto extraction', () => {
     writeMixedWorkspace()
 
     const result = generateGraph(sandbox, { noHtml: true })
-    const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+    const graph = readGeneratedGraphJson(result.graphPath) as {
       spi_mode?: unknown
       generation_policy?: { version?: unknown; settings?: { extraction_mode?: unknown } }
       extraction_receipt?: Record<string, unknown>
@@ -144,7 +145,7 @@ describe('generateGraph capability-aware auto extraction', () => {
 
     const first = generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
     const second = generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
-    const secondGraph = JSON.parse(readFileSync(second.graphPath, 'utf8')) as {
+    const secondGraph = readGeneratedGraphJson(second.graphPath) as {
       nodes: Array<Record<string, unknown>>
     }
 
@@ -161,7 +162,7 @@ describe('generateGraph capability-aware auto extraction', () => {
     writeMixedWorkspace()
 
     const result = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+    const graph = readGeneratedGraphJson(result.graphPath) as {
       nodes: Array<Record<string, unknown>>
     }
     const indexing = JSON.parse(readFileSync(result.indexingManifestPath!, 'utf8')) as {
@@ -186,7 +187,7 @@ describe('generateGraph capability-aware auto extraction', () => {
     writeFile(sandbox, 'docs/notes.md', '# Retained non-code evidence\n')
 
     const result = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+    const graph = readGeneratedGraphJson(result.graphPath) as {
       spi_mode?: unknown
     }
 
@@ -201,7 +202,7 @@ describe('generateGraph capability-aware auto extraction', () => {
     writeFile(sandbox, 'cmd/main.go', 'package main\nfunc main() {}\n')
 
     const clustered = generateGraph(sandbox, { clusterOnly: true, noHtml: true })
-    const graph = JSON.parse(readFileSync(clustered.graphPath, 'utf8')) as {
+    const graph = readGeneratedGraphJson(clustered.graphPath) as {
       spi_mode?: unknown
     }
     const indexing = JSON.parse(readFileSync(clustered.indexingManifestPath!, 'utf8')) as {
@@ -229,7 +230,7 @@ describe('generateGraph capability-aware auto extraction', () => {
       followSymlinks: true,
       noHtml: true,
     })
-    const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+    const graph = readGeneratedGraphJson(result.graphPath) as {
       nodes: Array<Record<string, unknown>>
     }
     const indexing = JSON.parse(readFileSync(result.indexingManifestPath!, 'utf8')) as {
@@ -264,7 +265,7 @@ describe('generateGraph strict SPI extraction', () => {
     ].join('\n') + '\n')
 
     const result = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const parsed = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+    const parsed = readGeneratedGraphJson(result.graphPath) as {
       spi_mode?: unknown
       nodes: Array<Record<string, unknown>>
     }
@@ -292,7 +293,7 @@ describe('generateGraph strict SPI extraction', () => {
     ].join('\n') + '\n')
 
     const result = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const parsed = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+    const parsed = readGeneratedGraphJson(result.graphPath) as {
       nodes: Array<Record<string, unknown>>
     }
     const listUsersNode = parsed.nodes.find((n) => n.label === 'listUsers()')
@@ -318,7 +319,7 @@ describe('generateGraph strict SPI extraction', () => {
     writeFile(sandbox, 'docs/notes.md', '# Notes\nGraph docs\n')
 
     const first = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const firstGraph = JSON.parse(readFileSync(first.graphPath, 'utf8')) as {
+    const firstGraph = readGeneratedGraphJson(first.graphPath) as {
       nodes: Array<Record<string, unknown>>
     }
     expect(first.extractableFiles).toBe(2)
@@ -351,7 +352,7 @@ describe('generateGraph strict SPI extraction', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
     const result = generateGraph(sandbox, { extractionMode: 'legacy', noHtml: true })
-    const parsed = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+    const parsed = readGeneratedGraphJson(result.graphPath) as {
       spi_mode?: unknown
       nodes: Array<Record<string, unknown>>
     }
@@ -369,13 +370,13 @@ describe('generateGraph strict SPI extraction', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
     const spiResult = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const spiGraph = JSON.parse(readFileSync(spiResult.graphPath, 'utf8')) as {
+    const spiGraph = readGeneratedGraphJson(spiResult.graphPath) as {
       spi_mode?: unknown
     }
     expect(spiGraph.spi_mode).toBe(true)
 
     const updated = generateGraph(sandbox, { extractionMode: 'legacy', update: true, noHtml: true })
-    const updatedGraph = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
+    const updatedGraph = readGeneratedGraphJson(updated.graphPath) as {
       spi_mode?: unknown
     }
     expect(updatedGraph.spi_mode).toBeUndefined()
@@ -384,14 +385,14 @@ describe('generateGraph strict SPI extraction', () => {
   it('does not let unsupported files alter strict SPI source IDs', () => {
     writeFile(sandbox, 'src/main.ts', 'export function answer(): number { return 42 }\n')
     const before = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const beforeGraph = JSON.parse(readFileSync(before.graphPath, 'utf8')) as {
+    const beforeGraph = readGeneratedGraphJson(before.graphPath) as {
       nodes: Array<Record<string, unknown>>
     }
     const beforeSource = beforeGraph.nodes.find((node) => String(node.source_file).endsWith('/src/main.ts'))
 
     writeFile(sandbox, 'cmd/main.go', 'package main\nfunc main() {}\n')
     const after = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    const afterGraph = JSON.parse(readFileSync(after.graphPath, 'utf8')) as {
+    const afterGraph = readGeneratedGraphJson(after.graphPath) as {
       nodes: Array<Record<string, unknown>>
     }
     const afterSource = afterGraph.nodes.find((node) => String(node.source_file).endsWith('/src/main.ts'))
