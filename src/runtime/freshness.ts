@@ -16,6 +16,7 @@ import { readPackageVersion } from '../shared/package-metadata.js'
 import { validateGraphPath } from '../shared/security.js'
 import { isDiscoveryPathIgnored, loadMadarignorePatterns } from '../shared/source-discovery.js'
 import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
+import { classifyWorkspaceGraph } from '../contracts/graph-artifact-selection.js'
 
 export interface GraphFreshnessMetadata {
   graphVersion: string
@@ -404,8 +405,25 @@ function gitChangedSourceFiles(
   return graphRelevantGitChangedFiles(indexed, [...changedFiles])
 }
 
+/**
+ * Resolves a request to the artifact whose bytes actually define freshness.
+ *
+ * Hashing the requested path was correct while graph.json held the graph. It
+ * stopped being correct at the #705 cutover: the legacy path now holds a
+ * constant tombstone, so every workspace hashed to the same version and the
+ * value never changed when the graph did. Staleness detection failed silently
+ * rather than loudly, which is the worst way for it to fail.
+ */
+function freshnessSourcePath(safeGraphPath: string): string {
+  if (basename(safeGraphPath) !== 'graph.json') return safeGraphPath
+  const classification = classifyWorkspaceGraph(dirname(safeGraphPath))
+  return classification.state === 'legacy_v1_only' || !existsSync(classification.canonicalPath)
+    ? safeGraphPath
+    : classification.canonicalPath
+}
+
 function graphVersionForPath(graphPath: string): { graphVersion: string; mtimeMs: number } {
-  const safeGraphPath = validateGraphPath(graphPath)
+  const safeGraphPath = freshnessSourcePath(validateGraphPath(graphPath))
   const graphStat = statSync(safeGraphPath)
   const truncatedMtime = truncateMtime(graphStat.mtimeMs)
   const cached = graphVersionCache.get(safeGraphPath)
