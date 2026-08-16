@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import {
+  GRAPH_ARTIFACT_V2_HEADER,
   GRAPH_ARTIFACT_V2_TOMBSTONE,
   serializeGraphArtifactV2,
 } from '../../src/contracts/graph-artifact.js'
@@ -176,7 +177,10 @@ describe('explicit intent reaches specific artifacts', () => {
     }
   })
 
-  it('loads an explicit backup degraded', () => {
+  it('loads an explicit backup degraded even when it is not JSON-shaped', () => {
+    // A JSON-shaped backup would also be reached by the generic fallthrough, so
+    // it cannot show the dedicated backup branch exists. Content that the
+    // fallthrough rejects can.
     const out = workspace({ legacy: GRAPH_ARTIFACT_V2_TOMBSTONE, backup: LIVE_V1 })
     try {
       const selection = resolveGraphArtifact(join(out, 'graph.v1.json'), { intent: 'explicit' })
@@ -184,6 +188,7 @@ describe('explicit intent reaches specific artifacts', () => {
       expect(selection.format).toBe('v1')
       expect(selection.selection).toBe('explicit_legacy')
       expect(selection.selectedPhysicalPath).toBe(join(out, 'graph.v1.json'))
+      expect(selection.workspaceState).toBe('moved_without_canonical')
     } finally {
       cleanup(out)
     }
@@ -204,9 +209,40 @@ describe('explicit intent reaches specific artifacts', () => {
   it('refuses an explicit tombstone whose sibling is missing', () => {
     const out = workspace({ legacy: GRAPH_ARTIFACT_V2_TOMBSTONE, backup: LIVE_V1 })
     try {
-      // A backup is present and still does not rescue this.
-      expect(() => resolveGraphArtifact(join(out, 'graph.json'), { intent: 'explicit' }))
-        .toThrow(GraphArtifactStateError)
+      let thrown: GraphArtifactStateError | undefined
+      try {
+        resolveGraphArtifact(join(out, 'graph.json'), { intent: 'explicit' })
+      } catch (error) {
+        thrown = error as GraphArtifactStateError
+      }
+
+      // The state matters, not just the error class: without it, deleting the
+      // tombstone-forwarding branch entirely still "passes" because the generic
+      // unreadable-path refusal throws the same type. A backup is present and
+      // still does not rescue this.
+      expect(thrown?.state).toBe('moved_without_canonical')
+      expect(thrown?.expectedCanonicalPath).toBe(join(out, 'graph.madar'))
+    } finally {
+      cleanup(out)
+    }
+  })
+
+  it('refuses an explicit backup request when no backup exists', () => {
+    const out = workspace({ canonical: canonicalBytes(), legacy: GRAPH_ARTIFACT_V2_TOMBSTONE })
+    try {
+      expect(() => resolveGraphArtifact(join(out, 'graph.v1.json'), { intent: 'explicit' }))
+        .toThrow(/No readable legacy backup/)
+    } finally {
+      cleanup(out)
+    }
+  })
+
+  it('refuses an explicit path that is not any known artifact shape', () => {
+    const out = workspace({ canonical: canonicalBytes() })
+    writeFileSync(join(out, 'notes.txt'), 'plain text, not a graph')
+    try {
+      expect(() => resolveGraphArtifact(join(out, 'notes.txt'), { intent: 'explicit' }))
+        .toThrow(/not a readable graph artifact/)
     } finally {
       cleanup(out)
     }
@@ -224,6 +260,20 @@ describe('explicit intent reaches specific artifacts', () => {
 })
 
 describe('physical and logical paths are separate', () => {
+  it('defaults the logical path to the artifact actually selected', () => {
+    const out = workspace({ canonical: canonicalBytes(), legacy: GRAPH_ARTIFACT_V2_TOMBSTONE })
+    try {
+      // No logicalPath supplied, so this exercises the default rather than
+      // proving the option is echoed back.
+      const selection = resolveGraphArtifact(join(out, 'graph.json'), { intent: 'default' })
+
+      expect(selection.selectedLogicalPath).toBe(join(out, 'graph.madar'))
+      expect(selection.selectedLogicalPath).not.toBe(selection.requestedPath)
+    } finally {
+      cleanup(out)
+    }
+  })
+
   it('reports the supplied logical path while reading the physical one', () => {
     const out = workspace({ canonical: canonicalBytes(), legacy: GRAPH_ARTIFACT_V2_TOMBSTONE })
     try {
@@ -270,6 +320,42 @@ describe('bounds are mandatory', () => {
       expect(() => readArtifactWithinBound(join(out, 'graph.madar'), 0)).toThrow(TypeError)
       expect(() => readArtifactWithinBound(join(out, 'graph.madar'), -1)).toThrow(TypeError)
       expect(() => readArtifactWithinBound(join(out, 'graph.madar'), 1.5)).toThrow(TypeError)
+    } finally {
+      cleanup(out)
+    }
+  })
+
+  it.each([
+    ['truncated mid-payload', `${GRAPH_ARTIFACT_V2_HEADER}{ "nodes": [`],
+    ['payload is not JSON', `${GRAPH_ARTIFACT_V2_HEADER}not json at all`],
+    ['header only, empty payload', GRAPH_ARTIFACT_V2_HEADER],
+  ])('treats a canonical artifact that is %s as invalid, not current', (_label, contents) => {
+    const out = workspace({ canonical: contents, legacy: GRAPH_ARTIFACT_V2_TOMBSTONE })
+    try {
+      // A write cut short still begins with the right magic bytes, so a header
+      // check called this healthy. That is the likeliest real corruption, and
+      // reporting current_v2 hands back a selection that fails on use.
+      expect(classifyWorkspaceGraph(out).state).toBe('invalid_current_v2')
+    } finally {
+      cleanup(out)
+    }
+  })
+
+  it('reports a canonical artifact that fails the bound as invalid, with no tombstone', () => {
+    const out = workspace({ canonical: canonicalBytes() })
+    try {
+      expect(classifyWorkspaceGraph(out, 64).state).toBe('invalid_current_v2')
+    } finally {
+      cleanup(out)
+    }
+  })
+
+  it('reports v1 JSON written to the canonical path as invalid', () => {
+    const out = workspace({ canonical: LIVE_V1 })
+    try {
+      // A downgrade or a bad restore can put v1 content at graph.madar. It is
+      // not a usable canonical artifact and must not read as legacy either.
+      expect(classifyWorkspaceGraph(out).state).toBe('invalid_current_v2')
     } finally {
       cleanup(out)
     }

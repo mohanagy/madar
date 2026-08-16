@@ -183,10 +183,27 @@ function isExactTombstone(path: string): boolean {
     && bytes.toString('utf8') === GRAPH_ARTIFACT_V2_TOMBSTONE
 }
 
+/**
+ * Whether the canonical artifact is actually readable, not merely magic-marked.
+ *
+ * A header check alone called a truncated artifact healthy, which is the
+ * likeliest real corruption: a write cut short still begins with the right
+ * bytes. Classifying that as `current_v2` meant a default read returned a
+ * selection that then failed downstream, and `invalid_current_v2` was only ever
+ * reachable for wrong magic or an oversized file.
+ *
+ * This reads the artifact in full, within the bound, and parses the payload.
+ * That read is inherent to answering the question -- nothing cheaper can
+ * distinguish a complete artifact from a truncated one.
+ */
 function canonicalIsValid(path: string, maxBytes: number): boolean {
   try {
-    return readArtifactWithinBound(path, maxBytes).subarray(0, GRAPH_ARTIFACT_V2_HEADER.length)
-      .toString('utf8') === GRAPH_ARTIFACT_V2_HEADER
+    const bytes = readArtifactWithinBound(path, maxBytes)
+    if (bytes.subarray(0, GRAPH_ARTIFACT_V2_HEADER.length).toString('utf8') !== GRAPH_ARTIFACT_V2_HEADER) {
+      return false
+    }
+    JSON.parse(bytes.subarray(GRAPH_ARTIFACT_V2_HEADER.length).toString('utf8'))
+    return true
   } catch {
     return false
   }

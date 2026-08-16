@@ -86,9 +86,11 @@ describe('workspace-aware artifact selection', () => {
 
     expect(selection.selectedPhysicalPath).toBe(workspace.canonicalGraphPath)
     expect(selection.selectedLogicalPath).toBe('out/graph.madar')
-    // The private worktree directory must never reach public output.
+    // The private worktree directory must never reach public output. Asserted
+    // on the pair rather than on the logical path alone: the line above already
+    // pins that to a literal, so a `not.toContain` on it could never fail.
+    expect(selection.selectedPhysicalPath).toContain(workspace.outputDir)
     expect(isInside(selection.selectedPhysicalPath, linked)).toBe(false)
-    expect(selection.selectedLogicalPath).not.toContain(workspace.outputDir)
   })
 
   it('reports the legacy logical path when the workspace is pre-cutover', () => {
@@ -122,6 +124,29 @@ describe('workspace-aware artifact selection', () => {
 
     expect(selection.selectedPhysicalPath).toBe(workspace.canonicalGraphPath)
     expect(selection.requestedPath).toBe(spelling)
+  })
+
+  it.each([
+    ['out\\graph.madar', 'explicit_v2'],
+    ['.\\out\\graph.madar', 'explicit_v2'],
+    ['out/graph.madar', 'explicit_v2'],
+    ['out\\graph.json', 'explicit_legacy'],
+    ['.\\out\\graph.json', 'explicit_legacy'],
+    ['out/graph.json', 'explicit_legacy'],
+  ])('resolves the spelling %s by basename under explicit intent', (spelling, expected) => {
+    // Under default intent the basename is irrelevant -- classification is
+    // directory-based, so every spelling above takes one identical path and the
+    // table proves nothing about normalization. Explicit intent dispatches on
+    // the basename, so here a lost backslash actually changes the answer.
+    writeWorkspaceArtifacts({ canonical: canonicalArtifact(), legacy: LIVE_V1 })
+
+    const selection = resolveWorkspaceGraphArtifact({
+      intent: 'explicit',
+      requestedPath: spelling,
+      workspaceRoot: linked,
+    })
+
+    expect(selection.selection).toBe(expected)
   })
 
   it('leaves a non-conventional explicit path outside the workspace alone', () => {
