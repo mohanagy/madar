@@ -3428,7 +3428,19 @@ export async function runCompareCommand(
 // inaccessible during the baseline run. We additionally hide `.mcp.json`,
 // `CLAUDE.md`, and `.claude/` so the baseline agent has no MCP server, no
 // project-level madar rules, and no PreToolUse hooks.
-const NATIVE_AGENT_SNAPSHOT_TARGETS = [
+/**
+ * Everything a native agent run must not be able to leave behind.
+ *
+ * graph.madar was missing while graph.json was still the live artifact, so the
+ * leak was invisible: the baseline arm's graph was protected by the entry above
+ * it. After the #705 cutover graph.json is only a tombstone, so without these
+ * the real graph is not isolated at all and a native run could leave the
+ * developer's workspace pointing at an arm's graph.
+ */
+export const NATIVE_AGENT_SNAPSHOT_TARGETS = [
+  'out/graph.madar',
+  'out/graph.local.json',
+  'out/graph.v1.json',
   'out/graph.json',
   'out/GRAPH_REPORT.md',
   'out/graph.html',
