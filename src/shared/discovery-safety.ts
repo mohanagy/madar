@@ -126,7 +126,13 @@ const RELEVANCE_TOKEN_ALIASES: Readonly<Record<string, string>> = {
   tokens: 'token',
 }
 const ENVIRONMENT_CONFIG_INTENT_PATTERN = /(?:^|[^a-z0-9])\.env(?:[^a-z0-9]|$)|\b(?:config(?:uration)?|credentials?|deploy(?:ment)?|environment|key|password|runtime\s+variable|secret|settings|token)\b/i
-const MAX_GRAPH_ARTIFACT_BYTES = 100 * 1024 * 1024
+/**
+ * Ceiling for any graph artifact this module will read.
+ *
+ * Exported so the limit that actually reaches the artifact reader can be
+ * asserted, rather than assumed from reading the call site.
+ */
+export const MAX_GRAPH_ARTIFACT_BYTES = 100 * 1024 * 1024
 const MAX_STORED_EXCLUSIONS = 10_000
 const MAX_METADATA_CACHE_ENTRIES = 16
 const discoveryMetadataCache = new Map<string, {
@@ -288,10 +294,26 @@ export function parseDiscoverySafetyMetadata(value: unknown): DiscoverySafetyMet
   return buildDiscoverySafetyMetadata(exclusions)
 }
 
-export function readDiscoverySafetyMetadata(graphPath: string): DiscoverySafetyMetadata | null {
+export interface ReadDiscoverySafetyMetadataOptions {
+  /**
+   * Overrides the artifact ceiling. Defaults to MAX_GRAPH_ARTIFACT_BYTES.
+   *
+   * A caller may want a stricter bound than the global one, and a test needs
+   * one: proving the post-read byte-length check fires against the 100 MB
+   * default would require a 100 MB fixture, which is a worse thing to commit
+   * than a parameter.
+   */
+  readonly maxBytes?: number
+}
+
+export function readDiscoverySafetyMetadata(
+  graphPath: string,
+  options: ReadDiscoverySafetyMetadataOptions = {},
+): DiscoverySafetyMetadata | null {
+  const maxBytes = options.maxBytes ?? MAX_GRAPH_ARTIFACT_BYTES
   try {
     const stats = statSync(graphPath)
-    if (stats.size > MAX_GRAPH_ARTIFACT_BYTES) {
+    if (stats.size > maxBytes) {
       return null
     }
     const cached = discoveryMetadataCache.get(graphPath)
@@ -301,7 +323,7 @@ export function readDiscoverySafetyMetadata(graphPath: string): DiscoverySafetyM
     // The stat above covers the path handed in. Metadata resolution may switch
     // to a sibling graph.madar, so the limit has to travel with the request or
     // a small graph.json beside a huge canonical artifact reads unbounded.
-    const metadata = readGraphArtifactMetadata(graphPath, { maxBytes: MAX_GRAPH_ARTIFACT_BYTES })
+    const metadata = readGraphArtifactMetadata(graphPath, { maxBytes })
     if (metadata.format === 'absent' || metadata.format === 'unreadable') {
       return null
     }
