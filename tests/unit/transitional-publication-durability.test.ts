@@ -90,6 +90,16 @@ describe('staging paths cannot collide between publishers', () => {
 
       // The artifact can carry machine-local paths, so staging must not be
       // world-readable even briefly.
+      //
+      // POSIX only. Windows has no POSIX mode bits: Node reports 0o666 for any
+      // writable file whatever mode openSync was given, so asserting 0o600
+      // there tests the reporting convention rather than the request. The mode
+      // is still passed on every platform; only the assertion is narrowed, and
+      // the guarantee is not weakened where it exists.
+      if (process.platform === 'win32') {
+        expect(statSync(staging).isFile()).toBe(true)
+        return
+      }
       expect(statSync(staging).mode & 0o777).toBe(0o600)
     } finally {
       rmSync(root, { recursive: true, force: true })
