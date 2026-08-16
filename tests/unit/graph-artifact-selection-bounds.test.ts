@@ -77,6 +77,25 @@ describe('classification never reads a whole artifact', () => {
   })
 })
 
+describe('pre-read bound', () => {
+  it('rejects an oversized artifact without loading it into memory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'bounds-pre-'))
+    const path = join(root, 'graph.madar')
+    writeFileSync(path, 'x'.repeat(4096))
+
+    try {
+      expect(() => readArtifactWithinBound(path, 64)).toThrow(GraphArtifactTooLargeError)
+
+      // The point of the stat gate: an oversized artifact is refused before it
+      // is read at all. Rejecting it only after the read would raise the same
+      // error while still pulling the whole file into memory.
+      expect(wholeFileReads).not.toContain(path)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('post-read bound', () => {
   it('rejects an artifact that stat under-reported', () => {
     const root = mkdtempSync(join(tmpdir(), 'bounds-'))
