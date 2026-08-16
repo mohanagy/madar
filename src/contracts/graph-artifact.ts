@@ -51,6 +51,22 @@ export const GRAPH_ARTIFACT_V2_TOMBSTONE = [
   'Use out/graph.madar with Madar >= the v2-supporting version.',
   '',
 ].join('\n')
+/**
+ * Magic that marks a legacy path as moved, whatever version wrote it.
+ *
+ * Write the exact tombstone above; accept any `MADAR_GRAPH_MOVED/<n>`. Nothing
+ * else writes this magic, so a different version -- or trailing bytes from a
+ * partial write -- still unambiguously means the artifact moved. Reporting that
+ * is more actionable than calling the file corrupt, and it keeps a future
+ * tombstone readable by today's binary.
+ */
+export const GRAPH_ARTIFACT_MOVED_PREFIX = 'MADAR_GRAPH_MOVED/'
+
+/** True for any versioned moved marker, current or not. */
+export function isMovedMarkerText(text: string): boolean {
+  return text.startsWith(GRAPH_ARTIFACT_MOVED_PREFIX)
+}
+
 export const GRAPH_ARTIFACT_VERSION = 2 as const
 export const GRAPH_ARTIFACT_RECEIPT_STORAGE_SCHEMA_VERSION = 1 as const
 export const UNREGISTERED_RELATION_AT_STORAGE_BOUNDARY = 'unregistered_relation_at_storage_boundary' as const
@@ -1225,7 +1241,7 @@ export function loadGraphArtifact(
   options: LoadGraphArtifactOptions = {},
 ): LoadedGraphArtifact {
   const text = decodeArtifactBytes(bytes)
-  if (text === GRAPH_ARTIFACT_V2_TOMBSTONE || text.startsWith('MADAR_GRAPH_MOVED/')) {
+  if (isMovedMarkerText(text)) {
     throw new GraphArtifactMovedError()
   }
   if (text.startsWith(GRAPH_ARTIFACT_V2_HEADER)) {
@@ -1247,8 +1263,7 @@ export function loadGraphArtifactFromPath(
   const currentText = decodeArtifactBytes(currentBytes)
   if (
     basename(graphPath) === 'graph.json'
-    && currentText !== GRAPH_ARTIFACT_V2_TOMBSTONE
-    && !currentText.startsWith('MADAR_GRAPH_MOVED/')
+    && !isMovedMarkerText(currentText)
   ) {
     const v2Path = join(dirname(graphPath), 'graph.madar')
     if (existsSync(v2Path)) return withLocalRootPath(loadGraphArtifact(readFileSync(v2Path), options), v2Path)
@@ -1429,7 +1444,7 @@ export function readGraphArtifactMetadata(
       }
     }
     text = readArtifactWithinLimit(graphPath, options.maxBytes)
-    if (text === GRAPH_ARTIFACT_V2_TOMBSTONE || text.startsWith('MADAR_GRAPH_MOVED/')) {
+    if (isMovedMarkerText(text)) {
       const sibling = join(dirname(graphPath), 'graph.madar')
       if (!existsSync(sibling)) return { ...ABSENT_METADATA, format: 'unreadable' }
       resolvedPath = sibling

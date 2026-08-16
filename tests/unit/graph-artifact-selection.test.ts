@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -7,6 +7,8 @@ import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import {
   GRAPH_ARTIFACT_V2_HEADER,
   GRAPH_ARTIFACT_V2_TOMBSTONE,
+  GraphArtifactMovedError,
+  loadGraphArtifact,
   serializeGraphArtifactV2,
 } from '../../src/contracts/graph-artifact.js'
 import {
@@ -361,27 +363,49 @@ describe('bounds are mandatory', () => {
     }
   })
 
-  it('does not accept a tombstone prefix as the tombstone', () => {
-    // Starts with the tombstone but is not it. With no canonical to fall back
-    // on, the honest answer is 'invalid' -- reporting 'moved_without_canonical'
-    // would claim a clean cutover that never happened.
-    const out = workspace({ legacy: `${GRAPH_ARTIFACT_V2_TOMBSTONE}${'x'.repeat(4096)}` })
+  it.each([
+    ['a marker with trailing bytes', `${GRAPH_ARTIFACT_V2_TOMBSTONE}${'x'.repeat(4096)}`],
+    ['a marker from another version', 'MADAR_GRAPH_MOVED/1\nolder tombstone text\n'],
+    ['a bare marker line', 'MADAR_GRAPH_MOVED/9'],
+  ])('treats %s as moved, not corrupt', (_label, legacy) => {
+    // Nothing but a cutover writes this magic, so the file says "moved" even
+    // when the version differs or a partial write left trailing bytes.
+    // Reporting 'invalid' would hide a cutover that demonstrably happened, and
+    // would disagree with loadGraphArtifact, which raises the moved error for
+    // exactly the same input.
+    const out = workspace({ legacy })
     try {
-      expect(classifyWorkspaceGraph(out).state).toBe('invalid')
+      expect(classifyWorkspaceGraph(out).state).toBe('moved_without_canonical')
     } finally {
       cleanup(out)
     }
   })
 
-  it('stays current_v2 when a mangled tombstone sits beside a valid canonical', () => {
+  it('stays current_v2 when a non-current marker sits beside a valid canonical', () => {
     const out = workspace({
       canonical: canonicalBytes(),
       legacy: `${GRAPH_ARTIFACT_V2_TOMBSTONE}${'x'.repeat(4096)}`,
     })
     try {
-      // The graph is healthy and the mangled legacy file is not JSON, so no
-      // old reader can mistake it for a live v1. Nothing here is ambiguous.
       expect(classifyWorkspaceGraph(out).state).toBe('current_v2')
+    } finally {
+      cleanup(out)
+    }
+  })
+
+  it.each([
+    ['the exact tombstone', GRAPH_ARTIFACT_V2_TOMBSTONE],
+    ['a marker from another version', 'MADAR_GRAPH_MOVED/1\nolder tombstone text\n'],
+    ['a marker with trailing bytes', `${GRAPH_ARTIFACT_V2_TOMBSTONE}trailing`],
+  ])('agrees with loadGraphArtifact that %s means moved', (_label, legacy) => {
+    // Two definitions of "tombstone" in one codebase is the duplication this
+    // module exists to remove: before this, MADAR_GRAPH_MOVED/1 meant "moved"
+    // to the loader and "invalid" here, with nothing pinning either side.
+    const out = workspace({ legacy })
+    try {
+      expect(classifyWorkspaceGraph(out).state).toBe('moved_without_canonical')
+      expect(() => loadGraphArtifact(readFileSync(join(out, 'graph.json'))))
+        .toThrow(GraphArtifactMovedError)
     } finally {
       cleanup(out)
     }

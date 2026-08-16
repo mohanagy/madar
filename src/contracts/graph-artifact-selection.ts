@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'node:path'
 import {
   GRAPH_ARTIFACT_V2_HEADER,
   GRAPH_ARTIFACT_V2_TOMBSTONE,
+  isMovedMarkerText,
 } from './graph-artifact.js'
 
 /**
@@ -128,6 +129,7 @@ export function readArtifactWithinBound(path: string, maxBytes = MAX_GRAPH_ARTIF
 }
 
 const TOMBSTONE_BYTES = Buffer.byteLength(GRAPH_ARTIFACT_V2_TOMBSTONE, 'utf8')
+const GRAPH_ARTIFACT_MOVED_PREFIX_BYTES = Buffer.byteLength('MADAR_GRAPH_MOVED/', 'utf8')
 
 /** Just enough bytes to tell the four shapes apart, never the whole file. */
 const CLASSIFY_PREFIX_BYTES = Math.max(
@@ -173,14 +175,19 @@ function shapeOf(path: string): ArtifactShape {
   return 'unknown'
 }
 
-/** True only for a byte-exact tombstone, not merely the moved prefix. */
-function isExactTombstone(path: string): boolean {
-  // One byte past the tombstone is all it takes to separate "equal" from
-  // "starts with", so a longer file is rejected without ever being read.
-  const bytes = readPrefix(path, TOMBSTONE_BYTES + 1)
-  return bytes !== null
-    && bytes.byteLength === TOMBSTONE_BYTES
-    && bytes.toString('utf8') === GRAPH_ARTIFACT_V2_TOMBSTONE
+/**
+ * True for any versioned moved marker at this path.
+ *
+ * Generation writes the byte-exact tombstone, but reading accepts any
+ * `MADAR_GRAPH_MOVED/<n>`: nothing else writes that magic, so a marker from a
+ * different version -- or one with trailing bytes from a partial write -- still
+ * means the artifact moved. Calling that "invalid" would hide a cutover that
+ * demonstrably happened, and it is the same rule loadGraphArtifact applies, so
+ * one file cannot mean "moved" to one module and "corrupt" to another.
+ */
+function isMovedMarker(path: string): boolean {
+  const bytes = readPrefix(path, GRAPH_ARTIFACT_MOVED_PREFIX_BYTES)
+  return bytes !== null && isMovedMarkerText(bytes.toString('utf8'))
 }
 
 /**
@@ -234,7 +241,7 @@ export function classifyWorkspaceGraph(
 
   const hasBackup = shapeOf(backupPath) === 'json_like'
   const canonicalShape = shapeOf(canonicalPath)
-  const tombstoned = isExactTombstone(legacyPath)
+  const tombstoned = isMovedMarker(legacyPath)
   const base = { canonicalPath, legacyPath, backupPath, hasBackup }
 
   if (tombstoned) {
@@ -343,7 +350,7 @@ export function resolveGraphArtifact(
 
     // Explicit legacy path: a tombstone forwards to its sibling, a live v1
     // loads degraded. Neither silently becomes the other.
-    if (isExactTombstone(requestedPath)) {
+    if (isMovedMarker(requestedPath)) {
       if (!canonicalIsValid(classification.canonicalPath, maxBytes)) {
         refuse(classification, display, `${requestedPath} has moved but ${display(classification.canonicalPath)} is missing or invalid.`)
       }
