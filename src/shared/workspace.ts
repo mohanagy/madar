@@ -3,6 +3,15 @@ import { execFileSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import {
+  CANONICAL_ARTIFACT_BASENAME,
+  LEGACY_ARTIFACT_BASENAME,
+  LEGACY_BACKUP_BASENAME,
+  type GraphPathIntent,
+  type ResolvedGraphArtifactSelection,
+  resolveGraphArtifact,
+} from '../contracts/graph-artifact-selection.js'
+
 export interface MadarWorkspace {
   /** Source root Madar is indexing. This may be a directory within a worktree. */
   rootPath: string
@@ -15,6 +24,18 @@ export interface MadarWorkspace {
   /** Physical directory that owns this source root's Madar artifacts. */
   artifactRoot: string
   outputDir: string
+  /** Canonical v2 artifact. The only artifact generation keeps active. */
+  canonicalGraphPath: string
+  /** Legacy v1 location. After a cutover this holds the tombstone. */
+  legacyGraphPath: string
+  /** Preserved prior v1 artifact, when a first cutover backed one up. */
+  legacyBackupPath: string
+  /**
+   * Legacy alias for {@link legacyGraphPath}.
+   *
+   * @deprecated Name the artifact you mean. Consumers migrate to
+   * `canonicalGraphPath` or an intent-carrying selection.
+   */
   graphPath: string
 }
 
@@ -83,6 +104,7 @@ export function resolveMadarWorkspace(rootPath = '.'): MadarWorkspace {
     ? join(gitCommonDir, 'madar', 'worktrees', worktreeArtifactId(gitCommonDir, worktreeRoot, sourceRoot))
     : sourceRoot
   const outputDir = join(artifactRoot, 'out')
+  const legacyGraphPath = join(outputDir, LEGACY_ARTIFACT_BASENAME)
 
   return {
     rootPath: sourceRoot,
@@ -91,7 +113,10 @@ export function resolveMadarWorkspace(rootPath = '.'): MadarWorkspace {
     isLinkedWorktree,
     artifactRoot,
     outputDir,
-    graphPath: join(outputDir, 'graph.json'),
+    canonicalGraphPath: join(outputDir, CANONICAL_ARTIFACT_BASENAME),
+    legacyGraphPath,
+    legacyBackupPath: join(outputDir, LEGACY_BACKUP_BASENAME),
+    graphPath: legacyGraphPath,
   }
 }
 
@@ -143,4 +168,80 @@ export function resolveWorkspaceOutputPath(outputPath = 'out', workspaceRoot = p
 
 export function isLinkedGitWorktree(rootPath = '.'): boolean {
   return resolveMadarWorkspace(rootPath).isLinkedWorktree
+}
+
+/**
+ * Reduces the ways a caller can spell the same relative artifact path to one
+ * form, so `out/graph.madar`, `./out/graph.madar` and `out\graph.madar` are
+ * never treated as three different requests.
+ */
+export function normalizeGraphPathSpelling(graphPath: string): string {
+  return graphPath.replaceAll('\\', '/').replace(/^(?:\.\/)+/, '')
+}
+
+/** The relative spellings that name a workspace's own artifact. */
+const DEFAULT_GRAPH_PATH_SPELLINGS: ReadonlySet<string> = new Set([
+  `out/${CANONICAL_ARTIFACT_BASENAME}`,
+  `out/${LEGACY_ARTIFACT_BASENAME}`,
+])
+
+export function isDefaultGraphPathSpelling(graphPath: string): boolean {
+  return DEFAULT_GRAPH_PATH_SPELLINGS.has(normalizeGraphPathSpelling(graphPath))
+}
+
+export interface ResolveWorkspaceGraphArtifactOptions {
+  /**
+   * Whether the caller named this artifact or fell back to a default.
+   *
+   * Required, and never derived from the path: an omitted `--graph` and an
+   * explicit `--graph out/graph.json` normalize to identical text but must
+   * behave differently once a workspace is ambiguous.
+   */
+  readonly intent: GraphPathIntent
+  /** Omit for the workspace default. */
+  readonly requestedPath?: string
+  readonly workspaceRoot?: string
+  readonly maxBytes?: number
+}
+
+/**
+ * Resolves a graph request against a real workspace.
+ *
+ * Default requests are answered from the workspace's own output directory,
+ * which is redirected for a linked worktree. That redirected location is
+ * physical only -- the logical path stays the conventional `out/...` spelling
+ * so a private worktree directory never reaches a Pack field or public output.
+ */
+export function resolveWorkspaceGraphArtifact(
+  options: ResolveWorkspaceGraphArtifactOptions,
+): ResolvedGraphArtifactSelection {
+  const workspace = resolveMadarWorkspace(options.workspaceRoot ?? process.cwd())
+  const requestedPath = options.requestedPath ?? `out/${CANONICAL_ARTIFACT_BASENAME}`
+  const treatAsWorkspaceDefault = options.intent === 'default' || isDefaultGraphPathSpelling(requestedPath)
+
+  // An explicit path outside the workspace convention is used verbatim; only
+  // conventional paths are redirected onto the workspace's own artifacts.
+  const physicalRequest = treatAsWorkspaceDefault
+    ? join(workspace.outputDir, basenameOfSpelling(requestedPath))
+    : requestedPath
+
+  const selection = resolveGraphArtifact(physicalRequest, {
+    intent: options.intent,
+    ...(options.maxBytes === undefined ? {} : { maxBytes: options.maxBytes }),
+  })
+
+  if (!treatAsWorkspaceDefault) return { ...selection, requestedPath }
+
+  // Report whichever artifact was actually chosen, under the conventional
+  // spelling rather than the worktree's private physical directory.
+  return {
+    ...selection,
+    requestedPath,
+    selectedLogicalPath: `out/${basenameOfSpelling(selection.selectedPhysicalPath)}`,
+  }
+}
+
+function basenameOfSpelling(graphPath: string): string {
+  const normalized = normalizeGraphPathSpelling(graphPath)
+  return normalized.slice(normalized.lastIndexOf('/') + 1)
 }
