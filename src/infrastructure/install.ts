@@ -142,7 +142,10 @@ const WORKSPACE_GRAPH_CHECK = [
   `const fs=require('fs'),path=require('path');`,
   `let directory=process.cwd(),hasGraph=false;`,
   `for(;;){`,
-  `if(fs.existsSync(path.join(directory,'out','graph.json'))){hasGraph=true;break}`,
+  // Either artifact counts. graph.json alone is a pre-cutover workspace; after
+  // the cutover it is a tombstone that happens to still exist, so relying on it
+  // would go quiet the moment a workspace kept only its canonical artifact.
+  `if(fs.existsSync(path.join(directory,'out','graph.madar'))||fs.existsSync(path.join(directory,'out','graph.json'))){hasGraph=true;break}`,
   `try{if(fs.lstatSync(path.join(directory,'.git')).isFile()){hasGraph=true;break}}catch(e){}`,
   `const parent=path.dirname(directory);`,
   `if(parent===directory)break;`,
@@ -676,7 +679,10 @@ import { dirname, join } from "path";
 function hasMadarGraph(directory) {
   let current = directory;
   while (true) {
-    if (existsSync(join(current, "out", "graph.json"))) {
+    // Either artifact counts. graph.json alone is a pre-cutover workspace; after
+    // the cutover it is a tombstone that happens to still exist, so relying on
+    // it would go quiet for a workspace that kept only its canonical artifact.
+    if (existsSync(join(current, "out", "graph.madar")) || existsSync(join(current, "out", "graph.json"))) {
       return true;
     }
 
