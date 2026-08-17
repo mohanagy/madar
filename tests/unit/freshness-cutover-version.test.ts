@@ -72,9 +72,10 @@ describe('graph version after the cutover', () => {
       const reported = analyzeGraphContextFreshness(join(root, 'out', 'graph.json')).graph_path
 
       // Reporting the requested path named the tombstone, which is not the
-      // file any of the numbers beside it describe. Only the basename moves,
-      // so the caller's own directory spelling is preserved.
-      expect(reported).toBe(join(root, 'out', 'graph.madar'))
+      // file any of the numbers beside it describe. Inside a workspace this is
+      // now the public out/ spelling, so a linked worktree's private artifact
+      // directory cannot reach governance output either.
+      expect(reported).toBe('out/graph.madar')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
