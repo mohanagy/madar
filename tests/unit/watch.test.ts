@@ -403,16 +403,19 @@ describe('watch', () => {
       try {
         expect(refresh.initialRebuilt).toBe(true)
         expect(workspace.isLinkedWorktree).toBe(true)
-        expect(existsSync(workspace.graphPath)).toBe(true)
+        // The canonical artifact, not the legacy path: after the cutover
+        // graph.json exists as a tombstone, so asserting its existence proved
+        // nothing about the rebuild this test is checking.
+        expect(existsSync(workspace.canonicalGraphPath)).toBe(true)
         expect(existsSync(join(workspace.outputDir, 'watcher-state.json'))).toBe(true)
         expect(existsSync(join(linked, 'out'))).toBe(false)
         // `git worktree add` has just written the whole linked checkout, so the watcher
         // may still observe that activity when it attaches. Wait for the settled state.
-        await waitForWatcherStatus(workspace.graphPath, 'idle')
+        await waitForWatcherStatus(workspace.canonicalGraphPath, 'idle')
 
         writeFileSync(join(linked, 'added.ts'), 'export const linkedValue = 2\n', 'utf8')
         await waitFor(() => {
-          const graph = readGeneratedGraphJson(workspace.graphPath) as { nodes?: Array<{ source_file?: string }> }
+          const graph = readGeneratedGraphJson(workspace.canonicalGraphPath) as { nodes?: Array<{ source_file?: string }> }
           return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
         })
       } finally {

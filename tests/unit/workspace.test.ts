@@ -144,7 +144,7 @@ describe('worktree artifact routing', () => {
         expect(canonicalPhysicalPath(workspace.worktreeRoot ?? '')).toBe(canonicalPhysicalPath(primary))
         expect(workspace.isLinkedWorktree).toBe(false)
         expect(workspace.outputDir).toBe(join(resolve(nested), 'out'))
-        expect(workspace.graphPath).toBe(join(resolve(nested), 'out', 'graph.json'))
+        expect(workspace.legacyGraphPath).toBe(join(resolve(nested), 'out', 'graph.json'))
       })
       workSucceeded = true
     } finally {
@@ -233,12 +233,12 @@ describe('linked worktree artifact routing', () => {
 
     phases.phase('assert-routing', () => {
       expect(workspaces.primary.isLinkedWorktree).toBe(false)
-      expect(workspaces.primary.graphPath).toBe(join(resolve(paths.primary), 'out', 'graph.json'))
+      expect(workspaces.primary.legacyGraphPath).toBe(join(resolve(paths.primary), 'out', 'graph.json'))
       expect(workspaces.linked.isLinkedWorktree).toBe(true)
       expect(canonicalPhysicalPath(workspaces.linked.gitCommonDir ?? '')).toBe(canonicalPhysicalPath(join(paths.primary, '.git')))
-      expect(workspaces.linked.graphPath).not.toBe(workspaces.primary.graphPath)
-      expect(isInside(workspaces.linked.graphPath, paths.linked)).toBe(false)
-      expect(workspaces.scoped.graphPath).not.toBe(workspaces.linked.graphPath)
+      expect(workspaces.linked.legacyGraphPath).not.toBe(workspaces.primary.legacyGraphPath)
+      expect(isInside(workspaces.linked.legacyGraphPath, paths.linked)).toBe(false)
+      expect(workspaces.scoped.legacyGraphPath).not.toBe(workspaces.linked.legacyGraphPath)
     })
   }, NON_GATING_ELAPSED_CEILING_MS)
 
@@ -248,12 +248,12 @@ describe('linked worktree artifact routing', () => {
     const workspace = resolvedWorkspaces().linked
 
     phases.phase('assert-routing', () => {
-      expect(resolveWorkspaceGraphPath('out/graph.json', paths.linked, 'explicit')).toBe(workspace.graphPath)
-      expect(resolveWorkspaceGraphPath('./out/graph.json', paths.linked, 'explicit')).toBe(workspace.graphPath)
+      expect(resolveWorkspaceGraphPath('out/graph.json', paths.linked, 'explicit')).toBe(workspace.legacyGraphPath)
+      expect(resolveWorkspaceGraphPath('./out/graph.json', paths.linked, 'explicit')).toBe(workspace.legacyGraphPath)
       expect(resolveWorkspaceOutputPath('out/compare', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
       expect(validateGraphOutputPath('out/compare', 'out', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
-      expect(resolveWorkspaceGraphPath('out\\graph.json', paths.linked, 'explicit')).toBe(workspace.graphPath)
-      expect(resolveWorkspaceGraphPath('.\\out\\graph.json', paths.linked, 'explicit')).toBe(workspace.graphPath)
+      expect(resolveWorkspaceGraphPath('out\\graph.json', paths.linked, 'explicit')).toBe(workspace.legacyGraphPath)
+      expect(resolveWorkspaceGraphPath('.\\out\\graph.json', paths.linked, 'explicit')).toBe(workspace.legacyGraphPath)
       expect(resolveWorkspaceOutputPath('out\\compare', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
       expect(validateGraphOutputPath('out\\compare', 'out', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
     })

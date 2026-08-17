@@ -1127,7 +1127,13 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
     }
 
     const workspace = resolveMadarWorkspace(workspaceRoot)
-    if (!sameFilesystemPath(options.graphPath, workspace.graphPath)) {
+    // Either artifact the workspace can hold belongs to it. Comparing against
+    // one spelling refused the other: this checked only the legacy path, so
+    // after the cutover `serve --stdio --auto-refresh` -- the command the MCP
+    // registry entry runs -- rejected the canonical artifact of the very
+    // workspace it was started from.
+    const workspaceArtifacts = [workspace.canonicalGraphPath, workspace.legacyGraphPath]
+    if (!workspaceArtifacts.some((artifact) => sameFilesystemPath(options.graphPath, artifact))) {
       throw new Error(
         `Refusing to auto-refresh ${options.graphPath}: it is not the graph artifact for ${workspace.rootPath}. ` +
         'Start the MCP server from the intended worktree instead.',

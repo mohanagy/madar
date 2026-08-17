@@ -31,14 +31,18 @@ export interface MadarWorkspace {
   legacyGraphPath: string
   /** Preserved prior v1 artifact, when a first cutover backed one up. */
   legacyBackupPath: string
-  /**
-   * Legacy alias for {@link legacyGraphPath}.
-   *
-   * @deprecated Name the artifact you mean. Consumers migrate to
-   * `canonicalGraphPath` or an intent-carrying selection.
-   */
-  graphPath: string
 }
+
+/*
+ * There is deliberately no `graphPath` field.
+ *
+ * It existed as a transitional alias for `legacyGraphPath`, and a name that
+ * general made callers take the legacy artifact without choosing it. That is
+ * how the auto-refresh guard came to compare a requested `graph.madar` against
+ * the legacy spelling and refuse its own workspace, and how a watch test came
+ * to assert the existence of a path that the cutover fills with a tombstone.
+ * Callers name the artifact they mean, or resolve one with an intent.
+ */
 
 function canonicalPath(path: string): string {
   const resolved = resolve(path)
@@ -117,7 +121,6 @@ export function resolveMadarWorkspace(rootPath = '.'): MadarWorkspace {
     canonicalGraphPath: join(outputDir, CANONICAL_ARTIFACT_BASENAME),
     legacyGraphPath,
     legacyBackupPath: join(outputDir, LEGACY_BACKUP_BASENAME),
-    graphPath: legacyGraphPath,
   }
 }
 

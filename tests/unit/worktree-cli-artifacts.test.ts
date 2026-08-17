@@ -1,14 +1,14 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 import { describe, expect, test } from 'vitest'
 
 import { parseCompareArgs, parseProofReportArgs, parseReviewCompareArgs } from '../../src/cli/parser.js'
-import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { classifyWorkspaceGraph } from '../../src/contracts/graph-artifact-selection.js'
+import { generateGraph } from '../../src/infrastructure/generate.js'
 import { runProofReportCommand } from '../../src/infrastructure/proof-report.js'
-import { toJson } from '../../src/pipeline/export.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
 
 function git(directory: string, args: string[]): void {
@@ -32,17 +32,11 @@ describe('linked-worktree CLI artifact routing', () => {
       git(primary, ['worktree', 'add', '-b', 'feature/cli-artifacts', linked])
 
       const workspace = resolveMadarWorkspace(linked)
-      mkdirSync(dirname(workspace.graphPath), { recursive: true })
-      const graph = new KnowledgeGraph()
-      graph.graph.root_path = linked
-      graph.addNode('entry', {
-        label: 'value',
-        source_file: 'main.ts',
-        source_location: 'L1',
-        node_kind: 'variable',
-        file_type: 'code',
-      })
-      toJson(graph, { 0: ['entry'] }, workspace.graphPath)
+      // Generated rather than hand-written: the routing under test is about
+      // where a cut-over workspace puts its artifacts, and a hand-built v1 file
+      // could not exercise the canonical path the parsers now resolve to.
+      generateGraph(linked, { noHtml: true })
+      expect(classifyWorkspaceGraph(workspace.outputDir).state).toBe('current_v2')
 
       process.chdir(linked)
 
@@ -51,18 +45,20 @@ describe('linked-worktree CLI artifact routing', () => {
         '--exec',
         'claude -p "$(cat {prompt_file})"',
       ])).toMatchObject({
-        graphPath: workspace.graphPath,
+        graphPath: workspace.canonicalGraphPath,
         outputDir: join(workspace.outputDir, 'compare'),
       })
       expect(parseReviewCompareArgs([
         '--exec',
         'claude -p "$(cat {prompt_file})"',
       ])).toMatchObject({
-        graphPath: workspace.graphPath,
+        graphPath: workspace.canonicalGraphPath,
         outputDir: join(workspace.outputDir, 'review-compare'),
       })
       expect(parseProofReportArgs([])).toEqual({
-        graphPath: workspace.graphPath,
+        graphPath: workspace.canonicalGraphPath,
+        // No --graph was passed, so the intent must travel as a default.
+        graphPathIntent: 'default',
         outputDir: join(workspace.outputDir, 'proof-report'),
         compareDir: join(workspace.outputDir, 'compare'),
         packPath: null,
@@ -72,13 +68,14 @@ describe('linked-worktree CLI artifact routing', () => {
         '--compare-dir', 'out/compare/custom',
         '--pack', 'out/proof-inputs/context-pack.json',
       ])).toEqual({
-        graphPath: workspace.graphPath,
+        graphPath: workspace.canonicalGraphPath,
+        graphPathIntent: 'default',
         outputDir: join(workspace.outputDir, 'proof-report', 'custom'),
         compareDir: join(workspace.outputDir, 'compare', 'custom'),
         packPath: join(workspace.outputDir, 'proof-inputs', 'context-pack.json'),
       })
 
-      const proof = runProofReportCommand({ graphPath: 'out/graph.json', graphPathIntent: 'explicit' })
+      const proof = runProofReportCommand({ graphPath: 'out/graph.madar', graphPathIntent: 'default' })
       expect(proof.outputPath).toBe(join(workspace.outputDir, 'proof-report', 'proof-report.md'))
       expect(existsSync(proof.outputPath)).toBe(true)
       expect(existsSync(join(linked, 'out'))).toBe(false)
