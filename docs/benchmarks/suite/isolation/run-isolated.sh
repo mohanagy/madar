@@ -128,7 +128,7 @@ cat > "${CURSOR_MCP_PATH}" <<JSON
         "${CLI_PATH}",
         "serve",
         "--stdio",
-        "out/graph.json"
+        "out/graph.madar"
       ],
       "env": {
         "MADAR_TOOL_PROFILE": "core"

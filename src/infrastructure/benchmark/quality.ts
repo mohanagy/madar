@@ -18,7 +18,7 @@ import {
   usageCaptureSummary,
   usageProviderLabel,
 } from './usage.js'
-import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
+import { graphPathIntentFor, resolveWorkspaceGraphPath } from '../../shared/workspace.js'
 
 export interface GoldQuestion {
   question: string
@@ -273,7 +273,7 @@ async function evaluateRunnerBackedQuestion(
   budget: number,
   options: QualityOptions & { execTemplate: string },
 ): Promise<QualityResult> {
-  const graphPath = resolveWorkspaceGraphPath(options.graphPath, undefined, 'explicit')
+  const graphPath = resolveWorkspaceGraphPath(options.graphPath, undefined, graphPathIntentFor(options.graphPath))
   const retrieval = qualityRetrieveContext(graph, gold.question, budget, graphPath)
   const run = await runBenchmarkPrompt({
     graphPath,

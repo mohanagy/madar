@@ -137,6 +137,14 @@ export function resolveMadarOutputDirectory(rootPath = '.'): string {
  * invalid-canonical workspaces. Explicit intent stays a pure path mapping: it
  * performs no I/O, so callers may still probe a path that does not exist yet.
  */
+export function graphPathIntentFor(graphPath: string | undefined): GraphPathIntent {
+  // Presence of the argument is the signal, never what the path spells. A
+  // caller that supplied nothing made a default lookup, and calling it
+  // explicit would skip classification and hand back an artifact path the
+  // workspace may not have.
+  return graphPath === undefined ? 'default' : 'explicit'
+}
+
 export function resolveWorkspaceGraphPath(
   graphPath: string | undefined,
   workspaceRoot: string | undefined,

@@ -22,8 +22,7 @@ import {
   usageCaptureSummary,
   usageProviderLabel,
 } from './benchmark/usage.js'
-import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
-import { CANONICAL_ARTIFACT_BASENAME } from '../contracts/graph-artifact-selection.js'
+import { graphPathIntentFor, resolveWorkspaceGraphPath } from '../shared/workspace.js'
 
 export { loadBenchmarkQuestions, querySubgraphTokens, type BenchmarkQuestionInput } from './benchmark/questions.js'
 
@@ -279,12 +278,12 @@ function totalTokenLabel(result: BenchmarkSuccessResult): string | null {
 }
 
 export function runBenchmark(
-  graphPath = `out/${CANONICAL_ARTIFACT_BASENAME}`,
+  graphPath?: string,
   corpusWords?: number | null,
   questions?: BenchmarkQuestionInput[],
   options: BenchmarkRunOptions = {},
 ): BenchmarkResult | Promise<BenchmarkResult> {
-  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath, undefined, 'explicit')
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath, undefined, graphPathIntentFor(graphPath))
   const graph = loadBenchmarkGraph(resolvedGraphPath)
   const structureSignals = hasStructureSignalProvenance(graph) ? graphStructureMetrics(graph) : null
   const baseline = resolveCorpusBaseline(graph.numberOfNodes(), { graphPath: resolvedGraphPath, corpusWords })
