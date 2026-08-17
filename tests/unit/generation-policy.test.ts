@@ -20,6 +20,7 @@ import {
 } from '../../src/infrastructure/generation-policy.js'
 import { loadManifestMetadata } from '../../src/pipeline/detect.js'
 import { loadGraph } from '../../src/runtime/serve.js'
+import { readGeneratedGraphJson } from './helpers/generated-graph.js'
 
 function withTempDir<T>(callback: (tempDir: string) => T): T {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-generation-policy-'))
@@ -122,7 +123,7 @@ describe('generation policy contract', () => {
         noHtml: true,
         indexingStrict: { maxFailed: 1, maxUnsupported: 2 },
       })
-      const rawGraph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as { generation_policy?: unknown }
+      const rawGraph = readGeneratedGraphJson(result.graphPath) as { generation_policy?: unknown }
       const graphPolicy = parseGenerationPolicy(rawGraph.generation_policy)
       const manifestPolicy = loadManifestMetadata(join(result.outputDir, 'manifest.json')).generation_policy
 
