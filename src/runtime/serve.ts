@@ -137,13 +137,13 @@ export function readGraphArtifactRecord(graphPath: string): Record<string, unkno
   const safePath = validateGraphPath(graphPath)
 
   try {
-    const resolved = basename(safePath) === 'graph.json'
-      ? (() => {
-          const classification = classifyWorkspaceGraph(dirname(safePath))
-          return classification.state === 'legacy_v1_only' || !existsSync(classification.canonicalPath)
-            ? safePath
-            : classification.canonicalPath
-        })()
+    // Same rule as loadGraph, deliberately. Preferring the canonical artifact
+    // here while loadGraph returns the named v1 split a single request across
+    // two artifacts: structure from one, community labels and stored metadata
+    // from the other. A moved marker still forwards, because that file holds
+    // no data of its own.
+    const resolved = basename(safePath) === 'graph.json' && isMovedMarkerText(readFileSync(safePath, 'utf8'))
+      ? classifyWorkspaceGraph(dirname(safePath)).canonicalPath
       : safePath
     const text = readFileSync(resolved, 'utf8')
     const parsed = JSON.parse(

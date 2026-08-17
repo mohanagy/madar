@@ -63,7 +63,10 @@ const MIN_TRIAL_NODES = 10
 const GETTING_STARTED_URL = 'https://github.com/mohanagy/madar/blob/main/docs/tutorials/getting-started.md'
 
 function trialGraphPath(workspace: string): string {
-  return resolveMadarWorkspace(workspace).graphPath
+  // The canonical artifact, not the deprecated legacy alias. After the cutover
+  // that alias names the tombstone, so `try` would probe a file that always
+  // exists and never holds a graph.
+  return resolveMadarWorkspace(workspace).canonicalGraphPath
 }
 
 function isReusableFreshnessStatus(status: GraphContextFreshness['status']): boolean {

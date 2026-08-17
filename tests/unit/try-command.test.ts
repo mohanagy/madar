@@ -69,7 +69,7 @@ function createDependencies(overrides: Partial<TryCommandDependencies> = {}): Tr
       mode: 'generate',
       rootPath: resolve(rootPath),
       outputDir: resolve(rootPath, 'out'),
-      graphPath: resolve(rootPath, 'out', 'graph.json'),
+      graphPath: resolve(rootPath, 'out', 'graph.madar'),
       graphPathIntent: 'explicit',
       reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
       htmlPath: null,
@@ -109,7 +109,7 @@ function createDependencies(overrides: Partial<TryCommandDependencies> = {}): Tr
 describe('runTryCommand', () => {
   it('reuses a fresh graph and forces a text explain pack', async () => {
     const workspace = resolve('/tmp/workspace')
-    const graphPath = resolve(workspace, 'out', 'graph.json')
+    const graphPath = resolve(workspace, 'out', 'graph.madar')
     const { io } = createIo()
     const dependencies = createDependencies({
       pathExists: vi.fn().mockImplementation((path: string) => path === graphPath),
@@ -138,7 +138,7 @@ describe('runTryCommand', () => {
     'rebuilds a %s graph before running the pack',
     async (freshnessStatus) => {
       const workspace = resolve('/tmp/stale-workspace')
-      const graphPath = resolve(workspace, 'out', 'graph.json')
+      const graphPath = resolve(workspace, 'out', 'graph.madar')
       const { io } = createIo()
       const dependencies = createDependencies({
         pathExists: vi.fn().mockImplementation((path: string) => path === graphPath),
@@ -164,7 +164,7 @@ describe('runTryCommand', () => {
 
   it('rebuilds a fresh legacy undirected graph before running the pack', async () => {
     const workspace = resolve('/tmp/undirected-workspace')
-    const graphPath = resolve(workspace, 'out', 'graph.json')
+    const graphPath = resolve(workspace, 'out', 'graph.madar')
     const { io } = createIo()
     const dependencies = createDependencies({
       pathExists: vi.fn().mockImplementation((path: string) => path === graphPath),
@@ -181,7 +181,7 @@ describe('runTryCommand', () => {
   it('falls back to the packaged sample workspace when the current repo has no supported files', async () => {
     const workspace = resolve('/tmp/empty-workspace')
     const sampleWorkspace = resolve('/pkg/examples/sample-workspace')
-    const sampleGraphPath = resolve(sampleWorkspace, 'out', 'graph.json')
+    const sampleGraphPath = resolve(sampleWorkspace, 'out', 'graph.madar')
     const { io } = createIo()
     const dependencies = createDependencies({
       pathExists: vi.fn().mockImplementation((path: string) => path === sampleWorkspace),
@@ -194,7 +194,7 @@ describe('runTryCommand', () => {
           mode: 'generate',
           rootPath: resolvedRoot,
           outputDir: resolve(resolvedRoot, 'out'),
-          graphPath: resolve(resolvedRoot, 'out', 'graph.json'),
+          graphPath: resolve(resolvedRoot, 'out', 'graph.madar'),
           graphPathIntent: 'explicit',
           reportPath: resolve(resolvedRoot, 'out', 'GRAPH_REPORT.md'),
           htmlPath: null,
@@ -243,9 +243,9 @@ describe('runTryCommand', () => {
 
   it('falls back when the current repo graph is too small for a useful first proof', async () => {
     const workspace = resolve('/tmp/tiny-workspace')
-    const graphPath = resolve(workspace, 'out', 'graph.json')
+    const graphPath = resolve(workspace, 'out', 'graph.madar')
     const sampleWorkspace = resolve('/pkg/examples/sample-workspace')
-    const sampleGraphPath = resolve(sampleWorkspace, 'out', 'graph.json')
+    const sampleGraphPath = resolve(sampleWorkspace, 'out', 'graph.madar')
     const { io } = createIo()
     const dependencies = createDependencies({
       pathExists: vi.fn().mockImplementation((path: string) => path === graphPath || path === sampleWorkspace),
@@ -305,7 +305,7 @@ describe('runTryCommand', () => {
 
   it('surfaces pack failures from fresh graph reuse without rewriting them as graph read failures', async () => {
     const workspace = resolve('/tmp/reuse-workspace')
-    const graphPath = resolve(workspace, 'out', 'graph.json')
+    const graphPath = resolve(workspace, 'out', 'graph.madar')
     const { io } = createIo()
     const dependencies = createDependencies({
       pathExists: vi.fn().mockImplementation((path: string) => path === graphPath),

@@ -248,7 +248,7 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   runCompare: async ({ options }) => {
     try {
       return await runCompareCommand({
-        graphPath: options.graphPath,
+        graphPath: graphPathForCommand(options),
         question: options.question,
         questionsPath: options.questionsPath,
         outputDir: options.outputDir,
@@ -275,7 +275,7 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   },
   runReviewCompare: async ({ options }) => {
     return await runReviewCompareCommand({
-      graphPath: options.graphPath,
+      graphPath: graphPathForCommand(options),
       execTemplate: options.execTemplate,
       outputDir: options.outputDir,
       ...(options.baseBranch !== null ? { baseBranch: options.baseBranch } : {}),

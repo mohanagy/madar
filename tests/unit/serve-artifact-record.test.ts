@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { GRAPH_ARTIFACT_V2_HEADER } from '../../src/contracts/graph-artifact.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
-import { readGraphArtifactRecord } from '../../src/runtime/serve.js'
+import { loadGraph, readGraphArtifactRecord } from '../../src/runtime/serve.js'
 
 function workspace(): string {
   const root = mkdtempSync(join(tmpdir(), 'artifact-record-'))
@@ -54,6 +54,34 @@ describe('reading stored artifact fields after the cutover', () => {
       // graph.json is a tombstone now, so reading it literally yields nothing.
       expect(readGraphArtifactRecord(join(root, 'out', 'graph.json')).community_labels)
         .toEqual(storedLabels(root))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reads the same artifact loadGraph does for an explicit legacy request', () => {
+    const root = workspace()
+    const out = join(root, 'out')
+    writeFileSync(
+      join(out, 'graph.json'),
+      JSON.stringify({
+        schema_version: 1,
+        directed: true,
+        nodes: [{ id: 'stale' }],
+        links: [],
+        community_labels: { 0: 'STALE V1 LABEL' },
+      }),
+    )
+
+    try {
+      // Reading stored fields from the canonical artifact while loadGraph
+      // returns the named v1 splits one request across two artifacts:
+      // structure from one, labels and metadata from the other.
+      const record = readGraphArtifactRecord(join(out, 'graph.json'))
+      const graph = loadGraph(join(out, 'graph.json'))
+
+      expect(record.community_labels).toEqual({ 0: 'STALE V1 LABEL' })
+      expect(graph.numberOfNodes()).toBe(1)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
