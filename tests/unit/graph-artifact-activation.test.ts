@@ -195,6 +195,26 @@ describe('graph artifact v2 activation', () => {
     expect(existsSync(join(outputDir, 'graph.madar'))).toBe(true)
   })
 
+  it('says an oversized backup is too large, not corrupt', () => {
+    const root = temporaryRoot('madar activation backup oversized ')
+    const outputDir = join(root, 'out')
+    mkdirSync(outputDir)
+    // Structurally fine, just past the record bound the loader enforces.
+    const huge = JSON.stringify({
+      schema_version: 1,
+      directed: true,
+      nodes: Array.from({ length: 1_000_001 }, (_, index) => ({ id: `n${index}` })),
+      links: [],
+    })
+    writeFileSync(join(outputDir, 'graph.v1.json'), huge)
+
+    // Both refuse, but an operator sent looking for corruption in an
+    // uncorrupted file wastes the trip.
+    expect(() => activateGraphArtifactV2(root, v2Artifact())).toThrow(/too large/)
+    expect(() => activateGraphArtifactV2(root, v2Artifact())).not.toThrow(/cannot read it/)
+    expect(existsSync(join(outputDir, 'graph.madar'))).toBe(false)
+  })
+
   it('refuses a preserved backup it cannot read, before any mutation', () => {
     const root = temporaryRoot('madar activation backup invalid ')
     const outputDir = join(root, 'out')

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { GRAPH_ARTIFACT_V2_TOMBSTONE, serializeGraphArtifactV2 } from '../../src/contracts/graph-artifact.js'
 import {
+  GraphArtifactActivationInterruptedError,
   type GraphArtifactActivationResult,
   type GraphArtifactActivationStep,
   activateGraphArtifactV2,
@@ -197,10 +198,16 @@ describe('rollback restores the pre-call live artifact, not the backup', () => {
     try {
       // Both sides of the tombstone boundary: refused before the rename, and
       // unwound after the rename is already visible on disk.
+      //
+      // The injected message is matched, not just "throws". A bare toThrow()
+      // passed against the pre-ruling code, where the differing-backup check
+      // threw before the fault could ever be injected -- the assertions below
+      // then held for the wrong reason. Requiring this exact failure means a
+      // reintroduced equality check surfaces as a different error.
       expect(() => activate(root, when.beforeTombstone
         ? { beforeStep: (step) => { if (step === 'rename_tombstone') throw new Error('injected failure') } }
         : { afterRename: (step) => { if (step === 'rename_tombstone') throw new Error('injected failure') } },
-      )).toThrow()
+      )).toThrow('injected failure')
 
       // The durable backup and the live artifact are different files with
       // different roles. Unwinding by copying the backup over graph.json would
@@ -218,7 +225,8 @@ describe('rollback restores the pre-call live artifact, not the backup', () => {
     writeFileSync(join(outputDir, 'graph.json'), LIVE)
 
     try {
-      expect(() => activate(root, { interruptAfterPhase: 'v2_activated' })).toThrow()
+      expect(() => activate(root, { interruptAfterPhase: 'v2_activated' }))
+        .toThrow(GraphArtifactActivationInterruptedError)
 
       // An interruption is not unwound: the canonical artifact is durable and
       // the live v1 is still there, which is the mixed state default reads

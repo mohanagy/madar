@@ -123,12 +123,33 @@ function decodeLegacyText(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString('utf8')
 }
 
-function validLegacyArtifact(bytes: Uint8Array): boolean {
+type LegacyClassification = 'valid_v1' | 'too_large' | 'unreadable'
+
+/**
+ * Classifies legacy bytes, distinguishing "too big to load" from "corrupt".
+ *
+ * Both refuse a cutover, but they call for different actions: a corrupt file
+ * needs investigating, an oversized one needs a bound raised or the graph
+ * trimmed. Collapsing them into one message sends an operator looking for
+ * damage that is not there.
+ */
+function classifyLegacyArtifact(bytes: Uint8Array): LegacyClassification {
   try {
-    return loadGraphArtifact(bytes).format === 'v1'
-  } catch {
-    return false
+    return loadGraphArtifact(bytes).format === 'v1' ? 'valid_v1' : 'unreadable'
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    return /exceeds|too large|too many/i.test(message) ? 'too_large' : 'unreadable'
   }
+}
+
+function validLegacyArtifact(bytes: Uint8Array): boolean {
+  return classifyLegacyArtifact(bytes) === 'valid_v1'
+}
+
+function legacyRefusalDetail(bytes: Uint8Array): string {
+  return classifyLegacyArtifact(bytes) === 'too_large'
+    ? 'it is too large for Madar to load and classify'
+    : 'Madar cannot read it as a v1 artifact'
 }
 
 export function activateGraphArtifactV2(
@@ -177,8 +198,8 @@ export function activateGraphArtifactV2InDirectory(
   if (existingLegacyBackup !== null && !validLegacyArtifact(existingLegacyBackup)) {
     throw new GraphArtifactBackupError(
       legacyBackupPath,
-      `${legacyBackupPath} exists but is not a valid v1 artifact. Madar will not overwrite or ignore a `
-      + 'preserved backup it cannot read; move it aside to continue.',
+      `${legacyBackupPath} exists but ${legacyRefusalDetail(existingLegacyBackup)}. Madar will not `
+      + 'overwrite or ignore a preserved backup it cannot account for; move it aside to continue.',
     )
   }
 
@@ -195,8 +216,8 @@ export function activateGraphArtifactV2InDirectory(
   if (existingGraph !== null && legacyToPreserve === null && !legacyIsMovedMarker) {
     throw new GraphArtifactBackupError(
       tombstonePath,
-      `${tombstonePath} exists but is neither a valid v1 artifact nor a moved marker. Refusing to replace `
-      + 'content Madar cannot account for; move it aside to continue.',
+      `${tombstonePath} exists but is not a moved marker and ${legacyRefusalDetail(existingGraph)}. `
+      + 'Refusing to replace content Madar cannot account for; move it aside to continue.',
     )
   }
 
