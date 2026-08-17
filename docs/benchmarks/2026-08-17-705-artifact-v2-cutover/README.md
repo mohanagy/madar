@@ -2,15 +2,17 @@
 
 Direct three-arm measurement at the final #705 production head.
 
-**Verdict: four formal gates pass. Load latency is 2.64×–2.71× and requires a
-human decision.**
+**Verdict: four formal gates pass. The 2.64×–2.71× default-path load ratio was
+referred for a maintainer decision and has been ACCEPTED as an explicit exception
+to the 2.00× threshold — see
+[`maintainer-decision.md`](./maintainer-decision.md).**
 
 | Metric | #705 vs base | Verdict |
 |---|---:|---|
 | Generation wall | 0.979× | **passed** |
 | Peak RSS | 1.115× | **passed** |
 | Canonical artifact | 1.799× | **passed** |
-| Load latency (default path) | **2.643×–2.707×** | **human decision required** |
+| Load latency (default path) | **2.643×–2.707×** | **accepted exception** |
 | Output directory | 1.546× | reported (disclosure) |
 
 ## Correction to the B1 historical record
@@ -63,7 +65,7 @@ directly at the #705 head.
 Invalidated attempts and their reasons:
 [`invalidated-attempts.md`](./invalidated-attempts.md).
 
-## Load latency — human decision required
+## Load latency — accepted exception
 
 Process-isolated, one fresh process per sample, arms interleaved, two sessions
 with opposite starting arms, one unrecorded warm-up per arm.
@@ -105,7 +107,7 @@ than incidental to it.
 ### B1 control
 
 The B1 default-path control measures 2.109×–2.202× against an accepted band of
-2.25×–2.29% — slightly below, on a host that is not quiescent (load average
+2.25×–2.29× — slightly below, on a host that is not quiescent (load average
 ~2.8, other agents' work running). The control reproduces the accepted band
 closely enough to trust the harness; it is not a quiescent-host reproduction.
 
@@ -212,7 +214,7 @@ ratios — canonical 1.793× against 1.899×, output directory 2.223× against
 | Generation wall | 0.979× | **passed** |
 | Peak RSS | 1.115× | **passed** |
 | Canonical artifact | 1.799× | **passed** |
-| Load latency (default path) | 2.643×–2.707× | **human decision required** |
+| Load latency (default path) | 2.643×–2.707× | **accepted exception** (maintainer decision) |
 | Load latency (explicit canonical) | 2.453×–2.469× | context for the above |
 | Output directory | 1.546× | reported |
 
