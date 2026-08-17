@@ -14,7 +14,10 @@ import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 
 const sandboxRoots: string[] = []
 const PACKAGE_VERSION = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string }
-const OUT_GRAPH_PATH_PATTERN = /[\\/]out[\\/]graph\.json$/
+// Governance reports the logical spelling, so the leading separator an
+// absolute path used to supply is gone. Anchored on `out/` rather than made
+// permissive, so a bare basename or a leaked worktree path still fails.
+const OUT_GRAPH_PATH_PATTERN = /(?:^|[\\/])out[\\/]graph\.json$/
 const OUT_MISSING_GRAPH_PATH_PATTERN = /[\\/]out[\\/]missing\.json$/
 
 type FixtureState = 'fresh' | 'modified' | 'unrelated_modified' | 'deleted' | 'shared_modified'
