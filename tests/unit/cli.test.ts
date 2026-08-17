@@ -3262,7 +3262,11 @@ describe('summary command', () => {
     const exitCode = await executeCli(['summary', 'out/graph.json'], io, dependencies)
 
     expect(exitCode).toBe(0)
-    expect(capturedGraphPath).toBe('out/graph.json')
+    // Resolved through the intent boundary rather than passed through raw, so
+    // the value is the workspace's own artifact. Compared against the resolver
+    // instead of a literal: this repo may itself be a linked worktree, where
+    // the physical artifact lives outside the checkout.
+    expect(capturedGraphPath).toBe(resolveWorkspaceGraphPath('out/graph.json', undefined, 'explicit'))
     expect(logs).toEqual([JSON.stringify(expectedPayload, null, 2)])
   })
 
@@ -3278,6 +3282,10 @@ describe('summary command', () => {
     const exitCode = await executeCli(['summary'], io, dependencies)
 
     expect(exitCode).toBe(0)
-    expect(capturedGraphPath).toBe('out/graph.json')
+    // Resolved through the intent boundary rather than passed through raw, so
+    // the value is the workspace's own artifact. Compared against the resolver
+    // instead of a literal: this repo may itself be a linked worktree, where
+    // the physical artifact lives outside the checkout.
+    expect(capturedGraphPath).toBe(resolveWorkspaceGraphPath('out/graph.json', undefined, 'explicit'))
   })
 })

@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 
 import {
   CANONICAL_ARTIFACT_BASENAME,
+  GraphArtifactStateError,
   LEGACY_ARTIFACT_BASENAME,
   LEGACY_BACKUP_BASENAME,
   type GraphPathIntent,
@@ -238,7 +239,18 @@ export function graphPathForCommand(
   options: { readonly graphPath: string; readonly graphPathIntent: GraphPathIntent },
   workspaceRoot?: string,
 ): string {
-  return resolveWorkspaceGraphPath(options.graphPath, workspaceRoot, options.graphPathIntent)
+  try {
+    return resolveWorkspaceGraphPath(options.graphPath, workspaceRoot, options.graphPathIntent)
+  } catch (error) {
+    // A workspace with no graph at all is not ambiguous, and commands already
+    // explain that case. Refusing it here would replace a familiar "run madar
+    // generate ." path with a different error and break callers that supply
+    // their own loader. Every ambiguous or damaged state still propagates.
+    if (error instanceof GraphArtifactStateError && error.state === 'missing') {
+      return resolveWorkspaceGraphPath(options.graphPath, workspaceRoot, 'explicit')
+    }
+    throw error
+  }
 }
 
 export function logicalGraphPath(physicalPath: string, workspaceRoot = process.cwd()): string {
