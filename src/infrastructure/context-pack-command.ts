@@ -2231,6 +2231,7 @@ function baseResponse(
   plan: TaskContextPlan,
   budget: number,
   task: TaskContextPlan['task_kind'],
+  resolvedGraphPath: string,
 ) {
   return {
     task,
@@ -2239,8 +2240,10 @@ function baseResponse(
     budget,
     // The artifact actually used, in its public spelling: never the tombstone
     // the caller may have named, and never a linked worktree's private
-    // directory.
-    graph_path: logicalGraphPath(options.graphPath, dirname(dirname(resolve(options.graphPath)))),
+    // directory. It has to be the resolved path rather than the requested one --
+    // the default spelling names the canonical artifact, so reporting it in a
+    // workspace that never cut over claimed a file that does not exist.
+    graph_path: logicalGraphPath(resolvedGraphPath, dirname(dirname(resolve(resolvedGraphPath)))),
     plan,
   }
 }
@@ -3181,7 +3184,7 @@ export async function runContextPackCommand(
     })
 
     return renderContextPackOutput(options.format, buildPackSchemaV1({
-      ...baseResponse(options, plan, plannerBudget, resolvedTask.task_kind),
+      ...baseResponse(options, plan, plannerBudget, resolvedTask.task_kind, resolvedGraphPath),
       pack: reviewPack,
       graphFreshness: initialGraphFreshness,
       discoverySafety,
@@ -3207,7 +3210,7 @@ export async function runContextPackCommand(
     const impactPack = dependencies.compactImpactResult(impactResult)
 
     return renderContextPackOutput(options.format, buildPackSchemaV1({
-      ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
+      ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind, resolvedGraphPath),
       target: impactTarget,
       pack: impactPack,
       graphFreshness: initialGraphFreshness,
@@ -3236,19 +3239,23 @@ export async function runContextPackCommand(
         taskIntent: initialPlan.evidence.recipe_id,
       })
     : undefined
-  const graphFreshness = analyzeGraphContextFreshness(options.graphPath, graph, {
+  // Measured against the artifact that was actually loaded. The requested path
+  // is the caller's default spelling, which names the canonical artifact even in
+  // a workspace that never cut over -- measuring it there made freshness report
+  // `missing` for a graph this command had just answered from.
+  const graphFreshness = analyzeGraphContextFreshness(resolvedGraphPath, graph, {
     selected_source_files: selectedContextSourceFilesFromRetrieveResult(retrieval),
   })
   if (options.requireFreshContext === true) {
     requireFreshSelectedContext(graphFreshness)
   }
   return renderContextPackOutput(options.format, buildPackSchemaV1({
-    ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
+    ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind, resolvedGraphPath),
     graphFreshness,
     discoverySafety,
     ...(
       resolvedTask.task_kind === 'explain'
-        ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation, options.graphPath, discoverySafety)
+        ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation, resolvedGraphPath, discoverySafety)
         : buildExplainPackPayload(dependencies.compactRetrieveResult(retrieval), retrieval, implementation)
     ),
     retrieval,

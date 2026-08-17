@@ -2437,8 +2437,15 @@ describe('cli main', () => {
     await expect(executeCli(['doctor', '--graph', 'out/custom.json'], doctor.io, dependencies)).resolves.toBe(0)
     await expect(executeCli(['status'], status.io, dependencies)).resolves.toBe(0)
 
-    expect(runDoctor).toHaveBeenCalledWith('out/custom.json')
-    expect(runStatus).toHaveBeenCalledWith('out/graph.madar')
+    // The intent travels with the path. Passing the path alone made every
+    // invocation look explicit, because the parser always supplies a default --
+    // which left the report unable to describe a pre-cutover workspace.
+    expect(runDoctor).toHaveBeenCalledWith(
+      expect.objectContaining({ graphPath: 'out/custom.json', graphPathIntent: 'explicit' }),
+    )
+    expect(runStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ graphPath: 'out/graph.madar', graphPathIntent: 'default' }),
+    )
     expect(doctor.logs).toEqual(['doctor summary'])
     expect(status.logs).toEqual(['status summary'])
     expect(doctor.errors).toEqual([])

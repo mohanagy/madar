@@ -8,7 +8,7 @@ import { BenchmarkReadinessError, NativeAgentInstallRequiredError, runCompareCom
 import { runContextPackCommand } from '../infrastructure/context-pack-command.js'
 import { runHandoffCommand } from '../infrastructure/handoff-command.js'
 import { runContextPromptCommand } from '../infrastructure/context-prompt-command.js'
-import { buildDoctorReport, runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
+import { buildDoctorReport, runDoctorCommand, runStatusCommand, type DoctorCommandOptions } from '../infrastructure/doctor.js'
 import { runProofReportCommand, type ProofReportResult } from '../infrastructure/proof-report.js'
 import { runReviewCompareCommand } from '../infrastructure/review-compare.js'
 import { runTryCommand } from '../infrastructure/try-command.js'
@@ -96,7 +96,7 @@ import {
   type TimeTravelCliOptions,
   UsageError,
 } from './parser.js'
-import { classifyWorkspaceGraph } from '../contracts/graph-artifact-selection.js'
+import { classifyWorkspaceGraph, type GraphPathIntent } from '../contracts/graph-artifact-selection.js'
 
 export interface CliIO {
   log(message?: string): void
@@ -174,8 +174,8 @@ export interface CliDependencies {
   runHandoff: (context: HandoffCommandContext) => Promise<string | void> | string | void
   runContextPrompt: (context: ContextPromptCommandContext) => Promise<string | void> | string | void
   runProofReport: (options: ProofReportCliOptions) => ProofReportResult
-  runDoctor: (graphPath: string) => string
-  runStatus: (graphPath: string) => string
+  runDoctor: (options: DoctorCommandOptions) => string
+  runStatus: (options: DoctorCommandOptions) => string
   runGraphSummary?: (graphPath: string) => Promise<GraphSummary> | GraphSummary
   confirm: (message: string) => Promise<boolean>
   printBenchmark: (result: BenchmarkResult) => void
@@ -206,8 +206,8 @@ export interface CliDependencies {
   readTelemetryStatus?: () => string
   clearTelemetry?: () => string
   readTelemetryReport?: (spoolPaths?: string[]) => string
-  readDoctorTelemetryBucket?: (graphPath: string) => TelemetryStatusBucket
-  readStatusTelemetryBucket?: (graphPath: string) => TelemetryStatusBucket
+  readDoctorTelemetryBucket?: (options: DoctorCommandOptions) => TelemetryStatusBucket
+  readStatusTelemetryBucket?: (options: DoctorCommandOptions) => TelemetryStatusBucket
   recordTelemetryEvent?: (event: TelemetryEventInput) => void
 }
 
@@ -300,8 +300,8 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
     return await runContextPromptCommand(options)
   },
   runProofReport: (options) => runProofReportCommand(options),
-  runDoctor: (graphPath) => runDoctorCommand({ graphPath }),
-  runStatus: (graphPath) => runStatusCommand({ graphPath }),
+  runDoctor: (options) => runDoctorCommand(options),
+  runStatus: (options) => runStatusCommand(options),
   runGraphSummary: (graphPath) => buildGraphSummary(loadGraph(graphPath)),
   confirm: async (message) => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -349,8 +349,8 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   readTelemetryStatus: () => formatTelemetryStatus(getTelemetryStatus()),
   clearTelemetry: () => clearTelemetry(),
   readTelemetryReport: (spoolPaths) => readTelemetryReport({}, spoolPaths),
-  readDoctorTelemetryBucket: (graphPath) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed',
-  readStatusTelemetryBucket: (graphPath) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed',
+  readDoctorTelemetryBucket: (options) => buildDoctorReport(options).healthy ? 'healthy' : 'attention_needed',
+  readStatusTelemetryBucket: (options) => buildDoctorReport(options).healthy ? 'healthy' : 'attention_needed',
   recordTelemetryEvent: (event) => {
     persistTelemetryEvent(event)
   },
@@ -389,12 +389,26 @@ function emitTelemetry(io: CliIO, dependencies: CliDependencies, buildEvent: () 
   }
 }
 
-function repoSizeBucketForGraph(dependencies: CliDependencies, graphPath: string) {
-  return repoSizeBucketFromFileCount(buildGraphSummary(dependencies.loadGraph(graphPath)).file_count)
+interface GraphPathRequest {
+  readonly graphPath: string
+  readonly graphPathIntent: GraphPathIntent
 }
 
-function graphSizeBucketForGraph(dependencies: CliDependencies, graphPath: string) {
-  return graphSizeBucketFromNodeCount(buildGraphSummary(dependencies.loadGraph(graphPath)).node_count)
+/**
+ * Telemetry buckets load the artifact the command loaded.
+ *
+ * Loading `options.graphPath` instead read the caller's requested spelling,
+ * which defaults to the canonical artifact. In a workspace that never cut over
+ * that file does not exist, so a command that had answered correctly then
+ * emitted `[madar telemetry] Graph file not found: <absolute path>` -- both a
+ * false report and a path leak.
+ */
+function repoSizeBucketForGraph(dependencies: CliDependencies, options: GraphPathRequest) {
+  return repoSizeBucketFromFileCount(buildGraphSummary(dependencies.loadGraph(graphPathForCommand(options))).file_count)
+}
+
+function graphSizeBucketForGraph(dependencies: CliDependencies, options: GraphPathRequest) {
+  return graphSizeBucketFromNodeCount(buildGraphSummary(dependencies.loadGraph(graphPathForCommand(options))).node_count)
 }
 
 function telemetryBase(dependencies: CliDependencies) {
@@ -881,7 +895,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         command: 'compare',
         stage: 'succeeded',
         ...telemetryBase(dependencies),
-        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
+        repoSizeBucket: repoSizeBucketForGraph(dependencies, options),
       }))
       return 0
     }
@@ -927,12 +941,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         ...telemetryBase(dependencies),
         failureBucket,
       })
-      io.log(dependencies.runDoctor(options.graphPath))
+      io.log(dependencies.runDoctor(options))
       emitTelemetry(io, dependencies, () => ({
         command: 'doctor',
         stage: 'succeeded',
         ...telemetryBase(dependencies),
-        statusBucket: (dependencies.readDoctorTelemetryBucket ?? ((graphPath: string) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed'))(options.graphPath),
+        statusBucket: (dependencies.readDoctorTelemetryBucket ?? ((doctorOptions: DoctorCommandOptions) => buildDoctorReport(doctorOptions).healthy ? 'healthy' : 'attention_needed'))(options),
       }))
       return 0
     }
@@ -945,12 +959,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         ...telemetryBase(dependencies),
         failureBucket,
       })
-      io.log(dependencies.runStatus(options.graphPath))
+      io.log(dependencies.runStatus(options))
       emitTelemetry(io, dependencies, () => ({
         command: 'status',
         stage: 'succeeded',
         ...telemetryBase(dependencies),
-        statusBucket: (dependencies.readStatusTelemetryBucket ?? ((graphPath: string) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed'))(options.graphPath),
+        statusBucket: (dependencies.readStatusTelemetryBucket ?? ((doctorOptions: DoctorCommandOptions) => buildDoctorReport(doctorOptions).healthy ? 'healthy' : 'attention_needed'))(options),
       }))
       return 0
     }
@@ -994,7 +1008,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         command: 'pack',
         stage: 'succeeded',
         ...telemetryBase(dependencies),
-        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
+        repoSizeBucket: repoSizeBucketForGraph(dependencies, options),
       }))
       return 0
     }
@@ -1024,7 +1038,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         command: 'prompt',
         stage: 'succeeded',
         ...telemetryBase(dependencies),
-        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
+        repoSizeBucket: repoSizeBucketForGraph(dependencies, options),
       }))
       return 0
     }

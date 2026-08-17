@@ -7,9 +7,11 @@ import {
   requireFreshSelectedContext,
   selectedContextSourceFilesFromRetrieveResult,
 } from '../runtime/freshness.js'
+import { dirname, resolve } from 'node:path'
+
 import { retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { loadGraph } from '../runtime/serve.js'
-import { graphPathForCommand } from '../shared/workspace.js'
+import { graphPathForCommand, logicalGraphPath } from '../shared/workspace.js'
 
 const DEFAULT_PROMPT_BUDGET = 3_000
 
@@ -81,14 +83,18 @@ export async function runContextPromptCommand(
     question: options.prompt,
     budget: DEFAULT_PROMPT_BUDGET,
   })
-  const graphFreshness = analyzeGraphContextFreshness(options.graphPath, graph, {
+  // Measured and reported against the artifact that was actually loaded. The
+  // requested path is the caller's default spelling, which names the canonical
+  // artifact even in a workspace that never cut over -- measuring it there made
+  // freshness report `missing` for a graph this command had just answered from.
+  const graphFreshness = analyzeGraphContextFreshness(resolvedGraphPath, graph, {
     selected_source_files: selectedContextSourceFilesFromRetrieveResult(retrieval),
   })
   if (options.requireFreshContext === true) {
     requireFreshSelectedContext(graphFreshness)
   }
   const compiled = dependencies.buildMadarPromptPack({
-    graphPath: options.graphPath,
+    graphPath: resolvedGraphPath,
     question: options.prompt,
     retrieval,
   })
@@ -97,7 +103,7 @@ export async function runContextPromptCommand(
   return JSON.stringify({
     provider: options.provider,
     prompt: options.prompt,
-    graph_path: options.graphPath,
+    graph_path: logicalGraphPath(resolvedGraphPath, dirname(dirname(resolve(resolvedGraphPath)))),
     graph_freshness: graphFreshness,
     compiled: providerCompiled,
   })

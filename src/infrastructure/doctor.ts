@@ -44,6 +44,7 @@ import {
 import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 import {
   classifyWorkspaceGraph,
+  type GraphPathIntent,
   type WorkspaceGraphState,
 } from '../contracts/graph-artifact-selection.js'
 
@@ -145,6 +146,15 @@ const OPENCODE_INSTRUCTION_SNIPPETS = [
 
 export interface DoctorCommandOptions {
   graphPath?: string
+  /**
+   * Whether the caller named the artifact or fell back to a default.
+   *
+   * Needed because the CLI always supplies a path: the parser's default is
+   * `out/graph.madar`, so a presence check treated every invocation as
+   * explicit and the pre-cutover branch below was unreachable. A caller that
+   * supplies a path without stating an intent is still treated as explicit.
+   */
+  graphPathIntent?: GraphPathIntent
   projectDir?: string
   now?: number
 }
@@ -606,7 +616,8 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   // whichever artifact the workspace actually has: defaulting to graph.madar
   // would report a genuinely pre-cutover workspace as having no graph.
   const workspaceGraph = classifyWorkspaceGraph(resolveMadarOutputDirectory(projectDir))
-  const graphPath = options.graphPath !== undefined
+  const namedByCaller = options.graphPath !== undefined && options.graphPathIntent !== 'default'
+  const graphPath = namedByCaller
     ? resolveWorkspaceGraphPath(options.graphPath, projectDir, 'explicit')
     : workspaceGraph.state === 'legacy_v1_only'
       ? workspaceGraph.legacyPath
