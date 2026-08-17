@@ -1,0 +1,81 @@
+{
+  "session": "2",
+  "samples": 11,
+  "arms": {
+    "head_default": {
+      "median_ms": 896.06,
+      "min_ms": 864.65,
+      "max_ms": 956.984,
+      "spread_pct": 10.7,
+      "samples_ms": [
+        923.295,
+        896.061,
+        956.984,
+        931.913,
+        869.132,
+        864.65,
+        947.348,
+        939.486,
+        874.095,
+        888.19,
+        867.742
+      ],
+      "selected_physical_path": "/private/tmp/claude-501/-Users-mohammednaji-Desktop-projects-works-madar/f7d7297e-0a0e-458f-be03-d3952d6d8b0f/scratchpad/art-head/out/graph.madar",
+      "selected_logical_path": "out/graph.madar",
+      "artifact_bytes": 47030676,
+      "node_count": 12669,
+      "relationship_count": 17940,
+      "load1_median": 2.74
+    },
+    "b1": {
+      "median_ms": 735.13,
+      "min_ms": 691.652,
+      "max_ms": 882.676,
+      "spread_pct": 27.6,
+      "samples_ms": [
+        720.142,
+        770.886,
+        766.859,
+        703.038,
+        691.887,
+        696.826,
+        753.595,
+        882.676,
+        691.652,
+        794.888,
+        735.13
+      ],
+      "selected_physical_path": "out/graph.json",
+      "selected_logical_path": null,
+      "artifact_bytes": 26069288,
+      "node_count": 12669,
+      "relationship_count": 17940,
+      "load1_median": 2.74
+    },
+    "base": {
+      "median_ms": 340,
+      "min_ms": 318.503,
+      "max_ms": 384.99,
+      "spread_pct": 20.9,
+      "samples_ms": [
+        334.695,
+        384.99,
+        363.29,
+        341.599,
+        318.503,
+        331.731,
+        339.098,
+        327.733,
+        341.751,
+        366.251,
+        340
+      ],
+      "selected_physical_path": "out/graph.json",
+      "selected_logical_path": null,
+      "artifact_bytes": 26105161,
+      "node_count": 12669,
+      "relationship_count": 17835,
+      "load1_median": 2.74
+    }
+  }
+}
