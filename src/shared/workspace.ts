@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 
 import {
   CANONICAL_ARTIFACT_BASENAME,
@@ -213,6 +213,23 @@ const DEFAULT_GRAPH_PATH_SPELLINGS: ReadonlySet<string> = new Set([
 
 export function isDefaultGraphPathSpelling(graphPath: string): boolean {
   return DEFAULT_GRAPH_PATH_SPELLINGS.has(normalizeGraphPathSpelling(graphPath))
+}
+
+/**
+ * The public spelling for an artifact a command actually used.
+ *
+ * Output that names a path -- Pack fields, governance freshness -- must not
+ * echo the request, which after the cutover may be a tombstone, and must not
+ * expose a linked worktree's redirected directory under .git. Any artifact
+ * inside the workspace output directory is reported as `out/<name>`; anything
+ * else was a deliberate path from the caller and is returned unchanged.
+ */
+export function logicalGraphPath(physicalPath: string, workspaceRoot = process.cwd()): string {
+  const workspace = resolveMadarWorkspace(workspaceRoot)
+  const resolved = resolve(physicalPath)
+  return dirname(resolved) === workspace.outputDir
+    ? `out/${basename(resolved)}`
+    : physicalPath
 }
 
 export interface ResolveWorkspaceGraphArtifactOptions {

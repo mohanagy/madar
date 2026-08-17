@@ -56,6 +56,8 @@ import {
   parseDiscoverySafetyMetadata,
   type DiscoverySafetyMetadata,
 } from '../shared/discovery-safety.js'
+import { logicalGraphPath } from '../shared/workspace.js'
+import { dirname, resolve } from 'node:path'
 
 const DEFAULT_IMPACT_DEPTH = 3
 const IMPLEMENTATION_DISTRACTOR_PATTERN = /(?:helper|util|formatter|serializer|mapper|constant|generated|dist\/|build\/|lockfile|migration)/i
@@ -2235,7 +2237,10 @@ function baseResponse(
     task_intent: plan.evidence.recipe_id,
     prompt: options.prompt,
     budget,
-    graph_path: options.graphPath,
+    // The artifact actually used, in its public spelling: never the tombstone
+    // the caller may have named, and never a linked worktree's private
+    // directory.
+    graph_path: logicalGraphPath(options.graphPath, dirname(dirname(resolve(options.graphPath)))),
     plan,
   }
 }

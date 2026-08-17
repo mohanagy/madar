@@ -17,6 +17,7 @@ import { validateGraphPath } from '../shared/security.js'
 import { isDiscoveryPathIgnored, loadMadarignorePatterns } from '../shared/source-discovery.js'
 import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 import { classifyWorkspaceGraph } from '../contracts/graph-artifact-selection.js'
+import { logicalGraphPath } from '../shared/workspace.js'
 
 export interface GraphFreshnessMetadata {
   graphVersion: string
@@ -431,6 +432,14 @@ function freshnessSourcePath(safeGraphPath: string): string {
  * linked worktree's private directory is never introduced.
  */
 function reportedGraphPath(requestedPath: string, resolvedPath: string): string {
+  // Inside the workspace this is the public `out/<name>` spelling, so a linked
+  // worktree's redirected directory never reaches governance output. Outside
+  // it, the caller named a specific file and keeps their own spelling.
+  // Derive the workspace from the artifact itself. Defaulting to process.cwd()
+  // silently failed to recognise an artifact belonging to another workspace --
+  // exactly the linked-worktree case this is meant to protect.
+  const logical = logicalGraphPath(resolvedPath, dirname(dirname(resolvedPath)))
+  if (logical !== resolvedPath) return logical
   return requestedPath === resolvedPath
     ? requestedPath
     : join(dirname(requestedPath), basename(resolvedPath))
