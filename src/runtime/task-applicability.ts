@@ -6,6 +6,10 @@ import {
   CANONICAL_ARTIFACT_BASENAME,
   LEGACY_ARTIFACT_BASENAME,
 } from '../contracts/graph-artifact-selection.js'
+import {
+  GENERATED_LEGACY_GRAPH_NOTICE,
+  generatedGraphDiscoverySource,
+} from '../shared/generated-graph-discovery.js'
 
 const LOCAL_CODE_TERMS = [
   'repo',
@@ -365,39 +369,27 @@ export function buildPromptApplicabilityHookScript(
   hookEventName: string,
   graphPath = `out/${CANONICAL_ARTIFACT_BASENAME}`,
 ): string {
-  // Either conventional default spelling means "the workspace's own graph".
-  const graphAvailabilityFunction = graphPath === `out/${CANONICAL_ARTIFACT_BASENAME}`
+  // Either conventional default spelling means "the workspace's own graph", and
+  // which artifact holds it is what the shared classifier decides. This used to
+  // check `existsSync(out/graph.json)`, which after the cutover meant a
+  // canonical-only workspace produced no guidance at all while a tombstone or an
+  // ambiguous mixed workspace produced the full "the graph is ready" text.
+  const usesWorkspaceDefault = graphPath === `out/${CANONICAL_ARTIFACT_BASENAME}`
     || graphPath === `out/${LEGACY_ARTIFACT_BASENAME}`
-    ? `function hasMadarGraph() {
-  let directory = process.cwd()
-  while (true) {
-    if (fs.existsSync(path.join(directory, 'out', 'graph.json'))) {
-      return true
-    }
+  const graphAvailabilityFunction = usesWorkspaceDefault
+    ? `${generatedGraphDiscoverySource('commonjs')}
 
-    // A linked Git worktree stores Madar artifacts below the common Git
-    // directory. Its MCP server builds that graph at session startup, so the
-    // prompt hook should still provide guidance instead of looking for the
-    // primary checkout's out/ directory.
-    try {
-      if (fs.lstatSync(path.join(directory, '.git')).isFile()) {
-        return true
-      }
-    } catch {}
-
-    const parent = path.dirname(directory)
-    if (parent === directory) {
-      return false
-    }
-    directory = parent
-  }
+function madarWorkspaceDiscovery() {
+  return classifyMadarWorkspace(process.cwd())
 }`
-    : `function hasMadarGraph() {
+    // An explicitly named artifact is the caller's choice, so its own existence
+    // is the question; there is no workspace state to classify.
+    : `function madarWorkspaceDiscovery() {
   try {
     fs.accessSync(${JSON.stringify(graphPath)})
-    return true
+    return { hasGraph: true, legacyGraph: false, graphState: 'explicit' }
   } catch {
-    return false
+    return { hasGraph: false, legacyGraph: false, graphState: 'none' }
   }
 }`
 
@@ -407,6 +399,7 @@ const path = require('path')
 const config = ${JSON.stringify(HOOK_CONFIG, null, 2)}
 const matchPayload = ${JSON.stringify(matchPayloadJson)}
 const hookEventName = ${JSON.stringify(hookEventName)}
+const legacyNotice = ${JSON.stringify(GENERATED_LEGACY_GRAPH_NOTICE)}
 const filePathRe = ${FILE_PATH_RE}
 const urlRe = ${URL_RE}
 const githubProjectUrlRe = ${GITHUB_PROJECT_URL_RE}
@@ -553,7 +546,8 @@ process.stdin.on('data', (chunk) => {
 })
 
 process.stdin.on('end', () => {
-  if (!hasMadarGraph()) {
+  const madarDiscovery = madarWorkspaceDiscovery()
+  if (!madarDiscovery.hasGraph) {
     return
   }
 
@@ -585,6 +579,22 @@ process.stdin.on('end', () => {
     return
   }
 
+  if (!madarDiscovery.legacyGraph) {
+    process.stdout.write(matchPayload)
+    return
+  }
+
+  // A legacy workspace has a working graph, but the guidance must say it is
+  // being read in compatibility mode rather than claim an unqualified graph.
+  try {
+    const legacyPayload = JSON.parse(matchPayload)
+    const output = legacyPayload.hookSpecificOutput
+    if (output && typeof output.additionalContext === 'string') {
+      output.additionalContext = legacyNotice + ' ' + output.additionalContext
+      process.stdout.write(JSON.stringify(legacyPayload))
+      return
+    }
+  } catch {}
   process.stdout.write(matchPayload)
 })
 `

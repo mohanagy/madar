@@ -42,6 +42,7 @@ const INTENTIONAL: ReadonlyMap<string, string> = new Map([
   ['shared/discovery-safety.ts', 'reads safety metadata from either artifact'],
   ['shared/graph-source-root.ts', 'resolves a legacy request to its source root'],
   ['shared/workspace.ts', 'names every artifact the workspace can hold'],
+  ['shared/generated-graph-discovery.ts', 'generates host code that classifies both artifacts'],
 ])
 
 function sourceFiles(directory: string): string[] {

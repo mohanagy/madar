@@ -9,6 +9,12 @@ import {
 } from './install-routing-guidance.js'
 import { buildPromptApplicabilityHookScript } from '../runtime/task-applicability.js'
 import {
+  GENERATED_GRAPH_DISCOVERY_MARKER,
+  GENERATED_LEGACY_GRAPH_NOTICE,
+  generatedGraphDiscoveryInline,
+  generatedGraphDiscoverySource,
+} from '../shared/generated-graph-discovery.js'
+import {
   findPackageRoot as resolvePackageRoot,
   readPackageVersion as resolvePackageVersion,
 } from '../shared/package-metadata.js'
@@ -136,57 +142,56 @@ const PLATFORM_CONFIG: Record<SkillInstallPlatform, InstallPlatformConfig> = {
 
 // Cross-platform hook: pass the base64 payload as an argv argument so the
 // node -e command stays shell-neutral on macOS, Linux, and Windows.
-const WORKSPACE_GRAPH_CHECK_MARKER = 'madar-workspace-graph-check'
+const WORKSPACE_GRAPH_CHECK_MARKER = GENERATED_GRAPH_DISCOVERY_MARKER
 /*
  * Generated host discovery classifies the workspace; it does not ask whether a
  * file exists.
  *
- * Existence was wrong in both directions after the cutover: graph.json still
- * exists as a tombstone, so "it is there" stopped meaning "a graph is ready",
- * and a workspace holding only graph.madar looked empty. Worse, an ambiguous
- * B1 workspace and one with a corrupt artifact both looked ready.
- *
- * Only a bounded prefix of each file is read -- enough to tell the four shapes
- * apart and nothing more. This stays a readiness hint: the runtime loader is
- * what validates an artifact before anything is answered from it, and it still
- * fails closed on a truncated body this prefix check would accept.
+ * The classifier itself is shared with the Claude/Codex prompt hook and the
+ * OpenCode plugin. It used to be written out separately here, and only this copy
+ * was migrated at the cutover -- the other two kept checking for a file, so a
+ * canonical-only workspace looked empty to them and a tombstone looked ready.
  */
 const WORKSPACE_GRAPH_CHECK = [
-  `/* ${WORKSPACE_GRAPH_CHECK_MARKER} */`,
-  `const fs=require('fs'),path=require('path');`,
-  `const head=(p)=>{try{const d=fs.openSync(p,'r');const b=Buffer.alloc(32);`,
-  `const n=fs.readSync(d,b,0,32,0);fs.closeSync(d);return b.slice(0,n).toString('utf8')}catch(e){return null}};`,
-  `let directory=process.cwd(),graphState='none',linkedWorktree=false;`,
-  `for(;;){`,
-  `const out=path.join(directory,'out');`,
-  `const mh=head(path.join(out,'graph.madar')),lh=head(path.join(out,'graph.json'));`,
-  `if(mh!==null||lh!==null){`,
-  `const canonical=mh!==null&&mh.indexOf('MADAR_GRAPH_ARTIFACT/2')===0;`,
-  `const moved=lh!==null&&lh.indexOf('MADAR_GRAPH_MOVED/')===0;`,
-  `const liveV1=lh!==null&&!moved&&/^\\s*\\{/.test(lh);`,
-  `graphState=(mh!==null&&!canonical)?'invalid':canonical?(liveV1?'mixed':'current'):moved?'moved':liveV1?'legacy':'invalid';`,
-  `break}`,
-  `try{if(fs.lstatSync(path.join(directory,'.git')).isFile()){linkedWorktree=true;break}}catch(e){}`,
-  `const parent=path.dirname(directory);`,
-  `if(parent===directory)break;`,
-  `directory=parent}`,
-  // A linked worktree keeps its artifacts outside the checkout, and resolving
-  // that location needs the workspace hash this snippet cannot compute. The
-  // hint stays -- the MCP server builds the graph at startup -- but it is a
-  // hint about availability, never a claim that an artifact was inspected.
-  `const hasGraph=graphState==='current'||graphState==='legacy'||linkedWorktree;`,
-  `const legacyGraph=graphState==='legacy';`,
+  generatedGraphDiscoveryInline(),
+  'const madarDiscovery = classifyMadarWorkspace(process.cwd());',
+  'const hasGraph = madarDiscovery.hasGraph;',
+  'const legacyGraph = madarDiscovery.legacyGraph;',
 ].join('')
 
-function hookCommand(payloadJson: string): string {
-  const b64 = Buffer.from(payloadJson).toString('base64')
-  return `node -e "${WORKSPACE_GRAPH_CHECK};if(hasGraph)process.stdout.write(Buffer.from(process.argv[1],'base64').toString())" "${b64}"`
+/**
+ * Guidance for a workspace reading the legacy artifact in compatibility mode.
+ *
+ * `legacyGraph` was computed by the classifier and then never read, so every
+ * host received the same unqualified "this project has a madar knowledge graph"
+ * text whether the graph was canonical or legacy.
+ */
+function legacyQualified(payloadJson: string): string {
+  const payload = JSON.parse(payloadJson) as Record<string, unknown>
+  const hookSpecificOutput = payload.hookSpecificOutput
+  if (isRecord(hookSpecificOutput) && typeof hookSpecificOutput.additionalContext === 'string') {
+    return JSON.stringify({
+      ...payload,
+      hookSpecificOutput: {
+        ...hookSpecificOutput,
+        additionalContext: `${GENERATED_LEGACY_GRAPH_NOTICE} ${hookSpecificOutput.additionalContext}`,
+      },
+    })
+  }
+  if (typeof payload.additionalContext === 'string') {
+    return JSON.stringify({
+      ...payload,
+      additionalContext: `${GENERATED_LEGACY_GRAPH_NOTICE} ${payload.additionalContext}`,
+    })
+  }
+  return payloadJson
 }
 
 function hookCommandWithFallback(matchJson: string, missJson: string): string {
   const b64Match = Buffer.from(matchJson).toString('base64')
   const b64Miss = Buffer.from(missJson).toString('base64')
-  return `node -e "${WORKSPACE_GRAPH_CHECK};var f=hasGraph?process.argv[1]:process.argv[2];process.stdout.write(Buffer.from(f,'base64').toString())" "${b64Match}" "${b64Miss}"`
+  const b64Legacy = Buffer.from(legacyQualified(matchJson)).toString('base64')
+  return `node -e "${WORKSPACE_GRAPH_CHECK};var f=hasGraph?(legacyGraph?process.argv[3]:process.argv[1]):process.argv[2];process.stdout.write(Buffer.from(f,'base64').toString())" "${b64Match}" "${b64Miss}" "${b64Legacy}"`
 }
 
 function decodeGeneratedHookPayloads(command: string): string[] {
@@ -458,24 +463,6 @@ function renderMarkdownStrictContextPackRoutingTable(): string {
 Strict exposes no general graph-navigation tool after this pack. Use \`context_expand\` only for a listed \`verify_targets\` handle.`
 }
 
-const SETTINGS_HOOK = {
-  // SECURITY: Keep this command static. Do not interpolate user-controlled input here.
-  matcher: 'Glob|Grep|Bash|Agent|Read',
-  hooks: [
-    {
-      type: 'command',
-      command: hookCommand(
-        JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: 'PreToolUse',
-            additionalContext: RETRIEVE_FIRST_MESSAGE,
-          },
-        }),
-      ),
-    },
-  ],
-}
-
 function codexPromptHook(): Record<string, unknown> {
   return withManagedHookIdentity({
     hooks: [
@@ -695,39 +682,21 @@ const OPENCODE_JSON_CONFIG_PATH = 'opencode.json'
 const OPENCODE_JSONC_CONFIG_PATH = 'opencode.jsonc'
 export const OPENCODE_MCP_SERVER_NAME = 'madar'
 const CURSOR_RULE_RELATIVE_PATH = '.cursor/rules/madar.mdc'
+const OPENCODE_PLUGIN_REMINDER_BODY =
+  `${renderPlainMcpRoutingGuide()} ${strictNonMadarMcpRule(false).replace(/^for/, 'For')}. ${strictSkillOverrideRule(false)}. ${strictGraphReportFallbackRule(false).replace(/^do/, 'Do')}`
 const OPENCODE_PLUGIN_REMINDER_COMMAND =
-  `echo "[madar] Knowledge graph available. ${renderPlainMcpRoutingGuide()} ${strictNonMadarMcpRule(false).replace(/^for/, 'For')}. ${strictSkillOverrideRule(false)}. ${strictGraphReportFallbackRule(false).replace(/^do/, 'Do')}" && `
+  `echo "[madar] Knowledge graph available. ${OPENCODE_PLUGIN_REMINDER_BODY}" && `
+// A legacy workspace has a real graph, but saying only that one is "available"
+// hides that it is being read in compatibility mode.
+const OPENCODE_PLUGIN_LEGACY_REMINDER_COMMAND =
+  `echo "[madar] Knowledge graph available from the legacy artifact. ${GENERATED_LEGACY_GRAPH_NOTICE} ${OPENCODE_PLUGIN_REMINDER_BODY}" && `
 const OPENCODE_PLUGIN_JS = `// madar OpenCode plugin
-// Injects a knowledge graph reminder before bash tool calls when the graph exists.
-import { existsSync, lstatSync } from "fs";
-import { dirname, join } from "path";
-
-function hasMadarGraph(directory) {
-  let current = directory;
-  while (true) {
-    // Either artifact counts. graph.json alone is a pre-cutover workspace; after
-    // the cutover it is a tombstone that happens to still exist, so relying on
-    // it would go quiet for a workspace that kept only its canonical artifact.
-    if (existsSync(join(current, "out", "graph.madar")) || existsSync(join(current, "out", "graph.json"))) {
-      return true;
-    }
-
-    // Linked Git worktrees store Madar artifacts outside the checkout. The
-    // installed MCP server builds that graph at session startup, so retain the
-    // reminder when this workspace is a linked worktree.
-    try {
-      if (lstatSync(join(current, ".git")).isFile()) {
-        return true;
-      }
-    } catch {}
-
-    const parent = dirname(current);
-    if (parent === current) {
-      return false;
-    }
-    current = parent;
-  }
-}
+// Injects a knowledge graph reminder before bash tool calls, based on what the
+// workspace actually holds. An existence check was wrong in both directions
+// after the artifact cutover: out/graph.json survives as a tombstone, so a
+// repaired-but-unbuilt workspace looked ready, and an ambiguous or corrupt
+// workspace did too.
+${generatedGraphDiscoverySource('esm')}
 
 export const MadarPlugin = async ({ directory }) => {
   let reminded = false;
@@ -735,11 +704,14 @@ export const MadarPlugin = async ({ directory }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (reminded) return;
-      if (!hasMadarGraph(directory)) return;
+      const discovery = classifyMadarWorkspace(directory);
+      if (!discovery.hasGraph) return;
 
       if (input.tool === "bash") {
           output.args.command =
-            ${JSON.stringify(OPENCODE_PLUGIN_REMINDER_COMMAND)} +
+            (discovery.legacyGraph
+              ? ${JSON.stringify(OPENCODE_PLUGIN_LEGACY_REMINDER_COMMAND)}
+              : ${JSON.stringify(OPENCODE_PLUGIN_REMINDER_COMMAND)}) +
             output.args.command;
         reminded = true;
       }

@@ -1585,7 +1585,10 @@ describe('install helpers', () => {
         { prompt: 'Explain how this repository auth module works' },
       )
 
-      expect(hookScript).toContain('function hasMadarGraph()')
+      // The prompt hook embeds the shared classifier rather than its own
+      // existence check, which is what made it miss the cutover.
+      expect(hookScript).toContain('function classifyMadarWorkspace(')
+      expect(hookScript).toContain('MADAR_GRAPH_ARTIFACT/2')
       expect(command).not.toContain(projectDir)
       expect(JSON.parse(output)).toMatchObject({
         hookSpecificOutput: {

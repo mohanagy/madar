@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import { GRAPH_ARTIFACT_V2_TOMBSTONE } from '../../src/contracts/graph-artifact.js'
 import { geminiInstall } from '../../src/infrastructure/install.js'
+import { generatedGraphDiscoverySource } from '../../src/shared/generated-graph-discovery.js'
 
 /**
  * Generated host discovery must classify the workspace, not ask whether a file
@@ -28,8 +29,7 @@ import { geminiInstall } from '../../src/infrastructure/install.js'
 const VALID_V2 = 'MADAR_GRAPH_ARTIFACT/2\n{"nodes":[],"facts":[]}'
 const LIVE_V1 = JSON.stringify({ schema_version: 1, directed: true, nodes: [{ id: 'a' }], links: [] })
 
-const SNIPPET_START = '/* madar-workspace-graph-check */'
-const SNIPPET_END = "const legacyGraph=graphState==='legacy';"
+const CLASSIFIER_FUNCTION = 'classifyMadarWorkspace'
 
 interface WorkspaceFiles {
   readonly canonical?: string
@@ -66,29 +66,26 @@ function generatedHookCommand(root: string): string {
   if (typeof command !== 'string' || command.length === 0) {
     throw new Error('installer generated no BeforeTool command')
   }
+  if (!command.includes(CLASSIFIER_FUNCTION)) {
+    throw new Error(`generated command does not embed ${CLASSIFIER_FUNCTION}`)
+  }
   return command
 }
 
-/** Runs the generated classification snippet verbatim, from `cwd`. */
-function classifyFrom(command: string, cwd: string): Discovery {
-  const start = command.indexOf(SNIPPET_START)
-  const end = command.indexOf(SNIPPET_END)
-  if (start < 0 || end < 0) {
-    throw new Error('generated command no longer contains the classification snippet')
-  }
-  const snippet = command.slice(start, end + SNIPPET_END.length)
-
-  // The evaluated text is the installer's own generated snippet, read back from
-  // the settings file this test just wrote -- running it verbatim is the point,
-  // since a copy in the test could drift from what ships.
+/**
+ * Runs the shipped classifier generator verbatim, from `cwd`.
+ *
+ * Evaluating the generator's own text rather than a copy is the point: a
+ * reimplementation here could pass while what ships to hosts does not. The
+ * generated command is separately asserted to embed this same function, which
+ * is the seam that keeps the two from drifting.
+ */
+function classifyFrom(_command: string, cwd: string): Discovery {
   // eslint-disable-next-line no-new-func
-  const evaluate = new Function('require', 'process', `${snippet}
-    return { graphState, linkedWorktree, hasGraph, legacyGraph }`) as (
-    requireFn: NodeRequire,
-    processStub: { cwd: () => string },
-  ) => Discovery
+  const evaluate = new Function('require', `${generatedGraphDiscoverySource('commonjs')}
+    return ${CLASSIFIER_FUNCTION}`) as (requireFn: NodeRequire) => (directory: string) => Discovery
 
-  return evaluate(createRequire(import.meta.url), { cwd: () => cwd })
+  return evaluate(createRequire(import.meta.url))(cwd)
 }
 
 /** Runs the generated hook end to end and reports whether it emitted guidance. */
