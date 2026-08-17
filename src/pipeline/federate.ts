@@ -12,6 +12,9 @@ import { isRecord } from '../shared/guards.js'
 import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import { validateGraphPath } from '../shared/security.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from './analyze.js'
+import { loadGraph } from '../runtime/serve.js'
+import { serializeGraphArtifactV2 } from '../contracts/graph-artifact.js'
+import { activateGraphArtifactV2InDirectory } from '../infrastructure/graph-artifact-activation.js'
 
 const MAX_GRAPH_BYTES = 100 * 1024 * 1024
 const MAX_GRAPHS = 50
@@ -37,27 +40,21 @@ interface GraphSource {
   graph: KnowledgeGraph
 }
 
+/**
+ * Loads one federation source.
+ *
+ * Federation predates artifact v2 and parsed the file as bare JSON, so after
+ * the #705 cutover it could not read anything: the legacy path holds a
+ * tombstone and the canonical artifact begins with a header. It now goes
+ * through the shared loader, which resolves the request to the artifact that
+ * actually holds the graph and understands both formats.
+ *
+ * The old size guard also read the entire file before comparing its length,
+ * then read it a second time to parse. loadGraph stats first.
+ */
 function loadSourceGraph(graphPath: string): { graph: KnowledgeGraph; graphPath: string } {
   const safePath = validateGraphPath(graphPath)
-  if (readFileSync(safePath).byteLength > MAX_GRAPH_BYTES) {
-    throw new Error(`Graph file too large: ${safePath}`)
-  }
-
-  const parsed = JSON.parse(readFileSync(safePath, 'utf8'))
-  if (!isRecord(parsed)) {
-    throw new Error(`Invalid graph file: ${safePath}`)
-  }
-
-  return {
-    graphPath: safePath,
-    graph: buildFromJson({
-    schema_version: parsed.schema_version,
-    directed: parsed.directed === true,
-    nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [],
-    edges: Array.isArray(parsed.links) ? parsed.links : Array.isArray(parsed.edges) ? parsed.edges : [],
-    hyperedges: Array.isArray(parsed.hyperedges) ? parsed.hyperedges : [],
-    }, { directed: false, validateExtraction: false }),
-  }
+  return { graphPath: safePath, graph: loadGraph(safePath) }
 }
 
 function inferRepoName(graphPath: string): string {
@@ -187,7 +184,6 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
   // Output
   const outputDir = resolve(options.outputDir ?? 'out-federated')
   mkdirSync(outputDir, { recursive: true })
-  const graphPath = join(outputDir, 'graph.json')
   const reportPath = join(outputDir, 'GRAPH_REPORT.md')
 
   const gods = godNodes(federatedGraph, 10)
@@ -218,7 +214,22 @@ export function federate(graphPaths: string[], options: FederateOptions = {}): F
     questions,
   )
 
-  toJson(federatedGraph, communities, graphPath, communityLabels, anomalies)
+  // Federated output follows the same cutover contract as a generated
+  // workspace: a canonical artifact plus a tombstone, published through the
+  // same primitive rather than a second writer that could drift from it.
+  // Writing v1 here would hand federation consumers a format the rest of
+  // Madar no longer produces.
+  const { artifactPath: graphPath } = activateGraphArtifactV2InDirectory(
+    outputDir,
+    serializeGraphArtifactV2({
+      graph: federatedGraph,
+      repositoryRevision: 'federated',
+      generationMode: 'full',
+      generatedAt: new Date().toISOString(),
+      communityLabels,
+      provenance: { schema_version: 2 },
+    }),
+  )
   writeFileSync(reportPath, report, 'utf8')
 
   return {

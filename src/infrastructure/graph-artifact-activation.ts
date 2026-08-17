@@ -111,8 +111,26 @@ export function activateGraphArtifactV2(
   artifactBytes: Uint8Array,
   options: GraphArtifactActivationOptions = {},
 ): GraphArtifactActivationResult {
+  return activateGraphArtifactV2InDirectory(
+    resolveMadarOutputDirectory(workspaceRoot),
+    artifactBytes,
+    options,
+  )
+}
+
+/**
+ * Publishes into a directory that is not a workspace `out/`.
+ *
+ * Federation writes to its own output directory, and it needs the same
+ * publication contract -- canonical artifact, tombstone last, nothing staged
+ * left behind -- rather than a second implementation that drifts from this one.
+ */
+export function activateGraphArtifactV2InDirectory(
+  outputDir: string,
+  artifactBytes: Uint8Array,
+  options: GraphArtifactActivationOptions = {},
+): GraphArtifactActivationResult {
   parseGraphArtifactV2(artifactBytes)
-  const outputDir = resolveMadarOutputDirectory(workspaceRoot)
   mkdirSync(outputDir, { recursive: true })
   const artifactPath = join(outputDir, 'graph.madar')
   const legacyBackupPath = join(outputDir, 'graph.v1.json')
