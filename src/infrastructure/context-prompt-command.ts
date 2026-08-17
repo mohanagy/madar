@@ -9,6 +9,7 @@ import {
 } from '../runtime/freshness.js'
 import { retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { loadGraph } from '../runtime/serve.js'
+import { graphPathForCommand } from '../shared/workspace.js'
 
 const DEFAULT_PROMPT_BUDGET = 3_000
 
@@ -70,8 +71,9 @@ export async function runContextPromptCommand(
   options: PromptCliOptions,
   dependencies: ContextPromptCommandDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<string> {
-  const graph = dependencies.loadGraph(options.graphPath)
-  const initialGraphFreshness = analyzeGraphContextFreshness(options.graphPath, graph)
+  const resolvedGraphPath = graphPathForCommand(options)
+  const graph = dependencies.loadGraph(resolvedGraphPath)
+  const initialGraphFreshness = analyzeGraphContextFreshness(resolvedGraphPath, graph)
   if (options.requireFreshGraph === true) {
     requireFreshGraph(initialGraphFreshness)
   }

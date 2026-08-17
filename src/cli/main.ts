@@ -43,7 +43,7 @@ import { serveGraphStdio } from '../runtime/stdio-server.js'
 import { getNeighbors, getNode, loadGraph, queryGraph, shortestPath } from '../runtime/serve.js'
 import { formatTimeTravelResult } from '../runtime/time-travel.js'
 import { findPackageRoot, readPackageName, readPackageVersion } from '../shared/package-metadata.js'
-import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
+import { graphPathForCommand, resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import {
   disableTelemetry,
   enableTelemetry,
@@ -229,17 +229,18 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   saveQueryResult,
   runBenchmark: ({ options }) => {
     const questions = options.questionsPath ? loadBenchmarkQuestions(options.questionsPath) : undefined
-    return runBenchmark(options.graphPath, undefined, questions, { execTemplate: options.execTemplate })
+    return runBenchmark(graphPathForCommand(options), undefined, questions, { execTemplate: options.execTemplate })
   },
   runBenchSuite: async ({ options }) => {
     const result = await runBenchmarkSuite(options)
     return result.text
   },
   runEval: async ({ options }) => {
-    const graph = loadGraph(options.graphPath)
+    const resolvedGraphPath = graphPathForCommand(options)
+    const graph = loadGraph(resolvedGraphPath)
     const questions = options.questionsPath ? loadBenchmarkQuestions(options.questionsPath) : undefined
     const report = await evaluateRetrievalQuality(graph, questions, 3000, {
-      graphPath: options.graphPath,
+      graphPath: resolvedGraphPath,
       execTemplate: options.execTemplate,
     })
     return formatQualityReport(report)
@@ -961,7 +962,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'summary') {
       const options = parseSummaryArgs(args)
       const runGraphSummary = dependencies.runGraphSummary ?? ((graphPath: string) => buildGraphSummary(dependencies.loadGraph(graphPath)))
-      io.log(JSON.stringify(await runGraphSummary(options.graphPath), null, 2))
+      io.log(JSON.stringify(await runGraphSummary(graphPathForCommand(options)), null, 2))
       return 0
     }
 
@@ -1211,7 +1212,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'query') {
       const options = parseQueryArgs(args)
-      const graph = dependencies.loadGraph(options.graphPath)
+      const graph = dependencies.loadGraph(graphPathForCommand(options))
       const filters = {
         ...(options.community !== null ? { community: options.community } : {}),
         ...(options.fileType ? { fileType: options.fileType } : {}),
@@ -1229,22 +1230,24 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'diff') {
       const options = parseDiffArgs(args)
+      // The baseline is always a named artifact; only the compared graph can be
+      // a workspace default.
       const baselineGraph = dependencies.loadGraph(options.baselineGraphPath)
-      const graph = dependencies.loadGraph(options.graphPath)
+      const graph = dependencies.loadGraph(graphPathForCommand(options))
       io.log(diffGraphs(baselineGraph, graph, { limit: options.limit }))
       return 0
     }
 
     if (command === 'path') {
       const options = parsePathArgs(args)
-      const graph = dependencies.loadGraph(options.graphPath)
+      const graph = dependencies.loadGraph(graphPathForCommand(options))
       io.log(shortestPath(graph, options.source, options.target, options.maxHops))
       return 0
     }
 
     if (command === 'explain') {
       const options = parseExplainArgs(args)
-      const graph = dependencies.loadGraph(options.graphPath)
+      const graph = dependencies.loadGraph(graphPathForCommand(options))
       io.log(formatExplainSummary(graph, options.label, options.relation))
       return 0
     }

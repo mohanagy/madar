@@ -224,6 +224,23 @@ export function isDefaultGraphPathSpelling(graphPath: string): boolean {
  * inside the workspace output directory is reported as `out/<name>`; anything
  * else was a deliberate path from the caller and is returned unchanged.
  */
+/**
+ * The artifact a command should read, given the options it was parsed with.
+ *
+ * Commands used to call loadGraph with their raw option string. That worked
+ * only because loadGraph itself preferred the canonical artifact, which the
+ * #705 mixed-state decision had to remove -- leaving those commands silently
+ * reading a stale v1. Routing options through here applies the same intent
+ * boundary every other surface uses, and throws GraphArtifactStateError for an
+ * ambiguous workspace on a default load.
+ */
+export function graphPathForCommand(
+  options: { readonly graphPath: string; readonly graphPathIntent: GraphPathIntent },
+  workspaceRoot?: string,
+): string {
+  return resolveWorkspaceGraphPath(options.graphPath, workspaceRoot, options.graphPathIntent)
+}
+
 export function logicalGraphPath(physicalPath: string, workspaceRoot = process.cwd()): string {
   const workspace = resolveMadarWorkspace(workspaceRoot)
   const resolved = resolve(physicalPath)

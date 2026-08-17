@@ -56,7 +56,7 @@ import {
   parseDiscoverySafetyMetadata,
   type DiscoverySafetyMetadata,
 } from '../shared/discovery-safety.js'
-import { logicalGraphPath } from '../shared/workspace.js'
+import { graphPathForCommand, logicalGraphPath } from '../shared/workspace.js'
 import { dirname, resolve } from 'node:path'
 
 const DEFAULT_IMPACT_DEPTH = 3
@@ -3132,9 +3132,13 @@ export async function runContextPackCommand(
   options: PackCliOptions,
   dependencies: ContextPackCommandDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<string> {
-  const graph = dependencies.loadGraph(options.graphPath)
+  // Pack is the primary agent-facing surface, so an ambiguous workspace must
+  // refuse here rather than answer from whichever artifact happened to be at
+  // the requested path.
+  const resolvedGraphPath = graphPathForCommand(options)
+  const graph = dependencies.loadGraph(resolvedGraphPath)
   const discoverySafety = parseDiscoverySafetyMetadata(graph.graph.discovery_safety)
-  const initialGraphFreshness = analyzeGraphContextFreshness(options.graphPath, graph)
+  const initialGraphFreshness = analyzeGraphContextFreshness(resolvedGraphPath, graph)
   if (options.requireFreshGraph === true) {
     requireFreshGraph(initialGraphFreshness)
   }
