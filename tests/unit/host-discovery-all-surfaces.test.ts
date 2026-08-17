@@ -41,6 +41,21 @@ interface Expectation {
   readonly legacy: boolean
 }
 
+/**
+ * The full state table runs in process in host-discovery-states.test.ts, against
+ * this same generator. Surfaces that have to be spawned to be observed use the
+ * three states that distinguish their wiring -- ready, ready-but-legacy, and not
+ * ready -- because one file spawning a process per state per host is enough to
+ * starve the worker pool, and a timeout there reads as a failure of the contract
+ * rather than of the machine.
+ */
+const SPAWNED_STATES: ReadonlyArray<readonly [string, WorkspaceFiles, Expectation]> = [
+  ['current v2 with a tombstone', { canonical: VALID_V2, legacy: GRAPH_ARTIFACT_V2_TOMBSTONE }, { ready: true, legacy: false }],
+  ['legacy v1 only', { legacy: LIVE_V1 }, { ready: true, legacy: true }],
+  ['a tombstone alone', { legacy: GRAPH_ARTIFACT_V2_TOMBSTONE }, { ready: false, legacy: false }],
+]
+
+/** Evaluated in process, so the whole table is cheap here. */
 const STATES: ReadonlyArray<readonly [string, WorkspaceFiles, Expectation]> = [
   ['current v2 with a tombstone', { canonical: VALID_V2, legacy: GRAPH_ARTIFACT_V2_TOMBSTONE }, { ready: true, legacy: false }],
   ['canonical only', { canonical: VALID_V2 }, { ready: true, legacy: false }],
@@ -106,7 +121,7 @@ function promptHookGuidance(root: string, scriptPath: string): Guidance {
 }
 
 describe('every generated host surface classifies the workspace', () => {
-  it.each(STATES)('the Gemini tool hook reads %s correctly', (_label, files, expectation) => {
+  it.each(SPAWNED_STATES)('the Gemini tool hook reads %s correctly', (_label, files, expectation) => {
     const root = workspace(files as WorkspaceFiles)
     try {
       geminiInstall(root)
@@ -129,7 +144,7 @@ describe('every generated host surface classifies the workspace', () => {
     }
   }, 60_000)
 
-  it.each(STATES)('the Claude prompt hook reads %s correctly', (_label, files, expectation) => {
+  it.each(SPAWNED_STATES)('the Claude prompt hook reads %s correctly', (_label, files, expectation) => {
     const root = workspace(files as WorkspaceFiles)
     try {
       claudeInstall(root)
