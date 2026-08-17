@@ -46,6 +46,8 @@ const LIVE_V1 = JSON.stringify({ schema_version: 1, directed: true, nodes: [], l
 interface ActivateExtras {
   readonly sidecarRootPath?: string
   readonly beforeStep?: (step: GraphArtifactActivationStep) => void
+  readonly afterRename?: (step: Extract<GraphArtifactActivationStep, `rename_${string}`>) => void
+  readonly interruptAfterPhase?: 'v2_activated' | 'v1_preserved'
 }
 
 const activate = (root: string, extra: ActivateExtras = {}): GraphArtifactActivationResult =>
@@ -172,6 +174,57 @@ describe('a failed activation leaves the previous state', () => {
       // A failed cutover must not strand the workspace with its only v1
       // artifact replaced and nothing usable in its place.
       expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(LIVE_V1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('rollback restores the pre-call live artifact, not the backup', () => {
+  const PRESERVED = JSON.stringify({ schema_version: 1, directed: true, nodes: [{ id: 'preserved' }], links: [] })
+  const LIVE = JSON.stringify({ schema_version: 1, directed: true, nodes: [{ id: 'live-and-different' }], links: [] })
+
+  it.each([
+    ['before the tombstone rename', { beforeTombstone: true }],
+    ['after the tombstone rename is visible', { beforeTombstone: false }],
+  ])('restores the exact pre-call bytes when a failure lands %s', (_label, when) => {
+    const root = workspace()
+    const outputDir = join(root, 'out')
+    writeFileSync(join(outputDir, 'graph.v1.json'), PRESERVED)
+    writeFileSync(join(outputDir, 'graph.json'), LIVE)
+    expect(PRESERVED).not.toBe(LIVE)
+
+    try {
+      // Both sides of the tombstone boundary: refused before the rename, and
+      // unwound after the rename is already visible on disk.
+      expect(() => activate(root, when.beforeTombstone
+        ? { beforeStep: (step) => { if (step === 'rename_tombstone') throw new Error('injected failure') } }
+        : { afterRename: (step) => { if (step === 'rename_tombstone') throw new Error('injected failure') } },
+      )).toThrow()
+
+      // The durable backup and the live artifact are different files with
+      // different roles. Unwinding by copying the backup over graph.json would
+      // silently replace the workspace's actual state with an older one.
+      expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(LIVE)
+      expect(readFileSync(join(outputDir, 'graph.v1.json'), 'utf8')).toBe(PRESERVED)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves a repairable state when interrupted after the canonical rename', () => {
+    const root = workspace()
+    const outputDir = join(root, 'out')
+    writeFileSync(join(outputDir, 'graph.json'), LIVE)
+
+    try {
+      expect(() => activate(root, { interruptAfterPhase: 'v2_activated' })).toThrow()
+
+      // An interruption is not unwound: the canonical artifact is durable and
+      // the live v1 is still there, which is the mixed state default reads
+      // refuse and a later full generation repairs.
+      expect(existsSync(join(outputDir, 'graph.madar'))).toBe(true)
+      expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(LIVE)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

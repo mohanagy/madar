@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import {
   GRAPH_ARTIFACT_V2_TOMBSTONE,
   GRAPH_LOCAL_SIDECAR_BASENAME,
+  isMovedMarkerText,
   loadGraphArtifact,
   parseGraphArtifactV2,
 } from '../contracts/graph-artifact.js'
@@ -28,6 +29,13 @@ export interface GraphArtifactActivationResult {
   readonly legacyBackupPath: string
   readonly tombstonePath: string
   readonly legacyBackupCreated: boolean
+  /**
+   * What happened to the durable backup.
+   *
+   * `preserved_existing` is the repair case: a backup was already there and is
+   * left byte-for-byte untouched even when the live v1 differs from it.
+   */
+  readonly legacyBackupStatus: GraphArtifactBackupStatus
   /** Null when no source root was supplied. */
   readonly sidecarPath: string | null
 }
@@ -67,12 +75,25 @@ export class GraphArtifactActivationInterruptedError extends Error {
   }
 }
 
-export class GraphArtifactBackupConflictError extends Error {
-  constructor(readonly backupPath: string) {
-    super(`Refusing to overwrite a different preserved legacy graph artifact at ${backupPath}`)
-    this.name = 'GraphArtifactBackupConflictError'
+/**
+ * Refuses a cutover whose legacy files cannot be accounted for.
+ *
+ * This replaces an equality check between the preserved backup and the live v1.
+ * Those two are allowed to differ -- the backup records the first cutover, the
+ * live file records whatever happened since -- so difference alone is not a
+ * fault. What is a fault is a backup Madar cannot read, or legacy content it
+ * cannot classify, because in both cases publishing would destroy something
+ * unexplained.
+ */
+export class GraphArtifactBackupError extends Error {
+  constructor(readonly path: string, message: string) {
+    super(message)
+    this.name = 'GraphArtifactBackupError'
   }
 }
+
+/** Whether this publication created the backup, kept one, or had none to keep. */
+export type GraphArtifactBackupStatus = 'created' | 'preserved_existing' | 'none'
 
 interface FileSnapshot {
   readonly bytes: Buffer | null
@@ -96,6 +117,10 @@ function restoreSnapshot(outputDir: string, path: string, state: FileSnapshot, l
   } finally {
     rmSync(temporary, { force: true })
   }
+}
+
+function decodeLegacyText(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString('utf8')
 }
 
 function validLegacyArtifact(bytes: Uint8Array): boolean {
@@ -136,18 +161,49 @@ export function activateGraphArtifactV2InDirectory(
   const legacyBackupPath = join(outputDir, 'graph.v1.json')
   const tombstonePath = join(outputDir, 'graph.json')
   const existingGraph = existsSync(tombstonePath) ? readFileSync(tombstonePath) : null
+  const existingLegacyBackup = existsSync(legacyBackupPath) ? readFileSync(legacyBackupPath) : null
+
+  /*
+   * graph.v1.json is the immutable first v1 backup, not a refreshed mirror. A
+   * later rollback or B1 build can leave a live graph.json whose bytes differ
+   * from it, and the two are allowed to differ: they record different moments.
+   * Requiring equality would permanently wedge the one repair path a mixed
+   * workspace has.
+   *
+   * So a differing live v1 is not a conflict. Neither ambiguous v1 is ever the
+   * source of the new graph -- that comes from the repository -- and the
+   * existing backup is never rewritten.
+   */
+  if (existingLegacyBackup !== null && !validLegacyArtifact(existingLegacyBackup)) {
+    throw new GraphArtifactBackupError(
+      legacyBackupPath,
+      `${legacyBackupPath} exists but is not a valid v1 artifact. Madar will not overwrite or ignore a `
+      + 'preserved backup it cannot read; move it aside to continue.',
+    )
+  }
+
+  /*
+   * The legacy path may hold: nothing (fresh workspace), a moved marker
+   * (already cut over), or a valid v1 (pre-cutover or rolled back). Anything
+   * else -- corrupt JSON, unrelated JSON, v2 magic at the legacy path -- is
+   * unexplained, and replacing it with a tombstone would destroy it silently.
+   */
+  const legacyIsMovedMarker = existingGraph !== null && isMovedMarkerText(decodeLegacyText(existingGraph))
   const legacyToPreserve = existingGraph !== null && validLegacyArtifact(existingGraph)
     ? existingGraph
     : null
-  const existingLegacyBackup = existsSync(legacyBackupPath) ? readFileSync(legacyBackupPath) : null
-  if (
-    legacyToPreserve !== null
-    && existingLegacyBackup !== null
-    && !existingLegacyBackup.equals(legacyToPreserve)
-  ) {
-    throw new GraphArtifactBackupConflictError(legacyBackupPath)
+  if (existingGraph !== null && legacyToPreserve === null && !legacyIsMovedMarker) {
+    throw new GraphArtifactBackupError(
+      tombstonePath,
+      `${tombstonePath} exists but is neither a valid v1 artifact nor a moved marker. Refusing to replace `
+      + 'content Madar cannot account for; move it aside to continue.',
+    )
   }
+
   const createLegacyBackup = legacyToPreserve !== null && existingLegacyBackup === null
+  const legacyBackupStatus: GraphArtifactBackupStatus = createLegacyBackup
+    ? 'created'
+    : existingLegacyBackup !== null ? 'preserved_existing' : 'none'
   const artifactSnapshot = snapshot(artifactPath)
   const legacyBackupSnapshot = snapshot(legacyBackupPath)
   const tombstoneSnapshot = snapshot(tombstonePath)
@@ -252,6 +308,7 @@ export function activateGraphArtifactV2InDirectory(
     legacyBackupPath,
     tombstonePath,
     legacyBackupCreated: createLegacyBackup,
+    legacyBackupStatus,
     sidecarPath,
   }
 }

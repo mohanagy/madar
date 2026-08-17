@@ -62,8 +62,17 @@ export function readGeneratedGraphJson(target: string): GeneratedGraphJson {
   const nodes = (payload.nodes ?? []) as V2Node[]
   const facts = (payload.facts ?? []) as V2Fact[]
 
+  // v2-only keys are dropped, not passed through. `facts` and `occurrences`
+  // are already exposed as `links`, and leaving them in made this object claim
+  // to be v1-shaped while carrying content that identifies it as v2 -- a
+  // legacy reader rejects such a payload outright, so a test that wrote this
+  // back as a "graph from an older binary" was seeding something no binary
+  // ever produced.
+  const { facts: _facts, occurrences: _occurrences, integrity_receipt: _receipt, versions: _versions,
+    reserved: _reserved, provenance: _provenance, ...rest } = payload
+
   return {
-    ...payload,
+    ...rest,
     ...provenance,
     nodes: nodes.map((node) => ({ id: node.id, ...node.attributes })),
     links: facts.map(({ attributes, ...fact }) => ({ ...fact, ...attributes })),

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -163,18 +163,56 @@ describe('full generation repairs a mixed workspace', () => {
     }
   })
 
-  it('refuses rather than overwrite a conflicting preserved backup', () => {
+  it('repairs with a preserved backup that differs from the live v1', () => {
+    const { root, out } = mixedWorkspace()
+    const original = JSON.stringify({ schema_version: 1, directed: true, nodes: [{ id: 'original' }], links: [] })
+    writeFileSync(join(out, 'graph.v1.json'), original)
+    expect(readFileSync(join(out, 'graph.json'), 'utf8')).not.toBe(original)
+
+    try {
+      // Inverted by the maintainer ruling. graph.v1.json is the immutable
+      // first backup and the live file is whatever happened after it, so the
+      // two are expected to diverge. Requiring them to match wedged the only
+      // repair a mixed workspace has. Neither ambiguous v1 becomes the new
+      // graph -- that is generated from source -- and the backup is untouched.
+      generateGraph(root, { noHtml: true })
+
+      expect(readFileSync(join(out, 'graph.v1.json'), 'utf8')).toBe(original)
+      expect(readFileSync(join(out, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
+      expect(classifyWorkspaceGraph(out).state).toBe('current_v2')
+    } finally {
+      cleanup(root)
+    }
+  })
+
+  it('creates no second backup file during repair', () => {
+    const { root, out } = mixedWorkspace()
+    writeFileSync(join(out, 'graph.v1.json'),
+      JSON.stringify({ schema_version: 1, directed: true, nodes: [{ id: 'original' }], links: [] }))
+
+    try {
+      generateGraph(root, { noHtml: true })
+
+      // One durable backup, not a rotation scheme.
+      const backups = readdirSync(out).filter((name) => name.startsWith('graph.v1'))
+      expect(backups).toEqual(['graph.v1.json'])
+    } finally {
+      cleanup(root)
+    }
+  })
+
+  it('keeps the same backup across repeated repair', () => {
     const { root, out } = mixedWorkspace()
     const original = JSON.stringify({ schema_version: 1, directed: true, nodes: [{ id: 'original' }], links: [] })
     writeFileSync(join(out, 'graph.v1.json'), original)
 
     try {
-      // Two different v1 states -- an already-preserved backup and a live v1 --
-      // and one backup slot. Repair cannot keep both, and picking one silently
-      // is the thing this whole contract exists to prevent. Refusing leaves the
-      // backup byte-identical, which is what the repair guarantee requires.
-      expect(() => generateGraph(root, { noHtml: true })).toThrow(/Refusing to overwrite/)
+      generateGraph(root, { noHtml: true })
+      generateGraph(root, { noHtml: true })
+      generateGraph(root, { noHtml: true })
+
       expect(readFileSync(join(out, 'graph.v1.json'), 'utf8')).toBe(original)
+      expect(readdirSync(out).filter((name) => name.startsWith('graph.v1'))).toEqual(['graph.v1.json'])
     } finally {
       cleanup(root)
     }
