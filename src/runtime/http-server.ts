@@ -6,6 +6,10 @@ import { validateGraphPath } from '../shared/security.js'
 import { graphFreshnessHeaders, graphFreshnessMetadata, resourceFreshnessHeaders, resourceFreshnessMetadata } from './freshness.js'
 import { communitiesFromGraph, getCommunity, getNeighbors, getNode, graphStats, loadGraph, queryGraph, semanticAnomaliesSummary, shortestPath } from './serve.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
+import {
+  CANONICAL_ARTIFACT_BASENAME,
+  LEGACY_ARTIFACT_BASENAME,
+} from '../contracts/graph-artifact-selection.js'
 
 export interface ServeLogger {
   log(message?: string): void
@@ -58,6 +62,14 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown, h
   response.end(`${JSON.stringify(body, null, 2)}\n`)
 }
 
+/** Vendor media type: a v2 artifact is not JSON and must not claim to be. */
+const GRAPH_ARTIFACT_MEDIA_TYPE = 'application/vnd.madar.graph-artifact.v2; charset=utf-8'
+
+function sendProblem(response: ServerResponse, statusCode: number, problem: Record<string, unknown>): void {
+  response.writeHead(statusCode, { 'content-type': 'application/problem+json; charset=utf-8' })
+  response.end(`${JSON.stringify(problem, null, 2)}\n`)
+}
+
 function readUtf8File(filePath: string): string {
   return readFileSync(filePath, 'utf8')
 }
@@ -79,7 +91,7 @@ function renderIndex(outputDir: string): string {
   <p>Serving graph artifacts from <code>${outputDir}</code>.</p>
   <ul>
     <li><a href="/graph.html">graph.html</a></li>
-    <li><a href="/graph.json">graph.json</a></li>
+    <li><a href="/graph.madar">graph.madar</a></li>
     <li><a href="/GRAPH_REPORT.md">GRAPH_REPORT.md</a></li>
     <li><a href="/stats">/stats</a></li>
     <li><a href="/health">/health</a></li>
@@ -249,8 +261,52 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
         return
       }
 
-      if (url.pathname === '/graph.json') {
-        sendText(response, 200, readUtf8File(graphPath), 'application/json; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, graphPath)))
+      if (url.pathname === `/${CANONICAL_ARTIFACT_BASENAME}`) {
+        const canonical = join(outputDir, CANONICAL_ARTIFACT_BASENAME)
+        if (!existsSync(canonical)) {
+          sendText(response, 404, `${CANONICAL_ARTIFACT_BASENAME} not found.`)
+          return
+        }
+        sendText(
+          response,
+          200,
+          readUtf8File(canonical),
+          GRAPH_ARTIFACT_MEDIA_TYPE,
+          resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, canonical)),
+        )
+        return
+      }
+
+      if (url.pathname === `/${LEGACY_ARTIFACT_BASENAME}`) {
+        const canonical = join(outputDir, CANONICAL_ARTIFACT_BASENAME)
+        if (!existsSync(canonical)) {
+          // A workspace that never cut over still has a real v1 here, and
+          // nothing has moved. Answering 410 would retire an artifact that is
+          // present and correct.
+          sendText(
+            response,
+            200,
+            readUtf8File(graphPath),
+            'application/json; charset=utf-8',
+            resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, graphPath)),
+          )
+          return
+        }
+        /*
+         * Gone, not moved. A redirect would hand a v1 client a v2 body it
+         * cannot parse: the formats are not interchangeable, so the client
+         * needs to learn its request can no longer be satisfied rather than be
+         * quietly pointed elsewhere. problem+json keeps the reason
+         * machine-readable.
+         */
+        sendProblem(response, 410, {
+          type: 'https://madar.dev/problems/graph-artifact-moved',
+          title: 'The v1 graph artifact is gone',
+          status: 410,
+          detail: `${LEGACY_ARTIFACT_BASENAME} is no longer published. Request /${CANONICAL_ARTIFACT_BASENAME}, `
+            + 'which serves artifact v2 and is not v1-compatible.',
+          canonical_path: `/${CANONICAL_ARTIFACT_BASENAME}`,
+        })
         return
       }
 

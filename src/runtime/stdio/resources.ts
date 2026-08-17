@@ -5,6 +5,10 @@ import type { Writable } from 'node:stream'
 import { freshnessAnnotations, resourceFreshnessMetadata } from '../freshness.js'
 import { validateGraphPath } from '../../shared/security.js'
 import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
+import {
+  CANONICAL_ARTIFACT_BASENAME,
+  LEGACY_ARTIFACT_BASENAME,
+} from '../../contracts/graph-artifact-selection.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -63,6 +67,25 @@ function resourceUri(name: string): string {
   return `madar://artifact/${name}`
 }
 
+/**
+ * Explains a resource miss, distinguishing "moved" from "never existed".
+ *
+ * "Unknown resource" reads like a typo or a version skew. A client that
+ * hard-coded the v1 artifact URI needs to learn the resource moved AND that the
+ * replacement is a different format, not a rename it can transparently follow.
+ * Only said once the workspace actually has a canonical artifact -- in a
+ * pre-cutover workspace the v1 URI is served, so nothing has moved.
+ */
+function unknownResourceMessage(uri: string, graphPath: string): string {
+  if (uri !== resourceUri(LEGACY_ARTIFACT_BASENAME)) return `Unknown resource: ${uri}`
+  const canonicalServed = resourcesForGraph(graphPath)
+    .some((entry) => entry.uri === resourceUri(CANONICAL_ARTIFACT_BASENAME))
+  return canonicalServed
+    ? `${uri} is gone. Read ${resourceUri(CANONICAL_ARTIFACT_BASENAME)} instead, which serves artifact v2 `
+      + 'and is not v1-compatible.'
+    : `Unknown resource: ${uri}`
+}
+
 export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
   // During a first auto-refresh startup the MCP transport is available before
   // graph.json. Resource discovery must return an empty list instead of making
@@ -73,15 +96,32 @@ export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
   }
   const safeGraphPath = validateGraphPath(effectiveGraphPath)
   const outputDir = dirname(safeGraphPath)
+  const canonicalPath = join(outputDir, CANONICAL_ARTIFACT_BASENAME)
+  // A workspace that never cut over still has a real v1 and keeps serving it
+  // under its own URI and media type. Publishing it as the canonical artifact
+  // would label v1 bytes as v2; publishing nothing would strip a legacy
+  // workspace of its graph resource entirely.
+  const graphResource: McpResourceDefinition = existsSync(canonicalPath)
+    ? {
+        uri: resourceUri(CANONICAL_ARTIFACT_BASENAME),
+        name: CANONICAL_ARTIFACT_BASENAME,
+        title: 'Graph Artifact',
+        description: 'Canonical Madar graph artifact v2 with nodes, facts, occurrences, and provenance.',
+        // Not application/json. The artifact is a header followed by JSON, so a
+        // client that trusts the MIME type and parses the whole body fails.
+        mimeType: 'application/vnd.madar.graph-artifact.v2',
+        filePath: canonicalPath,
+      }
+    : {
+        uri: resourceUri(LEGACY_ARTIFACT_BASENAME),
+        name: LEGACY_ARTIFACT_BASENAME,
+        title: 'Graph JSON',
+        description: 'GraphRAG-ready graph export with nodes, links, and hyperedges.',
+        mimeType: 'application/json',
+        filePath: safeGraphPath,
+      }
   const candidates: McpResourceDefinition[] = [
-    {
-      uri: resourceUri('graph.json'),
-      name: 'graph.json',
-      title: 'Graph JSON',
-      description: 'GraphRAG-ready graph export with nodes, links, and hyperedges.',
-      mimeType: 'application/json',
-      filePath: safeGraphPath,
-    },
+    graphResource,
     {
       uri: resourceUri('GRAPH_REPORT.md'),
       name: 'GRAPH_REPORT.md',
@@ -175,7 +215,7 @@ export function handleResourceRead(
 
   const resource = resourcesForGraph(graphPath).find((entry) => entry.uri === uri)
   if (!resource) {
-    return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unknown resource: ${uri}`)
+    return helpers.failure(id, helpers.jsonrpcInvalidParams, unknownResourceMessage(uri, graphPath))
   }
 
   if (statSync(resource.filePath).size > helpers.maxResourceBytes) {
@@ -208,7 +248,7 @@ export function handleResourceSubscribe(
 
   const resource = resourcesForGraph(graphPath).find((entry) => entry.uri === uri)
   if (!resource) {
-    return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unknown resource: ${uri}`)
+    return helpers.failure(id, helpers.jsonrpcInvalidParams, unknownResourceMessage(uri, graphPath))
   }
 
   const subscribedUris = helpers.ensureSubscribedResourceUris(sessionState)
