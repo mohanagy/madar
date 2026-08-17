@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import { GRAPH_ARTIFACT_V2_TOMBSTONE } from '../../src/contracts/graph-artifact.js'
 import { agentsInstall, claudeInstall, geminiInstall } from '../../src/infrastructure/install.js'
-import { GENERATED_LEGACY_GRAPH_NOTICE } from '../../src/shared/generated-graph-discovery.js'
+import { GENERATED_LEGACY_GRAPH_NOTICE, escapeGeneratedString } from '../../src/shared/generated-graph-discovery.js'
 
 /**
  * Every generated host surface must classify the workspace, not any one of them.
@@ -203,6 +203,24 @@ describe('every generated host surface classifies the workspace', () => {
       rmSync(root, { recursive: true, force: true })
     }
   }, 60_000)
+
+  it.each([
+    ['graph.madar', "'graph.madar'"],
+    ["it's", "'it\\'s'"],
+    ['a\\b', "'a\\\\b'"],
+    ['line\nbreak', "'line\\nbreak'"],
+  ])('embeds %s as a safe single-quoted literal', (value, expected) => {
+    // The inline form lives inside `node -e "<program>"`. Today's constants
+    // happen to contain no apostrophe, but a rename that introduced one would
+    // otherwise produce a truncated program with no test failing.
+    expect(escapeGeneratedString(value)).toBe(expected)
+  })
+
+  it('refuses to embed a value that would close the shell string', () => {
+    // A double quote cannot be escaped out of trouble here: it ends the
+    // `node -e "..."` argument itself, so generation has to fail instead.
+    expect(() => escapeGeneratedString('say "hi"')).toThrow(/double quote/)
+  })
 
   it('generates the classifier from one shared source, not a copy per host', () => {
     const root = workspace({ canonical: VALID_V2, legacy: GRAPH_ARTIFACT_V2_TOMBSTONE })

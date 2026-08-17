@@ -44,15 +44,29 @@ export type GeneratedModuleStyle = 'inline' | 'commonjs' | 'esm'
 const PREFIX_BYTES = 32
 
 /**
- * Single-quoted, always.
+ * A single-quoted JavaScript string literal, safe for every emitted form.
  *
  * The inline form is embedded in `node -e "<program>"`, so a double quote in the
- * generated JavaScript closes the shell string and truncates the program. None
- * of the values quoted here contain a single quote.
+ * generated JavaScript would close the shell string and truncate the program --
+ * which is why single quotes are not a style choice here. None of the values
+ * currently quoted contain an apostrophe, but nothing about a basename or header
+ * constant guarantees that, and a rename that introduced one would silently
+ * reintroduce a truncated program. So the escaping is real rather than assumed,
+ * and a value that cannot be embedded safely fails loudly at generation time.
  */
-function jsString(value: string): string {
-  return `'${value}'`
+export function escapeGeneratedString(value: string): string {
+  if (value.includes('"')) {
+    throw new Error(`generated host discovery cannot embed a double quote: ${JSON.stringify(value)}`)
+  }
+  const escaped = value
+    .replaceAll('\\', '\\\\')
+    .replaceAll("'", "\\'")
+    .replaceAll('\n', '\\n')
+    .replaceAll('\r', '\\r')
+  return `'${escaped}'`
 }
+
+const jsString = escapeGeneratedString
 
 function prelude(style: GeneratedModuleStyle): string {
   if (style === 'esm') {
