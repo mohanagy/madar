@@ -8,6 +8,7 @@ import {
   GraphArtifactStateError,
   classifyWorkspaceGraph,
 } from '../../src/contracts/graph-artifact-selection.js'
+import { buildDoctorReport } from '../../src/infrastructure/doctor.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 import { resolveWorkspaceGraphPath } from '../../src/shared/workspace.js'
@@ -214,6 +215,37 @@ describe('full generation repairs a mixed workspace', () => {
       generateGraph(root, { noHtml: true })
       expect(() => generateGraph(root, { noHtml: true, update: true })).not.toThrow()
       expect(classifyWorkspaceGraph(out).state).toBe('current_v2')
+    } finally {
+      cleanup(root)
+    }
+  })
+})
+
+describe('doctor names the ambiguous state instead of refusing', () => {
+  it('identifies the mixed workspace and recommends full generation', () => {
+    const { root } = mixedWorkspace()
+    try {
+      const report = buildDoctorReport({ projectDir: root })
+
+      // Doctor reports rather than throwing: an operator running it is trying
+      // to find out what is wrong, so failing closed would hide the answer.
+      expect(report.graph.workspaceState).toBe('mixed_v2_and_live_v1')
+      expect(report.graph.recommendation).toMatch(/madar generate \./)
+      expect(report.graph.recommendation).toMatch(/ambiguous|interrupted-cutover|rollback/)
+    } finally {
+      cleanup(root)
+    }
+  })
+
+  it('reports an ordinary workspace as current', () => {
+    const { root, out } = mixedWorkspace()
+    try {
+      generateGraph(root, { noHtml: true })
+      expect(classifyWorkspaceGraph(out).state).toBe('current_v2')
+
+      const report = buildDoctorReport({ projectDir: root })
+      expect(report.graph.workspaceState).toBe('current_v2')
+      expect(report.graph.recommendation).not.toMatch(/ambiguous/)
     } finally {
       cleanup(root)
     }

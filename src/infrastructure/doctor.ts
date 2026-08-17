@@ -25,7 +25,7 @@ import {
 import { analyzeGraphContextFreshness, graphFreshnessStatusLabel, type GraphContextFreshnessStatus } from '../runtime/freshness.js'
 import { isSemanticRuntimeAvailable } from '../runtime/semantic.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
-import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
+import { resolveMadarOutputDirectory, resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import { readIndexingManifestForGraph } from './indexing-manifest.js'
 import {
   buildGenerationPolicy,
@@ -42,6 +42,10 @@ import {
   type DiscoverySafetySummary,
 } from '../shared/discovery-safety.js'
 import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
+import {
+  classifyWorkspaceGraph,
+  type WorkspaceGraphState,
+} from '../contracts/graph-artifact-selection.js'
 
 const MADAR_SECTION_MARKER = '## madar'
 
@@ -63,6 +67,13 @@ interface AgentCheck {
 
 interface GraphCheck {
   graphPath: string
+  /**
+   * What the artifacts on disk say about the workspace.
+   *
+   * Reported rather than acted on: doctor's job is to name an ambiguous
+   * workspace and the repair, not to refuse like a default load does.
+   */
+  workspaceState: WorkspaceGraphState
   exists: boolean
   freshness: GraphContextFreshnessStatus
   ageMs: number | null
@@ -413,7 +424,12 @@ function readGenerationPolicyCheck(graphPath: string, projectDir: string): Graph
   }
 }
 
-function readGraphCheck(graphPath: string, now: number, projectDir: string): GraphCheck {
+function readGraphCheck(
+  graphPath: string,
+  now: number,
+  projectDir: string,
+  workspaceState: WorkspaceGraphState,
+): GraphCheck {
   const resolvedGraphPath = resolve(graphPath)
   const freshness = analyzeGraphContextFreshness(resolvedGraphPath)
   const ageMs = freshness.generated_ms === null
@@ -429,6 +445,7 @@ function readGraphCheck(graphPath: string, now: number, projectDir: string): Gra
 
   return {
     graphPath: resolvedGraphPath,
+    workspaceState,
     exists: freshness.status !== 'missing',
     freshness: freshness.status,
     ageMs,
@@ -437,7 +454,11 @@ function readGraphCheck(graphPath: string, now: number, projectDir: string): Gra
     indexedFileCount: freshness.indexed_file_count,
     changedSourceCount: freshness.changed_source_count,
     missingSourceCount: freshness.missing_source_count,
-    recommendation: freshness.recommendation,
+    recommendation: workspaceState === 'mixed_v2_and_live_v1'
+      ? 'A valid out/graph.madar and a live v1 out/graph.json exist together. This workspace is in an '
+        + 'ambiguous B1, interrupted-cutover, or rollback state, so Madar will not choose one silently. '
+        + 'Run `madar generate .` to complete the v2 cutover.'
+      : freshness.recommendation,
     discoverySafety: discoverySafety?.summary ?? null,
     discoveryExclusions: discoverySafety?.exclusions ?? [],
     indexingManifest,
@@ -579,13 +600,20 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
 
 export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorReport {
   const projectDir = resolve(options.projectDir ?? '.')
-  // Doctor reports on an ambiguous workspace rather than failing on it, so
-  // it maps the path and classifies separately.
-  const graphPath = resolveWorkspaceGraphPath(options.graphPath, projectDir, 'explicit')
   const now = options.now ?? Date.now()
+  // Doctor reports on a workspace rather than failing on it, so it classifies
+  // instead of using the default resolver, which throws. It must also point at
+  // whichever artifact the workspace actually has: defaulting to graph.madar
+  // would report a genuinely pre-cutover workspace as having no graph.
+  const workspaceGraph = classifyWorkspaceGraph(resolveMadarOutputDirectory(projectDir))
+  const graphPath = options.graphPath !== undefined
+    ? resolveWorkspaceGraphPath(options.graphPath, projectDir, 'explicit')
+    : workspaceGraph.state === 'legacy_v1_only'
+      ? workspaceGraph.legacyPath
+      : workspaceGraph.canonicalPath
   const resolvedGraphPath = resolve(projectDir, graphPath)
   const packageVersion = readPackageVersion(findPackageRoot())
-  const graph = readGraphCheck(resolvedGraphPath, now, projectDir)
+  const graph = readGraphCheck(resolvedGraphPath, now, projectDir, workspaceGraph.state)
 
   const claudeMcp = readMcpCheck('claude', resolve(projectDir, '.mcp.json'), 'mcpServers')
   const cursorMcp = readMcpCheck('cursor', resolve(projectDir, '.cursor', 'mcp.json'), 'mcpServers')
