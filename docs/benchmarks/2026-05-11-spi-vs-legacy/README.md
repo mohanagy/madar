@@ -4,6 +4,22 @@
 
 > **Historical harness:** the strategy-comparison section of `probe.mjs` targets commit `debf9ba602fa04766528e5f184aca578442ee8d4`. Current production retrieval intentionally has no packing-strategy override; benchmark expectations and alternate compiler-policy tests now live outside the production retrieval API. Use the pinned commit to reproduce this exact receipt, or use the current benchmark suite for a new run.
 
+> **Frozen against the v1 artifact contract.** Every number below was measured
+> when the graph artifact was a v1 JSON file at `out/graph.json`. That path is now
+> a tombstone, so `run.sh` here requires `MADAR_BENCH_MODE=historical` and refuses
+> to continue against a binary that publishes `out/graph.madar` — otherwise it
+> would have recorded the tombstone's size as the graph size rather than failing.
+> For a current measurement use
+> [`docs/benchmarks/tools/real-workspace`](../tools/real-workspace/README.md).
+>
+> Two limitations of this harness are worth knowing before comparing anything to
+> it. `graph.json size` is the v1 JSON file and is not comparable with a v2
+> artifact's size. And the explain-pack token totals were read from
+> `pack.token_count` with a `?? 0` fallback; that field is absent on one retrieval
+> path, so prompts answered that way contributed zero to the totals. The
+> maintained tool records `serialized_budget.token_count` and treats a missing
+> field as an error. The numbers below are left exactly as measured.
+
 ## TL;DR (latest measured run: `results/2026-05-11T163843Z/`)
 
 | Metric | Legacy | `--spi` | Δ |

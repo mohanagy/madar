@@ -2,6 +2,21 @@
 
 set -euo pipefail
 
+# This directory is a frozen record of the May 2026 measurement, taken when the
+# graph artifact was a v1 JSON file at out/graph.json. It is kept so the
+# published numbers can be traced to the procedure that produced them, not so
+# they can be reproduced with a current binary: today that path holds the
+# tombstone, so `wc -c` here would record the marker's size as the graph size.
+#
+# Reruns therefore require an explicit acknowledgement plus a binary that still
+# produces v1. For any new measurement use docs/benchmarks/tools/real-workspace.
+if [[ "${MADAR_BENCH_MODE:-}" != "historical" ]]; then
+  echo "This is the archived v1-era runner for #130. Set MADAR_BENCH_MODE=historical to rerun it" >&2
+  echo "against a v0.32.1-era binary, or use docs/benchmarks/tools/real-workspace/run.sh for a" >&2
+  echo "current measurement." >&2
+  exit 2
+fi
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TS="$(date -u +%Y-%m-%dT%H%M%SZ)"
 BUNDLE_DIR="${MADAR_BENCH_REAL_RESULTS_DIR:-$HERE/results/real-workspaces/$TS}"

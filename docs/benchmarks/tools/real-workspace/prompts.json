@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "prompts": [
+    {
+      "id": "express-route",
+      "intent": "framework-shaped",
+      "text": "Show me the Express route that handles GET /api/users/:id"
+    },
+    {
+      "id": "hono-route",
+      "intent": "framework-shaped",
+      "text": "Find the Hono route for listProducts"
+    },
+    {
+      "id": "trpc-mutations",
+      "intent": "framework-shaped",
+      "text": "Which tRPC mutations exist in this app and what do they do"
+    },
+    {
+      "id": "prisma-client",
+      "intent": "framework-shaped",
+      "text": "Where is the Prisma database client used"
+    },
+    {
+      "id": "auth-middleware",
+      "intent": "framework-shaped",
+      "text": "How is authentication middleware wired up"
+    },
+    {
+      "id": "generic-utils",
+      "intent": "code-comprehension",
+      "text": "How does debounce work in this codebase"
+    },
+    {
+      "id": "cross-framework",
+      "intent": "framework-shaped",
+      "text": "What routes exist across all the HTTP frameworks in this project"
+    }
+  ]
+}
