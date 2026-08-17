@@ -158,7 +158,10 @@ describe('answers do not depend on which artifact carries the graph', () => {
     // legacy state from this fixture.
     writeFileSync(join(outputDir, 'graph.madar'), canonicalBytes)
     writeFileSync(join(outputDir, 'graph.json'), GRAPH_ARTIFACT_V2_TOMBSTONE)
-  })
+    // One generation plus every command twice. That exceeds the default budget
+    // when the worker pool is saturated, and a timeout here is reported against
+    // whichever test the hook was blocking.
+  }, 180_000)
 
   afterAll(() => {
     rmSync(root, { recursive: true, force: true })

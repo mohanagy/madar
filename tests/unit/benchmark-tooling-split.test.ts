@@ -60,7 +60,9 @@ describe('the archived v1-era runners refuse to pose as a current measurement', 
     } finally {
       rmSync(results, { recursive: true, force: true })
     }
-  })
+    // Runs a real generate through a subprocess, which exceeds the default
+    // budget when the worker pool is saturated.
+  }, 120_000)
 
   it('keeps its recorded numbers and says which contract they belong to', () => {
     const readme = readFileSync(join(HISTORICAL, 'README.md'), 'utf8')
@@ -150,7 +152,8 @@ describe('graph-stats reads a v2 artifact and refuses anything else', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
-  })
+    // Generation plus a subprocess; see the note above.
+  }, 120_000)
 
   it('refuses the tombstone instead of measuring the marker', () => {
     const root = mkdtempSync(join(tmpdir(), 'stats-tombstone-'))
