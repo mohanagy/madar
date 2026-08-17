@@ -1,0 +1,70 @@
+{
+  "fixture": "/private/tmp/claude-501/-Users-mohammednaji-Desktop-projects-works-madar/f7d7297e-0a0e-458f-be03-d3952d6d8b0f/scratchpad/repo-fixture",
+  "rounds": 3,
+  "arms": {
+    "base": {
+      "runs": 3,
+      "cold_runs": 3,
+      "discarded_warm_cache": 0,
+      "wall_median_ms": 174582,
+      "wall_runs_ms": [
+        83331,
+        174582,
+        209975
+      ],
+      "produced_canonical": false,
+      "artifact_bytes": 26600225,
+      "legacy_bytes": 26600225,
+      "output_dir_bytes": 38809600
+    },
+    "b1": {
+      "runs": 3,
+      "cold_runs": 3,
+      "discarded_warm_cache": 0,
+      "wall_median_ms": 251108,
+      "wall_runs_ms": [
+        265982,
+        250324,
+        251108
+      ],
+      "produced_canonical": true,
+      "artifact_bytes": 47308099,
+      "legacy_bytes": 26566032,
+      "output_dir_bytes": 86085632
+    },
+    "head": {
+      "runs": 3,
+      "cold_runs": 3,
+      "discarded_warm_cache": 0,
+      "wall_median_ms": 174621,
+      "wall_runs_ms": [
+        174621,
+        221902,
+        171841
+      ],
+      "produced_canonical": true,
+      "artifact_bytes": 47676452,
+      "legacy_bytes": 81,
+      "output_dir_bytes": 59891712
+    }
+  },
+  "ratios_vs_base": {
+    "b1_wall": 1.438,
+    "head_wall": 1,
+    "b1_artifact": 1.778,
+    "head_artifact": 1.792,
+    "b1_output_dir": 2.218,
+    "head_output_dir": 1.543
+  },
+  "ratios_head_vs_b1": {
+    "wall": 0.695,
+    "artifact": 1.008,
+    "output_dir": 0.696
+  },
+  "attribution": {
+    "base_produced_no_canonical": true,
+    "b1_produced_canonical": true,
+    "head_produced_canonical": true,
+    "all_runs_cold": true
+  }
+}
