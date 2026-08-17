@@ -1,8 +1,54 @@
-# Maintainer performance decision — #705 default-load exception
+# Maintainer performance decisions — #705 default-load exception
+
+Two decisions, in order. The second supersedes the first **for its own head
+only** and does not extend forward. Both are retained; neither is rewritten.
+
+| Decision | Production head | Accepted band | Status |
+|---|---|---|---|
+| 2 (current) | **`78e7acd4b3724adcc78fe034d94c33526054ae8a`** | **2.635×–2.732×** | in force |
+| 1 | `1fcc8d88fec85b30a22d1729be6d7800cad23bb7` | 2.64×–2.71× | superseded by decision 2 |
+
+---
+
+# Decision 2 — accepted for production head `78e7acd4`
+
+**The 2.635×–2.732× default-path load-latency band is accepted for production
+head `78e7acd4b3724adcc78fe034d94c33526054ae8a` only.**
+
+An explicit exception to the 2.00× review threshold, narrowly scoped. It
+supersedes decision 1 and is **not** silently extended to any later production
+head.
+
+| Item | Value |
+|---|---|
+| **Accepted production head** | **`78e7acd4b3724adcc78fe034d94c33526054ae8a`** |
+| Accepted measured band | **2.635×–2.732×** |
+| Observed midpoint | approximately 2.68× |
+| Artifact size | 12,669 nodes / 17,940 facts |
+| Artifact equivalence vs `1fcc8d88` | semantic content equivalent; only approved generation and provenance timestamps differ |
+| Scope | the exact pinned corpus and recorded toolchain in [`README.md`](./README.md) |
+| Invalidation | the same thirteen-area production-head rule, retained unchanged |
+
+Measured sessions, and the reasoning behind the band, are in
+[`rerun-78e7acd4.md`](./rerun-78e7acd4.md).
+
+The production change that moved the head is a single refusal-path display
+helper: user-facing logical artifact paths are slash-normalized on every
+platform so they stay consistent with the tombstone text. That normalization is
+retained deliberately.
+
+The thirteen-area invalidation rule below applies unchanged to this decision.
+
+---
+
+# Decision 1 — superseded, retained for history
+
+Accepted for production head `1fcc8d88` at a band of 2.64×–2.71×. Superseded by
+decision 2 when the head moved. Preserved below exactly as recorded.
 
 **The 2.64×–2.71× default-path load-latency ratio is accepted for #705.**
 
-This is an explicit exception to the 2.00× review threshold. It is not a claim
+This was an explicit exception to the 2.00× review threshold. It is not a claim
 that the result is optimal.
 
 ## Scope of the decision

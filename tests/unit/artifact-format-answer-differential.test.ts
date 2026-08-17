@@ -221,6 +221,33 @@ describe('answers do not depend on which artifact carries the graph', () => {
     }
   })
 
+  it.each([
+    ['a selected node', 'auth_login', 'auth_LOGIN'],
+    ['a relationship', 'calls', 'imports_from'],
+    ['a claim', 'primary evidence', 'secondary evidence'],
+    ['a matched label', 'login()', 'logout()'],
+    ['the logical graph path', 'out/<artifact>', 'out/elsewhere'],
+    ['a community label', 'Src Auth', 'Src Elsewhere'],
+  ])('still fails when %s differs', (_label, from, to) => {
+    // The normalizer removes exactly two volatile representations: digests that
+    // cover artifact bytes, and clock readings. Everything that carries meaning
+    // has to survive it, or the differential would pass on a broken cutover.
+    const answer = normalize(canonicalAnswers.get('pack')?.text ?? '')
+    const tampered = answer.replace(from, to)
+
+    expect(tampered).not.toBe(answer)
+    expect(normalize(tampered)).not.toBe(answer)
+  })
+
+  it('normalizes only the volatile mtime representation, not every date-like string', () => {
+    // graph_modified_at is an artifact mtime rendered as an HTTP-date and moves
+    // between the two phases. A date appearing inside answer content must not be
+    // swallowed with it.
+    expect(normalize('"graph_modified_at":"Mon, 17 Aug 2026 20:14:18 GMT"'))
+      .toBe('"graph_modified_at":"<http-date>"')
+    expect(normalize('"label":"release 2026-08-17 notes"')).toBe('"label":"release 2026-08-17 notes"')
+  })
+
   it('proves the comparison can fail', () => {
     // Control for the normalizer: if it flattened enough to make any two
     // answers look alike, the assertions above would pass on a broken cutover.

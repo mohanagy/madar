@@ -190,19 +190,45 @@ describe('generated host discovery classifies the workspace', () => {
     }
   })
 
-  // Windows is excluded deliberately, not incidentally. The generated command is
-  // `node -e "<program>"`, and this harness runs it through `cmd /c`, whose
-  // quoting rules mangle the program before node sees it -- the child fails with
-  // "Unterminated string constant" on the opening comment. That is a property of
-  // this invocation, not evidence about the product: a host may launch the
-  // command without a cmd shell. Asserting either way from here would be a
-  // claim the harness cannot support, so Windows hook execution is left
-  // unverified and the in-process classifier matrix above still runs there.
-  describe.skipIf(process.platform === 'win32')('the generated shell command behaves as the snippet says', () => {
+  /*
+   * Executed without a shell, on every platform including Windows.
+   *
+   * An earlier version ran the generated command through `cmd /c` on Windows,
+   * where quoting mangled the program before node saw it. That measured the
+   * harness, not the product. #705 changed the generated program, so recording
+   * Windows as an unverified gap was not good enough -- the program is spawned
+   * directly instead, with argv carrying the program and its base64 payloads.
+   *
+   * Splitting on the double quote is safe precisely because the generator
+   * refuses to emit one; see escapeGeneratedString.
+   */
+  const spawnGeneratedProgram = (command: string, cwd: string): { status: number | null, stdout: string } => {
+    const parts = command.split('"')
+    const program = parts[1]
+    const payloads = parts.slice(2).map((part) => part.trim()).filter((part) => part.length > 0)
+    if (typeof program !== 'string' || payloads.length === 0) {
+      throw new Error(`could not split the generated command into a program and payloads: ${command.slice(0, 80)}`)
+    }
+
+    const result = spawnSync(process.execPath, ['-e', program, ...payloads], {
+      cwd,
+      input: JSON.stringify({ tool_name: 'read_file' }),
+      encoding: 'utf8',
+    })
+    if (result.error) throw result.error
+    return { status: result.status, stdout: `${result.stdout ?? ''}` }
+  }
+
+  describe('the generated program runs as written, without a shell', () => {
     it('emits guidance for a cut-over workspace', () => {
       const root = workspace({ canonical: VALID_V2, legacy: GRAPH_ARTIFACT_V2_TOMBSTONE })
       try {
-        expect(hookReportsGraph(root)).toBe(true)
+        const nested = join(root, 'nested', 'session')
+        mkdirSync(nested, { recursive: true })
+        const result = spawnGeneratedProgram(generatedHookCommand(root), nested)
+
+        expect(result.status).toBe(0)
+        expect(result.stdout).toContain('additionalContext')
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
@@ -211,7 +237,26 @@ describe('generated host discovery classifies the workspace', () => {
     it('stays silent when only the tombstone remains', () => {
       const root = workspace({ legacy: GRAPH_ARTIFACT_V2_TOMBSTONE })
       try {
-        expect(hookReportsGraph(root)).toBe(false)
+        const nested = join(root, 'nested', 'session')
+        mkdirSync(nested, { recursive: true })
+        const result = spawnGeneratedProgram(generatedHookCommand(root), nested)
+
+        expect(result.status).toBe(0)
+        expect(result.stdout).not.toContain('additionalContext')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('qualifies the guidance for a legacy workspace', () => {
+      const root = workspace({ legacy: LIVE_V1 })
+      try {
+        const nested = join(root, 'nested', 'session')
+        mkdirSync(nested, { recursive: true })
+        const result = spawnGeneratedProgram(generatedHookCommand(root), nested)
+
+        expect(result.stdout).toContain('additionalContext')
+        expect(result.stdout).toContain('legacy out/graph.json')
       } finally {
         rmSync(root, { recursive: true, force: true })
       }

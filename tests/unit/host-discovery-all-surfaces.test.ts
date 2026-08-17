@@ -100,21 +100,38 @@ interface Guidance {
   readonly text: string
 }
 
-/** Runs a generated `node -e` tool hook from a nested directory. */
+/**
+ * Runs a generated `node -e` tool hook, spawned directly rather than through a
+ * shell.
+ *
+ * Going through `cmd /c` on Windows mangled the program before node saw it,
+ * which measured the harness rather than the product. #705 changed the
+ * generated program, so it is executed on every platform instead of recorded as
+ * an unverified gap. Splitting on the double quote is safe because the
+ * generator refuses to emit one; see escapeGeneratedString.
+ */
 function toolHookGuidance(root: string, command: string): Guidance {
   const nested = join(root, 'nested', 'session')
   mkdirSync(nested, { recursive: true })
-  const controlled = process.platform === 'win32'
-    ? command
-    : `export PATH="${dirname(process.execPath)}:$PATH"; ${command}`
-  const result = spawnSync(
-    process.platform === 'win32' ? 'cmd' : 'sh',
-    process.platform === 'win32' ? ['/c', controlled] : ['-c', controlled],
-    { cwd: nested, input: JSON.stringify({ tool_name: 'read_file' }), encoding: 'utf8' },
-  )
+
+  const parts = command.split('"')
+  const program = parts[1]
+  const payloads = parts.slice(2).map((part) => part.trim()).filter((part) => part.length > 0)
+  if (typeof program !== 'string' || payloads.length === 0) {
+    throw new Error(`could not split the generated command into a program and payloads: ${command.slice(0, 80)}`)
+  }
+
+  const result = spawnSync(process.execPath, ['-e', program, ...payloads], {
+    cwd: nested,
+    input: JSON.stringify({ tool_name: 'read_file' }),
+    encoding: 'utf8',
+  })
   if (result.error) throw result.error
   if (typeof result.status !== 'number') {
     throw new Error(`hook did not run to completion: signal=${String(result.signal)}`)
+  }
+  if (result.status !== 0) {
+    throw new Error(`hook exited ${result.status}: ${`${result.stderr ?? ''}`.slice(0, 200)}`)
   }
   const stdout = `${result.stdout ?? ''}`
   return { emitted: stdout.includes('additionalContext'), text: stdout }
@@ -138,15 +155,7 @@ function promptHookGuidance(root: string, scriptPath: string): Guidance {
 }
 
 describe('every generated host surface classifies the workspace', () => {
-  // Windows is excluded deliberately, not incidentally. The generated command is
-  // `node -e "<program>"`, and this harness runs it through `cmd /c`, whose
-  // quoting rules mangle the program before node sees it -- the child fails with
-  // "Unterminated string constant" on the opening comment. That is a property of
-  // this invocation, not evidence about the product: a host may launch the
-  // command without a cmd shell. Asserting either way from here would be a
-  // claim the harness cannot support, so Windows hook execution is left
-  // unverified and the in-process classifier matrix above still runs there.
-  it.skipIf(process.platform === 'win32').each(SPAWNED_STATES)('the Gemini tool hook reads %s correctly', (_label, files, expectation) => {
+  it.each(SPAWNED_STATES)('the Gemini tool hook reads %s correctly', (_label, files, expectation) => {
     const root = workspace(files as WorkspaceFiles)
     try {
       geminiInstall(root)
