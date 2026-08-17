@@ -615,7 +615,18 @@ jobs:
               binary="$next_binary"
             fi
             (cd "$workspace" && "$binary" generate . --no-html)
-            test -s "$workspace/out/graph.json"
+
+            # `test -s out/graph.json` proved nothing after the cutover: that
+            # path is the tombstone, which is always non-empty, so the check
+            # passed even if generation produced no graph at all. The smoke now
+            # requires the canonical artifact, a supported load of it, and one
+            # graph-backed answer through the installed package's own default.
+            test -s "$workspace/out/graph.madar"
+            head -c 22 "$workspace/out/graph.madar" | grep -q '^MADAR_GRAPH_ARTIFACT/2$'
+            printf 'MADAR_GRAPH_MOVED/2\nUse out/graph.madar with Madar >= the v2-supporting version.\n' \
+              > "$RUNNER_TEMP/expected-tombstone"
+            cmp -s "$workspace/out/graph.json" "$RUNNER_TEMP/expected-tombstone"
+            (cd "$workspace" && "$binary" summary >/dev/null)
           done
 
       - name: Create or update GitHub prerelease
