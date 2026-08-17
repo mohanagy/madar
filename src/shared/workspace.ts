@@ -125,18 +125,44 @@ export function resolveMadarOutputDirectory(rootPath = '.'): string {
 }
 
 /**
- * Resolves the conventional graph path for the active workspace. Explicit
- * graph paths are left alone so users can still serve an arbitrary artifact.
+ * Resolves the graph path a command should read.
+ *
+ * `intent` is required rather than defaulted. A default lookup must fail
+ * closed on an ambiguous workspace, and an omitted argument would silently
+ * pick the permissive branch for any caller that forgot to pass one.
+ *
+ * Default intent goes through the workspace classifier and therefore throws
+ * GraphArtifactStateError for mixed, moved-without-canonical and
+ * invalid-canonical workspaces. Explicit intent stays a pure path mapping: it
+ * performs no I/O, so callers may still probe a path that does not exist yet.
  */
-export function resolveWorkspaceGraphPath(graphPath = 'out/graph.json', workspaceRoot = process.cwd()): string {
-  const normalized = graphPath.replaceAll('\\', '/').replace(/^(?:\.\/)+/, '')
-  if (normalized === 'out/graph.json') {
-    const workspace = resolveMadarWorkspace(workspaceRoot)
+export function resolveWorkspaceGraphPath(
+  graphPath: string | undefined,
+  workspaceRoot: string | undefined,
+  intent: GraphPathIntent,
+): string {
+  const requested = graphPath ?? `out/${CANONICAL_ARTIFACT_BASENAME}`
+  const root = workspaceRoot ?? process.cwd()
+
+  if (intent === 'default') {
+    return resolveWorkspaceGraphArtifact({
+      intent: 'default',
+      requestedPath: requested,
+      workspaceRoot: root,
+    }).selectedPhysicalPath
+  }
+
+  const normalized = normalizeGraphPathSpelling(requested)
+  if (normalized === `out/${LEGACY_ARTIFACT_BASENAME}` || normalized === `out/${CANONICAL_ARTIFACT_BASENAME}`) {
+    const workspace = resolveMadarWorkspace(root)
     // Preserve the public relative default for normal checkouts. A linked
     // worktree is the only case that needs a redirected physical artifact.
-    return workspace.isLinkedWorktree ? workspace.graphPath : graphPath
+    if (!workspace.isLinkedWorktree) return requested
+    return normalized === `out/${CANONICAL_ARTIFACT_BASENAME}`
+      ? workspace.canonicalGraphPath
+      : workspace.legacyGraphPath
   }
-  return graphPath
+  return requested
 }
 
 /**

@@ -579,7 +579,9 @@ function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'health
 
 export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorReport {
   const projectDir = resolve(options.projectDir ?? '.')
-  const graphPath = resolveWorkspaceGraphPath(options.graphPath ?? 'out/graph.json', projectDir)
+  // Doctor reports on an ambiguous workspace rather than failing on it, so
+  // it maps the path and classifies separately.
+  const graphPath = resolveWorkspaceGraphPath(options.graphPath, projectDir, 'explicit')
   const now = options.now ?? Date.now()
   const resolvedGraphPath = resolve(projectDir, graphPath)
   const packageVersion = readPackageVersion(findPackageRoot())

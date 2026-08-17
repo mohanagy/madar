@@ -27,7 +27,7 @@ export function resolveGraphSourceRoot(graphPath: string, graph?: GraphRootCarri
 
 /** Reads just enough of graph.json to resolve its recorded source workspace. */
 export function readGraphSourceRoot(graphPath: string): string {
-  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath, undefined, 'explicit')
   const { rootPath } = readGraphArtifactMetadata(resolvedGraphPath)
   return rootPath === null
     ? resolveGraphSourceRoot(resolvedGraphPath)

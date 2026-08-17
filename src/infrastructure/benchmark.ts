@@ -283,7 +283,7 @@ export function runBenchmark(
   questions?: BenchmarkQuestionInput[],
   options: BenchmarkRunOptions = {},
 ): BenchmarkResult | Promise<BenchmarkResult> {
-  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath, undefined, 'explicit')
   const graph = loadBenchmarkGraph(resolvedGraphPath)
   const structureSignals = hasStructureSignalProvenance(graph) ? graphStructureMetrics(graph) : null
   const baseline = resolveCorpusBaseline(graph.numberOfNodes(), { graphPath: resolvedGraphPath, corpusWords })

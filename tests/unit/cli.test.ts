@@ -35,7 +35,7 @@ import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { resolveMadarOutputDirectory, resolveWorkspaceGraphPath } from '../../src/shared/workspace.js'
 
 const ACTIVE_OUTPUT_DIR = resolveMadarOutputDirectory()
-const ACTIVE_GRAPH_PATH = resolveWorkspaceGraphPath('out/graph.json')
+const ACTIVE_GRAPH_PATH = resolveWorkspaceGraphPath('out/graph.json', undefined, 'explicit')
 const activeOutputPath = (...segments: string[]) => join(ACTIVE_OUTPUT_DIR, ...segments)
 
 type GraphSummaryPayload = {
@@ -3083,7 +3083,7 @@ describe('cli main', () => {
       execFileSync('git', ['-C', primary, 'commit', '-m', 'initial'], { stdio: 'pipe' })
       execFileSync('git', ['-C', primary, 'worktree', 'add', '-b', 'feature/install-warning', linked], { stdio: 'pipe' })
 
-      const graphPath = resolveWorkspaceGraphPath('out/graph.json', linked)
+      const graphPath = resolveWorkspaceGraphPath('out/graph.json', linked, 'explicit')
       mkdirSync(dirname(graphPath), { recursive: true })
       writeFileSync(graphPath, '{}\n', 'utf8')
 

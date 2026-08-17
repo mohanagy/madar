@@ -1578,7 +1578,9 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     throw new UsageError('error: --exec is required')
   }
 
-  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  // Parse time does no I/O; the intent flag travels with the options so the
+  // command can apply default semantics when it loads.
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath, undefined, 'explicit')
   const graphArtifactDir = dirname(resolve(resolvedGraphPath))
   // Keep compare receipts beside the graph. This is especially important for
   // linked worktrees, whose graph artifact directory intentionally lives
@@ -1693,7 +1695,9 @@ export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions 
     throw new UsageError('error: --exec is required')
   }
 
-  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  // Parse time does no I/O; the intent flag travels with the options so the
+  // command can apply default semantics when it loads.
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath, undefined, 'explicit')
   const graphArtifactDir = dirname(resolve(resolvedGraphPath))
   const resolvedOutputDir = outputDir === 'out/review-compare'
     ? validateGraphOutputPath(resolve(graphArtifactDir, 'review-compare'), graphArtifactDir)
@@ -2346,7 +2350,9 @@ export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
     graphPathIntent = 'explicit'
   }
 
-  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
+  // Parse time does no I/O; the intent flag travels with the options so the
+  // command can apply default semantics when it loads.
+  const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath, undefined, 'explicit')
   const graphBase = dirname(resolve(resolvedGraphPath))
   return {
     graphPath: resolvedGraphPath,

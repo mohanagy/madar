@@ -68,6 +68,12 @@ import { readGraphArtifactMetadata, serializeGraphArtifactV2 } from '../contract
 import { activateGraphArtifactV2 } from './graph-artifact-activation.js'
 import type { Communities } from '../pipeline/cluster.js'
 import type { SemanticAnomaly } from '../pipeline/analyze.js'
+import {
+  CANONICAL_ARTIFACT_BASENAME,
+  GraphArtifactStateError,
+  LEGACY_ARTIFACT_BASENAME,
+  classifyWorkspaceGraph,
+} from '../contracts/graph-artifact-selection.js'
 
 export type ProgressStep =
   | { step: 'detect'; message: string }
@@ -503,7 +509,23 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   // artifact, and collapsing these two would make its first `--update` look
   // like a workspace with no graph at all and silently re-extract everything.
   const legacyGraphPath = join(resolvedOutputDir, 'graph.json')
-  const existingGraphPath = existsSync(graphPath) ? graphPath : legacyGraphPath
+  // Full generation is the documented repair for an ambiguous workspace, so it
+  // must not consult either artifact. Reuse paths need a graph they can trust
+  // and therefore refuse the state outright rather than picking a side.
+  const workspaceGraphState = classifyWorkspaceGraph(resolvedOutputDir).state
+  if (workspaceGraphState === 'mixed_v2_and_live_v1' && (options.update === true || options.clusterOnly === true)) {
+    throw new GraphArtifactStateError(
+      'mixed_v2_and_live_v1',
+      `A valid ${CANONICAL_ARTIFACT_BASENAME} and a live v1 ${LEGACY_ARTIFACT_BASENAME} exist together in ${resolvedOutputDir}. `
+      + 'This workspace is in an ambiguous B1, interrupted-cutover, or rollback state, and an incremental or '
+      + 'cluster-only build would have to trust one of them. Run `madar generate .` without --update or '
+      + '--cluster-only to rebuild from source and complete the v2 cutover.',
+      { expectedCanonicalPath: graphPath, tombstonePath: legacyGraphPath },
+    )
+  }
+  const existingGraphPath = workspaceGraphState === 'mixed_v2_and_live_v1'
+    ? null
+    : existsSync(graphPath) ? graphPath : legacyGraphPath
   const reportPath = join(resolvedOutputDir, 'GRAPH_REPORT.md')
   const htmlPath = join(resolvedOutputDir, 'graph.html')
   const wikiPath = options.wiki ? join(resolvedOutputDir, 'wiki') : null
@@ -517,7 +539,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const progress = options.onProgress
 
   progress?.({ step: 'detect', message: 'Scanning files...' })
-  const graphGenerationPolicy = existsSync(existingGraphPath) ? readGraphGenerationPolicy(existingGraphPath) : null
+  const graphGenerationPolicy = existingGraphPath !== null && existsSync(existingGraphPath) ? readGraphGenerationPolicy(existingGraphPath as string) : null
   if (options.clusterOnly && !graphGenerationPolicy) {
     throw new Error(
       '--cluster-only requires valid generation-policy metadata. Run `madar generate . --update` to migrate and re-extract the graph first.',
@@ -562,13 +584,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const manifestGenerationPolicy = existsSync(manifestPath) ? loadManifestMetadata(manifestPath).generation_policy ?? null : null
   const storedPolicyMatches = graphGenerationPolicy?.fingerprint === generationPolicy.fingerprint
     && manifestGenerationPolicy?.fingerprint === generationPolicy.fingerprint
-  const generationPolicyMismatch = options.update === true && existsSync(existingGraphPath) && !storedPolicyMatches
+  const generationPolicyMismatch = options.update === true && existingGraphPath !== null && existsSync(existingGraphPath) && !storedPolicyMatches
   const detectionOptions = detectOptions(corpusOptions, gitVisibleFiles)
   const detected = options.update && !generationPolicyMismatch
     ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions)
     : detect(resolvedRootPath, detectionOptions)
   const discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
-  const previousIndexingManifest = readIndexingManifestForGraph(existingGraphPath)
+  const previousIndexingManifest = existingGraphPath === null ? null : readIndexingManifestForGraph(existingGraphPath)
   const indexingOutcomes: IndexingOutcome[] = (detected.indexing_outcomes ?? []).map((outcome) => ({
     ...outcome,
     extraction_strategy: outcome.extraction_strategy ?? 'not_extracted',
@@ -682,8 +704,8 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
 
-  const loadedExistingGraph = options.clusterOnly || (options.update && existsSync(existingGraphPath)) ? loadGraph(existingGraphPath) : null
-  const existingGraphExtractorVersion = options.update && existsSync(existingGraphPath) ? loadGraphExtractorVersion(existingGraphPath) : null
+  const loadedExistingGraph = options.clusterOnly || (options.update && existingGraphPath !== null && existsSync(existingGraphPath)) ? loadGraph(existingGraphPath as string) : null
+  const existingGraphExtractorVersion = options.update && existingGraphPath !== null && existsSync(existingGraphPath) ? loadGraphExtractorVersion(existingGraphPath as string) : null
   const directed = options.directed !== false
   const generationPolicyToPublish = generationPolicy
   const upgradingLegacyDirection = loadedExistingGraph?.isDirected() === false && directed

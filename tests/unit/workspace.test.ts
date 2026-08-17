@@ -248,12 +248,12 @@ describe('linked worktree artifact routing', () => {
     const workspace = resolvedWorkspaces().linked
 
     phases.phase('assert-routing', () => {
-      expect(resolveWorkspaceGraphPath('out/graph.json', paths.linked)).toBe(workspace.graphPath)
-      expect(resolveWorkspaceGraphPath('./out/graph.json', paths.linked)).toBe(workspace.graphPath)
+      expect(resolveWorkspaceGraphPath('out/graph.json', paths.linked, 'explicit')).toBe(workspace.graphPath)
+      expect(resolveWorkspaceGraphPath('./out/graph.json', paths.linked, 'explicit')).toBe(workspace.graphPath)
       expect(resolveWorkspaceOutputPath('out/compare', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
       expect(validateGraphOutputPath('out/compare', 'out', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
-      expect(resolveWorkspaceGraphPath('out\\graph.json', paths.linked)).toBe(workspace.graphPath)
-      expect(resolveWorkspaceGraphPath('.\\out\\graph.json', paths.linked)).toBe(workspace.graphPath)
+      expect(resolveWorkspaceGraphPath('out\\graph.json', paths.linked, 'explicit')).toBe(workspace.graphPath)
+      expect(resolveWorkspaceGraphPath('.\\out\\graph.json', paths.linked, 'explicit')).toBe(workspace.graphPath)
       expect(resolveWorkspaceOutputPath('out\\compare', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
       expect(validateGraphOutputPath('out\\compare', 'out', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
     })

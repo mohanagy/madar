@@ -67,7 +67,7 @@ export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
   // During a first auto-refresh startup the MCP transport is available before
   // graph.json. Resource discovery must return an empty list instead of making
   // initialize fail through notification bookkeeping.
-  const effectiveGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const effectiveGraphPath = resolveWorkspaceGraphPath(graphPath, undefined, 'explicit')
   if (!existsSync(effectiveGraphPath)) {
     return []
   }

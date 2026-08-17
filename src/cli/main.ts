@@ -813,8 +813,11 @@ function handleAgentCommand(command: AgentPlatform, args: string[], io: CliIO, d
 }
 
 function warnWhenWorkspaceGraphIsMissing(io: CliIO): void {
-  if (!existsSync(resolveWorkspaceGraphPath())) {
-    io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
+  // A pre-flight warning, so it maps the path without classifying: an
+  // ambiguous workspace must surface its typed error from the load, not from
+  // a hint that runs before the command starts.
+  if (!existsSync(resolveWorkspaceGraphPath(undefined, undefined, 'explicit'))) {
+    io.log("Warning: out/graph.madar not found. Run 'madar generate .' first, then re-run this command.")
   }
 }
 
@@ -1187,7 +1190,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'serve') {
       const options = parseServeArgs(args)
-      const graphPath = resolveWorkspaceGraphPath(options.graphPath)
+      const graphPath = resolveWorkspaceGraphPath(options.graphPath, undefined, options.graphPathIntent)
       if (options.transport === 'stdio') {
         await dependencies.serveGraphStdio({
           graphPath,

@@ -138,17 +138,29 @@ describe('cutover generation', () => {
 })
 
 describe('new-reader preference', () => {
-  it('prefers graph.madar even when handed the legacy path', () => {
+  it('loads an explicitly named live v1 rather than the canonical sibling', () => {
     const { outputDir } = generated()
 
-    // Hand the reader graph.json while a valid canonical artifact exists. The
-    // mirror cannot represent parallel facts, so settling for it would lose
-    // relationships silently.
+    // Inverted by the #705 mixed-state decision. B1 preferred graph.madar here
+    // so a current reader never settled for a lossy mirror. That preference
+    // would now quietly satisfy a default load of an ambiguous workspace,
+    // which must fail closed instead. loadGraph is the low-level reader --
+    // intent is applied before a path reaches it -- so naming graph.json is a
+    // deliberate diagnostic selection and gets exactly that file.
     writeFileSync(
       join(outputDir, 'graph.json'),
       JSON.stringify({ schema_version: 1, directed: true, nodes: [], links: [] }),
     )
 
+    expect(loadGraph(join(outputDir, 'graph.json')).numberOfNodes()).toBe(0)
+  })
+
+  it('follows the tombstone to the canonical artifact', () => {
+    const { outputDir } = generated()
+
+    // A moved marker is addressed to old readers, so a current one follows it
+    // rather than reporting the graph unavailable.
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
     expect(loadGraph(join(outputDir, 'graph.json')).numberOfNodes()).toBeGreaterThan(0)
     expect(readGraphArtifactMetadata(join(outputDir, 'graph.json')).format).toBe('v2')
   })

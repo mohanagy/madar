@@ -78,7 +78,7 @@ describe('linked-worktree CLI artifact routing', () => {
         packPath: join(workspace.outputDir, 'proof-inputs', 'context-pack.json'),
       })
 
-      const proof = runProofReportCommand({ graphPath: 'out/graph.json' })
+      const proof = runProofReportCommand({ graphPath: 'out/graph.json', graphPathIntent: 'explicit' })
       expect(proof.outputPath).toBe(join(workspace.outputDir, 'proof-report', 'proof-report.md'))
       expect(existsSync(proof.outputPath)).toBe(true)
       expect(existsSync(join(linked, 'out'))).toBe(false)

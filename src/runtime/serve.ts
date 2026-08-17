@@ -246,30 +246,26 @@ export function loadGraph(graphPath: string): KnowledgeGraph {
     return loadGraphArtifactFromPath(safePath).graph
   }
   if (basename(safePath) === 'graph.json') {
-    // One classification instead of two ad-hoc sibling checks. The rules it
-    // encodes are unchanged:
+    // loadGraph is the low-level reader: by the time a path reaches it, a
+    // command has already applied default-vs-explicit intent. So this is a
+    // deliberate selection and follows the explicit rules --
     //
-    // - A moved marker is addressed to old readers. This is a current reader,
-    //   so it follows the pointer rather than reporting the graph unavailable.
-    // - A live v1 beside a valid canonical is a B1-era workspace. A current
-    //   reader must never settle for the v1 just because that is the path it
-    //   was handed: v1 cannot represent parallel facts, so preferring it would
-    //   silently drop relationships.
+    // - a moved marker forwards to its canonical sibling, because the marker
+    //   is addressed to old readers and this is a current one;
+    // - a live v1 loads degraded, because the caller asked for that file.
     //
-    // Note this keeps reading a mixed workspace rather than failing closed the
-    // way default intent does. loadGraph is an internal reader with many
-    // callers and no intent of its own, and refusing here would stop Madar
-    // reading any B1-era workspace until it was regenerated. That is a
-    // migration policy decision, not one to make silently inside a loader.
+    // It must NOT prefer the canonical artifact over a live v1 here. Doing so
+    // would quietly satisfy a default load of an ambiguous workspace, which
+    // the #705 contract requires to fail closed at the intent boundary above.
     const classification = classifyWorkspaceGraph(dirname(safePath))
     if (classification.state === 'moved_without_canonical') {
       throw new Error('out/graph.json has moved but out/graph.madar is missing. Re-run madar to rebuild.')
     }
-    if (existsSync(classification.canonicalPath) && classification.state !== 'invalid_current_v2') {
-      return loadGraphArtifactFromPath(classification.canonicalPath).graph
-    }
     if (isMovedMarkerText(head.toString('utf8'))) {
-      throw new Error('out/graph.json has moved but out/graph.madar is missing. Re-run madar to rebuild.')
+      if (!existsSync(classification.canonicalPath) || classification.state === 'invalid_current_v2') {
+        throw new Error('out/graph.json has moved but out/graph.madar is missing. Re-run madar to rebuild.')
+      }
+      return loadGraphArtifactFromPath(classification.canonicalPath).graph
     }
   }
 

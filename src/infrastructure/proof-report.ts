@@ -10,6 +10,7 @@ import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import type { CompiledContextPack, ContextPackCoverage, ContextPackNode, ContextPackTaskKind } from '../contracts/context-pack.js'
 import type { ContextPackDiagnostics } from '../contracts/context-pack-diagnostics.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
+import type { GraphPathIntent } from '../contracts/graph-artifact-selection.js'
 
 interface ProofReportCompareSummary {
   question: string
@@ -23,6 +24,8 @@ interface ProofReportCompareSummary {
 
 interface ProofReportOptions {
   graphPath: string
+  /** Whether the caller named the artifact or fell back to the default. */
+  graphPathIntent: GraphPathIntent
   outputDir?: string
   compareDir?: string
   packPath?: string | null
@@ -367,7 +370,7 @@ function uniqueOrdered(values: readonly string[]): string[] {
 }
 
 export function runProofReportCommand(options: ProofReportOptions): ProofReportResult {
-  const graphPath = resolveWorkspaceGraphPath(options.graphPath)
+  const graphPath = resolveWorkspaceGraphPath(options.graphPath, undefined, options.graphPathIntent)
   const graphBase = relativeOutputBase(graphPath)
   const outputDir = validateGraphOutputPath(options.outputDir ?? join(graphBase, 'proof-report'), graphBase)
   const compareDir = options.compareDir ?? join(graphBase, 'compare')
