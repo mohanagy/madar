@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { basename, dirname, isAbsolute, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 
 import type { KnowledgeGraph } from '../contracts/graph.js'
@@ -422,6 +422,20 @@ function freshnessSourcePath(safeGraphPath: string): string {
     : classification.canonicalPath
 }
 
+/**
+ * The path to report for a measurement, in the caller's own spelling.
+ *
+ * Reporting the requested path named a tombstone after the cutover, which is
+ * not the file any number here describes. Only the basename is swapped, so a
+ * caller that passed a relative path still gets a relative one back and a
+ * linked worktree's private directory is never introduced.
+ */
+function reportedGraphPath(requestedPath: string, resolvedPath: string): string {
+  return requestedPath === resolvedPath
+    ? requestedPath
+    : join(dirname(requestedPath), basename(resolvedPath))
+}
+
 function graphVersionForPath(graphPath: string): { graphVersion: string; mtimeMs: number } {
   const safeGraphPath = freshnessSourcePath(validateGraphPath(graphPath))
   const graphStat = statSync(safeGraphPath)
@@ -479,6 +493,8 @@ export function analyzeGraphContextFreshness(
     throw error
   }
 
+  const measuredPath = freshnessSourcePath(safeGraphPath)
+  const reportedPath = reportedGraphPath(graphPath, measuredPath)
   const graphFreshness = graphFreshnessMetadata(safeGraphPath)
   const indexed = graph
     ? indexedSourceFilesFromGraph(graph, safeGraphPath)
@@ -518,7 +534,7 @@ export function analyzeGraphContextFreshness(
 
   return {
     status,
-    graph_path: safeGraphPath,
+    graph_path: reportedPath,
     graph_version: graphFreshness.graphVersion,
     graph_modified_ms: graphFreshness.graphModifiedMs,
     graph_modified_at: graphFreshness.graphModifiedAt,

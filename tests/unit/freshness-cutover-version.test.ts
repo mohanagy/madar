@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { GRAPH_ARTIFACT_V2_TOMBSTONE } from '../../src/contracts/graph-artifact.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
-import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
+import { analyzeGraphContextFreshness, graphFreshnessMetadata } from '../../src/runtime/freshness.js'
 
 function workspaceWith(source: string): string {
   const root = mkdtempSync(join(tmpdir(), 'freshness-cutover-'))
@@ -60,6 +60,21 @@ describe('graph version after the cutover', () => {
       generateGraph(root, { noHtml: true })
 
       expect(graphFreshnessMetadata(join(root, 'out', 'graph.json')).graphVersion).not.toBe(before)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('names the artifact it measured, in the caller spelling', () => {
+    const root = workspaceWith('export function alpha() {}\n')
+
+    try {
+      const reported = analyzeGraphContextFreshness(join(root, 'out', 'graph.json')).graph_path
+
+      // Reporting the requested path named the tombstone, which is not the
+      // file any of the numbers beside it describe. Only the basename moves,
+      // so the caller's own directory spelling is preserved.
+      expect(reported).toBe(join(root, 'out', 'graph.madar'))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
