@@ -16,10 +16,21 @@ type MaybePromise<T> = T | Promise<T>
 
 const inflightSnapshotBuilds = new Map<string, Promise<TimeTravelSnapshot>>()
 
+/**
+ * Snapshot layout version.
+ *
+ * Load-bearing: B1-era snapshots hold a canonical artifact beside a live v1
+ * mirror, which is the ambiguous state #705 refuses to read. They cannot be
+ * upgraded in place -- the two files may describe different runs -- so a
+ * version mismatch invalidates the snapshot and it is rebuilt from source.
+ */
+const SNAPSHOT_FORMAT_VERSION = 2 as const
+
 interface SnapshotMetadata {
   commitSha: string
   extractorVersion: number | null
   schemaVersion: number | null
+  snapshotFormatVersion: number | null
 }
 
 export interface SnapshotRequest {
@@ -95,7 +106,7 @@ function snapshotDir(rootDir: string, commitSha: string): string {
 }
 
 function snapshotGraphPath(rootDir: string, commitSha: string): string {
-  return join(snapshotDir(rootDir, commitSha), 'graph.json')
+  return join(snapshotDir(rootDir, commitSha), 'graph.madar')
 }
 
 function snapshotReportPath(rootDir: string, commitSha: string): string {
@@ -145,6 +156,9 @@ function readSnapshotMetadata(rootDir: string, commitSha: string): SnapshotMetad
       commitSha: typeof parsed.commitSha === 'string' ? parsed.commitSha : '',
       extractorVersion: typeof parsed.extractorVersion === 'number' && Number.isFinite(parsed.extractorVersion) ? parsed.extractorVersion : null,
       schemaVersion: typeof parsed.schemaVersion === 'number' && Number.isFinite(parsed.schemaVersion) ? parsed.schemaVersion : null,
+      snapshotFormatVersion: typeof parsed.snapshotFormatVersion === 'number' && Number.isFinite(parsed.snapshotFormatVersion)
+        ? parsed.snapshotFormatVersion
+        : null,
     }
   } catch {
     return null
@@ -160,6 +174,9 @@ function canReuseSnapshot(rootDir: string, commitSha: string): boolean {
 
   return (
     metadata.commitSha === commitSha
+    // A snapshot written before the cutover carries a live v1 mirror, so it is
+    // rebuilt rather than read.
+    && metadata.snapshotFormatVersion === SNAPSHOT_FORMAT_VERSION
     && metadata.extractorVersion === EXTRACTOR_CACHE_VERSION
     && metadata.schemaVersion !== null
     && metadata.schemaVersion === readGraphSchemaVersion(graphPath)
@@ -172,37 +189,32 @@ function persistSnapshot(rootDir: string, ref: string, commitSha: string, genera
   const tempDir = snapshotTempDir(rootDir, commitSha)
   mkdirSync(tempDir, { recursive: true })
 
-  const tempGraphPath = join(tempDir, 'graph.json')
+  const tempGraphPath = join(tempDir, 'graph.madar')
   const tempReportPath = join(tempDir, 'GRAPH_REPORT.md')
   const tempMetadataPath = join(tempDir, 'metadata.json')
-  const graphPath = join(destinationDir, 'graph.json')
+  const graphPath = join(destinationDir, 'graph.madar')
   const reportPath = join(destinationDir, 'GRAPH_REPORT.md')
 
   try {
+    /*
+     * A snapshot holds the canonical artifact and nothing that competes with
+     * it. Earlier snapshots also carried a v1 mirror so old readers could use
+     * them, which produced exactly the mixed state #705 refuses: two artifacts
+     * with nothing proving they describe the same run. The sidecar travels so a
+     * restored snapshot still knows its root path.
+     */
     copyFileSync(generated.graphPath, tempGraphPath)
 
-    /*
-     * The snapshot must contain the canonical artifact, not only the mirror.
-     * graph.json is a v1 mirror and is lossy by construction -- it cannot
-     * represent parallel facts -- so a snapshot holding only the mirror
-     * silently drops every v2-only fact the moment it is read back. Copying
-     * graph.madar beside it is enough for the read path to prefer v2, because
-     * both loadGraph and readGraphArtifactMetadata already resolve a canonical
-     * sibling. The machine-local sidecar travels too so a restored snapshot
-     * still knows its root path.
-     */
     const sourceDir = dirname(generated.graphPath)
-    for (const basename of ['graph.madar', GRAPH_LOCAL_SIDECAR_BASENAME]) {
-      const source = join(sourceDir, basename)
-      const destination = join(tempDir, basename)
-      // Remove first. tempDir survives an interrupted run, so copying only when
-      // the source exists would let a stale graph.madar from a previous attempt
-      // ride into this snapshot and be preferred over the mirror -- a snapshot
-      // silently describing a different commit. The report below already clears
-      // itself the same way.
-      rmSync(destination, { force: true })
-      if (existsSync(source)) copyFileSync(source, destination)
-    }
+    const sidecarSource = join(sourceDir, GRAPH_LOCAL_SIDECAR_BASENAME)
+    const sidecarDestination = join(tempDir, GRAPH_LOCAL_SIDECAR_BASENAME)
+    // Remove first. tempDir survives an interrupted run, so copying only when
+    // the source exists would let a stale file from a previous attempt ride
+    // into this snapshot. The report below already clears itself the same way.
+    rmSync(sidecarDestination, { force: true })
+    if (existsSync(sidecarSource)) copyFileSync(sidecarSource, sidecarDestination)
+    // No v1 mirror: a snapshot must never be the ambiguous two-artifact shape.
+    rmSync(join(tempDir, 'graph.json'), { force: true })
 
     if (generated.reportPath && existsSync(generated.reportPath)) {
       copyFileSync(generated.reportPath, tempReportPath)
@@ -214,6 +226,7 @@ function persistSnapshot(rootDir: string, ref: string, commitSha: string, genera
       commitSha,
       extractorVersion,
       schemaVersion: readGraphSchemaVersion(tempGraphPath),
+      snapshotFormatVersion: SNAPSHOT_FORMAT_VERSION,
     }))
 
     rmSync(destinationDir, { recursive: true, force: true })
