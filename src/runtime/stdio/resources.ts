@@ -8,6 +8,7 @@ import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
 import {
   CANONICAL_ARTIFACT_BASENAME,
   LEGACY_ARTIFACT_BASENAME,
+  classifyWorkspaceGraph,
 } from '../../contracts/graph-artifact-selection.js'
 
 interface StdioResponse {
@@ -86,6 +87,9 @@ function unknownResourceMessage(uri: string, graphPath: string): string {
     : `Unknown resource: ${uri}`
 }
 
+/** Locked in tests: a magic-header artifact must never be labelled JSON. */
+export const GRAPH_ARTIFACT_MIME_TYPE = 'application/vnd.madar.graph-artifact.v2'
+
 export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
   // During a first auto-refresh startup the MCP transport is available before
   // graph.json. Resource discovery must return an empty list instead of making
@@ -97,11 +101,18 @@ export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
   const safeGraphPath = validateGraphPath(effectiveGraphPath)
   const outputDir = dirname(safeGraphPath)
   const canonicalPath = join(outputDir, CANONICAL_ARTIFACT_BASENAME)
-  // A workspace that never cut over still has a real v1 and keeps serving it
-  // under its own URI and media type. Publishing it as the canonical artifact
-  // would label v1 bytes as v2; publishing nothing would strip a legacy
-  // workspace of its graph resource entirely.
-  const graphResource: McpResourceDefinition = existsSync(canonicalPath)
+  /*
+   * Which graph resource exists is decided by workspace state, so the listed
+   * resource always matches the artifact a reader would actually get.
+   *
+   * A workspace that never cut over keeps its real v1 under its own URI and
+   * media type: publishing it as graph.madar would label v1 bytes as v2, and
+   * publishing nothing would take a legacy workspace's graph away. Every
+   * ambiguous or damaged state lists no graph resource at all, so a client
+   * cannot read one by accident.
+   */
+  const state = classifyWorkspaceGraph(outputDir).state
+  const graphResource: McpResourceDefinition | null = state === 'current_v2'
     ? {
         uri: resourceUri(CANONICAL_ARTIFACT_BASENAME),
         name: CANONICAL_ARTIFACT_BASENAME,
@@ -109,19 +120,23 @@ export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
         description: 'Canonical Madar graph artifact v2 with nodes, facts, occurrences, and provenance.',
         // Not application/json. The artifact is a header followed by JSON, so a
         // client that trusts the MIME type and parses the whole body fails.
-        mimeType: 'application/vnd.madar.graph-artifact.v2',
+        mimeType: GRAPH_ARTIFACT_MIME_TYPE,
         filePath: canonicalPath,
       }
-    : {
-        uri: resourceUri(LEGACY_ARTIFACT_BASENAME),
-        name: LEGACY_ARTIFACT_BASENAME,
-        title: 'Graph JSON',
-        description: 'GraphRAG-ready graph export with nodes, links, and hyperedges.',
-        mimeType: 'application/json',
-        filePath: safeGraphPath,
-      }
+    : state === 'legacy_v1_only'
+      ? {
+          uri: resourceUri(LEGACY_ARTIFACT_BASENAME),
+          name: LEGACY_ARTIFACT_BASENAME,
+          title: 'Graph JSON (legacy v1, degraded)',
+          description: 'Legacy v1 graph export from a workspace that has not been cut over. It cannot '
+            + 'represent parallel facts between one endpoint pair. Run `madar generate .` to produce the '
+            + 'canonical v2 artifact.',
+          mimeType: 'application/json',
+          filePath: safeGraphPath,
+        }
+      : null
   const candidates: McpResourceDefinition[] = [
-    graphResource,
+    ...(graphResource === null ? [] : [graphResource]),
     {
       uri: resourceUri('GRAPH_REPORT.md'),
       name: 'GRAPH_REPORT.md',

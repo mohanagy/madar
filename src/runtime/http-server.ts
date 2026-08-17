@@ -9,6 +9,8 @@ import type { KnowledgeGraph } from '../contracts/graph.js'
 import {
   CANONICAL_ARTIFACT_BASENAME,
   LEGACY_ARTIFACT_BASENAME,
+  type WorkspaceGraphState,
+  classifyWorkspaceGraph,
 } from '../contracts/graph-artifact-selection.js'
 
 export interface ServeLogger {
@@ -65,9 +67,35 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown, h
 /** Vendor media type: a v2 artifact is not JSON and must not claim to be. */
 const GRAPH_ARTIFACT_MEDIA_TYPE = 'application/vnd.madar.graph-artifact.v2; charset=utf-8'
 
-function sendProblem(response: ServerResponse, statusCode: number, problem: Record<string, unknown>): void {
-  response.writeHead(statusCode, { 'content-type': 'application/problem+json; charset=utf-8' })
+const PROBLEM_BASE = 'https://madar.dev/problems'
+
+function sendProblem(
+  response: ServerResponse,
+  statusCode: number,
+  problem: Record<string, unknown>,
+  extra: { link?: string } = {},
+): void {
+  response.writeHead(statusCode, {
+    'content-type': 'application/problem+json; charset=utf-8',
+    ...(extra.link === undefined ? {} : { link: extra.link }),
+  })
   response.end(`${JSON.stringify(problem, null, 2)}\n`)
+}
+
+function workspaceStateDetail(state: WorkspaceGraphState): string {
+  switch (state) {
+    case 'mixed_v2_and_live_v1':
+      return `A valid ${CANONICAL_ARTIFACT_BASENAME} and a live v1 ${LEGACY_ARTIFACT_BASENAME} exist together, `
+        + 'and nothing proves they describe the same generation.'
+    case 'moved_without_canonical':
+      return `${LEGACY_ARTIFACT_BASENAME} has moved but ${CANONICAL_ARTIFACT_BASENAME} is missing.`
+    case 'invalid_current_v2':
+      return `${CANONICAL_ARTIFACT_BASENAME} exists but is not a readable v2 artifact.`
+    case 'missing':
+      return 'This workspace has no graph artifact.'
+    default:
+      return 'The graph artifacts in this workspace cannot be classified.'
+  }
 }
 
 function readUtf8File(filePath: string): string {
@@ -261,51 +289,84 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
         return
       }
 
-      if (url.pathname === `/${CANONICAL_ARTIFACT_BASENAME}`) {
+      if (
+        url.pathname === `/${CANONICAL_ARTIFACT_BASENAME}`
+        || url.pathname === `/${LEGACY_ARTIFACT_BASENAME}`
+      ) {
+        /*
+         * Raw artifact routes are decided by workspace state, not by which
+         * files happen to exist. The two 200-serving states are mutually
+         * exclusive -- current_v2 serves only the canonical artifact,
+         * legacy_v1_only serves only the v1 -- and every ambiguous or damaged
+         * state serves neither.
+         */
+        const state = classifyWorkspaceGraph(outputDir).state
+        const wantsCanonical = url.pathname === `/${CANONICAL_ARTIFACT_BASENAME}`
         const canonical = join(outputDir, CANONICAL_ARTIFACT_BASENAME)
-        if (!existsSync(canonical)) {
-          sendText(response, 404, `${CANONICAL_ARTIFACT_BASENAME} not found.`)
+
+        if (state === 'current_v2') {
+          if (wantsCanonical) {
+            sendText(
+              response,
+              200,
+              readUtf8File(canonical),
+              GRAPH_ARTIFACT_MEDIA_TYPE,
+              resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, canonical)),
+            )
+            return
+          }
+          /*
+           * Gone, not moved. A redirect would hand a v1 client a v2 body it
+           * cannot parse: the formats are not interchangeable, so the request
+           * must be reported unsatisfiable rather than quietly pointed
+           * elsewhere. The Link header names the successor for clients that
+           * can act on it, without implying the response body is a substitute.
+           */
+          sendProblem(response, 410, {
+            type: `${PROBLEM_BASE}/graph-artifact-moved`,
+            title: 'The v1 graph artifact is gone',
+            status: 410,
+            detail: `${LEGACY_ARTIFACT_BASENAME} is no longer published. Request `
+              + `/${CANONICAL_ARTIFACT_BASENAME}, which serves artifact v2 and is not v1-compatible.`,
+            canonical_path: `/${CANONICAL_ARTIFACT_BASENAME}`,
+          }, { link: `</${CANONICAL_ARTIFACT_BASENAME}>; rel="successor-version"` })
           return
         }
-        sendText(
-          response,
-          200,
-          readUtf8File(canonical),
-          GRAPH_ARTIFACT_MEDIA_TYPE,
-          resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, canonical)),
-        )
-        return
-      }
 
-      if (url.pathname === `/${LEGACY_ARTIFACT_BASENAME}`) {
-        const canonical = join(outputDir, CANONICAL_ARTIFACT_BASENAME)
-        if (!existsSync(canonical)) {
-          // A workspace that never cut over still has a real v1 here, and
-          // nothing has moved. Answering 410 would retire an artifact that is
-          // present and correct.
+        if (state === 'legacy_v1_only') {
+          if (wantsCanonical) {
+            // Truthful: this workspace has no v2 artifact to serve.
+            sendProblem(response, 404, {
+              type: `${PROBLEM_BASE}/canonical-artifact-required`,
+              title: 'No canonical graph artifact',
+              status: 404,
+              detail: `This workspace has not been cut over, so ${CANONICAL_ARTIFACT_BASENAME} does not `
+                + `exist. Run \`madar generate .\` to produce it, or request /${LEGACY_ARTIFACT_BASENAME} `
+                + 'for the legacy v1 artifact.',
+              workspace_state: state,
+            })
+            return
+          }
+          // Nothing has moved here, so the v1 is served as itself.
           sendText(
             response,
             200,
-            readUtf8File(graphPath),
+            readUtf8File(join(outputDir, LEGACY_ARTIFACT_BASENAME)),
             'application/json; charset=utf-8',
             resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, graphPath)),
           )
           return
         }
-        /*
-         * Gone, not moved. A redirect would hand a v1 client a v2 body it
-         * cannot parse: the formats are not interchangeable, so the client
-         * needs to learn its request can no longer be satisfied rather than be
-         * quietly pointed elsewhere. problem+json keeps the reason
-         * machine-readable.
-         */
-        sendProblem(response, 410, {
-          type: 'https://madar.dev/problems/graph-artifact-moved',
-          title: 'The v1 graph artifact is gone',
-          status: 410,
-          detail: `${LEGACY_ARTIFACT_BASENAME} is no longer published. Request /${CANONICAL_ARTIFACT_BASENAME}, `
-            + 'which serves artifact v2 and is not v1-compatible.',
-          canonical_path: `/${CANONICAL_ARTIFACT_BASENAME}`,
+
+        // mixed_v2_and_live_v1, moved_without_canonical, invalid_current_v2,
+        // invalid, missing: neither endpoint serves a graph, and a preserved
+        // backup is never an automatic fallback.
+        sendProblem(response, 409, {
+          type: `${PROBLEM_BASE}/graph-workspace-unusable`,
+          title: 'The graph workspace is not in a servable state',
+          status: 409,
+          detail: `${workspaceStateDetail(state)} Run \`madar generate .\` to rebuild from source.`,
+          workspace_state: state,
         })
         return
       }

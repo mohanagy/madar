@@ -137,19 +137,45 @@ const PLATFORM_CONFIG: Record<SkillInstallPlatform, InstallPlatformConfig> = {
 // Cross-platform hook: pass the base64 payload as an argv argument so the
 // node -e command stays shell-neutral on macOS, Linux, and Windows.
 const WORKSPACE_GRAPH_CHECK_MARKER = 'madar-workspace-graph-check'
+/*
+ * Generated host discovery classifies the workspace; it does not ask whether a
+ * file exists.
+ *
+ * Existence was wrong in both directions after the cutover: graph.json still
+ * exists as a tombstone, so "it is there" stopped meaning "a graph is ready",
+ * and a workspace holding only graph.madar looked empty. Worse, an ambiguous
+ * B1 workspace and one with a corrupt artifact both looked ready.
+ *
+ * Only a bounded prefix of each file is read -- enough to tell the four shapes
+ * apart and nothing more. This stays a readiness hint: the runtime loader is
+ * what validates an artifact before anything is answered from it, and it still
+ * fails closed on a truncated body this prefix check would accept.
+ */
 const WORKSPACE_GRAPH_CHECK = [
   `/* ${WORKSPACE_GRAPH_CHECK_MARKER} */`,
   `const fs=require('fs'),path=require('path');`,
-  `let directory=process.cwd(),hasGraph=false;`,
+  `const head=(p)=>{try{const d=fs.openSync(p,'r');const b=Buffer.alloc(32);`,
+  `const n=fs.readSync(d,b,0,32,0);fs.closeSync(d);return b.slice(0,n).toString('utf8')}catch(e){return null}};`,
+  `let directory=process.cwd(),graphState='none',linkedWorktree=false;`,
   `for(;;){`,
-  // Either artifact counts. graph.json alone is a pre-cutover workspace; after
-  // the cutover it is a tombstone that happens to still exist, so relying on it
-  // would go quiet the moment a workspace kept only its canonical artifact.
-  `if(fs.existsSync(path.join(directory,'out','graph.madar'))||fs.existsSync(path.join(directory,'out','graph.json'))){hasGraph=true;break}`,
-  `try{if(fs.lstatSync(path.join(directory,'.git')).isFile()){hasGraph=true;break}}catch(e){}`,
+  `const out=path.join(directory,'out');`,
+  `const mh=head(path.join(out,'graph.madar')),lh=head(path.join(out,'graph.json'));`,
+  `if(mh!==null||lh!==null){`,
+  `const canonical=mh!==null&&mh.indexOf('MADAR_GRAPH_ARTIFACT/2')===0;`,
+  `const moved=lh!==null&&lh.indexOf('MADAR_GRAPH_MOVED/')===0;`,
+  `const liveV1=lh!==null&&!moved&&/^\\s*\\{/.test(lh);`,
+  `graphState=(mh!==null&&!canonical)?'invalid':canonical?(liveV1?'mixed':'current'):moved?'moved':liveV1?'legacy':'invalid';`,
+  `break}`,
+  `try{if(fs.lstatSync(path.join(directory,'.git')).isFile()){linkedWorktree=true;break}}catch(e){}`,
   `const parent=path.dirname(directory);`,
   `if(parent===directory)break;`,
   `directory=parent}`,
+  // A linked worktree keeps its artifacts outside the checkout, and resolving
+  // that location needs the workspace hash this snippet cannot compute. The
+  // hint stays -- the MCP server builds the graph at startup -- but it is a
+  // hint about availability, never a claim that an artifact was inspected.
+  `const hasGraph=graphState==='current'||graphState==='legacy'||linkedWorktree;`,
+  `const legacyGraph=graphState==='legacy';`,
 ].join('')
 
 function hookCommand(payloadJson: string): string {
