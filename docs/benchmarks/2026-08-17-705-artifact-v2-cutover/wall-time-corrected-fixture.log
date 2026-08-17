@@ -1,0 +1,7 @@
+base round 0: 74530ms cold=true canonical=false
+b1 round 0: 251301ms cold=true canonical=true
+head round 0: 173222ms cold=true canonical=true
+head round 1: 210042ms cold=true canonical=true
+b1 round 1: 251094ms cold=true canonical=true
+base round 1: 173370ms cold=true canonical=false
+base round 2: 210268ms cold=true canonical=false

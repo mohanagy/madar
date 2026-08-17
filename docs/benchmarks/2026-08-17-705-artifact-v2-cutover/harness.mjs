@@ -42,11 +42,17 @@ function median(values) {
 function runOnce(armName, cli, index) {
   const workspace = join(WORK, `${armName}-${index}`)
   rmSync(workspace, { recursive: true, force: true })
-  // Copy without .git so the arm cannot resolve a linked-worktree artifact
-  // directory belonging to the real repository.
+  // Copy without the root .git directory so the arm cannot resolve a
+  // linked-worktree artifact directory belonging to the real repository.
+  //
+  // The exclusion is anchored to that one path. A substring test for '/.git'
+  // also matched .gitignore, .github and .gitattributes -- and generation
+  // respects Git-ignore, so dropping .gitignore silently enlarged the indexed
+  // corpus and inflated both artifact size and wall time for every arm.
+  const gitDir = join(FIXTURE, '.git')
   cpSync(FIXTURE, workspace, {
     recursive: true,
-    filter: (src) => !src.includes(`${'/'}.git`),
+    filter: (src) => src !== gitDir && !src.startsWith(`${gitDir}/`),
   })
   rmSync(join(workspace, 'out'), { recursive: true, force: true })
 
