@@ -80,6 +80,10 @@ function normalize(text: string): string {
     .replaceAll('graph.json', '<artifact>')
     .replace(/\b[0-9a-f]{12,64}\b/g, '<digest>')
     .replace(/\d{4}-\d{2}-\d{2}T[0-9:.]+Z/g, '<timestamp>')
+    // HTTP-date too. The two phases run a moment apart, so an artifact mtime
+    // rendered as `Mon, 17 Aug 2026 20:14:18 GMT` differs by a second between
+    // them -- a clock reading, not an answer.
+    .replace(/[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT/g, '<http-date>')
     .replace(/\b\d+ ?ms\b/g, '<duration>')
     // A serialized payload carries the artifact path inside it, and
     // `graph.madar` is one character longer than `graph.json`, so its own token

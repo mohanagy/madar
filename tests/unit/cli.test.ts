@@ -1192,7 +1192,7 @@ describe('cli parser', () => {
       compareDir: activeOutputPath('compare', 'custom'),
       packPath: activeOutputPath('proof-inputs', 'context-pack.json'),
     })
-    expect(() => parseProofReportArgs(['custom.json', 'second.json'])).toThrow('Usage: madar proof-report [graph.json] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]')
+    expect(() => parseProofReportArgs(['custom.json', 'second.json'])).toThrow('Usage: madar proof-report [graph.madar] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]')
     expect(() => parseProofReportArgs(['--wat'])).toThrow('error: unknown option for proof-report: --wat')
   })
 

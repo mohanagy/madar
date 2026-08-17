@@ -314,8 +314,12 @@ export function resolveGraphArtifact(
   const logicalPath = options.logicalPath ?? requestedPath
 
   const displayDir = options.logicalOutputDir
+  // Forward slashes, on every platform. This is the logical spelling a user
+  // reads in a refusal, and the tombstone it has to be matched against says
+  // `out/graph.madar` literally -- a Windows refusal naming `out\graph.madar`
+  // makes the reader work out that the two are the same file.
   const display = (path: string): string =>
-    displayDir === undefined ? path : join(displayDir, basename(path))
+    displayDir === undefined ? path : join(displayDir, basename(path)).replaceAll('\\', '/')
   const displayOutputDir = displayDir ?? outputDir
 
   const common = { requestedPath, intent: options.intent } as const

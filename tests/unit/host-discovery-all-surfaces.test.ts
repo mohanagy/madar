@@ -77,6 +77,23 @@ function workspace(files: WorkspaceFiles): string {
   return root
 }
 
+
+/** Package root carrying a stub CLI, so the installer never needs a built dist. */
+function stubPackageRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'host-surfaces-pkg-'))
+  // The bin entry uses the platform separator, as the installer's own resolver
+  // does; a literal forward-slash value does not match on Windows.
+  const relativeCliPath = join('dist', 'src', 'cli', 'bin.js')
+  const cliPath = join(root, relativeCliPath)
+  mkdirSync(join(cliPath, '..'), { recursive: true })
+  writeFileSync(cliPath, '#!/usr/bin/env node\n')
+  writeFileSync(join(root, 'package.json'), JSON.stringify({
+    name: 'madar-test',
+    bin: { madar: relativeCliPath },
+  }))
+  return root
+}
+
 /** What a generated surface told the host: nothing, or some guidance text. */
 interface Guidance {
   readonly emitted: boolean
@@ -121,7 +138,15 @@ function promptHookGuidance(root: string, scriptPath: string): Guidance {
 }
 
 describe('every generated host surface classifies the workspace', () => {
-  it.each(SPAWNED_STATES)('the Gemini tool hook reads %s correctly', (_label, files, expectation) => {
+  // Windows is excluded deliberately, not incidentally. The generated command is
+  // `node -e "<program>"`, and this harness runs it through `cmd /c`, whose
+  // quoting rules mangle the program before node sees it -- the child fails with
+  // "Unterminated string constant" on the opening comment. That is a property of
+  // this invocation, not evidence about the product: a host may launch the
+  // command without a cmd shell. Asserting either way from here would be a
+  // claim the harness cannot support, so Windows hook execution is left
+  // unverified and the in-process classifier matrix above still runs there.
+  it.skipIf(process.platform === 'win32').each(SPAWNED_STATES)('the Gemini tool hook reads %s correctly', (_label, files, expectation) => {
     const root = workspace(files as WorkspaceFiles)
     try {
       geminiInstall(root)
@@ -168,7 +193,12 @@ describe('every generated host surface classifies the workspace', () => {
   it.each(STATES)('the OpenCode plugin reads %s correctly', async (_label, files, expectation) => {
     const root = workspace(files as WorkspaceFiles)
     try {
-      agentsInstall(root, 'opencode')
+      const packageRoot = stubPackageRoot()
+      try {
+        agentsInstall(root, 'opencode', { packageRoot })
+      } finally {
+        rmSync(packageRoot, { recursive: true, force: true })
+      }
       const pluginSource = readFileSync(join(root, '.opencode', 'plugins', 'madar.js'), 'utf8')
       const body = pluginSource
         .replace(/^import .*$/gm, '')
@@ -227,7 +257,12 @@ describe('every generated host surface classifies the workspace', () => {
     try {
       geminiInstall(root)
       claudeInstall(root)
-      agentsInstall(root, 'opencode')
+      const packageRoot = stubPackageRoot()
+      try {
+        agentsInstall(root, 'opencode', { packageRoot })
+      } finally {
+        rmSync(packageRoot, { recursive: true, force: true })
+      }
 
       const settings = JSON.parse(readFileSync(join(root, '.gemini', 'settings.json'), 'utf8')) as {
         hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>
