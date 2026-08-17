@@ -804,6 +804,7 @@ describe('compare runtime', () => {
         budget: 3000,
         task: 'explain',
         graphPath,
+        graphPathIntent: 'explicit' as const,
       }),
     ) as Record<string, unknown>
     const pack = buildMadarPromptPack({ question: retrieval.question, retrieval })

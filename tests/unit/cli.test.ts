@@ -179,7 +179,7 @@ function createDependencies(): CliTestDependencies {
       mode: options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate',
       rootPath: resolve(rootPath),
       outputDir: resolve(rootPath, 'out'),
-      graphPath: resolve(rootPath, 'out', 'graph.json'),
+      graphPath: resolve(rootPath, 'out', 'graph.madar'),
       reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
       htmlPath: options.noHtml ? null : resolve(rootPath, 'out', 'graph.html'),
       wikiPath: options.wiki ? resolve(rootPath, 'out', 'wiki') : null,
@@ -258,6 +258,7 @@ describe('cli parser', () => {
       mode: 'bfs',
       tokenBudget: 2000,
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       rankBy: 'relevance',
       community: null,
       fileType: null,
@@ -270,6 +271,7 @@ describe('cli parser', () => {
       mode: 'dfs',
       tokenBudget: 1500,
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       rankBy: 'degree',
       community: 0,
       fileType: 'code',
@@ -292,6 +294,7 @@ describe('cli parser', () => {
       task: 'explain',
       taskExplicit: true,
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
     })
   })
 
@@ -302,6 +305,7 @@ describe('cli parser', () => {
       task: 'implement',
       taskExplicit: true,
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
     })
   })
 
@@ -311,6 +315,7 @@ describe('cli parser', () => {
       budget: 3000,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       why: true,
     })
   })
@@ -321,6 +326,7 @@ describe('cli parser', () => {
       budget: 3000,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       format: 'text',
     })
     expect(parsePackArgs(['how does auth work', '--format', 'markdown'])).toEqual({
@@ -328,6 +334,7 @@ describe('cli parser', () => {
       budget: 3000,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       format: 'markdown',
     })
     expect(parsePackArgs(['how does auth work', '--format', 'claude'])).toEqual({
@@ -335,6 +342,7 @@ describe('cli parser', () => {
       budget: 3000,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       format: 'claude',
     })
     expect(parsePackArgs(['how does auth work', '--format', 'copilot'])).toEqual({
@@ -342,6 +350,7 @@ describe('cli parser', () => {
       budget: 3000,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       format: 'copilot',
     })
     expect(parsePackArgs(['how does auth work', '--format=json'])).toEqual({
@@ -349,6 +358,7 @@ describe('cli parser', () => {
       budget: 3000,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       format: 'json',
     })
   })
@@ -368,6 +378,7 @@ describe('cli parser', () => {
       budget: 3000,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       consumer: 'generic',
     })
 
@@ -383,6 +394,7 @@ describe('cli parser', () => {
       budget: 1800,
       task: 'implement',
       graphPath: 'out/custom.json',
+      graphPathIntent: 'explicit',
       consumer: 'copilot',
       allowSnippets: true,
     })
@@ -401,6 +413,7 @@ describe('cli parser', () => {
       prompt: 'how does auth work',
       provider: 'claude',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
     })
   })
 
@@ -419,12 +432,14 @@ describe('cli parser', () => {
         task: 'review',
         taskExplicit: true,
         graphPath: resolvedGraphPath,
+        graphPathIntent: 'explicit',
       })
 
       expect(parsePromptArgs(['review current diff', '--provider=gemini', '--graph', relativeGraphPath])).toEqual({
         prompt: 'review current diff',
         provider: 'gemini',
         graphPath: resolvedGraphPath,
+        graphPathIntent: 'explicit',
       })
 
       expect(() => parsePackArgs(['review current diff', '--graph', '../../../outside/graph.json'])).toThrow(
@@ -441,6 +456,7 @@ describe('cli parser', () => {
       source: 'AuthService',
       target: 'Transport',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       maxHops: 8,
     })
 
@@ -448,6 +464,7 @@ describe('cli parser', () => {
       source: 'AuthService',
       target: 'Transport',
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       maxHops: 4,
     })
 
@@ -460,12 +477,14 @@ describe('cli parser', () => {
     expect(parseExplainArgs(['HttpClient'])).toEqual({
       label: 'HttpClient',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       relation: '',
     })
 
     expect(parseExplainArgs(['HttpClient', '--graph=custom.json', '--relation', 'calls'])).toEqual({
       label: 'HttpClient',
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       relation: 'calls',
     })
 
@@ -478,12 +497,14 @@ describe('cli parser', () => {
     expect(parseDiffArgs(['baseline.json'])).toEqual({
       baselineGraphPath: 'baseline.json',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       limit: 10,
     })
 
     expect(parseDiffArgs(['baseline.json', '--graph', 'current.json', '--limit', '5'])).toEqual({
       baselineGraphPath: 'baseline.json',
       graphPath: 'current.json',
+      graphPathIntent: 'explicit',
       limit: 5,
     })
 
@@ -516,24 +537,28 @@ describe('cli parser', () => {
   it('parses benchmark args', () => {
     expect(parseBenchmarkArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       questionsPath: null,
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       yes: false,
     })
     expect(parseBenchmarkArgs(['custom.json', '--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       questionsPath: null,
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       yes: false,
     })
     expect(parseBenchmarkArgs(['custom.json', '--questions', 'tests/fixtures/workspace-parity-questions.json', '--exec', 'claude -p "$(cat {prompt_file})"', '--yes'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       questionsPath: 'tests/fixtures/workspace-parity-questions.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       yes: true,
     })
     expect(parseBenchmarkArgs(['--questions=tests/fixtures/workspace-parity-questions.json', '--exec=claude -p "$(cat {prompt_file})"'])).toEqual({
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       questionsPath: 'tests/fixtures/workspace-parity-questions.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       yes: false,
@@ -598,6 +623,7 @@ describe('cli parser', () => {
     expect(parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
       question: 'how does login work',
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: activeOutputPath('compare'),
@@ -616,6 +642,7 @@ describe('cli parser', () => {
     expect(parseCompareArgs(['--questions', 'benchmark-questions.json', '--exec', 'gemini -p "$(cat {prompt_file})"'])).toEqual({
       question: null,
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       questionsPath: 'benchmark-questions.json',
       outputDir: activeOutputPath('compare'),
@@ -660,6 +687,7 @@ describe('cli parser', () => {
     ).toEqual({
       question: 'how does login work',
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: activeOutputPath('compare', 'custom'),
@@ -688,6 +716,7 @@ describe('cli parser', () => {
     ).toEqual({
       question: 'how does login work',
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: activeOutputPath('compare'),
@@ -718,6 +747,7 @@ describe('cli parser', () => {
     ).toEqual({
       question: 'implement session sliding expiration',
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: activeOutputPath('compare'),
@@ -745,6 +775,7 @@ describe('cli parser', () => {
     ).toEqual({
       question: 'how does login work',
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: activeOutputPath('compare'),
@@ -772,6 +803,7 @@ describe('cli parser', () => {
     ).toEqual({
     question: 'how does login work',
     graphPath: ACTIVE_GRAPH_PATH,
+    graphPathIntent: 'default',
     execTemplate: 'claude -p "$(cat {prompt_file})"',
     questionsPath: null,
     outputDir: activeOutputPath('compare'),
@@ -827,6 +859,7 @@ describe('cli parser', () => {
 
     expect(parseReviewCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       outputDir: activeOutputPath('review-compare'),
       baseBranch: null,
@@ -847,6 +880,7 @@ describe('cli parser', () => {
       '--yes',
     ])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       outputDir: activeOutputPath('review-compare', 'custom'),
       baseBranch: 'origin/main',
@@ -862,6 +896,7 @@ describe('cli parser', () => {
       externalOutputDir,
     ])).toEqual({
       graphPath: '/tmp/graph.json',
+      graphPathIntent: 'explicit',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       outputDir: externalOutputDir,
       baseBranch: null,
@@ -1046,6 +1081,7 @@ describe('cli parser', () => {
   it('parses serve args', () => {
     expect(parseServeArgs([])).toEqual({
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       host: '127.0.0.1',
       port: 4173,
       transport: 'http',
@@ -1054,6 +1090,7 @@ describe('cli parser', () => {
 
     expect(parseServeArgs(['custom.json', '--host', '0.0.0.0', '--port', '8080'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       host: '0.0.0.0',
       port: 8080,
       transport: 'http',
@@ -1062,6 +1099,7 @@ describe('cli parser', () => {
 
     expect(parseServeArgs(['graph.json', '--mcp'])).toEqual({
       graphPath: 'graph.json',
+      graphPathIntent: 'explicit',
       host: '127.0.0.1',
       port: 4173,
       transport: 'stdio',
@@ -1070,6 +1108,7 @@ describe('cli parser', () => {
 
     expect(parseServeArgs(['graph.json', '--transport', 'stdio'])).toEqual({
       graphPath: 'graph.json',
+      graphPathIntent: 'explicit',
       host: '127.0.0.1',
       port: 4173,
       transport: 'stdio',
@@ -1078,6 +1117,7 @@ describe('cli parser', () => {
 
     expect(parseServeArgs(['graph.json', '--http'])).toEqual({
       graphPath: 'graph.json',
+      graphPathIntent: 'explicit',
       host: '127.0.0.1',
       port: 4173,
       transport: 'http',
@@ -1086,6 +1126,7 @@ describe('cli parser', () => {
 
     expect(parseServeArgs(['--stdio', '--auto-refresh'])).toEqual({
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
       host: '127.0.0.1',
       port: 4173,
       transport: 'stdio',
@@ -1097,10 +1138,10 @@ describe('cli parser', () => {
   })
 
   it('parses doctor and status args', () => {
-    expect(parseDoctorArgs([])).toEqual({ graphPath: 'out/graph.json' })
-    expect(parseDoctorArgs(['out/custom.json'])).toEqual({ graphPath: 'out/custom.json' })
-    expect(parseDoctorArgs(['--graph', 'out/runtime.json'])).toEqual({ graphPath: 'out/runtime.json' })
-    expect(parseDoctorArgs(['--graph=out/runtime.json'], 'status')).toEqual({ graphPath: 'out/runtime.json' })
+    expect(parseDoctorArgs([])).toEqual({ graphPath: 'out/graph.json', graphPathIntent: 'default' })
+    expect(parseDoctorArgs(['out/custom.json'])).toEqual({ graphPath: 'out/custom.json', graphPathIntent: 'explicit' })
+    expect(parseDoctorArgs(['--graph', 'out/runtime.json'])).toEqual({ graphPath: 'out/runtime.json', graphPathIntent: 'explicit' })
+    expect(parseDoctorArgs(['--graph=out/runtime.json'], 'status')).toEqual({ graphPath: 'out/runtime.json', graphPathIntent: 'explicit' })
     expect(() => parseDoctorArgs(['--wat'])).toThrow('error: unknown option for doctor: --wat')
     expect(() => parseDoctorArgs(['--wat'], 'status')).toThrow('error: unknown option for status: --wat')
   })
@@ -1124,12 +1165,14 @@ describe('cli parser', () => {
   it('parses proof-report args with defaults and overrides', () => {
     expect(parseProofReportArgs([])).toEqual({
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       outputDir: activeOutputPath('proof-report'),
       compareDir: activeOutputPath('compare'),
       packPath: null,
     })
     expect(parseProofReportArgs(['out/custom/graph.json'])).toEqual({
       graphPath: 'out/custom/graph.json',
+      graphPathIntent: 'explicit',
       outputDir: resolve('out/custom/proof-report'),
       compareDir: resolve('out/custom/compare'),
       packPath: null,
@@ -1144,6 +1187,7 @@ describe('cli parser', () => {
       'out/proof-inputs/context-pack.json',
     ])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       outputDir: activeOutputPath('proof', 'custom'),
       compareDir: activeOutputPath('compare', 'custom'),
       packPath: activeOutputPath('proof-inputs', 'context-pack.json'),
@@ -1436,6 +1480,7 @@ describe('cli main', () => {
     expect(compareRequest.options).toEqual({
       question: null,
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       questionsPath: 'benchmark-questions.json',
       outputDir: activeOutputPath('compare', 'custom'),
@@ -1962,6 +2007,7 @@ describe('cli main', () => {
     expect(logs).toEqual([`Saved to ${activeOutputPath('proof-report', 'custom', 'proof-report.md')}`])
     expect(capturedOptions).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       outputDir: activeOutputPath('proof-report', 'custom'),
       compareDir: resolve('compare'),
       packPath: activeOutputPath('proof-inputs', 'context-pack.json'),
@@ -1994,6 +2040,7 @@ describe('cli main', () => {
     expect(logs).toEqual([`Saved to ${resolve('out/custom/proof-report', 'proof-report.md')}`])
     expect(capturedOptions).toEqual({
       graphPath: 'out/custom/graph.json',
+      graphPathIntent: 'explicit',
       outputDir: resolve('out/custom/proof-report'),
       compareDir: resolve('out/custom/compare'),
       packPath: null,
@@ -2120,6 +2167,7 @@ describe('cli main', () => {
     }
     expect(reviewCompareRequest.options).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       outputDir: activeOutputPath('review-compare', 'custom'),
       baseBranch: 'origin/main',
@@ -2414,6 +2462,7 @@ describe('cli main', () => {
         task: 'explain',
         taskExplicit: true,
         graphPath: 'out/graph.json',
+        graphPathIntent: 'default',
         why: true,
       },
       io,
@@ -2459,6 +2508,7 @@ describe('cli main', () => {
         budget: 1200,
         task: 'explain',
         graphPath: 'out/graph.json',
+        graphPathIntent: 'default',
         consumer: 'cursor',
       },
       io,
@@ -2482,6 +2532,7 @@ describe('cli main', () => {
         prompt: 'how does auth work',
         provider: 'claude',
         graphPath: 'out/graph.json',
+        graphPathIntent: 'default',
       },
       io,
     })
@@ -2513,6 +2564,7 @@ describe('cli main', () => {
         budget: 3000,
         task: 'explain',
         graphPath: 'out/graph.json',
+        graphPathIntent: 'default',
         requireFreshGraph: true,
       },
       io: packIo.io,
@@ -2523,6 +2575,7 @@ describe('cli main', () => {
         budget: 3000,
         task: 'explain',
         graphPath: 'out/graph.json',
+        graphPathIntent: 'default',
         consumer: 'cursor',
         requireFreshGraph: true,
       },
@@ -2533,6 +2586,7 @@ describe('cli main', () => {
         prompt: 'how does auth work',
         provider: 'claude',
         graphPath: 'out/graph.json',
+        graphPathIntent: 'default',
         requireFreshGraph: true,
       },
       io: promptIo.io,
@@ -2563,6 +2617,7 @@ describe('cli main', () => {
         budget: 3000,
         task: 'explain',
         graphPath: 'out/graph.json',
+        graphPathIntent: 'default',
         requireFreshContext: true,
       },
       io: packIo.io,
@@ -2573,6 +2628,7 @@ describe('cli main', () => {
         budget: 3000,
         task: 'explain',
         graphPath: 'out/graph.json',
+        graphPathIntent: 'default',
         consumer: 'cursor',
         requireFreshContext: true,
       },
@@ -2583,6 +2639,7 @@ describe('cli main', () => {
         prompt: 'how does auth work',
         provider: 'claude',
         graphPath: 'out/graph.json',
+        graphPathIntent: 'default',
         requireFreshContext: true,
       },
       io: promptIo.io,
@@ -2729,7 +2786,7 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(0)
     expect(logs[0]).toContain('[madar generate] update completed')
-    expect(logs[0]).toContain('graph.json')
+    expect(logs[0]).toContain('graph.madar')
     expect(logs[0]).toContain('Semantic anomalies: 2 high-signal item(s)')
     expect(logs[0]).toContain('Safety exclusions: 1 (1 sensitive, 0 unreadable)')
     expect(logs[0]).toContain('"config/credentials.json" (secret_config)')
@@ -2746,7 +2803,7 @@ describe('cli main', () => {
         mode: options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate',
         rootPath: resolve(rootPath),
         outputDir: resolve(rootPath, 'out'),
-        graphPath: resolve(rootPath, 'out', 'graph.json'),
+        graphPath: resolve(rootPath, 'out', 'graph.madar'),
         reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
         htmlPath: options.noHtml ? null : resolve(rootPath, 'out', 'graph.html'),
         wikiPath: options.wiki ? resolve(rootPath, 'out', 'wiki') : null,
@@ -2895,6 +2952,7 @@ describe('cli main', () => {
         io,
         options: {
           graphPath: 'graph.json',
+          graphPathIntent: 'explicit' as const,
           questionsPath: null,
           execTemplate: 'unused',
           yes: true,
@@ -2917,6 +2975,7 @@ describe('cli main', () => {
       io,
       options: {
         graphPath: 'graph.json',
+        graphPathIntent: 'explicit',
         questionsPath: resolve('tests/fixtures/workspace-parity-questions.json'),
         execTemplate: 'claude -p "$(cat {prompt_file})"',
         yes: true,
@@ -2946,6 +3005,7 @@ describe('cli main', () => {
       io,
       options: {
         graphPath: 'out/graph.json',
+        graphPathIntent: 'default',
         questionsPath: resolve('tests/fixtures/workspace-parity-questions.json'),
         execTemplate: 'claude -p "$(cat {prompt_file})"',
         yes: true,
@@ -3150,18 +3210,22 @@ describe('summary command', () => {
   it('parses summary args with positional and --graph forms', () => {
     expect(parseSummaryArgs([])).toEqual({
       graphPath: 'out/graph.json',
+      graphPathIntent: 'default',
     })
 
     expect(parseSummaryArgs(['custom.json'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
     })
 
     expect(parseSummaryArgs(['--graph', 'custom.json'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
     })
 
     expect(parseSummaryArgs(['--graph=custom.json'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
     })
   })
 

@@ -82,6 +82,7 @@ describe('context-prompt-command', () => {
       prompt: 'how does auth work',
       provider: 'claude',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
@@ -169,6 +170,7 @@ describe('context-prompt-command', () => {
       prompt: 'how does auth work',
       provider: 'gemini',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     const parsed = JSON.parse(output) as {
@@ -203,6 +205,7 @@ describe('context-prompt-command', () => {
         prompt: 'how does auth work',
         provider: 'claude',
         graphPath: 'out/missing/context-prompt-graph.json',
+        graphPathIntent: 'explicit' as const,
         requireFreshGraph: true,
       }, dependencies)).rejects.toThrow(/require-fresh-graph|fresh graph/i)
       expect(dependencies.retrieveContext).not.toHaveBeenCalled()

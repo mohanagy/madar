@@ -99,6 +99,9 @@ function recommendInstallPlatform(workspace: string, dependencies: TryCommandDep
 function buildPackOptions(prompt: string, graphPath: string): PackCliOptions {
   return {
     prompt,
+    // `try` resolves the workspace artifact itself, so this is a deliberate
+    // selection rather than a default lookup.
+    graphPathIntent: 'explicit',
     budget: TRY_PACK_BUDGET,
     task: 'explain',
     graphPath,

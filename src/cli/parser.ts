@@ -5,6 +5,7 @@ import type { ExtractionMode } from '../contracts/generation-policy.js'
 import { validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import { type InstallPlatform, isInstallPlatform, type InstallProfile, isInstallProfile } from '../infrastructure/install.js'
+import type { GraphPathIntent } from '../contracts/graph-artifact-selection.js'
 
 export class UsageError extends Error {
   constructor(message: string) {
@@ -20,6 +21,7 @@ export interface QueryCliOptions {
   mode: 'bfs' | 'dfs'
   tokenBudget: number
   graphPath: string
+  graphPathIntent: GraphPathIntent
   rankBy: QueryRankBy
   community: number | null
   fileType: string | null
@@ -31,6 +33,7 @@ export interface PackCliOptions {
   task: ContextPackTaskKind
   taskExplicit?: boolean
   graphPath: string
+  graphPathIntent: GraphPathIntent
   requireFreshGraph?: boolean
   requireFreshContext?: boolean
   format?: ContextPackFormat
@@ -53,6 +56,7 @@ export interface HandoffCliOptions {
   budget: number
   task: ContextPackTaskKind
   graphPath: string
+  graphPathIntent: GraphPathIntent
   consumer: 'generic' | 'codex' | 'cursor' | 'copilot'
   requireFreshGraph?: boolean
   requireFreshContext?: boolean
@@ -65,6 +69,7 @@ export interface PromptCliOptions {
   prompt: string
   provider: PromptCliProvider
   graphPath: string
+  graphPathIntent: GraphPathIntent
   requireFreshGraph?: boolean
   requireFreshContext?: boolean
 }
@@ -73,18 +78,21 @@ export interface PathCliOptions {
   source: string
   target: string
   graphPath: string
+  graphPathIntent: GraphPathIntent
   maxHops: number
 }
 
 export interface DiffCliOptions {
   baselineGraphPath: string
   graphPath: string
+  graphPathIntent: GraphPathIntent
   limit: number
 }
 
 export interface ExplainCliOptions {
   label: string
   graphPath: string
+  graphPathIntent: GraphPathIntent
   relation: string
 }
 
@@ -105,6 +113,7 @@ export interface SaveResultCliOptions {
 
 export interface BenchmarkCliOptions {
   graphPath: string
+  graphPathIntent: GraphPathIntent
   questionsPath: string | null
   execTemplate: string
   yes: boolean
@@ -126,6 +135,7 @@ export interface BenchSuiteCliOptions {
 export interface CompareCliOptions {
   question: string | null
   graphPath: string
+  graphPathIntent: GraphPathIntent
   execTemplate: string
   questionsPath: string | null
   outputDir: string
@@ -144,6 +154,7 @@ export interface CompareCliOptions {
 
 export interface ReviewCompareCliOptions {
   graphPath: string
+  graphPathIntent: GraphPathIntent
   execTemplate: string
   outputDir: string
   baseBranch: string | null
@@ -199,6 +210,7 @@ export interface WatchCliOptions {
 
 export interface ServeCliOptions {
   graphPath: string
+  graphPathIntent: GraphPathIntent
   host: string
   port: number
   transport: 'http' | 'stdio'
@@ -207,14 +219,17 @@ export interface ServeCliOptions {
 
 export interface DoctorCliOptions {
   graphPath: string
+  graphPathIntent: GraphPathIntent
 }
 
 export interface SummaryCliOptions {
   graphPath: string
+  graphPathIntent: GraphPathIntent
 }
 
 export interface ProofReportCliOptions {
   graphPath: string
+  graphPathIntent: GraphPathIntent
   outputDir: string
   compareDir: string
   packPath: string | null
@@ -406,6 +421,7 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
   let mode: 'bfs' | 'dfs' = 'bfs'
   let tokenBudget = 2000
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let rankBy: QueryRankBy = 'relevance'
   let community: number | null = null
   let fileType: string | null = null
@@ -435,6 +451,7 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
 
     if (argument === '--graph') {
       graphPath = requireNonEmptyValue('--graph', args[index + 1])
+      graphPathIntent = 'explicit'
       index += 1
       continue
     }
@@ -442,6 +459,7 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
       graphPath = requireNonEmptyValue('--graph', value)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -484,7 +502,7 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
     throw new UsageError(`error: unknown option for query: ${argument}`)
   }
 
-  return { question, mode, tokenBudget, graphPath, rankBy, community, fileType }
+  return { question, mode, tokenBudget, graphPath, graphPathIntent, rankBy, community, fileType }
 }
 
 export function parsePackArgs(args: string[]): PackCliOptions {
@@ -498,6 +516,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
   let task: ContextPackTaskKind = 'explain'
   let taskExplicit = false
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let format: PackCliOptions['format'] | undefined
   let why = false
   let verbose = false
@@ -546,6 +565,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
 
     if (argument === '--graph') {
       graphPath = parseValidatedGraphPath('--graph', args[index + 1])
+      graphPathIntent = 'explicit'
       index += 1
       continue
     }
@@ -553,6 +573,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
       graphPath = parseValidatedGraphPath('--graph', value)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -621,6 +642,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
     task,
     ...(taskExplicit ? { taskExplicit: true } : {}),
     graphPath,
+    graphPathIntent,
     ...(requireFreshGraph ? { requireFreshGraph: true } : {}),
     ...(requireFreshContext ? { requireFreshContext: true } : {}),
     ...(format ? { format } : {}),
@@ -676,6 +698,7 @@ export function parseHandoffArgs(args: string[]): HandoffCliOptions {
   let budget = 3000
   let task: ContextPackTaskKind = 'explain'
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let consumer: HandoffCliOptions['consumer'] = 'generic'
   let allowSnippets = false
   let requireFreshGraph = false
@@ -719,6 +742,7 @@ export function parseHandoffArgs(args: string[]): HandoffCliOptions {
 
     if (argument === '--graph') {
       graphPath = parseGraphPathArgument('--graph', args[index + 1])
+      graphPathIntent = 'explicit'
       index += 1
       continue
     }
@@ -726,6 +750,7 @@ export function parseHandoffArgs(args: string[]): HandoffCliOptions {
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
       graphPath = parseGraphPathArgument('--graph', value)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -764,6 +789,7 @@ export function parseHandoffArgs(args: string[]): HandoffCliOptions {
     budget,
     task,
     graphPath,
+    graphPathIntent,
     consumer,
     ...(requireFreshGraph ? { requireFreshGraph: true } : {}),
     ...(requireFreshContext ? { requireFreshContext: true } : {}),
@@ -818,6 +844,7 @@ export function parsePromptArgs(args: string[]): PromptCliOptions {
 
   let provider: PromptCliProvider | null = null
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let requireFreshGraph = false
   let requireFreshContext = false
 
@@ -847,6 +874,7 @@ export function parsePromptArgs(args: string[]): PromptCliOptions {
 
     if (argument === '--graph') {
       graphPath = parseValidatedGraphPath('--graph', args[index + 1])
+      graphPathIntent = 'explicit'
       index += 1
       continue
     }
@@ -854,6 +882,7 @@ export function parsePromptArgs(args: string[]): PromptCliOptions {
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
       graphPath = parseValidatedGraphPath('--graph', value)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -878,6 +907,7 @@ export function parsePromptArgs(args: string[]): PromptCliOptions {
     prompt: normalizedPrompt,
     provider,
     graphPath,
+    graphPathIntent,
     ...(requireFreshGraph ? { requireFreshGraph: true } : {}),
     ...(requireFreshContext ? { requireFreshContext: true } : {}),
   }
@@ -891,6 +921,7 @@ export function parsePathArgs(args: string[]): PathCliOptions {
   }
 
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let maxHops = 8
   const normalizedSource = validateCliText('source', source)
   const normalizedTarget = validateCliText('target', target)
@@ -903,6 +934,7 @@ export function parsePathArgs(args: string[]): PathCliOptions {
 
     if (argument === '--graph') {
       graphPath = requireNonEmptyValue('--graph', args[index + 1])
+      graphPathIntent = 'explicit'
       index += 1
       continue
     }
@@ -910,6 +942,7 @@ export function parsePathArgs(args: string[]): PathCliOptions {
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
       graphPath = requireNonEmptyValue('--graph', value)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -928,7 +961,7 @@ export function parsePathArgs(args: string[]): PathCliOptions {
     }
   }
 
-  return { source: normalizedSource, target: normalizedTarget, graphPath, maxHops }
+  return { source: normalizedSource, target: normalizedTarget, graphPath, graphPathIntent, maxHops }
 }
 
 export function parseDiffArgs(args: string[]): DiffCliOptions {
@@ -941,6 +974,7 @@ export function parseDiffArgs(args: string[]): DiffCliOptions {
   }
 
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let limit = 10
 
   for (let index = 1; index < args.length; index += 1) {
@@ -951,6 +985,7 @@ export function parseDiffArgs(args: string[]): DiffCliOptions {
 
     if (argument === '--graph') {
       graphPath = requireNonEmptyValue('--graph', args[index + 1])
+      graphPathIntent = 'explicit'
       index += 1
       continue
     }
@@ -958,6 +993,7 @@ export function parseDiffArgs(args: string[]): DiffCliOptions {
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
       graphPath = requireNonEmptyValue('--graph', value)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -976,7 +1012,7 @@ export function parseDiffArgs(args: string[]): DiffCliOptions {
     throw new UsageError(`error: unknown option for diff: ${argument}`)
   }
 
-  return { baselineGraphPath, graphPath, limit }
+  return { baselineGraphPath, graphPath, graphPathIntent, limit }
 }
 
 export function parseExplainArgs(args: string[]): ExplainCliOptions {
@@ -986,6 +1022,7 @@ export function parseExplainArgs(args: string[]): ExplainCliOptions {
   }
 
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let relation = ''
   const normalizedLabel = validateCliText('label', label)
 
@@ -997,6 +1034,7 @@ export function parseExplainArgs(args: string[]): ExplainCliOptions {
 
     if (argument === '--graph') {
       graphPath = requireNonEmptyValue('--graph', args[index + 1])
+      graphPathIntent = 'explicit'
       index += 1
       continue
     }
@@ -1004,6 +1042,7 @@ export function parseExplainArgs(args: string[]): ExplainCliOptions {
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
       graphPath = requireNonEmptyValue('--graph', value)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -1022,7 +1061,7 @@ export function parseExplainArgs(args: string[]): ExplainCliOptions {
     throw new UsageError(`error: unknown option for explain: ${argument}`)
   }
 
-  return { label: normalizedLabel, graphPath, relation }
+  return { label: normalizedLabel, graphPath, graphPathIntent, relation }
 }
 
 export function parseAddArgs(args: string[]): AddCliOptions {
@@ -1140,6 +1179,7 @@ export function parseSaveResultArgs(args: string[]): SaveResultCliOptions {
 export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): BenchmarkCliOptions {
   const usage = `Usage: madar ${commandName} [graph.json] --exec TEMPLATE [--questions PATH] [--yes]`
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let questionsPath: string | null = null
   let execTemplate = ''
   let yes = false
@@ -1151,10 +1191,11 @@ export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): B
     }
 
     if (!argument.startsWith('--')) {
-      if (graphPath !== 'out/graph.json') {
+      if (graphPathIntent === 'explicit') {
         throw new UsageError(usage)
       }
       graphPath = requireNonEmptyValue('graph path', argument)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -1194,7 +1235,7 @@ export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): B
     throw new UsageError('error: --exec is required')
   }
 
-  return { graphPath, questionsPath, execTemplate, yes }
+  return { graphPath, graphPathIntent, questionsPath, execTemplate, yes }
 }
 
 export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
@@ -1341,6 +1382,7 @@ export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
 export function parseCompareArgs(args: string[]): CompareCliOptions {
   let question: string | null = null
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let execTemplate = ''
   let questionsPath: string | null = null
   let outputDir = 'out/compare'
@@ -1376,6 +1418,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
 
     if (argument === '--graph') {
       graphPath = requireOptionValue('--graph', args[index + 1])
+      graphPathIntent = 'explicit'
       index += 1
       continue
     }
@@ -1383,6 +1426,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
       graphPath = requireOptionValue('--graph', value)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -1546,6 +1590,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
   return {
     question,
     graphPath: resolvedGraphPath,
+    graphPathIntent,
     execTemplate,
     questionsPath,
     outputDir,
@@ -1566,6 +1611,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
 export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions {
   const usage = 'Usage: madar review-compare [graph.json] --exec TEMPLATE [--output-dir DIR] [--base-branch BRANCH] [--budget N] [--yes]'
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let execTemplate = ''
   let outputDir = 'out/review-compare'
   let baseBranch: string | null = null
@@ -1579,10 +1625,11 @@ export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions 
     }
 
     if (!argument.startsWith('--')) {
-      if (graphPath !== 'out/graph.json') {
+      if (graphPathIntent === 'explicit') {
         throw new UsageError(usage)
       }
       graphPath = requireNonEmptyValue('graph path', argument)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -1654,6 +1701,7 @@ export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions 
 
   return {
     graphPath: resolvedGraphPath,
+    graphPathIntent,
     execTemplate,
     outputDir: resolvedOutputDir,
     baseBranch,
@@ -2078,6 +2126,7 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 
 export function parseServeArgs(args: string[]): ServeCliOptions {
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let host = '127.0.0.1'
   let port = 4173
   let transport: 'http' | 'stdio' = 'http'
@@ -2090,10 +2139,11 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
     }
 
     if (!argument.startsWith('--')) {
-      if (graphPath !== 'out/graph.json') {
+      if (graphPathIntent === 'explicit') {
         throw new UsageError('Usage: madar serve [graph.json] [--host H] [--port N] [--transport http|stdio] [--http|--stdio|--mcp] [--auto-refresh]')
       }
       graphPath = argument
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -2151,12 +2201,13 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
     throw new UsageError(`error: unknown option for serve: ${argument}`)
   }
 
-  return { graphPath, host, port, transport, autoRefresh }
+  return { graphPath, graphPathIntent, host, port, transport, autoRefresh }
 }
 
 export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status' = 'doctor'): DoctorCliOptions {
   const usage = `Usage: madar ${commandName} [graph.json] [--graph path]`
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -2165,15 +2216,17 @@ export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status'
     }
 
     if (!argument.startsWith('--')) {
-      if (graphPath !== 'out/graph.json') {
+      if (graphPathIntent === 'explicit') {
         throw new UsageError(usage)
       }
       graphPath = argument
+      graphPathIntent = 'explicit'
       continue
     }
 
     if (argument === '--graph') {
       graphPath = requireOptionValue('--graph', args[index + 1])
+      graphPathIntent = 'explicit'
       index += 1
       continue
     }
@@ -2181,18 +2234,20 @@ export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status'
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
       graphPath = requireOptionValue('--graph', value)
+      graphPathIntent = 'explicit'
       continue
     }
 
     throw new UsageError(`error: unknown option for ${commandName}: ${argument}`)
   }
 
-  return { graphPath }
+  return { graphPath, graphPathIntent }
 }
 
 export function parseSummaryArgs(args: string[]): SummaryCliOptions {
   const usage = 'Usage: madar summary [graph.json]'
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
@@ -2202,6 +2257,7 @@ export function parseSummaryArgs(args: string[]): SummaryCliOptions {
 
     if (argument === '--graph') {
       graphPath = requireOptionValue('--graph', args[index + 1])
+      graphPathIntent = 'explicit'
       index += 1
       continue
     }
@@ -2209,6 +2265,7 @@ export function parseSummaryArgs(args: string[]): SummaryCliOptions {
     if (argument.startsWith('--graph=')) {
       const [, value] = argument.split('=', 2)
       graphPath = requireOptionValue('--graph', value)
+      graphPathIntent = 'explicit'
       continue
     }
 
@@ -2216,19 +2273,21 @@ export function parseSummaryArgs(args: string[]): SummaryCliOptions {
       throw new UsageError(`error: unknown option for summary: ${argument}`)
     }
 
-    if (graphPath !== 'out/graph.json') {
+    if (graphPathIntent === 'explicit') {
       throw new UsageError(usage)
     }
 
     graphPath = argument
+    graphPathIntent = 'explicit'
   }
 
-  return { graphPath }
+  return { graphPath, graphPathIntent }
 }
 
 export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
   const usage = 'Usage: madar proof-report [graph.json] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]'
   let graphPath = 'out/graph.json'
+  let graphPathIntent: GraphPathIntent = 'default'
   let outputDir: string | null = null
   let compareDir: string | null = null
   let packPath: string | null = null
@@ -2279,17 +2338,19 @@ export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
       throw new UsageError(`error: unknown option for proof-report: ${argument}`)
     }
 
-    if (graphPath !== 'out/graph.json') {
+    if (graphPathIntent === 'explicit') {
       throw new UsageError(usage)
     }
 
     graphPath = argument
+    graphPathIntent = 'explicit'
   }
 
   const resolvedGraphPath = resolveWorkspaceGraphPath(graphPath)
   const graphBase = dirname(resolve(resolvedGraphPath))
   return {
     graphPath: resolvedGraphPath,
+    graphPathIntent,
     outputDir: outputDir ?? validateGraphOutputPath(resolve(graphBase, 'proof-report'), graphBase),
     compareDir: compareDir ?? validateGraphOutputPath(resolve(graphBase, 'compare'), graphBase),
     packPath,

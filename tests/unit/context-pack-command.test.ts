@@ -415,6 +415,7 @@ describe('context-pack-command', () => {
       budget: 3000,
       task: 'explain',
       graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'json',
       verbose: true,
     }, dependencies)
@@ -460,6 +461,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
     }, dependencies)
 
@@ -737,6 +739,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -1004,6 +1007,7 @@ describe('context-pack-command', () => {
       budget: 800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -1109,6 +1113,7 @@ describe('context-pack-command', () => {
       budget: 1_800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)) as {
@@ -1709,6 +1714,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -1746,6 +1752,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     const payload = JSON.parse(output) as {
@@ -1890,6 +1897,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -2018,6 +2026,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -2168,6 +2177,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'backend/out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -2295,6 +2305,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)) as Record<string, unknown>
 
     const withWhy = JSON.parse(await runContextPackCommand({
@@ -2378,6 +2389,7 @@ describe('context-pack-command', () => {
       budget: 1,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
@@ -2416,6 +2428,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
@@ -2868,6 +2881,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'review',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.analyzePrImpact).toHaveBeenCalledWith(graph, '.', { budget: 1800, taskIntent: 'pr-review-risk' })
@@ -2985,6 +2999,7 @@ describe('context-pack-command', () => {
       budget: 1,
       task: 'review',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.analyzePrImpact).toHaveBeenCalledWith(graph, '.', {
@@ -3065,6 +3080,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'review',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     const payload = JSON.parse(output) as Record<string, unknown>
@@ -3098,6 +3114,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'review',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       requireFreshContext: true,
     }, dependencies)).rejects.toThrow(/requireFreshContext.*review/i)
     expect(dependencies.analyzePrImpact).not.toHaveBeenCalled()
@@ -3161,6 +3178,7 @@ describe('context-pack-command', () => {
       budget: 900,
       task: 'impact',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.analyzeImpact).toHaveBeenCalledWith(graph, {}, {
@@ -3262,6 +3280,7 @@ describe('context-pack-command', () => {
       budget: 1,
       task: 'impact',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {

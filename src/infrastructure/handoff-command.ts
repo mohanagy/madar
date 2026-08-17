@@ -208,6 +208,8 @@ export async function runHandoffCommand(
     budget: options.budget,
     task: options.task,
     graphPath,
+    // The user's intent travels with the request; handoff does not decide it.
+    graphPathIntent: options.graphPathIntent,
     format: 'json',
     verbose: true,
     ...(options.requireFreshGraph === true ? { requireFreshGraph: true } : {}),

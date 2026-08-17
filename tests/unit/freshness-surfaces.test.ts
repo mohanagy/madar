@@ -540,6 +540,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'json',
       verbose: true,
     })) as {
@@ -552,6 +553,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'text',
       verbose: true,
     })
@@ -559,6 +561,7 @@ describe('freshness surfaces', () => {
       prompt: 'How does AuthService reach issueSession?',
       provider: 'claude',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
     })) as {
       graph_freshness?: Record<string, unknown>
     }
@@ -567,6 +570,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       consumer: 'generic',
     })) as {
       governance?: {
@@ -646,6 +650,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'json',
       verbose: true,
     })) as {
@@ -658,6 +663,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'text',
       verbose: true,
     })
@@ -682,6 +688,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'json',
       verbose: true,
     })) as {
@@ -707,6 +714,7 @@ describe('freshness surfaces', () => {
       prompt: 'How does AuthService reach issueSession?',
       provider: 'claude',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
     })) as {
       graph_freshness?: Record<string, unknown>
     }

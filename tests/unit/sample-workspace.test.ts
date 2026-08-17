@@ -65,6 +65,7 @@ describe('examples/sample-workspace', () => {
         budget: 1800,
         task: 'explain',
         graphPath,
+        graphPathIntent: 'explicit' as const,
       })
       const pack = JSON.parse(packOutput) as {
         pack: {
