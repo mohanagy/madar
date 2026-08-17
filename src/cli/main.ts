@@ -43,7 +43,7 @@ import { serveGraphStdio } from '../runtime/stdio-server.js'
 import { getNeighbors, getNode, loadGraph, queryGraph, shortestPath } from '../runtime/serve.js'
 import { formatTimeTravelResult } from '../runtime/time-travel.js'
 import { findPackageRoot, readPackageName, readPackageVersion } from '../shared/package-metadata.js'
-import { graphPathForCommand, resolveWorkspaceGraphPath } from '../shared/workspace.js'
+import { graphPathForCommand, resolveMadarOutputDirectory, resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import {
   disableTelemetry,
   enableTelemetry,
@@ -96,6 +96,7 @@ import {
   type TimeTravelCliOptions,
   UsageError,
 } from './parser.js'
+import { classifyWorkspaceGraph } from '../contracts/graph-artifact-selection.js'
 
 export interface CliIO {
   log(message?: string): void
@@ -814,11 +815,13 @@ function handleAgentCommand(command: AgentPlatform, args: string[], io: CliIO, d
 }
 
 function warnWhenWorkspaceGraphIsMissing(io: CliIO): void {
-  // A pre-flight warning, so it maps the path without classifying: an
-  // ambiguous workspace must surface its typed error from the load, not from
-  // a hint that runs before the command starts.
-  if (!existsSync(resolveWorkspaceGraphPath(undefined, undefined, 'explicit'))) {
-    io.log("Warning: out/graph.madar not found. Run 'madar generate .' first, then re-run this command.")
+  // Classified, not probed. A single-filename check warns for a legacy
+  // workspace that has a perfectly good v1, and stays silent for an ambiguous
+  // one that genuinely needs attention. Only a workspace with no artifact at
+  // all is missing; every other problem surfaces as the command's own typed
+  // error rather than as a pre-flight hint.
+  if (classifyWorkspaceGraph(resolveMadarOutputDirectory('.')).state === 'missing') {
+    io.log("Warning: no graph artifact found in out/. Run 'madar generate .' first, then re-run this command.")
   }
 }
 

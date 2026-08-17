@@ -2,6 +2,10 @@ import type {
   TaskApplicabilityClassification,
   TaskApplicabilityReason,
 } from '../contracts/task-applicability.js'
+import {
+  CANONICAL_ARTIFACT_BASENAME,
+  LEGACY_ARTIFACT_BASENAME,
+} from '../contracts/graph-artifact-selection.js'
 
 const LOCAL_CODE_TERMS = [
   'repo',
@@ -359,9 +363,11 @@ export function formatTaskApplicabilityDebugMessage(classification: TaskApplicab
 export function buildPromptApplicabilityHookScript(
   matchPayloadJson: string,
   hookEventName: string,
-  graphPath = 'out/graph.json',
+  graphPath = `out/${CANONICAL_ARTIFACT_BASENAME}`,
 ): string {
-  const graphAvailabilityFunction = graphPath === 'out/graph.json'
+  // Either conventional default spelling means "the workspace's own graph".
+  const graphAvailabilityFunction = graphPath === `out/${CANONICAL_ARTIFACT_BASENAME}`
+    || graphPath === `out/${LEGACY_ARTIFACT_BASENAME}`
     ? `function hasMadarGraph() {
   let directory = process.cwd()
   while (true) {

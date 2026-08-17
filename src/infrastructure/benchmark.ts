@@ -23,6 +23,7 @@ import {
   usageProviderLabel,
 } from './benchmark/usage.js'
 import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
+import { CANONICAL_ARTIFACT_BASENAME } from '../contracts/graph-artifact-selection.js'
 
 export { loadBenchmarkQuestions, querySubgraphTokens, type BenchmarkQuestionInput } from './benchmark/questions.js'
 
@@ -278,7 +279,7 @@ function totalTokenLabel(result: BenchmarkSuccessResult): string | null {
 }
 
 export function runBenchmark(
-  graphPath = 'out/graph.json',
+  graphPath = `out/${CANONICAL_ARTIFACT_BASENAME}`,
   corpusWords?: number | null,
   questions?: BenchmarkQuestionInput[],
   options: BenchmarkRunOptions = {},

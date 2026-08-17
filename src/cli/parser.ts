@@ -420,7 +420,7 @@ export function parseQueryArgs(args: string[]): QueryCliOptions {
 
   let mode: 'bfs' | 'dfs' = 'bfs'
   let tokenBudget = 2000
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let rankBy: QueryRankBy = 'relevance'
   let community: number | null = null
@@ -515,7 +515,7 @@ export function parsePackArgs(args: string[]): PackCliOptions {
   let budget = 3000
   let task: ContextPackTaskKind = 'explain'
   let taskExplicit = false
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let format: PackCliOptions['format'] | undefined
   let why = false
@@ -697,7 +697,7 @@ export function parseHandoffArgs(args: string[]): HandoffCliOptions {
 
   let budget = 3000
   let task: ContextPackTaskKind = 'explain'
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let consumer: HandoffCliOptions['consumer'] = 'generic'
   let allowSnippets = false
@@ -843,7 +843,7 @@ export function parsePromptArgs(args: string[]): PromptCliOptions {
   }
 
   let provider: PromptCliProvider | null = null
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let requireFreshGraph = false
   let requireFreshContext = false
@@ -920,7 +920,7 @@ export function parsePathArgs(args: string[]): PathCliOptions {
     throw new UsageError('Usage: madar path <source> <target> [--graph path] [--max-hops N]')
   }
 
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let maxHops = 8
   const normalizedSource = validateCliText('source', source)
@@ -973,7 +973,7 @@ export function parseDiffArgs(args: string[]): DiffCliOptions {
     throw new UsageError(`error: baseline graph path exceeds maximum length of ${MAX_CLI_PATH_LENGTH} characters`)
   }
 
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let limit = 10
 
@@ -1021,7 +1021,7 @@ export function parseExplainArgs(args: string[]): ExplainCliOptions {
     throw new UsageError('Usage: madar explain <label> [--graph path] [--relation REL]')
   }
 
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let relation = ''
   const normalizedLabel = validateCliText('label', label)
@@ -1178,7 +1178,7 @@ export function parseSaveResultArgs(args: string[]): SaveResultCliOptions {
 
 export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): BenchmarkCliOptions {
   const usage = `Usage: madar ${commandName} [graph.json] --exec TEMPLATE [--questions PATH] [--yes]`
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let questionsPath: string | null = null
   let execTemplate = ''
@@ -1381,7 +1381,7 @@ export function parseBenchSuiteArgs(args: string[]): BenchSuiteCliOptions {
 
 export function parseCompareArgs(args: string[]): CompareCliOptions {
   let question: string | null = null
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let execTemplate = ''
   let questionsPath: string | null = null
@@ -1612,7 +1612,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
 
 export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions {
   const usage = 'Usage: madar review-compare [graph.json] --exec TEMPLATE [--output-dir DIR] [--base-branch BRANCH] [--budget N] [--yes]'
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let execTemplate = ''
   let outputDir = 'out/review-compare'
@@ -2129,7 +2129,7 @@ export function parseWatchArgs(args: string[]): WatchCliOptions {
 }
 
 export function parseServeArgs(args: string[]): ServeCliOptions {
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let host = '127.0.0.1'
   let port = 4173
@@ -2210,7 +2210,7 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
 
 export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status' = 'doctor'): DoctorCliOptions {
   const usage = `Usage: madar ${commandName} [graph.json] [--graph path]`
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
 
   for (let index = 0; index < args.length; index += 1) {
@@ -2250,7 +2250,7 @@ export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status'
 
 export function parseSummaryArgs(args: string[]): SummaryCliOptions {
   const usage = 'Usage: madar summary [graph.json]'
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
 
   for (let index = 0; index < args.length; index += 1) {
@@ -2290,7 +2290,7 @@ export function parseSummaryArgs(args: string[]): SummaryCliOptions {
 
 export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
   const usage = 'Usage: madar proof-report [graph.json] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]'
-  let graphPath = 'out/graph.json'
+  let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let outputDir: string | null = null
   let compareDir: string | null = null

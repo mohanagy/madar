@@ -257,7 +257,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
   const output = defaultLogger(options.logger)
   const host = options.host ?? '127.0.0.1'
   const port = parsePort(options.port)
-  const graphPath = validateGraphPath(options.graphPath ?? 'out/graph.json')
+  const graphPath = validateGraphPath(options.graphPath ?? `out/${CANONICAL_ARTIFACT_BASENAME}`)
   const outputDir = graphOutputDirectory(graphPath)
   const graph = createGraphLoader(graphPath)
   const rateLimitState = new Map<string, { count: number; resetAt: number }>()
@@ -519,7 +519,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
 
 export async function serveGraph(options: ServeGraphOptions = {}): Promise<void> {
   const output = defaultLogger(options.logger)
-  const graphPath = validateGraphPath(options.graphPath ?? 'out/graph.json')
+  const graphPath = validateGraphPath(options.graphPath ?? `out/${CANONICAL_ARTIFACT_BASENAME}`)
   const handle = await startGraphServer(options)
 
   output.log(`[madar serve] Serving ${graphPath}`)
