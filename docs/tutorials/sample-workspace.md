@@ -9,13 +9,13 @@ npm run build # run from the repository root to build madar locally
 madar generate examples/sample-workspace --no-html
 ```
 
-This creates `examples/sample-workspace/out/graph.json`.
+This creates `examples/sample-workspace/out/graph.madar`.
 
 ## Run a compact pack query
 
 ```bash
 madar pack "how does password reset request enqueue the reset email" \
-  --graph examples/sample-workspace/out/graph.json \
+  --graph examples/sample-workspace/out/graph.madar \
   --task explain
 ```
 

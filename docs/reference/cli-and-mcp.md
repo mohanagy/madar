@@ -43,7 +43,7 @@ The checked-in registry manifest lives at [`docs/mcp-registry/server.json`](../m
 npm run registry:validate
 ```
 
-The official MCP Registry hosts metadata, not Madar code or your local graph artifact. Once the release-gated workflow has published this manifest, its entry will ask the MCP host to run `npx @lubab/madar serve --stdio --auto-refresh`. The MCP host chooses the working directory; when it launches Madar from a workspace, Madar creates that workspace's graph when needed and refreshes it after local changes. Do not add a fixed `out/graph.json` argument to that registry command, because it would become stale and would not follow a linked Git worktree's isolated artifact directory. Start or reconnect the MCP server from each worktree the agent enters. Generated agent MCP configs use the installed `madar` command with the same `serve --stdio --auto-refresh` flow rather than a version-pinned `npx` launcher or an absolute graph path.
+The official MCP Registry hosts metadata, not Madar code or your local graph artifact. Once the release-gated workflow has published this manifest, its entry will ask the MCP host to run `npx @lubab/madar serve --stdio --auto-refresh`. The MCP host chooses the working directory; when it launches Madar from a workspace, Madar creates that workspace's graph when needed and refreshes it after local changes. Do not add a fixed `out/graph.madar` argument to that registry command, because it would become stale and would not follow a linked Git worktree's isolated artifact directory. Start or reconnect the MCP server from each worktree the agent enters. Generated agent MCP configs use the installed `madar` command with the same `serve --stdio --auto-refresh` flow rather than a version-pinned `npx` launcher or an absolute graph path.
 
 Publishing is intentionally a post-npm, release-tag action: after the matching `@lubab/madar` version is public, run **Publish MCP Registry metadata** from GitHub Actions with its `vX.Y.Z` tag. The workflow verifies the checked-out tag, the published npm package's `mcpName`, and this manifest; it then authenticates with GitHub OIDC, publishes `io.github.mohanagy/madar`, and checks the Registry API. This prevents a registry entry from pointing at an npm version that has not been published yet.
 
@@ -71,7 +71,7 @@ These seven MCP tools handle the most common agent workflows in the default core
 
 Full request/response examples live in [`examples/mcp-tool-examples.md`](../../examples/mcp-tool-examples.md).
 
-Within one MCP stdio session, identical `context_pack` requests for `task=explain` are reused automatically when the graph version and relevant prompt/options match. The cache is memory-only, skips delta-session packs, and invalidates itself when `graph.json` changes.
+Within one MCP stdio session, identical `context_pack` requests for `task=explain` are reused automatically when the graph version and relevant prompt/options match. The cache is memory-only, skips delta-session packs, and invalidates itself when the graph artifact changes.
 
 ## Graph freshness contract
 
@@ -81,7 +81,7 @@ Use `--require-fresh-context` on `madar pack`, `madar prompt`, or `madar handoff
 
 Cached `context_pack` explain responses still refresh the current freshness receipt before reuse, so a cache hit does not hide newly changed or missing indexed source files.
 
-With `--auto-refresh`, filesystem events invalidate the graph immediately and adaptive authoritative reconciliations verify the full watched corpus. Graph-backed MCP requests fail closed while reconciliation is pending/failed or watcher coverage/policy is not trustworthy. Generation policy is versioned and fingerprinted in both `graph.json` and `manifest.json`, so automatic refresh reuses direction, extraction mode (auto, legacy, or strict SPI), Git-ignore, symlink, document/non-code, exclusion, extractor, and indexing-threshold settings. Policy drift forces a full rebuild. `madar doctor` and `madar status` expose the local `watcher-state.json` health record. Full behavior and legacy migration are documented in [Auto-refresh and generation policy](../auto-refresh.md).
+With `--auto-refresh`, filesystem events invalidate the graph immediately and adaptive authoritative reconciliations verify the full watched corpus. Graph-backed MCP requests fail closed while reconciliation is pending/failed or watcher coverage/policy is not trustworthy. Generation policy is versioned and fingerprinted in both `graph.madar` and `manifest.json`, so automatic refresh reuses direction, extraction mode (auto, legacy, or strict SPI), Git-ignore, symlink, document/non-code, exclusion, extractor, and indexing-threshold settings. Policy drift forces a full rebuild. `madar doctor` and `madar status` expose the local `watcher-state.json` health record. Full behavior and legacy migration are documented in [Auto-refresh and generation policy](../auto-refresh.md).
 
 The stdio transport and MCP discovery stay responsive while initial reconciliation runs in a background worker. Until the watcher reaches `idle` with matching published policy, graph-backed calls return the structured error type `madar_graph_not_ready`. For transient `starting`, `pending`, or `reconciling` states, `retryable` is `true`, `retry_after_ms` is `1000`, and the suggested action is to retry the same request without bypassing Madar. Terminal failures, incomplete graphs, and policy mismatches set `retryable` to `false` and suggest graph repair; inspect `madar status`, then run `madar generate . --update` when required.
 
@@ -104,7 +104,7 @@ madar pack "how does auth work?" --task explain --require-fresh-context
 madar pack "how does auth work?" --task explain --require-fresh-graph
 madar prompt "how does auth work?" --provider claude
 madar handoff "add auth telemetry" --task implement --consumer copilot
-madar review-compare out/graph.json --exec '...' --yes
+madar review-compare out/graph.madar --exec '...' --yes
 madar compare "How does auth work?" --exec '...' --yes
 madar compare "How does auth work?" --baseline-mode pack_only --exec '...' --yes
 madar telemetry enable
@@ -112,13 +112,13 @@ madar telemetry status
 madar telemetry clear
 madar telemetry report
 madar time-travel main HEAD --view risk
-madar federate frontend/graph.json backend/graph.json
+madar federate frontend/out/graph.madar backend/out/graph.madar
 madar --help
 ```
 
 Generated code graphs are directed by default, including `try`, `watch`, automatic MCP refresh, and unchanged `--update` runs. An unchanged `--update` fully re-extracts a legacy undirected artifact because old storage may have collapsed opposite edges; `--cluster-only` refuses that unsafe migration. `--directed` remains accepted for compatibility. `--undirected` is an explicit visualization-only legacy mode that collapses reciprocal edges into one connection; `impact`, `call_chain`, and `slice-v1` retrieval reject that output rather than infer reverse edges. The two direction flags are mutually exclusive.
 
-Every generation also writes local and share-safe indexing-completeness manifests beside `graph.json`. A valid graph is not a claim of complete source coverage. `--strict-indexing` uses zero failed and zero unsupported candidates as its thresholds; either `--max-indexing-failed N` or `--max-indexing-unsupported N` enables strict mode with the supplied allowance. See [Indexing completeness](../indexing-completeness.md) for outcome meanings, path-redaction behavior, and confidence effects.
+Every generation also writes local and share-safe indexing-completeness manifests beside `graph.madar`. A valid graph is not a claim of complete source coverage. `--strict-indexing` uses zero failed and zero unsupported candidates as its thresholds; either `--max-indexing-failed N` or `--max-indexing-unsupported N` enables strict mode with the supplied allowance. See [Indexing completeness](../indexing-completeness.md) for outcome meanings, path-redaction behavior, and confidence effects.
 
 The local `indexing-manifest.json` is also the extraction receipt: `requested_extraction_mode` records `auto`, `legacy`, or `spi`; each outcome records its `extraction_strategy`; and auto fallback outcomes carry `fallback_reason: "spi_unsupported_language"`. The graph stores the same requested mode in `generation_policy`, an aggregate `extraction_receipt`, and `extraction_strategy` on its source evidence. `--cluster-only` never re-extracts source, so it cannot be combined with `--legacy` or `--spi`; use `madar generate . --update` to change modes.
 

@@ -103,7 +103,7 @@ madar claude install
 madar codex install
 ```
 
-Confirm `madar --version` prints the version about to be published, generation refreshes `out/graph.json`, and install commands write the expected project files and instructions. For Codex, confirm `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and this workspace's block in `~/.codex/config.toml` exist with `startup_timeout_sec = 180` and `tool_timeout_sec = 60`. Only in a trusted repository, restart or open a new session, use `/hooks` to review and trust the project hook, then use `/mcp` or `codex mcp list` to verify the local MCP server. Uninstall any agent profile enabled solely for the smoke test.
+Confirm `madar --version` prints the version about to be published, generation refreshes `out/graph.madar`, and install commands write the expected project files and instructions. For Codex, confirm `.codex/hooks.json`, `.codex/madar-user-prompt-submit.cjs`, and this workspace's block in `~/.codex/config.toml` exist with `startup_timeout_sec = 180` and `tool_timeout_sec = 60`. Only in a trusted repository, restart or open a new session, use `/hooks` to review and trust the project hook, then use `/mcp` or `codex mcp list` to verify the local MCP server. Uninstall any agent profile enabled solely for the smoke test.
 
 ## Post-release verification
 

@@ -10,10 +10,10 @@ This repo ships a checked-in demo workspace plus a labeled question set under `e
 npm install
 npm run build
 node dist/src/cli/bin.js generate examples/demo-repo --no-html
-node dist/src/cli/bin.js benchmark examples/demo-repo/out/graph.json --questions examples/demo-repo/benchmark-questions.json \
+node dist/src/cli/bin.js benchmark examples/demo-repo/out/graph.madar --questions examples/demo-repo/benchmark-questions.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
-node dist/src/cli/bin.js eval examples/demo-repo/out/graph.json --questions examples/demo-repo/benchmark-questions.json \
+node dist/src/cli/bin.js eval examples/demo-repo/out/graph.madar --questions examples/demo-repo/benchmark-questions.json \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
 ```
@@ -33,7 +33,7 @@ Runner-backed `benchmark` executions (`--exec ...`) keep the per-run prompt/answ
 
 ```bash
 node dist/src/cli/bin.js compare "How does login create a session?" \
-  --graph examples/demo-repo/out/graph.json \
+  --graph examples/demo-repo/out/graph.madar \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
 ```
@@ -77,7 +77,7 @@ Like runner-backed `benchmark` and `eval`, `compare` can spend paid model tokens
 `review-compare` is the proof path for review mode. It compares the **verbose** and **compact** `pr_impact` prompts for the current git diff, saves both payload-backed prompts, and can optionally run both through your own model runner.
 
 ```bash
-madar review-compare out/graph.json \
+madar review-compare out/graph.madar \
   --exec 'cat {prompt_file} | claude -p' \
   --yes
 ```
@@ -99,7 +99,7 @@ As with `compare` and `benchmark`, the prompt and answer file contents stay loca
 
 Use this path when the question is not just "did Madar shrink the prompt?", but "how should a review or security agent consume bounded diff evidence, and how do we compare that workflow across tools?"
 
-1. Generate the graph locally and run `madar review-compare out/graph.json --exec ... --yes` (or capture the compact `pr_impact` payload for the current diff).
+1. Generate the graph locally and run `madar review-compare out/graph.madar --exec ... --yes` (or capture the compact `pr_impact` payload for the current diff).
 2. Keep the local `report.json` for the full artifact bundle, and share `report.share-safe.json` when you need to hand a sanitized receipt to another system or attach evidence to a PR discussion.
 3. Run the same diff through CodeRabbit, Qodo, Codex Security, or another review/security agent and compare overlap, misses, and human follow-up against the Madar-backed receipt.
 4. Record the outcome as workflow evidence: what risks were surfaced, what needed more repo reads, and whether the compact evidence changed review/security-agent behavior.
@@ -121,12 +121,12 @@ madar generate backend
 madar generate shared
 
 madar federate \
-  frontend/out/graph.json \
-  backend/out/graph.json \
-  shared/out/graph.json \
+  frontend/out/graph.madar \
+  backend/out/graph.madar \
+  shared/out/graph.madar \
   --output federated-out
 
-madar serve federated-out/graph.json --stdio
+madar serve federated-out/graph.madar --stdio
 ```
 
 The smallest checked-in version of that story now lives under [`docs/benchmarks/2026-06-01-federation-flagship/`](docs/benchmarks/2026-06-01-federation-flagship/README.md). It is a **synthetic federation receipt** built around a **frontend/backend/shared** fixture, and it exists because federation can be an **enterprise differentiator** when teams need one auditable local graph across multiple repos. The current receipt is intentionally explicit that cross-repo links come from **shared labels**, so it is a reproducible workflow note rather than a broad cross-repo benchmark headline.

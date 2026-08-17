@@ -1177,7 +1177,7 @@ export function parseSaveResultArgs(args: string[]): SaveResultCliOptions {
 }
 
 export function parseBenchmarkArgs(args: string[], commandName = 'benchmark'): BenchmarkCliOptions {
-  const usage = `Usage: madar ${commandName} [graph.json] --exec TEMPLATE [--questions PATH] [--yes]`
+  const usage = `Usage: madar ${commandName} [graph.madar] --exec TEMPLATE [--questions PATH] [--yes]`
   let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let questionsPath: string | null = null
@@ -1611,7 +1611,7 @@ export function parseCompareArgs(args: string[]): CompareCliOptions {
 }
 
 export function parseReviewCompareArgs(args: string[]): ReviewCompareCliOptions {
-  const usage = 'Usage: madar review-compare [graph.json] --exec TEMPLATE [--output-dir DIR] [--base-branch BRANCH] [--budget N] [--yes]'
+  const usage = 'Usage: madar review-compare [graph.madar] --exec TEMPLATE [--output-dir DIR] [--base-branch BRANCH] [--budget N] [--yes]'
   let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let execTemplate = ''
@@ -2144,7 +2144,7 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
 
     if (!argument.startsWith('--')) {
       if (graphPathIntent === 'explicit') {
-        throw new UsageError('Usage: madar serve [graph.json] [--host H] [--port N] [--transport http|stdio] [--http|--stdio|--mcp] [--auto-refresh]')
+        throw new UsageError('Usage: madar serve [graph.madar] [--host H] [--port N] [--transport http|stdio] [--http|--stdio|--mcp] [--auto-refresh]')
       }
       graphPath = argument
       graphPathIntent = 'explicit'
@@ -2209,7 +2209,7 @@ export function parseServeArgs(args: string[]): ServeCliOptions {
 }
 
 export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status' = 'doctor'): DoctorCliOptions {
-  const usage = `Usage: madar ${commandName} [graph.json] [--graph path]`
+  const usage = `Usage: madar ${commandName} [graph.madar] [--graph path]`
   let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
 
@@ -2249,7 +2249,7 @@ export function parseDoctorArgs(args: string[], commandName: 'doctor' | 'status'
 }
 
 export function parseSummaryArgs(args: string[]): SummaryCliOptions {
-  const usage = 'Usage: madar summary [graph.json]'
+  const usage = 'Usage: madar summary [graph.madar]'
   let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
 
@@ -2289,7 +2289,7 @@ export function parseSummaryArgs(args: string[]): SummaryCliOptions {
 }
 
 export function parseProofReportArgs(args: string[]): ProofReportCliOptions {
-  const usage = 'Usage: madar proof-report [graph.json] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]'
+  const usage = 'Usage: madar proof-report [graph.madar] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]'
   let graphPath = 'out/graph.madar'
   let graphPathIntent: GraphPathIntent = 'default'
   let outputDir: string | null = null

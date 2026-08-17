@@ -69,7 +69,7 @@ describe('rebrand surface', () => {
     const help = formatHelp()
 
     expect(help).toContain('Usage: madar <command>')
-    expect(help).toContain('default out/graph.json')
+    expect(help).toContain('default out/graph.madar')
     expect(help).toContain('default out/compare')
     expect(help).toContain('default out/review-compare')
     expect(help).toContain('default out/memory')
@@ -77,9 +77,9 @@ describe('rebrand surface', () => {
     expect(help).not.toContain(LEGACY_BRAND)
     expect(help).not.toContain(LEGACY_OUT_DIR)
 
-    expect(parseQueryArgs(['how does auth work']).graphPath).toBe('out/graph.json')
-    expect(parsePackArgs(['how does auth work']).graphPath).toBe('out/graph.json')
-    expect(parsePromptArgs(['how does auth work', '--provider', 'claude']).graphPath).toBe('out/graph.json')
+    expect(parseQueryArgs(['how does auth work']).graphPath).toBe('out/graph.madar')
+    expect(parsePackArgs(['how does auth work']).graphPath).toBe('out/graph.madar')
+    expect(parsePromptArgs(['how does auth work', '--provider', 'claude']).graphPath).toBe('out/graph.madar')
     expect(parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"']).outputDir).toBe(
       join(resolveMadarOutputDirectory(), 'compare'),
     )
@@ -89,9 +89,9 @@ describe('rebrand surface', () => {
     expect(parseSaveResultArgs(['--question', 'Q', '--answer', 'A']).memoryDir).toBe(
       join(resolveMadarOutputDirectory(), 'memory'),
     )
-    expect(parseDoctorArgs([]).graphPath).toBe('out/graph.json')
-    expect(parseSummaryArgs([]).graphPath).toBe('out/graph.json')
-    expect(parseServeArgs([]).graphPath).toBe('out/graph.json')
+    expect(parseDoctorArgs([]).graphPath).toBe('out/graph.madar')
+    expect(parseSummaryArgs([]).graphPath).toBe('out/graph.madar')
+    expect(parseServeArgs([]).graphPath).toBe('out/graph.madar')
   })
 
   it('writes madar as the saved result contributor', () => {

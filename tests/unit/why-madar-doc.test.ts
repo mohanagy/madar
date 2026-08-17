@@ -239,7 +239,7 @@ describe('public marketing copy honesty', () => {
       expect(content).toContain('madar generate examples/sample-workspace --no-html')
       expect(content.indexOf('madar try')).toBeLessThan(content.indexOf('madar generate examples/sample-workspace --no-html'))
       expect(content).toContain('cd examples/sample-workspace')
-      expect(content).toContain('madar summary out/graph.json')
+      expect(content).toContain('madar summary out/graph.madar')
       expect(content).toContain('madar pack')
       expect(content).toContain('madar prompt')
     })

@@ -80,6 +80,24 @@ describe('the maintained runner measures the canonical artifact', () => {
     expect(output).toMatch(/MADAR_BENCH_MODE=current/)
   })
 
+  it('refuses a fixture directory that does not exist', () => {
+    const { status, output } = runScript(join(MAINTAINED, 'run.sh'), [], {
+      MADAR_BENCH_FIXTURE: join(MAINTAINED, 'no-such-fixture'),
+    })
+
+    expect(status).toBe(2)
+    expect(output).toMatch(/MADAR_BENCH_FIXTURE/)
+  })
+
+  it('refuses a prompts file that does not exist', () => {
+    const { status, output } = runScript(join(MAINTAINED, 'run.sh'), [], {
+      MADAR_BENCH_PROMPTS: join(MAINTAINED, 'no-such-prompts.json'),
+    })
+
+    expect(status).toBe(2)
+    expect(output).toMatch(/MADAR_BENCH_PROMPTS/)
+  })
+
   it('reads out/graph.madar and verifies the tombstone by content', () => {
     const script = readFileSync(join(MAINTAINED, 'run.sh'), 'utf8')
 

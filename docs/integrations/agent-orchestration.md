@@ -108,7 +108,7 @@ Use graph-backed review surfaces first:
 
 ```bash
 madar generate .
-madar review-compare out/graph.json --exec 'cat {prompt_file} | claude -p' --yes
+madar review-compare out/graph.madar --exec 'cat {prompt_file} | claude -p' --yes
 ```
 
 For live review work, prefer `pr_impact` / review-oriented MCP tools when the agent supports MCP. If a second agent needs the same review scope, hand it the compact review context instead of re-running diff discovery.

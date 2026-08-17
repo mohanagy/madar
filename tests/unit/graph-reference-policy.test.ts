@@ -77,6 +77,14 @@ describe('production code does not default to the legacy artifact', () => {
     ["graphPath = 'out/graph.json'", 'a command default'],
     ["?? 'out/graph.json'", 'a fallback default'],
     ["= 'out/graph.json'\n", 'an initialiser default'],
+    // Help text is the surface users read before anything else, and the
+    // allowlist above cannot see the difference between a file that mentions
+    // the legacy name and one that advertises it as the default. Every
+    // `--graph` line in the CLI help said `(default out/graph.json)` after the
+    // cutover, which told every reader to name the tombstone.
+    ['(default out/graph.json)', 'a documented default'],
+    ['[graph.json]', 'a command-line placeholder'],
+    ['path to graph.json', 'help text describing the legacy artifact'],
   ])('has no %s (%s)', (pattern) => {
     // The distinction the allowlist cannot make: mentioning the legacy name is
     // fine, defaulting to it is not.

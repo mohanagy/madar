@@ -16,7 +16,7 @@ If you are working from this repository instead of a published npm install, run 
 madar try "how does password reset request enqueue the reset email" examples/sample-workspace
 ```
 
-This builds or reuses `examples/sample-workspace/out/graph.json`, prints one human-readable local explanation, and ends with the next recommended install command without requiring Claude/Cursor/Codex/Copilot setup first.
+This builds or reuses `examples/sample-workspace/out/graph.madar`, prints one human-readable local explanation, and ends with the next recommended install command without requiring Claude/Cursor/Codex/Copilot setup first.
 
 ## 3. Generate a graph for the sample workspace manually
 
@@ -24,7 +24,7 @@ This builds or reuses `examples/sample-workspace/out/graph.json`, prints one hum
 madar generate examples/sample-workspace --no-html
 ```
 
-This creates `examples/sample-workspace/out/graph.json`.
+This creates `examples/sample-workspace/out/graph.madar`.
 
 Default generation combines SPI metadata with proven legacy semantics for supported TypeScript/JavaScript code, while retaining legacy fallback for other supported languages. Strict SPI mode restricts code extraction to SPI-supported JS/TS without legacy semantics or language fallback; eligible non-code evidence remains included:
 
@@ -51,8 +51,8 @@ If you want a different runtime, use the same step with `madar codex install`, `
 ## 5. Verify the install before asking bigger questions
 
 ```bash
-madar doctor out/graph.json
-madar status out/graph.json
+madar doctor out/graph.madar
+madar status out/graph.madar
 ```
 
 For Claude, Cursor, Gemini, and Copilot, `doctor` checks graph freshness plus the install wiring, and `status` gives you the compact readiness summary plus the next recommended commands. `doctor`/`status` also report Codex, Aider, and OpenCode when their AGENTS/hook/plugin/MCP signals are present; if any of those drift, the agent is marked `partial` with a reinstall suggestion.
@@ -60,7 +60,7 @@ For Claude, Cursor, Gemini, and Copilot, `doctor` checks graph freshness plus th
 ## 6. Start with a bounded summary
 
 ```bash
-madar summary out/graph.json
+madar summary out/graph.madar
 ```
 
 This prints the deterministic high-signal overview first: graph counts, source domains, top modules, frameworks, entrypoints, and runtime paths. It is the fastest way to decide whether you need a deeper `pack`, `prompt`, or MCP retrieval call.
@@ -69,7 +69,7 @@ This prints the deterministic high-signal overview first: graph counts, source d
 
 ```bash
 madar pack "how does password reset request enqueue the reset email" \
-  --graph out/graph.json \
+  --graph out/graph.madar \
   --task explain
 ```
 
@@ -80,7 +80,7 @@ This is the fastest way to confirm the route → service → job flow is represe
 ```bash
 madar prompt "where is reset token persisted before the email job runs" \
   --provider claude \
-  --graph out/graph.json
+  --graph out/graph.madar
 ```
 
 `prompt` only compiles the prompt payload. It does **not** call Claude or spend paid model tokens by itself.
@@ -91,7 +91,7 @@ If you want to exercise `compare` without calling a paid model, use a local echo
 
 ```bash
 madar compare "how does password reset request enqueue the reset email" \
-  --graph out/graph.json \
+  --graph out/graph.madar \
   --baseline-mode pack_only \
   --exec 'cat {prompt_file}' \
   --yes
@@ -104,7 +104,7 @@ On Windows, use `--exec "type {prompt_file}"` for the same smoke check because `
 ## Expected output
 
 - `try` should print one human-readable local result plus a recommended install command
-- `generate` should write `examples/sample-workspace/out/graph.json`
+- `generate` should write `examples/sample-workspace/out/graph.madar`
 - `claude install` should register the local Madar integration for the sample workspace
 - `doctor` should confirm the graph path plus install wiring for Claude, Cursor, Gemini, or Copilot
 - `status` should print the next recommended commands for this sample workspace when you use one of those reported agents
@@ -117,7 +117,7 @@ On Windows, use `--exec "type {prompt_file}"` for the same smoke check because `
 ## Troubleshooting
 
 - **`madar: command not found`**: make sure the global npm install succeeded, or run from a local repo checkout after `npm run build`.
-- **`graph.json` missing**: rerun `madar generate . --no-html` before `pack`, `prompt`, or `compare`.
+- **`graph.madar` missing**: rerun `madar generate . --no-html` before `pack`, `prompt`, or `compare`. A workspace left by an older version holds `out/graph.json` instead; the current commands still read it, and one `madar generate .` moves it to `out/graph.madar`.
 - **`doctor` or `status` says the install is missing**: rerun your chosen `madar <agent> install` command from the sample workspace root, then rerun the verification commands for Claude, Cursor, Gemini, or Copilot.
 - **Need a strict JS/TS code-extraction diagnostic?** Regenerate with `madar generate . --spi --no-html`; eligible non-code evidence remains included. Normal `madar generate . --no-html` already includes framework-aware JS/TS hints and retains Go, Python, and other supported legacy languages.
 - **`compare` looks noisy**: the `cat {prompt_file}` runner (or `type {prompt_file}` on Windows) is only a local smoke check. Use a real terminal model runner later if you want meaningful answer comparisons.
