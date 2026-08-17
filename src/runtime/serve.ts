@@ -124,11 +124,31 @@ function describeQueryFilters(filters?: QueryFilters): string | null {
   return parts.length > 0 ? parts.join(', ') : null
 }
 
-function readGraphArtifactRecord(graphPath: string): Record<string, unknown> {
+/**
+ * Reads the stored artifact payload as a record.
+ *
+ * This parsed the file as bare JSON, so a v2 artifact threw and was swallowed
+ * to {}. While graph.json was a live mirror that was invisible -- the mirror
+ * parsed. After the cutover it meant every caller silently lost the stored
+ * fields: community_labels in particular are authoritative over derived ones,
+ * so discarding them quietly changed labelling rather than failing.
+ */
+export function readGraphArtifactRecord(graphPath: string): Record<string, unknown> {
   const safePath = validateGraphPath(graphPath)
 
   try {
-    const parsed = JSON.parse(readFileSync(safePath, 'utf8'))
+    const resolved = basename(safePath) === 'graph.json'
+      ? (() => {
+          const classification = classifyWorkspaceGraph(dirname(safePath))
+          return classification.state === 'legacy_v1_only' || !existsSync(classification.canonicalPath)
+            ? safePath
+            : classification.canonicalPath
+        })()
+      : safePath
+    const text = readFileSync(resolved, 'utf8')
+    const parsed = JSON.parse(
+      text.startsWith(GRAPH_ARTIFACT_V2_HEADER) ? text.slice(GRAPH_ARTIFACT_V2_HEADER.length) : text,
+    )
     return isRecord(parsed) ? parsed : {}
   } catch {
     return {}
