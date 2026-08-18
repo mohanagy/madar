@@ -478,6 +478,7 @@ describe('handoff-command', () => {
       budget: schema.budget,
       task: schema.task,
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       consumer: 'cursor',
     }, {
       loadGraph: () => graph,

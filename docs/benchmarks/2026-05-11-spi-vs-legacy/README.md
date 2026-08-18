@@ -4,6 +4,22 @@
 
 > **Historical harness:** the strategy-comparison section of `probe.mjs` targets commit `debf9ba602fa04766528e5f184aca578442ee8d4`. Current production retrieval intentionally has no packing-strategy override; benchmark expectations and alternate compiler-policy tests now live outside the production retrieval API. Use the pinned commit to reproduce this exact receipt, or use the current benchmark suite for a new run.
 
+> **Frozen against the v1 artifact contract.** Every number below was measured
+> when the graph artifact was a v1 JSON file at `out/graph.json`. That path is now
+> a tombstone, so `run.sh` here requires `MADAR_BENCH_MODE=historical` and refuses
+> to continue against a binary that publishes `out/graph.madar` — otherwise it
+> would have recorded the tombstone's size as the graph size rather than failing.
+> For a current measurement use
+> [`docs/benchmarks/tools/real-workspace`](../tools/real-workspace/README.md).
+>
+> Two limitations of this harness are worth knowing before comparing anything to
+> it. `graph.json size` is the v1 JSON file and is not comparable with a v2
+> artifact's size. And the explain-pack token totals were read from
+> `pack.token_count` with a `?? 0` fallback; that field is absent on one retrieval
+> path, so prompts answered that way contributed zero to the totals. The
+> maintained tool records `serialized_budget.token_count` and treats a missing
+> field as an error. The numbers below are left exactly as measured.
+
 ## TL;DR (latest measured run: `results/2026-05-11T163843Z/`)
 
 | Metric | Legacy | `--spi` | Δ |
@@ -71,7 +87,8 @@ Diagnostics also become more useful at higher levels on this fixture. For exampl
 
 ```bash
 # from repo root
-bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
+MADAR_BENCH_MODE=historical \
+  bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
 ```
 
 The runner now produces:
@@ -88,7 +105,8 @@ If you have a local backend-only or monorepo workspace, you can reuse the same r
 ```bash
 MADAR_BENCH_FIXTURE=/absolute/path/to/repo \
 MADAR_BENCH_PROMPTS=docs/benchmarks/2026-05-11-spi-vs-legacy/prompts.json \
-bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
+MADAR_BENCH_MODE=historical \
+  bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
 ```
 
 For a fully manual flow:
@@ -111,7 +129,8 @@ You can benchmark two local workspaces side by side without committing private p
 ```bash
 MADAR_BENCH_BACKEND=/absolute/path/to/backend \
 MADAR_BENCH_MONOREPO=/absolute/path/to/monorepo \
-bash docs/benchmarks/2026-05-11-spi-vs-legacy/run-real-workspace.sh
+MADAR_BENCH_MODE=historical \
+  bash docs/benchmarks/2026-05-11-spi-vs-legacy/run-real-workspace.sh
 ```
 
 Defaults:
@@ -138,7 +157,9 @@ The aggregate summary keeps objective metrics separate from qualitative notes an
 
 - `fixture/` — synthetic TypeScript workspace covering Express, Hono, tRPC, Prisma, and utility code
 - `prompts.json` — benchmark prompts
-- `run.sh` — runner (`MADAR_BENCH_FIXTURE` / `MADAR_BENCH_PROMPTS` overrides supported)
+- `run.sh` — runner (`MADAR_BENCH_FIXTURE` / `MADAR_BENCH_PROMPTS` overrides supported; requires
+  `MADAR_BENCH_MODE=historical` and a v0.32.1-era binary, since a current binary
+  publishes v2 and this schema cannot hold that measurement)
 - `probe.mjs` — strategy comparison + retrieval-level sweep
 - `summarize.mjs` — aggregate summary builder
 - `results/<timestamp>/` — measured run artifacts

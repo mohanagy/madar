@@ -10,6 +10,7 @@ import { validateGraphOutputPath } from '../../src/shared/security.js'
 import { resolveMadarWorkspace, resolveWorkspaceGraphPath, resolveWorkspaceOutputPath } from '../../src/shared/workspace.js'
 
 import { createPhaseRun, PhaseFailure, usePhaseRun } from './helpers/phase-run.js'
+import { readGeneratedGraphJson, readGeneratedSidecar } from './helpers/generated-graph.js'
 
 // The only real hang protection available here. `execFileSync`'s `timeout`
 // kills the child and returns control; Vitest cannot interrupt a synchronous
@@ -143,7 +144,7 @@ describe('worktree artifact routing', () => {
         expect(canonicalPhysicalPath(workspace.worktreeRoot ?? '')).toBe(canonicalPhysicalPath(primary))
         expect(workspace.isLinkedWorktree).toBe(false)
         expect(workspace.outputDir).toBe(join(resolve(nested), 'out'))
-        expect(workspace.graphPath).toBe(join(resolve(nested), 'out', 'graph.json'))
+        expect(workspace.legacyGraphPath).toBe(join(resolve(nested), 'out', 'graph.json'))
       })
       workSucceeded = true
     } finally {
@@ -232,12 +233,12 @@ describe('linked worktree artifact routing', () => {
 
     phases.phase('assert-routing', () => {
       expect(workspaces.primary.isLinkedWorktree).toBe(false)
-      expect(workspaces.primary.graphPath).toBe(join(resolve(paths.primary), 'out', 'graph.json'))
+      expect(workspaces.primary.legacyGraphPath).toBe(join(resolve(paths.primary), 'out', 'graph.json'))
       expect(workspaces.linked.isLinkedWorktree).toBe(true)
       expect(canonicalPhysicalPath(workspaces.linked.gitCommonDir ?? '')).toBe(canonicalPhysicalPath(join(paths.primary, '.git')))
-      expect(workspaces.linked.graphPath).not.toBe(workspaces.primary.graphPath)
-      expect(isInside(workspaces.linked.graphPath, paths.linked)).toBe(false)
-      expect(workspaces.scoped.graphPath).not.toBe(workspaces.linked.graphPath)
+      expect(workspaces.linked.legacyGraphPath).not.toBe(workspaces.primary.legacyGraphPath)
+      expect(isInside(workspaces.linked.legacyGraphPath, paths.linked)).toBe(false)
+      expect(workspaces.scoped.legacyGraphPath).not.toBe(workspaces.linked.legacyGraphPath)
     })
   }, NON_GATING_ELAPSED_CEILING_MS)
 
@@ -247,12 +248,12 @@ describe('linked worktree artifact routing', () => {
     const workspace = resolvedWorkspaces().linked
 
     phases.phase('assert-routing', () => {
-      expect(resolveWorkspaceGraphPath('out/graph.json', paths.linked)).toBe(workspace.graphPath)
-      expect(resolveWorkspaceGraphPath('./out/graph.json', paths.linked)).toBe(workspace.graphPath)
+      expect(resolveWorkspaceGraphPath('out/graph.json', paths.linked, 'explicit')).toBe(workspace.legacyGraphPath)
+      expect(resolveWorkspaceGraphPath('./out/graph.json', paths.linked, 'explicit')).toBe(workspace.legacyGraphPath)
       expect(resolveWorkspaceOutputPath('out/compare', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
       expect(validateGraphOutputPath('out/compare', 'out', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
-      expect(resolveWorkspaceGraphPath('out\\graph.json', paths.linked)).toBe(workspace.graphPath)
-      expect(resolveWorkspaceGraphPath('.\\out\\graph.json', paths.linked)).toBe(workspace.graphPath)
+      expect(resolveWorkspaceGraphPath('out\\graph.json', paths.linked, 'explicit')).toBe(workspace.legacyGraphPath)
+      expect(resolveWorkspaceGraphPath('.\\out\\graph.json', paths.linked, 'explicit')).toBe(workspace.legacyGraphPath)
       expect(resolveWorkspaceOutputPath('out\\compare', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
       expect(validateGraphOutputPath('out\\compare', 'out', paths.linked)).toBe(join(workspace.outputDir, 'compare'))
     })
@@ -264,13 +265,17 @@ describe('linked worktree artifact routing', () => {
     const workspace = resolvedWorkspaces().linked
 
     const result = phases.phase('generate-graph', () => generateGraph(paths.linked, { noHtml: true }))
-    const graph = phases.phase('read-graph', () => JSON.parse(readFileSync(result.graphPath, 'utf8')) as { root_path?: string; nodes?: Array<{ source_file?: string }> })
+    const graph = phases.phase('read-graph', () => readGeneratedGraphJson(result.graphPath) as unknown as { nodes?: Array<{ source_file?: string }> })
+    const sidecar = phases.phase('read-sidecar', () => readGeneratedSidecar(result.graphPath))
 
     phases.phase('assert-graph-artifacts', () => {
       expect(result.outputDir).toBe(workspace.outputDir)
-      expect(result.graphPath).toBe(workspace.graphPath)
+      expect(result.graphPath).toBe(workspace.canonicalGraphPath)
       expect(existsSync(join(paths.linked, 'out'))).toBe(false)
-      expect(graph.root_path).toBe(resolve(paths.linked))
+      // root_path is machine-local and lives in the sidecar, not the
+      // shared artifact. The sidecar must still record the linked source
+      // root, not the redirected artifact directory.
+      expect(sidecar?.root_path).toBe(resolve(paths.linked))
       expect(graph.nodes?.some((node) => node.source_file?.endsWith('feature.ts'))).toBe(true)
     })
   }, NON_GATING_ELAPSED_CEILING_MS)

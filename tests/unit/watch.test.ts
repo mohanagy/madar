@@ -13,6 +13,7 @@ import { readWatcherStateForGraph } from '../../src/infrastructure/watcher-state
 import { tryAcquireRefreshLease } from '../../src/infrastructure/refresh-lease.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
+import { readGeneratedGraphJson } from './helpers/generated-graph.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-watch-'))
@@ -125,7 +126,7 @@ describe('rebuildCode', () => {
       writeFileSync(sourcePath, 'export const refreshed = true\n', 'utf8')
       expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
 
-      const graph = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as { spi_mode?: unknown }
+      const graph = readGeneratedGraphJson(join(tempDir, 'out', 'graph.json')) as { spi_mode?: unknown }
       expect(graph.spi_mode).toBe(true)
     })
   })
@@ -142,7 +143,7 @@ describe('rebuildCode', () => {
       writeFileSync(goPath, 'package main\n\nfunc main() { println("refreshed") }\n', 'utf8')
       expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
 
-      const graph = JSON.parse(readFileSync(join(tempDir, 'out', 'graph.json'), 'utf8')) as {
+      const graph = readGeneratedGraphJson(join(tempDir, 'out', 'graph.json')) as {
         spi_mode?: unknown
         generation_policy?: unknown
         nodes: Array<{ label?: unknown; source_file?: unknown }>
@@ -172,14 +173,14 @@ describe('rebuildCode', () => {
         indexingStrict: { maxFailed: 0, maxUnsupported: 0 },
       })
       const before = parseGenerationPolicy(
-        (JSON.parse(readFileSync(initial.graphPath, 'utf8')) as { generation_policy?: unknown }).generation_policy,
+        (readGeneratedGraphJson(initial.graphPath) as { generation_policy?: unknown }).generation_policy,
       )
 
       writeFileSync(sourcePath, 'export const refreshed = true\n', 'utf8')
       expect(rebuildCode(tempDir, { noHtml: true })).toBe(true)
 
       const after = parseGenerationPolicy(
-        (JSON.parse(readFileSync(initial.graphPath, 'utf8')) as { generation_policy?: unknown }).generation_policy,
+        (readGeneratedGraphJson(initial.graphPath) as { generation_policy?: unknown }).generation_policy,
       )
       expect(after).toEqual(before)
       expect(after?.settings).toMatchObject({
@@ -402,16 +403,19 @@ describe('watch', () => {
       try {
         expect(refresh.initialRebuilt).toBe(true)
         expect(workspace.isLinkedWorktree).toBe(true)
-        expect(existsSync(workspace.graphPath)).toBe(true)
+        // The canonical artifact, not the legacy path: after the cutover
+        // graph.json exists as a tombstone, so asserting its existence proved
+        // nothing about the rebuild this test is checking.
+        expect(existsSync(workspace.canonicalGraphPath)).toBe(true)
         expect(existsSync(join(workspace.outputDir, 'watcher-state.json'))).toBe(true)
         expect(existsSync(join(linked, 'out'))).toBe(false)
         // `git worktree add` has just written the whole linked checkout, so the watcher
         // may still observe that activity when it attaches. Wait for the settled state.
-        await waitForWatcherStatus(workspace.graphPath, 'idle')
+        await waitForWatcherStatus(workspace.canonicalGraphPath, 'idle')
 
         writeFileSync(join(linked, 'added.ts'), 'export const linkedValue = 2\n', 'utf8')
         await waitFor(() => {
-          const graph = JSON.parse(readFileSync(workspace.graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+          const graph = readGeneratedGraphJson(workspace.canonicalGraphPath) as { nodes?: Array<{ source_file?: string }> }
           return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
         })
       } finally {
@@ -611,7 +615,7 @@ describe('watch', () => {
       const generated = generateGraph(tempDir, { noHtml: true })
       const manifestPath = join(generated.outputDir, 'manifest.json')
       const graphPolicy = parseGenerationPolicy(
-        (JSON.parse(readFileSync(generated.graphPath, 'utf8')) as { generation_policy?: unknown }).generation_policy,
+        (readGeneratedGraphJson(generated.graphPath) as { generation_policy?: unknown }).generation_policy,
       )
       const controller = new AbortController()
       const watcher = watch(tempDir, 0, {
@@ -688,7 +692,7 @@ describe('watch', () => {
 
         writeFileSync(join(tempDir, 'added.ts'), 'export function addedDuringSession() { return 2 }\n', 'utf8')
         await waitFor(() => {
-          const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+          const graph = readGeneratedGraphJson(graphPath) as unknown as { nodes?: Array<{ source_file?: string }> }
           return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
         })
       } finally {

@@ -8,7 +8,7 @@ There is no file-count cutoff. A reconciliation scans every supported candidate 
 
 ## Generation-policy preservation
 
-Every generated `graph.json` and `manifest.json` contains the same versioned `generation_policy` and SHA-256 fingerprint. The policy covers:
+Every generated `graph.madar` and `manifest.json` contains the same versioned `generation_policy` and SHA-256 fingerprint. The policy covers:
 
 - directed versus legacy undirected graph semantics;
 - extraction mode: capability-aware auto, legacy-only, or strict SPI code extraction without unsupported-language fallback;
@@ -28,7 +28,7 @@ madar generate . --update
 
 ## Watcher health
 
-The local `watcher-state.json` beside `graph.json` is written atomically and includes:
+The local `watcher-state.json` beside `graph.madar` is written atomically and includes:
 
 - `status`: `starting`, `idle`, `pending`, `reconciling`, `failed`, or `stopped`;
 - coverage and event mode;
@@ -45,4 +45,4 @@ The refresh lease serializes multiple MCP processes that target the same workspa
 
 ## Linked worktrees
 
-Auto-refresh watches the source worktree selected when the MCP server starts. In a linked worktree, `graph.json`, manifests, and `watcher-state.json` live together in that worktree's isolated external Madar artifact directory under the repository's shared Git data. Reconnect the MCP server after switching to a different worktree.
+Auto-refresh watches the source worktree selected when the MCP server starts. In a linked worktree, `graph.madar`, manifests, and `watcher-state.json` live together in that worktree's isolated external Madar artifact directory under the repository's shared Git data. Reconnect the MCP server after switching to a different worktree.

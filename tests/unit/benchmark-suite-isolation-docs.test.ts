@@ -90,7 +90,10 @@ describe('benchmark suite isolation docs', () => {
     expect(runIsolated).toContain('package/dist/src/cli/bin.js')
     expect(runIsolated).toContain('"serve"')
     expect(runIsolated).toContain('"--stdio"')
-    expect(runIsolated).toContain('"out/graph.json"')
+    // The suite measures the artifact generation produces. Serving graph.json
+    // would point the isolated run at the tombstone.
+    expect(runIsolated).toContain('"out/graph.madar"')
+    expect(runIsolated).not.toContain('"out/graph.json"')
     expect(runIsolated).toContain('bench:suite "$@"')
   })
 

@@ -45,7 +45,7 @@ body:
       description: Paste the exact command(s) that reproduce the problem.
       placeholder: |
         madar generate .
-        madar query "..." --graph out/graph.json
+        madar query "..." --graph out/graph.madar
     validations:
       required: true
 

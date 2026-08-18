@@ -32,10 +32,10 @@ import {
   UsageError,
 } from '../../src/cli/parser.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
-import { resolveMadarOutputDirectory, resolveWorkspaceGraphPath } from '../../src/shared/workspace.js'
+import { graphPathForCommand, resolveMadarOutputDirectory, resolveWorkspaceGraphPath } from '../../src/shared/workspace.js'
 
 const ACTIVE_OUTPUT_DIR = resolveMadarOutputDirectory()
-const ACTIVE_GRAPH_PATH = resolveWorkspaceGraphPath('out/graph.json')
+const ACTIVE_GRAPH_PATH = resolveWorkspaceGraphPath('out/graph.madar', undefined, 'explicit')
 const activeOutputPath = (...segments: string[]) => join(ACTIVE_OUTPUT_DIR, ...segments)
 
 type GraphSummaryPayload = {
@@ -179,7 +179,7 @@ function createDependencies(): CliTestDependencies {
       mode: options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate',
       rootPath: resolve(rootPath),
       outputDir: resolve(rootPath, 'out'),
-      graphPath: resolve(rootPath, 'out', 'graph.json'),
+      graphPath: resolve(rootPath, 'out', 'graph.madar'),
       reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
       htmlPath: options.noHtml ? null : resolve(rootPath, 'out', 'graph.html'),
       wikiPath: options.wiki ? resolve(rootPath, 'out', 'wiki') : null,
@@ -257,7 +257,8 @@ describe('cli parser', () => {
       question: 'how does auth work',
       mode: 'bfs',
       tokenBudget: 2000,
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       rankBy: 'relevance',
       community: null,
       fileType: null,
@@ -270,6 +271,7 @@ describe('cli parser', () => {
       mode: 'dfs',
       tokenBudget: 1500,
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       rankBy: 'degree',
       community: 0,
       fileType: 'code',
@@ -291,7 +293,8 @@ describe('cli parser', () => {
       budget: 1800,
       task: 'explain',
       taskExplicit: true,
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
     })
   })
 
@@ -301,7 +304,8 @@ describe('cli parser', () => {
       budget: 3000,
       task: 'implement',
       taskExplicit: true,
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
     })
   })
 
@@ -310,7 +314,8 @@ describe('cli parser', () => {
       prompt: 'how does auth work',
       budget: 3000,
       task: 'explain',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       why: true,
     })
   })
@@ -320,35 +325,40 @@ describe('cli parser', () => {
       prompt: 'how does auth work',
       budget: 3000,
       task: 'explain',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       format: 'text',
     })
     expect(parsePackArgs(['how does auth work', '--format', 'markdown'])).toEqual({
       prompt: 'how does auth work',
       budget: 3000,
       task: 'explain',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       format: 'markdown',
     })
     expect(parsePackArgs(['how does auth work', '--format', 'claude'])).toEqual({
       prompt: 'how does auth work',
       budget: 3000,
       task: 'explain',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       format: 'claude',
     })
     expect(parsePackArgs(['how does auth work', '--format', 'copilot'])).toEqual({
       prompt: 'how does auth work',
       budget: 3000,
       task: 'explain',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       format: 'copilot',
     })
     expect(parsePackArgs(['how does auth work', '--format=json'])).toEqual({
       prompt: 'how does auth work',
       budget: 3000,
       task: 'explain',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       format: 'json',
     })
   })
@@ -367,7 +377,8 @@ describe('cli parser', () => {
       prompt: 'ship remote auth debug brief',
       budget: 3000,
       task: 'explain',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       consumer: 'generic',
     })
 
@@ -383,6 +394,7 @@ describe('cli parser', () => {
       budget: 1800,
       task: 'implement',
       graphPath: 'out/custom.json',
+      graphPathIntent: 'explicit',
       consumer: 'copilot',
       allowSnippets: true,
     })
@@ -400,7 +412,8 @@ describe('cli parser', () => {
     expect(parsePromptArgs(['how does auth work', '--provider', 'claude'])).toEqual({
       prompt: 'how does auth work',
       provider: 'claude',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
     })
   })
 
@@ -419,12 +432,14 @@ describe('cli parser', () => {
         task: 'review',
         taskExplicit: true,
         graphPath: resolvedGraphPath,
+        graphPathIntent: 'explicit',
       })
 
       expect(parsePromptArgs(['review current diff', '--provider=gemini', '--graph', relativeGraphPath])).toEqual({
         prompt: 'review current diff',
         provider: 'gemini',
         graphPath: resolvedGraphPath,
+        graphPathIntent: 'explicit',
       })
 
       expect(() => parsePackArgs(['review current diff', '--graph', '../../../outside/graph.json'])).toThrow(
@@ -440,7 +455,8 @@ describe('cli parser', () => {
     expect(parsePathArgs(['AuthService', 'Transport'])).toEqual({
       source: 'AuthService',
       target: 'Transport',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       maxHops: 8,
     })
 
@@ -448,6 +464,7 @@ describe('cli parser', () => {
       source: 'AuthService',
       target: 'Transport',
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       maxHops: 4,
     })
 
@@ -459,13 +476,15 @@ describe('cli parser', () => {
   it('parses explain args', () => {
     expect(parseExplainArgs(['HttpClient'])).toEqual({
       label: 'HttpClient',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       relation: '',
     })
 
     expect(parseExplainArgs(['HttpClient', '--graph=custom.json', '--relation', 'calls'])).toEqual({
       label: 'HttpClient',
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       relation: 'calls',
     })
 
@@ -477,13 +496,15 @@ describe('cli parser', () => {
   it('parses diff args', () => {
     expect(parseDiffArgs(['baseline.json'])).toEqual({
       baselineGraphPath: 'baseline.json',
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       limit: 10,
     })
 
     expect(parseDiffArgs(['baseline.json', '--graph', 'current.json', '--limit', '5'])).toEqual({
       baselineGraphPath: 'baseline.json',
       graphPath: 'current.json',
+      graphPathIntent: 'explicit',
       limit: 5,
     })
 
@@ -515,25 +536,29 @@ describe('cli parser', () => {
 
   it('parses benchmark args', () => {
     expect(parseBenchmarkArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       questionsPath: null,
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       yes: false,
     })
     expect(parseBenchmarkArgs(['custom.json', '--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       questionsPath: null,
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       yes: false,
     })
     expect(parseBenchmarkArgs(['custom.json', '--questions', 'tests/fixtures/workspace-parity-questions.json', '--exec', 'claude -p "$(cat {prompt_file})"', '--yes'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       questionsPath: 'tests/fixtures/workspace-parity-questions.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       yes: true,
     })
     expect(parseBenchmarkArgs(['--questions=tests/fixtures/workspace-parity-questions.json', '--exec=claude -p "$(cat {prompt_file})"'])).toEqual({
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       questionsPath: 'tests/fixtures/workspace-parity-questions.json',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       yes: false,
@@ -598,6 +623,7 @@ describe('cli parser', () => {
     expect(parseCompareArgs(['how does login work', '--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
       question: 'how does login work',
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: activeOutputPath('compare'),
@@ -616,6 +642,7 @@ describe('cli parser', () => {
     expect(parseCompareArgs(['--questions', 'benchmark-questions.json', '--exec', 'gemini -p "$(cat {prompt_file})"'])).toEqual({
       question: null,
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       questionsPath: 'benchmark-questions.json',
       outputDir: activeOutputPath('compare'),
@@ -660,6 +687,7 @@ describe('cli parser', () => {
     ).toEqual({
       question: 'how does login work',
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: activeOutputPath('compare', 'custom'),
@@ -688,6 +716,7 @@ describe('cli parser', () => {
     ).toEqual({
       question: 'how does login work',
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: activeOutputPath('compare'),
@@ -718,6 +747,7 @@ describe('cli parser', () => {
     ).toEqual({
       question: 'implement session sliding expiration',
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: activeOutputPath('compare'),
@@ -745,6 +775,7 @@ describe('cli parser', () => {
     ).toEqual({
       question: 'how does login work',
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       questionsPath: null,
       outputDir: activeOutputPath('compare'),
@@ -772,6 +803,7 @@ describe('cli parser', () => {
     ).toEqual({
     question: 'how does login work',
     graphPath: ACTIVE_GRAPH_PATH,
+    graphPathIntent: 'default',
     execTemplate: 'claude -p "$(cat {prompt_file})"',
     questionsPath: null,
     outputDir: activeOutputPath('compare'),
@@ -827,6 +859,7 @@ describe('cli parser', () => {
 
     expect(parseReviewCompareArgs(['--exec', 'claude -p "$(cat {prompt_file})"'])).toEqual({
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       outputDir: activeOutputPath('review-compare'),
       baseBranch: null,
@@ -847,6 +880,7 @@ describe('cli parser', () => {
       '--yes',
     ])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       outputDir: activeOutputPath('review-compare', 'custom'),
       baseBranch: 'origin/main',
@@ -862,6 +896,7 @@ describe('cli parser', () => {
       externalOutputDir,
     ])).toEqual({
       graphPath: '/tmp/graph.json',
+      graphPathIntent: 'explicit',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       outputDir: externalOutputDir,
       baseBranch: null,
@@ -1045,7 +1080,8 @@ describe('cli parser', () => {
 
   it('parses serve args', () => {
     expect(parseServeArgs([])).toEqual({
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       host: '127.0.0.1',
       port: 4173,
       transport: 'http',
@@ -1054,6 +1090,7 @@ describe('cli parser', () => {
 
     expect(parseServeArgs(['custom.json', '--host', '0.0.0.0', '--port', '8080'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       host: '0.0.0.0',
       port: 8080,
       transport: 'http',
@@ -1062,6 +1099,7 @@ describe('cli parser', () => {
 
     expect(parseServeArgs(['graph.json', '--mcp'])).toEqual({
       graphPath: 'graph.json',
+      graphPathIntent: 'explicit',
       host: '127.0.0.1',
       port: 4173,
       transport: 'stdio',
@@ -1070,6 +1108,7 @@ describe('cli parser', () => {
 
     expect(parseServeArgs(['graph.json', '--transport', 'stdio'])).toEqual({
       graphPath: 'graph.json',
+      graphPathIntent: 'explicit',
       host: '127.0.0.1',
       port: 4173,
       transport: 'stdio',
@@ -1078,6 +1117,7 @@ describe('cli parser', () => {
 
     expect(parseServeArgs(['graph.json', '--http'])).toEqual({
       graphPath: 'graph.json',
+      graphPathIntent: 'explicit',
       host: '127.0.0.1',
       port: 4173,
       transport: 'http',
@@ -1085,7 +1125,8 @@ describe('cli parser', () => {
     })
 
     expect(parseServeArgs(['--stdio', '--auto-refresh'])).toEqual({
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
       host: '127.0.0.1',
       port: 4173,
       transport: 'stdio',
@@ -1097,10 +1138,10 @@ describe('cli parser', () => {
   })
 
   it('parses doctor and status args', () => {
-    expect(parseDoctorArgs([])).toEqual({ graphPath: 'out/graph.json' })
-    expect(parseDoctorArgs(['out/custom.json'])).toEqual({ graphPath: 'out/custom.json' })
-    expect(parseDoctorArgs(['--graph', 'out/runtime.json'])).toEqual({ graphPath: 'out/runtime.json' })
-    expect(parseDoctorArgs(['--graph=out/runtime.json'], 'status')).toEqual({ graphPath: 'out/runtime.json' })
+    expect(parseDoctorArgs([])).toEqual({ graphPath: 'out/graph.madar', graphPathIntent: 'default' })
+    expect(parseDoctorArgs(['out/custom.json'])).toEqual({ graphPath: 'out/custom.json', graphPathIntent: 'explicit' })
+    expect(parseDoctorArgs(['--graph', 'out/runtime.json'])).toEqual({ graphPath: 'out/runtime.json', graphPathIntent: 'explicit' })
+    expect(parseDoctorArgs(['--graph=out/runtime.json'], 'status')).toEqual({ graphPath: 'out/runtime.json', graphPathIntent: 'explicit' })
     expect(() => parseDoctorArgs(['--wat'])).toThrow('error: unknown option for doctor: --wat')
     expect(() => parseDoctorArgs(['--wat'], 'status')).toThrow('error: unknown option for status: --wat')
   })
@@ -1124,12 +1165,14 @@ describe('cli parser', () => {
   it('parses proof-report args with defaults and overrides', () => {
     expect(parseProofReportArgs([])).toEqual({
       graphPath: ACTIVE_GRAPH_PATH,
+      graphPathIntent: 'default',
       outputDir: activeOutputPath('proof-report'),
       compareDir: activeOutputPath('compare'),
       packPath: null,
     })
     expect(parseProofReportArgs(['out/custom/graph.json'])).toEqual({
       graphPath: 'out/custom/graph.json',
+      graphPathIntent: 'explicit',
       outputDir: resolve('out/custom/proof-report'),
       compareDir: resolve('out/custom/compare'),
       packPath: null,
@@ -1144,11 +1187,12 @@ describe('cli parser', () => {
       'out/proof-inputs/context-pack.json',
     ])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       outputDir: activeOutputPath('proof', 'custom'),
       compareDir: activeOutputPath('compare', 'custom'),
       packPath: activeOutputPath('proof-inputs', 'context-pack.json'),
     })
-    expect(() => parseProofReportArgs(['custom.json', 'second.json'])).toThrow('Usage: madar proof-report [graph.json] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]')
+    expect(() => parseProofReportArgs(['custom.json', 'second.json'])).toThrow('Usage: madar proof-report [graph.madar] [--output-dir DIR] [--compare-dir DIR] [--pack PATH]')
     expect(() => parseProofReportArgs(['--wat'])).toThrow('error: unknown option for proof-report: --wat')
   })
 
@@ -1284,7 +1328,7 @@ describe('cli main', () => {
     expect(help).toContain('--version')
     expect(help).toContain('generate [path]')
     expect(help).toContain('watch [path]')
-    expect(help).toContain('serve [graph.json]')
+    expect(help).toContain('serve [graph.madar]')
     expect(help).toContain('--directed')
     expect(help).toContain('--legacy')
     expect(help).toContain('--spi')
@@ -1306,7 +1350,9 @@ describe('cli main', () => {
     expect(help).toContain('--mcp')
     expect(help).toContain('codex <install|uninstall>   manage local AGENTS.md + Codex hook/MCP rules')
     expect(help).toContain('query "<question>"')
-    expect(help).toContain('diff <baseline-graph.json>')
+    // Deliberately generic: a diff baseline is often an older snapshot, which
+    // may still be v1, so the help text must not name one format.
+    expect(help).toContain('diff <baseline-graph>')
     expect(help).toContain('--rank-by MODE')
     expect(help).toContain('--community ID')
     expect(help).toContain('--file-type TYPE')
@@ -1314,7 +1360,7 @@ describe('cli main', () => {
     expect(help).toContain('explain <label>')
     expect(help).not.toContain('add <url> [path]')
     expect(help).toContain('save-result')
-    expect(help).toContain('benchmark [graph.json]')
+    expect(help).toContain('benchmark [graph.madar]')
     expect(help).toContain('benchmark/eval runner. This may consume paid model tokens.')
     expect(help).toContain('    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}')
     expect(help).toContain('--questions PATH')
@@ -1322,10 +1368,10 @@ describe('cli main', () => {
     expect(help).toContain('bench:suite')
     expect(help).toContain('docs/benchmarks/suite/results/')
     expect(help).toContain('    --dry-run             list planned and runnable suite cells without executing prompts')
-    expect(help).toContain('eval [graph.json]')
+    expect(help).toContain('eval [graph.madar]')
     expect(help).toContain('compare [question]    run a real baseline vs madar prompt comparison')
     expect(help).toContain('    --format MODE       json|text|markdown|claude|copilot (default json)')
-    expect(help).toContain('    --graph <path>        path to graph.json (default out/graph.json)')
+    expect(help).toContain('    --graph <path>        path to the graph artifact (default out/graph.madar)')
     expect(help).toContain('    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}')
     expect(help).toContain('    --questions PATH      load questions from a JSON file instead of a positional question')
     expect(help).toContain('    --output-dir DIR      compare output directory (default out/compare)')
@@ -1340,17 +1386,17 @@ describe('cli main', () => {
     expect(help).toContain('    --yes                 skip confirmation before running the paid prompt comparison')
     expect(help).toContain('    --limit N             cap processed prompts/questions for the comparison run')
     expect(help).toContain('    --why                 include retrieval-routing debug metadata in the compare summary and reports')
-    expect(help).toContain('review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff')
+    expect(help).toContain('review-compare [graph.madar] compare full vs compact pr_impact review prompts on the current git diff')
     expect(help).toContain('    --output-dir DIR      review compare output directory (default out/review-compare)')
     expect(help).toContain('time-travel <from> <to> compare two refs using on-demand cached graph snapshots')
     expect(help).toContain('    --view MODE          summary|risk|drift|timeline (default summary)')
     expect(help).toContain('    --json               emit machine-readable JSON')
     expect(help).toContain('    --refresh            rebuild snapshots instead of using cache')
     expect(help).toContain('    --limit N            cap view items (default 10)')
-    expect(help).toContain('doctor [graph.json]')
-    expect(help).toContain('status [graph.json]')
+    expect(help).toContain('doctor [graph.madar]')
+    expect(help).toContain('status [graph.madar]')
     expect(help).toContain('check graph freshness, agent config, and MCP wiring')
-    expect(help).toContain('proof-report [graph.json]')
+    expect(help).toContain('proof-report [graph.madar]')
     expect(help).toContain('generate a local markdown proof report from graph, pack, and compare evidence')
     expect(help).toContain('    --output-dir DIR      proof report output directory (default out/proof-report)')
     expect(help).toContain('    --pack PATH           optional saved context-pack JSON for pack-quality evidence')
@@ -1367,7 +1413,7 @@ describe('cli main', () => {
     expect(help).toContain('copilot <install|uninstall> [--profile core|full|strict]')
     expect(help).toContain('codex <install|uninstall>')
     expect(help).toContain('opencode <install|uninstall>')
-    expect(help).toContain('summary [graph.json]')
+    expect(help).toContain('summary [graph.madar]')
     expect(help).toContain('try "<question>" [path]')
     expect(help).toContain('one-command local first proof before agent install')
   })
@@ -1436,6 +1482,7 @@ describe('cli main', () => {
     expect(compareRequest.options).toEqual({
       question: null,
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       execTemplate: 'gemini -p "$(cat {prompt_file})"',
       questionsPath: 'benchmark-questions.json',
       outputDir: activeOutputPath('compare', 'custom'),
@@ -1962,6 +2009,7 @@ describe('cli main', () => {
     expect(logs).toEqual([`Saved to ${activeOutputPath('proof-report', 'custom', 'proof-report.md')}`])
     expect(capturedOptions).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       outputDir: activeOutputPath('proof-report', 'custom'),
       compareDir: resolve('compare'),
       packPath: activeOutputPath('proof-inputs', 'context-pack.json'),
@@ -1994,6 +2042,7 @@ describe('cli main', () => {
     expect(logs).toEqual([`Saved to ${resolve('out/custom/proof-report', 'proof-report.md')}`])
     expect(capturedOptions).toEqual({
       graphPath: 'out/custom/graph.json',
+      graphPathIntent: 'explicit',
       outputDir: resolve('out/custom/proof-report'),
       compareDir: resolve('out/custom/compare'),
       packPath: null,
@@ -2120,6 +2169,7 @@ describe('cli main', () => {
     }
     expect(reviewCompareRequest.options).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
       execTemplate: 'claude -p "$(cat {prompt_file})"',
       outputDir: activeOutputPath('review-compare', 'custom'),
       baseBranch: 'origin/main',
@@ -2389,8 +2439,15 @@ describe('cli main', () => {
     await expect(executeCli(['doctor', '--graph', 'out/custom.json'], doctor.io, dependencies)).resolves.toBe(0)
     await expect(executeCli(['status'], status.io, dependencies)).resolves.toBe(0)
 
-    expect(runDoctor).toHaveBeenCalledWith('out/custom.json')
-    expect(runStatus).toHaveBeenCalledWith('out/graph.json')
+    // The intent travels with the path. Passing the path alone made every
+    // invocation look explicit, because the parser always supplies a default --
+    // which left the report unable to describe a pre-cutover workspace.
+    expect(runDoctor).toHaveBeenCalledWith(
+      expect.objectContaining({ graphPath: 'out/custom.json', graphPathIntent: 'explicit' }),
+    )
+    expect(runStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ graphPath: 'out/graph.madar', graphPathIntent: 'default' }),
+    )
     expect(doctor.logs).toEqual(['doctor summary'])
     expect(status.logs).toEqual(['status summary'])
     expect(doctor.errors).toEqual([])
@@ -2413,7 +2470,8 @@ describe('cli main', () => {
         budget: 1800,
         task: 'explain',
         taskExplicit: true,
-        graphPath: 'out/graph.json',
+        graphPath: 'out/graph.madar',
+        graphPathIntent: 'default',
         why: true,
       },
       io,
@@ -2458,7 +2516,8 @@ describe('cli main', () => {
         prompt: 'remote auth incident brief',
         budget: 1200,
         task: 'explain',
-        graphPath: 'out/graph.json',
+        graphPath: 'out/graph.madar',
+        graphPathIntent: 'default',
         consumer: 'cursor',
       },
       io,
@@ -2481,7 +2540,8 @@ describe('cli main', () => {
       options: {
         prompt: 'how does auth work',
         provider: 'claude',
-        graphPath: 'out/graph.json',
+        graphPath: 'out/graph.madar',
+        graphPathIntent: 'default',
       },
       io,
     })
@@ -2512,7 +2572,8 @@ describe('cli main', () => {
         prompt: 'how does auth work',
         budget: 3000,
         task: 'explain',
-        graphPath: 'out/graph.json',
+        graphPath: 'out/graph.madar',
+        graphPathIntent: 'default',
         requireFreshGraph: true,
       },
       io: packIo.io,
@@ -2522,7 +2583,8 @@ describe('cli main', () => {
         prompt: 'remote auth incident brief',
         budget: 3000,
         task: 'explain',
-        graphPath: 'out/graph.json',
+        graphPath: 'out/graph.madar',
+        graphPathIntent: 'default',
         consumer: 'cursor',
         requireFreshGraph: true,
       },
@@ -2532,7 +2594,8 @@ describe('cli main', () => {
       options: {
         prompt: 'how does auth work',
         provider: 'claude',
-        graphPath: 'out/graph.json',
+        graphPath: 'out/graph.madar',
+        graphPathIntent: 'default',
         requireFreshGraph: true,
       },
       io: promptIo.io,
@@ -2562,7 +2625,8 @@ describe('cli main', () => {
         prompt: 'how does auth work',
         budget: 3000,
         task: 'explain',
-        graphPath: 'out/graph.json',
+        graphPath: 'out/graph.madar',
+        graphPathIntent: 'default',
         requireFreshContext: true,
       },
       io: packIo.io,
@@ -2572,7 +2636,8 @@ describe('cli main', () => {
         prompt: 'remote auth incident brief',
         budget: 3000,
         task: 'explain',
-        graphPath: 'out/graph.json',
+        graphPath: 'out/graph.madar',
+        graphPathIntent: 'default',
         consumer: 'cursor',
         requireFreshContext: true,
       },
@@ -2582,7 +2647,8 @@ describe('cli main', () => {
       options: {
         prompt: 'how does auth work',
         provider: 'claude',
-        graphPath: 'out/graph.json',
+        graphPath: 'out/graph.madar',
+        graphPathIntent: 'default',
         requireFreshContext: true,
       },
       io: promptIo.io,
@@ -2729,7 +2795,7 @@ describe('cli main', () => {
 
     expect(exitCode).toBe(0)
     expect(logs[0]).toContain('[madar generate] update completed')
-    expect(logs[0]).toContain('graph.json')
+    expect(logs[0]).toContain('graph.madar')
     expect(logs[0]).toContain('Semantic anomalies: 2 high-signal item(s)')
     expect(logs[0]).toContain('Safety exclusions: 1 (1 sensitive, 0 unreadable)')
     expect(logs[0]).toContain('"config/credentials.json" (secret_config)')
@@ -2746,7 +2812,7 @@ describe('cli main', () => {
         mode: options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate',
         rootPath: resolve(rootPath),
         outputDir: resolve(rootPath, 'out'),
-        graphPath: resolve(rootPath, 'out', 'graph.json'),
+        graphPath: resolve(rootPath, 'out', 'graph.madar'),
         reportPath: resolve(rootPath, 'out', 'GRAPH_REPORT.md'),
         htmlPath: options.noHtml ? null : resolve(rootPath, 'out', 'graph.html'),
         wikiPath: options.wiki ? resolve(rootPath, 'out', 'wiki') : null,
@@ -2895,6 +2961,7 @@ describe('cli main', () => {
         io,
         options: {
           graphPath: 'graph.json',
+          graphPathIntent: 'explicit' as const,
           questionsPath: null,
           execTemplate: 'unused',
           yes: true,
@@ -2917,6 +2984,7 @@ describe('cli main', () => {
       io,
       options: {
         graphPath: 'graph.json',
+        graphPathIntent: 'explicit',
         questionsPath: resolve('tests/fixtures/workspace-parity-questions.json'),
         execTemplate: 'claude -p "$(cat {prompt_file})"',
         yes: true,
@@ -2945,7 +3013,8 @@ describe('cli main', () => {
     expect(capturedContext).toEqual({
       io,
       options: {
-        graphPath: 'out/graph.json',
+        graphPath: 'out/graph.madar',
+        graphPathIntent: 'default',
         questionsPath: resolve('tests/fixtures/workspace-parity-questions.json'),
         execTemplate: 'claude -p "$(cat {prompt_file})"',
         yes: true,
@@ -3023,7 +3092,7 @@ describe('cli main', () => {
       execFileSync('git', ['-C', primary, 'commit', '-m', 'initial'], { stdio: 'pipe' })
       execFileSync('git', ['-C', primary, 'worktree', 'add', '-b', 'feature/install-warning', linked], { stdio: 'pipe' })
 
-      const graphPath = resolveWorkspaceGraphPath('out/graph.json', linked)
+      const graphPath = resolveWorkspaceGraphPath('out/graph.json', linked, 'explicit')
       mkdirSync(dirname(graphPath), { recursive: true })
       writeFileSync(graphPath, '{}\n', 'utf8')
 
@@ -3033,7 +3102,7 @@ describe('cli main', () => {
       await expect(executeCli(['claude', 'install'], io, createDependencies())).resolves.toBe(0)
 
       expect(logs).toContain('claude local rules installed')
-      expect(logs.join('\n')).not.toContain('Warning: out/graph.json not found')
+      expect(logs.join('\n')).not.toContain('no graph artifact found in out/')
     } finally {
       process.chdir(originalCwd)
       if (existsSync(primary)) {
@@ -3123,7 +3192,13 @@ describe('cli main', () => {
     expect(lastGenerateOptions?.respectGitignore).toBe(true)
     expect(lastWatchOptions?.noHtml).toBe(true)
     expect(lastWatchOptions?.respectGitignore).toBe(true)
-    expect(stdioOptions).toMatchObject({ graphPath: ACTIVE_GRAPH_PATH, autoRefresh: true, workspaceRoot: process.cwd() })
+    // The command was given out/graph.json explicitly, so it resolves to this
+    // workspace's legacy artifact rather than the canonical default.
+    expect(stdioOptions).toMatchObject({
+      graphPath: resolveWorkspaceGraphPath('out/graph.json', undefined, 'explicit'),
+      autoRefresh: true,
+      workspaceRoot: process.cwd(),
+    })
     expect(logs[0]).toContain('[madar generate]')
   })
 
@@ -3149,25 +3224,29 @@ describe('cli main', () => {
 describe('summary command', () => {
   it('parses summary args with positional and --graph forms', () => {
     expect(parseSummaryArgs([])).toEqual({
-      graphPath: 'out/graph.json',
+      graphPath: 'out/graph.madar',
+      graphPathIntent: 'default',
     })
 
     expect(parseSummaryArgs(['custom.json'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
     })
 
     expect(parseSummaryArgs(['--graph', 'custom.json'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
     })
 
     expect(parseSummaryArgs(['--graph=custom.json'])).toEqual({
       graphPath: 'custom.json',
+      graphPathIntent: 'explicit',
     })
   })
 
   it('formatHelp documents the summary command', () => {
     const help = formatHelp()
-    expect(help).toContain('summary [graph.json]')
+    expect(help).toContain('summary [graph.madar]')
   })
 
   it('dispatches summary to the runGraphSummary dependency and prints JSON', async () => {
@@ -3198,7 +3277,13 @@ describe('summary command', () => {
     const exitCode = await executeCli(['summary', 'out/graph.json'], io, dependencies)
 
     expect(exitCode).toBe(0)
-    expect(capturedGraphPath).toBe('out/graph.json')
+    // Compared against the same boundary the command applies, not a literal:
+    // the resolved value depends on whether this checkout is a linked worktree
+    // and on which artifacts its output directory holds. The assertion is that
+    // the command resolved the path rather than forwarding its raw option.
+    expect(capturedGraphPath).toBe(
+      graphPathForCommand({ graphPath: 'out/graph.json', graphPathIntent: 'explicit' }),
+    )
     expect(logs).toEqual([JSON.stringify(expectedPayload, null, 2)])
   })
 
@@ -3214,6 +3299,12 @@ describe('summary command', () => {
     const exitCode = await executeCli(['summary'], io, dependencies)
 
     expect(exitCode).toBe(0)
-    expect(capturedGraphPath).toBe('out/graph.json')
+    // Compared against the same boundary the command applies, not a literal:
+    // the resolved value depends on whether this checkout is a linked worktree
+    // and on which artifacts its output directory holds. The assertion is that
+    // the command resolved the path rather than forwarding its raw option.
+    expect(capturedGraphPath).toBe(
+      graphPathForCommand({ graphPath: 'out/graph.madar', graphPathIntent: 'default' }),
+    )
   })
 })

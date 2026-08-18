@@ -10,6 +10,8 @@ import {
   IndexingCompletenessError,
 } from '../../src/infrastructure/generate.js'
 
+import { readGeneratedGraphJson } from './helpers/generated-graph.js'
+
 function withWorkspace(run: (root: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), 'madar-indexing-generate-'))
   try {
@@ -37,7 +39,7 @@ describe('generate indexing completeness', () => {
       const shareSafePath = join(root, 'out', 'indexing-manifest.share-safe.json')
       const manifest = readJson<IndexingManifestV1>(manifestPath)
       const shareSafe = readJson<ShareSafeIndexingManifestV1>(shareSafePath)
-      const graph = readJson<Record<string, unknown>>(join(root, 'out', 'graph.json'))
+      const graph = readGeneratedGraphJson(join(root, 'out')) as unknown as Record<string, unknown>
       const report = readFileSync(join(root, 'out', 'GRAPH_REPORT.md'), 'utf8')
 
       expect(result.indexing).toMatchObject({
@@ -125,11 +127,11 @@ describe('generate indexing completeness', () => {
       expect(readFileSync(sourceManifestPath, 'utf8')).toBe(manifestBeforeFailure)
       expect(readFileSync(join(root, 'out', 'indexing-manifest.json'), 'utf8')).toBe(indexingManifestBeforeFailure)
       expect(existsSync(join(root, 'out', 'indexing-manifest.failed.json'))).toBe(true)
-      expect(JSON.stringify(readJson<Record<string, unknown>>(graphPath))).not.toContain('updatedFlow')
+      expect(JSON.stringify(readGeneratedGraphJson(graphPath))).not.toContain('updatedFlow')
 
       unlinkSync(unsupportedPath)
       const retry = generateGraph(root, { update: true, noHtml: true })
-      const retriedGraph = readJson<{ nodes: Array<{ label?: string }> }>(graphPath)
+      const retriedGraph = readGeneratedGraphJson(graphPath) as unknown as { nodes: Array<{ label?: string }> }
 
       expect(retry.changedFiles).toBeGreaterThan(0)
       expect(retriedGraph.nodes.some((node) => node.label?.includes('updatedFlow'))).toBe(true)

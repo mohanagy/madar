@@ -1,3 +1,4 @@
+import { graphPathForCommand, graphPathIntentFor } from '../shared/workspace.js'
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -6,6 +7,13 @@ import { validateGraphPath } from '../shared/security.js'
 import { graphFreshnessHeaders, graphFreshnessMetadata, resourceFreshnessHeaders, resourceFreshnessMetadata } from './freshness.js'
 import { communitiesFromGraph, getCommunity, getNeighbors, getNode, graphStats, loadGraph, queryGraph, semanticAnomaliesSummary, shortestPath } from './serve.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
+import {
+  CANONICAL_ARTIFACT_BASENAME,
+  LEGACY_ARTIFACT_BASENAME,
+  type WorkspaceGraphState,
+  classifyWorkspaceGraph,
+} from '../contracts/graph-artifact-selection.js'
+import { GRAPH_ARTIFACT_MEDIA_TYPE } from '../contracts/graph-artifact-format.js'
 
 export interface ServeLogger {
   log(message?: string): void
@@ -58,6 +66,40 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown, h
   response.end(`${JSON.stringify(body, null, 2)}\n`)
 }
 
+/** One declaration, in the format contract both surfaces publish. */
+const GRAPH_ARTIFACT_CONTENT_TYPE = `${GRAPH_ARTIFACT_MEDIA_TYPE}; charset=utf-8`
+
+const PROBLEM_BASE = 'https://madar.dev/problems'
+
+function sendProblem(
+  response: ServerResponse,
+  statusCode: number,
+  problem: Record<string, unknown>,
+  extra: { link?: string } = {},
+): void {
+  response.writeHead(statusCode, {
+    'content-type': 'application/problem+json; charset=utf-8',
+    ...(extra.link === undefined ? {} : { link: extra.link }),
+  })
+  response.end(`${JSON.stringify(problem, null, 2)}\n`)
+}
+
+function workspaceStateDetail(state: WorkspaceGraphState): string {
+  switch (state) {
+    case 'mixed_v2_and_live_v1':
+      return `A valid ${CANONICAL_ARTIFACT_BASENAME} and a live v1 ${LEGACY_ARTIFACT_BASENAME} exist together, `
+        + 'and nothing proves they describe the same generation.'
+    case 'moved_without_canonical':
+      return `${LEGACY_ARTIFACT_BASENAME} has moved but ${CANONICAL_ARTIFACT_BASENAME} is missing.`
+    case 'invalid_current_v2':
+      return `${CANONICAL_ARTIFACT_BASENAME} exists but is not a readable v2 artifact.`
+    case 'missing':
+      return 'This workspace has no graph artifact.'
+    default:
+      return 'The graph artifacts in this workspace cannot be classified.'
+  }
+}
+
 function readUtf8File(filePath: string): string {
   return readFileSync(filePath, 'utf8')
 }
@@ -79,7 +121,7 @@ function renderIndex(outputDir: string): string {
   <p>Serving graph artifacts from <code>${outputDir}</code>.</p>
   <ul>
     <li><a href="/graph.html">graph.html</a></li>
-    <li><a href="/graph.json">graph.json</a></li>
+    <li><a href="/graph.madar">graph.madar</a></li>
     <li><a href="/GRAPH_REPORT.md">GRAPH_REPORT.md</a></li>
     <li><a href="/stats">/stats</a></li>
     <li><a href="/health">/health</a></li>
@@ -217,7 +259,15 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
   const output = defaultLogger(options.logger)
   const host = options.host ?? '127.0.0.1'
   const port = parsePort(options.port)
-  const graphPath = validateGraphPath(options.graphPath ?? 'out/graph.json')
+  // Intent survives the server boundary. Substituting the canonical default for
+  // an omitted option and handing that to validateGraphPath marked every start
+  // explicit, so a server launched with no --graph in an ambiguous workspace
+  // loaded the canonical artifact instead of failing closed like every other
+  // default load.
+  const graphPath = validateGraphPath(graphPathForCommand({
+    graphPath: options.graphPath ?? `out/${CANONICAL_ARTIFACT_BASENAME}`,
+    graphPathIntent: graphPathIntentFor(options.graphPath),
+  }))
   const outputDir = graphOutputDirectory(graphPath)
   const graph = createGraphLoader(graphPath)
   const rateLimitState = new Map<string, { count: number; resetAt: number }>()
@@ -249,8 +299,89 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
         return
       }
 
-      if (url.pathname === '/graph.json') {
-        sendText(response, 200, readUtf8File(graphPath), 'application/json; charset=utf-8', resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, graphPath)))
+      if (
+        url.pathname === `/${CANONICAL_ARTIFACT_BASENAME}`
+        || url.pathname === `/${LEGACY_ARTIFACT_BASENAME}`
+      ) {
+        /*
+         * Raw artifact routes are decided by workspace state, not by which
+         * files happen to exist. The two 200-serving states are mutually
+         * exclusive -- current_v2 serves only the canonical artifact,
+         * legacy_v1_only serves only the v1 -- and every ambiguous or damaged
+         * state serves neither.
+         */
+        const state = classifyWorkspaceGraph(outputDir).state
+        const wantsCanonical = url.pathname === `/${CANONICAL_ARTIFACT_BASENAME}`
+        const canonical = join(outputDir, CANONICAL_ARTIFACT_BASENAME)
+
+        if (state === 'current_v2') {
+          if (wantsCanonical) {
+            sendText(
+              response,
+              200,
+              readUtf8File(canonical),
+              GRAPH_ARTIFACT_CONTENT_TYPE,
+              resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, canonical)),
+            )
+            return
+          }
+          /*
+           * Gone, not moved. A redirect would hand a v1 client a v2 body it
+           * cannot parse: the formats are not interchangeable, so the request
+           * must be reported unsatisfiable rather than quietly pointed
+           * elsewhere. The Link header names the successor for clients that
+           * can act on it, without implying the response body is a substitute.
+           */
+          sendProblem(response, 410, {
+            type: `${PROBLEM_BASE}/graph-artifact-moved`,
+            title: 'The v1 graph artifact is gone',
+            status: 410,
+            detail: `${LEGACY_ARTIFACT_BASENAME} is no longer published. Request `
+              + `/${CANONICAL_ARTIFACT_BASENAME}, which serves artifact v2 and is not v1-compatible.`,
+            canonical_path: `/${CANONICAL_ARTIFACT_BASENAME}`,
+          }, { link: `</${CANONICAL_ARTIFACT_BASENAME}>; rel="successor-version"` })
+          return
+        }
+
+        if (state === 'legacy_v1_only') {
+          if (wantsCanonical) {
+            // Truthful: this workspace has no v2 artifact to serve.
+            sendProblem(response, 404, {
+              type: `${PROBLEM_BASE}/canonical-artifact-required`,
+              title: 'No canonical graph artifact',
+              status: 404,
+              detail: `This workspace has not been cut over, so ${CANONICAL_ARTIFACT_BASENAME} does not `
+                + `exist. Run \`madar generate .\` to produce it, or request /${LEGACY_ARTIFACT_BASENAME} `
+                + 'for the legacy v1 artifact.',
+              workspace_state: state,
+            })
+            return
+          }
+          // Nothing has moved here, so the v1 is served as itself -- and the
+          // freshness headers describe that same file. Measuring graphPath
+          // instead made etag, last-modified and the resource-byte headers
+          // describe a different artifact than the body they accompany.
+          const servedLegacyPath = join(outputDir, LEGACY_ARTIFACT_BASENAME)
+          sendText(
+            response,
+            200,
+            readUtf8File(servedLegacyPath),
+            'application/json; charset=utf-8',
+            resourceFreshnessHeaders(resourceFreshnessMetadata(servedLegacyPath, servedLegacyPath)),
+          )
+          return
+        }
+
+        // mixed_v2_and_live_v1, moved_without_canonical, invalid_current_v2,
+        // invalid, missing: neither endpoint serves a graph, and a preserved
+        // backup is never an automatic fallback.
+        sendProblem(response, 409, {
+          type: `${PROBLEM_BASE}/graph-workspace-unusable`,
+          title: 'The graph workspace is not in a servable state',
+          status: 409,
+          detail: `${workspaceStateDetail(state)} Run \`madar generate .\` to rebuild from source.`,
+          workspace_state: state,
+        })
         return
       }
 
@@ -402,7 +533,15 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
 
 export async function serveGraph(options: ServeGraphOptions = {}): Promise<void> {
   const output = defaultLogger(options.logger)
-  const graphPath = validateGraphPath(options.graphPath ?? 'out/graph.json')
+  // Intent survives the server boundary. Substituting the canonical default for
+  // an omitted option and handing that to validateGraphPath marked every start
+  // explicit, so a server launched with no --graph in an ambiguous workspace
+  // loaded the canonical artifact instead of failing closed like every other
+  // default load.
+  const graphPath = validateGraphPath(graphPathForCommand({
+    graphPath: options.graphPath ?? `out/${CANONICAL_ARTIFACT_BASENAME}`,
+    graphPathIntent: graphPathIntentFor(options.graphPath),
+  }))
   const handle = await startGraphServer(options)
 
   output.log(`[madar serve] Serving ${graphPath}`)

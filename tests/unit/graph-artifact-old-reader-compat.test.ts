@@ -9,70 +9,20 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import {
+  RELEASE_SERVE_SOURCE_SHA256,
+  RELEASE_TAG_OBJECT_SHA,
+  compileOldLoadGraph,
+  exactFunction,
+  executableJavaScript,
+  gitText,
+  type OldLoadGraph,
+} from './helpers/v0321-loader.js'
+import {
   GRAPH_ARTIFACT_V2_TOMBSTONE,
   GraphArtifactMovedError,
   loadGraphArtifact,
   serializeGraphArtifactV2,
 } from '../../src/contracts/graph-artifact.js'
-
-const RELEASE_TAG_OBJECT_SHA = '60266f238a838d73303c20a1e8894ba47d1444d7'
-const RELEASE_SERVE_SOURCE_SHA256 = '7683f62b0621a318837fbb0395ab90797fc795665031d9bd818ac7bcc48ea713'
-const MAX_GRAPH_BYTES = 100 * 1024 * 1024
-
-type OldLoadGraph = (path: string) => unknown
-
-function gitText(args: readonly string[]): string {
-  return execFileSync('git', args, {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-}
-
-function exactFunction(source: string, startMarker: string, endMarker: string): string {
-  const start = source.indexOf(startMarker)
-  const end = source.indexOf(endMarker, start)
-  if (start < 0 || end < 0) throw new Error(`Could not extract ${startMarker} from tagged source`)
-  return source.slice(start, end).trimEnd()
-}
-
-function executableJavaScript(functionSource: string): string {
-  // The release source is otherwise verbatim; removing only the module export
-  // lets the extracted function execute inside the dependency-injection shell.
-  return ts.transpileModule(functionSource.replace(/^export\s+/, ''), {
-    compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
-  }).outputText
-}
-
-function compileOldLoadGraph(functionSource: string): OldLoadGraph {
-  const executableSource = executableJavaScript(functionSource)
-  // validateGraphPath is mechanically substituted with identity. It is a path
-  // safety guard orthogonal to the released JSON parse behavior under proof.
-  const factory = new Function(
-    'readFileSync',
-    'statSync',
-    'MAX_GRAPH_BYTES',
-    'validateGraphPath',
-    'isRecord',
-    'buildFromJson',
-    'parseGenerationPolicy',
-    'storedCommunityLabels',
-    'parseDiscoverySafetyMetadata',
-    `"use strict"; ${executableSource}; return loadGraph;`,
-  ) as (...dependencies: readonly unknown[]) => OldLoadGraph
-  const graph = { graph: {} as Record<string, unknown> }
-  return factory(
-    readFileSync,
-    statSync,
-    MAX_GRAPH_BYTES,
-    (path: string) => path,
-    (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value),
-    () => graph,
-    () => null,
-    () => ({}),
-    () => null,
-  )
-}
 
 function compileOldArtifactReader(functionSource: string): (path: string) => Record<string, unknown> {
   const factory = new Function(

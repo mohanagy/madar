@@ -43,7 +43,7 @@ export function findNearestExistingAncestor(targetPath: string): string | null {
 }
 
 export function validateGraphPath(graphPath: string, base?: string): string {
-  const effectiveGraphPath = base === undefined ? resolveWorkspaceGraphPath(graphPath) : graphPath
+  const effectiveGraphPath = base === undefined ? resolveWorkspaceGraphPath(graphPath, undefined, 'explicit') : graphPath
   const resolvedBase = resolve(base ?? inferGraphBase(effectiveGraphPath))
   if (!existsSync(resolvedBase)) {
     throw new Error(`Graph base directory does not exist: ${resolvedBase}. Run madar first to build the graph.`)

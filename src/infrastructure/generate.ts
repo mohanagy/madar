@@ -28,7 +28,7 @@ import {
   writeManifestSnapshot,
 } from '../pipeline/detect.js'
 import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
-import { serializeGraphJsonPayload, toCypher, toGraphml, toHtml, toObsidian, toSvg } from '../pipeline/export.js'
+import { toCypher, toGraphml, toHtml, toObsidian, toSvg } from '../pipeline/export.js'
 import { extract, EXTRACTOR_CACHE_VERSION } from '../pipeline/extract.js'
 import { createFileStemMap } from '../pipeline/extract/core.js'
 import {
@@ -65,9 +65,15 @@ import {
   type DiscoverySafetyMetadata,
 } from '../shared/discovery-safety.js'
 import { readGraphArtifactMetadata, serializeGraphArtifactV2 } from '../contracts/graph-artifact.js'
-import { publishTransitionalGraphArtifacts } from './graph-artifact-transitional.js'
+import { activateGraphArtifactV2 } from './graph-artifact-activation.js'
 import type { Communities } from '../pipeline/cluster.js'
 import type { SemanticAnomaly } from '../pipeline/analyze.js'
+import {
+  CANONICAL_ARTIFACT_BASENAME,
+  GraphArtifactStateError,
+  LEGACY_ARTIFACT_BASENAME,
+  classifyWorkspaceGraph,
+} from '../contracts/graph-artifact-selection.js'
 
 export type ProgressStep =
   | { step: 'detect'; message: string }
@@ -426,10 +432,8 @@ function missingCodeExtractionError(totalFiles: number, discoverySafety?: Discov
 function publishGraphArtifacts(
   graph: KnowledgeGraph,
   workspaceRoot: string,
-  outputDir: string,
   communities: Communities,
   communityLabels: Record<number, string>,
-  semanticAnomalies: SemanticAnomaly[],
 ): void {
   const bytes = serializeGraphArtifactV2({
     graph,
@@ -451,23 +455,24 @@ function publishGraphArtifacts(
       ...(graph.graph.discovery_safety !== undefined
         ? { discovery_safety: graph.graph.discovery_safety }
         : {}),
+      // Carried by the v1 payload but missing from v2 provenance until the
+      // cutover exposed it: while graph.json was still a live mirror these
+      // reached readers through it, so dropping them here was invisible.
+      // graph.madar is now the only published graph, and losing extraction
+      // provenance would make a generated graph unauditable.
+      ...(isPlainRecord(graph.graph.indexing_completeness)
+        ? { indexing_completeness: graph.graph.indexing_completeness }
+        : {}),
+      ...(isPlainRecord(graph.graph.extraction_receipt)
+        ? { extraction_receipt: graph.graph.extraction_receipt }
+        : {}),
     },
   })
 
   const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path.trim() : ''
-  publishTransitionalGraphArtifacts({
-    outputDir,
-    artifactBytes: bytes,
-    legacyJson: serializeGraphJsonPayload(
-      graph,
-      communities,
-      communityLabels,
-      semanticAnomalies,
-      EXTRACTOR_CACHE_VERSION,
-    ),
-    ...(rootPath.length > 0 ? { rootPath } : {}),
+  activateGraphArtifactV2(workspaceRoot, bytes, {
+    ...(rootPath.length > 0 ? { sidecarRootPath: rootPath } : {}),
   })
-  void workspaceRoot
 }
 
 /** Node id to community id, matching what toJson injects into the v1 payload. */
@@ -494,7 +499,56 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   const resolvedRootPath = resolve(rootPath)
   const resolvedOutputDir = outputDirectory(resolvedRootPath)
-  const graphPath = join(resolvedOutputDir, 'graph.json')
+  // What this run publishes. After the #705 cutover the canonical artifact is
+  // the only active graph, so it is what callers are handed back.
+  const graphPath = join(resolvedOutputDir, 'graph.madar')
+  // What this run reads. A workspace being upgraded still has only a v1
+  // artifact, and collapsing these two would make its first `--update` look
+  // like a workspace with no graph at all and silently re-extract everything.
+  const legacyGraphPath = join(resolvedOutputDir, 'graph.json')
+  // Full generation is the documented repair for an ambiguous workspace, so it
+  // must not consult either artifact. Reuse paths need a graph they can trust
+  // and therefore refuse the state outright rather than picking a side.
+  const workspaceGraphState = classifyWorkspaceGraph(resolvedOutputDir).state
+  if (workspaceGraphState === 'mixed_v2_and_live_v1' && (options.update === true || options.clusterOnly === true)) {
+    throw new GraphArtifactStateError(
+      'mixed_v2_and_live_v1',
+      `A valid ${CANONICAL_ARTIFACT_BASENAME} and a live v1 ${LEGACY_ARTIFACT_BASENAME} exist together in ${resolvedOutputDir}. `
+      + 'This workspace is in an ambiguous B1, interrupted-cutover, or rollback state, and an incremental or '
+      + 'cluster-only build would have to trust one of them. Run `madar generate .` without --update or '
+      + '--cluster-only to rebuild from source and complete the v2 cutover.',
+      { expectedCanonicalPath: graphPath, tombstonePath: legacyGraphPath },
+    )
+  }
+  // --cluster-only re-clusters an existing graph, so it has nothing to work
+  // from when the canonical artifact does not parse. Refusing here is the same
+  // rule the ambiguous state applies: a reuse path must not proceed on a graph
+  // it cannot trust.
+  if (workspaceGraphState === 'invalid_current_v2' && options.clusterOnly === true) {
+    throw new GraphArtifactStateError(
+      'invalid_current_v2',
+      `${graphPath} exists but is not a readable v2 artifact, so --cluster-only has no graph to re-cluster. `
+      + 'Run `madar generate .` to rebuild it from source.',
+      { expectedCanonicalPath: graphPath, tombstonePath: legacyGraphPath },
+    )
+  }
+
+  // An unreadable canonical artifact is rebuilt from source rather than parsed.
+  // Loading it raised a raw parse error out of `--update`, which failed the
+  // command instead of repairing the workspace -- and the loaded graph was
+  // discarded moments later anyway, because the policy comparison already
+  // treated it as unusable.
+  //
+  // Selected from the classified state, so it names an artifact that holds a
+  // graph or nothing at all. Falling back to the legacy path whenever the
+  // canonical was absent named the tombstone in a moved_without_canonical
+  // workspace -- the state a user reaches by deleting out/graph.madar, where
+  // full generation is the documented repair -- and the reuse paths then read
+  // that tombstone as if it were a graph. Non-null now implies the file
+  // exists, because classification found a readable artifact there.
+  const existingGraphPath = workspaceGraphState === 'current_v2'
+    ? graphPath
+    : workspaceGraphState === 'legacy_v1_only' ? legacyGraphPath : null
   const reportPath = join(resolvedOutputDir, 'GRAPH_REPORT.md')
   const htmlPath = join(resolvedOutputDir, 'graph.html')
   const wikiPath = options.wiki ? join(resolvedOutputDir, 'wiki') : null
@@ -508,7 +562,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const progress = options.onProgress
 
   progress?.({ step: 'detect', message: 'Scanning files...' })
-  const graphGenerationPolicy = existsSync(graphPath) ? readGraphGenerationPolicy(graphPath) : null
+  const graphGenerationPolicy = existingGraphPath === null ? null : readGraphGenerationPolicy(existingGraphPath)
   if (options.clusterOnly && !graphGenerationPolicy) {
     throw new Error(
       '--cluster-only requires valid generation-policy metadata. Run `madar generate . --update` to migrate and re-extract the graph first.',
@@ -553,13 +607,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const manifestGenerationPolicy = existsSync(manifestPath) ? loadManifestMetadata(manifestPath).generation_policy ?? null : null
   const storedPolicyMatches = graphGenerationPolicy?.fingerprint === generationPolicy.fingerprint
     && manifestGenerationPolicy?.fingerprint === generationPolicy.fingerprint
-  const generationPolicyMismatch = options.update === true && existsSync(graphPath) && !storedPolicyMatches
+  const generationPolicyMismatch = options.update === true && existingGraphPath !== null && !storedPolicyMatches
   const detectionOptions = detectOptions(corpusOptions, gitVisibleFiles)
   const detected = options.update && !generationPolicyMismatch
     ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions)
     : detect(resolvedRootPath, detectionOptions)
   const discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
-  const previousIndexingManifest = readIndexingManifestForGraph(graphPath)
+  const previousIndexingManifest = existingGraphPath === null ? null : readIndexingManifestForGraph(existingGraphPath)
   const indexingOutcomes: IndexingOutcome[] = (detected.indexing_outcomes ?? []).map((outcome) => ({
     ...outcome,
     extraction_strategy: outcome.extraction_strategy ?? 'not_extracted',
@@ -673,8 +727,8 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
 
-  const loadedExistingGraph = options.clusterOnly || (options.update && existsSync(graphPath)) ? loadGraph(graphPath) : null
-  const existingGraphExtractorVersion = options.update && existsSync(graphPath) ? loadGraphExtractorVersion(graphPath) : null
+  const loadedExistingGraph = options.clusterOnly || (options.update === true && existingGraphPath !== null) ? loadGraph(existingGraphPath as string) : null
+  const existingGraphExtractorVersion = options.update === true && existingGraphPath !== null ? loadGraphExtractorVersion(existingGraphPath) : null
   const directed = options.directed !== false
   const generationPolicyToPublish = generationPolicy
   const upgradingLegacyDirection = loadedExistingGraph?.isDirected() === false && directed
@@ -1004,7 +1058,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   progress?.({ step: 'export', message: 'Writing outputs...' })
   writeTextFileAtomically(reportPath, `${report}\n`)
-  publishGraphArtifacts(graph, resolvedRootPath, resolvedOutputDir, communities, communityLabels, semanticAnomalyList)
+  publishGraphArtifacts(graph, resolvedRootPath, communities, communityLabels)
   if (!options.noHtml) {
     const htmlResult = toHtml(graph, communities, htmlPath, communityLabels, {
       mode: options.htmlMode ?? 'auto',

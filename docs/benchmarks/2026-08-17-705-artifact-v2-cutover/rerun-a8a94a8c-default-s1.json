@@ -1,0 +1,75 @@
+{
+  "session": "1",
+  "samples": 9,
+  "arms": {
+    "base": {
+      "median_ms": 312.29,
+      "min_ms": 306.598,
+      "max_ms": 359.164,
+      "spread_pct": 17.1,
+      "samples_ms": [
+        347.352,
+        310.162,
+        319.512,
+        312.292,
+        359.164,
+        311.32,
+        307.24,
+        306.598,
+        317.21
+      ],
+      "selected_workspace_relative_path": "out/graph.json",
+      "selected_logical_path": null,
+      "artifact_bytes": 26105161,
+      "node_count": 12669,
+      "relationship_count": 17835,
+      "load1_median": 2.92
+    },
+    "b1": {
+      "median_ms": 669.5,
+      "min_ms": 655.65,
+      "max_ms": 737.983,
+      "spread_pct": 12.6,
+      "samples_ms": [
+        737.983,
+        681.01,
+        669.504,
+        662.923,
+        682.18,
+        655.65,
+        716.5,
+        664.006,
+        662.884
+      ],
+      "selected_workspace_relative_path": "out/graph.json",
+      "selected_logical_path": null,
+      "artifact_bytes": 26069288,
+      "node_count": 12669,
+      "relationship_count": 17940,
+      "load1_median": 2.91
+    },
+    "head_default": {
+      "median_ms": 824.4,
+      "min_ms": 818.627,
+      "max_ms": 942.188,
+      "spread_pct": 15.1,
+      "samples_ms": [
+        819.334,
+        908.145,
+        824.398,
+        831.513,
+        823.668,
+        942.188,
+        818.766,
+        833.714,
+        818.627
+      ],
+      "selected_workspace_relative_path": "out/graph.madar",
+      "selected_logical_path": "out/graph.madar",
+      "artifact_bytes": 47030676,
+      "node_count": 12669,
+      "relationship_count": 17940,
+      "load1_median": 2.91
+    }
+  }
+}

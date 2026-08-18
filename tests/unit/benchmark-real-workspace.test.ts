@@ -129,6 +129,9 @@ describe('real-workspace benchmark support', () => {
         stdio: 'pipe',
         env: {
           ...process.env,
+          // The archived runner refuses to start without this, so reaching its
+          // argument validation at all means opting into the v1-era procedure.
+          MADAR_BENCH_MODE: 'historical',
           MADAR_BENCH_BACKEND: process.cwd(),
           MADAR_BENCH_REAL_PROMPTS: join(dir, 'missing-prompts.json'),
         },
@@ -154,11 +157,43 @@ describe('real-workspace benchmark support', () => {
         stdio: 'pipe',
         env: {
           ...process.env,
+          MADAR_BENCH_MODE: 'historical',
           MADAR_BENCH_BACKEND: join(dir, 'missing-backend'),
           MADAR_BENCH_REAL_PROMPTS: promptsPath,
         },
       })).toThrowError(expect.objectContaining({
         stderr: expect.stringContaining('MADAR_BENCH_BACKEND'),
+      }))
+    })
+  })
+
+  it.skipIf(process.platform === 'win32')('refuses before validating arguments when the mode is not set', () => {
+    withTempDir((dir) => {
+      const promptsPath = join(dir, 'prompts.json')
+      writeFileSync(promptsPath, JSON.stringify({ schema_version: 1, prompts: [] }, null, 2))
+
+      // A fully valid configuration, so the only thing left to stop it is the
+      // archive guard. If argument validation ran first, a maintainer could get
+      // partway into a v1-era run against a binary that no longer produces v1.
+      expect(() => execFileSync('bash', [
+        'docs/benchmarks/2026-05-11-spi-vs-legacy/run-real-workspace.sh',
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        stdio: 'pipe',
+        // The guard is expected to refuse immediately. If it regresses the
+        // script starts a real benchmark run, and an unbounded execFileSync
+        // would block until Vitest kills the test while the child outlives it.
+        timeout: 30_000,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          MADAR_BENCH_MODE: '',
+          MADAR_BENCH_BACKEND: process.cwd(),
+          MADAR_BENCH_REAL_PROMPTS: promptsPath,
+        },
+      })).toThrowError(expect.objectContaining({
+        stderr: expect.stringContaining('MADAR_BENCH_MODE=historical'),
       }))
     })
   })

@@ -175,7 +175,7 @@ function formatContextPackPromptTaskLine(task: string, prompt: string): string {
 }
 
 export function promptDefinitionsForGraph(graphPath: string): McpPromptDefinition[] {
-  if (!existsSync(resolveWorkspaceGraphPath(graphPath))) {
+  if (!existsSync(resolveWorkspaceGraphPath(graphPath, undefined, 'explicit'))) {
     // MCP clients may discover prompts while auto-refresh is still creating the
     // first graph. Static definitions keep startup responsive; prompts/get
     // remains freshness-gated until reconciliation succeeds.

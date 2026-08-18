@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { basename, dirname, isAbsolute, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 
 import type { KnowledgeGraph } from '../contracts/graph.js'
@@ -16,6 +16,12 @@ import { readPackageVersion } from '../shared/package-metadata.js'
 import { validateGraphPath } from '../shared/security.js'
 import { isDiscoveryPathIgnored, loadMadarignorePatterns } from '../shared/source-discovery.js'
 import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
+import { classifyWorkspaceGraph,
+  legacyRequestResolvesToCanonical,
+} from '../contracts/graph-artifact-selection.js'
+import {
+  logicalGraphPathForArtifact,
+} from '../shared/workspace.js'
 
 export interface GraphFreshnessMetadata {
   graphVersion: string
@@ -404,8 +410,50 @@ function gitChangedSourceFiles(
   return graphRelevantGitChangedFiles(indexed, [...changedFiles])
 }
 
+/**
+ * Resolves a request to the artifact whose bytes actually define freshness.
+ *
+ * Hashing the requested path was correct while graph.json held the graph. It
+ * stopped being correct at the #705 cutover: the legacy path now holds a
+ * constant tombstone, so every workspace hashed to the same version and the
+ * value never changed when the graph did. Staleness detection failed silently
+ * rather than loudly, which is the worst way for it to fail.
+ */
+function freshnessSourcePath(safeGraphPath: string): string {
+  if (basename(safeGraphPath) !== 'graph.json') return safeGraphPath
+  const classification = classifyWorkspaceGraph(dirname(safeGraphPath))
+  // Measure whatever loadGraph reads. Redirecting for any state with a
+  // canonical artifact hashed graph.madar while the graph came from a live v1
+  // graph.json, so the reported version described a different file.
+  return legacyRequestResolvesToCanonical(classification.state)
+    ? classification.canonicalPath
+    : safeGraphPath
+}
+
+/**
+ * The path to report for a measurement, in the caller's own spelling.
+ *
+ * Reporting the requested path named a tombstone after the cutover, which is
+ * not the file any number here describes. Only the basename is swapped, so a
+ * caller that passed a relative path still gets a relative one back and a
+ * linked worktree's private directory is never introduced.
+ */
+function reportedGraphPath(requestedPath: string, resolvedPath: string): string {
+  // Inside the workspace this is the public `out/<name>` spelling, so a linked
+  // worktree's redirected directory never reaches governance output. Outside
+  // it, the caller named a specific file and keeps their own spelling.
+  // Derive the workspace from the artifact itself. Defaulting to process.cwd()
+  // silently failed to recognise an artifact belonging to another workspace --
+  // exactly the linked-worktree case this is meant to protect.
+  const logical = logicalGraphPathForArtifact(resolvedPath)
+  if (logical !== resolvedPath) return logical
+  return requestedPath === resolvedPath
+    ? requestedPath
+    : join(dirname(requestedPath), basename(resolvedPath))
+}
+
 function graphVersionForPath(graphPath: string): { graphVersion: string; mtimeMs: number } {
-  const safeGraphPath = validateGraphPath(graphPath)
+  const safeGraphPath = freshnessSourcePath(validateGraphPath(graphPath))
   const graphStat = statSync(safeGraphPath)
   const truncatedMtime = truncateMtime(graphStat.mtimeMs)
   const cached = graphVersionCache.get(safeGraphPath)
@@ -461,6 +509,8 @@ export function analyzeGraphContextFreshness(
     throw error
   }
 
+  const measuredPath = freshnessSourcePath(safeGraphPath)
+  const reportedPath = reportedGraphPath(graphPath, measuredPath)
   const graphFreshness = graphFreshnessMetadata(safeGraphPath)
   const indexed = graph
     ? indexedSourceFilesFromGraph(graph, safeGraphPath)
@@ -500,7 +550,7 @@ export function analyzeGraphContextFreshness(
 
   return {
     status,
-    graph_path: safeGraphPath,
+    graph_path: reportedPath,
     graph_version: graphFreshness.graphVersion,
     graph_modified_ms: graphFreshness.graphModifiedMs,
     graph_modified_at: graphFreshness.graphModifiedAt,

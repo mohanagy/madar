@@ -1,6 +1,6 @@
 # Indexing completeness
 
-A valid `graph.json` proves that Madar produced a readable graph artifact. It does **not** prove that every relevant source file was indexed.
+A valid `graph.madar` proves that Madar produced a readable graph artifact. It does **not** prove that every relevant source file was indexed.
 
 Madar writes a separate, versioned completeness receipt for each generation:
 

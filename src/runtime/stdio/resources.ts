@@ -5,6 +5,12 @@ import type { Writable } from 'node:stream'
 import { freshnessAnnotations, resourceFreshnessMetadata } from '../freshness.js'
 import { validateGraphPath } from '../../shared/security.js'
 import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
+import {
+  CANONICAL_ARTIFACT_BASENAME,
+  LEGACY_ARTIFACT_BASENAME,
+  classifyWorkspaceGraph,
+} from '../../contracts/graph-artifact-selection.js'
+import { GRAPH_ARTIFACT_MEDIA_TYPE } from '../../contracts/graph-artifact-format.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -63,25 +69,78 @@ function resourceUri(name: string): string {
   return `madar://artifact/${name}`
 }
 
+/**
+ * Explains a resource miss, distinguishing "moved" from "never existed".
+ *
+ * "Unknown resource" reads like a typo or a version skew. A client that
+ * hard-coded the v1 artifact URI needs to learn the resource moved AND that the
+ * replacement is a different format, not a rename it can transparently follow.
+ * Only said once the workspace actually has a canonical artifact -- in a
+ * pre-cutover workspace the v1 URI is served, so nothing has moved.
+ */
+function unknownResourceMessage(uri: string, resources: readonly McpResourceDefinition[]): string {
+  if (uri !== resourceUri(LEGACY_ARTIFACT_BASENAME)) return `Unknown resource: ${uri}`
+  // The caller already holds this list. Recomputing it here repeated
+  // existsSync, validateGraphPath, classifyWorkspaceGraph and one stat per
+  // candidate, to answer a question the list it was given already answers.
+  const canonicalServed = resources
+    .some((entry) => entry.uri === resourceUri(CANONICAL_ARTIFACT_BASENAME))
+  return canonicalServed
+    ? `${uri} is gone. Read ${resourceUri(CANONICAL_ARTIFACT_BASENAME)} instead, which serves artifact v2 `
+      + 'and is not v1-compatible.'
+    : `Unknown resource: ${uri}`
+}
+
+/** Locked in tests: a magic-header artifact must never be labelled JSON. */
+export const GRAPH_ARTIFACT_MIME_TYPE = GRAPH_ARTIFACT_MEDIA_TYPE
+
 export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
   // During a first auto-refresh startup the MCP transport is available before
   // graph.json. Resource discovery must return an empty list instead of making
   // initialize fail through notification bookkeeping.
-  const effectiveGraphPath = resolveWorkspaceGraphPath(graphPath)
+  const effectiveGraphPath = resolveWorkspaceGraphPath(graphPath, undefined, 'explicit')
   if (!existsSync(effectiveGraphPath)) {
     return []
   }
   const safeGraphPath = validateGraphPath(effectiveGraphPath)
   const outputDir = dirname(safeGraphPath)
+  const canonicalPath = join(outputDir, CANONICAL_ARTIFACT_BASENAME)
+  /*
+   * Which graph resource exists is decided by workspace state, so the listed
+   * resource always matches the artifact a reader would actually get.
+   *
+   * A workspace that never cut over keeps its real v1 under its own URI and
+   * media type: publishing it as graph.madar would label v1 bytes as v2, and
+   * publishing nothing would take a legacy workspace's graph away. Every
+   * ambiguous or damaged state lists no graph resource at all, so a client
+   * cannot read one by accident.
+   */
+  const state = classifyWorkspaceGraph(outputDir).state
+  const graphResource: McpResourceDefinition | null = state === 'current_v2'
+    ? {
+        uri: resourceUri(CANONICAL_ARTIFACT_BASENAME),
+        name: CANONICAL_ARTIFACT_BASENAME,
+        title: 'Graph Artifact',
+        description: 'Canonical Madar graph artifact v2 with nodes, facts, occurrences, and provenance.',
+        // Not application/json. The artifact is a header followed by JSON, so a
+        // client that trusts the MIME type and parses the whole body fails.
+        mimeType: GRAPH_ARTIFACT_MIME_TYPE,
+        filePath: canonicalPath,
+      }
+    : state === 'legacy_v1_only'
+      ? {
+          uri: resourceUri(LEGACY_ARTIFACT_BASENAME),
+          name: LEGACY_ARTIFACT_BASENAME,
+          title: 'Graph JSON (legacy v1, degraded)',
+          description: 'Legacy v1 graph export from a workspace that has not been cut over. It cannot '
+            + 'represent parallel facts between one endpoint pair. Run `madar generate .` to produce the '
+            + 'canonical v2 artifact.',
+          mimeType: 'application/json',
+          filePath: safeGraphPath,
+        }
+      : null
   const candidates: McpResourceDefinition[] = [
-    {
-      uri: resourceUri('graph.json'),
-      name: 'graph.json',
-      title: 'Graph JSON',
-      description: 'GraphRAG-ready graph export with nodes, links, and hyperedges.',
-      mimeType: 'application/json',
-      filePath: safeGraphPath,
-    },
+    ...(graphResource === null ? [] : [graphResource]),
     {
       uri: resourceUri('GRAPH_REPORT.md'),
       name: 'GRAPH_REPORT.md',
@@ -173,9 +232,10 @@ export function handleResourceRead(
     return helpers.failure(id, helpers.jsonrpcInvalidParams, `resources/read requires a string uri parameter <= ${helpers.maxStdioTextLength} characters`)
   }
 
-  const resource = resourcesForGraph(graphPath).find((entry) => entry.uri === uri)
+  const resources = resourcesForGraph(graphPath)
+  const resource = resources.find((entry) => entry.uri === uri)
   if (!resource) {
-    return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unknown resource: ${uri}`)
+    return helpers.failure(id, helpers.jsonrpcInvalidParams, unknownResourceMessage(uri, resources))
   }
 
   if (statSync(resource.filePath).size > helpers.maxResourceBytes) {
@@ -206,9 +266,10 @@ export function handleResourceSubscribe(
     return helpers.failure(id, helpers.jsonrpcInvalidParams, `resources/subscribe requires a string uri parameter <= ${helpers.maxStdioTextLength} characters`)
   }
 
-  const resource = resourcesForGraph(graphPath).find((entry) => entry.uri === uri)
+  const resources = resourcesForGraph(graphPath)
+  const resource = resources.find((entry) => entry.uri === uri)
   if (!resource) {
-    return helpers.failure(id, helpers.jsonrpcInvalidParams, `Unknown resource: ${uri}`)
+    return helpers.failure(id, helpers.jsonrpcInvalidParams, unknownResourceMessage(uri, resources))
   }
 
   const subscribedUris = helpers.ensureSubscribedResourceUris(sessionState)

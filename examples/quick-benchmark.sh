@@ -30,7 +30,7 @@ echo ""
 
 # Run benchmark
 echo "Step 2: Running token reduction benchmark..."
-madar benchmark out/graph.json --exec "$MADAR_RUNNER" --yes
+madar benchmark out/graph.madar --exec "$MADAR_RUNNER" --yes
 echo ""
 
 # Show key stats

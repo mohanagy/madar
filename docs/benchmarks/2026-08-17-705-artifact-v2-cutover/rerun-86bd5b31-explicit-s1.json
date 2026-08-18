@@ -1,0 +1,75 @@
+{
+  "session": "1",
+  "samples": 9,
+  "arms": {
+    "base": {
+      "median_ms": 296.28,
+      "min_ms": 285.759,
+      "max_ms": 319.767,
+      "spread_pct": 11.9,
+      "samples_ms": [
+        296.277,
+        300.003,
+        285.759,
+        319.767,
+        304.853,
+        291.239,
+        291.426,
+        286.031,
+        316.083
+      ],
+      "artifact_bytes": 26105161,
+      "artifact_sha256": "ad7c0edb5745db82d16b26898877be3d2c7474d0e65890cbfdd1676f963fb93c",
+      "node_count": 12669,
+      "relationship_count": 17835,
+      "rss_bytes_median": 375848960,
+      "load1_median": 3.36
+    },
+    "b1": {
+      "median_ms": 715.5,
+      "min_ms": 693.247,
+      "max_ms": 795.086,
+      "spread_pct": 14.7,
+      "samples_ms": [
+        728.329,
+        715.501,
+        790.936,
+        730.236,
+        693.247,
+        795.086,
+        709.272,
+        698.217,
+        701.566
+      ],
+      "artifact_bytes": 46868382,
+      "artifact_sha256": "7e0e50d94a4c78206e62f750d03ea888c0850f27af8d610b4af57a5cc6dab4fb",
+      "node_count": 12669,
+      "relationship_count": 17940,
+      "rss_bytes_median": 634912768,
+      "load1_median": 3.36
+    },
+    "head_explicit": {
+      "median_ms": 722.24,
+      "min_ms": 656.061,
+      "max_ms": 852.363,
+      "spread_pct": 29.9,
+      "samples_ms": [
+        722.975,
+        714.773,
+        852.363,
+        760.53,
+        656.061,
+        711.526,
+        722.24,
+        811.238,
+        690.079
+      ],
+      "artifact_bytes": 47030676,
+      "artifact_sha256": "d25d898e303da785f8417c9a638dcf758dc35b6c67b318a9526c9bec063d1dbb",
+      "node_count": 12669,
+      "relationship_count": 17940,
+      "rss_bytes_median": 636452864,
+      "load1_median": 3.36
+    }
+  }
+}

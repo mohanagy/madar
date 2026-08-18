@@ -7,6 +7,7 @@ import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { loadGraphArtifact, serializeGraphArtifactV2 } from '../../src/contracts/graph-artifact.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { loadGraph } from '../../src/runtime/serve.js'
+import { readGeneratedGraphJson } from './helpers/generated-graph.js'
 
 const FIXTURE = 'tests/fixtures/pack-quality/framework-runtime-boundary-distractor/workspace'
 
@@ -21,35 +22,38 @@ describe('community assignment survives the artifact round trip', () => {
   it('preserves per-node community in the v2 artifact', () => {
     const { root, out } = generated()
     try {
-      const mirror = JSON.parse(readFileSync(join(out, 'graph.json'), 'utf8')) as {
+      // community is a clustering result that v1 injected at write time rather
+      // than storing on the node. v2 must carry it too: without it a v2 load
+      // returned community-less nodes and retrieval scored them differently.
+      //
+      // Compared against the artifact's own serialized nodes rather than a v1
+      // mirror, which the #705 cutover removed. The stored bytes are what a
+      // reader actually gets, so this is the stronger of the two comparisons.
+      const stored = readGeneratedGraphJson(out) as unknown as {
         nodes: { id: string; community?: number }[]
       }
       const canonical = loadGraph(join(out, 'graph.madar'))
 
-      // community is a clustering result that v1 injects at write time rather
-      // than storing on the node. v2 must carry it too: without it a v2 load
-      // returned community-less nodes and retrieval scored them differently.
-      const fromMirror = Object.fromEntries(mirror.nodes.map((node) => [node.id, node.community]))
+      const fromStored = Object.fromEntries(stored.nodes.map((node) => [node.id, node.community]))
       const fromCanonical = Object.fromEntries(
         canonical.nodeIds().map((id) => [id, canonical.nodeAttributes(id).community]),
       )
 
+      expect(stored.nodes.length).toBeGreaterThan(0)
       expect(Object.values(fromCanonical).every((value) => typeof value === 'number')).toBe(true)
-      expect(fromCanonical).toEqual(fromMirror)
+      expect(fromCanonical).toEqual(fromStored)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it('keeps the v1 mirror and the canonical artifact agreeing on every node', () => {
+  it('keeps the stored artifact and the loaded graph agreeing on every node', () => {
     const { root, out } = generated()
     try {
-      const mirror = JSON.parse(readFileSync(join(out, 'graph.json'), 'utf8')) as {
-        nodes: { id: string; label?: string }[]
-      }
+      const stored = readGeneratedGraphJson(out) as unknown as { nodes: { id: string }[] }
       const canonical = loadGraph(join(out, 'graph.madar'))
 
-      expect(canonical.nodeIds().sort()).toEqual(mirror.nodes.map((node) => node.id).sort())
+      expect(canonical.nodeIds().sort()).toEqual(stored.nodes.map((node) => node.id).sort())
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -138,19 +142,19 @@ describe('community parity holds on an unrelated workspace shape', () => {
     return root
   }
 
-  it('agrees between the v1 mirror and the canonical artifact', () => {
+  it('agrees between the stored artifact and the loaded graph', () => {
     const root = holdoutWorkspace()
     try {
       generateGraph(root, { noHtml: true, extractionMode: 'legacy' })
       const out = join(root, 'out')
-      const mirror = JSON.parse(readFileSync(join(out, 'graph.json'), 'utf8')) as {
+      const stored = readGeneratedGraphJson(out) as unknown as {
         nodes: { id: string; community?: number }[]
       }
       const canonical = loadGraph(join(out, 'graph.madar'))
 
-      expect(mirror.nodes.length).toBeGreaterThan(0)
+      expect(stored.nodes.length).toBeGreaterThan(0)
       expect(Object.fromEntries(canonical.nodeIds().map((id) => [id, canonical.nodeAttributes(id).community])))
-        .toEqual(Object.fromEntries(mirror.nodes.map((node) => [node.id, node.community])))
+        .toEqual(Object.fromEntries(stored.nodes.map((node) => [node.id, node.community])))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

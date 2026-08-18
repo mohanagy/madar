@@ -10,7 +10,7 @@ import { loadGraphArtifactFromPath, serializeGraphArtifactV2 } from '../../src/c
 import {
   GraphArtifactActivationInterruptedError,
   type GraphArtifactActivationStep,
-  GraphArtifactBackupConflictError,
+  GraphArtifactBackupError,
   GRAPH_ARTIFACT_V2_TOMBSTONE,
   activateGraphArtifactV2,
 } from '../../src/infrastructure/graph-artifact-activation.js'
@@ -137,36 +137,112 @@ describe('graph artifact v2 activation', () => {
     expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
   })
 
+  it('does not back up an existing tombstone as legacy v1', () => {
+    const root = temporaryRoot('madar activation already cut over ')
+    const outputDir = join(root, 'out')
+    mkdirSync(outputDir)
+    writeFileSync(join(outputDir, 'graph.json'), GRAPH_ARTIFACT_V2_TOMBSTONE)
+
+    // An already-cut-over workspace is accounted for, so publication proceeds
+    // and there is nothing to preserve.
+    const result = activateGraphArtifactV2(root, v2Artifact())
+
+    expect(result.legacyBackupCreated).toBe(false)
+    expect(result.legacyBackupStatus).toBe('none')
+    expect(existsSync(join(outputDir, 'graph.v1.json'))).toBe(false)
+  })
+
   it.each([
-    ['existing tombstone', Buffer.from(GRAPH_ARTIFACT_V2_TOMBSTONE)],
     ['existing v2', v2Artifact()],
     ['corrupt JSON', Buffer.from('{')],
     ['unrelated JSON', Buffer.from('{"hello":"world"}')],
     ['future schema', Buffer.from('{"schema_version":99,"directed":true,"nodes":[],"links":[]}')],
-  ])('does not back up %s as legacy v1', (_label, existingGraph) => {
+  ])('refuses %s at the legacy path rather than discarding it', (_label, existingGraph) => {
     const root = temporaryRoot('madar activation invalid prior ')
     const outputDir = join(root, 'out')
     mkdirSync(outputDir)
     writeFileSync(join(outputDir, 'graph.json'), existingGraph)
 
-    const result = activateGraphArtifactV2(root, v2Artifact())
-
-    expect(result.legacyBackupCreated).toBe(false)
+    // Previously this content was simply not backed up and the tombstone
+    // replaced it, destroying whatever it was. Madar cannot classify it, so it
+    // refuses instead.
+    expect(() => activateGraphArtifactV2(root, v2Artifact())).toThrow(GraphArtifactBackupError)
+    expect(readFileSync(join(outputDir, 'graph.json'))).toEqual(Buffer.from(existingGraph))
     expect(existsSync(join(outputDir, 'graph.v1.json'))).toBe(false)
+    expect(existsSync(join(outputDir, 'graph.madar'))).toBe(false)
   })
 
-  it('fails before activation instead of overwriting a different graph.v1.json', () => {
-    const root = temporaryRoot('madar activation backup conflict ')
+  it('cuts over with a live v1 that differs from the preserved backup', () => {
+    const root = temporaryRoot('madar activation backup differs ')
     const outputDir = join(root, 'out')
     mkdirSync(outputDir)
     const currentLegacy = legacyArtifact('current')
     const preservedLegacy = legacyArtifact('already-preserved')
     writeFileSync(join(outputDir, 'graph.json'), currentLegacy)
     writeFileSync(join(outputDir, 'graph.v1.json'), preservedLegacy)
+    expect(currentLegacy).not.toEqual(preservedLegacy)
 
-    expect(() => activateGraphArtifactV2(root, v2Artifact())).toThrow(GraphArtifactBackupConflictError)
-    expect(readFileSync(join(outputDir, 'graph.json'))).toEqual(currentLegacy)
+    // Inverted deliberately. graph.v1.json records the first cutover and the
+    // live file records whatever happened after it, so the two are expected to
+    // diverge. Treating that as a conflict wedged the only repair a mixed
+    // workspace has. The backup is still never rewritten.
+    const result = activateGraphArtifactV2(root, v2Artifact())
+
+    expect(result.legacyBackupStatus).toBe('preserved_existing')
+    expect(result.legacyBackupCreated).toBe(false)
     expect(readFileSync(join(outputDir, 'graph.v1.json'))).toEqual(preservedLegacy)
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
+    expect(existsSync(join(outputDir, 'graph.madar'))).toBe(true)
+  })
+
+  it('says an oversized backup is too large, not corrupt', () => {
+    const root = temporaryRoot('madar activation backup oversized ')
+    const outputDir = join(root, 'out')
+    mkdirSync(outputDir)
+    // Structurally fine, just past the record bound the loader enforces.
+    const huge = JSON.stringify({
+      schema_version: 1,
+      directed: true,
+      nodes: Array.from({ length: 1_000_001 }, (_, index) => ({ id: `n${index}` })),
+      links: [],
+    })
+    writeFileSync(join(outputDir, 'graph.v1.json'), huge)
+
+    // Both refuse, but an operator sent looking for corruption in an
+    // uncorrupted file wastes the trip.
+    expect(() => activateGraphArtifactV2(root, v2Artifact())).toThrow(/too large/)
+    expect(() => activateGraphArtifactV2(root, v2Artifact())).not.toThrow(/cannot read it/)
+    expect(existsSync(join(outputDir, 'graph.madar'))).toBe(false)
+  })
+
+  it('refuses a preserved backup it cannot read, before any mutation', () => {
+    const root = temporaryRoot('madar activation backup invalid ')
+    const outputDir = join(root, 'out')
+    mkdirSync(outputDir)
+    const currentLegacy = legacyArtifact('current')
+    writeFileSync(join(outputDir, 'graph.json'), currentLegacy)
+    writeFileSync(join(outputDir, 'graph.v1.json'), 'not a graph at all')
+
+    expect(() => activateGraphArtifactV2(root, v2Artifact())).toThrow(GraphArtifactBackupError)
+    expect(readFileSync(join(outputDir, 'graph.json'))).toEqual(currentLegacy)
+    expect(readFileSync(join(outputDir, 'graph.v1.json'), 'utf8')).toBe('not a graph at all')
+    expect(existsSync(join(outputDir, 'graph.madar'))).toBe(false)
+  })
+
+  it.each([
+    ['corrupt JSON', '{ "nodes": ['],
+    ['unrelated JSON', '{"unrelated":true}'],
+    ['v2 magic at the legacy path', 'MADAR_GRAPH_ARTIFACT/2\n{}'],
+  ])('refuses %s at the legacy path, before any mutation', (_label, contents) => {
+    const root = temporaryRoot('madar activation legacy unexpected ')
+    const outputDir = join(root, 'out')
+    mkdirSync(outputDir)
+    writeFileSync(join(outputDir, 'graph.json'), contents)
+
+    // Replacing this with a tombstone would destroy content Madar cannot
+    // account for.
+    expect(() => activateGraphArtifactV2(root, v2Artifact())).toThrow(GraphArtifactBackupError)
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(contents)
     expect(existsSync(join(outputDir, 'graph.madar'))).toBe(false)
   })
 
@@ -184,15 +260,32 @@ describe('graph artifact v2 activation', () => {
     expect(readFileSync(join(outputDir, 'graph.v1.json'))).toEqual(legacy)
   })
 
-  it('leaves an unrelated existing graph.v1.json untouched when no backup is needed', () => {
+  it('refuses an unreadable existing graph.v1.json rather than working around it', () => {
     const root = temporaryRoot('madar activation existing backup ')
     const outputDir = join(root, 'out')
     mkdirSync(outputDir)
     const existingBackup = Buffer.from('do not overwrite')
     writeFileSync(join(outputDir, 'graph.v1.json'), existingBackup)
 
-    activateGraphArtifactV2(root, v2Artifact())
+    // It used to be left alone and ignored. A backup Madar cannot read is not
+    // rollback evidence, and proceeding would quietly publish over a workspace
+    // whose recovery state is unknown.
+    expect(() => activateGraphArtifactV2(root, v2Artifact())).toThrow(GraphArtifactBackupError)
+    expect(readFileSync(join(outputDir, 'graph.v1.json'))).toEqual(existingBackup)
+    expect(existsSync(join(outputDir, 'graph.madar'))).toBe(false)
+  })
 
+  it('keeps a valid existing backup untouched when the legacy path is a tombstone', () => {
+    const root = temporaryRoot('madar activation preserved backup ')
+    const outputDir = join(root, 'out')
+    mkdirSync(outputDir)
+    const existingBackup = legacyArtifact('already-preserved')
+    writeFileSync(join(outputDir, 'graph.v1.json'), existingBackup)
+    writeFileSync(join(outputDir, 'graph.json'), GRAPH_ARTIFACT_V2_TOMBSTONE)
+
+    const result = activateGraphArtifactV2(root, v2Artifact())
+
+    expect(result.legacyBackupStatus).toBe('preserved_existing')
     expect(readFileSync(join(outputDir, 'graph.v1.json'))).toEqual(existingBackup)
   })
 

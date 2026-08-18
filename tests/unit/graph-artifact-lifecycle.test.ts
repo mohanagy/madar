@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
   GRAPH_ARTIFACT_V2_HEADER,
+  GRAPH_ARTIFACT_V2_TOMBSTONE,
   GRAPH_LOCAL_SIDECAR_BASENAME,
   loadGraphArtifact,
   readGraphArtifactMetadata,
@@ -32,7 +33,7 @@ function generated(): { root: string; outputDir: string } {
   return { root, outputDir: join(root, 'out') }
 }
 
-describe('B1 transitional dual-artifact generation', () => {
+describe('cutover generation', () => {
   it('writes graph.madar as the canonical v2 artifact', () => {
     const { outputDir } = generated()
     const artifact = join(outputDir, 'graph.madar')
@@ -42,34 +43,51 @@ describe('B1 transitional dual-artifact generation', () => {
       .toBe(GRAPH_ARTIFACT_V2_HEADER)
   })
 
-  it('keeps graph.json as a real v1 mirror rather than a tombstone', () => {
+  it('leaves graph.json as the exact tombstone, not a v1 mirror', () => {
     const { outputDir } = generated()
 
-    const legacy = readFileSync(join(outputDir, 'graph.json'), 'utf8')
-    expect(legacy).not.toContain('MADAR_GRAPH_MOVED/')
-    const parsed = JSON.parse(legacy) as { nodes?: unknown[]; links?: unknown[] }
-    expect(Array.isArray(parsed.nodes)).toBe(true)
-    expect(Array.isArray(parsed.links)).toBe(true)
+    // Inverted at the cutover: B1 kept a fresh v1 mirror here so old readers
+    // kept working. #705 ends that, and the byte-exact tombstone is what makes
+    // an old reader fail closed instead of silently reading a stale graph.
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8'))
+      .toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
   })
 
-  it('does not perform the B2 cutover', () => {
+  it('creates no v1 backup for a workspace that never had one', () => {
     const { outputDir } = generated()
 
-    // graph.v1.json is produced by the tombstone cutover, which B1 must not run.
+    // graph.v1.json preserves a *prior* v1 artifact. A fresh project has none,
+    // so inventing one would fabricate rollback evidence.
     expect(existsSync(join(outputDir, 'graph.v1.json'))).toBe(false)
   })
 
-  it('generates the mirror from the same run as the canonical artifact', () => {
-    const { outputDir } = generated()
+  it('preserves a prior v1 artifact byte-for-byte on first cutover', () => {
+    const root = project()
+    const outputDir = join(root, 'out')
+    mkdirSync(outputDir, { recursive: true })
+    const priorV1 = JSON.stringify({ schema_version: 1, directed: true, nodes: [{ id: 'prior' }], links: [] })
+    writeFileSync(join(outputDir, 'graph.json'), priorV1)
 
-    const legacy = JSON.parse(readFileSync(join(outputDir, 'graph.json'), 'utf8')) as {
-      nodes: { id: string }[]
-    }
-    const canonical = loadGraphArtifact(readFileSync(join(outputDir, 'graph.madar'))).graph
+    generateGraph(root, { noHtml: true })
 
-    // Same revision, so the node sets agree. A stale mirror would diverge here.
-    expect(new Set(legacy.nodes.map((node) => node.id)))
-      .toEqual(new Set(canonical.nodeIds()))
+    expect(readFileSync(join(outputDir, 'graph.v1.json'), 'utf8')).toBe(priorV1)
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
+  })
+
+  it('does not overwrite the preserved backup on a later generation', () => {
+    const root = project()
+    const outputDir = join(root, 'out')
+    mkdirSync(outputDir, { recursive: true })
+    const priorV1 = JSON.stringify({ schema_version: 1, directed: true, nodes: [{ id: 'prior' }], links: [] })
+    writeFileSync(join(outputDir, 'graph.json'), priorV1)
+
+    generateGraph(root, { noHtml: true })
+    generateGraph(root, { noHtml: true })
+    generateGraph(root, { noHtml: true })
+
+    // The backup is the only copy of what the workspace had before the
+    // cutover. Re-running generation must never disturb it.
+    expect(readFileSync(join(outputDir, 'graph.v1.json'), 'utf8')).toBe(priorV1)
   })
 
   it('writes root_path only to the machine-local sidecar', () => {
@@ -82,33 +100,94 @@ describe('B1 transitional dual-artifact generation', () => {
     expect(readFileSync(join(outputDir, 'graph.madar'), 'utf8')).not.toContain('root_path')
   })
 
+  it('carries extraction provenance that only the v1 mirror used to expose', () => {
+    const { outputDir } = generated()
+
+    const raw = readFileSync(join(outputDir, 'graph.madar'), 'utf8')
+    const payload = JSON.parse(raw.slice(GRAPH_ARTIFACT_V2_HEADER.length)) as {
+      provenance?: Record<string, unknown>
+    }
+
+    // v2 provenance omitted these while graph.json was still a live mirror, so
+    // readers kept getting them from the mirror and the gap stayed invisible.
+    // The canonical artifact is now the only published graph; without these a
+    // generated graph cannot be audited for how it was extracted.
+    expect(payload.provenance?.extraction_receipt).toBeDefined()
+    expect(payload.provenance?.indexing_completeness).toBeDefined()
+    expect(payload.provenance?.discovery_safety).toBeDefined()
+    expect(payload.provenance?.generation_policy).toBeDefined()
+  })
+
   it('leaves no staging file behind', () => {
     const { outputDir } = generated()
 
     expect(readdirSync(outputDir).filter((name) => name.includes('.publishing'))).toEqual([])
   })
 
-  it('succeeds on a second generation over an activated workspace', () => {
+  it('is repeatable over an already-cut-over workspace', () => {
     const { root, outputDir } = generated()
+
+    // The second run reads a tombstone where the first read a real v1. It must
+    // recognize that as "already cut over" rather than treating the tombstone
+    // as a legacy artifact worth preserving.
+    expect(() => generateGraph(root, { noHtml: true })).not.toThrow()
+    expect(existsSync(join(outputDir, 'graph.madar'))).toBe(true)
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
+    expect(existsSync(join(outputDir, 'graph.v1.json'))).toBe(false)
+  })
+
+  it('rebuilds a workspace whose canonical artifact was deleted', () => {
+    const { root, outputDir } = generated()
+    // moved_without_canonical: the tombstone says the graph moved, and the
+    // artifact it points at is gone. Full generation is the documented repair,
+    // and it must rebuild from source rather than reach for the only file
+    // still sitting at the legacy path -- which is the tombstone itself.
+    rmSync(join(outputDir, 'graph.madar'))
 
     expect(() => generateGraph(root, { noHtml: true })).not.toThrow()
     expect(existsSync(join(outputDir, 'graph.madar'))).toBe(true)
-    expect(JSON.parse(readFileSync(join(outputDir, 'graph.json'), 'utf8'))).toHaveProperty('nodes')
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
+    expect(loadGraph(join(outputDir, 'graph.madar')).numberOfNodes()).toBeGreaterThan(0)
+  })
+
+  it('re-extracts instead of reusing a tombstone when --update finds no canonical', () => {
+    const { root, outputDir } = generated()
+    rmSync(join(outputDir, 'graph.madar'))
+
+    // The reuse path is where naming the tombstone actually bites: --update
+    // asked loadGraph for the graph it was going to extend, and the only file
+    // left at the legacy path is a marker pointing at the artifact that was
+    // just deleted. There is no graph to reuse, so this run must re-extract.
+    expect(() => generateGraph(root, { noHtml: true, update: true })).not.toThrow()
+    expect(loadGraph(join(outputDir, 'graph.madar')).numberOfNodes()).toBeGreaterThan(0)
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
   })
 })
 
-describe('B1 new-reader preference', () => {
-  it('prefers graph.madar even when handed the legacy path', () => {
+describe('new-reader preference', () => {
+  it('loads an explicitly named live v1 rather than the canonical sibling', () => {
     const { outputDir } = generated()
 
-    // Hand the reader graph.json while a valid canonical artifact exists. The
-    // mirror cannot represent parallel facts, so settling for it would lose
-    // relationships silently.
+    // Inverted by the #705 mixed-state decision. B1 preferred graph.madar here
+    // so a current reader never settled for a lossy mirror. That preference
+    // would now quietly satisfy a default load of an ambiguous workspace,
+    // which must fail closed instead. loadGraph is the low-level reader --
+    // intent is applied before a path reaches it -- so naming graph.json is a
+    // deliberate diagnostic selection and gets exactly that file.
     writeFileSync(
       join(outputDir, 'graph.json'),
       JSON.stringify({ schema_version: 1, directed: true, nodes: [], links: [] }),
     )
 
+    expect(loadGraph(join(outputDir, 'graph.json')).numberOfNodes()).toBe(0)
+  })
+
+  it('follows the tombstone to the canonical artifact', () => {
+    const { outputDir } = generated()
+
+    // A moved marker is addressed to old readers, so a current one follows it
+    // rather than reporting the graph unavailable.
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
     expect(loadGraph(join(outputDir, 'graph.json')).numberOfNodes()).toBeGreaterThan(0)
     expect(readGraphArtifactMetadata(join(outputDir, 'graph.json')).format).toBe('v2')
   })
@@ -120,10 +199,20 @@ describe('B1 new-reader preference', () => {
   })
 
   it('still reads a v1 workspace that has no canonical artifact', () => {
-    const { outputDir } = generated()
     const legacyOnly = join(mkdtempSync(join(tmpdir(), 'madar-v1only-')), 'out')
     mkdirSync(legacyOnly, { recursive: true })
-    writeFileSync(join(legacyOnly, 'graph.json'), readFileSync(join(outputDir, 'graph.json')))
+    // Written directly rather than copied from a generated workspace: after the
+    // cutover that source is a tombstone, which is the moved state, not a
+    // pre-cutover v1 workspace.
+    writeFileSync(
+      join(legacyOnly, 'graph.json'),
+      JSON.stringify({
+        schema_version: 1,
+        directed: true,
+        nodes: [{ id: 'service', source_file: 'src/service.ts' }],
+        links: [],
+      }),
+    )
 
     // No sibling graph.madar, so the preference must fall through to v1
     // rather than reporting the workspace as unreadable.

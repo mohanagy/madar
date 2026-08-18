@@ -9,6 +9,8 @@ import { EXTRACTOR_CACHE_VERSION } from '../../src/pipeline/extract.js'
 import { compareRefs, loadOrBuildSnapshot, type CompareRefsDependencies, type SnapshotDependencies } from '../../src/infrastructure/time-travel.js'
 import type { TimeTravelResult } from '../../src/runtime/time-travel.js'
 import { resolveMadarWorkspace } from '../../src/shared/workspace.js'
+import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { serializeGraphArtifactV2 } from '../../src/contracts/graph-artifact.js'
 
 const createdRoots = new Set<string>()
 
@@ -42,18 +44,25 @@ function createTestRoot(name: string): string {
   return root
 }
 
+/** A canonical artifact, which is what generation now produces. */
+function canonicalArtifactBytes(schemaVersion = 2, directed = true): Buffer {
+  const graph = new KnowledgeGraph({ directed })
+  graph.graph.schema_version = schemaVersion
+  return serializeGraphArtifactV2({
+    graph,
+    repositoryRevision: 'rev',
+    generationMode: 'full',
+    generatedAt: '2026-08-17T00:00:00.000Z',
+    provenance: { schema_version: schemaVersion, extractor_version: EXTRACTOR_CACHE_VERSION },
+  })
+}
+
 function writeGraphArtifacts(root: string, relativeDir: string, schemaVersion = 2): { graphPath: string; reportPath: string } {
   const outputDir = join(root, relativeDir, 'out')
   mkdirSync(outputDir, { recursive: true })
-  const graphPath = join(outputDir, 'graph.json')
+  const graphPath = join(outputDir, 'graph.madar')
   const reportPath = join(outputDir, 'GRAPH_REPORT.md')
-  writeFileSync(graphPath, JSON.stringify({
-    schema_version: schemaVersion,
-    directed: true,
-    extractor_version: EXTRACTOR_CACHE_VERSION,
-    nodes: [],
-    edges: [],
-  }))
+  writeFileSync(graphPath, canonicalArtifactBytes(schemaVersion))
   writeFileSync(reportPath, '# report\n')
   return { graphPath, reportPath }
 }
@@ -61,18 +70,13 @@ function writeGraphArtifacts(root: string, relativeDir: string, schemaVersion = 
 function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2, directed = true): void {
   const snapshotDir = join(root, 'out', 'time-travel', 'snapshots', commitSha)
   mkdirSync(snapshotDir, { recursive: true })
-  writeFileSync(join(snapshotDir, 'graph.json'), JSON.stringify({
-    schema_version: schemaVersion,
-    directed,
-    extractor_version: EXTRACTOR_CACHE_VERSION,
-    nodes: [],
-    edges: [],
-  }))
+  writeFileSync(join(snapshotDir, 'graph.madar'), canonicalArtifactBytes(schemaVersion, directed))
   writeFileSync(join(snapshotDir, 'GRAPH_REPORT.md'), '# cached report\n')
   writeFileSync(join(snapshotDir, 'metadata.json'), JSON.stringify({
     commitSha,
     extractorVersion: EXTRACTOR_CACHE_VERSION,
     schemaVersion,
+    snapshotFormatVersion: 2,
   }))
 }
 
@@ -97,7 +101,7 @@ function createSnapshotDependencies(rootDir: string): SnapshotDependencies & {
 
   const generateGraph = vi.fn((worktreePath: string) => {
     return {
-      graphPath: join(worktreePath, 'out', 'graph.json'),
+      graphPath: join(worktreePath, 'out', 'graph.madar'),
       reportPath: join(worktreePath, 'out', 'GRAPH_REPORT.md'),
     }
   })
@@ -132,6 +136,38 @@ describe('time travel infrastructure', () => {
     expect(deps.git.createDetachedWorktree).not.toHaveBeenCalled()
   })
 
+  it('rebuilds a pre-cutover snapshot instead of reusing it', async () => {
+    const rootDir = createTestRoot('legacy-format')
+    const snapshotDir = join(rootDir, 'out', 'time-travel', 'snapshots', 'cached-sha')
+    mkdirSync(snapshotDir, { recursive: true })
+    // A B1-era snapshot: canonical artifact beside a live v1 mirror, and
+    // metadata written before the format version existed.
+    writeFileSync(join(snapshotDir, 'graph.madar'), canonicalArtifactBytes())
+    writeFileSync(join(snapshotDir, 'graph.json'), JSON.stringify({
+      schema_version: 1,
+      directed: true,
+      extractor_version: EXTRACTOR_CACHE_VERSION,
+      nodes: [],
+      links: [],
+    }))
+    writeFileSync(join(snapshotDir, 'GRAPH_REPORT.md'), '# stale report\n')
+    writeFileSync(join(snapshotDir, 'metadata.json'), JSON.stringify({
+      commitSha: 'cached-sha',
+      extractorVersion: EXTRACTOR_CACHE_VERSION,
+      schemaVersion: 2,
+    }))
+
+    const deps = createSnapshotDependencies(rootDir)
+    const result = await loadOrBuildSnapshot({ ref: 'main', refresh: false }, deps)
+
+    // The pair cannot be upgraded in place -- nothing proves the two files
+    // describe the same run -- so the snapshot is rebuilt from source and the
+    // mirror does not survive.
+    expect(result.fromCache).toBe(false)
+    expect(deps.generateGraph).toHaveBeenCalled()
+    expect(existsSync(join(snapshotDir, 'graph.json'))).toBe(false)
+  })
+
   it('materializes a ref and builds a snapshot on cache miss', async () => {
     const rootDir = createTestRoot('cache-miss')
     const deps = createSnapshotDependencies(rootDir)
@@ -142,7 +178,7 @@ describe('time travel infrastructure', () => {
     expect(deps.git.resolveRef).toHaveBeenCalledWith('HEAD~1')
     expect(deps.generateGraph).toHaveBeenCalled()
     expect(result.fromCache).toBe(false)
-    expect(existsSync(join(rootDir, 'out', 'time-travel', 'snapshots', 'commit-head-1', 'graph.json'))).toBe(true)
+    expect(existsSync(join(rootDir, 'out', 'time-travel', 'snapshots', 'commit-head-1', 'graph.madar'))).toBe(true)
     expect(deps.git.removeWorktree).toHaveBeenCalledTimes(1)
   })
 
@@ -185,7 +221,7 @@ describe('time travel infrastructure', () => {
       buildStarted.resolve()
       await buildGate.promise
       return {
-        graphPath: join(worktreePath, 'out', 'graph.json'),
+        graphPath: join(worktreePath, 'out', 'graph.madar'),
         reportPath: join(worktreePath, 'out', 'GRAPH_REPORT.md'),
       }
     })
@@ -216,12 +252,12 @@ describe('time travel infrastructure', () => {
         firstBuildStarted.resolve()
         await firstBuildGate.promise
         return {
-          graphPath: join(worktreePath, 'out', 'graph.json'),
+          graphPath: join(worktreePath, 'out', 'graph.madar'),
           reportPath: join(worktreePath, 'out', 'GRAPH_REPORT.md'),
         }
       })
       .mockImplementation(async (worktreePath: string) => ({
-        graphPath: join(worktreePath, 'out', 'graph.json'),
+        graphPath: join(worktreePath, 'out', 'graph.madar'),
         reportPath: join(worktreePath, 'out', 'GRAPH_REPORT.md'),
       }))
 
@@ -280,7 +316,7 @@ describe('time travel infrastructure', () => {
       const artifactContainer = join(linkedWorkspace.gitCommonDir ?? '', 'madar', 'worktrees')
 
       expect(linkedWorkspace.isLinkedWorktree).toBe(true)
-      expect(result.graphPath).toBe(join(linkedWorkspace.outputDir, 'time-travel', 'snapshots', result.commitSha, 'graph.json'))
+      expect(result.graphPath).toBe(join(linkedWorkspace.outputDir, 'time-travel', 'snapshots', result.commitSha, 'graph.madar'))
       expect(existsSync(result.graphPath)).toBe(true)
       expect(existsSync(join(linked, 'out'))).toBe(false)
       expect(readdirSync(artifactContainer).sort()).toEqual([basename(linkedWorkspace.artifactRoot)])

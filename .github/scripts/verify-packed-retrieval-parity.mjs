@@ -103,10 +103,17 @@ function extractNpmTarball(tarballPath, destination) {
   }
 }
 
-function createParityGraph(root) {
+/**
+ * Builds the parity workspace by generating, not by hand-writing an artifact.
+ *
+ * The primary proof has to run against what Madar actually publishes. A
+ * hand-written v1 fixture qualified the packed package against a format the
+ * cutover no longer produces, so the gate could pass while canonical
+ * generation was broken. The legacy shape is still covered separately below.
+ */
+function createParityGraph(root, cliPath) {
   const sourceRoot = join(root, 'workspace')
-  const graphPath = join(sourceRoot, 'out', 'graph.json')
-  mkdirSync(dirname(graphPath), { recursive: true })
+  mkdirSync(join(sourceRoot, 'out'), { recursive: true })
   const files = {
     route: join(sourceRoot, 'route.ts'),
     analytics: join(sourceRoot, 'analytics.ts'),
@@ -115,26 +122,55 @@ function createParityGraph(root) {
   writeFileSync(files.route, 'export function handleClick() { trackClick(); redirectToDestination() }\n')
   writeFileSync(files.analytics, 'export function trackClick() {}\n')
   writeFileSync(files.redirect, 'export function redirectToDestination() {}\n')
-  writeFileSync(graphPath, JSON.stringify({
-    directed: true,
-    root_path: sourceRoot,
-    nodes: [
-      { id: 'route', label: 'handleClick', source_file: files.route, source_location: 'L1', file_type: 'code', node_kind: 'function', community: 0 },
-      { id: 'analytics', label: 'trackClick', source_file: files.analytics, source_location: 'L1', file_type: 'code', node_kind: 'function', community: 0 },
-      { id: 'redirect', label: 'redirectToDestination', source_file: files.redirect, source_location: 'L1', file_type: 'code', node_kind: 'function', community: 0 },
-    ],
-    edges: [
-      { source: 'route', target: 'analytics', relation: 'calls', confidence: 'EXTRACTED', source_file: files.route },
-      { source: 'route', target: 'redirect', relation: 'calls', confidence: 'EXTRACTED', source_file: files.route },
-    ],
-    hyperedges: [],
-  }))
-  return graphPath
+  execFileSync(process.execPath, [cliPath, 'generate', '.', '--no-html'], {
+    cwd: sourceRoot,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+
+  const canonicalPath = join(sourceRoot, 'out', 'graph.madar')
+  if (!existsSync(canonicalPath)) {
+    throw new Error('Parity generation did not publish out/graph.madar')
+  }
+  const header = readFileSync(canonicalPath, 'utf8').slice(0, 23)
+  if (header !== 'MADAR_GRAPH_ARTIFACT/2\n') {
+    throw new Error(`Parity artifact is not a v2 artifact: ${JSON.stringify(header)}`)
+  }
+  const tombstone = readFileSync(join(sourceRoot, 'out', 'graph.json'), 'utf8')
+  if (tombstone !== EXPECTED_TOMBSTONE) {
+    throw new Error('Parity workspace did not leave the exact tombstone at out/graph.json')
+  }
+  return canonicalPath
 }
 
+const EXPECTED_TOMBSTONE = [
+  'MADAR_GRAPH_MOVED/2',
+  'Use out/graph.madar with Madar >= the v2-supporting version.',
+  '',
+].join('\n')
+
+/** Fields that legitimately differ between two runs of the same code. */
+const NON_PARITY_FIELDS = new Set(['checked_at', 'generated_at', 'elapsed_ms'])
+
 function normalizedResponse(response) {
-  return JSON.parse(JSON.stringify(response, (key, value) =>
-    key === 'checked_at' || key === 'generated_at' ? undefined : value))
+  // elapsed_ms joined this list when the gate started running against a real
+  // generated graph: retrieval over an actual artifact takes measurable and
+  // varying time, so comparing it made the gate a stopwatch race rather than a
+  // parity check. The hand-written fixture was small enough to hide that.
+  const stripTimings = (value) => JSON.parse(JSON.stringify(value, (key, inner) =>
+    NON_PARITY_FIELDS.has(key) ? undefined : inner))
+
+  const normalized = stripTimings(response)
+  // Retrieval payloads travel as a JSON string inside the response text, so the
+  // timings inside them have to be stripped too.
+  for (const entry of normalized?.result?.content ?? []) {
+    if (typeof entry?.text !== 'string') continue
+    try {
+      entry.text = JSON.stringify(stripTimings(JSON.parse(entry.text)))
+    } catch {
+      // Not JSON; compared verbatim.
+    }
+  }
+  return normalized
 }
 
 const tempRoot = join(tmpdir(), `madar-packed-parity-${randomUUID()}`)
@@ -202,7 +238,7 @@ try {
   }
 
   process.env.MADAR_TOOL_PROFILE = 'full'
-  const graphPath = createParityGraph(tempRoot)
+  const graphPath = createParityGraph(tempRoot, join(repositoryRoot, 'dist', 'src', 'cli', 'bin.js'))
   const prompt = 'How does Dub resolve a short-link click from request handling through analytics tracking and destination redirect?'
   const request = {
     jsonrpc: '2.0',

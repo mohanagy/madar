@@ -14,7 +14,14 @@ import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 
 const sandboxRoots: string[] = []
 const PACKAGE_VERSION = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string }
-const OUT_GRAPH_PATH_PATTERN = /[\\/]out[\\/]graph\.json$/
+// Governance reports the logical spelling, so the leading separator an
+// absolute path used to supply is gone. Anchored on `out/` rather than made
+// permissive, so a bare basename or a leaked worktree path still fails.
+// Anchored at both ends on purpose. The leading alternation also matched
+// /tmp/worktree/out/graph.json, so the assertion could not tell the logical
+// spelling from a physical worktree path leaking into governance output --
+// which is the one thing it exists to catch.
+const OUT_GRAPH_PATH_PATTERN = /^out[\\/]graph\.json$/
 const OUT_MISSING_GRAPH_PATH_PATTERN = /[\\/]out[\\/]missing\.json$/
 
 type FixtureState = 'fresh' | 'modified' | 'unrelated_modified' | 'deleted' | 'shared_modified'
@@ -540,6 +547,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'json',
       verbose: true,
     })) as {
@@ -552,6 +560,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'text',
       verbose: true,
     })
@@ -559,6 +568,7 @@ describe('freshness surfaces', () => {
       prompt: 'How does AuthService reach issueSession?',
       provider: 'claude',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
     })) as {
       graph_freshness?: Record<string, unknown>
     }
@@ -567,6 +577,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       consumer: 'generic',
     })) as {
       governance?: {
@@ -646,6 +657,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'json',
       verbose: true,
     })) as {
@@ -658,6 +670,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'text',
       verbose: true,
     })
@@ -682,6 +695,7 @@ describe('freshness surfaces', () => {
       budget: 500,
       task: 'explain',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'json',
       verbose: true,
     })) as {
@@ -707,6 +721,7 @@ describe('freshness surfaces', () => {
       prompt: 'How does AuthService reach issueSession?',
       provider: 'claude',
       graphPath: fixture.graphPath,
+      graphPathIntent: 'explicit' as const,
     })) as {
       graph_freshness?: Record<string, unknown>
     }

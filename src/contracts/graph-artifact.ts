@@ -45,12 +45,26 @@ import type {
   SourceRange,
 } from './semantic-graph.js'
 
-export const GRAPH_ARTIFACT_V2_HEADER = 'MADAR_GRAPH_ARTIFACT/2\n' as const
-export const GRAPH_ARTIFACT_V2_TOMBSTONE = [
-  'MADAR_GRAPH_MOVED/2',
-  'Use out/graph.madar with Madar >= the v2-supporting version.',
-  '',
-].join('\n')
+import {
+  GRAPH_ARTIFACT_MOVED_PREFIX,
+  GRAPH_ARTIFACT_V2_HEADER,
+  GRAPH_ARTIFACT_V2_TOMBSTONE,
+  isMovedMarkerText,
+} from './graph-artifact-format.js'
+import { v2PayloadStructureError } from './graph-artifact-payload.js'
+import { classifyWorkspaceGraph,
+  legacyRequestResolvesToCanonical,
+} from './graph-artifact-selection.js'
+
+// Re-exported so the many existing importers of this module keep working; the
+// markers themselves live in a leaf module the classifier can also import.
+export {
+  GRAPH_ARTIFACT_MOVED_PREFIX,
+  GRAPH_ARTIFACT_V2_HEADER,
+  GRAPH_ARTIFACT_V2_TOMBSTONE,
+  isMovedMarkerText,
+}
+
 export const GRAPH_ARTIFACT_VERSION = 2 as const
 export const GRAPH_ARTIFACT_RECEIPT_STORAGE_SCHEMA_VERSION = 1 as const
 export const UNREGISTERED_RELATION_AT_STORAGE_BOUNDARY = 'unregistered_relation_at_storage_boundary' as const
@@ -680,6 +694,13 @@ export function parseGraphArtifactV2(bytes: Uint8Array | string): ParsedGraphArt
     const detail = error instanceof Error ? `: ${error.message}` : ''
     throw new GraphArtifactInvariantError(`artifact body is invalid JSON or has trailing non-whitespace${detail}`)
   }
+  // One owner for "is this structurally a v2 payload". The classifier asks the
+  // same question before selecting an artifact, and when each side answered it
+  // independently they drifted: the classifier was the more permissive of the
+  // two, so payloads it accepted failed here instead of failing closed there.
+  const structureError = v2PayloadStructureError(parsed)
+  if (structureError !== null) throw new GraphArtifactInvariantError(structureError)
+
   const payload = record(parsed, 'artifact payload')
   const versions = assertSupportedVersions(payload.versions)
   const directed = payload.directed
@@ -1078,7 +1099,7 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
   })
 }
 
-const MAX_LEGACY_ARTIFACT_BYTES = 100 * 1024 * 1024
+export const MAX_LEGACY_ARTIFACT_BYTES = 100 * 1024 * 1024
 const MAX_LEGACY_RECORDS = 1_000_000
 
 function legacyJson(text: string): Record<string, unknown> {
@@ -1112,6 +1133,41 @@ function legacyJson(text: string): Record<string, unknown> {
     throw new GraphArtifactInvariantError('JSON payload is not a compatible legacy v1 graph artifact')
   }
   return legacy
+}
+
+/**
+ * Whether these bytes are a loadable v1 artifact, without building the graph.
+ *
+ * `legacyJson` already performs the whole v1 acceptance decision: the size
+ * bound, the leading brace, JSON validity, the v2-identity rejection, and the
+ * required `schema_version`/`directed`/`nodes`/`links` shape. Hydration adds
+ * nothing to that answer, so a caller that only needs the answer should not pay
+ * for a full KnowledgeGraph -- publication was hydrating both the preserved
+ * backup and the legacy file on every generate, twice each on the refusal path.
+ *
+ * Living beside `legacyJson` is deliberate: the two must accept exactly the
+ * same bytes, and `legacyClassificationMatchesLoader` in the artifact tests
+ * pins them together.
+ */
+export function classifyLegacyArtifactBytes(bytes: Uint8Array | string): 'valid_v1' | 'too_large' | 'unreadable' {
+  try {
+    const legacy = legacyJson(decodeArtifactBytes(bytes))
+    // The record bound belongs to the loader's acceptance too. Checking only
+    // the byte size and shape would call a structurally fine but oversized
+    // artifact valid, which the loader refuses -- and that is a weakening, not
+    // a speed-up.
+    const nodes = Array.isArray(legacy.nodes) ? legacy.nodes.length : 0
+    const links = Array.isArray(legacy.links)
+      ? legacy.links.length
+      : Array.isArray(legacy.edges) ? legacy.edges.length : 0
+    if (nodes > MAX_LEGACY_RECORDS || links > MAX_LEGACY_RECORDS) {
+      throw new GraphArtifactInvariantError('legacy artifact has too many records for the bounded normal mode')
+    }
+    return 'valid_v1'
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    return /exceeds|too large|too many/i.test(message) ? 'too_large' : 'unreadable'
+  }
 }
 
 function legacyLinkFingerprint(link: Record<string, unknown>): { readonly canonical: string; readonly digest: string } {
@@ -1225,7 +1281,7 @@ export function loadGraphArtifact(
   options: LoadGraphArtifactOptions = {},
 ): LoadedGraphArtifact {
   const text = decodeArtifactBytes(bytes)
-  if (text === GRAPH_ARTIFACT_V2_TOMBSTONE || text.startsWith('MADAR_GRAPH_MOVED/')) {
+  if (isMovedMarkerText(text)) {
     throw new GraphArtifactMovedError()
   }
   if (text.startsWith(GRAPH_ARTIFACT_V2_HEADER)) {
@@ -1247,8 +1303,7 @@ export function loadGraphArtifactFromPath(
   const currentText = decodeArtifactBytes(currentBytes)
   if (
     basename(graphPath) === 'graph.json'
-    && currentText !== GRAPH_ARTIFACT_V2_TOMBSTONE
-    && !currentText.startsWith('MADAR_GRAPH_MOVED/')
+    && !isMovedMarkerText(currentText)
   ) {
     const v2Path = join(dirname(graphPath), 'graph.madar')
     if (existsSync(v2Path)) return withLocalRootPath(loadGraphArtifact(readFileSync(v2Path), options), v2Path)
@@ -1418,18 +1473,35 @@ export function readGraphArtifactMetadata(
   let resolvedPath = graphPath
   try {
     if (!existsSync(graphPath)) return ABSENT_METADATA
-    // Same canonical preference as the graph loader: during the transitional
-    // dual-artifact state a valid v1 mirror sits beside the canonical v2, and
-    // metadata must describe the artifact readers actually use.
+    // Same resolution the graph loader uses, through the same classifier
+    // rather than restated here. Metadata must describe the artifact readers
+    // actually consume: during a B1-era dual-artifact state a live v1 sits
+    // beside the canonical v2, and after the cutover the legacy path holds
+    // only a moved marker.
     if (basename(graphPath) === 'graph.json') {
-      const canonical = join(dirname(graphPath), 'graph.madar')
-      if (existsSync(canonical)) {
-        resolvedPath = canonical
-        graphPath = canonical
+      // Under the caller's bound, not the module-wide one. Classification
+      // reads the canonical artifact in full to judge validity, so leaving it
+      // on the default let a caller that refuses anything over its own smaller
+      // limit read up to MAX_GRAPH_ARTIFACT_BYTES first. One request, one
+      // limit.
+      const classification = options.maxBytes === undefined
+        ? classifyWorkspaceGraph(dirname(graphPath))
+        : classifyWorkspaceGraph(dirname(graphPath), options.maxBytes)
+      if (classification.state === 'moved_without_canonical') {
+        return { ...ABSENT_METADATA, format: 'unreadable' }
+      }
+      // Only a cut-over workspace redirects, matching loadGraph. Redirecting
+      // whenever a canonical artifact merely existed described the v2 artifact
+      // while loadGraph returned the live v1 for the same path.
+      if (legacyRequestResolvesToCanonical(classification.state)) {
+        resolvedPath = classification.canonicalPath
+        graphPath = classification.canonicalPath
       }
     }
     text = readArtifactWithinLimit(graphPath, options.maxBytes)
-    if (text === GRAPH_ARTIFACT_V2_TOMBSTONE || text.startsWith('MADAR_GRAPH_MOVED/')) {
+    if (isMovedMarkerText(text)) {
+      // Reached only for a marker outside the conventional legacy path, where
+      // the classifier above does not apply.
       const sibling = join(dirname(graphPath), 'graph.madar')
       if (!existsSync(sibling)) return { ...ABSENT_METADATA, format: 'unreadable' }
       resolvedPath = sibling

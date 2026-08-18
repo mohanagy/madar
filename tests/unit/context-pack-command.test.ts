@@ -14,6 +14,7 @@ import { evaluateQueryEvidenceCoverage } from '../../src/runtime/retrieve/concep
 import { buildRetrievalEvidencePlanFromResult } from '../../src/runtime/retrieve/pipeline.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { buildCrossLayerMonitorFlowFixture } from '../fixtures/cross-layer-monitor-flow.js'
+import { resolveWorkspaceGraphPath } from '../../src/shared/workspace.js'
 
 const tempFixtureRoots: string[] = []
 const repoGraphFixturePath = join(process.cwd(), 'out', 'graph.json')
@@ -415,6 +416,7 @@ describe('context-pack-command', () => {
       budget: 3000,
       task: 'explain',
       graphPath,
+      graphPathIntent: 'explicit' as const,
       format: 'json',
       verbose: true,
     }, dependencies)
@@ -460,6 +462,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
     }, dependencies)
 
@@ -489,7 +492,12 @@ describe('context-pack-command', () => {
       }
     }
 
-    expect(dependencies.loadGraph).toHaveBeenCalledWith('out/graph.json')
+    // Pack resolves through the intent boundary before loading, so the loader
+    // sees the workspace's own artifact rather than the raw option string.
+    // Compared against the resolver because this repo may itself be a linked
+    // worktree, where that artifact lives outside the checkout.
+    expect(dependencies.loadGraph)
+      .toHaveBeenCalledWith(resolveWorkspaceGraphPath('out/graph.json', undefined, 'explicit'))
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
       budget: 1800,
@@ -737,6 +745,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -1004,6 +1013,7 @@ describe('context-pack-command', () => {
       budget: 800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -1109,6 +1119,7 @@ describe('context-pack-command', () => {
       budget: 1_800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)) as {
@@ -1709,6 +1720,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -1746,6 +1758,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     const payload = JSON.parse(output) as {
@@ -1890,6 +1903,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -2018,6 +2032,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -2168,6 +2183,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'backend/out/graph.json',
+      graphPathIntent: 'explicit' as const,
       retrievalStrategy: 'slice-v1',
       format: 'json',
     }, dependencies)
@@ -2295,6 +2311,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)) as Record<string, unknown>
 
     const withWhy = JSON.parse(await runContextPackCommand({
@@ -2378,6 +2395,7 @@ describe('context-pack-command', () => {
       budget: 1,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
@@ -2416,6 +2434,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'explain',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
@@ -2868,6 +2887,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'review',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.analyzePrImpact).toHaveBeenCalledWith(graph, '.', { budget: 1800, taskIntent: 'pr-review-risk' })
@@ -2985,6 +3005,7 @@ describe('context-pack-command', () => {
       budget: 1,
       task: 'review',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.analyzePrImpact).toHaveBeenCalledWith(graph, '.', {
@@ -3065,6 +3086,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'review',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     const payload = JSON.parse(output) as Record<string, unknown>
@@ -3098,6 +3120,7 @@ describe('context-pack-command', () => {
       budget: 1800,
       task: 'review',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
       requireFreshContext: true,
     }, dependencies)).rejects.toThrow(/requireFreshContext.*review/i)
     expect(dependencies.analyzePrImpact).not.toHaveBeenCalled()
@@ -3161,6 +3184,7 @@ describe('context-pack-command', () => {
       budget: 900,
       task: 'impact',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.analyzeImpact).toHaveBeenCalledWith(graph, {}, {
@@ -3262,6 +3286,7 @@ describe('context-pack-command', () => {
       budget: 1,
       task: 'impact',
       graphPath: 'out/graph.json',
+      graphPathIntent: 'explicit' as const,
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {

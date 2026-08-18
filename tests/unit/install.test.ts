@@ -654,6 +654,27 @@ describe('install helpers', () => {
     })
   })
 
+  it('keeps hook guidance active for a workspace holding only the canonical artifact', () => {
+    withTempDir((projectDir) => {
+      const nestedDirectory = join(projectDir, 'nested', 'agent-session')
+      mkdirSync(nestedDirectory, { recursive: true })
+      mkdirSync(join(projectDir, 'out'), { recursive: true })
+      // No graph.json at all: the tombstone can be removed, and discovery that
+      // keyed on it alone went quiet for a workspace that plainly has a graph.
+      writeFileSync(join(projectDir, 'out', 'graph.madar'), 'MADAR_GRAPH_ARTIFACT/2\n{}', 'utf8')
+      geminiInstall(projectDir)
+
+      const command = extractHookCommand(
+        readFileSync(join(projectDir, '.gemini', 'settings.json'), 'utf8'),
+        'BeforeTool',
+      )
+      const output = runHookCommand(command, nestedDirectory, { tool_name: 'read_file' })
+
+      expect(output).toContain('additionalContext')
+      expect(output).toContain('madar knowledge graph')
+    })
+  })
+
   it('keeps Gemini hook guidance active in a linked worktree without a local out graph', () => {
     withTempDir((projectDir) => {
       const nestedDirectory = join(projectDir, 'nested', 'agent-session')
@@ -1564,7 +1585,10 @@ describe('install helpers', () => {
         { prompt: 'Explain how this repository auth module works' },
       )
 
-      expect(hookScript).toContain('function hasMadarGraph()')
+      // The prompt hook embeds the shared classifier rather than its own
+      // existence check, which is what made it miss the cutover.
+      expect(hookScript).toContain('function classifyMadarWorkspace(')
+      expect(hookScript).toContain('MADAR_GRAPH_ARTIFACT/2')
       expect(command).not.toContain(projectDir)
       expect(JSON.parse(output)).toMatchObject({
         hookSpecificOutput: {

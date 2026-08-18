@@ -7,6 +7,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
+import { readGeneratedGraphJson } from './helpers/generated-graph.js'
+
 import { handleStdioRequest, serveGraphStdio } from '../../src/runtime/stdio-server.js'
 import { graphFreshnessMetadata } from '../../src/runtime/freshness.js'
 import { startGraphAutoRefresh } from '../../src/infrastructure/watch.js'
@@ -2704,17 +2706,17 @@ describe('stdio runtime', () => {
         if (!existsSync(graphPath)) {
           return false
         }
-        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+        const graph = readGeneratedGraphJson(graphPath) as { nodes?: Array<{ source_file?: string }> }
         return graph.nodes?.some((node) => node.source_file?.endsWith('initial.ts')) === true
       })
-      const initialGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: unknown[] }
+      const initialGraph = readGeneratedGraphJson(graphPath) as { nodes?: unknown[] }
 
       input.write(`${JSON.stringify({ id: 1, method: 'stats' })}\n`)
       await waitFor(() => outputText.includes('"id":1'))
 
       writeFileSync(join(root, 'added.ts'), 'export function addedDuringSession() { return 2 }\n', 'utf8')
       await waitFor(() => {
-        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+        const graph = readGeneratedGraphJson(graphPath) as { nodes?: Array<{ source_file?: string }> }
         return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
       }, 5_000, () => `auto-refresh graph to include added.ts; watcher state: ${JSON.stringify(readWatcherStateForGraph(graphPath))}`)
 
@@ -2728,7 +2730,7 @@ describe('stdio runtime', () => {
         .map((line) => JSON.parse(line)) as Array<{ id?: number; result?: string }>
       const before = responses.find((response) => response.id === 1)
       const after = responses.find((response) => response.id === 2)
-      const refreshedGraph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: unknown[] }
+      const refreshedGraph = readGeneratedGraphJson(graphPath) as { nodes?: unknown[] }
 
       expect(before?.result).toContain(`Nodes: ${initialGraph.nodes?.length ?? 0}`)
       expect(after?.result).toContain(`Nodes: ${refreshedGraph.nodes?.length ?? 0}`)
@@ -2777,7 +2779,7 @@ describe('stdio runtime', () => {
         if (readWatcherStateForGraph(graphPath)?.status !== 'idle') {
           return false
         }
-        const graph = JSON.parse(readFileSync(graphPath, 'utf8')) as { nodes?: Array<{ source_file?: string }> }
+        const graph = readGeneratedGraphJson(graphPath) as { nodes?: Array<{ source_file?: string }> }
         return graph.nodes?.some((node) => node.source_file?.endsWith('added.ts')) === true
       })
       await waitFor(() => outputText.includes('"id":31'))

@@ -12,9 +12,14 @@ import { isRecord } from '../shared/guards.js'
 import { sanitizeLabel, validateGraphPath } from '../shared/security.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { parseGenerationPolicy } from '../contracts/generation-policy.js'
-import { GRAPH_ARTIFACT_V2_HEADER, loadGraphArtifactFromPath } from '../contracts/graph-artifact.js'
-
-const GRAPH_ARTIFACT_MOVED_PREFIX = 'MADAR_GRAPH_MOVED/'
+import {
+  GRAPH_ARTIFACT_V2_HEADER,
+  isMovedMarkerText,
+  loadGraphArtifactFromPath,
+} from '../contracts/graph-artifact.js'
+import { classifyWorkspaceGraph,
+  LEGACY_ARTIFACT_BASENAME,
+} from '../contracts/graph-artifact-selection.js'
 
 const MAX_GRAPH_BYTES = 100 * 1024 * 1024
 const MAX_TRAVERSAL_DEPTH = 6
@@ -121,11 +126,34 @@ function describeQueryFilters(filters?: QueryFilters): string | null {
   return parts.length > 0 ? parts.join(', ') : null
 }
 
-function readGraphArtifactRecord(graphPath: string): Record<string, unknown> {
+/**
+ * Reads the stored artifact payload as a record.
+ *
+ * This parsed the file as bare JSON, so a v2 artifact threw and was swallowed
+ * to {}. While graph.json was a live mirror that was invisible -- the mirror
+ * parsed. After the cutover it meant every caller silently lost the stored
+ * fields: community_labels in particular are authoritative over derived ones,
+ * so discarding them quietly changed labelling rather than failing.
+ */
+export function readGraphArtifactRecord(graphPath: string): Record<string, unknown> {
   const safePath = validateGraphPath(graphPath)
 
   try {
-    const parsed = JSON.parse(readFileSync(safePath, 'utf8'))
+    // Same rule as loadGraph, deliberately. Preferring the canonical artifact
+    // here while loadGraph returns the named v1 split a single request across
+    // two artifacts: structure from one, community labels and stored metadata
+    // from the other. A moved marker still forwards, because that file holds
+    // no data of its own.
+    // One read on the path that has data. Testing the marker with its own
+    // read and then reading again to parse meant a live v1 at graph.json was
+    // read twice in full, on metadata paths such as semanticAnomaliesSummary.
+    const requestedText = readFileSync(safePath, 'utf8')
+    const text = basename(safePath) === 'graph.json' && isMovedMarkerText(requestedText)
+      ? readFileSync(classifyWorkspaceGraph(dirname(safePath)).canonicalPath, 'utf8')
+      : requestedText
+    const parsed = JSON.parse(
+      text.startsWith(GRAPH_ARTIFACT_V2_HEADER) ? text.slice(GRAPH_ARTIFACT_V2_HEADER.length) : text,
+    )
     return isRecord(parsed) ? parsed : {}
   } catch {
     return {}
@@ -209,6 +237,31 @@ function workspaceBridgeMap(graph: KnowledgeGraph): Map<string, WorkspaceBridge>
   return new Map(workspaceBridges(graph, communities, communityLabels).map((bridge) => [bridge.id, bridge]))
 }
 
+/**
+ * The artifact `loadGraph` will actually read for this request.
+ *
+ * Callers that cache a loaded graph must watch the file the bytes came from.
+ * Keying on the requested path is wrong whenever that path is the tombstone:
+ * the marker is a constant, so it never invalidates, and a refreshed
+ * `graph.madar` kept serving the previous graph from cache.
+ *
+ * This reads only the bounded prefixes the classifier reads, never the payload.
+ * `loadGraphAgreesWithResolvedPath` in the serve tests pins it against
+ * `loadGraph` itself so the two cannot drift.
+ */
+export function resolvedLoadPath(graphPath: string): string {
+  const safePath = validateGraphPath(graphPath)
+  if (basename(safePath) !== LEGACY_ARTIFACT_BASENAME) {
+    return safePath
+  }
+
+  // Only a cut-over workspace redirects. A live v1 -- legacy-only or mixed --
+  // loads the requested file, and the failing states throw in loadGraph rather
+  // than resolving anywhere.
+  const classification = classifyWorkspaceGraph(dirname(safePath))
+  return classification.state === 'current_v2' ? classification.canonicalPath : safePath
+}
+
 export function loadGraph(graphPath: string): KnowledgeGraph {
   const safePath = validateGraphPath(graphPath)
   if (statSync(safePath).size > MAX_GRAPH_BYTES) {
@@ -222,22 +275,28 @@ export function loadGraph(graphPath: string): KnowledgeGraph {
   if (head.subarray(0, GRAPH_ARTIFACT_V2_HEADER.length).toString('utf8') === GRAPH_ARTIFACT_V2_HEADER) {
     return loadGraphArtifactFromPath(safePath).graph
   }
-  if (head.subarray(0, GRAPH_ARTIFACT_MOVED_PREFIX.length).toString('utf8') === GRAPH_ARTIFACT_MOVED_PREFIX) {
-    // The tombstone is addressed to old readers. This is a current reader, so
-    // it follows the pointer instead of reporting the graph as unavailable.
-    const sibling = join(dirname(safePath), 'graph.madar')
-    if (!existsSync(sibling)) {
+  if (basename(safePath) === 'graph.json') {
+    // loadGraph is the low-level reader: by the time a path reaches it, a
+    // command has already applied default-vs-explicit intent. So this is a
+    // deliberate selection and follows the explicit rules --
+    //
+    // - a moved marker forwards to its canonical sibling, because the marker
+    //   is addressed to old readers and this is a current one;
+    // - a live v1 loads degraded, because the caller asked for that file.
+    //
+    // It must NOT prefer the canonical artifact over a live v1 here. Doing so
+    // would quietly satisfy a default load of an ambiguous workspace, which
+    // the #705 contract requires to fail closed at the intent boundary above.
+    const classification = classifyWorkspaceGraph(dirname(safePath))
+    if (classification.state === 'moved_without_canonical') {
       throw new Error('out/graph.json has moved but out/graph.madar is missing. Re-run madar to rebuild.')
     }
-    return loadGraphArtifactFromPath(sibling).graph
-  }
-  // Transitional dual-artifact state: graph.json is still a valid v1 mirror,
-  // but v2 is canonical. A current reader must never settle for the mirror
-  // just because it was the path it was handed -- the mirror cannot represent
-  // parallel facts, so preferring it would silently lose relationships.
-  if (basename(safePath) === 'graph.json') {
-    const canonical = join(dirname(safePath), 'graph.madar')
-    if (existsSync(canonical)) return loadGraphArtifactFromPath(canonical).graph
+    if (isMovedMarkerText(head.toString('utf8'))) {
+      if (!existsSync(classification.canonicalPath) || classification.state === 'invalid_current_v2') {
+        throw new Error('out/graph.json has moved but out/graph.madar is missing. Re-run madar to rebuild.')
+      }
+      return loadGraphArtifactFromPath(classification.canonicalPath).graph
+    }
   }
 
   let parsed: unknown

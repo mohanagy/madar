@@ -201,13 +201,15 @@ export async function runHandoffCommand(
   dependencies: HandoffCommandDependencies = {},
 ): Promise<string> {
   const loadGraphDependency = dependencies.loadGraph ?? loadGraph
-  const graphPath = resolveWorkspaceGraphPath(options.graphPath)
+  const graphPath = resolveWorkspaceGraphPath(options.graphPath, undefined, options.graphPathIntent)
   const graph = loadGraphDependency(graphPath)
   const packOptions = {
     prompt: options.prompt,
     budget: options.budget,
     task: options.task,
     graphPath,
+    // The user's intent travels with the request; handoff does not decide it.
+    graphPathIntent: options.graphPathIntent,
     format: 'json',
     verbose: true,
     ...(options.requireFreshGraph === true ? { requireFreshGraph: true } : {}),

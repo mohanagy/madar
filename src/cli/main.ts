@@ -8,7 +8,7 @@ import { BenchmarkReadinessError, NativeAgentInstallRequiredError, runCompareCom
 import { runContextPackCommand } from '../infrastructure/context-pack-command.js'
 import { runHandoffCommand } from '../infrastructure/handoff-command.js'
 import { runContextPromptCommand } from '../infrastructure/context-prompt-command.js'
-import { buildDoctorReport, runDoctorCommand, runStatusCommand } from '../infrastructure/doctor.js'
+import { buildDoctorReport, runDoctorCommand, runStatusCommand, type DoctorCommandOptions } from '../infrastructure/doctor.js'
 import { runProofReportCommand, type ProofReportResult } from '../infrastructure/proof-report.js'
 import { runReviewCompareCommand } from '../infrastructure/review-compare.js'
 import { runTryCommand } from '../infrastructure/try-command.js'
@@ -43,7 +43,7 @@ import { serveGraphStdio } from '../runtime/stdio-server.js'
 import { getNeighbors, getNode, loadGraph, queryGraph, shortestPath } from '../runtime/serve.js'
 import { formatTimeTravelResult } from '../runtime/time-travel.js'
 import { findPackageRoot, readPackageName, readPackageVersion } from '../shared/package-metadata.js'
-import { resolveWorkspaceGraphPath } from '../shared/workspace.js'
+import { graphPathForCommand, resolveMadarOutputDirectory, resolveWorkspaceGraphPath } from '../shared/workspace.js'
 import {
   disableTelemetry,
   enableTelemetry,
@@ -96,6 +96,7 @@ import {
   type TimeTravelCliOptions,
   UsageError,
 } from './parser.js'
+import { classifyWorkspaceGraph, type GraphPathIntent } from '../contracts/graph-artifact-selection.js'
 
 export interface CliIO {
   log(message?: string): void
@@ -173,8 +174,8 @@ export interface CliDependencies {
   runHandoff: (context: HandoffCommandContext) => Promise<string | void> | string | void
   runContextPrompt: (context: ContextPromptCommandContext) => Promise<string | void> | string | void
   runProofReport: (options: ProofReportCliOptions) => ProofReportResult
-  runDoctor: (graphPath: string) => string
-  runStatus: (graphPath: string) => string
+  runDoctor: (options: DoctorCommandOptions) => string
+  runStatus: (options: DoctorCommandOptions) => string
   runGraphSummary?: (graphPath: string) => Promise<GraphSummary> | GraphSummary
   confirm: (message: string) => Promise<boolean>
   printBenchmark: (result: BenchmarkResult) => void
@@ -205,8 +206,8 @@ export interface CliDependencies {
   readTelemetryStatus?: () => string
   clearTelemetry?: () => string
   readTelemetryReport?: (spoolPaths?: string[]) => string
-  readDoctorTelemetryBucket?: (graphPath: string) => TelemetryStatusBucket
-  readStatusTelemetryBucket?: (graphPath: string) => TelemetryStatusBucket
+  readDoctorTelemetryBucket?: (options: DoctorCommandOptions) => TelemetryStatusBucket
+  readStatusTelemetryBucket?: (options: DoctorCommandOptions) => TelemetryStatusBucket
   recordTelemetryEvent?: (event: TelemetryEventInput) => void
 }
 
@@ -229,17 +230,18 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   saveQueryResult,
   runBenchmark: ({ options }) => {
     const questions = options.questionsPath ? loadBenchmarkQuestions(options.questionsPath) : undefined
-    return runBenchmark(options.graphPath, undefined, questions, { execTemplate: options.execTemplate })
+    return runBenchmark(graphPathForCommand(options), undefined, questions, { execTemplate: options.execTemplate })
   },
   runBenchSuite: async ({ options }) => {
     const result = await runBenchmarkSuite(options)
     return result.text
   },
   runEval: async ({ options }) => {
-    const graph = loadGraph(options.graphPath)
+    const resolvedGraphPath = graphPathForCommand(options)
+    const graph = loadGraph(resolvedGraphPath)
     const questions = options.questionsPath ? loadBenchmarkQuestions(options.questionsPath) : undefined
     const report = await evaluateRetrievalQuality(graph, questions, 3000, {
-      graphPath: options.graphPath,
+      graphPath: resolvedGraphPath,
       execTemplate: options.execTemplate,
     })
     return formatQualityReport(report)
@@ -247,7 +249,7 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   runCompare: async ({ options }) => {
     try {
       return await runCompareCommand({
-        graphPath: options.graphPath,
+        graphPath: graphPathForCommand(options),
         question: options.question,
         questionsPath: options.questionsPath,
         outputDir: options.outputDir,
@@ -274,7 +276,7 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   },
   runReviewCompare: async ({ options }) => {
     return await runReviewCompareCommand({
-      graphPath: options.graphPath,
+      graphPath: graphPathForCommand(options),
       execTemplate: options.execTemplate,
       outputDir: options.outputDir,
       ...(options.baseBranch !== null ? { baseBranch: options.baseBranch } : {}),
@@ -298,8 +300,8 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
     return await runContextPromptCommand(options)
   },
   runProofReport: (options) => runProofReportCommand(options),
-  runDoctor: (graphPath) => runDoctorCommand({ graphPath }),
-  runStatus: (graphPath) => runStatusCommand({ graphPath }),
+  runDoctor: (options) => runDoctorCommand(options),
+  runStatus: (options) => runStatusCommand(options),
   runGraphSummary: (graphPath) => buildGraphSummary(loadGraph(graphPath)),
   confirm: async (message) => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -347,8 +349,8 @@ const DEFAULT_DEPENDENCIES: CliDependencies = {
   readTelemetryStatus: () => formatTelemetryStatus(getTelemetryStatus()),
   clearTelemetry: () => clearTelemetry(),
   readTelemetryReport: (spoolPaths) => readTelemetryReport({}, spoolPaths),
-  readDoctorTelemetryBucket: (graphPath) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed',
-  readStatusTelemetryBucket: (graphPath) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed',
+  readDoctorTelemetryBucket: (options) => buildDoctorReport(options).healthy ? 'healthy' : 'attention_needed',
+  readStatusTelemetryBucket: (options) => buildDoctorReport(options).healthy ? 'healthy' : 'attention_needed',
   recordTelemetryEvent: (event) => {
     persistTelemetryEvent(event)
   },
@@ -387,12 +389,26 @@ function emitTelemetry(io: CliIO, dependencies: CliDependencies, buildEvent: () 
   }
 }
 
-function repoSizeBucketForGraph(dependencies: CliDependencies, graphPath: string) {
-  return repoSizeBucketFromFileCount(buildGraphSummary(dependencies.loadGraph(graphPath)).file_count)
+interface GraphPathRequest {
+  readonly graphPath: string
+  readonly graphPathIntent: GraphPathIntent
 }
 
-function graphSizeBucketForGraph(dependencies: CliDependencies, graphPath: string) {
-  return graphSizeBucketFromNodeCount(buildGraphSummary(dependencies.loadGraph(graphPath)).node_count)
+/**
+ * Telemetry buckets load the artifact the command loaded.
+ *
+ * Loading `options.graphPath` instead read the caller's requested spelling,
+ * which defaults to the canonical artifact. In a workspace that never cut over
+ * that file does not exist, so a command that had answered correctly then
+ * emitted `[madar telemetry] Graph file not found: <absolute path>` -- both a
+ * false report and a path leak.
+ */
+function repoSizeBucketForGraph(dependencies: CliDependencies, options: GraphPathRequest) {
+  return repoSizeBucketFromFileCount(buildGraphSummary(dependencies.loadGraph(graphPathForCommand(options))).file_count)
+}
+
+function graphSizeBucketForGraph(dependencies: CliDependencies, options: GraphPathRequest) {
+  return graphSizeBucketFromNodeCount(buildGraphSummary(dependencies.loadGraph(graphPathForCommand(options))).node_count)
 }
 
 function telemetryBase(dependencies: CliDependencies) {
@@ -408,7 +424,12 @@ function classifyTelemetryFailure(error: unknown): TelemetryFailureBucket {
   if (message.includes('context_pack requires') || message.includes('invalid params')) {
     return 'invalid_params'
   }
-  if (message.includes('graph file not found') || message.includes('out/graph.json not found') || message.includes('graph.json not found')) {
+  if (
+    message.includes('graph file not found')
+    // Both spellings: a pre-cutover workspace still raises the legacy name.
+    || message.includes('out/graph.json not found') || message.includes('graph.json not found')
+    || message.includes('out/graph.madar not found') || message.includes('graph.madar not found')
+  ) {
     return 'missing_graph'
   }
   if (message.includes('require_fresh_graph') || message.includes('non-fresh graph')) {
@@ -461,7 +482,7 @@ export function formatHelp(binaryName = 'madar'): string {
     'Commands:',
     '  generate [path]       build graph artifacts for a folder (default .)',
     '    --update             rebuild incrementally from the manifest, re-extracting changed files only',
-    '    --cluster-only       re-cluster an existing graph.json without re-extraction',
+    '    --cluster-only       re-cluster an existing graph without re-extraction',
     '    --watch              keep watching after the initial build',
     '    --directed           preserve source → target edges (default; retained for compatibility)',
     '    --undirected         visualization-only legacy mode; directional analysis is unavailable',
@@ -494,7 +515,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
     '    --debounce S         watch debounce seconds (default 3)',
     '    --no-html            skip graph.html generation during the initial build',
-    '  serve [graph.json]    serve graph artifacts over HTTP or stdio',
+    '  serve [graph.madar]    serve graph artifacts over HTTP or stdio',
     '    --host H             host interface (default 127.0.0.1)',
     '    --port N             port (default 4173; use 0 for a random port)',
     '    --transport MODE     choose http or stdio explicitly',
@@ -502,19 +523,19 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --stdio              serve graph query methods over stdio (JSON lines)',
     '    --mcp                alias for --stdio for installer/runtime parity',
     '    --auto-refresh       reconcile and watch the active workspace while serving over stdio',
-    '  summary [graph.json]  print a compact deterministic graph summary as JSON',
+    '  summary [graph.madar]  print a compact deterministic graph summary as JSON',
     '  try "<question>" [path] one-command local first proof before agent install',
-    '  query "<question>"     traverse graph.json for a question',
+    '  query "<question>"     traverse the graph for a question',
     '    --dfs                 use depth-first instead of breadth-first',
     '    --budget N            cap output at N tokens (default 2000)',
-    '    --graph <path>        path to graph.json (default out/graph.json)',
+    '    --graph <path>        path to the graph artifact (default out/graph.madar)',
     '    --rank-by MODE        rank matches by relevance or degree (default relevance)',
     '    --community ID        limit traversal to one community id',
     '    --file-type TYPE      limit traversal to one file type (for example code or document)',
     '  pack "<prompt>"       compile a task-aware context pack / execution brief',
     '    --budget N            cap context pack assembly at N tokens (default 3000)',
     '    --task KIND          explain|implement|review|impact (default infer from prompt; fallback explain)',
-    '    --graph <path>       path to graph.json (default out/graph.json)',
+    '    --graph <path>       path to the graph artifact (default out/graph.madar)',
     '    --require-fresh-graph  refuse non-fresh graph context instead of only warning',
     '    --require-fresh-context refuse selected context that may be stale',
     '    --format MODE       json|text|markdown|claude|copilot (default json)',
@@ -522,24 +543,24 @@ export function formatHelp(binaryName = 'madar'): string {
     '  handoff "<prompt>"    emit a portable remote-agent handoff artifact',
     '    --budget N            cap handoff assembly at N tokens (default 3000)',
     '    --task KIND          explain|implement|review|impact (default explain)',
-    '    --graph <path>       path to graph.json (default out/graph.json)',
+    '    --graph <path>       path to the graph artifact (default out/graph.madar)',
     '    --consumer NAME      generic|codex|cursor|copilot (default generic)',
     '    --require-fresh-graph  refuse non-fresh graph context instead of only warning',
     '    --require-fresh-context refuse selected context that may be stale',
     '    --allow-snippets     include raw snippets and mark the artifact non-share-safe',
     '  prompt "<prompt>"     compile a provider-ready prompt payload',
     '    --provider NAME      claude|gemini',
-    '    --graph <path>       path to graph.json (default out/graph.json)',
+    '    --graph <path>       path to the graph artifact (default out/graph.madar)',
     '    --require-fresh-graph  refuse non-fresh graph context instead of only warning',
     '    --require-fresh-context refuse selected context that may be stale',
-    '  diff <baseline-graph.json> compare a baseline graph.json to the current graph snapshot',
-    '    --graph <path>        path to the current graph.json (default out/graph.json)',
+    '  diff <baseline-graph> compare a baseline graph to the current graph snapshot',
+    '    --graph <path>        path to the current graph artifact (default out/graph.madar)',
     '    --limit N             maximum items to show per change section (default 10)',
     '  path <source> <target> find the shortest path between two concepts',
-    '    --graph <path>        path to graph.json (default out/graph.json)',
+    '    --graph <path>        path to the graph artifact (default out/graph.madar)',
     '    --max-hops N          maximum allowed hops before reporting overflow (default 8)',
     '  explain <label>        explain one node and its neighborhood from graph evidence',
-    '    --graph <path>        path to graph.json (default out/graph.json)',
+    '    --graph <path>        path to the graph artifact (default out/graph.madar)',
     '    --relation REL        optional relation filter for neighbors',
     '  save-result            save a Q&A result to out/memory/',
     '    --question Q          the question asked',
@@ -547,7 +568,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --type T              query type: query|path_query|explain (default query)',
     '    --nodes N1 N2 ...     source node labels cited in the answer',
     '    --memory-dir DIR      memory directory (default out/memory)',
-    '  benchmark [graph.json] measure token reduction, question coverage, and structure signals through the benchmark/eval runner. This may consume paid model tokens.',
+    '  benchmark [graph.madar] measure token reduction, question coverage, and structure signals through the benchmark/eval runner. This may consume paid model tokens.',
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load benchmark/eval questions from a JSON file',
     '    --yes                 skip confirmation before running the paid benchmark/eval prompts',
@@ -562,12 +583,12 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --output-dir DIR      suite results directory (default docs/benchmarks/suite/results)',
     '    --dry-run             list planned and runnable suite cells without executing prompts',
     '    --yes                 skip confirmation before running the paid suite prompts',
-    '  eval [graph.json]      measure retrieval quality: recall, MRR, and snippet coverage through the benchmark/eval runner. This may consume paid model tokens.',
+    '  eval [graph.madar]      measure retrieval quality: recall, MRR, and snippet coverage through the benchmark/eval runner. This may consume paid model tokens.',
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load benchmark/eval questions from a JSON file',
     '    --yes                 skip confirmation before running the paid benchmark/eval prompts',
     '  compare [question]    run a real baseline vs madar prompt comparison',
-    '    --graph <path>        path to graph.json (default out/graph.json)',
+    '    --graph <path>        path to the graph artifact (default out/graph.madar)',
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {question}, {mode}, and {output_file}',
     '    --questions PATH      load questions from a JSON file instead of a positional question',
     '    --output-dir DIR      compare output directory (default out/compare)',
@@ -583,7 +604,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --yes                 skip confirmation before running the paid prompt comparison',
     '    --limit N             cap processed prompts/questions for the comparison run',
     '    --why                 include retrieval-routing debug metadata in the compare summary and reports',
-    '  review-compare [graph.json] compare full vs compact pr_impact review prompts on the current git diff',
+    '  review-compare [graph.madar] compare full vs compact pr_impact review prompts on the current git diff',
     '    --exec TEMPLATE       required command template; supports {prompt_file}, {mode}, and {output_file}',
     '    --output-dir DIR      review compare output directory (default out/review-compare)',
     '    --base-branch BRANCH  override the PR base branch used for diff selection',
@@ -594,11 +615,11 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --json               emit machine-readable JSON',
     '    --refresh            rebuild snapshots instead of using cache',
     '    --limit N            cap view items (default 10)',
-    '  doctor [graph.json]   check graph freshness, agent config, and MCP wiring',
-    '    --graph <path>      path to graph.json to validate (default out/graph.json)',
-    '  status [graph.json]   compact readiness summary with next commands',
-    '    --graph <path>      path to graph.json to validate (default out/graph.json)',
-    '  proof-report [graph.json]  generate a local markdown proof report from graph, pack, and compare evidence',
+    '  doctor [graph.madar]   check graph freshness, agent config, and MCP wiring',
+    '    --graph <path>      path to the graph artifact to validate (default out/graph.madar)',
+    '  status [graph.madar]   compact readiness summary with next commands',
+    '    --graph <path>      path to the graph artifact to validate (default out/graph.madar)',
+    '  proof-report [graph.madar]  generate a local markdown proof report from graph, pack, and compare evidence',
     '    --output-dir DIR      proof report output directory (default out/proof-report)',
     '    --compare-dir DIR     compare receipt directory (default out/compare)',
     '    --pack PATH           optional saved context-pack JSON for pack-quality evidence',
@@ -714,7 +735,7 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
     }
     const exclusionCount = (result.discoveryExclusions ?? result.discoverySafety.exclusions).length
     if (exclusionCount > 20) {
-      lines.push(`  - ... ${exclusionCount - 20} more; inspect graph.json discovery_safety.exclusions`)
+      lines.push(`  - ... ${exclusionCount - 20} more; inspect the graph artifact's discovery_safety.exclusions`)
     }
   }
 
@@ -813,8 +834,13 @@ function handleAgentCommand(command: AgentPlatform, args: string[], io: CliIO, d
 }
 
 function warnWhenWorkspaceGraphIsMissing(io: CliIO): void {
-  if (!existsSync(resolveWorkspaceGraphPath())) {
-    io.log("Warning: out/graph.json not found. Run 'madar generate .' first, then re-run this command.")
+  // Classified, not probed. A single-filename check warns for a legacy
+  // workspace that has a perfectly good v1, and stays silent for an ambiguous
+  // one that genuinely needs attention. Only a workspace with no artifact at
+  // all is missing; every other problem surfaces as the command's own typed
+  // error rather than as a pre-flight hint.
+  if (classifyWorkspaceGraph(resolveMadarOutputDirectory('.')).state === 'missing') {
+    io.log("Warning: no graph artifact found in out/. Run 'madar generate .' first, then re-run this command.")
   }
 }
 
@@ -874,7 +900,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         command: 'compare',
         stage: 'succeeded',
         ...telemetryBase(dependencies),
-        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
+        repoSizeBucket: repoSizeBucketForGraph(dependencies, options),
       }))
       return 0
     }
@@ -920,12 +946,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         ...telemetryBase(dependencies),
         failureBucket,
       })
-      io.log(dependencies.runDoctor(options.graphPath))
+      io.log(dependencies.runDoctor(options))
       emitTelemetry(io, dependencies, () => ({
         command: 'doctor',
         stage: 'succeeded',
         ...telemetryBase(dependencies),
-        statusBucket: (dependencies.readDoctorTelemetryBucket ?? ((graphPath: string) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed'))(options.graphPath),
+        statusBucket: (dependencies.readDoctorTelemetryBucket ?? ((doctorOptions: DoctorCommandOptions) => buildDoctorReport(doctorOptions).healthy ? 'healthy' : 'attention_needed'))(options),
       }))
       return 0
     }
@@ -938,12 +964,12 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         ...telemetryBase(dependencies),
         failureBucket,
       })
-      io.log(dependencies.runStatus(options.graphPath))
+      io.log(dependencies.runStatus(options))
       emitTelemetry(io, dependencies, () => ({
         command: 'status',
         stage: 'succeeded',
         ...telemetryBase(dependencies),
-        statusBucket: (dependencies.readStatusTelemetryBucket ?? ((graphPath: string) => buildDoctorReport({ graphPath }).healthy ? 'healthy' : 'attention_needed'))(options.graphPath),
+        statusBucket: (dependencies.readStatusTelemetryBucket ?? ((doctorOptions: DoctorCommandOptions) => buildDoctorReport(doctorOptions).healthy ? 'healthy' : 'attention_needed'))(options),
       }))
       return 0
     }
@@ -958,7 +984,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'summary') {
       const options = parseSummaryArgs(args)
       const runGraphSummary = dependencies.runGraphSummary ?? ((graphPath: string) => buildGraphSummary(dependencies.loadGraph(graphPath)))
-      io.log(JSON.stringify(await runGraphSummary(options.graphPath), null, 2))
+      io.log(JSON.stringify(await runGraphSummary(graphPathForCommand(options)), null, 2))
       return 0
     }
 
@@ -987,7 +1013,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         command: 'pack',
         stage: 'succeeded',
         ...telemetryBase(dependencies),
-        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
+        repoSizeBucket: repoSizeBucketForGraph(dependencies, options),
       }))
       return 0
     }
@@ -1017,7 +1043,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         command: 'prompt',
         stage: 'succeeded',
         ...telemetryBase(dependencies),
-        repoSizeBucket: repoSizeBucketForGraph(dependencies, options.graphPath),
+        repoSizeBucket: repoSizeBucketForGraph(dependencies, options),
       }))
       return 0
     }
@@ -1151,7 +1177,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'federate') {
       if (args.length === 0) {
-        throw new UsageError('Usage: madar federate <graph1.json> <graph2.json> ... [--output DIR]')
+        throw new UsageError('Usage: madar federate <graph1.madar> <graph2.madar> ... [--output DIR]')
       }
 
       const graphPaths: string[] = []
@@ -1187,7 +1213,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'serve') {
       const options = parseServeArgs(args)
-      const graphPath = resolveWorkspaceGraphPath(options.graphPath)
+      const graphPath = resolveWorkspaceGraphPath(options.graphPath, undefined, options.graphPathIntent)
       if (options.transport === 'stdio') {
         await dependencies.serveGraphStdio({
           graphPath,
@@ -1208,7 +1234,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'query') {
       const options = parseQueryArgs(args)
-      const graph = dependencies.loadGraph(options.graphPath)
+      const graph = dependencies.loadGraph(graphPathForCommand(options))
       const filters = {
         ...(options.community !== null ? { community: options.community } : {}),
         ...(options.fileType ? { fileType: options.fileType } : {}),
@@ -1226,22 +1252,24 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
 
     if (command === 'diff') {
       const options = parseDiffArgs(args)
+      // The baseline is always a named artifact; only the compared graph can be
+      // a workspace default.
       const baselineGraph = dependencies.loadGraph(options.baselineGraphPath)
-      const graph = dependencies.loadGraph(options.graphPath)
+      const graph = dependencies.loadGraph(graphPathForCommand(options))
       io.log(diffGraphs(baselineGraph, graph, { limit: options.limit }))
       return 0
     }
 
     if (command === 'path') {
       const options = parsePathArgs(args)
-      const graph = dependencies.loadGraph(options.graphPath)
+      const graph = dependencies.loadGraph(graphPathForCommand(options))
       io.log(shortestPath(graph, options.source, options.target, options.maxHops))
       return 0
     }
 
     if (command === 'explain') {
       const options = parseExplainArgs(args)
-      const graph = dependencies.loadGraph(options.graphPath)
+      const graph = dependencies.loadGraph(graphPathForCommand(options))
       io.log(formatExplainSummary(graph, options.label, options.relation))
       return 0
     }

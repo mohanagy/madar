@@ -18,7 +18,7 @@ import {
   usageCaptureSummary,
   usageProviderLabel,
 } from './usage.js'
-import { resolveWorkspaceGraphPath } from '../../shared/workspace.js'
+import { graphPathIntentFor, resolveWorkspaceGraphPath } from '../../shared/workspace.js'
 
 export interface GoldQuestion {
   question: string
@@ -273,7 +273,7 @@ async function evaluateRunnerBackedQuestion(
   budget: number,
   options: QualityOptions & { execTemplate: string },
 ): Promise<QualityResult> {
-  const graphPath = resolveWorkspaceGraphPath(options.graphPath ?? 'out/graph.json')
+  const graphPath = resolveWorkspaceGraphPath(options.graphPath, undefined, graphPathIntentFor(options.graphPath))
   const retrieval = qualityRetrieveContext(graph, gold.question, budget, graphPath)
   const run = await runBenchmarkPrompt({
     graphPath,
@@ -360,7 +360,7 @@ export function evaluateRetrievalQuality(
   options: QualityOptions = {},
 ): QualityReport | Promise<QualityReport> {
   const effectiveOptions = options.graphPath
-    ? { ...options, graphPath: resolveWorkspaceGraphPath(options.graphPath) }
+    ? { ...options, graphPath: resolveWorkspaceGraphPath(options.graphPath, undefined, 'explicit') }
     : options
   const normalizedQuestions = questions.map((question) => normalizeGoldQuestion(question))
   const skippedQuestions = normalizedQuestions.filter((question) => question === null).length
