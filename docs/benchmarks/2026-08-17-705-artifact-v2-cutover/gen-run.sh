@@ -2,12 +2,16 @@
 # One generation run for one arm, with process-tree peak RSS and wall time.
 set -euo pipefail
 S="$1"; ARM="$2"; IDX="$3"
-# Every arm's CLI is supplied, never inferred from whatever dist happens to be
-# on this machine. A hard-coded workstation path made the head arm runnable in
+# Every arm CLI is supplied, never inferred from whatever dist happens to be on
+# this machine. A hard-coded workstation path made the head arm runnable in
 # exactly one place and left the receipt unreplayable.
-: "${ARM_BASE_CLI:?set ARM_BASE_CLI to the base binary's dist/src/cli/bin.js}"
-: "${ARM_B1_CLI:?set ARM_B1_CLI to the B1 binary's dist/src/cli/bin.js}"
-: "${ARM_HEAD_CLI:?set ARM_HEAD_CLI to the candidate binary's dist/src/cli/bin.js}"
+#
+# No apostrophes in the messages below: bash parses a single quote inside
+# "${VAR:?...}" as opening a quote even within the double quotes, and the whole
+# script then fails to parse. A harness that cannot run is not a receipt.
+: "${ARM_BASE_CLI:?set ARM_BASE_CLI to the base binary dist/src/cli/bin.js}"
+: "${ARM_B1_CLI:?set ARM_B1_CLI to the B1 binary dist/src/cli/bin.js}"
+: "${ARM_HEAD_CLI:?set ARM_HEAD_CLI to the candidate binary dist/src/cli/bin.js}"
 case "$ARM" in
   base) CLI="$ARM_BASE_CLI" ;;
   b1)   CLI="$ARM_B1_CLI" ;;
