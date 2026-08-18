@@ -87,10 +87,24 @@ describe('assert-clean-vitest-log CLI', () => {
     })
   })
 
+  /*
+   * The titles name the signature indirectly, and must keep doing so.
+   *
+   * Interpolating the signature into the title puts the literal string into
+   * vitest's own output whenever it prints this test's name -- which it does
+   * once the test is slow enough. The guard then scans the run log, finds its
+   * own test title, and fails a run in which every one of 3,718 tests passed.
+   * That happened on Windows Node 20 in protected run 32148986352.
+   *
+   * The scanner is deliberately not taught to ignore result lines: a real
+   * absorbed worker failure is exactly what it exists to catch, and narrowing
+   * the match to avoid this collision would trade a false positive for the
+   * risk of a false negative. The test titles give way instead.
+   */
   it.each([
-    'Failed to start forks worker',
-    'Timeout waiting for worker to respond',
-  ])('exits non-zero for the signature "%s" individually', (signature) => {
+    ['forks-worker-start', 'Failed to start forks worker'],
+    ['worker-response-timeout', 'Timeout waiting for worker to respond'],
+  ])('exits non-zero for the %s signature individually', (_label, signature) => {
     withTempDir((dir) => {
       const logPath = join(dir, 'each.log')
       writeFileSync(logPath, `clean line\n${signature} for tests/unit/x.test.ts\nclean line\n`)
