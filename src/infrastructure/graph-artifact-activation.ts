@@ -21,6 +21,10 @@ import {
   MAX_LEGACY_ARTIFACT_BYTES,
   classifyLegacyArtifactBytes,
 } from '../contracts/graph-artifact.js'
+import {
+  GraphArtifactTooLargeError,
+  readArtifactWithinBound,
+} from '../contracts/graph-artifact-selection.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 import { syncDirectory, temporaryPath, writeDurableTemporaryFile } from './durable-file.js'
 
@@ -159,12 +163,19 @@ const ABSENT_LEGACY_FILE: ExistingLegacyFile = { bytes: null, classification: 'u
  */
 function readExistingLegacyFile(path: string): ExistingLegacyFile {
   if (!existsSync(path)) return ABSENT_LEGACY_FILE
-  if (statSync(path).size > MAX_LEGACY_ARTIFACT_BYTES) {
-    return { bytes: null, classification: 'too_large' }
+  try {
+    // The same bounded primitive selection uses, rather than a separate stat
+    // and read: sizing a file with one call and reading it with another lets
+    // it grow in between, and the read then allocates the whole replacement
+    // before the size is ever compared.
+    const bytes = readArtifactWithinBound(path, MAX_LEGACY_ARTIFACT_BYTES)
+    return { bytes, classification: classifyLegacyArtifactBytes(bytes) }
+  } catch (error) {
+    if (error instanceof GraphArtifactTooLargeError) {
+      return { bytes: null, classification: 'too_large' }
+    }
+    throw error
   }
-
-  const bytes = readFileSync(path)
-  return { bytes, classification: classifyLegacyArtifactBytes(bytes) }
 }
 
 function legacyRefusalDetail(classification: LegacyClassification): string {

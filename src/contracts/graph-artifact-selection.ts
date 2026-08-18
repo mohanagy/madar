@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import {
@@ -7,6 +7,7 @@ import {
   GRAPH_ARTIFACT_V2_TOMBSTONE,
   isMovedMarkerText,
 } from './graph-artifact-format.js'
+import { v2PayloadStructureError } from './graph-artifact-payload.js'
 
 /**
  * One place that decides which graph artifact a request actually means.
@@ -124,18 +125,56 @@ function assertBound(maxBytes: number): number {
  */
 export function readArtifactWithinBound(path: string, maxBytes = MAX_GRAPH_ARTIFACT_BYTES): Buffer {
   const bound = assertBound(maxBytes)
-  const { size } = statSync(path)
-  if (size > bound) throw new GraphArtifactTooLargeError(path, size, bound)
-  const bytes = readFileSync(path)
-  if (bytes.byteLength > bound) throw new GraphArtifactTooLargeError(path, bytes.byteLength, bound)
-  return bytes
+  const descriptor = openSync(path, 'r')
+  try {
+    // Sized and read through one descriptor. statSync followed by readFileSync
+    // leaves a window in which the file grows, and readFileSync then allocates
+    // the whole replacement before any check runs -- the bound this function
+    // exists to enforce would be applied only after the memory was already
+    // committed. Reading one byte past the bound is what makes growth past it
+    // observable rather than silently truncated.
+    const { size } = fstatSync(descriptor)
+    if (size > bound) throw new GraphArtifactTooLargeError(path, size, bound)
+    // The bound is the ceiling, not the reported size. fstat is a fast reject
+    // for the common case, but a size that under-reports must still yield the
+    // whole artifact when the bytes fit -- so the read grows past the reported
+    // size rather than truncating there, and stops one byte past the bound,
+    // which is what makes exceeding it detectable.
+    let capacity = Math.min(size, bound) + 1
+    let buffer = Buffer.allocUnsafe(capacity)
+    let read = 0
+    for (;;) {
+      if (read === capacity) {
+        if (capacity > bound) break
+        const grown = Buffer.allocUnsafe(Math.min(capacity * 2, bound + 1))
+        buffer.copy(grown, 0, 0, read)
+        buffer = grown
+        capacity = grown.byteLength
+      }
+      const chunk = readSync(descriptor, buffer, read, capacity - read, read)
+      if (chunk === 0) break
+      read += chunk
+    }
+    if (read > bound) throw new GraphArtifactTooLargeError(path, read, bound)
+    // A view, not a copy: the artifact is tens of megabytes and this is the
+    // load path. Only the bytes actually read are ever exposed.
+    return buffer.subarray(0, read)
+  } finally {
+    closeSync(descriptor)
+  }
 }
 
 const TOMBSTONE_BYTES = Buffer.byteLength(GRAPH_ARTIFACT_V2_TOMBSTONE, 'utf8')
 const GRAPH_ARTIFACT_MOVED_PREFIX_BYTES = Buffer.byteLength(GRAPH_ARTIFACT_MOVED_PREFIX, 'utf8')
 
 /** Just enough bytes to tell the four shapes apart, never the whole file. */
-const CLASSIFY_PREFIX_BYTES = Math.max(
+/**
+ * Exported so a test can tell a classification probe apart from an artifact
+ * read. Both go through readSync on a descriptor, and size alone cannot
+ * separate them: a bounded read under a small maxBytes asks for fewer bytes
+ * than this probe does.
+ */
+export const CLASSIFY_PREFIX_BYTES = Math.max(
   Buffer.byteLength(GRAPH_ARTIFACT_V2_HEADER, 'utf8'),
   TOMBSTONE_BYTES,
 ) + 8
@@ -212,8 +251,13 @@ function canonicalIsValid(path: string, maxBytes: number): boolean {
     if (bytes.subarray(0, GRAPH_ARTIFACT_V2_HEADER.length).toString('utf8') !== GRAPH_ARTIFACT_V2_HEADER) {
       return false
     }
-    JSON.parse(bytes.subarray(GRAPH_ARTIFACT_V2_HEADER.length).toString('utf8'))
-    return true
+    const payload: unknown = JSON.parse(bytes.subarray(GRAPH_ARTIFACT_V2_HEADER.length).toString('utf8'))
+    // Parsing is not validity. Accepting any JSON body meant a header followed
+    // by `{}` classified as current_v2: the default load selected it, doctor
+    // called the workspace healthy, and the parser then threw a raw invariant
+    // error carrying no workspace state. The structural rule is shared with
+    // the parser so the two cannot drift apart again.
+    return v2PayloadStructureError(payload) === null
   } catch {
     return false
   }

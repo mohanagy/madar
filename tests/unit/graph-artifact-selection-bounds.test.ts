@@ -11,28 +11,62 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
  */
 const understatedSize = { bytes: null as number | null }
 
-/** Every path passed to readFileSync, so a whole-file read cannot hide. */
+/**
+ * Every path read in full, so a whole-file read cannot hide.
+ *
+ * Two primitives, because the bounded reader does not use readFileSync: it
+ * opens a descriptor, sizes it with fstat and reads from that same descriptor,
+ * which is what closes the window between sizing a file and reading it. Only
+ * tracking readFileSync would have left this instrument reading empty while
+ * whole artifacts went through readSync -- and an empty list makes every
+ * `not.toContain` assertion below pass without testing anything.
+ *
+ * A prefix read is not a whole-file read. Classification deliberately reads a
+ * short prefix of the legacy artifact and the backup, so a read is recorded
+ * here only when it asks for more than that.
+ */
 const wholeFileReads: string[] = []
+const descriptorPaths = new Map<number, string>()
+
+/** Larger than the classification prefix, smaller than any real artifact. */
+const PREFIX_READ_CEILING = 256
 
 vi.mock('node:fs', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs')>()
+  const understate = (stats: ReturnType<typeof real.statSync> | undefined) => {
+    if (stats === undefined || understatedSize.bytes === null) return stats
+    return new Proxy(stats, {
+      get: (target, property, receiver) =>
+        property === 'size' ? understatedSize.bytes : Reflect.get(target, property, receiver),
+    })
+  }
   return {
     ...real,
     readFileSync: (path: Parameters<typeof real.readFileSync>[0], ...rest: unknown[]) => {
       if (typeof path === 'string') wholeFileReads.push(path)
       return (real.readFileSync as (...args: unknown[]) => ReturnType<typeof real.readFileSync>)(path, ...rest)
     },
+    openSync: (path: Parameters<typeof real.openSync>[0], ...rest: unknown[]) => {
+      const descriptor = (real.openSync as (...args: unknown[]) => number)(path, ...rest)
+      if (typeof path === 'string') descriptorPaths.set(descriptor, path)
+      return descriptor
+    },
+    readSync: (...args: unknown[]) => {
+      const [descriptor, , , length] = args as [number, unknown, unknown, unknown]
+      const path = descriptorPaths.get(descriptor)
+      if (path !== undefined && typeof length === 'number' && length > PREFIX_READ_CEILING) {
+        wholeFileReads.push(path)
+      }
+      return (real.readSync as (...a: unknown[]) => number)(...args)
+    },
     // Passes through untouched unless a test arms it, so every other suite
     // and the fixture helpers below keep the real filesystem.
-    statSync: (path: Parameters<typeof real.statSync>[0], ...rest: unknown[]) => {
-      const stats = (real.statSync as (...args: unknown[]) => ReturnType<typeof real.statSync>)(path, ...rest)
-      // `throwIfNoEntry: false` callers get undefined; pass that through.
-      if (stats === undefined || understatedSize.bytes === null) return stats
-      return new Proxy(stats, {
-        get: (target, property, receiver) =>
-          property === 'size' ? understatedSize.bytes : Reflect.get(target, property, receiver),
-      })
-    },
+    statSync: (path: Parameters<typeof real.statSync>[0], ...rest: unknown[]) =>
+      understate((real.statSync as (...args: unknown[]) => ReturnType<typeof real.statSync>)(path, ...rest)),
+    // The bounded reader sizes the descriptor it reads from, so the
+    // under-reporting this file arms has to reach fstat as well.
+    fstatSync: (descriptor: number, ...rest: unknown[]) =>
+      understate((real.fstatSync as (...args: unknown[]) => ReturnType<typeof real.statSync>)(descriptor, ...rest)),
   }
 })
 
@@ -45,6 +79,7 @@ const { KnowledgeGraph } = await import('../../src/contracts/graph.js')
 afterEach(() => {
   understatedSize.bytes = null
   wholeFileReads.length = 0
+  descriptorPaths.clear()
 })
 
 /**

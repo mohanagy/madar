@@ -14,6 +14,9 @@ const control = vi.hoisted(() => ({
   metadataCalls: [] as { path: string; maxBytes: unknown }[],
   forcedSizes: {} as Record<string, number>,
   reads: [] as string[],
+  // Set once the real constant is importable. The mock factory is hoisted
+  // above the imports, so it cannot close over the binding directly.
+  classifyPrefixBytes: -1,
 }))
 
 vi.mock('../../src/contracts/graph-artifact.js', async (importOriginal) => {
@@ -29,12 +32,42 @@ vi.mock('../../src/contracts/graph-artifact.js', async (importOriginal) => {
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
+  // The bounded reader opens a descriptor, sizes it with fstat and reads from
+  // that same descriptor, so both interceptions have to follow it there.
+  // Watching only statSync and readFileSync left forcedSizes ignored and
+  // control.reads empty, which turns every assertion below into a pass that
+  // observes nothing.
+  const descriptorPaths = new Map<number, string>()
+  const forcedFor = (path: string): number | undefined => control.forcedSizes[path]
   return {
     ...actual,
     statSync: ((path: never, ...rest: never[]) => {
-      const forced = control.forcedSizes[String(path)]
+      const forced = forcedFor(String(path))
       if (forced !== undefined) return { size: forced, mtimeMs: 1 }
       return (actual.statSync as never as (...a: never[]) => unknown)(path, ...rest)
+    }) as never,
+    fstatSync: ((descriptor: never, ...rest: never[]) => {
+      const path = descriptorPaths.get(Number(descriptor))
+      const forced = path === undefined ? undefined : forcedFor(path)
+      if (forced !== undefined) return { size: forced, mtimeMs: 1 }
+      return (actual.fstatSync as never as (...a: never[]) => unknown)(descriptor, ...rest)
+    }) as never,
+    openSync: ((path: never, ...rest: never[]) => {
+      const descriptor = (actual.openSync as never as (...a: never[]) => number)(path, ...rest)
+      descriptorPaths.set(descriptor, String(path))
+      return descriptor
+    }) as never,
+    readSync: ((...args: never[]) => {
+      const [descriptor, , , length] = args as unknown as [number, unknown, unknown, unknown]
+      const path = descriptorPaths.get(descriptor)
+      // A classification probe is not a read of the artifact. It is the only
+      // read that asks for exactly CLASSIFY_PREFIX_BYTES at position 0, which
+      // is the one discriminator that holds when maxBytes is smaller than the
+      // probe itself.
+      const [, , , , position] = args as unknown as [number, unknown, unknown, unknown, unknown]
+      const isProbe = length === control.classifyPrefixBytes && position === 0
+      if (path !== undefined && !isProbe) control.reads.push(path)
+      return (actual.readSync as never as (...a: never[]) => number)(...args)
     }) as never,
     readFileSync: ((path: never, ...rest: never[]) => {
       control.reads.push(String(path))
@@ -53,6 +86,8 @@ const {
   readGraphArtifactMetadata,
 } = await import('../../src/contracts/graph-artifact.js')
 const { MAX_GRAPH_ARTIFACT_BYTES, readDiscoverySafetyMetadata } = await import('../../src/shared/discovery-safety.js')
+const { CLASSIFY_PREFIX_BYTES } = await import('../../src/contracts/graph-artifact-selection.js')
+control.classifyPrefixBytes = CLASSIFY_PREFIX_BYTES
 
 function canonicalBytes(): Buffer {
   const graph = new KnowledgeGraph({ directed: true })
