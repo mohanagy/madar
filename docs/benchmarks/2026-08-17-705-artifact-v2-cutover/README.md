@@ -1,10 +1,20 @@
-# #705 artifact v2 cutover — final performance receipt
+# #705 artifact v2 cutover — performance receipt
 
-Direct three-arm measurement at the final #705 production head.
+Direct three-arm measurement.
 
-**Verdict: four formal gates pass. The 2.64×–2.71× default-path load ratio was
-referred for a maintainer decision and has been ACCEPTED as an explicit exception
-to the 2.00× threshold — see
+> **Superseded for the current head.** This receipt was measured at production
+> head `1fcc8d88`. The head has since moved twice. The measurement in force is
+> [`rerun-851f92ba.md`](./rerun-851f92ba.md), at production head `851f92ba`,
+> which reports a **2.647×–2.666×** default-path load band and **awaits a new
+> maintainer decision**. The intermediate rerun at `78e7acd4` is
+> [`rerun-78e7acd4.md`](./rerun-78e7acd4.md).
+>
+> Every measurement below is retained as recorded. Accepted exceptions are bound
+> to the head they were measured at and are never carried forward.
+
+**Verdict at `1fcc8d88`: four formal gates pass. The 2.64×–2.71× default-path
+load ratio was referred for a maintainer decision and was ACCEPTED as an
+explicit exception to the 2.00× threshold — see
 [`maintainer-decision.md`](./maintainer-decision.md).**
 
 | Metric | #705 vs base | Verdict |
