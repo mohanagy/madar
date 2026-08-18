@@ -535,7 +535,9 @@ function isOpencodeMcpConfigured(config: JsonObject | null): boolean {
 function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'healthy'>): string[] {
   const nextCommands = new Set<string>()
 
-  if (!report.graph.exists) {
+  if (!report.graph.exists || report.graph.workspaceState === 'mixed_v2_and_live_v1') {
+    // Full generation is the repair for an ambiguous workspace, so the command
+    // that fixes it belongs in the list a user is told to run.
     nextCommands.add('madar generate .')
   } else if (
     report.graph.freshness === 'possibly_stale'
@@ -771,7 +773,12 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const configuredOrAttemptedAgents = agents.filter((agent) => agent.status !== 'missing')
   const configuredOrAttemptedLabels = new Set(configuredOrAttemptedAgents.map((agent) => agent.label))
   const configuredOrAttemptedMcpChecks = mcpChecks.filter((check) => configuredOrAttemptedLabels.has(check.label))
+  // An ambiguous workspace is not healthy, whatever the canonical artifact's
+  // freshness says. Default loading fails closed here, so reporting health
+  // would tell a user everything is fine about a workspace where no command
+  // will answer.
   const healthy = graph.exists
+    && graph.workspaceState !== 'mixed_v2_and_live_v1'
     && graph.freshness === 'fresh'
     && !indexingRequiresAttention
     && graph.generationPolicy.match !== false
