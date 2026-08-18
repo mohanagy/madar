@@ -373,7 +373,7 @@ export function resolveGraphArtifact(
     // loads degraded. Neither silently becomes the other.
     if (isMovedMarker(requestedPath)) {
       if (!canonicalIsValid(classification.canonicalPath, maxBytes)) {
-        refuse(classification, display, `${requestedPath} has moved but ${display(classification.canonicalPath)} is missing or invalid.`)
+        refuse(classification, display, `${display(requestedPath)} has moved but ${display(classification.canonicalPath)} is missing or invalid.`)
       }
       return {
         ...common,
@@ -394,7 +394,7 @@ export function resolveGraphArtifact(
         selection: 'explicit_legacy',
       }
     }
-    refuse(classification, display, `${requestedPath} is not a readable graph artifact.`)
+    refuse(classification, display, `${display(requestedPath)} is not a readable graph artifact.`)
   }
 
   switch (classification.state) {
