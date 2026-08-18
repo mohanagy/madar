@@ -58,6 +58,8 @@ export type WorkspaceGraphState =
 
 export type GraphArtifactSelectionKind =
   | 'canonical_default'
+  /** A default load in a workspace that has not cut over yet. */
+  | 'legacy_default'
   | 'explicit_v2'
   | 'explicit_legacy'
   | 'tombstone_alias'
@@ -422,7 +424,10 @@ export function resolveGraphArtifact(
         selectedLogicalPath: options.logicalPath ?? classification.legacyPath,
         format: 'v1',
         workspaceState: classification.state,
-        selection: 'explicit_legacy',
+        // Nobody asked for this artifact by name. Reporting `explicit_legacy`
+        // for an automatic compatibility fallback made the two cases
+        // indistinguishable to anything reading the selection kind.
+        selection: 'legacy_default',
       }
     case 'mixed_v2_and_live_v1':
       refuse(

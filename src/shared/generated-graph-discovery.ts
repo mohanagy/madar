@@ -44,6 +44,31 @@ export type GeneratedModuleStyle = 'inline' | 'commonjs' | 'esm'
 const PREFIX_BYTES = 32
 
 /**
+ * The markers the generated classifier matches must fit the window it reads.
+ *
+ * The generated program reads exactly PREFIX_BYTES from the front of each
+ * candidate and compares the result against these two literals. A rename that
+ * pushed either past the window would not fail to build and would not throw at
+ * runtime: every workspace would simply classify as `invalid`, on every host
+ * surface at once, with nothing pointing at the cause. Asserting it here fails
+ * at generation instead.
+ */
+const GENERATED_PREFIX_MARKERS = [
+  GRAPH_ARTIFACT_V2_HEADER.trimEnd(),
+  GRAPH_ARTIFACT_MOVED_PREFIX,
+] as const
+
+for (const marker of GENERATED_PREFIX_MARKERS) {
+  const byteLength = Buffer.byteLength(marker, 'utf8')
+  if (byteLength > PREFIX_BYTES) {
+    throw new Error(
+      `generated host discovery reads ${PREFIX_BYTES} bytes but must match `
+      + `${JSON.stringify(marker)}, which is ${byteLength} bytes`,
+    )
+  }
+}
+
+/**
  * A single-quoted JavaScript string literal, safe for every emitted form.
  *
  * The inline form is embedded in `node -e "<program>"`, so a double quote in the

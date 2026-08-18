@@ -146,6 +146,23 @@ describe('default intent refuses every ambiguous or broken state', () => {
 
       expect(selection.format).toBe('v1')
       expect(selection.workspaceState).toBe('legacy_v1_only')
+      // Nobody named this artifact. A default fallback and a caller that asked
+      // for graph.json by name reach the same file for different reasons, and
+      // the selection kind is the only place that distinction survives.
+      expect(selection.selection).toBe('legacy_default')
+      expect(selection.intent).toBe('default')
+    } finally {
+      cleanup(out)
+    }
+  })
+
+  it('separates the default fallback from an explicit legacy request', () => {
+    const out = workspace({ legacy: LIVE_V1 })
+    try {
+      const requested = join(out, 'graph.json')
+
+      expect(resolveGraphArtifact(requested, { intent: 'default' }).selection).toBe('legacy_default')
+      expect(resolveGraphArtifact(requested, { intent: 'explicit' }).selection).toBe('explicit_legacy')
     } finally {
       cleanup(out)
     }
