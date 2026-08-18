@@ -7,6 +7,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
@@ -17,6 +18,8 @@ import {
   isMovedMarkerText,
   loadGraphArtifact,
   parseGraphArtifactV2,
+  MAX_LEGACY_ARTIFACT_BYTES,
+  classifyLegacyArtifactBytes,
 } from '../contracts/graph-artifact.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 import { syncDirectory, temporaryPath, writeDurableTemporaryFile } from './durable-file.js'
@@ -133,21 +136,39 @@ type LegacyClassification = 'valid_v1' | 'too_large' | 'unreadable'
  * trimmed. Collapsing them into one message sends an operator looking for
  * damage that is not there.
  */
-function classifyLegacyArtifact(bytes: Uint8Array): LegacyClassification {
-  try {
-    return loadGraphArtifact(bytes).format === 'v1' ? 'valid_v1' : 'unreadable'
-  } catch (error) {
-    const message = error instanceof Error ? error.message : ''
-    return /exceeds|too large|too many/i.test(message) ? 'too_large' : 'unreadable'
+/** One file, read once within a bound, classified once. */
+interface ExistingLegacyFile {
+  readonly bytes: Uint8Array | null
+  readonly classification: LegacyClassification
+}
+
+const ABSENT_LEGACY_FILE: ExistingLegacyFile = { bytes: null, classification: 'unreadable' }
+
+/**
+ * Reads and classifies a legacy file at most once.
+ *
+ * Publication used to read both the preserved backup and the legacy file with
+ * no size bound, then hydrate a full KnowledgeGraph for each just to ask
+ * whether they were valid v1 -- and hydrate them again on the refusal path to
+ * word the message. An oversized file was pulled entirely into memory before
+ * the bound inside the parser could reject it.
+ *
+ * The size is checked before the read, and the answer is computed once and
+ * reused. Corruption detection is unchanged: `classifyLegacyArtifactBytes`
+ * runs the same acceptance the loader runs, minus the graph build.
+ */
+function readExistingLegacyFile(path: string): ExistingLegacyFile {
+  if (!existsSync(path)) return ABSENT_LEGACY_FILE
+  if (statSync(path).size > MAX_LEGACY_ARTIFACT_BYTES) {
+    return { bytes: null, classification: 'too_large' }
   }
+
+  const bytes = readFileSync(path)
+  return { bytes, classification: classifyLegacyArtifactBytes(bytes) }
 }
 
-function validLegacyArtifact(bytes: Uint8Array): boolean {
-  return classifyLegacyArtifact(bytes) === 'valid_v1'
-}
-
-function legacyRefusalDetail(bytes: Uint8Array): string {
-  return classifyLegacyArtifact(bytes) === 'too_large'
+function legacyRefusalDetail(classification: LegacyClassification): string {
+  return classification === 'too_large'
     ? 'it is too large for Madar to load and classify'
     : 'Madar cannot read it as a v1 artifact'
 }
@@ -181,8 +202,10 @@ export function activateGraphArtifactV2InDirectory(
   const artifactPath = join(outputDir, 'graph.madar')
   const legacyBackupPath = join(outputDir, 'graph.v1.json')
   const tombstonePath = join(outputDir, 'graph.json')
-  const existingGraph = existsSync(tombstonePath) ? readFileSync(tombstonePath) : null
-  const existingLegacyBackup = existsSync(legacyBackupPath) ? readFileSync(legacyBackupPath) : null
+  const existingLegacyFile = readExistingLegacyFile(tombstonePath)
+  const existingBackupFile = readExistingLegacyFile(legacyBackupPath)
+  const existingGraph = existingLegacyFile.bytes
+  const existingLegacyBackup = existingBackupFile.bytes
 
   /*
    * graph.v1.json is the immutable first v1 backup, not a refreshed mirror. A
@@ -195,10 +218,13 @@ export function activateGraphArtifactV2InDirectory(
    * source of the new graph -- that comes from the repository -- and the
    * existing backup is never rewritten.
    */
-  if (existingLegacyBackup !== null && !validLegacyArtifact(existingLegacyBackup)) {
+  // An oversized backup is refused before anything is mutated, using the size
+  // check rather than a failed read of the whole file.
+  if (existingBackupFile.classification !== 'valid_v1'
+    && (existingBackupFile.bytes !== null || existingBackupFile.classification === 'too_large')) {
     throw new GraphArtifactBackupError(
       legacyBackupPath,
-      `${legacyBackupPath} exists but ${legacyRefusalDetail(existingLegacyBackup)}. Madar will not `
+      `${legacyBackupPath} exists but ${legacyRefusalDetail(existingBackupFile.classification)}. Madar will not `
       + 'overwrite or ignore a preserved backup it cannot account for; move it aside to continue.',
     )
   }
@@ -210,13 +236,12 @@ export function activateGraphArtifactV2InDirectory(
    * unexplained, and replacing it with a tombstone would destroy it silently.
    */
   const legacyIsMovedMarker = existingGraph !== null && isMovedMarkerText(decodeLegacyText(existingGraph))
-  const legacyToPreserve = existingGraph !== null && validLegacyArtifact(existingGraph)
-    ? existingGraph
-    : null
-  if (existingGraph !== null && legacyToPreserve === null && !legacyIsMovedMarker) {
+  const legacyToPreserve = existingLegacyFile.classification === 'valid_v1' ? existingGraph : null
+  const legacyPresent = existingGraph !== null || existingLegacyFile.classification === 'too_large'
+  if (legacyPresent && legacyToPreserve === null && !legacyIsMovedMarker) {
     throw new GraphArtifactBackupError(
       tombstonePath,
-      `${tombstonePath} exists but is not a moved marker and ${legacyRefusalDetail(existingGraph)}. `
+      `${tombstonePath} exists but is not a moved marker and ${legacyRefusalDetail(existingLegacyFile.classification)}. `
       + 'Refusing to replace content Madar cannot account for; move it aside to continue.',
     )
   }

@@ -1091,7 +1091,7 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
   })
 }
 
-const MAX_LEGACY_ARTIFACT_BYTES = 100 * 1024 * 1024
+export const MAX_LEGACY_ARTIFACT_BYTES = 100 * 1024 * 1024
 const MAX_LEGACY_RECORDS = 1_000_000
 
 function legacyJson(text: string): Record<string, unknown> {
@@ -1125,6 +1125,41 @@ function legacyJson(text: string): Record<string, unknown> {
     throw new GraphArtifactInvariantError('JSON payload is not a compatible legacy v1 graph artifact')
   }
   return legacy
+}
+
+/**
+ * Whether these bytes are a loadable v1 artifact, without building the graph.
+ *
+ * `legacyJson` already performs the whole v1 acceptance decision: the size
+ * bound, the leading brace, JSON validity, the v2-identity rejection, and the
+ * required `schema_version`/`directed`/`nodes`/`links` shape. Hydration adds
+ * nothing to that answer, so a caller that only needs the answer should not pay
+ * for a full KnowledgeGraph -- publication was hydrating both the preserved
+ * backup and the legacy file on every generate, twice each on the refusal path.
+ *
+ * Living beside `legacyJson` is deliberate: the two must accept exactly the
+ * same bytes, and `legacyClassificationMatchesLoader` in the artifact tests
+ * pins them together.
+ */
+export function classifyLegacyArtifactBytes(bytes: Uint8Array | string): 'valid_v1' | 'too_large' | 'unreadable' {
+  try {
+    const legacy = legacyJson(decodeArtifactBytes(bytes))
+    // The record bound belongs to the loader's acceptance too. Checking only
+    // the byte size and shape would call a structurally fine but oversized
+    // artifact valid, which the loader refuses -- and that is a weakening, not
+    // a speed-up.
+    const nodes = Array.isArray(legacy.nodes) ? legacy.nodes.length : 0
+    const links = Array.isArray(legacy.links)
+      ? legacy.links.length
+      : Array.isArray(legacy.edges) ? legacy.edges.length : 0
+    if (nodes > MAX_LEGACY_RECORDS || links > MAX_LEGACY_RECORDS) {
+      throw new GraphArtifactInvariantError('legacy artifact has too many records for the bounded normal mode')
+    }
+    return 'valid_v1'
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    return /exceeds|too large|too many/i.test(message) ? 'too_large' : 'unreadable'
+  }
 }
 
 function legacyLinkFingerprint(link: Record<string, unknown>): { readonly canonical: string; readonly digest: string } {
