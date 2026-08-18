@@ -255,6 +255,9 @@ describe('generated host discovery classifies the workspace', () => {
         mkdirSync(nested, { recursive: true })
         const result = spawnGeneratedProgram(generatedHookCommand(root), nested)
 
+        // Sibling cases assert this; a program that failed after printing
+        // partial output would otherwise satisfy both string checks.
+        expect(result.status).toBe(0)
         expect(result.stdout).toContain('additionalContext')
         expect(result.stdout).toContain('legacy out/graph.json')
       } finally {

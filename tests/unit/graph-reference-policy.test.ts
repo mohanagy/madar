@@ -55,7 +55,13 @@ function sourceFiles(directory: string): string[] {
 
 describe('production code does not default to the legacy artifact', () => {
   const offenders = sourceFiles(SOURCE_ROOT)
-    .map((file) => ({ file: relative(SOURCE_ROOT, file).replaceAll('\\', '/'), text: readFileSync(file, 'utf8') }))
+    // Line endings are normalized before matching. A pattern anchored on \n
+    // never matches a CRLF checkout, so the gate would report success without
+    // having checked anything -- the worst way for a policy test to fail.
+    .map((file) => ({
+      file: relative(SOURCE_ROOT, file).replaceAll('\\', '/'),
+      text: readFileSync(file, 'utf8').replaceAll('\r\n', '\n'),
+    }))
     .filter(({ text }) => text.includes('graph.json'))
 
   it('finds the legacy literal only where it is recorded as intentional', () => {

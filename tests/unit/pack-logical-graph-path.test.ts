@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, realpathSync} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { analyzeGraphContextFreshness } from '../../src/runtime/freshness.js'
+import { resolvedLoadPath } from '../../src/runtime/serve.js'
 import { logicalGraphPath, resolveMadarWorkspace } from '../../src/shared/workspace.js'
 
 function git(cwd: string, args: string[]): void {
@@ -37,9 +38,17 @@ describe('paths reported to Pack consumers', () => {
   })
 
   it('names the canonical artifact for a tombstone request', () => {
-    // A caller may still hand over the legacy spelling; what gets reported is
-    // the artifact the answer actually came from.
-    expect(logicalGraphPath(join(plain, 'out', 'graph.madar'), plain)).toBe('out/graph.madar')
+    // A caller may still hand over the legacy spelling, and what gets reported
+    // is the artifact the answer actually came from. This case previously
+    // passed the canonical path, so it duplicated the one above and proved
+    // nothing about a tombstone request -- the resolution step is the point.
+    const requested = join(plain, 'out', 'graph.json')
+    const resolved = resolvedLoadPath(requested)
+
+    // The resolver canonicalizes symlinks, so the workspace root is compared in
+    // the same form; on macOS /var and /private/var are the same directory.
+    expect(resolved.endsWith('graph.madar')).toBe(true)
+    expect(logicalGraphPath(resolved, realpathSync(plain))).toBe('out/graph.madar')
   })
 
   it('names a preserved backup when that is what was read', () => {

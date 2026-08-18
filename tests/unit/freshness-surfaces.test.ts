@@ -17,7 +17,11 @@ const PACKAGE_VERSION = JSON.parse(readFileSync(join(process.cwd(), 'package.jso
 // Governance reports the logical spelling, so the leading separator an
 // absolute path used to supply is gone. Anchored on `out/` rather than made
 // permissive, so a bare basename or a leaked worktree path still fails.
-const OUT_GRAPH_PATH_PATTERN = /(?:^|[\\/])out[\\/]graph\.json$/
+// Anchored at both ends on purpose. The leading alternation also matched
+// /tmp/worktree/out/graph.json, so the assertion could not tell the logical
+// spelling from a physical worktree path leaking into governance output --
+// which is the one thing it exists to catch.
+const OUT_GRAPH_PATH_PATTERN = /^out[\\/]graph\.json$/
 const OUT_MISSING_GRAPH_PATH_PATTERN = /[\\/]out[\\/]missing\.json$/
 
 type FixtureState = 'fresh' | 'modified' | 'unrelated_modified' | 'deleted' | 'shared_modified'

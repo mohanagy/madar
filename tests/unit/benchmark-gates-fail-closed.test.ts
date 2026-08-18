@@ -25,6 +25,9 @@ import { evaluateRetrievalQuality } from '../../src/infrastructure/benchmark/qua
  * refusal is about the missing artifact and not a broken command.
  */
 
+/** Printed only if the exec template runs, which it must never do here. */
+const EXEC_MARKER = 'madar-eval-exec-ran'
+
 function captureIo(): { io: { log: (m: string) => void, error: (m: string) => void }, text: () => string } {
   const lines: string[] = []
   return {
@@ -73,21 +76,24 @@ describe('measurement gates refuse a tombstone-only workspace', () => {
     // fails loudly if it ever runs: reaching a prompt at all would mean the
     // gate had already decided it had a graph to measure.
     const exitCode = await executeCli(
-      ['eval', '--questions', 'questions.json', '--exec', 'node -e "process.exit(97)"', '--yes'],
+      ['eval', '--questions', 'questions.json', '--exec', 'node -e "console.log(\'madar-eval-exec-ran\'); process.exit(97)"', '--yes'],
       io,
     )
 
     expect(exitCode).not.toBe(0)
     expect(text()).toMatch(/graph\.madar/)
     expect(text()).not.toMatch(/Recall:/)
-    expect(text()).not.toMatch(/97/)
+    // Keyed on the marker the exec prints, not on the bare number 97: the
+    // refusal text carries a random mkdtemp suffix and can contain counts, so a
+    // digit match could pass or fail for reasons unrelated to the exec.
+    expect(text()).not.toContain(EXEC_MARKER)
   })
 
   it('the benchmark gate fails instead of reporting thresholds', async () => {
     const { io, text } = captureIo()
 
     const exitCode = await executeCli(
-      ['benchmark', '--exec', 'node -e "process.exit(97)"', '--yes'],
+      ['benchmark', '--exec', 'node -e "console.log(\'madar-eval-exec-ran\'); process.exit(97)"', '--yes'],
       io,
     )
 
@@ -124,7 +130,7 @@ describe('measurement gates refuse a tombstone-only workspace', () => {
       graph,
       [{ question: 'how does alpha work?', expected_labels: ['alpha'] }],
       3000,
-      { execTemplate: 'node -e "process.exit(97)"' },
+      { execTemplate: 'node -e "console.log(\'madar-eval-exec-ran\'); process.exit(97)"' },
     )).rejects.toThrow(GraphArtifactStateError)
   })
 

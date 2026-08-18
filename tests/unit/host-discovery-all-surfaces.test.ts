@@ -55,6 +55,9 @@ interface Expectation {
  */
 const SPAWNED_STATES: ReadonlyArray<readonly [string, WorkspaceFiles, Expectation]> = [
   ['current v2 with a tombstone', { canonical: VALID_V2, legacy: GRAPH_ARTIFACT_V2_TOMBSTONE }, { ready: true, legacy: false }],
+  // Canonical-only is the case the unmigrated hooks got wrong: with no legacy
+  // file to find, an existence check saw an empty workspace and said nothing.
+  ['canonical only', { canonical: VALID_V2 }, { ready: true, legacy: false }],
   ['legacy v1 only', { legacy: LIVE_V1 }, { ready: true, legacy: true }],
   ['a tombstone alone', { legacy: GRAPH_ARTIFACT_V2_TOMBSTONE }, { ready: false, legacy: false }],
 ]
@@ -153,6 +156,11 @@ function promptHookGuidance(root: string, scriptPath: string): Guidance {
   if (result.error) throw result.error
   if (typeof result.status !== 'number') {
     throw new Error(`prompt hook did not run to completion: signal=${String(result.signal)}`)
+  }
+  // A crashing hook prints nothing, which would satisfy every `ready: false`
+  // expectation for the wrong reason. The tool-hook runner already checks this.
+  if (result.status !== 0) {
+    throw new Error(`prompt hook exited ${result.status}: ${`${result.stderr ?? ''}`.slice(0, 200)}`)
   }
   const stdout = `${result.stdout ?? ''}`
   return { emitted: stdout.includes('additionalContext'), text: stdout }

@@ -179,10 +179,11 @@ describe('explicit intent reaches specific artifacts', () => {
     }
   })
 
-  it('loads an explicit backup degraded even when it is not JSON-shaped', () => {
-    // A JSON-shaped backup would also be reached by the generic fallthrough, so
-    // it cannot show the dedicated backup branch exists. Content that the
-    // fallthrough rejects can.
+  it('honours an explicit backup request in a state that refuses by default', () => {
+    // The fixture is a JSON-shaped v1 backup, so the earlier title and comment
+    // claiming non-JSON content described something this test never had. What
+    // it does prove is the branch that matters: moved_without_canonical refuses
+    // every default load, and an explicitly named backup is still resolved.
     const out = workspace({ legacy: GRAPH_ARTIFACT_V2_TOMBSTONE, backup: LIVE_V1 })
     try {
       const selection = resolveGraphArtifact(join(out, 'graph.v1.json'), { intent: 'explicit' })
