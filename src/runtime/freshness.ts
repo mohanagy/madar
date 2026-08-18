@@ -16,7 +16,9 @@ import { readPackageVersion } from '../shared/package-metadata.js'
 import { validateGraphPath } from '../shared/security.js'
 import { isDiscoveryPathIgnored, loadMadarignorePatterns } from '../shared/source-discovery.js'
 import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
-import { classifyWorkspaceGraph } from '../contracts/graph-artifact-selection.js'
+import { classifyWorkspaceGraph,
+  legacyRequestResolvesToCanonical,
+} from '../contracts/graph-artifact-selection.js'
 import { logicalGraphPath } from '../shared/workspace.js'
 
 export interface GraphFreshnessMetadata {
@@ -418,9 +420,12 @@ function gitChangedSourceFiles(
 function freshnessSourcePath(safeGraphPath: string): string {
   if (basename(safeGraphPath) !== 'graph.json') return safeGraphPath
   const classification = classifyWorkspaceGraph(dirname(safeGraphPath))
-  return classification.state === 'legacy_v1_only' || !existsSync(classification.canonicalPath)
-    ? safeGraphPath
-    : classification.canonicalPath
+  // Measure whatever loadGraph reads. Redirecting for any state with a
+  // canonical artifact hashed graph.madar while the graph came from a live v1
+  // graph.json, so the reported version described a different file.
+  return legacyRequestResolvesToCanonical(classification.state)
+    ? classification.canonicalPath
+    : safeGraphPath
 }
 
 /**

@@ -51,7 +51,9 @@ import {
   GRAPH_ARTIFACT_V2_TOMBSTONE,
   isMovedMarkerText,
 } from './graph-artifact-format.js'
-import { classifyWorkspaceGraph } from './graph-artifact-selection.js'
+import { classifyWorkspaceGraph,
+  legacyRequestResolvesToCanonical,
+} from './graph-artifact-selection.js'
 
 // Re-exported so the many existing importers of this module keep working; the
 // markers themselves live in a leaf module the classifier can also import.
@@ -1438,7 +1440,10 @@ export function readGraphArtifactMetadata(
       if (classification.state === 'moved_without_canonical') {
         return { ...ABSENT_METADATA, format: 'unreadable' }
       }
-      if (existsSync(classification.canonicalPath) && classification.state !== 'invalid_current_v2') {
+      // Only a cut-over workspace redirects, matching loadGraph. Redirecting
+      // whenever a canonical artifact merely existed described the v2 artifact
+      // while loadGraph returned the live v1 for the same path.
+      if (legacyRequestResolvesToCanonical(classification.state)) {
         resolvedPath = classification.canonicalPath
         graphPath = classification.canonicalPath
       }

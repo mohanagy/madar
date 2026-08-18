@@ -232,6 +232,22 @@ export interface WorkspaceGraphClassification {
  * preserved `graph.v1.json` is rollback evidence, not an active graph, so it
  * must never turn a moved-or-broken workspace into a usable one.
  */
+/**
+ * Whether a request naming the legacy path resolves to the canonical artifact.
+ *
+ * Only a cut-over workspace redirects. Every other state either keeps live v1
+ * bytes at `graph.json` -- legacy-only, and mixed -- or refuses outright.
+ *
+ * This exists because three readers each decided it separately and two decided
+ * it differently: metadata and freshness redirected whenever a canonical
+ * artifact merely *existed*, while `loadGraph` redirected only on a moved
+ * marker. In a mixed workspace that produced v2 provenance and freshness
+ * describing a v1 graph body, which is worse than either answer alone.
+ */
+export function legacyRequestResolvesToCanonical(state: WorkspaceGraphState): boolean {
+  return state === 'current_v2'
+}
+
 export function classifyWorkspaceGraph(
   outputDir: string,
   maxBytes = MAX_GRAPH_ARTIFACT_BYTES,
