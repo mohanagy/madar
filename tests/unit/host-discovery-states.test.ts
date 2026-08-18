@@ -189,10 +189,17 @@ describe('generated host discovery classifies the workspace', () => {
       throw new Error(`could not split the generated command into a program and payloads: ${command.slice(0, 80)}`)
     }
 
+    // No `input`. The generated program never reads stdin -- it classifies the
+    // working directory and writes one payload to stdout -- so supplying any
+    // tested nothing, and it raced: spawnSync writes stdin to a child that has
+    // already exited, which surfaces as EPIPE and fails the test for a reason
+    // unrelated to discovery. Seen once on macOS/Node 22 in protected CI, and
+    // reachable on every platform.
     const result = spawnSync(process.execPath, ['-e', program, ...payloads], {
       cwd,
-      input: JSON.stringify({ tool_name: 'read_file' }),
       encoding: 'utf8',
+      timeout: 30_000,
+      windowsHide: true,
     })
     if (result.error) throw result.error
     return { status: result.status, stdout: `${result.stdout ?? ''}` }
