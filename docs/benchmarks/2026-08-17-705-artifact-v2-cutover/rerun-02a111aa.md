@@ -6,9 +6,11 @@ load, and the base binary never opened that path at all, so a FIFO there hung a
 command that previously answered in 736 ms. The fix changes how every artifact
 file is opened, so `a8a94a8c` is superseded and the receipt was measured again.
 
-**This is the measurement in force. The default-path load ratio is above 2.00×
-and requires an explicit maintainer decision. The acceptance recorded for
-`a8a94a8c` does not carry forward.**
+**This is the measurement in force, and the default-path band has been
+ACCEPTED as an explicit maintainer exception to the 2.00× threshold for this
+production head only — see [`maintainer-decision.md`](./maintainer-decision.md),
+decision 4. The acceptance recorded for `a8a94a8c` did not carry forward into
+it; this is a separate decision taken against these measurements.**
 
 ## Identities
 
@@ -42,7 +44,7 @@ regeneration.
 | Generation wall | **0.996×** | 2.00× | **passed** |
 | Peak RSS | **1.338×** | 2.00× | **passed** |
 | Canonical artifact | **1.799×** | 2.00× | **passed** |
-| **Load latency (default path)** | **2.624×–2.632×** | 2.00× | **exceeds — decision required** |
+| **Load latency (default path)** | **2.624×–2.632×** | 2.00× | **accepted exception** |
 | Output directory | 1.546× | — | reported |
 
 ## Load latency
@@ -141,8 +143,16 @@ Relationship counts differ by arm — 17,835 for base against 17,940 for B1 and
 ## Gate
 
 Generation wall, peak RSS and canonical artifact size all pass. Default-path
-load latency is **2.624×–2.632×**, above the 2.00× threshold, so this requires
-an **explicit maintainer decision**. No earlier acceptance carries forward.
+load latency is **2.624×–2.632×**, above the 2.00× threshold, and has been
+**accepted as an explicit maintainer exception bound to production head
+`02a111aa` only** (decision 4 in
+[`maintainer-decision.md`](./maintainer-decision.md)).
+
+The acceptance rests on the FIFO fix closing a PR-introduced availability
+defect that must not be reverted to preserve an older performance head, on this
+band being slightly lower and tighter than the previously accepted
+2.640×–2.678×, and on every other formal gate passing. #706 owns the remaining
+repeated-parse optimization; #710 owns the CI timing family.
 
 The larger canonical artifact is a major contributor to that gap. Default-path
 artifact selection and workspace classification also contribute — the default

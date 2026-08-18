@@ -1,23 +1,91 @@
 # Maintainer performance decisions — #705 default-load exception
 
-Three decisions, in order. **The production head has since moved to
-`02a111aa` and no decision has been made for it** — see
-[`rerun-02a111aa.md`](./rerun-02a111aa.md), which reports 2.624×–2.632×.
-
-Each decision is scoped to **one production head** and is never extended
-forward. All are retained; none is rewritten. An earlier
-decision is superseded by a later production head, which is a statement about
-scope — not that the earlier measurement or decision was wrong.
+Four decisions, in order. Each is scoped to **one production head** and is
+never extended forward. All are retained; none is rewritten or deleted. An
+earlier decision is superseded by a later production head, which is a statement
+about scope — not that the earlier measurement or decision was wrong.
 
 | Decision | Production head | Accepted band | Status |
 |---|---|---|---|
-| 3 | `a8a94a8c396d2283dcae27e806eb707b24f80d54` | 2.640×–2.678× | superseded by production head `02a111aa`; no decision yet for that head |
+| 4 (in force) | **`02a111aabc47f0e7d0bc04359cc2c711b098b83e`** | **2.624×–2.632×** | in force |
+| 3 | `a8a94a8c396d2283dcae27e806eb707b24f80d54` | 2.640×–2.678× | superseded by production head `02a111aa` |
 | 2 | `78e7acd4b3724adcc78fe034d94c33526054ae8a` | 2.635×–2.732× | superseded by production head `a8a94a8c` |
 | 1 | `1fcc8d88fec85b30a22d1729be6d7800cad23bb7` | 2.64×–2.71× | superseded by production head `78e7acd4` |
 
 ---
 
-# Decision 3 — accepted for production head `a8a94a8c`
+# Decision 4 — accepted for production head `02a111aa`
+
+**The 2.624×–2.632× default-path load-latency band is accepted for production
+head `02a111aabc47f0e7d0bc04359cc2c711b098b83e` only.**
+
+A new, narrowly scoped maintainer exception to the 2.00× review threshold. It
+supersedes decision 3 for its own head and does not extend to any later one.
+
+| Item | Value |
+|---|---|
+| **Accepted production head** | **`02a111aabc47f0e7d0bc04359cc2c711b098b83e`** |
+| Accepted measured band | **2.624×–2.632×** |
+| Receipt | [`rerun-02a111aa.md`](./rerun-02a111aa.md) |
+| Scope | the exact pinned corpus and recorded toolchain in that receipt |
+| FIFO fix | `02a111aa` |
+| FIFO review thread | resolved |
+
+## Supporting measurements
+
+| Metric | Result | Verdict |
+|---|---:|---|
+| Generation wall | 0.996× | pass |
+| Peak RSS | 1.338× | pass |
+| Canonical artifact vs base legacy artifact | 1.799× | pass |
+| Output directory | 1.546× of base | reported |
+| **Default-path load** | **2.624×–2.632×** | **accepted exception** |
+| Same byte-identical artifact, #705 vs B1 | 0.972×–0.994× | control |
+
+## Why it is accepted
+
+- The FIFO fix closes a PR-introduced availability defect and must not be
+  reverted merely to preserve an older performance head.
+- The final band is slightly lower and tighter than the previously accepted
+  2.640×–2.678× band.
+- Generation, RSS, artifact-size and output-footprint gates all pass.
+- The canonical v2 artifact remains the required authoritative default.
+- #706 owns the remaining repeated-parse optimization.
+
+## What causes the gap
+
+The larger canonical artifact is a major contributor. Default-path artifact
+selection and workspace classification also contribute — the default path
+classifies the workspace before reading anything, which the explicit path does
+not. The controlled same-artifact comparison puts the #705 loader at parity
+with B1 on identical bytes.
+
+This is deliberately not stated as artifact size alone, and no claim is made
+that the host would perform better when idle. The recorded measurements are the
+basis for this decision.
+
+## Follow-ups this acceptance does not absorb
+
+| Issue | Owns |
+|---|---|
+| #706 | repeated-parse load optimization — 2 full parses on a canonical load, 3 on a tombstone load, 2 for metadata |
+| #710 | the wall-clock-sensitive CI test family |
+
+## Invalidation
+
+Any later production change touching artifact opening or special-file handling,
+artifact selection, default/explicit intent, workspace-state classification,
+`loadGraph`, metadata or freshness resolution, artifact parsing or hydration,
+v2 structural validation, bounded reads, generation or publication, activation,
+time travel, federate, HTTP/MCP artifact serving, or canonical serialization
+invalidates this acceptance and requires a rerun and a fresh decision.
+
+Documentation, receipt, PR-body, issue-comment and review-record changes do not
+move the production head and do not invalidate it.
+
+---
+
+# Decision 3 — accepted for production head `a8a94a8c` (superseded)
 
 **The 2.640×–2.678× default-path load-latency band is accepted for production
 head `a8a94a8c396d2283dcae27e806eb707b24f80d54` only.**
