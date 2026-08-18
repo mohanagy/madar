@@ -23,7 +23,6 @@ const INTENTIONAL: ReadonlyMap<string, string> = new Map([
   ['infrastructure/compare.ts', 'isolates every published artifact during native agent runs'],
   ['infrastructure/install.ts', 'generated host discovery classifies both artifacts'],
   ['infrastructure/proof-report.ts', 'accepts an explicitly named legacy artifact'],
-  ['infrastructure/time-travel.ts', 'removes any v1 mirror from a snapshot'],
   ['infrastructure/watch.ts', 'watches both artifact paths for change'],
   ['pipeline/export.ts', 'writes the v1 export format on request'],
   ['runtime/freshness.ts', 'resolves a legacy request to the measured artifact'],
