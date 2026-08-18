@@ -113,8 +113,12 @@ loader that is within a few percent is the whole of it.
 
 ## Generation, memory and footprint
 
-Four interleaved rounds per arm, medians. No outlier in this sweep; walls fell
-within 140.9–141.7 s across all twelve runs.
+Four interleaved rounds per arm, medians.
+
+**Correction.** This originally read "walls fell within 140.9–141.7 s across all
+twelve runs". That range is the three arm *medians*, not the twelve runs. The
+raw range across all twelve is **139.117–143.860 s**. The medians and every
+ratio below are unaffected; only the sentence describing the spread was wrong.
 
 | Arm | Wall | Peak RSS | Canonical | Legacy | Output dir |
 |---|---:|---:|---:|---:|---:|

@@ -17,6 +17,8 @@ const control = vi.hoisted(() => ({
   // Set once the real constant is importable. The mock factory is hoisted
   // above the imports, so it cannot close over the binding directly.
   classifyPrefixBytes: -1,
+  /** Every read, probe or not, so the discriminator below can be audited. */
+  rawReads: [] as { path: string; length: number; position: number }[],
 }))
 
 vi.mock('../../src/contracts/graph-artifact.js', async (importOriginal) => {
@@ -60,6 +62,10 @@ vi.mock('node:fs', async (importOriginal) => {
     readSync: ((...args: never[]) => {
       const [descriptor, , , length] = args as unknown as [number, unknown, unknown, unknown]
       const path = descriptorPaths.get(descriptor)
+      const [, , , , rawPosition] = args as unknown as [number, unknown, unknown, unknown, unknown]
+      if (path !== undefined && typeof length === 'number' && typeof rawPosition === 'number') {
+        control.rawReads.push({ path, length, position: rawPosition })
+      }
       // A classification probe is not a read of the artifact. It is the only
       // read that asks for exactly CLASSIFY_PREFIX_BYTES at position 0, which
       // is the one discriminator that holds when maxBytes is smaller than the
@@ -76,7 +82,7 @@ vi.mock('node:fs', async (importOriginal) => {
   }
 })
 
-const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs')
+const { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = await import('node:fs')
 const { tmpdir } = await import('node:os')
 const { join } = await import('node:path')
 const { KnowledgeGraph } = await import('../../src/contracts/graph.js')
@@ -114,12 +120,37 @@ function reset(): void {
   control.metadataCalls = []
   control.forcedSizes = {}
   control.reads = []
+  control.rawReads = []
 }
 
 const cleanup = (dir: string): void => {
   reset()
   rmSync(join(dir, '..'), { recursive: true, force: true })
 }
+
+/**
+ * The probe discriminator above separates a classification probe from an
+ * artifact read by the exact width it asks for, because size alone cannot: a
+ * bounded read under a small maxBytes asks for fewer bytes than the probe.
+ *
+ * That rule has one blind spot. A bounded read whose limit happens to equal
+ * CLASSIFY_PREFIX_BYTES asks for exactly the probe's width at position 0 and
+ * would be filed as a probe, silently vanishing from control.reads and making
+ * a `not.toContain` assertion pass for the wrong reason. No bound in this file
+ * is 89 today. This makes that a loud failure rather than a silent one if it
+ * ever becomes true.
+ */
+describe('the probe discriminator is unambiguous for this file', () => {
+  it('uses no artifact bound equal to the classification prefix width', () => {
+    const source = readFileSync(new URL(import.meta.url), 'utf8')
+    const bounds = [...source.matchAll(/maxBytes: ([0-9_]+)/g)]
+      .map((match) => Number(match[1]!.replaceAll('_', '')))
+
+    expect(bounds.length).toBeGreaterThan(0)
+    expect(CLASSIFY_PREFIX_BYTES).toBe(89)
+    expect(bounds).not.toContain(CLASSIFY_PREFIX_BYTES)
+  })
+})
 
 describe('discovery safety supplies its ceiling to the artifact reader', () => {
   it('passes MAX_GRAPH_ARTIFACT_BYTES by default', () => {

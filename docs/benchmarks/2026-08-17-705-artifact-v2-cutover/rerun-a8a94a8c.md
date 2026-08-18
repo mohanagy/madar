@@ -86,7 +86,13 @@ with one call to it.
 
 ## Generation, memory and footprint
 
-Four interleaved rounds per arm, medians.
+Four interleaved rounds per arm, medians. Raw wall times across all twelve runs
+span **139.133–151.494 s**; the per-arm medians below are what the ratios use.
+
+Round 4 was slow for every arm — base 150.1 s, B1 151.5 s, #705 148.2 s —
+against a 139–143 s cluster in rounds 1–3. A whole-round host slowdown is what
+interleaving exists to absorb: it moved all three arms together, so the ratios
+are unaffected. It is recorded rather than dropped.
 
 | Arm | Wall | Peak RSS | Canonical | Legacy | Output dir |
 |---|---:|---:|---:|---:|---:|
