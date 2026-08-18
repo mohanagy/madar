@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
@@ -22,7 +22,7 @@ function shellHarnesses(directory: string): string[] {
     if (statSync(path).isDirectory()) {
       found.push(...shellHarnesses(path))
     } else if (entry.endsWith('.sh')) {
-      found.push(path)
+      found.push(path.replaceAll(sep, '/'))
     }
   }
   return found

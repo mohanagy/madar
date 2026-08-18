@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, realpathSync} from 'node:fs'
-import { tmpdir, devNull } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -9,6 +9,16 @@ import { generateGraph } from '../../src/infrastructure/generate.js'
 import { analyzeGraphContextFreshness } from '../../src/runtime/freshness.js'
 import { resolvedLoadPath } from '../../src/runtime/serve.js'
 import { logicalGraphPath, resolveMadarWorkspace } from '../../src/shared/workspace.js'
+
+/**
+ * A path that is never created. Git treats a config file that does not exist
+ * as empty, which is the portable way to neutralize a contributor's globals.
+ *
+ * Not the platform null device: on Windows that is `\\.\nul`, and git refuses
+ * it outright with `unable to access '//./nul': Invalid argument`, so every
+ * git call in this fixture failed there while passing on POSIX.
+ */
+const ABSENT_GIT_CONFIG = join(tmpdir(), `madar-absent-gitconfig-${process.pid}`)
 
 function git(cwd: string, args: string[]): void {
   execFileSync('git', args, {
@@ -20,7 +30,11 @@ function git(cwd: string, args: string[]): void {
     // other globals still apply: commit.gpgsign makes `git commit` fail or
     // block on a passphrase, and a global core.hooksPath runs their hooks in
     // this fixture. Either failure reads as a bug in the pack path.
-    env: { ...process.env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_SYSTEM: devNull },
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: ABSENT_GIT_CONFIG,
+      GIT_CONFIG_SYSTEM: ABSENT_GIT_CONFIG,
+    },
   })
 }
 
