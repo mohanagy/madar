@@ -1,13 +1,17 @@
 # Maintainer performance decisions — #705 default-load exception
 
-Three decisions, in order. Each is scoped to **one production head** and is
-never extended forward. All are retained; none is rewritten. An earlier
+Three decisions, in order. **The production head has since moved to
+`02a111aa` and no decision has been made for it** — see
+[`rerun-02a111aa.md`](./rerun-02a111aa.md), which reports 2.624×–2.632×.
+
+Each decision is scoped to **one production head** and is never extended
+forward. All are retained; none is rewritten. An earlier
 decision is superseded by a later production head, which is a statement about
 scope — not that the earlier measurement or decision was wrong.
 
 | Decision | Production head | Accepted band | Status |
 |---|---|---|---|
-| 3 (in force) | **`a8a94a8c396d2283dcae27e806eb707b24f80d54`** | **2.640×–2.678×** | in force |
+| 3 | `a8a94a8c396d2283dcae27e806eb707b24f80d54` | 2.640×–2.678× | superseded by production head `02a111aa`; no decision yet for that head |
 | 2 | `78e7acd4b3724adcc78fe034d94c33526054ae8a` | 2.635×–2.732× | superseded by production head `a8a94a8c` |
 | 1 | `1fcc8d88fec85b30a22d1729be6d7800cad23bb7` | 2.64×–2.71× | superseded by production head `78e7acd4` |
 

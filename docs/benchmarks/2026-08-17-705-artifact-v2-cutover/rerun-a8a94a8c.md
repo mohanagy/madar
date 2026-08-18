@@ -1,5 +1,11 @@
 # Performance rerun at production head `a8a94a8c`
 
+> **Superseded.** A review finding proved to be a new blocking surface rather
+> than an inherited one, and fixing it moved the production head. The
+> measurement in force is [`rerun-02a111aa.md`](./rerun-02a111aa.md). The
+> acceptance recorded here remains valid for the head it names and does not
+> extend forward. This receipt is retained exactly as measured.
+
 The final review round asked the artifact parser to delegate the structural
 rule it shares with the workspace classifier. That check runs inside
 `parseGraphArtifactV2`, which is on every load, so `86bd5b31` is superseded and
