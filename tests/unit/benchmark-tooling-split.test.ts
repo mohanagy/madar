@@ -214,6 +214,24 @@ describe('pack metrics never turn a missing field into a zero', () => {
     })
   })
 
+  it.each([
+    ['a negative count', -5],
+    ['a fractional count', 12.5],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['an unsafe integer', Number.MAX_SAFE_INTEGER + 2],
+  ])('refuses %s rather than recording it', (_label, tokenCount) => {
+    // None of these can represent a serialized token count, and writing one
+    // into a benchmark metric produces a number no reader can act on.
+    const { status, output } = metrics({
+      serialized_budget: { token_count: tokenCount },
+      pack: { matched_nodes: [{ label: 'debounce()' }] },
+    })
+
+    expect(status).toBe(1)
+    expect(output).toMatch(/refusing to record/)
+  })
+
   it('fails on the response shape that used to record zero tokens', () => {
     // The real shape that caused it: pack.token_count absent while the prompt
     // packed a full context. `?? 0` filed that as zero tokens.
@@ -222,6 +240,6 @@ describe('pack metrics never turn a missing field into a zero', () => {
     })
 
     expect(status).toBe(1)
-    expect(output).toMatch(/refusing to record a zero/)
+    expect(output).toMatch(/refusing to record/)
   })
 })

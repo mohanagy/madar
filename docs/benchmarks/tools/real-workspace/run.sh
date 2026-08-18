@@ -110,10 +110,13 @@ for ((i = 0; i < prompt_count; i++)); do
   pack_nodes=$(PACK_METRICS="$pack_metrics" node -e "process.stdout.write(String(JSON.parse(process.env.PACK_METRICS).matched_node_count))")
   top_labels=$(PACK_METRICS="$pack_metrics" node -e "process.stdout.write(JSON.stringify(JSON.parse(process.env.PACK_METRICS).top_labels))")
   prompt_text_json=$(PROMPT_TEXT="$prompt_text" node -e "process.stdout.write(JSON.stringify(process.env.PROMPT_TEXT))")
+  # The ID comes from a caller-supplied prompts file and can carry quotes,
+  # backslashes or newlines. Interpolating it raw produced invalid metrics.json.
+  prompt_id_json=$(PROMPT_ID="$prompt_id" node -e "process.stdout.write(JSON.stringify(process.env.PROMPT_ID))")
 
   if [[ $first -eq 0 ]]; then prompt_results+=","; fi
   first=0
-  prompt_results+="{\"id\":\"$prompt_id\",\"text\":$prompt_text_json,\"serialized_token_count\":$pack_tokens,\"matched_node_count\":$pack_nodes,\"top_labels\":$top_labels}"
+  prompt_results+="{\"id\":$prompt_id_json,\"text\":$prompt_text_json,\"serialized_token_count\":$pack_tokens,\"matched_node_count\":$pack_nodes,\"top_labels\":$top_labels}"
   echo "  [$prompt_id] serialized_tokens=$pack_tokens nodes=$pack_nodes"
 done
 prompt_results+="]"

@@ -127,7 +127,7 @@ workload did not.
 | B1 | 1368, 1493, 1212 | 1368 | 1.344× |
 | **#705** | 1135, 1135, 1072 | **1135** | **1.115×** |
 
-#705 is 0.830× of B1 — consistent with no longer writing the v1 mirror.
+`#705` is 0.830× of B1 — consistent with no longer writing the v1 mirror.
 
 ## Generation wall — passed
 

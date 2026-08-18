@@ -16,6 +16,12 @@ import { loadavg } from 'node:os'
 const SAMPLER = process.env.LOAD_SAMPLER
 const SESSION = process.env.LOAD_SESSION ?? '1'
 const SAMPLES = Number(process.env.LOAD_SAMPLES ?? '9')
+// See the default-path driver: a non-positive or fractional count silently
+// produces a report that does not match its own sample list.
+if (!Number.isSafeInteger(SAMPLES) || SAMPLES < 1) {
+  console.error(`LOAD_SAMPLES must be a positive safe integer, received ${JSON.stringify(process.env.LOAD_SAMPLES)}`)
+  process.exit(2)
+}
 
 const ARMS = JSON.parse(process.env.LOAD_ARMS ?? '[]')
 if (!SAMPLER || ARMS.length === 0) {

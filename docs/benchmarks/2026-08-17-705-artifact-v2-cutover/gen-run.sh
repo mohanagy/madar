@@ -2,11 +2,19 @@
 # One generation run for one arm, with process-tree peak RSS and wall time.
 set -euo pipefail
 S="$1"; ARM="$2"; IDX="$3"
+# Every arm's CLI is supplied, never inferred from whatever dist happens to be
+# on this machine. A hard-coded workstation path made the head arm runnable in
+# exactly one place and left the receipt unreplayable.
+: "${ARM_BASE_CLI:?set ARM_BASE_CLI to the base binary's dist/src/cli/bin.js}"
+: "${ARM_B1_CLI:?set ARM_B1_CLI to the B1 binary's dist/src/cli/bin.js}"
+: "${ARM_HEAD_CLI:?set ARM_HEAD_CLI to the candidate binary's dist/src/cli/bin.js}"
 case "$ARM" in
-  base) CLI="$S/base-ee2115a2/dist/src/cli/bin.js" ;;
-  b1)   CLI="$S/b1-5bfdb869/dist/src/cli/bin.js" ;;
-  head) CLI="/Users/mohammednaji/Desktop/projects/works/madar-705/dist/src/cli/bin.js" ;;
+  base) CLI="$ARM_BASE_CLI" ;;
+  b1)   CLI="$ARM_B1_CLI" ;;
+  head) CLI="$ARM_HEAD_CLI" ;;
+  *) echo "unknown arm: $ARM" >&2; exit 2 ;;
 esac
+if [ ! -f "$CLI" ]; then echo "no CLI for arm $ARM at $CLI" >&2; exit 2; fi
 WS="$S/gen-$ARM-$IDX"
 rm -rf "$WS"; cp -R "$S/repo-fixture" "$WS" 2>/dev/null
 rm -rf "$WS/.git" "$WS/out"

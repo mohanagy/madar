@@ -5,6 +5,13 @@ import { loadavg } from 'node:os'
 
 const SAMPLER = process.env.LOAD_SAMPLER
 const SAMPLES = Number(process.env.LOAD_SAMPLES ?? '9')
+// 0, negatives, fractions and NaN each produce an empty or inconsistent report
+// and then fail on runs[0], which reads as a harness crash rather than bad
+// input. Reject them before any sampling happens.
+if (!Number.isSafeInteger(SAMPLES) || SAMPLES < 1) {
+  console.error(`LOAD_SAMPLES must be a positive safe integer, received ${JSON.stringify(process.env.LOAD_SAMPLES)}`)
+  process.exit(2)
+}
 const SESSION = process.env.LOAD_SESSION ?? '1'
 const ARMS = JSON.parse(process.env.LOAD_ARMS ?? '[]')
 
@@ -24,7 +31,7 @@ for (let i = 0; i < SAMPLES; i += 1) {
   for (const arm of ordered) {
     const m = sample(arm)
     results[arm.name].push(m)
-    process.stderr.write(`s${SESSION} ${arm.name} #${i + 1}: ${m.elapsed_ms}ms -> ${m.selected_physical_path.split('/').pop()}\n`)
+    process.stderr.write(`s${SESSION} ${arm.name} #${i + 1}: ${m.elapsed_ms}ms -> ${m.selected_logical_path ?? m.selected_workspace_relative_path}\n`)
   }
 }
 
@@ -36,7 +43,7 @@ for (const [name, runs] of Object.entries(results)) {
     median_ms: Number(median(t).toFixed(2)), min_ms: Math.min(...t), max_ms: Math.max(...t),
     spread_pct: Number((((Math.max(...t)-Math.min(...t))/Math.min(...t))*100).toFixed(1)),
     samples_ms: t,
-    selected_physical_path: runs[0].selected_physical_path,
+    selected_workspace_relative_path: runs[0].selected_workspace_relative_path,
     selected_logical_path: runs[0].selected_logical_path,
     artifact_bytes: runs[0].artifact_bytes,
     node_count: runs[0].node_count, relationship_count: runs[0].relationship_count,

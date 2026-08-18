@@ -87,7 +87,8 @@ Diagnostics also become more useful at higher levels on this fixture. For exampl
 
 ```bash
 # from repo root
-bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
+MADAR_BENCH_MODE=historical \
+  bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
 ```
 
 The runner now produces:
@@ -104,7 +105,8 @@ If you have a local backend-only or monorepo workspace, you can reuse the same r
 ```bash
 MADAR_BENCH_FIXTURE=/absolute/path/to/repo \
 MADAR_BENCH_PROMPTS=docs/benchmarks/2026-05-11-spi-vs-legacy/prompts.json \
-bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
+MADAR_BENCH_MODE=historical \
+  bash docs/benchmarks/2026-05-11-spi-vs-legacy/run.sh
 ```
 
 For a fully manual flow:
@@ -127,7 +129,8 @@ You can benchmark two local workspaces side by side without committing private p
 ```bash
 MADAR_BENCH_BACKEND=/absolute/path/to/backend \
 MADAR_BENCH_MONOREPO=/absolute/path/to/monorepo \
-bash docs/benchmarks/2026-05-11-spi-vs-legacy/run-real-workspace.sh
+MADAR_BENCH_MODE=historical \
+  bash docs/benchmarks/2026-05-11-spi-vs-legacy/run-real-workspace.sh
 ```
 
 Defaults:
@@ -154,7 +157,9 @@ The aggregate summary keeps objective metrics separate from qualitative notes an
 
 - `fixture/` — synthetic TypeScript workspace covering Express, Hono, tRPC, Prisma, and utility code
 - `prompts.json` — benchmark prompts
-- `run.sh` — runner (`MADAR_BENCH_FIXTURE` / `MADAR_BENCH_PROMPTS` overrides supported)
+- `run.sh` — runner (`MADAR_BENCH_FIXTURE` / `MADAR_BENCH_PROMPTS` overrides supported; requires
+  `MADAR_BENCH_MODE=historical` and a v0.32.1-era binary, since a current binary
+  publishes v2 and this schema cannot hold that measurement)
 - `probe.mjs` — strategy comparison + retrieval-level sweep
 - `summarize.mjs` — aggregate summary builder
 - `results/<timestamp>/` — measured run artifacts

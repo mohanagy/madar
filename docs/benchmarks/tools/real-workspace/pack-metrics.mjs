@@ -27,8 +27,14 @@ process.stdin.on('end', () => {
   }
 
   const tokenCount = response?.serialized_budget?.token_count
-  if (typeof tokenCount !== 'number' || !Number.isFinite(tokenCount)) {
-    console.error('pack response has no serialized_budget.token_count; refusing to record a zero')
+  // A token count is a whole number of tokens. Negative and fractional values
+  // cannot represent one, and accepting them would write a metric no reader
+  // could act on.
+  if (!Number.isSafeInteger(tokenCount) || tokenCount < 0) {
+    console.error(
+      `pack response has no usable serialized_budget.token_count (received ${JSON.stringify(tokenCount)}); `
+      + 'refusing to record it',
+    )
     process.exit(1)
   }
 
