@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -134,6 +134,33 @@ describe('cutover generation', () => {
     expect(existsSync(join(outputDir, 'graph.madar'))).toBe(true)
     expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
     expect(existsSync(join(outputDir, 'graph.v1.json'))).toBe(false)
+  })
+
+  it('rebuilds a workspace whose canonical artifact was deleted', () => {
+    const { root, outputDir } = generated()
+    // moved_without_canonical: the tombstone says the graph moved, and the
+    // artifact it points at is gone. Full generation is the documented repair,
+    // and it must rebuild from source rather than reach for the only file
+    // still sitting at the legacy path -- which is the tombstone itself.
+    rmSync(join(outputDir, 'graph.madar'))
+
+    expect(() => generateGraph(root, { noHtml: true })).not.toThrow()
+    expect(existsSync(join(outputDir, 'graph.madar'))).toBe(true)
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
+    expect(loadGraph(join(outputDir, 'graph.madar')).numberOfNodes()).toBeGreaterThan(0)
+  })
+
+  it('re-extracts instead of reusing a tombstone when --update finds no canonical', () => {
+    const { root, outputDir } = generated()
+    rmSync(join(outputDir, 'graph.madar'))
+
+    // The reuse path is where naming the tombstone actually bites: --update
+    // asked loadGraph for the graph it was going to extend, and the only file
+    // left at the legacy path is a marker pointing at the artifact that was
+    // just deleted. There is no graph to reuse, so this run must re-extract.
+    expect(() => generateGraph(root, { noHtml: true, update: true })).not.toThrow()
+    expect(loadGraph(join(outputDir, 'graph.madar')).numberOfNodes()).toBeGreaterThan(0)
+    expect(readFileSync(join(outputDir, 'graph.json'), 'utf8')).toBe(GRAPH_ARTIFACT_V2_TOMBSTONE)
   })
 })
 

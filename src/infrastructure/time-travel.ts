@@ -208,18 +208,17 @@ function persistSnapshot(rootDir: string, ref: string, commitSha: string, genera
     const sourceDir = dirname(generated.graphPath)
     const sidecarSource = join(sourceDir, GRAPH_LOCAL_SIDECAR_BASENAME)
     const sidecarDestination = join(tempDir, GRAPH_LOCAL_SIDECAR_BASENAME)
-    // Remove first. tempDir survives an interrupted run, so copying only when
-    // the source exists would let a stale file from a previous attempt ride
-    // into this snapshot. The report below already clears itself the same way.
-    rmSync(sidecarDestination, { force: true })
+    // No clearing step, because there is nothing to clear: snapshotTempDir
+    // names a directory by pid, timestamp and a random suffix and mkdirSync
+    // above creates it, so an interrupted earlier run cannot have left a file
+    // inside this one. The staging directory holds exactly what is copied into
+    // it here, which is how a snapshot stays free of the ambiguous
+    // two-artifact shape -- no v1 mirror is ever written, rather than written
+    // and removed.
     if (existsSync(sidecarSource)) copyFileSync(sidecarSource, sidecarDestination)
-    // No v1 mirror: a snapshot must never be the ambiguous two-artifact shape.
-    rmSync(join(tempDir, 'graph.json'), { force: true })
 
     if (generated.reportPath && existsSync(generated.reportPath)) {
       copyFileSync(generated.reportPath, tempReportPath)
-    } else {
-      rmSync(tempReportPath, { force: true })
     }
 
     writeFileSync(tempMetadataPath, JSON.stringify({

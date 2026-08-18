@@ -432,10 +432,8 @@ function missingCodeExtractionError(totalFiles: number, discoverySafety?: Discov
 function publishGraphArtifacts(
   graph: KnowledgeGraph,
   workspaceRoot: string,
-  outputDir: string,
   communities: Communities,
   communityLabels: Record<number, string>,
-  semanticAnomalies: SemanticAnomaly[],
 ): void {
   const bytes = serializeGraphArtifactV2({
     graph,
@@ -475,7 +473,6 @@ function publishGraphArtifacts(
   activateGraphArtifactV2(workspaceRoot, bytes, {
     ...(rootPath.length > 0 ? { sidecarRootPath: rootPath } : {}),
   })
-  void outputDir
 }
 
 /** Node id to community id, matching what toJson injects into the v1 payload. */
@@ -541,10 +538,17 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   // command instead of repairing the workspace -- and the loaded graph was
   // discarded moments later anyway, because the policy comparison already
   // treated it as unusable.
-  const existingGraphPath = workspaceGraphState === 'mixed_v2_and_live_v1'
-    || workspaceGraphState === 'invalid_current_v2'
-    ? null
-    : existsSync(graphPath) ? graphPath : legacyGraphPath
+  //
+  // Selected from the classified state, so it names an artifact that holds a
+  // graph or nothing at all. Falling back to the legacy path whenever the
+  // canonical was absent named the tombstone in a moved_without_canonical
+  // workspace -- the state a user reaches by deleting out/graph.madar, where
+  // full generation is the documented repair -- and the reuse paths then read
+  // that tombstone as if it were a graph. Non-null now implies the file
+  // exists, because classification found a readable artifact there.
+  const existingGraphPath = workspaceGraphState === 'current_v2'
+    ? graphPath
+    : workspaceGraphState === 'legacy_v1_only' ? legacyGraphPath : null
   const reportPath = join(resolvedOutputDir, 'GRAPH_REPORT.md')
   const htmlPath = join(resolvedOutputDir, 'graph.html')
   const wikiPath = options.wiki ? join(resolvedOutputDir, 'wiki') : null
@@ -558,7 +562,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const progress = options.onProgress
 
   progress?.({ step: 'detect', message: 'Scanning files...' })
-  const graphGenerationPolicy = existingGraphPath !== null && existsSync(existingGraphPath) ? readGraphGenerationPolicy(existingGraphPath as string) : null
+  const graphGenerationPolicy = existingGraphPath === null ? null : readGraphGenerationPolicy(existingGraphPath)
   if (options.clusterOnly && !graphGenerationPolicy) {
     throw new Error(
       '--cluster-only requires valid generation-policy metadata. Run `madar generate . --update` to migrate and re-extract the graph first.',
@@ -603,7 +607,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const manifestGenerationPolicy = existsSync(manifestPath) ? loadManifestMetadata(manifestPath).generation_policy ?? null : null
   const storedPolicyMatches = graphGenerationPolicy?.fingerprint === generationPolicy.fingerprint
     && manifestGenerationPolicy?.fingerprint === generationPolicy.fingerprint
-  const generationPolicyMismatch = options.update === true && existingGraphPath !== null && existsSync(existingGraphPath) && !storedPolicyMatches
+  const generationPolicyMismatch = options.update === true && existingGraphPath !== null && !storedPolicyMatches
   const detectionOptions = detectOptions(corpusOptions, gitVisibleFiles)
   const detected = options.update && !generationPolicyMismatch
     ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions)
@@ -723,8 +727,8 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
 
-  const loadedExistingGraph = options.clusterOnly || (options.update && existingGraphPath !== null && existsSync(existingGraphPath)) ? loadGraph(existingGraphPath as string) : null
-  const existingGraphExtractorVersion = options.update && existingGraphPath !== null && existsSync(existingGraphPath) ? loadGraphExtractorVersion(existingGraphPath as string) : null
+  const loadedExistingGraph = options.clusterOnly || (options.update === true && existingGraphPath !== null) ? loadGraph(existingGraphPath as string) : null
+  const existingGraphExtractorVersion = options.update === true && existingGraphPath !== null ? loadGraphExtractorVersion(existingGraphPath) : null
   const directed = options.directed !== false
   const generationPolicyToPublish = generationPolicy
   const upgradingLegacyDirection = loadedExistingGraph?.isDirected() === false && directed
@@ -1054,7 +1058,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   progress?.({ step: 'export', message: 'Writing outputs...' })
   writeTextFileAtomically(reportPath, `${report}\n`)
-  publishGraphArtifacts(graph, resolvedRootPath, resolvedOutputDir, communities, communityLabels, semanticAnomalyList)
+  publishGraphArtifacts(graph, resolvedRootPath, communities, communityLabels)
   if (!options.noHtml) {
     const htmlResult = toHtml(graph, communities, htmlPath, communityLabels, {
       mode: options.htmlMode ?? 'auto',
