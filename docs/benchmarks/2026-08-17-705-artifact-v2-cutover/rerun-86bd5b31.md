@@ -3,6 +3,15 @@
 > **Superseded.** The final review round moved the parse path. The measurement
 > in force is [`rerun-a8a94a8c.md`](./rerun-a8a94a8c.md). This receipt is
 > retained exactly as measured.
+>
+> **Two claims below were corrected later and are left in place as written.**
+> This receipt says the loader "is not the cause" and that a larger artifact
+> read by an equivalent loader "is the whole of it". The current receipt states
+> the attribution more narrowly: the larger canonical artifact is a major
+> contributor, default-path selection and workspace classification also
+> contribute, and the controlled same-artifact result shows the loader itself
+> within approximately 1% of B1. Nothing here is edited — the wording is the
+> evidence of what was concluded at the time.
 
 The CodeRabbit re-review raised two valid findings on the previous remediation:
 artifact selection accepted any JSON body after the magic header, and artifact

@@ -4,6 +4,15 @@
 > was measured. The measurement in force is
 > [`rerun-86bd5b31.md`](./rerun-86bd5b31.md). This receipt is retained exactly
 > as measured.
+>
+> **Two claims below were corrected later and are left in place as written.**
+> This receipt says the loader "is not the cause" and that a larger artifact
+> read by an equivalent loader "is the whole of it". The current receipt states
+> the attribution more narrowly: the larger canonical artifact is a major
+> contributor, default-path selection and workspace classification also
+> contribute, and the controlled same-artifact result shows the loader itself
+> within approximately 1% of B1. Nothing here is edited — the wording is the
+> evidence of what was concluded at the time.
 
 The accepted exception was scoped to production head
 `78e7acd4b3724adcc78fe034d94c33526054ae8a` and to that head only. Remediating

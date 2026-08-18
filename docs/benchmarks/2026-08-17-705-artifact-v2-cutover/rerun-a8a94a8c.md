@@ -5,8 +5,10 @@ rule it shares with the workspace classifier. That check runs inside
 `parseGraphArtifactV2`, which is on every load, so `86bd5b31` is superseded and
 the receipt was measured again.
 
-**This is the measurement in force. The default-path load ratio is above 2.00×
-and requires an explicit maintainer decision.**
+**This is the measurement in force, and the default-path band has been
+ACCEPTED as an explicit maintainer exception to the 2.00× threshold for this
+production head only — see [`maintainer-decision.md`](./maintainer-decision.md),
+decision 3.**
 
 ## Identities
 
@@ -28,7 +30,7 @@ and requires an explicit maintainer decision.**
 | Generation wall | **1.007×** | 2.00× | **passed** |
 | Peak RSS | **1.219×** | 2.00× | **passed** |
 | Canonical artifact | **1.799×** | 2.00× | **passed** |
-| **Load latency (default path)** | **2.640×–2.678×** | 2.00× | **exceeds — decision required** |
+| **Load latency (default path)** | **2.640×–2.678×** | 2.00× | **accepted exception** |
 | Output directory | 1.546× | — | reported |
 
 ## Load latency
@@ -58,10 +60,17 @@ comparison. The two runs together suggest the earlier 1.023× upper end was host
 noise rather than a loader difference, but both are recorded as measured and
 neither is discarded in favour of the flattering one.
 
-A loader within about 1% cannot produce a 2.64× default-path ratio. That
-difference is which artifact each binary reaches for: B1's default read the
-26 MB v1 mirror, #705's default reads the 47 MB canonical artifact, because the
-cutover removed the mirror.
+A loader within about 1% cannot itself produce a 2.64× default-path ratio, so
+the difference lies in what the default path does around the load rather than
+in the load.
+
+The larger canonical artifact is a major contributor: B1's default read the
+26 MB v1 mirror and #705's default reads the 47 MB canonical artifact, because
+the cutover removed the mirror. Default-path artifact selection and workspace
+classification also contribute — the default path classifies the workspace
+before it reads anything, which the explicit path does not. This receipt does
+not apportion the remainder between those two, and the attribution is stated no
+more precisely than the measurements support.
 
 ### What each remediation round cost
 
@@ -120,5 +129,14 @@ Relationship counts differ by arm — 17,835 for base against 17,940 for B1 and
 ## Gate
 
 Generation wall, peak RSS and canonical artifact size all pass. Default-path
-load latency is **2.640×–2.678×**, above the 2.00× threshold, so this requires
-an **explicit maintainer decision**. No earlier acceptance carries forward.
+load latency is **2.640×–2.678×**, above the 2.00× threshold, and has been
+**accepted as an explicit maintainer exception bound to production head
+`a8a94a8c` only** (decision 3 in
+[`maintainer-decision.md`](./maintainer-decision.md)). No earlier acceptance
+carried forward into it, and it does not extend to any later head.
+
+The larger canonical artifact is a major contributor to the gap. Default-path
+artifact selection and workspace classification also contribute. The controlled
+same-artifact result shows the #705 loader itself is within approximately 1% of
+B1 on identical bytes. The remaining parse duplication — 2 full parses on a
+canonical load, 3 on a tombstone load, 2 for metadata — is deferred to #706.

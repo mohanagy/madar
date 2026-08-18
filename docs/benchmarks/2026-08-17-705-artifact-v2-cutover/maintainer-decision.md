@@ -1,16 +1,108 @@
 # Maintainer performance decisions — #705 default-load exception
 
-Two decisions, in order. The second supersedes the first **for its own head
-only** and does not extend forward. Both are retained; neither is rewritten.
+Three decisions, in order. Each is scoped to **one production head** and is
+never extended forward. All are retained; none is rewritten. An earlier
+decision is superseded by a later production head, which is a statement about
+scope — not that the earlier measurement or decision was wrong.
 
 | Decision | Production head | Accepted band | Status |
 |---|---|---|---|
-| 2 (current) | **`78e7acd4b3724adcc78fe034d94c33526054ae8a`** | **2.635×–2.732×** | in force |
-| 1 | `1fcc8d88fec85b30a22d1729be6d7800cad23bb7` | 2.64×–2.71× | superseded by decision 2 |
+| 3 (in force) | **`a8a94a8c396d2283dcae27e806eb707b24f80d54`** | **2.640×–2.678×** | in force |
+| 2 | `78e7acd4b3724adcc78fe034d94c33526054ae8a` | 2.635×–2.732× | superseded by production head `a8a94a8c` |
+| 1 | `1fcc8d88fec85b30a22d1729be6d7800cad23bb7` | 2.64×–2.71× | superseded by production head `78e7acd4` |
 
 ---
 
-# Decision 2 — accepted for production head `78e7acd4`
+# Decision 3 — accepted for production head `a8a94a8c`
+
+**The 2.640×–2.678× default-path load-latency band is accepted for production
+head `a8a94a8c396d2283dcae27e806eb707b24f80d54` only.**
+
+An explicit maintainer exception to the 2.00× review threshold, narrowly
+scoped. Recorded after three rounds of CodeRabbit remediation moved the
+production head three times, each onto the load path, voiding every earlier
+acceptance.
+
+| Item | Value |
+|---|---|
+| **Accepted production head** | **`a8a94a8c396d2283dcae27e806eb707b24f80d54`** |
+| Accepted measured band | **2.640×–2.678×** |
+| Receipt | [`rerun-a8a94a8c.md`](./rerun-a8a94a8c.md) |
+| Scope | the exact pinned corpus and recorded toolchain in that receipt |
+
+## Supporting measurements
+
+| Metric | Result | Verdict |
+|---|---:|---|
+| Generation wall | 1.007× | pass |
+| Peak RSS | 1.219× | pass |
+| Canonical v2 artifact vs base v1 artifact | 1.799× | pass |
+| Output directory | 1.546× of base | reported |
+| **Default-path load** | **2.640×–2.678×** | **accepted exception** |
+| Same byte-identical artifact, #705 loader vs B1 loader | 1.009×–1.010× | control |
+
+## Why it is accepted
+
+- The band is stable across multiple production heads and reruns.
+- The same-artifact loader comparison shows no material #705 loader regression
+  relative to B1.
+- Every other formal performance gate passes.
+- Canonical v2 is the final authoritative default.
+- Restoring the live v1 mirror as the default would reverse the cutover.
+- #706 already owns future artifact-load optimization.
+
+## What causes the gap
+
+The larger canonical artifact is a major contributor. Default-path artifact
+selection and workspace classification also contribute. The controlled
+same-artifact result shows the #705 loader itself is within approximately 1% of
+B1 on identical bytes.
+
+This is deliberately not stated as "artifact size alone". An earlier draft of
+these receipts made that stronger claim from a comparison of two *different*
+artifacts; the controlled measurement replaced it, and the attribution is
+correspondingly narrower.
+
+## What this acceptance does not establish
+
+- Load optimization is complete.
+- Every repository size has the same acceptable ratio.
+- Large-repository scalability is proven.
+- Repeated full-artifact parses are acceptable forever.
+- Corruption validation may be weakened.
+- The unexplained historical base-artifact-size discrepancy is resolved.
+
+## Deferred to #706
+
+The measured remaining parse duplication, which this PR does not address:
+
+| Path | Full JSON parses |
+|---|---:|
+| Canonical load | 2 |
+| Tombstone load | 3 |
+| Metadata | 2 |
+
+## Contract this acceptance is bound to
+
+Canonical `graph.madar` default; bounded reads; full v2 structural validation;
+fail-closed workspace-state classification; explicit/default intent preserved;
+no automatic legacy-backup fallback.
+
+## Invalidation
+
+Any later production change touching artifact selection, default/explicit
+intent, workspace-state classification, `loadGraph`, stdio cache selection,
+metadata resolution, freshness, artifact parsing or hydration, v2 structural
+validation, bounded reading, generation or publication, activation, time
+travel, federate, HTTP/MCP artifact serving, or canonical serialization
+invalidates this acceptance and requires a rerun and a fresh decision.
+
+Documentation, PR-body, issue-comment and receipt-only changes do not move the
+production head and do not invalidate it.
+
+---
+
+# Decision 2 — accepted for production head `78e7acd4` (superseded)
 
 **The 2.635×–2.732× default-path load-latency band is accepted for production
 head `78e7acd4b3724adcc78fe034d94c33526054ae8a` only.**
