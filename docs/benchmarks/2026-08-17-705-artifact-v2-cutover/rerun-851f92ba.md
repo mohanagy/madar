@@ -133,7 +133,7 @@ concurrently — a detached launch survived a tool-reported exit and a second wa
 started — so both generated graphs at once into one file. Walls came out at
 roughly double (base 299.5 s against 140.1 s measured alone), load averages
 reached 4.7, and the arms ended with uneven sample counts. Those records are
-retained as `rr-gen.CONTAMINATED.jsonl` and no number from them is used
+retained as `rerun-851f92ba-generation.discarded.jsonl` and no number from them is used
 anywhere. The sweep script now takes an exclusive lock and refuses to start
 while another holds it.
 

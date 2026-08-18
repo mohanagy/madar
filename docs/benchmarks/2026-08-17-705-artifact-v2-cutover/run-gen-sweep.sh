@@ -33,7 +33,14 @@ rm -f "$SP/rr-gen.done"
 : > "$SP/rr-gen.jsonl"
 for ((i = 1; i <= ROUNDS; i += 1)); do
   for arm in base b1 head; do
-    bash "$HERE/gen-run.sh" "$SP" "$arm" "$i" >> "$SP/rr-gen.jsonl"
+    # Stop on the first failed arm. Without this the loop carried on and the
+    # completion marker below was written for a sweep with uneven arm samples,
+    # which is exactly the shape a reader cannot distinguish from a good one --
+    # every individual record still looks plausible.
+    if ! bash "$HERE/gen-run.sh" "$SP" "$arm" "$i" >> "$SP/rr-gen.jsonl"; then
+      echo "arm $arm failed in round $i; sweep is incomplete and unusable" >&2
+      exit 1
+    fi
     echo "round $i arm $arm done" >&2
   done
 done

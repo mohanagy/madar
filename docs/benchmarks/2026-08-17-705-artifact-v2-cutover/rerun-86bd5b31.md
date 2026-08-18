@@ -47,12 +47,34 @@ with the arm order reversed in the second.
 | 1 | 9 | 321.00 ms | 710.89 ms | 850.80 ms | **2.650×** | 2.215× |
 | 2 | 11 | 324.59 ms | 699.42 ms | 864.46 ms | **2.663×** | 2.155× |
 
-### Explicit canonical path — the same artifact in both binaries
+### Explicit canonical path — each binary on its own artifact
 
-| Session | n | base | B1 | #705 | **#705/B1** |
+| Session | n | base | B1 | #705 | #705/B1 |
 |---|---:|---:|---:|---:|---:|
-| 1 | 9 | 296.28 ms | 715.50 ms | 722.24 ms | **1.009×** |
-| 2 | 11 | 291.62 ms | 698.07 ms | 699.47 ms | **1.002×** |
+| 1 | 9 | 296.28 ms | 715.50 ms | 722.24 ms | 1.009× |
+| 2 | 11 | 291.62 ms | 698.07 ms | 699.47 ms | 1.002× |
+
+**This is not same-artifact evidence, and earlier receipts described it as if it
+were.** Each arm reads the artifact its own binary produced: 46,868,382 bytes
+for B1 against 47,030,676 for #705, with different digests. The two are 0.35%
+apart, which is close enough to be suggestive and not close enough to support a
+causal claim about the loader.
+
+### Same artifact, both binaries — the controlled comparison
+
+Both loaders were pointed at one byte-identical file, the artifact #705
+produced, SHA-256 `d25d898e303da785f8417c9a…`, 47,030,676 bytes. The driver
+asserts both arms report the same byte count before reporting a ratio.
+
+| Session | n | B1 | #705 | **#705/B1** |
+|---|---:|---:|---:|---:|
+| 1 | 9 | 686.90 ms | 702.38 ms | **1.023×** |
+| 2 | 11 | 702.64 ms | 708.44 ms | **1.008×** |
+
+**#705's loader is 1.008×–1.023× of B1 on identical input** — up to 2.3%
+slower, not the "within 1%" the uncontrolled comparison suggested. That the
+B1 binary reads a #705-produced artifact at all, and vice versa, is itself
+recorded: both directions were checked before this measurement was designed.
 
 ### What the two remediations cost
 
@@ -61,18 +83,20 @@ Nothing measurable, and the reason is structural rather than lucky.
 | Measurement | `851f92ba` | `86bd5b31` |
 |---|---:|---:|
 | Default load vs base | 2.647×–2.666× | 2.650×–2.663× |
-| Explicit canonical vs B1 | 1.007×–1.008× | 1.002×–1.009× |
+| Explicit canonical vs B1 (own artifacts) | 1.007×–1.008× | 1.002×–1.009× |
+| Same artifact, both binaries | not measured | 1.008×–1.023× |
 
 Structural validation inspects an object the classifier had already parsed, so
 it adds no read and no parse. The bounded read performs the same single
 allocation and the same single read `readFileSync` did; it sizes from the
 descriptor it reads from rather than from a separate path lookup.
 
-The explicit-canonical figure continues to locate the cost. Handed the same
-artifact, #705 is within 1% of B1. The default-path difference is which
-artifact each binary reaches for: B1's default read the 26 MB v1 mirror, #705's
-default reads the 47 MB canonical artifact, because the cutover removed the
-mirror.
+The controlled comparison locates the cost. On identical input the loader
+accounts for at most 2.3%, which cannot produce a 2.65× default-path ratio. The
+default-path difference is which artifact each binary reaches for: B1's default
+read the 26 MB v1 mirror, #705's default reads the 47 MB canonical artifact,
+because the cutover removed the mirror. A 1.80× larger artifact read by a
+loader that is within a few percent is the whole of it.
 
 ## Generation, memory and footprint
 
