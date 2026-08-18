@@ -1,3 +1,4 @@
+import { graphPathForCommand, graphPathIntentFor } from '../shared/workspace.js'
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -257,7 +258,15 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
   const output = defaultLogger(options.logger)
   const host = options.host ?? '127.0.0.1'
   const port = parsePort(options.port)
-  const graphPath = validateGraphPath(options.graphPath ?? `out/${CANONICAL_ARTIFACT_BASENAME}`)
+  // Intent survives the server boundary. Substituting the canonical default for
+  // an omitted option and handing that to validateGraphPath marked every start
+  // explicit, so a server launched with no --graph in an ambiguous workspace
+  // loaded the canonical artifact instead of failing closed like every other
+  // default load.
+  const graphPath = validateGraphPath(graphPathForCommand({
+    graphPath: options.graphPath ?? `out/${CANONICAL_ARTIFACT_BASENAME}`,
+    graphPathIntent: graphPathIntentFor(options.graphPath),
+  }))
   const outputDir = graphOutputDirectory(graphPath)
   const graph = createGraphLoader(graphPath)
   const rateLimitState = new Map<string, { count: number; resetAt: number }>()
@@ -519,7 +528,15 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
 
 export async function serveGraph(options: ServeGraphOptions = {}): Promise<void> {
   const output = defaultLogger(options.logger)
-  const graphPath = validateGraphPath(options.graphPath ?? `out/${CANONICAL_ARTIFACT_BASENAME}`)
+  // Intent survives the server boundary. Substituting the canonical default for
+  // an omitted option and handing that to validateGraphPath marked every start
+  // explicit, so a server launched with no --graph in an ambiguous workspace
+  // loaded the canonical artifact instead of failing closed like every other
+  // default load.
+  const graphPath = validateGraphPath(graphPathForCommand({
+    graphPath: options.graphPath ?? `out/${CANONICAL_ARTIFACT_BASENAME}`,
+    graphPathIntent: graphPathIntentFor(options.graphPath),
+  }))
   const handle = await startGraphServer(options)
 
   output.log(`[madar serve] Serving ${graphPath}`)
