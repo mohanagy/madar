@@ -1471,7 +1471,14 @@ export function readGraphArtifactMetadata(
     // beside the canonical v2, and after the cutover the legacy path holds
     // only a moved marker.
     if (basename(graphPath) === 'graph.json') {
-      const classification = classifyWorkspaceGraph(dirname(graphPath))
+      // Under the caller's bound, not the module-wide one. Classification
+      // reads the canonical artifact in full to judge validity, so leaving it
+      // on the default let a caller that refuses anything over its own smaller
+      // limit read up to MAX_GRAPH_ARTIFACT_BYTES first. One request, one
+      // limit.
+      const classification = options.maxBytes === undefined
+        ? classifyWorkspaceGraph(dirname(graphPath))
+        : classifyWorkspaceGraph(dirname(graphPath), options.maxBytes)
       if (classification.state === 'moved_without_canonical') {
         return { ...ABSENT_METADATA, format: 'unreadable' }
       }

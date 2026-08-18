@@ -340,6 +340,14 @@ export function resolveGraphArtifact(
 
   const common = { requestedPath, intent: options.intent } as const
 
+  // Classification already read and parsed the canonical artifact under this
+  // same bound to decide the state, and these are exactly the two states it
+  // reaches by finding a valid one. Asking canonicalIsValid again re-read and
+  // re-parsed the whole file -- up to MAX_GRAPH_ARTIFACT_BYTES -- immediately
+  // before the caller loads it a third time.
+  const canonicalUsable = classification.state === 'current_v2'
+    || classification.state === 'mixed_v2_and_live_v1'
+
   if (options.intent === 'explicit') {
     if (name === LEGACY_BACKUP_BASENAME) {
       if (!classification.hasBackup) {
@@ -356,7 +364,7 @@ export function resolveGraphArtifact(
     }
 
     if (name === CANONICAL_ARTIFACT_BASENAME) {
-      if (!canonicalIsValid(classification.canonicalPath, maxBytes)) {
+      if (!canonicalUsable) {
         refuse(classification, display, `Canonical artifact ${display(classification.canonicalPath)} is missing or not a valid v2 artifact.`)
       }
       return {
@@ -372,7 +380,7 @@ export function resolveGraphArtifact(
     // Explicit legacy path: a tombstone forwards to its sibling, a live v1
     // loads degraded. Neither silently becomes the other.
     if (isMovedMarker(requestedPath)) {
-      if (!canonicalIsValid(classification.canonicalPath, maxBytes)) {
+      if (!canonicalUsable) {
         refuse(classification, display, `${display(requestedPath)} has moved but ${display(classification.canonicalPath)} is missing or invalid.`)
       }
       return {

@@ -47,7 +47,11 @@ const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs'
 const { tmpdir } = await import('node:os')
 const { join } = await import('node:path')
 const { KnowledgeGraph } = await import('../../src/contracts/graph.js')
-const { serializeGraphArtifactV2, GRAPH_ARTIFACT_V2_TOMBSTONE } = await import('../../src/contracts/graph-artifact.js')
+const {
+  serializeGraphArtifactV2,
+  GRAPH_ARTIFACT_V2_TOMBSTONE,
+  readGraphArtifactMetadata,
+} = await import('../../src/contracts/graph-artifact.js')
 const { MAX_GRAPH_ARTIFACT_BYTES, readDiscoverySafetyMetadata } = await import('../../src/shared/discovery-safety.js')
 
 function canonicalBytes(): Buffer {
@@ -308,6 +312,32 @@ describe('the cache describes what was read, not what was asked for', () => {
 
       // The fix must not turn the cache off; nothing changed, so no re-read.
       expect(control.metadataCalls).toEqual([])
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+describe('one request honours one size limit', () => {
+  it('never reads a canonical artifact that exceeds the caller\'s bound', () => {
+    const dir = workspace()
+    try {
+      reset()
+      const graphJson = join(dir, 'graph.json')
+      const canonical = join(dir, 'graph.madar')
+      writeFileSync(graphJson, GRAPH_ARTIFACT_V2_TOMBSTONE)
+      writeFileSync(canonical, canonicalBytes())
+      control.forcedSizes[canonical] = 5_000_000
+
+      const metadata = readGraphArtifactMetadata(graphJson, { maxBytes: 1_000 })
+
+      // Classification decides the state by reading the canonical artifact in
+      // full. On the module-wide default a 5 MB artifact is comfortably valid,
+      // so it was read whole -- and only then did the caller's own 1 KB limit
+      // refuse the same file. The bound the caller asked for has to reach the
+      // classifier, or the read it exists to prevent has already happened.
+      expect(control.reads).not.toContain(canonical)
+      expect(metadata.format).not.toBe('v2')
     } finally {
       cleanup(dir)
     }
