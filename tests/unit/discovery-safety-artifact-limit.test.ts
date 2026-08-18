@@ -47,7 +47,7 @@ const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs'
 const { tmpdir } = await import('node:os')
 const { join } = await import('node:path')
 const { KnowledgeGraph } = await import('../../src/contracts/graph.js')
-const { serializeGraphArtifactV2 } = await import('../../src/contracts/graph-artifact.js')
+const { serializeGraphArtifactV2, GRAPH_ARTIFACT_V2_TOMBSTONE } = await import('../../src/contracts/graph-artifact.js')
 const { MAX_GRAPH_ARTIFACT_BYTES, readDiscoverySafetyMetadata } = await import('../../src/shared/discovery-safety.js')
 
 function canonicalBytes(): Buffer {
@@ -271,7 +271,12 @@ describe('the cache describes what was read, not what was asked for', () => {
       reset()
       const graphJson = join(dir, 'graph.json')
       const canonical = join(dir, 'graph.madar')
-      writeFileSync(graphJson, LEGACY)
+      // A cut-over workspace, not a mixed one. graph.json must be the tombstone
+      // for this request to resolve to the canonical sibling at all: where a
+      // live v1 sits there, the request stays on the v1 and this cache never
+      // reads graph.madar. The fixture used a live v1 and so depended on the
+      // metadata redirect that disagreed with the loader.
+      writeFileSync(graphJson, GRAPH_ARTIFACT_V2_TOMBSTONE)
       writeFileSync(canonical, canonicalBytes())
 
       readDiscoverySafetyMetadata(graphJson)
