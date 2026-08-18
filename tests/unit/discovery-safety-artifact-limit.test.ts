@@ -41,18 +41,28 @@ vi.mock('node:fs', async (importOriginal) => {
   // observes nothing.
   const descriptorPaths = new Map<number, string>()
   const forcedFor = (path: string): number | undefined => control.forcedSizes[path]
+  const overrideSize = (stats: unknown, forced: number | undefined): unknown => {
+    if (stats === undefined || forced === undefined) return stats
+    return new Proxy(stats as object, {
+      get: (target, property, receiver) =>
+        property === 'size' ? forced : Reflect.get(target, property, receiver),
+    })
+  }
   return {
     ...actual,
+    // A forced size overrides `size` on the real Stats and nothing else. A
+    // bare `{ size }` object drops `isFile()`, and the artifact reader asks
+    // exactly that before reading -- so the stand-in made every forced-size
+    // path look like a special file and get refused, which is a different
+    // outcome from the oversized one these tests are about.
     statSync: ((path: never, ...rest: never[]) => {
-      const forced = forcedFor(String(path))
-      if (forced !== undefined) return { size: forced, mtimeMs: 1 }
-      return (actual.statSync as never as (...a: never[]) => unknown)(path, ...rest)
+      const stats = (actual.statSync as never as (...a: never[]) => unknown)(path, ...rest)
+      return overrideSize(stats, forcedFor(String(path)))
     }) as never,
     fstatSync: ((descriptor: never, ...rest: never[]) => {
+      const stats = (actual.fstatSync as never as (...a: never[]) => unknown)(descriptor, ...rest)
       const path = descriptorPaths.get(Number(descriptor))
-      const forced = path === undefined ? undefined : forcedFor(path)
-      if (forced !== undefined) return { size: forced, mtimeMs: 1 }
-      return (actual.fstatSync as never as (...a: never[]) => unknown)(descriptor, ...rest)
+      return overrideSize(stats, path === undefined ? undefined : forcedFor(path))
     }) as never,
     openSync: ((path: never, ...rest: never[]) => {
       const descriptor = (actual.openSync as never as (...a: never[]) => number)(path, ...rest)

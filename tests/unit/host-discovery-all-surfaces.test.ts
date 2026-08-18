@@ -221,13 +221,22 @@ describe('every generated host surface classifies the workspace', () => {
         rmSync(packageRoot, { recursive: true, force: true })
       }
       const pluginSource = readFileSync(join(root, '.opencode', 'plugins', 'madar.js'), 'utf8')
+      // The plugin's own import list is rewritten to requires rather than
+      // stripped and replaced by a hand-written one. A local copy of the
+      // prelude's bindings silently omits anything the generator later adds --
+      // which happened: two new bindings landed, the shim did not know about
+      // them, and the classifier's own try/catch turned the resulting
+      // ReferenceError into "no graph found" on three otherwise-ready states.
       const body = pluginSource
+        .replace(
+          /^import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"];?$/gm,
+          (_match, bindings: string, module: string) =>
+            `const {${bindings.replaceAll(' as ', ': ')}} = require('${module}');`,
+        )
         .replace(/^import .*$/gm, '')
         .replace('export const MadarPlugin', 'const MadarPlugin')
       // eslint-disable-next-line no-new-func
       const build = new Function('require', `
-        const { closeSync, lstatSync, openSync, readSync } = require('fs');
-        const { dirname: dirnameOf, join: joinPath } = require('path');
         ${body}
         return MadarPlugin`) as (requireFn: NodeRequire) => (input: { directory: string }) => Promise<{
           'tool.execute.before': (

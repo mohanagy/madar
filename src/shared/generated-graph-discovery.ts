@@ -95,11 +95,11 @@ const jsString = escapeGeneratedString
 
 function prelude(style: GeneratedModuleStyle): string {
   if (style === 'esm') {
-    return `import { closeSync, lstatSync, openSync, readSync } from ${jsString('fs')};\n`
+    return `import { closeSync, constants as madarFsConstants, fstatSync, lstatSync, openSync, readSync } from ${jsString('fs')};\n`
       + `import { dirname as dirnameOf, join as joinPath } from ${jsString('path')};\n`
   }
   return `const madarFs = require(${jsString('fs')}), madarPath = require(${jsString('path')});\n`
-    + 'const { closeSync, lstatSync, openSync, readSync } = madarFs;\n'
+    + 'const { closeSync, constants: madarFsConstants, fstatSync, lstatSync, openSync, readSync } = madarFs;\n'
     + 'const dirnameOf = madarPath.dirname, joinPath = madarPath.join;\n'
 }
 
@@ -117,7 +117,16 @@ function classifyMadarWorkspace(startDirectory) {
   function madarArtifactPrefix(artifactPath) {
     var descriptor = null;
     try {
-      descriptor = openSync(artifactPath, 'r');
+      // Non-blocking, and only ordinary files. A hook runs on every tool
+      // invocation, and openSync on a FIFO with no writer waits for one --
+      // which would hang the host, not just this check. Windows has no
+      // O_NONBLOCK, so the flag is omitted there and the regular-file test
+      // still rejects directories and devices.
+      var madarOpenFlags = typeof madarFsConstants.O_NONBLOCK === 'number'
+        ? madarFsConstants.O_RDONLY | madarFsConstants.O_NONBLOCK
+        : madarFsConstants.O_RDONLY;
+      descriptor = openSync(artifactPath, madarOpenFlags);
+      if (!fstatSync(descriptor).isFile()) { return null; }
       const buffer = Buffer.alloc(${PREFIX_BYTES});
       const read = readSync(descriptor, buffer, 0, ${PREFIX_BYTES}, 0);
       return buffer.slice(0, read).toString('utf8');

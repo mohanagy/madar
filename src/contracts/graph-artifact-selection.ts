@@ -1,4 +1,4 @@
-import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import {
@@ -110,6 +110,50 @@ export class GraphArtifactTooLargeError extends Error {
   }
 }
 
+/** A graph artifact must be an ordinary file; nothing else is one. */
+export class GraphArtifactNotRegularFileError extends Error {
+  constructor(path: string) {
+    super(
+      `Graph artifact ${path} is not a regular file. A FIFO, socket, device or `
+      + 'directory is never a graph artifact. Run `madar generate .` to rebuild it.',
+    )
+    this.name = 'GraphArtifactNotRegularFileError'
+  }
+}
+
+/**
+ * Opens an artifact path without ever waiting on it, and refuses anything that
+ * is not an ordinary file.
+ *
+ * `openSync(path, 'r')` on a FIFO with no writer blocks until one connects --
+ * indefinitely, in the calling process, with no timeout. That is reachable
+ * here: workspace classification probes `graph.madar`, `graph.json` and the
+ * `graph.v1.json` backup on every default load, so a FIFO left at any of the
+ * three hangs a command that would otherwise have answered. The backup path in
+ * particular was never opened at all before this work, so this is a surface
+ * this change introduced rather than one it inherited.
+ *
+ * O_NONBLOCK makes the open itself return immediately for a FIFO, and the
+ * fstat that follows rejects every non-regular file before a single byte is
+ * read. Windows has no O_NONBLOCK; the flag is omitted there and the
+ * regular-file check still runs, which is the part that matters for
+ * directories and devices.
+ */
+export const NONBLOCKING_READ_FLAGS = typeof constants.O_NONBLOCK === 'number'
+  ? constants.O_RDONLY | constants.O_NONBLOCK
+  : constants.O_RDONLY
+
+export function openRegularArtifactFile(path: string): number {
+  const descriptor = openSync(path, NONBLOCKING_READ_FLAGS)
+  try {
+    if (!fstatSync(descriptor).isFile()) throw new GraphArtifactNotRegularFileError(path)
+  } catch (error) {
+    closeSync(descriptor)
+    throw error
+  }
+  return descriptor
+}
+
 function assertBound(maxBytes: number): number {
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
     throw new TypeError(`Graph artifact byte bound must be a positive safe integer, received ${maxBytes}`)
@@ -125,7 +169,7 @@ function assertBound(maxBytes: number): number {
  */
 export function readArtifactWithinBound(path: string, maxBytes = MAX_GRAPH_ARTIFACT_BYTES): Buffer {
   const bound = assertBound(maxBytes)
-  const descriptor = openSync(path, 'r')
+  const descriptor = openRegularArtifactFile(path)
   try {
     // Sized and read through one descriptor. statSync followed by readFileSync
     // leaves a window in which the file grows, and readFileSync then allocates
@@ -189,8 +233,10 @@ export const CLASSIFY_PREFIX_BYTES = Math.max(
 function readPrefix(path: string, byteCount: number): Buffer | null {
   let handle: number
   try {
-    handle = openSync(path, 'r')
+    handle = openRegularArtifactFile(path)
   } catch {
+    // A path that is not an ordinary file has no artifact shape, which is
+    // exactly what an unreadable prefix already means to every caller.
     return null
   }
   try {
