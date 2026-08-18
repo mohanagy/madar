@@ -1,5 +1,10 @@
 # Performance rerun at production head `851f92ba`
 
+> **Superseded.** The re-review found two valid load-path defects after this
+> was measured. The measurement in force is
+> [`rerun-86bd5b31.md`](./rerun-86bd5b31.md). This receipt is retained exactly
+> as measured.
+
 The accepted exception was scoped to production head
 `78e7acd4b3724adcc78fe034d94c33526054ae8a` and to that head only. Remediating
 the CodeRabbit review changed thirteen production files, including artifact

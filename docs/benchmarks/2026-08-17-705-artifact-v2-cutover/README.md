@@ -4,9 +4,10 @@ Direct three-arm measurement.
 
 > **Superseded for the current head.** This receipt was measured at production
 > head `1fcc8d88`. The head has since moved twice. The measurement in force is
-> [`rerun-851f92ba.md`](./rerun-851f92ba.md), at production head `851f92ba`,
-> which reports a **2.647×–2.666×** default-path load band and **awaits a new
-> maintainer decision**. The intermediate rerun at `78e7acd4` is
+> [`rerun-86bd5b31.md`](./rerun-86bd5b31.md), at production head `86bd5b31`,
+> which reports a **2.650×–2.663×** default-path load band and **awaits a
+> maintainer decision**. The intermediate reruns are
+> [`rerun-851f92ba.md`](./rerun-851f92ba.md) and
 > [`rerun-78e7acd4.md`](./rerun-78e7acd4.md).
 >
 > Every measurement below is retained as recorded. Accepted exceptions are bound
