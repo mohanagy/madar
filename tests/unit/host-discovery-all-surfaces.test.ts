@@ -7,7 +7,11 @@ import { describe, expect, it } from 'vitest'
 
 import { GRAPH_ARTIFACT_V2_TOMBSTONE } from '../../src/contracts/graph-artifact.js'
 import { agentsInstall, claudeInstall, geminiInstall } from '../../src/infrastructure/install.js'
-import { GENERATED_LEGACY_GRAPH_NOTICE, escapeGeneratedString } from '../../src/shared/generated-graph-discovery.js'
+import {
+  GENERATED_LEGACY_GRAPH_NOTICE,
+  escapeGeneratedString,
+  generatedGraphDiscoveryInline,
+} from '../../src/shared/generated-graph-discovery.js'
 
 /**
  * Every generated host surface must classify the workspace, not any one of them.
@@ -253,6 +257,17 @@ describe('every generated host surface classifies the workspace', () => {
     // happen to contain no apostrophe, but a rename that introduced one would
     // otherwise produce a truncated program with no test failing.
     expect(escapeGeneratedString(value)).toBe(expected)
+  })
+
+  it('emits no line comment in the inline form', () => {
+    // The inline form is one line, so a `//` anywhere in it comments out the
+    // rest of the program. A comment added inside the generated function did
+    // exactly that and truncated the classifier at the finally block.
+    const inline = generatedGraphDiscoveryInline()
+
+    expect(inline).not.toContain('//')
+    expect(inline.includes('\n')).toBe(false)
+    expect(inline).toContain('classifyMadarWorkspace')
   })
 
   it('refuses to embed a value that would close the shell string', () => {

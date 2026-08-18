@@ -90,14 +90,22 @@ export function generatedGraphDiscoverySource(style: GeneratedModuleStyle): stri
   return `${prelude(style)}
 function classifyMadarWorkspace(startDirectory) {
   function madarArtifactPrefix(artifactPath) {
+    var descriptor = null;
     try {
-      const descriptor = openSync(artifactPath, 'r');
+      descriptor = openSync(artifactPath, 'r');
       const buffer = Buffer.alloc(${PREFIX_BYTES});
       const read = readSync(descriptor, buffer, 0, ${PREFIX_BYTES}, 0);
-      closeSync(descriptor);
       return buffer.slice(0, read).toString('utf8');
     } catch (error) {
       return null;
+    } finally {
+      // The read can fail after the open succeeds -- EISDIR when the path is a
+      // directory, EIO on a failing mount. Closing only on the success path
+      // leaked a descriptor every time, and a host that calls this on each tool
+      // invocation repeats it for the life of the process.
+      if (descriptor !== null) {
+        try { closeSync(descriptor); } catch (closeError) {}
+      }
     }
   }
 
@@ -143,11 +151,23 @@ function classifyMadarWorkspace(startDirectory) {
 }`
 }
 
-/** Single-line form, for embedding in a `node -e` program. */
+/**
+ * Single-line form, for embedding in a `node -e` program.
+ *
+ * Line comments are stripped before joining. Collapsing the source to one line
+ * turns any `//` into a comment that swallows the rest of the program, so a
+ * comment written inside the generated function would silently truncate it --
+ * which is exactly what happened when one was added to a `finally` block.
+ * `containsNoLineComment` below is the guard that keeps this honest.
+ */
 export function generatedGraphDiscoveryInline(): string {
-  return `/* ${GENERATED_GRAPH_DISCOVERY_MARKER} */${generatedGraphDiscoverySource('inline')
+  const body = generatedGraphDiscoverySource('inline')
     .split('\n')
-    .map((line) => line.trim())
+    .map((line) => line.replace(/(^|\s)\/\/.*$/, '').trim())
     .filter((line) => line.length > 0)
-    .join(' ')}`
+    .join(' ')
+  if (body.includes('//')) {
+    throw new Error('generated inline discovery still contains a line comment after stripping')
+  }
+  return `/* ${GENERATED_GRAPH_DISCOVERY_MARKER} */${body}`
 }
