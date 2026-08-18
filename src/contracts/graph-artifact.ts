@@ -51,6 +51,7 @@ import {
   GRAPH_ARTIFACT_V2_TOMBSTONE,
   isMovedMarkerText,
 } from './graph-artifact-format.js'
+import { v2PayloadStructureError } from './graph-artifact-payload.js'
 import { classifyWorkspaceGraph,
   legacyRequestResolvesToCanonical,
 } from './graph-artifact-selection.js'
@@ -693,6 +694,13 @@ export function parseGraphArtifactV2(bytes: Uint8Array | string): ParsedGraphArt
     const detail = error instanceof Error ? `: ${error.message}` : ''
     throw new GraphArtifactInvariantError(`artifact body is invalid JSON or has trailing non-whitespace${detail}`)
   }
+  // One owner for "is this structurally a v2 payload". The classifier asks the
+  // same question before selecting an artifact, and when each side answered it
+  // independently they drifted: the classifier was the more permissive of the
+  // two, so payloads it accepted failed here instead of failing closed there.
+  const structureError = v2PayloadStructureError(parsed)
+  if (structureError !== null) throw new GraphArtifactInvariantError(structureError)
+
   const payload = record(parsed, 'artifact payload')
   const versions = assertSupportedVersions(payload.versions)
   const directed = payload.directed

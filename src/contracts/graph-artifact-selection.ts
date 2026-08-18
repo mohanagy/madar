@@ -131,8 +131,7 @@ export function readArtifactWithinBound(path: string, maxBytes = MAX_GRAPH_ARTIF
     // leaves a window in which the file grows, and readFileSync then allocates
     // the whole replacement before any check runs -- the bound this function
     // exists to enforce would be applied only after the memory was already
-    // committed. Reading one byte past the bound is what makes growth past it
-    // observable rather than silently truncated.
+    // committed.
     const { size } = fstatSync(descriptor)
     if (size > bound) throw new GraphArtifactTooLargeError(path, size, bound)
     // The bound is the ceiling, not the reported size. fstat is a fast reject

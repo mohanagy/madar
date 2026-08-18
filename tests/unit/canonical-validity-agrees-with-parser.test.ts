@@ -64,6 +64,11 @@ const REJECTED: ReadonlyArray<readonly [string, string]> = [
   ['occurrences that are not an array', withField((p) => { delete p.occurrences })],
   ['community_labels keyed by a non-integer', withField((p) => { p.community_labels = { alpha: 'x' } })],
   ['a non-empty reserved block', withField((p) => { p.reserved = { future: 1 } })],
+  // Both of these were accepted by the classifier while the parser refused
+  // them, because each side had written the rule independently. They are the
+  // reason the parser now delegates rather than agreeing by inspection.
+  ['an empty repository_revision', withField((p) => { p.repository_revision = '' })],
+  ['no reserved block at all', withField((p) => { delete p.reserved })],
 ]
 
 function workspaceWith(body: string): string {

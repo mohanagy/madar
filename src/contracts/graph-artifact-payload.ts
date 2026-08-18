@@ -65,14 +65,6 @@ export function v2PayloadStructureError(payload: unknown): string | null {
 
   if (typeof payload.directed !== 'boolean') return 'directed must be boolean'
 
-  for (const field of ['repository_revision', 'generation_mode', 'generated_at'] as const) {
-    if (typeof payload[field] !== 'string') return `${field} must be a string`
-  }
-
-  for (const field of ['nodes', 'facts', 'occurrences', 'hyperedges'] as const) {
-    if (!Array.isArray(payload[field])) return `${field} must be an array`
-  }
-
   const communityLabels = payload.community_labels
   if (!isRecord(communityLabels)) return 'community_labels must be an object'
   for (const [communityId, label] of Object.entries(communityLabels)) {
@@ -81,13 +73,29 @@ export function v2PayloadStructureError(payload: unknown): string | null {
     }
   }
 
+  // Non-empty, matching the parser: an empty repository_revision is not a
+  // revision. An earlier version of this rule accepted any string, so such a
+  // payload classified as usable and then failed in the parser -- the exact
+  // divergence this module exists to close.
+  for (const field of ['repository_revision', 'generation_mode', 'generated_at'] as const) {
+    const value = payload[field]
+    if (typeof value !== 'string' || value.length === 0) return `${field} must be a non-empty string`
+  }
+
+  for (const field of ['nodes', 'facts', 'occurrences', 'hyperedges'] as const) {
+    if (!Array.isArray(payload[field])) return `${field} must be an array`
+  }
+
   if (payload.provenance !== undefined && !isRecord(payload.provenance)) {
     return 'provenance must be an object'
   }
 
-  const reserved = payload.reserved
-  if (reserved !== undefined && (!isRecord(reserved) || Object.keys(reserved).length > 0)) {
-    return 'reserved must be an empty object'
+  // Required, not optional: the parser reads it through the same object check
+  // every other record field uses, so an absent reserved block is a refusal
+  // there and has to be one here too.
+  if (!isRecord(payload.reserved)) return 'reserved must be an object'
+  if (Object.keys(payload.reserved).length !== 0) {
+    return 'reserved is reserved and must be empty in artifact v2'
   }
 
   return null
