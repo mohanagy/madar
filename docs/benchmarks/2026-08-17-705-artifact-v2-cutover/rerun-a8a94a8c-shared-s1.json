@@ -1,0 +1,52 @@
+{
+  "session": "1",
+  "samples": 9,
+  "arms": {
+    "b1_shared": {
+      "median_ms": 681.65,
+      "min_ms": 631.683,
+      "max_ms": 697.397,
+      "spread_pct": 10.4,
+      "samples_ms": [
+        689.428,
+        697.397,
+        685.133,
+        681.653,
+        636.001,
+        632.017,
+        690.612,
+        661.677,
+        631.683
+      ],
+      "artifact_bytes": 47030676,
+      "artifact_sha256": "f8ab0f6573dbee557cc4b936f6eb25e1658ffc4b58dece350934189291a92d52",
+      "node_count": 12669,
+      "relationship_count": 17940,
+      "rss_bytes_median": 636715008,
+      "load1_median": 3
+    },
+    "head_shared": {
+      "median_ms": 688.5,
+      "min_ms": 645.748,
+      "max_ms": 806.937,
+      "spread_pct": 25,
+      "samples_ms": [
+        683.876,
+        680.177,
+        703.324,
+        688.496,
+        684.862,
+        757.791,
+        734.986,
+        806.937,
+        645.748
+      ],
+      "artifact_bytes": 47030676,
+      "artifact_sha256": "f8ab0f6573dbee557cc4b936f6eb25e1658ffc4b58dece350934189291a92d52",
+      "node_count": 12669,
+      "relationship_count": 17940,
+      "rss_bytes_median": 636436480,
+      "load1_median": 3
+    }
+  }
+}

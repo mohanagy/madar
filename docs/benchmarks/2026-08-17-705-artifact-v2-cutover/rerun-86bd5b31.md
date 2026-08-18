@@ -1,5 +1,9 @@
 # Performance rerun at production head `86bd5b31`
 
+> **Superseded.** The final review round moved the parse path. The measurement
+> in force is [`rerun-a8a94a8c.md`](./rerun-a8a94a8c.md). This receipt is
+> retained exactly as measured.
+
 The CodeRabbit re-review raised two valid findings on the previous remediation:
 artifact selection accepted any JSON body after the magic header, and artifact
 reads sized a file with one call and read it with another. Both are on the load
