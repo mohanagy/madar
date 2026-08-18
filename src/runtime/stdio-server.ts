@@ -37,6 +37,7 @@ import {
   queryGraph,
   semanticAnomaliesSummary,
   shortestPath,
+  resolvedLoadPath,
 } from './serve.js'
 import { validateGraphPath } from '../shared/security.js'
 import {
@@ -688,14 +689,20 @@ function errorToolResult(text: string): { content: Array<{ type: 'text'; text: s
 
 function loadGraphCached(graphPath: string): ReturnType<typeof loadGraph> {
   const safeGraphPath = validateGraphPath(graphPath)
-  const currentGraphStat = statSync(safeGraphPath)
-  const cached = graphCache.get(safeGraphPath)
+  // Key and validate against the artifact the bytes actually come from. When
+  // the request names out/graph.json in a cut-over workspace, loadGraph reads
+  // out/graph.madar -- and the tombstone is a constant, so a cache keyed on it
+  // never invalidated. A refreshed canonical artifact kept being answered from
+  // the previous graph for the life of the session.
+  const resolvedGraphPath = resolvedLoadPath(safeGraphPath)
+  const currentGraphStat = statSync(resolvedGraphPath)
+  const cached = graphCache.get(resolvedGraphPath)
   if (cached && cached.mtimeMs === currentGraphStat.mtimeMs && cached.size === currentGraphStat.size) {
     return cached.graph
   }
 
   const graph = loadGraph(safeGraphPath)
-  graphCache.set(safeGraphPath, { mtimeMs: currentGraphStat.mtimeMs, size: currentGraphStat.size, graph })
+  graphCache.set(resolvedGraphPath, { mtimeMs: currentGraphStat.mtimeMs, size: currentGraphStat.size, graph })
   return graph
 }
 

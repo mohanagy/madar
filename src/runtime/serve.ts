@@ -17,7 +17,9 @@ import {
   isMovedMarkerText,
   loadGraphArtifactFromPath,
 } from '../contracts/graph-artifact.js'
-import { classifyWorkspaceGraph } from '../contracts/graph-artifact-selection.js'
+import { classifyWorkspaceGraph,
+  LEGACY_ARTIFACT_BASENAME,
+} from '../contracts/graph-artifact-selection.js'
 
 const MAX_GRAPH_BYTES = 100 * 1024 * 1024
 const MAX_TRAVERSAL_DEPTH = 6
@@ -230,6 +232,31 @@ function workspaceBridgeMap(graph: KnowledgeGraph): Map<string, WorkspaceBridge>
   const communities = communitiesFromGraph(graph)
   const communityLabels = communityLabelsFromGraph(graph, communities)
   return new Map(workspaceBridges(graph, communities, communityLabels).map((bridge) => [bridge.id, bridge]))
+}
+
+/**
+ * The artifact `loadGraph` will actually read for this request.
+ *
+ * Callers that cache a loaded graph must watch the file the bytes came from.
+ * Keying on the requested path is wrong whenever that path is the tombstone:
+ * the marker is a constant, so it never invalidates, and a refreshed
+ * `graph.madar` kept serving the previous graph from cache.
+ *
+ * This reads only the bounded prefixes the classifier reads, never the payload.
+ * `loadGraphAgreesWithResolvedPath` in the serve tests pins it against
+ * `loadGraph` itself so the two cannot drift.
+ */
+export function resolvedLoadPath(graphPath: string): string {
+  const safePath = validateGraphPath(graphPath)
+  if (basename(safePath) !== LEGACY_ARTIFACT_BASENAME) {
+    return safePath
+  }
+
+  // Only a cut-over workspace redirects. A live v1 -- legacy-only or mixed --
+  // loads the requested file, and the failing states throw in loadGraph rather
+  // than resolving anywhere.
+  const classification = classifyWorkspaceGraph(dirname(safePath))
+  return classification.state === 'current_v2' ? classification.canonicalPath : safePath
 }
 
 export function loadGraph(graphPath: string): KnowledgeGraph {
