@@ -153,11 +153,15 @@ describe('the protected workflows consume the canonical artifact', () => {
 
   it('runs eval against graph.madar and never against graph.json', () => {
     const ci = workflow('ci.yml')
-    const evalLine = ci.split('\n').find((line) => line.includes('bin.js eval'))
+    // Every one of them. `find` returns the first match, so a second eval
+    // invocation that still named out/graph.json would leave this green.
+    const evalLines = ci.split('\n').filter((line) => line.includes('bin.js eval'))
 
-    expect(evalLine).toBeDefined()
-    expect(evalLine).toContain('out/graph.madar')
-    expect(evalLine).not.toContain('out/graph.json')
+    expect(evalLines.length).toBeGreaterThan(0)
+    for (const evalLine of evalLines) {
+      expect(evalLine).toContain('out/graph.madar')
+      expect(evalLine).not.toContain('out/graph.json')
+    }
   })
 
   it('checks the prerelease artifact by content, not by size', () => {

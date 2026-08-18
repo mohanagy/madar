@@ -114,7 +114,9 @@ describe('auto-refresh accepts the artifact the workspace has', () => {
 
     expect(workspace.canonicalGraphPath.endsWith('graph.madar')).toBe(true)
     expect(workspace.legacyGraphPath.endsWith('graph.json')).toBe(true)
-    expect(Object.keys(workspace)).not.toContain('graphPath')
+    // `in`, not Object.keys: the alias must be unreachable, and own-enumerable
+    // is only one of the ways it could come back.
+    expect('graphPath' in workspace).toBe(false)
   })
 
   it('accepts the canonical artifact while the tombstone sits beside it', async () => {

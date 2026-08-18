@@ -3277,14 +3277,10 @@ describe('summary command', () => {
     const exitCode = await executeCli(['summary', 'out/graph.json'], io, dependencies)
 
     expect(exitCode).toBe(0)
-    // Resolved through the intent boundary rather than passed through raw, so
-    // the value is the workspace's own artifact. Compared against the resolver
-    // instead of a literal: this repo may itself be a linked worktree, where
-    // the physical artifact lives outside the checkout.
     // Compared against the same boundary the command applies, not a literal:
     // the resolved value depends on whether this checkout is a linked worktree
-    // and on which artifacts its output directory holds. What is being asserted
-    // is that the command resolved at all rather than forwarding its raw option.
+    // and on which artifacts its output directory holds. The assertion is that
+    // the command resolved the path rather than forwarding its raw option.
     expect(capturedGraphPath).toBe(
       graphPathForCommand({ graphPath: 'out/graph.json', graphPathIntent: 'explicit' }),
     )
@@ -3303,14 +3299,10 @@ describe('summary command', () => {
     const exitCode = await executeCli(['summary'], io, dependencies)
 
     expect(exitCode).toBe(0)
-    // Resolved through the intent boundary rather than passed through raw, so
-    // the value is the workspace's own artifact. Compared against the resolver
-    // instead of a literal: this repo may itself be a linked worktree, where
-    // the physical artifact lives outside the checkout.
     // Compared against the same boundary the command applies, not a literal:
     // the resolved value depends on whether this checkout is a linked worktree
-    // and on which artifacts its output directory holds. What is being asserted
-    // is that the command resolved at all rather than forwarding its raw option.
+    // and on which artifacts its output directory holds. The assertion is that
+    // the command resolved the path rather than forwarding its raw option.
     expect(capturedGraphPath).toBe(
       graphPathForCommand({ graphPath: 'out/graph.madar', graphPathIntent: 'default' }),
     )

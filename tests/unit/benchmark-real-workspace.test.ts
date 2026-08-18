@@ -181,6 +181,11 @@ describe('real-workspace benchmark support', () => {
         cwd: process.cwd(),
         encoding: 'utf8',
         stdio: 'pipe',
+        // The guard is expected to refuse immediately. If it regresses the
+        // script starts a real benchmark run, and an unbounded execFileSync
+        // would block until Vitest kills the test while the child outlives it.
+        timeout: 30_000,
+        windowsHide: true,
         env: {
           ...process.env,
           MADAR_BENCH_MODE: '',

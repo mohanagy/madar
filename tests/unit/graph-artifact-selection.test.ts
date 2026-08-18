@@ -345,6 +345,15 @@ describe('bounds are mandatory', () => {
     }
   })
 
+})
+
+/**
+ * Kept apart from the bounds block above: these decide what a canonical
+ * artifact and a moved marker mean, not how many bytes may be read. A reader
+ * looking for the moved-marker contract does not go looking inside a block
+ * about byte limits.
+ */
+describe('canonical validity and moved markers', () => {
   it.each([
     ['truncated mid-payload', `${GRAPH_ARTIFACT_V2_HEADER}{ "nodes": [`],
     ['payload is not JSON', `${GRAPH_ARTIFACT_V2_HEADER}not json at all`],

@@ -307,6 +307,7 @@ describe('other broken states keep failing closed by default', () => {
       }
 
       // A preserved backup is rollback evidence, not an active graph.
+      expect(thrown).toBeInstanceOf(GraphArtifactStateError)
       expect(thrown?.state).toBe('moved_without_canonical')
       expect(existsSync(join(out, 'graph.v1.json'))).toBe(true)
     } finally {
@@ -330,6 +331,7 @@ describe('other broken states keep failing closed by default', () => {
         thrown = error as GraphArtifactStateError
       }
 
+      expect(thrown).toBeInstanceOf(GraphArtifactStateError)
       expect(thrown?.state).toBe('invalid_current_v2')
     } finally {
       cleanup(root)

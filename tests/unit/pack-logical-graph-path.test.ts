@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, realpathSync} from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, devNull } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -11,7 +11,17 @@ import { resolvedLoadPath } from '../../src/runtime/serve.js'
 import { logicalGraphPath, resolveMadarWorkspace } from '../../src/shared/workspace.js'
 
 function git(cwd: string, args: string[]): void {
-  execFileSync('git', args, { cwd, stdio: 'pipe', timeout: 30_000, windowsHide: true })
+  execFileSync('git', args, {
+    cwd,
+    stdio: 'pipe',
+    timeout: 30_000,
+    windowsHide: true,
+    // user.email and user.name are set locally below, but a contributor's
+    // other globals still apply: commit.gpgsign makes `git commit` fail or
+    // block on a passphrase, and a global core.hooksPath runs their hooks in
+    // this fixture. Either failure reads as a bug in the pack path.
+    env: { ...process.env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_SYSTEM: devNull },
+  })
 }
 
 function isInside(candidate: string, root: string): boolean {

@@ -2,6 +2,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 
 import { GRAPH_ARTIFACT_V2_HEADER } from '../../../src/contracts/graph-artifact.js'
+import {
+  CANONICAL_ARTIFACT_BASENAME,
+  LEGACY_ARTIFACT_BASENAME,
+} from '../../../src/contracts/graph-artifact-selection.js'
+import { GRAPH_LOCAL_SIDECAR_BASENAME } from '../../../src/contracts/graph-artifact.js'
 
 /**
  * Reads a generated graph as a flat, v1-shaped object.
@@ -45,9 +50,9 @@ interface V2Fact {
 
 /** Accepts an output directory, a graph.madar path, or a legacy graph.json path. */
 function canonicalArtifactPath(target: string): string {
-  if (basename(target) === 'graph.madar') return target
-  const directory = basename(target) === 'graph.json' ? dirname(target) : target
-  return join(directory, 'graph.madar')
+  if (basename(target) === CANONICAL_ARTIFACT_BASENAME) return target
+  const directory = basename(target) === LEGACY_ARTIFACT_BASENAME ? dirname(target) : target
+  return join(directory, CANONICAL_ARTIFACT_BASENAME)
 }
 
 export function readGeneratedGraphJson(target: string): GeneratedGraphJson {
@@ -81,7 +86,7 @@ export function readGeneratedGraphJson(target: string): GeneratedGraphJson {
 
 /** The machine-local sidecar beside a generated artifact, or null when absent. */
 export function readGeneratedSidecar(target: string): Record<string, unknown> | null {
-  const sidecar = join(dirname(canonicalArtifactPath(target)), 'graph.local.json')
+  const sidecar = join(dirname(canonicalArtifactPath(target)), GRAPH_LOCAL_SIDECAR_BASENAME)
   return existsSync(sidecar)
     ? (JSON.parse(readFileSync(sidecar, 'utf8')) as Record<string, unknown>)
     : null

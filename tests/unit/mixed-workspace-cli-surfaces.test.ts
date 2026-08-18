@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { executeCli } from '../../src/cli/main.js'
 import { classifyWorkspaceGraph } from '../../src/contracts/graph-artifact-selection.js'
@@ -77,18 +78,63 @@ describe('no command answers from a mixed workspace', () => {
     expect(text).not.toContain('stale')
   })
 
-  it.each(GRAPH_READING_COMMANDS)('%s succeeds once the workspace is repaired', async (_name, argv) => {
+})
+
+/**
+ * The control: the refusal above is about the state, not about the commands.
+ *
+ * One workspace for the whole table rather than one per case. Every command
+ * here reads the graph and none writes it, so they do not interact -- and that
+ * is asserted at the end from the artifact's digest rather than assumed, which
+ * is the condition for sharing a mutable workspace at all. Repairing per case
+ * cost twelve full generations to prove one invariant.
+ */
+describe('the same commands answer once the workspace is repaired', () => {
+  let root: string
+  let originalCwd: string
+  let repairedDigest: string
+
+  const digest = (): string =>
+    createHash('sha256').update(readFileSync(join(root, 'out', 'graph.madar'))).digest('hex')
+
+  beforeAll(() => {
+    originalCwd = process.cwd()
+    root = mkdtempSync(join(tmpdir(), 'mixed-cli-repaired-'))
+    mkdirSync(join(root, 'src'), { recursive: true })
+    writeFileSync(
+      join(root, 'src', 'a.ts'),
+      'export function alpha() { beta() }\nexport function beta() {}\n',
+    )
+    generateGraph(root, { noHtml: true })
+    writeFileSync(join(root, 'out', 'graph.json'), STALE_V1)
+
+    // Full generation is the documented repair for the ambiguous state.
     generateGraph(root, { noHtml: true })
     expect(classifyWorkspaceGraph(join(root, 'out')).state).toBe('current_v2')
+    repairedDigest = digest()
+    process.chdir(root)
+  })
 
+  afterAll(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it.each(GRAPH_READING_COMMANDS)('%s succeeds once the workspace is repaired', async (_name, argv) => {
     const output: string[] = []
     const io = {
       log: (message: string) => output.push(String(message)),
       error: (message: string) => output.push(String(message)),
     }
 
-    // The refusal must be about the ambiguity, not about the command being
-    // broken: the same invocation works as soon as the state is unambiguous.
     expect(await executeCli([...argv], io)).toBe(0)
+  })
+
+  it('left the shared artifact byte-identical', () => {
+    // Sharing one workspace is only sound while every case above is a reader.
+    // A command that started publishing would make the table order-dependent
+    // and this is what would catch it.
+    expect(digest()).toBe(repairedDigest)
+    expect(classifyWorkspaceGraph(join(root, 'out')).state).toBe('current_v2')
   })
 })

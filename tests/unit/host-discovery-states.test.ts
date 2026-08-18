@@ -80,39 +80,12 @@ function generatedHookCommand(root: string): string {
  * generated command is separately asserted to embed this same function, which
  * is the seam that keeps the two from drifting.
  */
-function classifyFrom(_command: string, cwd: string): Discovery {
+function classifyFrom(cwd: string): Discovery {
   // eslint-disable-next-line no-new-func
   const evaluate = new Function('require', `${generatedGraphDiscoverySource('commonjs')}
     return ${CLASSIFIER_FUNCTION}`) as (requireFn: NodeRequire) => (directory: string) => Discovery
 
   return evaluate(createRequire(import.meta.url))(cwd)
-}
-
-/** Runs the generated hook end to end and reports whether it emitted guidance. */
-function hookReportsGraph(root: string): boolean {
-  const command = generatedHookCommand(root)
-  const nested = join(root, 'nested', 'session')
-  mkdirSync(nested, { recursive: true })
-
-  const controlled = process.platform === 'win32'
-    ? command
-    : `export PATH="${dirname(process.execPath)}:$PATH"; ${command}`
-  const result = spawnSync(
-    process.platform === 'win32' ? 'cmd' : 'sh',
-    process.platform === 'win32' ? ['/c', controlled] : ['-c', controlled],
-    { cwd: nested, input: JSON.stringify({ tool_name: 'read_file' }), encoding: 'utf8' },
-  )
-
-  // A hook that never ran is not an answer. Reporting false here would let every
-  // "not ready" expectation pass for the wrong reason.
-  if (result.error) throw result.error
-  if (typeof result.status !== 'number') {
-    throw new Error(`hook did not run to completion: signal=${String(result.signal)}`)
-  }
-  if (result.status !== 0) {
-    throw new Error(`hook exited ${result.status}: ${`${result.stderr ?? ''}`.slice(0, 200)}`)
-  }
-  return `${result.stdout ?? ''}`.includes('additionalContext')
 }
 
 describe('generated host discovery classifies the workspace', () => {
@@ -133,13 +106,15 @@ describe('generated host discovery classifies the workspace', () => {
   ])('reads %s as %s (ready=%s)', (_label, files, state, ready) => {
     const root = workspace(files as WorkspaceFiles)
     try {
-      const command = generatedHookCommand(root)
+      // Installs the hook and asserts the classifier is embedded in it; the
+      // classification below runs that same generated source in process.
+      generatedHookCommand(root)
       const nested = join(root, 'nested', 'session')
       mkdirSync(nested, { recursive: true })
 
       // Classified from a nested directory: the snippet has to walk up to the
       // workspace before it can classify anything.
-      expect(classifyFrom(command, nested)).toMatchObject({ graphState: state, hasGraph: ready })
+      expect(classifyFrom(nested)).toMatchObject({ graphState: state, hasGraph: ready })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -151,8 +126,10 @@ describe('generated host discovery classifies the workspace', () => {
     try {
       // legacyGraph drives the degraded guidance. A cut-over workspace claiming
       // it would tell the host to keep using the artifact that was retired.
-      expect(classifyFrom(generatedHookCommand(legacy), legacy).legacyGraph).toBe(true)
-      expect(classifyFrom(generatedHookCommand(current), current).legacyGraph).toBe(false)
+      generatedHookCommand(legacy)
+      generatedHookCommand(current)
+      expect(classifyFrom(legacy).legacyGraph).toBe(true)
+      expect(classifyFrom(current).legacyGraph).toBe(false)
     } finally {
       rmSync(legacy, { recursive: true, force: true })
       rmSync(current, { recursive: true, force: true })
@@ -166,7 +143,8 @@ describe('generated host discovery classifies the workspace', () => {
       // A linked worktree stores artifacts outside the checkout, behind a
       // workspace hash the generated snippet cannot compute. The hint says the
       // MCP server will build a graph, not that one was found.
-      const discovery = classifyFrom(generatedHookCommand(root), root)
+      generatedHookCommand(root)
+      const discovery = classifyFrom(root)
 
       expect(discovery).toMatchObject({ graphState: 'none', linkedWorktree: true, hasGraph: true })
     } finally {
@@ -181,7 +159,8 @@ describe('generated host discovery classifies the workspace', () => {
     mkdirSync(join(inner, 'out'), { recursive: true })
     writeFileSync(join(inner, 'out', 'graph.json'), GRAPH_ARTIFACT_V2_TOMBSTONE)
     try {
-      expect(classifyFrom(generatedHookCommand(outer), inner)).toMatchObject({
+      generatedHookCommand(outer)
+      expect(classifyFrom(inner)).toMatchObject({
         graphState: 'moved',
         hasGraph: false,
       })
