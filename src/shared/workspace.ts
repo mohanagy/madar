@@ -228,15 +228,6 @@ export function isDefaultGraphPathSpelling(graphPath: string): boolean {
 }
 
 /**
- * The public spelling for an artifact a command actually used.
- *
- * Output that names a path -- Pack fields, governance freshness -- must not
- * echo the request, which after the cutover may be a tombstone, and must not
- * expose a linked worktree's redirected directory under .git. Any artifact
- * inside the workspace output directory is reported as `out/<name>`; anything
- * else was a deliberate path from the caller and is returned unchanged.
- */
-/**
  * The artifact a command should read, given the options it was parsed with.
  *
  * Commands used to call loadGraph with their raw option string. That worked
@@ -264,12 +255,33 @@ export function graphPathForCommand(
   }
 }
 
+/**
+ * The public spelling for an artifact a command actually used.
+ *
+ * Output that names a path -- Pack fields, governance freshness -- must not
+ * echo the request, which after the cutover may be a tombstone, and must not
+ * expose a linked worktree's redirected directory under .git. Any artifact
+ * inside the workspace output directory is reported as `out/<name>`; anything
+ * else was a deliberate path from the caller and is returned unchanged.
+ */
 export function logicalGraphPath(physicalPath: string, workspaceRoot = process.cwd()): string {
   const workspace = resolveMadarWorkspace(workspaceRoot)
   const resolved = resolve(physicalPath)
   return dirname(resolved) === workspace.outputDir
     ? `out/${basename(resolved)}`
     : physicalPath
+}
+
+/**
+ * The public spelling for an artifact, deriving the workspace root from it.
+ *
+ * Callers that hold only the physical artifact path recovered the root by
+ * stripping two segments -- the `<root>/out/<artifact>` layout, restated at
+ * each site. Pack, prompt and freshness each carried their own copy, so a
+ * change to the output directory layout had to be found in all of them.
+ */
+export function logicalGraphPathForArtifact(physicalPath: string): string {
+  return logicalGraphPath(physicalPath, dirname(dirname(resolve(physicalPath))))
 }
 
 export interface ResolveWorkspaceGraphArtifactOptions {

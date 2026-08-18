@@ -19,7 +19,9 @@ import { readGraphArtifactMetadata } from '../contracts/graph-artifact.js'
 import { classifyWorkspaceGraph,
   legacyRequestResolvesToCanonical,
 } from '../contracts/graph-artifact-selection.js'
-import { logicalGraphPath } from '../shared/workspace.js'
+import {
+  logicalGraphPathForArtifact,
+} from '../shared/workspace.js'
 
 export interface GraphFreshnessMetadata {
   graphVersion: string
@@ -443,7 +445,7 @@ function reportedGraphPath(requestedPath: string, resolvedPath: string): string 
   // Derive the workspace from the artifact itself. Defaulting to process.cwd()
   // silently failed to recognise an artifact belonging to another workspace --
   // exactly the linked-worktree case this is meant to protect.
-  const logical = logicalGraphPath(resolvedPath, dirname(dirname(resolvedPath)))
+  const logical = logicalGraphPathForArtifact(resolvedPath)
   if (logical !== resolvedPath) return logical
   return requestedPath === resolvedPath
     ? requestedPath

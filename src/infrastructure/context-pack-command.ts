@@ -56,7 +56,9 @@ import {
   parseDiscoverySafetyMetadata,
   type DiscoverySafetyMetadata,
 } from '../shared/discovery-safety.js'
-import { graphPathForCommand, logicalGraphPath } from '../shared/workspace.js'
+import { graphPathForCommand,
+  logicalGraphPathForArtifact,
+} from '../shared/workspace.js'
 import { dirname, resolve } from 'node:path'
 
 const DEFAULT_IMPACT_DEPTH = 3
@@ -2243,7 +2245,7 @@ function baseResponse(
     // directory. It has to be the resolved path rather than the requested one --
     // the default spelling names the canonical artifact, so reporting it in a
     // workspace that never cut over claimed a file that does not exist.
-    graph_path: logicalGraphPath(resolvedGraphPath, dirname(dirname(resolve(resolvedGraphPath)))),
+    graph_path: logicalGraphPathForArtifact(resolvedGraphPath),
     plan,
   }
 }

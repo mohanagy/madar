@@ -10,6 +10,7 @@ import {
   LEGACY_ARTIFACT_BASENAME,
   classifyWorkspaceGraph,
 } from '../../contracts/graph-artifact-selection.js'
+import { GRAPH_ARTIFACT_MEDIA_TYPE } from '../../contracts/graph-artifact-format.js'
 
 interface StdioResponse {
   jsonrpc: '2.0'
@@ -91,7 +92,7 @@ function unknownResourceMessage(uri: string, resources: readonly McpResourceDefi
 }
 
 /** Locked in tests: a magic-header artifact must never be labelled JSON. */
-export const GRAPH_ARTIFACT_MIME_TYPE = 'application/vnd.madar.graph-artifact.v2'
+export const GRAPH_ARTIFACT_MIME_TYPE = GRAPH_ARTIFACT_MEDIA_TYPE
 
 export function resourcesForGraph(graphPath: string): McpResourceDefinition[] {
   // During a first auto-refresh startup the MCP transport is available before

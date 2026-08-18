@@ -11,7 +11,9 @@ import { dirname, resolve } from 'node:path'
 
 import { retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { loadGraph } from '../runtime/serve.js'
-import { graphPathForCommand, logicalGraphPath } from '../shared/workspace.js'
+import { graphPathForCommand,
+  logicalGraphPathForArtifact,
+} from '../shared/workspace.js'
 
 const DEFAULT_PROMPT_BUDGET = 3_000
 
@@ -103,7 +105,7 @@ export async function runContextPromptCommand(
   return JSON.stringify({
     provider: options.provider,
     prompt: options.prompt,
-    graph_path: logicalGraphPath(resolvedGraphPath, dirname(dirname(resolve(resolvedGraphPath)))),
+    graph_path: logicalGraphPathForArtifact(resolvedGraphPath),
     graph_freshness: graphFreshness,
     compiled: providerCompiled,
   })

@@ -13,6 +13,7 @@ import {
   type WorkspaceGraphState,
   classifyWorkspaceGraph,
 } from '../contracts/graph-artifact-selection.js'
+import { GRAPH_ARTIFACT_MEDIA_TYPE } from '../contracts/graph-artifact-format.js'
 
 export interface ServeLogger {
   log(message?: string): void
@@ -65,8 +66,8 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown, h
   response.end(`${JSON.stringify(body, null, 2)}\n`)
 }
 
-/** Vendor media type: a v2 artifact is not JSON and must not claim to be. */
-const GRAPH_ARTIFACT_MEDIA_TYPE = 'application/vnd.madar.graph-artifact.v2; charset=utf-8'
+/** One declaration, in the format contract both surfaces publish. */
+const GRAPH_ARTIFACT_CONTENT_TYPE = `${GRAPH_ARTIFACT_MEDIA_TYPE}; charset=utf-8`
 
 const PROBLEM_BASE = 'https://madar.dev/problems'
 
@@ -319,7 +320,7 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
               response,
               200,
               readUtf8File(canonical),
-              GRAPH_ARTIFACT_MEDIA_TYPE,
+              GRAPH_ARTIFACT_CONTENT_TYPE,
               resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, canonical)),
             )
             return

@@ -26,6 +26,16 @@ export const GRAPH_ARTIFACT_V2_TOMBSTONE = [
  */
 export const GRAPH_ARTIFACT_MOVED_PREFIX = 'MADAR_GRAPH_MOVED/'
 
+/**
+ * The wire media type for a v2 artifact body.
+ *
+ * A v2 artifact carries a magic header and is not JSON, so no surface may
+ * label it `application/json`. HTTP and MCP both publish this contract and
+ * each declared its own copy, so a later revision could change one and leave
+ * the other advertising the old type for the same bytes.
+ */
+export const GRAPH_ARTIFACT_MEDIA_TYPE = 'application/vnd.madar.graph-artifact.v2'
+
 /** True for any versioned moved marker, current or not. */
 export function isMovedMarkerText(text: string): boolean {
   return text.startsWith(GRAPH_ARTIFACT_MOVED_PREFIX)
