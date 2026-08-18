@@ -51,10 +51,14 @@ interface GraphSource {
  *
  * The old size guard also read the entire file before comparing its length,
  * then read it a second time to parse. loadGraph stats first.
+ *
+ * loadGraph validates the path itself, so the raw path goes to it and the
+ * resolved one comes from a single validation. Validating here as well ran
+ * resolve, existsSync and realpathSync twice for each of up to MAX_GRAPHS
+ * sources.
  */
 function loadSourceGraph(graphPath: string): { graph: KnowledgeGraph; graphPath: string } {
-  const safePath = validateGraphPath(graphPath)
-  return { graphPath: safePath, graph: loadGraph(safePath) }
+  return { graphPath: validateGraphPath(graphPath), graph: loadGraph(graphPath) }
 }
 
 function inferRepoName(graphPath: string): string {

@@ -77,9 +77,12 @@ function resourceUri(name: string): string {
  * Only said once the workspace actually has a canonical artifact -- in a
  * pre-cutover workspace the v1 URI is served, so nothing has moved.
  */
-function unknownResourceMessage(uri: string, graphPath: string): string {
+function unknownResourceMessage(uri: string, resources: readonly McpResourceDefinition[]): string {
   if (uri !== resourceUri(LEGACY_ARTIFACT_BASENAME)) return `Unknown resource: ${uri}`
-  const canonicalServed = resourcesForGraph(graphPath)
+  // The caller already holds this list. Recomputing it here repeated
+  // existsSync, validateGraphPath, classifyWorkspaceGraph and one stat per
+  // candidate, to answer a question the list it was given already answers.
+  const canonicalServed = resources
     .some((entry) => entry.uri === resourceUri(CANONICAL_ARTIFACT_BASENAME))
   return canonicalServed
     ? `${uri} is gone. Read ${resourceUri(CANONICAL_ARTIFACT_BASENAME)} instead, which serves artifact v2 `
@@ -228,9 +231,10 @@ export function handleResourceRead(
     return helpers.failure(id, helpers.jsonrpcInvalidParams, `resources/read requires a string uri parameter <= ${helpers.maxStdioTextLength} characters`)
   }
 
-  const resource = resourcesForGraph(graphPath).find((entry) => entry.uri === uri)
+  const resources = resourcesForGraph(graphPath)
+  const resource = resources.find((entry) => entry.uri === uri)
   if (!resource) {
-    return helpers.failure(id, helpers.jsonrpcInvalidParams, unknownResourceMessage(uri, graphPath))
+    return helpers.failure(id, helpers.jsonrpcInvalidParams, unknownResourceMessage(uri, resources))
   }
 
   if (statSync(resource.filePath).size > helpers.maxResourceBytes) {
@@ -261,9 +265,10 @@ export function handleResourceSubscribe(
     return helpers.failure(id, helpers.jsonrpcInvalidParams, `resources/subscribe requires a string uri parameter <= ${helpers.maxStdioTextLength} characters`)
   }
 
-  const resource = resourcesForGraph(graphPath).find((entry) => entry.uri === uri)
+  const resources = resourcesForGraph(graphPath)
+  const resource = resources.find((entry) => entry.uri === uri)
   if (!resource) {
-    return helpers.failure(id, helpers.jsonrpcInvalidParams, unknownResourceMessage(uri, graphPath))
+    return helpers.failure(id, helpers.jsonrpcInvalidParams, unknownResourceMessage(uri, resources))
   }
 
   const subscribedUris = helpers.ensureSubscribedResourceUris(sessionState)

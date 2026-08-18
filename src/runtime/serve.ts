@@ -144,10 +144,13 @@ export function readGraphArtifactRecord(graphPath: string): Record<string, unkno
     // two artifacts: structure from one, community labels and stored metadata
     // from the other. A moved marker still forwards, because that file holds
     // no data of its own.
-    const resolved = basename(safePath) === 'graph.json' && isMovedMarkerText(readFileSync(safePath, 'utf8'))
-      ? classifyWorkspaceGraph(dirname(safePath)).canonicalPath
-      : safePath
-    const text = readFileSync(resolved, 'utf8')
+    // One read on the path that has data. Testing the marker with its own
+    // read and then reading again to parse meant a live v1 at graph.json was
+    // read twice in full, on metadata paths such as semanticAnomaliesSummary.
+    const requestedText = readFileSync(safePath, 'utf8')
+    const text = basename(safePath) === 'graph.json' && isMovedMarkerText(requestedText)
+      ? readFileSync(classifyWorkspaceGraph(dirname(safePath)).canonicalPath, 'utf8')
+      : requestedText
     const parsed = JSON.parse(
       text.startsWith(GRAPH_ARTIFACT_V2_HEADER) ? text.slice(GRAPH_ARTIFACT_V2_HEADER.length) : text,
     )
