@@ -356,13 +356,17 @@ export async function startGraphServer(options: ServeGraphOptions = {}): Promise
             })
             return
           }
-          // Nothing has moved here, so the v1 is served as itself.
+          // Nothing has moved here, so the v1 is served as itself -- and the
+          // freshness headers describe that same file. Measuring graphPath
+          // instead made etag, last-modified and the resource-byte headers
+          // describe a different artifact than the body they accompany.
+          const servedLegacyPath = join(outputDir, LEGACY_ARTIFACT_BASENAME)
           sendText(
             response,
             200,
-            readUtf8File(join(outputDir, LEGACY_ARTIFACT_BASENAME)),
+            readUtf8File(servedLegacyPath),
             'application/json; charset=utf-8',
-            resourceFreshnessHeaders(resourceFreshnessMetadata(graphPath, graphPath)),
+            resourceFreshnessHeaders(resourceFreshnessMetadata(servedLegacyPath, servedLegacyPath)),
           )
           return
         }
