@@ -523,7 +523,26 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       { expectedCanonicalPath: graphPath, tombstonePath: legacyGraphPath },
     )
   }
+  // --cluster-only re-clusters an existing graph, so it has nothing to work
+  // from when the canonical artifact does not parse. Refusing here is the same
+  // rule the ambiguous state applies: a reuse path must not proceed on a graph
+  // it cannot trust.
+  if (workspaceGraphState === 'invalid_current_v2' && options.clusterOnly === true) {
+    throw new GraphArtifactStateError(
+      'invalid_current_v2',
+      `${graphPath} exists but is not a readable v2 artifact, so --cluster-only has no graph to re-cluster. `
+      + 'Run `madar generate .` to rebuild it from source.',
+      { expectedCanonicalPath: graphPath, tombstonePath: legacyGraphPath },
+    )
+  }
+
+  // An unreadable canonical artifact is rebuilt from source rather than parsed.
+  // Loading it raised a raw parse error out of `--update`, which failed the
+  // command instead of repairing the workspace -- and the loaded graph was
+  // discarded moments later anyway, because the policy comparison already
+  // treated it as unusable.
   const existingGraphPath = workspaceGraphState === 'mixed_v2_and_live_v1'
+    || workspaceGraphState === 'invalid_current_v2'
     ? null
     : existsSync(graphPath) ? graphPath : legacyGraphPath
   const reportPath = join(resolvedOutputDir, 'GRAPH_REPORT.md')
