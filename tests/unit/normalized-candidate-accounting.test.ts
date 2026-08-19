@@ -423,6 +423,44 @@ describe('a graph with no build reports no accounting rather than zeros', () => 
   })
 })
 
+describe('draft accumulation is bounded without falsifying a count', () => {
+  it('keeps the distinct total exact once the draft bound is exceeded', () => {
+    const session = new NormalizedAccountingSession()
+    // Well past the retained-draft bound, each candidate a distinct group.
+    const groups = 10_050
+    for (let index = 0; index < groups; index += 1) {
+      session.dispose(`cf_${index}`, {
+        state: 'unresolved',
+        reasons: ['missing_target_endpoint'],
+        source: 'alpha',
+        target: `missing_${index}`,
+      })
+    }
+    const result = session.finalize()
+
+    // The equation is untouched by any bound.
+    expect(result.emittedCandidates).toBe(groups)
+    expect(result.counts.unresolved).toBe(groups)
+    // Records are capped, but the distinct total remains exact so the loss is
+    // disclosed rather than hidden behind a smaller number.
+    expect(result.unresolvedRecords.length).toBeLessThanOrEqual(1000)
+    expect(result.unresolvedRetention.total).toBe(groups)
+    expect(result.unresolvedRetention.retained).toBeLessThan(result.unresolvedRetention.total)
+  })
+
+  it('still groups repeats by multiplicity after the bound is reached', () => {
+    const session = new NormalizedAccountingSession()
+    for (let index = 0; index < 10_050; index += 1) {
+      session.dispose(`cf_${index}`, { state: 'unresolved', reasons: ['missing_target_endpoint'] })
+    }
+    // A repeat of a group that IS retained must still raise its multiplicity.
+    session.dispose('cf_0', { state: 'unresolved', reasons: ['missing_target_endpoint'] })
+    const result = session.finalize()
+    expect(result.unresolvedRetention.total).toBe(10_050)
+    expect(result.counts.unresolved).toBe(10_051)
+  })
+})
+
 describe('a copy helper that rebuilds a graph cannot launder degradation', () => {
   it('carries accounting and admission counters onto a rebuilt graph', () => {
     const source = buildFromJson(representativeExtraction(), { directed: true })
@@ -466,6 +504,41 @@ describe('candidate sanitization', () => {
 
   it('drops an unsafe path even from an allowlisted key', () => {
     expect(sanitizeCandidate({ kind: '/Users/someone/x.ts' })).toEqual({})
+  })
+
+  it('drops a WINDOWS absolute path, which has no forward slash', () => {
+    // A `!value.includes('/')` shortcut previously let this straight through.
+    expect(sanitizeCandidate({ kind: 'C:\\Users\\me\\secret.ts' })).toEqual({})
+  })
+
+  it('drops a UNC path', () => {
+    expect(sanitizeCandidate({ kind: '\\\\server\\share\\secret.ts' })).toEqual({})
+  })
+
+  it('drops a url-shaped value', () => {
+    expect(sanitizeCandidate({ kind: 'https://example.com/x.ts' })).toEqual({})
+  })
+
+  it('drops a path that escapes the repository', () => {
+    expect(sanitizeCandidate({ kind: '../../etc/passwd' })).toEqual({})
+  })
+
+  it('keeps a repository-relative path in normalized form', () => {
+    expect(sanitizeCandidate({ kind: 'src\\pipeline\\build.ts' }))
+      .toEqual({ kind: 'src/pipeline/build.ts' })
+  })
+
+  it('drops an over-long value rather than truncating it', () => {
+    // Half a path is neither safe nor useful, and artifact-size headroom is thin.
+    expect(sanitizeCandidate({ kind: 'x'.repeat(500) })).toEqual({})
+    expect(sanitizeCandidate({ kind: 'x'.repeat(50) })).toEqual({ kind: 'x'.repeat(50) })
+  })
+
+  it('sanitizes a relation the same way as any other allowlisted string', () => {
+    // `relation` used to be exempt, so a path-shaped relation slipped through.
+    expect(sanitizeCandidate({ relation: '/Users/me/evil' })).toEqual({})
+    expect(sanitizeCandidate({ relation: 'unregistered_thing' }))
+      .toEqual({ relation: 'unregistered_thing' })
   })
 
   it('returns an empty projection for a non-record', () => {

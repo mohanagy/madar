@@ -4,6 +4,7 @@ import { canonicalJsonBytes, serializeCanonicalJson } from './canonical-json.js'
 import {
   CandidateRecordIdentityFactory,
   GraphIntegrityInvariantError,
+  MAX_DURABLE_RECORDS_PER_KIND,
   boundDurableRecords,
   emptyTerminalCounts,
   normalizeVerificationTargets,
@@ -151,24 +152,64 @@ export function sanitizeCandidate(candidate: unknown): Readonly<Record<string, C
   for (const key of SANITIZED_CANDIDATE_KEYS) {
     const value = record[key]
     if (typeof value === 'string') {
-      // Even an allowlisted string is refused if it looks like a path we cannot
-      // make repository-relative.
-      if (key === 'relation' || !value.includes('/')) {
-        sanitized[key] = value
-        continue
-      }
-      try {
-        const relative = normalizeIdentityRepositoryPath(value, key)
-        if (relative !== null) sanitized[key] = relative
-      } catch {
-        // Deliberately dropped: an unsafe path never enters a shared record.
-      }
+      const safe = safeCandidateString(value, key)
+      if (safe !== null) sanitized[key] = safe
       continue
     }
     if (typeof value === 'number' && Number.isFinite(value)) sanitized[key] = value
     if (typeof value === 'boolean') sanitized[key] = value
   }
   return Object.freeze(sanitized)
+}
+
+/**
+ * Anything path-shaped on any platform. A previous version tested only for a
+ * forward slash, which let a Windows absolute path (`C:\\Users\\me\\x.ts`) and a
+ * UNC path (`\\\\server\\share`) past the check entirely and into a shared record.
+ * The path normalizer itself handles both correctly; the shortcut was what
+ * bypassed it.
+ */
+const PATH_SHAPED = /[/\\]|^[A-Za-z]:|^[A-Za-z][A-Za-z0-9+.-]*:/
+
+/**
+ * Longest string kept on a rejected record.
+ *
+ * Rejected candidates are built from input already judged malformed, so an
+ * adapter is free to have put something enormous in an allowlisted field.
+ * #705 accepted a canonical-artifact ratio of 1.799x against a 2.00x gate, so
+ * there is no headroom for unbounded strings; an over-long value is dropped
+ * rather than truncated, because a half a path is neither safe nor useful.
+ */
+const MAX_SANITIZED_STRING_LENGTH = 200
+
+/**
+ * Distinct draft groups retained per kind while accounting is still running.
+ *
+ * `boundDurableRecords` caps what the artifact carries, but it only runs at
+ * finalize -- so without a bound here the drafts map would grow with the number
+ * of distinct candidate groups, which on a large repository is unbounded. The
+ * bound is a generous multiple of the record cap so deterministic id-ordered
+ * truncation still applies for any realistic corpus (Madar's own graph produces
+ * 416 distinct unresolved groups, a 24x margin), while memory stays bounded on a
+ * pathological one.
+ *
+ * Exceeding it never falsifies a count: the distinct-group total is tracked
+ * separately and stays exact, so `retained < total` still discloses the loss.
+ */
+const MAX_RETAINED_DRAFTS_PER_KIND = MAX_DURABLE_RECORDS_PER_KIND * 10
+
+function safeCandidateString(value: string, field: string): string | null {
+  if (value.length === 0 || value.length > MAX_SANITIZED_STRING_LENGTH) return null
+  if (!PATH_SHAPED.test(value)) return value
+  try {
+    // Path-shaped on any platform, so it only survives as a repository-relative
+    // form. `normalizeIdentityRepositoryPath` refuses absolute POSIX paths,
+    // Windows drive paths, UNC paths, URL schemes and `..` escapes.
+    return normalizeIdentityRepositoryPath(value, field)
+  } catch {
+    // Deliberately dropped: an unsafe path never enters a shared record.
+    return null
+  }
 }
 
 export class NormalizedAccountingSession {
@@ -179,6 +220,7 @@ export class NormalizedAccountingSession {
   private readonly rejectedDrafts = new Map<string, { draft: RejectedDisposition; fingerprint: string; multiplicity: number }>()
   private readonly conflictDrafts = new Map<string, { draft: ConflictingDisposition; multiplicity: number }>()
   private readonly disposedFingerprints = new Set<string>()
+  private readonly distinctGroupTotals = new Map<'unresolved' | 'rejected' | 'conflicting', number>()
   private readonly scopeFailureSet = new Set<string>()
   private emitted = 0
   private partialDiscriminators = 0
@@ -203,20 +245,23 @@ export class NormalizedAccountingSession {
 
     switch (disposition.state) {
       case 'unresolved':
-        this.accumulate(this.unresolvedDrafts, fingerprint, disposition)
+        this.accumulate(this.unresolvedDrafts, fingerprint, disposition, 'unresolved')
         return
       case 'rejected':
-        this.accumulate(this.rejectedDrafts, fingerprint, disposition)
+        this.accumulate(this.rejectedDrafts, fingerprint, disposition, 'rejected')
         return
       case 'conflicting': {
         // Grouped by sorted member fingerprints so a group's identity never
         // depends on which member was observed first.
         const key = serializeCanonicalJson([...disposition.groupFingerprints].sort(), { arraySemantics: 'ordered' })
         const existing = this.conflictDrafts.get(key)
-        if (existing === undefined) {
-          this.conflictDrafts.set(key, { draft: disposition, multiplicity: 1 })
-        } else {
+        if (existing !== undefined) {
           existing.multiplicity += 1
+          return
+        }
+        this.bumpDistinct('conflicting')
+        if (this.conflictDrafts.size < MAX_RETAINED_DRAFTS_PER_KIND) {
+          this.conflictDrafts.set(key, { draft: disposition, multiplicity: 1 })
         }
         return
       }
@@ -229,14 +274,28 @@ export class NormalizedAccountingSession {
     drafts: Map<string, { draft: T; fingerprint: string; multiplicity: number }>,
     fingerprint: string,
     disposition: T,
+    kind: 'unresolved' | 'rejected',
   ): void {
     const key = `${fingerprint}|${[...disposition.reasons].sort().join(',')}`
     const existing = drafts.get(key)
-    if (existing === undefined) {
-      drafts.set(key, { draft: disposition, fingerprint, multiplicity: 1 })
+    if (existing !== undefined) {
+      existing.multiplicity += 1
       return
     }
-    existing.multiplicity += 1
+    // A new distinct group. Counted even when it is not retained, so the total
+    // stays exact and truncation is disclosed rather than hidden.
+    this.bumpDistinct(kind)
+    if (drafts.size >= MAX_RETAINED_DRAFTS_PER_KIND) return
+    drafts.set(key, { draft: disposition, fingerprint, multiplicity: 1 })
+  }
+
+  private bumpDistinct(kind: 'unresolved' | 'rejected' | 'conflicting'): void {
+    this.distinctGroupTotals.set(kind, (this.distinctGroupTotals.get(kind) ?? 0) + 1)
+  }
+
+  /** Exact distinct-group total for a kind, independent of what was retained. */
+  private distinctTotal(kind: 'unresolved' | 'rejected' | 'conflicting', retained: number): number {
+    return Math.max(this.distinctGroupTotals.get(kind) ?? 0, retained)
   }
 
   /**
@@ -316,9 +375,18 @@ export class NormalizedAccountingSession {
       unresolvedRecords: unresolved.records,
       rejectedRecords: rejected.records,
       conflictRecords: conflicting.records,
-      unresolvedRetention: unresolved.retention,
-      rejectedRetention: rejected.retention,
-      conflictingRetention: conflicting.retention,
+      unresolvedRetention: Object.freeze({
+        retained: unresolved.retention.retained,
+        total: this.distinctTotal('unresolved', unresolved.retention.total),
+      }),
+      rejectedRetention: Object.freeze({
+        retained: rejected.retention.retained,
+        total: this.distinctTotal('rejected', rejected.retention.total),
+      }),
+      conflictingRetention: Object.freeze({
+        retained: conflicting.retention.retained,
+        total: this.distinctTotal('conflicting', conflicting.retention.total),
+      }),
       retainedPartialDiscriminators: this.partialDiscriminators,
       scopeFailures: Object.freeze([...this.scopeFailureSet].sort()),
     })
