@@ -25,6 +25,11 @@ function graph(): KnowledgeGraph {
   return buildFromJson(extraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
 }
 
+/** A mutable deep copy, since the graph now hands out frozen rows. */
+function mutableMatrix(g: KnowledgeGraph): Record<string, Record<string, number>> {
+  return JSON.parse(JSON.stringify(g.endpointIdentityMatrix())) as Record<string, Record<string, number>>
+}
+
 /** Finalizes with one part of a genuine snapshot input replaced. */
 function finalizeWith(overrides: Record<string, unknown>): () => unknown {
   const g = graph()
@@ -221,22 +226,19 @@ describe('R1/R2-02 — totals, matrices and counters are validated', () => {
   })
 
   it('refuses a matrix whose sum disagrees with the fact count', () => {
-    const g = graph()
-    const matrix = g.endpointIdentityMatrix() as unknown as Record<string, Record<string, number>>
+    const matrix = mutableMatrix(graph())
     matrix['legacy']!['legacy'] = (matrix['legacy']!['legacy'] ?? 0) + 5
     expectTypedRejection(finalizeWith({ endpointIdentityMatrix: matrix }))
   })
 
   it('refuses a negative matrix cell', () => {
-    const g = graph()
-    const matrix = g.endpointIdentityMatrix() as unknown as Record<string, Record<string, number>>
+    const matrix = mutableMatrix(graph())
     matrix['legacy']!['legacy'] = -1
     expectTypedRejection(finalizeWith({ endpointIdentityMatrix: matrix }))
   })
 
   it('refuses an unknown matrix status row', () => {
-    const g = graph()
-    const matrix = { ...g.endpointIdentityMatrix() } as unknown as Record<string, unknown>
+    const matrix = mutableMatrix(graph()) as unknown as Record<string, unknown>
     matrix['invented'] = { legacy: 0 }
     expectTypedRejection(finalizeWith({ endpointIdentityMatrix: matrix }))
   })

@@ -85,6 +85,28 @@ export interface SnapshotInput {
  * is wrong at construction is wrong for the rest of its life, and Stage 3 will
  * have no cheap way to notice.
  */
+/**
+ * Freezes a projection all the way down.
+ *
+ * `Object.freeze` is shallow, so a frozen snapshot whose matrix rows, record
+ * arrays and retention objects were still writable was immutable only at the
+ * top: a consumer handed the snapshot could rewrite a matrix cell, a retained
+ * record, or a retention count through the object it was given, and the change
+ * would serialize as though the producer had written it.
+ *
+ * Cycles are tracked because a projection that ever gains one must not turn a
+ * freeze into a hang.
+ */
+function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
+  if (value === null || typeof value !== 'object') return value
+  if (seen.has(value)) return value
+  seen.add(value)
+  for (const key of Object.getOwnPropertyNames(value)) {
+    deepFreeze((value as Record<string, unknown>)[key], seen)
+  }
+  return Object.freeze(value)
+}
+
 export function finalizeNormalizedIntegritySnapshot(
   input: SnapshotInput,
 ): FinalizedNormalizedIntegritySnapshot {
@@ -130,7 +152,7 @@ export function finalizeNormalizedIntegritySnapshot(
     throw new GraphIntegrityInvariantError('endpoint identity matrix is incomplete')
   }
 
-  return Object.freeze({
+  return deepFreeze({
     accountingScope: NORMALIZED_ACCOUNTING_SCOPE,
 
     emittedCandidates: accounting.emittedCandidates,

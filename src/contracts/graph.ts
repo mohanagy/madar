@@ -1135,11 +1135,16 @@ export class KnowledgeGraph {
     if (this.normalizedAccounting !== null) {
       throw new NormalizedAccountingAlreadyAttachedError()
     }
-    this.normalizedAccounting = result
-    // Finalized here, at the end of normalized construction, so it cannot go
-    // stale relative to the facts it describes. Any later mutation invalidates
-    // it rather than leaving a snapshot that quietly stops being true.
-    this.integritySnapshot = finalizeNormalizedIntegritySnapshot({
+    // Finalized into a local before anything is assigned. Validation lives
+    // inside finalization, so assigning the accounting first meant a rejected
+    // payload left this graph holding accounting with no snapshot -- a state no
+    // successful call can produce, and one a later reader cannot distinguish
+    // from a legitimate one.
+    //
+    // Finalized at the end of normalized construction so it cannot go stale
+    // relative to the facts it describes; any later mutation invalidates it
+    // rather than leaving a snapshot that quietly stops being true.
+    const snapshot = finalizeNormalizedIntegritySnapshot({
       accountingResult: result,
       facts: this.numberOfFacts(),
       occurrences: this.numberOfOccurrences(),
@@ -1148,6 +1153,9 @@ export class KnowledgeGraph {
       reasonFactCounts: this.endpointReasonFactSummary(),
       storageAdmission: this.storageAdmissionSummary(),
     })
+    // Both fields assigned together, only after every check has passed.
+    this.normalizedAccounting = result
+    this.integritySnapshot = snapshot
   }
 
   /**
@@ -1175,6 +1183,9 @@ export class KnowledgeGraph {
     const copy = emptyEndpointMatrix()
     for (const source of ENDPOINT_IDENTITY_STATUSES) {
       for (const target of ENDPOINT_IDENTITY_STATUSES) copy[source]![target] = this.endpointMatrix[source]![target]!
+      // Freezing only the outer object left every row writable, so a consumer
+      // could rewrite a cell through the projection it was handed.
+      Object.freeze(copy[source])
     }
     return Object.freeze(copy)
   }
