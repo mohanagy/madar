@@ -48,6 +48,16 @@ export interface BuildGraphOptions {
   directed?: boolean
   validateExtraction?: boolean
   accounting?: NormalizedAccountingMode
+  /**
+   * Absolute checkout root, supplied only by a build that truly knows it.
+   *
+   * Used for two things a candidate cannot determine on its own: refusing
+   * endpoint identifiers that are the flattened checkout path, and turning
+   * absolute producer `source_file` values into repository-relative
+   * verification targets. Absent means neither happens -- an invented root
+   * would be worse than none.
+   */
+  repositoryRoot?: string
 }
 
 type BuildableExtraction = {
@@ -258,8 +268,14 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
   const rawEdges: readonly unknown[] = Array.isArray(extraction.edges) ? extraction.edges : []
   // A session is created only when this build owns the boundary. Compatibility
   // callers get no ledger at all rather than an empty or fabricated one.
+  // A truthful root may also arrive on the extraction itself; an explicit
+  // option wins because the caller knows more than the payload.
+  const repositoryRoot = options.repositoryRoot
+    ?? (typeof extraction.root_path === 'string' && extraction.root_path.trim().length > 0
+      ? extraction.root_path
+      : undefined)
   const session = options.accounting === 'normalized_extraction_boundary'
-    ? new NormalizedAccountingSession()
+    ? new NormalizedAccountingSession(repositoryRoot !== undefined ? { repositoryRoot } : {})
     : null
   let normalizedCursor = 0
 
@@ -319,9 +335,7 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
         targetMissing,
         ...(relation !== undefined ? { relation } : {}),
         sourceFile: normalizedEdge.source_file,
-        ...(typeof extraction.root_path === 'string' && extraction.root_path.trim().length > 0
-          ? { rootPath: extraction.root_path }
-          : {}),
+        ...(repositoryRoot !== undefined ? { rootPath: repositoryRoot } : {}),
       }))
       continue
     }

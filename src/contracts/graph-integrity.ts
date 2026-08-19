@@ -537,6 +537,55 @@ export function assertEndpointMatrixPartition(
 }
 
 /**
+ * Share-safety context for one accounting run.
+ *
+ * Only a build that genuinely knows the checkout root may supply one.
+ * Compatibility loading, copy/subgraph, federation without a truthful root and
+ * direct construction must not invent one -- a wrong root would either redact
+ * legitimate identifiers or, worse, fail to redact real ones.
+ */
+export interface ShareSafetyContext {
+  readonly repositoryRoot?: string
+}
+
+/**
+ * The repository root as an extractor flattens it into an identifier.
+ *
+ * Some producers build a node id from a whole absolute path rather than a
+ * basename, so `/Users/someone/Desktop/proj` arrives as
+ * `users_someone_desktop_proj`. That form carries a home directory and a
+ * username but contains no slash, drive prefix, scheme, tilde or control
+ * character, so every ordinary path check passes it. It is only detectable by
+ * comparing against the actual root.
+ */
+export function flattenedRootPrefix(repositoryRoot: string): string | null {
+  const trimmed = repositoryRoot.trim()
+  if (trimmed.length === 0) return null
+  const flattened = trimmed
+    .replace(/^[A-Za-z]:/, (drive) => drive.slice(0, 1))
+    .replace(/^[/\\]+/, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase()
+  return flattened.length === 0 ? null : flattened
+}
+
+/**
+ * True when a value is the flattened root, or begins with it at a segment
+ * boundary.
+ *
+ * Anchored at a boundary rather than a bare `includes` so an unrelated
+ * identifier that merely shares a leading substring is not redacted. Compared
+ * case-insensitively because a Windows checkout can differ only in case.
+ */
+export function isRootDerivedIdentifier(value: string, flattenedRoot: string | null): boolean {
+  if (flattenedRoot === null || flattenedRoot.length === 0) return false
+  const lower = value.toLowerCase()
+  if (lower === flattenedRoot) return true
+  return lower.startsWith(`${flattenedRoot}_`)
+}
+
+/**
  * A semantic node identifier, bounded and refused when path-shaped.
  *
  * Node ids may legitimately contain non-ASCII, so unlike a diagnostic hint they
@@ -545,22 +594,58 @@ export function assertEndpointMatrixPartition(
  * neither can be a legitimate identifier and both are how a checkout path would
  * reach a shared artifact.
  */
-export function safeEndpointIdentifier(value: string | undefined, field: string): string | undefined {
+/**
+ * Unicode characters that render as a path separator without being one.
+ *
+ * An explicit reviewed set rather than NFKC folding: NFKC would rewrite the
+ * identifier into a different identifier, and a semantic node id must survive
+ * sanitization unchanged or not at all. Each of these has been used to disguise
+ * a path from a check that only knows `/` and `\`.
+ */
+const SEPARATOR_LOOKALIKES = /[\u2044\u2215\u29f8\uff0f\uff3c\ufe68\u2216\u01c0\u2571\u2572]/
+
+/** Percent-encoded byte escapes, which can hide a separator. */
+const PERCENT_ESCAPE = /%[0-9A-Fa-f]{2}/
+
+/** Traversal-only values, which name a directory rather than an entity. */
+const TRAVERSAL_ONLY = /^\.{1,2}$/
+
+export function safeEndpointIdentifier(
+  value: string | undefined,
+  field: string,
+  flattenedRoot: string | null = null,
+): string | undefined {
   if (value === undefined) return undefined
-  if (value.length === 0 || value.length > MAX_ENDPOINT_ID_LENGTH) return undefined
+  // NFC first so length and every predicate below judge one canonical form.
+  // Canonical JSON already normalizes identity this way, so this keeps the
+  // projection and the identity payload agreeing.
+  const normalized = value.normalize('NFC')
+  if (normalized.length === 0 || normalized.length > MAX_ENDPOINT_ID_LENGTH) return undefined
+  // A flattened checkout path is a real identifier to the graph and a privacy
+  // leak in a shared artifact, so it is omitted from the diagnostic projection
+  // while remaining part of record identity.
+  if (isRootDerivedIdentifier(normalized, flattenedRoot)) return undefined
+  // C0 and C1 controls, including NUL.
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f]/.test(value)) return undefined
-  if (/[/\\]|^[A-Za-z]:|^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) return undefined
-  if (value.startsWith('~')) return undefined
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(normalized)) return undefined
+  if (PERCENT_ESCAPE.test(normalized)) return undefined
+  if (SEPARATOR_LOOKALIKES.test(normalized)) return undefined
+  if (TRAVERSAL_ONLY.test(normalized)) return undefined
+  if (/[/\\]|^[A-Za-z]:|^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(normalized)) return undefined
+  if (normalized.startsWith('~')) return undefined
   void field
-  return value
+  return normalized
 }
 
 /** A relation vocabulary token: shorter bound, same refusals. */
-export function safeRelationToken(value: string | undefined, field: string): string | undefined {
+export function safeRelationToken(
+  value: string | undefined,
+  field: string,
+  flattenedRoot: string | null = null,
+): string | undefined {
   if (value === undefined) return undefined
   if (value.length === 0 || value.length > MAX_RELATION_LENGTH) return undefined
-  return safeEndpointIdentifier(value, field)
+  return safeEndpointIdentifier(value, field, flattenedRoot)
 }
 
 function sortedUniqueReasons(reasons: readonly TerminalIntegrityReason[], field: string): readonly TerminalIntegrityReason[] {
@@ -671,8 +756,16 @@ function assertMultiplicity(value: number, field: string): number {
  */
 export class CandidateRecordIdentityFactory {
   private readonly payloadByDigest = new Map<string, Buffer>()
+  private readonly flattenedRoot: string | null
 
-  constructor(private readonly hash: (payload: Buffer) => string = sha256) {}
+  constructor(
+    private readonly hash: (payload: Buffer) => string = sha256,
+    shareSafety: ShareSafetyContext = {},
+  ) {
+    this.flattenedRoot = shareSafety.repositoryRoot === undefined
+      ? null
+      : flattenedRootPrefix(shareSafety.repositoryRoot)
+  }
 
   /** Distinct payloads witnessed by this scope. A fresh operation starts at zero. */
   get witnessCount(): number {
@@ -700,16 +793,21 @@ export class CandidateRecordIdentityFactory {
     const targets = normalizeVerificationTargets(draft.verificationTargets ?? [], 'unresolved record')
     const bounded = boundDetail(draft.occurrences ?? [], MAX_RECORD_OCCURRENCES, (occurrence) => occurrence.id)
     const occurrences = bounded.values
-    const source = safeEndpointIdentifier(draft.source, 'unresolved record source')
-    const target = safeEndpointIdentifier(draft.target, 'unresolved record target')
-    const relation = safeRelationToken(draft.relation, 'unresolved record relation')
+    // Redaction applies to the DISPLAYED hint only. Identity below still keys on
+    // the original endpoints, so omitting an unsafe hint cannot collapse two
+    // distinct candidates onto one record.
+    const source = safeEndpointIdentifier(draft.source, 'unresolved record source', this.flattenedRoot)
+    const target = safeEndpointIdentifier(draft.target, 'unresolved record target', this.flattenedRoot)
+    const relation = safeRelationToken(draft.relation, 'unresolved record relation', this.flattenedRoot)
     const identityPayload = {
       record_kind: 'unresolved',
       reason_vocabulary_version: GRAPH_INTEGRITY_REASON_VOCABULARY_VERSION,
       candidate_fingerprint: draft.candidateFingerprint,
-      ...(source !== undefined ? { source } : {}),
-      ...(target !== undefined ? { target } : {}),
-      ...(relation !== undefined ? { relation } : {}),
+      // The original values, not the redacted projection: two candidates that
+      // differ only in a redacted endpoint must still get distinct ids.
+      ...(draft.source !== undefined ? { source: draft.source } : {}),
+      ...(draft.target !== undefined ? { target: draft.target } : {}),
+      ...(draft.relation !== undefined ? { relation: draft.relation } : {}),
       reasons: orderedCanonicalArray(reasons),
     }
     const id = this.contentAddress('uc_', canonicalJsonBytes(identityPayload))
@@ -789,6 +887,27 @@ export class CandidateRecordIdentityFactory {
 
 function sha256(payload: Buffer): string {
   return createHash('sha256').update(payload).digest('hex')
+}
+
+/**
+ * Applies a final multiplicity without touching anything identity-bearing.
+ *
+ * Finalization previously rebuilt records through the factory, which assumes it
+ * is given the COMPLETE raw detail. Feeding it an already-bounded record made it
+ * re-bound the bound -- occurrence retention came back as 16 of 16 instead of 16
+ * of 50 -- and recompute the conflict full-set digest from the retained 32
+ * fingerprints instead of the real 40, which moved the record id and threw.
+ *
+ * Multiplicity is not part of record identity, so it can simply be replaced.
+ */
+export function withMultiplicityPreservingIdentity<T extends DurableCandidateRecord>(
+  record: T,
+  multiplicity: number,
+): T {
+  if (!Number.isSafeInteger(multiplicity) || multiplicity < 1) {
+    throw new GraphIntegrityInvariantError(`multiplicity ${multiplicity} must be a positive safe integer`)
+  }
+  return Object.freeze({ ...record, multiplicity }) as unknown as T
 }
 
 /**

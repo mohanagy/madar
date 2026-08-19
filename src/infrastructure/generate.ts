@@ -878,7 +878,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     }
     return buildFromJson(mergeExtractions([codeExtraction, nonCodeExtraction]), {
       directed,
-      accounting: 'normalized_extraction_boundary',
+      accounting: 'normalized_extraction_boundary', repositoryRoot: resolvedRootPath,
     })
   }
 
@@ -892,7 +892,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
           return extractableFiles.length > 0
             ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
                 onFileOutcome: recordExtractionOutcome('legacy'),
-              }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary' })
+              }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary', repositoryRoot: resolvedRootPath })
             : null
         })()
     : options.update && existingGraph && isIncrementalDetectResult(detected)
@@ -907,7 +907,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
               return extractableFiles.length > 0
                 ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
                     onFileOutcome: recordExtractionOutcome('legacy'),
-                  }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary' })
+                  }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary', repositoryRoot: resolvedRootPath })
                 : null
             }
 
@@ -951,13 +951,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
           return buildFromJson(mergeExtractions([retainedExtraction, changedExtraction]), {
             directed,
-            accounting: 'normalized_extraction_boundary',
+            accounting: 'normalized_extraction_boundary', repositoryRoot: resolvedRootPath,
           })
         })()
       : extractableFiles.length > 0
         ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
             onFileOutcome: recordExtractionOutcome('legacy'),
-          }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary' })
+          }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary', repositoryRoot: resolvedRootPath })
       : options.update && existingGraph
           ? existingGraph
           : null

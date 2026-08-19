@@ -3,6 +3,10 @@ import { createHash } from 'node:crypto'
 import { canonicalJsonBytes, serializeCanonicalJson } from './canonical-json.js'
 import {
   CandidateRecordIdentityFactory,
+  detailRetention,
+  withMultiplicityPreservingIdentity,
+  type DurableCandidateRecord,
+  type ShareSafetyContext,
   GraphIntegrityInvariantError,
   MAX_DURABLE_RECORDS_PER_KIND,
   MAX_SCOPE_FAILURES,
@@ -323,9 +327,20 @@ class RetainedRecords<T extends { readonly id: string }> {
 }
 
 export class NormalizedAccountingSession {
+  /**
+   * Share-safety context for this run.
+   *
+   * Supplied only by a build that genuinely knows the checkout root. Everything
+   * else leaves it absent, because an invented root either redacts legitimate
+   * identifiers or fails to redact real ones.
+   */
   private readonly counts: Record<CandidateTerminalState, number> = { ...emptyTerminalCounts() }
   private readonly reasonCounts = new Map<TerminalIntegrityReason, number>()
-  private readonly identity = new CandidateRecordIdentityFactory()
+  private readonly identity: CandidateRecordIdentityFactory
+
+  constructor(private readonly shareSafety: ShareSafetyContext = {}) {
+    this.identity = new CandidateRecordIdentityFactory(undefined, shareSafety)
+  }
   private readonly unresolvedRetained = new RetainedRecords<UnresolvedCandidateRecord>()
   private readonly rejectedRetained = new RetainedRecords<RejectedCandidateRecord>()
   private readonly conflictRetained = new RetainedRecords<CandidateConflictRecord>()
@@ -452,60 +467,42 @@ export class NormalizedAccountingSession {
     // Rebuilt at the exact multiplicity. Multiplicity is excluded from record
     // identity, so the id must not move; asserting that is what makes the
     // retention bound's ordering trustworthy rather than merely intended.
-    const rebuild = <T extends { readonly id: string }>(
+    // Multiplicity is replaced in place. Rebuilding through the factory would
+    // hand it an already-bounded record as if it were complete detail, which
+    // destroyed retention totals and moved conflict record ids.
+    const applyMultiplicity = <T extends DurableCandidateRecord>(
       entries: readonly { readonly record: T; readonly multiplicity: number }[],
-      make: (record: T, multiplicity: number) => T,
     ): readonly T[] => Object.freeze(entries.map(({ record, multiplicity }) => {
-      const rebuilt = make(record, multiplicity)
-      if (rebuilt.id !== record.id) {
+      const finalized = withMultiplicityPreservingIdentity(record, multiplicity)
+      if (finalized.id !== record.id) {
         throw new GraphIntegrityInvariantError(
-          `record id moved when multiplicity was applied: ${record.id} became ${rebuilt.id}`,
+          `record id moved when multiplicity was applied: ${record.id} became ${finalized.id}`,
         )
       }
-      return rebuilt
+      return finalized
     }))
 
-    const unresolvedRecords = rebuild(this.unresolvedRetained.entries(), (record, multiplicity) => (
-      this.identity.createUnresolvedRecord({
-        candidateFingerprint: record.candidateFingerprint,
-        multiplicity,
-        ...(record.source !== undefined ? { source: record.source } : {}),
-        ...(record.target !== undefined ? { target: record.target } : {}),
-        ...(record.relation !== undefined ? { relation: record.relation } : {}),
-        occurrences: record.occurrences,
-        reasons: record.reasons,
-        verificationTargets: record.verificationTargets,
-      })
-    ))
+    const unresolvedRecords = applyMultiplicity(this.unresolvedRetained.entries())
 
-    const rejectedRecords = rebuild(this.rejectedRetained.entries(), (record, multiplicity) => (
-      this.identity.createRejectedRecord({
-        candidateFingerprint: record.candidateFingerprint,
-        multiplicity,
-        sanitizedCandidate: record.sanitizedCandidate,
-        reasons: record.reasons,
-        verificationTargets: record.verificationTargets,
-      })
-    ))
+    const rejectedRecords = applyMultiplicity(this.rejectedRetained.entries())
 
-    const conflictRecords = rebuild(this.conflictRetained.entries(), (record, multiplicity) => (
-      this.identity.createConflictRecord({
-        candidateFingerprints: record.candidateFingerprints,
-        multiplicity,
-        reasons: record.reasons,
-        verificationTargets: record.verificationTargets,
-      })
-    ))
+    const conflictRecords = applyMultiplicity(this.conflictRetained.entries())
 
     // Scope failures are diagnostic strings from adapters, so they get the same
     // treatment as any other capped detail: bounded, deterministically chosen,
     // and reported with an exact total.
-    const boundedScopeFailures = boundDetail(
-      [...this.scopeFailureSet]
-        .map((scope) => safeScopeName(scope))
-        .filter((scope): scope is string => scope !== null),
-      MAX_SCOPE_FAILURES,
-      (scope) => scope,
+    // Total is the count of DISTINCT SUBMITTED names, captured before
+    // sanitization. Filtering first made three unsafe submissions vanish from
+    // the total as well as from the list, so the receipt reported 2 of 2 for
+    // five submissions -- omission that discloses itself as completeness.
+    const submittedScopeFailures = this.scopeFailureSet.size
+    const safeScopeNames = [...this.scopeFailureSet]
+      .map((scope) => safeScopeName(scope))
+      .filter((scope): scope is string => scope !== null)
+    const boundedScopeFailures = boundDetail(safeScopeNames, MAX_SCOPE_FAILURES, (scope) => scope)
+    const scopeFailureRetention = detailRetention(
+      boundedScopeFailures.values.length,
+      submittedScopeFailures,
     )
 
     const retention = (
@@ -527,7 +524,7 @@ export class NormalizedAccountingSession {
       conflictingRetention: retention(conflictRecords.length, this.conflictRetained.distinctTotal),
       retainedPartialDiscriminators: this.partialDiscriminators,
       scopeFailures: boundedScopeFailures.values,
-      scopeFailureRetention: boundedScopeFailures.retention,
+      scopeFailureRetention,
     })
   }
 }
