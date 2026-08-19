@@ -1072,6 +1072,31 @@ export class KnowledgeGraph {
     return this.normalizedAccounting
   }
 
+  /**
+   * Carries degradation state onto a graph rebuilt by a copy helper.
+   *
+   * `copy()` and `subgraph()` preserve this themselves, but a helper that
+   * constructs a fresh graph and replays facts -- the direction-changing copy in
+   * `generate` is the one production case -- bypasses that path entirely. It
+   * therefore produced a graph with zero unregistered admissions and no
+   * accounting from a source that had both, which is the same laundering
+   * `copySelectedNodes` already refuses. Narrow on purpose: it only ever moves
+   * degradation *onto* a graph that has none.
+   */
+  inheritDegradationFrom(source: KnowledgeGraph): void {
+    for (const [relation, count] of source.unregisteredRelationAdmissions) {
+      this.unregisteredRelationAdmissions.set(
+        relation,
+        (this.unregisteredRelationAdmissions.get(relation) ?? 0) + count,
+      )
+    }
+    const accounting = source.normalizedAccounting
+    if (accounting !== null) {
+      if (this.normalizedAccounting !== null) throw new NormalizedAccountingAlreadyAttachedError()
+      this.normalizedAccounting = accounting
+    }
+  }
+
   copy(): KnowledgeGraph {
     return this.copySelectedNodes(new Set(this.nodeIds()))
   }

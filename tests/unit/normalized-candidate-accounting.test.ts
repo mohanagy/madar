@@ -423,6 +423,36 @@ describe('a graph with no build reports no accounting rather than zeros', () => 
   })
 })
 
+describe('a copy helper that rebuilds a graph cannot launder degradation', () => {
+  it('carries accounting and admission counters onto a rebuilt graph', () => {
+    const source = buildFromJson(representativeExtraction(), { directed: true })
+    expect(source.storageAdmissionSummary().unresolvedUnregisteredRelationCandidates).toBe(1)
+
+    // What the direction-changing copy in generate does: a fresh graph with the
+    // facts replayed. copy() preserves degradation itself; this path does not,
+    // so it has to carry it explicitly or the rebuilt graph looks clean.
+    const rebuilt = new KnowledgeGraph({ directed: false })
+    rebuilt.inheritDegradationFrom(source)
+
+    expect(rebuilt.normalizedAccountingSummary()).toBe(source.normalizedAccountingSummary())
+    expect(rebuilt.storageAdmissionSummary().unresolvedUnregisteredRelationCandidates).toBe(1)
+  })
+
+  it('refuses to overwrite accounting already attached to the target', () => {
+    const source = buildFromJson(representativeExtraction(), { directed: true })
+    const target = buildFromJson(representativeExtraction(), { directed: true })
+    expect(() => target.inheritDegradationFrom(source))
+      .toThrow(NormalizedAccountingAlreadyAttachedError)
+  })
+
+  it('is a no-op for accounting when the source never ran a build', () => {
+    const source = new KnowledgeGraph({ directed: true })
+    const target = new KnowledgeGraph({ directed: true })
+    target.inheritDegradationFrom(source)
+    expect(target.normalizedAccountingSummary()).toBeNull()
+  })
+})
+
 describe('candidate sanitization', () => {
   it('keeps allowlisted primitives only', () => {
     expect(sanitizeCandidate({

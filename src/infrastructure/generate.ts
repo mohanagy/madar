@@ -379,6 +379,12 @@ function copyGraphWithDirection(graph: KnowledgeGraph, directed: boolean): Knowl
     }
   }
 
+  // This helper builds a fresh graph rather than going through copy(), so the
+  // degradation copy() preserves has to be carried explicitly. Without it a
+  // direction change silently reset both the unregistered-admission counters
+  // and the candidate accounting to empty.
+  copied.inheritDegradationFrom(graph)
+
   return copied
 }
 
