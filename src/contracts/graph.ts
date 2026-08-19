@@ -1,3 +1,4 @@
+import type { NormalizedAccountingResult } from './graph-integrity-session.js'
 import { serializeCanonicalJson, type CanonicalJson } from './canonical-json.js'
 import {
   EndpointIdentityInvariantError,
@@ -85,12 +86,23 @@ export interface GraphAddEdgeOptions {
   readonly legacyCompatibility?: 'v1-artifact-loader'
 }
 
+/**
+ * Whether an occurrence was newly indexed or merged into one already stored.
+ *
+ * Additive for #658: without it a caller cannot tell a candidate that added a
+ * distinct observation (`retained_additional_occurrence`) from one that was an
+ * exact repeat (`deliberately_merged_duplicate`). `addOccurrence` already knows
+ * -- it looks the id up before storing -- but returned only the id.
+ */
+export type EvidenceOccurrenceDisposition = 'inserted' | 'merged'
+
 export type GraphEdgeAdmissionResult =
   | Readonly<{
     status: 'stored'
     factId: SemanticFactId
     duplicate: boolean
     occurrenceId?: EvidenceOccurrenceId
+    occurrenceDisposition?: EvidenceOccurrenceDisposition
   }>
   | Readonly<{
     status: 'unresolved_degraded'
@@ -117,6 +129,13 @@ export function artifactHydrationToken(caller: 'graph-artifact-loader'): symbol 
     throw new GraphAdmissionError('Verified hydration is reserved for the artifact loader')
   }
   return ARTIFACT_HYDRATION_TOKEN
+}
+
+export class NormalizedAccountingAlreadyAttachedError extends Error {
+  constructor() {
+    super('normalized candidate accounting has already been attached to this graph')
+    this.name = 'NormalizedAccountingAlreadyAttachedError'
+  }
 }
 
 export class GraphAdmissionError extends Error {
@@ -455,6 +474,13 @@ export class KnowledgeGraph {
    * unresolved candidates remains #658's responsibility.
    */
   private readonly unregisteredRelationAdmissions = new Map<string, number>()
+  /**
+   * Finalized normalized-boundary accounting for the build that produced this
+   * graph, or null when no build ran -- `--cluster-only` and graph-reuse paths
+   * perform zero `buildFromJson` calls, and reporting seven zeros for them
+   * would describe an accounting run that never happened.
+   */
+  private normalizedAccounting: NormalizedAccountingResult | null = null
   /** Invalidated by every endpoint-pair mutation; see endpointEntries(). */
   private endpointEntriesCache: readonly GraphEndpointEntry[] | null = null
 
@@ -643,24 +669,28 @@ export class KnowledgeGraph {
       })
     const existing = this.factMap.get(fact.id)
     if (existing !== undefined) {
-      if (occurrence !== null) this.addOccurrence(occurrence)
+      const inserted = occurrence !== null ? this.insertOccurrence(occurrence) : null
       return Object.freeze({
         status: 'stored' as const,
         factId: fact.id,
         duplicate: true,
-        ...(occurrence !== null ? { occurrenceId: occurrence.id } : {}),
+        ...(inserted !== null
+          ? { occurrenceId: inserted.id, occurrenceDisposition: inserted.disposition }
+          : {}),
       })
     }
 
     this.indexVerifiedFact(fact, attributes)
 
-    if (occurrence !== null) this.addOccurrence(occurrence)
+    const inserted = occurrence !== null ? this.insertOccurrence(occurrence) : null
 
     return Object.freeze({
       status: 'stored' as const,
       factId: fact.id,
       duplicate: false,
-      ...(occurrence !== null ? { occurrenceId: occurrence.id } : {}),
+      ...(inserted !== null
+        ? { occurrenceId: inserted.id, occurrenceDisposition: inserted.disposition }
+        : {}),
     })
   }
 
@@ -718,6 +748,17 @@ export class KnowledgeGraph {
   }
 
   addOccurrence(occurrence: EvidenceOccurrence): EvidenceOccurrenceId {
+    return this.insertOccurrence(occurrence).id
+  }
+
+  /**
+   * Insertion core. Reports whether the occurrence was newly indexed or merged
+   * into an existing one; `addOccurrence` keeps its original id-only signature
+   * for the three copy/federation callers that do not need the distinction.
+   */
+  private insertOccurrence(
+    occurrence: EvidenceOccurrence,
+  ): { readonly id: EvidenceOccurrenceId; readonly disposition: EvidenceOccurrenceDisposition } {
     if (!this.factMap.has(occurrence.factId)) {
       throw new MissingSemanticFactError(occurrence.factId)
     }
@@ -756,7 +797,7 @@ export class KnowledgeGraph {
       })
     this.occurrenceMap.set(stored.id, stored)
     this.factOccurrenceIndex.get(stored.factId)?.add(stored.id)
-    return stored.id
+    return { id: stored.id, disposition: existing === undefined ? 'inserted' : 'merged' }
   }
 
   private addFactIndexEntry(index: Map<string, Set<SemanticFactId>>, key: string, factId: SemanticFactId): void {
@@ -1012,6 +1053,25 @@ export class KnowledgeGraph {
     })
   }
 
+  /**
+   * Attaches the one finalized accounting result for this graph's build.
+   *
+   * Attaching twice is a typed failure: two results would mean two accounting
+   * runs claimed the same graph, and silently keeping either one would make the
+   * receipt describe a build that did not produce this graph.
+   */
+  attachNormalizedAccounting(result: NormalizedAccountingResult): void {
+    if (this.normalizedAccounting !== null) {
+      throw new NormalizedAccountingAlreadyAttachedError()
+    }
+    this.normalizedAccounting = result
+  }
+
+  /** Null when no normalized build produced this graph. Never a zeroed result. */
+  normalizedAccountingSummary(): NormalizedAccountingResult | null {
+    return this.normalizedAccounting
+  }
+
   copy(): KnowledgeGraph {
     return this.copySelectedNodes(new Set(this.nodeIds()))
   }
@@ -1028,6 +1088,10 @@ export class KnowledgeGraph {
     for (const [relation, count] of this.unregisteredRelationAdmissions) {
       copied.unregisteredRelationAdmissions.set(relation, count)
     }
+    // Same rule, same reason: a copy must never look cleaner than its source.
+    // Dropping this would let copy() launder away the candidate loss the
+    // accounting exists to report.
+    copied.normalizedAccounting = this.normalizedAccounting
 
     for (const [nodeId, attributes] of this.nodeMap) {
       if (!selectedNodeIds.has(nodeId)) continue

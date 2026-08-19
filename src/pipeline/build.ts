@@ -1,8 +1,17 @@
-import { KnowledgeGraph } from '../contracts/graph.js'
+import { GraphAdmissionError, InvalidGraphEndpointQualificationError, KnowledgeGraph, MissingGraphEndpointError } from '../contracts/graph.js'
 import { classifyLegacyEndpoint } from '../contracts/endpoint-identity.js'
+import {
+  NormalizedAccountingSession,
+  candidateFingerprint,
+  type CandidateDisposition,
+} from '../contracts/graph-integrity-session.js'
+import type { IntegrityVerificationTarget, TerminalIntegrityReason } from '../contracts/graph-integrity.js'
 import type { ExtractionData, ExtractionSchemaVersion } from '../contracts/types.js'
 import { validateExtraction } from '../contracts/extraction.js'
 import { normalizeExtractionData } from '../core/schema/normalize.js'
+import { resolveRelationDiscriminator } from '../contracts/relation-discriminator.js'
+import { isBuiltin } from 'node:module'
+import { isAbsolute, relative } from 'node:path'
 import { isRecord } from '../shared/guards.js'
 
 type CombinedExtraction = {
@@ -54,6 +63,142 @@ function derivedEdgeConfidenceScore(attributes: Record<string, unknown>): number
   }
 }
 
+interface UnresolvedEndpointInput {
+  readonly source: string
+  readonly target: string
+  readonly sourceMissing: boolean
+  readonly targetMissing: boolean
+  readonly relation?: string
+  readonly sourceFile?: unknown
+  readonly rootPath?: string
+}
+
+/**
+ * Best-effort repository-relative form of a producer path.
+ *
+ * Producer attributes still carry absolute `source_file` values -- audited under
+ * #657 as pre-existing in v1 and owned by #704 -- so a verification target can
+ * only be emitted when a root is supplied to relativize against. When it cannot
+ * be, no target is emitted: a missing hint is recoverable, a leaked checkout
+ * path in a shared artifact is not.
+ */
+function repositoryRelativeHint(sourceFile: unknown, rootPath: string | undefined): string | null {
+  if (typeof sourceFile !== 'string' || sourceFile.length === 0) return null
+  if (rootPath !== undefined && rootPath.length > 0) {
+    const relativized = relative(rootPath, sourceFile)
+    if (!relativized.startsWith('..') && !isAbsolute(relativized)) return relativized
+    return null
+  }
+  return isAbsolute(sourceFile) ? null : sourceFile
+}
+
+/**
+ * Classifies a candidate whose endpoint is absent from the node set.
+ *
+ * The primary reason is always the plain fact -- which endpoint is missing.
+ * `unresolved_external_module_boundary` is added only on **positive evidence**
+ * that the target is a runtime built-in. Absence of that evidence is not proof
+ * a target is repository-local, so no internal claim is made speculatively:
+ * asserting one would be exactly the fabrication #658 forbids, and telling
+ * `fs` apart from an unresolved local module needs a declaration mechanism this
+ * repository does not have. #703 owns closing that gap upstream.
+ */
+function unresolvedEndpoint(input: UnresolvedEndpointInput): CandidateDisposition {
+  const reasons: TerminalIntegrityReason[] = []
+  if (input.sourceMissing && input.targetMissing) {
+    reasons.push('missing_both_endpoints')
+  } else if (input.sourceMissing) {
+    reasons.push('missing_source_endpoint')
+  } else {
+    reasons.push('missing_target_endpoint')
+  }
+  if (input.targetMissing && isBuiltin(input.target)) {
+    reasons.push('unresolved_external_module_boundary')
+  }
+
+  const hint = repositoryRelativeHint(input.sourceFile, input.rootPath)
+  const targets: IntegrityVerificationTarget[] = hint !== null
+    ? [{ file: hint, reason: reasons[0]! }]
+    : []
+
+  return {
+    state: 'unresolved',
+    reasons,
+    source: input.source,
+    target: input.target,
+    ...(input.relation !== undefined ? { relation: input.relation } : {}),
+    verificationTargets: targets,
+  }
+}
+
+/**
+ * Admits a candidate through the storage boundary and maps the result to a
+ * terminal state.
+ *
+ * The registry is deliberately **not** pre-checked here. Letting `addEdge` make
+ * every unsupported-relation determination is what keeps #657's
+ * `storage_admission` counter and this ledger's `unsupported_relation` bucket
+ * equal; a pre-check that skipped the call would count a rejection the storage
+ * boundary never saw.
+ */
+function admitCandidate(
+  graph: KnowledgeGraph,
+  source: string,
+  target: string,
+  attributes: Record<string, unknown>,
+  candidate: unknown,
+): CandidateDisposition {
+  let admission
+  try {
+    admission = graph.addEdge(source, target, attributes as never)
+  } catch (error) {
+    if (error instanceof MissingGraphEndpointError) {
+      // Unreachable through this path -- endpoints are checked above -- so
+      // reaching it means the node set and the store disagree.
+      return { state: 'invariant_failed', reasons: ['candidate_accounting_mismatch'], candidate }
+    }
+    if (error instanceof InvalidGraphEndpointQualificationError) {
+      return { state: 'rejected', reasons: ['malformed_endpoint_identity'], candidate }
+    }
+    if (error instanceof GraphAdmissionError) {
+      return { state: 'rejected', reasons: ['malformed_discriminator'], candidate }
+    }
+    throw error
+  }
+
+  if (admission.status === 'unresolved_degraded') {
+    return { state: 'rejected', reasons: ['unsupported_relation'], candidate }
+  }
+
+  const reasons: TerminalIntegrityReason[] = []
+  if (relationDiscriminatorCompleteness(attributes.relation) === 'partial') {
+    // Visible degradation on a retained fact: the registry has a policy for
+    // this relation but the producer does not supply the behaviour data it
+    // names. Retained, not dropped -- and not silently clean either.
+    reasons.push('partial_discriminator')
+  }
+
+  if (!admission.duplicate) {
+    return { state: 'retained_new_fact', reasons }
+  }
+  // The fact already existed. Whether this candidate contributed a distinct
+  // observation or was an exact repeat is the difference between
+  // `retained_additional_occurrence` and `deliberately_merged_duplicate`, and
+  // only the occurrence disposition can tell them apart.
+  return {
+    state: admission.occurrenceDisposition === 'inserted'
+      ? 'retained_additional_occurrence'
+      : 'deliberately_merged_duplicate',
+    reasons,
+  }
+}
+
+function relationDiscriminatorCompleteness(relation: unknown): 'partial' | 'endpoint_only' | 'full' | null {
+  if (typeof relation !== 'string') return null
+  const resolution = resolveRelationDiscriminator(relation)
+  return resolution.status === 'registered' ? resolution.discriminator.completeness : null
+}
+
 export function buildFromJson(extraction: unknown, options: BuildGraphOptions = {}): KnowledgeGraph {
   const graph = new KnowledgeGraph({ directed: options.directed === true })
   if (!isRecord(extraction)) {
@@ -91,23 +236,97 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
   }
 
   const nodeIds = new Set(graph.nodeIds())
-  const edges = normalized.edges
-  for (const edge of edges) {
-    const source = typeof edge.source === 'string' ? edge.source : null
-    const target = typeof edge.target === 'string' ? edge.target : null
-    if (!source || !target || !nodeIds.has(source) || !nodeIds.has(target)) {
+  // The declared normalized extraction boundary. One entry of the extraction's
+  // `edges` array is one normalized candidate, and every entry reaches exactly
+  // one terminal state. Before #658 an entry whose endpoints were absent was
+  // skipped with a bare `continue`, leaving no counter, record or diagnostic --
+  // 412 of 14,556 candidates on Madar's own corpus disappeared that way.
+  const rawEdges: readonly unknown[] = Array.isArray(extraction.edges) ? extraction.edges : []
+  const session = new NormalizedAccountingSession()
+  let normalizedCursor = 0
+
+  for (const [index, rawEdge] of rawEdges.entries()) {
+    if (!isRecord(rawEdge)) {
+      // `normalizeExtractionData` drops non-record entries before they ever
+      // acquire a candidate shape. Accounted here rather than silently filtered.
+      session.dispose(candidateFingerprint({ index }), {
+        state: 'rejected',
+        reasons: ['malformed_candidate'],
+        candidate: rawEdge,
+      })
       continue
     }
 
-    const { source: _source, target: _target, ...attributes } = edge
+    // The normalizer filters non-records and then maps one-to-one, so the
+    // normalized array is the subsequence of record entries in order. Asserted
+    // below rather than assumed, so a future normalizer change cannot silently
+    // desynchronise the correlation.
+    const normalizedEdge = normalized.edges[normalizedCursor]
+    normalizedCursor += 1
+    if (normalizedEdge === undefined) {
+      session.dispose(candidateFingerprint({ index }), {
+        state: 'invariant_failed',
+        reasons: ['candidate_accounting_mismatch'],
+        candidate: rawEdge,
+      })
+      continue
+    }
+
+    const source = typeof normalizedEdge.source === 'string' ? normalizedEdge.source : null
+    const target = typeof normalizedEdge.target === 'string' ? normalizedEdge.target : null
+    const relation = typeof normalizedEdge.relation === 'string' ? normalizedEdge.relation : undefined
+    const fingerprint = candidateFingerprint({
+      index,
+      ...(source !== null ? { source } : {}),
+      ...(target !== null ? { target } : {}),
+      ...(relation !== undefined ? { relation } : {}),
+    })
+
+    if (source === null || target === null) {
+      session.dispose(fingerprint, {
+        state: 'rejected',
+        reasons: ['malformed_candidate'],
+        candidate: normalizedEdge,
+      })
+      continue
+    }
+
+    const sourceMissing = !nodeIds.has(source)
+    const targetMissing = !nodeIds.has(target)
+    if (sourceMissing || targetMissing) {
+      session.dispose(fingerprint, unresolvedEndpoint({
+        source,
+        target,
+        sourceMissing,
+        targetMissing,
+        ...(relation !== undefined ? { relation } : {}),
+        sourceFile: normalizedEdge.source_file,
+        ...(typeof extraction.root_path === 'string' && extraction.root_path.trim().length > 0
+          ? { rootPath: extraction.root_path }
+          : {}),
+      }))
+      continue
+    }
+
+    const { source: _source, target: _target, ...attributes } = normalizedEdge
     const confidenceScore = derivedEdgeConfidenceScore(attributes)
-    graph.addEdge(source, target, {
+    session.dispose(fingerprint, admitCandidate(graph, source, target, {
       ...attributes,
       ...(confidenceScore !== undefined ? { confidence_score: confidenceScore } : {}),
       _src: source,
       _tgt: target,
-    })
+    }, normalizedEdge))
   }
+
+  if (normalizedCursor !== normalized.edges.length) {
+    // The subsequence assumption above no longer holds. Failing closed beats
+    // publishing a ledger built on a correlation that silently drifted.
+    throw new GraphAdmissionError(
+      `normalized edge correlation drifted: consumed ${normalizedCursor} of ${normalized.edges.length}`,
+    )
+  }
+
+  graph.attachNormalizedAccounting(session.finalize())
 
   const hyperedges = normalized.hyperedges
   if (hyperedges.length > 0) {
