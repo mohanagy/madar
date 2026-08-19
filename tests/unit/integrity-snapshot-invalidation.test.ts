@@ -111,21 +111,27 @@ describe('R3-04 — every successful mutation invalidates the snapshot', () => {
     expect(graph.normalizedIntegritySnapshot()).toBeNull()
   })
 
-  it('hydrated occurrence insertion', () => {
+  it('hydrated occurrence insertion on a fact that already exists', () => {
     const graph = withSnapshot()
-    const donor = donorWithExtraFact()
-    const extra = donor.factRecords().find((record) => !graph.factRecords().some((held) => held.fact.id === record.fact.id))!
-    graph.hydrateVerifiedFact(HYDRATION_TOKEN, extra.fact, extra.attributes)
-    // Re-attach so the occurrence path is what invalidates, not the fact above.
-    const fresh = withSnapshot()
-    fresh.hydrateVerifiedFact(HYDRATION_TOKEN, extra.fact, extra.attributes)
-    const occurrence = donor.occurrencesForFact(extra.fact.id)[0]!
-    const reattached = withSnapshot()
-    reattached.hydrateVerifiedFact(HYDRATION_TOKEN, extra.fact, extra.attributes)
-    reattached.hydrateVerifiedOccurrence(HYDRATION_TOKEN, occurrence)
-    expect(reattached.numberOfOccurrences()).toBeGreaterThan(0)
-    expect(reattached.normalizedIntegritySnapshot()).toBeNull()
+    // Same endpoints and relation, different evidence site: the donor holds an
+    // occurrence whose fact this graph already has. Hydrating only that
+    // occurrence isolates the occurrence path -- hydrating a fact first would
+    // invalidate on the fact path and mask whatever the occurrence path does.
+    const donor = buildFromJson({
+      ...extraction(),
+      edges: [{ source: 'alpha', target: 'beta', relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/elsewhere.ts' }],
+    }, { directed: true })
+    const factId = donor.factRecords()[0]!.fact.id
+    expect(graph.factRecords().some((record) => record.fact.id === factId)).toBe(true)
+    const occurrence = donor.occurrencesForFact(factId)[0]!
+    expect(graph.occurrenceEntries().some((held) => held.id === occurrence.id)).toBe(false)
+
+    const facts = graph.numberOfFacts()
+    graph.hydrateVerifiedOccurrence(HYDRATION_TOKEN, occurrence)
+    expect(graph.numberOfFacts()).toBe(facts)
+    expect(graph.normalizedIntegritySnapshot()).toBeNull()
   })
+
 })
 
 describe('R3-04 — no-op operations keep a still-true snapshot', () => {

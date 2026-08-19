@@ -23,9 +23,10 @@
  * Exit 0 only when caught > 0, uncaught === 0 and skipped === 0.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
+import { baselineVerdict, planMutation, readSuiteResult, scoreMutant } from './lib/mutation-scoring.mjs'
 
 const ROOT = process.cwd()
 const CONTRACTS = 'src/contracts/graph-integrity.ts'
@@ -33,6 +34,7 @@ const SESSION = 'src/contracts/graph-integrity-session.ts'
 const BUILD = 'src/pipeline/build.ts'
 const GRAPH = 'src/contracts/graph.ts'
 const SNAPSHOT_SRC = 'src/contracts/graph-integrity-snapshot.ts'
+const VALIDATION = 'src/contracts/graph-integrity-validation.ts'
 
 const SHARE_SAFETY = 'tests/unit/integrity-record-share-safety.test.ts'
 const ACCOUNTING = 'tests/unit/normalized-candidate-accounting.test.ts'
@@ -40,6 +42,9 @@ const CONTRACT_TESTS = 'tests/unit/graph-integrity-contracts.test.ts'
 const RECEIPT_TESTS = 'tests/unit/graph-integrity-receipt.test.ts'
 const SNAPSHOT = 'tests/unit/integrity-snapshot.test.ts'
 const TARGET_POLICY = 'tests/unit/verification-target-policy.test.ts'
+const TAMPER = 'tests/unit/integrity-snapshot-tamper.test.ts'
+const INVALIDATION = 'tests/unit/integrity-snapshot-invalidation.test.ts'
+const IMMUTABILITY = 'tests/unit/integrity-snapshot-immutability.test.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -64,6 +69,10 @@ const MUTANTS = [
     test: SHARE_SAFETY,
     from: '  if (isRootDerivedIdentifier(normalized, flattenedRoot)) return undefined',
     to: '',
+    expect: [
+      'B1 — a flattened checkout path never reaches a shared record omits a root-derived endpoint from the share-safe record',
+      'B1 — a flattened checkout path never reaches a shared record never lets the username appear in a share-safe record',
+    ],
   },
   {
     name: 'B1: match the root anywhere instead of at a segment boundary',
@@ -71,6 +80,9 @@ const MUTANTS = [
     test: SHARE_SAFETY,
     from: '  return lower.startsWith(`${flattenedRoot}_`)',
     to: '  return lower.includes(flattenedRoot)',
+    expect: [
+      'B1 — a flattened checkout path never reaches a shared record matches the flattened root only at a segment boundary',
+    ],
   },
   {
     name: 'B1: key identity on the redacted projection',
@@ -78,6 +90,9 @@ const MUTANTS = [
     test: SHARE_SAFETY,
     from: '      ...(draft.source !== undefined ? { source: draft.source } : {}),',
     to: '      ...(source !== undefined ? { source } : {}),',
+    expect: [
+      'B1 — a flattened checkout path never reaches a shared record does not collapse two redacted endpoints onto one record',
+    ],
   },
   {
     name: 'B2: accept percent-encoded separators in endpoints',
@@ -85,6 +100,10 @@ const MUTANTS = [
     test: SHARE_SAFETY,
     from: '  if (PERCENT_ESCAPE.test(normalized)) return undefined',
     to: '',
+    expect: [
+      'B2 — endpoint identifiers refuse every path disguise refuses percent-encoded separator',
+      'B2 — endpoint identifiers refuse every path disguise applies the same disguise rules to relation tokens',
+    ],
   },
   {
     name: 'B2: accept Unicode separator look-alikes in endpoints',
@@ -92,13 +111,20 @@ const MUTANTS = [
     test: SHARE_SAFETY,
     from: '  if (SEPARATOR_LOOKALIKES.test(normalized)) return undefined',
     to: '',
+    expect: [
+      'B2 — endpoint identifiers refuse every path disguise refuses U+2044 fraction slash',
+      'B2 — endpoint identifiers refuse every path disguise refuses U+2215 division slash',
+    ],
   },
   {
     name: 'B2: skip NFC normalization',
     file: CONTRACTS,
     test: SHARE_SAFETY,
-    from: "  const normalized = value.normalize('NFC')",
-    to: '  const normalized = value',
+    from: "  const normalized = value.normalize('NFC')\n  if (normalized.length === 0 || normalized.length > MAX_ENDPOINT_ID_LENGTH) return undefined",
+    to: '  const normalized = value\n  if (normalized.length === 0 || normalized.length > MAX_ENDPOINT_ID_LENGTH) return undefined',
+    expect: [
+      'B2 — endpoint identifiers refuse every path disguise treats NFC and NFD spellings as one identifier',
+    ],
   },
   {
     name: 'B2: accept traversal-only endpoint values',
@@ -106,6 +132,10 @@ const MUTANTS = [
     test: SHARE_SAFETY,
     from: '  if (TRAVERSAL_ONLY.test(normalized)) return undefined',
     to: '',
+    expect: [
+      'B2 — endpoint identifiers refuse every path disguise refuses dot-dot',
+      'B2 — endpoint identifiers refuse every path disguise refuses single dot',
+    ],
   },
   {
     // Renamed: this resets one retention object. It does NOT reconstruct from
@@ -116,6 +146,9 @@ const MUTANTS = [
     test: SHARE_SAFETY,
     from: '  return Object.freeze({ ...record, multiplicity }) as unknown as T',
     to: '  return Object.freeze({ ...record, multiplicity, occurrenceRetention: detailRetention(0, 0) }) as unknown as T',
+    expect: [
+      'B3 — finalization preserves retention truth and record identity keeps the true occurrence total when detail is capped',
+    ],
   },
   {
     // The real B3 shape: rebuild the record from its already-bounded detail, so
@@ -131,6 +164,9 @@ const MUTANTS = [
       ? { occurrenceRetention: detailRetention(record.occurrences.length, record.occurrences.length) }
       : {}),
   }) as unknown as T`,
+    expect: [
+      'B3 — finalization preserves retention truth and record identity keeps the true occurrence total when detail is capped',
+    ],
   },
   {
     name: 'B3: digest only the retained fingerprint slice',
@@ -138,6 +174,9 @@ const MUTANTS = [
     test: SHARE_SAFETY,
     from: '      candidate_fingerprints: orderedCanonicalArray(complete),',
     to: '      candidate_fingerprints: orderedCanonicalArray(complete.slice(0, MAX_CONFLICT_FINGERPRINTS)),',
+    expect: [
+      'B3 — finalization preserves retention truth and record identity changes identity when the complete set changes, even if the retained slice does not',
+    ],
   },
   {
     name: 'R2: drop per-kind record retention',
@@ -145,13 +184,9 @@ const MUTANTS = [
     test: SNAPSHOT,
     from: '        unresolved: detailRetention(unresolvedRecords.length, this.unresolvedRetained.distinctTotal),',
     to: '        unresolved: detailRetention(unresolvedRecords.length, unresolvedRecords.length),',
-  },
-  {
-    name: 'R2: skip nested retention validation at finalize',
-    file: SNAPSHOT_SRC,
-    test: SNAPSHOT,
-    from: '    assertRecordRetention(record, `record ${record.id}`)',
-    to: '',
+    expect: [
+      'R2 — retention metadata is validated, never trusted carries the true total when records are capped',
+    ],
   },
   {
     name: 'R2: accept an inconsistent omitted count',
@@ -159,6 +194,9 @@ const MUTANTS = [
     test: SNAPSHOT,
     from: '  if (retention.omitted !== retention.total - retention.retained) {',
     to: '  if (false) {',
+    expect: [
+      'R2 — retention metadata is validated, never trusted rejects omitted mismatch',
+    ],
   },
   {
     name: 'R2: accept a false truncated flag',
@@ -166,20 +204,32 @@ const MUTANTS = [
     test: SNAPSHOT,
     from: '  if (retention.truncated !== retention.omitted > 0) {',
     to: '  if (false) {',
+    expect: [
+      'R2 — retention metadata is validated, never trusted rejects truncated false with omissions',
+      'R2 — retention metadata is validated, never trusted rejects truncated true with none omitted',
+    ],
   },
   {
     name: 'R3: never finalize the composite snapshot',
     file: GRAPH,
     test: SNAPSHOT,
-    from: '    this.integritySnapshot = finalizeNormalizedIntegritySnapshot({',
-    to: '    this.integritySnapshot = (null as never) && finalizeNormalizedIntegritySnapshot({',
+    from: '    const snapshot = finalizeNormalizedIntegritySnapshot({',
+    to: '    const snapshot = (null as never) && finalizeNormalizedIntegritySnapshot({',
+    expect: [
+      'R3 — production attaches one complete snapshot is attached by a real normalized build, not only by a helper',
+      'R3 — production attaches one complete snapshot carries every field a serializer needs',
+    ],
   },
   {
-    name: 'R3: keep a stale snapshot after later graph mutation',
+    name: 'R3: neuter the central invalidation seam',
     file: GRAPH,
-    test: SNAPSHOT,
-    from: '      this.integritySnapshot = null\n    }',
-    to: '    }',
+    test: INVALIDATION,
+    from: '  private invalidateIntegritySnapshot(): void {\n    this.integritySnapshot = null',
+    to: '  private invalidateIntegritySnapshot(): void {\n    void 0',
+    expect: [
+      'R3-04 — every successful mutation invalidates the snapshot node insertion',
+      'R3-04 — every successful mutation invalidates the snapshot node attribute change',
+    ],
   },
   {
     name: 'R3: let a subgraph inherit the full-graph snapshot',
@@ -187,13 +237,20 @@ const MUTANTS = [
     test: SNAPSHOT,
     from: '    copied.integritySnapshot = isFullCopy ? this.integritySnapshot : null',
     to: '    copied.integritySnapshot = this.integritySnapshot',
+    expect: [
+      'R3 — copy, subgraph and compatibility loads stay truthful a subgraph gets no snapshot, because it describes fewer facts',
+    ],
   },
   {
     name: 'R1: stop rejecting scheme forms in verification targets',
     file: CONTRACTS,
     test: TARGET_POLICY,
-    from: '    return null\n  }\n\n  const segments = candidate.split',
-    to: '    void 0\n  }\n\n  const segments = candidate.split',
+    from: '    if (SCHEME_PREFIX.test(separatorsNormalized)) return null',
+    to: '',
+    expect: [
+      'R1 — unsafe verification targets never reach a record refuses file: without slashes through the production path',
+      'R1 — unsafe verification targets never reach a record refuses mailto: through the production path',
+    ],
   },
   {
     name: 'R1: use startsWith(..) instead of a segment test',
@@ -201,6 +258,10 @@ const MUTANTS = [
     test: TARGET_POLICY,
     from: '  return segments.includes(\'..\')',
     to: '  return segments.join(\'/\').startsWith(\'..\')',
+    expect: [
+      'R1 — unsafe verification targets never reach a record refuses interior traversal through the production path',
+      'R1 — legitimate paths survive keeps a directory whose NAME begins with two dots',
+    ],
   },
   {
     name: 'R1: stop bounding verification-target length',
@@ -208,6 +269,9 @@ const MUTANTS = [
     test: TARGET_POLICY,
     from: 'export const MAX_VERIFICATION_TARGET_LENGTH = 512 as const',
     to: 'export const MAX_VERIFICATION_TARGET_LENGTH = 1_000_000 as const',
+    expect: [
+      'R1 — unsafe verification targets never reach a record refuses a target longer than the bound',
+    ],
   },
   {
     name: 'R1: accept control characters in verification targets',
@@ -215,6 +279,10 @@ const MUTANTS = [
     test: TARGET_POLICY,
     from: '  if (/[\\u0000-\\u001f\\u007f-\\u009f]/.test(normalized)) return null\n  if (/%[0-9A-Fa-f]{2}/.test(normalized)) return null',
     to: '  if (/%[0-9A-Fa-f]{2}/.test(normalized)) return null',
+    expect: [
+      'R1 — unsafe verification targets never reach a record refuses null byte through the production path',
+      'R1 — unsafe verification targets never reach a record refuses newline through the production path',
+    ],
   },
   {
     name: 'B4: count scope failures after sanitization',
@@ -222,6 +290,10 @@ const MUTANTS = [
     test: SHARE_SAFETY,
     from: '    const submittedScopeFailures = this.scopeFailureSet.size',
     to: '    const submittedScopeFailures = [...this.scopeFailureSet].filter((s) => safeScopeName(s) !== null).length',
+    expect: [
+      'B4 — scope-failure totals count what was submitted counts unsanitizable submissions in the total',
+      'B4 — scope-failure totals count what was submitted reports all-unsafe submissions as fully omitted',
+    ],
   },
   {
     name: 'accounting: default buildFromJson to attached accounting',
@@ -229,6 +301,10 @@ const MUTANTS = [
     test: ACCOUNTING,
     from: "  const session = options.accounting === 'normalized_extraction_boundary'",
     to: '  const session = options.accounting !== undefined || true',
+    expect: [
+      'normalized accounting is opt-in, so compatibility loads cannot claim it attaches no accounting when a v1 artifact is rehydrated',
+      'normalized accounting is opt-in, so compatibility loads cannot claim it defaults an unannotated call to no accounting',
+    ],
   },
   {
     name: 'accounting: never attach the finalized result',
@@ -236,6 +312,9 @@ const MUTANTS = [
     test: ACCOUNTING,
     from: '  if (session !== null) graph.attachNormalizedAccounting(session.finalize())',
     to: '',
+    expect: [
+      'refuses to overwrite accounting',
+    ],
   },
   {
     name: 'accounting: restore the silent missing-endpoint continue',
@@ -243,6 +322,9 @@ const MUTANTS = [
     test: ACCOUNTING,
     from: '      session?.dispose(fingerprint, unresolvedEndpoint({',
     to: '      if (true) continue\n      session?.dispose(fingerprint, unresolvedEndpoint({',
+    expect: [
+      'retains a durable record per',
+    ],
   },
   {
     name: 'equation: stop comparing the terminal totals',
@@ -250,6 +332,10 @@ const MUTANTS = [
     test: CONTRACT_TESTS,
     from: '  if (total !== emittedCandidates) {',
     to: '  if (false) {',
+    expect: [
+      'the candidate accounting equation is enforced, not reported throws when one candidate is unaccounted for',
+      'the candidate accounting equation is enforced, not reported throws when a candidate is counted twice',
+    ],
   },
   {
     name: 'equation: drop safe-integer validation',
@@ -257,6 +343,10 @@ const MUTANTS = [
     from: 'function assertCount(value: number, field: string): number {\n  if (!Number.isSafeInteger(value) || value < 0) {',
     test: CONTRACT_TESTS,
     to: 'function assertCount(value: number, field: string): number {\n  if (false) {',
+    expect: [
+      'the candidate accounting equation is enforced, not reported refuses negative, fractional and unsafe counters',
+      'the endpoint matrix stays a partition over stored facts refuses negative and fractional cells',
+    ],
   },
   {
     name: 'cap: retain the first K encountered instead of the smallest ids',
@@ -264,6 +354,10 @@ const MUTANTS = [
     test: ACCOUNTING,
     from: '    if (largest === null || id >= largest) return',
     to: '    return',
+    expect: [
+      'record retention is bounded and independent of arrival order produces byte-identical output under reverse arrival order',
+      'record retention is bounded and independent of arrival order produces byte-identical output under shuffle arrival order',
+    ],
   },
   {
     name: 'cap: stop tracking distinct ids exactly',
@@ -271,6 +365,9 @@ const MUTANTS = [
     test: ACCOUNTING,
     from: '    this.seenIds.add(id)',
     to: '',
+    expect: [
+      'keeps the distinct total exact',
+    ],
   },
   {
     name: 'receipt: stop re-deriving status on load',
@@ -278,6 +375,10 @@ const MUTANTS = [
     test: RECEIPT_TESTS,
     from: '  if (derived.status !== receipt.status) {',
     to: '  if (false) {',
+    expect: [
+      'status is derived, never supplied re-derives the partial-discriminator warning on load',
+      'validation re-derives status so the field cannot be forged rejects a status tampered to look better than its counters',
+    ],
   },
   {
     name: 'graph: let a rebuilt graph launder accounting away',
@@ -285,9 +386,166 @@ const MUTANTS = [
     test: ACCOUNTING,
     from: '      this.normalizedAccounting = source.normalizedAccounting',
     to: '',
+    expect: [
+      'a copy helper that rebuilds a graph cannot launder degradation carries accounting and admission counters onto a rebuilt graph',
+    ],
+  },
+  {
+    name: 'R2: remove unresolved record retention',
+    file: SESSION,
+    test: TAMPER,
+    from: '        unresolved: detailRetention(unresolvedRecords.length, this.unresolvedRetained.distinctTotal),',
+    to: '',
+    expect: [
+      'a genuine snapshot still finalizes',
+    ],
+  },
+  {
+    name: 'R2: remove rejected record retention',
+    file: SESSION,
+    test: TAMPER,
+    from: '        rejected: detailRetention(rejectedRecords.length, this.rejectedRetained.distinctTotal),',
+    to: '',
+    expect: [
+      'a genuine snapshot still finalizes',
+    ],
+  },
+  {
+    name: 'R2: remove conflicting record retention',
+    file: SESSION,
+    test: TAMPER,
+    from: '        conflicting: detailRetention(conflictRecords.length, this.conflictRetained.distinctTotal),',
+    to: '',
+    expect: [
+      'a genuine snapshot still finalizes',
+    ],
+  },
+  {
+    name: 'R2: force omitted to zero',
+    file: CONTRACTS,
+    test: SNAPSHOT,
+    from: '  return Object.freeze({ retained, total, omitted: total - retained, truncated: retained < total })',
+    to: '  return Object.freeze({ retained, total, omitted: 0, truncated: retained < total })',
+    expect: [
+      'R2 — retention metadata is validated, never trusted carries the true total when records are capped',
+    ],
+  },
+  {
+    name: 'R2: force truncated to false',
+    file: CONTRACTS,
+    test: SNAPSHOT,
+    from: '  return Object.freeze({ retained, total, omitted: total - retained, truncated: retained < total })',
+    to: '  return Object.freeze({ retained, total, omitted: total - retained, truncated: false })',
+    expect: [
+      'R2 — retention metadata is validated, never trusted carries the true total when records are capped',
+    ],
+  },
+  {
+    name: 'R2: skip nested record retention validation',
+    file: VALIDATION,
+    test: SNAPSHOT,
+    from: '  assertRecordRetention(record as unknown as DurableCandidateRecord, field)',
+    to: '',
+    expect: [
+      'R2 — retention metadata is validated, never trusted refuses to finalize a snapshot carrying a record with tampered retention',
+    ],
+  },
+  {
+    name: 'R2-02: accept an unsafe snapshot record',
+    file: VALIDATION,
+    test: TAMPER,
+    from: '  if (sanitize(raw) !== raw) {',
+    to: '  if (false) {',
+    expect: [
+      'R1/R2-02 — an unsafe payload cannot be attached refuses a record carrying an absolute private path',
+      'R1/R2-02 — an unsafe payload cannot be attached refuses an unsafe verification target even on an otherwise valid record',
+    ],
+  },
+  {
+    name: 'R3-04: stale snapshot after node mutation',
+    file: GRAPH,
+    test: INVALIDATION,
+    from: '    if (!unchanged) this.invalidateIntegritySnapshot()',
+    to: '    if (false) this.invalidateIntegritySnapshot()',
+    expect: [
+      'R3-04 — every successful mutation invalidates the snapshot node insertion',
+      'R3-04 — every successful mutation invalidates the snapshot node attribute change',
+    ],
+  },
+  {
+    name: 'R3-04: stale snapshot after occurrence insertion',
+    file: GRAPH,
+    test: INVALIDATION,
+    from: '    if (changed) this.invalidateIntegritySnapshot()',
+    to: '    if (false) this.invalidateIntegritySnapshot()',
+    expect: [
+      'R3-04 — every successful mutation invalidates the snapshot occurrence insertion on a fact that already exists',
+    ],
+  },
+  {
+    name: 'R3-04: stale snapshot after hydration',
+    file: GRAPH,
+    test: INVALIDATION,
+    from: '    factOccurrences.add(occurrence.id)\n    this.invalidateIntegritySnapshot()',
+    to: '    factOccurrences.add(occurrence.id)',
+    expect: [
+      'R3-04 — every successful mutation invalidates the snapshot hydrated occurrence insertion on a fact that already exists',
+    ],
+  },
+  {
+    name: 'R3-04: stale snapshot after storage admission',
+    file: GRAPH,
+    test: INVALIDATION,
+    from: '      this.invalidateIntegritySnapshot()\n      return Object.freeze({',
+    to: '      return Object.freeze({',
+    expect: [
+      'R3-04 — every successful mutation invalidates the snapshot unregistered storage admission',
+    ],
+  },
+  {
+    name: 'R3-04: stale snapshot after degradation inheritance',
+    file: GRAPH,
+    test: INVALIDATION,
+    from: '    this.invalidateIntegritySnapshot()\n  }\n\n  copy()',
+    to: '  }\n\n  copy()',
+    expect: [
+      'R3-04 — every successful mutation invalidates the snapshot degradation inheritance',
+    ],
+  },
+  {
+    name: 'R3-05: leave endpoint-matrix rows mutable',
+    file: GRAPH,
+    test: IMMUTABILITY,
+    from: '      Object.freeze(copy[source])',
+    to: '',
+    expect: [
+      'R3-05 — the snapshot is immutable all the way down freezes the matrix handed out by the graph accessor too',
+    ],
+  },
+  {
+    name: 'R3-05: attach accounting before validation',
+    file: GRAPH,
+    test: IMMUTABILITY,
+    from: '    const snapshot = finalizeNormalizedIntegritySnapshot({',
+    to: '    this.normalizedAccounting = result\n    const snapshot = finalizeNormalizedIntegritySnapshot({',
+    expect: [
+      'R3-05 — attachment is all-or-nothing leaves both fields null when a first attachment is rejected',
+      'R3-05 — attachment is all-or-nothing leaves both fields null when attachment is rejected for a broken candidate equation',
+    ],
+  },
+  {
+    name: 'R3-04: recompute the snapshot inside the read accessor',
+    file: GRAPH,
+    test: INVALIDATION,
+    from: '  normalizedIntegritySnapshot(): FinalizedNormalizedIntegritySnapshot | null {\n    return this.integritySnapshot',
+    to: '  normalizedIntegritySnapshot(): FinalizedNormalizedIntegritySnapshot | null {\n    void finalizeNormalizedIntegritySnapshot\n    return this.integritySnapshot',
+    expect: [
+      'R3-04 — invalidation is never silently skipped by a new mutator never recomputes the snapshot inside a read accessor',
+    ],
   },
 ]
 
+const DISCOVER = process.argv.includes('--discover')
 const filterArg = process.argv.indexOf('--filter')
 const filter = filterArg >= 0 ? process.argv[filterArg + 1] : null
 const selected = filter === null ? MUTANTS : MUTANTS.filter((m) => m.name.includes(filter))
@@ -315,7 +573,49 @@ function report(kind, name, detail) {
   else skipped += 1
 }
 
+const JSON_OUT = resolve(ROOT, 'node_modules/.cache/madar-mutation-report.json')
+
+/**
+ * Runs one focused suite and reports exactly which tests failed.
+ *
+ * Exact identities matter: scoring on "the suite went red" lets an unrelated
+ * failure -- a flaky neighbour, a broken fixture, a host problem -- be recorded
+ * as proof that the invariant is covered, which is the opposite of what the
+ * harness is for.
+ */
+function runSuite(testFile) {
+  let raw = ''
+  try {
+    raw = execFileSync('npx', ['vitest', 'run', testFile, '--reporter=json', `--outputFile=${JSON_OUT}`], {
+      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
+    })
+  } catch (error) {
+    raw = `${error.stdout ?? ''}${error.stderr ?? ''}`
+  }
+
+  let report = null
+  if (existsSync(JSON_OUT)) {
+    try {
+      report = JSON.parse(readFileSync(JSON_OUT, 'utf8'))
+    } catch {
+      report = null
+    }
+    rmSync(JSON_OUT, { force: true })
+  }
+  return readSuiteResult({ raw, report })
+}
+
 console.log(`#658 integrity mutation controls (${selected.length} mutants)\n`)
+
+// One green baseline per suite before any mutation. A suite that is already red
+// cannot attribute anything, and every mutant pointed at it would score on a
+// failure that was there first.
+const baselines = new Map()
+for (const testFile of new Set(selected.map((m) => m.test))) {
+  baselines.set(testFile, baselineVerdict(runSuite(testFile)))
+}
+
+const discovered = {}
 
 for (const mutant of selected) {
   const filePath = resolve(ROOT, mutant.file)
@@ -323,38 +623,49 @@ for (const mutant of selected) {
 
   if (!existsSync(filePath)) { report('SKIPPED', mutant.name, `missing source ${mutant.file}`); continue }
   if (!existsSync(testPath)) { report('SKIPPED', mutant.name, `missing test ${mutant.test}`); continue }
+  const baseline = baselines.get(mutant.test)
+  if (baseline !== null) { report('SKIPPED', mutant.name, baseline); continue }
+  if (!DISCOVER && (mutant.expect ?? []).length === 0) {
+    report('SKIPPED', mutant.name, 'no expected test declared'); continue
+  }
 
   if (!originals.has(mutant.file)) originals.set(mutant.file, readFileSync(filePath, 'utf8'))
   restore()
 
   const before = digest(mutant.file)
-  const source = readFileSync(filePath, 'utf8')
-  if (!source.includes(mutant.from)) { report('SKIPPED', mutant.name, 'anchor not found'); continue }
-  writeFileSync(filePath, source.replace(mutant.from, mutant.to))
+  const plan = planMutation({ source: readFileSync(filePath, 'utf8'), from: mutant.from, to: mutant.to })
+  if (!plan.ok) { report('SKIPPED', mutant.name, plan.why); continue }
+  writeFileSync(filePath, plan.mutated)
+  // Belt and braces: the plan says it changed the text, the disk must agree.
   if (digest(mutant.file) === before) { report('SKIPPED', mutant.name, 'mutation changed nothing'); continue }
 
-  let output = ''
+  let result
   try {
-    output = execFileSync('npx', ['vitest', 'run', mutant.test], {
-      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
-    })
-  } catch (error) {
-    output = `${error.stdout ?? ''}${error.stderr ?? ''}`
+    result = runSuite(mutant.test)
   } finally {
     restore()
   }
 
-  // A worker startup failure is a host problem, never evidence about a mutant.
-  if (/Failed to start forks worker|Timeout waiting for worker to respond/.test(output)) {
-    report('SKIPPED', mutant.name, 'worker startup failure'); continue
+  if (!result.usable) { report('SKIPPED', mutant.name, result.why); continue }
+
+  if (DISCOVER) {
+    discovered[mutant.name] = result.failed
+    report(result.failed.length > 0 ? 'caught' : 'UNCAUGHT', mutant.name, `${result.failed.length} failed`)
+    continue
   }
-  const failed = /Tests\s+(\d+)\s+failed/.exec(output)
-  if (failed !== null) { report('caught', mutant.name, `${failed[1]} test(s) failed`); continue }
-  if (/Tests\s+\d+\s+passed/.test(output)) { report('UNCAUGHT', mutant.name, 'suite stayed green'); continue }
-  report('SKIPPED', mutant.name, 'suite did not run cleanly')
+
+  const score = scoreMutant({ expect: mutant.expect ?? [], result })
+  report(score.kind, mutant.name, score.detail)
 }
 
 restore()
+
+if (DISCOVER) {
+  writeFileSync(resolve(ROOT, 'node_modules/.cache/madar-mutation-discovery.json'), JSON.stringify(discovered, null, 2))
+  console.log('\ndiscovery written')
+  process.exit(0)
+}
+
 console.log(`\ncaught=${caught} uncaught=${uncaught} skipped=${skipped}`)
 const ok = caught > 0 && uncaught === 0 && skipped === 0
 console.log(ok ? 'MUTATION CONTROLS PASS' : 'MUTATION CONTROLS FAIL')
