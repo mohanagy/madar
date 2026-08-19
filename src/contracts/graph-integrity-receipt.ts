@@ -13,7 +13,8 @@ import {
   isScopeIntegrityReason,
   isTerminalIntegrityReason,
   type CandidateTerminalCounts,
-  type DurableRecordRetention,
+  assertDetailRetention,
+  type DetailRetention,
   type EndpointIdentityFactMatrix,
   type GraphIntegrityReceiptV1,
   type IntegrityReason,
@@ -50,9 +51,9 @@ export interface NormalizedIntegrityReceiptInput {
   readonly uniqueEndpointPairs: number
   readonly endpointFactPairCounts: EndpointIdentityFactMatrix
   readonly endpointReasonFactCounts: Readonly<Partial<Record<EndpointIdentityReason, number>>>
-  readonly unresolvedRetention: DurableRecordRetention
-  readonly rejectedRetention: DurableRecordRetention
-  readonly conflictingRetention: DurableRecordRetention
+  readonly unresolvedRetention: DetailRetention
+  readonly rejectedRetention: DetailRetention
+  readonly conflictingRetention: DetailRetention
   readonly strictModeResult: StrictModeResult
   readonly legacyArtifact?: boolean
 }
@@ -64,16 +65,26 @@ function assertCount(value: number, field: string): number {
   return value
 }
 
-function assertRetention(retention: DurableRecordRetention, field: string): DurableRecordRetention {
-  assertCount(retention.retained, `${field}.retained`)
-  assertCount(retention.total, `${field}.total`)
-  if (retention.retained > retention.total) {
-    throw new GraphIntegrityInvariantError(`${field} retained ${retention.retained} exceeds total ${retention.total}`)
-  }
+/**
+ * A normalized-boundary receipt carries exactly one retention contract.
+ *
+ * All four fields are required, and `omitted` and `truncated` are re-derived and
+ * compared rather than accepted -- a receipt that arrives with only
+ * `{retained, total}` is refused, not silently upgraded. Deriving the missing
+ * fields would manufacture agreement between a producer and a reader who never
+ * actually agreed, which is the failure this contract exists to prevent.
+ */
+function assertRetention(retention: DetailRetention, field: string): DetailRetention {
+  assertDetailRetention(retention, field)
   if (retention.retained > MAX_DURABLE_RECORDS_PER_KIND) {
     throw new GraphIntegrityInvariantError(`${field} retained ${retention.retained} exceeds the per-kind bound`)
   }
-  return Object.freeze({ retained: retention.retained, total: retention.total })
+  return Object.freeze({
+    retained: retention.retained,
+    total: retention.total,
+    omitted: retention.omitted,
+    truncated: retention.truncated,
+  })
 }
 
 function normalizeTerminalReasonCounts(counts: TerminalReasonCounts): TerminalReasonCounts {
@@ -93,9 +104,12 @@ function normalizeTerminalReasonCounts(counts: TerminalReasonCounts): TerminalRe
 }
 
 function truncated(input: NormalizedIntegrityReceiptInput): boolean {
-  return input.unresolvedRetention.retained < input.unresolvedRetention.total
-    || input.rejectedRetention.retained < input.rejectedRetention.total
-    || input.conflictingRetention.retained < input.conflictingRetention.total
+  // Read the disclosed flag rather than re-deriving it: the retention contract
+  // has already been validated, so the flag and the arithmetic agree by
+  // construction.
+  return input.unresolvedRetention.truncated
+    || input.rejectedRetention.truncated
+    || input.conflictingRetention.truncated
 }
 
 /**

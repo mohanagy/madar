@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import { ENDPOINT_IDENTITY_STATUSES, type EndpointIdentityStatus } from '../../src/contracts/endpoint-identity.js'
 import {
+  GraphIntegrityInvariantError,
+  detailRetention,
   GRAPH_INTEGRITY_REASON_VOCABULARY_VERSION,
   GRAPH_INTEGRITY_RECEIPT_VERSION,
   MAX_DURABLE_RECORDS_PER_KIND,
@@ -34,7 +36,7 @@ function counts(overrides: Partial<CandidateTerminalCounts> = {}): CandidateTerm
   return { ...emptyTerminalCounts(), ...overrides }
 }
 
-const NONE = Object.freeze({ retained: 0, total: 0 })
+const NONE = Object.freeze(detailRetention(0, 0))
 
 function input(overrides: Partial<NormalizedIntegrityReceiptInput> = {}): NormalizedIntegrityReceiptInput {
   return {
@@ -96,13 +98,13 @@ describe('the receipt refuses to be built on numbers that disagree', () => {
   })
 
   it('rejects retention that keeps more than it saw', () => {
-    expect(() => build({ unresolvedRetention: { retained: 5, total: 2 } }))
+    expect(() => build({ unresolvedRetention: { retained: 5, total: 2, omitted: 0, truncated: false } as never }))
       .toThrow(/retained 5 exceeds total 2/)
   })
 
   it('rejects retention above the declared per-kind bound', () => {
     const over = MAX_DURABLE_RECORDS_PER_KIND + 1
-    expect(() => build({ rejectedRetention: { retained: over, total: over } }))
+    expect(() => build({ rejectedRetention: { retained: over, total: over, omitted: 0, truncated: false } as never }))
       .toThrow(/exceeds the per-kind bound/)
   })
 })
@@ -121,7 +123,7 @@ describe('status is derived, never supplied', () => {
       emittedCandidates: 4,
       counts: counts({ retained_new_fact: 3, unresolved: 1 }),
       terminalReasonCounts: { missing_target_endpoint: 1 },
-      unresolvedRetention: { retained: 1, total: 1 },
+      unresolvedRetention: detailRetention(1, 1),
     })
     expect(receipt.status).toBe('degraded')
     expect(receipt.missing_target_endpoints).toBe(1)
@@ -166,8 +168,8 @@ describe('named counters are derived from the reason breakdown', () => {
         malformed_candidate: 1,
         unsupported_relation: 1,
       },
-      unresolvedRetention: { retained: 2, total: 2 },
-      rejectedRetention: { retained: 2, total: 2 },
+      unresolvedRetention: detailRetention(2, 2),
+      rejectedRetention: detailRetention(2, 2),
     })
     expect(receipt.missing_source_endpoints).toBe(1)
     expect(receipt.missing_target_endpoints).toBe(1)
@@ -187,10 +189,10 @@ describe('truncation is disclosed, never silent', () => {
     const receipt = build({
       emittedCandidates: 13,
       counts: counts({ retained_new_fact: 3, unresolved: 10 }),
-      unresolvedRetention: { retained: 4, total: 10 },
+      unresolvedRetention: detailRetention(4, 10),
     })
     expect(receipt.reasons).toContain('durable_records_truncated')
-    expect(receipt.durable_records.unresolved).toEqual({ retained: 4, total: 10 })
+    expect(receipt.durable_records.unresolved).toEqual({ retained: 4, total: 10, omitted: 6, truncated: true })
   })
 
   it('omits the truncation reason when nothing was dropped', () => {
@@ -240,8 +242,8 @@ describe('the breakdown is deterministic and mirrors the named counters', () => 
         missing_target_endpoint: 1,
         malformed_candidate: 1,
       },
-      unresolvedRetention: { retained: 2, total: 2 },
-      rejectedRetention: { retained: 2, total: 2 },
+      unresolvedRetention: detailRetention(2, 2),
+      rejectedRetention: detailRetention(2, 2),
     })
     const keys = Object.keys(receipt.terminal_reason_counts)
     expect(keys).toEqual([...keys].sort())
@@ -252,8 +254,8 @@ describe('the breakdown is deterministic and mirrors the named counters', () => 
     const shared = {
       emittedCandidates: 7,
       counts: counts({ retained_new_fact: 3, unresolved: 2, rejected: 2 }),
-      unresolvedRetention: { retained: 2, total: 2 },
-      rejectedRetention: { retained: 2, total: 2 },
+      unresolvedRetention: detailRetention(2, 2),
+      rejectedRetention: detailRetention(2, 2),
     }
     const forward = build({
       ...shared,
@@ -272,7 +274,7 @@ describe('the breakdown is deterministic and mirrors the named counters', () => 
       emittedCandidates: 4,
       counts: counts({ retained_new_fact: 3, rejected: 1 }),
       terminalReasonCounts: { unsupported_relation: 1, malformed_candidate: 0 },
-      rejectedRetention: { retained: 1, total: 1 },
+      rejectedRetention: detailRetention(1, 1),
     })
     expect(receipt.terminal_reason_counts).toEqual({ unsupported_relation: 1 })
     expect(receipt.terminal_reason_counts).not.toHaveProperty('malformed_candidate')
@@ -305,7 +307,7 @@ describe('the breakdown is deterministic and mirrors the named counters', () => 
       emittedCandidates: 4,
       counts: counts({ retained_new_fact: 3, rejected: 1 }),
       terminalReasonCounts: { unsupported_relation: 1 },
-      rejectedRetention: { retained: 1, total: 1 },
+      rejectedRetention: detailRetention(1, 1),
     })
     const tampered = { ...receipt, unsupported_relations: 0 }
     expect(() => assertNormalizedIntegrityReceipt(tampered))
@@ -321,7 +323,7 @@ describe('the builder enforces the strict-mode policy itself', () => {
       strictModeResult: 'pass',
       emittedCandidates: 4,
       counts: counts({ retained_new_fact: 3, unresolved: 1 }),
-      unresolvedRetention: { retained: 1, total: 1 },
+      unresolvedRetention: detailRetention(1, 1),
     })).toThrow(/cannot be pass while integrity status is degraded/)
   })
 
@@ -343,7 +345,7 @@ describe('validation re-derives status so the field cannot be forged', () => {
     const forged = { ...build({
       emittedCandidates: 4,
       counts: counts({ retained_new_fact: 3, unresolved: 1 }),
-      unresolvedRetention: { retained: 1, total: 1 },
+      unresolvedRetention: detailRetention(1, 1),
     }), status: 'valid' as const }
     expect(() => assertNormalizedIntegrityReceipt(forged))
       .toThrow(/disagrees with its own counters/)
@@ -387,7 +389,7 @@ describe('validation re-derives status so the field cannot be forged', () => {
     const receipt = build({
       emittedCandidates: 13,
       counts: counts({ retained_new_fact: 3, unresolved: 10 }),
-      unresolvedRetention: { retained: 4, total: 10 },
+      unresolvedRetention: detailRetention(4, 10),
     })
     const hidden = { ...receipt, reasons: receipt.reasons.filter((reason) => reason !== 'durable_records_truncated') }
     expect(() => assertNormalizedIntegrityReceipt(hidden))
@@ -452,7 +454,7 @@ describe('validation re-derives status so the field cannot be forged', () => {
     const receipt = build({
       emittedCandidates: 4,
       counts: counts({ retained_new_fact: 3, unresolved: 1 }),
-      unresolvedRetention: { retained: 1, total: 1 },
+      unresolvedRetention: detailRetention(1, 1),
     })
     expect(() => assertNormalizedIntegrityReceipt({ ...receipt, strict_mode_result: 'pass' }))
       .toThrow(/cannot be pass while integrity status is degraded/)
@@ -464,7 +466,7 @@ describe('storage_admission is a projection, never an addend', () => {
     emittedCandidates: 5,
     counts: counts({ retained_new_fact: 3, rejected: 2 }),
     terminalReasonCounts: { unsupported_relation: 2 },
-    rejectedRetention: { retained: 2, total: 2 },
+    rejectedRetention: detailRetention(2, 2),
   })
 
   it('accepts a storage count that matches the normalized sub-bucket', () => {
@@ -509,5 +511,69 @@ describe('graph totals are reported beside the equation, never inside it', () =>
     expect(receipt.occurrences_retained).toBe(4)
     expect(receipt.unique_endpoint_pairs).toBe(1)
     expect(() => assertNormalizedIntegrityReceipt(receipt)).not.toThrow()
+  })
+})
+
+describe('R2-03 — one retention contract on the normalized boundary', () => {
+  const valid = detailRetention(4, 10)
+
+  it('carries all four fields, not a two-field pair', () => {
+    const receipt = build({ unresolvedRetention: valid })
+    expect(receipt.durable_records.unresolved).toEqual({
+      retained: 4, total: 10, omitted: 6, truncated: true,
+    })
+  })
+
+  it('refuses a two-field retention rather than upgrading it', () => {
+    // Deriving the missing fields would manufacture agreement between a
+    // producer and a reader who never agreed on the contract.
+    expect(() => build({ unresolvedRetention: { retained: 4, total: 10 } as never }))
+      .toThrow(GraphIntegrityInvariantError)
+  })
+
+  it.each([
+    ['missing retention object', undefined],
+    ['null retention', null],
+    ['a string', 'retained'],
+    ['an array', []],
+  ])('refuses %s with the typed invariant, not a TypeError', (_label, retention) => {
+    let thrown: unknown
+    try {
+      build({ unresolvedRetention: retention as never })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(GraphIntegrityInvariantError)
+    expect(thrown).not.toBeInstanceOf(TypeError)
+  })
+
+  it.each([
+    ['inconsistent omitted', { retained: 4, total: 10, omitted: 3, truncated: true }],
+    ['false truncated with omissions', { retained: 4, total: 10, omitted: 6, truncated: false }],
+    ['true truncated with none omitted', { retained: 4, total: 4, omitted: 0, truncated: true }],
+    ['non-boolean truncated', { retained: 4, total: 4, omitted: 0, truncated: 'no' }],
+    ['fractional retained', { retained: 1.5, total: 10, omitted: 8.5, truncated: true }],
+    ['negative omitted', { retained: 4, total: 10, omitted: -6, truncated: true }],
+  ])('refuses %s', (_label, retention) => {
+    expect(() => build({ unresolvedRetention: retention as never }))
+      .toThrow(GraphIntegrityInvariantError)
+  })
+
+  it('derives receipt truncation from the disclosed flag', () => {
+    expect(build({ unresolvedRetention: detailRetention(4, 10) }).durable_records.unresolved.truncated).toBe(true)
+    expect(build({ unresolvedRetention: detailRetention(4, 4) }).durable_records.unresolved.truncated).toBe(false)
+  })
+
+  it('re-validates retention on load, not only on construction', () => {
+    const receipt = build({ unresolvedRetention: valid })
+    const tampered = {
+      ...receipt,
+      durable_records: {
+        ...receipt.durable_records,
+        unresolved: { retained: 4, total: 10, omitted: 0, truncated: false },
+      },
+    }
+    expect(() => assertNormalizedIntegrityReceipt(tampered as never))
+      .toThrow(GraphIntegrityInvariantError)
   })
 })

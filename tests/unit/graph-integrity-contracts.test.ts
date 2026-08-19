@@ -535,14 +535,14 @@ describe('durable records are bounded and deterministically ordered', () => {
   it('reports retained and total identically when nothing is truncated', () => {
     const { records, retention } = boundDurableRecords([record('cf_a'), record('cf_b')])
     expect(records).toHaveLength(2)
-    expect(retention).toEqual({ retained: 2, total: 2 })
+    expect(retention).toEqual({ retained: 2, total: 2, omitted: 0, truncated: false })
   })
 
-  it('discloses truncation with an exact retained and total pair', () => {
+  it('discloses truncation with exact retained, total, omitted and truncated', () => {
     const many = Array.from({ length: 12 }, (_, index) => record(`cf_${String(index).padStart(3, '0')}`))
     const { records, retention } = boundDurableRecords(many, 5)
     expect(records).toHaveLength(5)
-    expect(retention).toEqual({ retained: 5, total: 12 })
+    expect(retention).toEqual({ retained: 5, total: 12, omitted: 7, truncated: true })
   })
 
   it('truncates deterministically rather than keeping whichever arrived first', () => {

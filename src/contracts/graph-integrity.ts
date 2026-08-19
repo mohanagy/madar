@@ -235,16 +235,6 @@ export type DurableCandidateRecord =
   | CandidateConflictRecord
 
 /**
- * Per-kind retention accounting. `total` is what actually occurred; `retained`
- * is what the artifact carries. They differ only under the bound above, and
- * the difference is always disclosed rather than inferred.
- */
-export interface DurableRecordRetention {
-  readonly retained: number
-  readonly total: number
-}
-
-/**
  * Exact accounting for a capped detail array.
  *
  * `omitted` is carried rather than left to be derived so a reader cannot
@@ -275,6 +265,14 @@ export function detailRetention(retained: number, total: number): DetailRetentio
  * would edit to make omission look like completeness.
  */
 export function assertDetailRetention(retention: DetailRetention, field: string): void {
+  // A missing or non-object retention must fail as a typed graph invariant, not
+  // as a TypeError raised by the first property read.
+  if (retention === null || typeof retention !== 'object') {
+    throw new GraphIntegrityInvariantError(`${field} must be a retention object`)
+  }
+  if (typeof retention.truncated !== 'boolean') {
+    throw new GraphIntegrityInvariantError(`${field}.truncated must be a boolean`)
+  }
   for (const [name, value] of [
     ['retained', retention.retained],
     ['total', retention.total],
@@ -408,9 +406,9 @@ export interface GraphIntegrityReceiptV1 {
   }
 
   readonly durable_records: {
-    readonly unresolved: DurableRecordRetention
-    readonly rejected: DurableRecordRetention
-    readonly conflicting: DurableRecordRetention
+    readonly unresolved: DetailRetention
+    readonly rejected: DetailRetention
+    readonly conflicting: DetailRetention
     readonly max_records_per_kind: typeof MAX_DURABLE_RECORDS_PER_KIND
   }
 
@@ -1125,11 +1123,11 @@ export function sortDurableRecords<T extends DurableCandidateRecord>(records: re
 export function boundDurableRecords<T extends DurableCandidateRecord>(
   records: readonly T[],
   maxRecords: number = MAX_DURABLE_RECORDS_PER_KIND,
-): { readonly records: readonly T[]; readonly retention: DurableRecordRetention } {
+): { readonly records: readonly T[]; readonly retention: DetailRetention } {
   const sorted = sortDurableRecords(records)
   const retained = sorted.slice(0, maxRecords)
   return Object.freeze({
     records: Object.freeze(retained) as readonly T[],
-    retention: Object.freeze({ retained: retained.length, total: sorted.length }),
+    retention: detailRetention(retained.length, sorted.length),
   })
 }
