@@ -1,10 +1,17 @@
 import type { NormalizedAccountingResult } from './graph-integrity-session.js'
+import {
+  finalizeNormalizedIntegritySnapshot,
+  type FinalizedNormalizedIntegritySnapshot,
+} from './graph-integrity-snapshot.js'
 import { serializeCanonicalJson, type CanonicalJson } from './canonical-json.js'
 import {
+  ENDPOINT_IDENTITY_STATUSES,
   EndpointIdentityInvariantError,
   normalizeNodeEndpointIdentityQualification,
   validateEndpointIdentityEndpointQualification,
   type EndpointIdentityEndpointQualification,
+  type EndpointIdentityReason,
+  type EndpointIdentityStatus,
 } from './endpoint-identity.js'
 import {
   createEvidenceOccurrence,
@@ -129,6 +136,15 @@ export function artifactHydrationToken(caller: 'graph-artifact-loader'): symbol 
     throw new GraphAdmissionError('Verified hydration is reserved for the artifact loader')
   }
   return ARTIFACT_HYDRATION_TOKEN
+}
+
+function emptyEndpointMatrix(): Record<EndpointIdentityStatus, Record<EndpointIdentityStatus, number>> {
+  const matrix = {} as Record<EndpointIdentityStatus, Record<EndpointIdentityStatus, number>>
+  for (const source of ENDPOINT_IDENTITY_STATUSES) {
+    matrix[source] = {} as Record<EndpointIdentityStatus, number>
+    for (const target of ENDPOINT_IDENTITY_STATUSES) matrix[source]![target] = 0
+  }
+  return matrix
 }
 
 export class NormalizedAccountingAlreadyAttachedError extends Error {
@@ -481,6 +497,11 @@ export class KnowledgeGraph {
    * would describe an accounting run that never happened.
    */
   private normalizedAccounting: NormalizedAccountingResult | null = null
+  private integritySnapshot: FinalizedNormalizedIntegritySnapshot | null = null
+  /** Source-status x target-status fact counts, maintained during insertion. */
+  private readonly endpointMatrix: Record<EndpointIdentityStatus, Record<EndpointIdentityStatus, number>> =
+    emptyEndpointMatrix()
+  private readonly endpointReasonFactCounts = new Map<EndpointIdentityReason, number>()
   /** Invalidated by every endpoint-pair mutation; see endpointEntries(). */
   private endpointEntriesCache: readonly GraphEndpointEntry[] | null = null
 
@@ -519,6 +540,21 @@ export class KnowledgeGraph {
    */
   private indexVerifiedFact(fact: SemanticFact, attributes: GraphAttributes): void {
     this.factMap.set(fact.id, { fact, attributes: { ...attributes } })
+    // Accumulated here, on the single existing insertion path, rather than by a
+    // second walk over every fact at serialization time. #705 already carries an
+    // accepted load exception, so another full accumulation is not available to
+    // spend.
+    if (this.integritySnapshot !== null) {
+      // A snapshot that stops matching the graph is worse than no snapshot: it
+      // would serialize as authoritative. Dropped, not silently kept.
+      this.integritySnapshot = null
+    }
+    this.endpointMatrix[fact.endpointIdentity.source.status]![fact.endpointIdentity.target.status] += 1
+    for (const endpoint of [fact.endpointIdentity.source, fact.endpointIdentity.target]) {
+      for (const reason of endpoint.reasons) {
+        this.endpointReasonFactCounts.set(reason, (this.endpointReasonFactCounts.get(reason) ?? 0) + 1)
+      }
+    }
     this.addFactIndexEntry(this.sourceFactIndex, fact.source, fact.id)
     this.addFactIndexEntry(this.targetFactIndex, fact.target, fact.id)
     this.addFactIndexEntry(this.relationFactIndex, fact.relation, fact.id)
@@ -1065,11 +1101,54 @@ export class KnowledgeGraph {
       throw new NormalizedAccountingAlreadyAttachedError()
     }
     this.normalizedAccounting = result
+    // Finalized here, at the end of normalized construction, so it cannot go
+    // stale relative to the facts it describes. Any later mutation invalidates
+    // it rather than leaving a snapshot that quietly stops being true.
+    this.integritySnapshot = finalizeNormalizedIntegritySnapshot({
+      accountingResult: result,
+      facts: this.numberOfFacts(),
+      occurrences: this.numberOfOccurrences(),
+      endpointPairs: this.numberOfEndpointPairs(),
+      endpointIdentityMatrix: this.endpointIdentityMatrix(),
+      reasonFactCounts: this.endpointReasonFactSummary(),
+      storageAdmission: this.storageAdmissionSummary(),
+    })
+  }
+
+  /**
+   * The serialization-ready snapshot, or null when none was finalized.
+   *
+   * O(1): everything in it was derived once at finalization. Stage 3 reads this
+   * and sorts bounded arrays; it does not re-walk facts or candidates.
+   */
+  normalizedIntegritySnapshot(): FinalizedNormalizedIntegritySnapshot | null {
+    return this.integritySnapshot
   }
 
   /** Null when no normalized build produced this graph. Never a zeroed result. */
   normalizedAccountingSummary(): NormalizedAccountingResult | null {
     return this.normalizedAccounting
+  }
+
+  /**
+   * Endpoint-identity fact matrix, O(1) because it is maintained on insertion.
+   *
+   * Returns a detached copy so a consumer cannot mutate graph state, and so the
+   * snapshot it feeds stays frozen.
+   */
+  endpointIdentityMatrix(): Readonly<Record<EndpointIdentityStatus, Readonly<Record<EndpointIdentityStatus, number>>>> {
+    const copy = emptyEndpointMatrix()
+    for (const source of ENDPOINT_IDENTITY_STATUSES) {
+      for (const target of ENDPOINT_IDENTITY_STATUSES) copy[source]![target] = this.endpointMatrix[source]![target]!
+    }
+    return Object.freeze(copy)
+  }
+
+  /** Overlapping endpoint-reason fact counts, maintained on insertion. */
+  endpointReasonFactSummary(): Readonly<Partial<Record<EndpointIdentityReason, number>>> {
+    return Object.freeze(Object.fromEntries(
+      [...this.endpointReasonFactCounts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+    ))
   }
 
   /**
@@ -1155,6 +1234,14 @@ export class KnowledgeGraph {
         copied.addOccurrence(occurrence)
       }
     }
+
+    // After the facts, not before: copying them runs the same insertion path
+    // that invalidates a stale snapshot, so an earlier assignment would be
+    // wiped. A full copy describes the same graph, so it inherits the snapshot;
+    // a subgraph describes fewer facts, so it must not.
+    const isFullCopy = selectedNodeIds.size === this.nodeMap.size
+      && copied.numberOfFacts() === this.numberOfFacts()
+    copied.integritySnapshot = isFullCopy ? this.integritySnapshot : null
 
     return copied
   }
