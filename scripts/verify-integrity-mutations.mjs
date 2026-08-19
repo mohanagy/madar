@@ -32,11 +32,14 @@ const CONTRACTS = 'src/contracts/graph-integrity.ts'
 const SESSION = 'src/contracts/graph-integrity-session.ts'
 const BUILD = 'src/pipeline/build.ts'
 const GRAPH = 'src/contracts/graph.ts'
+const SNAPSHOT_SRC = 'src/contracts/graph-integrity-snapshot.ts'
 
 const SHARE_SAFETY = 'tests/unit/integrity-record-share-safety.test.ts'
 const ACCOUNTING = 'tests/unit/normalized-candidate-accounting.test.ts'
 const CONTRACT_TESTS = 'tests/unit/graph-integrity-contracts.test.ts'
 const RECEIPT_TESTS = 'tests/unit/graph-integrity-receipt.test.ts'
+const SNAPSHOT = 'tests/unit/integrity-snapshot.test.ts'
+const TARGET_POLICY = 'tests/unit/verification-target-policy.test.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -105,11 +108,113 @@ const MUTANTS = [
     to: '',
   },
   {
-    name: 'B3: rebuild retention from the bounded array',
+    // Renamed: this resets one retention object. It does NOT reconstruct from
+    // the bounded array, which was the actual B3 defect -- the two mutants
+    // below do that.
+    name: 'B3: reset occurrence retention during multiplicity finalization',
     file: CONTRACTS,
     test: SHARE_SAFETY,
     from: '  return Object.freeze({ ...record, multiplicity }) as unknown as T',
     to: '  return Object.freeze({ ...record, multiplicity, occurrenceRetention: detailRetention(0, 0) }) as unknown as T',
+  },
+  {
+    // The real B3 shape: rebuild the record from its already-bounded detail, so
+    // 50 occurrences capped to 16 report a total of 16 instead of 50.
+    name: 'B3: rebuild occurrence retention from the bounded array',
+    file: CONTRACTS,
+    test: SHARE_SAFETY,
+    from: '  return Object.freeze({ ...record, multiplicity }) as unknown as T',
+    to: `  return Object.freeze({
+    ...record,
+    multiplicity,
+    ...('occurrences' in record
+      ? { occurrenceRetention: detailRetention(record.occurrences.length, record.occurrences.length) }
+      : {}),
+  }) as unknown as T`,
+  },
+  {
+    name: 'B3: digest only the retained fingerprint slice',
+    file: CONTRACTS,
+    test: SHARE_SAFETY,
+    from: '      candidate_fingerprints: orderedCanonicalArray(complete),',
+    to: '      candidate_fingerprints: orderedCanonicalArray(complete.slice(0, MAX_CONFLICT_FINGERPRINTS)),',
+  },
+  {
+    name: 'R2: drop per-kind record retention',
+    file: SESSION,
+    test: SNAPSHOT,
+    from: '        unresolved: detailRetention(unresolvedRecords.length, this.unresolvedRetained.distinctTotal),',
+    to: '        unresolved: detailRetention(unresolvedRecords.length, unresolvedRecords.length),',
+  },
+  {
+    name: 'R2: skip nested retention validation at finalize',
+    file: SNAPSHOT_SRC,
+    test: SNAPSHOT,
+    from: '    assertRecordRetention(record, `record ${record.id}`)',
+    to: '',
+  },
+  {
+    name: 'R2: accept an inconsistent omitted count',
+    file: CONTRACTS,
+    test: SNAPSHOT,
+    from: '  if (retention.omitted !== retention.total - retention.retained) {',
+    to: '  if (false) {',
+  },
+  {
+    name: 'R2: accept a false truncated flag',
+    file: CONTRACTS,
+    test: SNAPSHOT,
+    from: '  if (retention.truncated !== retention.omitted > 0) {',
+    to: '  if (false) {',
+  },
+  {
+    name: 'R3: never finalize the composite snapshot',
+    file: GRAPH,
+    test: SNAPSHOT,
+    from: '    this.integritySnapshot = finalizeNormalizedIntegritySnapshot({',
+    to: '    this.integritySnapshot = (null as never) && finalizeNormalizedIntegritySnapshot({',
+  },
+  {
+    name: 'R3: keep a stale snapshot after later graph mutation',
+    file: GRAPH,
+    test: SNAPSHOT,
+    from: '      this.integritySnapshot = null\n    }',
+    to: '    }',
+  },
+  {
+    name: 'R3: let a subgraph inherit the full-graph snapshot',
+    file: GRAPH,
+    test: SNAPSHOT,
+    from: '    copied.integritySnapshot = isFullCopy ? this.integritySnapshot : null',
+    to: '    copied.integritySnapshot = this.integritySnapshot',
+  },
+  {
+    name: 'R1: stop rejecting scheme forms in verification targets',
+    file: CONTRACTS,
+    test: TARGET_POLICY,
+    from: '    return null\n  }\n\n  const segments = candidate.split',
+    to: '    void 0\n  }\n\n  const segments = candidate.split',
+  },
+  {
+    name: 'R1: use startsWith(..) instead of a segment test',
+    file: CONTRACTS,
+    test: TARGET_POLICY,
+    from: '  return segments.includes(\'..\')',
+    to: '  return segments.join(\'/\').startsWith(\'..\')',
+  },
+  {
+    name: 'R1: stop bounding verification-target length',
+    file: CONTRACTS,
+    test: TARGET_POLICY,
+    from: 'export const MAX_VERIFICATION_TARGET_LENGTH = 512 as const',
+    to: 'export const MAX_VERIFICATION_TARGET_LENGTH = 1_000_000 as const',
+  },
+  {
+    name: 'R1: accept control characters in verification targets',
+    file: CONTRACTS,
+    test: TARGET_POLICY,
+    from: '  if (/[\\u0000-\\u001f\\u007f-\\u009f]/.test(normalized)) return null\n  if (/%[0-9A-Fa-f]{2}/.test(normalized)) return null',
+    to: '  if (/%[0-9A-Fa-f]{2}/.test(normalized)) return null',
   },
   {
     name: 'B4: count scope failures after sanitization',
@@ -149,9 +254,9 @@ const MUTANTS = [
   {
     name: 'equation: drop safe-integer validation',
     file: CONTRACTS,
+    from: 'function assertCount(value: number, field: string): number {\n  if (!Number.isSafeInteger(value) || value < 0) {',
     test: CONTRACT_TESTS,
-    from: '  if (!Number.isSafeInteger(value) || value < 0) {',
-    to: '  if (false) {',
+    to: 'function assertCount(value: number, field: string): number {\n  if (false) {',
   },
   {
     name: 'cap: retain the first K encountered instead of the smallest ids',
