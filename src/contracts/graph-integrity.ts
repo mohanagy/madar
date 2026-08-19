@@ -1,3 +1,4 @@
+import { posix as pathPosix, win32 as pathWin32 } from 'node:path'
 import { createHash } from 'node:crypto'
 
 import { canonicalJsonBytes, orderedCanonicalArray, serializeCanonicalJson } from './canonical-json.js'
@@ -768,20 +769,22 @@ export function normalizeVerificationTargetPath(
   if (SEPARATOR_LOOKALIKES.test(normalized)) return null
   if (normalized.startsWith('~')) return null
 
-  const separatorsNormalized = normalized.replaceAll('\\', '/')
-
-  // Absolute, drive and UNC forms are only acceptable after conversion against a
-  // truthful root; without one they are refused rather than guessed at.
-  const isAbsoluteLike = separatorsNormalized.startsWith('/')
-    || /^[A-Za-z]:\//.test(separatorsNormalized)
-  let candidate = separatorsNormalized
-  if (isAbsoluteLike) {
-    const relative = repositoryRelativeUnder(separatorsNormalized, context.repositoryRoot)
+  // Flavour is decided before separators are folded, because folding `\\` to `/`
+  // turns a UNC path into something indistinguishable from a POSIX one.
+  let candidate: string
+  if (isAbsoluteLikePath(normalized)) {
+    // Absolute, drive and UNC forms are only acceptable after conversion against
+    // a truthful root; without one they are refused rather than guessed at.
+    const relative = repositoryRelativeUnder(normalized, context.repositoryRoot)
     if (relative === null) return null
     candidate = relative
-  } else if (SCHEME_PREFIX.test(separatorsNormalized)) {
+  } else {
+    const separatorsNormalized = normalized.replaceAll('\\', '/')
     // A scheme form that is not an absolute path is not a repository path.
-    return null
+    // `C:relative\path` is drive-relative and lands here too, which is correct:
+    // it names no root we can prove containment against.
+    if (SCHEME_PREFIX.test(separatorsNormalized)) return null
+    candidate = separatorsNormalized
   }
 
   const segments = candidate.split('/').filter((segment) => segment.length > 0 && segment !== '.')
@@ -800,13 +803,62 @@ export function normalizeVerificationTargetPath(
  * Compared on normalized separators and segment boundaries so a sibling
  * directory sharing a name prefix is not treated as inside the repository.
  */
+type AbsolutePathFlavour = 'win32' | 'posix'
+
+/**
+ * Containment is a filesystem question, not a string question.
+ *
+ * `C:\\repo2` shares a textual prefix with `C:\\repo` but is not inside it, and
+ * `c:\\REPO` is the same directory as `C:\\repo` on a Windows volume. Prefix
+ * matching gets both wrong in opposite directions, so each root is matched with
+ * the semantics of its own platform.
+ */
+function pathFlavour(value: string): AbsolutePathFlavour {
+  if (/^[A-Za-z]:[\\/]/.test(value)) return 'win32'
+  // Two leading separators followed by a host: a UNC share.
+  if (/^[\\/]{2}[^\\/]/.test(value)) return 'win32'
+  return 'posix'
+}
+
+function isAbsoluteLikePath(value: string): boolean {
+  return value.startsWith('/')
+    || value.startsWith('\\')
+    || /^[A-Za-z]:[\\/]/.test(value)
+}
+
+/**
+ * Converts an absolute path into a repository-relative target, or refuses.
+ *
+ * An absolute path is only ever converted against a truthful matching root:
+ * a different drive or share, a path outside the root, and a root-prefix
+ * look-alike all refuse rather than convert. Refusing every absolute Windows
+ * and UNC input instead would leave legitimate Windows repositories with no
+ * verification targets at all, so containment is proven rather than assumed.
+ *
+ * Case: Windows and UNC volumes are case-insensitive, so containment is matched
+ * case-insensitively there and case-sensitively under POSIX. The emitted target
+ * keeps the source's own casing rather than the root's.
+ */
 function repositoryRelativeUnder(absolutePath: string, repositoryRoot?: string): string | null {
   if (repositoryRoot === undefined || repositoryRoot.trim().length === 0) return null
-  const root = repositoryRoot.replaceAll('\\', '/').replace(/\/+$/, '')
-  if (root.length === 0) return null
-  if (absolutePath === root) return null
-  if (!absolutePath.startsWith(`${root}/`)) return null
-  return absolutePath.slice(root.length + 1)
+  const root = repositoryRoot.trim()
+  const flavour = pathFlavour(root)
+  // A Windows path under a POSIX root -- or the reverse -- is not containment.
+  if (pathFlavour(absolutePath) !== flavour) return null
+
+  const platform = flavour === 'win32' ? pathWin32 : pathPosix
+  if (!platform.isAbsolute(root) || !platform.isAbsolute(absolutePath)) return null
+
+  const relative = platform.relative(root, absolutePath)
+  // Empty means the path IS the root; absolute means a different drive or
+  // share; a `..` segment means it escapes the root.
+  if (relative.length === 0) return null
+  if (platform.isAbsolute(relative)) return null
+  const segments = relative.split(/[\\/]/)
+  if (segments.includes('..')) return null
+
+  const joined = segments.filter((segment) => segment.length > 0 && segment !== '.').join('/')
+  return joined.length === 0 ? null : joined
 }
 
 /**

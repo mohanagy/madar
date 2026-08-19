@@ -182,3 +182,96 @@ describe('R1 — the policy has one owner', () => {
     expect(session.includes('normalizeVerificationTargets')).toBe(false)
   })
 })
+
+describe('R1-01 — absolute containment is proven with platform semantics', () => {
+  // Maintainer decision: a raw absolute Windows/UNC path must never reach a
+  // share-safe receipt, but truthful conversion under a verified matching root
+  // is permitted and required on every supported platform. Refusing all
+  // Windows/UNC input before conversion would leave legitimate Windows
+  // repositories with no verification targets at all.
+  const win = (value: string, root?: string): string | null =>
+    normalizeVerificationTargetPath(value, root === undefined ? { field: 't' } : { repositoryRoot: root, field: 't' })
+
+  it('1. converts a drive path inside its own root', () => {
+    expect(win('C:\\repo\\src\\a.ts', 'C:\\repo')).toBe('src/a.ts')
+  })
+
+  it('2. matches a drive root case-insensitively, keeping the source casing', () => {
+    // Windows volumes are case-insensitive, so `c:\REPO` names the same
+    // directory as `C:\repo`. Refusing it would deny targets to a truthful
+    // repository over letter case alone. The emitted target keeps the source's
+    // casing rather than the root's.
+    expect(win('c:\\REPO\\src\\a.ts', 'C:\\repo')).toBe('src/a.ts')
+    expect(win('C:\\repo\\SRC\\A.ts', 'C:\\repo')).toBe('SRC/A.ts')
+  })
+
+  it('3. omits a path on a different drive', () => {
+    expect(win('D:\\repo\\a.ts', 'C:\\repo')).toBeNull()
+  })
+
+  it('4. omits a root-prefix look-alike', () => {
+    expect(win('C:\\repo2\\a.ts', 'C:\\repo')).toBeNull()
+  })
+
+  it('5. converts a UNC path inside its own share', () => {
+    expect(win('\\\\server\\share\\repo\\src\\a.ts', '\\\\server\\share\\repo')).toBe('src/a.ts')
+  })
+
+  it('6. omits a path on a different share', () => {
+    expect(win('\\\\server\\other\\repo\\a.ts', '\\\\server\\share\\repo')).toBeNull()
+  })
+
+  it('7. omits a UNC root-prefix look-alike', () => {
+    expect(win('\\\\server\\share\\repo2\\a.ts', '\\\\server\\share\\repo')).toBeNull()
+  })
+
+  it('8. omits every absolute form when no truthful root is supplied', () => {
+    for (const value of [
+      'C:\\repo\\src\\a.ts',
+      'C:/repo/src/a.ts',
+      '\\\\server\\share\\repo\\src\\a.ts',
+      '/repo/src/a.ts',
+    ]) {
+      expect(win(value), value).toBeNull()
+    }
+  })
+
+  it('9. never emits a drive letter, UNC prefix, username or physical root', () => {
+    const converted = [
+      win('C:\\repo\\src\\a.ts', 'C:\\repo'),
+      win('\\\\server\\share\\repo\\src\\a.ts', '\\\\server\\share\\repo'),
+      win('/home/someone/repo/src/a.ts', '/home/someone/repo'),
+    ]
+    expect(converted).toEqual(['src/a.ts', 'src/a.ts', 'src/a.ts'])
+    for (const value of converted) {
+      expect(value).not.toMatch(/^[A-Za-z]:/)
+      expect(value).not.toMatch(/^[\\/]/)
+      expect(value).not.toContain('\\')
+      expect(value).not.toContain('server')
+      expect(value).not.toContain('someone')
+    }
+  })
+
+  it('10. leaves POSIX in-root conversion correct', () => {
+    expect(win('/repo/src/a.ts', '/repo')).toBe('src/a.ts')
+    expect(win('/repo/deeply/nested/b.ts', '/repo')).toBe('deeply/nested/b.ts')
+    expect(win('/repo2/a.ts', '/repo')).toBeNull()
+    expect(win('/other/a.ts', '/repo')).toBeNull()
+  })
+
+  it('refuses a flavour mismatch in either direction', () => {
+    // A Windows path under a POSIX root is not containment, however the strings
+    // happen to line up.
+    expect(win('C:\\repo\\a.ts', '/repo')).toBeNull()
+    expect(win('/repo/a.ts', 'C:\\repo')).toBeNull()
+  })
+
+  it('refuses a drive-relative path, which proves no containment', () => {
+    expect(win('C:relative\\a.ts', 'C:\\repo')).toBeNull()
+  })
+
+  it('refuses the root itself, which names no file', () => {
+    expect(win('C:\\repo', 'C:\\repo')).toBeNull()
+    expect(win('/repo', '/repo')).toBeNull()
+  })
+})
