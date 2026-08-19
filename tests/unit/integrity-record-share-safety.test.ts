@@ -10,7 +10,7 @@ import {
   safeRelationToken,
   withMultiplicityPreservingIdentity,
 } from '../../src/contracts/graph-integrity.js'
-import { NormalizedAccountingSession } from '../../src/contracts/graph-integrity-session.js'
+import { NormalizedAccountingSession, sanitizeCandidate } from '../../src/contracts/graph-integrity-session.js'
 
 const POSIX_ROOT = '/Users/someone/Desktop/projects/works/madar-658'
 const POSIX_FLAT = 'users_someone_desktop_projects_works_madar_658'
@@ -232,6 +232,24 @@ describe('B3 — finalization preserves retention truth and record identity', ()
       candidateFingerprint: 'cf_a', multiplicity: 1, reasons: ['missing_target_endpoint'],
     })
     expect(() => withMultiplicityPreservingIdentity(record, 0)).toThrow(/positive safe integer/)
+  })
+})
+
+describe('B2 — the sanitizer does not swallow arbitrary failures', () => {
+  it('propagates an error raised while reading a candidate attribute', () => {
+    // Narrower than it looks: this proves sanitizeCandidate does not wrap
+    // property access in a catch-all. The catch inside sanitizedPathLike is
+    // separately narrowed, but `normalizeIdentityRepositoryPath` only ever
+    // throws SemanticIdentityInvariantError, so that narrowing is forward-looking
+    // defence rather than something a test can currently distinguish.
+    const hostile = {
+      get relation(): string { throw new TypeError('not a path failure') },
+    }
+    expect(() => sanitizeCandidate(hostile)).toThrow(TypeError)
+  })
+
+  it('still drops an ordinary unsafe path without throwing', () => {
+    expect(sanitizeCandidate({ kind: '/Users/someone/secret.ts' })).toEqual({})
   })
 })
 

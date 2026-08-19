@@ -67,7 +67,8 @@
         "release:verify": "node .github/scripts/verify-release-hygiene.mjs",
         "verify:pack-parity": "node .github/scripts/verify-packed-retrieval-parity.mjs",
         "registry:validate": "node .github/scripts/validate-mcp-registry.mjs",
-        "qualify:validate": "node .github/scripts/validate-qualification-contract.mjs"
+        "qualify:validate": "node .github/scripts/validate-qualification-contract.mjs",
+        "verify:integrity-mutations": "node scripts/verify-integrity-mutations.mjs"
     },
     "devDependencies": {
         "@types/node": "^26.0.0",

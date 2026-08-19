@@ -23,7 +23,7 @@ import {
   type TerminalIntegrityReason,
   type UnresolvedCandidateRecord,
 } from './graph-integrity.js'
-import { normalizeIdentityRepositoryPath } from './semantic-identity.js'
+import { SemanticIdentityInvariantError, normalizeIdentityRepositoryPath } from './semantic-identity.js'
 import type { CanonicalJson } from './canonical-json.js'
 import type { EvidenceOccurrence } from './semantic-graph.js'
 
@@ -237,8 +237,11 @@ function sanitizedPathLike(value: string, field: string): string | null {
   if (!PATH_SHAPED.test(value)) return value
   try {
     return normalizeIdentityRepositoryPath(value, field)
-  } catch {
-    // Deliberately dropped: an unsafe path never enters a shared record.
+  } catch (error) {
+    // Only an unsafe *path* is droppable. A bare catch here would also swallow
+    // a programming error -- a changed signature, a bad argument -- and emit a
+    // record that looks sanitized while the sanitizer never ran.
+    if (!(error instanceof SemanticIdentityInvariantError)) throw error
     return null
   }
 }
