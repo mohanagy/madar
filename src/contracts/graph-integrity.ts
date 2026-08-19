@@ -240,7 +240,16 @@ export interface GraphIntegrityReceiptV1 {
   readonly occurrences_retained: number
   readonly unique_endpoint_pairs: number
 
-  /** Overlapping diagnostics over unresolved/rejected candidates, not a partition. */
+  /**
+   * Candidates carrying each terminal reason. Overlapping diagnostics,
+   * deliberately **not** a partition: one candidate with both a missing
+   * endpoint and an unsupported relation contributes to both counters, so
+   * these need not sum to `emitted_candidates`. Zero-valued reasons are
+   * omitted rather than carried, so two equivalent runs serialize identically.
+   */
+  readonly terminal_reason_counts: Readonly<Partial<Record<TerminalIntegrityReason, number>>>
+
+  /** The four named counters above, mirrored out of `terminal_reason_counts`. */
   readonly missing_source_endpoints: number
   readonly missing_target_endpoints: number
   readonly malformed_candidates: number
