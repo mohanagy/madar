@@ -423,12 +423,25 @@ describe('a graph with no build reports no accounting rather than zeros', () => 
   })
 })
 
-describe('draft accumulation is bounded without falsifying a count', () => {
-  it('keeps the distinct total exact once the draft bound is exceeded', () => {
+describe('record retention is bounded and independent of arrival order', () => {
+  const CAP = 1000
+
+  function unresolvedGroups(count: number, order: 'forward' | 'reverse' | 'shuffle' | 'chunked'): NormalizedAccountingSession {
+    const indexes = Array.from({ length: count }, (_, index) => index)
+    if (order === 'reverse') indexes.reverse()
+    if (order === 'shuffle') {
+      // Deterministic shuffle: no Math.random, so a failure is reproducible.
+      indexes.sort((left, right) => ((left * 7919) % count) - ((right * 7919) % count))
+    }
+    if (order === 'chunked') {
+      const chunks: number[][] = []
+      for (let i = 0; i < indexes.length; i += 97) chunks.push(indexes.slice(i, i + 97))
+      indexes.length = 0
+      for (const chunk of chunks.reverse()) indexes.push(...chunk)
+    }
+
     const session = new NormalizedAccountingSession()
-    // Well past the retained-draft bound, each candidate a distinct group.
-    const groups = 10_050
-    for (let index = 0; index < groups; index += 1) {
+    for (const index of indexes) {
       session.dispose(`cf_${index}`, {
         state: 'unresolved',
         reasons: ['missing_target_endpoint'],
@@ -436,28 +449,106 @@ describe('draft accumulation is bounded without falsifying a count', () => {
         target: `missing_${index}`,
       })
     }
-    const result = session.finalize()
+    return session
+  }
 
-    // The equation is untouched by any bound.
+  it('keeps the distinct total exact once the cap is exceeded', () => {
+    const groups = CAP + 100
+    const result = unresolvedGroups(groups, 'forward').finalize()
+
+    // The equation is untouched by any cap.
     expect(result.emittedCandidates).toBe(groups)
     expect(result.counts.unresolved).toBe(groups)
-    // Records are capped, but the distinct total remains exact so the loss is
-    // disclosed rather than hidden behind a smaller number.
-    expect(result.unresolvedRecords.length).toBeLessThanOrEqual(1000)
-    expect(result.unresolvedRetention.total).toBe(groups)
-    expect(result.unresolvedRetention.retained).toBeLessThan(result.unresolvedRetention.total)
+    // Detail is capped; the total stays exact so the loss is disclosed.
+    expect(result.unresolvedRecords).toHaveLength(CAP)
+    expect(result.unresolvedRetention).toEqual({ retained: CAP, total: groups })
   })
 
-  it('still groups repeats by multiplicity after the bound is reached', () => {
-    const session = new NormalizedAccountingSession()
-    for (let index = 0; index < 10_050; index += 1) {
-      session.dispose(`cf_${index}`, { state: 'unresolved', reasons: ['missing_target_endpoint'] })
+  it.each(['reverse', 'shuffle', 'chunked'] as const)(
+    'produces byte-identical output under %s arrival order',
+    (order) => {
+      // The blocker: "first K encountered" made the retained subset depend on
+      // arrival, which cannot be a deterministic artifact contract.
+      const forward = unresolvedGroups(CAP + 100, 'forward').finalize()
+      const other = unresolvedGroups(CAP + 100, order).finalize()
+      expect(JSON.stringify(other)).toBe(JSON.stringify(forward))
+    },
+  )
+
+  it('retains the lexicographically smallest record ids, not the earliest', () => {
+    const result = unresolvedGroups(CAP + 100, 'forward').finalize()
+    const ids = result.unresolvedRecords.map((record) => record.id)
+    expect(ids).toEqual([...ids].sort())
+
+    // Every retained id sorts at or below every id the reverse run retained,
+    // which is only true if selection is by identity rather than arrival.
+    const reverse = unresolvedGroups(CAP + 100, 'reverse').finalize()
+    expect(reverse.unresolvedRecords.map((record) => record.id)).toEqual(ids)
+  })
+
+  it('keeps multiplicity exact for a retained group however often it repeats', () => {
+    const session = unresolvedGroups(CAP + 100, 'forward')
+    const retainedId = session.finalize().unresolvedRecords[0]!.id
+
+    // Rebuild and repeat one group that is known to be retained.
+    const repeated = unresolvedGroups(CAP + 100, 'forward')
+    const target = unresolvedGroups(CAP + 100, 'forward').finalize().unresolvedRecords[0]!
+    for (let i = 0; i < 4; i += 1) {
+      repeated.dispose(target.candidateFingerprint, {
+        state: 'unresolved',
+        reasons: [...target.reasons],
+        ...(target.source !== undefined ? { source: target.source } : {}),
+        ...(target.target !== undefined ? { target: target.target } : {}),
+      })
     }
-    // A repeat of a group that IS retained must still raise its multiplicity.
-    session.dispose('cf_0', { state: 'unresolved', reasons: ['missing_target_endpoint'] })
+    const result = repeated.finalize()
+    const found = result.unresolvedRecords.find((record) => record.id === retainedId)
+
+    expect(found?.multiplicity).toBe(5)
+    // Repeats raise multiplicity, never the distinct total.
+    expect(result.unresolvedRetention.total).toBe(CAP + 100)
+    expect(result.counts.unresolved).toBe(CAP + 104)
+  })
+
+  it('counts an evicted group in the terminal counters even though its detail is gone', () => {
+    const groups = CAP + 100
+    const result = unresolvedGroups(groups, 'forward').finalize()
+    const retainedIds = new Set(result.unresolvedRecords.map((record) => record.id))
+
+    // 100 groups have no record at all, yet every one of them is counted.
+    expect(retainedIds.size).toBe(CAP)
+    expect(result.counts.unresolved).toBe(groups)
+    expect(result.unresolvedRetention.total - result.unresolvedRetention.retained).toBe(100)
+  })
+
+  it('does not let an evicted id re-enter when it reappears', () => {
+    // Eviction is monotone: the K-th smallest id only decreases, so an id
+    // dropped once can never sort back in. Without that, a late repeat could
+    // re-enter carrying a multiplicity of 1 and understate itself.
+    const groups = CAP + 100
+    const first = unresolvedGroups(groups, 'forward').finalize()
+
+    const session = unresolvedGroups(groups, 'forward')
+    const evicted = [...Array(groups).keys()]
+      .map((index) => `cf_${index}`)
+      .find((fingerprint) => !first.unresolvedRecords.some((r) => r.candidateFingerprint === fingerprint))
+    expect(evicted, 'expected at least one evicted group').toBeDefined()
+
+    // Re-disposed with IDENTICAL content, so it derives the SAME record id.
+    // Different content would be a different group, which proves nothing.
+    const evictedIndex = Number(evicted!.slice('cf_'.length))
+    session.dispose(evicted!, {
+      state: 'unresolved',
+      reasons: ['missing_target_endpoint'],
+      source: 'alpha',
+      target: `missing_${evictedIndex}`,
+    })
     const result = session.finalize()
-    expect(result.unresolvedRetention.total).toBe(10_050)
-    expect(result.counts.unresolved).toBe(10_051)
+
+    expect(result.unresolvedRecords.some((r) => r.candidateFingerprint === evicted)).toBe(false)
+    expect(result.counts.unresolved).toBe(groups + 1)
+    // And it must not inflate the distinct total by being seen twice.
+    expect(result.unresolvedRetention.total).toBe(groups)
   })
 })
 

@@ -5,7 +5,6 @@ import {
   CandidateRecordIdentityFactory,
   GraphIntegrityInvariantError,
   MAX_DURABLE_RECORDS_PER_KIND,
-  boundDurableRecords,
   emptyTerminalCounts,
   normalizeVerificationTargets,
   type CandidateConflictRecord,
@@ -183,22 +182,6 @@ const PATH_SHAPED = /[/\\]|^[A-Za-z]:|^[A-Za-z][A-Za-z0-9+.-]*:/
 const MAX_SANITIZED_STRING_LENGTH = 200
 
 /**
- * Distinct draft groups retained per kind while accounting is still running.
- *
- * `boundDurableRecords` caps what the artifact carries, but it only runs at
- * finalize -- so without a bound here the drafts map would grow with the number
- * of distinct candidate groups, which on a large repository is unbounded. The
- * bound is a generous multiple of the record cap so deterministic id-ordered
- * truncation still applies for any realistic corpus (Madar's own graph produces
- * 416 distinct unresolved groups, a 24x margin), while memory stays bounded on a
- * pathological one.
- *
- * Exceeding it never falsifies a count: the distinct-group total is tracked
- * separately and stays exact, so `retained < total` still discloses the loss.
- */
-const MAX_RETAINED_DRAFTS_PER_KIND = MAX_DURABLE_RECORDS_PER_KIND * 10
-
-/**
  * Printable ASCII only, and nothing that disguises a path.
  *
  * These fields are diagnostic hints -- relation names, HTTP methods, binding
@@ -231,15 +214,93 @@ function safeCandidateString(value: string, field: string): string | null {
   }
 }
 
+/**
+ * Bounded retention of durable records, selected by canonical record identity.
+ *
+ * Retains the K lexicographically smallest record ids seen. That makes the
+ * retained subset a function of the candidate multiset alone, so the same
+ * candidates in any order -- reversed, shuffled, chunked, or produced by a
+ * different adapter traversal -- yield byte-identical output. Keeping "the first
+ * K encountered" instead would have made the artifact depend on arrival order,
+ * which cannot be a deterministic contract.
+ *
+ * Eviction is monotone: an id is dropped only when K smaller ids already exist,
+ * and the K-th smallest can only decrease as more arrive, so an evicted id can
+ * never re-enter. Multiplicity for retained ids stays exact; evicted groups
+ * still contribute to the terminal counters and to the exact distinct total,
+ * because only the *detail* is capped, never the accounting.
+ */
+class RetainedRecords<T extends { readonly id: string }> {
+  private readonly byId = new Map<string, { record: T; multiplicity: number }>()
+  /**
+   * Ids seen, retained or evicted.
+   *
+   * Needed because the distinct total must stay *exact*: without it, an evicted
+   * group observed again would be counted as newly distinct every time and the
+   * disclosed total would drift upward. Ids only, never records -- roughly 67
+   * bytes per distinct group against ~500 for a full record, so the dominant
+   * memory term is still the one the cap bounds.
+   */
+  private readonly seenIds = new Set<string>()
+
+  constructor(private readonly capacity: number = MAX_DURABLE_RECORDS_PER_KIND) {}
+
+  /** Distinct groups seen, retained or not. Exact, never capped. */
+  get distinctTotal(): number {
+    return this.seenIds.size
+  }
+
+  get retainedCount(): number {
+    return this.byId.size
+  }
+
+  /**
+   * @param id canonical record id, already content-derived
+   * @param build produces the record; called only when the id is newly retained
+   */
+  observe(id: string, build: () => T): void {
+    const existing = this.byId.get(id)
+    if (existing !== undefined) {
+      existing.multiplicity += 1
+      return
+    }
+    // An id already seen but not retained was evicted. Eviction is monotone --
+    // the K-th smallest id only decreases -- so it cannot sort back in, and it
+    // must not be counted as newly distinct either.
+    if (this.seenIds.has(id)) return
+    this.seenIds.add(id)
+
+    if (this.byId.size < this.capacity) {
+      this.byId.set(id, { record: build(), multiplicity: 1 })
+      return
+    }
+    // At capacity: this id displaces the current largest only if it sorts below
+    // it. Ids that do not are dropped and, by monotonicity, stay dropped.
+    let largest: string | null = null
+    for (const key of this.byId.keys()) {
+      if (largest === null || key > largest) largest = key
+    }
+    if (largest === null || id >= largest) return
+    this.byId.delete(largest)
+    this.byId.set(id, { record: build(), multiplicity: 1 })
+  }
+
+  /** Retained entries in canonical id order, with their exact multiplicities. */
+  entries(): readonly { readonly record: T; readonly multiplicity: number }[] {
+    return [...this.byId.entries()]
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([, value]) => value)
+  }
+}
+
 export class NormalizedAccountingSession {
   private readonly counts: Record<CandidateTerminalState, number> = { ...emptyTerminalCounts() }
   private readonly reasonCounts = new Map<TerminalIntegrityReason, number>()
   private readonly identity = new CandidateRecordIdentityFactory()
-  private readonly unresolvedDrafts = new Map<string, { draft: UnresolvedDisposition; fingerprint: string; multiplicity: number }>()
-  private readonly rejectedDrafts = new Map<string, { draft: RejectedDisposition; fingerprint: string; multiplicity: number }>()
-  private readonly conflictDrafts = new Map<string, { draft: ConflictingDisposition; multiplicity: number }>()
+  private readonly unresolvedRetained = new RetainedRecords<UnresolvedCandidateRecord>()
+  private readonly rejectedRetained = new RetainedRecords<RejectedCandidateRecord>()
+  private readonly conflictRetained = new RetainedRecords<CandidateConflictRecord>()
   private readonly disposedFingerprints = new Set<string>()
-  private readonly distinctGroupTotals = new Map<'unresolved' | 'rejected' | 'conflicting', number>()
   private readonly scopeFailureSet = new Set<string>()
   private emitted = 0
   private partialDiscriminators = 0
@@ -262,26 +323,24 @@ export class NormalizedAccountingSession {
     }
     this.disposedFingerprints.add(fingerprint)
 
+    // The record is built here rather than at finalize so its canonical id is
+    // available to the retention bound. Multiplicity is not part of record
+    // identity, so building at multiplicity 1 yields the same id the final
+    // record carries -- asserted at finalize rather than assumed.
     switch (disposition.state) {
-      case 'unresolved':
-        this.accumulate(this.unresolvedDrafts, fingerprint, disposition, 'unresolved')
+      case 'unresolved': {
+        const record = this.buildUnresolved(fingerprint, disposition, 1)
+        this.unresolvedRetained.observe(record.id, () => record)
         return
-      case 'rejected':
-        this.accumulate(this.rejectedDrafts, fingerprint, disposition, 'rejected')
+      }
+      case 'rejected': {
+        const record = this.buildRejected(fingerprint, disposition, 1)
+        this.rejectedRetained.observe(record.id, () => record)
         return
+      }
       case 'conflicting': {
-        // Grouped by sorted member fingerprints so a group's identity never
-        // depends on which member was observed first.
-        const key = serializeCanonicalJson([...disposition.groupFingerprints].sort(), { arraySemantics: 'ordered' })
-        const existing = this.conflictDrafts.get(key)
-        if (existing !== undefined) {
-          existing.multiplicity += 1
-          return
-        }
-        this.bumpDistinct('conflicting')
-        if (this.conflictDrafts.size < MAX_RETAINED_DRAFTS_PER_KIND) {
-          this.conflictDrafts.set(key, { draft: disposition, multiplicity: 1 })
-        }
+        const record = this.buildConflict(disposition, 1)
+        this.conflictRetained.observe(record.id, () => record)
         return
       }
       default:
@@ -289,32 +348,50 @@ export class NormalizedAccountingSession {
     }
   }
 
-  private accumulate<T extends UnresolvedDisposition | RejectedDisposition>(
-    drafts: Map<string, { draft: T; fingerprint: string; multiplicity: number }>,
+  private buildUnresolved(
     fingerprint: string,
-    disposition: T,
-    kind: 'unresolved' | 'rejected',
-  ): void {
-    const key = `${fingerprint}|${[...disposition.reasons].sort().join(',')}`
-    const existing = drafts.get(key)
-    if (existing !== undefined) {
-      existing.multiplicity += 1
-      return
-    }
-    // A new distinct group. Counted even when it is not retained, so the total
-    // stays exact and truncation is disclosed rather than hidden.
-    this.bumpDistinct(kind)
-    if (drafts.size >= MAX_RETAINED_DRAFTS_PER_KIND) return
-    drafts.set(key, { draft: disposition, fingerprint, multiplicity: 1 })
+    draft: UnresolvedDisposition,
+    multiplicity: number,
+  ): UnresolvedCandidateRecord {
+    return this.identity.createUnresolvedRecord({
+      candidateFingerprint: fingerprint,
+      multiplicity,
+      ...(draft.source !== undefined ? { source: draft.source } : {}),
+      ...(draft.target !== undefined ? { target: draft.target } : {}),
+      ...(draft.relation !== undefined ? { relation: draft.relation } : {}),
+      ...(draft.occurrences !== undefined ? { occurrences: draft.occurrences } : {}),
+      reasons: draft.reasons,
+      ...(draft.verificationTargets !== undefined
+        ? { verificationTargets: normalizeVerificationTargets(draft.verificationTargets, 'unresolved') }
+        : {}),
+    })
   }
 
-  private bumpDistinct(kind: 'unresolved' | 'rejected' | 'conflicting'): void {
-    this.distinctGroupTotals.set(kind, (this.distinctGroupTotals.get(kind) ?? 0) + 1)
+  private buildRejected(
+    fingerprint: string,
+    draft: RejectedDisposition,
+    multiplicity: number,
+  ): RejectedCandidateRecord {
+    return this.identity.createRejectedRecord({
+      candidateFingerprint: fingerprint,
+      multiplicity,
+      sanitizedCandidate: sanitizeCandidate(draft.candidate),
+      reasons: draft.reasons,
+      ...(draft.verificationTargets !== undefined
+        ? { verificationTargets: normalizeVerificationTargets(draft.verificationTargets, 'rejected') }
+        : {}),
+    })
   }
 
-  /** Exact distinct-group total for a kind, independent of what was retained. */
-  private distinctTotal(kind: 'unresolved' | 'rejected' | 'conflicting', retained: number): number {
-    return Math.max(this.distinctGroupTotals.get(kind) ?? 0, retained)
+  private buildConflict(draft: ConflictingDisposition, multiplicity: number): CandidateConflictRecord {
+    return this.identity.createConflictRecord({
+      candidateFingerprints: draft.groupFingerprints,
+      multiplicity,
+      reasons: draft.reasons,
+      ...(draft.verificationTargets !== undefined
+        ? { verificationTargets: normalizeVerificationTargets(draft.verificationTargets, 'conflict') }
+        : {}),
+    })
   }
 
   /**
@@ -343,47 +420,58 @@ export class NormalizedAccountingSession {
     this.assertOpen()
     this.finalized = true
 
-    const unresolvedRecords = [...this.unresolvedDrafts.values()].map(({ draft, fingerprint, multiplicity }) => (
+    // Rebuilt at the exact multiplicity. Multiplicity is excluded from record
+    // identity, so the id must not move; asserting that is what makes the
+    // retention bound's ordering trustworthy rather than merely intended.
+    const rebuild = <T extends { readonly id: string }>(
+      entries: readonly { readonly record: T; readonly multiplicity: number }[],
+      make: (record: T, multiplicity: number) => T,
+    ): readonly T[] => Object.freeze(entries.map(({ record, multiplicity }) => {
+      const rebuilt = make(record, multiplicity)
+      if (rebuilt.id !== record.id) {
+        throw new GraphIntegrityInvariantError(
+          `record id moved when multiplicity was applied: ${record.id} became ${rebuilt.id}`,
+        )
+      }
+      return rebuilt
+    }))
+
+    const unresolvedRecords = rebuild(this.unresolvedRetained.entries(), (record, multiplicity) => (
       this.identity.createUnresolvedRecord({
-        candidateFingerprint: fingerprint,
+        candidateFingerprint: record.candidateFingerprint,
         multiplicity,
-        ...(draft.source !== undefined ? { source: draft.source } : {}),
-        ...(draft.target !== undefined ? { target: draft.target } : {}),
-        ...(draft.relation !== undefined ? { relation: draft.relation } : {}),
-        ...(draft.occurrences !== undefined ? { occurrences: draft.occurrences } : {}),
-        reasons: draft.reasons,
-        ...(draft.verificationTargets !== undefined
-          ? { verificationTargets: normalizeVerificationTargets(draft.verificationTargets, 'unresolved') }
-          : {}),
+        ...(record.source !== undefined ? { source: record.source } : {}),
+        ...(record.target !== undefined ? { target: record.target } : {}),
+        ...(record.relation !== undefined ? { relation: record.relation } : {}),
+        occurrences: record.occurrences,
+        reasons: record.reasons,
+        verificationTargets: record.verificationTargets,
       })
     ))
 
-    const rejectedRecords = [...this.rejectedDrafts.values()].map(({ draft, fingerprint, multiplicity }) => (
+    const rejectedRecords = rebuild(this.rejectedRetained.entries(), (record, multiplicity) => (
       this.identity.createRejectedRecord({
-        candidateFingerprint: fingerprint,
+        candidateFingerprint: record.candidateFingerprint,
         multiplicity,
-        sanitizedCandidate: sanitizeCandidate(draft.candidate),
-        reasons: draft.reasons,
-        ...(draft.verificationTargets !== undefined
-          ? { verificationTargets: normalizeVerificationTargets(draft.verificationTargets, 'rejected') }
-          : {}),
+        sanitizedCandidate: record.sanitizedCandidate,
+        reasons: record.reasons,
+        verificationTargets: record.verificationTargets,
       })
     ))
 
-    const conflictRecords = [...this.conflictDrafts.values()].map(({ draft, multiplicity }) => (
+    const conflictRecords = rebuild(this.conflictRetained.entries(), (record, multiplicity) => (
       this.identity.createConflictRecord({
-        candidateFingerprints: draft.groupFingerprints,
+        candidateFingerprints: record.candidateFingerprints,
         multiplicity,
-        reasons: draft.reasons,
-        ...(draft.verificationTargets !== undefined
-          ? { verificationTargets: normalizeVerificationTargets(draft.verificationTargets, 'conflict') }
-          : {}),
+        reasons: record.reasons,
+        verificationTargets: record.verificationTargets,
       })
     ))
 
-    const unresolved = boundDurableRecords(unresolvedRecords)
-    const rejected = boundDurableRecords(rejectedRecords)
-    const conflicting = boundDurableRecords(conflictRecords)
+    const retention = (
+      retained: number,
+      total: number,
+    ): DurableRecordRetention => Object.freeze({ retained, total })
 
     return Object.freeze({
       emittedCandidates: this.emitted,
@@ -391,21 +479,12 @@ export class NormalizedAccountingSession {
       terminalReasonCounts: Object.freeze(Object.fromEntries(
         [...this.reasonCounts.entries()].sort(([left], [right]) => left.localeCompare(right)),
       )),
-      unresolvedRecords: unresolved.records,
-      rejectedRecords: rejected.records,
-      conflictRecords: conflicting.records,
-      unresolvedRetention: Object.freeze({
-        retained: unresolved.retention.retained,
-        total: this.distinctTotal('unresolved', unresolved.retention.total),
-      }),
-      rejectedRetention: Object.freeze({
-        retained: rejected.retention.retained,
-        total: this.distinctTotal('rejected', rejected.retention.total),
-      }),
-      conflictingRetention: Object.freeze({
-        retained: conflicting.retention.retained,
-        total: this.distinctTotal('conflicting', conflicting.retention.total),
-      }),
+      unresolvedRecords,
+      rejectedRecords,
+      conflictRecords,
+      unresolvedRetention: retention(unresolvedRecords.length, this.unresolvedRetained.distinctTotal),
+      rejectedRetention: retention(rejectedRecords.length, this.rejectedRetained.distinctTotal),
+      conflictingRetention: retention(conflictRecords.length, this.conflictRetained.distinctTotal),
       retainedPartialDiscriminators: this.partialDiscriminators,
       scopeFailures: Object.freeze([...this.scopeFailureSet].sort()),
     })
