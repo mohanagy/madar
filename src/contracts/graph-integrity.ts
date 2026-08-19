@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 
 import { canonicalJsonBytes, orderedCanonicalArray, serializeCanonicalJson } from './canonical-json.js'
 import { ENDPOINT_IDENTITY_STATUSES, type EndpointIdentityReason, type EndpointIdentityStatus } from './endpoint-identity.js'
-import { normalizeIdentityRepositoryPath } from './semantic-identity.js'
+import { SemanticIdentityInvariantError, normalizeIdentityRepositoryPath } from './semantic-identity.js'
 import type { CanonicalJson } from './canonical-json.js'
 import type { EvidenceOccurrence, SourceRange } from './semantic-graph.js'
 
@@ -488,7 +488,12 @@ export function normalizeVerificationTargets(
     let file: string | null
     try {
       file = normalizeIdentityRepositoryPath(target.file, `${field}.file`)
-    } catch {
+    } catch (error) {
+      // Only an unsafe *path* is droppable. A bare catch here would also
+      // swallow a programming error -- a changed signature, a bad argument --
+      // and silently emit fewer hints while looking healthy, which is the
+      // failure mode this whole receipt exists to prevent.
+      if (!(error instanceof SemanticIdentityInvariantError)) throw error
       continue
     }
     if (file === null || file.length === 0) continue

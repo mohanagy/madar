@@ -503,6 +503,16 @@ describe('verification targets are share-safe', () => {
   it('never fabricates a target from an empty input', () => {
     expect(normalizeVerificationTargets([], 'test')).toEqual([])
   })
+
+  it('rethrows an unexpected error instead of silently dropping the target', () => {
+    // A bare catch would swallow a programming error and emit fewer hints while
+    // looking healthy -- the failure mode this receipt exists to prevent.
+    const hostile = {
+      reason: 'unresolved_internal_target' as const,
+      get file(): string { throw new TypeError('not a path lookup failure') },
+    }
+    expect(() => normalizeVerificationTargets([hostile], 'test')).toThrow(TypeError)
+  })
 })
 
 describe('durable records are bounded and deterministically ordered', () => {
