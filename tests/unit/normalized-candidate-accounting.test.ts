@@ -54,7 +54,7 @@ function representativeExtraction(): Record<string, unknown> {
 }
 
 function accountingFor(extraction: Record<string, unknown>): NonNullable<ReturnType<KnowledgeGraph['normalizedAccountingSummary']>> {
-  const graph = buildFromJson(extraction, { directed: true })
+  const graph = buildFromJson(extraction, { directed: true, accounting: 'normalized_extraction_boundary' })
   const accounting = graph.normalizedAccountingSummary()
   expect(accounting, 'expected accounting to be attached').not.toBeNull()
   return accounting!
@@ -86,7 +86,7 @@ describe('every normalized candidate reaches exactly one terminal state', () => 
 
   it('reports graph totals separately from the candidate ledger', () => {
     const extraction = representativeExtraction()
-    const graph = buildFromJson(extraction, { directed: true })
+    const graph = buildFromJson(extraction, { directed: true, accounting: 'normalized_extraction_boundary' })
     const accounting = graph.normalizedAccountingSummary()!
 
     // Nine candidates produced ONE fact carrying TWO occurrences across ONE
@@ -110,7 +110,7 @@ describe('the three retained states are told apart by occurrence disposition', (
   })
 
   it('collapses an exact repeat onto the same occurrence', () => {
-    const graph = buildFromJson(representativeExtraction(), { directed: true })
+    const graph = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     // Three calls candidates, two occurrences: the repeat merged rather than
     // inflating evidence.
     expect(graph.numberOfOccurrences()).toBe(2)
@@ -127,20 +127,20 @@ describe('missing endpoints are retained as records, never as topology', () => {
   })
 
   it('creates no placeholder node for a missing endpoint', () => {
-    const graph = buildFromJson(representativeExtraction(), { directed: true })
+    const graph = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     expect(graph.hasNode('nowhere')).toBe(false)
     expect(graph.hasNode('ghost')).toBe(false)
     expect(graph.nodeIds().sort()).toEqual(['alpha', 'beta', 'gamma'])
   })
 
   it('creates no topology for an unresolved candidate', () => {
-    const graph = buildFromJson(representativeExtraction(), { directed: true })
+    const graph = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     expect(graph.hasEdge('alpha', 'nowhere')).toBe(false)
     expect(graph.successors('alpha')).toEqual(['beta'])
   })
 
   it('keeps the unaffected valid facts usable', () => {
-    const graph = buildFromJson(representativeExtraction(), { directed: true })
+    const graph = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     expect(graph.numberOfFacts()).toBe(1)
     expect(graph.relationsBetween('alpha', 'beta')).toEqual(['calls'])
   })
@@ -179,12 +179,12 @@ describe('unsupported and malformed candidates are rejected, not dropped', () =>
   })
 
   it('keeps an unsupported relation out of facts and topology', () => {
-    const graph = buildFromJson(representativeExtraction(), { directed: true })
+    const graph = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     expect(graph.hasEdge('beta', 'gamma')).toBe(false)
   })
 
   it('agrees with the storage-boundary admission counter', () => {
-    const graph = buildFromJson(representativeExtraction(), { directed: true })
+    const graph = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     const accounting = graph.normalizedAccountingSummary()!
     expect(graph.storageAdmissionSummary().unresolvedUnregisteredRelationCandidates)
       .toBe(accounting.terminalReasonCounts.unsupported_relation)
@@ -371,7 +371,7 @@ describe('the accounting session is the single owner', () => {
   })
 
   it('refuses a second accounting result on one graph', () => {
-    const graph = buildFromJson(representativeExtraction(), { directed: true })
+    const graph = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     const other = new NormalizedAccountingSession().finalize()
     expect(() => graph.attachNormalizedAccounting(other))
       .toThrow(NormalizedAccountingAlreadyAttachedError)
@@ -416,7 +416,7 @@ describe('a graph with no build reports no accounting rather than zeros', () => 
   })
 
   it('preserves accounting through copy so a copy cannot look cleaner', () => {
-    const graph = buildFromJson(representativeExtraction(), { directed: true })
+    const graph = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     const copied = graph.copy()
     expect(copied.normalizedAccountingSummary()).toBe(graph.normalizedAccountingSummary())
     expect(copied.normalizedAccountingSummary()!.counts.unresolved).toBe(3)
@@ -463,7 +463,7 @@ describe('draft accumulation is bounded without falsifying a count', () => {
 
 describe('a copy helper that rebuilds a graph cannot launder degradation', () => {
   it('carries accounting and admission counters onto a rebuilt graph', () => {
-    const source = buildFromJson(representativeExtraction(), { directed: true })
+    const source = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     expect(source.storageAdmissionSummary().unresolvedUnregisteredRelationCandidates).toBe(1)
 
     // What the direction-changing copy in generate does: a fresh graph with the
@@ -477,8 +477,8 @@ describe('a copy helper that rebuilds a graph cannot launder degradation', () =>
   })
 
   it('refuses to overwrite accounting already attached to the target', () => {
-    const source = buildFromJson(representativeExtraction(), { directed: true })
-    const target = buildFromJson(representativeExtraction(), { directed: true })
+    const source = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
+    const target = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     expect(() => target.inheritDegradationFrom(source))
       .toThrow(NormalizedAccountingAlreadyAttachedError)
   })
@@ -486,8 +486,8 @@ describe('a copy helper that rebuilds a graph cannot launder degradation', () =>
   it('leaves the target untouched when it refuses', () => {
     // The guard used to run AFTER the admission counts were added, so a refused
     // call still doubled them and reported failure -- the worst combination.
-    const source = buildFromJson(representativeExtraction(), { directed: true })
-    const target = buildFromJson(representativeExtraction(), { directed: true })
+    const source = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
+    const target = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     const before = target.storageAdmissionSummary().unresolvedUnregisteredRelationCandidates
 
     expect(() => target.inheritDegradationFrom(source)).toThrow()
@@ -495,7 +495,7 @@ describe('a copy helper that rebuilds a graph cannot launder degradation', () =>
   })
 
   it('refuses to inherit onto a graph that already carries admissions', () => {
-    const source = buildFromJson(representativeExtraction(), { directed: true })
+    const source = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     const target = new KnowledgeGraph({ directed: true })
     target.addNode('a', {})
     target.addNode('b', {})
@@ -507,7 +507,7 @@ describe('a copy helper that rebuilds a graph cannot launder degradation', () =>
   })
 
   it('copies admission counts rather than adding to them', () => {
-    const source = buildFromJson(representativeExtraction(), { directed: true })
+    const source = buildFromJson(representativeExtraction(), { directed: true, accounting: 'normalized_extraction_boundary' })
     const target = new KnowledgeGraph({ directed: true })
     target.inheritDegradationFrom(source)
     expect(target.storageAdmissionSummary())
@@ -618,5 +618,89 @@ describe('candidate fingerprints', () => {
 
   it('separate unidentifiable entries so they cannot collapse and be undercounted', () => {
     expect(candidateFingerprint({ index: 1 })).not.toBe(candidateFingerprint({ index: 2 }))
+  })
+})
+
+describe('normalized accounting is opt-in, so compatibility loads cannot claim it', () => {
+  const V1_ARTIFACT = {
+    schema_version: 1,
+    directed: true,
+    nodes: [
+      { id: 'alpha', label: 'Alpha', file_type: 'code', source_file: 'src/alpha.ts' },
+      { id: 'beta', label: 'Beta', file_type: 'code', source_file: 'src/beta.ts' },
+    ],
+    // `links` is the v1 shape; serve reshapes it into extraction `edges`.
+    links: [
+      { source: 'alpha', target: 'beta', relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/alpha.ts' },
+      { source: 'alpha', target: 'gone', relation: 'imports_from', confidence: 'EXTRACTED', source_file: 'src/alpha.ts' },
+    ],
+  }
+
+  /** Exactly what serve.ts does with a parsed v1 artifact before building. */
+  function asServeReshapes(parsed: Record<string, unknown>): Record<string, unknown> {
+    return {
+      schema_version: parsed.schema_version,
+      directed: parsed.directed === true,
+      root_path: parsed.root_path,
+      nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [],
+      edges: Array.isArray(parsed.links) ? parsed.links : Array.isArray(parsed.edges) ? parsed.edges : [],
+      hyperedges: Array.isArray(parsed.hyperedges) ? parsed.hyperedges : [],
+    }
+  }
+
+  it('attaches no accounting when a v1 artifact is rehydrated', () => {
+    const graph = buildFromJson(asServeReshapes(V1_ARTIFACT), { directed: true, validateExtraction: false })
+    expect(graph.normalizedAccountingSummary()).toBeNull()
+  })
+
+  it('still builds the legacy graph correctly', () => {
+    // Absence of a ledger must not mean absence of a graph.
+    const graph = buildFromJson(asServeReshapes(V1_ARTIFACT), { directed: true, validateExtraction: false })
+    expect(graph.numberOfFacts()).toBe(1)
+    expect(graph.hasEdge('alpha', 'beta')).toBe(true)
+    expect(graph.hasNode('gone')).toBe(false)
+  })
+
+  it('defaults an unannotated call to no accounting', () => {
+    // A future caller that forgets to think about this gets no ledger rather
+    // than a fabricated one. Forgetting to opt in costs a ledger; forgetting to
+    // opt out would fabricate provenance.
+    const graph = buildFromJson(representativeExtraction())
+    expect(graph.normalizedAccountingSummary()).toBeNull()
+  })
+
+  it('treats an explicit none the same as absence', () => {
+    const graph = buildFromJson(representativeExtraction(), { directed: true, accounting: 'none' })
+    expect(graph.normalizedAccountingSummary()).toBeNull()
+  })
+
+  it('still admits every valid candidate when accounting is off', () => {
+    const withLedger = buildFromJson(representativeExtraction(), {
+      directed: true,
+      accounting: 'normalized_extraction_boundary',
+    })
+    const withoutLedger = buildFromJson(representativeExtraction(), { directed: true })
+
+    // The graph must be byte-identical either way: accounting observes, it does
+    // not decide what is admitted.
+    expect(withoutLedger.numberOfFacts()).toBe(withLedger.numberOfFacts())
+    expect(withoutLedger.numberOfOccurrences()).toBe(withLedger.numberOfOccurrences())
+    expect(withoutLedger.numberOfEndpointPairs()).toBe(withLedger.numberOfEndpointPairs())
+    expect(withoutLedger.nodeIds().sort()).toEqual(withLedger.nodeIds().sort())
+  })
+
+  it('still records storage-boundary admissions when accounting is off', () => {
+    // The #657 counters are independent of #658's ledger and must not vanish.
+    const graph = buildFromJson(representativeExtraction(), { directed: true })
+    expect(graph.storageAdmissionSummary().unresolvedUnregisteredRelationCandidates).toBe(1)
+  })
+
+  it('produces normalized accounting when a real build opts in', () => {
+    const graph = buildFromJson(representativeExtraction(), {
+      directed: true,
+      accounting: 'normalized_extraction_boundary',
+    })
+    expect(graph.normalizedAccountingSummary()).not.toBeNull()
+    expect(graph.normalizedAccountingSummary()!.emittedCandidates).toBe(9)
   })
 })

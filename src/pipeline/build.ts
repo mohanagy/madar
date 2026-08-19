@@ -31,9 +31,23 @@ function mergeSchemaVersion(current: ExtractionData['schema_version'], next: Ext
   return 1
 }
 
+/**
+ * Whether this build owns the declared normalized extraction boundary.
+ *
+ * Default `'none'` on purpose. `buildFromJson` is reached by compatibility
+ * callers as well as real builds -- `serve` reshapes a stored v1 artifact's
+ * links into extraction shape and passes them straight through -- and an
+ * opt-out default would let any such caller publish a receipt claiming
+ * candidates it never extracted. Opting in is a reviewed decision per call
+ * site; forgetting to opt in costs a ledger, forgetting to opt out fabricates
+ * provenance.
+ */
+export type NormalizedAccountingMode = 'none' | 'normalized_extraction_boundary'
+
 export interface BuildGraphOptions {
   directed?: boolean
   validateExtraction?: boolean
+  accounting?: NormalizedAccountingMode
 }
 
 type BuildableExtraction = {
@@ -242,14 +256,18 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
   // skipped with a bare `continue`, leaving no counter, record or diagnostic --
   // 412 of 14,556 candidates on Madar's own corpus disappeared that way.
   const rawEdges: readonly unknown[] = Array.isArray(extraction.edges) ? extraction.edges : []
-  const session = new NormalizedAccountingSession()
+  // A session is created only when this build owns the boundary. Compatibility
+  // callers get no ledger at all rather than an empty or fabricated one.
+  const session = options.accounting === 'normalized_extraction_boundary'
+    ? new NormalizedAccountingSession()
+    : null
   let normalizedCursor = 0
 
   for (const [index, rawEdge] of rawEdges.entries()) {
     if (!isRecord(rawEdge)) {
       // `normalizeExtractionData` drops non-record entries before they ever
       // acquire a candidate shape. Accounted here rather than silently filtered.
-      session.dispose(candidateFingerprint({ index }), {
+      session?.dispose(candidateFingerprint({ index }), {
         state: 'rejected',
         reasons: ['malformed_candidate'],
         candidate: rawEdge,
@@ -264,7 +282,7 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
     const normalizedEdge = normalized.edges[normalizedCursor]
     normalizedCursor += 1
     if (normalizedEdge === undefined) {
-      session.dispose(candidateFingerprint({ index }), {
+      session?.dispose(candidateFingerprint({ index }), {
         state: 'invariant_failed',
         reasons: ['candidate_accounting_mismatch'],
         candidate: rawEdge,
@@ -283,7 +301,7 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
     })
 
     if (source === null || target === null) {
-      session.dispose(fingerprint, {
+      session?.dispose(fingerprint, {
         state: 'rejected',
         reasons: ['malformed_candidate'],
         candidate: normalizedEdge,
@@ -294,7 +312,7 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
     const sourceMissing = !nodeIds.has(source)
     const targetMissing = !nodeIds.has(target)
     if (sourceMissing || targetMissing) {
-      session.dispose(fingerprint, unresolvedEndpoint({
+      session?.dispose(fingerprint, unresolvedEndpoint({
         source,
         target,
         sourceMissing,
@@ -310,12 +328,16 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
 
     const { source: _source, target: _target, ...attributes } = normalizedEdge
     const confidenceScore = derivedEdgeConfidenceScore(attributes)
-    session.dispose(fingerprint, admitCandidate(graph, source, target, {
+    // Admission must happen whether or not this build keeps a ledger: with
+    // optional chaining the argument would not even be evaluated, and a
+    // compatibility load would silently build an edgeless graph.
+    const disposition = admitCandidate(graph, source, target, {
       ...attributes,
       ...(confidenceScore !== undefined ? { confidence_score: confidenceScore } : {}),
       _src: source,
       _tgt: target,
-    }, normalizedEdge))
+    }, normalizedEdge)
+    session?.dispose(fingerprint, disposition)
   }
 
   if (normalizedCursor !== normalized.edges.length) {
@@ -326,7 +348,7 @@ export function buildFromJson(extraction: unknown, options: BuildGraphOptions = 
     )
   }
 
-  graph.attachNormalizedAccounting(session.finalize())
+  if (session !== null) graph.attachNormalizedAccounting(session.finalize())
 
   const hyperedges = normalized.hyperedges
   if (hyperedges.length > 0) {

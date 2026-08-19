@@ -876,7 +876,10 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
         `Auto extraction: SPI routed ${spiCodeFiles.length} supported source file(s); legacy semantic augmentation routed ${legacyAugmentationCodeFiles.length} supported source file(s); legacy fallback routed ${legacyFallbackCodeFiles.length} SPI-unsupported source file(s).`,
       )
     }
-    return buildFromJson(mergeExtractions([codeExtraction, nonCodeExtraction]), { directed })
+    return buildFromJson(mergeExtractions([codeExtraction, nonCodeExtraction]), {
+      directed,
+      accounting: 'normalized_extraction_boundary',
+    })
   }
 
   const graph = options.clusterOnly
@@ -889,7 +892,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
           return extractableFiles.length > 0
             ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
                 onFileOutcome: recordExtractionOutcome('legacy'),
-              }), 'legacy'), { directed })
+              }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary' })
             : null
         })()
     : options.update && existingGraph && isIncrementalDetectResult(detected)
@@ -904,7 +907,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
               return extractableFiles.length > 0
                 ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
                     onFileOutcome: recordExtractionOutcome('legacy'),
-                  }), 'legacy'), { directed })
+                  }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary' })
                 : null
             }
 
@@ -946,12 +949,15 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
               `Incremental update re-extracted ${changedExtractableFiles.length} changed file(s) and retained ${new Set(retainedExtraction.nodes.map((node) => node.source_file)).size} unchanged file(s) from the existing graph.`,
             )
 
-          return buildFromJson(mergeExtractions([retainedExtraction, changedExtraction]), { directed })
+          return buildFromJson(mergeExtractions([retainedExtraction, changedExtraction]), {
+            directed,
+            accounting: 'normalized_extraction_boundary',
+          })
         })()
       : extractableFiles.length > 0
         ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
             onFileOutcome: recordExtractionOutcome('legacy'),
-          }), 'legacy'), { directed })
+          }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary' })
       : options.update && existingGraph
           ? existingGraph
           : null
