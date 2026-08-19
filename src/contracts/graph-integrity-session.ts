@@ -209,35 +209,38 @@ const PERCENT_ENCODED = /%[0-9A-Fa-f]{2}/
  * relation safe make a path impossible.
  */
 function safeScopeName(value: string): string | null {
-  if (value.length === 0 || value.length > MAX_SANITIZED_STRING_LENGTH) return null
-  if (!PRINTABLE_ASCII.test(value)) return null
-  if (PERCENT_ENCODED.test(value)) return null
-  if (value.startsWith('~')) return null
-  if (!PATH_SHAPED.test(value)) return value
-  try {
-    return normalizeIdentityRepositoryPath(value, 'scope failure')
-  } catch {
-    return null
-  }
+  return sanitizedPathLike(value, 'scope failure')
 }
 
-function safeCandidateString(value: string, field: string): string | null {
+/**
+ * The one place a string is judged safe to carry into a shared record.
+ *
+ * Both the candidate-attribute and scope-failure sanitizers route through here.
+ * They previously duplicated these four guards, which is how a drift starts --
+ * and it already cost a real mutation control, which silently exercised the
+ * copy in the other function and reported the guard as untested.
+ *
+ * Order is deliberate: reject the disguises before asking whether the value
+ * looks like a path, because each of them can make a path fail to look like
+ * one. `normalizeIdentityRepositoryPath` then refuses absolute POSIX paths,
+ * Windows drive paths, UNC paths, URL schemes and `..` escapes.
+ */
+function sanitizedPathLike(value: string, field: string): string | null {
   if (value.length === 0 || value.length > MAX_SANITIZED_STRING_LENGTH) return null
-  // Ordered deliberately: reject the disguises before asking whether it looks
-  // like a path, because each of these can make a path fail to look like one.
   if (!PRINTABLE_ASCII.test(value)) return null
   if (PERCENT_ENCODED.test(value)) return null
   if (value.startsWith('~')) return null
   if (!PATH_SHAPED.test(value)) return value
   try {
-    // Path-shaped on any platform, so it only survives as a repository-relative
-    // form. `normalizeIdentityRepositoryPath` refuses absolute POSIX paths,
-    // Windows drive paths, UNC paths, URL schemes and `..` escapes.
     return normalizeIdentityRepositoryPath(value, field)
   } catch {
     // Deliberately dropped: an unsafe path never enters a shared record.
     return null
   }
+}
+
+function safeCandidateString(value: string, field: string): string | null {
+  return sanitizedPathLike(value, field)
 }
 
 /**
