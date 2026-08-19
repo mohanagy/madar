@@ -100,6 +100,11 @@ export type CandidateDisposition =
   | InvariantFailedDisposition
 
 export interface NormalizedAccountingResult {
+  /**
+   * The flattened checkout prefix used when these records were sanitized, so
+   * the snapshot boundary can re-apply the identical root-derived check.
+   */
+  readonly flattenedRoot: string | null
   readonly emittedCandidates: number
   readonly counts: CandidateTerminalCounts
   readonly terminalReasonCounts: Readonly<Partial<Record<TerminalIntegrityReason, number>>>
@@ -221,7 +226,7 @@ const PERCENT_ENCODED = /%[0-9A-Fa-f]{2}/
  * the hazard in applying one share-safe helper uniformly: the rules that make a
  * relation safe make a path impossible.
  */
-function safeScopeName(value: string): string | null {
+export function safeScopeName(value: string): string | null {
   return sanitizedPathLike(value, 'scope failure')
 }
 
@@ -255,7 +260,7 @@ function sanitizedPathLike(value: string, field: string): string | null {
   }
 }
 
-function safeCandidateString(value: string, field: string): string | null {
+export function safeCandidateString(value: string, field: string): string | null {
   return sanitizedPathLike(value, field)
 }
 
@@ -524,6 +529,7 @@ export class NormalizedAccountingSession {
     }
 
     return Object.freeze({
+      flattenedRoot: this.identity.shareSafeFlattenedRoot,
       emittedCandidates: this.emitted,
       counts: Object.freeze({ ...this.counts }),
       terminalReasonCounts: Object.freeze(Object.fromEntries(

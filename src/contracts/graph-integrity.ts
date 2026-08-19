@@ -957,6 +957,15 @@ export class CandidateRecordIdentityFactory {
       : flattenedRootPrefix(shareSafety.repositoryRoot)
   }
 
+  /**
+   * The flattened checkout prefix, so a later boundary can apply the same
+   * root-derived check this factory applied at construction rather than
+   * inventing a second notion of what counts as root-derived.
+   */
+  get shareSafeFlattenedRoot(): string | null {
+    return this.flattenedRoot
+  }
+
   /** Root context for the verification-target policy, or none when untruthful. */
   private get targetContext(): { readonly repositoryRoot?: string } {
     return this.repositoryRoot === undefined ? {} : { repositoryRoot: this.repositoryRoot }

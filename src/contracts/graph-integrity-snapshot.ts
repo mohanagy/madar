@@ -15,6 +15,7 @@ import {
   type UnresolvedCandidateRecord,
 } from './graph-integrity.js'
 import { assertCandidateAccountingEquation, GraphIntegrityInvariantError, NORMALIZED_ACCOUNTING_SCOPE } from './graph-integrity.js'
+import { assertSerializerFacingIntegrity } from './graph-integrity-validation.js'
 import type { NormalizedAccountingResult } from './graph-integrity-session.js'
 import type { StorageBoundaryAdmissionSummary } from './graph.js'
 
@@ -89,37 +90,27 @@ export function finalizeNormalizedIntegritySnapshot(
 ): FinalizedNormalizedIntegritySnapshot {
   const accounting = input.accountingResult
 
-  assertCandidateAccountingEquation(accounting.emittedCandidates, accounting.counts)
-  assertEndpointMatrixPartition(input.endpointIdentityMatrix, input.facts)
-
-  for (const [kind, retention] of Object.entries(accounting.recordRetention)) {
-    assertDetailRetention(retention, `recordRetention.${kind}`)
-  }
-  assertDetailRetention(accounting.scopeFailureRetention, 'scopeFailureRetention')
-
-  for (const record of [
-    ...accounting.unresolvedRecords,
-    ...accounting.rejectedRecords,
-    ...accounting.conflictRecords,
-  ]) {
-    assertRecordRetention(record, `record ${record.id}`)
-  }
-
-  // Carried arrays must agree with the retention they advertise, or a reader
-  // could take a capped sample for the whole set.
-  const arrayAgreement: readonly [string, number, DetailRetention][] = [
-    ['unresolved', accounting.unresolvedRecords.length, accounting.recordRetention.unresolved],
-    ['rejected', accounting.rejectedRecords.length, accounting.recordRetention.rejected],
-    ['conflicting', accounting.conflictRecords.length, accounting.recordRetention.conflicting],
-    ['scopeFailures', accounting.scopeFailures.length, accounting.scopeFailureRetention],
-  ]
-  for (const [name, length, retention] of arrayAgreement) {
-    if (length !== retention.retained) {
-      throw new GraphIntegrityInvariantError(
-        `${name} carries ${length} entries but claims ${retention.retained} retained`,
-      )
-    }
-  }
+  // One total validation of every serializer-facing structure. Whatever reaches
+  // this boundary is treated as untrusted -- it may have been hand-built,
+  // decoded from bytes, relabelled, or tampered with -- so nothing downstream
+  // has to re-check, and nothing invalid can become graph state.
+  assertSerializerFacingIntegrity({
+    emittedCandidates: accounting.emittedCandidates,
+    counts: accounting.counts,
+    facts: input.facts,
+    occurrences: input.occurrences,
+    endpointPairs: input.endpointPairs,
+    endpointIdentityMatrix: input.endpointIdentityMatrix,
+    reasonFactCounts: input.reasonFactCounts,
+    storageAdmission: input.storageAdmission,
+    unresolvedRecords: accounting.unresolvedRecords,
+    rejectedRecords: accounting.rejectedRecords,
+    conflictRecords: accounting.conflictRecords,
+    recordRetention: accounting.recordRetention,
+    scopeFailures: accounting.scopeFailures,
+    scopeFailureRetention: accounting.scopeFailureRetention,
+    flattenedRoot: accounting.flattenedRoot,
+  })
 
   const derived = deriveIntegrityStatus({
     counts: accounting.counts,
