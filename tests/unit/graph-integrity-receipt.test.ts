@@ -139,6 +139,20 @@ describe('status is derived, never supplied', () => {
     expect(build({ endpointFactPairCounts: matrix({ unknown: { unknown: 3 } }) }).status)
       .toBe('valid_with_warnings')
   })
+
+  it('caps at valid_with_warnings when the run retained a partial discriminator', () => {
+    const receipt = build({ terminalReasonCounts: { partial_discriminator: 3 } })
+    expect(receipt.status).toBe('valid_with_warnings')
+    expect(receipt.reasons).toContain('partial_discriminator_retained')
+  })
+
+  it('re-derives the partial-discriminator warning on load', () => {
+    const receipt = build({ terminalReasonCounts: { partial_discriminator: 3 } })
+    expect(() => assertNormalizedIntegrityReceipt(receipt)).not.toThrow()
+    const forged = { ...receipt, status: 'valid' as const }
+    expect(() => assertNormalizedIntegrityReceipt(forged))
+      .toThrow(/disagrees with its own counters/)
+  })
 })
 
 describe('named counters are derived from the reason breakdown', () => {

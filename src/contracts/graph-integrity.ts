@@ -89,6 +89,7 @@ export const SCOPE_INTEGRITY_REASONS = Object.freeze([
   'full_emission_accounting_not_available',
   'legacy_artifact',
   'legacy_endpoint_identity',
+  'partial_discriminator_retained',
   'unknown_endpoint_identity',
 ] as const)
 
@@ -341,6 +342,17 @@ export interface IntegrityStatusInput {
   readonly matrix: EndpointIdentityFactMatrix
   readonly recordsTruncated: boolean
   readonly legacyArtifact: boolean
+  /**
+   * Candidates retained despite an incomplete discriminator.
+   *
+   * `partial_discriminator` is the only terminal reason that attaches to a
+   * candidate which *was* retained -- every other reason implies unresolved,
+   * rejected, conflicting or invariant_failed, and is therefore already visible
+   * through the counters. Without this input a run could retain every candidate
+   * on partial discriminators and still derive `valid`, which is exactly the
+   * kind of flattering silence this receipt exists to prevent.
+   */
+  readonly retainedPartialDiscriminators: number
 }
 
 export interface DerivedIntegrityStatus {
@@ -361,6 +373,7 @@ export function deriveIntegrityStatus(input: IntegrityStatusInput): DerivedInteg
 
   if (input.recordsTruncated) reasons.add('durable_records_truncated')
   if (input.legacyArtifact) reasons.add('legacy_artifact')
+  if (input.retainedPartialDiscriminators > 0) reasons.add('partial_discriminator_retained')
 
   // Endpoint degradation is inherited, not caused here, but it still bars
   // `valid`: a graph whose endpoint identities are unaudited is not fully
@@ -381,9 +394,12 @@ export function deriveIntegrityStatus(input: IntegrityStatusInput): DerivedInteg
     return Object.freeze({ status: 'degraded' as const, reasons: sorted })
   }
 
-  if (endpointDegradation.length > 0) {
-    // Every candidate terminated cleanly, but endpoint identity is still
-    // qualified. `valid_with_warnings` is the honest ceiling until #704.
+  if (endpointDegradation.length > 0 || input.retainedPartialDiscriminators > 0) {
+    // Every candidate terminated cleanly, but something about the retained
+    // facts is still qualified -- an unaudited endpoint identity, or a
+    // discriminator the registry could only fill in partially.
+    // `valid_with_warnings` is the honest ceiling until #704 and a registry
+    // that can reach `full`.
     return Object.freeze({ status: 'valid_with_warnings' as const, reasons: sorted })
   }
 

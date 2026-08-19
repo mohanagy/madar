@@ -42,6 +42,7 @@ const CLEAN_STATUS_INPUT = {
   matrix: matrix(),
   recordsTruncated: false,
   legacyArtifact: false,
+  retainedPartialDiscriminators: 0,
 }
 
 describe('candidate terminal states', () => {
@@ -231,6 +232,40 @@ describe('integrity status has exactly one owner', () => {
     })
     expect([...derived.reasons]).toEqual([...derived.reasons].sort())
     expect(new Set(derived.reasons).size).toBe(derived.reasons.length)
+  })
+
+  it('caps at valid_with_warnings when a retained candidate had a partial discriminator', () => {
+    // partial_discriminator is the only reason that attaches to a candidate
+    // which WAS retained, so the counters alone cannot reveal it.
+    const derived = deriveIntegrityStatus({
+      ...CLEAN_STATUS_INPUT,
+      counts: counts({ retained_new_fact: 5 }),
+      matrix: matrix({ stable: { stable: 5 } }),
+      retainedPartialDiscriminators: 5,
+    })
+    expect(derived.status).toBe('valid_with_warnings')
+    expect(derived.reasons).toContain('partial_discriminator_retained')
+  })
+
+  it('does not claim a partial discriminator when none was retained', () => {
+    const derived = deriveIntegrityStatus({
+      ...CLEAN_STATUS_INPUT,
+      counts: counts({ retained_new_fact: 5 }),
+      matrix: matrix({ stable: { stable: 5 } }),
+    })
+    expect(derived.status).toBe('valid')
+    expect(derived.reasons).not.toContain('partial_discriminator_retained')
+  })
+
+  it('still degrades rather than warns when a candidate also failed to terminate cleanly', () => {
+    const derived = deriveIntegrityStatus({
+      ...CLEAN_STATUS_INPUT,
+      counts: counts({ retained_new_fact: 4, unresolved: 1 }),
+      matrix: matrix({ stable: { stable: 4 } }),
+      retainedPartialDiscriminators: 4,
+    })
+    expect(derived.status).toBe('degraded')
+    expect(derived.reasons).toContain('partial_discriminator_retained')
   })
 
   it('never derives incompatible, which only a loader may set', () => {

@@ -124,6 +124,7 @@ export function buildNormalizedIntegrityReceipt(
     matrix: input.endpointFactPairCounts,
     recordsTruncated: truncated(input),
     legacyArtifact: input.legacyArtifact === true,
+    retainedPartialDiscriminators: terminalReasonCounts.partial_discriminator ?? 0,
   })
 
   assertStrictModeResultPolicy(input.strictModeResult, derived.status)
@@ -279,6 +280,7 @@ export function assertNormalizedIntegrityReceipt(receipt: GraphIntegrityReceiptV
     matrix: receipt.endpoint_identity.fact_pair_counts,
     recordsTruncated,
     legacyArtifact: receipt.reasons.includes('legacy_artifact'),
+    retainedPartialDiscriminators: receipt.terminal_reason_counts.partial_discriminator ?? 0,
   })
 
   if (derived.status !== receipt.status) {
@@ -342,6 +344,12 @@ function assertReasonVocabulary(reasons: readonly IntegrityReason[]): void {
  *
  * Checked as an equality rather than documented as a convention, because a
  * convention cannot fail a build.
+ *
+ * The equality holds only while every unsupported-relation determination is
+ * made *by* `addEdge`. Stage 2 must therefore not pre-check the registry and
+ * skip the call as an optimization: that would count a rejection at the
+ * normalized boundary that the storage boundary never saw, and this assertion
+ * would fail -- which is the intended alarm, not a false positive.
  */
 export function assertStorageAdmissionProjection(
   unregisteredAtStorageBoundary: number,
