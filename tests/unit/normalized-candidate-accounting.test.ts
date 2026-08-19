@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import { KnowledgeGraph, NormalizedAccountingAlreadyAttachedError } from '../../src/contracts/graph.js'
-import { GraphIntegrityInvariantError } from '../../src/contracts/graph-integrity.js'
+import {
+  CandidateRecordIdentityFactory,
+  GraphIntegrityInvariantError,
+  MAX_CONFLICT_FINGERPRINTS,
+  MAX_ENDPOINT_ID_LENGTH,
+  MAX_RECORD_OCCURRENCES,
+  MAX_RELATION_LENGTH,
+  MAX_SCOPE_FAILURES,
+} from '../../src/contracts/graph-integrity.js'
 import {
   NormalizedAccountingSession,
   candidateFingerprint,
@@ -793,5 +801,145 @@ describe('normalized accounting is opt-in, so compatibility loads cannot claim i
     })
     expect(graph.normalizedAccountingSummary()).not.toBeNull()
     expect(graph.normalizedAccountingSummary()!.emittedCandidates).toBe(9)
+  })
+})
+
+describe('every serializable field is bounded with exact totals', () => {
+  const factory = (): CandidateRecordIdentityFactory => new CandidateRecordIdentityFactory()
+
+  it('bounds endpoint identifiers and refuses path-shaped ones', () => {
+    const record = factory().createUnresolvedRecord({
+      candidateFingerprint: 'cf_a',
+      multiplicity: 1,
+      source: '/Users/me/secret.ts',
+      target: 'x'.repeat(MAX_ENDPOINT_ID_LENGTH + 1),
+      relation: 'imports_from',
+      reasons: ['missing_target_endpoint'],
+    })
+    expect(record.source).toBeUndefined()
+    expect(record.target).toBeUndefined()
+    expect(record.relation).toBe('imports_from')
+  })
+
+  it('preserves a legitimate non-ASCII node identifier', () => {
+    // Node ids are semantic identifiers the graph contract governs; an
+    // ASCII-only rule applied uniformly would corrupt real ones.
+    const record = factory().createUnresolvedRecord({
+      candidateFingerprint: 'cf_a',
+      multiplicity: 1,
+      source: 'módulo_café',
+      reasons: ['missing_target_endpoint'],
+    })
+    expect(record.source).toBe('módulo_café')
+  })
+
+  it('bounds a relation token more tightly than an identifier', () => {
+    const record = factory().createUnresolvedRecord({
+      candidateFingerprint: 'cf_a',
+      multiplicity: 1,
+      relation: 'r'.repeat(MAX_RELATION_LENGTH + 1),
+      reasons: ['missing_target_endpoint'],
+    })
+    expect(record.relation).toBeUndefined()
+  })
+
+  it('caps occurrences and reports the exact total', () => {
+    const occurrences = Array.from({ length: MAX_RECORD_OCCURRENCES + 9 }, (_, index) => (
+      { id: `eo_${String(index).padStart(3, '0')}`, factId: 'sf_x' }
+    )) as never[]
+    const record = factory().createUnresolvedRecord({
+      candidateFingerprint: 'cf_a',
+      multiplicity: 1,
+      occurrences,
+      reasons: ['missing_target_endpoint'],
+    })
+    expect(record.occurrences).toHaveLength(MAX_RECORD_OCCURRENCES)
+    expect(record.occurrenceRetention).toEqual({
+      retained: MAX_RECORD_OCCURRENCES,
+      total: MAX_RECORD_OCCURRENCES + 9,
+      omitted: 9,
+      truncated: true,
+    })
+  })
+
+  it('reports truncated false when nothing was dropped', () => {
+    const record = factory().createUnresolvedRecord({
+      candidateFingerprint: 'cf_a',
+      multiplicity: 1,
+      reasons: ['missing_target_endpoint'],
+    })
+    expect(record.occurrenceRetention).toEqual({ retained: 0, total: 0, omitted: 0, truncated: false })
+  })
+
+  it('caps conflict fingerprints and keeps a digest of the complete set', () => {
+    const fingerprints = Array.from({ length: MAX_CONFLICT_FINGERPRINTS + 5 }, (_, i) => `cf_${String(i).padStart(3, '0')}`)
+    const record = factory().createConflictRecord({
+      candidateFingerprints: fingerprints,
+      multiplicity: 1,
+      reasons: ['conflicting_behavior_metadata'],
+    })
+    expect(record.candidateFingerprints).toHaveLength(MAX_CONFLICT_FINGERPRINTS)
+    expect(record.fingerprintRetention.total).toBe(MAX_CONFLICT_FINGERPRINTS + 5)
+    expect(record.fingerprintRetention.omitted).toBe(5)
+    expect(record.fingerprintSetDigest).toMatch(/^cs_[a-f0-9]{64}$/)
+  })
+
+  it('keeps two capped conflict groups distinct via the whole-set digest', () => {
+    // The retained slices are identical; only the omitted tail differs. Without
+    // digesting the complete set these would collapse into one record.
+    const base = Array.from({ length: MAX_CONFLICT_FINGERPRINTS }, (_, i) => `cf_${String(i).padStart(3, '0')}`)
+    const make = (extra: string): ReturnType<CandidateRecordIdentityFactory['createConflictRecord']> =>
+      factory().createConflictRecord({
+        candidateFingerprints: [...base, extra],
+        multiplicity: 1,
+        reasons: ['conflicting_behavior_metadata'],
+      })
+    const left = make('cf_zzz1')
+    const right = make('cf_zzz2')
+
+    expect(left.candidateFingerprints).toEqual(right.candidateFingerprints)
+    expect(left.fingerprintSetDigest).not.toBe(right.fingerprintSetDigest)
+    expect(left.id).not.toBe(right.id)
+  })
+
+  it('caps scope failures and reports the exact total', () => {
+    const session = new NormalizedAccountingSession()
+    for (let index = 0; index < MAX_SCOPE_FAILURES + 7; index += 1) {
+      session.recordScopeFailure(`src/broken${String(index).padStart(4, '0')}.ts`)
+    }
+    const result = session.finalize()
+    expect(result.scopeFailures).toHaveLength(MAX_SCOPE_FAILURES)
+    expect(result.scopeFailureRetention).toEqual({
+      retained: MAX_SCOPE_FAILURES,
+      total: MAX_SCOPE_FAILURES + 7,
+      omitted: 7,
+      truncated: true,
+    })
+  })
+
+  it('drops an unsafe scope name rather than carrying it', () => {
+    const session = new NormalizedAccountingSession()
+    session.recordScopeFailure('/Users/me/private/broken.ts')
+    session.recordScopeFailure('src/ok.ts')
+    const result = session.finalize()
+    expect(result.scopeFailures).toEqual(['src/ok.ts'])
+  })
+
+  it('keeps a repository-relative scope name, which is a path not a token', () => {
+    const session = new NormalizedAccountingSession()
+    session.recordScopeFailure('src/pipeline/build.ts')
+    expect(session.finalize().scopeFailures).toEqual(['src/pipeline/build.ts'])
+  })
+
+  it('bounds detail selection by canonical order, not arrival', () => {
+    const ids = Array.from({ length: MAX_RECORD_OCCURRENCES + 5 }, (_, i) => `eo_${String(i).padStart(3, '0')}`)
+    const build = (order: readonly string[]): readonly string[] => factory().createUnresolvedRecord({
+      candidateFingerprint: 'cf_a',
+      multiplicity: 1,
+      occurrences: order.map((id) => ({ id, factId: 'sf_x' })) as never[],
+      reasons: ['missing_target_endpoint'],
+    }).occurrences.map((occurrence) => occurrence.id)
+
+    expect(build([...ids].reverse())).toEqual(build(ids))
   })
 })

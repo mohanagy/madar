@@ -148,6 +148,28 @@ export interface IntegrityVerificationTarget {
  */
 export const MAX_DURABLE_RECORDS_PER_KIND = 1000 as const
 
+/**
+ * Bounds for the string fields a record carries into the artifact.
+ *
+ * Split by field because they carry different things. A node id is a semantic
+ * identifier the graph contract already governs, so it is preserved as-is up to
+ * a length bound and only refused when it is path-shaped or unprintable -- and
+ * unlike a diagnostic hint it may legitimately carry non-ASCII, so an
+ * ASCII-only rule applied uniformly would corrupt real identifiers. A relation
+ * is a vocabulary token. Neither may smuggle a path.
+ */
+export const MAX_ENDPOINT_ID_LENGTH = 512 as const
+export const MAX_RELATION_LENGTH = 128 as const
+
+/** Occurrences carried on one unresolved record. */
+export const MAX_RECORD_OCCURRENCES = 16 as const
+
+/** Member fingerprints carried on one conflict record. */
+export const MAX_CONFLICT_FINGERPRINTS = 32 as const
+
+/** Scope failures carried in one accounting result. */
+export const MAX_SCOPE_FAILURES = 256 as const
+
 /** Bounded per record so one candidate cannot carry an unbounded target list. */
 export const MAX_VERIFICATION_TARGETS_PER_RECORD = 8 as const
 
@@ -170,6 +192,8 @@ export interface UnresolvedCandidateRecord extends DurableRecordBase {
   readonly target?: string
   readonly relation?: string
   readonly occurrences: readonly EvidenceOccurrence[]
+  /** Exact accounting for `occurrences`, which is capped. */
+  readonly occurrenceRetention: DetailRetention
 }
 
 /**
@@ -192,6 +216,16 @@ export interface RejectedCandidateRecord extends DurableRecordBase {
 export interface CandidateConflictRecord extends DurableRecordBase {
   readonly kind: 'conflicting'
   readonly candidateFingerprints: readonly string[]
+  /** Exact accounting for `candidateFingerprints`, which is capped. */
+  readonly fingerprintRetention: DetailRetention
+  /**
+   * Digest over the COMPLETE canonical fingerprint set.
+   *
+   * Present whenever the retained list is partial, so a reader can still tell
+   * two conflict groups apart and verify membership without the truncated list
+   * pretending to be the whole group.
+   */
+  readonly fingerprintSetDigest: string
 }
 
 export type DurableCandidateRecord =
@@ -207,6 +241,51 @@ export type DurableCandidateRecord =
 export interface DurableRecordRetention {
   readonly retained: number
   readonly total: number
+}
+
+/**
+ * Exact accounting for a capped detail array.
+ *
+ * `omitted` is carried rather than left to be derived so a reader cannot
+ * mistake a retained sample for the whole set, and `truncated` states the fact
+ * outright instead of requiring a comparison.
+ */
+export interface DetailRetention {
+  readonly retained: number
+  readonly total: number
+  readonly omitted: number
+  readonly truncated: boolean
+}
+
+export function detailRetention(retained: number, total: number): DetailRetention {
+  if (!Number.isSafeInteger(retained) || retained < 0 || !Number.isSafeInteger(total) || total < retained) {
+    throw new GraphIntegrityInvariantError(`detail retention ${retained}/${total} is not a valid bound`)
+  }
+  return Object.freeze({ retained, total, omitted: total - retained, truncated: retained < total })
+}
+
+/**
+ * Bounds a detail array deterministically and reports what it dropped.
+ *
+ * Selection is by canonical key order, never arrival, for the same reason the
+ * record cap is: a retained sample that changes with input order cannot be
+ * serialized as a stable contract.
+ */
+export function boundDetail<T>(
+  values: readonly T[],
+  limit: number,
+  key: (value: T) => string,
+): { readonly values: readonly T[]; readonly retention: DetailRetention } {
+  const unique = new Map<string, T>()
+  for (const value of values) unique.set(key(value), value)
+  const ordered = [...unique.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([, value]) => value)
+  const retained = ordered.slice(0, limit)
+  return Object.freeze({
+    values: Object.freeze(retained),
+    retention: detailRetention(retained.length, ordered.length),
+  })
 }
 
 export type CandidateTerminalCounts = Readonly<Record<CandidateTerminalState, number>>
@@ -457,6 +536,33 @@ export function assertEndpointMatrixPartition(
   }
 }
 
+/**
+ * A semantic node identifier, bounded and refused when path-shaped.
+ *
+ * Node ids may legitimately contain non-ASCII, so unlike a diagnostic hint they
+ * are not held to an ASCII-only rule -- doing so would corrupt real
+ * identifiers. Control characters and path shapes are still refused, because
+ * neither can be a legitimate identifier and both are how a checkout path would
+ * reach a shared artifact.
+ */
+export function safeEndpointIdentifier(value: string | undefined, field: string): string | undefined {
+  if (value === undefined) return undefined
+  if (value.length === 0 || value.length > MAX_ENDPOINT_ID_LENGTH) return undefined
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(value)) return undefined
+  if (/[/\\]|^[A-Za-z]:|^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) return undefined
+  if (value.startsWith('~')) return undefined
+  void field
+  return value
+}
+
+/** A relation vocabulary token: shorter bound, same refusals. */
+export function safeRelationToken(value: string | undefined, field: string): string | undefined {
+  if (value === undefined) return undefined
+  if (value.length === 0 || value.length > MAX_RELATION_LENGTH) return undefined
+  return safeEndpointIdentifier(value, field)
+}
+
 function sortedUniqueReasons(reasons: readonly TerminalIntegrityReason[], field: string): readonly TerminalIntegrityReason[] {
   for (const reason of reasons) {
     if (!isTerminalIntegrityReason(reason)) {
@@ -592,16 +698,18 @@ export class CandidateRecordIdentityFactory {
   createUnresolvedRecord(draft: UnresolvedRecordDraft): UnresolvedCandidateRecord {
     const reasons = sortedUniqueReasons(draft.reasons, 'unresolved record reasons')
     const targets = normalizeVerificationTargets(draft.verificationTargets ?? [], 'unresolved record')
-    const occurrences = Object.freeze(
-      [...(draft.occurrences ?? [])].sort((left, right) => left.id.localeCompare(right.id)),
-    )
+    const bounded = boundDetail(draft.occurrences ?? [], MAX_RECORD_OCCURRENCES, (occurrence) => occurrence.id)
+    const occurrences = bounded.values
+    const source = safeEndpointIdentifier(draft.source, 'unresolved record source')
+    const target = safeEndpointIdentifier(draft.target, 'unresolved record target')
+    const relation = safeRelationToken(draft.relation, 'unresolved record relation')
     const identityPayload = {
       record_kind: 'unresolved',
       reason_vocabulary_version: GRAPH_INTEGRITY_REASON_VOCABULARY_VERSION,
       candidate_fingerprint: draft.candidateFingerprint,
-      ...(draft.source !== undefined ? { source: draft.source } : {}),
-      ...(draft.target !== undefined ? { target: draft.target } : {}),
-      ...(draft.relation !== undefined ? { relation: draft.relation } : {}),
+      ...(source !== undefined ? { source } : {}),
+      ...(target !== undefined ? { target } : {}),
+      ...(relation !== undefined ? { relation } : {}),
       reasons: orderedCanonicalArray(reasons),
     }
     const id = this.contentAddress('uc_', canonicalJsonBytes(identityPayload))
@@ -610,10 +718,11 @@ export class CandidateRecordIdentityFactory {
       id,
       candidateFingerprint: draft.candidateFingerprint,
       multiplicity: assertMultiplicity(draft.multiplicity, 'unresolved record multiplicity'),
-      ...(draft.source !== undefined ? { source: draft.source } : {}),
-      ...(draft.target !== undefined ? { target: draft.target } : {}),
-      ...(draft.relation !== undefined ? { relation: draft.relation } : {}),
+      ...(source !== undefined ? { source } : {}),
+      ...(target !== undefined ? { target } : {}),
+      ...(relation !== undefined ? { relation } : {}),
       occurrences,
+      occurrenceRetention: bounded.retention,
       reasons,
       verificationTargets: targets,
     })
@@ -649,18 +758,28 @@ export class CandidateRecordIdentityFactory {
     const targets = normalizeVerificationTargets(draft.verificationTargets ?? [], 'conflict record')
     // Sorted, so the group's identity cannot depend on which member arrived
     // first. Order-dependence here would be last-write-wins wearing a record.
-    const fingerprints = Object.freeze([...new Set(draft.candidateFingerprints)].sort())
+    const complete = Object.freeze([...new Set(draft.candidateFingerprints)].sort())
+    // The digest covers the COMPLETE set, so identity and membership survive
+    // even when the carried list is capped.
+    const fingerprintSetDigest = `cs_${sha256(canonicalJsonBytes({
+      candidate_fingerprints: orderedCanonicalArray(complete),
+    }))}`
+    const bounded = boundDetail(complete, MAX_CONFLICT_FINGERPRINTS, (value) => value)
     const identityPayload = {
       record_kind: 'conflicting',
       reason_vocabulary_version: GRAPH_INTEGRITY_REASON_VOCABULARY_VERSION,
-      candidate_fingerprints: orderedCanonicalArray(fingerprints),
+      // Identity keys on the digest of the whole set rather than the retained
+      // slice, so capping cannot merge two distinct conflict groups.
+      candidate_fingerprint_set: fingerprintSetDigest,
       reasons: orderedCanonicalArray(reasons),
     }
     const id = this.contentAddress('cc_', canonicalJsonBytes(identityPayload))
     return Object.freeze({
       kind: 'conflicting' as const,
       id,
-      candidateFingerprints: fingerprints,
+      candidateFingerprints: bounded.values,
+      fingerprintRetention: bounded.retention,
+      fingerprintSetDigest,
       multiplicity: assertMultiplicity(draft.multiplicity, 'conflict record multiplicity'),
       reasons,
       verificationTargets: targets,

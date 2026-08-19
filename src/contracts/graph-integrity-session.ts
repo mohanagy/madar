@@ -5,11 +5,14 @@ import {
   CandidateRecordIdentityFactory,
   GraphIntegrityInvariantError,
   MAX_DURABLE_RECORDS_PER_KIND,
+  MAX_SCOPE_FAILURES,
+  boundDetail,
   emptyTerminalCounts,
   normalizeVerificationTargets,
   type CandidateConflictRecord,
   type CandidateTerminalCounts,
   type CandidateTerminalState,
+  type DetailRetention,
   type DurableRecordRetention,
   type IntegrityVerificationTarget,
   type RejectedCandidateRecord,
@@ -106,6 +109,8 @@ export interface NormalizedAccountingResult {
   readonly retainedPartialDiscriminators: number
   /** File- or adapter-scope failures that emitted no candidate. Not in the equation. */
   readonly scopeFailures: readonly string[]
+  /** Exact accounting for `scopeFailures`, which is capped. */
+  readonly scopeFailureRetention: DetailRetention
 }
 
 function sha256Hex(payload: Buffer): string {
@@ -194,6 +199,27 @@ const PRINTABLE_ASCII = /^[\x20-\x7e]+$/
 
 /** Percent-encoding can hide a separator, so `%2F`-style escapes are refused. */
 const PERCENT_ENCODED = /%[0-9A-Fa-f]{2}/
+
+/**
+ * A scope failure names a file or adapter, so it is a repository-relative PATH,
+ * not a vocabulary token.
+ *
+ * Reusing the relation sanitizer here refused every legitimate value, which is
+ * the hazard in applying one share-safe helper uniformly: the rules that make a
+ * relation safe make a path impossible.
+ */
+function safeScopeName(value: string): string | null {
+  if (value.length === 0 || value.length > MAX_SANITIZED_STRING_LENGTH) return null
+  if (!PRINTABLE_ASCII.test(value)) return null
+  if (PERCENT_ENCODED.test(value)) return null
+  if (value.startsWith('~')) return null
+  if (!PATH_SHAPED.test(value)) return value
+  try {
+    return normalizeIdentityRepositoryPath(value, 'scope failure')
+  } catch {
+    return null
+  }
+}
 
 function safeCandidateString(value: string, field: string): string | null {
   if (value.length === 0 || value.length > MAX_SANITIZED_STRING_LENGTH) return null
@@ -468,6 +494,17 @@ export class NormalizedAccountingSession {
       })
     ))
 
+    // Scope failures are diagnostic strings from adapters, so they get the same
+    // treatment as any other capped detail: bounded, deterministically chosen,
+    // and reported with an exact total.
+    const boundedScopeFailures = boundDetail(
+      [...this.scopeFailureSet]
+        .map((scope) => safeScopeName(scope))
+        .filter((scope): scope is string => scope !== null),
+      MAX_SCOPE_FAILURES,
+      (scope) => scope,
+    )
+
     const retention = (
       retained: number,
       total: number,
@@ -486,7 +523,8 @@ export class NormalizedAccountingSession {
       rejectedRetention: retention(rejectedRecords.length, this.rejectedRetained.distinctTotal),
       conflictingRetention: retention(conflictRecords.length, this.conflictRetained.distinctTotal),
       retainedPartialDiscriminators: this.partialDiscriminators,
-      scopeFailures: Object.freeze([...this.scopeFailureSet].sort()),
+      scopeFailures: boundedScopeFailures.values,
+      scopeFailureRetention: boundedScopeFailures.retention,
     })
   }
 }
