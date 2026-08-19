@@ -198,8 +198,27 @@ const MAX_SANITIZED_STRING_LENGTH = 200
  */
 const MAX_RETAINED_DRAFTS_PER_KIND = MAX_DURABLE_RECORDS_PER_KIND * 10
 
+/**
+ * Printable ASCII only, and nothing that disguises a path.
+ *
+ * These fields are diagnostic hints -- relation names, HTTP methods, binding
+ * kinds -- so ASCII is the norm and dropping an exotic value costs a hint, never
+ * a count. Refusing the whole class is what keeps a control character out of a
+ * shared artifact and a unicode separator look-alike (U+2215 and friends) from
+ * slipping past a path check that only knows `/` and `\\`.
+ */
+const PRINTABLE_ASCII = /^[\x20-\x7e]+$/
+
+/** Percent-encoding can hide a separator, so `%2F`-style escapes are refused. */
+const PERCENT_ENCODED = /%[0-9A-Fa-f]{2}/
+
 function safeCandidateString(value: string, field: string): string | null {
   if (value.length === 0 || value.length > MAX_SANITIZED_STRING_LENGTH) return null
+  // Ordered deliberately: reject the disguises before asking whether it looks
+  // like a path, because each of these can make a path fail to look like one.
+  if (!PRINTABLE_ASCII.test(value)) return null
+  if (PERCENT_ENCODED.test(value)) return null
+  if (value.startsWith('~')) return null
   if (!PATH_SHAPED.test(value)) return value
   try {
     // Path-shaped on any platform, so it only survives as a repository-relative

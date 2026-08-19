@@ -1084,16 +1084,24 @@ export class KnowledgeGraph {
    * degradation *onto* a graph that has none.
    */
   inheritDegradationFrom(source: KnowledgeGraph): void {
-    for (const [relation, count] of source.unregisteredRelationAdmissions) {
-      this.unregisteredRelationAdmissions.set(
-        relation,
-        (this.unregisteredRelationAdmissions.get(relation) ?? 0) + count,
+    // Validate before mutating. A previous version added the admission counts
+    // first and only then checked the accounting guard, so calling this twice
+    // doubled the counters and *then* threw -- leaving the target holding
+    // inflated degradation from a call that reported failure.
+    if (source.normalizedAccounting !== null && this.normalizedAccounting !== null) {
+      throw new NormalizedAccountingAlreadyAttachedError()
+    }
+    if (this.unregisteredRelationAdmissions.size > 0) {
+      throw new GraphAdmissionError(
+        'degradation may only be inherited onto a graph that has none of its own',
       )
     }
-    const accounting = source.normalizedAccounting
-    if (accounting !== null) {
-      if (this.normalizedAccounting !== null) throw new NormalizedAccountingAlreadyAttachedError()
-      this.normalizedAccounting = accounting
+
+    for (const [relation, count] of source.unregisteredRelationAdmissions) {
+      this.unregisteredRelationAdmissions.set(relation, count)
+    }
+    if (source.normalizedAccounting !== null) {
+      this.normalizedAccounting = source.normalizedAccounting
     }
   }
 

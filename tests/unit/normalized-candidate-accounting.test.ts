@@ -483,6 +483,37 @@ describe('a copy helper that rebuilds a graph cannot launder degradation', () =>
       .toThrow(NormalizedAccountingAlreadyAttachedError)
   })
 
+  it('leaves the target untouched when it refuses', () => {
+    // The guard used to run AFTER the admission counts were added, so a refused
+    // call still doubled them and reported failure -- the worst combination.
+    const source = buildFromJson(representativeExtraction(), { directed: true })
+    const target = buildFromJson(representativeExtraction(), { directed: true })
+    const before = target.storageAdmissionSummary().unresolvedUnregisteredRelationCandidates
+
+    expect(() => target.inheritDegradationFrom(source)).toThrow()
+    expect(target.storageAdmissionSummary().unresolvedUnregisteredRelationCandidates).toBe(before)
+  })
+
+  it('refuses to inherit onto a graph that already carries admissions', () => {
+    const source = buildFromJson(representativeExtraction(), { directed: true })
+    const target = new KnowledgeGraph({ directed: true })
+    target.addNode('a', {})
+    target.addNode('b', {})
+    target.addEdge('a', 'b', { relation: 'totally_unregistered_relation' })
+    expect(target.storageAdmissionSummary().unresolvedUnregisteredRelationCandidates).toBe(1)
+
+    expect(() => target.inheritDegradationFrom(source))
+      .toThrow(/only be inherited onto a graph that has none/)
+  })
+
+  it('copies admission counts rather than adding to them', () => {
+    const source = buildFromJson(representativeExtraction(), { directed: true })
+    const target = new KnowledgeGraph({ directed: true })
+    target.inheritDegradationFrom(source)
+    expect(target.storageAdmissionSummary())
+      .toEqual(source.storageAdmissionSummary())
+  })
+
   it('is a no-op for accounting when the source never ran a build', () => {
     const source = new KnowledgeGraph({ directed: true })
     const target = new KnowledgeGraph({ directed: true })
@@ -539,6 +570,31 @@ describe('candidate sanitization', () => {
     expect(sanitizeCandidate({ relation: '/Users/me/evil' })).toEqual({})
     expect(sanitizeCandidate({ relation: 'unregistered_thing' }))
       .toEqual({ relation: 'unregistered_thing' })
+  })
+
+  it('drops a home-relative path', () => {
+    expect(sanitizeCandidate({ kind: '~/secret.ts' })).toEqual({})
+  })
+
+  it('drops a percent-encoded separator that would hide a path', () => {
+    expect(sanitizeCandidate({ kind: '%2FUsers%2Fme' })).toEqual({})
+  })
+
+  it('drops a unicode separator look-alike a slash check would miss', () => {
+    // U+2215 DIVISION SLASH is not `/`, so a path check that only knows the
+    // ASCII separators would have let this through intact.
+    expect(sanitizeCandidate({ kind: 'src\u2215evil.ts' })).toEqual({})
+  })
+
+  it('drops control characters', () => {
+    expect(sanitizeCandidate({ kind: 'src/a\u0000.ts' })).toEqual({})
+    expect(sanitizeCandidate({ kind: 'src/a\n.ts' })).toEqual({})
+  })
+
+  it('still keeps ordinary printable values', () => {
+    expect(sanitizeCandidate({ kind: 'src/a b.ts' })).toEqual({ kind: 'src/a b.ts' })
+    expect(sanitizeCandidate({ kind: './src/a.ts' })).toEqual({ kind: 'src/a.ts' })
+    expect(sanitizeCandidate({ http_method: 'GET' })).toEqual({ http_method: 'GET' })
   })
 
   it('returns an empty projection for a non-record', () => {
