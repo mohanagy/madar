@@ -498,6 +498,23 @@ export class KnowledgeGraph {
    */
   private normalizedAccounting: NormalizedAccountingResult | null = null
   private integritySnapshot: FinalizedNormalizedIntegritySnapshot | null = null
+
+  /**
+   * The one place a successful mutation drops the finalized snapshot.
+   *
+   * Called *after* a mutation succeeds, never before and never on a failed or
+   * no-op path. A snapshot that stops matching the graph is worse than no
+   * snapshot, because it serializes as authoritative -- but invalidating on a
+   * failed operation would be its own defect, discarding a still-truthful
+   * snapshot because something else threw.
+   *
+   * Recomputation deliberately does not happen here or in any read accessor.
+   * Serialization must ask for a freshly finalized snapshot instead, so the
+   * cost is paid once at a known point rather than at an arbitrary read.
+   */
+  private invalidateIntegritySnapshot(): void {
+    this.integritySnapshot = null
+  }
   /** Source-status x target-status fact counts, maintained during insertion. */
   private readonly endpointMatrix: Record<EndpointIdentityStatus, Record<EndpointIdentityStatus, number>> =
     emptyEndpointMatrix()
@@ -521,7 +538,16 @@ export class KnowledgeGraph {
     assertGraphAttributesWritable(attributes)
     const qualification = normalizeNodeEndpointIdentityQualification(attributes)
     const { endpointIdentity: _endpointIdentity, ...storedAttributes } = attributes
+    // Re-adding a node with identical attributes changes nothing, so it must
+    // not discard a snapshot that is still true. Anything else -- a new node,
+    // or changed attributes that would qualify a later fact's endpoints
+    // differently -- is a real state change.
+    const previous = this.nodeMap.get(id)
+    const unchanged = previous !== undefined
+      && serializeCanonicalJson(previous as unknown as CanonicalJson, { arraySemantics: 'ordered' })
+        === serializeCanonicalJson(storedAttributes as unknown as CanonicalJson, { arraySemantics: 'ordered' })
     this.nodeMap.set(id, storedAttributes)
+    if (!unchanged) this.invalidateIntegritySnapshot()
     this.nodeEndpointIdentityMap.set(id, qualification)
     if (!this.successorMap.has(id)) {
       this.successorMap.set(id, new Set())
@@ -544,11 +570,7 @@ export class KnowledgeGraph {
     // second walk over every fact at serialization time. #705 already carries an
     // accepted load exception, so another full accumulation is not available to
     // spend.
-    if (this.integritySnapshot !== null) {
-      // A snapshot that stops matching the graph is worse than no snapshot: it
-      // would serialize as authoritative. Dropped, not silently kept.
-      this.integritySnapshot = null
-    }
+    this.invalidateIntegritySnapshot()
     this.endpointMatrix[fact.endpointIdentity.source.status]![fact.endpointIdentity.target.status] += 1
     for (const endpoint of [fact.endpointIdentity.source, fact.endpointIdentity.target]) {
       for (const reason of endpoint.reasons) {
@@ -623,10 +645,13 @@ export class KnowledgeGraph {
       }
       return
     }
-    this.occurrenceMap.set(occurrence.id, occurrence)
     const factOccurrences = this.factOccurrenceIndex.get(occurrence.factId)
+    // Looked up before storing: a missing index would otherwise leave the
+    // occurrence map mutated by a call that reports failure.
     if (factOccurrences === undefined) throw new MissingSemanticFactError(occurrence.factId)
+    this.occurrenceMap.set(occurrence.id, occurrence)
     factOccurrences.add(occurrence.id)
+    this.invalidateIntegritySnapshot()
   }
 
   addEdge(
@@ -667,6 +692,9 @@ export class KnowledgeGraph {
         relation,
         (this.unregisteredRelationAdmissions.get(relation) ?? 0) + 1,
       )
+      // Storage admission is part of the snapshot's storage-admission summary,
+      // so recording one makes any existing snapshot stale.
+      this.invalidateIntegritySnapshot()
       return Object.freeze({
         status: 'unresolved_degraded' as const,
         relation,
@@ -831,8 +859,15 @@ export class KnowledgeGraph {
         confidenceObservations: canonicalUnion(existing.confidenceObservations, rebuilt.confidenceObservations),
         metadata: canonicalChoice(existing.metadata, rebuilt.metadata),
       })
+    // A merge that produces a byte-identical occurrence changed no retained
+    // evidence, so it is a no-op; a merge that widened provenance, confidence
+    // or metadata did change the evidence the snapshot describes.
+    const changed = existing === undefined
+      || serializeCanonicalJson(existing as unknown as CanonicalJson, { arraySemantics: 'ordered' })
+        !== serializeCanonicalJson(stored as unknown as CanonicalJson, { arraySemantics: 'ordered' })
     this.occurrenceMap.set(stored.id, stored)
     this.factOccurrenceIndex.get(stored.factId)?.add(stored.id)
+    if (changed) this.invalidateIntegritySnapshot()
     return { id: stored.id, disposition: existing === undefined ? 'inserted' : 'merged' }
   }
 
@@ -1176,12 +1211,19 @@ export class KnowledgeGraph {
       )
     }
 
+    if (source.unregisteredRelationAdmissions.size === 0 && source.normalizedAccounting === null) {
+      // Inheriting nothing changes nothing.
+      return
+    }
     for (const [relation, count] of source.unregisteredRelationAdmissions) {
       this.unregisteredRelationAdmissions.set(relation, count)
     }
     if (source.normalizedAccounting !== null) {
       this.normalizedAccounting = source.normalizedAccounting
     }
+    // The inherited accounting and admissions describe a different generation
+    // than any snapshot this graph already holds.
+    this.invalidateIntegritySnapshot()
   }
 
   copy(): KnowledgeGraph {
