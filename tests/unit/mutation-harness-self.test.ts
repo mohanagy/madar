@@ -133,6 +133,16 @@ describe('mutation harness — an already-red suite attributes nothing', () => {
   })
 })
 
+/**
+ * These two drive the real harness as a subprocess, and the harness writes to
+ * production source while it runs. Nothing else may be reading those files at
+ * the time, so they are opt-in rather than part of the parallel suite --
+ * `npm run verify:integrity-mutations` sets the flag and runs them alone, after
+ * the mutants themselves. Running them inside the parallel suite corrupted
+ * concurrent workers, which is exactly the hazard they exist to guard against.
+ */
+const HARNESS_E2E = process.env['MADAR_MUTATION_HARNESS_E2E'] === '1'
+
 describe('mutation harness — the working tree survives a run', () => {
   it('declares every mutant with a focused suite and an expectation', () => {
     const source = readFileSync(join(process.cwd(), 'scripts/verify-integrity-mutations.mjs'), 'utf8')
@@ -144,7 +154,7 @@ describe('mutation harness — the working tree survives a run', () => {
     expect(expects).toHaveLength(names.length)
   })
 
-  it('restores every mutated file, leaving the tree clean', () => {
+  it.runIf(HARNESS_E2E)('restores every mutated file, leaving the tree clean', () => {
     const before = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' })
     execFileSync('node', ['scripts/verify-integrity-mutations.mjs', '--filter', 'R3-05'], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 600_000,
@@ -152,7 +162,7 @@ describe('mutation harness — the working tree survives a run', () => {
     expect(execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' })).toBe(before)
   }, 600_000)
 
-  it('restores the tree even when interrupted', () => {
+  it.runIf(HARNESS_E2E)('restores the tree even when interrupted', () => {
     const before = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' })
     // Start a run, kill it mid-flight, and require the tree to come back. The
     // handler is the only thing standing between an interrupted run and a
