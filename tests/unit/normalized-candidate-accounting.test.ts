@@ -156,7 +156,7 @@ describe('missing endpoints are retained as records, never as topology', () => {
   it('retains a durable record per distinct unresolved candidate', () => {
     const accounting = accountingFor(representativeExtraction())
     expect(accounting.unresolvedRecords).toHaveLength(3)
-    expect(accounting.unresolvedRetention).toEqual({ retained: 3, total: 3 })
+    expect(accounting.recordRetention.unresolved).toEqual({ retained: 3, total: 3, omitted: 0, truncated: false })
     for (const record of accounting.unresolvedRecords) {
       expect(record.id).toMatch(/^uc_[a-f0-9]{64}$/)
       expect(record.reasons.length).toBeGreaterThan(0)
@@ -469,7 +469,8 @@ describe('record retention is bounded and independent of arrival order', () => {
     expect(result.counts.unresolved).toBe(groups)
     // Detail is capped; the total stays exact so the loss is disclosed.
     expect(result.unresolvedRecords).toHaveLength(CAP)
-    expect(result.unresolvedRetention).toEqual({ retained: CAP, total: groups })
+    expect(result.recordRetention.unresolved)
+      .toEqual({ retained: CAP, total: groups, omitted: groups - CAP, truncated: true })
   })
 
   it.each(['reverse', 'shuffle', 'chunked'] as const)(
@@ -514,7 +515,7 @@ describe('record retention is bounded and independent of arrival order', () => {
 
     expect(found?.multiplicity).toBe(5)
     // Repeats raise multiplicity, never the distinct total.
-    expect(result.unresolvedRetention.total).toBe(CAP + 100)
+    expect(result.recordRetention.unresolved.total).toBe(CAP + 100)
     expect(result.counts.unresolved).toBe(CAP + 104)
   })
 
@@ -526,7 +527,7 @@ describe('record retention is bounded and independent of arrival order', () => {
     // 100 groups have no record at all, yet every one of them is counted.
     expect(retainedIds.size).toBe(CAP)
     expect(result.counts.unresolved).toBe(groups)
-    expect(result.unresolvedRetention.total - result.unresolvedRetention.retained).toBe(100)
+    expect(result.recordRetention.unresolved.total - result.recordRetention.unresolved.retained).toBe(100)
   })
 
   it('does not let an evicted id re-enter when it reappears', () => {
@@ -556,7 +557,7 @@ describe('record retention is bounded and independent of arrival order', () => {
     expect(result.unresolvedRecords.some((r) => r.candidateFingerprint === evicted)).toBe(false)
     expect(result.counts.unresolved).toBe(groups + 1)
     // And it must not inflate the distinct total by being seen twice.
-    expect(result.unresolvedRetention.total).toBe(groups)
+    expect(result.recordRetention.unresolved.total).toBe(groups)
   })
 })
 

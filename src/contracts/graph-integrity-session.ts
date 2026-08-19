@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { canonicalJsonBytes, serializeCanonicalJson } from './canonical-json.js'
 import {
   CandidateRecordIdentityFactory,
+  assertRecordRetention,
   detailRetention,
   withMultiplicityPreservingIdentity,
   type DurableCandidateRecord,
@@ -16,7 +17,6 @@ import {
   type CandidateTerminalCounts,
   type CandidateTerminalState,
   type DetailRetention,
-  type DurableRecordRetention,
   type IntegrityVerificationTarget,
   type RejectedCandidateRecord,
   type TerminalIntegrityReason,
@@ -106,9 +106,19 @@ export interface NormalizedAccountingResult {
   readonly unresolvedRecords: readonly UnresolvedCandidateRecord[]
   readonly rejectedRecords: readonly RejectedCandidateRecord[]
   readonly conflictRecords: readonly CandidateConflictRecord[]
-  readonly unresolvedRetention: DurableRecordRetention
-  readonly rejectedRetention: DurableRecordRetention
-  readonly conflictingRetention: DurableRecordRetention
+  /**
+   * Exact per-kind record retention.
+   *
+   * Full `DetailRetention` rather than retained/total, so `omitted` and
+   * `truncated` are carried rather than left for a serializer to infer. A
+   * reader must never have to subtract two numbers to discover that detail is
+   * missing.
+   */
+  readonly recordRetention: {
+    readonly unresolved: DetailRetention
+    readonly rejected: DetailRetention
+    readonly conflicting: DetailRetention
+  }
   readonly retainedPartialDiscriminators: number
   /** File- or adapter-scope failures that emitted no candidate. Not in the equation. */
   readonly scopeFailures: readonly string[]
@@ -507,10 +517,11 @@ export class NormalizedAccountingSession {
       submittedScopeFailures,
     )
 
-    const retention = (
-      retained: number,
-      total: number,
-    ): DurableRecordRetention => Object.freeze({ retained, total })
+    // Validate every retention object a record carries before it can be
+    // finalized. Tampered metadata is refused, never silently repaired.
+    for (const record of [...unresolvedRecords, ...rejectedRecords, ...conflictRecords]) {
+      assertRecordRetention(record, `record ${record.id}`)
+    }
 
     return Object.freeze({
       emittedCandidates: this.emitted,
@@ -521,9 +532,11 @@ export class NormalizedAccountingSession {
       unresolvedRecords,
       rejectedRecords,
       conflictRecords,
-      unresolvedRetention: retention(unresolvedRecords.length, this.unresolvedRetained.distinctTotal),
-      rejectedRetention: retention(rejectedRecords.length, this.rejectedRetained.distinctTotal),
-      conflictingRetention: retention(conflictRecords.length, this.conflictRetained.distinctTotal),
+      recordRetention: Object.freeze({
+        unresolved: detailRetention(unresolvedRecords.length, this.unresolvedRetained.distinctTotal),
+        rejected: detailRetention(rejectedRecords.length, this.rejectedRetained.distinctTotal),
+        conflicting: detailRetention(conflictRecords.length, this.conflictRetained.distinctTotal),
+      }),
       retainedPartialDiscriminators: this.partialDiscriminators,
       scopeFailures: boundedScopeFailures.values,
       scopeFailureRetention,

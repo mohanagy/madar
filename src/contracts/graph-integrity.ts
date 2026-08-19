@@ -265,6 +265,65 @@ export function detailRetention(retained: number, total: number): DetailRetentio
 }
 
 /**
+ * Validates a retention object that arrived from somewhere else.
+ *
+ * `detailRetention` guarantees consistency for values it builds, but a
+ * finalized snapshot can be handed a retention object that was tampered with or
+ * assembled by hand. Every derived field is re-derived and compared rather than
+ * trusted, because `omitted` and `truncated` are exactly the fields a caller
+ * would edit to make omission look like completeness.
+ */
+export function assertDetailRetention(retention: DetailRetention, field: string): void {
+  for (const [name, value] of [
+    ['retained', retention.retained],
+    ['total', retention.total],
+    ['omitted', retention.omitted],
+  ] as const) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new GraphIntegrityInvariantError(`${field}.${name} must be a non-negative safe integer`)
+    }
+  }
+  if (retention.retained > retention.total) {
+    throw new GraphIntegrityInvariantError(
+      `${field} retained ${retention.retained} exceeds total ${retention.total}`,
+    )
+  }
+  if (retention.omitted !== retention.total - retention.retained) {
+    throw new GraphIntegrityInvariantError(
+      `${field}.omitted is ${retention.omitted} but total - retained is ${retention.total - retention.retained}`,
+    )
+  }
+  if (retention.truncated !== retention.omitted > 0) {
+    throw new GraphIntegrityInvariantError(
+      `${field}.truncated is ${String(retention.truncated)} with ${retention.omitted} omitted`,
+    )
+  }
+}
+
+/**
+ * Validates every retention object a durable record carries, plus agreement
+ * between the carried array length and its own retained count.
+ */
+export function assertRecordRetention(record: DurableCandidateRecord, field: string): void {
+  if (record.kind === 'unresolved') {
+    assertDetailRetention(record.occurrenceRetention, `${field}.occurrenceRetention`)
+    if (record.occurrences.length !== record.occurrenceRetention.retained) {
+      throw new GraphIntegrityInvariantError(
+        `${field} carries ${record.occurrences.length} occurrences but claims ${record.occurrenceRetention.retained}`,
+      )
+    }
+  }
+  if (record.kind === 'conflicting') {
+    assertDetailRetention(record.fingerprintRetention, `${field}.fingerprintRetention`)
+    if (record.candidateFingerprints.length !== record.fingerprintRetention.retained) {
+      throw new GraphIntegrityInvariantError(
+        `${field} carries ${record.candidateFingerprints.length} fingerprints but claims ${record.fingerprintRetention.retained}`,
+      )
+    }
+  }
+}
+
+/**
  * Bounds a detail array deterministically and reports what it dropped.
  *
  * Selection is by canonical key order, never arrival, for the same reason the
