@@ -12,7 +12,6 @@ import {
   MAX_SCOPE_FAILURES,
   boundDetail,
   emptyTerminalCounts,
-  normalizeVerificationTargets,
   type CandidateConflictRecord,
   type CandidateTerminalCounts,
   type CandidateTerminalState,
@@ -409,7 +408,7 @@ export class NormalizedAccountingSession {
       ...(draft.occurrences !== undefined ? { occurrences: draft.occurrences } : {}),
       reasons: draft.reasons,
       ...(draft.verificationTargets !== undefined
-        ? { verificationTargets: normalizeVerificationTargets(draft.verificationTargets, 'unresolved') }
+        ? { verificationTargets: draft.verificationTargets }
         : {}),
     })
   }
@@ -425,7 +424,7 @@ export class NormalizedAccountingSession {
       sanitizedCandidate: sanitizeCandidate(draft.candidate),
       reasons: draft.reasons,
       ...(draft.verificationTargets !== undefined
-        ? { verificationTargets: normalizeVerificationTargets(draft.verificationTargets, 'rejected') }
+        ? { verificationTargets: draft.verificationTargets }
         : {}),
     })
   }
@@ -436,7 +435,7 @@ export class NormalizedAccountingSession {
       multiplicity,
       reasons: draft.reasons,
       ...(draft.verificationTargets !== undefined
-        ? { verificationTargets: normalizeVerificationTargets(draft.verificationTargets, 'conflict') }
+        ? { verificationTargets: draft.verificationTargets }
         : {}),
     })
   }

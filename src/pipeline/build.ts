@@ -11,7 +11,6 @@ import { validateExtraction } from '../contracts/extraction.js'
 import { normalizeExtractionData } from '../core/schema/normalize.js'
 import { resolveRelationDiscriminator } from '../contracts/relation-discriminator.js'
 import { isBuiltin } from 'node:module'
-import { isAbsolute, relative } from 'node:path'
 import { isRecord } from '../shared/guards.js'
 
 type CombinedExtraction = {
@@ -98,34 +97,13 @@ interface UnresolvedEndpointInput {
 }
 
 /**
- * Best-effort repository-relative form of a producer path.
+ * Hands the producer path to the verification-target policy unchanged.
  *
- * Producer attributes still carry absolute `source_file` values -- audited under
- * #657 as pre-existing in v1 and owned by #704 -- so a verification target can
- * only be emitted when a root is supplied to relativize against. When it cannot
- * be, no target is emitted: a missing hint is recoverable, a leaked checkout
- * path in a shared artifact is not.
- */
-function repositoryRelativeHint(sourceFile: unknown, rootPath: string | undefined): string | null {
-  if (typeof sourceFile !== 'string' || sourceFile.length === 0) return null
-  if (rootPath !== undefined && rootPath.length > 0) {
-    const relativized = relative(rootPath, sourceFile)
-    if (!relativized.startsWith('..') && !isAbsolute(relativized)) return relativized
-    return null
-  }
-  return isAbsolute(sourceFile) ? null : sourceFile
-}
-
-/**
- * Classifies a candidate whose endpoint is absent from the node set.
- *
- * The primary reason is always the plain fact -- which endpoint is missing.
- * `unresolved_external_module_boundary` is added only on **positive evidence**
- * that the target is a runtime built-in. Absence of that evidence is not proof
- * a target is repository-local, so no internal claim is made speculatively:
- * asserting one would be exactly the fabrication #658 forbids, and telling
- * `fs` apart from an unresolved local module needs a declaration mechanism this
- * repository does not have. #703 owns closing that gap upstream.
+ * This used to relativize here and gate on `relativized.startsWith('..')`,
+ * which discarded an in-root directory literally named `..fixtures` as if it
+ * were an escape. Root conversion and traversal detection now live in one
+ * segment-aware owner, so a path is judged once by path semantics rather than
+ * twice by two different string rules.
  */
 function unresolvedEndpoint(input: UnresolvedEndpointInput): CandidateDisposition {
   const reasons: TerminalIntegrityReason[] = []
@@ -140,9 +118,9 @@ function unresolvedEndpoint(input: UnresolvedEndpointInput): CandidateDispositio
     reasons.push('unresolved_external_module_boundary')
   }
 
-  const hint = repositoryRelativeHint(input.sourceFile, input.rootPath)
-  const targets: IntegrityVerificationTarget[] = hint !== null
-    ? [{ file: hint, reason: reasons[0]! }]
+  // Raw producer path in; the sanitizer owns conversion, bounding and refusal.
+  const targets: IntegrityVerificationTarget[] = typeof input.sourceFile === 'string'
+    ? [{ file: input.sourceFile, reason: reasons[0]! }]
     : []
 
   return {

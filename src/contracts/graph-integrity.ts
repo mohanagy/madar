@@ -660,44 +660,123 @@ function sortedUniqueReasons(reasons: readonly TerminalIntegrityReason[], field:
   return Object.freeze([...new Set(reasons)].sort())
 }
 
+/** Longest verification target retained. Reviewed limit; no repo-wide one exists. */
+export const MAX_VERIFICATION_TARGET_LENGTH = 512 as const
+
 /**
- * Targets are sanitized through the same path rule that governs occurrence
- * identity, so a record can never carry an absolute path or a `..` escape into
- * a shared artifact. A target whose file cannot be made repository-relative is
- * dropped rather than emitted unsafely -- a missing hint is recoverable, a
- * leaked checkout path is not.
+ * Scheme-like prefixes, including the forms without `//`.
+ *
+ * `file:relative-looking` and `mailto:user@example.com` are not paths and were
+ * previously accepted because the check only looked for `scheme://`.
+ */
+const SCHEME_PREFIX = /^[A-Za-z][A-Za-z0-9+.-]*:/
+
+/**
+ * True parent traversal, tested per segment.
+ *
+ * A `startsWith('..')` test conflates traversal with an ordinary directory whose
+ * name merely begins with two dots: `..fixtures/a.ts` is a legitimate in-root
+ * path and was being discarded as an escape.
+ */
+function hasParentSegment(segments: readonly string[]): boolean {
+  return segments.includes('..')
+}
+
+/**
+ * The one owner of verification-target safety.
+ *
+ * Deliberately separate from the candidate-hint and endpoint sanitizers: a
+ * target is a repository-relative PATH that a reader will open, so it needs
+ * path semantics, its own length bound, and rejection of scheme forms that are
+ * meaningless as paths. Reusing a hint sanitizer here is what let thirteen
+ * unsafe shapes through -- the identity path-normalizer was never a
+ * share-safety policy.
+ *
+ * Returns null rather than throwing: a missing hint is recoverable, and a
+ * target is never load-bearing for accounting.
+ */
+export function normalizeVerificationTargetPath(
+  value: string,
+  context: { readonly repositoryRoot?: string; readonly field: string },
+): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.normalize('NFC')
+  if (normalized.length === 0 || normalized.length > MAX_VERIFICATION_TARGET_LENGTH) return null
+  // C0 and C1 controls, including NUL, newline and tab.
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(normalized)) return null
+  if (/%[0-9A-Fa-f]{2}/.test(normalized)) return null
+  if (SEPARATOR_LOOKALIKES.test(normalized)) return null
+  if (normalized.startsWith('~')) return null
+
+  const separatorsNormalized = normalized.replaceAll('\\', '/')
+
+  // Absolute, drive and UNC forms are only acceptable after conversion against a
+  // truthful root; without one they are refused rather than guessed at.
+  const isAbsoluteLike = separatorsNormalized.startsWith('/')
+    || /^[A-Za-z]:\//.test(separatorsNormalized)
+  let candidate = separatorsNormalized
+  if (isAbsoluteLike) {
+    const relative = repositoryRelativeUnder(separatorsNormalized, context.repositoryRoot)
+    if (relative === null) return null
+    candidate = relative
+  } else if (SCHEME_PREFIX.test(separatorsNormalized)) {
+    // A scheme form that is not an absolute path is not a repository path.
+    return null
+  }
+
+  const segments = candidate.split('/').filter((segment) => segment.length > 0 && segment !== '.')
+  if (segments.length === 0) return null
+  if (hasParentSegment(segments)) return null
+  const joined = segments.join('/')
+  if (joined.length === 0 || joined.length > MAX_VERIFICATION_TARGET_LENGTH) return null
+  void context.field
+  return joined
+}
+
+/**
+ * Repository-relative form of an absolute path, or null when it is outside the
+ * root or no truthful root exists.
+ *
+ * Compared on normalized separators and segment boundaries so a sibling
+ * directory sharing a name prefix is not treated as inside the repository.
+ */
+function repositoryRelativeUnder(absolutePath: string, repositoryRoot?: string): string | null {
+  if (repositoryRoot === undefined || repositoryRoot.trim().length === 0) return null
+  const root = repositoryRoot.replaceAll('\\', '/').replace(/\/+$/, '')
+  if (root.length === 0) return null
+  if (absolutePath === root) return null
+  if (!absolutePath.startsWith(`${root}/`)) return null
+  return absolutePath.slice(root.length + 1)
+}
+
+/**
+ * Normalizes, bounds, de-duplicates and orders a record's verification targets.
+ *
+ * Every production target flows through here, so a caller cannot push a raw
+ * string and rely on serialization to clean it later.
  */
 export function normalizeVerificationTargets(
   targets: readonly IntegrityVerificationTarget[],
   field: string,
+  context: { readonly repositoryRoot?: string } = {},
 ): readonly IntegrityVerificationTarget[] {
-  const normalized: IntegrityVerificationTarget[] = []
+  const byKey = new Map<string, IntegrityVerificationTarget>()
   for (const target of targets) {
     if (!isTerminalIntegrityReason(target.reason)) {
       throw new GraphIntegrityInvariantError(`${field} target carries unknown reason ${JSON.stringify(target.reason)}`)
     }
-    let file: string | null
-    try {
-      file = normalizeIdentityRepositoryPath(target.file, `${field}.file`)
-    } catch (error) {
-      // Only an unsafe *path* is droppable. A bare catch here would also
-      // swallow a programming error -- a changed signature, a bad argument --
-      // and silently emit fewer hints while looking healthy, which is the
-      // failure mode this whole receipt exists to prevent.
-      if (!(error instanceof SemanticIdentityInvariantError)) throw error
-      continue
-    }
-    if (file === null || file.length === 0) continue
-    normalized.push(Object.freeze({
+    const file = normalizeVerificationTargetPath(target.file, {
+      ...(context.repositoryRoot !== undefined ? { repositoryRoot: context.repositoryRoot } : {}),
+      field,
+    })
+    if (file === null) continue
+    const safe: IntegrityVerificationTarget = Object.freeze({
       file,
       ...(target.range !== undefined ? { range: target.range } : {}),
       reason: target.reason,
-    }))
-  }
-
-  const byKey = new Map<string, IntegrityVerificationTarget>()
-  for (const target of normalized) {
-    byKey.set(serializeCanonicalJson(target as unknown as CanonicalJson, { arraySemantics: 'ordered' }), target)
+    })
+    byKey.set(serializeCanonicalJson(safe as unknown as CanonicalJson, { arraySemantics: 'ordered' }), safe)
   }
   return Object.freeze(
     [...byKey.entries()]
@@ -757,14 +836,21 @@ function assertMultiplicity(value: number, field: string): number {
 export class CandidateRecordIdentityFactory {
   private readonly payloadByDigest = new Map<string, Buffer>()
   private readonly flattenedRoot: string | null
+  private readonly repositoryRoot: string | undefined
 
   constructor(
     private readonly hash: (payload: Buffer) => string = sha256,
     shareSafety: ShareSafetyContext = {},
   ) {
+    this.repositoryRoot = shareSafety.repositoryRoot
     this.flattenedRoot = shareSafety.repositoryRoot === undefined
       ? null
       : flattenedRootPrefix(shareSafety.repositoryRoot)
+  }
+
+  /** Root context for the verification-target policy, or none when untruthful. */
+  private get targetContext(): { readonly repositoryRoot?: string } {
+    return this.repositoryRoot === undefined ? {} : { repositoryRoot: this.repositoryRoot }
   }
 
   /** Distinct payloads witnessed by this scope. A fresh operation starts at zero. */
@@ -790,7 +876,7 @@ export class CandidateRecordIdentityFactory {
 
   createUnresolvedRecord(draft: UnresolvedRecordDraft): UnresolvedCandidateRecord {
     const reasons = sortedUniqueReasons(draft.reasons, 'unresolved record reasons')
-    const targets = normalizeVerificationTargets(draft.verificationTargets ?? [], 'unresolved record')
+    const targets = normalizeVerificationTargets(draft.verificationTargets ?? [], 'unresolved record', this.targetContext)
     const bounded = boundDetail(draft.occurrences ?? [], MAX_RECORD_OCCURRENCES, (occurrence) => occurrence.id)
     const occurrences = bounded.values
     // Redaction applies to the DISPLAYED hint only. Identity below still keys on
@@ -828,7 +914,7 @@ export class CandidateRecordIdentityFactory {
 
   createRejectedRecord(draft: RejectedRecordDraft): RejectedCandidateRecord {
     const reasons = sortedUniqueReasons(draft.reasons, 'rejected record reasons')
-    const targets = normalizeVerificationTargets(draft.verificationTargets ?? [], 'rejected record')
+    const targets = normalizeVerificationTargets(draft.verificationTargets ?? [], 'rejected record', this.targetContext)
     const identityPayload = {
       record_kind: 'rejected',
       reason_vocabulary_version: GRAPH_INTEGRITY_REASON_VOCABULARY_VERSION,
@@ -853,7 +939,7 @@ export class CandidateRecordIdentityFactory {
       throw new GraphIntegrityInvariantError('a conflict record must name at least two candidates')
     }
     const reasons = sortedUniqueReasons(draft.reasons, 'conflict record reasons')
-    const targets = normalizeVerificationTargets(draft.verificationTargets ?? [], 'conflict record')
+    const targets = normalizeVerificationTargets(draft.verificationTargets ?? [], 'conflict record', this.targetContext)
     // Sorted, so the group's identity cannot depend on which member arrived
     // first. Order-dependence here would be last-write-wins wearing a record.
     const complete = Object.freeze([...new Set(draft.candidateFingerprints)].sort())
