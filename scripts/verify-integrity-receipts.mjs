@@ -20,7 +20,8 @@
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 
 const ROOT = process.cwd()
@@ -31,6 +32,12 @@ const argOf = (flag) => {
 }
 const OUT = argOf('--out')
 const BASELINE = argOf('--baseline')
+const BASELINE_REF = argOf('--baseline-ref')
+// Corpus receipts alone are a legitimate product, but they are not a
+// qualification: the review found a receipt generated with no baseline being
+// read as one. Saying which you want is now mandatory.
+const CORPUS_ONLY = args.includes('--corpus-only')
+const RUNS = Number(argOf('--runs') ?? 5)
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex')
 
@@ -134,9 +141,75 @@ function scannerControl() {
   return { planted: 5, detected: detected.length, passes: detected.length === 5 }
 }
 
-async function measure(dir, scope, files, runs) {
+
+/**
+ * Builds an exact baseline ref in a throwaway worktree.
+ *
+ * The previous runner could only be pointed at a checkout somebody had already
+ * prepared by hand, so the published comparison was not reproducible from a
+ * clean tree -- and the receipt it produced recorded a revision that was not
+ * the one being claimed. Resolving the ref here means the command itself is the
+ * evidence.
+ */
+function withBaselineWorktree(ref, run) {
+  let resolved
+  try {
+    resolved = execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], {
+      cwd: ROOT, encoding: 'utf8',
+    }).trim()
+  } catch {
+    throw new Error(`baseline ref cannot be resolved: ${ref}`)
+  }
+  if (execFileSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' }).trim().length > 0) {
+    throw new Error('refusing to measure a dirty tree; commit or stash first')
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), 'madar-baseline-'))
+  const cleanup = () => {
+    try {
+      execFileSync('git', ['worktree', 'remove', '--force', dir], { cwd: ROOT, stdio: 'ignore' })
+    } catch {
+      // Already gone, or never registered.
+    }
+    rmSync(dir, { recursive: true, force: true })
+    try {
+      execFileSync('git', ['worktree', 'prune'], { cwd: ROOT, stdio: 'ignore' })
+    } catch {
+      // Nothing to prune.
+    }
+  }
+  // Registered before any work so an interrupt cannot leave the worktree behind.
+  const onSignal = () => { cleanup(); process.exit(130) }
+  process.on('SIGINT', onSignal)
+  process.on('SIGTERM', onSignal)
+
+  try {
+    execFileSync('git', ['worktree', 'add', '--detach', dir, resolved], { cwd: ROOT, stdio: 'ignore' })
+    // The pinned lockfile and toolchain, not whatever happens to be installed.
+    execFileSync('npm', ['ci', '--ignore-scripts'], { cwd: dir, stdio: 'ignore' })
+    execFileSync('npm', ['run', 'build'], { cwd: dir, stdio: 'ignore' })
+    return run({ dir, sha: resolved })
+  } finally {
+    process.off('SIGINT', onSignal)
+    process.off('SIGTERM', onSignal)
+    cleanup()
+  }
+}
+
+/**
+ * One canonical normalized input, produced once by a declared authority and
+ * handed byte-identically to both arms.
+ *
+ * Letting each arm extract its own input and then calling the result a build
+ * comparison measures two different extractions as if they were one.
+ */
+function inputAuthority(files) {
+  return { extractedBy: 'candidate head', files }
+}
+
+async function measure(dir, scope, files, runs, sharedInput = null) {
   const { extract, buildFromJson } = await loadPipeline(dir)
-  const raw = extract(files)
+  const raw = sharedInput ?? extract(files)
   const inputChecksum = sha256(JSON.stringify(raw))
   const durations = []
   let graph = null
@@ -149,12 +222,17 @@ async function measure(dir, scope, files, runs) {
     })
     durations.push(Number(process.hrtime.bigint() - started) / 1e6)
   }
-  durations.sort((left, right) => left - right)
+  const sorted = [...durations].sort((left, right) => left - right)
   return {
     scope,
     rawEdges: Array.isArray(raw.edges) ? raw.edges.length : 0,
     inputChecksum,
-    medianMs: Number(durations[Math.floor(durations.length / 2)].toFixed(1)),
+    samples: durations.map((value) => Number(value.toFixed(1))),
+    medianMs: Number(sorted[Math.floor(sorted.length / 2)].toFixed(1)),
+    minMs: Number(sorted[0].toFixed(1)),
+    maxMs: Number(sorted[sorted.length - 1].toFixed(1)),
+    spreadMs: Number((sorted[sorted.length - 1] - sorted[0]).toFixed(1)),
+    peakRssMb: Math.round(process.resourceUsage().maxRSS / 1024),
     graph,
   }
 }
@@ -189,10 +267,36 @@ function receiptFor(scope, files, checksum, measured) {
     hazard_examples: hazards.slice(0, 3),
     finalized_snapshot: snapshot === null ? 'ABSENT' : `attached, status=${snapshot.status}`,
     build_median_ms: measured.medianMs,
+    build_samples_ms: measured.samples,
+    build_spread_ms: measured.spreadMs,
   }
 }
 
-const RUNS = 5
+
+// One arm, in its own process. Arms must never share a process: a JIT warmed by
+// the first arm makes the second look faster for reasons that have nothing to
+// do with either head.
+const MEASURE_ARM = argOf('--measure-arm')
+if (MEASURE_ARM !== null) {
+  const scope = argOf('--scope')
+  const inputPath = argOf('--input')
+  const shared = JSON.parse(readFileSync(inputPath, 'utf8'))
+  const measured = await measure(MEASURE_ARM, scope, [], RUNS, shared)
+  const accounting = measured.graph.normalizedAccountingSummary()
+  console.log(JSON.stringify({
+    scope,
+    samples: measured.samples,
+    medianMs: measured.medianMs,
+    minMs: measured.minMs,
+    maxMs: measured.maxMs,
+    spreadMs: measured.spreadMs,
+    peakRssMb: measured.peakRssMb,
+    inputChecksum: measured.inputChecksum,
+    emittedCandidates: accounting.emittedCandidates,
+  }))
+  process.exit(0)
+}
+
 const control = scannerControl()
 
 const receipts = []
@@ -202,28 +306,111 @@ for (const scope of Object.keys(SCOPES)) {
   receipts.push({ ...receiptFor(scope, files, checksum, measured), file_count: count })
 }
 
-let performance = { baseline: 'not supplied', note: 'pass --baseline <builtCheckout> to compare heads' }
-if (BASELINE !== null) {
+/** Runs one arm in a child process and returns its parsed measurement. */
+function runArm(dir, scope, inputPath) {
+  const raw = execFileSync(process.execPath, [
+    resolve(ROOT, 'scripts/verify-integrity-receipts.mjs'),
+    '--measure-arm', dir, '--scope', scope, '--input', inputPath, '--runs', String(RUNS),
+  ], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  return JSON.parse(raw.trim().split('\n').pop())
+}
+
+async function comparePerformance(baselineDir, baselineSha) {
   const comparisons = []
+  const invalidated = []
   for (const scope of Object.keys(SCOPES)) {
-    const { files } = inventory(scope)
-    // Identical inventory and identical input for both arms, freshly built
-    // dists on each side, so the ratio measures code and not corpus.
-    const base = await measure(resolve(BASELINE), scope, files, RUNS)
-    const head = await measure(ROOT, scope, files, RUNS)
-    const ratio = Number((head.medianMs / base.medianMs).toFixed(3))
+    const { files, checksum } = inventory(scope)
+    // Extracted once, by a declared authority, and handed byte-identically to
+    // both arms. Letting each arm extract its own input measures two different
+    // extractions and calls the difference a build comparison.
+    const { extract } = await loadPipeline(ROOT)
+    const shared = extract(files)
+    const authority = inputAuthority(files)
+    const inputPath = join(mkdtempSync(join(tmpdir(), 'madar-input-')), 'extraction.json')
+    writeFileSync(inputPath, JSON.stringify(shared))
+    const inputChecksum = sha256(readFileSync(inputPath))
+
+    // Two sessions with opposite starting arms, so ordering cannot favour
+    // either head.
+    const sessions = [
+      { order: 'baseline-first', base: runArm(baselineDir, scope, inputPath), head: runArm(ROOT, scope, inputPath) },
+      { order: 'candidate-first', head: runArm(ROOT, scope, inputPath), base: runArm(baselineDir, scope, inputPath) },
+    ]
+    rmSync(join(inputPath, '..'), { recursive: true, force: true })
+
+    for (const session of sessions) {
+      if (session.base.inputChecksum !== session.head.inputChecksum) {
+        invalidated.push({ scope, order: session.order, reason: 'arms did not receive identical input' })
+      }
+    }
+    const usable = sessions.filter((session) => session.base.inputChecksum === session.head.inputChecksum)
+    if (usable.length === 0) {
+      comparisons.push({ corpus_scope: scope, gate: 'NOT ESTABLISHED', reason: 'no session had identical input' })
+      continue
+    }
+
+    const baseMedian = Math.min(...usable.map((session) => session.base.medianMs))
+    const headMedian = Math.min(...usable.map((session) => session.head.medianMs))
+    const ratio = Number((headMedian / baseMedian).toFixed(3))
+    const rssRatio = Number((
+      Math.max(...usable.map((s) => s.head.peakRssMb)) / Math.max(...usable.map((s) => s.base.peakRssMb))
+    ).toFixed(3))
     comparisons.push({
       corpus_scope: scope,
-      identical_input: base.inputChecksum === head.inputChecksum,
-      baseline_median_ms: base.medianMs,
-      candidate_median_ms: head.medianMs,
+      extraction_mode: 'legacy',
+      input_authority: authority.extractedBy,
+      input_files: files.length,
+      inventory_checksum: checksum,
+      canonical_input_checksum: inputChecksum,
+      identical_input: true,
+      cache_state: 'no extractor cache; one extraction shared by both arms',
+      baseline_sha: baselineSha,
+      candidate_sha: git('rev-parse', 'HEAD'),
+      sessions: usable.map((session) => ({
+        order: session.order,
+        baseline: {
+          samples: session.base.samples, medianMs: session.base.medianMs, spreadMs: session.base.spreadMs,
+          peakRssMb: session.base.peakRssMb, emittedCandidates: session.base.emittedCandidates,
+        },
+        candidate: {
+          samples: session.head.samples, medianMs: session.head.medianMs, spreadMs: session.head.spreadMs,
+          peakRssMb: session.head.peakRssMb, emittedCandidates: session.head.emittedCandidates,
+        },
+      })),
+      baseline_median_ms: baseMedian,
+      candidate_median_ms: headMedian,
       ratio,
-      gate: ratio > 2 ? 'HUMAN_GATE' : 'within budget',
-      baseline_candidates: base.graph.normalizedAccountingSummary().emittedCandidates,
-      candidate_candidates: head.graph.normalizedAccountingSummary().emittedCandidates,
+      rss_ratio: rssRatio,
+      gate: ratio > 2 || rssRatio > 2 ? 'HUMAN_GATE' : 'within budget',
     })
   }
-  performance = { baseline_revision: git('-C', BASELINE, 'rev-parse', 'HEAD'), comparisons }
+  return { baseline_revision: baselineSha, comparisons, invalidated_runs: invalidated }
+}
+
+if (BASELINE_REF === null && BASELINE === null && !CORPUS_ONLY) {
+  console.error(
+    'refusing to produce a receipt with no comparison.\n'
+    + '  --baseline-ref <sha>   reproducible exact-head qualification (required for qualification)\n'
+    + '  --corpus-only          current-head corpus receipts only, explicitly not a qualification',
+  )
+  process.exit(2)
+}
+
+let performance = {
+  baseline: 'not supplied',
+  qualifies: false,
+  note: 'corpus-only run; not a qualification. Use --baseline-ref for an exact-head comparison.',
+}
+if (BASELINE_REF !== null) {
+  performance = await withBaselineWorktree(BASELINE_REF, async ({ dir, sha }) => comparePerformance(dir, sha))
+} else if (BASELINE !== null) {
+  // Lower-level debugging path: an already-built checkout, not reproducible on
+  // its own, so it is labelled as such in the receipt.
+  performance = {
+    ...(await comparePerformance(resolve(BASELINE), git('-C', BASELINE, 'rev-parse', 'HEAD'))),
+    reproducible: false,
+    note: 'built from a manually prepared checkout; use --baseline-ref for qualification',
+  }
 }
 
 const usage = process.resourceUsage()
@@ -266,12 +453,13 @@ console.log(rendered)
 const balanced = receipts.every((entry) => entry.equation_balances)
 const clean = receipts.every((entry) => entry.share_safety_hazards === 0)
 const gated = performance.comparisons?.some((entry) => entry.gate === 'HUMAN_GATE') ?? false
+const unestablished = performance.comparisons?.some((entry) => entry.gate === 'NOT ESTABLISHED') ?? false
 
 console.log(`\nequation balances: ${balanced}`)
 console.log(`share-safety hazards: ${clean ? 0 : 'PRESENT'}`)
 console.log(`scanner control: ${control.passes ? 'PASSES' : 'FAILS'}`)
-console.log(`focused performance: ${gated ? 'HUMAN_GATE' : 'within budget'}`)
+console.log(`focused performance: ${gated ? 'HUMAN_GATE' : unestablished ? 'NOT ESTABLISHED' : 'within budget'}`)
 
-const ok = balanced && clean && control.passes && !gated
+const ok = balanced && clean && control.passes && !gated && !unestablished
 console.log(ok ? 'INTEGRITY RECEIPTS PASS' : 'INTEGRITY RECEIPTS FAIL')
 process.exit(ok ? 0 : 1)
