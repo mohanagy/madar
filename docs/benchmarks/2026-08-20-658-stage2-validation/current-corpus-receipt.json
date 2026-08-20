@@ -1,7 +1,7 @@
 {
-  "repository_revision": "a135efca773f5b5f4690a7195e48ad5c44b18ef9",
-  "repository_dirty": true,
-  "candidate_code_revision": "a135efca773f5b5f4690a7195e48ad5c44b18ef9",
+  "repository_revision": "5b1dd947cc8e307842847bb4ecac2e368fc2029d",
+  "repository_dirty": false,
+  "candidate_code_revision": "5b1dd947cc8e307842847bb4ecac2e368fc2029d",
   "node_version": "v22.22.3",
   "npm_version": "12.0.2",
   "lockfile_checksum": "0144eb0ddf92f78c69f10089d0e0414485594966ff5be4f36f655c7aa5cff53e",
@@ -71,15 +71,15 @@
       "share_safety_hazards": 0,
       "hazard_examples": [],
       "finalized_snapshot": "attached, status=degraded",
-      "build_median_ms": 698.1,
+      "build_median_ms": 747.4,
       "build_samples_ms": [
-        753,
-        698.1,
-        690.6,
-        709.9,
-        674.8
+        758.3,
+        747.4,
+        752,
+        677.4,
+        701.5
       ],
-      "build_spread_ms": 78.2
+      "build_spread_ms": 80.9
     },
     {
       "corpus_scope": "src-plus-tests-js-ts",
@@ -135,15 +135,15 @@
       "share_safety_hazards": 0,
       "hazard_examples": [],
       "finalized_snapshot": "attached, status=degraded",
-      "build_median_ms": 982.2,
+      "build_median_ms": 985.1,
       "build_samples_ms": [
-        982.2,
-        1008.3,
-        1047.3,
-        971.5,
-        969.1
+        1000.9,
+        992.6,
+        948.4,
+        985.1,
+        956.3
       ],
-      "build_spread_ms": 78.2
+      "build_spread_ms": 52.5
     }
   ],
   "performance": {
@@ -151,5 +151,5 @@
     "qualifies": false,
     "note": "corpus-only run; not a qualification. Use --baseline-ref for an exact-head comparison."
   },
-  "peak_rss_mb": 1024
+  "peak_rss_mb": 1088
 }
