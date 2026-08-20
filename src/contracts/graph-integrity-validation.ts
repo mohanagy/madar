@@ -1,17 +1,26 @@
-import { ENDPOINT_IDENTITY_STATUSES, type EndpointIdentityReason } from './endpoint-identity.js'
+import {
+  ENDPOINT_IDENTITY_REASONS,
+  ENDPOINT_IDENTITY_STATUSES,
+  type EndpointIdentityReason,
+} from './endpoint-identity.js'
 import {
   assertCandidateAccountingEquation,
   assertDetailRetention,
+  assertExactObjectShape,
+  assertPlainJsonObject,
   assertRecordRetention,
+  DETAIL_RETENTION_KEYS,
   CANDIDATE_TERMINAL_STATES,
   GraphIntegrityInvariantError,
   isTerminalIntegrityReason,
   MAX_DURABLE_RECORDS_PER_KIND,
+  MAX_VERIFICATION_TARGETS_PER_RECORD,
   normalizeVerificationTargetPath,
   safeEndpointIdentifier,
   type DurableCandidateRecord,
 } from './graph-integrity.js'
-import { safeCandidateString, safeScopeName } from './graph-integrity-session.js'
+import { candidateFingerprint, safeCandidateString, safeScopeName } from './graph-integrity-session.js'
+import { assertCanonicalJsonValue } from './graph-integrity-json.js'
 
 /**
  * Total runtime validation for everything a serializer will be handed.
@@ -77,6 +86,71 @@ function assertShareSafe(
   }
 }
 
+
+/**
+ * Content-derived identities are a prefix plus a full lowercase SHA-256.
+ *
+ * Validating them as generic safe strings accepted a truncated hash, a wrong
+ * prefix, or an id belonging to another record class -- all of which look like
+ * ordinary safe strings and none of which name what they claim to.
+ */
+const ID_PREFIXES = {
+  unresolved: 'uc_',
+  rejected: 'rc_',
+  conflicting: 'cc_',
+} as const
+
+const HASH_SUFFIX = /^[a-f0-9]{64}$/
+
+function assertContentAddress(value: unknown, prefix: string, field: string): string {
+  const id = assertString(value, field)
+  if (!id.startsWith(prefix) || !HASH_SUFFIX.test(id.slice(prefix.length))) {
+    throw new GraphIntegrityInvariantError(
+      `${field} must be ${prefix} followed by a full lowercase SHA-256, got ${JSON.stringify(id.slice(0, 24))}`,
+    )
+  }
+  return id
+}
+
+/** Exact key sets for every closed serializer-facing schema. */
+const SCHEMA = {
+  verificationTarget: { required: ['file', 'reason'], optional: ['range'] },
+  sourceRange: { required: ['start', 'end'], optional: [] },
+  sourcePosition: { required: ['line', 'column'], optional: [] },
+  graphTotals: { required: ['facts', 'occurrences', 'endpointPairs'], optional: [] },
+  storageAdmission: {
+    required: ['unresolvedUnregisteredRelationCandidates', 'unregisteredRelationCounts'],
+    optional: [],
+  },
+  occurrence: {
+    required: ['id', 'factId', 'owner', 'provenance', 'confidenceObservations', 'metadata'],
+    optional: ['sourceFile', 'sourceRange', 'targetFile', 'targetRange', 'siteKind', 'adapterEvidenceKey'],
+  },
+  occurrenceOwner: { required: ['adapterId', 'strategy'], optional: ['sourceFile', 'adapterVersion'] },
+  recordRetention: { required: ['unresolved', 'rejected', 'conflicting'], optional: [] },
+} as const
+
+function assertSourcePosition(value: unknown, field: string): { line: number; column: number } {
+  assertExactObjectShape(value, field, SCHEMA.sourcePosition.required)
+  return {
+    line: assertSafeCount(value['line'], `${field}.line`),
+    column: assertSafeCount(value['column'], `${field}.column`),
+  }
+}
+
+function assertSourceRange(value: unknown, field: string): void {
+  assertExactObjectShape(value, field, SCHEMA.sourceRange.required)
+  const start = assertSourcePosition(value['start'], `${field}.start`)
+  const end = assertSourcePosition(value['end'], `${field}.end`)
+  // A range that ends before it starts names no region, and a reader following
+  // it would either read nothing or read backwards.
+  if (end.line < start.line || (end.line === start.line && end.column < start.column)) {
+    throw new GraphIntegrityInvariantError(
+      `${field} ends at ${end.line}:${end.column} before it starts at ${start.line}:${start.column}`,
+    )
+  }
+}
+
 const RECORD_FIELDS = {
   unresolved: new Set([
     'kind', 'id', 'multiplicity', 'reasons', 'verificationTargets',
@@ -110,9 +184,15 @@ function assertReasons(value: unknown, field: string): void {
 
 function assertVerificationTargets(value: unknown, field: string): void {
   assertArray(value, field)
+  if (value.length > MAX_VERIFICATION_TARGETS_PER_RECORD) {
+    throw new GraphIntegrityInvariantError(
+      `${field} carries ${value.length} targets, above the per-record bound`,
+    )
+  }
   for (const [index, target] of value.entries()) {
     const at = `${field}[${index}]`
-    assertPlainObject(target, at)
+    // Exact shape: a target with an unknown field is a field nobody validated.
+    assertExactObjectShape(target, at, SCHEMA.verificationTarget.required, SCHEMA.verificationTarget.optional)
     // A stored target is already repository-relative, so re-normalizing it with
     // no root must be a no-op. Anything absolute, encoded, disguised or
     // escaping fails here rather than reaching a reader.
@@ -123,6 +203,74 @@ function assertVerificationTargets(value: unknown, field: string): void {
     if (!isTerminalIntegrityReason(reason)) {
       throw new GraphIntegrityInvariantError(`${at}.reason is not a terminal reason: ${JSON.stringify(reason)}`)
     }
+    if (target['range'] !== undefined) assertSourceRange(target['range'], `${at}.range`)
+  }
+}
+
+/**
+ * Validates one evidence occurrence against the shape Stage 3 will serialize.
+ *
+ * Accepting an arbitrary object whose string fields happen to be safe was the
+ * gap: the fields nobody named were never looked at, and a BigInt or a nested
+ * private path could ride through untouched.
+ */
+function assertEvidenceOccurrence(value: unknown, field: string): void {
+  assertExactObjectShape(value, field, SCHEMA.occurrence.required, SCHEMA.occurrence.optional)
+  assertContentAddress(value['id'], 'eo_', `${field}.id`)
+  assertContentAddress(value['factId'], 'sf_', `${field}.factId`)
+
+  const owner = value['owner']
+  assertExactObjectShape(owner, `${field}.owner`, SCHEMA.occurrenceOwner.required, SCHEMA.occurrenceOwner.optional)
+  for (const key of ['adapterId', 'strategy', 'sourceFile', 'adapterVersion']) {
+    const entry = (owner as Record<string, unknown>)[key]
+    if (entry === undefined) continue
+    assertShareSafe(entry, `${field}.owner.${key}`, (raw) => safeCandidateString(raw, `${field}.owner.${key}`))
+  }
+
+  for (const key of ['sourceFile', 'targetFile', 'siteKind', 'adapterEvidenceKey']) {
+    const entry = value[key]
+    if (entry === undefined) continue
+    assertShareSafe(entry, `${field}.${key}`, (raw) => safeCandidateString(raw, `${field}.${key}`))
+  }
+  for (const key of ['sourceRange', 'targetRange']) {
+    if (value[key] === undefined) continue
+    assertSourceRange(value[key], `${field}.${key}`)
+  }
+
+  // Provenance and confidence entries are intentionally extensible, so their
+  // keys cannot be closed. Every key and nested value is still validated as
+  // bounded canonical JSON, and every string is still held to share safety --
+  // extensible is not the same as unchecked, and nothing is silently dropped.
+  for (const key of ['provenance', 'confidenceObservations'] as const) {
+    const entries = value[key]
+    assertArray(entries, `${field}.${key}`)
+    for (const [index, entry] of entries.entries()) {
+      const at = `${field}.${key}[${index}]`
+      assertPlainJsonObject(entry, at)
+      assertCanonicalJsonValue(entry, at)
+      assertShareSafeStringsDeep(entry, at)
+    }
+  }
+
+  assertPlainJsonObject(value['metadata'], `${field}.metadata`)
+  assertCanonicalJsonValue(value['metadata'], `${field}.metadata`)
+  assertShareSafeStringsDeep(value['metadata'], `${field}.metadata`)
+}
+
+/** Every string anywhere inside an extensible payload is still share-safe. */
+function assertShareSafeStringsDeep(value: unknown, field: string): void {
+  if (typeof value === 'string') {
+    assertShareSafe(value, field, (raw) => safeCandidateString(raw, field))
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) assertShareSafeStringsDeep(entry, `${field}[${index}]`)
+    return
+  }
+  if (value === null || typeof value !== 'object') return
+  for (const [key, entry] of Object.entries(value)) {
+    assertShareSafe(key, `${field} key ${JSON.stringify(key)}`, (raw) => safeCandidateString(raw, field))
+    assertShareSafeStringsDeep(entry, `${field}.${key}`)
   }
 }
 
@@ -157,7 +305,7 @@ export function assertSerializerFacingRecord(
     }
   }
 
-  assertShareSafe(record['id'], `${field}.id`, (id) => safeCandidateString(id, `${field}.id`))
+  assertContentAddress(record['id'], ID_PREFIXES[kind], `${field}.id`)
   const multiplicity = assertSafeCount(record['multiplicity'], `${field}.multiplicity`)
   if (multiplicity < 1) {
     throw new GraphIntegrityInvariantError(`${field}.multiplicity must be at least 1`)
@@ -166,9 +314,7 @@ export function assertSerializerFacingRecord(
   assertVerificationTargets(record['verificationTargets'], `${field}.verificationTargets`)
 
   if (kind === 'unresolved' || kind === 'rejected') {
-    assertShareSafe(record['candidateFingerprint'], `${field}.candidateFingerprint`, (value) => (
-      safeCandidateString(value, `${field}.candidateFingerprint`)
-    ))
+    assertContentAddress(record['candidateFingerprint'], 'cf_', `${field}.candidateFingerprint`)
   }
 
   if (kind === 'unresolved') {
@@ -181,39 +327,46 @@ export function assertSerializerFacingRecord(
     }
     assertArray(record['occurrences'], `${field}.occurrences`)
     for (const [index, occurrence] of record['occurrences'].entries()) {
-      const at = `${field}.occurrences[${index}]`
-      assertPlainObject(occurrence, at)
-      // Occurrence references are opaque here, so every string they carry is
-      // held to the same share-safety rule as the rest of the record.
-      for (const [key, value] of Object.entries(occurrence)) {
-        if (typeof value !== 'string') continue
-        assertShareSafe(value, `${at}.${key}`, (raw) => safeCandidateString(raw, `${at}.${key}`))
-      }
+      assertEvidenceOccurrence(occurrence, `${field}.occurrences[${index}]`)
     }
     assertDetailRetention(record['occurrenceRetention'] as never, `${field}.occurrenceRetention`)
+
+    // The fingerprint is derived from exactly these three projections, so where
+    // the record is identifiable it can be rederived and compared rather than
+    // merely checked for shape. A record whose id disagrees with its own
+    // payload names a candidate it does not describe.
+    const projection = {
+      source: record['source'], target: record['target'], relation: record['relation'],
+    }
+    const identifiable = Object.values(projection).some((value) => typeof value === 'string')
+    if (identifiable) {
+      const rederived = candidateFingerprint({ ...projection, index: -1 } as never)
+      if (rederived !== record['candidateFingerprint']) {
+        throw new GraphIntegrityInvariantError(
+          `${field}.candidateFingerprint does not match its own source/target/relation projection`,
+        )
+      }
+    }
   }
 
   if (kind === 'rejected') {
-    assertPlainObject(record['sanitizedCandidate'], `${field}.sanitizedCandidate`)
-    for (const [key, value] of Object.entries(record['sanitizedCandidate'])) {
-      if (typeof value !== 'string') continue
-      assertShareSafe(value, `${field}.sanitizedCandidate.${key}`, (raw) => (
-        safeCandidateString(raw, `${field}.sanitizedCandidate.${key}`)
-      ))
-    }
+    // Intentionally free-form, so its keys cannot be closed -- but every key and
+    // every nested value at every depth is still bounded canonical JSON and
+    // still share-safe. Checking only top-level strings let a private path or a
+    // BigInt sit one level down and pass.
+    const projection = record['sanitizedCandidate']
+    assertPlainJsonObject(projection, `${field}.sanitizedCandidate`)
+    assertCanonicalJsonValue(projection, `${field}.sanitizedCandidate`)
+    assertShareSafeStringsDeep(projection, `${field}.sanitizedCandidate`)
   }
 
   if (kind === 'conflicting') {
     assertArray(record['candidateFingerprints'], `${field}.candidateFingerprints`)
     for (const [index, fingerprint] of record['candidateFingerprints'].entries()) {
-      assertShareSafe(fingerprint, `${field}.candidateFingerprints[${index}]`, (raw) => (
-        safeCandidateString(raw, `${field}.candidateFingerprints[${index}]`)
-      ))
+      assertContentAddress(fingerprint, 'cf_', `${field}.candidateFingerprints[${index}]`)
     }
     assertDetailRetention(record['fingerprintRetention'] as never, `${field}.fingerprintRetention`)
-    assertShareSafe(record['fingerprintSetDigest'], `${field}.fingerprintSetDigest`, (raw) => (
-      safeCandidateString(raw, `${field}.fingerprintSetDigest`)
-    ))
+    assertContentAddress(record['fingerprintSetDigest'], 'cs_', `${field}.fingerprintSetDigest`)
   }
 
   // Retention/array agreement, which the record-level owner already knows how
@@ -262,9 +415,33 @@ export function assertEndpointIdentityMatrixShape(
   }
 }
 
+/**
+ * Reason maps are closed vocabularies.
+ *
+ * An unknown key is not a harmless extra diagnostic: it is a reason no reader
+ * can interpret, carried as though the producer and the reader agreed on it.
+ *
+ * Their values are overlapping diagnostics and deliberately are NOT required to
+ * sum to any candidate or fact total -- one fact can carry several reasons.
+ */
 export function assertReasonFactCounts(counts: unknown, field = 'reasonFactCounts'): void {
-  assertPlainObject(counts, field)
+  assertPlainJsonObject(counts, field)
+  const known = new Set<string>(ENDPOINT_IDENTITY_REASONS)
   for (const [reason, count] of Object.entries(counts)) {
+    if (!known.has(reason)) {
+      throw new GraphIntegrityInvariantError(`${field} has unknown endpoint reason ${JSON.stringify(reason)}`)
+    }
+    if (count === undefined) continue
+    assertSafeCount(count, `${field}.${reason}`)
+  }
+}
+
+export function assertTerminalReasonCounts(counts: unknown, field = 'terminalReasonCounts'): void {
+  assertPlainJsonObject(counts, field)
+  for (const [reason, count] of Object.entries(counts)) {
+    if (!isTerminalIntegrityReason(reason)) {
+      throw new GraphIntegrityInvariantError(`${field} has unknown terminal reason ${JSON.stringify(reason)}`)
+    }
     if (count === undefined) continue
     assertSafeCount(count, `${field}.${reason}`)
   }
@@ -274,13 +451,13 @@ export function assertStorageAdmissionShape(
   admission: unknown,
   field = 'storageAdmission',
 ): void {
-  assertPlainObject(admission, field)
+  assertExactObjectShape(admission, field, SCHEMA.storageAdmission.required)
   const total = assertSafeCount(
     admission['unresolvedUnregisteredRelationCandidates'],
     `${field}.unresolvedUnregisteredRelationCandidates`,
   )
   const counts = admission['unregisteredRelationCounts']
-  assertPlainObject(counts, `${field}.unregisteredRelationCounts`)
+  assertPlainJsonObject(counts, `${field}.unregisteredRelationCounts`)
   let componentSum = 0
   for (const [relation, count] of Object.entries(counts)) {
     assertShareSafe(relation, `${field}.unregisteredRelationCounts key`, (raw) => safeScopeName(raw))
@@ -296,7 +473,7 @@ export function assertStorageAdmissionShape(
 }
 
 function assertTerminalCounts(counts: unknown, field = 'terminalCounts'): void {
-  assertPlainObject(counts, field)
+  assertPlainJsonObject(counts, field)
   for (const key of Object.keys(counts)) {
     if (!(CANDIDATE_TERMINAL_STATES as readonly string[]).includes(key)) {
       throw new GraphIntegrityInvariantError(`${field} has unknown terminal state ${JSON.stringify(key)}`)
@@ -310,6 +487,12 @@ function assertTerminalCounts(counts: unknown, field = 'terminalCounts'): void {
 export interface SerializerFacingIntegrityInput {
   readonly emittedCandidates: number
   readonly counts: unknown
+  /**
+   * Passed explicitly rather than merely deep frozen. Freezing an object stops
+   * it changing; it says nothing about whether its keys are a vocabulary any
+   * reader can interpret.
+   */
+  readonly terminalReasonCounts: unknown
   readonly facts: number
   readonly occurrences: number
   readonly endpointPairs: number
@@ -338,6 +521,7 @@ export function assertSerializerFacingIntegrity(input: SerializerFacingIntegrity
   assertSafeCount(input.emittedCandidates, 'emittedCandidates')
 
   assertTerminalCounts(input.counts)
+  assertTerminalReasonCounts(input.terminalReasonCounts)
   assertCandidateAccountingEquation(input.emittedCandidates, input.counts as never)
 
   assertEndpointIdentityMatrixShape(input.endpointIdentityMatrix, facts)
@@ -351,7 +535,7 @@ export function assertSerializerFacingIntegrity(input: SerializerFacingIntegrity
     ['conflicting', input.conflictRecords],
   ] as const
 
-  assertPlainObject(input.recordRetention, 'recordRetention')
+  assertExactObjectShape(input.recordRetention, 'recordRetention', SCHEMA.recordRetention.required)
   for (const [kind, records] of kinds) {
     assertArray(records, `${kind}Records`)
     const seen = new Set<string>()
@@ -376,12 +560,7 @@ export function assertSerializerFacingIntegrity(input: SerializerFacingIntegrity
       )
     }
   }
-  for (const key of Object.keys(input.recordRetention)) {
-    if (!['unresolved', 'rejected', 'conflicting'].includes(key)) {
-      throw new GraphIntegrityInvariantError(`recordRetention has unknown kind ${JSON.stringify(key)}`)
-    }
-  }
-
+  void DETAIL_RETENTION_KEYS
   assertArray(input.scopeFailures, 'scopeFailures')
   for (const [index, failure] of input.scopeFailures.entries()) {
     assertShareSafe(failure, `scopeFailures[${index}]`, (raw) => safeScopeName(raw))

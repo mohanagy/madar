@@ -119,6 +119,7 @@ export function finalizeNormalizedIntegritySnapshot(
   assertSerializerFacingIntegrity({
     emittedCandidates: accounting.emittedCandidates,
     counts: accounting.counts,
+    terminalReasonCounts: accounting.terminalReasonCounts,
     facts: input.facts,
     occurrences: input.occurrences,
     endpointPairs: input.endpointPairs,
