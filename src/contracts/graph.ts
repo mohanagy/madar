@@ -535,20 +535,34 @@ export class KnowledgeGraph {
   }
 
   addNode(id: string, attributes: GraphAttributes): void {
+    // Everything that can reject runs before anything is written, so a refused
+    // node leaves the graph and any attached snapshot exactly as they were.
     assertGraphAttributesWritable(attributes)
     const qualification = normalizeNodeEndpointIdentityQualification(attributes)
     const { endpointIdentity: _endpointIdentity, ...storedAttributes } = attributes
-    // Re-adding a node with identical attributes changes nothing, so it must
-    // not discard a snapshot that is still true. Anything else -- a new node,
-    // or changed attributes that would qualify a later fact's endpoints
-    // differently -- is a real state change.
+
+    // Sameness spans BOTH halves of node state. Endpoint qualification is
+    // stripped out of the stored attributes, so comparing only those reported
+    // "unchanged" for a node whose qualification had just changed, and the
+    // snapshot survived a real state change.
+    //
+    // Existing facts are untouched by this: a fact captures its endpoint
+    // qualification at admission, and the endpoint matrix and reason counts
+    // accumulate from that captured value rather than from this map. A
+    // qualification change therefore alters what FUTURE facts would record,
+    // which is a graph-state change the snapshot must not outlive, without
+    // making any already-stored fact disagree with the counters derived from it.
     const previous = this.nodeMap.get(id)
+    const canonical = (value: unknown): string => (
+      serializeCanonicalJson(value as CanonicalJson, { arraySemantics: 'ordered' })
+    )
     const unchanged = previous !== undefined
-      && serializeCanonicalJson(previous as unknown as CanonicalJson, { arraySemantics: 'ordered' })
-        === serializeCanonicalJson(storedAttributes as unknown as CanonicalJson, { arraySemantics: 'ordered' })
+      && canonical(previous) === canonical(storedAttributes)
+      && canonical(this.nodeEndpointIdentityMap.get(id)) === canonical(qualification)
+
     this.nodeMap.set(id, storedAttributes)
-    if (!unchanged) this.invalidateIntegritySnapshot()
     this.nodeEndpointIdentityMap.set(id, qualification)
+    if (!unchanged) this.invalidateIntegritySnapshot()
     if (!this.successorMap.has(id)) {
       this.successorMap.set(id, new Set())
     }

@@ -135,10 +135,16 @@ describe('R3-04 — every successful mutation invalidates the snapshot', () => {
 })
 
 describe('R3-04 — no-op operations keep a still-true snapshot', () => {
-  it('re-adding a node with identical attributes', () => {
+  it('re-adding a node with identical attributes and qualification', () => {
+    // Both halves of node state must be passed back. nodeAttributes() omits
+    // endpointIdentity by design, so re-adding its result alone drops the
+    // qualification -- a real change, and the V3 defect this test used to
+    // encode by asserting it was a no-op.
     const graph = withSnapshot()
-    const attributes = graph.nodeAttributes('alpha')
-    graph.addNode('alpha', { ...attributes })
+    graph.addNode('alpha', {
+      ...graph.nodeAttributes('alpha'),
+      endpointIdentity: graph.nodeEndpointIdentity('alpha'),
+    })
     expect(graph.normalizedIntegritySnapshot()).not.toBeNull()
   })
 
