@@ -1,7 +1,7 @@
 {
-  "repository_revision": "067f03ed39d6a8a35d07d879e676e216da5e70e8",
+  "repository_revision": "a135efca773f5b5f4690a7195e48ad5c44b18ef9",
   "repository_dirty": true,
-  "candidate_code_revision": "067f03ed39d6a8a35d07d879e676e216da5e70e8",
+  "candidate_code_revision": "a135efca773f5b5f4690a7195e48ad5c44b18ef9",
   "node_version": "v22.22.3",
   "npm_version": "12.0.2",
   "lockfile_checksum": "0144eb0ddf92f78c69f10089d0e0414485594966ff5be4f36f655c7aa5cff53e",
@@ -22,13 +22,13 @@
       "extraction_mode": "legacy",
       "command": "extract(files) -> buildFromJson(accounting: normalized_extraction_boundary)",
       "file_count": 199,
-      "inventory_checksum": "6ff7841567104f13d22b86ff2ecc867175b6f61da9af6e35bccbdacf49d596e4",
-      "extraction_input_checksum": "0c4d58fd4d43afdc8abe73a6c476e12185f7527800180d0a06d8d51ec42a04d8",
+      "inventory_checksum": "f3052843d1f6188b28f77951650a996195b0b69195b4b89eced829c45aa444fe",
+      "extraction_input_checksum": "0b242aa4c0904a639bd4cb1e88b77de1b6e66fcfeab6572c3e77625e00a11bd9",
       "cache_state": "no extractor cache used; extract() called directly on the inventory",
-      "raw_normalized_edges": 14985,
-      "emitted_candidates": 14985,
+      "raw_normalized_edges": 14983,
+      "emitted_candidates": 14983,
       "terminal_counts": {
-        "retained_new_fact": 14545,
+        "retained_new_fact": 14543,
         "retained_additional_occurrence": 24,
         "deliberately_merged_duplicate": 0,
         "unresolved": 416,
@@ -36,11 +36,11 @@
         "conflicting": 0,
         "invariant_failed": 0
       },
-      "terminal_sum": 14985,
+      "terminal_sum": 14983,
       "equation_balances": true,
-      "facts": 14545,
-      "occurrences": 14569,
-      "endpoint_pairs": 14443,
+      "facts": 14543,
+      "occurrences": 14567,
+      "endpoint_pairs": 14441,
       "record_retention": {
         "unresolved": {
           "retained": 416,
@@ -71,28 +71,28 @@
       "share_safety_hazards": 0,
       "hazard_examples": [],
       "finalized_snapshot": "attached, status=degraded",
-      "build_median_ms": 695.2,
+      "build_median_ms": 698.1,
       "build_samples_ms": [
-        767.3,
-        695.2,
-        691.4,
-        782.8,
-        673.2
+        753,
+        698.1,
+        690.6,
+        709.9,
+        674.8
       ],
-      "build_spread_ms": 109.6
+      "build_spread_ms": 78.2
     },
     {
       "corpus_scope": "src-plus-tests-js-ts",
       "extraction_mode": "legacy",
       "command": "extract(files) -> buildFromJson(accounting: normalized_extraction_boundary)",
       "file_count": 677,
-      "inventory_checksum": "444afc3ffb5f309f0a831b9d82192d5fe0a9f6afdedc440e1b04a858e0c24af8",
-      "extraction_input_checksum": "63f83cfcbf448e339558538206f80040116b8ee60a2c7249c675964e8076821e",
+      "inventory_checksum": "554923329e24ac4110a13b8ae5d5088431f5455c1e5fae6bb9c4b95c9b88f43d",
+      "extraction_input_checksum": "a634db602bda27b713ef8175b4187bb00e364e701337f827fe0f883c9eb0ec90",
       "cache_state": "no extractor cache used; extract() called directly on the inventory",
-      "raw_normalized_edges": 20884,
-      "emitted_candidates": 20884,
+      "raw_normalized_edges": 20882,
+      "emitted_candidates": 20882,
       "terminal_counts": {
-        "retained_new_fact": 19392,
+        "retained_new_fact": 19390,
         "retained_additional_occurrence": 27,
         "deliberately_merged_duplicate": 6,
         "unresolved": 1459,
@@ -100,11 +100,11 @@
         "conflicting": 0,
         "invariant_failed": 0
       },
-      "terminal_sum": 20884,
+      "terminal_sum": 20882,
       "equation_balances": true,
-      "facts": 19392,
-      "occurrences": 19419,
-      "endpoint_pairs": 19283,
+      "facts": 19390,
+      "occurrences": 19417,
+      "endpoint_pairs": 19281,
       "record_retention": {
         "unresolved": {
           "retained": 1000,
@@ -135,15 +135,15 @@
       "share_safety_hazards": 0,
       "hazard_examples": [],
       "finalized_snapshot": "attached, status=degraded",
-      "build_median_ms": 1024.2,
+      "build_median_ms": 982.2,
       "build_samples_ms": [
-        1054.6,
-        1024.2,
-        1041.6,
-        956,
-        986.9
+        982.2,
+        1008.3,
+        1047.3,
+        971.5,
+        969.1
       ],
-      "build_spread_ms": 98.6
+      "build_spread_ms": 78.2
     }
   ],
   "performance": {
@@ -151,5 +151,5 @@
     "qualifies": false,
     "note": "corpus-only run; not a qualification. Use --baseline-ref for an exact-head comparison."
   },
-  "peak_rss_mb": 1049
+  "peak_rss_mb": 1024
 }
