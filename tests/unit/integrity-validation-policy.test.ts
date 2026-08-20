@@ -12,6 +12,7 @@ const SNAPSHOT_SRC = 'src/contracts/graph-integrity-snapshot.ts'
 const VALIDATION_SRC = 'src/contracts/graph-integrity-validation.ts'
 const GRAPH_SRC = 'src/contracts/graph.ts'
 const MUTATIONS = 'scripts/verify-integrity-mutations.mjs'
+const RECEIPTS = 'scripts/verify-integrity-receipts.mjs'
 
 /**
  * Policy tests, not behaviour tests.
@@ -156,5 +157,46 @@ describe('policy — the invalidation seam is reachable from a real build', () =
     expect(graph.normalizedIntegritySnapshot()).not.toBeNull()
     graph.addNode('beta', {})
     expect(graph.normalizedIntegritySnapshot()).toBeNull()
+  })
+})
+
+describe('policy — the receipt command cannot qualify without an exact baseline', () => {
+  it('refuses to produce a receipt with no comparison at all', () => {
+    const source = read(RECEIPTS)
+    expect(source).toContain('refusing to produce a receipt with no comparison')
+    expect(source).toContain("argOf('--baseline-ref')")
+  })
+
+  it('resolves the baseline ref itself rather than trusting a prepared checkout', () => {
+    const source = read(RECEIPTS)
+    expect(source).toContain("execFileSync('git', ['worktree', 'add', '--detach'")
+    expect(source).toContain("execFileSync('npm', step,")
+    expect(source).toContain('refusing to measure a dirty tree')
+    expect(source).toContain('baseline ref cannot be resolved')
+  })
+
+  it('cleans the temporary worktree on success, failure and signal', () => {
+    const source = read(RECEIPTS)
+    expect(source).toContain("process.on('SIGINT', onSignal)")
+    expect(source).toContain("process.on('SIGTERM', onSignal)")
+    expect(source).toContain('} finally {')
+    expect(source).toContain("execFileSync('git', ['worktree', 'prune']")
+  })
+
+  it('requires both arms to receive identical input', () => {
+    const source = read(RECEIPTS)
+    expect(source).toContain('arms did not receive identical input')
+    expect(source).toContain('canonical_input_checksum')
+  })
+
+  it('runs arms in separate processes with counterbalanced order', () => {
+    const source = read(RECEIPTS)
+    expect(source).toContain("order: 'baseline-first'")
+    expect(source).toContain("order: 'candidate-first'")
+    expect(source).toContain('--measure-arm')
+  })
+
+  it('gates on wall time and RSS alike', () => {
+    expect(read(RECEIPTS)).toContain("ratio > 2 || rssRatio > 2 ? 'HUMAN_GATE'")
   })
 })
