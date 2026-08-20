@@ -19,7 +19,7 @@ import {
   safeEndpointIdentifier,
   type DurableCandidateRecord,
 } from './graph-integrity.js'
-import { candidateFingerprint, safeCandidateString, safeScopeName } from './graph-integrity-session.js'
+import { safeCandidateString, safeScopeName } from './graph-integrity-session.js'
 import { assertCanonicalJsonValue } from './graph-integrity-json.js'
 
 /**
@@ -314,6 +314,13 @@ export function assertSerializerFacingRecord(
   assertVerificationTargets(record['verificationTargets'], `${field}.verificationTargets`)
 
   if (kind === 'unresolved' || kind === 'rejected') {
+    // Format only, deliberately. The fingerprint keys on the ORIGINAL endpoints
+    // while the record carries their redacted display projection -- that split
+    // is the B1 fix, and it is what keeps omitting an unsafe hint from
+    // collapsing two distinct candidates onto one record. The record therefore
+    // does not contain the fingerprint's inputs, so rederiving it here is not
+    // possible, and a check that appeared to do so would only be testing
+    // corpora where nothing needed redacting.
     assertContentAddress(record['candidateFingerprint'], 'cf_', `${field}.candidateFingerprint`)
   }
 
@@ -331,22 +338,6 @@ export function assertSerializerFacingRecord(
     }
     assertDetailRetention(record['occurrenceRetention'] as never, `${field}.occurrenceRetention`)
 
-    // The fingerprint is derived from exactly these three projections, so where
-    // the record is identifiable it can be rederived and compared rather than
-    // merely checked for shape. A record whose id disagrees with its own
-    // payload names a candidate it does not describe.
-    const projection = {
-      source: record['source'], target: record['target'], relation: record['relation'],
-    }
-    const identifiable = Object.values(projection).some((value) => typeof value === 'string')
-    if (identifiable) {
-      const rederived = candidateFingerprint({ ...projection, index: -1 } as never)
-      if (rederived !== record['candidateFingerprint']) {
-        throw new GraphIntegrityInvariantError(
-          `${field}.candidateFingerprint does not match its own source/target/relation projection`,
-        )
-      }
-    }
   }
 
   if (kind === 'rejected') {

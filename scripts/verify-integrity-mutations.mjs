@@ -599,14 +599,13 @@ const MUTANTS = [
     ],
   },
   {
-    name: 'V1: stop rederiving the candidate fingerprint',
+    name: 'V1: stop checking the candidate fingerprint format',
     file: VALIDATION,
     test: TOTAL_VALIDATION,
-    from: '      const rederived = candidateFingerprint({ ...projection, index: -1 } as never)',
-    to: '      const rederived = record[\'candidateFingerprint\']',
+    from: '    assertContentAddress(record[\'candidateFingerprint\'], \'cf_\', `${field}.candidateFingerprint`)',
+    to: '    assertString(record[\'candidateFingerprint\'], `${field}.candidateFingerprint`)',
     expect: [
-      'V1 — identities must name what they claim to rederives the fingerprint and rejects one that disagrees with its own projection',
-      'V1 — identities must name what they claim to rejects a projection edited without its fingerprint',
+      'still rejects a fingerprint that is malformed rather than merely wrong',
     ],
   },
   {

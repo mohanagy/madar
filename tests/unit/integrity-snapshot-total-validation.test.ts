@@ -145,15 +145,18 @@ describe('V1 — identities must name what they claim to', () => {
     expectTyped(withRecord((r) => { r['candidateFingerprint'] = fingerprint }))
   })
 
-  it('rederives the fingerprint and rejects one that disagrees with its own projection', () => {
-    // A well-formed fingerprint that simply belongs to a different candidate.
-    expectTyped(withRecord((r) => {
-      r['candidateFingerprint'] = `cf_${'a'.repeat(64)}`
-    }))
+  it('does not claim to rederive a fingerprint it cannot rederive', () => {
+    // The fingerprint keys on the ORIGINAL endpoints; the record carries their
+    // redacted display projection. That split is the B1 fix. So a well-formed
+    // fingerprint belonging to a different candidate is NOT detectable here,
+    // and a check that appeared to detect it would only be passing on corpora
+    // where nothing needed redacting.
+    expect(withRecord((r) => { r['candidateFingerprint'] = `cf_${'a'.repeat(64)}` })())
+      .toBeDefined()
   })
 
-  it('rejects a projection edited without its fingerprint', () => {
-    expectTyped(withRecord((r) => { r['target'] = 'somewhere_else' }))
+  it('still rejects a fingerprint that is malformed rather than merely wrong', () => {
+    expectTyped(withRecord((r) => { r['candidateFingerprint'] = 'cf_short' }))
   })
 })
 
