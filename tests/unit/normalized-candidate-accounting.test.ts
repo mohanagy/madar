@@ -221,8 +221,11 @@ describe('partial discriminators are visible on retained facts', () => {
     const accounting = accountingFor(representativeExtraction())
     // `calls` is registered `partial`, so every retained calls candidate carries
     // the reason even though the fact was kept.
+    // One authority: the terminal reason count is the retained
+    // partial-discriminator count. A second counter derived from the same loop
+    // could disagree with it, and the status reason would then depend on which
+    // one a reader believed.
     expect(accounting.terminalReasonCounts.partial_discriminator).toBeGreaterThan(0)
-    expect(accounting.retainedPartialDiscriminators).toBeGreaterThan(0)
   })
 
   it('does not claim a partial discriminator for an endpoint-only relation', () => {
@@ -236,7 +239,7 @@ describe('partial discriminators are visible on retained facts', () => {
         { source: 'alpha', target: 'beta', relation: 'contains', confidence: 'EXTRACTED', source_file: 'src/alpha.ts' },
       ],
     })
-    expect(accounting.retainedPartialDiscriminators).toBe(0)
+    expect(accounting.terminalReasonCounts.partial_discriminator ?? 0).toBe(0)
   })
 })
 

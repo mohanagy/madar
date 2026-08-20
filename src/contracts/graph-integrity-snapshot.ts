@@ -143,7 +143,12 @@ export function finalizeNormalizedIntegritySnapshot(
       || accounting.recordRetention.rejected.truncated
       || accounting.recordRetention.conflicting.truncated,
     legacyArtifact: input.legacyArtifact === true,
-    retainedPartialDiscriminators: accounting.retainedPartialDiscriminators,
+    // One authority: the terminal reason count IS the retained
+    // partial-discriminator count. A second counter derived from the same loop
+    // let the status reason be driven by either value alone, so the two could
+    // disagree and the reason could appear or vanish depending on which was
+    // believed.
+    retainedPartialDiscriminators: accounting.terminalReasonCounts.partial_discriminator ?? 0,
   })
 
   if (

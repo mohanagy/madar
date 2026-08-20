@@ -124,7 +124,6 @@ export interface NormalizedAccountingResult {
     readonly rejected: DetailRetention
     readonly conflicting: DetailRetention
   }
-  readonly retainedPartialDiscriminators: number
   /** File- or adapter-scope failures that emitted no candidate. Not in the equation. */
   readonly scopeFailures: readonly string[]
   /** Exact accounting for `scopeFailures`, which is capped. */
@@ -364,7 +363,6 @@ export class NormalizedAccountingSession {
   private readonly disposedFingerprints = new Set<string>()
   private readonly scopeFailureSet = new Set<string>()
   private emitted = 0
-  private partialDiscriminators = 0
   private finalized = false
 
   /**
@@ -380,7 +378,6 @@ export class NormalizedAccountingSession {
     this.counts[disposition.state] += 1
     for (const reason of disposition.reasons ?? []) {
       this.reasonCounts.set(reason, (this.reasonCounts.get(reason) ?? 0) + 1)
-      if (reason === 'partial_discriminator') this.partialDiscriminators += 1
     }
     this.disposedFingerprints.add(fingerprint)
 
@@ -543,7 +540,6 @@ export class NormalizedAccountingSession {
         rejected: detailRetention(rejectedRecords.length, this.rejectedRetained.distinctTotal),
         conflicting: detailRetention(conflictRecords.length, this.conflictRetained.distinctTotal),
       }),
-      retainedPartialDiscriminators: this.partialDiscriminators,
       scopeFailures: boundedScopeFailures.values,
       scopeFailureRetention,
     })

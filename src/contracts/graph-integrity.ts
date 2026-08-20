@@ -349,6 +349,17 @@ export function assertExactObjectShape(
       throw new GraphIntegrityInvariantError(`${field} is missing required field ${JSON.stringify(key)}`)
     }
   }
+  // An own property whose value is `undefined` is NOT the same as an absent
+  // one. Absent is allowed where a schema says optional; present-and-undefined
+  // is what canonical JSON refuses, and it attached silently until now because
+  // every check treated the two as equivalent.
+  for (const key of Object.getOwnPropertyNames(value)) {
+    if ((value as Record<string, unknown>)[key] === undefined) {
+      throw new GraphIntegrityInvariantError(
+        `${field}.${key} is present with the value undefined; omit the property instead`,
+      )
+    }
+  }
 }
 
 export const DETAIL_RETENTION_KEYS = ['retained', 'total', 'omitted', 'truncated'] as const

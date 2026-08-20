@@ -414,23 +414,23 @@ export function assertEndpointIdentityMatrixShape(
 export function assertReasonFactCounts(counts: unknown, field = 'reasonFactCounts'): void {
   assertPlainJsonObject(counts, field)
   const known = new Set<string>(ENDPOINT_IDENTITY_REASONS)
-  for (const [reason, count] of Object.entries(counts)) {
+  for (const reason of Object.getOwnPropertyNames(counts)) {
     if (!known.has(reason)) {
       throw new GraphIntegrityInvariantError(`${field} has unknown endpoint reason ${JSON.stringify(reason)}`)
     }
-    if (count === undefined) continue
-    assertSafeCount(count, `${field}.${reason}`)
+    // Present-with-undefined is refused rather than skipped: it survives every
+    // numeric check by never reaching one, and then breaks serialization.
+    assertSafeCount(counts[reason], `${field}.${reason}`)
   }
 }
 
 export function assertTerminalReasonCounts(counts: unknown, field = 'terminalReasonCounts'): void {
   assertPlainJsonObject(counts, field)
-  for (const [reason, count] of Object.entries(counts)) {
+  for (const reason of Object.getOwnPropertyNames(counts)) {
     if (!isTerminalIntegrityReason(reason)) {
       throw new GraphIntegrityInvariantError(`${field} has unknown terminal reason ${JSON.stringify(reason)}`)
     }
-    if (count === undefined) continue
-    assertSafeCount(count, `${field}.${reason}`)
+    assertSafeCount(counts[reason], `${field}.${reason}`)
   }
 }
 
