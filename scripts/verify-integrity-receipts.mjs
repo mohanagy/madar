@@ -23,6 +23,19 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
+import {
+  createResourceRegistry,
+  directoryCleanup,
+  installSignalCoordinator,
+  worktreeCleanup,
+} from './lib/resource-registry.mjs'
+
+// One owner for every temporary resource this run creates, and exactly one
+// signal coordinator above it. No helper below installs its own.
+const REGISTRY = createResourceRegistry({
+  onWarning: (message) => console.error(`warning: ${message}`),
+})
+installSignalCoordinator(REGISTRY)
 
 const ROOT = process.cwd()
 const args = process.argv.slice(2)
@@ -169,23 +182,10 @@ async function withBaselineWorktree(ref, run) {
   }
 
   const dir = mkdtempSync(join(tmpdir(), 'madar-baseline-'))
-  const cleanup = () => {
-    try {
-      execFileSync('git', ['worktree', 'remove', '--force', dir], { cwd: ROOT, stdio: 'ignore' })
-    } catch {
-      // Already gone, or never registered.
-    }
-    rmSync(dir, { recursive: true, force: true })
-    try {
-      execFileSync('git', ['worktree', 'prune'], { cwd: ROOT, stdio: 'ignore' })
-    } catch {
-      // Nothing to prune.
-    }
-  }
-  // Registered before any work so an interrupt cannot leave the worktree behind.
-  const onSignal = () => { cleanup(); process.exit(130) }
-  process.on('SIGINT', onSignal)
-  process.on('SIGTERM', onSignal)
+  // Registered with the single owner before any work, so an interrupt at any
+  // point cleans this up along with everything else -- including resources
+  // owned by callers further out, which per-helper handlers could not reach.
+  const token = REGISTRY.register(`worktree ${ref} at ${dir}`, worktreeCleanup(ROOT, dir))
 
   try {
     execFileSync('git', ['worktree', 'add', '--detach', dir, resolved], { cwd: ROOT, stdio: 'ignore' })
@@ -209,9 +209,7 @@ async function withBaselineWorktree(ref, run) {
     // that depends on it was still running.
     return await run({ dir, sha: resolved })
   } finally {
-    process.off('SIGINT', onSignal)
-    process.off('SIGTERM', onSignal)
-    cleanup()
+    REGISTRY.release(token)
   }
 }
 
@@ -346,17 +344,26 @@ async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT,
     const { extract } = await loadPipeline(candidateDir)
     const shared = extract(files)
     const authority = inputAuthority(files)
-    const inputPath = join(mkdtempSync(join(tmpdir(), 'madar-input-')), 'extraction.json')
-    writeFileSync(inputPath, JSON.stringify(shared))
-    const inputChecksum = sha256(readFileSync(inputPath))
+    const inputDir = mkdtempSync(join(tmpdir(), 'madar-input-'))
+    const inputToken = REGISTRY.register(`shared input at ${inputDir}`, directoryCleanup(inputDir))
+    let sessions
+    let inputChecksum
+    try {
+      const inputPath = join(inputDir, 'extraction.json')
+      writeFileSync(inputPath, JSON.stringify(shared))
+      inputChecksum = sha256(readFileSync(inputPath))
 
-    // Two sessions with opposite starting arms, so ordering cannot favour
-    // either head.
-    const sessions = [
-      { order: 'baseline-first', base: runArm(baselineDir, scope, inputPath), head: runArm(candidateDir, scope, inputPath) },
-      { order: 'candidate-first', head: runArm(candidateDir, scope, inputPath), base: runArm(baselineDir, scope, inputPath) },
-    ]
-    rmSync(join(inputPath, '..'), { recursive: true, force: true })
+      // Two sessions with opposite starting arms, so ordering cannot favour
+      // either head.
+      sessions = [
+        { order: 'baseline-first', base: runArm(baselineDir, scope, inputPath), head: runArm(candidateDir, scope, inputPath) },
+        { order: 'candidate-first', head: runArm(candidateDir, scope, inputPath), base: runArm(baselineDir, scope, inputPath) },
+      ]
+    } finally {
+      // A throwing arm previously skipped this line entirely, because it was
+      // not in a finally.
+      REGISTRY.release(inputToken)
+    }
 
     for (const session of sessions) {
       if (session.base.inputChecksum !== session.head.inputChecksum) {
