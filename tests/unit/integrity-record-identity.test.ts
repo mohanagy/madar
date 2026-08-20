@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   CandidateRecordIdentityFactory,
   conflictFingerprintSetDigest,
+  conflictRecordIdentityPayload,
+  contentAddressOf,
   GraphIntegrityInvariantError,
   MAX_CONFLICT_FINGERPRINTS,
 } from '../../src/contracts/graph-integrity.js'
@@ -102,12 +104,22 @@ describe('V1-03 — the complete-set digest is rederived only when it is complet
     expect(validate(record, 'conflicting')).not.toThrow()
   })
 
-  it('rejects a wrong digest on an untruncated record', () => {
+  it('rejects a wrong digest even when the id was recomputed to match it', () => {
+    // Swapping the digest alone also breaks the id, so the id check would
+    // catch it and the digest check would never be exercised. A tamperer would
+    // recompute the id from the forged digest -- this does exactly that, so
+    // only the complete-set comparison can catch it.
     const record = conflicting(members)
-    const wrong = conflictFingerprintSetDigest([fingerprint('z')])
-    // The id is rebuilt so the failure is attributable to the digest, not to
-    // the id disagreeing as a side effect.
-    expectTyped(validate({ ...record, fingerprintSetDigest: wrong }, 'conflicting'))
+    const forged = conflictFingerprintSetDigest([fingerprint('z'), fingerprint('y')])
+    const consistentId = contentAddressOf('cc_', conflictRecordIdentityPayload({
+      fingerprintSetDigest: forged,
+      reasons: record['reasons'] as never,
+    }))
+    expectTyped(validate({
+      ...record,
+      fingerprintSetDigest: forged,
+      id: consistentId,
+    }, 'conflicting'))
   })
 
   it('does not rederive the digest from a truncated subset', () => {

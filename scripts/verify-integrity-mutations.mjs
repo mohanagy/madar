@@ -36,6 +36,8 @@ const GRAPH = 'src/contracts/graph.ts'
 const SNAPSHOT_SRC = 'src/contracts/graph-integrity-snapshot.ts'
 const VALIDATION = 'src/contracts/graph-integrity-validation.ts'
 const JSON_GUARDS = 'src/contracts/graph-integrity-json.ts'
+const GUARDS = 'scripts/lib/receipt-guards.mjs'
+const REGISTRY_SRC = 'scripts/lib/resource-registry.mjs'
 
 const SHARE_SAFETY = 'tests/unit/integrity-record-share-safety.test.ts'
 const ACCOUNTING = 'tests/unit/normalized-candidate-accounting.test.ts'
@@ -49,6 +51,11 @@ const IMMUTABILITY = 'tests/unit/integrity-snapshot-immutability.test.ts'
 const TOTAL_VALIDATION = 'tests/unit/integrity-snapshot-total-validation.test.ts'
 const RETENTION_SHAPE = 'tests/unit/detail-retention-shape.test.ts'
 const QUALIFICATION = 'tests/unit/endpoint-qualification-invalidation.test.ts'
+const CLOSED_SCHEMAS = 'tests/unit/integrity-closed-schemas.test.ts'
+const JSON_SAFETY = 'tests/unit/integrity-json-safety.test.ts'
+const RECORD_IDENTITY = 'tests/unit/integrity-record-identity.test.ts'
+const RECEIPT_GUARDS = 'tests/unit/receipt-exact-ref-guards.test.ts'
+const RECEIPT_CLEANUP = 'tests/unit/receipt-resource-cleanup.test.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -176,8 +183,8 @@ const MUTANTS = [
     name: 'B3: digest only the retained fingerprint slice',
     file: CONTRACTS,
     test: SHARE_SAFETY,
-    from: '      candidate_fingerprints: orderedCanonicalArray(complete),',
-    to: '      candidate_fingerprints: orderedCanonicalArray(complete.slice(0, MAX_CONFLICT_FINGERPRINTS)),',
+    from: '    const fingerprintSetDigest = conflictFingerprintSetDigest(complete)',
+    to: '    const fingerprintSetDigest = conflictFingerprintSetDigest(complete.slice(0, MAX_CONFLICT_FINGERPRINTS))',
     expect: [
       'B3 — finalization preserves retention truth and record identity changes identity when the complete set changes, even if the retained slice does not',
     ],
@@ -461,8 +468,8 @@ const MUTANTS = [
     from: '  if (sanitize(raw) !== raw) {',
     to: '  if (false) {',
     expect: [
+      'R1/R2-02 — an unsafe payload cannot be attached refuses a record carrying an absolute private path',
       'R1/R2-02 — an unsafe payload cannot be attached refuses an unsafe verification target even on an otherwise valid record',
-      'R1/R2-02 — an unsafe payload cannot be attached refuses a percent-encoded separator in a verification target',
     ],
   },
   {
@@ -578,16 +585,6 @@ const MUTANTS = [
     ],
   },
   {
-    name: 'V1: accept an unknown verification-target field',
-    file: VALIDATION,
-    test: TOTAL_VALIDATION,
-    from: '    assertExactObjectShape(target, at, SCHEMA.verificationTarget.required, SCHEMA.verificationTarget.optional)',
-    to: '    assertPlainJsonObject(target, at)',
-    expect: [
-      'V1 — closed schemas reject unknown fields rejects an unknown verification-target field',
-    ],
-  },
-  {
     name: 'V1: stop checking the record id format',
     file: VALIDATION,
     test: TOTAL_VALIDATION,
@@ -605,17 +602,8 @@ const MUTANTS = [
     from: '    assertContentAddress(record[\'candidateFingerprint\'], \'cf_\', `${field}.candidateFingerprint`)',
     to: '    assertString(record[\'candidateFingerprint\'], `${field}.candidateFingerprint`)',
     expect: [
-      'still rejects a fingerprint that is malformed rather than merely wrong',
-    ],
-  },
-  {
-    name: 'V1: accept an extra storage-admission field',
-    file: VALIDATION,
-    test: TOTAL_VALIDATION,
-    from: '  assertExactObjectShape(admission, field, SCHEMA.storageAdmission.required)',
-    to: '  assertPlainJsonObject(admission, field)',
-    expect: [
-      'V1 — closed schemas reject unknown fields rejects an unknown storage-admission field',
+      'V1 — identities must name what they claim to rejects a candidate fingerprint that has a wrong prefix',
+      'V1 — identities must name what they claim to rejects a candidate fingerprint that has a truncated hash',
     ],
   },
   {
@@ -650,6 +638,216 @@ const MUTANTS = [
       'a qualification change is a state change',
     ],
   },
+  {
+    name: 'M1: ignore an empty baseline ref',
+    file: GUARDS,
+    test: RECEIPT_GUARDS,
+    from: '  if (typeof ref !== \'string\' || ref.trim().length === 0) {',
+    to: '  if (false) {',
+    expect: [
+      'M1-05 — a baseline ref resolves to an exact commit or refuses refuses an empty ref rather than defaulting to HEAD',
+    ],
+  },
+  {
+    name: 'M1: resolve any baseline ref to HEAD',
+    file: GUARDS,
+    test: RECEIPT_GUARDS,
+    from: '      cwd: repoRoot, encoding: \'utf8\',\n    }).trim()',
+    to: '      cwd: repoRoot, encoding: \'utf8\',\n    }) && execFileSync(\'git\', [\'rev-parse\', \'HEAD\'], { cwd: repoRoot, encoding: \'utf8\' }).trim()',
+    expect: [
+      'M1-05 — a baseline ref resolves to an exact commit or refuses resolves a full sha',
+      'M1-05 — a baseline ref resolves to an exact commit or refuses resolves a short sha to the full commit',
+    ],
+  },
+  {
+    name: 'M1: allow a dirty tree',
+    file: GUARDS,
+    test: RECEIPT_GUARDS,
+    from: '  if (status.length > 0) {',
+    to: '  if (false) {',
+    expect: [
+      'M1-05 — a dirty tree cannot be measured refuses an uncommitted change',
+      'M1-05 — a dirty tree cannot be measured refuses an untracked file',
+    ],
+  },
+  {
+    name: 'M1: reuse a stale dist',
+    file: GUARDS,
+    test: RECEIPT_GUARDS,
+    from: '  if (!existsSync(entry)) {',
+    to: '  if (false) {',
+    expect: [
+      'M1-05 — an arm must carry its own build refuses a worktree with no dist rather than reusing another',
+    ],
+  },
+  {
+    name: 'M1: drop shared-input checksum equality',
+    file: GUARDS,
+    test: RECEIPT_GUARDS,
+    from: '  return session.base.inputChecksum === session.head.inputChecksum',
+    to: '  return true',
+    expect: [
+      'M1-05 — both arms must have received the same bytes rejects a session whose arms disagree',
+      'M1-05 — both arms must have received the same bytes invalidates rather than silently dropping a mismatched session',
+    ],
+  },
+  {
+    name: 'M1: stop recording invalidated sessions',
+    file: GUARDS,
+    test: RECEIPT_GUARDS,
+    from: '    else invalidated.push({ scope, order: session.order, reason: \'arms did not receive identical input\' })',
+    to: '',
+    expect: [
+      'M1-05 — both arms must have received the same bytes invalidates rather than silently dropping a mismatched session',
+      'M1-05 — both arms must have received the same bytes reports every mismatched session, not just the first',
+    ],
+  },
+  {
+    name: 'M1: allow both arms to be the same commit',
+    file: GUARDS,
+    test: RECEIPT_GUARDS,
+    from: '  if (baselineSha === candidateSha) {',
+    to: '  if (false) {',
+    expect: [
+      'M1-05 — the arms must be different commits refuses a baseline that resolved to the candidate head',
+    ],
+  },
+  {
+    name: 'E1: skip resource cleanup entirely',
+    file: REGISTRY_SRC,
+    test: RECEIPT_CLEANUP,
+    from: '      for (const id of [...resources.keys()].reverse()) releaseOne(id)',
+    to: '',
+    expect: [
+      'E1-04 — one registry cleans every resource removes a worktree registration and its directory on success',
+      'E1-04 — one registry cleans every resource cleans an inner resource even when an outer one was registered first',
+    ],
+  },
+  {
+    name: 'E1: exit before cleanup completes on a signal',
+    file: REGISTRY_SRC,
+    test: RECEIPT_CLEANUP,
+    from: '      registry.cleanupAll()\n      exit(code)',
+    to: '      exit(code)',
+    expect: [
+      'one signal coordinator, cleanup before exit',
+    ],
+  },
+  {
+    name: 'E1: stop cleaning after the first failure',
+    file: REGISTRY_SRC,
+    test: RECEIPT_CLEANUP,
+    from: '      onWarning(`cleanup failed for ${entry.description}: ${error?.message ?? String(error)}`)\n      return false',
+    to: '      throw error',
+    expect: [
+      'cleans remaining resources when one cleanup itself fails',
+    ],
+  },
+  {
+    name: 'V1-01: skip the prototype check',
+    file: CONTRACTS,
+    test: CLOSED_SCHEMAS,
+    from: '  if (prototype !== Object.prototype && prototype !== null) {',
+    to: '  if (false) {',
+    expect: [
+      'V1-01 — the unresolved record schema is closed rejects a custom prototype',
+      'V1-01 — the unresolved record schema is closed rejects a record copied onto a custom prototype',
+    ],
+  },
+  {
+    name: 'V1-01: ignore symbol keys',
+    file: CONTRACTS,
+    test: CLOSED_SCHEMAS,
+    from: '  if (Object.getOwnPropertySymbols(value).length > 0) {',
+    to: '  if (false) {',
+    expect: [
+      'V1-01 — the unresolved record schema is closed rejects a symbol key',
+      'V1-01 — the unresolved record schema is closed rejects a symbol-keyed record carrying a BigInt',
+    ],
+  },
+  {
+    name: 'V1-01: allow accessors',
+    file: CONTRACTS,
+    test: CLOSED_SCHEMAS,
+    from: '    if (descriptor.get !== undefined || descriptor.set !== undefined) {',
+    to: '    if (false) {',
+    expect: [
+      'V1-01 — the unresolved record schema is closed rejects a getter',
+      'V1-01 — the unresolved record schema is closed rejects a setter',
+    ],
+  },
+  {
+    name: 'V1-01: allow an unknown key',
+    file: CONTRACTS,
+    test: CLOSED_SCHEMAS,
+    from: '    if (!allowed.has(key)) {',
+    to: '    if (false) {',
+    expect: [
+      'V1-01 — the unresolved record schema is closed rejects an unknown field',
+      'V1-01 — the verification-target schema is closed rejects an unknown field',
+    ],
+  },
+  {
+    name: 'V1-01: allow a missing required key',
+    file: CONTRACTS,
+    test: CLOSED_SCHEMAS,
+    from: '    if (!Object.prototype.hasOwnProperty.call(value, key)) {',
+    to: '    if (false) {',
+    expect: [
+      'a missing required key is named',
+    ],
+  },
+  {
+    name: 'V1-02: permit a present undefined',
+    file: CONTRACTS,
+    test: JSON_SAFETY,
+    from: '    if ((value as Record<string, unknown>)[key] === undefined) {',
+    to: '    if (false) {',
+    expect: [
+      'a present undefined is not the same as an absent property',
+    ],
+  },
+  {
+    name: 'V1-03: stop rederiving the rejected record id',
+    file: VALIDATION,
+    test: RECORD_IDENTITY,
+    from: '    if (rederived !== record[\'id\']) {',
+    to: '    if (false) {',
+    expect: [
+      'V1-03 — a rejected record id is rederived from its own payload rejects a well-formed id belonging to a different record',
+      'V1-03 — a rejected record id is rederived from its own payload rejects a payload edited without its id',
+    ],
+  },
+  {
+    name: 'V1-03: stop rederiving the conflict record id',
+    file: VALIDATION,
+    test: RECORD_IDENTITY,
+    from: '    if (rederivedId !== record[\'id\']) {',
+    to: '    if (false) {',
+    expect: [
+      'V1-03 — a conflict record id is rederived from its own payload rejects a well-formed id belonging to a different conflict group',
+    ],
+  },
+  {
+    name: 'V1-03: stop rederiving the complete-set digest',
+    file: VALIDATION,
+    test: RECORD_IDENTITY,
+    from: '      if (rederivedDigest !== record[\'fingerprintSetDigest\']) {',
+    to: '      if (false) {',
+    expect: [
+      'rejects a wrong digest even when the id was recomputed',
+    ],
+  },
+  {
+    name: 'V1-03: rederive the digest from a truncated subset',
+    file: VALIDATION,
+    test: RECORD_IDENTITY,
+    from: '    if (!retention.truncated) {',
+    to: '    if (true) {',
+    expect: [
+      'does not rederive the digest from a truncated subset',
+    ],
+  },
 ]
 
 const DISCOVER = process.argv.includes('--discover')
@@ -664,8 +862,44 @@ let uncaught = 0
 let skipped = 0
 const originals = new Map()
 
+/**
+ * Puts every mutated file back and PROVES it went back.
+ *
+ * A run killed while blocked in a synchronous child can leave a mutation on
+ * disk: the signal handler is queued behind the blocking call, and if the whole
+ * process group dies it never runs at all. That happened, and the surviving
+ * mutation was invisible to a `git status` check because the file was untracked
+ * -- it showed as a new file, which is exactly what it was supposed to be.
+ *
+ * So restoration is verified by digest rather than assumed, and a file that
+ * cannot be restored is reported loudly instead of left for a later run to
+ * discover as a mysteriously red baseline.
+ */
 function restore() {
-  for (const [path, text] of originals) writeFileSync(resolve(ROOT, path), text)
+  const unrestored = []
+  for (const [path, text] of originals) {
+    const absolute = resolve(ROOT, path)
+    try {
+      writeFileSync(absolute, text)
+      if (readFileSync(absolute, 'utf8') !== text) unrestored.push(path)
+    } catch (error) {
+      unrestored.push(`${path} (${error?.message ?? String(error)})`)
+    }
+  }
+  if (unrestored.length > 0) {
+    console.error(`\nFAILED TO RESTORE: ${unrestored.join(', ')}`)
+    console.error('These files may still carry a mutation. Restore them before trusting any result.')
+  }
+  return unrestored
+}
+
+/** Every tracked and untracked source file this harness may have touched. */
+function assertNoResidualMutation() {
+  const residual = []
+  for (const [path, text] of originals) {
+    if (readFileSync(resolve(ROOT, path), 'utf8') !== text) residual.push(path)
+  }
+  return residual
 }
 process.on('exit', restore)
 for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -771,6 +1005,16 @@ if (DISCOVER) {
   writeFileSync(resolve(ROOT, 'node_modules/.cache/madar-mutation-discovery.json'), JSON.stringify(discovered, null, 2))
   console.log('\ndiscovery written')
   process.exit(0)
+}
+
+// Checked before any number is printed: a tree that still carries a mutation
+// cannot produce a trustworthy result, and reporting one anyway is how a
+// corrupted file became a mysteriously red baseline in a later run.
+const residual = assertNoResidualMutation()
+if (residual.length > 0) {
+  console.error(`\nRESIDUAL MUTATION IN: ${residual.join(', ')}`)
+  console.error('Refusing to report a result from a tree that still carries a mutation.')
+  process.exit(1)
 }
 
 console.log(`\ncaught=${caught} uncaught=${uncaught} skipped=${skipped}`)

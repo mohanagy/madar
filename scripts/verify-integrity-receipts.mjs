@@ -24,6 +24,13 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, w
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import {
+  assertCleanTree,
+  assertDistinctArms,
+  assertFreshBuild,
+  partitionSessions,
+  resolveExactCommit,
+} from './lib/receipt-guards.mjs'
+import {
   createResourceRegistry,
   directoryCleanup,
   installSignalCoordinator,
@@ -169,17 +176,8 @@ function scannerControl() {
  * evidence.
  */
 async function withBaselineWorktree(ref, run) {
-  let resolved
-  try {
-    resolved = execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], {
-      cwd: ROOT, encoding: 'utf8',
-    }).trim()
-  } catch {
-    throw new Error(`baseline ref cannot be resolved: ${ref}`)
-  }
-  if (execFileSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' }).trim().length > 0) {
-    throw new Error('refusing to measure a dirty tree; commit or stash first')
-  }
+  const resolved = resolveExactCommit(ROOT, ref)
+  assertCleanTree(ROOT)
 
   const dir = mkdtempSync(join(tmpdir(), 'madar-baseline-'))
   // Registered with the single owner before any work, so an interrupt at any
@@ -201,9 +199,7 @@ async function withBaselineWorktree(ref, run) {
         throw new Error(`baseline "npm ${step.join(' ')}" failed at ${resolved}:\n${detail}`)
       }
     }
-    if (!existsSync(join(dir, 'dist/src/pipeline/build.js'))) {
-      throw new Error(`baseline build at ${resolved} produced no dist`)
-    }
+    assertFreshBuild(dir, resolved)
     // Awaited inside the try, not returned from it: returning the promise
     // would let the finally below delete the worktree while the measurement
     // that depends on it was still running.
@@ -333,6 +329,8 @@ function runArm(dir, scope, inputPath) {
 }
 
 async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT, candidateSha = null) {
+  // Comparing a commit with itself is not a comparison.
+  assertDistinctArms(baselineSha, candidateSha ?? git('rev-parse', 'HEAD'))
   const comparisons = []
   const invalidated = []
   for (const scope of Object.keys(SCOPES)) {
@@ -365,12 +363,9 @@ async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT,
       REGISTRY.release(inputToken)
     }
 
-    for (const session of sessions) {
-      if (session.base.inputChecksum !== session.head.inputChecksum) {
-        invalidated.push({ scope, order: session.order, reason: 'arms did not receive identical input' })
-      }
-    }
-    const usable = sessions.filter((session) => session.base.inputChecksum === session.head.inputChecksum)
+    const partitioned = partitionSessions(sessions, scope)
+    invalidated.push(...partitioned.invalidated)
+    const usable = partitioned.usable
     if (usable.length === 0) {
       comparisons.push({ corpus_scope: scope, gate: 'NOT ESTABLISHED', reason: 'no session had identical input' })
       continue

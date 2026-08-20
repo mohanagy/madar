@@ -118,6 +118,30 @@ describe('mutation harness — only a named expected failure counts as caught', 
   })
 })
 
+describe('mutation harness — restoration is proven, not assumed', () => {
+  it('declares a restore that verifies the file came back', () => {
+    // A run killed while blocked in a synchronous child can leave a mutation on
+    // disk: the signal handler queues behind the blocking call and never runs
+    // if the process group dies. That happened. The surviving mutation was
+    // invisible to `git status` because the file was untracked -- git showed it
+    // as a new file, which is exactly what it was meant to be.
+    const source = readFileSync(join(process.cwd(), 'scripts/verify-integrity-mutations.mjs'), 'utf8')
+    expect(source).toContain('FAILED TO RESTORE')
+    expect(source).toContain('function assertNoResidualMutation()')
+  })
+
+  it('refuses to report a tally when a mutation survives', () => {
+    const source = readFileSync(join(process.cwd(), 'scripts/verify-integrity-mutations.mjs'), 'utf8')
+    const guard = source.indexOf('const residual = assertNoResidualMutation()')
+    expect(guard).toBeGreaterThan(-1)
+    const tally = source.indexOf('caught=${caught}')
+    // The refusal comes before the number, so a corrupted tree cannot produce
+    // a result at all.
+    expect(guard).toBeLessThan(tally)
+    expect(source.slice(guard, tally)).toContain('process.exit(1)')
+  })
+})
+
 describe('mutation harness — an already-red suite attributes nothing', () => {
   it('accepts a green baseline', () => {
     expect(baselineVerdict(usable(['a', 'passed']))).toBeNull()

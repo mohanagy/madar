@@ -255,3 +255,37 @@ describe('V1-01 — a sound payload still attaches', () => {
     expect(target.normalizedIntegritySnapshot()).toBeNull()
   })
 })
+
+describe('V1-01 — a missing required key is named, not merely rejected', () => {
+  it('reports which field is missing rather than failing further downstream', () => {
+    // Deleting a key is usually caught later, when something reads it and finds
+    // undefined. That produces a rejection but not an explanation. The
+    // required-key check is what turns it into a message naming the field.
+    const record = { ...unresolvedRecord() }
+    delete record['occurrenceRetention']
+    let thrown: unknown
+    try {
+      finalizeWith({ 'accounting.unresolvedRecords': [record] })()
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(GraphIntegrityInvariantError)
+    expect((thrown as Error).message).toContain('missing required field')
+    expect((thrown as Error).message).toContain('occurrenceRetention')
+  })
+
+  it('names a missing key on a nested closed schema too', () => {
+    const record = {
+      ...unresolvedRecord(),
+      verificationTargets: [{ file: 'src/alpha.ts' }],
+    }
+    let thrown: unknown
+    try {
+      finalizeWith({ 'accounting.unresolvedRecords': [record] })()
+    } catch (error) {
+      thrown = error
+    }
+    expect((thrown as Error).message).toContain('missing required field')
+    expect((thrown as Error).message).toContain('reason')
+  })
+})
