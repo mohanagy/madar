@@ -20,7 +20,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 
@@ -190,8 +190,20 @@ function withBaselineWorktree(ref, run) {
   try {
     execFileSync('git', ['worktree', 'add', '--detach', dir, resolved], { cwd: ROOT, stdio: 'ignore' })
     // The pinned lockfile and toolchain, not whatever happens to be installed.
-    execFileSync('npm', ['ci', '--ignore-scripts'], { cwd: dir, stdio: 'ignore' })
-    execFileSync('npm', ['run', 'build'], { cwd: dir, stdio: 'ignore' })
+    // Output is captured rather than discarded: a silently failed build leaves
+    // no dist and surfaces later as an unreadable module, which says nothing
+    // about what went wrong.
+    for (const step of [['ci'], ['run', 'build']]) {
+      try {
+        execFileSync('npm', step, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      } catch (error) {
+        const detail = `${error.stdout ?? ''}${error.stderr ?? ''}`.trim().split('\n').slice(-12).join('\n')
+        throw new Error(`baseline "npm ${step.join(' ')}" failed at ${resolved}:\n${detail}`)
+      }
+    }
+    if (!existsSync(join(dir, 'dist/src/pipeline/build.js'))) {
+      throw new Error(`baseline build at ${resolved} produced no dist`)
+    }
     return run({ dir, sha: resolved })
   } finally {
     process.off('SIGINT', onSignal)
