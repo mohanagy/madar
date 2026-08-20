@@ -33,6 +33,10 @@ const argOf = (flag) => {
 const OUT = argOf('--out')
 const BASELINE = argOf('--baseline')
 const BASELINE_REF = argOf('--baseline-ref')
+// Lets the tool audit any historical pair, including one that predates the
+// tool. Without it a past comparison could only be re-run by the very head
+// being audited, which is what made the previous claim unverifiable.
+const CANDIDATE_REF = argOf('--candidate-ref')
 // Corpus receipts alone are a legitimate product, but they are not a
 // qualification: the review found a receipt generated with no baseline being
 // read as one. Saying which you want is now mandatory.
@@ -315,7 +319,7 @@ function runArm(dir, scope, inputPath) {
   return JSON.parse(raw.trim().split('\n').pop())
 }
 
-async function comparePerformance(baselineDir, baselineSha) {
+async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT, candidateSha = null) {
   const comparisons = []
   const invalidated = []
   for (const scope of Object.keys(SCOPES)) {
@@ -323,7 +327,8 @@ async function comparePerformance(baselineDir, baselineSha) {
     // Extracted once, by a declared authority, and handed byte-identically to
     // both arms. Letting each arm extract its own input measures two different
     // extractions and calls the difference a build comparison.
-    const { extract } = await loadPipeline(ROOT)
+    // The declared authority is the candidate arm's extractor.
+    const { extract } = await loadPipeline(candidateDir)
     const shared = extract(files)
     const authority = inputAuthority(files)
     const inputPath = join(mkdtempSync(join(tmpdir(), 'madar-input-')), 'extraction.json')
@@ -333,8 +338,8 @@ async function comparePerformance(baselineDir, baselineSha) {
     // Two sessions with opposite starting arms, so ordering cannot favour
     // either head.
     const sessions = [
-      { order: 'baseline-first', base: runArm(baselineDir, scope, inputPath), head: runArm(ROOT, scope, inputPath) },
-      { order: 'candidate-first', head: runArm(ROOT, scope, inputPath), base: runArm(baselineDir, scope, inputPath) },
+      { order: 'baseline-first', base: runArm(baselineDir, scope, inputPath), head: runArm(candidateDir, scope, inputPath) },
+      { order: 'candidate-first', head: runArm(candidateDir, scope, inputPath), base: runArm(baselineDir, scope, inputPath) },
     ]
     rmSync(join(inputPath, '..'), { recursive: true, force: true })
 
@@ -358,14 +363,14 @@ async function comparePerformance(baselineDir, baselineSha) {
     comparisons.push({
       corpus_scope: scope,
       extraction_mode: 'legacy',
-      input_authority: authority.extractedBy,
+      input_authority: candidateSha ?? authority.extractedBy,
       input_files: files.length,
       inventory_checksum: checksum,
       canonical_input_checksum: inputChecksum,
       identical_input: true,
       cache_state: 'no extractor cache; one extraction shared by both arms',
       baseline_sha: baselineSha,
-      candidate_sha: git('rev-parse', 'HEAD'),
+      candidate_sha: candidateSha ?? git('rev-parse', 'HEAD'),
       sessions: usable.map((session) => ({
         order: session.order,
         baseline: {
@@ -402,7 +407,13 @@ let performance = {
   note: 'corpus-only run; not a qualification. Use --baseline-ref for an exact-head comparison.',
 }
 if (BASELINE_REF !== null) {
-  performance = await withBaselineWorktree(BASELINE_REF, async ({ dir, sha }) => comparePerformance(dir, sha))
+  performance = await withBaselineWorktree(BASELINE_REF, async (baseline) => (
+    CANDIDATE_REF === null
+      ? comparePerformance(baseline.dir, baseline.sha)
+      : withBaselineWorktree(CANDIDATE_REF, async (candidate) => (
+        comparePerformance(baseline.dir, baseline.sha, candidate.dir, candidate.sha)
+      ))
+  ))
 } else if (BASELINE !== null) {
   // Lower-level debugging path: an already-built checkout, not reproducible on
   // its own, so it is labelled as such in the receipt.
