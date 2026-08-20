@@ -8,6 +8,10 @@ import {
   assertDetailRetention,
   assertClosedPlainDataObject,
   assertPlainJsonObject,
+  conflictFingerprintSetDigest,
+  conflictRecordIdentityPayload,
+  contentAddressOf,
+  rejectedRecordIdentityPayload,
   type ClosedObjectSchema,
   assertRecordRetention,
   DETAIL_RETENTION_KEYS,
@@ -301,6 +305,12 @@ export function assertSerializerFacingRecord(
   // reading `kind` could not run caller code.
   assertClosedPlainDataObject(record, RECORD_SCHEMA[kind], field)
 
+  // Format for every kind. Rejected and conflict records additionally have
+  // their ids rederived below, because they retain their complete identity
+  // payloads. An unresolved record does not: its id keys on the ORIGINAL
+  // endpoints while the record carries their redacted display projection, so
+  // rederiving from what it carries would only agree on corpora where nothing
+  // needed redacting. That limit is stated rather than papered over.
   assertContentAddress(record['id'], ID_PREFIXES[kind], `${field}.id`)
   const multiplicity = assertSafeCount(record['multiplicity'], `${field}.multiplicity`)
   if (multiplicity < 1) {
@@ -345,6 +355,21 @@ export function assertSerializerFacingRecord(
     assertPlainJsonObject(projection, `${field}.sanitizedCandidate`)
     assertCanonicalJsonValue(projection, `${field}.sanitizedCandidate`)
     assertShareSafeStringsDeep(projection, `${field}.sanitizedCandidate`)
+
+    // A rejected record retains its entire identity payload -- fingerprint,
+    // sanitized candidate and reasons -- so its id is rederivable and is
+    // rederived. A well-formed id belonging to a different record is caught
+    // here; format alone would have accepted it.
+    const rederived = contentAddressOf('rc_', rejectedRecordIdentityPayload({
+      candidateFingerprint: record['candidateFingerprint'] as string,
+      sanitizedCandidate: projection,
+      reasons: record['reasons'] as never,
+    }))
+    if (rederived !== record['id']) {
+      throw new GraphIntegrityInvariantError(
+        `${field}.id does not match the record's own identity payload`,
+      )
+    }
   }
 
   if (kind === 'conflicting') {
@@ -354,6 +379,32 @@ export function assertSerializerFacingRecord(
     }
     assertDetailRetention(record['fingerprintRetention'] as never, `${field}.fingerprintRetention`)
     assertContentAddress(record['fingerprintSetDigest'], 'cs_', `${field}.fingerprintSetDigest`)
+
+    const retention = record['fingerprintRetention'] as { truncated: boolean }
+    if (!retention.truncated) {
+      // Untruncated means the carried array IS the complete set, so the
+      // complete-set digest is rederivable and is rederived. When truncated it
+      // is not, and claiming otherwise would rederive from a subset and call
+      // the disagreement a tamper.
+      const rederivedDigest = conflictFingerprintSetDigest(record['candidateFingerprints'] as readonly string[])
+      if (rederivedDigest !== record['fingerprintSetDigest']) {
+        throw new GraphIntegrityInvariantError(
+          `${field}.fingerprintSetDigest does not match its own complete fingerprint set`,
+        )
+      }
+    }
+
+    // The conflict id keys on the digest and the reasons, both of which the
+    // record retains whether or not the fingerprint list was capped.
+    const rederivedId = contentAddressOf('cc_', conflictRecordIdentityPayload({
+      fingerprintSetDigest: record['fingerprintSetDigest'] as string,
+      reasons: record['reasons'] as never,
+    }))
+    if (rederivedId !== record['id']) {
+      throw new GraphIntegrityInvariantError(
+        `${field}.id does not match the record's own identity payload`,
+      )
+    }
   }
 
   // Retention/array agreement, which the record-level owner already knows how

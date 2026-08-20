@@ -1043,6 +1043,54 @@ function assertMultiplicity(value: number, field: string): number {
  * discriminator would make two identical runs produce different artifacts,
  * which is exactly the determinism the receipt exists to support.
  */
+/**
+ * Pure identity owners, shared by construction and by validation.
+ *
+ * The snapshot boundary must be able to rederive a record id and compare it,
+ * and it must do that with the exact rules construction used. A second
+ * implementation of the payload shape or the hashing would drift, and the drift
+ * would show up as ids that disagree for no reason anyone could find.
+ */
+export function rejectedRecordIdentityPayload(input: {
+  readonly candidateFingerprint: string
+  readonly sanitizedCandidate: unknown
+  readonly reasons: readonly TerminalIntegrityReason[]
+}): Record<string, unknown> {
+  return {
+    record_kind: 'rejected',
+    reason_vocabulary_version: GRAPH_INTEGRITY_REASON_VOCABULARY_VERSION,
+    candidate_fingerprint: input.candidateFingerprint,
+    sanitized_candidate: input.sanitizedCandidate,
+    reasons: orderedCanonicalArray(input.reasons),
+  }
+}
+
+export function conflictRecordIdentityPayload(input: {
+  readonly fingerprintSetDigest: string
+  readonly reasons: readonly TerminalIntegrityReason[]
+}): Record<string, unknown> {
+  return {
+    record_kind: 'conflicting',
+    reason_vocabulary_version: GRAPH_INTEGRITY_REASON_VOCABULARY_VERSION,
+    // Identity keys on the digest of the whole set rather than the retained
+    // slice, so capping cannot merge two distinct conflict groups.
+    candidate_fingerprint_set: input.fingerprintSetDigest,
+    reasons: orderedCanonicalArray(input.reasons),
+  }
+}
+
+/** The digest over the COMPLETE canonical fingerprint set. */
+export function conflictFingerprintSetDigest(complete: readonly string[]): string {
+  return `cs_${sha256(canonicalJsonBytes({
+    candidate_fingerprints: orderedCanonicalArray(complete),
+  }))}`
+}
+
+/** Content address without the witness bookkeeping construction performs. */
+export function contentAddressOf(prefix: 'uc_' | 'rc_' | 'cc_', payload: Record<string, unknown>): string {
+  return `${prefix}${sha256(canonicalJsonBytes(payload))}`
+}
+
 export class CandidateRecordIdentityFactory {
   private readonly payloadByDigest = new Map<string, Buffer>()
   private readonly flattenedRoot: string | null
@@ -1134,13 +1182,11 @@ export class CandidateRecordIdentityFactory {
   createRejectedRecord(draft: RejectedRecordDraft): RejectedCandidateRecord {
     const reasons = sortedUniqueReasons(draft.reasons, 'rejected record reasons')
     const targets = normalizeVerificationTargets(draft.verificationTargets ?? [], 'rejected record', this.targetContext)
-    const identityPayload = {
-      record_kind: 'rejected',
-      reason_vocabulary_version: GRAPH_INTEGRITY_REASON_VOCABULARY_VERSION,
-      candidate_fingerprint: draft.candidateFingerprint,
-      sanitized_candidate: draft.sanitizedCandidate,
-      reasons: orderedCanonicalArray(reasons),
-    }
+    const identityPayload = rejectedRecordIdentityPayload({
+      candidateFingerprint: draft.candidateFingerprint,
+      sanitizedCandidate: draft.sanitizedCandidate,
+      reasons,
+    })
     const id = this.contentAddress('rc_', canonicalJsonBytes(identityPayload))
     return Object.freeze({
       kind: 'rejected' as const,
@@ -1164,18 +1210,9 @@ export class CandidateRecordIdentityFactory {
     const complete = Object.freeze([...new Set(draft.candidateFingerprints)].sort())
     // The digest covers the COMPLETE set, so identity and membership survive
     // even when the carried list is capped.
-    const fingerprintSetDigest = `cs_${sha256(canonicalJsonBytes({
-      candidate_fingerprints: orderedCanonicalArray(complete),
-    }))}`
+    const fingerprintSetDigest = conflictFingerprintSetDigest(complete)
     const bounded = boundDetail(complete, MAX_CONFLICT_FINGERPRINTS, (value) => value)
-    const identityPayload = {
-      record_kind: 'conflicting',
-      reason_vocabulary_version: GRAPH_INTEGRITY_REASON_VOCABULARY_VERSION,
-      // Identity keys on the digest of the whole set rather than the retained
-      // slice, so capping cannot merge two distinct conflict groups.
-      candidate_fingerprint_set: fingerprintSetDigest,
-      reasons: orderedCanonicalArray(reasons),
-    }
+    const identityPayload = conflictRecordIdentityPayload({ fingerprintSetDigest, reasons })
     const id = this.contentAddress('cc_', canonicalJsonBytes(identityPayload))
     return Object.freeze({
       kind: 'conflicting' as const,
