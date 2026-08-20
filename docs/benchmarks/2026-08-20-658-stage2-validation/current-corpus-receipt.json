@@ -1,0 +1,155 @@
+{
+  "repository_revision": "067f03ed39d6a8a35d07d879e676e216da5e70e8",
+  "repository_dirty": true,
+  "candidate_code_revision": "067f03ed39d6a8a35d07d879e676e216da5e70e8",
+  "node_version": "v22.22.3",
+  "npm_version": "12.0.2",
+  "lockfile_checksum": "0144eb0ddf92f78c69f10089d0e0414485594966ff5be4f36f655c7aa5cff53e",
+  "platform": "darwin-arm64",
+  "supported_extraction_modes": {
+    "legacy": "measured below",
+    "spi": "not measured: the extraction handed to the normalized boundary in spi and auto modes is assembled inside generate() by unexported merge and node-precedence logic. Reproducing that assembly here would measure a reimplementation rather than production, so no spi receipt is fabricated. Measuring it requires exporting that assembly, which is out of scope for #658.",
+    "auto": "not measured: same reason as spi."
+  },
+  "scanner_control": {
+    "planted": 5,
+    "detected": 5,
+    "passes": true
+  },
+  "receipts": [
+    {
+      "corpus_scope": "src-only",
+      "extraction_mode": "legacy",
+      "command": "extract(files) -> buildFromJson(accounting: normalized_extraction_boundary)",
+      "file_count": 199,
+      "inventory_checksum": "6ff7841567104f13d22b86ff2ecc867175b6f61da9af6e35bccbdacf49d596e4",
+      "extraction_input_checksum": "0c4d58fd4d43afdc8abe73a6c476e12185f7527800180d0a06d8d51ec42a04d8",
+      "cache_state": "no extractor cache used; extract() called directly on the inventory",
+      "raw_normalized_edges": 14985,
+      "emitted_candidates": 14985,
+      "terminal_counts": {
+        "retained_new_fact": 14545,
+        "retained_additional_occurrence": 24,
+        "deliberately_merged_duplicate": 0,
+        "unresolved": 416,
+        "rejected": 0,
+        "conflicting": 0,
+        "invariant_failed": 0
+      },
+      "terminal_sum": 14985,
+      "equation_balances": true,
+      "facts": 14545,
+      "occurrences": 14569,
+      "endpoint_pairs": 14443,
+      "record_retention": {
+        "unresolved": {
+          "retained": 416,
+          "total": 416,
+          "omitted": 0,
+          "truncated": false
+        },
+        "rejected": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        },
+        "conflicting": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        }
+      },
+      "scope_failure_retention": {
+        "retained": 0,
+        "total": 0,
+        "omitted": 0,
+        "truncated": false
+      },
+      "verification_targets": 416,
+      "share_safety_hazards": 0,
+      "hazard_examples": [],
+      "finalized_snapshot": "attached, status=degraded",
+      "build_median_ms": 695.2,
+      "build_samples_ms": [
+        767.3,
+        695.2,
+        691.4,
+        782.8,
+        673.2
+      ],
+      "build_spread_ms": 109.6
+    },
+    {
+      "corpus_scope": "src-plus-tests-js-ts",
+      "extraction_mode": "legacy",
+      "command": "extract(files) -> buildFromJson(accounting: normalized_extraction_boundary)",
+      "file_count": 677,
+      "inventory_checksum": "444afc3ffb5f309f0a831b9d82192d5fe0a9f6afdedc440e1b04a858e0c24af8",
+      "extraction_input_checksum": "63f83cfcbf448e339558538206f80040116b8ee60a2c7249c675964e8076821e",
+      "cache_state": "no extractor cache used; extract() called directly on the inventory",
+      "raw_normalized_edges": 20884,
+      "emitted_candidates": 20884,
+      "terminal_counts": {
+        "retained_new_fact": 19392,
+        "retained_additional_occurrence": 27,
+        "deliberately_merged_duplicate": 6,
+        "unresolved": 1459,
+        "rejected": 0,
+        "conflicting": 0,
+        "invariant_failed": 0
+      },
+      "terminal_sum": 20884,
+      "equation_balances": true,
+      "facts": 19392,
+      "occurrences": 19419,
+      "endpoint_pairs": 19283,
+      "record_retention": {
+        "unresolved": {
+          "retained": 1000,
+          "total": 1459,
+          "omitted": 459,
+          "truncated": true
+        },
+        "rejected": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        },
+        "conflicting": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        }
+      },
+      "scope_failure_retention": {
+        "retained": 0,
+        "total": 0,
+        "omitted": 0,
+        "truncated": false
+      },
+      "verification_targets": 1000,
+      "share_safety_hazards": 0,
+      "hazard_examples": [],
+      "finalized_snapshot": "attached, status=degraded",
+      "build_median_ms": 1024.2,
+      "build_samples_ms": [
+        1054.6,
+        1024.2,
+        1041.6,
+        956,
+        986.9
+      ],
+      "build_spread_ms": 98.6
+    }
+  ],
+  "performance": {
+    "baseline": "not supplied",
+    "qualifies": false,
+    "note": "corpus-only run; not a qualification. Use --baseline-ref for an exact-head comparison."
+  },
+  "peak_rss_mb": 1049
+}

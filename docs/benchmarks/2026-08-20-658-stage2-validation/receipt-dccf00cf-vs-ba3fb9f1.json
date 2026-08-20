@@ -1,0 +1,310 @@
+{
+  "repository_revision": "5bc50adf3908c3759ad5aa1e82c37469aaaf40d5",
+  "repository_dirty": false,
+  "candidate_code_revision": "5bc50adf3908c3759ad5aa1e82c37469aaaf40d5",
+  "node_version": "v22.22.3",
+  "npm_version": "12.0.2",
+  "lockfile_checksum": "0144eb0ddf92f78c69f10089d0e0414485594966ff5be4f36f655c7aa5cff53e",
+  "platform": "darwin-arm64",
+  "supported_extraction_modes": {
+    "legacy": "measured below",
+    "spi": "not measured: the extraction handed to the normalized boundary in spi and auto modes is assembled inside generate() by unexported merge and node-precedence logic. Reproducing that assembly here would measure a reimplementation rather than production, so no spi receipt is fabricated. Measuring it requires exporting that assembly, which is out of scope for #658.",
+    "auto": "not measured: same reason as spi."
+  },
+  "scanner_control": {
+    "planted": 5,
+    "detected": 5,
+    "passes": true
+  },
+  "receipts": [
+    {
+      "corpus_scope": "src-only",
+      "extraction_mode": "legacy",
+      "command": "extract(files) -> buildFromJson(accounting: normalized_extraction_boundary)",
+      "file_count": 199,
+      "inventory_checksum": "6ff7841567104f13d22b86ff2ecc867175b6f61da9af6e35bccbdacf49d596e4",
+      "extraction_input_checksum": "0c4d58fd4d43afdc8abe73a6c476e12185f7527800180d0a06d8d51ec42a04d8",
+      "cache_state": "no extractor cache used; extract() called directly on the inventory",
+      "raw_normalized_edges": 14985,
+      "emitted_candidates": 14985,
+      "terminal_counts": {
+        "retained_new_fact": 14545,
+        "retained_additional_occurrence": 24,
+        "deliberately_merged_duplicate": 0,
+        "unresolved": 416,
+        "rejected": 0,
+        "conflicting": 0,
+        "invariant_failed": 0
+      },
+      "terminal_sum": 14985,
+      "equation_balances": true,
+      "facts": 14545,
+      "occurrences": 14569,
+      "endpoint_pairs": 14443,
+      "record_retention": {
+        "unresolved": {
+          "retained": 416,
+          "total": 416,
+          "omitted": 0,
+          "truncated": false
+        },
+        "rejected": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        },
+        "conflicting": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        }
+      },
+      "scope_failure_retention": {
+        "retained": 0,
+        "total": 0,
+        "omitted": 0,
+        "truncated": false
+      },
+      "verification_targets": 416,
+      "share_safety_hazards": 0,
+      "hazard_examples": [],
+      "finalized_snapshot": "attached, status=degraded",
+      "build_median_ms": 698.4,
+      "build_samples_ms": [
+        764.5,
+        687.1,
+        704.1,
+        679.7,
+        698.4
+      ],
+      "build_spread_ms": 84.8
+    },
+    {
+      "corpus_scope": "src-plus-tests-js-ts",
+      "extraction_mode": "legacy",
+      "command": "extract(files) -> buildFromJson(accounting: normalized_extraction_boundary)",
+      "file_count": 677,
+      "inventory_checksum": "3d3a7df182252a0954387be858fec38b1c6bf5ab0b1f9202a9ecfe2efee23cc2",
+      "extraction_input_checksum": "59711ee74629f8d7fb3e2fa14afc65c994cced888cf8a3a4f056c74e8ab7e8e4",
+      "cache_state": "no extractor cache used; extract() called directly on the inventory",
+      "raw_normalized_edges": 20884,
+      "emitted_candidates": 20884,
+      "terminal_counts": {
+        "retained_new_fact": 19392,
+        "retained_additional_occurrence": 27,
+        "deliberately_merged_duplicate": 6,
+        "unresolved": 1459,
+        "rejected": 0,
+        "conflicting": 0,
+        "invariant_failed": 0
+      },
+      "terminal_sum": 20884,
+      "equation_balances": true,
+      "facts": 19392,
+      "occurrences": 19419,
+      "endpoint_pairs": 19283,
+      "record_retention": {
+        "unresolved": {
+          "retained": 1000,
+          "total": 1459,
+          "omitted": 459,
+          "truncated": true
+        },
+        "rejected": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        },
+        "conflicting": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        }
+      },
+      "scope_failure_retention": {
+        "retained": 0,
+        "total": 0,
+        "omitted": 0,
+        "truncated": false
+      },
+      "verification_targets": 1000,
+      "share_safety_hazards": 0,
+      "hazard_examples": [],
+      "finalized_snapshot": "attached, status=degraded",
+      "build_median_ms": 1014.6,
+      "build_samples_ms": [
+        1036.1,
+        1014.6,
+        1070.6,
+        984.6,
+        961.1
+      ],
+      "build_spread_ms": 109.4
+    }
+  ],
+  "performance": {
+    "baseline_revision": "dccf00cf95b3d0ba043f71197815307060b5a4f8",
+    "comparisons": [
+      {
+        "corpus_scope": "src-only",
+        "extraction_mode": "legacy",
+        "input_authority": "ba3fb9f17a2a3aa7bbb9f91bd8262770a139ce9e",
+        "input_files": 199,
+        "inventory_checksum": "6ff7841567104f13d22b86ff2ecc867175b6f61da9af6e35bccbdacf49d596e4",
+        "canonical_input_checksum": "0c4d58fd4d43afdc8abe73a6c476e12185f7527800180d0a06d8d51ec42a04d8",
+        "identical_input": true,
+        "cache_state": "no extractor cache; one extraction shared by both arms",
+        "baseline_sha": "dccf00cf95b3d0ba043f71197815307060b5a4f8",
+        "candidate_sha": "ba3fb9f17a2a3aa7bbb9f91bd8262770a139ce9e",
+        "sessions": [
+          {
+            "order": "baseline-first",
+            "baseline": {
+              "samples": [
+                728.3,
+                655.2,
+                724.3,
+                714,
+                672.1
+              ],
+              "medianMs": 714,
+              "spreadMs": 73.1,
+              "peakRssMb": 682,
+              "emittedCandidates": 14985
+            },
+            "candidate": {
+              "samples": [
+                734.5,
+                654.9,
+                711.4,
+                754,
+                684.6
+              ],
+              "medianMs": 711.4,
+              "spreadMs": 99.1,
+              "peakRssMb": 680,
+              "emittedCandidates": 14985
+            }
+          },
+          {
+            "order": "candidate-first",
+            "baseline": {
+              "samples": [
+                721.8,
+                649.3,
+                665.8,
+                640.2,
+                675.4
+              ],
+              "medianMs": 665.8,
+              "spreadMs": 81.6,
+              "peakRssMb": 677,
+              "emittedCandidates": 14985
+            },
+            "candidate": {
+              "samples": [
+                736.3,
+                649,
+                675.3,
+                644.2,
+                799
+              ],
+              "medianMs": 675.3,
+              "spreadMs": 154.8,
+              "peakRssMb": 676,
+              "emittedCandidates": 14985
+            }
+          }
+        ],
+        "baseline_median_ms": 665.8,
+        "candidate_median_ms": 675.3,
+        "ratio": 1.014,
+        "rss_ratio": 0.997,
+        "gate": "within budget"
+      },
+      {
+        "corpus_scope": "src-plus-tests-js-ts",
+        "extraction_mode": "legacy",
+        "input_authority": "ba3fb9f17a2a3aa7bbb9f91bd8262770a139ce9e",
+        "input_files": 677,
+        "inventory_checksum": "3d3a7df182252a0954387be858fec38b1c6bf5ab0b1f9202a9ecfe2efee23cc2",
+        "canonical_input_checksum": "59711ee74629f8d7fb3e2fa14afc65c994cced888cf8a3a4f056c74e8ab7e8e4",
+        "identical_input": true,
+        "cache_state": "no extractor cache; one extraction shared by both arms",
+        "baseline_sha": "dccf00cf95b3d0ba043f71197815307060b5a4f8",
+        "candidate_sha": "ba3fb9f17a2a3aa7bbb9f91bd8262770a139ce9e",
+        "sessions": [
+          {
+            "order": "baseline-first",
+            "baseline": {
+              "samples": [
+                993.8,
+                930.7,
+                921.9,
+                964.2,
+                920.4
+              ],
+              "medianMs": 930.7,
+              "spreadMs": 73.3,
+              "peakRssMb": 889,
+              "emittedCandidates": 20884
+            },
+            "candidate": {
+              "samples": [
+                1030.4,
+                946.3,
+                915.1,
+                958.2,
+                961
+              ],
+              "medianMs": 958.2,
+              "spreadMs": 115.2,
+              "peakRssMb": 890,
+              "emittedCandidates": 20884
+            }
+          },
+          {
+            "order": "candidate-first",
+            "baseline": {
+              "samples": [
+                1003.7,
+                952.1,
+                917.5,
+                937.8,
+                971.8
+              ],
+              "medianMs": 952.1,
+              "spreadMs": 86.2,
+              "peakRssMb": 887,
+              "emittedCandidates": 20884
+            },
+            "candidate": {
+              "samples": [
+                1014.8,
+                955.1,
+                922.7,
+                949.3,
+                900.7
+              ],
+              "medianMs": 949.3,
+              "spreadMs": 114.2,
+              "peakRssMb": 886,
+              "emittedCandidates": 20884
+            }
+          }
+        ],
+        "baseline_median_ms": 930.7,
+        "candidate_median_ms": 949.3,
+        "ratio": 1.02,
+        "rss_ratio": 1.001,
+        "gate": "within budget"
+      }
+    ],
+    "invalidated_runs": []
+  },
+  "peak_rss_mb": 1293
+}
