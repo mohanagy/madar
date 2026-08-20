@@ -288,12 +288,39 @@ export function assertPlainJsonObject(
   if (Object.getOwnPropertySymbols(value).length > 0) {
     throw new GraphIntegrityInvariantError(`${field} must not carry symbol keys`)
   }
+  // Descriptors are inspected rather than values read. Invoking a getter in
+  // order to discover that it is a getter runs caller code inside validation --
+  // and a getter that throws would escape as a raw TypeError from a validator
+  // whose whole contract is that it throws typed invariants.
   for (const key of Object.getOwnPropertyNames(value)) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key)
-    if (descriptor?.get !== undefined || descriptor?.set !== undefined) {
+    if (descriptor === undefined) continue
+    if (descriptor.get !== undefined || descriptor.set !== undefined) {
       throw new GraphIntegrityInvariantError(`${field}.${key} must be a data property, not an accessor`)
     }
+    if (!descriptor.enumerable) {
+      // Invisible to JSON, visible to code: validator and serializer would
+      // disagree about what the object contains.
+      throw new GraphIntegrityInvariantError(`${field}.${key} must be enumerable`)
+    }
   }
+}
+
+/**
+ * The canonical closed-shape gate: a plain data object carrying exactly the keys
+ * its schema declares, checked before any of those keys is read.
+ */
+export interface ClosedObjectSchema {
+  readonly required: readonly string[]
+  readonly optional?: readonly string[]
+}
+
+export function assertClosedPlainDataObject(
+  value: unknown,
+  schema: ClosedObjectSchema,
+  field: string,
+): asserts value is Record<string, unknown> {
+  assertExactObjectShape(value, field, schema.required, schema.optional ?? [])
 }
 
 /**

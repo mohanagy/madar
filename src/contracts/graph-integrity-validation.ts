@@ -6,8 +6,9 @@ import {
 import {
   assertCandidateAccountingEquation,
   assertDetailRetention,
-  assertExactObjectShape,
+  assertClosedPlainDataObject,
   assertPlainJsonObject,
+  type ClosedObjectSchema,
   assertRecordRetention,
   DETAIL_RETENTION_KEYS,
   CANDIDATE_TERMINAL_STATES,
@@ -41,11 +42,6 @@ import { assertCanonicalJsonValue } from './graph-integrity-json.js'
  *    the first, and the drift would be invisible until something leaked.
  */
 
-function assertPlainObject(value: unknown, field: string): asserts value is Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new GraphIntegrityInvariantError(`${field} must be an object`)
-  }
-}
 
 function assertArray(value: unknown, field: string): asserts value is readonly unknown[] {
   if (!Array.isArray(value)) {
@@ -131,7 +127,7 @@ const SCHEMA = {
 } as const
 
 function assertSourcePosition(value: unknown, field: string): { line: number; column: number } {
-  assertExactObjectShape(value, field, SCHEMA.sourcePosition.required)
+  assertClosedPlainDataObject(value, SCHEMA.sourcePosition, field)
   return {
     line: assertSafeCount(value['line'], `${field}.line`),
     column: assertSafeCount(value['column'], `${field}.column`),
@@ -139,7 +135,7 @@ function assertSourcePosition(value: unknown, field: string): { line: number; co
 }
 
 function assertSourceRange(value: unknown, field: string): void {
-  assertExactObjectShape(value, field, SCHEMA.sourceRange.required)
+  assertClosedPlainDataObject(value, SCHEMA.sourceRange, field)
   const start = assertSourcePosition(value['start'], `${field}.start`)
   const end = assertSourcePosition(value['end'], `${field}.end`)
   // A range that ends before it starts names no region, and a reader following
@@ -151,23 +147,25 @@ function assertSourceRange(value: unknown, field: string): void {
   }
 }
 
-const RECORD_FIELDS = {
-  unresolved: new Set([
-    'kind', 'id', 'multiplicity', 'reasons', 'verificationTargets',
-    'candidateFingerprint', 'source', 'target', 'relation',
-    'occurrences', 'occurrenceRetention',
-  ]),
-  rejected: new Set([
-    'kind', 'id', 'multiplicity', 'reasons', 'verificationTargets',
-    'candidateFingerprint', 'sanitizedCandidate',
-  ]),
-  conflicting: new Set([
-    'kind', 'id', 'multiplicity', 'reasons', 'verificationTargets',
-    'candidateFingerprints', 'fingerprintRetention', 'fingerprintSetDigest',
-  ]),
-} as const
+const RECORD_SCHEMA = {
+  unresolved: {
+    required: ['kind', 'id', 'multiplicity', 'reasons', 'verificationTargets',
+      'candidateFingerprint', 'occurrences', 'occurrenceRetention'],
+    optional: ['source', 'target', 'relation'],
+  },
+  rejected: {
+    required: ['kind', 'id', 'multiplicity', 'reasons', 'verificationTargets',
+      'candidateFingerprint', 'sanitizedCandidate'],
+    optional: [],
+  },
+  conflicting: {
+    required: ['kind', 'id', 'multiplicity', 'reasons', 'verificationTargets',
+      'candidateFingerprints', 'fingerprintRetention', 'fingerprintSetDigest'],
+    optional: [],
+  },
+} as const satisfies Record<string, ClosedObjectSchema>
 
-type RecordKind = keyof typeof RECORD_FIELDS
+type RecordKind = keyof typeof RECORD_SCHEMA
 
 function assertReasons(value: unknown, field: string): void {
   assertArray(value, field)
@@ -192,7 +190,7 @@ function assertVerificationTargets(value: unknown, field: string): void {
   for (const [index, target] of value.entries()) {
     const at = `${field}[${index}]`
     // Exact shape: a target with an unknown field is a field nobody validated.
-    assertExactObjectShape(target, at, SCHEMA.verificationTarget.required, SCHEMA.verificationTarget.optional)
+    assertClosedPlainDataObject(target, SCHEMA.verificationTarget, at)
     // A stored target is already repository-relative, so re-normalizing it with
     // no root must be a no-op. Anything absolute, encoded, disguised or
     // escaping fails here rather than reaching a reader.
@@ -215,12 +213,12 @@ function assertVerificationTargets(value: unknown, field: string): void {
  * private path could ride through untouched.
  */
 function assertEvidenceOccurrence(value: unknown, field: string): void {
-  assertExactObjectShape(value, field, SCHEMA.occurrence.required, SCHEMA.occurrence.optional)
+  assertClosedPlainDataObject(value, SCHEMA.occurrence, field)
   assertContentAddress(value['id'], 'eo_', `${field}.id`)
   assertContentAddress(value['factId'], 'sf_', `${field}.factId`)
 
   const owner = value['owner']
-  assertExactObjectShape(owner, `${field}.owner`, SCHEMA.occurrenceOwner.required, SCHEMA.occurrenceOwner.optional)
+  assertClosedPlainDataObject(owner, SCHEMA.occurrenceOwner, `${field}.owner`)
   for (const key of ['adapterId', 'strategy', 'sourceFile', 'adapterVersion']) {
     const entry = (owner as Record<string, unknown>)[key]
     if (entry === undefined) continue
@@ -288,22 +286,20 @@ export function assertSerializerFacingRecord(
   field: string,
   flattenedRoot: string | null = null,
 ): void {
-  assertPlainObject(record, field)
+  assertPlainJsonObject(record, field)
 
   const kind = assertString(record['kind'], `${field}.kind`)
-  if (!(kind in RECORD_FIELDS)) {
+  if (!(kind in RECORD_SCHEMA)) {
     throw new GraphIntegrityInvariantError(`${field}.kind is unknown: ${JSON.stringify(kind)}`)
   }
   if (kind !== expectedKind) {
     throw new GraphIntegrityInvariantError(`${field} is a ${kind} record in the ${expectedKind} array`)
   }
 
-  const allowed = RECORD_FIELDS[kind]
-  for (const present of Object.keys(record)) {
-    if (!allowed.has(present)) {
-      throw new GraphIntegrityInvariantError(`${field} carries ${JSON.stringify(present)}, which a ${kind} record has no schema for`)
-    }
-  }
+  // Exact key set for this kind. The plain-object gate above already refused a
+  // custom prototype, symbol keys, accessors and non-enumerable properties, so
+  // reading `kind` could not run caller code.
+  assertClosedPlainDataObject(record, RECORD_SCHEMA[kind], field)
 
   assertContentAddress(record['id'], ID_PREFIXES[kind], `${field}.id`)
   const multiplicity = assertSafeCount(record['multiplicity'], `${field}.multiplicity`)
@@ -379,7 +375,7 @@ export function assertEndpointIdentityMatrixShape(
   facts: number,
   field = 'endpointIdentityMatrix',
 ): void {
-  assertPlainObject(matrix, field)
+  assertPlainJsonObject(matrix, field)
   const statuses = new Set<string>(ENDPOINT_IDENTITY_STATUSES)
   for (const key of Object.keys(matrix)) {
     if (!statuses.has(key)) {
@@ -389,7 +385,7 @@ export function assertEndpointIdentityMatrixShape(
   let sum = 0
   for (const source of ENDPOINT_IDENTITY_STATUSES) {
     const row = matrix[source]
-    assertPlainObject(row, `${field}.${source}`)
+    assertPlainJsonObject(row, `${field}.${source}`)
     for (const key of Object.keys(row)) {
       if (!statuses.has(key)) {
         throw new GraphIntegrityInvariantError(`${field}.${source} has unknown status ${JSON.stringify(key)}`)
@@ -442,7 +438,7 @@ export function assertStorageAdmissionShape(
   admission: unknown,
   field = 'storageAdmission',
 ): void {
-  assertExactObjectShape(admission, field, SCHEMA.storageAdmission.required)
+  assertClosedPlainDataObject(admission, SCHEMA.storageAdmission, field)
   const total = assertSafeCount(
     admission['unresolvedUnregisteredRelationCandidates'],
     `${field}.unresolvedUnregisteredRelationCandidates`,
@@ -464,12 +460,7 @@ export function assertStorageAdmissionShape(
 }
 
 function assertTerminalCounts(counts: unknown, field = 'terminalCounts'): void {
-  assertPlainJsonObject(counts, field)
-  for (const key of Object.keys(counts)) {
-    if (!(CANDIDATE_TERMINAL_STATES as readonly string[]).includes(key)) {
-      throw new GraphIntegrityInvariantError(`${field} has unknown terminal state ${JSON.stringify(key)}`)
-    }
-  }
+  assertClosedPlainDataObject(counts, { required: CANDIDATE_TERMINAL_STATES }, field)
   for (const state of CANDIDATE_TERMINAL_STATES) {
     assertSafeCount(counts[state], `${field}.${state}`)
   }
@@ -526,7 +517,7 @@ export function assertSerializerFacingIntegrity(input: SerializerFacingIntegrity
     ['conflicting', input.conflictRecords],
   ] as const
 
-  assertExactObjectShape(input.recordRetention, 'recordRetention', SCHEMA.recordRetention.required)
+  assertClosedPlainDataObject(input.recordRetention, SCHEMA.recordRetention, 'recordRetention')
   for (const [kind, records] of kinds) {
     assertArray(records, `${kind}Records`)
     const seen = new Set<string>()
