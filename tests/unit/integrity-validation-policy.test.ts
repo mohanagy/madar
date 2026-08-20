@@ -160,33 +160,49 @@ describe('policy — the invalidation seam is reachable from a real build', () =
   })
 })
 
-describe('policy — the receipt command cannot qualify without an exact baseline', () => {
+/**
+ * Secondary call-site protection only.
+ *
+ * These assert that the runner still routes through the guard and registry
+ * owners. They are NOT the evidence that the guards work -- a test that greps
+ * for the word `finally` proves the word is present. The binding evidence is
+ * receipt-exact-ref-guards.test.ts and receipt-resource-cleanup.test.ts, which
+ * execute the behaviour against real temporary repositories.
+ */
+describe('policy — the receipt command routes through its guard owners', () => {
   it('refuses to produce a receipt with no comparison at all', () => {
     const source = read(RECEIPTS)
     expect(source).toContain('refusing to produce a receipt with no comparison')
     expect(source).toContain("argOf('--baseline-ref')")
   })
 
-  it('resolves the baseline ref itself rather than trusting a prepared checkout', () => {
+  it('delegates every exact-ref decision to the tested guard owner', () => {
     const source = read(RECEIPTS)
-    expect(source).toContain("execFileSync('git', ['worktree', 'add', '--detach'")
-    expect(source).toContain("execFileSync('npm', step,")
-    expect(source).toContain('refusing to measure a dirty tree')
-    expect(source).toContain('baseline ref cannot be resolved')
+    for (const guard of [
+      'resolveExactCommit', 'assertCleanTree', 'assertFreshBuild',
+      'partitionSessions', 'assertDistinctArms',
+    ]) {
+      expect(source, `${guard} is not used by the runner`).toContain(guard)
+    }
+    // Inlined copies would drift from the versions the E2E suite exercises.
+    expect(source).toContain("from './lib/receipt-guards.mjs'")
   })
 
-  it('cleans the temporary worktree on success, failure and signal', () => {
+  it('owns every temporary resource through the single registry', () => {
     const source = read(RECEIPTS)
-    expect(source).toContain("process.on('SIGINT', onSignal)")
-    expect(source).toContain("process.on('SIGTERM', onSignal)")
-    expect(source).toContain('} finally {')
-    expect(source).toContain("execFileSync('git', ['worktree', 'prune']")
+    expect(source).toContain('createResourceRegistry(')
+    expect(source).toContain('installSignalCoordinator(REGISTRY)')
+    expect(source).toContain('REGISTRY.register(')
+    // No helper may install its own exit-producing handler.
+    expect(source).not.toContain("process.on('SIGINT'")
+    expect(source).not.toContain("process.on('SIGTERM'")
   })
 
-  it('requires both arms to receive identical input', () => {
+  it('releases the shared input inside a finally', () => {
     const source = read(RECEIPTS)
-    expect(source).toContain('arms did not receive identical input')
-    expect(source).toContain('canonical_input_checksum')
+    const release = source.indexOf('REGISTRY.release(inputToken)')
+    expect(release).toBeGreaterThan(-1)
+    expect(source.slice(release - 400, release)).toContain('} finally {')
   })
 
   it('runs arms in separate processes with counterbalanced order', () => {
