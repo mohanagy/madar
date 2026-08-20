@@ -35,6 +35,7 @@ const BUILD = 'src/pipeline/build.ts'
 const GRAPH = 'src/contracts/graph.ts'
 const SNAPSHOT_SRC = 'src/contracts/graph-integrity-snapshot.ts'
 const VALIDATION = 'src/contracts/graph-integrity-validation.ts'
+const JSON_GUARDS = 'src/contracts/graph-integrity-json.ts'
 
 const SHARE_SAFETY = 'tests/unit/integrity-record-share-safety.test.ts'
 const ACCOUNTING = 'tests/unit/normalized-candidate-accounting.test.ts'
@@ -45,6 +46,9 @@ const TARGET_POLICY = 'tests/unit/verification-target-policy.test.ts'
 const TAMPER = 'tests/unit/integrity-snapshot-tamper.test.ts'
 const INVALIDATION = 'tests/unit/integrity-snapshot-invalidation.test.ts'
 const IMMUTABILITY = 'tests/unit/integrity-snapshot-immutability.test.ts'
+const TOTAL_VALIDATION = 'tests/unit/integrity-snapshot-total-validation.test.ts'
+const RETENTION_SHAPE = 'tests/unit/detail-retention-shape.test.ts'
+const QUALIFICATION = 'tests/unit/endpoint-qualification-invalidation.test.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -457,8 +461,8 @@ const MUTANTS = [
     from: '  if (sanitize(raw) !== raw) {',
     to: '  if (false) {',
     expect: [
-      'R1/R2-02 — an unsafe payload cannot be attached refuses a record carrying an absolute private path',
       'R1/R2-02 — an unsafe payload cannot be attached refuses an unsafe verification target even on an otherwise valid record',
+      'R1/R2-02 — an unsafe payload cannot be attached refuses a percent-encoded separator in a verification target',
     ],
   },
   {
@@ -541,6 +545,110 @@ const MUTANTS = [
     to: '  normalizedIntegritySnapshot(): FinalizedNormalizedIntegritySnapshot | null {\n    void finalizeNormalizedIntegritySnapshot\n    return this.integritySnapshot',
     expect: [
       'R3-04 — invalidation is never silently skipped by a new mutator never recomputes the snapshot inside a read accessor',
+    ],
+  },
+  {
+    name: 'V1: skip terminalReasonCounts validation',
+    file: VALIDATION,
+    test: TOTAL_VALIDATION,
+    from: '  assertTerminalReasonCounts(input.terminalReasonCounts)',
+    to: '',
+    expect: [
+      'V1 — reason vocabularies are closed rejects an unknown terminal reason key',
+    ],
+  },
+  {
+    name: 'V1: accept an unknown reason-fact key',
+    file: VALIDATION,
+    test: TOTAL_VALIDATION,
+    from: '      throw new GraphIntegrityInvariantError(`${field} has unknown endpoint reason ${JSON.stringify(reason)}`)',
+    to: '',
+    expect: [
+      'V1 — reason vocabularies are closed rejects an unknown endpoint reason key',
+    ],
+  },
+  {
+    name: 'V1: skip canonical JSON validation',
+    file: JSON_GUARDS,
+    test: TOTAL_VALIDATION,
+    from: '  if (depth > MAX_CANONICAL_DEPTH) {',
+    to: '  if (depth >= 0) return\n  if (depth > MAX_CANONICAL_DEPTH) {',
+    expect: [
+      'non-JSON values cannot attach',
+    ],
+  },
+  {
+    name: 'V1: accept an unknown verification-target field',
+    file: VALIDATION,
+    test: TOTAL_VALIDATION,
+    from: '    assertExactObjectShape(target, at, SCHEMA.verificationTarget.required, SCHEMA.verificationTarget.optional)',
+    to: '    assertPlainJsonObject(target, at)',
+    expect: [
+      'V1 — closed schemas reject unknown fields rejects an unknown verification-target field',
+    ],
+  },
+  {
+    name: 'V1: stop checking the record id format',
+    file: VALIDATION,
+    test: TOTAL_VALIDATION,
+    from: '  assertContentAddress(record[\'id\'], ID_PREFIXES[kind], `${field}.id`)',
+    to: '  assertString(record[\'id\'], `${field}.id`)',
+    expect: [
+      'V1 — identities must name what they claim to rejects a record id that is a truncated hash',
+      'V1 — identities must name what they claim to rejects a record id that is a wrong prefix',
+    ],
+  },
+  {
+    name: 'V1: stop rederiving the candidate fingerprint',
+    file: VALIDATION,
+    test: TOTAL_VALIDATION,
+    from: '      const rederived = candidateFingerprint({ ...projection, index: -1 } as never)',
+    to: '      const rederived = record[\'candidateFingerprint\']',
+    expect: [
+      'V1 — identities must name what they claim to rederives the fingerprint and rejects one that disagrees with its own projection',
+      'V1 — identities must name what they claim to rejects a projection edited without its fingerprint',
+    ],
+  },
+  {
+    name: 'V1: accept an extra storage-admission field',
+    file: VALIDATION,
+    test: TOTAL_VALIDATION,
+    from: '  assertExactObjectShape(admission, field, SCHEMA.storageAdmission.required)',
+    to: '  assertPlainJsonObject(admission, field)',
+    expect: [
+      'V1 — closed schemas reject unknown fields rejects an unknown storage-admission field',
+    ],
+  },
+  {
+    name: 'V2: accept an extra DetailRetention field',
+    file: CONTRACTS,
+    test: RETENTION_SHAPE,
+    from: '  assertExactObjectShape(retention, field, DETAIL_RETENTION_KEYS)',
+    to: '  assertPlainJsonObject(retention, field)',
+    expect: [
+      'V2 — DetailRetention is an exact closed contract rejects a fifth field carrying a private path',
+      'V2 — DetailRetention is an exact closed contract rejects any unknown field, harmless-looking or not',
+    ],
+  },
+  {
+    name: 'V3: ignore endpoint qualification in addNode sameness',
+    file: GRAPH,
+    test: QUALIFICATION,
+    from: '      && canonical(this.nodeEndpointIdentityMap.get(id)) === canonical(qualification)',
+    to: '',
+    expect: [
+      'V3 — a qualification change is a state change invalidates on stable to context_bound',
+      'V3 — a qualification change is a state change invalidates on context_bound to unknown',
+    ],
+  },
+  {
+    name: 'V3: stop invalidating on node state change',
+    file: GRAPH,
+    test: QUALIFICATION,
+    from: '    if (!unchanged) this.invalidateIntegritySnapshot()',
+    to: '    if (false) this.invalidateIntegritySnapshot()',
+    expect: [
+      'a qualification change is a state change',
     ],
   },
 ]
