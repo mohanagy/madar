@@ -30,6 +30,7 @@ import {
   partitionSessions,
   resolveExactCommit,
 } from './lib/receipt-guards.mjs'
+import { runChild, runChildOrThrow } from './lib/child-runner.mjs'
 import {
   createResourceRegistry,
   directoryCleanup,
@@ -42,7 +43,13 @@ import {
 const REGISTRY = createResourceRegistry({
   onWarning: (message) => console.error(`warning: ${message}`),
 })
-installSignalCoordinator(REGISTRY)
+installSignalCoordinator(REGISTRY, {
+  onWarning: (message) => console.error(`warning: ${message}`),
+})
+
+/** Long-running children get a bounded timeout; none may hold the run open. */
+const BUILD_TIMEOUT_MS = 15 * 60 * 1000
+const ARM_TIMEOUT_MS = 10 * 60 * 1000
 
 const ROOT = process.cwd()
 const args = process.argv.slice(2)
@@ -65,6 +72,13 @@ const RUNS = Number(argOf('--runs') ?? 5)
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex')
 
+/**
+ * Bounded local metadata probe, deliberately synchronous.
+ *
+ * `git rev-parse` and friends return in milliseconds and cannot hold a live
+ * child across the signal contract. Only children that can block materially --
+ * installs, builds, measurement arms -- are asynchronous and registered.
+ */
 function git(...rest) {
   try {
     return execFileSync('git', rest, { cwd: ROOT, encoding: 'utf8' }).trim()
@@ -186,17 +200,22 @@ async function withBaselineWorktree(ref, run) {
   const token = REGISTRY.register(`worktree ${ref} at ${dir}`, worktreeCleanup(ROOT, dir))
 
   try {
-    execFileSync('git', ['worktree', 'add', '--detach', dir, resolved], { cwd: ROOT, stdio: 'ignore' })
+    await runChildOrThrow('git', ['worktree', 'add', '--detach', dir, resolved], {
+      cwd: ROOT, registry: REGISTRY, description: `git worktree add ${resolved}`, timeoutMs: BUILD_TIMEOUT_MS,
+    })
     // The pinned lockfile and toolchain, not whatever happens to be installed.
-    // Output is captured rather than discarded: a silently failed build leaves
-    // no dist and surfaces later as an unreadable module, which says nothing
-    // about what went wrong.
+    // Asynchronous so a signal arriving mid-install is actually serviced: a
+    // synchronous child blocks the event loop and no handler can run at all.
     for (const step of [['ci'], ['run', 'build']]) {
       try {
-        execFileSync('npm', step, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+        await runChildOrThrow('npm', step, {
+          cwd: dir,
+          registry: REGISTRY,
+          description: `npm ${step.join(' ')} at ${resolved}`,
+          timeoutMs: BUILD_TIMEOUT_MS,
+        })
       } catch (error) {
-        const detail = `${error.stdout ?? ''}${error.stderr ?? ''}`.trim().split('\n').slice(-12).join('\n')
-        throw new Error(`baseline "npm ${step.join(' ')}" failed at ${resolved}:\n${detail}`)
+        throw new Error(`baseline "npm ${step.join(' ')}" failed at ${resolved}:\n${error.message}`)
       }
     }
     assertFreshBuild(dir, resolved)
@@ -319,13 +338,23 @@ for (const scope of Object.keys(SCOPES)) {
   receipts.push({ ...receiptFor(scope, files, checksum, measured), file_count: count })
 }
 
-/** Runs one arm in a child process and returns its parsed measurement. */
-function runArm(dir, scope, inputPath) {
-  const raw = execFileSync(process.execPath, [
+/**
+ * Runs one arm in its own child process and returns its parsed measurement.
+ *
+ * Asynchronous for the same reason the builds are: an arm can run for minutes,
+ * and a signal during one must be able to terminate it rather than wait for it.
+ */
+async function runArm(dir, scope, inputPath) {
+  const result = await runChildOrThrow(process.execPath, [
     resolve(ROOT, 'scripts/verify-integrity-receipts.mjs'),
     '--measure-arm', dir, '--scope', scope, '--input', inputPath, '--runs', String(RUNS),
-  ], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-  return JSON.parse(raw.trim().split('\n').pop())
+  ], {
+    cwd: ROOT,
+    registry: REGISTRY,
+    description: `arm ${scope} at ${dir}`,
+    timeoutMs: ARM_TIMEOUT_MS,
+  })
+  return JSON.parse(result.stdout.trim().split('\n').pop())
 }
 
 async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT, candidateSha = null) {
@@ -353,9 +382,15 @@ async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT,
 
       // Two sessions with opposite starting arms, so ordering cannot favour
       // either head.
+      // Sequential and counterbalanced: never concurrent, because two arms
+      // sharing a machine measure contention rather than code.
+      const baselineFirstBase = await runArm(baselineDir, scope, inputPath)
+      const baselineFirstHead = await runArm(candidateDir, scope, inputPath)
+      const candidateFirstHead = await runArm(candidateDir, scope, inputPath)
+      const candidateFirstBase = await runArm(baselineDir, scope, inputPath)
       sessions = [
-        { order: 'baseline-first', base: runArm(baselineDir, scope, inputPath), head: runArm(candidateDir, scope, inputPath) },
-        { order: 'candidate-first', head: runArm(candidateDir, scope, inputPath), base: runArm(baselineDir, scope, inputPath) },
+        { order: 'baseline-first', base: baselineFirstBase, head: baselineFirstHead },
+        { order: 'candidate-first', head: candidateFirstHead, base: candidateFirstBase },
       ]
     } finally {
       // A throwing arm previously skipped this line entirely, because it was
@@ -449,6 +484,7 @@ const receipt = {
   node_version: process.version,
   npm_version: (() => {
     try {
+      // Bounded metadata probe; see the note on git() above.
       return execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim()
     } catch {
       return 'unavailable'

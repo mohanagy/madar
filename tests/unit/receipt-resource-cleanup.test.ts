@@ -183,7 +183,13 @@ describe('E1-04 — failure paths leave nothing behind', () => {
 })
 
 describe('E1-04 — one signal coordinator, cleanup before exit', () => {
-  it('cleans every resource on SIGINT and exits 130', () => {
+  let installed: (() => void) | null = null
+  afterEach(() => {
+    installed?.()
+    installed = null
+  })
+
+  it('cleans every resource on SIGINT and exits 130', async () => {
     const registry = createResourceRegistry()
     const dir = mkdtempSync(join(tmpdir(), 'madar-registry-sigint-'))
     created.push(dir)
@@ -192,21 +198,24 @@ describe('E1-04 — one signal coordinator, cleanup before exit', () => {
     git(repo, 'worktree', 'add', '--detach', '--quiet', dir, 'HEAD')
 
     const codes: number[] = []
-    const uninstall = installSignalCoordinator(registry, { exit: (code) => { codes.push(code) } })
-    try {
-      process.emit('SIGINT')
-    } finally {
-      uninstall()
-    }
+    // Resolved from inside the exit callback, which the coordinator invokes only
+    // after children are reaped and every resource is cleaned. Awaiting it is
+    // the ordering assertion.
+    const exited = new Promise<void>((resolve) => {
+      installed = installSignalCoordinator(registry, {
+        exit: (code) => { codes.push(code); resolve() },
+      })
+    })
+    process.emit('SIGINT')
+    await exited
 
-    // Cleanup completes before the exit rather than racing it.
     expect(worktreePaths(repo)).toEqual([])
     expect(existsSync(dir)).toBe(false)
     expect(codes).toEqual([130])
     expect(registry.interrupted).toBe(true)
   })
 
-  it('cleans every resource on SIGTERM and exits 143', () => {
+  it('cleans every resource on SIGTERM and exits 143', async () => {
     const registry = createResourceRegistry()
     const dir = mkdtempSync(join(tmpdir(), 'madar-registry-sigterm-'))
     created.push(dir)
@@ -215,18 +224,19 @@ describe('E1-04 — one signal coordinator, cleanup before exit', () => {
     git(repo, 'worktree', 'add', '--detach', '--quiet', dir, 'HEAD')
 
     const codes: number[] = []
-    const uninstall = installSignalCoordinator(registry, { exit: (code) => { codes.push(code) } })
-    try {
-      process.emit('SIGTERM')
-    } finally {
-      uninstall()
-    }
+    const exited = new Promise<void>((resolve) => {
+      installed = installSignalCoordinator(registry, {
+        exit: (code) => { codes.push(code); resolve() },
+      })
+    })
+    process.emit('SIGTERM')
+    await exited
 
     expect(worktreePaths(repo)).toEqual([])
     expect(codes).toEqual([143])
   })
 
-  it('cleans resources owned by every nesting level on one signal', () => {
+  it('cleans resources owned by every nesting level on one signal', async () => {
     const registry = createResourceRegistry()
     const dirs = ['outer', 'inner'].map((label) => {
       const dir = mkdtempSync(join(tmpdir(), `madar-registry-sig-${label}-`))
@@ -238,12 +248,11 @@ describe('E1-04 — one signal coordinator, cleanup before exit', () => {
     })
     expect(worktreePaths(repo)).toHaveLength(2)
 
-    const uninstall = installSignalCoordinator(registry, { exit: () => undefined })
-    try {
-      process.emit('SIGINT')
-    } finally {
-      uninstall()
-    }
+    const exited = new Promise<void>((resolve) => {
+      installed = installSignalCoordinator(registry, { exit: () => resolve() })
+    })
+    process.emit('SIGINT')
+    await exited
 
     expect(worktreePaths(repo)).toEqual([])
     for (const dir of dirs) expect(existsSync(dir)).toBe(false)
