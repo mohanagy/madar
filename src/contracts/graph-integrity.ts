@@ -264,12 +264,75 @@ export function detailRetention(retained: number, total: number): DetailRetentio
  * trusted, because `omitted` and `truncated` are exactly the fields a caller
  * would edit to make omission look like completeness.
  */
-export function assertDetailRetention(retention: DetailRetention, field: string): void {
-  // A missing or non-object retention must fail as a typed graph invariant, not
-  // as a TypeError raised by the first property read.
-  if (retention === null || typeof retention !== 'object') {
-    throw new GraphIntegrityInvariantError(`${field} must be a retention object`)
+/**
+ * Rejects anything that is not a plain, JSON-shaped object.
+ *
+ * A snapshot is the trust boundary for future serialized bytes, and a static
+ * TypeScript type is not evidence there: a decoded artifact, a hand-built
+ * record, or a class instance all arrive as objects that satisfy the type.
+ * Accessors are refused because a getter can return one value to the validator
+ * and another to the serializer, and symbol keys because they vanish silently
+ * through JSON while remaining visible to code that reads the object.
+ */
+export function assertPlainJsonObject(
+  value: unknown,
+  field: string,
+): asserts value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new GraphIntegrityInvariantError(`${field} must be a plain object`)
   }
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new GraphIntegrityInvariantError(`${field} must be a plain object, not a class instance`)
+  }
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new GraphIntegrityInvariantError(`${field} must not carry symbol keys`)
+  }
+  for (const key of Object.getOwnPropertyNames(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (descriptor?.get !== undefined || descriptor?.set !== undefined) {
+      throw new GraphIntegrityInvariantError(`${field}.${key} must be a data property, not an accessor`)
+    }
+  }
+}
+
+/**
+ * Requires an object to carry exactly the keys its schema declares.
+ *
+ * Closed rather than open because an unknown field is not harmless: the review
+ * attached a five-field retention object whose extra field carried a private
+ * path. Every value that reaches a serializer must have been validated, and a
+ * field nobody declared is a field nobody validated.
+ */
+export function assertExactObjectShape(
+  value: unknown,
+  field: string,
+  required: readonly string[],
+  optional: readonly string[] = [],
+): asserts value is Record<string, unknown> {
+  assertPlainJsonObject(value, field)
+  const allowed = new Set([...required, ...optional])
+  for (const key of Object.getOwnPropertyNames(value)) {
+    if (!allowed.has(key)) {
+      throw new GraphIntegrityInvariantError(`${field} carries unknown field ${JSON.stringify(key)}`)
+    }
+  }
+  for (const key of required) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) {
+      throw new GraphIntegrityInvariantError(`${field} is missing required field ${JSON.stringify(key)}`)
+    }
+  }
+}
+
+export const DETAIL_RETENTION_KEYS = ['retained', 'total', 'omitted', 'truncated'] as const
+
+export function assertDetailRetention(retention: DetailRetention, field: string): void {
+  // Exactly four fields, no more. A missing or non-object retention fails as a
+  // typed graph invariant rather than as a TypeError from the first property
+  // read, and a fifth field is refused outright rather than quietly dropped --
+  // copying only the four known fields out of a five-field input would let the
+  // fifth reach whatever built it while the snapshot claimed it was validated.
+  assertExactObjectShape(retention, field, DETAIL_RETENTION_KEYS)
   if (typeof retention.truncated !== 'boolean') {
     throw new GraphIntegrityInvariantError(`${field}.truncated must be a boolean`)
   }
