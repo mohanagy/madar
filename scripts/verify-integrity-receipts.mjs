@@ -155,7 +155,7 @@ function scannerControl() {
  * the one being claimed. Resolving the ref here means the command itself is the
  * evidence.
  */
-function withBaselineWorktree(ref, run) {
+async function withBaselineWorktree(ref, run) {
   let resolved
   try {
     resolved = execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], {
@@ -204,7 +204,10 @@ function withBaselineWorktree(ref, run) {
     if (!existsSync(join(dir, 'dist/src/pipeline/build.js'))) {
       throw new Error(`baseline build at ${resolved} produced no dist`)
     }
-    return run({ dir, sha: resolved })
+    // Awaited inside the try, not returned from it: returning the promise
+    // would let the finally below delete the worktree while the measurement
+    // that depends on it was still running.
+    return await run({ dir, sha: resolved })
   } finally {
     process.off('SIGINT', onSignal)
     process.off('SIGTERM', onSignal)
