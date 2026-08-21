@@ -23,7 +23,7 @@
  * Exit 0 only when caught > 0, uncaught === 0 and skipped === 0.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { relative, resolve } from 'node:path'
 import {
@@ -905,6 +905,89 @@ const MUTANTS = [
 
 // ===== executable section; nothing below is mutant data =====
 
+// Audit-only mode: verifies an existing artifact directory without running
+// anything, so the audit can be proven to fail on a broken artifact rather than
+// asserted about by reading source.
+const AUDIT_ARG = process.argv.indexOf('--audit')
+if (AUDIT_ARG >= 0) {
+  const auditDir = resolve(ROOT, process.argv[AUDIT_ARG + 1])
+  const expectMutants = Number(process.argv[process.argv.indexOf('--expect-mutants') + 1] ?? 0)
+  const expectBaselines = Number(process.argv[process.argv.indexOf('--expect-baselines') + 1] ?? 0)
+  const { problems, dirs, mutants, baselines: baseCount } =
+    auditInvocationArtifacts(expectMutants, expectBaselines, auditDir, null)
+  if (problems.length > 0) {
+    console.error(`ARTIFACT AUDIT FAILED (${problems.length} problem(s)):`)
+    for (const problem of problems) console.error(`  ${problem}`)
+    process.exit(1)
+  }
+  console.log(`artifact audit OK: ${dirs} invocations (${mutants} mutants, ${baseCount} baselines)`)
+  process.exit(0)
+}
+
+/**
+ * Audits the artifact directory before any tally is printed.
+ *
+ * A gate that passes while its own evidence is missing or corrupt proves
+ * nothing. Every invocation must have every artifact, every artifact must name
+ * the same invocation, and no stale directory from an earlier run may be
+ * counted.
+ */
+function auditInvocationArtifacts(expectedMutants, expectedBaselines, rootOverride = null, runIdOverride) {
+  // Both overrides short-circuit deliberately: audit-only mode runs before the
+  // run-scoped constants are initialised, and evaluating them would throw in
+  // the temporal dead zone rather than audit anything.
+  const auditRoot = rootOverride ?? ARTIFACT_ROOT
+  const runId = runIdOverride === undefined ? RUN_ID : runIdOverride
+  const required = [
+    'meta.json', 'stdout.txt', 'stderr.txt', 'display.log',
+    'suite-identity.json', 'scoring.json', 'restoration.json',
+  ]
+  const problems = []
+  const dirs = existsSync(auditRoot)
+    ? readdirSync(auditRoot).filter((name) => statSync(resolve(auditRoot, name)).isDirectory())
+    : []
+
+  let mutants = 0
+  let baselines = 0
+  for (const name of dirs) {
+    const dir = resolve(auditRoot, name)
+    for (const file of required) {
+      if (!existsSync(resolve(dir, file))) problems.push(`${name}: missing ${file}`)
+    }
+    let scoring = null
+    let restoration = null
+    try {
+      scoring = JSON.parse(readFileSync(resolve(dir, 'scoring.json'), 'utf8'))
+    } catch (error) {
+      problems.push(`${name}: scoring.json unreadable (${error.message})`)
+    }
+    try {
+      restoration = JSON.parse(readFileSync(resolve(dir, 'restoration.json'), 'utf8'))
+    } catch (error) {
+      problems.push(`${name}: restoration.json unreadable (${error.message})`)
+    }
+    if (scoring !== null && restoration !== null) {
+      if (scoring.invocation_id !== restoration.invocation_id) {
+        problems.push(`${name}: scoring and restoration name different invocations`)
+      }
+      // Every directory belongs to THIS run; a stale one would otherwise pad
+      // the count.
+      if (runId !== null && !String(scoring.invocation_id ?? '').startsWith(runId)) {
+        problems.push(`${name}: invocation_id does not belong to this run`)
+      }
+      if (scoring.mutant_id !== undefined) mutants += 1
+      else if (scoring.baseline_identity !== undefined) baselines += 1
+      else problems.push(`${name}: scoring.json identifies neither a mutant nor a baseline`)
+    }
+  }
+
+  if (mutants !== expectedMutants) problems.push(`scored ${mutants} mutants, expected ${expectedMutants}`)
+  if (baselines !== expectedBaselines) problems.push(`scored ${baselines} baselines, expected ${expectedBaselines}`)
+  return { problems, dirs: dirs.length, mutants, baselines }
+}
+
+
+
 const DISCOVER = process.argv.includes('--discover')
 const filterArg = process.argv.indexOf('--filter')
 const filter = filterArg >= 0 ? process.argv[filterArg + 1] : null
@@ -986,6 +1069,18 @@ function report(kind, name, detail) {
  */
 const RUN_ID = `${Date.now().toString(36)}-${process.pid.toString(36)}`
 const ARTIFACT_ROOT = resolve(ROOT, 'node_modules/.cache/madar-mutations', RUN_ID)
+
+/**
+ * Atomic write: temp file plus rename.
+ *
+ * A killed process must not leave a syntactically valid but partial artifact --
+ * that is worse than no artifact, because an audit would accept it.
+ */
+function writeAtomic(path, contents) {
+  const temporary = `${path}.tmp-${process.pid}`
+  writeFileSync(temporary, contents)
+  renameSync(temporary, path)
+}
 
 const slug = (value) => value.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
 
@@ -1089,7 +1184,36 @@ const baselines = new Map()
 let baselineIndex = 0
 for (const testFile of new Set(selected.map((m) => m.test))) {
   const dir = invocationDirectory(baselineIndex += 1, `baseline-${testFile}`)
-  baselines.set(testFile, baselineVerdict(runSuite(testFile, dir, { phase: 'baseline', testFile })))
+  const baselineResult = runSuite(testFile, dir, { phase: 'baseline', testFile })
+  const verdict = baselineVerdict(baselineResult)
+  baselines.set(testFile, verdict)
+  writeAtomic(resolve(dir, 'scoring.json'), `${JSON.stringify({
+    invocation_id: `${RUN_ID}-baseline-${String(baselineIndex).padStart(3, '0')}`,
+    baseline_identity: testFile,
+    requested_suite: testFile,
+    reported_suites: baselineResult.identity?.reported ?? [],
+    expected_test_identities: [],
+    observed_failed_test_identities: baselineResult.failed ?? [],
+    baseline_green: verdict === null,
+    worker_start_signatures: (baselineResult.identity?.workerSignatures ?? []),
+    handshake_signatures: [],
+    report_status: baselineResult.usable === true ? 'readable' : (baselineResult.why ?? 'unavailable'),
+    classification: verdict === null ? 'baseline_passed' : 'infrastructure_failure',
+    reason_code: verdict === null ? 'baseline_passed' : 'baseline_not_green',
+    reason_detail: verdict ?? 'baseline green',
+    scored_at: new Date().toISOString(),
+  }, null, 2)}\n`)
+  // Explicit rather than omitted: an absent file is indistinguishable from one
+  // an audit failed to write.
+  writeAtomic(resolve(dir, 'restoration.json'), `${JSON.stringify({
+    invocation_id: `${RUN_ID}-baseline-${String(baselineIndex).padStart(3, '0')}`,
+    source_paths: [],
+    restoration_attempted: false,
+    restoration_succeeded: null,
+    reason_code: 'not_applicable',
+    reason_detail: 'baseline invocations mutate nothing',
+    verified_at: new Date().toISOString(),
+  }, null, 2)}\n`)
 }
 
 const discovered = {}
@@ -1140,6 +1264,21 @@ for (const mutant of selected) {
   // Verified by re-reading bytes, not by trusting the write and not by `git
   // status` -- an untracked file shows as new whether or not it is mutated.
   const stillMutated = assertNoResidualMutation()
+  writeAtomic(resolve(artifactDir, 'restoration.json'), `${JSON.stringify({
+    invocation_id: `${RUN_ID}-${String(mutantIndex).padStart(3, '0')}`,
+    source_paths: [mutant.file],
+    pre_mutation_digests: { [mutant.file]: before },
+    mutated_digests: { [mutant.file]: digest(mutant.file) },
+    post_restoration_digests: Object.fromEntries(
+      [...originals.keys()].map((path) => [path, digest(path)]),
+    ),
+    restoration_attempted: true,
+    restoration_succeeded: stillMutated.length === 0,
+    tree_clean_after: stillMutated.length === 0,
+    leftover_paths: stillMutated,
+    reason_code: stillMutated.length === 0 ? 'restored' : 'restoration_failed',
+    verified_at: new Date().toISOString(),
+  }, null, 2)}\n`)
   if (stillMutated.length > 0) {
     console.error(`\nRESTORATION FAILED after ${mutant.name}: ${stillMutated.join(', ')}`)
     console.error(`Evidence retained in ${relative(ROOT, artifactDir)}`)
@@ -1161,6 +1300,33 @@ for (const mutant of selected) {
   }
 
   const score = scoreMutant({ expect: mutant.expect ?? [], result })
+
+  // Written for every invocation, including ones that could not be scored.
+  // The conclusion previously existed only in terminal output -- the same place
+  // the first unexplained skip was lost.
+  writeAtomic(resolve(artifactDir, 'scoring.json'), `${JSON.stringify({
+    invocation_id: `${RUN_ID}-${String(mutantIndex).padStart(3, '0')}`,
+    mutant_id: mutant.name,
+    requested_suite: mutant.test,
+    reported_suites: result.identity?.reported ?? [],
+    expected_test_identities: mutant.expect ?? [],
+    observed_failed_test_identities: result.failed ?? [],
+    baseline_green: baselines.get(mutant.test) === null,
+    worker_start_signatures: (result.identity?.workerSignatures ?? [])
+      .filter((hit) => hit.signature.includes('start forks')),
+    handshake_signatures: (result.identity?.workerSignatures ?? [])
+      .filter((hit) => hit.signature.includes('respond')),
+    process_exit_code: result.exitStatus ?? null,
+    process_signal: result.signal ?? null,
+    report_status: result.usable === true ? 'readable' : (result.why ?? 'unavailable'),
+    classification: score.kind === 'caught' ? 'caught'
+      : score.kind === 'UNCAUGHT' ? 'uncaught'
+        : result.usable === false ? 'infrastructure_failure' : 'skipped',
+    reason_code: score.kind,
+    reason_detail: score.detail,
+    scored_at: new Date().toISOString(),
+  }, null, 2)}\n`)
+
   report(score.kind, mutant.name, score.detail)
 }
 
@@ -1182,6 +1348,14 @@ if (residual.length > 0) {
   process.exit(1)
 }
 
+const audit = auditInvocationArtifacts(selected.length, baselines.size)
+if (audit.problems.length > 0) {
+  console.error(`\nARTIFACT AUDIT FAILED (${audit.problems.length} problem(s)):`)
+  for (const problem of audit.problems) console.error(`  ${problem}`)
+  console.error('Refusing to report a result whose own evidence is incomplete.')
+  process.exit(1)
+}
+console.log(`\nartifact audit      ${audit.dirs} invocations (${audit.mutants} mutants, ${audit.baselines} baselines) complete`)
 console.log(`\ncaught=${caught} uncaught=${uncaught} skipped=${skipped}`)
 const ok = caught > 0 && uncaught === 0 && skipped === 0
 console.log(ok ? 'MUTATION CONTROLS PASS' : 'MUTATION CONTROLS FAIL')
