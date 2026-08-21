@@ -59,6 +59,19 @@ export function runChild(command, args, options = {}) {
   } = options
 
   return new Promise((resolve, reject) => {
+    // Pre-spawn gate: after shutdown begins, no PID is created at all. Spawning
+    // and immediately killing would still start work the coordinator has
+    // already declared closed.
+    let reservation = null
+    if (registry !== null) {
+      try {
+        reservation = registry.reserveAdmission(description)
+      } catch (error) {
+        reject(error)
+        return
+      }
+    }
+
     let child
     try {
       child = spawn(command, args, {
@@ -73,7 +86,26 @@ export function runChild(command, args, options = {}) {
       return
     }
 
-    const token = registry?.registerChild(description, child) ?? null
+    // The narrow race: shutdown may have started between the reservation and
+    // here. The just-spawned child is then terminated and reaped rather than
+    // left running unregistered.
+    let token = null
+    if (registry !== null) {
+      if (reservation !== null && !reservation.valid()) {
+        terminateChildTree(child, 'SIGTERM')
+        child.once('close', () => {
+          reject(new Error(`refusing to admit child "${description}": shutdown began during spawn`))
+        })
+        return
+      }
+      try {
+        token = registry.registerChild(description, child)
+      } catch (error) {
+        terminateChildTree(child, 'SIGTERM')
+        child.once('close', () => reject(error))
+        return
+      }
+    }
     let stdout = ''
     let stderr = ''
     let timedOut = false

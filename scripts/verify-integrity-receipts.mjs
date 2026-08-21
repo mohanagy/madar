@@ -47,6 +47,19 @@ installSignalCoordinator(REGISTRY, {
   onWarning: (message) => console.error(`warning: ${message}`),
 })
 
+/**
+ * Refuses to begin a new phase once shutdown has started.
+ *
+ * Terminating in-flight work is not enough on its own: without this, the next
+ * phase would start immediately after the previous one was killed, and the run
+ * would keep making progress while the coordinator was tearing it down.
+ */
+function assertPhaseAdmitted(phase) {
+  if (!REGISTRY.acceptingWork) {
+    throw new Error(`refusing to begin "${phase}": shutdown has begun`)
+  }
+}
+
 /** Long-running children get a bounded timeout; none may hold the run open. */
 const BUILD_TIMEOUT_MS = 15 * 60 * 1000
 const ARM_TIMEOUT_MS = 10 * 60 * 1000
@@ -190,6 +203,7 @@ function scannerControl() {
  * evidence.
  */
 async function withBaselineWorktree(ref, run) {
+  assertPhaseAdmitted('baseline worktree')
   const resolved = resolveExactCommit(ROOT, ref)
   assertCleanTree(ROOT)
 
@@ -207,6 +221,7 @@ async function withBaselineWorktree(ref, run) {
     // Asynchronous so a signal arriving mid-install is actually serviced: a
     // synchronous child blocks the event loop and no handler can run at all.
     for (const step of [['ci'], ['run', 'build']]) {
+      assertPhaseAdmitted(`npm ${step.join(' ')}`)
       try {
         await runChildOrThrow('npm', step, {
           cwd: dir,
@@ -345,6 +360,7 @@ for (const scope of Object.keys(SCOPES)) {
  * and a signal during one must be able to terminate it rather than wait for it.
  */
 async function runArm(dir, scope, inputPath) {
+  assertPhaseAdmitted(`arm ${scope}`)
   const result = await runChildOrThrow(process.execPath, [
     resolve(ROOT, 'scripts/verify-integrity-receipts.mjs'),
     '--measure-arm', dir, '--scope', scope, '--input', inputPath, '--runs', String(RUNS),
@@ -358,6 +374,7 @@ async function runArm(dir, scope, inputPath) {
 }
 
 async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT, candidateSha = null) {
+  assertPhaseAdmitted('measurement arms')
   // Comparing a commit with itself is not a comparison.
   assertDistinctArms(baselineSha, candidateSha ?? git('rev-parse', 'HEAD'))
   const comparisons = []
@@ -368,6 +385,7 @@ async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT,
     // both arms. Letting each arm extract its own input measures two different
     // extractions and calls the difference a build comparison.
     // The declared authority is the candidate arm's extractor.
+    assertPhaseAdmitted('input extraction')
     const { extract } = await loadPipeline(candidateDir)
     const shared = extract(files)
     const authority = inputAuthority(files)
@@ -510,6 +528,7 @@ const receipt = {
     : 'unavailable: process.resourceUsage().maxRSS reported no value on this platform',
 }
 
+assertPhaseAdmitted('receipt write')
 const rendered = JSON.stringify(receipt, null, 2)
 if (OUT !== null) writeFileSync(resolve(ROOT, OUT), `${rendered}\n`)
 console.log(rendered)

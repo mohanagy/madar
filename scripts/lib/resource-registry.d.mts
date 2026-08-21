@@ -1,7 +1,16 @@
 /** Types for the receipt-runner resource registry, so its tests typecheck. */
 import type { ChildProcess } from 'node:child_process'
 
+export class ResourceRegistryShuttingDownError extends Error {
+  readonly code: 'RESOURCE_REGISTRY_SHUTTING_DOWN'
+}
+
+export interface AdmissionReservation {
+  valid(): boolean
+}
+
 export interface ResourceRegistry {
+  reserveAdmission(description: string): AdmissionReservation
   register(description: string, cleanup: () => void): number
   release(id: number): boolean
   registerChild(description: string, child: ChildProcess): number

@@ -357,3 +357,90 @@ describe('E1-04 — failure paths leave nothing behind', () => {
     expect(git(repo, 'status', '--porcelain')).toBe('')
   }, 60_000)
 })
+
+describe('E1-05 — shutdown refuses new work, it does not merely announce it', () => {
+  it('rejects a new child after shutdown, creating no PID at all', async () => {
+    // The reviewer's reproduction: acceptingWork went false, exit 143 was
+    // requested, and runChild still launched a child that ran to completion.
+    const registry = createResourceRegistry()
+    registry.stopAcceptingWork()
+
+    let thrown: unknown
+    try {
+      await runChild(process.execPath, ['-e', 'process.exit(0)'], {
+        registry, description: 'post-shutdown child',
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect((thrown as { code?: string }).code).toBe('RESOURCE_REGISTRY_SHUTTING_DOWN')
+    expect(registry.liveChildren).toEqual([])
+  }, 60_000)
+
+  it('rejects a new resource after shutdown', () => {
+    const registry = createResourceRegistry()
+    registry.stopAcceptingWork()
+    expect(() => registry.register('late resource', () => undefined))
+      .toThrow(/shutdown has begun/)
+    expect(registry.outstanding).toEqual([])
+  })
+
+  it('rejects a directly registered child after shutdown', () => {
+    const registry = createResourceRegistry()
+    registry.stopAcceptingWork()
+    expect(() => registry.registerChild('late child', { exitCode: null, signalCode: null } as never))
+      .toThrow(/shutdown has begun/)
+    expect(registry.liveChildren).toEqual([])
+  })
+
+  it('still permits cleanup and release after admission closes', () => {
+    // Closing admission must not close teardown, or a signal would strand
+    // everything already owned.
+    const registry = createResourceRegistry()
+    const dir = mkdtempSync(join(tmpdir(), 'madar-shutdown-cleanup-'))
+    created.push(dir)
+    const token = registry.register(`cleanup me ${dir}`, directoryCleanup(dir))
+
+    registry.stopAcceptingWork()
+
+    expect(() => registry.release(token)).not.toThrow()
+    expect(existsSync(dir)).toBe(false)
+    expect(registry.outstanding).toEqual([])
+  })
+
+  it('terminates and reaps a child when shutdown wins the spawn race', async () => {
+    // Admission is reserved, then revoked before registration. The child must
+    // not be left running unregistered.
+    const registry = createResourceRegistry()
+    let thrown: unknown
+    // Injected race seam: admission is granted (the registry is open at
+    // reservation time) and has lapsed by the time registration is attempted.
+    // runChild checks validity exactly once, after spawn, so the seam must
+    // report invalid from that point on.
+    ;(registry as unknown as { reserveAdmission: (d: string) => unknown }).reserveAdmission = () => ({
+      valid: () => false,
+    })
+
+    try {
+      await runChild(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], {
+        registry, description: 'raced child',
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(String((thrown as Error).message)).toMatch(/shutdown began during spawn/)
+    expect(registry.liveChildren).toEqual([])
+  }, 60_000)
+
+  it('leaves normal execution before shutdown unchanged', async () => {
+    const registry = createResourceRegistry()
+    const result = await runChild(process.execPath, ['-e', "console.log('fine')"], {
+      registry, description: 'pre-shutdown child',
+    })
+    expect(result.code).toBe(0)
+    expect(result.stdout.trim()).toBe('fine')
+    expect(registry.liveChildren).toEqual([])
+  }, 60_000)
+})
