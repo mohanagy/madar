@@ -26,6 +26,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { relative, resolve } from 'node:path'
+import { auditEvidence } from './lib/evidence-audit.mjs'
 import {
   baselineVerdict,
   classifyReportAvailability,
@@ -68,6 +69,8 @@ const RECEIPT_CLEANUP = 'tests/unit/receipt-resource-cleanup.test.ts'
 const SIGNAL_E2E = 'tests/unit/receipt-signal-responsiveness.test.ts'
 const HARNESS_SELF = 'tests/unit/mutation-harness-self.test.ts'
 const EVIDENCE_LIFECYCLE = 'tests/unit/mutation-evidence-lifecycle.test.ts'
+const EVIDENCE_AUDIT_SRC = 'scripts/lib/evidence-audit.mjs'
+const EVIDENCE_AUDIT = 'tests/unit/mutation-evidence-audit.test.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -986,6 +989,127 @@ const MUTANTS = [
       'stamps one invocation identity into every artifact that can carry one',
     ],
   },
+  {
+    name: 'M1-05D-B: accept a report this invocation did not produce',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '      if (reportIdentity.report_digest !== digest) {',
+    to: '      if (false) {',
+    expect: [
+      '01 rejects a stale or unrelated Vitest report',
+    ],
+  },
+  {
+    name: 'M1-05D-B: accept a report naming an unrequested suite',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '      if (attribution.unexpected.length > 0) {',
+    to: '      if (false) {',
+    expect: [
+      '02 rejects a report naming a suite that was not requested',
+    ],
+  },
+  {
+    name: 'M1-05D-B: trust the stored suite identity',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '      if (suiteIdentity.exactlyOne !== attribution.exactlyOne) {',
+    to: '      if (false) {',
+    expect: [
+      '04 rejects a stored exactlyOne that the report does not support',
+    ],
+  },
+  {
+    name: 'M1-05D-B: trust the requested suite each artifact claims',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '      if (claim !== undefined && claim !== requestedSuite) {',
+    to: '      if (false) {',
+    expect: [
+      '03 rejects a suite identity that declares the wrong suite',
+    ],
+  },
+  {
+    name: 'M1-05D-B: stop recomputing the scoring classification',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '    if (scoring.classification !== recomputed) {',
+    to: '    if (false) {',
+    expect: [
+      '16 rejects "caught" when the expected named test did not fail',
+      '17 rejects "baseline_passed" when the report is red',
+    ],
+  },
+  {
+    name: 'M1-05D-B: accept a mutated digest equal to the pre digest',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '        } else if (pre === mutated) {',
+    to: '        } else if (false) {',
+    expect: [
+      '14 rejects a mutated digest equal to the pre-mutation digest',
+    ],
+  },
+  {
+    name: 'M1-05D-B: accept a post digest that differs from pre',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '        } else if (post !== pre) {',
+    to: '        } else if (false) {',
+    expect: [
+      '15 rejects a post-restoration digest that differs from the pre-mutation digest',
+    ],
+  },
+  {
+    name: 'M1-05D-B: ignore artifacts written outside the invocation',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '      if (tooOld || tooNew) {',
+    to: '      if (false) {',
+    expect: [
+      '05 rejects a same-basename report carried in from elsewhere',
+    ],
+  },
+  {
+    name: 'M1-05D-B: stop cross-checking the process outcome',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '    if (JSON.stringify(meta.outcome ?? null) !== JSON.stringify(outcome)) {',
+    to: '    if (false) {',
+    expect: [
+      '13 rejects a scoring record that misstates the process outcome',
+    ],
+  },
+  {
+    name: 'M1-05D-B: allow two invocations to share one identity',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '      if (seenIds.has(id)) add(\'duplicate_invocation_id\', name, `invocation_id also used by ${seenIds.get(id)}`)',
+    to: '      void seenIds.has(id)',
+    expect: [
+      '20 rejects two invocations sharing one identity',
+    ],
+  },
+  {
+    name: 'M1-05D-B: ignore an unaccounted artifact',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '      if (!REQUIRED_ARTIFACTS.includes(file) && !OPTIONAL_ARTIFACTS.includes(file)) {',
+    to: '      if (false) {',
+    expect: [
+      '19 rejects an artifact directory carrying an unaccounted file',
+    ],
+  },
+  {
+    name: 'M1-05D-B: ignore a capture stamped before the invocation',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: '    if (startedMs !== null && capturedMs !== null && capturedMs + CLOCK_TOLERANCE_MS < startedMs) {',
+    to: '    if (false) {',
+    expect: [
+      '18 rejects a report captured outside its own invocation window',
+    ],
+  },
 ]
 
 // ===== executable section; nothing below is mutant data =====
@@ -998,7 +1122,7 @@ if (AUDIT_ARG >= 0) {
   const auditDir = resolve(ROOT, process.argv[AUDIT_ARG + 1])
   const expectMutants = Number(process.argv[process.argv.indexOf('--expect-mutants') + 1] ?? 0)
   const expectBaselines = Number(process.argv[process.argv.indexOf('--expect-baselines') + 1] ?? 0)
-  const { problems, dirs, mutants, baselines: baseCount } =
+  const { problems, dirs, mutants, baselines: baseCount, semanticDigest } =
     auditInvocationArtifacts(expectMutants, expectBaselines, auditDir, null)
   if (problems.length > 0) {
     console.error(`ARTIFACT AUDIT FAILED (${problems.length} problem(s)):`)
@@ -1006,6 +1130,7 @@ if (AUDIT_ARG >= 0) {
     process.exit(1)
   }
   console.log(`artifact audit OK: ${dirs} invocations (${mutants} mutants, ${baseCount} baselines)`)
+  console.log(`semantic audit digest  ${semanticDigest}`)
   process.exit(0)
 }
 
@@ -1090,7 +1215,17 @@ function auditInvocationArtifacts(expectedMutants, expectedBaselines, rootOverri
   if (mutants !== expectedMutants) problems.push(`scored ${mutants} mutants, expected ${expectedMutants}`)
   if (baselines !== expectedBaselines) problems.push(`scored ${baselines} baselines, expected ${expectedBaselines}`)
 
-  return { problems, dirs: dirs.length, mutants, baselines }
+  // Structural completeness is necessary and nowhere near sufficient. A
+  // reviewer pointed one invocation's report at an unrelated suite, flipped its
+  // stored `exactlyOne` to false, and this audit still said OK -- because it
+  // only ever asked whether the files were there. The semantic pass re-derives
+  // what the files MEAN and is unioned in here so no caller can get the weak
+  // answer by accident.
+  const semantic = auditEvidence({ root: auditRoot, sourceRoot: ROOT, runId })
+  for (const problem of semantic.problems) {
+    problems.push(`${problem.invocation ?? '(matrix)'}: [${problem.code}] ${problem.detail}`)
+  }
+  return { problems, dirs: dirs.length, mutants, baselines, semanticDigest: semantic.semanticDigest }
 }
 
 
@@ -1657,6 +1792,7 @@ if (audit.problems.length > 0) {
   process.exit(1)
 }
 console.log(`\nartifact audit      ${audit.dirs} invocations (${audit.mutants} mutants, ${audit.baselines} baselines) complete`)
+console.log(`semantic digest     ${audit.semanticDigest}`)
 console.log(`\ncaught=${caught} uncaught=${uncaught} skipped=${skipped}`)
 const ok = caught > 0 && uncaught === 0 && skipped === 0
 console.log(ok ? 'MUTATION CONTROLS PASS' : 'MUTATION CONTROLS FAIL')
