@@ -117,8 +117,19 @@ describe('mutation evidence scratch projects', () => {
     scratches.push(dirname(failing))
 
     const before = ours()
-    expect(() => produceEvidenceMatrix({ harness: failing })).toThrow(/harness failed \(1\)/)
-    expect(ours()).toEqual(before)
+    try {
+      expect(() => produceEvidenceMatrix({ harness: failing })).toThrow(/harness failed \(1\)/)
+      expect(ours()).toEqual(before)
+    } finally {
+      // The mutant that guards this control removes the helper's cleanup, so
+      // under it the helper really does strand a project. A control that
+      // detects a leak must not leave the leak behind: three directories
+      // survived a matrix pair for exactly this reason, one per run of that
+      // mutant.
+      for (const name of ours()) {
+        if (!before.includes(name)) rmSync(resolve(tmpdir(), name), { recursive: true, force: true })
+      }
+    }
   })
 })
 
