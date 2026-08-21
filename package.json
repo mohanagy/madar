@@ -70,6 +70,7 @@
         "qualify:validate": "node .github/scripts/validate-qualification-contract.mjs",
         "verify:integrity-mutations": "node scripts/verify-integrity-mutations.mjs && MADAR_MUTATION_HARNESS_E2E=1 npx vitest run tests/unit/mutation-harness-self.test.ts",
         "verify:integrity-receipts": "node scripts/verify-integrity-receipts.mjs",
+        "verify:658-manifest": "node scripts/run-exact-manifest.mjs tests/manifests/658-focused.json",
         "verify:receipt-signals": "MADAR_RECEIPT_SIGNAL_E2E=1 npx vitest run tests/unit/receipt-signal-responsiveness.test.ts"
     },
     "devDependencies": {

@@ -1044,8 +1044,40 @@ function runSuite(testFile, artifactDir, context = {}) {
   })
   writeFileSync(resolve(artifactDir, 'report-source.txt'), `${availability.source}\n`)
 
-  const result = readSuiteResult({ raw: `${stdout}${stderr}`, report: availability.report })
-  return { ...result, artifactDir, reportSource: availability.source }
+  // Suite identity, proven rather than assumed. One suite was requested; the
+  // report must name exactly that suite and no other. Without this a mutant
+  // could be scored against a report describing a different file entirely.
+  const combined = `${stdout}${stderr}`
+  const signatures = ['Failed to start forks worker', 'Timeout waiting for worker to respond']
+    .map((signature) => ({ signature, count: combined.split(signature).length - 1 }))
+    .filter((hit) => hit.count > 0)
+
+  const requestedModule = resolve(ROOT, testFile)
+  const reportedModules = (availability.report?.testResults ?? []).map((entry) => resolve(ROOT, entry.name))
+  const unexpectedModules = reportedModules.filter((id) => id !== requestedModule).map((id) => relative(ROOT, id))
+  const identity = {
+    requested: testFile,
+    reported: reportedModules.map((id) => relative(ROOT, id)),
+    unexpected: unexpectedModules,
+    exactlyOne: reportedModules.length === 1 && unexpectedModules.length === 0,
+    workerSignatures: signatures,
+  }
+  writeFileSync(resolve(artifactDir, 'suite-identity.json'), `${JSON.stringify(identity, null, 2)}\n`)
+
+  if (signatures.length > 0) {
+    return { usable: false, why: `worker signature: ${signatures[0].signature}`, artifactDir, identity }
+  }
+  if (availability.report !== null && !identity.exactlyOne) {
+    return {
+      usable: false,
+      why: `report names ${reportedModules.length} module(s), expected exactly ${testFile}`,
+      artifactDir,
+      identity,
+    }
+  }
+
+  const result = readSuiteResult({ raw: combined, report: availability.report })
+  return { ...result, artifactDir, reportSource: availability.source, identity }
 }
 
 console.log(`#658 integrity mutation controls (${selected.length} mutants)\n`)

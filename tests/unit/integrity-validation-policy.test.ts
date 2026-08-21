@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -215,5 +215,63 @@ describe('policy — the receipt command routes through its guard owners', () =>
 
   it('gates on wall time and RSS alike', () => {
     expect(read(RECEIPTS)).toContain("ratio > 2 || rssRatio > 2 ? 'HUMAN_GATE'")
+  })
+})
+
+describe('policy — #658 qualification cannot return to raw multi-file Vitest', () => {
+  const MANIFEST = 'tests/manifests/658-focused.json'
+  const RUNNER = 'scripts/run-exact-manifest.mjs'
+
+  it('keeps the exact-manifest runner and its manifest committed', () => {
+    expect(existsSync(join(process.cwd(), RUNNER)), 'the required qualification runner is missing').toBe(true)
+    expect(existsSync(join(process.cwd(), MANIFEST)), 'the focused manifest is missing').toBe(true)
+  })
+
+  it('runs one module per process through the canonical guarded path', () => {
+    // Bypassing the guarded runner is exactly how worker-start failures went
+    // unnoticed: it scans for the signature, and the multi-file commands never
+    // reached it.
+    const source = read(RUNNER)
+    expect(source).toContain('scripts/run-guarded-vitest.mjs')
+    expect(source).toContain('WORKER_FAILURE_SIGNATURES')
+  })
+
+  it('proves requested/executed equality before printing any aggregate', () => {
+    const source = read(RUNNER)
+    const equality = source.indexOf('setsEqual')
+    const totals = source.indexOf('const totals =')
+    expect(equality).toBeGreaterThan(-1)
+    // A total must never be able to describe a set it did not cover.
+    expect(equality).toBeLessThan(totals)
+  })
+
+  it('fails closed on a missing report rather than treating it as empty', () => {
+    const source = read(RUNNER)
+    expect(source).toContain('no report produced')
+    expect(source).toContain('the requested module did not execute')
+    expect(source).toContain('zero tests discovered')
+  })
+
+  it('declares every manifest entry as a real repository file', () => {
+    const manifest = JSON.parse(read(MANIFEST)) as string[]
+    expect(Array.isArray(manifest)).toBe(true)
+    expect(manifest.length).toBeGreaterThan(0)
+    expect(new Set(manifest).size, 'the manifest contains duplicates').toBe(manifest.length)
+    for (const entry of manifest) {
+      expect(existsSync(join(process.cwd(), entry)), `manifest entry missing: ${entry}`).toBe(true)
+    }
+  })
+
+  it('keeps the manifest in step with the focused suites on disk', () => {
+    // A suite added without a manifest entry would silently stop being
+    // qualification evidence -- the same invisibility this whole path exists to
+    // prevent, arriving by a different route.
+    const manifest = new Set(JSON.parse(read(MANIFEST)) as string[])
+    const onDisk = readdirSync(join(process.cwd(), 'tests/unit'))
+      .filter((file) => file.endsWith('.test.ts'))
+      .filter((file) => /^(graph-integrity|normalized-|integrity-|verification-target-policy|detail-retention-shape|endpoint-qualification|mutation-harness-self|receipt-|exact-manifest)/.test(file))
+      .map((file) => `tests/unit/${file}`)
+    const missing = onDisk.filter((file) => !manifest.has(file))
+    expect(missing, `focused suites absent from the manifest: ${missing.join(', ')}`).toEqual([])
   })
 })
