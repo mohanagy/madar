@@ -19,6 +19,18 @@ export interface MutantScore {
 
 export function matchesExpectation(name: string, expected: readonly (string | RegExp)[]): boolean
 export function readSuiteResult(input: { raw?: string; report?: unknown }): SuiteResult
-export function planMutation(input: { source: string; from: string; to: string }): MutationPlan
+export function planMutation(input: {
+  source: string
+  from: string
+  to: string
+  scopeAfter?: string | null
+}): MutationPlan
 export function scoreMutant(input: { expect?: readonly (string | RegExp)[]; result: SuiteResult }): MutantScore
 export function baselineVerdict(result: SuiteResult): string | null
+
+export function parseReportFromText(text: unknown): unknown | null
+export function classifyReportAvailability(input: {
+  fileExists: boolean
+  fileText?: string
+  stdout?: string
+}): { report: unknown | null; source: string }

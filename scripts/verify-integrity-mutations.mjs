@@ -23,10 +23,16 @@
  * Exit 0 only when caught > 0, uncaught === 0 and skipped === 0.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { resolve } from 'node:path'
-import { baselineVerdict, planMutation, readSuiteResult, scoreMutant } from './lib/mutation-scoring.mjs'
+import { relative, resolve } from 'node:path'
+import {
+  baselineVerdict,
+  classifyReportAvailability,
+  planMutation,
+  readSuiteResult,
+  scoreMutant,
+} from './lib/mutation-scoring.mjs'
 
 const ROOT = process.cwd()
 const CONTRACTS = 'src/contracts/graph-integrity.ts'
@@ -38,6 +44,8 @@ const VALIDATION = 'src/contracts/graph-integrity-validation.ts'
 const JSON_GUARDS = 'src/contracts/graph-integrity-json.ts'
 const GUARDS = 'scripts/lib/receipt-guards.mjs'
 const REGISTRY_SRC = 'scripts/lib/resource-registry.mjs'
+const MUTATIONS_SELF = 'scripts/verify-integrity-mutations.mjs'
+const SCORING_SRC = 'scripts/lib/mutation-scoring.mjs'
 
 const SHARE_SAFETY = 'tests/unit/integrity-record-share-safety.test.ts'
 const ACCOUNTING = 'tests/unit/normalized-candidate-accounting.test.ts'
@@ -56,6 +64,7 @@ const JSON_SAFETY = 'tests/unit/integrity-json-safety.test.ts'
 const RECORD_IDENTITY = 'tests/unit/integrity-record-identity.test.ts'
 const RECEIPT_GUARDS = 'tests/unit/receipt-exact-ref-guards.test.ts'
 const RECEIPT_CLEANUP = 'tests/unit/receipt-resource-cleanup.test.ts'
+const HARNESS_SELF = 'tests/unit/mutation-harness-self.test.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -73,6 +82,8 @@ const RECEIPT_CLEANUP = 'tests/unit/receipt-resource-cleanup.test.ts'
  * - the retained-draft memory bound, whose presence or absence produces the same
  *   record cap and the same exact distinct total.
  */
+const EXECUTABLE_SECTION = '===== executable section; nothing below is mutant data ====='
+
 const MUTANTS = [
   {
     name: 'B1: stop refusing root-derived endpoints',
@@ -727,8 +738,8 @@ const MUTANTS = [
     name: 'E1: exit before cleanup completes on a signal',
     file: REGISTRY_SRC,
     test: RECEIPT_CLEANUP,
-    from: '      registry.cleanupAll()\n      exit(code)',
-    to: '      exit(code)',
+    from: '    registry.cleanupAll()\n    process.exitCode = code\n    exit(code)',
+    to: '    exit(code)\n    registry.cleanupAll()\n    process.exitCode = code',
     expect: [
       'one signal coordinator, cleanup before exit',
     ],
@@ -848,7 +859,51 @@ const MUTANTS = [
       'does not rederive the digest from a truncated subset',
     ],
   },
+  {
+    name: 'M1: share one report path across invocations',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: HARNESS_SELF,
+    from: "  const reportPath = resolve(artifactDir, 'vitest-report.json')",
+    to: "  const reportPath = resolve(ROOT, 'node_modules/.cache/madar-mutation-report.json')",
+    expect: [
+      'gives every invocation its own report path',
+    ],
+  },
+  {
+    name: 'M1: parse the report before writing raw output',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: HARNESS_SELF,
+    from: "  writeFileSync(resolve(artifactDir, 'stdout.txt'), stdout)",
+    to: "  void 0",
+    expect: [
+      'writes raw output before attempting to parse',
+    ],
+  },
+  {
+    name: 'M1: continue after a restoration failure',
+    file: MUTATIONS_SELF,
+    test: HARNESS_SELF,
+    from: '    console.error(`\\nRESTORATION FAILED after ${mutant.name}: ${stillMutated.join(\', \')}`)',
+    to: '    void 0',
+    expect: [
+      'stops the matrix immediately when restoration fails',
+    ],
+  },
+  {
+    name: 'E1: stop treating a missing report as infrastructure failure',
+    file: SCORING_SRC,
+    test: HARNESS_SELF,
+    from: "    ? { report: null, source: 'no JSON report produced' }",
+    to: "    ? { report: { testResults: [] }, source: 'no JSON report produced' }",
+    expect: [
+      'classifies a wholly missing report as infrastructure failure',
+    ],
+  },
 ]
+
+// ===== executable section; nothing below is mutant data =====
 
 const DISCOVER = process.argv.includes('--discover')
 const filterArg = process.argv.indexOf('--filter')
@@ -914,36 +969,83 @@ function report(kind, name, detail) {
   else skipped += 1
 }
 
-const JSON_OUT = resolve(ROOT, 'node_modules/.cache/madar-mutation-report.json')
-
 /**
- * Runs one focused suite and reports exactly which tests failed.
+ * Every invocation gets its own artifact directory.
  *
- * Exact identities matter: scoring on "the suite went red" lets an unrelated
- * failure -- a flaky neighbour, a broken fixture, a host problem -- be recorded
- * as proof that the invariant is covered, which is the opposite of what the
- * harness is for.
+ * A single shared report path was the defect: `--outputFile` pointed at one
+ * file for all 73 mutants, the file was deleted after each read, and vitest
+ * flushes its JSON reporter to disk as the process exits. Under load that flush
+ * could lose the race, producing "no JSON report produced" for whichever mutant
+ * happened to be running -- an infrastructure failure indistinguishable from a
+ * real one, and unreproducible when the same mutant was run alone.
+ *
+ * Unique directories remove the sharing and the staleness. Raw stdout, stderr
+ * and process metadata are written BEFORE any parsing is attempted, so a mutant
+ * whose report never materialises still leaves its identity, its command and
+ * its exit status on disk.
  */
-function runSuite(testFile) {
-  let raw = ''
+const RUN_ID = `${Date.now().toString(36)}-${process.pid.toString(36)}`
+const ARTIFACT_ROOT = resolve(ROOT, 'node_modules/.cache/madar-mutations', RUN_ID)
+
+const slug = (value) => value.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
+
+function invocationDirectory(index, name) {
+  const dir = resolve(ARTIFACT_ROOT, `${String(index).padStart(3, '0')}-${slug(name)}`)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+
+function runSuite(testFile, artifactDir, context = {}) {
+  const reportPath = resolve(artifactDir, 'vitest-report.json')
+  const command = ['npx', 'vitest', 'run', testFile, '--reporter=json', `--outputFile=${reportPath}`]
+  const started = new Date().toISOString()
+  let stdout = ''
+  let stderr = ''
+  let status = null
+  let signal = null
+
   try {
-    raw = execFileSync('npx', ['vitest', 'run', testFile, '--reporter=json', `--outputFile=${JSON_OUT}`], {
+    stdout = execFileSync(command[0], command.slice(1), {
       cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
     })
+    status = 0
   } catch (error) {
-    raw = `${error.stdout ?? ''}${error.stderr ?? ''}`
+    stdout = error.stdout ?? ''
+    stderr = error.stderr ?? ''
+    status = error.status ?? null
+    signal = error.signal ?? null
   }
 
-  let report = null
-  if (existsSync(JSON_OUT)) {
-    try {
-      report = JSON.parse(readFileSync(JSON_OUT, 'utf8'))
-    } catch {
-      report = null
-    }
-    rmSync(JSON_OUT, { force: true })
+  // Durable BEFORE parsing: whatever happens next, the evidence exists.
+  writeFileSync(resolve(artifactDir, 'stdout.txt'), stdout)
+  writeFileSync(resolve(artifactDir, 'stderr.txt'), stderr)
+  writeFileSync(resolve(artifactDir, 'display.log'), `${stdout}\n--- STDERR ---\n${stderr}`.replaceAll('\r', '\n'))
+  writeFileSync(resolve(artifactDir, 'meta.json'), `${JSON.stringify({
+    ...context,
+    testFile,
+    command: command.join(' '),
+    startedAt: started,
+    endedAt: new Date().toISOString(),
+    exitStatus: status,
+    signal,
+    reportPath,
+  }, null, 2)}\n`)
+
+  if (/Failed to start forks worker|Timeout waiting for worker to respond/.test(`${stdout}${stderr}`)) {
+    return { usable: false, why: 'worker startup failure', artifactDir }
   }
-  return readSuiteResult({ raw, report })
+
+  const fileExists = existsSync(reportPath)
+  const availability = classifyReportAvailability({
+    fileExists,
+    fileText: fileExists ? readFileSync(reportPath, 'utf8') : undefined,
+    stdout,
+  })
+  writeFileSync(resolve(artifactDir, 'report-source.txt'), `${availability.source}\n`)
+
+  const result = readSuiteResult({ raw: `${stdout}${stderr}`, report: availability.report })
+  return { ...result, artifactDir, reportSource: availability.source }
 }
 
 console.log(`#658 integrity mutation controls (${selected.length} mutants)\n`)
@@ -952,11 +1054,14 @@ console.log(`#658 integrity mutation controls (${selected.length} mutants)\n`)
 // cannot attribute anything, and every mutant pointed at it would score on a
 // failure that was there first.
 const baselines = new Map()
+let baselineIndex = 0
 for (const testFile of new Set(selected.map((m) => m.test))) {
-  baselines.set(testFile, baselineVerdict(runSuite(testFile)))
+  const dir = invocationDirectory(baselineIndex += 1, `baseline-${testFile}`)
+  baselines.set(testFile, baselineVerdict(runSuite(testFile, dir, { phase: 'baseline', testFile })))
 }
 
 const discovered = {}
+let mutantIndex = 0
 
 for (const mutant of selected) {
   const filePath = resolve(ROOT, mutant.file)
@@ -973,8 +1078,14 @@ for (const mutant of selected) {
   if (!originals.has(mutant.file)) originals.set(mutant.file, readFileSync(filePath, 'utf8'))
   restore()
 
+  const artifactDir = invocationDirectory(mutantIndex += 1, mutant.name)
   const before = digest(mutant.file)
-  const plan = planMutation({ source: readFileSync(filePath, 'utf8'), from: mutant.from, to: mutant.to })
+  const plan = planMutation({
+    source: readFileSync(filePath, 'utf8'),
+    from: mutant.from,
+    to: mutant.to,
+    scopeAfter: mutant.scopeAfter ?? null,
+  })
   if (!plan.ok) { report('SKIPPED', mutant.name, plan.why); continue }
   writeFileSync(filePath, plan.mutated)
   // Belt and braces: the plan says it changed the text, the disk must agree.
@@ -982,12 +1093,34 @@ for (const mutant of selected) {
 
   let result
   try {
-    result = runSuite(mutant.test)
+    result = runSuite(mutant.test, artifactDir, {
+      phase: 'mutant',
+      mutant: mutant.name,
+      file: mutant.file,
+      expected: mutant.expect ?? [],
+      digestBefore: before,
+      digestAfter: digest(mutant.file),
+    })
   } finally {
     restore()
   }
 
-  if (!result.usable) { report('SKIPPED', mutant.name, result.why); continue }
+  // Verified by re-reading bytes, not by trusting the write and not by `git
+  // status` -- an untracked file shows as new whether or not it is mutated.
+  const stillMutated = assertNoResidualMutation()
+  if (stillMutated.length > 0) {
+    console.error(`\nRESTORATION FAILED after ${mutant.name}: ${stillMutated.join(', ')}`)
+    console.error(`Evidence retained in ${relative(ROOT, artifactDir)}`)
+    console.error('Stopping the matrix: no tally can be trusted from a mutated tree.')
+    process.exit(1)
+  }
+
+  if (!result.usable) {
+    // Identity and reason survive regardless of what the suite did, and the raw
+    // output is on disk rather than only in a scrolled terminal.
+    report('SKIPPED', mutant.name, `${result.why} [${relative(ROOT, result.artifactDir ?? artifactDir)}]`)
+    continue
+  }
 
   if (DISCOVER) {
     discovered[mutant.name] = result.failed

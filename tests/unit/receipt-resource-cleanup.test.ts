@@ -198,17 +198,25 @@ describe('E1-04 — one signal coordinator, cleanup before exit', () => {
     git(repo, 'worktree', 'add', '--detach', '--quiet', dir, 'HEAD')
 
     const codes: number[] = []
-    // Resolved from inside the exit callback, which the coordinator invokes only
-    // after children are reaped and every resource is cleaned. Awaiting it is
-    // the ordering assertion.
+    // Sampled INSIDE the exit callback. Asserting afterwards proves only that
+    // cleanup happened eventually; the contract is that it happened first.
+    let outstandingAtExit: readonly string[] | null = null
+    let dirExistedAtExit: boolean | null = null
     const exited = new Promise<void>((resolve) => {
       installed = installSignalCoordinator(registry, {
-        exit: (code) => { codes.push(code); resolve() },
+        exit: (code) => {
+          codes.push(code)
+          outstandingAtExit = [...registry.outstanding]
+          dirExistedAtExit = existsSync(dir)
+          resolve()
+        },
       })
     })
     process.emit('SIGINT')
     await exited
 
+    expect(outstandingAtExit, 'resources were still registered when exit ran').toEqual([])
+    expect(dirExistedAtExit, 'the worktree still existed when exit ran').toBe(false)
     expect(worktreePaths(repo)).toEqual([])
     expect(existsSync(dir)).toBe(false)
     expect(codes).toEqual([130])

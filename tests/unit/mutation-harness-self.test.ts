@@ -6,7 +6,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   baselineVerdict,
+  classifyReportAvailability,
   matchesExpectation,
+  parseReportFromText,
   planMutation,
   readSuiteResult,
   scoreMutant,
@@ -71,6 +73,25 @@ describe('mutation harness — a mutation must actually be applied', () => {
   it('refuses an ambiguous anchor', () => {
     expect(planMutation({ source: 'x\nx\n', from: 'x', to: 'y' }))
       .toEqual({ ok: false, why: 'anchor is ambiguous' })
+  })
+
+  it('scopes the search so a self-targeting mutant is expressible', () => {
+    // A mutant on the harness's own source always matches twice: once in the
+    // executable code and once in the definition that names it. Scoping past
+    // the mutant table is what makes it expressible rather than ambiguous.
+    const source = "MUTANTS = [{ from: 'const a = 1' }]\nMARKER\nconst a = 1\n"
+    expect(planMutation({ source, from: 'const a = 1', to: 'const a = 9' }))
+      .toEqual({ ok: false, why: 'anchor is ambiguous' })
+    const scoped = planMutation({ source, from: 'const a = 1', to: 'const a = 9', scopeAfter: 'MARKER' })
+    expect(scoped.ok).toBe(true)
+    // Only the executable copy is rewritten; the definition is untouched.
+    expect(scoped.mutated).toContain("from: 'const a = 1'")
+    expect(scoped.mutated).toContain('const a = 9')
+  })
+
+  it('refuses a scope marker that does not exist', () => {
+    expect(planMutation({ source: 'const a = 1', from: 'a', to: 'b', scopeAfter: 'ABSENT' }).why)
+      .toContain('scope marker not found')
   })
 
   it('refuses a no-op replacement', () => {
@@ -197,4 +218,119 @@ describe('mutation harness — the working tree survives a run', () => {
     ], { encoding: 'utf8', timeout: 120_000 })
     expect(execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' })).toBe(before)
   }, 180_000)
+})
+
+describe('M1-05 — a report that never reached disk still yields evidence', () => {
+  const valid = JSON.stringify({
+    numTotalTestSuites: 1,
+    testResults: [{ assertionResults: [{ fullName: 'names the invariant', status: 'failed' }] }],
+  })
+
+  it('prefers the report file when it is present and parseable', () => {
+    const { report, source } = classifyReportAvailability({ fileExists: true, fileText: valid, stdout: '' })
+    expect(source).toBe('file')
+    expect(readSuiteResult({ report }).failed).toEqual(['names the invariant'])
+  })
+
+  it('recovers the report from stdout when the file never appeared', () => {
+    // The exact defect: vitest flushes its JSON reporter as the process exits,
+    // and under load that flush lost the race. The same JSON was still in
+    // captured stdout, so the evidence existed and was being thrown away.
+    const { report, source } = classifyReportAvailability({
+      fileExists: false,
+      stdout: `RUN v4
+${valid}
+`,
+    })
+    expect(source).toContain('file missing')
+    expect(readSuiteResult({ report }).failed).toEqual(['names the invariant'])
+  })
+
+  it('recovers from stdout when the file is truncated mid-write', () => {
+    const { report, source } = classifyReportAvailability({
+      fileExists: true,
+      fileText: valid.slice(0, 40),
+      stdout: valid,
+    })
+    expect(source).toContain('file was unparseable')
+    expect(report).not.toBeNull()
+  })
+
+  it('classifies a wholly missing report as infrastructure failure, never caught', () => {
+    const { report, source } = classifyReportAvailability({ fileExists: false, stdout: 'progress only' })
+    expect(report).toBeNull()
+    expect(source).toBe('no JSON report produced')
+    const score = scoreMutant({
+      expect: ['names the invariant'],
+      result: readSuiteResult({ report }),
+    })
+    expect(score.kind).toBe('SKIPPED')
+  })
+
+  it('treats a partial report as no report rather than as a result', () => {
+    expect(parseReportFromText(valid.slice(0, 30))).toBeNull()
+  })
+
+  it('finds the report inside carriage-return-heavy output', () => {
+    // Progress rendering overwrote rows in a captured log and destroyed a
+    // mutant's identity once already.
+    const noisy = `\r  progress\r  more progress\r${valid}`
+    expect(parseReportFromText(noisy)).not.toBeNull()
+  })
+
+  it('rejects non-string input rather than throwing', () => {
+    expect(parseReportFromText(undefined)).toBeNull()
+    expect(parseReportFromText(null)).toBeNull()
+  })
+})
+
+describe('M1-05 — invocation artifacts are unique and durable', () => {
+  const whole = () => readFileSync(join(process.cwd(), 'scripts/verify-integrity-mutations.mjs'), 'utf8')
+
+  /**
+   * Only the executable section, never the mutant table.
+   *
+   * The mutant literals deliberately mirror the defective code they
+   * reintroduce, so a plain text search finds the mutant's copy of a defect and
+   * reports the defect as present. Two of these assertions failed exactly that
+   * way before being scoped.
+   */
+  const source = (): string => {
+    const text = whole()
+    const executable = text.lastIndexOf('===== executable section; nothing below is mutant data =====')
+    expect(executable, 'could not locate the executable section').toBeGreaterThan(-1)
+    return text.slice(executable)
+  }
+
+  it('gives every invocation its own report path', () => {
+    // One shared --outputFile across every mutant was the root cause. Asserted
+    // on the assignment rather than on the string: the string also appears
+    // inside the mutant literal whose whole job is to reintroduce it.
+    const text = source()
+    expect(text).toContain('function invocationDirectory(')
+    expect(text).toContain("const reportPath = resolve(artifactDir, 'vitest-report.json')")
+    expect(text).not.toContain('const reportPath = resolve(ROOT,')
+  })
+
+  it('writes raw output before attempting to parse it', () => {
+    const text = source()
+    const wroteStdout = text.indexOf("writeFileSync(resolve(artifactDir, 'stdout.txt')")
+    const parsed = text.indexOf('classifyReportAvailability(')
+    expect(wroteStdout).toBeGreaterThan(-1)
+    // Evidence exists even when parsing finds nothing to read.
+    expect(wroteStdout).toBeLessThan(parsed)
+  })
+
+  it('names the artifact directory when a mutant cannot be scored', () => {
+    expect(source()).toContain('result.artifactDir')
+  })
+
+  it('stops the matrix immediately when restoration fails', () => {
+    const text = source()
+    const abort = text.indexOf('RESTORATION FAILED after')
+    expect(abort).toBeGreaterThan(-1)
+    const block = text.slice(abort, abort + 600)
+    expect(block).toContain('Evidence retained in')
+    expect(block).toContain('process.exit(1)')
+  })
 })

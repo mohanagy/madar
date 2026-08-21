@@ -47,11 +47,25 @@ export function readSuiteResult({ raw = '', report = null }) {
  * did nothing, and the suite ran on unmutated source and scored UNCAUGHT. Both
  * the presence check and the did-anything-change check exist because of that.
  */
-export function planMutation({ source, from, to }) {
-  const occurrences = source.split(from).length - 1
+export function planMutation({ source, from, to, scopeAfter = null }) {
+  // When the harness mutates its OWN source, every anchor necessarily appears
+  // twice: once in the executable code and once inside the mutant definition
+  // that names it. Scoping the search past the mutant table is what makes such
+  // a mutant expressible at all -- without it the anchor is always ambiguous.
+  let offset = 0
+  if (scopeAfter !== null) {
+    // Resolved from the END: the marker also appears in the mutant definitions
+    // that reference it, and only the last occurrence is the real boundary.
+    offset = source.lastIndexOf(scopeAfter)
+    if (offset < 0) return { ok: false, why: `scope marker not found: ${scopeAfter}` }
+  }
+  const head = source.slice(0, offset)
+  const body = source.slice(offset)
+
+  const occurrences = body.split(from).length - 1
   if (occurrences === 0) return { ok: false, why: 'anchor not found' }
   if (occurrences > 1) return { ok: false, why: 'anchor is ambiguous' }
-  const mutated = source.replace(from, to)
+  const mutated = head + body.replace(from, to)
   if (mutated === source) return { ok: false, why: 'mutation changed nothing' }
   return { ok: true, mutated }
 }
@@ -86,4 +100,44 @@ export function baselineVerdict(result) {
   if (!result.usable) return `baseline unusable: ${result.why}`
   if (result.failed.length > 0) return `baseline already red (${result.failed.length} failing)`
   return null
+}
+
+/**
+ * Recovers a Vitest JSON report from captured text.
+ *
+ * The reporter flushes to disk as the process exits, and under load that flush
+ * can lose the race — leaving no file for a run that otherwise completed
+ * normally. The same JSON is usually still present in captured stdout, so
+ * reading it here recovers evidence the run already produced. This is not a
+ * retry: nothing is re-executed, and a run that produced no report at all still
+ * fails as an infrastructure failure.
+ */
+export function parseReportFromText(text) {
+  if (typeof text !== 'string') return null
+  const start = text.indexOf('{"numTotalTestSuites"')
+  if (start < 0) return null
+  try {
+    return JSON.parse(text.slice(start))
+  } catch {
+    // Truncated mid-write: a partial report is not a report.
+    return null
+  }
+}
+
+/** A missing or unparseable report is infrastructure failure, never `caught`. */
+export function classifyReportAvailability({ fileExists, fileText, stdout }) {
+  if (fileExists === true) {
+    try {
+      return { report: JSON.parse(fileText), source: 'file' }
+    } catch {
+      const recovered = parseReportFromText(stdout)
+      return recovered === null
+        ? { report: null, source: 'unparseable file, no stdout fallback' }
+        : { report: recovered, source: 'stdout (file was unparseable)' }
+    }
+  }
+  const recovered = parseReportFromText(stdout)
+  return recovered === null
+    ? { report: null, source: 'no JSON report produced' }
+    : { report: recovered, source: 'stdout (file missing)' }
 }
