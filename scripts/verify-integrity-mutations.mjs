@@ -1140,7 +1140,7 @@ const MUTANTS = [
     from: '    if (committed.status !== 0) continue',
     to: "    if (committed.status !== 0) { dirty.push(file); continue }",
     expect: [
-      'does not police a project that has no commits to compare against',
+      'does not police a target that has no committed form',
     ],
   },
 ]

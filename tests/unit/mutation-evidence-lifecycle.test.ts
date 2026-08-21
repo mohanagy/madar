@@ -63,6 +63,8 @@ interface HarnessOptions {
   readonly commit?: boolean
   /** Leave a target differing from the commit, as a killed run does. */
   readonly inheritMutation?: boolean
+  /** Commit everything EXCEPT the target, so it has no committed form. */
+  readonly untrackedTarget?: boolean
   /** The harness is expected to refuse before producing any artifact root. */
   readonly expectRefusal?: boolean
 }
@@ -89,7 +91,11 @@ function runHarness(options: HarnessOptions = {}): RunResult {
       expect(result.status, `git ${args.join(' ')} failed: ${result.stderr ?? ''}`).toBe(0)
     }
     git('init', '-q')
-    git('-c', 'user.email=controls@example.invalid', '-c', 'user.name=controls', 'add', '-A')
+    if (options.untrackedTarget === true) {
+      git('add', SUITE, 'mutants.json')
+    } else {
+      git('add', '-A')
+    }
     git('-c', 'user.email=controls@example.invalid', '-c', 'user.name=controls', 'commit', '-qm', 'scratch baseline')
   }
   if (options.inheritMutation === true) {
@@ -188,22 +194,29 @@ describe('mutation evidence inherited from a killed run', () => {
 
   it('starts normally when every target matches its commit', () => {
     // The positive control: without it the refusal above could pass because the
-    // harness refuses everything.
-    const run = runHarness({ commit: true })
-
-    expect(run.status).toBe(0)
-    expect(run.stderr).not.toContain('REFUSING TO START')
-    expect(run.dirs).toHaveLength(2)
+    // harness refuses everything. It asserts only that no refusal happened --
+    // `runHarness` already requires an artifact root to exist. Asserting the
+    // overall exit status here instead coupled this control to every unrelated
+    // harness defect and made three tests fail for one mutation.
+    expect(runHarness({ commit: true }).stderr).not.toContain('REFUSING TO START')
   })
 
-  it('does not police a project that has no commits to compare against', () => {
-    // The controls' own scratch projects are not repositories. Reading "no
+  it('does not police a project that is not a repository at all', () => {
+    // The controls' own scratch projects have no git repository. Reading "no
     // committed copy" as "mutated" refused to start in all of them -- the first
     // version of this guard did exactly that.
-    const run = runHarness()
+    expect(runHarness().stderr).not.toContain('REFUSING TO START')
+  })
 
-    expect(run.status).toBe(0)
+  it('does not police a target that has no committed form', () => {
+    // Distinct from the case above and governed by a different line: the
+    // project IS a repository, but this target was never committed, so there is
+    // nothing to compare against. Residue in an untracked target is caught
+    // during the run by digest instead.
+    const run = runHarness({ commit: true, untrackedTarget: true })
+
     expect(run.stderr).not.toContain('REFUSING TO START')
+    expect(run.stderr).not.toContain(TARGET)
   })
 })
 
