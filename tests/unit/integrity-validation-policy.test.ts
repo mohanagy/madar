@@ -245,11 +245,25 @@ describe('policy — #658 qualification cannot return to raw multi-file Vitest',
     expect(equality).toBeLessThan(totals)
   })
 
-  it('fails closed on a missing report rather than treating it as empty', () => {
+  it('fails closed with classified reasons rather than prose', () => {
+    // Classifications are contract; prose is not. A message reworded during a
+    // refactor must not silently weaken a control that matched on it.
     const source = read(RUNNER)
-    expect(source).toContain('no report produced')
-    expect(source).toContain('the requested module did not execute')
-    expect(source).toContain('zero tests discovered')
+    for (const classification of [
+      'report_unavailable', 'requested_module_not_reported', 'zero_tests_discovered',
+      'duplicate_module_report', 'unexpected_module_reported', 'raw_output_unavailable',
+      'display_output_unavailable', 'outside_repository', 'malformed_manifest',
+    ]) {
+      expect(source, `${classification} is not a declared failure`).toContain(classification)
+    }
+  })
+
+  it('counts module results without deduplicating them first', () => {
+    // Deduplicating before counting is what made a duplicate execution
+    // invisible to set equality.
+    const source = read(RUNNER)
+    expect(source).toContain('Deliberately NOT deduplicated')
+    expect(source).toContain('matching.length > 1')
   })
 
   it('declares every manifest entry as a real repository file', () => {
