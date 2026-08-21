@@ -71,6 +71,7 @@ const HARNESS_SELF = 'tests/unit/mutation-harness-self.test.ts'
 const EVIDENCE_LIFECYCLE = 'tests/unit/mutation-evidence-lifecycle.test.ts'
 const EVIDENCE_AUDIT_SRC = 'scripts/lib/evidence-audit.mjs'
 const EVIDENCE_AUDIT = 'tests/unit/mutation-evidence-audit.test.ts'
+const EVIDENCE_HELPER = 'tests/unit/helpers/evidence-matrix.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -1108,6 +1109,16 @@ const MUTANTS = [
     to: '    if (false) {',
     expect: [
       '18 rejects a report captured outside its own invocation window',
+    ],
+  },
+  {
+    name: 'M1-05D-A: strand the scratch project when the harness fails',
+    file: EVIDENCE_HELPER,
+    test: EVIDENCE_LIFECYCLE,
+    from: '    discardMatrix(project)\n    throw error',
+    to: '    void project\n    throw error',
+    expect: [
+      'removes its scratch project when the harness under test fails',
     ],
   },
 ]

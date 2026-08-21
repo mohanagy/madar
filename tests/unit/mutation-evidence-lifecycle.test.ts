@@ -19,6 +19,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { produceEvidenceMatrix, SCRATCH_PREFIX } from './helpers/evidence-matrix.js'
+
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const HARNESS = resolve(REPO, 'scripts/verify-integrity-mutations.mjs')
 const STUB = resolve(REPO, 'tests/fixtures/mutation-vitest-stub.mjs')
@@ -101,6 +103,24 @@ const read = (run: RunResult, dir: string, file: string): Record<string, unknown
 
 const baselineDir = (run: RunResult): string => run.dirs.find((name) => name.includes('baseline')) as string
 const mutantDir = (run: RunResult): string => run.dirs.find((name) => !name.includes('baseline')) as string
+
+describe('mutation evidence scratch projects', () => {
+  it('removes its scratch project when the harness under test fails', () => {
+    // Found by inspection after a matrix run: four stranded scratch projects,
+    // two per arm. The caller only learns the project path from a SUCCESSFUL
+    // return, so a throw stranded the directory with no one able to clean it.
+    // Counted by our own prefix rather than by watching the temp directory as a
+    // whole -- other fixtures leak there too, and a delta would blame them.
+    const ours = (): string[] => readdirSync(tmpdir()).filter((name) => name.startsWith(SCRATCH_PREFIX))
+    const failing = resolve(mkdtempSync(resolve(tmpdir(), 'madar-failing-harness-')), 'harness.mjs')
+    writeFileSync(failing, 'process.exit(1)\n')
+    scratches.push(dirname(failing))
+
+    const before = ours()
+    expect(() => produceEvidenceMatrix({ harness: failing })).toThrow(/harness failed \(1\)/)
+    expect(ours()).toEqual(before)
+  })
+})
 
 describe('mutation lifecycle evidence', () => {
   it('records a mutated digest that differs from the pre-mutation digest', () => {

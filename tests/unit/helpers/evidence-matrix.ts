@@ -30,9 +30,13 @@ export interface EvidenceMatrix {
   readonly runRoot: string
 }
 
+/** Where scratch projects are created, so a control can measure its own leak. */
+export const SCRATCH_PREFIX = 'madar-evidence-golden-'
+
 /** Runs the harness once and returns where its evidence landed. */
-export function produceEvidenceMatrix(): EvidenceMatrix {
-  const project = mkdtempSync(resolve(tmpdir(), 'madar-evidence-golden-'))
+export function produceEvidenceMatrix(options: { harness?: string } = {}): EvidenceMatrix {
+  const harness = options.harness ?? HARNESS
+  const project = mkdtempSync(resolve(tmpdir(), SCRATCH_PREFIX))
   mkdirSync(resolve(project, 'src'), { recursive: true })
   mkdirSync(resolve(project, 'tests/unit'), { recursive: true })
   writeFileSync(resolve(project, TARGET), "export const KEEP = 'ORIGINAL_VALUE'\n")
@@ -46,24 +50,33 @@ export function produceEvidenceMatrix(): EvidenceMatrix {
     expect: [TEST_NAME],
   }]))
 
-  const child = spawnSync(process.execPath, [HARNESS, '--mutants', 'mutants.json'], {
-    cwd: project,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      MADAR_MUTATION_VITEST_ARGV: JSON.stringify([process.execPath, STUB]),
-      MADAR_STUB_TARGET: TARGET,
-      MADAR_STUB_MARKER: MARKER,
-      MADAR_STUB_TEST_NAME: TEST_NAME,
-    },
-  })
-  if (child.status !== 0) {
-    throw new Error(`harness failed (${child.status}): ${child.stdout ?? ''}${child.stderr ?? ''}`)
-  }
+  try {
+    const child = spawnSync(process.execPath, [harness, '--mutants', 'mutants.json'], {
+      cwd: project,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        MADAR_MUTATION_VITEST_ARGV: JSON.stringify([process.execPath, STUB]),
+        MADAR_STUB_TARGET: TARGET,
+        MADAR_STUB_MARKER: MARKER,
+        MADAR_STUB_TEST_NAME: TEST_NAME,
+      },
+    })
+    if (child.status !== 0) {
+      throw new Error(`harness failed (${child.status}): ${child.stdout ?? ''}${child.stderr ?? ''}`)
+    }
 
-  const runs = resolve(project, 'node_modules/.cache/madar-mutations')
-  const [runId] = readdirSync(runs)
-  return { project, runRoot: resolve(runs, runId as string) }
+    const runs = resolve(project, 'node_modules/.cache/madar-mutations')
+    const [runId] = readdirSync(runs)
+    return { project, runRoot: resolve(runs, runId as string) }
+  } catch (error) {
+    // The caller only learns the project path from a successful return, so a
+    // throw here strands the directory forever. That is exactly what happened:
+    // a mutant that made the harness exit non-zero left one scratch project
+    // per suite behind, on every matrix arm.
+    discardMatrix(project)
+    throw error
+  }
 }
 
 /**
