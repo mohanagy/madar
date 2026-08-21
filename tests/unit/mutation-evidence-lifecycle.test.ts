@@ -55,7 +55,19 @@ interface RunResult {
   readonly dirs: readonly string[]
 }
 
-function runHarness(options: { fault?: string; timeoutMs?: number; mutant?: MutantOverrides } = {}): RunResult {
+interface HarnessOptions {
+  readonly fault?: string
+  readonly timeoutMs?: number
+  readonly mutant?: MutantOverrides
+  /** Commit the scratch project, so the startup guard has a baseline to read. */
+  readonly commit?: boolean
+  /** Leave a target differing from the commit, as a killed run does. */
+  readonly inheritMutation?: boolean
+  /** The harness is expected to refuse before producing any artifact root. */
+  readonly expectRefusal?: boolean
+}
+
+function runHarness(options: HarnessOptions = {}): RunResult {
   const root = mkdtempSync(resolve(tmpdir(), 'madar-mutation-evidence-'))
   scratches.push(root)
   mkdirSync(resolve(root, 'src'), { recursive: true })
@@ -70,6 +82,21 @@ function runHarness(options: { fault?: string; timeoutMs?: number; mutant?: Muta
     to: options.mutant?.to ?? `'${MARKER}'`,
     expect: options.mutant?.expect ?? [TEST_NAME],
   }]))
+
+  if (options.commit === true) {
+    const git = (...args: string[]): void => {
+      const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+      expect(result.status, `git ${args.join(' ')} failed: ${result.stderr ?? ''}`).toBe(0)
+    }
+    git('init', '-q')
+    git('-c', 'user.email=controls@example.invalid', '-c', 'user.name=controls', 'add', '-A')
+    git('-c', 'user.email=controls@example.invalid', '-c', 'user.name=controls', 'commit', '-qm', 'scratch baseline')
+  }
+  if (options.inheritMutation === true) {
+    // Exactly what a process-group kill leaves behind: the target on disk no
+    // longer matches its committed form, and no run is in progress to notice.
+    writeFileSync(resolve(root, TARGET), PRISTINE.replace('ORIGINAL_VALUE', MARKER))
+  }
 
   const child = spawnSync(process.execPath, [HARNESS, '--mutants', 'mutants.json'], {
     cwd: root,
@@ -87,6 +114,18 @@ function runHarness(options: { fault?: string; timeoutMs?: number; mutant?: Muta
 
   const runs = resolve(root, 'node_modules/.cache/madar-mutations')
   const runIds = existsSync(runs) ? readdirSync(runs) : []
+  if (options.expectRefusal === true) {
+    // A refusal must produce NOTHING: an artifact root here would mean the
+    // harness started measuring before deciding it should not.
+    expect(runIds).toHaveLength(0)
+    return {
+      status: child.status,
+      stdout: child.stdout ?? '',
+      stderr: child.stderr ?? '',
+      root: runs,
+      dirs: [],
+    }
+  }
   expect(runIds).toHaveLength(1)
   const runRoot = resolve(runs, runIds[0] as string)
   return {
@@ -130,6 +169,41 @@ describe('mutation evidence scratch projects', () => {
         if (!before.includes(name)) rmSync(resolve(tmpdir(), name), { recursive: true, force: true })
       }
     }
+  })
+})
+
+describe('mutation evidence inherited from a killed run', () => {
+  it('refuses to start when a mutation target no longer matches its commit', () => {
+    // A process-group kill bypasses the exit, SIGINT and SIGTERM restore hooks.
+    // One did, leaving `assertDistinctArms` reading `if (false)`. Nothing
+    // noticed: residual detection compares against originals captured DURING a
+    // run, so at startup the stale mutation would have been adopted as the
+    // pristine baseline and every later attribution measured against it.
+    const run = runHarness({ commit: true, inheritMutation: true, expectRefusal: true })
+
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain('REFUSING TO START')
+    expect(run.stderr).toContain(TARGET)
+  })
+
+  it('starts normally when every target matches its commit', () => {
+    // The positive control: without it the refusal above could pass because the
+    // harness refuses everything.
+    const run = runHarness({ commit: true })
+
+    expect(run.status).toBe(0)
+    expect(run.stderr).not.toContain('REFUSING TO START')
+    expect(run.dirs).toHaveLength(2)
+  })
+
+  it('does not police a project that has no commits to compare against', () => {
+    // The controls' own scratch projects are not repositories. Reading "no
+    // committed copy" as "mutated" refused to start in all of them -- the first
+    // version of this guard did exactly that.
+    const run = runHarness()
+
+    expect(run.status).toBe(0)
+    expect(run.stderr).not.toContain('REFUSING TO START')
   })
 })
 

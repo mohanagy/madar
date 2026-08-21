@@ -22,7 +22,7 @@
  * Usage:  node scripts/verify-integrity-mutations.mjs [--filter <substring>]
  * Exit 0 only when caught > 0, uncaught === 0 and skipped === 0.
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { relative, resolve } from 'node:path'
@@ -1121,6 +1121,28 @@ const MUTANTS = [
       'removes its scratch project when the harness under test fails',
     ],
   },
+  {
+    name: 'M1-05D-A: adopt a mutation inherited from a killed run',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: EVIDENCE_LIFECYCLE,
+    from: "if (inherited.length > 0 && process.env['MADAR_MUTATION_ALLOW_DIRTY'] !== '1') {",
+    to: 'if (false) {',
+    expect: [
+      'refuses to start when a mutation target no longer matches its commit',
+    ],
+  },
+  {
+    name: 'M1-05D-A: treat an uncommitted scratch project as mutated',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: EVIDENCE_LIFECYCLE,
+    from: '    if (committed.status !== 0) continue',
+    to: "    if (committed.status !== 0) { dirty.push(file); continue }",
+    expect: [
+      'does not police a project that has no commits to compare against',
+    ],
+  },
 ]
 
 // ===== executable section; nothing below is mutant data =====
@@ -1500,6 +1522,53 @@ function runSuite(testFile, artifactDir, context = {}, extraEnv = {}) {
 
   const result = readSuiteResult({ raw: combined, report: availability.report })
   return { ...result, artifactDir, reportSource: availability.source, identity, outcome }
+}
+
+/**
+ * Refuses to start on a tree that already carries a mutation.
+ *
+ * Restoration is hooked to `exit`, SIGINT and SIGTERM, and a process-group kill
+ * bypasses all three. That happened: a killed matrix left
+ * `assertDistinctArms` reading `if (false)`. Nothing noticed, because
+ * `assertNoResidualMutation` compares against originals captured DURING a run
+ * and so knows nothing at startup -- the stale mutation would simply have been
+ * adopted as the next run's pristine baseline.
+ *
+ * Only files this table targets are examined, so ordinary uncommitted work
+ * elsewhere in the tree is none of this harness's business.
+ */
+function assertNoInheritedMutation() {
+  // The controls run this harness inside throwaway projects that are not git
+  // repositories at all. Treating "no committed copy" as "mutated" refused to
+  // start there and broke every control -- so absence of a baseline is skipped,
+  // and a tracked file that disagrees with HEAD is the only signal.
+  const insideRepo = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+    cwd: ROOT, encoding: 'utf8',
+  })
+  if (insideRepo.status !== 0 || insideRepo.stdout.trim() !== 'true') return []
+
+  const targets = [...new Set(selected.map((mutant) => mutant.file))]
+  const dirty = []
+  for (const file of targets) {
+    if (!existsSync(resolve(ROOT, file))) continue
+    const committed = spawnSync('git', ['show', `HEAD:${file}`], {
+      cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+    })
+    // Untracked targets have no committed baseline to compare against; residue
+    // in those is caught during the run by digest instead.
+    if (committed.status !== 0) continue
+    if (committed.stdout !== readFileSync(resolve(ROOT, file), 'utf8')) dirty.push(file)
+  }
+  return dirty
+}
+
+const inherited = assertNoInheritedMutation()
+if (inherited.length > 0 && process.env['MADAR_MUTATION_ALLOW_DIRTY'] !== '1') {
+  console.error('REFUSING TO START: mutation target(s) differ from HEAD:')
+  for (const file of inherited) console.error(`  ${file}`)
+  console.error('A killed run can leave a mutation on disk. Restore these before measuring,')
+  console.error('or set MADAR_MUTATION_ALLOW_DIRTY=1 if the difference is deliberate.')
+  process.exit(1)
 }
 
 console.log(`#658 integrity mutation controls (${selected.length} mutants)\n`)
