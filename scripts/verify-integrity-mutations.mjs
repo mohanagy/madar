@@ -44,6 +44,7 @@ const VALIDATION = 'src/contracts/graph-integrity-validation.ts'
 const JSON_GUARDS = 'src/contracts/graph-integrity-json.ts'
 const GUARDS = 'scripts/lib/receipt-guards.mjs'
 const REGISTRY_SRC = 'scripts/lib/resource-registry.mjs'
+const CHILD_RUNNER = 'scripts/lib/child-runner.mjs'
 const MUTATIONS_SELF = 'scripts/verify-integrity-mutations.mjs'
 const SCORING_SRC = 'scripts/lib/mutation-scoring.mjs'
 
@@ -64,6 +65,7 @@ const JSON_SAFETY = 'tests/unit/integrity-json-safety.test.ts'
 const RECORD_IDENTITY = 'tests/unit/integrity-record-identity.test.ts'
 const RECEIPT_GUARDS = 'tests/unit/receipt-exact-ref-guards.test.ts'
 const RECEIPT_CLEANUP = 'tests/unit/receipt-resource-cleanup.test.ts'
+const SIGNAL_E2E = 'tests/unit/receipt-signal-responsiveness.test.ts'
 const HARNESS_SELF = 'tests/unit/mutation-harness-self.test.ts'
 
 /**
@@ -901,6 +903,19 @@ const MUTANTS = [
       'classifies a wholly missing report as infrastructure failure',
     ],
   },
+  {
+    name: 'E1-05R: untype the spawn-race shutdown rejection',
+    file: CHILD_RUNNER,
+    test: SIGNAL_E2E,
+    // The target suite is gated: without this the baseline would be "green"
+    // only because its tests never ran, and the mutant would score UNCAUGHT.
+    env: { MADAR_RECEIPT_SIGNAL_E2E: '1' },
+    from: '          reject(new ResourceRegistryShuttingDownError(`child \"${description}\" (shutdown began during spawn)`))',
+    to: '          reject(new Error(`refusing to admit child \"${description}\": shutdown began during spawn`))',
+    expect: [
+      'terminates and reaps a child when shutdown wins the spawn race',
+    ],
+  },
 ]
 
 // ===== executable section; nothing below is mutant data =====
@@ -1091,7 +1106,7 @@ function invocationDirectory(index, name) {
 }
 
 
-function runSuite(testFile, artifactDir, context = {}) {
+function runSuite(testFile, artifactDir, context = {}, extraEnv = {}) {
   const reportPath = resolve(artifactDir, 'vitest-report.json')
   const command = ['npx', 'vitest', 'run', testFile, '--reporter=json', `--outputFile=${reportPath}`]
   const started = new Date().toISOString()
@@ -1103,6 +1118,7 @@ function runSuite(testFile, artifactDir, context = {}) {
   try {
     stdout = execFileSync(command[0], command.slice(1), {
       cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
+      env: { ...process.env, ...extraEnv },
     })
     status = 0
   } catch (error) {
@@ -1184,7 +1200,8 @@ const baselines = new Map()
 let baselineIndex = 0
 for (const testFile of new Set(selected.map((m) => m.test))) {
   const dir = invocationDirectory(baselineIndex += 1, `baseline-${testFile}`)
-  const baselineResult = runSuite(testFile, dir, { phase: 'baseline', testFile })
+  const baselineEnv = MUTANTS.find((mutant) => mutant.test === testFile && mutant.env !== undefined)?.env ?? {}
+  const baselineResult = runSuite(testFile, dir, { phase: 'baseline', testFile }, baselineEnv)
   const verdict = baselineVerdict(baselineResult)
   baselines.set(testFile, verdict)
   writeAtomic(resolve(dir, 'scoring.json'), `${JSON.stringify({
@@ -1256,7 +1273,7 @@ for (const mutant of selected) {
       expected: mutant.expect ?? [],
       digestBefore: before,
       digestAfter: digest(mutant.file),
-    })
+    }, mutant.env ?? {})
   } finally {
     restore()
   }

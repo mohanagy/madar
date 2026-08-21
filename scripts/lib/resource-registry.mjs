@@ -2,36 +2,10 @@ import { execFileSync } from 'node:child_process'
 import { rmSync } from 'node:fs'
 
 import { terminateChildTree } from './child-runner.mjs'
+import { ResourceRegistryShuttingDownError } from './shutdown-error.mjs'
 
-/**
- * Raised when work is requested after shutdown has begun.
- *
- * A distinct type rather than a boolean return, so a caller cannot mistake
- * refusal for an ordinary failure and retry it.
- */
-export class ResourceRegistryShuttingDownError extends Error {
-  code = 'RESOURCE_REGISTRY_SHUTTING_DOWN'
+export { ResourceRegistryShuttingDownError }
 
-  constructor(what) {
-    super(`refusing to admit ${what}: shutdown has begun`)
-    this.name = 'ResourceRegistryShuttingDownError'
-  }
-}
-
-/**
- * One owner for every temporary resource a receipt run creates.
- *
- * The previous design let each helper install its own SIGINT/SIGTERM handler
- * that cleaned its own directory and then called `process.exit`. Node runs
- * listeners in registration order, so on an interrupt the outermost helper
- * cleaned up and exited before any inner helper's handler ran at all — the
- * candidate worktree simply leaked. Nested ownership cannot be made correct by
- * adding more handlers; there has to be exactly one.
- *
- * Cleanup is best-effort across every resource: one failing removal must not
- * prevent the others, because the alternative is leaving more behind than
- * necessary at exactly the moment something is already going wrong.
- */
 export function createResourceRegistry({ onWarning = () => undefined } = {}) {
   const resources = new Map()
   // Children are tracked apart from directories because they must be

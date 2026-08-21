@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
 
+import { ResourceRegistryShuttingDownError } from './shutdown-error.mjs'
+
 /**
  * Asynchronous, interruptible child execution.
  *
@@ -93,8 +95,11 @@ export function runChild(command, args, options = {}) {
     if (registry !== null) {
       if (reservation !== null && !reservation.valid()) {
         terminateChildTree(child, 'SIGTERM')
+        // The same typed class the pre-spawn gate throws. A plain Error here
+        // would make the race path indistinguishable from an ordinary failure,
+        // and a caller that retried on failure would retry into a shutdown.
         child.once('close', () => {
-          reject(new Error(`refusing to admit child "${description}": shutdown began during spawn`))
+          reject(new ResourceRegistryShuttingDownError(`child "${description}" (shutdown began during spawn)`))
         })
         return
       }

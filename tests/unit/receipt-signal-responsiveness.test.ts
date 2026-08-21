@@ -9,6 +9,7 @@ import { runChild, runChildOrThrow } from '../../scripts/lib/child-runner.mjs'
 import {
   createResourceRegistry,
   directoryCleanup,
+  ResourceRegistryShuttingDownError,
   worktreeCleanup,
 } from '../../scripts/lib/resource-registry.mjs'
 
@@ -374,6 +375,7 @@ describe('E1-05 — shutdown refuses new work, it does not merely announce it', 
       thrown = error
     }
 
+    expect(thrown).toBeInstanceOf(ResourceRegistryShuttingDownError)
     expect((thrown as { code?: string }).code).toBe('RESOURCE_REGISTRY_SHUTTING_DOWN')
     expect(registry.liveChildren).toEqual([])
   }, 60_000)
@@ -430,8 +432,13 @@ describe('E1-05 — shutdown refuses new work, it does not merely announce it', 
       thrown = error
     }
 
+    // The type is the contract, not the message. A message assertion passes
+    // against a plain Error, which is exactly what this used to be.
+    expect(thrown).toBeInstanceOf(ResourceRegistryShuttingDownError)
+    expect((thrown as { code?: string }).code).toBe('RESOURCE_REGISTRY_SHUTTING_DOWN')
     expect(String((thrown as Error).message)).toMatch(/shutdown began during spawn/)
     expect(registry.liveChildren).toEqual([])
+    expect(registry.outstanding).toEqual([])
   }, 60_000)
 
   it('leaves normal execution before shutdown unchanged', async () => {
