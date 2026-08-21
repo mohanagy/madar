@@ -80,6 +80,20 @@ switch (mode) {
     process.exit(0)
     break
 
+  case 'duplicate-module':
+    // Two result rows naming the SAME requested module. Set equality cannot
+    // see this: every requested module ran, none unrequested did, and the
+    // module still ran twice.
+    writeFileSync(outputFile, JSON.stringify({
+      numTotalTestSuites: 2,
+      testResults: [
+        { name: requested, assertionResults: passing },
+        { name: requested, assertionResults: passing },
+      ],
+    }))
+    process.exit(0)
+    break
+
   case 'delete-after-write':
     // Written, then removed: distinct from never writing one, and the shape a
     // racing cleanup produces.
