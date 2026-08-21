@@ -191,7 +191,8 @@ describe('policy — the receipt command routes through its guard owners', () =>
   it('owns every temporary resource through the single registry', () => {
     const source = read(RECEIPTS)
     expect(source).toContain('createResourceRegistry(')
-    expect(source).toContain('installSignalCoordinator(REGISTRY)')
+    // The call, not its exact arguments -- the coordinator takes options now.
+    expect(source).toContain('installSignalCoordinator(REGISTRY')
     expect(source).toContain('REGISTRY.register(')
     // No helper may install its own exit-producing handler.
     expect(source).not.toContain("process.on('SIGINT'")
