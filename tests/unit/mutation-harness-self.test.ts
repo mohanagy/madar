@@ -1,9 +1,8 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
   baselineVerdict,
@@ -14,6 +13,7 @@ import {
   readSuiteResult,
   scoreMutant,
 } from '../../scripts/lib/mutation-scoring.mjs'
+import { copyMatrix, discardMatrix, matrixDir, produceEvidenceMatrix } from './helpers/evidence-matrix.js'
 
 /** A Vitest JSON report with the given test outcomes. */
 function report(...outcomes: Array<[string, 'passed' | 'failed']>): unknown {
@@ -308,7 +308,7 @@ describe('M1-05 — invocation artifacts are unique and durable', () => {
     // on the assignment rather than on the string: the string also appears
     // inside the mutant literal whose whole job is to reintroduce it.
     const text = source()
-    expect(text).toContain('function invocationDirectory(')
+    expect(text).toContain('function allocateInvocation(')
     expect(text).toContain("const reportPath = resolve(artifactDir, 'vitest-report.json')")
     expect(text).not.toContain('const reportPath = resolve(ROOT,')
   })
@@ -339,37 +339,37 @@ describe('M1-05 — invocation artifacts are unique and durable', () => {
 describe('M1-05D — the artifact audit is executable, not asserted', () => {
   const HARNESS = resolve(process.cwd(), 'scripts/verify-integrity-mutations.mjs')
   const scratch: string[] = []
+  let golden = ''
+  let project = ''
 
-  afterEach(() => {
+  // Produced once from the real harness. A hand-written artifact set can only
+  // satisfy the checks its author remembered, which is how the audit came to
+  // accept a matrix whose report named an unrelated suite.
+  beforeAll(() => {
+    const matrix = produceEvidenceMatrix()
+    golden = matrix.runRoot
+    project = matrix.project
+  }, 60_000)
+
+  afterAll(() => {
     for (const dir of scratch.splice(0)) rmSync(dir, { recursive: true, force: true })
+    if (project !== '') discardMatrix(project)
   })
 
   /** A complete, valid artifact directory for one mutant and one baseline. */
   function buildArtifacts(): string {
-    const root = mkdtempSync(join(tmpdir(), 'madar-audit-'))
-    scratch.push(root)
-    const invocation = 'run1-001'
-    for (const [name, extra] of [
-      ['001-mutant', { mutant_id: 'demo mutant' }],
-      ['001-baseline', { baseline_identity: 'tests/unit/demo.test.ts' }],
-    ] as Array<[string, Record<string, unknown>]>) {
-      const dir = join(root, name)
-      mkdirSync(dir, { recursive: true })
-      for (const file of ['meta.json', 'stdout.txt', 'stderr.txt', 'display.log', 'suite-identity.json']) {
-        writeFileSync(join(dir, file), file.endsWith('.json') ? '{}' : 'output')
-      }
-      const id = `${invocation}-${name}`
-      writeFileSync(join(dir, 'scoring.json'), JSON.stringify({ invocation_id: id, ...extra }))
-      writeFileSync(join(dir, 'restoration.json'), JSON.stringify({ invocation_id: id }))
-    }
+    const root = copyMatrix(golden)
+    scratch.push(dirname(root))
     return root
   }
+
+  const mutant = (root: string): string => matrixDir(root, 'mutant')
 
   function audit(root: string): { status: number; output: string } {
     try {
       const stdout = execFileSync(process.execPath, [
         HARNESS, '--audit', root, '--expect-mutants', '1', '--expect-baselines', '1',
-      ], { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 })
+      ], { cwd: project, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 })
       return { status: 0, output: stdout }
     } catch (error) {
       const failure = error as { status?: number; stdout?: string; stderr?: string }
@@ -386,11 +386,11 @@ describe('M1-05D — the artifact audit is executable, not asserted', () => {
   })
 
   it.each([
-    'scoring.json', 'restoration.json', 'suite-identity.json',
-    'meta.json', 'stdout.txt', 'stderr.txt', 'display.log',
+    'scoring.json', 'restoration.json', 'suite-identity.json', 'report-identity.json',
+    'meta.json', 'command.json', 'stdout.txt', 'stderr.txt', 'display.log',
   ])('fails when %s is missing', (artifact) => {
     const root = buildArtifacts()
-    rmSync(join(root, '001-mutant', artifact), { force: true })
+    rmSync(join(mutant(root), artifact), { force: true })
     const { status, output } = audit(root)
     expect(status).not.toBe(0)
     expect(output).toContain(`missing ${artifact}`)
@@ -398,7 +398,7 @@ describe('M1-05D — the artifact audit is executable, not asserted', () => {
 
   it('fails when scoring.json is corrupt', () => {
     const root = buildArtifacts()
-    writeFileSync(join(root, '001-mutant', 'scoring.json'), '{ not json')
+    writeFileSync(join(mutant(root), 'scoring.json'), '{ not json')
     const { status, output } = audit(root)
     expect(status).not.toBe(0)
     expect(output).toContain('scoring.json unreadable')
@@ -406,7 +406,7 @@ describe('M1-05D — the artifact audit is executable, not asserted', () => {
 
   it('fails when restoration.json is corrupt', () => {
     const root = buildArtifacts()
-    writeFileSync(join(root, '001-mutant', 'restoration.json'), '{ not json')
+    writeFileSync(join(mutant(root), 'restoration.json'), '{ not json')
     const { status, output } = audit(root)
     expect(status).not.toBe(0)
     expect(output).toContain('restoration.json unreadable')
@@ -414,7 +414,7 @@ describe('M1-05D — the artifact audit is executable, not asserted', () => {
 
   it('fails when scoring and restoration name different invocations', () => {
     const root = buildArtifacts()
-    writeFileSync(join(root, '001-mutant', 'restoration.json'), JSON.stringify({ invocation_id: 'someone-else' }))
+    writeFileSync(join(mutant(root), 'restoration.json'), JSON.stringify({ invocation_id: 'someone-else' }))
     const { status, output } = audit(root)
     expect(status).not.toBe(0)
     expect(output).toContain('name different invocations')
@@ -422,7 +422,7 @@ describe('M1-05D — the artifact audit is executable, not asserted', () => {
 
   it('fails when an invocation identifies neither a mutant nor a baseline', () => {
     const root = buildArtifacts()
-    writeFileSync(join(root, '001-mutant', 'scoring.json'), JSON.stringify({ invocation_id: 'run1-001-001-mutant' }))
+    writeFileSync(join(mutant(root), 'scoring.json'), JSON.stringify({ invocation_id: 'run1-001-mutant' }))
     const { status, output } = audit(root)
     expect(status).not.toBe(0)
     expect(output).toContain('identifies neither a mutant nor a baseline')
@@ -431,7 +431,7 @@ describe('M1-05D — the artifact audit is executable, not asserted', () => {
   it('fails when an unexpected extra invocation directory is present', () => {
     // A stale directory from an earlier run would otherwise pad the count.
     const root = buildArtifacts()
-    const extra = join(root, '002-stale')
+    const extra = join(root, '900-stale')
     mkdirSync(extra, { recursive: true })
     for (const file of ['meta.json', 'stdout.txt', 'stderr.txt', 'display.log', 'suite-identity.json']) {
       writeFileSync(join(extra, file), '{}')
@@ -445,7 +445,7 @@ describe('M1-05D — the artifact audit is executable, not asserted', () => {
 
   it('fails when a mutant invocation is absent entirely', () => {
     const root = buildArtifacts()
-    rmSync(join(root, '001-mutant'), { recursive: true, force: true })
+    rmSync(mutant(root), { recursive: true, force: true })
     const { status, output } = audit(root)
     expect(status).not.toBe(0)
     expect(output).toContain('scored 0 mutants, expected 1')

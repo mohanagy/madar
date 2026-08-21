@@ -67,6 +67,7 @@ const RECEIPT_GUARDS = 'tests/unit/receipt-exact-ref-guards.test.ts'
 const RECEIPT_CLEANUP = 'tests/unit/receipt-resource-cleanup.test.ts'
 const SIGNAL_E2E = 'tests/unit/receipt-signal-responsiveness.test.ts'
 const HARNESS_SELF = 'tests/unit/mutation-harness-self.test.ts'
+const EVIDENCE_LIFECYCLE = 'tests/unit/mutation-evidence-lifecycle.test.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -916,6 +917,75 @@ const MUTANTS = [
       'terminates and reaps a child when shutdown wins the spawn race',
     ],
   },
+  {
+    name: 'M1-05D-A: read the mutated digest after restoration',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: EVIDENCE_LIFECYCLE,
+    from: '    // Captured before restore(), not re-read after it.\n    mutated_digests: { [mutant.file]: mutatedDigest },',
+    to: '    mutated_digests: { [mutant.file]: digest(mutant.file) },',
+    expect: [
+      'records a mutated digest that differs from the pre-mutation digest',
+    ],
+  },
+  {
+    name: 'M1-05D-A: fabricate a mutation lifecycle for a baseline',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: EVIDENCE_LIFECYCLE,
+    from: "    mutation_lifecycle: 'not_applicable',",
+    to: "    mutation_lifecycle: 'applied',",
+    expect: [
+      'gives a baseline an explicit not-applicable lifecycle rather than fabricated digests',
+    ],
+  },
+  {
+    name: 'M1-05D-A: drop the process outcome from scoring',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: EVIDENCE_LIFECYCLE,
+    from: '      process_outcome: result.outcome ?? null,',
+    to: '      process_outcome: null,',
+    expect: [
+      'retains the child exit code for baseline and mutant alike',
+      'retains the terminating signal when the child was killed rather than exiting',
+      'writes scoring.json when the suite produced no report at all',
+      'writes scoring.json when the suite timed out',
+    ],
+  },
+  {
+    name: 'M1-05D-A: abandon an invocation without scoring it',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: EVIDENCE_LIFECYCLE,
+    from: "    writeAtomic(resolve(artifactDir, 'scoring.json'), `${JSON.stringify({\n      invocation_id: invocationId,\n      mutant_id: mutant.name,\n      requested_suite: mutant.test,\n      reported_suites: [],",
+    to: "    void (resolve(artifactDir, 'scoring.json'), `${JSON.stringify({\n      invocation_id: invocationId,\n      mutant_id: mutant.name,\n      requested_suite: mutant.test,\n      reported_suites: [],",
+    expect: [
+      'writes scoring.json for a failure that happens before any suite runs',
+    ],
+  },
+  {
+    name: 'M1-05D-A: exit on a restoration failure without scoring it',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: EVIDENCE_LIFECYCLE,
+    from: "    writeScoring('infrastructure_failure', 'restoration_failed', `left mutated: ${stillMutated.join(', ')}`)",
+    to: '    void 0',
+    expect: [
+      'stops the matrix on a restoration failure and keeps the truthful digests',
+    ],
+  },
+  {
+    name: 'M1-05D-A: omit the invocation identity from the report sidecar',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: EVIDENCE_LIFECYCLE,
+    from: "  writeAtomic(resolve(artifactDir, 'report-identity.json'), `${JSON.stringify({\n    invocation_id: invocationId,",
+    to: "  writeAtomic(resolve(artifactDir, 'report-identity.json'), `${JSON.stringify({\n    invocation_id: null,",
+    expect: [
+      'stamps one invocation identity into every artifact that can carry one',
+    ],
+  },
 ]
 
 // ===== executable section; nothing below is mutant data =====
@@ -954,8 +1024,8 @@ function auditInvocationArtifacts(expectedMutants, expectedBaselines, rootOverri
   const auditRoot = rootOverride ?? ARTIFACT_ROOT
   const runId = runIdOverride === undefined ? RUN_ID : runIdOverride
   const required = [
-    'meta.json', 'stdout.txt', 'stderr.txt', 'display.log',
-    'suite-identity.json', 'scoring.json', 'restoration.json',
+    'meta.json', 'command.json', 'suite-identity.json', 'report-identity.json',
+    'scoring.json', 'restoration.json', 'stdout.txt', 'stderr.txt', 'display.log',
   ]
   const problems = []
   const dirs = existsSync(auditRoot)
@@ -993,11 +1063,33 @@ function auditInvocationArtifacts(expectedMutants, expectedBaselines, rootOverri
       if (scoring.mutant_id !== undefined) mutants += 1
       else if (scoring.baseline_identity !== undefined) baselines += 1
       else problems.push(`${name}: scoring.json identifies neither a mutant nor a baseline`)
+
+      // The lifecycle is three readings of one file at three different states.
+      // Checking it here is the whole point: a record where pre, mutated and
+      // post are equal is a record of nothing happening, and that is precisely
+      // what a post-restoration re-read silently produced.
+      if (restoration.mutation_lifecycle === 'applied') {
+        for (const path of restoration.source_paths ?? []) {
+          const pre = restoration.pre_mutation_digests?.[path]
+          const mutated = restoration.mutated_digests?.[path]
+          const post = restoration.post_restoration_digests?.[path]
+          if (pre === undefined || mutated === undefined || post === undefined) {
+            problems.push(`${name}: mutation lifecycle incomplete for ${path}`)
+          } else if (pre === mutated) {
+            problems.push(`${name}: pre and mutated digests are equal for ${path} (no mutation was recorded)`)
+          } else if (post !== pre) {
+            problems.push(`${name}: post-restoration digest does not match pre-mutation digest for ${path}`)
+          }
+        }
+      } else if (!['not_applicable', 'not_applied'].includes(restoration.mutation_lifecycle)) {
+        problems.push(`${name}: restoration.json declares no mutation lifecycle`)
+      }
     }
   }
 
   if (mutants !== expectedMutants) problems.push(`scored ${mutants} mutants, expected ${expectedMutants}`)
   if (baselines !== expectedBaselines) problems.push(`scored ${baselines} baselines, expected ${expectedBaselines}`)
+
   return { problems, dirs: dirs.length, mutants, baselines }
 }
 
@@ -1006,7 +1098,26 @@ function auditInvocationArtifacts(expectedMutants, expectedBaselines, rootOverri
 const DISCOVER = process.argv.includes('--discover')
 const filterArg = process.argv.indexOf('--filter')
 const filter = filterArg >= 0 ? process.argv[filterArg + 1] : null
-const selected = filter === null ? MUTANTS : MUTANTS.filter((m) => m.name.includes(filter))
+
+/**
+ * Test seam: an external mutant table.
+ *
+ * The evidence this harness writes is only trustworthy if its failure paths can
+ * be DRIVEN rather than described. Asserting about them by reading this file's
+ * source is precisely the kind of check that passes while checking nothing, so
+ * the controls run the real harness against a small table of their own.
+ */
+const tableArg = process.argv.indexOf('--mutants')
+const table = tableArg >= 0
+  ? JSON.parse(readFileSync(resolve(ROOT, process.argv[tableArg + 1]), 'utf8'))
+  : MUTANTS
+const selected = filter === null ? table : table.filter((m) => m.name.includes(filter))
+
+/** Test seam: the runner binary and its fixed argv prefix. */
+const VITEST_ARGV = process.env['MADAR_MUTATION_VITEST_ARGV'] !== undefined
+  ? JSON.parse(process.env['MADAR_MUTATION_VITEST_ARGV'])
+  : ['npx', 'vitest']
+const SUITE_TIMEOUT_MS = Number(process.env['MADAR_MUTATION_SUITE_TIMEOUT_MS'] ?? 300_000)
 
 const digest = (path) => createHash('sha256').update(readFileSync(resolve(ROOT, path))).digest('hex')
 
@@ -1099,54 +1210,91 @@ function writeAtomic(path, contents) {
 
 const slug = (value) => value.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
 
-function invocationDirectory(index, name) {
-  const dir = resolve(ARTIFACT_ROOT, `${String(index).padStart(3, '0')}-${slug(name)}`)
+/**
+ * Allocates the identity and the directory for one invocation, together.
+ *
+ * A single monotonic sequence across baselines and mutants: two invocations in
+ * one run cannot share an ordinal, and RUN_ID separates runs, so an
+ * `invocation_id` names exactly one invocation of exactly one run. Previously
+ * baselines and mutants counted independently and the directory name was the
+ * only thing keeping `001-` from meaning two different invocations.
+ */
+let invocationSequence = 0
+function allocateInvocation(kind, name) {
+  const ordinal = String(invocationSequence += 1).padStart(3, '0')
+  const dir = resolve(ARTIFACT_ROOT, `${ordinal}-${slug(name)}`)
+  if (existsSync(dir)) throw new Error(`invocation directory collision: ${dir}`)
   mkdirSync(dir, { recursive: true })
-  return dir
+  return { id: `${RUN_ID}-${kind}${ordinal}`, ordinal, dir }
 }
 
 
 function runSuite(testFile, artifactDir, context = {}, extraEnv = {}) {
   const reportPath = resolve(artifactDir, 'vitest-report.json')
-  const command = ['npx', 'vitest', 'run', testFile, '--reporter=json', `--outputFile=${reportPath}`]
-  const started = new Date().toISOString()
+  const command = [...VITEST_ARGV, 'run', testFile, '--reporter=json', `--outputFile=${reportPath}`]
+  const invocationId = context.invocation_id
+  const startedAt = new Date().toISOString()
+  const startedMs = Date.now()
   let stdout = ''
   let stderr = ''
   let status = null
   let signal = null
+  let timedOut = false
+  let spawnError = null
 
   try {
     stdout = execFileSync(command[0], command.slice(1), {
-      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
+      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SUITE_TIMEOUT_MS,
       env: { ...process.env, ...extraEnv },
     })
     status = 0
   } catch (error) {
     stdout = error.stdout ?? ''
     stderr = error.stderr ?? ''
+    // execFileSync reports a timeout as a signal kill; both are recorded rather
+    // than collapsed, and a status of null now means "no child ran" instead of
+    // "we did not look".
     status = error.status ?? null
     signal = error.signal ?? null
+    timedOut = error.code === 'ETIMEDOUT'
+    if (error.code === 'ENOENT' || error.code === 'EACCES') spawnError = `${error.code}: ${error.message}`
+  }
+  const finishedAt = new Date().toISOString()
+  const outcome = {
+    exit_code: status,
+    termination_signal: signal,
+    timed_out: timedOut,
+    spawn_error: spawnError,
+    started_at: startedAt,
+    finished_at: finishedAt,
+    duration_ms: Date.now() - startedMs,
+    child_started: spawnError === null,
   }
 
   // Durable BEFORE parsing: whatever happens next, the evidence exists.
   writeFileSync(resolve(artifactDir, 'stdout.txt'), stdout)
   writeFileSync(resolve(artifactDir, 'stderr.txt'), stderr)
   writeFileSync(resolve(artifactDir, 'display.log'), `${stdout}\n--- STDERR ---\n${stderr}`.replaceAll('\r', '\n'))
-  writeFileSync(resolve(artifactDir, 'meta.json'), `${JSON.stringify({
+  writeAtomic(resolve(artifactDir, 'meta.json'), `${JSON.stringify({
+    invocation_id: invocationId,
     ...context,
     testFile,
-    command: command.join(' '),
-    startedAt: started,
-    endedAt: new Date().toISOString(),
-    exitStatus: status,
-    signal,
-    reportPath,
+    reportPath: relative(ROOT, reportPath),
+    outcome,
+  }, null, 2)}\n`)
+  // Command recorded separately so the audit can cross-check argv against what
+  // every other artifact claims was run.
+  writeAtomic(resolve(artifactDir, 'command.json'), `${JSON.stringify({
+    invocation_id: invocationId,
+    requested_suite: testFile,
+    argv: command,
+    env_overrides: Object.keys(extraEnv),
   }, null, 2)}\n`)
 
-  if (/Failed to start forks worker|Timeout waiting for worker to respond/.test(`${stdout}${stderr}`)) {
-    return { usable: false, why: 'worker startup failure', artifactDir }
-  }
-
+  // No early return here. The worker-signature refusal lives below, AFTER
+  // report-source.txt and suite-identity.json are on disk: returning first left
+  // an invocation with two of its nine artifacts missing, and "missing" is
+  // exactly what an audit cannot distinguish from "never written".
   const fileExists = existsSync(reportPath)
   const availability = classifyReportAvailability({
     fileExists,
@@ -1154,6 +1302,22 @@ function runSuite(testFile, artifactDir, context = {}, extraEnv = {}) {
     stdout,
   })
   writeFileSync(resolve(artifactDir, 'report-source.txt'), `${availability.source}\n`)
+  // The native Vitest report cannot carry an invocation identity, so it gets a
+  // sidecar that can. Digest and bounds together are what let an audit reject a
+  // report copied in from another invocation whose basename happens to match.
+  const reportBytes = fileExists ? readFileSync(reportPath) : null
+  writeAtomic(resolve(artifactDir, 'report-identity.json'), `${JSON.stringify({
+    invocation_id: invocationId,
+    requested_suite: testFile,
+    report_path: relative(ROOT, reportPath),
+    report_present: fileExists,
+    report_status: availability.source,
+    report_bytes: reportBytes === null ? 0 : reportBytes.byteLength,
+    report_digest: reportBytes === null ? null : createHash('sha256').update(reportBytes).digest('hex'),
+    invocation_started_at: startedAt,
+    invocation_finished_at: finishedAt,
+    captured_at: new Date().toISOString(),
+  }, null, 2)}\n`)
 
   // Suite identity, proven rather than assumed. One suite was requested; the
   // report must name exactly that suite and no other. Without this a mutant
@@ -1173,10 +1337,10 @@ function runSuite(testFile, artifactDir, context = {}, extraEnv = {}) {
     exactlyOne: reportedModules.length === 1 && unexpectedModules.length === 0,
     workerSignatures: signatures,
   }
-  writeFileSync(resolve(artifactDir, 'suite-identity.json'), `${JSON.stringify(identity, null, 2)}\n`)
+  writeAtomic(resolve(artifactDir, 'suite-identity.json'), `${JSON.stringify({ invocation_id: invocationId, ...identity }, null, 2)}\n`)
 
   if (signatures.length > 0) {
-    return { usable: false, why: `worker signature: ${signatures[0].signature}`, artifactDir, identity }
+    return { usable: false, why: `worker signature: ${signatures[0].signature}`, artifactDir, identity, outcome }
   }
   if (availability.report !== null && !identity.exactlyOne) {
     return {
@@ -1184,11 +1348,12 @@ function runSuite(testFile, artifactDir, context = {}, extraEnv = {}) {
       why: `report names ${reportedModules.length} module(s), expected exactly ${testFile}`,
       artifactDir,
       identity,
+      outcome,
     }
   }
 
   const result = readSuiteResult({ raw: combined, report: availability.report })
-  return { ...result, artifactDir, reportSource: availability.source, identity }
+  return { ...result, artifactDir, reportSource: availability.source, identity, outcome }
 }
 
 console.log(`#658 integrity mutation controls (${selected.length} mutants)\n`)
@@ -1197,15 +1362,16 @@ console.log(`#658 integrity mutation controls (${selected.length} mutants)\n`)
 // cannot attribute anything, and every mutant pointed at it would score on a
 // failure that was there first.
 const baselines = new Map()
-let baselineIndex = 0
 for (const testFile of new Set(selected.map((m) => m.test))) {
-  const dir = invocationDirectory(baselineIndex += 1, `baseline-${testFile}`)
+  const { id: baselineInvocationId, dir } = allocateInvocation('b', `baseline-${testFile}`)
   const baselineEnv = MUTANTS.find((mutant) => mutant.test === testFile && mutant.env !== undefined)?.env ?? {}
-  const baselineResult = runSuite(testFile, dir, { phase: 'baseline', testFile }, baselineEnv)
+  const baselineResult = runSuite(testFile, dir, {
+    invocation_id: baselineInvocationId, phase: 'baseline', testFile,
+  }, baselineEnv)
   const verdict = baselineVerdict(baselineResult)
   baselines.set(testFile, verdict)
   writeAtomic(resolve(dir, 'scoring.json'), `${JSON.stringify({
-    invocation_id: `${RUN_ID}-baseline-${String(baselineIndex).padStart(3, '0')}`,
+    invocation_id: baselineInvocationId,
     baseline_identity: testFile,
     requested_suite: testFile,
     reported_suites: baselineResult.identity?.reported ?? [],
@@ -1214,6 +1380,7 @@ for (const testFile of new Set(selected.map((m) => m.test))) {
     baseline_green: verdict === null,
     worker_start_signatures: (baselineResult.identity?.workerSignatures ?? []),
     handshake_signatures: [],
+    process_outcome: baselineResult.outcome ?? null,
     report_status: baselineResult.usable === true ? 'readable' : (baselineResult.why ?? 'unavailable'),
     classification: verdict === null ? 'baseline_passed' : 'infrastructure_failure',
     reason_code: verdict === null ? 'baseline_passed' : 'baseline_not_green',
@@ -1223,69 +1390,198 @@ for (const testFile of new Set(selected.map((m) => m.test))) {
   // Explicit rather than omitted: an absent file is indistinguishable from one
   // an audit failed to write.
   writeAtomic(resolve(dir, 'restoration.json'), `${JSON.stringify({
-    invocation_id: `${RUN_ID}-baseline-${String(baselineIndex).padStart(3, '0')}`,
+    invocation_id: baselineInvocationId,
     source_paths: [],
+    // Present and empty, with a stated reason. An absent lifecycle is
+    // indistinguishable from one an audit forgot to write, and "no digests"
+    // must be a claim the audit can check rather than a gap it must excuse.
+    mutation_lifecycle: 'not_applicable',
+    pre_mutation_digests: {},
+    mutated_digests: {},
+    post_restoration_digests: {},
     restoration_attempted: false,
     restoration_succeeded: null,
-    reason_code: 'not_applicable',
+    tree_clean_after: true,
+    leftover_paths: [],
+    reason_code: 'not_applicable_baseline',
     reason_detail: 'baseline invocations mutate nothing',
     verified_at: new Date().toISOString(),
   }, null, 2)}\n`)
 }
 
 const discovered = {}
-let mutantIndex = 0
 
 for (const mutant of selected) {
   const filePath = resolve(ROOT, mutant.file)
   const testPath = resolve(ROOT, mutant.test)
 
-  if (!existsSync(filePath)) { report('SKIPPED', mutant.name, `missing source ${mutant.file}`); continue }
-  if (!existsSync(testPath)) { report('SKIPPED', mutant.name, `missing test ${mutant.test}`); continue }
+  // Allocated up front so an invocation that never runs still has a directory,
+  // an identity, and a durable scoring record explaining why.
+  const { id: invocationId, dir: artifactDir } = allocateInvocation('m', mutant.name)
+
+  /**
+   * Records an invocation that could not be scored normally.
+   *
+   * Written BEFORE the continuation, not after: an early return that skipped
+   * this is exactly how a skip's identity and reason were lost.
+   */
+  const abandon = (reasonCode, detail, lifecycle = null) => {
+    // The same outcome object both artifacts carry, so a cross-artifact audit
+    // sees agreement rather than one file's silence.
+    const notStarted = { exit_code: null, termination_signal: null, timed_out: false, spawn_error: null, started_at: null, finished_at: null, duration_ms: 0, child_started: false }
+    writeAtomic(resolve(artifactDir, 'meta.json'), `${JSON.stringify({
+      invocation_id: invocationId,
+      phase: 'mutant',
+      mutant: mutant.name,
+      file: mutant.file,
+      expected: mutant.expect ?? [],
+      testFile: mutant.test,
+      abandoned: reasonCode,
+      outcome: notStarted,
+    }, null, 2)}\n`)
+    writeAtomic(resolve(artifactDir, 'scoring.json'), `${JSON.stringify({
+      invocation_id: invocationId,
+      mutant_id: mutant.name,
+      requested_suite: mutant.test,
+      reported_suites: [],
+      expected_test_identities: mutant.expect ?? [],
+      observed_failed_test_identities: [],
+      baseline_green: baselines.get(mutant.test) === null,
+      worker_start_signatures: [],
+      handshake_signatures: [],
+      process_outcome: notStarted,
+      report_status: 'not_produced',
+      classification: 'infrastructure_failure',
+      reason_code: reasonCode,
+      reason_detail: detail,
+      scored_at: new Date().toISOString(),
+    }, null, 2)}\n`)
+    writeAtomic(resolve(artifactDir, 'restoration.json'), `${JSON.stringify({
+      invocation_id: invocationId,
+      source_paths: [mutant.file],
+      mutation_lifecycle: lifecycle === null ? 'not_applicable' : 'not_applied',
+      ...(lifecycle ?? {
+        pre_mutation_digests: {},
+        mutated_digests: {},
+        post_restoration_digests: {},
+      }),
+      restoration_attempted: lifecycle !== null,
+      restoration_succeeded: lifecycle === null ? null : true,
+      tree_clean_after: assertNoResidualMutation().length === 0,
+      leftover_paths: assertNoResidualMutation(),
+      reason_code: lifecycle === null ? 'not_mutated' : 'restored',
+      verified_at: new Date().toISOString(),
+    }, null, 2)}\n`)
+    for (const file of [
+      'command.json', 'suite-identity.json', 'report-identity.json',
+      'report-source.txt', 'stdout.txt', 'stderr.txt', 'display.log',
+    ]) {
+      const path = resolve(artifactDir, file)
+      if (!existsSync(path)) {
+        writeAtomic(path, file.endsWith('.json')
+          ? `${JSON.stringify({
+            invocation_id: invocationId,
+            requested_suite: mutant.test,
+            abandoned: reasonCode,
+            ...(file === 'report-identity.json'
+              ? { report_present: false, report_status: 'not_produced', report_digest: null }
+              : {}),
+          }, null, 2)}\n`
+          : file === 'report-source.txt'
+            ? 'not_produced\n'
+            : `invocation abandoned before execution: ${reasonCode}\n`)
+      }
+    }
+    report('SKIPPED', mutant.name, detail)
+  }
+
+  if (!existsSync(filePath)) { abandon('missing_source', `missing source ${mutant.file}`); continue }
+  if (!existsSync(testPath)) { abandon('missing_test', `missing test ${mutant.test}`); continue }
   const baseline = baselines.get(mutant.test)
-  if (baseline !== null) { report('SKIPPED', mutant.name, baseline); continue }
+  if (baseline !== null) { abandon('baseline_not_green', baseline); continue }
   if (!DISCOVER && (mutant.expect ?? []).length === 0) {
-    report('SKIPPED', mutant.name, 'no expected test declared'); continue
+    abandon('no_expected_test', 'no expected test declared'); continue
   }
 
   if (!originals.has(mutant.file)) originals.set(mutant.file, readFileSync(filePath, 'utf8'))
   restore()
 
-  const artifactDir = invocationDirectory(mutantIndex += 1, mutant.name)
-  const before = digest(mutant.file)
+  // Read BEFORE the mutation is applied.
+  const preMutationDigest = digest(mutant.file)
   const plan = planMutation({
     source: readFileSync(filePath, 'utf8'),
     from: mutant.from,
     to: mutant.to,
     scopeAfter: mutant.scopeAfter ?? null,
   })
-  if (!plan.ok) { report('SKIPPED', mutant.name, plan.why); continue }
+  if (!plan.ok) { abandon('mutation_not_applied', plan.why); continue }
   writeFileSync(filePath, plan.mutated)
-  // Belt and braces: the plan says it changed the text, the disk must agree.
-  if (digest(mutant.file) === before) { report('SKIPPED', mutant.name, 'mutation changed nothing'); continue }
+
+  // Read while the mutation is ON DISK. The previous version computed this
+  // after restore(), so every record showed pre == mutated == post: three
+  // readings of the same restored file, presented as a lifecycle.
+  const mutatedDigest = digest(mutant.file)
+  if (mutatedDigest === preMutationDigest) {
+    abandon('mutation_changed_nothing', 'mutation changed nothing', {
+      pre_mutation_digests: { [mutant.file]: preMutationDigest },
+      mutated_digests: { [mutant.file]: mutatedDigest },
+      post_restoration_digests: { [mutant.file]: digest(mutant.file) },
+    })
+    continue
+  }
 
   let result
   try {
     result = runSuite(mutant.test, artifactDir, {
+      invocation_id: invocationId,
       phase: 'mutant',
       mutant: mutant.name,
       file: mutant.file,
       expected: mutant.expect ?? [],
-      digestBefore: before,
-      digestAfter: digest(mutant.file),
+      pre_mutation_digest: preMutationDigest,
+      mutated_digest: mutatedDigest,
     }, mutant.env ?? {})
   } finally {
     restore()
+  }
+
+  // Written for every invocation, including ones that could not be scored, and
+  // written BEFORE any continuation. The conclusion previously existed only in
+  // terminal output for the unusable and discovery paths -- the same place the
+  // first unexplained skip was lost.
+  const writeScoring = (classification, reasonCode, reasonDetail, score = null) => {
+    writeAtomic(resolve(artifactDir, 'scoring.json'), `${JSON.stringify({
+      invocation_id: invocationId,
+      mutant_id: mutant.name,
+      requested_suite: mutant.test,
+      reported_suites: result.identity?.reported ?? [],
+      expected_test_identities: mutant.expect ?? [],
+      observed_failed_test_identities: result.failed ?? [],
+      baseline_green: baselines.get(mutant.test) === null,
+      worker_start_signatures: (result.identity?.workerSignatures ?? [])
+        .filter((hit) => hit.signature.includes('start forks')),
+      handshake_signatures: (result.identity?.workerSignatures ?? [])
+        .filter((hit) => hit.signature.includes('respond')),
+      process_outcome: result.outcome ?? null,
+      report_status: result.usable === true ? 'readable' : (result.why ?? 'unavailable'),
+      classification,
+      reason_code: reasonCode,
+      reason_detail: reasonDetail,
+      ...(score === null ? {} : { score_kind: score.kind }),
+      scored_at: new Date().toISOString(),
+    }, null, 2)}\n`)
   }
 
   // Verified by re-reading bytes, not by trusting the write and not by `git
   // status` -- an untracked file shows as new whether or not it is mutated.
   const stillMutated = assertNoResidualMutation()
   writeAtomic(resolve(artifactDir, 'restoration.json'), `${JSON.stringify({
-    invocation_id: `${RUN_ID}-${String(mutantIndex).padStart(3, '0')}`,
+    invocation_id: invocationId,
     source_paths: [mutant.file],
-    pre_mutation_digests: { [mutant.file]: before },
-    mutated_digests: { [mutant.file]: digest(mutant.file) },
+    mutation_lifecycle: 'applied',
+    pre_mutation_digests: { [mutant.file]: preMutationDigest },
+    // Captured before restore(), not re-read after it.
+    mutated_digests: { [mutant.file]: mutatedDigest },
     post_restoration_digests: Object.fromEntries(
       [...originals.keys()].map((path) => [path, digest(path)]),
     ),
@@ -1297,6 +1593,10 @@ for (const mutant of selected) {
     verified_at: new Date().toISOString(),
   }, null, 2)}\n`)
   if (stillMutated.length > 0) {
+    // §2.4 covers restoration failure too: the matrix stops here, and an
+    // invocation without a scoring record is exactly the gap that let an
+    // unexplained skip disappear.
+    writeScoring('infrastructure_failure', 'restoration_failed', `left mutated: ${stillMutated.join(', ')}`)
     console.error(`\nRESTORATION FAILED after ${mutant.name}: ${stillMutated.join(', ')}`)
     console.error(`Evidence retained in ${relative(ROOT, artifactDir)}`)
     console.error('Stopping the matrix: no tally can be trusted from a mutated tree.')
@@ -1306,43 +1606,27 @@ for (const mutant of selected) {
   if (!result.usable) {
     // Identity and reason survive regardless of what the suite did, and the raw
     // output is on disk rather than only in a scrolled terminal.
+    writeScoring('infrastructure_failure', 'suite_unusable', result.why ?? 'unusable')
     report('SKIPPED', mutant.name, `${result.why} [${relative(ROOT, result.artifactDir ?? artifactDir)}]`)
     continue
   }
 
   if (DISCOVER) {
     discovered[mutant.name] = result.failed
-    report(result.failed.length > 0 ? 'caught' : 'UNCAUGHT', mutant.name, `${result.failed.length} failed`)
+    const caught = result.failed.length > 0
+    writeScoring(caught ? 'caught' : 'uncaught', 'discovery', `${result.failed.length} failed`)
+    report(caught ? 'caught' : 'UNCAUGHT', mutant.name, `${result.failed.length} failed`)
     continue
   }
 
   const score = scoreMutant({ expect: mutant.expect ?? [], result })
-
-  // Written for every invocation, including ones that could not be scored.
-  // The conclusion previously existed only in terminal output -- the same place
-  // the first unexplained skip was lost.
-  writeAtomic(resolve(artifactDir, 'scoring.json'), `${JSON.stringify({
-    invocation_id: `${RUN_ID}-${String(mutantIndex).padStart(3, '0')}`,
-    mutant_id: mutant.name,
-    requested_suite: mutant.test,
-    reported_suites: result.identity?.reported ?? [],
-    expected_test_identities: mutant.expect ?? [],
-    observed_failed_test_identities: result.failed ?? [],
-    baseline_green: baselines.get(mutant.test) === null,
-    worker_start_signatures: (result.identity?.workerSignatures ?? [])
-      .filter((hit) => hit.signature.includes('start forks')),
-    handshake_signatures: (result.identity?.workerSignatures ?? [])
-      .filter((hit) => hit.signature.includes('respond')),
-    process_exit_code: result.exitStatus ?? null,
-    process_signal: result.signal ?? null,
-    report_status: result.usable === true ? 'readable' : (result.why ?? 'unavailable'),
-    classification: score.kind === 'caught' ? 'caught'
-      : score.kind === 'UNCAUGHT' ? 'uncaught'
-        : result.usable === false ? 'infrastructure_failure' : 'skipped',
-    reason_code: score.kind,
-    reason_detail: score.detail,
-    scored_at: new Date().toISOString(),
-  }, null, 2)}\n`)
+  writeScoring(
+    score.kind === 'caught' ? 'caught'
+      : score.kind === 'UNCAUGHT' ? 'uncaught' : 'skipped',
+    score.kind,
+    score.detail,
+    score,
+  )
 
   report(score.kind, mutant.name, score.detail)
 }
