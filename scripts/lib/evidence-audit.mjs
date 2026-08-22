@@ -87,11 +87,79 @@ export function recomputeAttribution({ report, requestedSuite, root }) {
  * infrastructure condition, and collapsing it into green or red would let an
  * absent report satisfy a concordance rule it never participated in.
  */
+export const REPORT_FAILURE_FIELDS = Object.freeze([
+  'success', 'numFailedTestSuites', 'numFailedTests',
+  'testResults[].status', 'testResults[].message', 'testResults[].assertionResults[].status',
+])
+
+/**
+ * Every authoritative failure indicator the installed reporter emits.
+ *
+ * Verified against vitest 4.1.10, whose JSON report carries top-level
+ * `success`, `numFailedTestSuites`, `numFailedTests`, and per-file
+ * `status` / `message` / `assertionResults[].status`.
+ *
+ * The previous derivation consulted assertion results ALONE. A reviewer set
+ * `success:false`, `numFailedTestSuites:1`, the file row to `failed` and added
+ * a file-level message, left all 54 assertions passing, and the audit derived
+ * `green` and returned the unchanged checkpoint digest. A suite that dies
+ * before its first assertion has no failed assertion to find, which is exactly
+ * the shape this missed.
+ */
+function reportFailureIndicators(report) {
+  const found = []
+  if (report.success === false) found.push('success:false')
+  if (typeof report.numFailedTestSuites === 'number' && report.numFailedTestSuites > 0) {
+    found.push(`numFailedTestSuites:${report.numFailedTestSuites}`)
+  }
+  if (typeof report.numFailedTests === 'number' && report.numFailedTests > 0) {
+    found.push(`numFailedTests:${report.numFailedTests}`)
+  }
+  for (const file of Array.isArray(report.testResults) ? report.testResults : []) {
+    if (file?.status === 'failed') found.push(`file status:failed (${file?.name ?? 'unnamed'})`)
+    if (typeof file?.message === 'string' && file.message.trim() !== '') {
+      found.push(`file message: ${file.message.trim().slice(0, 60)}`)
+    }
+    for (const a of Array.isArray(file?.assertionResults) ? file.assertionResults : []) {
+      if (a?.status === 'failed') found.push(`test failed: ${String(a?.fullName ?? '').slice(0, 60)}`)
+    }
+  }
+  // Unhandled/report-level errors, when the reporter emits them.
+  for (const key of ['errors', 'unhandledErrors']) {
+    if (Array.isArray(report[key]) && report[key].length > 0) found.push(`${key}:${report[key].length}`)
+  }
+  return found
+}
+
+/**
+ * Derives what the Vitest report itself says, independently of any stored
+ * classification.
+ *
+ * `unavailable` is a deliberate third state, used both for a structurally
+ * incomplete report and for one whose own fields contradict each other. The
+ * favorable indicator is never silently preferred: a report claiming
+ * `success:true` while also reporting failures is not evidence of anything.
+ */
 export function deriveReportStatus({ report, attribution }) {
   if (report === null || report === undefined) return 'unavailable'
   if (attribution.total === 0) return 'unavailable'
   if (!attribution.exactlyOne) return 'unavailable'
-  return attribution.failed.length > 0 ? 'red' : 'green'
+
+  const failures = reportFailureIndicators(report)
+  if (failures.length > 0) {
+    // A report asserting success while carrying failure indicators is
+    // internally inconsistent; refusing it is the only safe reading.
+    return report.success === true ? 'unavailable' : 'red'
+  }
+  // Green requires every applicable indicator to agree, not merely the absence
+  // of a failed assertion.
+  if (report.success !== undefined && report.success !== true) return 'unavailable'
+  return 'green'
+}
+
+/** The exact indicators that made a report red, for the audit's detail line. */
+export function reportFailureReasons(report) {
+  return report === null || report === undefined ? [] : reportFailureIndicators(report)
 }
 
 /**
