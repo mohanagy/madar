@@ -41,11 +41,55 @@ try {
 }
 const mutated = source.includes(marker)
 
-const write = (assertions) => writeFileSync(outputFile, JSON.stringify({
-  numTotalTestSuites: 1,
-  numTotalTests: assertions.length,
-  testResults: [{ name: requested, assertionResults: assertions }],
-}))
+/**
+ * Emits the FAITHFUL vitest 4.1.10 report shape.
+ *
+ * It used to emit only `numTotalTestSuites`, `numTotalTests` and a file row
+ * with a name and assertions. That was a second source of structurally
+ * incomplete reports, and it is why a validator written against the real shape
+ * would have rejected this fixture's own output. The fixture conforms to the
+ * reporter contract, not the other way round.
+ */
+const write = (assertions) => {
+  const failed = assertions.filter((a) => a.status === 'failed').length
+  const passed = assertions.filter((a) => a.status === 'passed').length
+  const pending = assertions.length - failed - passed
+  const now = Date.now()
+  writeFileSync(outputFile, JSON.stringify({
+    numTotalTestSuites: 1,
+    numPassedTestSuites: failed > 0 ? 0 : 1,
+    numFailedTestSuites: failed > 0 ? 1 : 0,
+    numPendingTestSuites: 0,
+    numTotalTests: assertions.length,
+    numPassedTests: passed,
+    numFailedTests: failed,
+    numPendingTests: pending,
+    numTodoTests: 0,
+    snapshot: { added: 0, failure: false, filesAdded: 0, filesRemoved: 0, filesUnmatched: 0, filesUpdated: 0, matched: 0, total: 0, unchecked: 0, uncheckedKeysByFile: [], unmatched: 0, updated: 0, didUpdate: false },
+    startTime: now,
+    success: failed === 0,
+    testResults: [{
+      assertionResults: assertions,
+      startTime: now,
+      endTime: now,
+      status: failed > 0 ? 'failed' : 'passed',
+      message: '',
+      name: requested,
+    }],
+  }))
+}
+
+/** One assertion row in the faithful shape. */
+const assertionRow = (name, status) => ({
+  ancestorTitles: [],
+  fullName: name,
+  status,
+  title: name,
+  duration: 1,
+  failureMessages: status === 'failed' ? [`stub: ${name} failed`] : [],
+  meta: {},
+  tags: [],
+})
 
 if (mutated && fault !== null) {
   switch (fault) {
@@ -63,14 +107,14 @@ if (mutated && fault !== null) {
       break
     case 'worker-start':
       process.stderr.write('Failed to start forks worker\n')
-      write([{ fullName: testName, status: 'passed', title: testName }])
+      write([assertionRow(testName, 'passed')])
       process.exit(0)
       break
     case 'chmod-readonly':
       // Makes restoration fail: the harness writes the original bytes back and
       // the write is refused, so the mutation survives on disk. That is the
       // exact state the three-state digest record has to tell the truth about.
-      write([{ fullName: testName, status: 'failed', title: testName }])
+      write([assertionRow(testName, 'failed')])
       chmodSync(targetPath, 0o444)
       process.exit(1)
       break
@@ -79,9 +123,9 @@ if (mutated && fault !== null) {
       process.exit(3)
   }
 } else if (mutated) {
-  write([{ fullName: testName, status: 'failed', title: testName }])
+  write([assertionRow(testName, 'failed')])
   process.exit(1)
 } else {
-  write([{ fullName: testName, status: 'passed', title: testName }])
+  write([assertionRow(testName, 'passed')])
   process.exit(0)
 }

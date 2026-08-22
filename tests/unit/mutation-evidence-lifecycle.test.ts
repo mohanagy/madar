@@ -325,15 +325,25 @@ describe('mutation evidence when a child exceeds its bound', () => {
     expect(post[TARGET]).toBe(pre[TARGET])
   })
 
-  it('leaves no child, report, scratch project or residual mutation after a timeout', { timeout: 30_000 }, () => {
-    const before = readdirSync(tmpdir()).filter((n) => n.startsWith(SCRATCH_PREFIX))
+  it('leaves no child, report or residual mutation after a timeout', { timeout: 30_000 }, () => {
     const run = runHarness({ fault: 'hang', timeoutMs: 1_500 })
+    const dir = mutantDir(run)
 
     // A hung child that was killed produced no usable report.
-    expect(existsSync(resolve(run.root, mutantDir(run), 'vitest-report.json'))).toBe(false)
-    expect(read(run, mutantDir(run), 'report-identity.json')['report_present']).toBe(false)
-    // The scratch project this run owned is gone, counted by our own prefix.
-    expect(readdirSync(tmpdir()).filter((n) => n.startsWith(SCRATCH_PREFIX))).toEqual(before)
+    expect(existsSync(resolve(run.root, dir, 'vitest-report.json'))).toBe(false)
+    expect(read(run, dir, 'report-identity.json')['report_present']).toBe(false)
+
+    // Residue is judged against THIS run's own paths. An earlier version
+    // counted `madar-evidence-golden-*` across the shared temp directory --
+    // a prefix owned by a different suite, which made the assertion race
+    // whenever the two files ran in parallel. Observing state you do not own
+    // is not a cleanliness check.
+    const restoration = read(run, dir, 'restoration.json')
+    expect(restoration['tree_clean_after']).toBe(true)
+    expect(restoration['leftover_paths']).toEqual([])
+    const pre = restoration['pre_mutation_digests'] as Record<string, string>
+    const post = restoration['post_restoration_digests'] as Record<string, string>
+    expect(post[TARGET]).toBe(pre[TARGET])
   })
 
   it('does not misclassify a worker-start failure as a timeout', () => {

@@ -133,6 +133,130 @@ export function recomputeAttribution({ report, requestedSuite, root }) {
  * infrastructure condition, and collapsing it into green or red would let an
  * absent report satisfy a concordance rule it never participated in.
  */
+/**
+ * The Vitest 4.1.10 JSON report shape this auditor depends on.
+ *
+ * Characterized from real green AND real red reports produced by the installed
+ * reporter, not from documentation.
+ */
+export const VITEST_REPORT_SCHEMA = Object.freeze({
+  top: Object.freeze({
+    success: 'boolean',
+    numTotalTestSuites: 'count',
+    numPassedTestSuites: 'count',
+    numFailedTestSuites: 'count',
+    numPendingTestSuites: 'count',
+    numTotalTests: 'count',
+    numPassedTests: 'count',
+    numFailedTests: 'count',
+    numPendingTests: 'count',
+    numTodoTests: 'count',
+    testResults: 'array',
+  }),
+  file: Object.freeze({
+    name: 'nonempty-string',
+    status: 'status',
+    message: 'string',
+    assertionResults: 'array',
+  }),
+  assertion: Object.freeze({
+    fullName: 'string',
+    title: 'string',
+    status: 'status',
+    ancestorTitles: 'array',
+    failureMessages: 'array',
+  }),
+})
+
+/** Status values the installed reporter emits. */
+export const VITEST_STATUS_VALUES = Object.freeze(['passed', 'failed', 'pending', 'skipped', 'todo'])
+
+const isCount = (v) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
+const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+  && (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null)
+
+function checkField(owner, key, kind, where, problems) {
+  // Own property, never inherited: an authority reached through a prototype is
+  // not something the reporter wrote.
+  if (!Object.prototype.hasOwnProperty.call(owner, key)) {
+    problems.push({ kind: 'incomplete', detail: `${where}: missing required field \`${key}\`` })
+    return
+  }
+  const value = owner[key]
+  const bad = (why) => problems.push({ kind: 'malformed', detail: `${where}: \`${key}\` ${why}` })
+  switch (kind) {
+    case 'boolean': if (typeof value !== 'boolean') bad(`must be boolean, got ${typeof value}`); break
+    case 'count': if (!isCount(value)) bad(`must be a non-negative safe integer, got ${JSON.stringify(value)}`); break
+    case 'array': if (!Array.isArray(value)) bad(`must be an array, got ${typeof value}`); break
+    case 'string': if (typeof value !== 'string') bad(`must be a string, got ${typeof value}`); break
+    case 'nonempty-string':
+      if (typeof value !== 'string') bad(`must be a string, got ${typeof value}`)
+      else if (value.trim() === '') bad('must not be empty')
+      break
+    case 'status':
+      if (typeof value !== 'string') bad(`must be a string, got ${typeof value}`)
+      else if (!VITEST_STATUS_VALUES.includes(value)) bad(`is not a reporter status: ${JSON.stringify(value)}`)
+      break
+    default: bad('has no declared type')
+  }
+}
+
+/**
+ * Proves a report is STRUCTURALLY usable before anything reads meaning from it.
+ *
+ * Absence of a failure indicator is not evidence of success. A reviewer removed
+ * `success`, both failed counts, the file status and the file message from a
+ * genuine green baseline, rebound the digest truthfully, and the auditor
+ * derived `green`, recomputed `baseline_passed`, exited 0 and produced the
+ * unchanged semantic digest. Nothing was missing from the auditor's point of
+ * view because it only ever asked whether failure was PRESENT.
+ *
+ * Returns one of `usable_complete`, `unavailable_incomplete`,
+ * `unavailable_malformed`.
+ */
+export function assertUsableVitestJsonReport(report) {
+  const problems = []
+  if (!isPlainObject(report)) {
+    return { result: 'unavailable_malformed', problems: [{ kind: 'malformed', detail: 'report is not a plain object' }] }
+  }
+  for (const key of Object.getOwnPropertySymbols(report)) {
+    problems.push({ kind: 'malformed', detail: `report carries a symbol key ${String(key)}` })
+  }
+  for (const [key, kind] of Object.entries(VITEST_REPORT_SCHEMA.top)) {
+    checkField(report, key, kind, 'report', problems)
+  }
+
+  if (Array.isArray(report.testResults)) {
+    report.testResults.forEach((file, index) => {
+      const where = `testResults[${index}]`
+      if (!isPlainObject(file)) {
+        problems.push({ kind: 'malformed', detail: `${where}: file result is not a plain object` })
+        return
+      }
+      for (const [key, kind] of Object.entries(VITEST_REPORT_SCHEMA.file)) {
+        checkField(file, key, kind, where, problems)
+      }
+      if (!Array.isArray(file.assertionResults)) return
+      file.assertionResults.forEach((assertion, ai) => {
+        const aWhere = `${where}.assertionResults[${ai}]`
+        if (!isPlainObject(assertion)) {
+          problems.push({ kind: 'malformed', detail: `${aWhere}: assertion is not a plain object` })
+          return
+        }
+        for (const [key, kind] of Object.entries(VITEST_REPORT_SCHEMA.assertion)) {
+          checkField(assertion, key, kind, aWhere, problems)
+        }
+      })
+    })
+  }
+
+  if (problems.length === 0) return { result: 'usable_complete', problems }
+  // Malformed dominates: a present-but-wrong field is a stronger signal than a
+  // missing one, and the control asserting it should see its own condition.
+  const malformed = problems.some((p) => p.kind === 'malformed')
+  return { result: malformed ? 'unavailable_malformed' : 'unavailable_incomplete', problems }
+}
+
 export const REPORT_FAILURE_FIELDS = Object.freeze([
   'success', 'numFailedTestSuites', 'numFailedTests',
   'testResults[].status', 'testResults[].message', 'testResults[].assertionResults[].status',
@@ -186,8 +310,13 @@ function reportFailureIndicators(report) {
  * favorable indicator is never silently preferred: a report claiming
  * `success:true` while also reporting failures is not evidence of anything.
  */
-export function deriveReportStatus({ report, attribution }) {
+export function deriveReportStatus({ report, attribution, structure = null }) {
   if (report === null || report === undefined) return 'unavailable'
+  // Structure first. A report that has not proven itself complete cannot be
+  // read as green OR red; absence of failure fields is not affirmative
+  // evidence of success.
+  const shape = structure ?? assertUsableVitestJsonReport(report).result
+  if (shape !== 'usable_complete') return 'unavailable'
   if (attribution.total === 0) return 'unavailable'
   if (!attribution.exactlyOne) return 'unavailable'
 
@@ -456,6 +585,21 @@ export function auditEvidence({
       add('report_missing', name, 'sidecar claims a report that is not on disk')
     }
 
+    // Structural validation runs before suite attribution, status derivation,
+    // concordance and classification -- the ordering the review requires.
+    let reportShape = 'unavailable_incomplete'
+    if (report !== null) {
+      const structure = assertUsableVitestJsonReport(report)
+      reportShape = structure.result
+      if (structure.result !== 'usable_complete') {
+        const code = structure.result === 'unavailable_malformed'
+          ? 'vitest_report_malformed'
+          : 'vitest_report_incomplete'
+        const detail = structure.problems.slice(0, 4).map((entry) => entry.detail).join('; ')
+        add(code, name, `${detail}${structure.problems.length > 4 ? ` (+${structure.problems.length - 4} more)` : ''}`)
+      }
+    }
+
     const stdout = present.has('stdout.txt') ? readFileSync(resolve(dir, 'stdout.txt'), 'utf8') : ''
     const stderr = present.has('stderr.txt') ? readFileSync(resolve(dir, 'stderr.txt'), 'utf8') : ''
     const signatures = WORKER_SIGNATURES.filter((signature) => `${stdout}${stderr}`.includes(signature))
@@ -496,12 +640,12 @@ export function auditEvidence({
 
     // ---- process / report status concordance ------------------------------
     // Derived from the artifacts themselves, never from a stored verdict.
-    const contradiction = reportContradiction(report)
+    const contradiction = reportShape === 'usable_complete' ? reportContradiction(report) : null
     if (contradiction !== null) {
       add('contradictory_report', name,
         `report claims success:true while reporting ${contradiction.join('; ')}`)
     }
-    const reportStatus = deriveReportStatus({ report, attribution })
+    const reportStatus = deriveReportStatus({ report, attribution, structure: reportShape })
     const processStatus = outcomeAgrees ? deriveProcessStatus(outcome) : 'unestablished'
     const discord = outcomeAgrees
       ? checkStatusConcordance({ reportStatus, processStatus, signatures })
@@ -520,7 +664,7 @@ export function auditEvidence({
       attribution,
       outcome,
       signatures,
-      reportUsable: report !== null && attribution.total > 0,
+      reportUsable: report !== null && attribution.total > 0 && reportShape === 'usable_complete',
       concordant: outcomeAgrees && discord === null
         && validateOutcomeCoherence(outcome, { reportPresent: report !== null }).length === 0,
     })
@@ -612,6 +756,7 @@ export function auditEvidence({
       recomputed_classification: recomputed,
       process_outcome_class: outcomeClass,
       report_status: reportStatus,
+      report_shape: reportShape,
       process_status: processStatus,
       mutation_lifecycle: lifecycle ?? 'missing',
       lifecycle_truth: (restoration.source_paths ?? []).map((path) => ({
@@ -655,6 +800,7 @@ export function semanticAuditDigest(invocations) {
       // Independently derived, so a matrix whose stored status was falsified
       // cannot produce the digest of a truthful one.
       report_status: entry.report_status,
+      report_shape: entry.report_shape,
       process_status: entry.process_status,
       mutation_lifecycle: entry.mutation_lifecycle,
       lifecycle_truth: entry.lifecycle_truth,

@@ -27,6 +27,20 @@ export const WORKER_SIGNATURES: readonly string[]
 export const REPORT_FAILURE_FIELDS: readonly string[]
 export const CLOCK_TOLERANCE_MS: number
 
+export type ReportShape = 'usable_complete' | 'unavailable_incomplete' | 'unavailable_malformed'
+
+export const VITEST_REPORT_SCHEMA: {
+  readonly top: Readonly<Record<string, string>>
+  readonly file: Readonly<Record<string, string>>
+  readonly assertion: Readonly<Record<string, string>>
+}
+export const VITEST_STATUS_VALUES: readonly string[]
+
+export function assertUsableVitestJsonReport(report: unknown): {
+  result: ReportShape
+  problems: ReadonlyArray<{ kind: 'incomplete' | 'malformed'; detail: string }>
+}
+
 export function processOutcomeClass(outcome: unknown): string
 export function deriveProcessStatus(outcome: unknown): ProcessStatus
 export function deriveReportStatus(input: { report: unknown; attribution: unknown }): ReportStatus

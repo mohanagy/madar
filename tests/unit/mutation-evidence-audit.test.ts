@@ -19,6 +19,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { assertUsableVitestJsonReport } from '../../scripts/lib/evidence-audit.mjs'
 import {
   copyMatrix,
   discardMatrix,
@@ -31,6 +32,8 @@ import {
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const AUDITOR = resolve(REPO, 'scripts/audit-mutation-evidence.mjs')
+/** A real report from the installed reporter, committed as a shape reference. */
+const REAL_REPORT = resolve(REPO, 'tests/fixtures/vitest-4.1.10-report.reference.json')
 
 const OTHER_SUITE = 'tests/unit/somewhere-else.test.ts'
 const HOUR_MS = 3_600_000
@@ -665,7 +668,186 @@ describe('semantic evidence audit — impossible process outcomes', () => {
   })
 })
 
-describe('semantic evidence audit — completeness', () => {
+describe('semantic evidence audit — report structure is proven, not assumed', () => {
+  /**
+   * C1-STRUCTURE-01. The derivation asked whether a failure indicator was
+   * PRESENT and read absence as green. A reviewer removed success, both failed
+   * counts, the file status and the file message from a genuine green baseline,
+   * rebound the digest truthfully, and the auditor derived green, recomputed
+   * baseline_passed, exited 0 and produced the unchanged semantic digest.
+   *
+   * Absence of evidence is not evidence of absence.
+   */
+  const MANDATORY_TOP = ['success', 'numFailedTestSuites', 'numFailedTests', 'numTotalTests', 'testResults'] as const
+  const MANDATORY_FILE = ['status', 'message', 'name', 'assertionResults'] as const
+
+  const stripAndAudit = (drop: (report: Record<string, unknown>) => void): AuditResult => {
+    const root = matrix()
+    const dir = dirFor(root, 'baseline')
+    const report = readJson(dir, 'vitest-report.json')
+    drop(report)
+    writeJson(dir, 'vitest-report.json', report)
+    restamp(dir)
+    return audit(root)
+  }
+
+  it.each([...MANDATORY_TOP])('removing top-level %s makes the report unusable', (field) => {
+    const result = stripAndAudit((report) => { delete report[field] })
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('vitest_report_incomplete')
+    expect(result.output).toContain(`missing required field \`${field}\``)
+    // Never green, and never silently rescued into an ordinary verdict.
+    expect(result.output).not.toContain('scoring says baseline_passed, evidence supports baseline_passed')
+  })
+
+  it.each([...MANDATORY_FILE])('removing per-file %s makes the report unusable', (field) => {
+    const result = stripAndAudit((report) => {
+      const file = (report['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+      delete file[field]
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('vitest_report_incomplete')
+    expect(result.output).toContain(`missing required field \`${field}\``)
+  })
+
+  it('reproduces the reviewer\u2019s exact stripped report', () => {
+    const root = matrix()
+    const dir = dirFor(root, 'baseline')
+    const report = readJson(dir, 'vitest-report.json')
+    const file = (report['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    const assertions = file['assertionResults'] as Array<Record<string, unknown>>
+    const before = assertions.length
+
+    delete report['success']
+    delete report['numFailedTestSuites']
+    delete report['numFailedTests']
+    delete file['status']
+    delete file['message']
+    writeJson(dir, 'vitest-report.json', report)
+    restamp(dir)
+
+    // Passing rows and the ordinary exit 0 are retained, exactly as reported.
+    expect(assertions.length).toBe(before)
+    expect(assertions.every((a) => a['status'] === 'passed')).toBe(true)
+    expect((readJson(dir, 'scoring.json')['process_outcome'] as Record<string, unknown>)['exit_code']).toBe(0)
+
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('vitest_report_incomplete')
+    expect(auditRecordFor(root, 'baseline')['report_status']).toBe('unavailable')
+  })
+
+  const malformed = (label: string, mutate: (report: Record<string, unknown>) => void): void => {
+    it(`rejects ${label} as malformed`, () => {
+      const result = stripAndAudit(mutate)
+      expect(result.status).not.toBe(0)
+      expect(result.codes).toContain('vitest_report_malformed')
+    })
+  }
+
+  malformed('a non-boolean success', (r) => { r['success'] = 'true' })
+  malformed('a negative failed-suite count', (r) => { r['numFailedTestSuites'] = -1 })
+  malformed('a fractional failed-test count', (r) => { r['numFailedTests'] = 1.5 })
+  malformed('a string failed-test count', (r) => { r['numFailedTests'] = '0' })
+  malformed('a non-array testResults', (r) => { r['testResults'] = {} })
+  malformed('an unknown file status', (r) => {
+    const file = (r['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    file['status'] = 'weird'
+  })
+  malformed('a non-array assertion collection', (r) => {
+    const file = (r['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    file['assertionResults'] = 'none'
+  })
+  malformed('a wrong-typed failure authority', (r) => {
+    const file = (r['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    file['message'] = { text: 'boom' }
+  })
+  malformed('an empty file name', (r) => {
+    const file = (r['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    file['name'] = '   '
+  })
+
+  it('rejects a report reached only through a prototype', () => {
+    // A required key must be an OWN property; an inherited authority is not
+    // something the reporter wrote.
+    const root = matrix()
+    const dir = dirFor(root, 'baseline')
+    const report = readJson(dir, 'vitest-report.json')
+    delete report['success']
+    // JSON cannot carry a prototype, so the equivalent on-disk shape is simply
+    // the missing own property, which must already be refused.
+    writeJson(dir, 'vitest-report.json', report)
+    restamp(dir)
+    expect(audit(root).codes).toContain('vitest_report_incomplete')
+  })
+
+  it('detects a positive failed-test count at ordinary exit 0 as red, not incomplete', () => {
+    // Distinct from the structural controls: the report is COMPLETE, and the
+    // count itself is the failure authority.
+    const root = matrix()
+    const dir = dirFor(root, 'baseline')
+    const report = readJson(dir, 'vitest-report.json')
+    report['success'] = false
+    report['numFailedTests'] = 2
+    writeJson(dir, 'vitest-report.json', report)
+    restamp(dir)
+
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('red_report_zero_exit')
+    expect(result.codes).not.toContain('vitest_report_incomplete')
+    expect(auditRecordFor(root, 'baseline')['report_status']).toBe('red')
+  })
+
+  it('accepts genuine complete reports on both sides', () => {
+    const root = matrix()
+    expect(audit(root).status).toBe(0)
+    expect(auditRecordFor(root, 'baseline')['report_shape']).toBe('usable_complete')
+    expect(auditRecordFor(root, 'mutant')['report_shape']).toBe('usable_complete')
+  })
+})
+
+describe('semantic evidence audit — fixture shape characterization', () => {
+  it('the stub reporter emits the same authority keys and types as real Vitest', () => {
+    // The fixture conforms to the installed reporter contract, not the other
+    // way round. The reviewer identified the stub as a second source of
+    // structurally incomplete reports, and a validator written against the real
+    // shape would have rejected the fixture's own output.
+    //
+    // Shape characterization, not a byte-for-byte golden report: only required
+    // keys and their types are compared, never run-specific content.
+    const stub = readJson(dirFor(matrix(), 'baseline'), 'vitest-report.json')
+    const real = JSON.parse(readFileSync(REAL_REPORT, 'utf8')) as Record<string, unknown>
+
+    const typeOf = (v: unknown): string => Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v
+    const shape = (o: Record<string, unknown>, keys: readonly string[]): Record<string, string> =>
+      Object.fromEntries(keys.map((k) => [k, typeOf(o[k])]))
+
+    const TOP = ['success', 'numTotalTestSuites', 'numPassedTestSuites', 'numFailedTestSuites',
+      'numPendingTestSuites', 'numTotalTests', 'numPassedTests', 'numFailedTests',
+      'numPendingTests', 'numTodoTests', 'testResults']
+    expect(shape(stub, TOP)).toEqual(shape(real, TOP))
+
+    const FILE = ['name', 'status', 'message', 'assertionResults']
+    const stubFile = (stub['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    const realFile = (real['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    expect(shape(stubFile, FILE)).toEqual(shape(realFile, FILE))
+
+    const ASSERTION = ['fullName', 'title', 'status', 'ancestorTitles', 'failureMessages']
+    const stubRow = (stubFile['assertionResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    const realRow = (realFile['assertionResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    expect(shape(stubRow, ASSERTION)).toEqual(shape(realRow, ASSERTION))
+  })
+
+  it('the validator accepts a real Vitest report unchanged', () => {
+    // The other direction: the schema must describe the installed reporter, not
+    // merely whatever the fixture happens to emit.
+    const real = JSON.parse(readFileSync(REAL_REPORT, 'utf8')) as Record<string, unknown>
+    expect(assertUsableVitestJsonReport(real).result).toBe('usable_complete')
+  })
+})
+
+describe('semantic evidence audit — artifact inventory completeness', () => {
   it('requires every artifact the harness is supposed to write', () => {
     // Enumerated as a control rather than trusted: an audit that silently
     // stopped requiring one of these would look exactly like a passing audit.
