@@ -46,16 +46,59 @@ export const WORKER_SIGNATURES = Object.freeze([
  */
 export const CLOCK_TOLERANCE_MS = 5_000
 
-/** A process outcome reduced to its class, so two runs can be compared. */
+const has = (value) => value !== null && value !== undefined
+
+/**
+ * A process outcome reduced to its class, so two runs can be compared.
+ *
+ * `spawn_error` is tested FIRST. It used to be tested after
+ * `child_started === false`, and the harness sets `child_started` from
+ * `spawnError === null` -- so every spawn failure took the not-started branch
+ * and `spawn_failed` was unreachable for the only shape that can produce it. A
+ * runner that does not exist and a run that was never attempted are different
+ * facts and must not share a classification.
+ */
 export function processOutcomeClass(outcome) {
   if (outcome === null || outcome === undefined) return 'absent'
-  if (outcome.child_started === false) return 'not_started'
-  if (outcome.spawn_error !== null && outcome.spawn_error !== undefined) return 'spawn_failed'
+  if (has(outcome.spawn_error)) return 'spawn_failed'
   if (outcome.timed_out === true) return 'timed_out'
-  if (outcome.termination_signal !== null && outcome.termination_signal !== undefined) return 'signalled'
+  if (has(outcome.termination_signal)) return 'signalled'
+  if (outcome.child_started === false) return 'not_started'
   if (outcome.exit_code === 0) return 'exited_zero'
   if (typeof outcome.exit_code === 'number') return 'exited_nonzero'
   return 'unknown'
+}
+
+/**
+ * Combinations the harness contract cannot produce.
+ *
+ * Reported rather than normalised: silently repairing an impossible outcome
+ * would let falsified evidence pass as merely untidy.
+ */
+export function validateOutcomeCoherence(outcome, { reportPresent }) {
+  if (outcome === null || outcome === undefined) return []
+  const problems = []
+  const push = (code, detail) => problems.push({ code, detail })
+
+  if (has(outcome.spawn_error) && outcome.child_started === true) {
+    push('spawn_error_with_started_child', 'a spawn error cannot accompany a started child')
+  }
+  if (has(outcome.spawn_error) && typeof outcome.exit_code === 'number') {
+    push('spawn_error_with_exit_code', `a child that never spawned cannot exit ${outcome.exit_code}`)
+  }
+  if (outcome.timed_out === true && outcome.exit_code === 0) {
+    push('timeout_with_successful_exit', 'a timed-out child cannot also exit 0')
+  }
+  if (has(outcome.termination_signal) && typeof outcome.exit_code === 'number') {
+    push('signal_with_exit_code', `a signalled child cannot also report exit ${outcome.exit_code}`)
+  }
+  if (outcome.child_started === false && reportPresent) {
+    push('not_started_with_report', 'a child that never started cannot have produced a report')
+  }
+  if (outcome.child_started === false && has(outcome.started_at) && has(outcome.finished_at)) {
+    push('not_started_with_timestamps', 'a child that never started carries start and finish timestamps')
+  }
+  return problems
 }
 
 /**
@@ -171,12 +214,12 @@ export function reportFailureReasons(report) {
  */
 export function deriveProcessStatus(outcome) {
   switch (processOutcomeClass(outcome)) {
+    case 'spawn_failed': return 'spawn_failed'
+    case 'timed_out': return 'timed_out'
+    case 'signalled': return 'signalled'
+    case 'not_started': return 'not_started'
     case 'exited_zero': return 'ordinary_zero'
     case 'exited_nonzero': return 'ordinary_nonzero'
-    case 'signalled': return 'signalled'
-    case 'timed_out': return 'timed_out'
-    case 'spawn_failed': return 'spawn_failed'
-    case 'not_started': return 'not_started'
     default: return 'indeterminate'
   }
 }
@@ -442,6 +485,9 @@ export function auditEvidence({
     const discord = outcomeAgrees
       ? checkStatusConcordance({ reportStatus, processStatus, signatures })
       : null
+    for (const problem of validateOutcomeCoherence(outcome, { reportPresent: report !== null })) {
+      add(problem.code, name, problem.detail)
+    }
     if (discord !== null) {
       add(discord.code, name, `${discord.detail} (report ${reportStatus}, process ${processStatus})`)
     }
@@ -454,7 +500,8 @@ export function auditEvidence({
       outcome,
       signatures,
       reportUsable: report !== null && attribution.total > 0,
-      concordant: outcomeAgrees && discord === null,
+      concordant: outcomeAgrees && discord === null
+        && validateOutcomeCoherence(outcome, { reportPresent: report !== null }).length === 0,
     })
     if (scoring.classification !== recomputed) {
       add('classification_unsupported', name,
