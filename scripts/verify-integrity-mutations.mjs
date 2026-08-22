@@ -1177,6 +1177,46 @@ const MUTANTS = [
       'does not misclassify a worker-start failure as a timeout',
     ],
   },
+  {
+    name: 'C1-STRUCTURE: treat a missing success field as green',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: "    success: 'boolean',",
+    to: '',
+    expect: [
+      'removing top-level success makes the report unusable',
+    ],
+  },
+  {
+    name: 'C1-STRUCTURE: treat a missing failed-suite count as zero',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: "    numFailedTestSuites: 'count',",
+    to: '',
+    expect: [
+      'removing top-level numFailedTestSuites makes the report unusable',
+    ],
+  },
+  {
+    name: 'C1-STRUCTURE: skip per-file status validation',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: "    status: 'status',\n    message: 'string',",
+    to: "    message: 'string',",
+    expect: [
+      'removing per-file status makes the report unusable',
+    ],
+  },
+  {
+    name: 'C1-STRUCTURE: accept an unusable report as derivable',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: "  if (shape !== 'usable_complete') return 'unavailable'",
+    to: '  void shape',
+    expect: [
+      'reproduces the reviewer\u2019s exact stripped report',
+    ],
+  },
 ]
 
 // ===== executable section; nothing below is mutant data =====
