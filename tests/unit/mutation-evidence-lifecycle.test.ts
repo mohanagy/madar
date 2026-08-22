@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { produceEvidenceMatrix, SCRATCH_PREFIX } from './helpers/evidence-matrix.js'
+import { checkStatusConcordance, deriveProcessStatus } from '../../scripts/lib/evidence-audit.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const HARNESS = resolve(REPO, 'scripts/verify-integrity-mutations.mjs')
@@ -67,6 +68,8 @@ interface HarnessOptions {
   readonly untrackedTarget?: boolean
   /** The harness is expected to refuse before producing any artifact root. */
   readonly expectRefusal?: boolean
+  /** Replace the runner argv, e.g. with a binary that does not exist. */
+  readonly vitestArgv?: readonly string[]
 }
 
 function runHarness(options: HarnessOptions = {}): RunResult {
@@ -109,7 +112,7 @@ function runHarness(options: HarnessOptions = {}): RunResult {
     encoding: 'utf8',
     env: {
       ...process.env,
-      MADAR_MUTATION_VITEST_ARGV: JSON.stringify([process.execPath, STUB]),
+      MADAR_MUTATION_VITEST_ARGV: JSON.stringify(options.vitestArgv ?? [process.execPath, STUB]),
       MADAR_MUTATION_SUITE_TIMEOUT_MS: String(options.timeoutMs ?? 300_000),
       MADAR_STUB_TARGET: TARGET,
       MADAR_STUB_MARKER: MARKER,
@@ -217,6 +220,69 @@ describe('mutation evidence inherited from a killed run', () => {
 
     expect(run.stderr).not.toContain('REFUSING TO START')
     expect(run.stderr).not.toContain(TARGET)
+  })
+})
+
+describe('mutation evidence when the runner cannot be spawned', () => {
+  it('records a real spawn failure as spawn_failed, not as a run that never started', () => {
+    // Driven through the real harness with a runner binary that does not
+    // exist. `spawn_error` used to be classified AFTER `child_started:false`,
+    // and the harness sets child_started from `spawnError === null`, so every
+    // spawn failure took the not-started branch and spawn_failed was
+    // unreachable for the only shape that can produce it.
+    const missing = resolve(tmpdir(), 'madar-no-such-runner-please-do-not-create-me')
+    expect(existsSync(missing)).toBe(false)
+
+    const run = runHarness({ vitestArgv: [missing] })
+    // The BASELINE invocation is the one that cannot spawn: it runs first, and
+    // the mutant is then abandoned because its baseline was never green. The
+    // spawn evidence lives where the spawn was attempted.
+    const scoring = read(run, baselineDir(run), 'scoring.json')
+    const outcome = scoring['process_outcome'] as Record<string, unknown>
+
+    expect(outcome['spawn_error']).toMatch(/ENOENT/)
+    expect(outcome['child_started']).toBe(false)
+    expect(outcome['timed_out']).toBe(false)
+    expect(outcome['termination_signal']).toBeNull()
+    expect(scoring['classification']).toBe('infrastructure_failure')
+
+    // The auditor must recompute the same fact independently.
+    expect(deriveProcessStatus(outcome)).toBe('spawn_failed')
+
+    // The mutant is abandoned rather than scored against a runner that never ran.
+    const abandoned = read(run, mutantDir(run), 'scoring.json')
+    expect(abandoned['classification']).toBe('infrastructure_failure')
+    expect(abandoned['reason_code']).toBe('baseline_not_green')
+
+    // Restoration truthful, tree left clean.
+    const restoration = read(run, mutantDir(run), 'restoration.json')
+    expect(restoration['tree_clean_after']).toBe(true)
+    expect(restoration['leftover_paths']).toEqual([])
+  })
+
+  it('keeps a genuine never-attempted invocation classified as not_started', () => {
+    // The positive counterpart: a stale anchor abandons the invocation before
+    // any spawn, so there is no spawn error to find.
+    const run = runHarness({ mutant: { from: 'THIS ANCHOR IS NOT IN THE FILE' } })
+    const outcome = read(run, mutantDir(run), 'scoring.json')['process_outcome'] as Record<string, unknown>
+
+    expect(outcome['spawn_error']).toBeNull()
+    expect(outcome['child_started']).toBe(false)
+    expect(deriveProcessStatus(outcome)).toBe('not_started')
+  })
+
+  it('applies no ordinary concordance rule to either infrastructure ending', () => {
+    // Neither shape has an ordinary exit code, so the report/exit invariant
+    // must not be reached for them at all.
+    for (const outcome of [
+      { spawn_error: 'ENOENT: missing', child_started: false, exit_code: null, termination_signal: null, timed_out: false },
+      { spawn_error: null, child_started: false, exit_code: null, termination_signal: null, timed_out: false },
+    ]) {
+      const status = deriveProcessStatus(outcome)
+      expect(['spawn_failed', 'not_started']).toContain(status)
+      expect(checkStatusConcordance({ reportStatus: 'red', processStatus: status, signatures: [] })).toBeNull()
+      expect(checkStatusConcordance({ reportStatus: 'green', processStatus: status, signatures: [] })).toBeNull()
+    }
   })
 })
 
