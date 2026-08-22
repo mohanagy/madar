@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 
 /**
  * Fail-closed controls for the exact-manifest runner.
@@ -28,6 +28,61 @@ afterEach(() => {
 })
 
 /**
+ * Guarded-test logs these controls provoke on purpose.
+ *
+ * `run-guarded-vitest.mjs` deliberately RETAINS its temp directory whenever the
+ * guarded run fails, and prints the path, because for a real failure the log is
+ * the evidence. That behaviour is correct and is not changed here. But these
+ * controls fail the guard on purpose, so the retention is ours to clean up --
+ * six directories survived a full qualification before this, and an ownership
+ * audit is what found them.
+ *
+ * Each spawned child therefore gets its own temp root, known before the spawn,
+ * inspected while it still exists, and removed in a `finally`. Nothing here
+ * reads or deletes anything under the shared system temp directory.
+ */
+const guardRoots: string[] = []
+
+const GUARD_PREFIX = 'madar-vitest-guard-'
+
+function createGuardRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'madar-manifest-guardroot-'))
+  guardRoots.push(root)
+  return root
+}
+
+/** Confines a child's `os.tmpdir()` to a root this suite owns. */
+const confineTemp = (root: string): Record<string, string> => ({ TMPDIR: root, TMP: root, TEMP: root })
+
+/** What the guard retained inside our root, read before the root is removed. */
+function inspectGuardRoot(root: string): { dirs: string[]; logs: string[] } {
+  if (!existsSync(root)) return { dirs: [], logs: [] }
+  const dirs = readdirSync(root).filter((name) => name.startsWith(GUARD_PREFIX)).sort()
+  const logs = dirs
+    .map((name) => join(root, name, 'output.log'))
+    .filter((path) => existsSync(path))
+    .map((path) => readFileSync(path, 'utf8'))
+  return { dirs, logs }
+}
+
+/**
+ * Runs `body` against a private temp root and removes that root afterwards,
+ * including when `body` throws -- an assertion failure must not strand what it
+ * was asserting about.
+ */
+function withGuardRoot<T>(body: (root: string) => T): T {
+  const root = createGuardRoot()
+  try {
+    return body(root)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    // Removal is verified rather than assumed; a silent failure here is how the
+    // residue accumulated in the first place.
+    if (existsSync(root)) throw new Error(`test-owned guard root was not removed: ${root}`)
+  }
+}
+
+/**
  * Removes one produced artifact and re-runs validation over the same directory,
  * proving the runner requires each witness rather than reconstructing it.
  */
@@ -38,29 +93,48 @@ function runWithArtifactRemoved(file: string, artifact: string): { status: numbe
   writeFileSync(manifestPath, JSON.stringify([file]))
   const artifacts = join(dir, 'artifacts')
 
-  // First pass populates the artifact directory.
-  try {
-    execFileSync(process.execPath, [RUNNER, manifestPath, '--out', artifacts], {
-      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
-      env: { ...process.env, VITEST_GUARD_EXEC_OVERRIDE: FAKE_VITEST, MADAR_FAKE_VITEST_MODE: 'ok' },
-    })
-  } catch {
-    // A failure here would be reported by the assertions below.
-  }
+  return withGuardRoot((guardRoot) => {
+    // First pass populates the artifact directory.
+    try {
+      execFileSync(process.execPath, [RUNNER, manifestPath, '--out', artifacts], {
+        cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
+        env: {
+          ...process.env,
+          ...confineTemp(guardRoot),
+          VITEST_GUARD_EXEC_OVERRIDE: FAKE_VITEST,
+          MADAR_FAKE_VITEST_MODE: 'ok',
+        },
+      })
+    } catch {
+      // A failure here would be reported by the assertions below.
+    }
 
-  // Remove the witness, then run again against the same directory.
-  const entryDir = readdirSync(artifacts).find((name) => name !== 'ledger.json')
-  if (entryDir !== undefined) rmSync(join(artifacts, entryDir, artifact), { force: true })
+    // Remove the witness, then run again against the same directory.
+    const entryDir = readdirSync(artifacts).find((name) => name !== 'ledger.json')
+    if (entryDir !== undefined) rmSync(join(artifacts, entryDir, artifact), { force: true })
 
-  try {
-    const stdout = execFileSync(process.execPath, [RUNNER, manifestPath, '--out', artifacts, '--validate-only'], {
-      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
-    })
-    return { status: 0, output: stdout }
-  } catch (error) {
-    const failure = error as { status?: number; stdout?: string; stderr?: string }
-    return { status: failure.status ?? -1, output: `${failure.stdout ?? ''}${failure.stderr ?? ''}` }
-  }
+    try {
+      const stdout = execFileSync(process.execPath, [RUNNER, manifestPath, '--out', artifacts, '--validate-only'], {
+        cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
+        env: { ...process.env, ...confineTemp(guardRoot) },
+      })
+      return { status: 0, output: stdout }
+    } catch (error) {
+      const failure = error as { status?: number; stdout?: string; stderr?: string }
+      return { status: failure.status ?? -1, output: `${failure.stdout ?? ''}${failure.stderr ?? ''}` }
+    }
+  })
+}
+
+interface ControlRun {
+  readonly status: number
+  readonly output: string
+  /** The temp root this invocation owned; removed by the time this returns. */
+  readonly guardRoot: string
+  /** Guard directories retained inside that root, read before removal. */
+  readonly retainedGuardDirs: readonly string[]
+  /** Contents of each retained output.log, read before removal. */
+  readonly retainedLogs: readonly string[]
 }
 
 function run(options: {
@@ -68,7 +142,7 @@ function run(options: {
   manifestPath?: string
   mode?: string
   rawManifest?: boolean
-}): { status: number; output: string } {
+}): ControlRun {
   const dir = mkdtempSync(join(tmpdir(), 'madar-manifest-control-'))
   scratch.push(dir)
   let manifestPath = options.manifestPath ?? join(dir, 'manifest.json')
@@ -80,26 +154,120 @@ function run(options: {
     manifestPath = join(dir, 'does-not-exist.json')
   }
 
-  try {
-    const stdout = execFileSync(process.execPath, [RUNNER, manifestPath, '--out', join(dir, 'artifacts')], {
-      cwd: ROOT,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 300_000,
-      env: {
-        ...process.env,
-        ...(options.mode === undefined ? {} : {
-          VITEST_GUARD_EXEC_OVERRIDE: FAKE_VITEST,
-          MADAR_FAKE_VITEST_MODE: options.mode,
-        }),
-      },
-    })
-    return { status: 0, output: stdout }
-  } catch (error) {
-    const failure = error as { status?: number; stdout?: string; stderr?: string }
-    return { status: failure.status ?? -1, output: `${failure.stdout ?? ''}${failure.stderr ?? ''}` }
-  }
+  return withGuardRoot((guardRoot) => {
+    let status = 0
+    let output = ''
+    try {
+      output = execFileSync(process.execPath, [RUNNER, manifestPath, '--out', join(dir, 'artifacts')], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 300_000,
+        env: {
+          ...process.env,
+          ...confineTemp(guardRoot),
+          ...(options.mode === undefined ? {} : {
+            VITEST_GUARD_EXEC_OVERRIDE: FAKE_VITEST,
+            MADAR_FAKE_VITEST_MODE: options.mode,
+          }),
+        },
+      })
+    } catch (error) {
+      const failure = error as { status?: number; stdout?: string; stderr?: string }
+      status = failure.status ?? -1
+      output = `${failure.stdout ?? ''}${failure.stderr ?? ''}`
+    }
+    // Read while it still exists: `withGuardRoot` removes the root on the way
+    // out, so anything a control needs to assert has to be captured here.
+    const retained = inspectGuardRoot(guardRoot)
+    return { status, output, guardRoot, retainedGuardDirs: retained.dirs, retainedLogs: retained.logs }
+  })
 }
+
+afterAll(() => {
+  // Exact, ownership-based, and not a global temp delta: every root this suite
+  // created must be gone, named individually.
+  const survivors = guardRoots.filter((root) => existsSync(root))
+  expect(survivors, `test-owned guard roots survived: ${survivors.join(', ')}`).toEqual([])
+})
+
+describe('controls own the guard logs they provoke', () => {
+  it('retains output.log long enough for the control to inspect it', () => {
+    // The guard keeps its directory on failure and prints the path, because for
+    // a REAL failure the log is the evidence. That is unchanged. What changed
+    // is that a deliberately provoked failure is now ours to clean up.
+    const result = run({ manifest: [REAL_A], mode: 'worker-start' })
+
+    expect(result.status).not.toBe(0)
+    expect(result.retainedGuardDirs.length).toBeGreaterThan(0)
+    expect(result.retainedLogs.length).toBeGreaterThan(0)
+  })
+
+  it('asserts the exact reason the guarded run was retained', () => {
+    // Not merely "something failed": the retained log must name the signature
+    // this control planted, or the control proves nothing about the guard.
+    const workerStart = run({ manifest: [REAL_A], mode: 'worker-start' })
+    expect(workerStart.retainedLogs.join('\n')).toContain('Failed to start forks worker')
+
+    const handshake = run({ manifest: [REAL_A], mode: 'handshake' })
+    expect(handshake.retainedLogs.join('\n')).toContain('Timeout waiting for worker to respond')
+  })
+
+  it('removes the test-owned temporary root afterwards', () => {
+    const result = run({ manifest: [REAL_A], mode: 'worker-start' })
+
+    expect(result.retainedGuardDirs.length).toBeGreaterThan(0)
+    expect(existsSync(result.guardRoot)).toBe(false)
+  })
+
+  it('removes the root even when the control body throws', () => {
+    // An assertion failure must not strand the thing it was asserting about.
+    let escaped = ''
+    expect(() => withGuardRoot((root) => {
+      escaped = root
+      mkdtempSync(join(root, `${GUARD_PREFIX}fake-`))
+      throw new Error('control assertion failed')
+    })).toThrow('control assertion failed')
+
+    expect(escaped).not.toBe('')
+    expect(existsSync(escaped)).toBe(false)
+  })
+
+  it('leaves no guard directory when the guarded run succeeds', () => {
+    // The positive control. The guard removes its own directory on success, so
+    // a retained one here would mean the success path stopped cleaning up.
+    const result = run({ manifest: [REAL_A, REAL_B], mode: 'ok' })
+
+    expect(result.status).toBe(0)
+    expect(result.retainedGuardDirs).toEqual([])
+    expect(existsSync(result.guardRoot)).toBe(false)
+  })
+
+  it('gives two sequential controls two distinct roots', () => {
+    const first = run({ manifest: [REAL_A], mode: 'worker-start' })
+    const second = run({ manifest: [REAL_A], mode: 'worker-start' })
+
+    expect(first.guardRoot).not.toBe(second.guardRoot)
+    expect(existsSync(first.guardRoot)).toBe(false)
+    expect(existsSync(second.guardRoot)).toBe(false)
+  })
+
+  it('removes nothing outside the test-owned root', () => {
+    // A named sentinel rather than a global temp count: a broad delta would be
+    // satisfied by unrelated churn and would blame unrelated fixtures.
+    const sentinelRoot = mkdtempSync(join(tmpdir(), 'madar-manifest-sentinel-'))
+    scratch.push(sentinelRoot)
+    mkdtempSync(join(sentinelRoot, GUARD_PREFIX))
+    writeFileSync(join(sentinelRoot, 'keep-me.txt'), 'untouched')
+
+    const result = run({ manifest: [REAL_A], mode: 'worker-start' })
+
+    expect(existsSync(result.guardRoot)).toBe(false)
+    expect(existsSync(sentinelRoot)).toBe(true)
+    expect(readFileSync(join(sentinelRoot, 'keep-me.txt'), 'utf8')).toBe('untouched')
+    expect(readdirSync(sentinelRoot).filter((n) => n.startsWith(GUARD_PREFIX))).toHaveLength(1)
+  })
+})
 
 describe('manifest validation refuses bad input before running anything', () => {
   it('rejects a missing manifest file', () => {
