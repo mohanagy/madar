@@ -1075,8 +1075,11 @@ const MUTANTS = [
     name: 'M1-05D-B: stop cross-checking the process outcome',
     file: EVIDENCE_AUDIT_SRC,
     test: EVIDENCE_AUDIT,
-    from: '    if (JSON.stringify(meta.outcome ?? null) !== JSON.stringify(outcome)) {',
-    to: '    if (false) {',
+    // Re-anchored when the cross-artifact comparison became a named
+    // precondition rather than an inline `if`. The old anchor went stale and
+    // the harness refused to score it -- correctly, and loudly.
+    from: '    const outcomeAgrees = JSON.stringify(meta.outcome ?? null) === JSON.stringify(outcome)',
+    to: '    const outcomeAgrees = true',
     expect: [
       '13 rejects a scoring record that misstates the process outcome',
     ],
