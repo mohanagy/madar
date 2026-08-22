@@ -104,6 +104,16 @@ interface AuditResult {
   readonly digest: string | null
 }
 
+/** The auditor's own derived record for one invocation, read from its JSON. */
+function auditRecordFor(root: string, kind: 'mutant' | 'baseline'): Record<string, unknown> {
+  const out = resolve(dirname(root), `audit-${kind}.json`)
+  spawnSync(process.execPath, [AUDITOR, root, '--json', out], { cwd: project, encoding: 'utf8' })
+  const parsed = JSON.parse(readFileSync(out, 'utf8')) as { invocations: Array<Record<string, unknown>> }
+  const record = parsed.invocations.find((entry) => entry['kind'] === kind)
+  if (record === undefined) throw new Error(`no ${kind} invocation in the audit record`)
+  return record
+}
+
 function audit(root: string): AuditResult {
   const child = spawnSync(process.execPath, [
     AUDITOR, root, '--expect-mutants', '1', '--expect-baselines', '1',
@@ -354,6 +364,119 @@ describe('semantic evidence audit — negative controls', () => {
     const result = audit(root)
     expect(result.status).not.toBe(0)
     expect(result.codes).toContain('duplicate_invocation_id')
+  })
+})
+
+describe('semantic evidence audit — process/report status concordance', () => {
+  /**
+   * M1-05D-C. The cross-artifact check compares `meta.json` against
+   * `scoring.json`, so falsifying BOTH consistently defeated it, and nothing
+   * compared either against the report. A reviewer set both exit codes to 0,
+   * left five failing tests in place, and the audit reported OK -- producing a
+   * different-but-accepted digest rather than a failure.
+   *
+   * Every control below starts from a matrix the real harness produced, edits a
+   * private copy, and leaves the source matrix untouched.
+   */
+  it('A rejects a red report whose persisted statuses both claim exit 0', () => {
+    const root = matrix()
+    const dir = dirFor(root, 'mutant')
+    // Both artifacts, consistently. Signal and timeout stay as ordinary
+    // completion so the invocation cannot be excused as infrastructure.
+    for (const file of ['meta.json', 'scoring.json']) {
+      edit(dir, file, (value) => {
+        const outcome = (value['outcome'] ?? value['process_outcome']) as Record<string, unknown>
+        outcome['exit_code'] = 0
+        outcome['termination_signal'] = null
+        outcome['timed_out'] = false
+      })
+    }
+
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('red_report_zero_exit')
+    // The failing tests it names must never be readable as proof of a catch.
+    expect(result.output).toContain('evidence supports unverifiable')
+  })
+
+  it('B rejects a green report whose persisted statuses both claim non-zero exit', () => {
+    const root = matrix()
+    const dir = dirFor(root, 'baseline')
+    for (const file of ['meta.json', 'scoring.json']) {
+      edit(dir, file, (value) => {
+        const outcome = (value['outcome'] ?? value['process_outcome']) as Record<string, unknown>
+        outcome['exit_code'] = 1
+        outcome['termination_signal'] = null
+        outcome['timed_out'] = false
+      })
+    }
+
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('green_report_nonzero_exit')
+    expect(result.output).toContain('evidence supports unverifiable')
+  })
+
+  it('C reports cross-artifact disagreement, not report concordance, when only one lies', () => {
+    const root = matrix()
+    // Only scoring is changed: the two status artifacts now disagree, so there
+    // is no established process status to compare against the report.
+    edit(dirFor(root, 'mutant'), 'scoring.json', (scoring) => {
+      (scoring['process_outcome'] as Record<string, unknown>)['exit_code'] = 0
+    })
+
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('process_outcome_mismatch')
+    expect(result.codes).not.toContain('red_report_zero_exit')
+    expect(result.codes).not.toContain('green_report_nonzero_exit')
+  })
+
+  it('leaves an infrastructure ending governed by its own classification', () => {
+    // A signalled child says nothing about whether tests passed, so the
+    // ordinary concordance rule must not be applied to it. Forcing it here
+    // would reclassify real infrastructure failures as tampering.
+    const root = matrix()
+    const dir = dirFor(root, 'mutant')
+    for (const file of ['meta.json', 'scoring.json']) {
+      edit(dir, file, (value) => {
+        const outcome = (value['outcome'] ?? value['process_outcome']) as Record<string, unknown>
+        outcome['exit_code'] = null
+        outcome['termination_signal'] = 'SIGKILL'
+      })
+    }
+
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).not.toContain('red_report_zero_exit')
+    expect(result.codes).not.toContain('green_report_nonzero_exit')
+    // Still refused, but as the infrastructure condition it actually is.
+    expect(result.codes).toContain('classification_unsupported')
+    expect(result.output).toContain('infrastructure_failure')
+  })
+})
+
+describe('semantic evidence audit — truthful status is accepted', () => {
+  it('accepts a green baseline report with an ordinary exit 0', () => {
+    const root = matrix()
+    const result = audit(root)
+    expect(result.status).toBe(0)
+
+    const record = auditRecordFor(root, 'baseline')
+    expect(record['report_status']).toBe('green')
+    expect(record['process_status']).toBe('ordinary_zero')
+    expect(record['classification']).toBe('baseline_passed')
+  })
+
+  it('accepts a red caught-mutant report with an ordinary non-zero exit', () => {
+    const root = matrix()
+    const result = audit(root)
+    expect(result.status).toBe(0)
+
+    const record = auditRecordFor(root, 'mutant')
+    expect(record['report_status']).toBe('red')
+    expect(record['process_status']).toBe('ordinary_nonzero')
+    expect(record['classification']).toBe('caught')
   })
 })
 

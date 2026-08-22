@@ -80,13 +80,88 @@ export function recomputeAttribution({ report, requestedSuite, root }) {
 }
 
 /**
+ * Derives what the Vitest report itself says, independently of any stored
+ * classification.
+ *
+ * `unavailable` is a third state on purpose: a missing or partial report is an
+ * infrastructure condition, and collapsing it into green or red would let an
+ * absent report satisfy a concordance rule it never participated in.
+ */
+export function deriveReportStatus({ report, attribution }) {
+  if (report === null || report === undefined) return 'unavailable'
+  if (attribution.total === 0) return 'unavailable'
+  if (!attribution.exactlyOne) return 'unavailable'
+  return attribution.failed.length > 0 ? 'red' : 'green'
+}
+
+/**
+ * Derives what the process did, from the agreed persisted outcome.
+ *
+ * Ordinary completion is separated from every infrastructure ending because
+ * only ordinary completion carries a meaningful relationship to the report: a
+ * signalled or timed-out child says nothing about whether tests passed.
+ */
+export function deriveProcessStatus(outcome) {
+  switch (processOutcomeClass(outcome)) {
+    case 'exited_zero': return 'ordinary_zero'
+    case 'exited_nonzero': return 'ordinary_nonzero'
+    case 'signalled': return 'signalled'
+    case 'timed_out': return 'timed_out'
+    case 'spawn_failed': return 'spawn_failed'
+    case 'not_started': return 'not_started'
+    default: return 'indeterminate'
+  }
+}
+
+/**
+ * The concordance invariant: for an ordinary completed child with a complete,
+ * usable report, `exit_code === 0` if and only if the report is green.
+ *
+ * An independent reviewer falsified BOTH persisted status artifacts to zero and
+ * left a red report in place. Every existing check passed: the two artifacts
+ * agreed with each other, so the cross-artifact rule saw nothing, and no rule
+ * compared either of them against the report. The audit reported OK and even
+ * produced a different-but-accepted digest.
+ *
+ * Deliberately NOT applied to signal, timeout, spawn failure, worker-start or
+ * handshake failure, or a missing/partial report. Those endings are governed by
+ * their own explicit infrastructure classifications, and forcing this rule onto
+ * them would reclassify real infrastructure failures as tampering.
+ */
+export function checkStatusConcordance({ reportStatus, processStatus, signatures = [] }) {
+  if (signatures.length > 0) return null
+  if (reportStatus === 'unavailable') return null
+  if (processStatus !== 'ordinary_zero' && processStatus !== 'ordinary_nonzero') return null
+
+  if (processStatus === 'ordinary_zero' && reportStatus === 'red') {
+    return {
+      code: 'red_report_zero_exit',
+      detail: 'report contains failing tests but the process is recorded as exiting 0',
+    }
+  }
+  if (processStatus === 'ordinary_nonzero' && reportStatus === 'green') {
+    return {
+      code: 'green_report_nonzero_exit',
+      detail: 'report contains no failing test but the process is recorded as exiting non-zero',
+    }
+  }
+  return null
+}
+
+/**
  * Re-derives the scoring class from the evidence.
  *
  * `caught` requires a named expected test to have failed. An unrelated failing
  * test is a harness problem, never proof the invariant is guarded.
  */
-export function recomputeClassification({ kind, expected, attribution, outcome, signatures, reportUsable }) {
+export function recomputeClassification({
+  kind, expected, attribution, outcome, signatures, reportUsable, concordant = true,
+}) {
   if (signatures.length > 0) return 'infrastructure_failure'
+  // Attribution is not reached while the evidence contradicts itself. A red
+  // report with a persisted zero exit must fail the audit BEFORE the failing
+  // tests it names can be read as proof a mutant was caught.
+  if (!concordant) return 'unverifiable'
   if (!reportUsable) return 'infrastructure_failure'
   const outcomeClass = processOutcomeClass(outcome)
   if (['not_started', 'spawn_failed', 'timed_out', 'signalled', 'absent'].includes(outcomeClass)) {
@@ -217,7 +292,12 @@ export function auditEvidence({
 
     // ---- process outcome, agreed by meta and scoring ----------------------
     const outcome = scoring.process_outcome ?? null
-    if (JSON.stringify(meta.outcome ?? null) !== JSON.stringify(outcome)) {
+    // Agreement is a PRECONDITION for deriving a process status, not merely
+    // another finding. While the two artifacts disagree there is no established
+    // process outcome to compare the report against, so the concordance rule
+    // below is not applied and the cross-artifact code stands alone.
+    const outcomeAgrees = JSON.stringify(meta.outcome ?? null) === JSON.stringify(outcome)
+    if (!outcomeAgrees) {
       add('process_outcome_mismatch', name, 'meta and scoring disagree about the process outcome')
     }
     const outcomeClass = processOutcomeClass(outcome)
@@ -287,6 +367,17 @@ export function auditEvidence({
       }
     }
 
+    // ---- process / report status concordance ------------------------------
+    // Derived from the artifacts themselves, never from a stored verdict.
+    const reportStatus = deriveReportStatus({ report, attribution })
+    const processStatus = outcomeAgrees ? deriveProcessStatus(outcome) : 'unestablished'
+    const discord = outcomeAgrees
+      ? checkStatusConcordance({ reportStatus, processStatus, signatures })
+      : null
+    if (discord !== null) {
+      add(discord.code, name, `${discord.detail} (report ${reportStatus}, process ${processStatus})`)
+    }
+
     // ---- the classification, re-derived -----------------------------------
     const recomputed = recomputeClassification({
       kind,
@@ -295,6 +386,7 @@ export function auditEvidence({
       outcome,
       signatures,
       reportUsable: report !== null && attribution.total > 0,
+      concordant: outcomeAgrees && discord === null,
     })
     if (scoring.classification !== recomputed) {
       add('classification_unsupported', name,
@@ -383,6 +475,8 @@ export function auditEvidence({
       classification: scoring.classification,
       recomputed_classification: recomputed,
       process_outcome_class: outcomeClass,
+      report_status: reportStatus,
+      process_status: processStatus,
       mutation_lifecycle: lifecycle ?? 'missing',
       lifecycle_truth: (restoration.source_paths ?? []).map((path) => ({
         path,
@@ -422,6 +516,10 @@ export function semanticAuditDigest(invocations) {
       classification: entry.classification,
       recomputed_classification: entry.recomputed_classification,
       process_outcome_class: entry.process_outcome_class,
+      // Independently derived, so a matrix whose stored status was falsified
+      // cannot produce the digest of a truthful one.
+      report_status: entry.report_status,
+      process_status: entry.process_status,
       mutation_lifecycle: entry.mutation_lifecycle,
       lifecycle_truth: entry.lifecycle_truth,
     }))
