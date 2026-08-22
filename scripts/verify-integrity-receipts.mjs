@@ -344,6 +344,26 @@ if (MEASURE_ARM !== null) {
   process.exit(0)
 }
 
+// Argument validation happens HERE, before any measurement.
+//
+// It used to sit after the corpus receipts were built, so `node
+// verify-integrity-receipts.mjs` with no arguments spent ~60 seconds
+// constructing graphs before discovering it had never been asked for a
+// comparison. The focused control that proves this refusal paid that cost on
+// every mutant invocation, which is what pushed six exact-ref rows to ~250s
+// against a 300s bound and timed two of them out in an independent matrix.
+//
+// Placed after the `--measure-arm` branch deliberately: an arm subprocess is
+// invoked without a baseline ref by design and must not be refused.
+if (BASELINE_REF === null && BASELINE === null && !CORPUS_ONLY) {
+  console.error(
+    'refusing to produce a receipt with no comparison.\n'
+    + '  --baseline-ref <sha>   reproducible exact-head qualification (required for qualification)\n'
+    + '  --corpus-only          current-head corpus receipts only, explicitly not a qualification',
+  )
+  process.exit(2)
+}
+
 const control = scannerControl()
 
 const receipts = []
@@ -462,14 +482,6 @@ async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT,
   return { baseline_revision: baselineSha, comparisons, invalidated_runs: invalidated }
 }
 
-if (BASELINE_REF === null && BASELINE === null && !CORPUS_ONLY) {
-  console.error(
-    'refusing to produce a receipt with no comparison.\n'
-    + '  --baseline-ref <sha>   reproducible exact-head qualification (required for qualification)\n'
-    + '  --corpus-only          current-head corpus receipts only, explicitly not a qualification',
-  )
-  process.exit(2)
-}
 
 let performance = {
   baseline: 'not supplied',
