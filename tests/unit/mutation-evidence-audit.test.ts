@@ -480,6 +480,191 @@ describe('semantic evidence audit — truthful status is accepted', () => {
   })
 })
 
+describe('semantic evidence audit — report status uses every authoritative field', () => {
+  /**
+   * M1-05D-C1. Report status was derived from assertion results alone. A
+   * reviewer set success:false, numFailedTestSuites:1, the file row to failed
+   * and added a file-level message, left all 54 assertions passing at exit 0,
+   * and the auditor derived green and returned the unchanged checkpoint digest.
+   *
+   * A suite that dies before its first assertion has no failed assertion to
+   * find, so each authoritative field is controlled on its own here: a
+   * derivation that consulted only some of them would pass the others.
+   *
+   * Each control edits ONE field on a genuine green baseline and leaves the
+   * ordinary exit 0 in place, so a correct derivation reads red and ordinary
+   * concordance then refuses it.
+   */
+  const redField = (label: string, mutate: (report: Record<string, unknown>) => void): void => {
+    it(`${label} makes the report red and fails concordance at exit 0`, () => {
+      const root = matrix()
+      const dir = dirFor(root, 'baseline')
+      const report = readJson(dir, 'vitest-report.json')
+      mutate(report)
+      writeJson(dir, 'vitest-report.json', report)
+      restamp(dir)
+
+      const result = audit(root)
+      expect(result.status).not.toBe(0)
+      expect(result.codes).toContain('red_report_zero_exit')
+      expect(result.output).toContain('report red')
+      // Never resolved in favour of the stored verdict.
+      expect(result.output).toContain('evidence supports unverifiable')
+    })
+  }
+
+  redField('A top-level success:false', (report) => { report['success'] = false })
+
+  redField('B numFailedTestSuites > 0', (report) => {
+    report['success'] = false
+    report['numFailedTestSuites'] = 1
+  })
+
+  redField('C a failed file-result status', (report) => {
+    report['success'] = false
+    const row = (report['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    row['status'] = 'failed'
+  })
+
+  redField('D a file-level failure message', (report) => {
+    report['success'] = false
+    const row = (report['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    row['message'] = 'Error: file-level failure before any test ran'
+  })
+
+  redField('E a failed assertion', (report) => {
+    report['success'] = false
+    const file = (report['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    const assertions = file['assertionResults'] as Array<Record<string, unknown>>
+    ;(assertions[0] as Record<string, unknown>)['status'] = 'failed'
+  })
+
+  it('F refuses a report whose own fields contradict each other', () => {
+    // success:true alongside failure counts. The favourable field must not be
+    // chosen; the report is not evidence of anything either way.
+    const root = matrix()
+    const dir = dirFor(root, 'baseline')
+    const report = readJson(dir, 'vitest-report.json')
+    report['success'] = true
+    report['numFailedTests'] = 3
+    report['numFailedTestSuites'] = 1
+    writeJson(dir, 'vitest-report.json', report)
+    restamp(dir)
+
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('contradictory_report')
+    expect(result.output).toContain('claims success:true while reporting')
+    // Fails closed rather than being read as green.
+    expect(result.codes).not.toContain('red_report_zero_exit')
+  })
+
+  it('reproduces the reviewer\u2019s exact file-level falsification', () => {
+    // Every field the reviewer set, together, on genuine green evidence.
+    const root = matrix()
+    const dir = dirFor(root, 'baseline')
+    const report = readJson(dir, 'vitest-report.json')
+    report['success'] = false
+    report['numFailedTestSuites'] = 1
+    const file = (report['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+    file['status'] = 'failed'
+    file['message'] = 'Error: file-level failure before any test ran'
+    writeJson(dir, 'vitest-report.json', report)
+    restamp(dir)
+
+    // Assertions all still pass and the exit code is still an ordinary 0.
+    const assertions = (file['assertionResults'] as Array<Record<string, unknown>>)
+    expect(assertions.every((a) => a['status'] === 'passed')).toBe(true)
+    expect((readJson(dir, 'scoring.json')['process_outcome'] as Record<string, unknown>)['exit_code']).toBe(0)
+
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('red_report_zero_exit')
+  })
+
+  it('G accepts a truthful green report at ordinary exit 0', () => {
+    const root = matrix()
+    expect(audit(root).status).toBe(0)
+    const record = auditRecordFor(root, 'baseline')
+    expect(record['report_status']).toBe('green')
+    expect(record['process_status']).toBe('ordinary_zero')
+  })
+
+  it('H accepts a truthful red mutant report at ordinary non-zero exit', () => {
+    const root = matrix()
+    expect(audit(root).status).toBe(0)
+    const record = auditRecordFor(root, 'mutant')
+    expect(record['report_status']).toBe('red')
+    expect(record['process_status']).toBe('ordinary_nonzero')
+  })
+})
+
+describe('semantic evidence audit — impossible process outcomes', () => {
+  /**
+   * M1-05D-C2. Reported with exact codes rather than normalised away: silently
+   * repairing an impossible outcome would let falsified evidence pass as merely
+   * untidy.
+   */
+  const impossible = (label: string, code: string, mutate: (outcome: Record<string, unknown>) => void): void => {
+    it(`rejects ${label}`, () => {
+      const root = matrix()
+      const dir = dirFor(root, 'mutant')
+      // Both artifacts, so cross-artifact disagreement is not what fires.
+      for (const file of ['meta.json', 'scoring.json']) {
+        edit(dir, file, (value) => {
+          mutate((value['outcome'] ?? value['process_outcome']) as Record<string, unknown>)
+        })
+      }
+      const result = audit(root)
+      expect(result.status).not.toBe(0)
+      expect(result.codes).toContain(code)
+    })
+  }
+
+  impossible('a spawn error alongside a started child', 'spawn_error_with_started_child', (o) => {
+    o['spawn_error'] = 'ENOENT: no such file or directory'
+    o['child_started'] = true
+  })
+
+  impossible('a spawn error alongside an ordinary exit code', 'spawn_error_with_exit_code', (o) => {
+    o['spawn_error'] = 'ENOENT: no such file or directory'
+    o['child_started'] = false
+    o['exit_code'] = 1
+  })
+
+  impossible('a timeout alongside a successful exit', 'timeout_with_successful_exit', (o) => {
+    o['timed_out'] = true
+    o['exit_code'] = 0
+  })
+
+  impossible('a signal alongside an ordinary exit code', 'signal_with_exit_code', (o) => {
+    o['termination_signal'] = 'SIGKILL'
+    o['exit_code'] = 1
+  })
+
+  impossible('a never-started child that produced a report', 'not_started_with_report', (o) => {
+    o['child_started'] = false
+    o['exit_code'] = null
+    o['started_at'] = null
+    o['finished_at'] = null
+    o['duration_ms'] = 0
+  })
+
+  impossible('a never-started child carrying completion timestamps', 'not_started_with_timestamps', (o) => {
+    o['child_started'] = false
+    o['exit_code'] = null
+    o['duration_ms'] = 0
+  })
+
+  impossible('a never-started child that consumed time', 'not_started_with_duration', (o) => {
+    o['child_started'] = false
+    o['exit_code'] = null
+    o['started_at'] = null
+    o['finished_at'] = null
+    o['duration_ms'] = 4200
+  })
+})
+
 describe('semantic evidence audit — completeness', () => {
   it('requires every artifact the harness is supposed to write', () => {
     // Enumerated as a control rather than trusted: an audit that silently

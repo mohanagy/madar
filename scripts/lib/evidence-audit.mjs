@@ -98,6 +98,9 @@ export function validateOutcomeCoherence(outcome, { reportPresent }) {
   if (outcome.child_started === false && has(outcome.started_at) && has(outcome.finished_at)) {
     push('not_started_with_timestamps', 'a child that never started carries start and finish timestamps')
   }
+  if (outcome.child_started === false && typeof outcome.duration_ms === 'number' && outcome.duration_ms > 0) {
+    push('not_started_with_duration', `a child that never started consumed ${outcome.duration_ms}ms`)
+  }
   return problems
 }
 
@@ -203,6 +206,19 @@ export function deriveReportStatus({ report, attribution }) {
 /** The exact indicators that made a report red, for the audit's detail line. */
 export function reportFailureReasons(report) {
   return report === null || report === undefined ? [] : reportFailureIndicators(report)
+}
+
+/**
+ * A report whose own fields disagree about whether it succeeded.
+ *
+ * Named separately so a control can assert the exact condition rather than
+ * inferring it from a downstream classification failure.
+ */
+export function reportContradiction(report) {
+  if (report === null || report === undefined) return null
+  if (report.success !== true) return null
+  const failures = reportFailureIndicators(report)
+  return failures.length === 0 ? null : failures
 }
 
 /**
@@ -480,6 +496,11 @@ export function auditEvidence({
 
     // ---- process / report status concordance ------------------------------
     // Derived from the artifacts themselves, never from a stored verdict.
+    const contradiction = reportContradiction(report)
+    if (contradiction !== null) {
+      add('contradictory_report', name,
+        `report claims success:true while reporting ${contradiction.join('; ')}`)
+    }
     const reportStatus = deriveReportStatus({ report, attribution })
     const processStatus = outcomeAgrees ? deriveProcessStatus(outcome) : 'unestablished'
     const discord = outcomeAgrees
