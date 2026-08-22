@@ -1166,6 +1166,17 @@ const MUTANTS = [
       'B rejects a green report whose persisted statuses both claim non-zero exit',
     ],
   },
+  {
+    name: 'M1-05D-C2: drop stderr on the success path',
+    scopeAfter: EXECUTABLE_SECTION,
+    file: MUTATIONS_SELF,
+    test: EVIDENCE_LIFECYCLE,
+    from: "  stderr = spawned.stderr ?? ''",
+    to: "  stderr = ''",
+    expect: [
+      'does not misclassify a worker-start failure as a timeout',
+    ],
+  },
 ]
 
 // ===== executable section; nothing below is mutant data =====
@@ -1433,22 +1444,26 @@ function runSuite(testFile, artifactDir, context = {}, extraEnv = {}) {
   let timedOut = false
   let spawnError = null
 
-  try {
-    stdout = execFileSync(command[0], command.slice(1), {
-      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SUITE_TIMEOUT_MS,
-      env: { ...process.env, ...extraEnv },
-    })
-    status = 0
-  } catch (error) {
-    stdout = error.stdout ?? ''
-    stderr = error.stderr ?? ''
-    // execFileSync reports a timeout as a signal kill; both are recorded rather
-    // than collapsed, and a status of null now means "no child ran" instead of
-    // "we did not look".
-    status = error.status ?? null
-    signal = error.signal ?? null
-    timedOut = error.code === 'ETIMEDOUT'
-    if (error.code === 'ENOENT' || error.code === 'EACCES') spawnError = `${error.code}: ${error.message}`
+  // spawnSync, not execFileSync: execFileSync returns only stdout, and its
+  // stderr is reachable ONLY from the thrown error. A child that emitted
+  // "Failed to start forks worker" on stderr and then exited 0 therefore
+  // produced no stderr at all here, the signature check found nothing, and the
+  // mutant was scored `uncaught` against a suite that never really ran. That is
+  // the exact #710 shape, and it was invisible on the success path.
+  const spawned = spawnSync(command[0], command.slice(1), {
+    cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SUITE_TIMEOUT_MS,
+    env: { ...process.env, ...extraEnv },
+  })
+  // Both streams on every path, success included.
+  stdout = spawned.stdout ?? ''
+  stderr = spawned.stderr ?? ''
+  status = spawned.status ?? null
+  signal = spawned.signal ?? null
+  if (spawned.error !== undefined && spawned.error !== null) {
+    timedOut = spawned.error.code === 'ETIMEDOUT'
+    if (spawned.error.code === 'ENOENT' || spawned.error.code === 'EACCES') {
+      spawnError = `${spawned.error.code}: ${spawned.error.message}`
+    }
   }
   const finishedAt = new Date().toISOString()
   const outcome = {

@@ -286,6 +286,73 @@ describe('mutation evidence when the runner cannot be spawned', () => {
   })
 })
 
+describe('mutation evidence when a child exceeds its bound', () => {
+  it('times out a hung child and keeps its identity and raw evidence', { timeout: 30_000 }, () => {
+    // The bound must still fire. Six exact-ref rows once sat at 249-271s
+    // against 300s and two timed out in an independent matrix; the correction
+    // removed misplaced work rather than raising the bound, so the bound has to
+    // remain provably live.
+    const run = runHarness({ fault: 'hang', timeoutMs: 1_500 })
+    const dir = mutantDir(run)
+    const scoring = read(run, dir, 'scoring.json')
+    const outcome = scoring['process_outcome'] as Record<string, unknown>
+
+    expect(outcome['timed_out']).toBe(true)
+    expect(outcome['termination_signal']).toBe('SIGTERM')
+    expect(scoring['classification']).toBe('infrastructure_failure')
+    // Never silently absorbed into an ordinary result.
+    expect(scoring['classification']).not.toBe('caught')
+
+    // Exact identity retained.
+    expect(scoring['mutant_id']).toBe('demo mutant')
+    expect(scoring['requested_suite']).toBe(SUITE)
+    expect(read(run, dir, 'meta.json')['mutant']).toBe('demo mutant')
+
+    // Raw evidence retained on disk.
+    for (const file of ['stdout.txt', 'stderr.txt', 'display.log', 'command.json', 'report-identity.json']) {
+      expect(existsSync(resolve(run.root, dir, file)), `${file} missing`).toBe(true)
+    }
+
+    // Restoration truthful and complete despite the timeout.
+    const restoration = read(run, dir, 'restoration.json')
+    expect(restoration['restoration_succeeded']).toBe(true)
+    expect(restoration['tree_clean_after']).toBe(true)
+    expect(restoration['leftover_paths']).toEqual([])
+    const pre = restoration['pre_mutation_digests'] as Record<string, string>
+    const post = restoration['post_restoration_digests'] as Record<string, string>
+    const mutated = restoration['mutated_digests'] as Record<string, string>
+    expect(mutated[TARGET]).not.toBe(pre[TARGET])
+    expect(post[TARGET]).toBe(pre[TARGET])
+  })
+
+  it('leaves no child, report, scratch project or residual mutation after a timeout', { timeout: 30_000 }, () => {
+    const before = readdirSync(tmpdir()).filter((n) => n.startsWith(SCRATCH_PREFIX))
+    const run = runHarness({ fault: 'hang', timeoutMs: 1_500 })
+
+    // A hung child that was killed produced no usable report.
+    expect(existsSync(resolve(run.root, mutantDir(run), 'vitest-report.json'))).toBe(false)
+    expect(read(run, mutantDir(run), 'report-identity.json')['report_present']).toBe(false)
+    // The scratch project this run owned is gone, counted by our own prefix.
+    expect(readdirSync(tmpdir()).filter((n) => n.startsWith(SCRATCH_PREFIX))).toEqual(before)
+  })
+
+  it('does not misclassify a worker-start failure as a timeout', () => {
+    // Both are infrastructure failures, but they are different facts and the
+    // #710 family is tracked by signature, not by bound.
+    const run = runHarness({ fault: 'worker-start' })
+    const scoring = read(run, mutantDir(run), 'scoring.json')
+    const outcome = scoring['process_outcome'] as Record<string, unknown>
+
+    expect(outcome['timed_out']).toBe(false)
+    expect(outcome['termination_signal']).toBeNull()
+    expect(deriveProcessStatus(outcome)).not.toBe('timed_out')
+    expect(scoring['classification']).toBe('infrastructure_failure')
+    const signatures = scoring['worker_start_signatures'] as Array<Record<string, unknown>>
+    expect(signatures.length).toBeGreaterThan(0)
+    expect(String(signatures[0]?.['signature'])).toContain('Failed to start forks worker')
+  })
+})
+
 describe('mutation lifecycle evidence', () => {
   it('records a mutated digest that differs from the pre-mutation digest', () => {
     const run = runHarness()
