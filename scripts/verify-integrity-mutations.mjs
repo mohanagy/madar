@@ -1143,6 +1143,26 @@ const MUTANTS = [
       'does not police a target that has no committed form',
     ],
   },
+  {
+    name: 'M1-05D-C: accept a red report that claims it exited zero',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: "  if (processStatus === 'ordinary_zero' && reportStatus === 'red') {",
+    to: '  if (false) {',
+    expect: [
+      'A rejects a red report whose persisted statuses both claim exit 0',
+    ],
+  },
+  {
+    name: 'M1-05D-C: accept a green report that claims it exited non-zero',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: "  if (processStatus === 'ordinary_nonzero' && reportStatus === 'green') {",
+    to: '  if (false) {',
+    expect: [
+      'B rejects a green report whose persisted statuses both claim non-zero exit',
+    ],
+  },
 ]
 
 // ===== executable section; nothing below is mutant data =====
