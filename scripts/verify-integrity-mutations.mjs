@@ -1201,7 +1201,9 @@ const MUTANTS = [
     name: 'C1-STRUCTURE: skip per-file status validation',
     file: EVIDENCE_AUDIT_SRC,
     test: EVIDENCE_AUDIT,
-    from: "    status: 'status',\n    message: 'string',",
+    // Re-anchored when the file level gained its own status domain; the old
+    // `status: 'status'` no longer exists.
+    from: "    status: 'file-status',\n    message: 'string',",
     to: "    message: 'string',",
     expect: [
       'removing per-file status makes the report unusable',
