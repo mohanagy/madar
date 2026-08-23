@@ -1318,7 +1318,7 @@ const MUTANTS = [
     from: '      reapOwnedTree(Date.now() + treeReapDeadlineMs)',
     to: '      settle()',
     expect: [
-      'accepts a complete result even when a descendant holds the pipes',
+      'reaps a cooperative closed-stdio descendant before resolving',
     ],
   },
   {
