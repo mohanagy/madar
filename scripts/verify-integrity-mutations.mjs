@@ -71,6 +71,7 @@ const HARNESS_SELF = 'tests/unit/mutation-harness-self.test.ts'
 const EVIDENCE_LIFECYCLE = 'tests/unit/mutation-evidence-lifecycle.test.ts'
 const EVIDENCE_AUDIT_SRC = 'scripts/lib/evidence-audit.mjs'
 const EVIDENCE_AUDIT = 'tests/unit/mutation-evidence-audit.test.ts'
+const RECEIPT_LIFECYCLE = 'tests/unit/receipt-child-lifecycle.test.ts'
 const EVIDENCE_HELPER = 'tests/unit/helpers/evidence-matrix.ts'
 
 /**
@@ -1257,6 +1258,36 @@ const MUTANTS = [
     to: "  const symbols = []\n  if (symbols.length > 0) {",
     expect: [
       'rejects a symbol key on the file object',
+    ],
+  },
+  {
+    name: 'RCP-01: refuse to reap descendants once the leader has exited',
+    file: CHILD_RUNNER,
+    test: RECEIPT_LIFECYCLE,
+    from: '  const pid = child.pid\n  // A pid of 0 or 1 addresses',
+    to: '  if (child.exitCode !== null || child.signalCode !== null) return\n  const pid = child.pid\n  // A pid of 0 or 1 addresses',
+    expect: [
+      'accepts a complete result even when a descendant holds the pipes',
+    ],
+  },
+  {
+    name: 'RCP-01: accept an arm result from another scope',
+    file: GUARDS,
+    test: RECEIPT_LIFECYCLE,
+    from: '  if (value.scope !== scope) throw new Error(`${where}: arm result is for scope "${value.scope}", expected "${scope}"`)',
+    to: '  void scope',
+    expect: [
+      'refuses a result for another scope',
+    ],
+  },
+  {
+    name: 'RCP-01: accept an arm result built from a different canonical input',
+    file: GUARDS,
+    test: RECEIPT_LIFECYCLE,
+    from: '  if (value.inputChecksum !== inputChecksum) {',
+    to: '  if (false) {',
+    expect: [
+      'refuses a result built from a different canonical input',
     ],
   },
 ]
