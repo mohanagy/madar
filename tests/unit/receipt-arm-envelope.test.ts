@@ -171,19 +171,19 @@ describe('C1 — sample and unit contract', () => {
   it('17 rejects a wrong metric contract', () => {
     expect(check((e) => {
       (e['sampleContract'] as Record<string, unknown>)['metricNames'] = ['samples', 'medianMs']
-    })).toThrow(/metric contract/)
+    })).toThrow(/entries, expected exactly/)
   })
 
   it('18 rejects a wrong wall unit', () => {
     expect(check((e) => {
       (e['sampleContract'] as Record<string, unknown>)['wallUnit'] = 's'
-    })).toThrow(/wall unit/)
+    })).toThrow(/wallUnit/)
   })
 
   it('18b rejects a wrong RSS unit', () => {
     expect(check((e) => {
       (e['sampleContract'] as Record<string, unknown>)['rssUnit'] = 'bytes'
-    })).toThrow(/rss unit/)
+    })).toThrow(/rssUnit/)
   })
 
   it('rejects a non-finite sample', () => {
@@ -219,6 +219,177 @@ describe('C1 — envelope shape is closed and plain', () => {
     const descriptor = descriptorFor()
     const envelope = Object.assign(Object.create({ inherited: true }), envelopeFor(descriptor))
     expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/plain object/)
+  })
+})
+
+describe('C1 — the nested sample contract is closed and descriptor-first', () => {
+  /**
+   * The previous validator read `contract.sampleCount` directly and checked
+   * `metricNames` with Array.isArray + .length + .some(). A reviewer replaced
+   * sampleCount with an enumerable getter -- which was EXECUTED -- and deleted
+   * metricNames[2] leaving length at 6. `.some()` skips holes, so both
+   * malformed contracts were accepted.
+   */
+  const contractOf = (envelope: Record<string, unknown>): Record<string, unknown> =>
+    envelope['sampleContract'] as Record<string, unknown>
+  const metricsOf = (envelope: Record<string, unknown>): unknown[] =>
+    contractOf(envelope)['metricNames'] as unknown[]
+
+  it('never executes an accessor-backed sampleCount', () => {
+    let reads = 0
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    Object.defineProperty(contractOf(envelope), 'sampleCount', {
+      get() { reads += 1; return 5 },
+      enumerable: true,
+      configurable: true,
+    })
+
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/is an accessor/)
+    expect(reads, 'the getter was executed').toBe(0)
+  })
+
+  it.each(['wallUnit', 'rssUnit', 'metricNames'])('never executes an accessor-backed %s', (field) => {
+    let reads = 0
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    Object.defineProperty(contractOf(envelope), field, {
+      get() { reads += 1; return undefined },
+      enumerable: true,
+      configurable: true,
+    })
+
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/is an accessor/)
+    expect(reads).toBe(0)
+  })
+
+  it('never executes an accessor-backed sampleContract', () => {
+    let reads = 0
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    Object.defineProperty(envelope, 'sampleContract', {
+      get() { reads += 1; return undefined },
+      enumerable: true,
+      configurable: true,
+    })
+
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/is an accessor/)
+    expect(reads).toBe(0)
+  })
+
+  it('rejects a sparse hole in metricNames with the length unchanged', () => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    const metrics = metricsOf(envelope)
+    const before = metrics.length
+    delete metrics[2]
+
+    // The shape the reviewer used: length intact, index genuinely absent.
+    expect(metrics.length).toBe(before)
+    expect(Object.prototype.hasOwnProperty.call(metrics, '2')).toBe(false)
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/\[2\]: is a hole/)
+  })
+
+  it('never executes an accessor-backed metric index', () => {
+    let reads = 0
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    Object.defineProperty(metricsOf(envelope), '3', {
+      get() { reads += 1; return 'spreadMs' },
+      enumerable: true,
+      configurable: true,
+    })
+
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/\[3\]: is an accessor/)
+    expect(reads).toBe(0)
+  })
+
+  it('rejects a wrong metric element', () => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    metricsOf(envelope)[1] = 'medianSeconds'
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/\[1\]: "medianSeconds"/)
+  })
+
+  it.each([
+    ['a missing element', (m: unknown[]) => { m.length = 5 }],
+    ['an extra element', (m: unknown[]) => { m.push('extraMetric') }],
+  ])('rejects %s', (_label, mutate) => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    mutate(metricsOf(envelope))
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/entries, expected exactly/)
+  })
+
+  it('rejects a non-string metric element', () => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    metricsOf(envelope)[0] = 42
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/must be a non-empty string/)
+  })
+
+  it('rejects an unexpected own key on metricNames', () => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    ;(metricsOf(envelope) as unknown as Record<string, unknown>)['smuggled'] = 'x'
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/unexpected own key `smuggled`/)
+  })
+
+  it('rejects a symbol key on metricNames', () => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    ;(metricsOf(envelope) as unknown as Record<symbol, unknown>)[Symbol('x')] = 1
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/symbol key/)
+  })
+
+  it('rejects a custom prototype on metricNames', () => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    Object.setPrototypeOf(metricsOf(envelope), { sneaky: true })
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/plain prototype/)
+  })
+
+  it.each([
+    ['an extra key', (c: Record<string, unknown>) => { c['extra'] = 1 }, /unexpected key `extra`/],
+    ['a symbol key', (c: Record<string, unknown>) => {
+      (c as Record<symbol, unknown>)[Symbol('s')] = 1
+    }, /symbol key/],
+  ])('rejects %s on the sample contract', (_label, mutate, pattern) => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    mutate(contractOf(envelope))
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(pattern)
+  })
+
+  it('rejects a custom prototype on the sample contract', () => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    envelope['sampleContract'] = Object.assign(Object.create({ inherited: 1 }), contractOf(envelope))
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/plain object|plain prototype/)
+  })
+
+  it.each([
+    ['negative', -1],
+    ['fractional', 5.5],
+    ['a string', '5'],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['unsafe', Number.MAX_SAFE_INTEGER + 2],
+  ])('rejects a %s sampleCount', (_label, value) => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    contractOf(envelope)['sampleCount'] = value
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' }))
+      .toThrow(/is not a non-negative safe integer|sample count/)
+  })
+
+  it('accepts a truthful dense contract on both arms', () => {
+    // The positive counterpart: this discipline must not reject faithful arms.
+    for (const revision of ['a135efca773f5b5f4690a7195e48ad5c44b18ef9', '06c23330496663fdbb7f71055cd4b4653e823d36']) {
+      const descriptor = descriptorFor({ revision })
+      const envelope = envelopeFor(descriptor)
+      expect(assertArmResult(envelope, descriptor, { where: 'arm' })).toBe(envelope)
+    }
   })
 })
 

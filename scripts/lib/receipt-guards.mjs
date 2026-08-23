@@ -148,6 +148,104 @@ function assertClosedPlainObject(value, keys, where, problems) {
   return true
 }
 
+/** Own keys the nested sample contract may carry. Exact, and closed. */
+const SAMPLE_CONTRACT_KEYS = Object.freeze(['sampleCount', 'metricNames', 'wallUnit', 'rssUnit'])
+
+/**
+ * Validates the nested sample contract, descriptor-first and exactly.
+ *
+ * The previous version read `contract.value.sampleCount` directly and checked
+ * `metricNames` with `Array.isArray` + `.length` + `.some(...)`. A reviewer
+ * replaced `sampleCount` with an enumerable getter -- which was then EXECUTED --
+ * and deleted `metricNames[2]` while leaving `length` at 6. `.some()` skips
+ * holes, so the sparse array passed. Both malformed contracts were accepted.
+ *
+ * Nothing here reads a value before its descriptor has been inspected, and the
+ * metric array is walked by index rather than by any array method, because
+ * every array method either skips holes or invokes accessors.
+ */
+export function assertSampleContract(actual, expected, where, problems) {
+  const contract = ownData(actual, 'sampleContract', where, problems)
+  if (!contract.ok) return
+  const at = `${where}.sampleContract`
+  if (!assertClosedPlainObject(contract.value, SAMPLE_CONTRACT_KEYS, at, problems)) return
+
+  const wanted = expected.sampleContract
+
+  // --- sampleCount: own data property, exact safe integer, parent-owned -----
+  const count = ownData(contract.value, 'sampleCount', at, problems)
+  if (count.ok) {
+    if (typeof count.value !== 'number' || !Number.isSafeInteger(count.value) || count.value < 0) {
+      problems.push(`${at}: sampleCount ${JSON.stringify(count.value)} is not a non-negative safe integer`)
+    } else if (count.value !== wanted.sampleCount) {
+      problems.push(`${at}: sample count ${count.value}, expected ${wanted.sampleCount}`)
+    }
+  }
+
+  // --- units: own data properties, exact values -----------------------------
+  for (const [key, want] of [['wallUnit', wanted.wallUnit], ['rssUnit', wanted.rssUnit]]) {
+    const unit = ownData(contract.value, key, at, problems)
+    if (!unit.ok) continue
+    if (typeof unit.value !== 'string') {
+      problems.push(`${at}: ${key} must be a string, got ${typeof unit.value}`)
+    } else if (unit.value !== want) {
+      problems.push(`${at}: ${key} ${JSON.stringify(unit.value)}, expected ${JSON.stringify(want)}`)
+    }
+  }
+
+  // --- metricNames: dense, closed, element-exact ---------------------------
+  const names = ownData(contract.value, 'metricNames', at, problems)
+  if (!names.ok) return
+  const list = names.value
+  const listAt = `${at}.metricNames`
+  if (!Array.isArray(list)) {
+    problems.push(`${listAt}: must be an array`)
+    return
+  }
+  const proto = Object.getPrototypeOf(list)
+  if (proto !== Array.prototype && proto !== null) {
+    problems.push(`${listAt}: array does not have a plain prototype`)
+    return
+  }
+  for (const symbol of Object.getOwnPropertySymbols(list)) {
+    problems.push(`${listAt}: carries symbol key ${String(symbol)}`)
+  }
+  if (list.length !== wanted.metricNames.length) {
+    problems.push(`${listAt}: ${list.length} entries, expected exactly ${wanted.metricNames.length}`)
+    return
+  }
+  // Any own key that is not `length` or an in-range index is unexpected.
+  for (const key of Object.getOwnPropertyNames(list)) {
+    if (key === 'length') continue
+    const index = Number(key)
+    if (!Number.isInteger(index) || index < 0 || index >= list.length) {
+      problems.push(`${listAt}: unexpected own key \`${key}\``)
+    }
+  }
+  const seen = new Set()
+  for (let index = 0; index < wanted.metricNames.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(list, String(index))
+    if (descriptor === undefined) {
+      problems.push(`${listAt}[${index}]: is a hole`)
+      continue
+    }
+    if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      problems.push(`${listAt}[${index}]: is an accessor, not stored data`)
+      continue
+    }
+    const element = descriptor.value
+    if (typeof element !== 'string' || element.trim() === '') {
+      problems.push(`${listAt}[${index}]: must be a non-empty string`)
+      continue
+    }
+    if (element !== wanted.metricNames[index]) {
+      problems.push(`${listAt}[${index}]: ${JSON.stringify(element)}, expected ${JSON.stringify(wanted.metricNames[index])}`)
+    }
+    if (seen.has(element)) problems.push(`${listAt}[${index}]: duplicate metric ${JSON.stringify(element)}`)
+    seen.add(element)
+  }
+}
+
 /**
  * Validates an arm result against the descriptor the PARENT generated before
  * the arm was spawned.
@@ -189,28 +287,10 @@ export function assertArmResult(actual, expected, { where }) {
     }
   }
 
-  // Sample and unit contract, also parent-declared.
-  const contract = ownData(actual, 'sampleContract', where, problems)
-  if (contract.ok) {
-    const CONTRACT_KEYS = ['sampleCount', 'metricNames', 'wallUnit', 'rssUnit']
-    if (assertClosedPlainObject(contract.value, CONTRACT_KEYS, `${where}.sampleContract`, problems)) {
-      const wanted = expected.sampleContract
-      if (contract.value.sampleCount !== wanted.sampleCount) {
-        problems.push(`${where}: sample count ${contract.value.sampleCount}, expected ${wanted.sampleCount}`)
-      }
-      if (contract.value.wallUnit !== wanted.wallUnit) {
-        problems.push(`${where}: wall unit ${JSON.stringify(contract.value.wallUnit)}, expected ${JSON.stringify(wanted.wallUnit)}`)
-      }
-      if (contract.value.rssUnit !== wanted.rssUnit) {
-        problems.push(`${where}: rss unit ${JSON.stringify(contract.value.rssUnit)}, expected ${JSON.stringify(wanted.rssUnit)}`)
-      }
-      const names = contract.value.metricNames
-      if (!Array.isArray(names) || names.length !== wanted.metricNames.length
-        || names.some((name, index) => name !== wanted.metricNames[index])) {
-        problems.push(`${where}: metric contract ${JSON.stringify(names)}, expected ${JSON.stringify(wanted.metricNames)}`)
-      }
-    }
-  }
+  // Sample and unit contract, also parent-declared. Validated by its own
+  // canonical checker so the nested object gets the same descriptor-first
+  // discipline as the envelope around it.
+  assertSampleContract(actual, expected, where, problems)
 
   // Only now are measurements read at all.
   const measurements = ownData(actual, 'measurements', where, problems)
