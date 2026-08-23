@@ -224,6 +224,65 @@ describe('C2 — success requires the owned process tree to be empty', () => {
   }, 30_000)
 })
 
+describe('C2 — an unprovable owned tree fails closed', () => {
+  /**
+   * `unprovable` used to settle as success. A reviewer forced only the
+   * process-group emptiness probe to EINVAL and a real closed-stdio descendant
+   * survived resolution with code 0.
+   *
+   * Absence of proof is not proof of absence. The bounded TERM/KILL sequence
+   * still runs against the exact owned group -- and the descendant does die --
+   * but the operation rejects, because emptiness cannot be shown.
+   */
+  const OWNED = resolve(REPO, 'tests/fixtures/owned-descendant.mjs')
+  const MARKER = 61234
+  const living = (): number => Number(execFileSync('bash', ['-c',
+    `ps -eo command | grep -F 'setTimeout(() => {}, ${MARKER})' | grep -v grep | wc -l`,
+  ], { encoding: 'utf8' }).trim())
+
+  it('rejects with the typed error, kills the descendant and spares a bystander', async () => {
+    const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
+    const bystander = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
+      stdio: 'ignore', detached: true,
+    })
+    bystander.unref()
+    await new Promise((r) => setTimeout(r, 300))
+
+    const realKill = process.kill.bind(process)
+    // Only the negative-pid signal-0 probe is broken; real delivery is intact.
+    process.kill = ((pid: number, signal?: string | number) => {
+      if (pid < 0 && (signal === 0 || signal === '0')) {
+        const error = new Error('kill EINVAL') as Error & { code?: string }
+        error.code = 'EINVAL'
+        throw error
+      }
+      return realKill(pid, signal as NodeJS.Signals)
+    }) as typeof process.kill
+
+    let rejectedCode: string | null = null
+    try {
+      await runChild(process.execPath, [OWNED], {
+        cwd: REPO, timeoutMs: 30_000, graceMs: 500, treeReapDeadlineMs: 4_000,
+        env: { ...process.env, MADAR_DESC_LIFE_MS: String(MARKER) },
+      })
+    } catch (error) {
+      rejectedCode = (error as { code?: string }).code ?? null
+    } finally {
+      process.kill = realKill
+    }
+
+    try {
+      expect(rejectedCode, 'an unprovable tree settled successfully').toBe('OWNED_PROCESS_TREE_UNPROVABLE')
+      // The owned descendant is dead even though emptiness could not be proven.
+      expect(living()).toBe(0)
+      expect(ownedTimerCount()).toBe(0)
+      expect(alive(bystander.pid as number), 'an unrelated process was terminated').toBe(true)
+    } finally {
+      try { realKill(bystander.pid as number, 'SIGKILL') } catch { /* already gone */ }
+    }
+  }, 120_000)
+})
+
 describe('RCP-01 — partial, absent and failed arm results', () => {
   it('a child that exits zero without writing a result leaves nothing to accept', async () => {
     const dir = scratchDir('madar-rcp-none-')

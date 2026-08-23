@@ -21,6 +21,11 @@ export interface ChildResult {
 }
 
 export interface RunChildOptions {
+  /**
+   * How long the owned process tree may take to be proven empty before the
+   * operation fails. Emptiness is a requirement for success, not a courtesy.
+   */
+  treeReapDeadlineMs?: number
   cwd?: string
   env?: NodeJS.ProcessEnv
   timeoutMs?: number
@@ -30,6 +35,12 @@ export interface RunChildOptions {
 }
 
 export function terminateChildTree(child: ChildProcess, signal?: NodeJS.Signals): void
+/** Raised when an owned process tree cannot be proven empty. */
+export class OwnedProcessTreeUnprovableError extends Error {
+  readonly code: 'OWNED_PROCESS_TREE_UNPROVABLE'
+  constructor(what: string)
+}
+
 /** Timers this module currently owns, across every in-flight run. */
 export function ownedTimerCount(): number
 

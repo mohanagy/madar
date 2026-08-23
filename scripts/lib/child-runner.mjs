@@ -3,6 +3,21 @@ import { spawn } from 'node:child_process'
 import { ResourceRegistryShuttingDownError } from './shutdown-error.mjs'
 
 /**
+ * Raised when an owned process tree cannot be proven empty.
+ *
+ * `unprovable` used to settle as success, which let a real closed-stdio
+ * descendant outlive `runChild` whenever the group probe was unavailable.
+ * Absence of proof is not proof of absence.
+ */
+export class OwnedProcessTreeUnprovableError extends Error {
+  constructor(what) {
+    super(`owned process tree could not be proven empty for ${what}`)
+    this.name = 'OwnedProcessTreeUnprovableError'
+    this.code = 'OWNED_PROCESS_TREE_UNPROVABLE'
+  }
+}
+
+/**
  * Asynchronous, interruptible child execution.
  *
  * The previous runner used `execFileSync` for `npm ci`, `npm run build` and each
@@ -254,14 +269,28 @@ export function runChild(command, args, options = {}) {
     const reapOwnedTree = (deadline) => {
       const state = ownedTreeState(child.pid)
       facts.treeState = state
-      if (state === 'empty' || state === 'unprovable') { settle(); return }
+      // ONLY `empty` is success. `unprovable` means the proof is unavailable,
+      // not that the tree is gone -- a real descendant survived resolution when
+      // those two were treated alike.
+      if (state === 'empty') { settle(); return }
+
       if (Date.now() >= deadline) {
+        if (state === 'unprovable') {
+          // Ownership was retained throughout, and the bounded TERM/KILL
+          // sequence below has already run against the exact owned group. The
+          // operation still fails: it cannot be shown that nothing survived.
+          failSettle(new OwnedProcessTreeUnprovableError(`"${command} ${args.join(' ')}"`))
+          return
+        }
         failSettle(new Error(
           `"${command} ${args.join(' ')}" completed but its owned process tree was still populated `
           + `after ${treeReapDeadlineMs}ms`,
         ))
         return
       }
+      // Escalation applies to `populated` and `unprovable` alike: the exact
+      // owned group is asked to terminate, then force-killed, never a name
+      // match and never an unrelated group.
       if (!facts.forceKilled && Date.now() >= deadline - graceMs) {
         facts.forceKilled = true
         terminateChildTree(child, 'SIGKILL')
