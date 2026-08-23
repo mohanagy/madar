@@ -241,9 +241,17 @@ describe('C1 — closure covers every own key, not only the enumerable ones', ()
   const contractOf = (e: Record<string, unknown>): Record<string, unknown> =>
     e['sampleContract'] as Record<string, unknown>
 
-  it('rejects a non-enumerable hiddenAuthority on the sample contract', () => {
+  // One helper owns all three closed objects, so this is ONE behaviour and is
+  // asserted as one control -- per boundary, with its own message. Split across
+  // three `it`s, a single mutation of the shared helper would fail three
+  // controls while declaring one, which is not attributable.
+  it('rejects a non-enumerable hidden key on every closed boundary', () => {
     expect(check((e) => { hide(contractOf(e), 'hiddenAuthority', 'forged') }))
       .toThrow(/sampleContract: unexpected key `hiddenAuthority`/)
+    expect(check((e) => { hide(e, 'hiddenAuthority', 'forged') }))
+      .toThrow(/^arm: unexpected key `hiddenAuthority`/)
+    expect(check((e) => { hide(e['measurements'] as object, 'hiddenAuthority', 'forged') }))
+      .toThrow(/measurements: unexpected key `hiddenAuthority`/)
   })
 
   it('rejects an enumerable extra key on the sample contract', () => {
@@ -256,16 +264,6 @@ describe('C1 — closure covers every own key, not only the enumerable ones', ()
       .toThrow(/sampleContract: carries symbol key Symbol\(forged\)/)
   })
 
-  it('rejects a non-enumerable hidden key on the outer envelope', () => {
-    expect(check((e) => { hide(e, 'hiddenAuthority', 'forged') }))
-      .toThrow(/^arm: unexpected key `hiddenAuthority`/)
-  })
-
-  it('rejects a non-enumerable hidden key on measurements', () => {
-    expect(check((e) => { hide(e['measurements'] as object, 'hiddenAuthority', 'forged') }))
-      .toThrow(/measurements: unexpected key `hiddenAuthority`/)
-  })
-
   it('rejects an expected authority field that is non-enumerable', () => {
     // Same value, same own data descriptor -- only hidden from JSON.
     expect(check((e) => {
@@ -276,21 +274,20 @@ describe('C1 — closure covers every own key, not only the enumerable ones', ()
     })).toThrow(/`sampleCount` is non-enumerable and could not have survived JSON transport/)
   })
 
-  it('rejects a non-enumerable hidden key on metricNames', () => {
+  // Same reasoning: metricNames and measurements.samples share one array-closure
+  // helper, so their hidden-key behaviour is one control with two assertions.
+  it('rejects a non-enumerable hidden key on every closed array', () => {
     expect(check((e) => { hide(contractOf(e)['metricNames'] as object, 'hiddenAuthority', 'forged') }))
       .toThrow(/metricNames: unexpected own key `hiddenAuthority`/)
+    expect(check((e) => {
+      hide((e['measurements'] as Record<string, unknown>)['samples'] as object, 'hiddenAuthority', 'forged')
+    })).toThrow(/samples: unexpected own key `hiddenAuthority`/)
   })
 
   it('rejects a symbol key on metricNames', () => {
     expect(check((e) => {
       (contractOf(e)['metricNames'] as unknown as Record<symbol, unknown>)[Symbol('forged')] = 1
     })).toThrow(/metricNames: carries symbol key Symbol\(forged\)/)
-  })
-
-  it('rejects a non-enumerable hidden key on the samples array', () => {
-    expect(check((e) => {
-      hide((e['measurements'] as Record<string, unknown>)['samples'] as object, 'hiddenAuthority', 'forged')
-    })).toThrow(/samples: unexpected own key `hiddenAuthority`/)
   })
 
   it('accepts the standard non-enumerable array length', () => {
