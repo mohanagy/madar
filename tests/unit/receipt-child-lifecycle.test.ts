@@ -12,6 +12,7 @@
  * These controls drive the real child runner and the real guards.
  */
 import { execFileSync, spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -25,7 +26,48 @@ const HOLDER = resolve(REPO, 'tests/fixtures/descendant-holds-stdio.mjs')
 
 const scratch: string[] = []
 const worktrees: string[] = []
+
+/**
+ * Descendant markers this file handed out, and the reaper that owns them.
+ *
+ * A control that provokes a failure owns what the failure leaves behind. When
+ * the runner is mutated to settle without proving emptiness, the descendant
+ * survives -- that IS the catch -- but it kept running for its full lifetime and
+ * the next run of this suite counted it as its own survivor, failing a control
+ * that had done nothing wrong. Measured directly: with the tree-proof mutant
+ * applied, strays went 0 -> 1 and stayed 1 for at least 25s.
+ *
+ * Killing by marker is a name match, which the runner under test must never do.
+ * It is sound HERE and only here: the token is minted per test process, embedded
+ * by this file's own fixture, and so cannot name anything this control did not
+ * create.
+ */
+const descendantMarkers: string[] = []
+
+const newDescendantMarker = (): string => {
+  const marker = `madar-owned-desc-${process.pid}-${randomUUID().slice(0, 8)}`
+  descendantMarkers.push(marker)
+  return marker
+}
+
+/** Counts processes still carrying one of this run's markers. */
+const livingMarked = (marker: string): number => Number(execFileSync('bash', ['-c',
+  `ps -eo command | grep -F ${JSON.stringify(marker)} | grep -v grep | wc -l`,
+], { encoding: 'utf8' }).trim())
+
+const reapMarked = (marker: string): void => {
+  for (const line of execFileSync('bash', ['-c',
+    `ps -eo pid,command | grep -F ${JSON.stringify(marker)} | grep -v grep || true`,
+  ], { encoding: 'utf8' }).split('\n')) {
+    const pid = Number(line.trim().split(/\s+/)[0])
+    if (Number.isSafeInteger(pid) && pid > 1) {
+      try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
+    }
+  }
+}
+
 afterEach(() => {
+  for (const marker of descendantMarkers.splice(0)) reapMarked(marker)
   for (const dir of worktrees.splice(0)) {
     try { execFileSync('git', ['worktree', 'remove', '--force', dir], { cwd: REPO }) } catch { /* already gone */ }
   }
@@ -168,7 +210,7 @@ describe('C2 — success requires the owned process tree to be empty', () => {
   it('reaps a cooperative closed-stdio descendant before resolving', async () => {
     const result = await runChild(process.execPath, [OWNED], {
       cwd: REPO, timeoutMs: 30_000, graceMs: 500,
-      env: { ...process.env, MADAR_DESC_LIFE_MS: '60000' },
+      env: { ...process.env, MADAR_DESC_LIFE_MS: '60000', MADAR_DESC_MARKER: newDescendantMarker() },
     })
     const { descendantPid } = JSON.parse(result.stdout) as { descendantPid: number }
 
@@ -183,7 +225,12 @@ describe('C2 — success requires the owned process tree to be empty', () => {
   it('force-kills an uncooperative closed-stdio descendant before resolving', async () => {
     const result = await runChild(process.execPath, [OWNED], {
       cwd: REPO, timeoutMs: 30_000, graceMs: 500,
-      env: { ...process.env, MADAR_DESC_LIFE_MS: '60000', MADAR_DESC_IGNORE_TERM: '1' },
+      env: {
+        ...process.env,
+        MADAR_DESC_LIFE_MS: '60000',
+        MADAR_DESC_IGNORE_TERM: '1',
+        MADAR_DESC_MARKER: newDescendantMarker(),
+      },
     })
     const { descendantPid } = JSON.parse(result.stdout) as { descendantPid: number }
 
@@ -203,7 +250,12 @@ describe('C2 — success requires the owned process tree to be empty', () => {
     try {
       const result = await runChild(process.execPath, [OWNED], {
         cwd: REPO, timeoutMs: 30_000, graceMs: 400,
-        env: { ...process.env, MADAR_DESC_LIFE_MS: '30000', MADAR_DESC_IGNORE_TERM: '1' },
+        env: {
+          ...process.env,
+          MADAR_DESC_LIFE_MS: '30000',
+          MADAR_DESC_IGNORE_TERM: '1',
+          MADAR_DESC_MARKER: newDescendantMarker(),
+        },
       })
       const { descendantPid } = JSON.parse(result.stdout) as { descendantPid: number }
       expect(alive(descendantPid)).toBe(false)
@@ -235,12 +287,9 @@ describe('C2 — an unprovable owned tree fails closed', () => {
    * but the operation rejects, because emptiness cannot be shown.
    */
   const OWNED = resolve(REPO, 'tests/fixtures/owned-descendant.mjs')
-  const MARKER = 61234
-  const living = (): number => Number(execFileSync('bash', ['-c',
-    `ps -eo command | grep -F 'setTimeout(() => {}, ${MARKER})' | grep -v grep | wc -l`,
-  ], { encoding: 'utf8' }).trim())
 
   it('rejects with the typed error, kills the descendant and spares a bystander', async () => {
+    const marker = newDescendantMarker()
     const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
     const bystander = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
       stdio: 'ignore', detached: true,
@@ -263,7 +312,7 @@ describe('C2 — an unprovable owned tree fails closed', () => {
     try {
       await runChild(process.execPath, [OWNED], {
         cwd: REPO, timeoutMs: 30_000, graceMs: 500, treeReapDeadlineMs: 4_000,
-        env: { ...process.env, MADAR_DESC_LIFE_MS: String(MARKER) },
+        env: { ...process.env, MADAR_DESC_LIFE_MS: '60000', MADAR_DESC_MARKER: marker },
       })
     } catch (error) {
       rejectedCode = (error as { code?: string }).code ?? null
@@ -271,10 +320,13 @@ describe('C2 — an unprovable owned tree fails closed', () => {
       process.kill = realKill
     }
 
+    // Read the survivor count BEFORE cleanup: afterEach reaps this marker
+    // unconditionally, so a control that measured afterwards could never fail.
+    const survivors = livingMarked(marker)
     try {
       expect(rejectedCode, 'an unprovable tree settled successfully').toBe('OWNED_PROCESS_TREE_UNPROVABLE')
       // The owned descendant is dead even though emptiness could not be proven.
-      expect(living()).toBe(0)
+      expect(survivors, 'the owned descendant outlived a rejected settlement').toBe(0)
       expect(ownedTimerCount()).toBe(0)
       expect(alive(bystander.pid as number), 'an unrelated process was terminated').toBe(true)
     } finally {
