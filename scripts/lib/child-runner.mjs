@@ -18,23 +18,38 @@ import { ResourceRegistryShuttingDownError } from './shutdown-error.mjs'
  * spread asynchrony through the guards for no gain in interruptibility.
  */
 
-/** Windows has no process groups; each platform gets its own tree kill. */
+/**
+ * Windows has no process groups; each platform gets its own tree kill.
+ *
+ * Deliberately NOT gated on whether the child itself has exited. It used to
+ * return early once `child.exitCode !== null`, which meant a descendant that
+ * outlived its parent could never be terminated -- and a descendant is exactly
+ * what keeps the inherited stdout/stderr open. An independent reviewer hit this:
+ * the measurement child exited 0 with a complete result, a descendant held the
+ * pipes, the timeout fired, this function did nothing, and the wrapper waited
+ * for `close` far past its own bound before reporting a timeout.
+ */
 function killTree(child, signal) {
-  if (child.exitCode !== null || child.signalCode !== null) return
+  const pid = child.pid
+  // A pid of 0 or 1 addresses the caller's own group or init; never signal it.
+  if (typeof pid !== 'number' || pid <= 1) return
   if (process.platform === 'win32') {
     // Narrowly scoped to this pid and its descendants, never a name match.
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+    spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
     return
   }
   try {
-    // Negative pid targets the process group this child leads, so a build's
-    // own children die with it rather than outliving the run.
-    process.kill(-child.pid, signal)
+    // Negative pid targets the process group this child leads, so a build's own
+    // children die with it rather than outliving the run. The group survives
+    // the leader, which is the whole point of reaching it here.
+    process.kill(-pid, signal)
   } catch {
-    try {
-      child.kill(signal)
-    } catch {
-      // Already gone.
+    if (child.exitCode === null && child.signalCode === null) {
+      try {
+        child.kill(signal)
+      } catch {
+        // Already gone.
+      }
     }
   }
 }
@@ -42,6 +57,13 @@ function killTree(child, signal) {
 export function terminateChildTree(child, signal = 'SIGTERM') {
   killTree(child, signal)
 }
+
+/**
+ * How long a completed child's stdio may stay open before its owned descendants
+ * are terminated. Long enough for ordinary pipe drain, short enough that a
+ * descendant cannot hold the run open.
+ */
+export const STDIO_DRAIN_GRACE_MS = 2000
 
 /**
  * Runs a child to completion, or terminates it on timeout.
@@ -114,10 +136,31 @@ export function runChild(command, args, options = {}) {
     let stdout = ''
     let stderr = ''
     let timedOut = false
+    let descendantsHeldStdio = false
     let forceTimer = null
+    let drainTimer = null
+    let settled = false
+    let exitInfo = null
 
     child.stdout?.on('data', (chunk) => { stdout += chunk })
     child.stderr?.on('data', (chunk) => { stderr += chunk })
+
+    /**
+     * Resolves exactly once and cancels every timer first.
+     *
+     * A stale timer must never be able to convert a completed child into a
+     * timeout after the fact, so cancellation happens here rather than at each
+     * call site.
+     */
+    const settle = (outcome) => {
+      if (settled) return
+      settled = true
+      if (timer !== null) clearTimeout(timer)
+      if (forceTimer !== null) clearTimeout(forceTimer)
+      if (drainTimer !== null) clearTimeout(drainTimer)
+      if (token !== null) registry?.releaseChild(token)
+      resolve(outcome)
+    }
 
     const timer = timeoutMs > 0
       ? setTimeout(() => {
@@ -125,24 +168,60 @@ export function runChild(command, args, options = {}) {
         terminateChildTree(child, 'SIGTERM')
         // A child that ignores graceful termination is force-killed rather
         // than allowed to hold the run open indefinitely.
-        forceTimer = setTimeout(() => terminateChildTree(child, 'SIGKILL'), graceMs)
+        forceTimer = setTimeout(() => {
+          terminateChildTree(child, 'SIGKILL')
+          // Even SIGKILL cannot make an unreachable holder release a pipe, so
+          // the wait itself is bounded rather than trusting `close` to arrive.
+          drainTimer = setTimeout(() => settle({
+            code: exitInfo?.code ?? null,
+            signal: exitInfo?.signal ?? null,
+            stdout,
+            stderr,
+            timedOut,
+            descendantsHeldStdio,
+          }), graceMs)
+        }, graceMs)
       }, timeoutMs)
       : null
 
     child.on('error', (error) => {
       if (timer !== null) clearTimeout(timer)
       if (forceTimer !== null) clearTimeout(forceTimer)
+      if (drainTimer !== null) clearTimeout(drainTimer)
       if (token !== null) registry?.releaseChild(token)
-      reject(error)
+      if (!settled) { settled = true; reject(error) }
     })
 
-    // `close` rather than `exit`: stdio is drained before the result is built,
-    // so evidence is never truncated by winning a race with the pipes.
+    // `exit` is process completion; `close` is stdio completion. They are not
+    // the same event and conflating them is what let a finished child be
+    // reported as a timeout: a descendant inherited the pipes, `close` never
+    // arrived, and the wait outlived its own bound.
+    child.on('exit', (code, signal) => {
+      exitInfo = { code, signal }
+      if (settled) return
+      // Give the pipes a bounded moment to drain normally, then reclaim them
+      // from any descendant still holding them.
+      drainTimer = setTimeout(() => {
+        descendantsHeldStdio = true
+        terminateChildTree(child, 'SIGTERM')
+        forceTimer = setTimeout(() => {
+          terminateChildTree(child, 'SIGKILL')
+          settle({ code, signal, stdout, stderr, timedOut, descendantsHeldStdio })
+        }, graceMs)
+      }, STDIO_DRAIN_GRACE_MS)
+    })
+
+    // The ordinary path: stdio drained before the result is built, so evidence
+    // is never truncated by winning a race with the pipes.
     child.on('close', (code, signal) => {
-      if (timer !== null) clearTimeout(timer)
-      if (forceTimer !== null) clearTimeout(forceTimer)
-      if (token !== null) registry?.releaseChild(token)
-      resolve({ code, signal, stdout, stderr, timedOut })
+      settle({
+        code: code ?? exitInfo?.code ?? null,
+        signal: signal ?? exitInfo?.signal ?? null,
+        stdout,
+        stderr,
+        timedOut,
+        descendantsHeldStdio,
+      })
     })
   })
 }

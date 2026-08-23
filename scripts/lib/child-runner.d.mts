@@ -7,6 +7,13 @@ export interface ChildResult {
   readonly stdout: string
   readonly stderr: string
   readonly timedOut: boolean
+  /**
+   * True when the child exited but a descendant kept its stdout/stderr open, so
+   * the pipes had to be reclaimed under the bounded drain policy. Surfaced as
+   * evidence rather than swallowed: it distinguishes an ordinary success from
+   * one that needed intervention.
+   */
+  readonly descendantsHeldStdio: boolean
 }
 
 export interface RunChildOptions {

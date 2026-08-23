@@ -20,3 +20,20 @@ export function partitionSessions(
   scope: string,
 ): { usable: ComparisonSession[]; invalidated: InvalidatedSession[] }
 export function assertDistinctArms(baselineSha: string, candidateSha: string): void
+
+export interface ArmResult {
+  readonly scope: string
+  readonly samples: readonly number[]
+  readonly medianMs: number
+  readonly minMs: number
+  readonly maxMs: number
+  readonly spreadMs: number
+  readonly peakRssMb: number
+  readonly inputChecksum: string
+  readonly emittedCandidates: number
+}
+
+export function assertArmResult(
+  value: unknown,
+  options: { scope: string; inputChecksum: string; where: string },
+): ArmResult

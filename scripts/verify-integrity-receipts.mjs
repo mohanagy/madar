@@ -20,10 +20,11 @@
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fsyncSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import {
+  assertArmResult,
   assertCleanTree,
   assertDistinctArms,
   assertFreshBuild,
@@ -330,7 +331,7 @@ if (MEASURE_ARM !== null) {
   const shared = JSON.parse(readFileSync(inputPath, 'utf8'))
   const measured = await measure(MEASURE_ARM, scope, [], RUNS, shared)
   const accounting = measured.graph.normalizedAccountingSummary()
-  console.log(JSON.stringify({
+  const payload = {
     scope,
     samples: measured.samples,
     medianMs: measured.medianMs,
@@ -340,7 +341,29 @@ if (MEASURE_ARM !== null) {
     peakRssMb: measured.peakRssMb,
     inputChecksum: measured.inputChecksum,
     emittedCandidates: accounting.emittedCandidates,
-  }))
+  }
+  const serialized = JSON.stringify(payload)
+
+  // Result transport is a file, not stdout.
+  //
+  // stdout is inherited by descendants and can be interleaved or truncated; a
+  // reviewer saw a complete-looking payload on a pipe that the wrapper could
+  // never finish reading. Written to a temp file, fsynced, then atomically
+  // renamed, so a reader observes either nothing or the whole result.
+  const RESULT_FILE = argOf('--result-file')
+  if (RESULT_FILE !== null) {
+    const temporary = `${RESULT_FILE}.tmp-${process.pid}`
+    const handle = openSync(temporary, 'w')
+    try {
+      writeSync(handle, serialized)
+      fsyncSync(handle)
+    } finally {
+      closeSync(handle)
+    }
+    renameSync(temporary, RESULT_FILE)
+  }
+  // Retained for diagnostics only; never parsed as the result.
+  console.log(serialized)
   process.exit(0)
 }
 
@@ -379,18 +402,38 @@ for (const scope of Object.keys(SCOPES)) {
  * Asynchronous for the same reason the builds are: an arm can run for minutes,
  * and a signal during one must be able to terminate it rather than wait for it.
  */
-async function runArm(dir, scope, inputPath) {
+async function runArm(dir, scope, inputPath, inputChecksum) {
   assertPhaseAdmitted(`arm ${scope}`)
-  const result = await runChildOrThrow(process.execPath, [
-    resolve(ROOT, 'scripts/verify-integrity-receipts.mjs'),
-    '--measure-arm', dir, '--scope', scope, '--input', inputPath, '--runs', String(RUNS),
-  ], {
-    cwd: ROOT,
-    registry: REGISTRY,
-    description: `arm ${scope} at ${dir}`,
-    timeoutMs: ARM_TIMEOUT_MS,
+  const resultFile = join(mkdtempSync(join(tmpdir(), 'madar-arm-')), 'result.json')
+  const token = REGISTRY.register(`arm result ${scope}`, () => {
+    rmSync(dirname(resultFile), { recursive: true, force: true })
   })
-  return JSON.parse(result.stdout.trim().split('\n').pop())
+  try {
+    const result = await runChildOrThrow(process.execPath, [
+      resolve(ROOT, 'scripts/verify-integrity-receipts.mjs'),
+      '--measure-arm', dir, '--scope', scope, '--input', inputPath, '--runs', String(RUNS),
+      '--result-file', resultFile,
+    ], {
+      cwd: ROOT,
+      registry: REGISTRY,
+      description: `arm ${scope} at ${dir}`,
+      timeoutMs: ARM_TIMEOUT_MS,
+    })
+    // A completed process is necessary and not sufficient: the result must
+    // exist, parse and describe THIS arm.
+    if (!existsSync(resultFile)) {
+      throw new Error(`arm ${scope} at ${dir} exited ${result.code} without writing a result file`)
+    }
+    let parsed
+    try {
+      parsed = JSON.parse(readFileSync(resultFile, 'utf8'))
+    } catch (error) {
+      throw new Error(`arm ${scope} at ${dir} wrote an unreadable result: ${error.message}`)
+    }
+    return assertArmResult(parsed, { scope, inputChecksum, where: `arm ${scope} at ${dir}` })
+  } finally {
+    REGISTRY.release(token)
+  }
 }
 
 async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT, candidateSha = null) {
@@ -415,17 +458,21 @@ async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT,
     let inputChecksum
     try {
       const inputPath = join(inputDir, 'extraction.json')
-      writeFileSync(inputPath, JSON.stringify(shared))
+      const serializedInput = JSON.stringify(shared)
+      writeFileSync(inputPath, serializedInput)
       inputChecksum = sha256(readFileSync(inputPath))
+      // The arm hashes `JSON.stringify(parsed)`, so the expectation is computed
+      // the same way rather than assuming a round-trip is byte-identical.
+      const armInputChecksum = sha256(serializedInput)
 
       // Two sessions with opposite starting arms, so ordering cannot favour
       // either head.
       // Sequential and counterbalanced: never concurrent, because two arms
       // sharing a machine measure contention rather than code.
-      const baselineFirstBase = await runArm(baselineDir, scope, inputPath)
-      const baselineFirstHead = await runArm(candidateDir, scope, inputPath)
-      const candidateFirstHead = await runArm(candidateDir, scope, inputPath)
-      const candidateFirstBase = await runArm(baselineDir, scope, inputPath)
+      const baselineFirstBase = await runArm(baselineDir, scope, inputPath, armInputChecksum)
+      const baselineFirstHead = await runArm(candidateDir, scope, inputPath, armInputChecksum)
+      const candidateFirstHead = await runArm(candidateDir, scope, inputPath, armInputChecksum)
+      const candidateFirstBase = await runArm(baselineDir, scope, inputPath, armInputChecksum)
       sessions = [
         { order: 'baseline-first', base: baselineFirstBase, head: baselineFirstHead },
         { order: 'candidate-first', head: candidateFirstHead, base: candidateFirstBase },
