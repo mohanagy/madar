@@ -1302,11 +1302,11 @@ const MUTANTS = [
     ],
   },
   {
-    name: 'C1-ARM: stop enforcing exact sample cardinality',
+    name: 'C1-ARM: enforce sample cardinality only as an upper bound',
     file: GUARDS,
     test: ARM_ENVELOPE,
-    from: '        if (samples.value.length !== wantedCount) {',
-    to: '        if (false) {',
+    from: '      if (assertClosedArray(samples.value, wantedCount, samplesAt, problems)) {',
+    to: '      if (assertClosedArray(samples.value, Math.min(samples.value.length, wantedCount), samplesAt, problems)) {',
     expect: [
       '15 rejects a missing sample',
     ],
@@ -1322,13 +1322,13 @@ const MUTANTS = [
     ],
   },
   {
-    name: 'C3-TIMER: skip cancelling owned timers at settlement',
+    name: 'C3-TIMER: settle an unprovable rejection without cancelling owned timers',
     file: CHILD_RUNNER,
     test: RECEIPT_LIFECYCLE,
-    from: '      // Cancel first: a late callback after settlement must be inert and must\n      // not retain the event loop.\n      cancelAllOwnedTimers()',
-    to: '      void 0',
+    from: "          failSettle(new OwnedProcessTreeUnprovableError(`\"${command} ${args.join(' ')}\"`))",
+    to: "          { settled = true; if (token !== null) registry?.releaseChild(token); reject(new OwnedProcessTreeUnprovableError(`\"${command} ${args.join(' ')}\"`)) }",
     expect: [
-      'leaves zero runner-owned timers after every settlement path',
+      'rejects with the typed error, kills the descendant and spares a bystander',
     ],
   },
   {
@@ -1369,6 +1369,36 @@ const MUTANTS = [
     to: "      if (state === 'empty' || state === 'unprovable') { settle(); return }",
     expect: [
       'rejects with the typed error, kills the descendant and spares a bystander',
+    ],
+  },
+  {
+    name: 'C1-CLOSURE: see only enumerable own keys',
+    file: GUARDS,
+    test: ARM_ENVELOPE,
+    from: '  for (const extra of own) {',
+    to: '  for (const extra of Object.keys(value)) {',
+    expect: [
+      'rejects a non-enumerable hidden key on every closed boundary',
+    ],
+  },
+  {
+    name: 'C1-CLOSURE: allow a non-enumerable expected field',
+    file: GUARDS,
+    test: ARM_ENVELOPE,
+    from: '    if (!descriptor.enumerable) {',
+    to: '    if (false) {',
+    expect: [
+      'rejects an expected authority field that is non-enumerable',
+    ],
+  },
+  {
+    name: 'C1-CLOSURE: skip non-enumerable own keys on closed arrays',
+    file: GUARDS,
+    test: ARM_ENVELOPE,
+    from: '  for (const key of Object.getOwnPropertyNames(list)) {',
+    to: '  for (const key of Object.keys(list)) {',
+    expect: [
+      'rejects a non-enumerable hidden key on every closed array',
     ],
   },
 ]
