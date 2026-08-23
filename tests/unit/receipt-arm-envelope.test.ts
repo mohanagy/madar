@@ -159,13 +159,13 @@ describe('C1 — sample and unit contract', () => {
   it('15 rejects a missing sample', () => {
     expect(check((e) => {
       (e['measurements'] as Record<string, unknown>)['samples'] = [10.1, 10.2, 10.3, 10.4]
-    })).toThrow(/4 samples, expected exactly 5/)
+    })).toThrow(/samples: 4 entries, expected exactly 5/)
   })
 
   it('16 rejects an extra sample', () => {
     expect(check((e) => {
       (e['measurements'] as Record<string, unknown>)['samples'] = [10.1, 10.2, 10.3, 10.4, 10.5, 10.6]
-    })).toThrow(/6 samples, expected exactly 5/)
+    })).toThrow(/samples: 6 entries, expected exactly 5/)
   })
 
   it('17 rejects a wrong metric contract', () => {
@@ -219,6 +219,103 @@ describe('C1 — envelope shape is closed and plain', () => {
     const descriptor = descriptorFor()
     const envelope = Object.assign(Object.create({ inherited: true }), envelopeFor(descriptor))
     expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/plain object/)
+  })
+})
+
+/**
+ * Enumerability is a presentation flag, not a closure boundary.
+ *
+ * Exact-key closure was built on `Object.keys`, which reports only ENUMERABLE
+ * own keys. A reviewer defined a non-enumerable own `hiddenAuthority` on a
+ * genuine contract and the forged evidence was accepted. The same helper owns
+ * the envelope and `measurements`, so all three boundaries leaked identically.
+ *
+ * These objects arrive as JSON. A non-enumerable own key cannot survive
+ * `JSON.stringify`, so its presence proves the object was assembled rather than
+ * parsed -- which is exactly the forgery this guard exists to refuse.
+ */
+describe('C1 — closure covers every own key, not only the enumerable ones', () => {
+  const hide = (target: object, key: string, value: unknown): void => {
+    Object.defineProperty(target, key, { value, enumerable: false, writable: true, configurable: true })
+  }
+  const contractOf = (e: Record<string, unknown>): Record<string, unknown> =>
+    e['sampleContract'] as Record<string, unknown>
+
+  it('rejects a non-enumerable hiddenAuthority on the sample contract', () => {
+    expect(check((e) => { hide(contractOf(e), 'hiddenAuthority', 'forged') }))
+      .toThrow(/sampleContract: unexpected key `hiddenAuthority`/)
+  })
+
+  it('rejects an enumerable extra key on the sample contract', () => {
+    expect(check((e) => { contractOf(e)['extra'] = 1 }))
+      .toThrow(/sampleContract: unexpected key `extra`/)
+  })
+
+  it('rejects a symbol key on the sample contract', () => {
+    expect(check((e) => { (contractOf(e) as Record<symbol, unknown>)[Symbol('forged')] = 1 }))
+      .toThrow(/sampleContract: carries symbol key Symbol\(forged\)/)
+  })
+
+  it('rejects a non-enumerable hidden key on the outer envelope', () => {
+    expect(check((e) => { hide(e, 'hiddenAuthority', 'forged') }))
+      .toThrow(/^arm: unexpected key `hiddenAuthority`/)
+  })
+
+  it('rejects a non-enumerable hidden key on measurements', () => {
+    expect(check((e) => { hide(e['measurements'] as object, 'hiddenAuthority', 'forged') }))
+      .toThrow(/measurements: unexpected key `hiddenAuthority`/)
+  })
+
+  it('rejects an expected authority field that is non-enumerable', () => {
+    // Same value, same own data descriptor -- only hidden from JSON.
+    expect(check((e) => {
+      const contract = contractOf(e)
+      const value = contract['sampleCount']
+      delete contract['sampleCount']
+      hide(contract, 'sampleCount', value)
+    })).toThrow(/`sampleCount` is non-enumerable and could not have survived JSON transport/)
+  })
+
+  it('rejects a non-enumerable hidden key on metricNames', () => {
+    expect(check((e) => { hide(contractOf(e)['metricNames'] as object, 'hiddenAuthority', 'forged') }))
+      .toThrow(/metricNames: unexpected own key `hiddenAuthority`/)
+  })
+
+  it('rejects a symbol key on metricNames', () => {
+    expect(check((e) => {
+      (contractOf(e)['metricNames'] as unknown as Record<symbol, unknown>)[Symbol('forged')] = 1
+    })).toThrow(/metricNames: carries symbol key Symbol\(forged\)/)
+  })
+
+  it('rejects a non-enumerable hidden key on the samples array', () => {
+    expect(check((e) => {
+      hide((e['measurements'] as Record<string, unknown>)['samples'] as object, 'hiddenAuthority', 'forged')
+    })).toThrow(/samples: unexpected own key `hiddenAuthority`/)
+  })
+
+  it('accepts the standard non-enumerable array length', () => {
+    // The one own key an ordinary dense array is expected to carry.
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    const names = (envelope['sampleContract'] as Record<string, unknown>)['metricNames'] as string[]
+    expect(Object.getOwnPropertyDescriptor(names, 'length')?.enumerable).toBe(false)
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).not.toThrow()
+  })
+
+  it('accepts a genuine matching baseline envelope', () => {
+    const descriptor = descriptorFor({ corpusScope: 'src-only' })
+    expect(() => assertArmResult(envelopeFor(descriptor), descriptor, { where: 'arm' })).not.toThrow()
+  })
+
+  it('accepts a genuine matching candidate envelope', () => {
+    const descriptor = descriptorFor({
+      armIdentity: '11111111-2222-3333-4444-555555555555:src-plus-tests-js-ts:2',
+      corpusScope: 'src-plus-tests-js-ts',
+      fileCount: 694,
+      candidateCount: 21210,
+    })
+    const envelope = envelopeFor(descriptor)
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).not.toThrow()
   })
 })
 

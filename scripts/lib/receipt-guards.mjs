@@ -131,19 +131,89 @@ function ownData(owner, key, where, problems) {
   return { ok: true, value: descriptor.value }
 }
 
+/**
+ * The one closure check for every closed receipt object.
+ *
+ * `Object.keys` was the authority here, and it reports only ENUMERABLE own
+ * keys. A reviewer defined a non-enumerable own `hiddenAuthority` on a
+ * genuine contract and the forged object was accepted -- on the envelope, on
+ * `sampleContract` and on `measurements` alike, because all three share this
+ * helper. Enumerability is a presentation flag, not a closure boundary.
+ *
+ * `Reflect.ownKeys` reports every own key: strings and symbols, enumerable and
+ * not. That is the only complete view of what an object actually carries.
+ *
+ * Closure is exact in BOTH directions: no own key outside the allowed set, and
+ * every allowed key present. Each allowed key must also be an own DATA property
+ * (never an accessor) and must be ENUMERABLE -- these objects arrive as JSON,
+ * and a non-enumerable field could not have survived that transport, so its
+ * presence means the object was assembled rather than parsed.
+ */
 function assertClosedPlainObject(value, keys, where, problems) {
   if (!isPlainObject(value)) {
     problems.push(`${where}: expected a plain object`)
     return false
   }
-  const symbols = Object.getOwnPropertySymbols(value)
-  if (symbols.length > 0) {
-    problems.push(`${where}: carries symbol key ${String(symbols[0])}`)
+  // Every own key, not merely the enumerable ones.
+  const own = Reflect.ownKeys(value)
+  const symbol = own.find((key) => typeof key === 'symbol')
+  if (symbol !== undefined) {
+    problems.push(`${where}: carries symbol key ${String(symbol)}`)
     return false
   }
-  const own = Object.keys(value)
   for (const extra of own) {
     if (!keys.includes(extra)) problems.push(`${where}: unexpected key \`${extra}\``)
+  }
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (descriptor === undefined) {
+      problems.push(`${where}: missing required field \`${key}\``)
+      continue
+    }
+    if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      problems.push(`${where}: \`${key}\` is an accessor, not stored data`)
+      continue
+    }
+    if (!descriptor.enumerable) {
+      problems.push(`${where}: \`${key}\` is non-enumerable and could not have survived JSON transport`)
+    }
+  }
+  return true
+}
+
+/**
+ * The one closure check for every closed receipt array.
+ *
+ * Shared by `metricNames` and `measurements.samples` so neither can drift from
+ * the other. `Object.getOwnPropertyNames` covers non-enumerable string keys;
+ * the standard non-enumerable `length` is the one own key that is expected.
+ */
+function assertClosedArray(list, expectedLength, where, problems) {
+  if (!Array.isArray(list)) {
+    problems.push(`${where}: must be an array`)
+    return false
+  }
+  const proto = Object.getPrototypeOf(list)
+  if (proto !== Array.prototype && proto !== null) {
+    problems.push(`${where}: array does not have a plain prototype`)
+    return false
+  }
+  for (const symbol of Object.getOwnPropertySymbols(list)) {
+    problems.push(`${where}: carries symbol key ${String(symbol)}`)
+  }
+  if (list.length !== expectedLength) {
+    problems.push(`${where}: ${list.length} entries, expected exactly ${expectedLength}`)
+    return false
+  }
+  // `length` is the standard own key and must NOT be reported; anything else
+  // that is not an in-range index is an extra the child had no business adding,
+  // enumerable or not.
+  for (const key of Object.getOwnPropertyNames(list)) {
+    if (key === 'length') continue
+    const index = Number(key)
+    if (!Number.isInteger(index) || index < 0 || index >= list.length) {
+      problems.push(`${where}: unexpected own key \`${key}\``)
+    }
   }
   return true
 }
@@ -198,30 +268,7 @@ export function assertSampleContract(actual, expected, where, problems) {
   if (!names.ok) return
   const list = names.value
   const listAt = `${at}.metricNames`
-  if (!Array.isArray(list)) {
-    problems.push(`${listAt}: must be an array`)
-    return
-  }
-  const proto = Object.getPrototypeOf(list)
-  if (proto !== Array.prototype && proto !== null) {
-    problems.push(`${listAt}: array does not have a plain prototype`)
-    return
-  }
-  for (const symbol of Object.getOwnPropertySymbols(list)) {
-    problems.push(`${listAt}: carries symbol key ${String(symbol)}`)
-  }
-  if (list.length !== wanted.metricNames.length) {
-    problems.push(`${listAt}: ${list.length} entries, expected exactly ${wanted.metricNames.length}`)
-    return
-  }
-  // Any own key that is not `length` or an in-range index is unexpected.
-  for (const key of Object.getOwnPropertyNames(list)) {
-    if (key === 'length') continue
-    const index = Number(key)
-    if (!Number.isInteger(index) || index < 0 || index >= list.length) {
-      problems.push(`${listAt}: unexpected own key \`${key}\``)
-    }
-  }
+  if (!assertClosedArray(list, wanted.metricNames.length, listAt, problems)) return
   const seen = new Set()
   for (let index = 0; index < wanted.metricNames.length; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(list, String(index))
@@ -304,13 +351,9 @@ export function assertArmResult(actual, expected, { where }) {
     }
     const samples = ownData(m, 'samples', `${where}.measurements`, problems)
     if (samples.ok) {
-      if (!Array.isArray(samples.value)) {
-        problems.push(`${where}.measurements: samples is not an array`)
-      } else {
-        const wantedCount = expected.sampleContract.sampleCount
-        if (samples.value.length !== wantedCount) {
-          problems.push(`${where}.measurements: ${samples.value.length} samples, expected exactly ${wantedCount}`)
-        }
+      const wantedCount = expected.sampleContract.sampleCount
+      const samplesAt = `${where}.measurements.samples`
+      if (assertClosedArray(samples.value, wantedCount, samplesAt, problems)) {
         for (let index = 0; index < samples.value.length; index += 1) {
           const element = Object.getOwnPropertyDescriptor(samples.value, String(index))
           if (element === undefined || !Object.prototype.hasOwnProperty.call(element, 'value')) {
