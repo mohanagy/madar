@@ -72,6 +72,7 @@ const EVIDENCE_LIFECYCLE = 'tests/unit/mutation-evidence-lifecycle.test.ts'
 const EVIDENCE_AUDIT_SRC = 'scripts/lib/evidence-audit.mjs'
 const EVIDENCE_AUDIT = 'tests/unit/mutation-evidence-audit.test.ts'
 const RECEIPT_LIFECYCLE = 'tests/unit/receipt-child-lifecycle.test.ts'
+const ARM_ENVELOPE = 'tests/unit/receipt-arm-envelope.test.ts'
 const EVIDENCE_HELPER = 'tests/unit/helpers/evidence-matrix.ts'
 
 /**
@@ -1271,23 +1272,63 @@ const MUTANTS = [
     ],
   },
   {
-    name: 'RCP-01: accept an arm result from another scope',
+    name: 'C1-ARM: stop binding the arm revision to the parent descriptor',
     file: GUARDS,
-    test: RECEIPT_LIFECYCLE,
-    from: '  if (value.scope !== scope) throw new Error(`${where}: arm result is for scope "${value.scope}", expected "${scope}"`)',
-    to: '  void scope',
+    test: ARM_ENVELOPE,
+    from: "  'envelopeVersion', 'runNonce', 'armIdentity', 'revision', 'mode', 'corpusScope',",
+    to: "  'envelopeVersion', 'runNonce', 'armIdentity', 'mode', 'corpusScope',",
     expect: [
-      'refuses a result for another scope',
+      '01 rejects a wrong revision',
     ],
   },
   {
-    name: 'RCP-01: accept an arm result built from a different canonical input',
+    name: 'C1-ARM: stop binding the run nonce',
     file: GUARDS,
-    test: RECEIPT_LIFECYCLE,
-    from: '  if (value.inputChecksum !== inputChecksum) {',
+    test: ARM_ENVELOPE,
+    from: "  'envelopeVersion', 'runNonce', 'armIdentity', 'revision', 'mode', 'corpusScope',\n  'inputChecksum', 'inventoryChecksum', 'fileCount', 'candidateCount',",
+    to: "  'envelopeVersion', 'armIdentity', 'revision', 'mode', 'corpusScope',\n  'inputChecksum', 'inventoryChecksum', 'fileCount', 'candidateCount',",
+    expect: [
+      '08 rejects a wrong run nonce',
+    ],
+  },
+  {
+    name: 'C1-ARM: accept any completion state',
+    file: GUARDS,
+    test: ARM_ENVELOPE,
+    from: "  if (completion.ok && completion.value !== 'complete') {",
     to: '  if (false) {',
     expect: [
-      'refuses a result built from a different canonical input',
+      '10 rejects a partial completion state',
+    ],
+  },
+  {
+    name: 'C1-ARM: stop enforcing exact sample cardinality',
+    file: GUARDS,
+    test: ARM_ENVELOPE,
+    from: '        if (samples.value.length !== wantedCount) {',
+    to: '        if (false) {',
+    expect: [
+      '15 rejects a missing sample',
+    ],
+  },
+  {
+    name: 'C2-TREE: settle before the owned tree is proven empty',
+    file: CHILD_RUNNER,
+    test: RECEIPT_LIFECYCLE,
+    from: '      reapOwnedTree(Date.now() + treeReapDeadlineMs)',
+    to: '      settle()',
+    expect: [
+      'accepts a complete result even when a descendant holds the pipes',
+    ],
+  },
+  {
+    name: 'C3-TIMER: skip cancelling owned timers at settlement',
+    file: CHILD_RUNNER,
+    test: RECEIPT_LIFECYCLE,
+    from: '      // Cancel first: a late callback after settlement must be inert and must\n      // not retain the event loop.\n      cancelAllOwnedTimers()',
+    to: '      void 0',
+    expect: [
+      'leaves zero runner-owned timers after every settlement path',
     ],
   },
 ]

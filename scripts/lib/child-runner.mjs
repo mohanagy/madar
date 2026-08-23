@@ -66,11 +66,62 @@ export function terminateChildTree(child, signal = 'SIGTERM') {
 export const STDIO_DRAIN_GRACE_MS = 2000
 
 /**
+ * Timers this module currently owns, across every in-flight run.
+ *
+ * Exported so a control can assert ownership precisely.
+ * `process.getActiveResourcesInfo()` counts the WHOLE process -- inside a test
+ * worker that includes the framework's own timers -- so asserting on it
+ * measures something this module does not own and fails for unrelated reasons.
+ */
+const ownedTimers = new Set()
+
+export function ownedTimerCount() {
+  return ownedTimers.size
+}
+
+/**
  * Runs a child to completion, or terminates it on timeout.
  *
  * The child is registered with the owning registry immediately after spawn and
  * released only once its exit has actually been observed, so a signal arriving
  * at any point finds it and can reap it.
+ */
+/**
+ * Probes whether the owned process group still has members.
+ *
+ * `kill(-pid, 0)` sends no signal; it asks the kernel whether the group exists.
+ * ESRCH means empty. EPERM means it exists but is not ours to signal, which is
+ * NOT emptiness and must never be read as success.
+ *
+ * Windows has no process groups. `taskkill /T` owns the tree there, and
+ * emptiness cannot be probed the same way, so the POSIX proof is unavailable
+ * and the bounded terminate/force-kill sequence is the guarantee instead.
+ */
+export function ownedTreeState(pid) {
+  if (process.platform === 'win32') return 'unprovable'
+  if (typeof pid !== 'number' || pid <= 1) return 'empty'
+  try {
+    process.kill(-pid, 0)
+    return 'populated'
+  } catch (error) {
+    if (error.code === 'ESRCH') return 'empty'
+    if (error.code === 'EPERM') return 'populated'
+    return 'unprovable'
+  }
+}
+
+/**
+ * Runs a child to completion, or terminates it on timeout.
+ *
+ * Three facts are tracked separately and none may overwrite another: the direct
+ * child's exit, its stdio closure, and whether the OWNED PROCESS TREE is empty.
+ * A leader can exit zero while a descendant with closed stdio lives on for
+ * minutes -- `close` fires immediately in that case, so keying success off
+ * stdio closure resolved successfully while an owned process was still running.
+ *
+ * Every timer has an explicit owner. Reusing one variable for the drain, grace
+ * and force-kill timers let one handle overwrite another, so a settlement could
+ * leave an orphaned timer active until its own later deadline.
  */
 export function runChild(command, args, options = {}) {
   const {
@@ -80,12 +131,11 @@ export function runChild(command, args, options = {}) {
     registry = null,
     description = `${command} ${args.join(' ')}`,
     graceMs = 5000,
+    treeReapDeadlineMs = 10000,
   } = options
 
   return new Promise((resolve, reject) => {
-    // Pre-spawn gate: after shutdown begins, no PID is created at all. Spawning
-    // and immediately killing would still start work the coordinator has
-    // already declared closed.
+    // Pre-spawn gate: after shutdown begins, no PID is created at all.
     let reservation = null
     if (registry !== null) {
       try {
@@ -110,16 +160,10 @@ export function runChild(command, args, options = {}) {
       return
     }
 
-    // The narrow race: shutdown may have started between the reservation and
-    // here. The just-spawned child is then terminated and reaped rather than
-    // left running unregistered.
     let token = null
     if (registry !== null) {
       if (reservation !== null && !reservation.valid()) {
         terminateChildTree(child, 'SIGTERM')
-        // The same typed class the pre-spawn gate throws. A plain Error here
-        // would make the race path indistinguishable from an ordinary failure,
-        // and a caller that retried on failure would retry into a shutdown.
         child.once('close', () => {
           reject(new ResourceRegistryShuttingDownError(`child "${description}" (shutdown began during spawn)`))
         })
@@ -133,95 +177,147 @@ export function runChild(command, args, options = {}) {
         return
       }
     }
+
+    // ---- one explicit owner for every timer ---------------------------------
+    const activeTimers = new Set()
+    const scheduleOwnedTimer = (fn, ms) => {
+      const handle = setTimeout(() => {
+        // Each callback releases its own handle before doing work, so a timer
+        // can never be cancelled twice or leak past its own firing.
+        activeTimers.delete(handle)
+        ownedTimers.delete(handle)
+        fn()
+      }, ms)
+      activeTimers.add(handle)
+      ownedTimers.add(handle)
+      return handle
+    }
+    const cancelAllOwnedTimers = () => {
+      for (const handle of activeTimers) {
+        clearTimeout(handle)
+        ownedTimers.delete(handle)
+      }
+      activeTimers.clear()
+    }
+
+    // ---- terminal facts, tracked separately ---------------------------------
+    const facts = {
+      exited: false,
+      closed: false,
+      timedOut: false,
+      descendantsHeldStdio: false,
+      forceKilled: false,
+      treeState: 'unknown',
+    }
+    let exitInfo = null
     let stdout = ''
     let stderr = ''
-    let timedOut = false
-    let descendantsHeldStdio = false
-    let forceTimer = null
-    let drainTimer = null
     let settled = false
-    let exitInfo = null
 
     child.stdout?.on('data', (chunk) => { stdout += chunk })
     child.stderr?.on('data', (chunk) => { stderr += chunk })
 
-    /**
-     * Resolves exactly once and cancels every timer first.
-     *
-     * A stale timer must never be able to convert a completed child into a
-     * timeout after the fact, so cancellation happens here rather than at each
-     * call site.
-     */
-    const settle = (outcome) => {
+    const settle = (extra = {}) => {
       if (settled) return
       settled = true
-      if (timer !== null) clearTimeout(timer)
-      if (forceTimer !== null) clearTimeout(forceTimer)
-      if (drainTimer !== null) clearTimeout(drainTimer)
+      // Cancel first: a late callback after settlement must be inert and must
+      // not retain the event loop.
+      cancelAllOwnedTimers()
       if (token !== null) registry?.releaseChild(token)
-      resolve(outcome)
-    }
-
-    const timer = timeoutMs > 0
-      ? setTimeout(() => {
-        timedOut = true
-        terminateChildTree(child, 'SIGTERM')
-        // A child that ignores graceful termination is force-killed rather
-        // than allowed to hold the run open indefinitely.
-        forceTimer = setTimeout(() => {
-          terminateChildTree(child, 'SIGKILL')
-          // Even SIGKILL cannot make an unreachable holder release a pipe, so
-          // the wait itself is bounded rather than trusting `close` to arrive.
-          drainTimer = setTimeout(() => settle({
-            code: exitInfo?.code ?? null,
-            signal: exitInfo?.signal ?? null,
-            stdout,
-            stderr,
-            timedOut,
-            descendantsHeldStdio,
-          }), graceMs)
-        }, graceMs)
-      }, timeoutMs)
-      : null
-
-    child.on('error', (error) => {
-      if (timer !== null) clearTimeout(timer)
-      if (forceTimer !== null) clearTimeout(forceTimer)
-      if (drainTimer !== null) clearTimeout(drainTimer)
-      if (token !== null) registry?.releaseChild(token)
-      if (!settled) { settled = true; reject(error) }
-    })
-
-    // `exit` is process completion; `close` is stdio completion. They are not
-    // the same event and conflating them is what let a finished child be
-    // reported as a timeout: a descendant inherited the pipes, `close` never
-    // arrived, and the wait outlived its own bound.
-    child.on('exit', (code, signal) => {
-      exitInfo = { code, signal }
-      if (settled) return
-      // Give the pipes a bounded moment to drain normally, then reclaim them
-      // from any descendant still holding them.
-      drainTimer = setTimeout(() => {
-        descendantsHeldStdio = true
-        terminateChildTree(child, 'SIGTERM')
-        forceTimer = setTimeout(() => {
-          terminateChildTree(child, 'SIGKILL')
-          settle({ code, signal, stdout, stderr, timedOut, descendantsHeldStdio })
-        }, graceMs)
-      }, STDIO_DRAIN_GRACE_MS)
-    })
-
-    // The ordinary path: stdio drained before the result is built, so evidence
-    // is never truncated by winning a race with the pipes.
-    child.on('close', (code, signal) => {
-      settle({
-        code: code ?? exitInfo?.code ?? null,
-        signal: signal ?? exitInfo?.signal ?? null,
+      resolve({
+        code: exitInfo?.code ?? null,
+        signal: exitInfo?.signal ?? null,
         stdout,
         stderr,
-        timedOut,
-        descendantsHeldStdio,
+        timedOut: facts.timedOut,
+        descendantsHeldStdio: facts.descendantsHeldStdio,
+        forceKilled: facts.forceKilled,
+        ownedTreeState: facts.treeState,
+        ...extra,
       })
+    }
+
+    const failSettle = (error) => {
+      if (settled) return
+      settled = true
+      cancelAllOwnedTimers()
+      if (token !== null) registry?.releaseChild(token)
+      reject(error)
+    }
+
+    /**
+     * Success is not declared until the owned tree is empty.
+     *
+     * Polls, then escalates TERM and KILL against the owned group only, and
+     * fails rather than claiming success if emptiness cannot be established.
+     */
+    const reapOwnedTree = (deadline) => {
+      const state = ownedTreeState(child.pid)
+      facts.treeState = state
+      if (state === 'empty' || state === 'unprovable') { settle(); return }
+      if (Date.now() >= deadline) {
+        failSettle(new Error(
+          `"${command} ${args.join(' ')}" completed but its owned process tree was still populated `
+          + `after ${treeReapDeadlineMs}ms`,
+        ))
+        return
+      }
+      if (!facts.forceKilled && Date.now() >= deadline - graceMs) {
+        facts.forceKilled = true
+        terminateChildTree(child, 'SIGKILL')
+      } else {
+        terminateChildTree(child, 'SIGTERM')
+      }
+      scheduleOwnedTimer(() => reapOwnedTree(deadline), 100)
+    }
+
+    const finishWhenTerminal = () => {
+      if (settled) return
+      if (!facts.exited || !facts.closed) return
+      reapOwnedTree(Date.now() + treeReapDeadlineMs)
+    }
+
+    if (timeoutMs > 0) {
+      scheduleOwnedTimer(() => {
+        facts.timedOut = true
+        terminateChildTree(child, 'SIGTERM')
+        scheduleOwnedTimer(() => {
+          facts.forceKilled = true
+          terminateChildTree(child, 'SIGKILL')
+          // Bounded: even SIGKILL cannot make an unreachable holder release a
+          // pipe, so the wait ends here rather than trusting `close` to arrive.
+          scheduleOwnedTimer(() => settle(), graceMs)
+        }, graceMs)
+      }, timeoutMs)
+    }
+
+    child.on('error', (error) => failSettle(error))
+
+    // `exit` is process completion; `close` is stdio completion; neither is
+    // owned-tree completion.
+    child.on('exit', (code, signal) => {
+      facts.exited = true
+      exitInfo = { code, signal }
+      if (settled) return
+      scheduleOwnedTimer(() => {
+        if (settled || facts.closed) return
+        // A descendant is holding the inherited pipes; reclaim them.
+        facts.descendantsHeldStdio = true
+        terminateChildTree(child, 'SIGTERM')
+        scheduleOwnedTimer(() => {
+          facts.forceKilled = true
+          terminateChildTree(child, 'SIGKILL')
+          facts.closed = true
+          finishWhenTerminal()
+        }, graceMs)
+      }, STDIO_DRAIN_GRACE_MS)
+      finishWhenTerminal()
+    })
+
+    child.on('close', (code, signal) => {
+      facts.closed = true
+      if (exitInfo === null) exitInfo = { code, signal }
+      finishWhenTerminal()
     })
   })
 }

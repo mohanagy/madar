@@ -14,6 +14,10 @@ export interface ChildResult {
    * one that needed intervention.
    */
   readonly descendantsHeldStdio: boolean
+  /** True when the owned tree needed a force kill before it was empty. */
+  readonly forceKilled: boolean
+  /** Proof state of the owned process group at settlement. */
+  readonly ownedTreeState: string
 }
 
 export interface RunChildOptions {
@@ -26,5 +30,11 @@ export interface RunChildOptions {
 }
 
 export function terminateChildTree(child: ChildProcess, signal?: NodeJS.Signals): void
+/** Timers this module currently owns, across every in-flight run. */
+export function ownedTimerCount(): number
+
+/** 'empty' | 'populated' | 'unprovable' for the child's owned process group. */
+export function ownedTreeState(pid: number | undefined): string
+
 export function runChild(command: string, args: readonly string[], options?: RunChildOptions): Promise<ChildResult>
 export function runChildOrThrow(command: string, args: readonly string[], options?: RunChildOptions): Promise<ChildResult>

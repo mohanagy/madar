@@ -18,8 +18,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { runChild } from '../../scripts/lib/child-runner.mjs'
-import { assertArmResult } from '../../scripts/lib/receipt-guards.mjs'
+import { ownedTimerCount, runChild } from '../../scripts/lib/child-runner.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const HOLDER = resolve(REPO, 'tests/fixtures/descendant-holds-stdio.mjs')
@@ -75,18 +74,69 @@ describe('RCP-01 — a completed child is not a timeout', () => {
   }, 60_000)
 
   it('does not let a stale timer convert a completed child into a timeout', async () => {
-    // The timer is cancelled when the terminal conditions hold, so nothing can
-    // reclassify the run afterwards.
+    // Proved by OWNERSHIP, not by outrunning a deadline.
+    //
+    // Two earlier versions of this control raced the timeout: a trivial child
+    // settles in ~30 ms, but under a concurrently running suite doing git
+    // worktree I/O the same spawn was measured at 30 ms, 213 ms and 1,162 ms in
+    // succession. Any fixed bound is a race against unrelated load, and
+    // widening it only moves the failure.
+    //
+    // The real invariant is that settlement leaves no owned timer alive, so
+    // there is nothing left that could reclassify the result. That is checked
+    // directly and is independent of how long anything took.
     const result = await runChild(process.execPath, ['-e', 'process.stdout.write("done")'], {
-      cwd: REPO, timeoutMs: 1_500, graceMs: 200,
+      cwd: REPO, timeoutMs: 10_000, graceMs: 200,
     })
     expect(result.timedOut).toBe(false)
     expect(result.code).toBe(0)
+    expect(ownedTimerCount()).toBe(0)
 
-    await new Promise((r) => setTimeout(r, 2_500))
-    // Re-read after the original deadline would have elapsed.
+    // Nothing appears later either, and the settled result does not change.
+    await new Promise((r) => setTimeout(r, 1_000))
+    expect(ownedTimerCount()).toBe(0)
     expect(result.timedOut).toBe(false)
-  }, 30_000)
+  }, 60_000)
+
+  it('leaves zero runner-owned timers after every settlement path', async () => {
+    // §4.4: not just the happy path. Each entry settles through a different
+    // branch, and none may leave an owned timer behind.
+    // Runner-owned timers, not process-wide ones: getActiveResourcesInfo()
+    // counts the whole process, and inside a test worker that includes the
+    // framework's own timers, so it fails for reasons this control does not own.
+    const timers = (): number => ownedTimerCount()
+    const paths: Array<[string, () => Promise<unknown>]> = [
+      ['normal success', () => runChild(process.execPath, ['-e', 'process.stdout.write("ok")'], {
+        cwd: REPO, timeoutMs: 20_000, graceMs: 300,
+      })],
+      ['ordinary non-zero exit', () => runChild(process.execPath, ['-e', 'process.exit(4)'], {
+        cwd: REPO, timeoutMs: 20_000, graceMs: 300,
+      })],
+      ['timeout with cooperative TERM', () => runChild(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {
+        cwd: REPO, timeoutMs: 800, graceMs: 300,
+      })],
+      ['timeout with force kill', () => runChild(process.execPath,
+        ['-e', "process.on('SIGTERM', () => {}); setTimeout(() => {}, 60000)"], {
+          cwd: REPO, timeoutMs: 800, graceMs: 300,
+        })],
+      ['descendant-held stdio reclamation', () => runChild(process.execPath, [HOLDER], {
+        cwd: REPO, timeoutMs: 20_000, graceMs: 300,
+        env: { ...process.env, MADAR_STDIO_HOLD_MS: '20000' },
+      })],
+      ['spawn failure', () => runChild(resolve(tmpdir(), 'madar-no-such-binary-ever'), [], {
+        cwd: REPO, timeoutMs: 20_000, graceMs: 300,
+      }).catch(() => undefined)],
+    ]
+
+    for (const [label, run] of paths) {
+      await run()
+      expect(timers(), `${label} left an owned timer active`).toBe(0)
+    }
+
+    // And still zero once every former deadline has elapsed.
+    await new Promise((r) => setTimeout(r, 2_000))
+    expect(timers()).toBe(0)
+  }, 120_000)
 
   it('still times out and reaps a genuinely hung child', async () => {
     const started = Date.now()
@@ -97,48 +147,6 @@ describe('RCP-01 — a completed child is not a timeout', () => {
     expect(result.signal).toBe('SIGTERM')
     expect(Date.now() - started).toBeLessThan(20_000)
   }, 40_000)
-})
-
-describe('RCP-01 — an arm result is accepted only when it is complete and its own', () => {
-  const valid = {
-    scope: 'src-only',
-    samples: [1, 2, 3],
-    medianMs: 2,
-    minMs: 1,
-    maxMs: 3,
-    spreadMs: 2,
-    peakRssMb: 10,
-    inputChecksum: 'a'.repeat(64),
-    emittedCandidates: 7,
-  }
-  const options = { scope: 'src-only', inputChecksum: 'a'.repeat(64), where: 'arm' }
-
-  it('accepts a complete, matching result', () => {
-    expect(assertArmResult({ ...valid }, options)).toMatchObject({ emittedCandidates: 7 })
-  })
-
-  it('refuses a result for another scope', () => {
-    expect(() => assertArmResult({ ...valid, scope: 'src-plus-tests-js-ts' }, options))
-      .toThrow(/is for scope/)
-  })
-
-  it('refuses a result built from a different canonical input', () => {
-    expect(() => assertArmResult({ ...valid, inputChecksum: 'b'.repeat(64) }, options))
-      .toThrow(/input checksum does not match/)
-  })
-
-  it('refuses a result with no samples', () => {
-    expect(() => assertArmResult({ ...valid, samples: [] }, options)).toThrow(/carries no samples/)
-  })
-
-  it.each(['medianMs', 'minMs', 'maxMs', 'spreadMs', 'peakRssMb', 'emittedCandidates'])(
-    'refuses a result whose %s is not a finite number', (field) => {
-      expect(() => assertArmResult({ ...valid, [field]: 'x' }, options)).toThrow(new RegExp(field))
-    })
-
-  it('refuses a non-object result', () => {
-    expect(() => assertArmResult('{}', options)).toThrow(/not an object/)
-  })
 })
 
 describe('RCP-01 — partial, absent and failed arm results', () => {

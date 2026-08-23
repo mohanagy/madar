@@ -1,0 +1,288 @@
+/**
+ * C1 — the arm-result envelope must be identity-bound to its parent.
+ *
+ * An independent reviewer forged a result carrying the correct corpus scope and
+ * canonical input checksum but the wrong revision, wrong mode, wrong inventory
+ * checksum, a stale arm identity and `completionState: 'partial'`, and it was
+ * accepted as a measurement. Scope and checksum alone are not identity.
+ *
+ * Each control starts from a genuine matching envelope and alters exactly one
+ * field, so every rejection is attributable to the field it names.
+ */
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { runChildOrThrow } from '../../scripts/lib/child-runner.mjs'
+import type { ExpectedArmDescriptor } from '../../scripts/lib/receipt-guards.mjs'
+import {
+  ARM_ENVELOPE_VERSION,
+  ARM_METRIC_NAMES,
+  ARM_RSS_UNIT,
+  ARM_WALL_UNIT,
+  assertArmResult,
+  buildArmDescriptor,
+} from '../../scripts/lib/receipt-guards.mjs'
+
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const HOLDER = resolve(REPO, 'tests/fixtures/descendant-holds-stdio.mjs')
+
+const scratch: string[] = []
+afterEach(() => {
+  for (const dir of scratch.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+const descriptorFor = (overrides: Record<string, unknown> = {}): ExpectedArmDescriptor =>
+  buildArmDescriptor({
+    runNonce: '11111111-2222-3333-4444-555555555555',
+    armIdentity: '11111111-2222-3333-4444-555555555555:src-only:1',
+    revision: 'a135efca773f5b5f4690a7195e48ad5c44b18ef9',
+    mode: 'legacy',
+    corpusScope: 'src-only',
+    inputChecksum: 'a'.repeat(64),
+    inventoryChecksum: 'b'.repeat(64),
+    fileCount: 199,
+    candidateCount: 15005,
+    sampleCount: 5,
+    ...overrides,
+  } as Parameters<typeof buildArmDescriptor>[0])
+
+/** A genuine, matching envelope for a descriptor. */
+const envelopeFor = (descriptor: ExpectedArmDescriptor): Record<string, unknown> => ({
+  envelopeVersion: descriptor.envelopeVersion,
+  runNonce: descriptor.runNonce,
+  armIdentity: descriptor.armIdentity,
+  revision: descriptor.revision,
+  mode: descriptor.mode,
+  corpusScope: descriptor.corpusScope,
+  inputChecksum: descriptor.inputChecksum,
+  inventoryChecksum: descriptor.inventoryChecksum,
+  fileCount: descriptor.fileCount,
+  candidateCount: descriptor.candidateCount,
+  completionState: 'complete',
+  sampleContract: {
+    sampleCount: 5,
+    metricNames: [...ARM_METRIC_NAMES],
+    wallUnit: ARM_WALL_UNIT,
+    rssUnit: ARM_RSS_UNIT,
+  },
+  measurements: {
+    samples: [10.1, 10.2, 10.3, 10.4, 10.5],
+    medianMs: 10.3, minMs: 10.1, maxMs: 10.5, spreadMs: 0.4, peakRssMb: 512,
+  },
+})
+
+const check = (mutate: (envelope: Record<string, unknown>) => void): (() => unknown) => {
+  const descriptor = descriptorFor()
+  const envelope = envelopeFor(descriptor)
+  mutate(envelope)
+  return () => assertArmResult(envelope, descriptor, { where: 'arm' })
+}
+
+describe('C1 — identity fields must equal the parent expectation', () => {
+  it('01 rejects a wrong revision', () => {
+    expect(check((e) => { e['revision'] = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef' })).toThrow(/revision is/)
+  })
+
+  it('02 rejects a wrong generation mode', () => {
+    expect(check((e) => { e['mode'] = 'spi' })).toThrow(/mode is/)
+  })
+
+  it('03 rejects a wrong corpus scope', () => {
+    expect(check((e) => { e['corpusScope'] = 'src-plus-tests-js-ts' })).toThrow(/corpusScope is/)
+  })
+
+  it('04 rejects a wrong inventory checksum', () => {
+    expect(check((e) => { e['inventoryChecksum'] = 'c'.repeat(64) })).toThrow(/inventoryChecksum is/)
+  })
+
+  it('05 rejects a wrong file count', () => {
+    expect(check((e) => { e['fileCount'] = 198 })).toThrow(/fileCount is/)
+  })
+
+  it('06 rejects a wrong candidate count', () => {
+    expect(check((e) => { e['candidateCount'] = 999999 })).toThrow(/candidateCount is/)
+  })
+
+  it('07 rejects a wrong canonical input checksum', () => {
+    expect(check((e) => { e['inputChecksum'] = 'd'.repeat(64) })).toThrow(/inputChecksum is/)
+  })
+
+  it('08 rejects a wrong run nonce', () => {
+    expect(check((e) => { e['runNonce'] = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' })).toThrow(/runNonce is/)
+  })
+
+  it('09 rejects a wrong arm identity', () => {
+    expect(check((e) => { e['armIdentity'] = 'someone-elses-arm' })).toThrow(/armIdentity is/)
+  })
+
+  it('13 rejects a valid result copied from another invocation', () => {
+    // Internally consistent and complete, but produced under a different run.
+    const other = descriptorFor({
+      runNonce: '99999999-8888-7777-6666-555555555555',
+      armIdentity: '99999999-8888-7777-6666-555555555555:src-only:1',
+    })
+    const stolen = envelopeFor(other)
+    expect(() => assertArmResult(stolen, descriptorFor(), { where: 'arm' }))
+      .toThrow(/runNonce is/)
+  })
+})
+
+describe('C1 — completion state and envelope version', () => {
+  it('10 rejects a partial completion state', () => {
+    expect(check((e) => { e['completionState'] = 'partial' })).toThrow(/completion state is "partial"/)
+  })
+
+  it('11 rejects a missing completion state', () => {
+    expect(check((e) => { delete e['completionState'] })).toThrow(/missing required field `completionState`/)
+  })
+
+  it('12 rejects a wrong envelope version', () => {
+    expect(check((e) => { e['envelopeVersion'] = ARM_ENVELOPE_VERSION + 1 })).toThrow(/envelope version/)
+  })
+
+  it('rejects a missing envelope version', () => {
+    expect(check((e) => { delete e['envelopeVersion'] })).toThrow(/missing required field `envelopeVersion`/)
+  })
+})
+
+describe('C1 — sample and unit contract', () => {
+  it('14 rejects a wrong sample count in the contract', () => {
+    expect(check((e) => {
+      (e['sampleContract'] as Record<string, unknown>)['sampleCount'] = 4
+    })).toThrow(/sample count 4, expected 5/)
+  })
+
+  it('15 rejects a missing sample', () => {
+    expect(check((e) => {
+      (e['measurements'] as Record<string, unknown>)['samples'] = [10.1, 10.2, 10.3, 10.4]
+    })).toThrow(/4 samples, expected exactly 5/)
+  })
+
+  it('16 rejects an extra sample', () => {
+    expect(check((e) => {
+      (e['measurements'] as Record<string, unknown>)['samples'] = [10.1, 10.2, 10.3, 10.4, 10.5, 10.6]
+    })).toThrow(/6 samples, expected exactly 5/)
+  })
+
+  it('17 rejects a wrong metric contract', () => {
+    expect(check((e) => {
+      (e['sampleContract'] as Record<string, unknown>)['metricNames'] = ['samples', 'medianMs']
+    })).toThrow(/metric contract/)
+  })
+
+  it('18 rejects a wrong wall unit', () => {
+    expect(check((e) => {
+      (e['sampleContract'] as Record<string, unknown>)['wallUnit'] = 's'
+    })).toThrow(/wall unit/)
+  })
+
+  it('18b rejects a wrong RSS unit', () => {
+    expect(check((e) => {
+      (e['sampleContract'] as Record<string, unknown>)['rssUnit'] = 'bytes'
+    })).toThrow(/rss unit/)
+  })
+
+  it('rejects a non-finite sample', () => {
+    expect(check((e) => {
+      (e['measurements'] as Record<string, unknown>)['samples'] = [10.1, 10.2, 10.3, 10.4, 'x']
+    })).toThrow(/sample 4 is not a finite number/)
+  })
+})
+
+describe('C1 — envelope shape is closed and plain', () => {
+  it('rejects an unexpected identity-bearing key', () => {
+    expect(check((e) => { e['revisionOverride'] = 'sneaky' })).toThrow(/unexpected key `revisionOverride`/)
+  })
+
+  it('rejects a symbol key', () => {
+    expect(check((e) => { (e as Record<symbol, unknown>)[Symbol('x')] = 1 })).toThrow(/symbol key/)
+  })
+
+  it('never executes an accessor on an identity field', () => {
+    let reads = 0
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    Object.defineProperty(envelope, 'revision', {
+      get() { reads += 1; throw new Error('validator invoked a getter') },
+      configurable: true,
+      enumerable: true,
+    })
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/is an accessor/)
+    expect(reads).toBe(0)
+  })
+
+  it('rejects a non-plain envelope', () => {
+    const descriptor = descriptorFor()
+    const envelope = Object.assign(Object.create({ inherited: true }), envelopeFor(descriptor))
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).toThrow(/plain object/)
+  })
+})
+
+describe('C1 — truthful arms are accepted', () => {
+  it('accepts a fresh matching baseline arm', () => {
+    const descriptor = descriptorFor({ revision: 'a135efca773f5b5f4690a7195e48ad5c44b18ef9' })
+    const envelope = envelopeFor(descriptor)
+    expect(assertArmResult(envelope, descriptor, { where: 'baseline arm' })).toBe(envelope)
+  })
+
+  it('accepts a fresh matching candidate arm', () => {
+    const descriptor = descriptorFor({
+      revision: '06c23330496663fdbb7f71055cd4b4653e823d36',
+      armIdentity: '11111111-2222-3333-4444-555555555555:src-only:2',
+      corpusScope: 'src-plus-tests-js-ts',
+      fileCount: 692,
+      candidateCount: 21189,
+    })
+    const envelope = envelopeFor(descriptor)
+    expect(assertArmResult(envelope, descriptor, { where: 'candidate arm' })).toBe(envelope)
+  })
+})
+
+describe('C1 — a complete result cannot rescue a failed process', () => {
+  it('19 rejects a non-zero child exit even when the result file is complete', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'madar-arm-exit-'))
+    scratch.push(dir)
+    const resultFile = join(dir, 'result.json')
+
+    await expect(runChildOrThrow(process.execPath, [HOLDER], {
+      cwd: REPO,
+      timeoutMs: 20_000,
+      graceMs: 300,
+      env: {
+        ...process.env,
+        MADAR_STDIO_HOLD_MS: '0',
+        MADAR_RESULT_FILE: resultFile,
+        MADAR_EXIT_CODE: '3',
+      },
+    })).rejects.toThrow(/exit 3/)
+
+    // The complete result exists and is still not evidence.
+    expect(existsSync(resultFile)).toBe(true)
+  }, 40_000)
+
+  it('an arm invoked without a descriptor refuses to publish', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'madar-arm-nodesc-'))
+    scratch.push(dir)
+    let status = 0
+    let stderr = ''
+    try {
+      execFileSync(process.execPath, [
+        resolve(REPO, 'scripts/verify-integrity-receipts.mjs'),
+        '--measure-arm', REPO, '--scope', 'src-only',
+        '--input', join(dir, 'missing.json'), '--runs', '1',
+        '--result-file', join(dir, 'result.json'),
+      ], { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 })
+    } catch (error) {
+      const failure = error as { status?: number; stderr?: string }
+      status = failure.status ?? -1
+      stderr = failure.stderr ?? ''
+    }
+    expect(status).not.toBe(0)
+    expect(existsSync(join(dir, 'result.json'))).toBe(false)
+    expect(stderr.length).toBeGreaterThan(0)
+  }, 180_000)
+})

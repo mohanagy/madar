@@ -19,12 +19,14 @@
  * the runner measures both heads on identical input and reports the ratio.
  */
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, existsSync, fsyncSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import {
+  ARM_ENVELOPE_VERSION,
   assertArmResult,
+  buildArmDescriptor,
   assertCleanTree,
   assertDistinctArms,
   assertFreshBuild,
@@ -85,6 +87,11 @@ const CORPUS_ONLY = args.includes('--corpus-only')
 const RUNS = Number(argOf('--runs') ?? 5)
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex')
+
+// One nonce per receipt run. An arm result carrying a different nonce belongs to
+// another invocation and is refused rather than measured.
+const RUN_NONCE = randomUUID()
+const EXTRACTION_MODE = 'legacy'
 
 /**
  * Bounded local metadata probe, deliberately synchronous.
@@ -331,16 +338,41 @@ if (MEASURE_ARM !== null) {
   const shared = JSON.parse(readFileSync(inputPath, 'utf8'))
   const measured = await measure(MEASURE_ARM, scope, [], RUNS, shared)
   const accounting = measured.graph.normalizedAccountingSummary()
+  // The child does not invent identity. It copies the parent's descriptor
+  // verbatim and adds only what it actually measured.
+  const DESCRIPTOR_FILE = argOf('--descriptor-file')
+  if (DESCRIPTOR_FILE === null) {
+    console.error('arm invoked without --descriptor-file; refusing to publish an unbound result')
+    process.exit(2)
+  }
+  const descriptor = JSON.parse(readFileSync(DESCRIPTOR_FILE, 'utf8'))
   const payload = {
-    scope,
-    samples: measured.samples,
-    medianMs: measured.medianMs,
-    minMs: measured.minMs,
-    maxMs: measured.maxMs,
-    spreadMs: measured.spreadMs,
-    peakRssMb: measured.peakRssMb,
-    inputChecksum: measured.inputChecksum,
-    emittedCandidates: accounting.emittedCandidates,
+    envelopeVersion: descriptor.envelopeVersion,
+    runNonce: descriptor.runNonce,
+    armIdentity: descriptor.armIdentity,
+    revision: descriptor.revision,
+    mode: descriptor.mode,
+    corpusScope: descriptor.corpusScope,
+    inputChecksum: descriptor.inputChecksum,
+    inventoryChecksum: descriptor.inventoryChecksum,
+    fileCount: descriptor.fileCount,
+    candidateCount: descriptor.candidateCount,
+    completionState: 'complete',
+    sampleContract: descriptor.sampleContract,
+    measurements: {
+      samples: measured.samples,
+      medianMs: measured.medianMs,
+      minMs: measured.minMs,
+      maxMs: measured.maxMs,
+      spreadMs: measured.spreadMs,
+      peakRssMb: measured.peakRssMb,
+    },
+  }
+  // The parent independently derived the candidate count; a disagreement here
+  // is the child's problem, not something to paper over in the envelope.
+  if (accounting.emittedCandidates !== descriptor.candidateCount) {
+    console.error(`arm measured ${accounting.emittedCandidates} candidates, parent expected ${descriptor.candidateCount}`)
+    process.exit(3)
   }
   const serialized = JSON.stringify(payload)
 
@@ -402,35 +434,58 @@ for (const scope of Object.keys(SCOPES)) {
  * Asynchronous for the same reason the builds are: an arm can run for minutes,
  * and a signal during one must be able to terminate it rather than wait for it.
  */
-async function runArm(dir, scope, inputPath, inputChecksum) {
+let armSequence = 0
+
+async function runArm(dir, scope, inputPath, expectation) {
   assertPhaseAdmitted(`arm ${scope}`)
-  const resultFile = join(mkdtempSync(join(tmpdir(), 'madar-arm-')), 'result.json')
-  const token = REGISTRY.register(`arm result ${scope}`, () => {
-    rmSync(dirname(resultFile), { recursive: true, force: true })
+  const armIdentity = `${RUN_NONCE}:${scope}:${armSequence += 1}`
+  const workspace = mkdtempSync(join(tmpdir(), 'madar-arm-'))
+  // Run-specific AND arm-specific, so no two arms can ever share a path.
+  const resultFile = join(workspace, `${armIdentity.replace(/[^A-Za-z0-9]+/g, '-')}.json`)
+  const descriptorFile = join(workspace, 'descriptor.json')
+  const token = REGISTRY.register(`arm workspace ${armIdentity}`, () => {
+    rmSync(workspace, { recursive: true, force: true })
   })
   try {
+    const descriptor = buildArmDescriptor({ ...expectation, armIdentity, revision: expectation.revision })
+    writeFileSync(descriptorFile, JSON.stringify(descriptor))
+    // Nothing may pre-exist at the final path.
+    if (existsSync(resultFile)) throw new Error(`arm ${armIdentity}: a result already existed before the arm ran`)
+
     const result = await runChildOrThrow(process.execPath, [
       resolve(ROOT, 'scripts/verify-integrity-receipts.mjs'),
       '--measure-arm', dir, '--scope', scope, '--input', inputPath, '--runs', String(RUNS),
-      '--result-file', resultFile,
+      '--result-file', resultFile, '--descriptor-file', descriptorFile,
     ], {
       cwd: ROOT,
       registry: REGISTRY,
       description: `arm ${scope} at ${dir}`,
       timeoutMs: ARM_TIMEOUT_MS,
     })
-    // A completed process is necessary and not sufficient: the result must
-    // exist, parse and describe THIS arm.
+    // A completed process is necessary and not sufficient.
     if (!existsSync(resultFile)) {
-      throw new Error(`arm ${scope} at ${dir} exited ${result.code} without writing a result file`)
+      throw new Error(`arm ${armIdentity} exited ${result.code} without writing a result file`)
+    }
+    // Read once, then confirm the bytes did not change underneath us.
+    const bytes = readFileSync(resultFile)
+    const digest = sha256(bytes)
+    if (sha256(readFileSync(resultFile)) !== digest) {
+      throw new Error(`arm ${armIdentity}: result changed while being read`)
     }
     let parsed
     try {
-      parsed = JSON.parse(readFileSync(resultFile, 'utf8'))
+      parsed = JSON.parse(bytes.toString('utf8'))
     } catch (error) {
-      throw new Error(`arm ${scope} at ${dir} wrote an unreadable result: ${error.message}`)
+      throw new Error(`arm ${armIdentity} wrote an unreadable result: ${error.message}`)
     }
-    return assertArmResult(parsed, { scope, inputChecksum, where: `arm ${scope} at ${dir}` })
+    const envelope = assertArmResult(parsed, descriptor, { where: `arm ${armIdentity}` })
+    // Flattened for the existing session comparators, which read these names.
+    return {
+      scope: envelope.corpusScope,
+      inputChecksum: envelope.inputChecksum,
+      emittedCandidates: envelope.candidateCount,
+      ...envelope.measurements,
+    }
   } finally {
     REGISTRY.release(token)
   }
@@ -465,14 +520,35 @@ async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT,
       // the same way rather than assuming a round-trip is byte-identical.
       const armInputChecksum = sha256(serializedInput)
 
+      // Candidate count is derived HERE, by the parent, from the canonical
+      // input it owns. Deriving it from an arm result would mean comparing one
+      // untrusted child field against another.
+      assertPhaseAdmitted(`candidate authority ${scope}`)
+      const authorityRun = await measure(ROOT, scope, [], 1, shared)
+      const expectedCandidates = authorityRun.graph.normalizedAccountingSummary().emittedCandidates
+
+      const expectationFor = (revision) => ({
+        runNonce: RUN_NONCE,
+        revision,
+        mode: EXTRACTION_MODE,
+        corpusScope: scope,
+        inputChecksum: armInputChecksum,
+        inventoryChecksum: checksum,
+        fileCount: files.length,
+        candidateCount: expectedCandidates,
+        sampleCount: RUNS,
+      })
+      const baselineExpectation = expectationFor(baselineSha)
+      const candidateExpectation = expectationFor(candidateSha ?? git('rev-parse', 'HEAD'))
+
       // Two sessions with opposite starting arms, so ordering cannot favour
       // either head.
       // Sequential and counterbalanced: never concurrent, because two arms
       // sharing a machine measure contention rather than code.
-      const baselineFirstBase = await runArm(baselineDir, scope, inputPath, armInputChecksum)
-      const baselineFirstHead = await runArm(candidateDir, scope, inputPath, armInputChecksum)
-      const candidateFirstHead = await runArm(candidateDir, scope, inputPath, armInputChecksum)
-      const candidateFirstBase = await runArm(baselineDir, scope, inputPath, armInputChecksum)
+      const baselineFirstBase = await runArm(baselineDir, scope, inputPath, baselineExpectation)
+      const baselineFirstHead = await runArm(candidateDir, scope, inputPath, candidateExpectation)
+      const candidateFirstHead = await runArm(candidateDir, scope, inputPath, candidateExpectation)
+      const candidateFirstBase = await runArm(baselineDir, scope, inputPath, baselineExpectation)
       sessions = [
         { order: 'baseline-first', base: baselineFirstBase, head: baselineFirstHead },
         { order: 'candidate-first', head: candidateFirstHead, base: candidateFirstBase },
