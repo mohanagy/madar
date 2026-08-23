@@ -19,6 +19,7 @@
   "tests/unit/mutation-harness-self.test.ts",
   "tests/unit/normalized-accounting-callsite-policy.test.ts",
   "tests/unit/normalized-candidate-accounting.test.ts",
+  "tests/unit/receipt-child-lifecycle.test.ts",
   "tests/unit/receipt-exact-ref-guards.test.ts",
   "tests/unit/receipt-resource-cleanup.test.ts",
   "tests/unit/receipt-signal-responsiveness.test.ts",
