@@ -11,7 +11,7 @@
  *
  * These controls drive the real child runner and the real guards.
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -147,6 +147,81 @@ describe('RCP-01 — a completed child is not a timeout', () => {
     expect(result.signal).toBe('SIGTERM')
     expect(Date.now() - started).toBeLessThan(20_000)
   }, 40_000)
+})
+
+describe('C2 — success requires the owned process tree to be empty', () => {
+  /**
+   * Distinct from the held-stdio case. There the descendant INHERITS the pipes,
+   * so `close` is late and the drain path reclaims it. Here the descendant
+   * closes its stdio, so `close` fires immediately and a runner that keys
+   * success off stdio closure settles while an owned process is still running.
+   *
+   * The mutation matrix found this gap: a mutant that settled before proving
+   * tree emptiness survived, because no control covered a closed-stdio
+   * descendant.
+   */
+  const OWNED = resolve(REPO, 'tests/fixtures/owned-descendant.mjs')
+  const alive = (pid: number): boolean => {
+    try { process.kill(pid, 0); return true } catch { return false }
+  }
+
+  it('reaps a cooperative closed-stdio descendant before resolving', async () => {
+    const result = await runChild(process.execPath, [OWNED], {
+      cwd: REPO, timeoutMs: 30_000, graceMs: 500,
+      env: { ...process.env, MADAR_DESC_LIFE_MS: '60000' },
+    })
+    const { descendantPid } = JSON.parse(result.stdout) as { descendantPid: number }
+
+    expect(result.code).toBe(0)
+    expect(result.timedOut).toBe(false)
+    // The whole point: dead by the time the promise resolved, not later.
+    expect(alive(descendantPid), 'owned descendant outlived a successful settlement').toBe(false)
+    expect(result.ownedTreeState).toBe('empty')
+    expect(ownedTimerCount()).toBe(0)
+  }, 60_000)
+
+  it('force-kills an uncooperative closed-stdio descendant before resolving', async () => {
+    const result = await runChild(process.execPath, [OWNED], {
+      cwd: REPO, timeoutMs: 30_000, graceMs: 500,
+      env: { ...process.env, MADAR_DESC_LIFE_MS: '60000', MADAR_DESC_IGNORE_TERM: '1' },
+    })
+    const { descendantPid } = JSON.parse(result.stdout) as { descendantPid: number }
+
+    expect(alive(descendantPid), 'descendant ignoring TERM outlived settlement').toBe(false)
+    expect(result.ownedTreeState).toBe('empty')
+    expect(ownedTimerCount()).toBe(0)
+  }, 60_000)
+
+  it('leaves an unrelated process in its own group untouched', async () => {
+    // Reclamation must target the exact group we created, never a name match.
+    const bystander = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
+      stdio: 'ignore', detached: true,
+    })
+    bystander.unref()
+    await new Promise((r) => setTimeout(r, 300))
+
+    try {
+      const result = await runChild(process.execPath, [OWNED], {
+        cwd: REPO, timeoutMs: 30_000, graceMs: 400,
+        env: { ...process.env, MADAR_DESC_LIFE_MS: '30000', MADAR_DESC_IGNORE_TERM: '1' },
+      })
+      const { descendantPid } = JSON.parse(result.stdout) as { descendantPid: number }
+      expect(alive(descendantPid)).toBe(false)
+      expect(alive(bystander.pid as number), 'an unrelated process was terminated').toBe(true)
+    } finally {
+      try { process.kill(bystander.pid as number, 'SIGKILL') } catch { /* already gone */ }
+    }
+  }, 60_000)
+
+  it('does not force-kill when the leader had no descendants', async () => {
+    const result = await runChild(process.execPath, ['-e', 'process.stdout.write("solo")'], {
+      cwd: REPO, timeoutMs: 30_000, graceMs: 400,
+    })
+    expect(result.code).toBe(0)
+    expect(result.forceKilled).toBe(false)
+    expect(result.descendantsHeldStdio).toBe(false)
+    expect(result.ownedTreeState).toBe('empty')
+  }, 30_000)
 })
 
 describe('RCP-01 — partial, absent and failed arm results', () => {
