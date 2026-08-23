@@ -1217,6 +1217,46 @@ const MUTANTS = [
       'reproduces the reviewer\u2019s exact stripped report',
     ],
   },
+  {
+    name: 'C1-STRUCTURE-02: share one status domain across both levels',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: "    status: 'file-status',",
+    to: "    status: 'assertion-status',",
+    expect: [
+      'reproduces the reviewer\u2019s exact pending-file report',
+    ],
+  },
+  {
+    name: 'C1-STRUCTURE-02: stop typing nested array elements',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: "    if (typeof descriptor.value !== 'string') {",
+    to: '    if (false) {',
+    expect: [
+      'rejects a number inside ancestorTitles',
+    ],
+  },
+  {
+    name: 'C1-STRUCTURE-02: read accessors instead of refusing them',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: "    problems.push({ kind: 'malformed', detail: `${where}: \\`${key}\\` is an accessor, not stored data` })\n    return { ok: false }",
+    to: "    return { ok: true, value: owner[key] }",
+    expect: [
+      'never executes a file-status accessor',
+    ],
+  },
+  {
+    name: 'C1-STRUCTURE-02: allow nested symbol keys',
+    file: EVIDENCE_AUDIT_SRC,
+    test: EVIDENCE_AUDIT,
+    from: "  const symbols = Object.getOwnPropertySymbols(value)\n  if (symbols.length > 0) {",
+    to: "  const symbols = []\n  if (symbols.length > 0) {",
+    expect: [
+      'rejects a symbol key on the file object',
+    ],
+  },
 ]
 
 // ===== executable section; nothing below is mutant data =====
