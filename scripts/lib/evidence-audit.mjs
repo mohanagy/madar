@@ -136,9 +136,34 @@ export function recomputeAttribution({ report, requestedSuite, root }) {
 /**
  * The Vitest 4.1.10 JSON report shape this auditor depends on.
  *
- * Characterized from real green AND real red reports produced by the installed
- * reporter, not from documentation.
+ * Taken from the installed declarations in
+ * `vitest/dist/chunks/reporters.d.*.d.ts` — `JsonTestResults`, `JsonTestResult`
+ * and `JsonAssertionResult` — and cross-checked against real reports.
+ *
+ * The two status domains are NOT the same set, and treating them as one is how
+ * a file row reading `pending` was accepted as a green suite:
+ *
+ *   JsonTestResult.status       "failed" | "passed"
+ *   JsonAssertionResult.status  Status = passed | failed | skipped | pending
+ *                               | todo | disabled
  */
+export const VITEST_FILE_STATUS_VALUES = Object.freeze(['passed', 'failed'])
+
+export const VITEST_ASSERTION_STATUS_VALUES = Object.freeze([
+  'passed', 'failed', 'skipped', 'pending', 'todo', 'disabled',
+])
+
+/** Retained for callers that only need the assertion domain. */
+export const VITEST_STATUS_VALUES = VITEST_ASSERTION_STATUS_VALUES
+
+export function assertVitestFileStatus(value) {
+  return typeof value === 'string' && VITEST_FILE_STATUS_VALUES.includes(value)
+}
+
+export function assertVitestAssertionStatus(value) {
+  return typeof value === 'string' && VITEST_ASSERTION_STATUS_VALUES.includes(value)
+}
+
 export const VITEST_REPORT_SCHEMA = Object.freeze({
   top: Object.freeze({
     success: 'boolean',
@@ -151,51 +176,128 @@ export const VITEST_REPORT_SCHEMA = Object.freeze({
     numFailedTests: 'count',
     numPendingTests: 'count',
     numTodoTests: 'count',
+    startTime: 'number',
+    snapshot: 'plain-object',
     testResults: 'array',
   }),
   file: Object.freeze({
     name: 'nonempty-string',
-    status: 'status',
+    status: 'file-status',
     message: 'string',
+    startTime: 'number',
+    endTime: 'number',
     assertionResults: 'array',
   }),
   assertion: Object.freeze({
     fullName: 'string',
     title: 'string',
-    status: 'status',
-    ancestorTitles: 'array',
-    failureMessages: 'array',
+    status: 'assertion-status',
+    ancestorTitles: 'string-array',
+    // `Array<string> | null` in the installed declaration.
+    failureMessages: 'nullable-string-array',
+    tags: 'string-array',
+    meta: 'plain-object',
   }),
 })
 
-/** Status values the installed reporter emits. */
-export const VITEST_STATUS_VALUES = Object.freeze(['passed', 'failed', 'pending', 'skipped', 'todo'])
-
 const isCount = (v) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
-const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
-  && (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null)
 
-function checkField(owner, key, kind, where, problems) {
-  // Own property, never inherited: an authority reached through a prototype is
-  // not something the reporter wrote.
-  if (!Object.prototype.hasOwnProperty.call(owner, key)) {
+/**
+ * Plain-data inspection that never invokes user code.
+ *
+ * Prototype, symbol keys and descriptor kind are all examined before any value
+ * is read, so a throwing or observing getter on an authority field is rejected
+ * rather than executed.
+ */
+function inspectPlainObject(value, where, problems) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    problems.push({ kind: 'malformed', detail: `${where}: expected a plain object` })
+    return false
+  }
+  const proto = Object.getPrototypeOf(value)
+  if (proto !== Object.prototype && proto !== null) {
+    problems.push({ kind: 'malformed', detail: `${where}: object does not have a plain prototype` })
+    return false
+  }
+  const symbols = Object.getOwnPropertySymbols(value)
+  if (symbols.length > 0) {
+    problems.push({ kind: 'malformed', detail: `${where}: carries symbol key ${String(symbols[0])}` })
+    return false
+  }
+  return true
+}
+
+/** Reads an own DATA property, or reports why it cannot be read. */
+function readDataProperty(owner, key, where, problems) {
+  const descriptor = Object.getOwnPropertyDescriptor(owner, key)
+  if (descriptor === undefined) {
     problems.push({ kind: 'incomplete', detail: `${where}: missing required field \`${key}\`` })
+    return { ok: false }
+  }
+  if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+    // Never invoked: the descriptor tells us it is an accessor before we read.
+    problems.push({ kind: 'malformed', detail: `${where}: \`${key}\` is an accessor, not stored data` })
+    return { ok: false }
+  }
+  return { ok: true, value: descriptor.value }
+}
+
+function checkStringArray(value, key, where, problems, { nullable = false } = {}) {
+  if (nullable && value === null) return
+  if (!Array.isArray(value)) {
+    problems.push({ kind: 'malformed', detail: `${where}: \`${key}\` must be an array${nullable ? ' or null' : ''}` })
     return
   }
-  const value = owner[key]
+  // Indexed by hand, never `forEach`: forEach SKIPS holes and READS each
+  // element, so it would both miss a sparse authority array and invoke an
+  // accessor element -- the two things this check exists to prevent. The first
+  // version of this validator used forEach and its own controls caught it.
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    if (descriptor === undefined) {
+      problems.push({ kind: 'malformed', detail: `${where}: \`${key}[${index}]\` is a hole` })
+      continue
+    }
+    if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      problems.push({ kind: 'malformed', detail: `${where}: \`${key}[${index}]\` is an accessor` })
+      continue
+    }
+    if (typeof descriptor.value !== 'string') {
+      problems.push({
+        kind: 'malformed',
+        detail: `${where}: \`${key}[${index}]\` must be a string, got ${Array.isArray(descriptor.value) ? 'array' : typeof descriptor.value}`,
+      })
+    }
+  }
+}
+
+function checkField(owner, key, kind, where, problems) {
+  const read = readDataProperty(owner, key, where, problems)
+  if (!read.ok) return
+  const value = read.value
   const bad = (why) => problems.push({ kind: 'malformed', detail: `${where}: \`${key}\` ${why}` })
   switch (kind) {
     case 'boolean': if (typeof value !== 'boolean') bad(`must be boolean, got ${typeof value}`); break
+    case 'number': if (typeof value !== 'number' || !Number.isFinite(value)) bad('must be a finite number'); break
     case 'count': if (!isCount(value)) bad(`must be a non-negative safe integer, got ${JSON.stringify(value)}`); break
     case 'array': if (!Array.isArray(value)) bad(`must be an array, got ${typeof value}`); break
+    case 'plain-object': inspectPlainObject(value, `${where}.${key}`, problems); break
     case 'string': if (typeof value !== 'string') bad(`must be a string, got ${typeof value}`); break
     case 'nonempty-string':
       if (typeof value !== 'string') bad(`must be a string, got ${typeof value}`)
       else if (value.trim() === '') bad('must not be empty')
       break
-    case 'status':
-      if (typeof value !== 'string') bad(`must be a string, got ${typeof value}`)
-      else if (!VITEST_STATUS_VALUES.includes(value)) bad(`is not a reporter status: ${JSON.stringify(value)}`)
+    case 'string-array': checkStringArray(value, key, where, problems); break
+    case 'nullable-string-array': checkStringArray(value, key, where, problems, { nullable: true }); break
+    case 'file-status':
+      if (!assertVitestFileStatus(value)) {
+        bad(`is not a file-result status (${VITEST_FILE_STATUS_VALUES.join('|')}), got ${JSON.stringify(value)}`)
+      }
+      break
+    case 'assertion-status':
+      if (!assertVitestAssertionStatus(value)) {
+        bad(`is not an assertion status (${VITEST_ASSERTION_STATUS_VALUES.join('|')}), got ${JSON.stringify(value)}`)
+      }
       break
     default: bad('has no declared type')
   }
@@ -204,45 +306,54 @@ function checkField(owner, key, kind, where, problems) {
 /**
  * Proves a report is STRUCTURALLY usable before anything reads meaning from it.
  *
- * Absence of a failure indicator is not evidence of success. A reviewer removed
- * `success`, both failed counts, the file status and the file message from a
- * genuine green baseline, rebound the digest truthfully, and the auditor
- * derived `green`, recomputed `baseline_passed`, exited 0 and produced the
- * unchanged semantic digest. Nothing was missing from the auditor's point of
- * view because it only ever asked whether failure was PRESENT.
+ * Absence of a failure indicator is not evidence of success, and neither is a
+ * shape that merely looks approximately right. A reviewer changed one file row
+ * from `passed` to `pending` — a value legal for an ASSERTION but not for a
+ * file — and the report was accepted as `usable_complete`, `green` and
+ * `baseline_passed`, because both levels shared one status domain and nested
+ * elements were checked only with `Array.isArray`.
  *
- * Returns one of `usable_complete`, `unavailable_incomplete`,
+ * Returns `usable_complete`, `unavailable_incomplete` or
  * `unavailable_malformed`.
  */
 export function assertUsableVitestJsonReport(report) {
   const problems = []
-  if (!isPlainObject(report)) {
-    return { result: 'unavailable_malformed', problems: [{ kind: 'malformed', detail: 'report is not a plain object' }] }
-  }
-  for (const key of Object.getOwnPropertySymbols(report)) {
-    problems.push({ kind: 'malformed', detail: `report carries a symbol key ${String(key)}` })
+  if (!inspectPlainObject(report, 'report', problems)) {
+    return { result: 'unavailable_malformed', problems }
   }
   for (const [key, kind] of Object.entries(VITEST_REPORT_SCHEMA.top)) {
     checkField(report, key, kind, 'report', problems)
   }
 
-  if (Array.isArray(report.testResults)) {
-    report.testResults.forEach((file, index) => {
-      const where = `testResults[${index}]`
-      if (!isPlainObject(file)) {
-        problems.push({ kind: 'malformed', detail: `${where}: file result is not a plain object` })
-        return
+  /** Element descriptors only; never reads through the array itself. */
+  const eachElement = (array, where, visit) => {
+    for (let index = 0; index < array.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(array, String(index))
+      if (descriptor === undefined) {
+        problems.push({ kind: 'malformed', detail: `${where}[${index}]: is a hole` })
+        continue
       }
+      if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+        problems.push({ kind: 'malformed', detail: `${where}[${index}]: is an accessor` })
+        continue
+      }
+      visit(descriptor.value, index)
+    }
+  }
+
+  const files = Object.getOwnPropertyDescriptor(report, 'testResults')
+  if (files !== undefined && Array.isArray(files.value)) {
+    eachElement(files.value, 'testResults', (file, index) => {
+      const where = `testResults[${index}]`
+      if (!inspectPlainObject(file, where, problems)) return
       for (const [key, kind] of Object.entries(VITEST_REPORT_SCHEMA.file)) {
         checkField(file, key, kind, where, problems)
       }
-      if (!Array.isArray(file.assertionResults)) return
-      file.assertionResults.forEach((assertion, ai) => {
+      const rows = Object.getOwnPropertyDescriptor(file, 'assertionResults')
+      if (rows === undefined || !Array.isArray(rows.value)) return
+      eachElement(rows.value, `${where}.assertionResults`, (assertion, ai) => {
         const aWhere = `${where}.assertionResults[${ai}]`
-        if (!isPlainObject(assertion)) {
-          problems.push({ kind: 'malformed', detail: `${aWhere}: assertion is not a plain object` })
-          return
-        }
+        if (!inspectPlainObject(assertion, aWhere, problems)) return
         for (const [key, kind] of Object.entries(VITEST_REPORT_SCHEMA.assertion)) {
           checkField(assertion, key, kind, aWhere, problems)
         }
@@ -251,9 +362,7 @@ export function assertUsableVitestJsonReport(report) {
   }
 
   if (problems.length === 0) return { result: 'usable_complete', problems }
-  // Malformed dominates: a present-but-wrong field is a stronger signal than a
-  // missing one, and the control asserting it should see its own condition.
-  const malformed = problems.some((p) => p.kind === 'malformed')
+  const malformed = problems.some((entry) => entry.kind === 'malformed')
   return { result: malformed ? 'unavailable_malformed' : 'unavailable_incomplete', problems }
 }
 

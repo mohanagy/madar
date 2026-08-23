@@ -847,6 +847,256 @@ describe('semantic evidence audit — fixture shape characterization', () => {
   })
 })
 
+describe('semantic evidence audit — nested report structure is validated deeply', () => {
+  /**
+   * C1-STRUCTURE-02. Both levels shared one status domain and nested arrays
+   * were checked only with `Array.isArray`. A reviewer changed one file row
+   * from `passed` to `pending` -- legal for an ASSERTION, not for a file -- and
+   * the report was accepted as usable_complete / green / baseline_passed.
+   *
+   * The domains come from the installed declarations, not from guesswork:
+   *   JsonTestResult.status       "failed" | "passed"
+   *   JsonAssertionResult.status  passed|failed|skipped|pending|todo|disabled
+   */
+  const withReport = (mutate: (report: Record<string, unknown>) => void): AuditResult => {
+    const root = matrix()
+    const dir = dirFor(root, 'baseline')
+    const report = readJson(dir, 'vitest-report.json')
+    mutate(report)
+    writeJson(dir, 'vitest-report.json', report)
+    restamp(dir)
+    return audit(root)
+  }
+
+  const fileRow = (r: Record<string, unknown>): Record<string, unknown> =>
+    (r['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+  const assertionRow = (r: Record<string, unknown>): Record<string, unknown> =>
+    (fileRow(r)['assertionResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+
+  it('reproduces the reviewer\u2019s exact pending-file report', () => {
+    const root = matrix()
+    const dir = dirFor(root, 'baseline')
+    const report = readJson(dir, 'vitest-report.json')
+    fileRow(report)['status'] = 'pending'
+    writeJson(dir, 'vitest-report.json', report)
+    restamp(dir)
+
+    // Ordinary exit 0 retained, digest and size rebound truthfully by restamp.
+    expect((readJson(dir, 'scoring.json')['process_outcome'] as Record<string, unknown>)['exit_code']).toBe(0)
+
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('vitest_report_malformed')
+    expect(result.output).toContain('is not a file-result status')
+    expect(auditRecordFor(root, 'baseline')['report_shape']).toBe('unavailable_malformed')
+    expect(auditRecordFor(root, 'baseline')['report_status']).toBe('unavailable')
+    expect(result.output).not.toContain('evidence supports baseline_passed')
+  })
+
+  it.each(['pending', 'skipped', 'todo', 'disabled'])(
+    'rejects assertion-only status %s on a file row', (status) => {
+      const result = withReport((r) => { fileRow(r)['status'] = status })
+      expect(result.status).not.toBe(0)
+      expect(result.codes).toContain('vitest_report_malformed')
+      expect(result.output).toContain('is not a file-result status')
+    })
+
+  it.each(['passed', 'failed'])('accepts faithful file status %s', (status) => {
+    // Only the two the installed declaration permits.
+    const root = matrix()
+    const dir = dirFor(root, 'baseline')
+    const report = readJson(dir, 'vitest-report.json')
+    fileRow(report)['status'] = status
+    if (status === 'failed') {
+      report['success'] = false
+      report['numFailedTestSuites'] = 1
+    }
+    writeJson(dir, 'vitest-report.json', report)
+    restamp(dir)
+    expect(audit(root).codes).not.toContain('vitest_report_malformed')
+  })
+
+  it.each(['passed', 'failed', 'skipped', 'pending', 'todo', 'disabled'])(
+    'accepts installed assertion status %s', (status) => {
+      const result = withReport((r) => { assertionRow(r)['status'] = status })
+      expect(result.codes).not.toContain('vitest_report_malformed')
+    })
+
+  it('rejects an unknown assertion status', () => {
+    const result = withReport((r) => { assertionRow(r)['status'] = 'flaky' })
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('vitest_report_malformed')
+    expect(result.output).toContain('is not an assertion status')
+  })
+
+  it('rejects a number inside ancestorTitles', () => {
+    const result = withReport((r) => { assertionRow(r)['ancestorTitles'] = [42] })
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('vitest_report_malformed')
+    expect(result.output).toContain('ancestorTitles[0]')
+  })
+
+  it('rejects an object inside failureMessages', () => {
+    const result = withReport((r) => { assertionRow(r)['failureMessages'] = [{ message: 'x' }] })
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('vitest_report_malformed')
+    expect(result.output).toContain('failureMessages[0]')
+  })
+
+  it('accepts a null failureMessages, which the declaration permits', () => {
+    // `Array<string> | null` in JsonAssertionResult. Rejecting null would make
+    // the validator stricter than the reporter it claims to describe.
+    const result = withReport((r) => { assertionRow(r)['failureMessages'] = null })
+    expect(result.codes).not.toContain('vitest_report_malformed')
+  })
+
+  it('rejects a primitive inside the assertion collection', () => {
+    const result = withReport((r) => {
+      (fileRow(r)['assertionResults'] as unknown[])[0] = 'not an assertion'
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('vitest_report_malformed')
+    expect(result.output).toContain('expected a plain object')
+  })
+
+  it('rejects a primitive inside testResults', () => {
+    const result = withReport((r) => { (r['testResults'] as unknown[])[0] = 7 })
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('vitest_report_malformed')
+  })
+})
+
+describe('semantic evidence audit — nested accessors and symbols are refused before reading', () => {
+  /**
+   * These shapes cannot survive JSON, so they are driven directly against the
+   * validator. The invariant is not "the getter threw and we caught it" -- it
+   * is that malformed evidence is rejected BEFORE user code runs at all.
+   */
+  const realReport = (): Record<string, unknown> =>
+    JSON.parse(readFileSync(REAL_REPORT, 'utf8')) as Record<string, unknown>
+
+  const fileRow = (r: Record<string, unknown>): Record<string, unknown> =>
+    (r['testResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+  const assertionRow = (r: Record<string, unknown>): Record<string, unknown> =>
+    (fileRow(r)['assertionResults'] as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+
+  it('never executes a file-status accessor', () => {
+    let reads = 0
+    const report = realReport()
+    Object.defineProperty(fileRow(report), 'status', {
+      get() { reads += 1; throw new Error('the validator invoked a getter') },
+      configurable: true,
+      enumerable: true,
+    })
+
+    const outcome = assertUsableVitestJsonReport(report)
+    expect(reads).toBe(0)
+    expect(outcome.result).toBe('unavailable_malformed')
+    expect(outcome.problems.some((p) => /is an accessor/.test(p.detail))).toBe(true)
+  })
+
+  it('never executes an assertion-status accessor', () => {
+    let reads = 0
+    const report = realReport()
+    Object.defineProperty(assertionRow(report), 'status', {
+      get() { reads += 1; throw new Error('the validator invoked a getter') },
+      configurable: true,
+      enumerable: true,
+    })
+
+    const outcome = assertUsableVitestJsonReport(report)
+    expect(reads).toBe(0)
+    expect(outcome.result).toBe('unavailable_malformed')
+  })
+
+  it('never executes a top-level authority accessor', () => {
+    let reads = 0
+    const report = realReport()
+    Object.defineProperty(report, 'success', {
+      get() { reads += 1; throw new Error('the validator invoked a getter') },
+      configurable: true,
+      enumerable: true,
+    })
+
+    const outcome = assertUsableVitestJsonReport(report)
+    expect(reads).toBe(0)
+    expect(outcome.result).toBe('unavailable_malformed')
+  })
+
+  it('never executes an accessor inside a nested authority array', () => {
+    let reads = 0
+    const report = realReport()
+    const titles: string[] = []
+    Object.defineProperty(titles, '0', {
+      get() { reads += 1; throw new Error('the validator invoked a getter') },
+      configurable: true,
+      enumerable: true,
+    })
+    assertionRow(report)['ancestorTitles'] = titles
+
+    const outcome = assertUsableVitestJsonReport(report)
+    expect(reads).toBe(0)
+    expect(outcome.result).toBe('unavailable_malformed')
+  })
+
+  it.each([
+    ['file', (r: Record<string, unknown>) => fileRow(r)],
+    ['assertion', (r: Record<string, unknown>) => assertionRow(r)],
+    ['report', (r: Record<string, unknown>) => r],
+  ])('rejects a symbol key on the %s object', (_label, pick) => {
+    const report = realReport()
+    ;(pick(report) as Record<symbol, unknown>)[Symbol('smuggled')] = 'x'
+
+    const outcome = assertUsableVitestJsonReport(report)
+    expect(outcome.result).toBe('unavailable_malformed')
+    expect(outcome.problems.some((p) => /symbol key/.test(p.detail))).toBe(true)
+  })
+
+  it.each([
+    ['file', (r: Record<string, unknown>) => fileRow(r)],
+    ['assertion', (r: Record<string, unknown>) => assertionRow(r)],
+  ])('rejects a custom prototype on the %s object', (_label, pick) => {
+    const report = realReport()
+    Object.setPrototypeOf(pick(report), { inheritedStatus: 'passed' })
+
+    const outcome = assertUsableVitestJsonReport(report)
+    expect(outcome.result).toBe('unavailable_malformed')
+    expect(outcome.problems.some((p) => /plain prototype/.test(p.detail))).toBe(true)
+  })
+
+  it('rejects an authority reached only through a prototype', () => {
+    // Own property or nothing: an inherited value is not what the reporter
+    // wrote, even when its type is correct.
+    const report = realReport()
+    const row = fileRow(report)
+    const status = row['status']
+    delete row['status']
+    Object.setPrototypeOf(row, Object.create(Object.prototype, {
+      status: { value: status, enumerable: true },
+    }))
+
+    const outcome = assertUsableVitestJsonReport(report)
+    expect(outcome.result).toBe('unavailable_malformed')
+  })
+
+  it('rejects a hole in a nested authority array', () => {
+    const report = realReport()
+    const sparse = ['a']
+    sparse.length = 3
+    assertionRow(report)['ancestorTitles'] = sparse
+
+    const outcome = assertUsableVitestJsonReport(report)
+    expect(outcome.result).toBe('unavailable_malformed')
+    expect(outcome.problems.some((p) => /is a hole/.test(p.detail))).toBe(true)
+  })
+
+  it('accepts the untouched real report', () => {
+    // The positive counterpart: the discipline above must not reject faithful
+    // reporter output.
+    expect(assertUsableVitestJsonReport(realReport()).result).toBe('usable_complete')
+  })
+})
+
 describe('semantic evidence audit — artifact inventory completeness', () => {
   it('requires every artifact the harness is supposed to write', () => {
     // Enumerated as a control rather than trusted: an audit that silently
