@@ -1331,6 +1331,46 @@ const MUTANTS = [
       'leaves zero runner-owned timers after every settlement path',
     ],
   },
+  {
+    name: 'C1-CONTRACT: read sampleCount without a descriptor check',
+    file: GUARDS,
+    test: ARM_ENVELOPE,
+    from: "  const count = ownData(contract.value, 'sampleCount', at, problems)",
+    to: "  const count = { ok: true, value: contract.value.sampleCount }",
+    expect: [
+      'never executes an accessor-backed sampleCount',
+    ],
+  },
+  {
+    name: 'C1-CONTRACT: skip dense metric-array validation',
+    file: GUARDS,
+    test: ARM_ENVELOPE,
+    from: '    const descriptor = Object.getOwnPropertyDescriptor(list, String(index))\n    if (descriptor === undefined) {',
+    to: '    const descriptor = Object.getOwnPropertyDescriptor(list, String(index)) ?? { value: wanted.metricNames[index] }\n    if (false) {',
+    expect: [
+      'rejects a sparse hole in metricNames with the length unchanged',
+    ],
+  },
+  {
+    name: 'C1-CONTRACT: accept an accessor-backed metric index',
+    file: GUARDS,
+    test: ARM_ENVELOPE,
+    from: "      problems.push(`${listAt}[${index}]: is an accessor, not stored data`)",
+    to: '      void index',
+    expect: [
+      'never executes an accessor-backed metric index',
+    ],
+  },
+  {
+    name: 'C2-PROOF: treat an unprovable tree as empty',
+    file: CHILD_RUNNER,
+    test: RECEIPT_LIFECYCLE,
+    from: "      if (state === 'empty') { settle(); return }",
+    to: "      if (state === 'empty' || state === 'unprovable') { settle(); return }",
+    expect: [
+      'rejects with the typed error, kills the descendant and spares a bystander',
+    ],
+  },
 ]
 
 // ===== executable section; nothing below is mutant data =====
