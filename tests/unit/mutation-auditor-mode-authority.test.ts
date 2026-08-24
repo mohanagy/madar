@@ -316,6 +316,114 @@ describe('7.8 — an actual identity change with truthful rebinding', () => {
   })
 })
 
+describe('7.3b — the nested attribution representation is required', () => {
+  /** The nested result object the scorer persists beside its verdict. */
+  const nested = (dir: string): Record<string, unknown> =>
+    readJson(dir, 'scoring.json')['attribution'] as Record<string, unknown>
+
+  it('is present and carries its mode in truthful evidence', () => {
+    const dir = mutantDir(matrix())
+    expect(nested(dir)['mode']).toBe('exact_failure_set')
+    for (const field of ['declared', 'actual', 'unexpected', 'missing']) {
+      expect(Array.isArray(nested(dir)[field]), field).toBe(true)
+    }
+  })
+
+  it('7.3 detects a deleted nested mode and moves the digest', () => {
+    // The reviewer's reproduction: everything else truthful, only the nested
+    // mode removed. Absence was silence, because the mode was validated only
+    // when present.
+    const truthful = matrix()
+    const root = matrix()
+    edit(mutantDir(root), 'scoring.json', (scoring) => {
+      delete (scoring['attribution'] as Record<string, unknown>)['mode']
+    })
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('attribution_derivation_disagrees')
+    expect(digestOf(root)).not.toBe(digestOf(truthful))
+  })
+
+  it('7.4 detects a deleted nested attribution object and moves the digest', () => {
+    const truthful = matrix()
+    const root = matrix()
+    edit(mutantDir(root), 'scoring.json', (scoring) => {
+      delete scoring['attribution']
+    })
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('attribution_derivation_disagrees')
+    expect(digestOf(root)).not.toBe(digestOf(truthful))
+  })
+
+  it('7.7 detects a deleted nested mode alongside a missing identity', () => {
+    const truthful = matrix()
+    const root = matrix()
+    const dir = mutantDir(root)
+    edit(dir, 'scoring.json', (scoring) => {
+      delete (scoring['attribution'] as Record<string, unknown>)['mode']
+      scoring['observed_failed_test_identities'] = []
+    })
+    const report = JSON.parse(readFileSync(resolve(dir, 'vitest-report.json'), 'utf8')) as {
+      testResults: Array<{ assertionResults: Array<{ fullName: string; status: string }> }>
+    }
+    for (const suite of report.testResults) {
+      for (const assertion of suite.assertionResults) {
+        if (assertion.fullName === TEST_NAME) assertion.status = 'passed'
+      }
+    }
+    writeFileSync(resolve(dir, 'vitest-report.json'), JSON.stringify(report))
+    restamp(dir)
+
+    const result = audit(root)
+    expect(result.status).not.toBe(0)
+    expect(result.codes).toContain('attribution_derivation_disagrees')
+    expect(result.codes).toContain('missing_expected_failed_test')
+    expect(digestOf(root)).not.toBe(digestOf(truthful))
+  })
+})
+
+describe('7.8 — every persisted nested field is compared, not just equal', () => {
+  /**
+   * The scorer writes seven pieces of nested material. Comparing only `equal`
+   * left the other six written and never read, so the recorded identity list
+   * could be emptied while the boolean beside it still claimed agreement.
+   */
+  const cases = [
+    ['actual emptied', (n: Record<string, unknown>) => { n['actual'] = [] }],
+    ['declared emptied', (n: Record<string, unknown>) => { n['declared'] = [] }],
+    ['unexpected invented', (n: Record<string, unknown>) => { n['unexpected'] = ['something'] }],
+    ['missing invented', (n: Record<string, unknown>) => { n['missing'] = ['something'] }],
+    ['duplicateActual invented', (n: Record<string, unknown>) => { n['duplicateActual'] = ['dup'] }],
+    ['duplicateDeclared invented', (n: Record<string, unknown>) => { n['duplicateDeclared'] = ['dup'] }],
+    ['equal falsified', (n: Record<string, unknown>) => { n['equal'] = false }],
+    ['actual replaced by a non-array', (n: Record<string, unknown>) => { n['actual'] = 'twenty five' }],
+  ] as const
+
+  for (const [label, corrupt] of cases) {
+    it(`detects ${label}`, () => {
+      const root = matrix()
+      edit(mutantDir(root), 'scoring.json', (scoring) => {
+        corrupt(scoring['attribution'] as Record<string, unknown>)
+      })
+      const result = audit(root)
+      expect(result.status).not.toBe(0)
+      expect(result.codes).toContain('attribution_derivation_disagrees')
+    })
+  }
+
+  it('moves the digest for every corruption', () => {
+    const truthful = digestOf(matrix())
+    for (const [, corrupt] of cases) {
+      const root = matrix()
+      edit(mutantDir(root), 'scoring.json', (scoring) => {
+        corrupt(scoring['attribution'] as Record<string, unknown>)
+      })
+      expect(digestOf(root)).not.toBe(truthful)
+    }
+  })
+})
+
 describe('7.9 — stored scorer result corruption is still detected', () => {
   it('rejects a falsified stored equality', () => {
     const root = matrix()

@@ -860,16 +860,47 @@ export function auditEvidence({
           add(ATTRIBUTION_REASONS.failureIdentitySetMismatch, name,
             `declared ${expected.length} identities, observed ${attribution.failed.length}`)
         }
-        // The scorer's own durable verdict is cross-checked against this
-        // derivation. Agreement is the point: two independent computations of
-        // the same equality, and a disagreement is a problem in itself.
+        // Every persisted conclusion is re-derived and compared, not just the
+        // one boolean. Checking `equal` alone left the six arrays beside it
+        // written and never read: the recorded identity list could be emptied,
+        // or the whole object deleted, while `equal: true` stood and the audit
+        // passed. Absence is a failure here, never silence -- the declaration
+        // already established that exact-set material is required.
         const stored = scoring.attribution
-        if (stored !== undefined && stored !== null) {
-          const storedEqual = stored.equal === true
-          const derivedEqual = recomputeExactAttribution(expected, attribution.failed).equal
-          if (storedEqual !== derivedEqual) {
+        if (stored === undefined || stored === null) {
+          add('attribution_derivation_disagrees', name,
+            'meta declares exact_failure_set but no nested attribution result was persisted')
+        } else {
+          if (!Object.prototype.hasOwnProperty.call(stored, 'mode')) {
             add('attribution_derivation_disagrees', name,
-              `scoring recorded equal=${String(storedEqual)}, evidence derives ${String(derivedEqual)}`)
+              'nested attribution result persists no mode')
+          }
+          const derivedResult = recomputeExactAttribution(expected, attribution.failed)
+          const comparable = [
+            ['declared', [...expected].sort()],
+            ['actual', [...attribution.failed].sort()],
+            ['unexpected', derivedResult.unexpected],
+            ['missing', derivedResult.missing],
+            ['duplicateActual', derivedResult.duplicateActual],
+            ['duplicateDeclared', derivedResult.duplicateDeclared],
+          ]
+          for (const [field, derivedValue] of comparable) {
+            const storedValue = stored[field]
+            if (!Array.isArray(storedValue)) {
+              add('attribution_derivation_disagrees', name,
+                `nested attribution persists no ${field} array`)
+              continue
+            }
+            const storedSorted = [...storedValue].map(String).sort()
+            if (JSON.stringify(storedSorted) !== JSON.stringify([...derivedValue].sort())) {
+              add('attribution_derivation_disagrees', name,
+                `nested attribution ${field} disagrees with the evidence: `
+                + `recorded ${storedSorted.length}, derived ${derivedValue.length}`)
+            }
+          }
+          if ((stored.equal === true) !== derivedResult.equal) {
+            add('attribution_derivation_disagrees', name,
+              `scoring recorded equal=${String(stored.equal === true)}, evidence derives ${String(derivedResult.equal)}`)
           }
         }
       }
@@ -958,6 +989,26 @@ export function auditEvidence({
       // exact-set attribution is a semantic change rather than a silent one.
       attribution_mode: exactFailureSet ? 'exact_failure_set' : 'owning_test',
       stored_attribution_mode: scoring.attribution_mode ?? null,
+      // The nested representation, with absence stated rather than omitted. A
+      // field left out of canonical material simply cannot be missed: deleting
+      // the whole nested object used to leave the digest untouched.
+      stored_nested_attribution: (() => {
+        const stored = scoring.attribution
+        if (stored === undefined || stored === null) return { present: false }
+        const list = (value) => (Array.isArray(value) ? [...value].map(String).sort() : null)
+        return {
+          present: true,
+          mode: Object.prototype.hasOwnProperty.call(stored, 'mode') ? String(stored.mode) : null,
+          mode_present: Object.prototype.hasOwnProperty.call(stored, 'mode'),
+          declared: list(stored.declared),
+          actual: list(stored.actual),
+          unexpected: list(stored.unexpected),
+          missing: list(stored.missing),
+          duplicate_actual: list(stored.duplicateActual),
+          duplicate_declared: list(stored.duplicateDeclared),
+          equal: stored.equal === true,
+        }
+      })(),
       // Independently derived here, not copied from the scorer, so the digest
       // covers what the evidence actually shows rather than what it claims.
       derived_attribution: exactFailureSet
@@ -1020,6 +1071,7 @@ export function semanticAuditDigest(invocations) {
       observed_failed_test_identities: entry.observed_failed_test_identities,
       attribution_mode: entry.attribution_mode,
       stored_attribution_mode: entry.stored_attribution_mode,
+      stored_nested_attribution: entry.stored_nested_attribution,
       derived_attribution: entry.derived_attribution,
       classification: entry.classification,
       recomputed_classification: entry.recomputed_classification,
