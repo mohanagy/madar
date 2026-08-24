@@ -2061,6 +2061,11 @@ for (const mutant of selected) {
       mutant: mutant.name,
       file: mutant.file,
       expected: mutant.expect ?? [],
+      // The declaration of what this mutant must prove, beside the identities
+      // it must prove it against. The auditor takes the mode from HERE, never
+      // from the scoring result, so a downgraded scoring field cannot decide
+      // how strictly its own work is audited.
+      attribution_mode: mutant.exactFailureSet === true ? 'exact_failure_set' : 'owning_test',
       testFile: mutant.test,
       abandoned: reasonCode,
       outcome: notStarted,
@@ -2164,6 +2169,7 @@ for (const mutant of selected) {
       mutant: mutant.name,
       file: mutant.file,
       expected: mutant.expect ?? [],
+      attribution_mode: mutant.exactFailureSet === true ? 'exact_failure_set' : 'owning_test',
       pre_mutation_digest: preMutationDigest,
       mutated_digest: mutatedDigest,
     }, mutant.env ?? {})

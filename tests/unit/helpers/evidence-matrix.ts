@@ -34,7 +34,9 @@ export interface EvidenceMatrix {
 export const SCRATCH_PREFIX = 'madar-evidence-golden-'
 
 /** Runs the harness once and returns where its evidence landed. */
-export function produceEvidenceMatrix(options: { harness?: string } = {}): EvidenceMatrix {
+export function produceEvidenceMatrix(
+  options: { harness?: string; exactFailureSet?: boolean } = {},
+): EvidenceMatrix {
   const harness = options.harness ?? HARNESS
   const project = mkdtempSync(resolve(tmpdir(), SCRATCH_PREFIX))
   mkdirSync(resolve(project, 'src'), { recursive: true })
@@ -48,6 +50,10 @@ export function produceEvidenceMatrix(options: { harness?: string } = {}): Evide
     from: "'ORIGINAL_VALUE'",
     to: `'${MARKER}'`,
     expect: [TEST_NAME],
+    // Declared exactly as the real harness declares the shared-policy mutant,
+    // so a control exercising exact-set attribution runs against genuine
+    // harness-produced evidence rather than a hand-assembled shape.
+    ...(options.exactFailureSet === true ? { exactFailureSet: true } : {}),
   }]))
 
   try {

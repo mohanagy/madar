@@ -788,7 +788,38 @@ export function auditEvidence({
     }
 
     // ---- the classification, re-derived -----------------------------------
-    const exactFailureSet = scoring.attribution_mode === 'exact_failure_set'
+    // ---- attribution mode, taken from the DECLARATION -------------------
+    //
+    // `meta.json` declares what this mutant must prove; `scoring.json` records
+    // what the scorer concluded. Reading the mode from the conclusion let a
+    // downgraded `scoring.attribution_mode` switch the auditor to the
+    // permissive path and suppress the exact derivation entirely -- an artifact
+    // missing a declared failure then audited clean with an unchanged digest.
+    //
+    // So the authority is the declaration, and every other persisted
+    // representation is validated against it rather than consulted.
+    const declaredMode = meta.attribution_mode
+    const exactFailureSet = declaredMode === 'exact_failure_set'
+    if (kind === 'mutant') {
+      if (declaredMode !== 'exact_failure_set' && declaredMode !== 'owning_test') {
+        add('attribution_derivation_disagrees', name,
+          `meta declares no usable attribution mode: ${JSON.stringify(declaredMode ?? null)}`)
+      }
+      if (scoring.attribution_mode !== declaredMode) {
+        add('attribution_derivation_disagrees', name,
+          `meta declares ${String(declaredMode)}, scoring records ${String(scoring.attribution_mode)}`)
+      }
+      const nestedMode = scoring.attribution?.mode
+      if (nestedMode !== undefined && exactFailureSet && nestedMode !== 'exact_failure_set') {
+        add('attribution_derivation_disagrees', name,
+          `meta declares exact_failure_set, nested attribution records ${String(nestedMode)}`)
+      }
+      if (nestedMode === 'exact_failure_set' && !exactFailureSet) {
+        add('attribution_derivation_disagrees', name,
+          `meta declares ${String(declaredMode)}, nested attribution records exact_failure_set`)
+      }
+    }
+
     const recomputed = recomputeClassification({
       kind,
       expected,
@@ -926,6 +957,21 @@ export function auditEvidence({
       // Part of the digest, so switching a mutant between owning-test and
       // exact-set attribution is a semantic change rather than a silent one.
       attribution_mode: exactFailureSet ? 'exact_failure_set' : 'owning_test',
+      stored_attribution_mode: scoring.attribution_mode ?? null,
+      // Independently derived here, not copied from the scorer, so the digest
+      // covers what the evidence actually shows rather than what it claims.
+      derived_attribution: exactFailureSet
+        ? (() => {
+          const derived = recomputeExactAttribution(expected, attribution.failed)
+          return {
+            unexpected: derived.unexpected,
+            missing: derived.missing,
+            duplicate_actual: derived.duplicateActual,
+            duplicate_declared: derived.duplicateDeclared,
+            equal: derived.equal,
+          }
+        })()
+        : null,
       classification: scoring.classification,
       recomputed_classification: recomputed,
       process_outcome_class: outcomeClass,
@@ -968,6 +1014,13 @@ export function semanticAuditDigest(invocations) {
       identity: entry.identity,
       requested_suite: entry.requested_suite,
       expected_test_identities: entry.expected_test_identities,
+      // Attribution material is canonical. Without these three, a mode
+      // downgrade and a removed failure both digested identically to truthful
+      // evidence -- the digest agreed while the evidence did not.
+      observed_failed_test_identities: entry.observed_failed_test_identities,
+      attribution_mode: entry.attribution_mode,
+      stored_attribution_mode: entry.stored_attribution_mode,
+      derived_attribution: entry.derived_attribution,
       classification: entry.classification,
       recomputed_classification: entry.recomputed_classification,
       process_outcome_class: entry.process_outcome_class,
