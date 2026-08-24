@@ -1,7 +1,9 @@
 [
+  "tests/unit/artifact-v2-upgrade-and-old-reader.test.ts",
   "tests/unit/detail-retention-shape.test.ts",
   "tests/unit/endpoint-qualification-invalidation.test.ts",
   "tests/unit/exact-manifest-controls.test.ts",
+  "tests/unit/graph-artifact-old-reader-compat.test.ts",
   "tests/unit/graph-integrity-contracts.test.ts",
   "tests/unit/graph-integrity-receipt.test.ts",
   "tests/unit/integrity-closed-schemas.test.ts",
@@ -17,6 +19,7 @@
   "tests/unit/mutation-evidence-audit.test.ts",
   "tests/unit/mutation-evidence-lifecycle.test.ts",
   "tests/unit/mutation-harness-self.test.ts",
+  "tests/unit/normalized-accounting-actual-byte-compat.test.ts",
   "tests/unit/normalized-accounting-callsite-policy.test.ts",
   "tests/unit/normalized-accounting-load-modes.test.ts",
   "tests/unit/normalized-accounting-round-trip.test.ts",
