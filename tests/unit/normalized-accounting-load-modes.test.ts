@@ -21,23 +21,40 @@ const FIXED = {
 
 const NON_NORMAL_MODES = ['strict', 'qualification'] as const
 
+/**
+ * A schema-2 extraction whose endpoints are certified stable.
+ *
+ * Schema 1 classifies every endpoint as legacy, which is itself a warning
+ * family, so a schema-1 corpus can never reach `valid` however clean its
+ * candidates are. A strict positive control built on one would only prove that
+ * strict accepts warnings -- which is the defect, not the contract.
+ */
 function extraction(edges: readonly Record<string, unknown>[]): Record<string, unknown> {
+  const node = (id: string): Record<string, unknown> => ({
+    id,
+    label: id,
+    file_type: 'code',
+    source_file: `src/${id}.ts`,
+    endpointIdentity: { status: 'stable', reasons: [] },
+  })
   return {
-    schema_version: 1,
+    schema_version: 2,
     directed: true,
-    nodes: [
-      { id: 'alpha', label: 'Alpha', file_type: 'code', source_file: 'src/alpha.ts' },
-      { id: 'beta', label: 'Beta', file_type: 'code', source_file: 'src/beta.ts' },
-      { id: 'gamma', label: 'Gamma', file_type: 'code', source_file: 'src/gamma.ts' },
-    ],
+    nodes: [node('alpha'), node('beta'), node('gamma')],
     edges,
   }
 }
 
-/** Every candidate terminates cleanly: no unresolved, rejected or conflicting. */
+/**
+ * Every candidate terminates cleanly AND every retained fact is fully
+ * qualified: `contains` is an endpoint-only discriminator policy, so it names
+ * no behaviour data the producer failed to supply. `calls` is a partial policy
+ * and would retain `partial_discriminator`, which is a warning and therefore
+ * not strict-eligible.
+ */
 const CLEAN_EDGES = [
-  { source: 'alpha', target: 'beta', relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/alpha.ts' },
-  { source: 'beta', target: 'gamma', relation: 'calls', confidence: 'EXTRACTED', source_file: 'src/beta.ts' },
+  { source: 'alpha', target: 'beta', relation: 'contains', confidence: 'EXTRACTED', source_file: 'src/alpha.ts' },
+  { source: 'beta', target: 'gamma', relation: 'contains', confidence: 'EXTRACTED', source_file: 'src/beta.ts' },
 ] as const
 
 /** One missing endpoint and one unregistered relation, so candidates degrade. */
@@ -74,10 +91,12 @@ function load(source: Buffer | string, options: LoadGraphArtifactOptions = {}) {
 }
 
 describe('S3-4 — the fixtures reach the statuses these controls depend on', () => {
-  it('reaches a passing status with a clean corpus', () => {
+  it('reaches exactly valid with a clean corpus', () => {
     // Without this the strict-pass controls would be vacuous: everything would
-    // fail strict for the wrong reason.
-    expect(['valid', 'valid_with_warnings']).toContain(statusOf(CLEAN_EDGES))
+    // fail strict for the wrong reason. `valid_with_warnings` is NOT good
+    // enough here -- the previous version of this control accepted it, and that
+    // is precisely how a warning artifact passed as a strict positive.
+    expect(statusOf(CLEAN_EDGES)).toBe('valid')
   })
 
   it('reaches a degraded status with lost candidates', () => {
@@ -130,10 +149,11 @@ describe('S3-4 — strict and qualification fail closed', () => {
       expect(load(LEGACY_V1).format).toBe('v1')
     })
 
-    it(`${mode} accepts a corpus whose candidates all terminated cleanly`, () => {
+    it(`${mode} accepts a fully qualified corpus`, () => {
       // Fail-closed has to be discriminating, not blanket. A gate that refused
       // everything would pass every refusal control and prove nothing.
       const loaded = load(bytes(CLEAN_EDGES), { mode })
+      expect(loaded.normalizedAccounting!.receipt.status).toBe('valid')
       expect(loaded.graph.normalizedIntegritySnapshot()).not.toBeNull()
       expect(loaded.normalizedAccounting!.receipt.strict_mode_result).toBe('not_run')
     })
@@ -190,8 +210,7 @@ describe('S3-4 — the loader keeps one strict policy owner', () => {
           return false
         }
       })()
-      const expectStrictPass = status === 'valid' || status === 'valid_with_warnings'
-      expect(policyAllows, `${status} disagrees with the declared policy`).toBe(expectStrictPass)
+      expect(policyAllows, `${status} disagrees with the declared policy`).toBe(status === 'valid')
     }
   })
 

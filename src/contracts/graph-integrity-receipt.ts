@@ -182,11 +182,36 @@ export function buildNormalizedIntegrityReceipt(
 }
 
 /**
- * Strict mode may only report `pass` for a run that actually qualified.
+ * Strict mode may only report `pass` for a run that actually qualified, and
+ * qualifying means `valid` -- nothing weaker.
  *
- * Without this, a producer could record `strict_mode_result: 'pass'` beside a
- * degraded status and every downstream reader that trusts one field over the
- * other would disagree about the same artifact.
+ * Without the first half, a producer could record `strict_mode_result: 'pass'`
+ * beside a degraded status and every downstream reader that trusts one field
+ * over the other would disagree about the same artifact.
+ *
+ * The second half used to admit `valid_with_warnings`, and that was a false
+ * qualification. A warning is a disclosed defect, not an approved one: a
+ * retained partial required discriminator means the registry names behaviour
+ * data the producer never supplied, and an unaudited, context-bound or legacy
+ * endpoint identity means the facts are keyed on something the identity policy
+ * has not certified. #658's strict contract makes each of those fatal unless an
+ * explicit qualification authority declares an allowed boundary, and this
+ * artifact contract has no such authority to appeal to. Treating the absence of
+ * a declared exception as permission is exactly backwards for a gate whose
+ * purpose is to fail closed.
+ *
+ * So the boundary is `valid` and only `valid`. That is deliberately narrower
+ * than the warning vocabulary: a future external-boundary exception must arrive
+ * as an explicit, validated qualification policy owned by this layer, never as
+ * an inference from a warning that happens to look benign.
+ *
+ * `fail` and `not_run` stay legal at any internally consistent status --
+ * recording that strict failed, or never ran, is always truthful.
+ *
+ * This is the one owner of the question. The artifact loader delegates strict
+ * and qualification eligibility here rather than keeping a second list, so
+ * tightening this boundary tightens both modes at once and no reader can drift
+ * from it.
  */
 export function assertStrictModeResultPolicy(
   result: StrictModeResult,
@@ -195,8 +220,10 @@ export function assertStrictModeResultPolicy(
   if (result !== 'pass' && result !== 'fail' && result !== 'not_run') {
     throw new GraphIntegrityInvariantError(`strict_mode_result ${JSON.stringify(result)} is not a declared result`)
   }
-  if (result === 'pass' && status !== 'valid' && status !== 'valid_with_warnings') {
-    throw new GraphIntegrityInvariantError(`strict_mode_result cannot be pass while integrity status is ${status}`)
+  if (result === 'pass' && status !== 'valid') {
+    throw new GraphIntegrityInvariantError(
+      `strict_mode_result cannot be pass while integrity status is ${status}; strict qualification requires valid`,
+    )
   }
 }
 

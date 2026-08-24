@@ -209,16 +209,45 @@ describe('strict mode cannot claim a pass it did not earn', () => {
     expect(build({ strictModeResult: 'pass' }).strict_mode_result).toBe('pass')
   })
 
-  it('allows pass on valid_with_warnings', () => {
+  it('refuses pass on valid_with_warnings', () => {
+    // A warning is a disclosed defect, not an approved one. An unaudited
+    // endpoint identity means the facts are keyed on something the identity
+    // policy has not certified, and #658 makes that fatal for strict unless an
+    // explicit qualification authority says otherwise -- which this contract
+    // does not have. Treating the absence of a declared exception as permission
+    // is backwards for a gate that exists to fail closed.
     expect(() => build({
       strictModeResult: 'pass',
       endpointFactPairCounts: matrix({ unknown: { unknown: 3 } }),
-    })).not.toThrow()
+    })).toThrow(/strict qualification requires valid/)
   })
 
-  it.each(['degraded', 'invalid'] as const)('refuses pass while status is %s', (status) => {
-    expect(() => assertStrictModeResultPolicy('pass', status))
-      .toThrow(/cannot be pass while integrity status is/)
+  it.each(['valid_with_warnings', 'degraded', 'incompatible', 'invalid'] as const)(
+    'refuses pass while status is %s',
+    (status) => {
+      expect(() => assertStrictModeResultPolicy('pass', status))
+        .toThrow(/cannot be pass while integrity status is .*; strict qualification requires valid/)
+    },
+  )
+
+  it('names the mode boundary in the refusal rather than only the status', () => {
+    // A reader that sees only "not valid_with_warnings" cannot tell whether the
+    // boundary moved or the artifact did.
+    expect(() => assertStrictModeResultPolicy('pass', 'valid_with_warnings'))
+      .toThrow(/strict qualification requires valid/)
+  })
+
+  it('accepts pass only at valid', () => {
+    const accepted = (['valid', 'valid_with_warnings', 'degraded', 'incompatible', 'invalid'] as const)
+      .filter((status) => {
+        try {
+          assertStrictModeResultPolicy('pass', status)
+          return true
+        } catch {
+          return false
+        }
+      })
+    expect(accepted).toEqual(['valid'])
   })
 
   it('refuses a result outside the declared set', () => {
@@ -227,8 +256,12 @@ describe('strict mode cannot claim a pass it did not earn', () => {
   })
 
   it('allows fail and not_run at any status', () => {
-    expect(() => assertStrictModeResultPolicy('fail', 'invalid')).not.toThrow()
-    expect(() => assertStrictModeResultPolicy('not_run', 'degraded')).not.toThrow()
+    // Recording that strict failed, or never ran, is always truthful whatever
+    // the status -- only claiming a pass is constrained.
+    for (const status of ['valid', 'valid_with_warnings', 'degraded', 'incompatible', 'invalid'] as const) {
+      expect(() => assertStrictModeResultPolicy('fail', status), `fail at ${status}`).not.toThrow()
+      expect(() => assertStrictModeResultPolicy('not_run', status), `not_run at ${status}`).not.toThrow()
+    }
   })
 })
 
