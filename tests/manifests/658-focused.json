@@ -16,6 +16,7 @@
   "tests/unit/integrity-snapshot-total-validation.test.ts",
   "tests/unit/integrity-snapshot.test.ts",
   "tests/unit/integrity-validation-policy.test.ts",
+  "tests/unit/mutation-attribution-schema.test.ts",
   "tests/unit/mutation-auditor-mode-authority.test.ts",
   "tests/unit/mutation-evidence-audit.test.ts",
   "tests/unit/mutation-evidence-lifecycle.test.ts",

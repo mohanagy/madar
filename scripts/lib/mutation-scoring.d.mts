@@ -27,12 +27,25 @@ export interface ExactAttribution extends FailureIdentityComparison {
   readonly mode?: 'exact_failure_set'
 }
 
+/** The owning-test branch's durable conclusion. */
+export interface OwningAttribution {
+  readonly mode: 'owning_test'
+  readonly matched: readonly string[]
+  readonly unmatched: readonly string[]
+  readonly caught: boolean
+}
+
+export type PersistedAttribution = ExactAttribution | OwningAttribution
+
 export interface MutantScore {
   readonly kind: 'caught' | 'UNCAUGHT' | 'SKIPPED'
   readonly detail: string
   readonly reason?: string
-  readonly attribution?: ExactAttribution
+  readonly attribution?: PersistedAttribution
 }
+
+/** Narrows a persisted attribution to the exact-set shape. */
+export function isExactAttribution(value: PersistedAttribution | undefined): value is ExactAttribution
 
 export interface ExactDeclarationCheck {
   readonly ok: boolean

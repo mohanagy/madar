@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ATTRIBUTION_REASONS,
   compareFailureIdentitySets,
+  isExactAttribution,
   recomputeExactAttribution,
   scoreMutant,
   validateExactDeclaration,
@@ -59,11 +60,17 @@ const DECLARED = genuineIdentities()
 const at = (index: number): string => DECLARED[index] as string
 
 function score(declared: readonly (string | RegExp)[], failed: readonly string[]) {
-  return scoreMutant({
+  const result = scoreMutant({
     expect: declared,
     result: { usable: true, total: 43, failed: [...failed] },
     exactFailureSet: true,
   })
+  // Exact-set scoring only ever persists the exact-set shape; narrowing here
+  // keeps every assertion below reading the fields it means.
+  return {
+    ...result,
+    attribution: isExactAttribution(result.attribution) ? result.attribution : undefined,
+  }
 }
 
 describe('exact attribution — the declaration itself is validated', () => {

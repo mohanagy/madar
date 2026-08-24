@@ -83,6 +83,11 @@ export const ATTRIBUTION_REASONS = Object.freeze({
   invalidExactDeclaration: 'invalid_exact_declaration',
 })
 
+/** True for the exact-set shape, so callers narrow instead of casting. */
+export function isExactAttribution(value) {
+  return value !== undefined && value !== null && value.mode === 'exact_failure_set'
+}
+
 /** Entries repeated in a list, each reported once. */
 function duplicatesOf(values) {
   const seen = new Set()
@@ -190,17 +195,41 @@ export function scoreMutant({ expect: expected = [], result, exactFailureSet = f
 
   if (exactFailureSet) return scoreExactFailureSet(expected, result)
 
-  if (result.failed.length === 0) return { kind: 'UNCAUGHT', detail: 'suite stayed green' }
+  if (result.failed.length === 0) {
+    return { kind: 'UNCAUGHT', detail: 'suite stayed green', attribution: owningAttribution(expected, result.failed) }
+  }
   const hit = result.failed.filter((name) => matchesExpectation(name, expected))
   if (hit.length === 0) {
     return {
       kind: 'SKIPPED',
       detail: `only unrelated tests failed: ${result.failed[0]?.slice(0, 60) ?? ''}`,
+      attribution: owningAttribution(expected, result.failed),
     }
   }
   return {
     kind: 'caught',
     detail: `${hit.length}/${result.failed.length} expected: ${hit[0].slice(0, 48)}`,
+    attribution: owningAttribution(expected, result.failed),
+  }
+}
+
+/**
+ * The owning-test conclusion, persisted so this branch has a durable schema of
+ * its own.
+ *
+ * It previously persisted nothing, which meant an auditor had no owning-test
+ * material to re-derive and compare -- and an artifact could acquire a nested
+ * object with any mode at all without contradicting anything. A branch that
+ * records nothing cannot be audited, only trusted.
+ */
+function owningAttribution(expected, failed) {
+  const matched = failed.filter((name) => matchesExpectation(name, expected))
+  const matchedSet = new Set(matched)
+  return {
+    mode: 'owning_test',
+    matched: [...matched].sort(),
+    unmatched: failed.filter((name) => !matchedSet.has(name)).sort(),
+    caught: matched.length > 0,
   }
 }
 
