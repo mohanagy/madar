@@ -51,7 +51,11 @@ import {
   GRAPH_ARTIFACT_V2_TOMBSTONE,
   isMovedMarkerText,
 } from './graph-artifact-format.js'
-import { v2PayloadStructureError } from './graph-artifact-payload.js'
+import {
+  GRAPH_ARTIFACT_RECEIPT_STORAGE_SCHEMA_VERSION,
+  GRAPH_ARTIFACT_VERSION,
+  v2PayloadStructureError,
+} from './graph-artifact-payload.js'
 import { classifyWorkspaceGraph,
   legacyRequestResolvesToCanonical,
 } from './graph-artifact-selection.js'
@@ -65,8 +69,16 @@ export {
   isMovedMarkerText,
 }
 
-export const GRAPH_ARTIFACT_VERSION = 2 as const
-export const GRAPH_ARTIFACT_RECEIPT_STORAGE_SCHEMA_VERSION = 1 as const
+/**
+ * Re-exported, never re-declared.
+ *
+ * The writer and the workspace classifier both have to agree on which artifact
+ * version and receipt-storage schema these bytes are. They used to declare the
+ * numbers separately, so a later revision could bump one and leave the other
+ * advertising the old value for the same file. One declaration makes the drift
+ * unrepresentable rather than merely tested for.
+ */
+export { GRAPH_ARTIFACT_VERSION, GRAPH_ARTIFACT_RECEIPT_STORAGE_SCHEMA_VERSION }
 export const UNREGISTERED_RELATION_AT_STORAGE_BOUNDARY = 'unregistered_relation_at_storage_boundary' as const
 
 const EMPTY_ADMISSION_SUMMARY: StorageBoundaryAdmissionSummary = Object.freeze({
