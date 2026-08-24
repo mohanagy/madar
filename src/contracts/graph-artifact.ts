@@ -57,7 +57,10 @@ import {
   NORMALIZED_ACCOUNTING_ARTIFACT_KEY,
   v2PayloadStructureError,
 } from './graph-artifact-payload.js'
-import { assertStorageAdmissionProjection } from './graph-integrity-receipt.js'
+import {
+  assertStorageAdmissionProjection,
+  assertStrictModeResultPolicy,
+} from './graph-integrity-receipt.js'
 import {
   assertNormalizedEndpointIdentityMatchesStorage,
   assertNormalizedReceiptMatchesGraphTotals,
@@ -1078,7 +1081,47 @@ function validateHyperedges(values: readonly unknown[]): readonly unknown[] {
   return values
 }
 
-function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifact {
+/**
+ * Whether these bytes may be trusted by a caller that asked for strict or
+ * qualification mode.
+ *
+ * The rule is not restated here. `assertStrictModeResultPolicy` is the existing
+ * owner of "may a run with this status report a strict pass", and the loader
+ * asks it rather than keeping a second list that could drift from it. Missing
+ * accounting is the one case that owner cannot answer, because there is no
+ * status to ask about -- and an artifact that never accounted for its candidates
+ * is exactly what strict mode exists to refuse.
+ *
+ * Strict and qualification are deliberately identical. Splitting them would mean
+ * inventing a policy neither #658 nor the load contract declares, and the
+ * loader is not where new policy belongs.
+ *
+ * Generation records `strict_mode_result: not_run`, so eligibility is decided
+ * here, against the bytes as they stand, without rewriting them.
+ */
+function assertStrictModeEligible(
+  mode: 'strict' | 'qualification',
+  accounting: GraphArtifactNormalizedAccountingV1 | null,
+): void {
+  if (accounting === null) {
+    throw new GraphArtifactInvariantError(
+      `${mode} mode requires normalized candidate accounting; this artifact carries none`,
+    )
+  }
+  try {
+    assertStrictModeResultPolicy('pass', accounting.receipt.status)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new GraphArtifactInvariantError(
+      `${mode} mode cannot qualify this artifact: ${detail}`,
+    )
+  }
+}
+
+function loadGraphArtifactV2(
+  payload: ParsedGraphArtifactV2,
+  options: LoadGraphArtifactOptions,
+): LoadedGraphArtifact {
   const graph = new KnowledgeGraph({ directed: payload.directed })
   // One collision scope for this whole load. Every fact and occurrence id is
   // re-derived and compared with the stored id through this factory, so two
@@ -1173,6 +1216,10 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
   const accumulated = buildStorageReceipt(loadedFacts, admission)
   assertReceiptMatchesAccumulated(receipt, accumulated, loadedFacts.length)
   const normalizedAccounting = receipt.normalized_accounting ?? null
+  const mode = options.mode ?? 'normal'
+  // Before the graph is finished, not after: a caller that asked for strict got
+  // no artifact at all rather than one it then had to remember to distrust.
+  if (mode !== 'normal') assertStrictModeEligible(mode, normalizedAccounting)
   if (normalizedAccounting !== null) {
     attachLoadedNormalizedAccounting(graph, normalizedAccounting, accumulated, admission)
   }
@@ -1467,7 +1514,7 @@ export function loadGraphArtifact(
     throw new GraphArtifactMovedError()
   }
   if (text.startsWith(GRAPH_ARTIFACT_V2_HEADER)) {
-    return loadGraphArtifactV2(parseGraphArtifactV2(text))
+    return loadGraphArtifactV2(parseGraphArtifactV2(text), options)
   }
   return loadLegacyGraphArtifact(legacyJson(text), options)
 }

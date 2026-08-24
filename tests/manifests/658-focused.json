@@ -18,6 +18,7 @@
   "tests/unit/mutation-evidence-lifecycle.test.ts",
   "tests/unit/mutation-harness-self.test.ts",
   "tests/unit/normalized-accounting-callsite-policy.test.ts",
+  "tests/unit/normalized-accounting-load-modes.test.ts",
   "tests/unit/normalized-accounting-round-trip.test.ts",
   "tests/unit/normalized-accounting-serialization.test.ts",
   "tests/unit/normalized-accounting-wire-contract.test.ts",
