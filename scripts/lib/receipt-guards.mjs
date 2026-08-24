@@ -205,15 +205,26 @@ function assertClosedArray(list, expectedLength, where, problems) {
     problems.push(`${where}: ${list.length} entries, expected exactly ${expectedLength}`)
     return false
   }
-  // `length` is the standard own key and must NOT be reported; anything else
-  // that is not an in-range index is an extra the child had no business adding,
-  // enumerable or not.
-  for (const key of Object.getOwnPropertyNames(list)) {
-    if (key === 'length') continue
-    const index = Number(key)
-    if (!Number.isInteger(index) || index < 0 || index >= list.length) {
-      problems.push(`${where}: unexpected own key \`${key}\``)
-    }
+  // The allowed key set is CONSTRUCTED, not tested.
+  //
+  // Indices used to be identified with `Number(key)`. That is coercion, not
+  // validation: `Number("01") === 1`, so an extra own property named "01" was
+  // accepted as though it were index 1 -- enumerable or not. `"+1"`, `"1.0"`,
+  // `"1e0"` and `"-0"` slipped through by the same route.
+  //
+  // For a parent-declared length N the complete own string-key set is exactly
+  // `length` plus the canonical spellings String(0) .. String(N - 1). Membership
+  // is compared as strings, so only an index's canonical spelling can match and
+  // no blacklist of look-alikes is involved. Equality is checked in both
+  // directions, so a missing index is caught here as well as an extra key.
+  const allowed = new Set(['length'])
+  for (let index = 0; index < expectedLength; index += 1) allowed.add(String(index))
+  const own = new Set(Object.getOwnPropertyNames(list))
+  for (const key of own) {
+    if (!allowed.has(key)) problems.push(`${where}: unexpected own key \`${key}\``)
+  }
+  for (const key of allowed) {
+    if (!own.has(key)) problems.push(`${where}: missing own key \`${key}\``)
   }
   return true
 }

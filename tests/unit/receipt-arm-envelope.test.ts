@@ -274,6 +274,51 @@ describe('C1 — closure covers every own key, not only the enumerable ones', ()
     })).toThrow(/`sampleCount` is non-enumerable and could not have survived JSON transport/)
   })
 
+  /**
+   * `Number("01") === 1`.
+   *
+   * Identifying indices by numeric coercion accepted an EXTRA own property whose
+   * name merely looked like an in-range index -- on both closed arrays, in both
+   * enumerable and non-enumerable form. The allowed key set is now constructed
+   * from the parent-declared length and compared as strings.
+   *
+   * One control with four subcases, not four controls: both boundaries share one
+   * helper, so a single mutation of it must fail exactly one test.
+   */
+  it('rejects canonical-looking non-index own keys on every closed arm array', () => {
+    const metricsAt = /metricNames: unexpected own key `01`/
+    const samplesAt = /samples: unexpected own key `01`/
+
+    // 1. metricNames, enumerable
+    expect(check((e) => {
+      (contractOf(e)['metricNames'] as unknown as Record<string, unknown>)['01'] = 'forged'
+    })).toThrow(metricsAt)
+
+    // 2. metricNames, non-enumerable
+    expect(check((e) => { hide(contractOf(e)['metricNames'] as object, '01', 'forged') }))
+      .toThrow(metricsAt)
+
+    // 3. measurements.samples, enumerable
+    expect(check((e) => {
+      ((e['measurements'] as Record<string, unknown>)['samples'] as unknown as Record<string, unknown>)['01'] = 1
+    })).toThrow(samplesAt)
+
+    // 4. measurements.samples, non-enumerable
+    expect(check((e) => {
+      hide((e['measurements'] as Record<string, unknown>)['samples'] as object, '01', 1)
+    })).toThrow(samplesAt)
+  })
+
+  it('accepts genuine dense arrays on both boundaries', () => {
+    const descriptor = descriptorFor()
+    const envelope = envelopeFor(descriptor)
+    const metrics = contractOf(envelope)['metricNames'] as string[]
+    const samples = (envelope['measurements'] as Record<string, unknown>)['samples'] as number[]
+    expect(Object.getOwnPropertyNames(metrics)).toEqual(['0', '1', '2', '3', '4', '5', 'length'])
+    expect(Object.getOwnPropertyNames(samples)).toEqual(['0', '1', '2', '3', '4', 'length'])
+    expect(() => assertArmResult(envelope, descriptor, { where: 'arm' })).not.toThrow()
+  })
+
   // Same reasoning: metricNames and measurements.samples share one array-closure
   // helper, so their hidden-key behaviour is one control with two assertions.
   it('rejects a non-enumerable hidden key on every closed array', () => {

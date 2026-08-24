@@ -1392,13 +1392,13 @@ const MUTANTS = [
     ],
   },
   {
-    name: 'C1-CLOSURE: skip non-enumerable own keys on closed arrays',
+    name: 'C1-CANONICAL: identify array indices by numeric coercion',
     file: GUARDS,
     test: ARM_ENVELOPE,
-    from: '  for (const key of Object.getOwnPropertyNames(list)) {',
-    to: '  for (const key of Object.keys(list)) {',
+    from: "    if (!allowed.has(key)) problems.push(`${where}: unexpected own key \\`${key}\\``)",
+    to: "    if (!allowed.has(key) && !(Number.isInteger(Number(key)) && Number(key) >= 0 && Number(key) < expectedLength)) problems.push(`${where}: unexpected own key \\`${key}\\``)",
     expect: [
-      'rejects a non-enumerable hidden key on every closed array',
+      'rejects canonical-looking non-index own keys on every closed arm array',
     ],
   },
 ]
