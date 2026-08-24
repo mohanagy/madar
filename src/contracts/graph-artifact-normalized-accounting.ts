@@ -20,12 +20,18 @@
  */
 
 import {
+  ENDPOINT_IDENTITY_REASONS,
+  ENDPOINT_IDENTITY_STATUSES,
+  type EndpointIdentityReason,
+} from './endpoint-identity.js'
+import {
   GraphIntegrityInvariantError,
   assertClosedPlainDataObject,
   assertDetailRetention,
   type CandidateConflictRecord,
   type CandidateTerminalCounts,
   type DetailRetention,
+  type EndpointIdentityFactMatrix,
   type GraphIntegrityReceiptV1,
   type IntegrityReason,
   type RejectedCandidateRecord,
@@ -92,8 +98,6 @@ const RECORD_ARRAYS = [
   ['rejected', 'rejected_records'],
   ['conflicting', 'conflict_records'],
 ] as const
-
-type RecordArrayKind = (typeof RECORD_ARRAYS)[number][0]
 
 /**
  * Strictly ascending code-unit order, which is also what proves uniqueness.
@@ -386,37 +390,38 @@ export function assertNormalizedReceiptMatchesGraphTotals(
  */
 export function assertNormalizedEndpointIdentityMatchesStorage(
   receipt: GraphIntegrityReceiptV1,
-  storage: {
-    readonly fact_pair_counts: Readonly<Record<string, Readonly<Record<string, number>>>>
-    readonly reason_fact_counts: Readonly<Record<string, number | undefined>>
-  },
+  storage: StorageEndpointIdentityProjection,
 ): void {
-  for (const [sourceStatus, row] of Object.entries(receipt.endpoint_identity.fact_pair_counts)) {
-    const storageRow = storage.fact_pair_counts[sourceStatus]
-    if (storageRow === undefined) {
-      throw new GraphIntegrityInvariantError(
-        `storage receipt endpoint matrix is missing the ${sourceStatus} row the normalized receipt declares`,
-      )
-    }
-    for (const [targetStatus, count] of Object.entries(row)) {
-      if (storageRow[targetStatus] !== count) {
+  // Every declared cell, always. Iterating the vocabulary rather than whichever
+  // keys happen to be present means a missing row is a disagreement instead of
+  // a comparison that quietly never happened.
+  for (const sourceStatus of ENDPOINT_IDENTITY_STATUSES) {
+    for (const targetStatus of ENDPOINT_IDENTITY_STATUSES) {
+      const normalized = receipt.endpoint_identity.fact_pair_counts[sourceStatus]?.[targetStatus]
+      const stored = storage.fact_pair_counts[sourceStatus]?.[targetStatus]
+      if (normalized !== stored) {
         throw new GraphIntegrityInvariantError(
           `normalized endpoint matrix disagrees with the storage receipt at ${sourceStatus}/${targetStatus}: `
-          + `${count} against ${String(storageRow[targetStatus])}`,
+          + `${String(normalized)} against ${String(stored)}`,
         )
       }
     }
   }
 
-  const normalizedReasons = receipt.endpoint_identity.reason_fact_counts as Readonly<Record<string, number>>
-  const keys = new Set([...Object.keys(normalizedReasons), ...Object.keys(storage.reason_fact_counts)])
-  for (const reason of keys) {
-    if (normalizedReasons[reason] !== storage.reason_fact_counts[reason]) {
+  for (const reason of ENDPOINT_IDENTITY_REASONS) {
+    const normalized = receipt.endpoint_identity.reason_fact_counts[reason]
+    const stored = storage.reason_fact_counts[reason]
+    if (normalized !== stored) {
       throw new GraphIntegrityInvariantError(
-        `normalized endpoint reason count for ${JSON.stringify(reason)} is `
-        + `${String(normalizedReasons[reason])} but the storage receipt counted `
-        + `${String(storage.reason_fact_counts[reason])}`,
+        `normalized endpoint reason count for ${JSON.stringify(reason)} is ${String(normalized)} `
+        + `but the storage receipt counted ${String(stored)}`,
       )
     }
   }
+}
+
+/** The endpoint-identity half of #657's storage-only receipt. */
+export interface StorageEndpointIdentityProjection {
+  readonly fact_pair_counts: EndpointIdentityFactMatrix
+  readonly reason_fact_counts: Readonly<Partial<Record<EndpointIdentityReason, number>>>
 }

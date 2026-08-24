@@ -54,8 +54,15 @@ import {
 import {
   GRAPH_ARTIFACT_RECEIPT_STORAGE_SCHEMA_VERSION,
   GRAPH_ARTIFACT_VERSION,
+  NORMALIZED_ACCOUNTING_ARTIFACT_KEY,
   v2PayloadStructureError,
 } from './graph-artifact-payload.js'
+import {
+  assertNormalizedEndpointIdentityMatchesStorage,
+  assertNormalizedReceiptMatchesGraphTotals,
+  buildGraphArtifactNormalizedAccounting,
+  type GraphArtifactNormalizedAccountingV1,
+} from './graph-artifact-normalized-accounting.js'
 import { classifyWorkspaceGraph,
   legacyRequestResolvesToCanonical,
 } from './graph-artifact-selection.js'
@@ -130,6 +137,20 @@ export interface GraphArtifactStorageReceipt {
     readonly unregistered_relation_counts: Readonly<Record<string, number>>
   }
   readonly reserved: Readonly<Record<string, never>>
+}
+
+/**
+ * The storage receipt as it appears on the wire, plus #658's optional
+ * normalized accounting.
+ *
+ * Additive by construction. Every field of the storage receipt keeps its
+ * existing name and meaning, and a receipt without the additive key is exactly
+ * the receipt every pre-#658 artifact carries. Absence means "no normalized
+ * extraction boundary ran for this graph", which is not the same claim as
+ * "it ran and found nothing" -- so the key is omitted rather than zeroed.
+ */
+export interface GraphArtifactIntegrityReceipt extends GraphArtifactStorageReceipt {
+  readonly normalized_accounting?: GraphArtifactNormalizedAccountingV1
 }
 
 /**
@@ -591,6 +612,58 @@ function canonicalHyperedge(value: unknown): Record<string, unknown> {
 }
 
 /**
+ * Assembles the receipt that actually reaches the bytes.
+ *
+ * The storage fields are copied out by name rather than spread. A
+ * caller-supplied receipt is an ordinary object and may carry anything,
+ * including a hand-written `normalized_accounting`; spreading it would let a
+ * caller publish accounting no snapshot ever produced. The only accounting that
+ * can appear here is the one this graph's own finalized snapshot projects.
+ *
+ * For a graph with no snapshot the result is byte-identical to what this
+ * serializer wrote before #658 -- the additive key is absent, not zeroed.
+ * Absence is the honest report for `--cluster-only`, graph reuse, v1
+ * rehydration and every path that never ran the normalized boundary; a zeroed
+ * receipt would describe an accounting run that never happened.
+ */
+function wireIntegrityReceipt(
+  receipt: GraphArtifactStorageReceipt,
+  graph: KnowledgeGraph,
+  accumulated: GraphArtifactStorageReceipt,
+): GraphArtifactIntegrityReceipt {
+  const storage: GraphArtifactStorageReceipt = {
+    accounting_scope: receipt.accounting_scope,
+    status: receipt.status,
+    reasons: receipt.reasons,
+    endpoint_identity: receipt.endpoint_identity,
+    storage_admission: receipt.storage_admission,
+    reserved: receipt.reserved,
+  }
+
+  // O(1). The snapshot was derived once, at the end of the build that produced
+  // this graph, and any later mutation dropped it rather than letting it go
+  // stale. Nothing here re-walks facts, occurrences or candidates.
+  const snapshot = graph.normalizedIntegritySnapshot()
+  if (snapshot === null) return storage
+
+  const normalizedAccounting = buildGraphArtifactNormalizedAccounting(snapshot)
+
+  // Cross-boundary reconciliation, enforced rather than assumed. The normalized
+  // receipt's totals come from counters maintained on insertion; the graph's
+  // come from its own O(1) sizes; the endpoint matrix beside them was
+  // accumulated by walking the retained facts. Three derivations of one truth,
+  // compared before any of them is published.
+  assertNormalizedReceiptMatchesGraphTotals(normalizedAccounting.receipt, {
+    facts: graph.numberOfFacts(),
+    occurrences: graph.numberOfOccurrences(),
+    endpointPairs: graph.numberOfEndpointPairs(),
+  })
+  assertNormalizedEndpointIdentityMatchesStorage(normalizedAccounting.receipt, accumulated.endpoint_identity)
+
+  return { ...storage, [NORMALIZED_ACCOUNTING_ARTIFACT_KEY]: normalizedAccounting }
+}
+
+/**
  * The only artifact-v2 serialization boundary. All collection ordering is
  * established here, and object-key ordering is delegated to canonical JSON.
  */
@@ -622,6 +695,7 @@ export function serializeGraphArtifactV2(input: SerializeGraphArtifactV2Input): 
   } else {
     assertReceiptShape(integrityReceipt, factList.length)
   }
+  const wireReceipt = wireIntegrityReceipt(integrityReceipt, input.graph, accumulated)
 
   const payload = {
     versions: {
@@ -641,7 +715,7 @@ export function serializeGraphArtifactV2(input: SerializeGraphArtifactV2Input): 
     occurrences: occurrences.map(occurrencePayload),
     hyperedges,
     community_labels: canonicalCommunityLabels(communityLabels),
-    integrity_receipt: integrityReceipt,
+    integrity_receipt: wireReceipt,
     provenance: canonicalProvenance(input.provenance),
     reserved: {},
   }

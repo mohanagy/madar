@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { serializeCanonicalJson } from '../../src/contracts/canonical-json.js'
+import type { EndpointIdentityStatus } from '../../src/contracts/endpoint-identity.js'
 import {
   NORMALIZED_ACCOUNTING_ARTIFACT_KEY,
   NORMALIZED_ACCOUNTING_KEYS,
@@ -371,8 +372,10 @@ describe('S3-1 — cross-boundary reconciliation', () => {
   it('refuses an endpoint matrix that disagrees with storage', () => {
     const graph = built()
     const receipt = buildGraphArtifactNormalizedAccounting(graph.normalizedIntegritySnapshot()!).receipt
-    const matrix = JSON.parse(JSON.stringify(graph.endpointIdentityMatrix())) as Record<string, Record<string, number>>
-    matrix.stable!.stable = 7
+    const matrix = JSON.parse(
+      JSON.stringify(graph.endpointIdentityMatrix()),
+    ) as Record<EndpointIdentityStatus, Record<EndpointIdentityStatus, number>>
+    matrix.stable.stable = 7
     expect(() => assertNormalizedEndpointIdentityMatchesStorage(receipt, {
       fact_pair_counts: matrix,
       reason_fact_counts: graph.endpointReasonFactSummary(),
