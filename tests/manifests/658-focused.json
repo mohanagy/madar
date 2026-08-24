@@ -24,6 +24,7 @@
   "tests/unit/normalized-accounting-load-modes.test.ts",
   "tests/unit/normalized-accounting-round-trip.test.ts",
   "tests/unit/normalized-accounting-serialization.test.ts",
+  "tests/unit/normalized-accounting-strict-warning-matrix.test.ts",
   "tests/unit/normalized-accounting-wire-contract.test.ts",
   "tests/unit/normalized-candidate-accounting.test.ts",
   "tests/unit/receipt-arm-envelope.test.ts",
