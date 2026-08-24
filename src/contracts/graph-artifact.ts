@@ -57,10 +57,13 @@ import {
   NORMALIZED_ACCOUNTING_ARTIFACT_KEY,
   v2PayloadStructureError,
 } from './graph-artifact-payload.js'
+import { assertStorageAdmissionProjection } from './graph-integrity-receipt.js'
 import {
   assertNormalizedEndpointIdentityMatchesStorage,
   assertNormalizedReceiptMatchesGraphTotals,
   buildGraphArtifactNormalizedAccounting,
+  normalizedAccountingResultFromArtifact,
+  parseGraphArtifactNormalizedAccounting,
   type GraphArtifactNormalizedAccountingV1,
 } from './graph-artifact-normalized-accounting.js'
 import { classifyWorkspaceGraph,
@@ -211,9 +214,18 @@ export interface LoadedGraphArtifact {
   readonly generationMode: string
   readonly generatedAt: string
   readonly receipt: GraphArtifactStorageReceipt
+  /**
+   * The normalized accounting these bytes carried, or null when they carried
+   * none. Additive and diagnostic; the authoritative copy is attached to the
+   * graph, and the two are reconciled before either is exposed.
+   */
+  readonly normalizedAccounting: GraphArtifactNormalizedAccountingV1 | null
   readonly diagnostics: readonly string[]
   readonly recommendation?: string
 }
+
+/** Disclosed on a normal-mode load of an artifact that carries no accounting. */
+export const NORMALIZED_ACCOUNTING_UNAVAILABLE = 'normalized_accounting_unavailable' as const
 
 export interface GraphArtifactCacheIdentity {
   readonly graph_artifact_version: 1 | typeof GRAPH_ARTIFACT_VERSION
@@ -875,7 +887,7 @@ function qualificationEqual(left: EndpointIdentityQualification, right: Endpoint
     && endpointQualificationEqual(left.target, right.target)
 }
 
-function parseReceipt(value: unknown): GraphArtifactStorageReceipt {
+function parseReceipt(value: unknown): GraphArtifactIntegrityReceipt {
   const receipt = record(value, 'integrity_receipt')
   const reasons = stringArray(receipt.reasons, 'integrity_receipt.reasons')
   assertSortedUnique(reasons, 'integrity_receipt.reasons')
@@ -940,6 +952,18 @@ function parseReceipt(value: unknown): GraphArtifactStorageReceipt {
     throw new GraphArtifactInvariantError('receipt records unregistered admissions without disclosing the reason')
   }
 
+  // Optional and additive. Absent is the normal case for every artifact
+  // written before #658, and it is not the same claim as present-and-empty:
+  // absent means no normalized extraction boundary ran for these bytes.
+  // Present-and-malformed is refused here rather than degraded into absent,
+  // which would turn tampering into a silent downgrade.
+  const normalizedAccounting = Object.prototype.hasOwnProperty.call(receipt, NORMALIZED_ACCOUNTING_ARTIFACT_KEY)
+    ? parseGraphArtifactNormalizedAccounting(
+      receipt[NORMALIZED_ACCOUNTING_ARTIFACT_KEY],
+      `integrity_receipt.${NORMALIZED_ACCOUNTING_ARTIFACT_KEY}`,
+    )
+    : null
+
   return {
     accounting_scope: receipt.accounting_scope as GraphArtifactStorageReceipt['accounting_scope'],
     status: receipt.status as GraphArtifactStorageReceipt['status'],
@@ -954,6 +978,9 @@ function parseReceipt(value: unknown): GraphArtifactStorageReceipt {
       unregistered_relation_counts: admissionCounts,
     },
     reserved: {},
+    ...(normalizedAccounting !== null
+      ? { [NORMALIZED_ACCOUNTING_ARTIFACT_KEY]: normalizedAccounting }
+      : {}),
   }
 }
 
@@ -1139,11 +1166,16 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
 
   const receipt = parseReceipt(payload.integrity_receipt)
   const loadedFacts = graph.factRecords().map(({ fact }) => fact)
-  assertReceiptMatchesAccumulated(
-    receipt,
-    buildStorageReceipt(loadedFacts, receiptAdmissionSummary(receipt)),
-    loadedFacts.length,
-  )
+  // Restored before the receipt is re-derived, so the comparison runs against
+  // the graph's own summary rather than against the artifact's copy of it.
+  graph.hydrateStorageAdmissions(HYDRATION_TOKEN, receiptAdmissionSummary(receipt))
+  const admission = graph.storageAdmissionSummary()
+  const accumulated = buildStorageReceipt(loadedFacts, admission)
+  assertReceiptMatchesAccumulated(receipt, accumulated, loadedFacts.length)
+  const normalizedAccounting = receipt.normalized_accounting ?? null
+  if (normalizedAccounting !== null) {
+    attachLoadedNormalizedAccounting(graph, normalizedAccounting, accumulated, admission)
+  }
   const hyperedges = validateHyperedges(payload.hyperedges)
   graph.graph.hyperedges = [...hyperedges]
   graph.graph.community_labels = { ...payload.community_labels }
@@ -1181,8 +1213,69 @@ function loadGraphArtifactV2(payload: ParsedGraphArtifactV2): LoadedGraphArtifac
     generationMode: payload.generation_mode,
     generatedAt: payload.generated_at,
     receipt,
-    diagnostics: Object.freeze([]),
+    normalizedAccounting,
+    diagnostics: Object.freeze(
+      normalizedAccounting === null ? [NORMALIZED_ACCOUNTING_UNAVAILABLE] : [],
+    ),
   })
+}
+
+/**
+ * Reconciles decoded accounting against the graph these bytes just produced,
+ * then attaches it atomically.
+ *
+ * The loader never runs the normalized extraction boundary and never fabricates
+ * a ledger. Everything attached here was decoded, validated and compared.
+ * Reconciliation happens before attachment, so a graph can never briefly hold
+ * accounting that describes different facts.
+ *
+ * Attachment itself goes through the finalization the build path uses, which
+ * re-derives the snapshot from THIS graph's own counters. So the wire receipt is
+ * not merely copied onto the graph -- it has to agree with a snapshot derived
+ * independently from the facts that were actually hydrated.
+ */
+function attachLoadedNormalizedAccounting(
+  graph: KnowledgeGraph,
+  block: GraphArtifactNormalizedAccountingV1,
+  accumulated: GraphArtifactStorageReceipt,
+  admission: StorageBoundaryAdmissionSummary,
+): void {
+  assertNormalizedReceiptMatchesGraphTotals(block.receipt, {
+    facts: graph.numberOfFacts(),
+    occurrences: graph.numberOfOccurrences(),
+    endpointPairs: graph.numberOfEndpointPairs(),
+  })
+  assertNormalizedEndpointIdentityMatchesStorage(block.receipt, accumulated.endpoint_identity)
+  assertStorageAdmissionProjection(
+    admission.unresolvedUnregisteredRelationCandidates,
+    block.receipt,
+  )
+
+  graph.hydrateNormalizedAccounting(
+    HYDRATION_TOKEN,
+    normalizedAccountingResultFromArtifact(block),
+    admission,
+  )
+
+  // The snapshot the graph derived for itself must be the verdict the bytes
+  // declare. They run the same derivation over the same counters, so a
+  // disagreement means the bytes and the hydrated graph describe different
+  // builds -- and a reader would otherwise have two statuses to choose between.
+  const snapshot = graph.normalizedIntegritySnapshot()
+  if (snapshot === null) {
+    throw new GraphArtifactInvariantError('normalized accounting attached without producing a snapshot')
+  }
+  if (snapshot.status !== block.receipt.status) {
+    throw new GraphArtifactInvariantError(
+      `loaded normalized status ${snapshot.status} disagrees with the artifact receipt ${block.receipt.status}`,
+    )
+  }
+  if (
+    snapshot.reasons.length !== block.receipt.reasons.length
+    || snapshot.reasons.some((reason, index) => reason !== block.receipt.reasons[index])
+  ) {
+    throw new GraphArtifactInvariantError('loaded normalized reasons disagree with the artifact receipt')
+  }
 }
 
 export const MAX_LEGACY_ARTIFACT_BYTES = 100 * 1024 * 1024
@@ -1356,7 +1449,10 @@ function loadLegacyGraphArtifact(
     generationMode: 'legacy_v1_compatibility',
     generatedAt: 'legacy-unavailable',
     receipt,
-    diagnostics: Object.freeze([LEGACY_PARALLEL_FACTS_UNRECOVERABLE]),
+    // A v1 artifact predates the normalized boundary entirely. Null is the
+    // honest report; a zeroed accounting would describe a run that never was.
+    normalizedAccounting: null,
+    diagnostics: Object.freeze([LEGACY_PARALLEL_FACTS_UNRECOVERABLE, NORMALIZED_ACCOUNTING_UNAVAILABLE]),
     recommendation: 'Regenerate the graph from source to produce a native artifact v2; historical multiplicity was not recovered.',
   })
 }

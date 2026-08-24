@@ -1153,18 +1153,91 @@ export class KnowledgeGraph {
    * receipt describe a build that did not produce this graph.
    */
   attachNormalizedAccounting(result: NormalizedAccountingResult): void {
+    // The storage admission this graph accumulated itself, because a normalized
+    // build ran every candidate through `addEdge` on this very graph.
+    this.finalizeAndAttachAccounting(result, this.storageAdmissionSummary())
+  }
+
+  /**
+   * @internal Artifact-loader only. Restores the storage-boundary refusals the
+   * artifact records.
+   *
+   * A loaded graph is hydrated through `hydrateVerifiedFact`, which never
+   * reaches `addEdge`, so nothing on the load path re-counts the candidates the
+   * storage boundary refused on the machine that generated the artifact.
+   * Without this the summary reported zero for a graph whose own receipt
+   * recorded refusals -- two views of one graph disagreeing -- and republishing
+   * that graph wrote an artifact whose storage admission and normalized
+   * accounting contradicted each other, which the next load then refused.
+   *
+   * Restoring rather than re-deriving is the only option available: the refused
+   * candidates are not in the artifact, by design. What the artifact does carry
+   * is the exact per-relation tally, already validated against its own total.
+   */
+  hydrateStorageAdmissions(token: symbol, summary: StorageBoundaryAdmissionSummary): void {
+    assertHydrationToken(token)
+    if (this.unregisteredRelationAdmissions.size > 0) {
+      throw new GraphAdmissionError(
+        'storage admissions may only be restored onto a graph that has none of its own',
+      )
+    }
+    for (const [relation, count] of Object.entries(summary.unregisteredRelationCounts)) {
+      this.unregisteredRelationAdmissions.set(relation, count)
+    }
+    // Restored degradation is part of any snapshot's storage-admission summary,
+    // so a snapshot taken before this call no longer describes this graph.
+    this.invalidateIntegritySnapshot()
+  }
+
+  /**
+   * @internal Artifact-loader only. Attaches accounting decoded from artifact
+   * bytes, with the storage admission the artifact itself declares.
+   *
+   * A loaded graph is hydrated through `hydrateVerifiedFact`, which never
+   * reaches the storage boundary, so its own admission counters are empty by
+   * construction -- the refusals happened on the machine that generated the
+   * artifact. Taking the summary from the parsed storage receipt is what the v2
+   * loader already does to re-derive that receipt, and it keeps the normalized
+   * snapshot describing the build the bytes record rather than the empty
+   * replay that produced this object.
+   *
+   * Guarded by the same module-private token as verified fact hydration, so no
+   * producer outside the loader can attach accounting that never went through
+   * artifact validation.
+   */
+  hydrateNormalizedAccounting(
+    token: symbol,
+    result: NormalizedAccountingResult,
+    storageAdmission: StorageBoundaryAdmissionSummary,
+  ): void {
+    assertHydrationToken(token)
+    this.finalizeAndAttachAccounting(result, storageAdmission)
+  }
+
+  /**
+   * The one place accounting and its snapshot become graph state.
+   *
+   * Attaching twice is a typed failure: two results would mean two accounting
+   * runs claimed the same graph, and silently keeping either one would make the
+   * receipt describe a build that did not produce this graph.
+   *
+   * Finalized into a local before anything is assigned. Validation lives inside
+   * finalization, so assigning the accounting first meant a rejected payload
+   * left this graph holding accounting with no snapshot -- a state no successful
+   * call can produce, and one a later reader cannot distinguish from a
+   * legitimate one.
+   *
+   * Finalized at the end of normalized construction so it cannot go stale
+   * relative to the facts it describes; any later mutation invalidates it
+   * rather than leaving a snapshot that quietly stops being true.
+   */
+  private finalizeAndAttachAccounting(
+    result: NormalizedAccountingResult,
+    storageAdmission: StorageBoundaryAdmissionSummary,
+  ): void {
     if (this.normalizedAccounting !== null) {
       throw new NormalizedAccountingAlreadyAttachedError()
     }
-    // Finalized into a local before anything is assigned. Validation lives
-    // inside finalization, so assigning the accounting first meant a rejected
-    // payload left this graph holding accounting with no snapshot -- a state no
-    // successful call can produce, and one a later reader cannot distinguish
-    // from a legitimate one.
-    //
-    // Finalized at the end of normalized construction so it cannot go stale
-    // relative to the facts it describes; any later mutation invalidates it
-    // rather than leaving a snapshot that quietly stops being true.
     const snapshot = finalizeNormalizedIntegritySnapshot({
       accountingResult: result,
       facts: this.numberOfFacts(),
@@ -1172,7 +1245,7 @@ export class KnowledgeGraph {
       endpointPairs: this.numberOfEndpointPairs(),
       endpointIdentityMatrix: this.endpointIdentityMatrix(),
       reasonFactCounts: this.endpointReasonFactSummary(),
-      storageAdmission: this.storageAdmissionSummary(),
+      storageAdmission,
     })
     // Both fields assigned together, only after every check has passed.
     this.normalizedAccounting = result
