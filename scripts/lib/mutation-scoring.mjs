@@ -71,17 +71,126 @@ export function planMutation({ source, from, to, scopeAfter = null }) {
 }
 
 /**
+ * Reason codes for an exact-set attribution failure, so a rejection names the
+ * specific way the evidence disagreed rather than a generic mismatch.
+ */
+export const ATTRIBUTION_REASONS = Object.freeze({
+  unexpectedFailedTest: 'unexpected_failed_test',
+  missingExpectedFailedTest: 'missing_expected_failed_test',
+  duplicateFailedTestIdentity: 'duplicate_failed_test_identity',
+  duplicateDeclaredTestIdentity: 'duplicate_declared_test_identity',
+  failureIdentitySetMismatch: 'failure_identity_set_mismatch',
+  invalidExactDeclaration: 'invalid_exact_declaration',
+})
+
+/** Entries repeated in a list, each reported once. */
+function duplicatesOf(values) {
+  const seen = new Set()
+  const repeated = new Set()
+  for (const value of values) {
+    if (seen.has(value)) repeated.add(value)
+    seen.add(value)
+  }
+  return [...repeated].sort()
+}
+
+/**
+ * Validates a declaration that claims to be an exact identity set.
+ *
+ * A pattern cannot express an exact set: it says which names are acceptable,
+ * never which names must ALL be present and no others. So a regex here is not
+ * a weaker declaration, it is a different kind of claim, and accepting one
+ * would reintroduce the gap this mode exists to close.
+ */
+export function validateExactDeclaration(declared) {
+  if (!Array.isArray(declared) || declared.length === 0) {
+    return { ok: false, reason: ATTRIBUTION_REASONS.invalidExactDeclaration, detail: 'exact declaration must be a non-empty array' }
+  }
+  const nonStrings = declared.filter((entry) => typeof entry !== 'string' || entry.trim().length === 0)
+  if (nonStrings.length > 0) {
+    return {
+      ok: false,
+      reason: ATTRIBUTION_REASONS.invalidExactDeclaration,
+      detail: 'exact declaration accepts only non-empty exact strings; a pattern cannot express set equality',
+    }
+  }
+  const duplicates = duplicatesOf(declared)
+  if (duplicates.length > 0) {
+    return {
+      ok: false,
+      reason: ATTRIBUTION_REASONS.duplicateDeclaredTestIdentity,
+      detail: `declared identity repeated: ${duplicates[0]}`,
+      duplicates,
+    }
+  }
+  return { ok: true }
+}
+
+/**
+ * Compares an observed failure set against a declared one, in both directions.
+ *
+ * Order-insensitive and identity-exact. Returned whole rather than as a
+ * boolean, because the evidence has to record WHICH identity was unexpected or
+ * missing -- a bare verdict cannot be audited independently later.
+ */
+export function compareFailureIdentitySets(declared, actual) {
+  const declaredSet = new Set(declared)
+  const actualSet = new Set(actual)
+  return {
+    declared: [...declared].sort(),
+    actual: [...actual].sort(),
+    unexpected: [...actual].filter((name) => !declaredSet.has(name)).sort(),
+    missing: [...declared].filter((name) => !actualSet.has(name)).sort(),
+    duplicateActual: duplicatesOf(actual),
+    duplicateDeclared: duplicatesOf(declared),
+  }
+}
+
+/**
+ * The one derivation both the scorer and the standalone auditor run.
+ *
+ * Exported so the auditor can reach the same verdict from durable evidence
+ * without reading the scorer's conclusion. Two computations of one equality is
+ * the point; a second opinion that consults the first is not a second opinion.
+ */
+export function recomputeExactAttribution(declared, actual) {
+  const comparison = compareFailureIdentitySets(declared, actual)
+  return {
+    ...comparison,
+    equal: comparison.unexpected.length === 0
+      && comparison.missing.length === 0
+      && comparison.duplicateActual.length === 0
+      && comparison.duplicateDeclared.length === 0
+      && actual.length === declared.length,
+  }
+}
+
+/**
  * Scores one mutant against the tests that were expected to catch it.
  *
- * Only a named expected test failing counts as caught. A suite that went red
- * for some other reason is a harness failure, never evidence -- recording it as
- * caught is exactly the misattribution this scoring exists to prevent.
+ * Two modes, because two different claims are being made.
+ *
+ * The default is the original one: a mutant owns ONE test, and that named test
+ * failing is what attributes it. Other failures in the same suite are the same
+ * defect seen from another angle.
+ *
+ * `exactFailureSet` is for the bounded case where a mutant legitimately breaks
+ * a known group -- a shared policy branch consumed by a whole matrix. There the
+ * pattern form is not merely loose, it is unsound: matching says every observed
+ * failure is acceptable, and says nothing about whether an undeclared failure
+ * appeared or a declared one vanished. An independent review reproduced both:
+ * 25 declared failures plus one undeclared scored `caught` as 26/26, and 24 of
+ * the 25 scored `caught` as 24/24, each indistinguishable from the truthful
+ * result. Exact set equality in both directions is the only check that
+ * distinguishes them.
  */
-export function scoreMutant({ expect: expected = [], result }) {
+export function scoreMutant({ expect: expected = [], result, exactFailureSet = false }) {
   if (!result.usable) return { kind: 'SKIPPED', detail: result.why }
   if (expected.length === 0) return { kind: 'SKIPPED', detail: 'no expected test declared' }
-  if (result.failed.length === 0) return { kind: 'UNCAUGHT', detail: 'suite stayed green' }
 
+  if (exactFailureSet) return scoreExactFailureSet(expected, result)
+
+  if (result.failed.length === 0) return { kind: 'UNCAUGHT', detail: 'suite stayed green' }
   const hit = result.failed.filter((name) => matchesExpectation(name, expected))
   if (hit.length === 0) {
     return {
@@ -92,6 +201,86 @@ export function scoreMutant({ expect: expected = [], result }) {
   return {
     kind: 'caught',
     detail: `${hit.length}/${result.failed.length} expected: ${hit[0].slice(0, 48)}`,
+  }
+}
+
+/**
+ * The exact-set path. Every rejection carries the identities that caused it, so
+ * the standalone auditor can re-derive the same verdict from the artifact
+ * without trusting this function's conclusion.
+ */
+function scoreExactFailureSet(declared, result) {
+  const declarationCheck = validateExactDeclaration(declared)
+  if (!declarationCheck.ok) {
+    return {
+      kind: 'SKIPPED',
+      reason: declarationCheck.reason,
+      detail: declarationCheck.detail,
+      attribution: {
+        mode: 'exact_failure_set',
+        declared: Array.isArray(declared) ? [...declared].map(String).sort() : [],
+        actual: [...result.failed].sort(),
+        unexpected: [],
+        missing: [],
+        duplicateActual: duplicatesOf(result.failed),
+        duplicateDeclared: Array.isArray(declared) ? duplicatesOf(declared.map(String)) : [],
+        equal: false,
+      },
+    }
+  }
+
+  const comparison = compareFailureIdentitySets(declared, result.failed)
+  const equal = comparison.unexpected.length === 0
+    && comparison.missing.length === 0
+    && comparison.duplicateActual.length === 0
+    && comparison.duplicateDeclared.length === 0
+    && result.failed.length === declared.length
+  const attribution = { mode: 'exact_failure_set', ...comparison, equal }
+
+  if (result.failed.length === 0) {
+    return {
+      kind: 'UNCAUGHT',
+      reason: ATTRIBUTION_REASONS.missingExpectedFailedTest,
+      detail: `suite stayed green; ${comparison.missing.length} declared failures never occurred`,
+      attribution,
+    }
+  }
+  if (comparison.duplicateActual.length > 0) {
+    return {
+      kind: 'SKIPPED',
+      reason: ATTRIBUTION_REASONS.duplicateFailedTestIdentity,
+      detail: `failed identity reported twice: ${comparison.duplicateActual[0]}`,
+      attribution,
+    }
+  }
+  if (comparison.unexpected.length > 0) {
+    return {
+      kind: 'SKIPPED',
+      reason: ATTRIBUTION_REASONS.unexpectedFailedTest,
+      detail: `${comparison.unexpected.length} undeclared failure(s), first: ${comparison.unexpected[0].slice(0, 60)}`,
+      attribution,
+    }
+  }
+  if (comparison.missing.length > 0) {
+    return {
+      kind: 'SKIPPED',
+      reason: ATTRIBUTION_REASONS.missingExpectedFailedTest,
+      detail: `${comparison.missing.length} declared failure(s) absent, first: ${comparison.missing[0].slice(0, 60)}`,
+      attribution,
+    }
+  }
+  if (!equal) {
+    return {
+      kind: 'SKIPPED',
+      reason: ATTRIBUTION_REASONS.failureIdentitySetMismatch,
+      detail: `declared ${declared.length} identities, observed ${result.failed.length}`,
+      attribution,
+    }
+  }
+  return {
+    kind: 'caught',
+    detail: `exact set ${result.failed.length}/${declared.length}, 0 unexpected, 0 missing`,
+    attribution,
   }
 }
 

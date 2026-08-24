@@ -18,6 +18,7 @@
   "tests/unit/integrity-validation-policy.test.ts",
   "tests/unit/mutation-evidence-audit.test.ts",
   "tests/unit/mutation-evidence-lifecycle.test.ts",
+  "tests/unit/mutation-exact-attribution.test.ts",
   "tests/unit/mutation-harness-self.test.ts",
   "tests/unit/normalized-accounting-actual-byte-compat.test.ts",
   "tests/unit/normalized-accounting-callsite-policy.test.ts",

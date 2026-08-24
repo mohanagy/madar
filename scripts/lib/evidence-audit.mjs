@@ -19,7 +19,13 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 
-import { matchesExpectation } from './mutation-scoring.mjs'
+import {
+  ATTRIBUTION_REASONS,
+  compareFailureIdentitySets,
+  matchesExpectation,
+  recomputeExactAttribution,
+  validateExactDeclaration,
+} from './mutation-scoring.mjs'
 
 /** Artifacts every invocation must have, whatever happened to it. */
 export const REQUIRED_ARTIFACTS = Object.freeze([
@@ -521,6 +527,7 @@ export function checkStatusConcordance({ reportStatus, processStatus, signatures
  */
 export function recomputeClassification({
   kind, expected, attribution, outcome, signatures, reportUsable, concordant = true,
+  exactFailureSet = false,
 }) {
   if (signatures.length > 0) return 'infrastructure_failure'
   // Attribution is not reached while the evidence contradicts itself. A red
@@ -535,6 +542,20 @@ export function recomputeClassification({
   if (attribution.total === 0) return 'infrastructure_failure'
   if (kind === 'baseline') return attribution.failed.length === 0 ? 'baseline_passed' : 'infrastructure_failure'
   if (expected.length === 0) return 'skipped'
+  if (exactFailureSet) {
+    // Re-derived here from the declared and observed identities, never read
+    // from the scorer's verdict. An auditor that trusted the boolean would
+    // reproduce whatever mistake produced it -- which is exactly how the
+    // pattern-coverage gap survived a matrix, two audits and a checkpoint.
+    if (!validateExactDeclaration(expected).ok) return 'skipped'
+    const comparison = compareFailureIdentitySets(expected, attribution.failed)
+    if (attribution.failed.length === 0) return 'uncaught'
+    if (comparison.unexpected.length > 0) return 'skipped'
+    if (comparison.missing.length > 0) return 'skipped'
+    if (comparison.duplicateActual.length > 0) return 'skipped'
+    if (comparison.duplicateDeclared.length > 0) return 'skipped'
+    return attribution.failed.length === expected.length ? 'caught' : 'skipped'
+  }
   if (attribution.failed.length === 0) return 'uncaught'
   const hit = attribution.failed.filter((name) => matchesExpectation(name, expected))
   return hit.length === 0 ? 'skipped' : 'caught'
@@ -767,12 +788,14 @@ export function auditEvidence({
     }
 
     // ---- the classification, re-derived -----------------------------------
+    const exactFailureSet = scoring.attribution_mode === 'exact_failure_set'
     const recomputed = recomputeClassification({
       kind,
       expected,
       attribution,
       outcome,
       signatures,
+      exactFailureSet,
       reportUsable: report !== null && attribution.total > 0 && reportShape === 'usable_complete',
       concordant: outcomeAgrees && discord === null
         && validateOutcomeCoherence(outcome, { reportPresent: report !== null }).length === 0,
@@ -780,6 +803,45 @@ export function auditEvidence({
     if (scoring.classification !== recomputed) {
       add('classification_unsupported', name,
         `scoring says ${scoring.classification}, evidence supports ${recomputed}`)
+    }
+
+    // ---- exact failure-set attribution, derived independently -------------
+    if (exactFailureSet) {
+      const declarationCheck = validateExactDeclaration(expected)
+      if (!declarationCheck.ok) {
+        add(ATTRIBUTION_REASONS.invalidExactDeclaration, name, declarationCheck.detail)
+      } else {
+        const derived = compareFailureIdentitySets(expected, attribution.failed)
+        for (const identity of derived.unexpected) {
+          add(ATTRIBUTION_REASONS.unexpectedFailedTest, name, `undeclared failed test: ${identity}`)
+        }
+        for (const identity of derived.missing) {
+          add(ATTRIBUTION_REASONS.missingExpectedFailedTest, name, `declared failed test did not fail: ${identity}`)
+        }
+        for (const identity of derived.duplicateActual) {
+          add(ATTRIBUTION_REASONS.duplicateFailedTestIdentity, name, `failed identity reported twice: ${identity}`)
+        }
+        for (const identity of derived.duplicateDeclared) {
+          add(ATTRIBUTION_REASONS.duplicateDeclaredTestIdentity, name, `declared identity repeated: ${identity}`)
+        }
+        if (attribution.failed.length !== expected.length && derived.unexpected.length === 0
+          && derived.missing.length === 0) {
+          add(ATTRIBUTION_REASONS.failureIdentitySetMismatch, name,
+            `declared ${expected.length} identities, observed ${attribution.failed.length}`)
+        }
+        // The scorer's own durable verdict is cross-checked against this
+        // derivation. Agreement is the point: two independent computations of
+        // the same equality, and a disagreement is a problem in itself.
+        const stored = scoring.attribution
+        if (stored !== undefined && stored !== null) {
+          const storedEqual = stored.equal === true
+          const derivedEqual = recomputeExactAttribution(expected, attribution.failed).equal
+          if (storedEqual !== derivedEqual) {
+            add('attribution_derivation_disagrees', name,
+              `scoring recorded equal=${String(storedEqual)}, evidence derives ${String(derivedEqual)}`)
+          }
+        }
+      }
     }
 
     // ---- restoration ------------------------------------------------------
@@ -861,6 +923,9 @@ export function auditEvidence({
       requested_suite: requestedSuite,
       expected_test_identities: [...expected].sort(),
       observed_failed_test_identities: [...attribution.failed].sort(),
+      // Part of the digest, so switching a mutant between owning-test and
+      // exact-set attribution is a semantic change rather than a silent one.
+      attribution_mode: exactFailureSet ? 'exact_failure_set' : 'owning_test',
       classification: scoring.classification,
       recomputed_classification: recomputed,
       process_outcome_class: outcomeClass,

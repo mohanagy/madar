@@ -1507,14 +1507,47 @@ const MUTANTS = [
     test: STRICT_WARNING,
     from: "  if (result === 'pass' && status !== 'valid') {",
     to: "  if (result === 'pass' && status !== 'valid' && status !== 'valid_with_warnings') {",
-    // Complete attribution rather than partial. Every test this mutant breaks
-    // is declared, so `caught` reports hit/failed as N/N and an unexpected
-    // failure would change the ratio instead of hiding inside it. All of them
-    // are the same branch observed through one describe block; none is
-    // unrelated.
+    // Exact set equality, not pattern coverage.
+    //
+    // This declaration used to be one exact identity plus a broad regex, and
+    // the claim made for it -- that an unrelated failure would change the
+    // reported ratio -- was false. The ratio is matched/observed, so 25
+    // declared plus one undeclared reports 26/26 and 24 of the 25 reports
+    // 24/24: both indistinguishable from the truth. A pattern says which names
+    // are acceptable; it cannot say which must ALL be present and no others.
+    //
+    // So every identity this mutant breaks is written out, byte-for-byte as
+    // Vitest emits it, and `exactFailureSet` requires the observed set to equal
+    // this one in both directions. Adding a test to the matrix, renaming one,
+    // or losing one now fails attribution until this list is updated
+    // deliberately -- which is the intended cost.
+    exactFailureSet: true,
     expect: [
-      'the retained partial discriminator is fatal on its own is refused by strict even though every candidate was retained',
-      /^S3-W — strict and qualification fail closed on every warning family /,
+    'S3-W — strict and qualification fail closed on every warning family qualification exposes no artifact when it refuses context_bound_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family qualification exposes no artifact when it refuses legacy_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family qualification exposes no artifact when it refuses partial_discriminator_retained',
+    'S3-W — strict and qualification fail closed on every warning family qualification exposes no artifact when it refuses unknown_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family qualification refuses context_bound_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family qualification refuses context_bound_endpoint_identity with a typed artifact invariant',
+    'S3-W — strict and qualification fail closed on every warning family qualification refuses legacy_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family qualification refuses legacy_endpoint_identity with a typed artifact invariant',
+    'S3-W — strict and qualification fail closed on every warning family qualification refuses partial_discriminator_retained',
+    'S3-W — strict and qualification fail closed on every warning family qualification refuses partial_discriminator_retained with a typed artifact invariant',
+    'S3-W — strict and qualification fail closed on every warning family qualification refuses unknown_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family qualification refuses unknown_endpoint_identity with a typed artifact invariant',
+    'S3-W — strict and qualification fail closed on every warning family strict exposes no artifact when it refuses context_bound_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family strict exposes no artifact when it refuses legacy_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family strict exposes no artifact when it refuses partial_discriminator_retained',
+    'S3-W — strict and qualification fail closed on every warning family strict exposes no artifact when it refuses unknown_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family strict refuses context_bound_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family strict refuses context_bound_endpoint_identity with a typed artifact invariant',
+    'S3-W — strict and qualification fail closed on every warning family strict refuses legacy_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family strict refuses legacy_endpoint_identity with a typed artifact invariant',
+    'S3-W — strict and qualification fail closed on every warning family strict refuses partial_discriminator_retained',
+    'S3-W — strict and qualification fail closed on every warning family strict refuses partial_discriminator_retained with a typed artifact invariant',
+    'S3-W — strict and qualification fail closed on every warning family strict refuses unknown_endpoint_identity',
+    'S3-W — strict and qualification fail closed on every warning family strict refuses unknown_endpoint_identity with a typed artifact invariant',
+    'S3-W — the retained partial discriminator is fatal on its own is refused by strict even though every candidate was retained',
     ],
   },
 ]
@@ -2161,6 +2194,11 @@ for (const mutant of selected) {
       reason_code: reasonCode,
       reason_detail: reasonDetail,
       ...(score === null ? {} : { score_kind: score.kind }),
+      // Durable, so the standalone auditor can re-derive the same verdict from
+      // the artifact instead of trusting `classification`. A boolean nobody can
+      // recompute is not evidence.
+      attribution_mode: mutant.exactFailureSet === true ? 'exact_failure_set' : 'owning_test',
+      ...(score?.attribution === undefined ? {} : { attribution: score.attribution }),
       scored_at: new Date().toISOString(),
     }, null, 2)}\n`)
   }
@@ -2212,7 +2250,11 @@ for (const mutant of selected) {
     continue
   }
 
-  const score = scoreMutant({ expect: mutant.expect ?? [], result })
+  const score = scoreMutant({
+    expect: mutant.expect ?? [],
+    result,
+    exactFailureSet: mutant.exactFailureSet === true,
+  })
   writeScoring(
     score.kind === 'caught' ? 'caught'
       : score.kind === 'UNCAUGHT' ? 'uncaught' : 'skipped',
