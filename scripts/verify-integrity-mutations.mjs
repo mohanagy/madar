@@ -48,6 +48,9 @@ const REGISTRY_SRC = 'scripts/lib/resource-registry.mjs'
 const CHILD_RUNNER = 'scripts/lib/child-runner.mjs'
 const MUTATIONS_SELF = 'scripts/verify-integrity-mutations.mjs'
 const SCORING_SRC = 'scripts/lib/mutation-scoring.mjs'
+const ARTIFACT = 'src/contracts/graph-artifact.ts'
+const WIRE = 'src/contracts/graph-artifact-normalized-accounting.ts'
+const PINNED_SOURCE = 'tests/unit/helpers/pinned-source-module.ts'
 
 const SHARE_SAFETY = 'tests/unit/integrity-record-share-safety.test.ts'
 const ACCOUNTING = 'tests/unit/normalized-candidate-accounting.test.ts'
@@ -74,6 +77,11 @@ const EVIDENCE_AUDIT = 'tests/unit/mutation-evidence-audit.test.ts'
 const RECEIPT_LIFECYCLE = 'tests/unit/receipt-child-lifecycle.test.ts'
 const ARM_ENVELOPE = 'tests/unit/receipt-arm-envelope.test.ts'
 const EVIDENCE_HELPER = 'tests/unit/helpers/evidence-matrix.ts'
+const WIRE_CONTRACT = 'tests/unit/normalized-accounting-wire-contract.test.ts'
+const SERIALIZATION = 'tests/unit/normalized-accounting-serialization.test.ts'
+const ROUND_TRIP = 'tests/unit/normalized-accounting-round-trip.test.ts'
+const LOAD_MODES = 'tests/unit/normalized-accounting-load-modes.test.ts'
+const BYTE_COMPAT = 'tests/unit/normalized-accounting-actual-byte-compat.test.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -1399,6 +1407,91 @@ const MUTANTS = [
     to: "    if (!allowed.has(key) && !(Number.isInteger(Number(key)) && Number(key) >= 0 && Number(key) < expectedLength)) problems.push(`${where}: unexpected own key \\`${key}\\``)",
     expect: [
       'rejects canonical-looking non-index own keys on every closed arm array',
+    ],
+  },
+
+  // ----- Stage 3: the seams that turn a finalized snapshot into artifact bytes
+  // and back. Each one names the single control that would notice if it broke.
+  {
+    name: 'S3-EMIT: omit normalized accounting despite a snapshot',
+    file: ARTIFACT,
+    test: SERIALIZATION,
+    from: '  if (snapshot === null) return storage',
+    to: '  if (snapshot !== undefined) return storage',
+    expect: [
+      'emits normalized accounting for an accounted build',
+    ],
+  },
+  {
+    name: 'S3-ABSENCE: stop omitting the block when there is no snapshot',
+    file: ARTIFACT,
+    test: SERIALIZATION,
+    from: '  const snapshot = graph.normalizedIntegritySnapshot()\n  if (snapshot === null) return storage',
+    to: '  const snapshot = graph.normalizedIntegritySnapshot()',
+    expect: [
+      'omits the key entirely when no normalized boundary ran',
+    ],
+  },
+  {
+    name: 'S3-TOTALS: skip graph-total reconciliation on write',
+    file: ARTIFACT,
+    test: SERIALIZATION,
+    from: '  assertNormalizedReceiptMatchesGraphTotals(normalizedAccounting.receipt, {\n    facts: graph.numberOfFacts(),\n    occurrences: graph.numberOfOccurrences(),\n    endpointPairs: graph.numberOfEndpointPairs(),\n  })',
+    to: '  void normalizedAccounting',
+    expect: [
+      'refuses a snapshot whose totals disagree with the graph',
+    ],
+  },
+  {
+    name: 'S3-ADMISSION: skip the storage-admission projection check',
+    file: WIRE,
+    test: SERIALIZATION,
+    from: '  assertStorageAdmissionProjection(\n    snapshot.storageAdmission.unresolvedUnregisteredRelationCandidates,\n    receipt,\n  )',
+    to: '  void snapshot',
+    expect: [
+      'refuses a snapshot whose storage admission is not a projection',
+    ],
+  },
+  {
+    name: 'S3-RECEIPT: accept a tampered normalized receipt on load',
+    file: WIRE,
+    test: ROUND_TRIP,
+    from: '  assertNormalizedIntegrityReceipt(block.receipt)',
+    to: '  void block.receipt',
+    expect: [
+      'refuses a forged valid status',
+      'refuses a wrong receipt version',
+    ],
+  },
+  {
+    name: 'S3-STRICT: accept a strict load with no normalized accounting',
+    file: ARTIFACT,
+    test: LOAD_MODES,
+    from: "      `${mode} mode requires normalized candidate accounting; this artifact carries none`,",
+    to: "      `${mode} mode notes that this artifact carries no normalized candidate accounting`,",
+    expect: [
+      'strict refuses an artifact carrying no normalized accounting',
+      'qualification refuses an artifact carrying no normalized accounting',
+    ],
+  },
+  {
+    name: 'S3-ATOMIC: attach accounting before its snapshot is finalized',
+    file: GRAPH,
+    test: ROUND_TRIP,
+    from: '    const snapshot = finalizeNormalizedIntegritySnapshot({\n      accountingResult: result,',
+    to: '    this.normalizedAccounting = result\n    const snapshot = finalizeNormalizedIntegritySnapshot({\n      accountingResult: result,',
+    expect: [
+      'leaves both accounting and snapshot null when attachment fails',
+    ],
+  },
+  {
+    name: 'S3-PINNED: read the compatibility loader from the working tree',
+    file: PINNED_SOURCE,
+    test: BYTE_COMPAT,
+    from: "  return execFileSync('git', ['show', `${commit}:${path}`], {",
+    to: "  return execFileSync('git', ['show', `HEAD:${path}`], {",
+    expect: [
+      'reads the pinned commit rather than the working tree',
     ],
   },
 ]
