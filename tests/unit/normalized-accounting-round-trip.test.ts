@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import { describe, expect, it } from 'vitest'
 
 import { serializeCanonicalJson } from '../../src/contracts/canonical-json.js'
@@ -12,6 +14,7 @@ import {
 } from '../../src/contracts/graph-artifact.js'
 import { NORMALIZED_ACCOUNTING_ARTIFACT_KEY } from '../../src/contracts/graph-artifact-payload.js'
 import { GraphIntegrityInvariantError } from '../../src/contracts/graph-integrity.js'
+import { NormalizedAccountingSession } from '../../src/contracts/graph-integrity-session.js'
 import { buildFromJson } from '../../src/pipeline/build.js'
 
 function extraction(): Record<string, unknown> {
@@ -342,6 +345,83 @@ describe('S3-3 — a loaded graph reports the degradation its artifact records',
     for (const loaded of [loadGraphArtifact(bytes), loadGraphArtifact(bytes)]) {
       expect(loaded.graph.storageAdmissionSummary().unresolvedUnregisteredRelationCandidates).toBe(1)
     }
+  })
+})
+
+describe('S3-3 — conflict records round-trip with their complete-set digest', () => {
+  /**
+   * A conflict group cannot be provoked from a corpus the way an unresolved
+   * candidate can, so this attaches a session result to a graph whose facts it
+   * actually describes. The graph is real and so are the two retained
+   * candidates; only the conflict is constructed.
+   */
+  function withConflict(fingerprints: readonly string[]): KnowledgeGraph {
+    const graph = buildFromJson(
+      { ...extraction(), edges: (extraction().edges as unknown[]).slice(0, 2) },
+      { directed: true },
+    )
+    const session = new NormalizedAccountingSession()
+    for (let index = 0; index < graph.numberOfFacts(); index += 1) {
+      session.dispose(`cf_retained_${index}`, { state: 'retained_new_fact' })
+    }
+    session.dispose('cf_conflict', {
+      state: 'conflicting',
+      reasons: ['conflicting_behavior_metadata'],
+      groupFingerprints: [...fingerprints],
+    })
+    graph.attachNormalizedAccounting(session.finalize())
+    return graph
+  }
+
+  /** Real content addresses: the validator refuses anything shorter. */
+  const address = (seed: string): string =>
+    `cf_${createHash('sha256').update(seed).digest('hex')}`
+  const group = Object.freeze(['a', 'b', 'c', 'd'].map(address))
+
+  it('round-trips a conflict record through actual bytes', () => {
+    const original = withConflict(group)
+    const loaded = loadGraphArtifact(bytesOf(original))
+    expect(loaded.normalizedAccounting!.conflict_records).toHaveLength(1)
+    expect(loaded.graph.normalizedIntegritySnapshot()!.conflictRecords)
+      .toEqual(original.normalizedIntegritySnapshot()!.conflictRecords)
+  })
+
+  it('carries the complete-set digest', () => {
+    const record = loadGraphArtifact(bytesOf(withConflict(group))).normalizedAccounting!.conflict_records[0]!
+    expect(record.fingerprintSetDigest).toMatch(/^cs_[a-f0-9]{64}$/)
+    // Canonically ordered by the retention bound, never by arrival order.
+    expect(record.candidateFingerprints).toEqual([...group].sort())
+  })
+
+  it('refuses a digest that does not match its own complete set', () => {
+    const bytes = reframe(bytesOf(withConflict(group)), (payload) => {
+      const receipt = payload.integrity_receipt as Record<string, unknown>
+      const block = receipt[NORMALIZED_ACCOUNTING_ARTIFACT_KEY] as Record<string, unknown>
+      const record = (block.conflict_records as Record<string, unknown>[])[0]!
+      record.candidateFingerprints = [...group, address('e')].sort()
+    })
+    expect(() => loadGraphArtifact(bytes))
+      .toThrow(/does not match its own complete fingerprint set|does not match the record's own identity payload/)
+  })
+
+  it('refuses a conflict id that does not match its own identity payload', () => {
+    const bytes = reframe(bytesOf(withConflict(group)), (payload) => {
+      const receipt = payload.integrity_receipt as Record<string, unknown>
+      const block = receipt[NORMALIZED_ACCOUNTING_ARTIFACT_KEY] as Record<string, unknown>
+      const record = (block.conflict_records as Record<string, unknown>[])[0]!
+      record.reasons = ['malformed_candidate']
+    })
+    expect(() => loadGraphArtifact(bytes)).toThrow(/does not match the record's own identity payload/)
+  })
+
+  it('refuses a conflict record whose fingerprint is not a content address', () => {
+    const bytes = reframe(bytesOf(withConflict(group)), (payload) => {
+      const receipt = payload.integrity_receipt as Record<string, unknown>
+      const block = receipt[NORMALIZED_ACCOUNTING_ARTIFACT_KEY] as Record<string, unknown>
+      const record = (block.conflict_records as Record<string, unknown>[])[0]!
+      record.candidateFingerprints = ['cf_short', ...group.slice(1)]
+    })
+    expect(() => loadGraphArtifact(bytes)).toThrow(/must be cf_ followed by/)
   })
 })
 

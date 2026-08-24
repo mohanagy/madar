@@ -1,3 +1,7 @@
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
@@ -9,6 +13,7 @@ import {
 } from '../../src/contracts/graph-artifact.js'
 import { NORMALIZED_ACCOUNTING_ARTIFACT_KEY } from '../../src/contracts/graph-artifact-payload.js'
 import { GraphIntegrityInvariantError } from '../../src/contracts/graph-integrity.js'
+import { activateGraphArtifactV2InDirectory } from '../../src/infrastructure/graph-artifact-activation.js'
 import { buildFromJson } from '../../src/pipeline/build.js'
 
 function extraction(): Record<string, unknown> {
@@ -268,6 +273,68 @@ describe('S3-2 — invalid accounting does not reach the bytes', () => {
     } as never)
     expect(() => serialize(graph)).toThrow(GraphIntegrityInvariantError)
     vi.restoreAllMocks()
+  })
+})
+
+describe('S3-2 — an invalid snapshot leaves the published workspace untouched', () => {
+  function workspaceWith(bytes: Buffer): string {
+    const dir = mkdtempSync(join(tmpdir(), 'madar-atomic-'))
+    activateGraphArtifactV2InDirectory(dir, bytes)
+    return dir
+  }
+
+  it('writes no artifact at all into a fresh workspace', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'madar-atomic-'))
+    try {
+      const graph = accounted()
+      const snapshot = graph.normalizedIntegritySnapshot()!
+      vi.spyOn(graph, 'normalizedIntegritySnapshot')
+        .mockReturnValue({ ...snapshot, status: 'valid' } as never)
+      // The refusal happens inside the serializer, before the activation
+      // primitive is reached, so there is nothing to roll back.
+      expect(() => activateGraphArtifactV2InDirectory(dir, serialize(graph)))
+        .toThrow(GraphIntegrityInvariantError)
+      vi.restoreAllMocks()
+      expect(readdirSync(dir)).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves a previously published artifact byte-for-byte intact', () => {
+    const published = serialize(accounted())
+    const dir = workspaceWith(published)
+    try {
+      const graph = accounted()
+      const snapshot = graph.normalizedIntegritySnapshot()!
+      vi.spyOn(graph, 'normalizedIntegritySnapshot').mockReturnValue({
+        ...snapshot,
+        graphTotals: { ...snapshot.graphTotals, facts: snapshot.graphTotals.facts + 1 },
+      } as never)
+      expect(() => activateGraphArtifactV2InDirectory(dir, serialize(graph))).toThrow()
+      vi.restoreAllMocks()
+      expect(readFileSync(join(dir, 'graph.madar')).equals(published)).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves no temporary output behind', () => {
+    const dir = workspaceWith(serialize(accounted()))
+    try {
+      const graph = accounted()
+      const snapshot = graph.normalizedIntegritySnapshot()!
+      vi.spyOn(graph, 'normalizedIntegritySnapshot')
+        .mockReturnValue({ ...snapshot, status: 'valid' } as never)
+      expect(() => activateGraphArtifactV2InDirectory(dir, serialize(graph))).toThrow()
+      vi.restoreAllMocks()
+      // A partially written normalized block must never survive as a staged
+      // file a later run could mistake for output.
+      expect(readdirSync(dir).filter((entry) => entry.includes('tmp') || entry.endsWith('.partial')))
+        .toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
