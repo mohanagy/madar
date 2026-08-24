@@ -586,10 +586,17 @@ export class KnowledgeGraph {
     // spend.
     this.invalidateIntegritySnapshot()
     this.endpointMatrix[fact.endpointIdentity.source.status]![fact.endpointIdentity.target.status] += 1
-    for (const endpoint of [fact.endpointIdentity.source, fact.endpointIdentity.target]) {
-      for (const reason of endpoint.reasons) {
-        this.endpointReasonFactCounts.set(reason, (this.endpointReasonFactCounts.get(reason) ?? 0) + 1)
-      }
+    // A FACT count, deduplicated across the pair. #657's storage receipt has
+    // always counted one fact once per applicable reason, and this counter is
+    // the same diagnostic maintained incrementally rather than by a second walk
+    // -- so counting per endpoint made a fact whose source and target share a
+    // reason contribute twice, and the two receipts described the same facts
+    // with different numbers.
+    for (const reason of new Set([
+      ...fact.endpointIdentity.source.reasons,
+      ...fact.endpointIdentity.target.reasons,
+    ])) {
+      this.endpointReasonFactCounts.set(reason, (this.endpointReasonFactCounts.get(reason) ?? 0) + 1)
     }
     this.addFactIndexEntry(this.sourceFactIndex, fact.source, fact.id)
     this.addFactIndexEntry(this.targetFactIndex, fact.target, fact.id)

@@ -72,6 +72,22 @@ describe('R3 — production attaches one complete snapshot', () => {
     expect(sum).toBe(graph.numberOfFacts())
   })
 
+  it('counts each fact once per endpoint reason, not once per endpoint', () => {
+    // Both endpoints of every fact in this corpus carry the same reason. The
+    // counter is maintained incrementally rather than by a second walk, and it
+    // incremented per endpoint -- so a fact whose source and target shared a
+    // reason contributed twice, and this diagnostic reported more facts than
+    // the graph holds. #657's storage receipt has always deduplicated here, and
+    // the two describe the same facts.
+    const graph = built()
+    const snapshot = graph.normalizedIntegritySnapshot()!
+    for (const [reason, count] of Object.entries(snapshot.reasonFactCounts)) {
+      expect(count, `${reason} exceeds the retained fact count`)
+        .toBeLessThanOrEqual(graph.numberOfFacts())
+    }
+    expect(snapshot.reasonFactCounts.legacy_identity_policy).toBe(graph.numberOfFacts())
+  })
+
   it('reconciles the storage-admission summary exactly', () => {
     const graph = built()
     const snapshot = graph.normalizedIntegritySnapshot()!
