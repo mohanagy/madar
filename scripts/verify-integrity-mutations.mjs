@@ -51,6 +51,7 @@ const SCORING_SRC = 'scripts/lib/mutation-scoring.mjs'
 const ARTIFACT = 'src/contracts/graph-artifact.ts'
 const WIRE = 'src/contracts/graph-artifact-normalized-accounting.ts'
 const PINNED_SOURCE = 'tests/unit/helpers/pinned-source-module.ts'
+const RECEIPT_SRC = 'src/contracts/graph-integrity-receipt.ts'
 
 const SHARE_SAFETY = 'tests/unit/integrity-record-share-safety.test.ts'
 const ACCOUNTING = 'tests/unit/normalized-candidate-accounting.test.ts'
@@ -82,6 +83,7 @@ const SERIALIZATION = 'tests/unit/normalized-accounting-serialization.test.ts'
 const ROUND_TRIP = 'tests/unit/normalized-accounting-round-trip.test.ts'
 const LOAD_MODES = 'tests/unit/normalized-accounting-load-modes.test.ts'
 const BYTE_COMPAT = 'tests/unit/normalized-accounting-actual-byte-compat.test.ts'
+const STRICT_WARNING = 'tests/unit/normalized-accounting-strict-warning-matrix.test.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -1492,6 +1494,27 @@ const MUTANTS = [
     to: "  return execFileSync('git', ['show', `HEAD:${path}`], {",
     expect: [
       'reads the pinned commit rather than the working tree',
+    ],
+  },
+  {
+    // The exact defect an independent review reproduced against actual bytes:
+    // the single strict policy owner admitting a disclosed warning as a
+    // qualification. One mutant, not four, because all four warning families
+    // pass through this one branch -- separate mutants per family would test
+    // the same line four times and attribute nothing new.
+    name: 'S3-STRICT-WARN: let valid_with_warnings pass strict policy',
+    file: RECEIPT_SRC,
+    test: STRICT_WARNING,
+    from: "  if (result === 'pass' && status !== 'valid') {",
+    to: "  if (result === 'pass' && status !== 'valid' && status !== 'valid_with_warnings') {",
+    // Complete attribution rather than partial. Every test this mutant breaks
+    // is declared, so `caught` reports hit/failed as N/N and an unexpected
+    // failure would change the ratio instead of hiding inside it. All of them
+    // are the same branch observed through one describe block; none is
+    // unrelated.
+    expect: [
+      'the retained partial discriminator is fatal on its own is refused by strict even though every candidate was retained',
+      /^S3-W — strict and qualification fail closed on every warning family /,
     ],
   },
 ]
