@@ -1101,15 +1101,15 @@ function validateHyperedges(values: readonly unknown[]): readonly unknown[] {
  */
 function assertStrictModeEligible(
   mode: 'strict' | 'qualification',
-  accounting: GraphArtifactNormalizedAccountingV1 | null,
+  block: GraphArtifactNormalizedAccountingV1 | null,
 ): void {
-  if (accounting === null) {
+  if (block === null) {
     throw new GraphArtifactInvariantError(
       `${mode} mode requires normalized candidate accounting; this artifact carries none`,
     )
   }
   try {
-    assertStrictModeResultPolicy('pass', accounting.receipt.status)
+    assertStrictModeResultPolicy('pass', block.receipt.status)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     throw new GraphArtifactInvariantError(
