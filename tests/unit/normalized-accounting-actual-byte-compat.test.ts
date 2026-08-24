@@ -277,12 +277,29 @@ describe('S3-5 — current loader, current bytes', () => {
   })
 
   it('behaves in strict mode exactly as the declared policy says', () => {
+    // The boundary is `valid` and only `valid`. This control previously also
+    // admitted `valid_with_warnings`, and a real generated corpus lands there
+    // -- so it was asserting the very acceptance that `S3-STRICT-WARN-01`
+    // identified as a false qualification.
     const status = currentLoad().normalizedAccounting!.receipt.status
-    const qualifies = status === 'valid' || status === 'valid_with_warnings'
-    if (qualifies) {
+    if (status === 'valid') {
       expect(loadGraphArtifact(currentBytes(), { mode: 'strict' }).format).toBe('v2')
     } else {
-      expect(() => loadGraphArtifact(currentBytes(), { mode: 'strict' })).toThrow()
+      expect(() => loadGraphArtifact(currentBytes(), { mode: 'strict' }))
+        .toThrow(/strict qualification requires valid/)
+    }
+  })
+
+  it('is a warning-state corpus, so strict refuses it', () => {
+    // Stated rather than left implicit: real extracted TypeScript retains
+    // partial discriminators and unaudited endpoint identities, so a genuinely
+    // generated artifact is not strict-eligible today. Anything else here would
+    // mean the warning families had stopped being reachable from real input.
+    const receipt = currentLoad().normalizedAccounting!.receipt
+    expect(receipt.status).toBe('valid_with_warnings')
+    for (const mode of ['strict', 'qualification'] as const) {
+      expect(() => loadGraphArtifact(currentBytes(), { mode }))
+        .toThrow(/strict qualification requires valid/)
     }
   })
 })
