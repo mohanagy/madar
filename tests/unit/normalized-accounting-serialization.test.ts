@@ -353,6 +353,26 @@ describe('S3-2 — a caller cannot publish accounting the graph never produced',
     expect(Object.keys(written)).not.toContain(NORMALIZED_ACCOUNTING_ARTIFACT_KEY)
   })
 
+  it('refuses a supplied receipt whose storage admission disagrees with the block', () => {
+    // Both boundaries describe one event. An artifact that disagreed with
+    // itself about it would fail its own reload, so it is never written.
+    const graph = accounted()
+    const supplied = receiptOf(graph) as unknown as Record<string, unknown>
+    delete supplied[NORMALIZED_ACCOUNTING_ARTIFACT_KEY]
+    // The reason is left in place, so the receipt stays self-consistent and the
+    // existing accumulated-receipt comparison has nothing to say about it. Only
+    // the cross-boundary equality catches this.
+    supplied.storage_admission = {
+      unresolved_unregistered_relation_candidates: 0,
+      unregistered_relation_counts: {},
+    }
+    expect(() => serializeGraphArtifactV2({
+      graph,
+      ...FIXED,
+      integrityReceipt: supplied as never,
+    })).toThrow(/storage admission counted 0/)
+  })
+
   it('emits the graph own accounting even when the supplied receipt has none', () => {
     const graph = accounted()
     const supplied = { ...(receiptOf(graph) as GraphArtifactIntegrityReceipt) }

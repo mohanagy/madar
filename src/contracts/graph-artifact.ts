@@ -674,6 +674,15 @@ function wireIntegrityReceipt(
     endpointPairs: graph.numberOfEndpointPairs(),
   })
   assertNormalizedEndpointIdentityMatchesStorage(normalizedAccounting.receipt, accumulated.endpoint_identity)
+  // The same equality the loader will check when it reads these bytes back,
+  // asserted against the storage receipt actually being written rather than
+  // against the snapshot the block was derived from. A caller-supplied receipt
+  // brings its own storage admission, and an artifact whose two boundaries
+  // disagree about one event would fail its own reload.
+  assertStorageAdmissionProjection(
+    storage.storage_admission.unresolved_unregistered_relation_candidates,
+    normalizedAccounting.receipt,
+  )
 
   return { ...storage, [NORMALIZED_ACCOUNTING_ARTIFACT_KEY]: normalizedAccounting }
 }
