@@ -42,6 +42,15 @@ describe('WP-01 — the key folds exactly what the platform folds', () => {
     expect(canonicalPathKey('\\\\?\\C:\\repo')).toBe(canonicalPathKey('C:\\repo'))
   })
 
+  it.runIf(onWindows)('maps the extended-length UNC form back to a network path', () => {
+    // A network checkout is the other spelling `realpathSync` can return.
+    // Stripping the generic prefix first leaves `UNC\server\share`, which
+    // never matches the `//server/share` git prints -- the same disagreement
+    // between the two sources that this helper removes for drive paths.
+    expect(canonicalPathKey('\\\\?\\UNC\\server\\share\\repo'))
+      .toBe(canonicalPathKey('//server/share/repo'))
+  })
+
   it.runIf(onWindows)('folds separators and drive-letter case on Windows', () => {
     expect(canonicalPathKey('C:\\Users\\runner\\repo')).toBe(canonicalPathKey('c:/users/runner/repo'))
     expect(canonicalPathKey('C:/repo/')).toBe(canonicalPathKey('c:\\repo'))

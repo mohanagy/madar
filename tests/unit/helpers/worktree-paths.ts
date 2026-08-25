@@ -37,8 +37,13 @@ const isWindows = process.platform === 'win32'
  */
 export function canonicalPathKey(path: string): string {
   let key = path
+  // The extended-length UNC form maps back to a plain `\\server\share`, which
+  // is what git prints. Stripping the generic prefix first would leave
+  // `UNC\server\share` and reintroduce the same disagreement between the two
+  // sources that this helper exists to remove for drive paths.
+  if (key.startsWith('\\\\?\\UNC\\')) key = `\\\\${key.slice('\\\\?\\UNC\\'.length)}`
   // Extended-length prefix, which `realpathSync` may add and git never emits.
-  if (key.startsWith('\\\\?\\')) key = key.slice('\\\\?\\'.length)
+  else if (key.startsWith('\\\\?\\')) key = key.slice('\\\\?\\'.length)
   // Git porcelain reports forward slashes on every platform.
   if (isWindows) key = key.replace(/\\/g, '/')
   // A trailing separator names the same directory; the root itself keeps its.

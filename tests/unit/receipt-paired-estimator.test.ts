@@ -1,7 +1,10 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
+
+import { carryForwardSupersededEstimates } from '../../scripts/lib/receipt-estimate-history.mjs'
 
 /**
  * The receipt runner's ratio must describe a comparison that actually happened.
@@ -141,4 +144,78 @@ describe('PE-02 — every tracked receipt uses that estimator', () => {
       expect(quotient).toBeCloseTo(comparison.ratio as number, 2)
     })
   }
+})
+
+
+describe('PE-03 — regenerating a migrated receipt keeps its history', () => {
+  /**
+   * The runner produces the corrected estimator fields and knows nothing about
+   * what they replaced. Regenerating a migrated receipt in place would
+   * therefore delete `superseded_estimate` silently -- and PE-02 above requires
+   * that field on every tracked paired comparison, so the contract would fail
+   * on some later run rather than at the moment the history was lost.
+   */
+  const scratch: string[] = []
+  afterAll(() => {
+    for (const dir of scratch.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  function previousReceipt(body: unknown): string {
+    const dir = mkdtempSync(join(tmpdir(), 'madar-receipt-history-'))
+    scratch.push(dir)
+    const path = join(dir, 'receipt.json')
+    writeFileSync(path, JSON.stringify(body, null, 2))
+    return path
+  }
+
+  const migrated = {
+    performance: {
+      comparisons: [{
+        corpus_scope: 'src-only',
+        superseded_estimate: { reason: 'PERF-PAIR-01', ratio: 0.976 },
+        ratio: 1.015,
+      }],
+    },
+  }
+
+  const regenerated = JSON.stringify({
+    performance: { comparisons: [{ corpus_scope: 'src-only', ratio: 1.015 }] },
+  }, null, 2)
+
+  it('carries the prior estimate onto the regenerated comparison', () => {
+    const path = previousReceipt(migrated)
+    const merged = JSON.parse(carryForwardSupersededEstimates(regenerated, path)) as typeof migrated
+    expect(merged.performance.comparisons[0]?.superseded_estimate)
+      .toEqual({ reason: 'PERF-PAIR-01', ratio: 0.976 })
+  })
+
+  it('does not disturb the freshly measured figures', () => {
+    const path = previousReceipt(migrated)
+    const merged = JSON.parse(carryForwardSupersededEstimates(regenerated, path)) as typeof migrated
+    // The history is additive: the new measurement is what it measured.
+    expect(merged.performance.comparisons[0]?.ratio).toBe(1.015)
+  })
+
+  it('matches by corpus scope rather than by position', () => {
+    const path = previousReceipt(migrated)
+    const other = JSON.stringify({
+      performance: { comparisons: [{ corpus_scope: 'src-plus-tests-js-ts', ratio: 1.1 }] },
+    })
+    const merged = JSON.parse(carryForwardSupersededEstimates(other, path)) as typeof migrated
+    // A scope the previous file did not carry gets nothing invented for it.
+    expect(merged.performance.comparisons[0]?.superseded_estimate).toBeUndefined()
+  })
+
+  it('leaves output unchanged when there is no previous receipt', () => {
+    expect(carryForwardSupersededEstimates(regenerated, join(tmpdir(), 'madar-no-such-receipt.json')))
+      .toBe(regenerated)
+  })
+
+  it('does not fail a fresh measurement over an unreadable previous receipt', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'madar-receipt-bad-'))
+    scratch.push(dir)
+    const path = join(dir, 'receipt.json')
+    writeFileSync(path, '{ not valid json')
+    expect(carryForwardSupersededEstimates(regenerated, path)).toBe(regenerated)
+  })
 })

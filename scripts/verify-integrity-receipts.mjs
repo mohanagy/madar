@@ -20,6 +20,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
+import { carryForwardSupersededEstimates } from './lib/receipt-estimate-history.mjs'
 import { closeSync, existsSync, fsyncSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -640,6 +641,7 @@ async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT,
 }
 
 
+
 let performance = {
   baseline: 'not supplied',
   qualifies: false,
@@ -699,7 +701,7 @@ const receipt = {
 
 assertPhaseAdmitted('receipt write')
 const rendered = JSON.stringify(receipt, null, 2)
-if (OUT !== null) writeFileSync(resolve(ROOT, OUT), `${rendered}\n`)
+if (OUT !== null) writeFileSync(resolve(ROOT, OUT), `${carryForwardSupersededEstimates(rendered, resolve(ROOT, OUT))}\n`)
 console.log(rendered)
 
 const balanced = receipts.every((entry) => entry.equation_balances)
