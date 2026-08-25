@@ -82,9 +82,9 @@ function processTable(): string {
   return execFileSync('ps', ['-eo', 'pid,command'], { encoding: 'utf8', maxBuffer: 1 << 26 })
 }
 
-/** Rows of the process table carrying `marker`, never the probe itself. */
-function markedRows(marker: string): string[] {
-  return processTable()
+/** Rows of `table` carrying `marker`, never the probe itself. */
+function rowsIn(table: string, marker: string): string[] {
+  return table
     .split('\n')
     .filter((line) => line.includes(marker))
     // The probe's own command line mentions the marker on some shells.
@@ -93,11 +93,16 @@ function markedRows(marker: string): string[] {
     .filter((line) => line.length > 0)
 }
 
+/** Rows of the process table carrying `marker`, never the probe itself. */
+function markedRows(marker: string): string[] {
+  return rowsIn(processTable(), marker)
+}
+
 /** Counts processes still carrying one of this run's markers. */
 const livingMarked = (marker: string): number => markedRows(marker).length
 
-const reapMarked = (marker: string): void => {
-  for (const line of markedRows(marker)) {
+const reapMarkedIn = (table: string, marker: string): void => {
+  for (const line of rowsIn(table, marker)) {
     const pid = Number(line.trim().split(/\s+/)[0])
     if (Number.isSafeInteger(pid) && pid > 1) {
       try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
@@ -106,12 +111,23 @@ const reapMarked = (marker: string): void => {
 }
 
 afterEach(() => {
-  for (const marker of descendantMarkers.splice(0)) reapMarked(marker)
+  // One process-table read for every marker, not one per marker. Reading it is
+  // cheap on POSIX and expensive on Windows, where each PowerShell start costs
+  // roughly a second, and this hook reaps several markers.
+  const markers = descendantMarkers.splice(0)
+  if (markers.length > 0) {
+    const table = processTable()
+    for (const marker of markers) reapMarkedIn(table, marker)
+  }
   for (const dir of worktrees.splice(0)) {
     try { execFileSync('git', ['worktree', 'remove', '--force', dir], { cwd: REPO }) } catch { /* already gone */ }
   }
   for (const dir of scratch.splice(0)) rmSync(dir, { recursive: true, force: true })
-})
+  // Vitest's default hook timeout is 10s. Removing a worktree that has had
+  // `npm ci` and `npm run build` run inside it is a large delete, and on
+  // Windows it is slow enough to exceed that -- the hook timed out there while
+  // the tests it was cleaning up after had all passed.
+}, 180_000)
 
 const scratchDir = (prefix: string): string => {
   const dir = mkdtempSync(join(tmpdir(), prefix))
