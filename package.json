@@ -67,7 +67,12 @@
         "release:verify": "node .github/scripts/verify-release-hygiene.mjs",
         "verify:pack-parity": "node .github/scripts/verify-packed-retrieval-parity.mjs",
         "registry:validate": "node .github/scripts/validate-mcp-registry.mjs",
-        "qualify:validate": "node .github/scripts/validate-qualification-contract.mjs"
+        "qualify:validate": "node .github/scripts/validate-qualification-contract.mjs",
+        "verify:integrity-mutations": "node scripts/verify-integrity-mutations.mjs && MADAR_MUTATION_HARNESS_E2E=1 npx vitest run tests/unit/mutation-harness-self.test.ts",
+        "verify:integrity-receipts": "node scripts/verify-integrity-receipts.mjs",
+        "verify:658-manifest": "node scripts/run-exact-manifest.mjs tests/manifests/658-focused.json",
+    "audit:mutation-evidence": "node scripts/audit-mutation-evidence.mjs",
+        "verify:receipt-signals": "MADAR_RECEIPT_SIGNAL_E2E=1 npx vitest run tests/unit/receipt-signal-responsiveness.test.ts"
     },
     "devDependencies": {
         "@types/node": "^26.0.0",

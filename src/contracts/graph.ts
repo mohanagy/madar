@@ -1,9 +1,18 @@
+import { compareUnicodeCodePoints } from './canonical-json.js'
+import type { NormalizedAccountingResult } from './graph-integrity-session.js'
+import {
+  finalizeNormalizedIntegritySnapshot,
+  type FinalizedNormalizedIntegritySnapshot,
+} from './graph-integrity-snapshot.js'
 import { serializeCanonicalJson, type CanonicalJson } from './canonical-json.js'
 import {
+  ENDPOINT_IDENTITY_STATUSES,
   EndpointIdentityInvariantError,
   normalizeNodeEndpointIdentityQualification,
   validateEndpointIdentityEndpointQualification,
   type EndpointIdentityEndpointQualification,
+  type EndpointIdentityReason,
+  type EndpointIdentityStatus,
 } from './endpoint-identity.js'
 import {
   createEvidenceOccurrence,
@@ -85,12 +94,23 @@ export interface GraphAddEdgeOptions {
   readonly legacyCompatibility?: 'v1-artifact-loader'
 }
 
+/**
+ * Whether an occurrence was newly indexed or merged into one already stored.
+ *
+ * Additive for #658: without it a caller cannot tell a candidate that added a
+ * distinct observation (`retained_additional_occurrence`) from one that was an
+ * exact repeat (`deliberately_merged_duplicate`). `addOccurrence` already knows
+ * -- it looks the id up before storing -- but returned only the id.
+ */
+export type EvidenceOccurrenceDisposition = 'inserted' | 'merged'
+
 export type GraphEdgeAdmissionResult =
   | Readonly<{
     status: 'stored'
     factId: SemanticFactId
     duplicate: boolean
     occurrenceId?: EvidenceOccurrenceId
+    occurrenceDisposition?: EvidenceOccurrenceDisposition
   }>
   | Readonly<{
     status: 'unresolved_degraded'
@@ -117,6 +137,22 @@ export function artifactHydrationToken(caller: 'graph-artifact-loader'): symbol 
     throw new GraphAdmissionError('Verified hydration is reserved for the artifact loader')
   }
   return ARTIFACT_HYDRATION_TOKEN
+}
+
+function emptyEndpointMatrix(): Record<EndpointIdentityStatus, Record<EndpointIdentityStatus, number>> {
+  const matrix = {} as Record<EndpointIdentityStatus, Record<EndpointIdentityStatus, number>>
+  for (const source of ENDPOINT_IDENTITY_STATUSES) {
+    matrix[source] = {} as Record<EndpointIdentityStatus, number>
+    for (const target of ENDPOINT_IDENTITY_STATUSES) matrix[source]![target] = 0
+  }
+  return matrix
+}
+
+export class NormalizedAccountingAlreadyAttachedError extends Error {
+  constructor() {
+    super('normalized candidate accounting has already been attached to this graph')
+    this.name = 'NormalizedAccountingAlreadyAttachedError'
+  }
 }
 
 export class GraphAdmissionError extends Error {
@@ -455,6 +491,35 @@ export class KnowledgeGraph {
    * unresolved candidates remains #658's responsibility.
    */
   private readonly unregisteredRelationAdmissions = new Map<string, number>()
+  /**
+   * Finalized normalized-boundary accounting for the build that produced this
+   * graph, or null when no build ran -- `--cluster-only` and graph-reuse paths
+   * perform zero `buildFromJson` calls, and reporting seven zeros for them
+   * would describe an accounting run that never happened.
+   */
+  private normalizedAccounting: NormalizedAccountingResult | null = null
+  private integritySnapshot: FinalizedNormalizedIntegritySnapshot | null = null
+
+  /**
+   * The one place a successful mutation drops the finalized snapshot.
+   *
+   * Called *after* a mutation succeeds, never before and never on a failed or
+   * no-op path. A snapshot that stops matching the graph is worse than no
+   * snapshot, because it serializes as authoritative -- but invalidating on a
+   * failed operation would be its own defect, discarding a still-truthful
+   * snapshot because something else threw.
+   *
+   * Recomputation deliberately does not happen here or in any read accessor.
+   * Serialization must ask for a freshly finalized snapshot instead, so the
+   * cost is paid once at a known point rather than at an arbitrary read.
+   */
+  private invalidateIntegritySnapshot(): void {
+    this.integritySnapshot = null
+  }
+  /** Source-status x target-status fact counts, maintained during insertion. */
+  private readonly endpointMatrix: Record<EndpointIdentityStatus, Record<EndpointIdentityStatus, number>> =
+    emptyEndpointMatrix()
+  private readonly endpointReasonFactCounts = new Map<EndpointIdentityReason, number>()
   /** Invalidated by every endpoint-pair mutation; see endpointEntries(). */
   private endpointEntriesCache: readonly GraphEndpointEntry[] | null = null
 
@@ -471,11 +536,34 @@ export class KnowledgeGraph {
   }
 
   addNode(id: string, attributes: GraphAttributes): void {
+    // Everything that can reject runs before anything is written, so a refused
+    // node leaves the graph and any attached snapshot exactly as they were.
     assertGraphAttributesWritable(attributes)
     const qualification = normalizeNodeEndpointIdentityQualification(attributes)
     const { endpointIdentity: _endpointIdentity, ...storedAttributes } = attributes
+
+    // Sameness spans BOTH halves of node state. Endpoint qualification is
+    // stripped out of the stored attributes, so comparing only those reported
+    // "unchanged" for a node whose qualification had just changed, and the
+    // snapshot survived a real state change.
+    //
+    // Existing facts are untouched by this: a fact captures its endpoint
+    // qualification at admission, and the endpoint matrix and reason counts
+    // accumulate from that captured value rather than from this map. A
+    // qualification change therefore alters what FUTURE facts would record,
+    // which is a graph-state change the snapshot must not outlive, without
+    // making any already-stored fact disagree with the counters derived from it.
+    const previous = this.nodeMap.get(id)
+    const canonical = (value: unknown): string => (
+      serializeCanonicalJson(value as CanonicalJson, { arraySemantics: 'ordered' })
+    )
+    const unchanged = previous !== undefined
+      && canonical(previous) === canonical(storedAttributes)
+      && canonical(this.nodeEndpointIdentityMap.get(id)) === canonical(qualification)
+
     this.nodeMap.set(id, storedAttributes)
     this.nodeEndpointIdentityMap.set(id, qualification)
+    if (!unchanged) this.invalidateIntegritySnapshot()
     if (!this.successorMap.has(id)) {
       this.successorMap.set(id, new Set())
     }
@@ -493,6 +581,24 @@ export class KnowledgeGraph {
    */
   private indexVerifiedFact(fact: SemanticFact, attributes: GraphAttributes): void {
     this.factMap.set(fact.id, { fact, attributes: { ...attributes } })
+    // Accumulated here, on the single existing insertion path, rather than by a
+    // second walk over every fact at serialization time. #705 already carries an
+    // accepted load exception, so another full accumulation is not available to
+    // spend.
+    this.invalidateIntegritySnapshot()
+    this.endpointMatrix[fact.endpointIdentity.source.status]![fact.endpointIdentity.target.status] += 1
+    // A FACT count, deduplicated across the pair. #657's storage receipt has
+    // always counted one fact once per applicable reason, and this counter is
+    // the same diagnostic maintained incrementally rather than by a second walk
+    // -- so counting per endpoint made a fact whose source and target share a
+    // reason contribute twice, and the two receipts described the same facts
+    // with different numbers.
+    for (const reason of new Set([
+      ...fact.endpointIdentity.source.reasons,
+      ...fact.endpointIdentity.target.reasons,
+    ])) {
+      this.endpointReasonFactCounts.set(reason, (this.endpointReasonFactCounts.get(reason) ?? 0) + 1)
+    }
     this.addFactIndexEntry(this.sourceFactIndex, fact.source, fact.id)
     this.addFactIndexEntry(this.targetFactIndex, fact.target, fact.id)
     this.addFactIndexEntry(this.relationFactIndex, fact.relation, fact.id)
@@ -561,10 +667,13 @@ export class KnowledgeGraph {
       }
       return
     }
-    this.occurrenceMap.set(occurrence.id, occurrence)
     const factOccurrences = this.factOccurrenceIndex.get(occurrence.factId)
+    // Looked up before storing: a missing index would otherwise leave the
+    // occurrence map mutated by a call that reports failure.
     if (factOccurrences === undefined) throw new MissingSemanticFactError(occurrence.factId)
+    this.occurrenceMap.set(occurrence.id, occurrence)
     factOccurrences.add(occurrence.id)
+    this.invalidateIntegritySnapshot()
   }
 
   addEdge(
@@ -605,6 +714,9 @@ export class KnowledgeGraph {
         relation,
         (this.unregisteredRelationAdmissions.get(relation) ?? 0) + 1,
       )
+      // Storage admission is part of the snapshot's storage-admission summary,
+      // so recording one makes any existing snapshot stale.
+      this.invalidateIntegritySnapshot()
       return Object.freeze({
         status: 'unresolved_degraded' as const,
         relation,
@@ -643,24 +755,28 @@ export class KnowledgeGraph {
       })
     const existing = this.factMap.get(fact.id)
     if (existing !== undefined) {
-      if (occurrence !== null) this.addOccurrence(occurrence)
+      const inserted = occurrence !== null ? this.insertOccurrence(occurrence) : null
       return Object.freeze({
         status: 'stored' as const,
         factId: fact.id,
         duplicate: true,
-        ...(occurrence !== null ? { occurrenceId: occurrence.id } : {}),
+        ...(inserted !== null
+          ? { occurrenceId: inserted.id, occurrenceDisposition: inserted.disposition }
+          : {}),
       })
     }
 
     this.indexVerifiedFact(fact, attributes)
 
-    if (occurrence !== null) this.addOccurrence(occurrence)
+    const inserted = occurrence !== null ? this.insertOccurrence(occurrence) : null
 
     return Object.freeze({
       status: 'stored' as const,
       factId: fact.id,
       duplicate: false,
-      ...(occurrence !== null ? { occurrenceId: occurrence.id } : {}),
+      ...(inserted !== null
+        ? { occurrenceId: inserted.id, occurrenceDisposition: inserted.disposition }
+        : {}),
     })
   }
 
@@ -718,6 +834,17 @@ export class KnowledgeGraph {
   }
 
   addOccurrence(occurrence: EvidenceOccurrence): EvidenceOccurrenceId {
+    return this.insertOccurrence(occurrence).id
+  }
+
+  /**
+   * Insertion core. Reports whether the occurrence was newly indexed or merged
+   * into an existing one; `addOccurrence` keeps its original id-only signature
+   * for the three copy/federation callers that do not need the distinction.
+   */
+  private insertOccurrence(
+    occurrence: EvidenceOccurrence,
+  ): { readonly id: EvidenceOccurrenceId; readonly disposition: EvidenceOccurrenceDisposition } {
     if (!this.factMap.has(occurrence.factId)) {
       throw new MissingSemanticFactError(occurrence.factId)
     }
@@ -754,9 +881,16 @@ export class KnowledgeGraph {
         confidenceObservations: canonicalUnion(existing.confidenceObservations, rebuilt.confidenceObservations),
         metadata: canonicalChoice(existing.metadata, rebuilt.metadata),
       })
+    // A merge that produces a byte-identical occurrence changed no retained
+    // evidence, so it is a no-op; a merge that widened provenance, confidence
+    // or metadata did change the evidence the snapshot describes.
+    const changed = existing === undefined
+      || serializeCanonicalJson(existing as unknown as CanonicalJson, { arraySemantics: 'ordered' })
+        !== serializeCanonicalJson(stored as unknown as CanonicalJson, { arraySemantics: 'ordered' })
     this.occurrenceMap.set(stored.id, stored)
     this.factOccurrenceIndex.get(stored.factId)?.add(stored.id)
-    return stored.id
+    if (changed) this.invalidateIntegritySnapshot()
+    return { id: stored.id, disposition: existing === undefined ? 'inserted' : 'merged' }
   }
 
   private addFactIndexEntry(index: Map<string, Set<SemanticFactId>>, key: string, factId: SemanticFactId): void {
@@ -1005,11 +1139,226 @@ export class KnowledgeGraph {
    */
   storageAdmissionSummary(): StorageBoundaryAdmissionSummary {
     const counts = [...this.unregisteredRelationAdmissions.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareUnicodeCodePoints(left, right))
     return Object.freeze({
       unresolvedUnregisteredRelationCandidates: counts.reduce((total, [, count]) => total + count, 0),
       unregisteredRelationCounts: Object.freeze(Object.fromEntries(counts)),
     })
+  }
+
+  /**
+   * Attaches the one finalized accounting result for this graph's build.
+   *
+   * Attaching twice is a typed failure: two results would mean two accounting
+   * runs claimed the same graph, and silently keeping either one would make the
+   * receipt describe a build that did not produce this graph.
+   */
+  attachNormalizedAccounting(result: NormalizedAccountingResult): void {
+    // The storage admission this graph accumulated itself, because a normalized
+    // build ran every candidate through `addEdge` on this very graph.
+    this.finalizeAndAttachAccounting(result, this.storageAdmissionSummary())
+  }
+
+  /**
+   * @internal Artifact-loader only. Restores the storage-boundary refusals the
+   * artifact records.
+   *
+   * A loaded graph is hydrated through `hydrateVerifiedFact`, which never
+   * reaches `addEdge`, so nothing on the load path re-counts the candidates the
+   * storage boundary refused on the machine that generated the artifact.
+   * Without this the summary reported zero for a graph whose own receipt
+   * recorded refusals -- two views of one graph disagreeing -- and republishing
+   * that graph wrote an artifact whose storage admission and normalized
+   * accounting contradicted each other, which the next load then refused.
+   *
+   * Restoring rather than re-deriving is the only option available: the refused
+   * candidates are not in the artifact, by design. What the artifact does carry
+   * is the exact per-relation tally, already validated against its own total.
+   */
+  hydrateStorageAdmissions(token: symbol, summary: StorageBoundaryAdmissionSummary): void {
+    assertHydrationToken(token)
+    if (this.unregisteredRelationAdmissions.size > 0) {
+      throw new GraphAdmissionError(
+        'storage admissions may only be restored onto a graph that has none of its own',
+      )
+    }
+    for (const [relation, count] of Object.entries(summary.unregisteredRelationCounts)) {
+      this.unregisteredRelationAdmissions.set(relation, count)
+    }
+    // Restored degradation is part of any snapshot's storage-admission summary,
+    // so a snapshot taken before this call no longer describes this graph.
+    this.invalidateIntegritySnapshot()
+  }
+
+  /**
+   * @internal Artifact-loader only. Attaches accounting decoded from artifact
+   * bytes, with the storage admission the artifact itself declares.
+   *
+   * A loaded graph is hydrated through `hydrateVerifiedFact`, which never
+   * reaches the storage boundary, so its own admission counters are empty by
+   * construction -- the refusals happened on the machine that generated the
+   * artifact. Taking the summary from the parsed storage receipt is what the v2
+   * loader already does to re-derive that receipt, and it keeps the normalized
+   * snapshot describing the build the bytes record rather than the empty
+   * replay that produced this object.
+   *
+   * Guarded by the same module-private token as verified fact hydration, so no
+   * producer outside the loader can attach accounting that never went through
+   * artifact validation.
+   */
+  hydrateNormalizedAccounting(
+    token: symbol,
+    result: NormalizedAccountingResult,
+    storageAdmission: StorageBoundaryAdmissionSummary,
+  ): void {
+    assertHydrationToken(token)
+    this.finalizeAndAttachAccounting(result, storageAdmission)
+  }
+
+  /**
+   * The one place accounting and its snapshot become graph state.
+   *
+   * Attaching twice is a typed failure: two results would mean two accounting
+   * runs claimed the same graph, and silently keeping either one would make the
+   * receipt describe a build that did not produce this graph.
+   *
+   * Finalized into a local before anything is assigned. Validation lives inside
+   * finalization, so assigning the accounting first meant a rejected payload
+   * left this graph holding accounting with no snapshot -- a state no successful
+   * call can produce, and one a later reader cannot distinguish from a
+   * legitimate one.
+   *
+   * Finalized at the end of normalized construction so it cannot go stale
+   * relative to the facts it describes; any later mutation invalidates it
+   * rather than leaving a snapshot that quietly stops being true.
+   */
+  private finalizeAndAttachAccounting(
+    result: NormalizedAccountingResult,
+    storageAdmission: StorageBoundaryAdmissionSummary,
+  ): void {
+    if (this.normalizedAccounting !== null) {
+      throw new NormalizedAccountingAlreadyAttachedError()
+    }
+    const snapshot = finalizeNormalizedIntegritySnapshot({
+      accountingResult: result,
+      facts: this.numberOfFacts(),
+      occurrences: this.numberOfOccurrences(),
+      endpointPairs: this.numberOfEndpointPairs(),
+      endpointIdentityMatrix: this.endpointIdentityMatrix(),
+      reasonFactCounts: this.endpointReasonFactSummary(),
+      storageAdmission,
+    })
+    // Both fields assigned together, only after every check has passed.
+    this.normalizedAccounting = result
+    this.integritySnapshot = snapshot
+  }
+
+  /**
+   * The serialization-ready snapshot, or null when none was finalized.
+   *
+   * O(1): everything in it was derived once at finalization. Stage 3 reads this
+   * and sorts bounded arrays; it does not re-walk facts or candidates.
+   */
+  normalizedIntegritySnapshot(): FinalizedNormalizedIntegritySnapshot | null {
+    return this.integritySnapshot
+  }
+
+  /** Null when no normalized build produced this graph. Never a zeroed result. */
+  normalizedAccountingSummary(): NormalizedAccountingResult | null {
+    return this.normalizedAccounting
+  }
+
+  /**
+   * Endpoint-identity fact matrix, O(1) because it is maintained on insertion.
+   *
+   * Returns a detached copy so a consumer cannot mutate graph state, and so the
+   * snapshot it feeds stays frozen.
+   */
+  endpointIdentityMatrix(): Readonly<Record<EndpointIdentityStatus, Readonly<Record<EndpointIdentityStatus, number>>>> {
+    const copy = emptyEndpointMatrix()
+    for (const source of ENDPOINT_IDENTITY_STATUSES) {
+      for (const target of ENDPOINT_IDENTITY_STATUSES) copy[source]![target] = this.endpointMatrix[source]![target]!
+      // Freezing only the outer object left every row writable, so a consumer
+      // could rewrite a cell through the projection it was handed.
+      Object.freeze(copy[source])
+    }
+    return Object.freeze(copy)
+  }
+
+  /** Overlapping endpoint-reason fact counts, maintained on insertion. */
+  endpointReasonFactSummary(): Readonly<Partial<Record<EndpointIdentityReason, number>>> {
+    return Object.freeze(Object.fromEntries(
+      [...this.endpointReasonFactCounts.entries()]
+        .sort(([left], [right]) => compareUnicodeCodePoints(left, right)),
+    ))
+  }
+
+  /**
+   * Carries degradation state onto a graph rebuilt by a copy helper.
+   *
+   * `copy()` and `subgraph()` preserve this themselves, but a helper that
+   * constructs a fresh graph and replays facts -- the direction-changing copy in
+   * `generate` is the one production case -- bypasses that path entirely. It
+   * therefore produced a graph with zero unregistered admissions and no
+   * accounting from a source that had both, which is the same laundering
+   * `copySelectedNodes` already refuses. Narrow on purpose: it only ever moves
+   * degradation *onto* a graph that has none.
+   */
+  inheritDegradationFrom(source: KnowledgeGraph): void {
+    // Validate before mutating. A previous version added the admission counts
+    // first and only then checked the accounting guard, so calling this twice
+    // doubled the counters and *then* threw -- leaving the target holding
+    // inflated degradation from a call that reported failure.
+    if (source.normalizedAccounting !== null && this.normalizedAccounting !== null) {
+      throw new NormalizedAccountingAlreadyAttachedError()
+    }
+    if (this.unregisteredRelationAdmissions.size > 0) {
+      throw new GraphAdmissionError(
+        'degradation may only be inherited onto a graph that has none of its own',
+      )
+    }
+
+    if (source.unregisteredRelationAdmissions.size === 0 && source.normalizedAccounting === null) {
+      // Inheriting nothing changes nothing.
+      return
+    }
+    for (const [relation, count] of source.unregisteredRelationAdmissions) {
+      this.unregisteredRelationAdmissions.set(relation, count)
+    }
+
+    if (source.normalizedAccounting === null) {
+      // Admissions only. There is no accounting to finalize, and whatever
+      // snapshot this graph held no longer describes the admissions it carries.
+      this.invalidateIntegritySnapshot()
+      return
+    }
+
+    // Finalize a NEW snapshot over this graph, rather than taking the
+    // accounting and leaving the snapshot null.
+    //
+    // Inheriting the field and invalidating the snapshot produced a state the
+    // artifact contract has no way to express: accounting attached, snapshot
+    // null. `serializeGraphArtifactV2` reads the SNAPSHOT, so it omitted
+    // `normalized_accounting` entirely -- a direction-changing generate wrote
+    // an artifact that had silently lost its accounting, and that artifact was
+    // then refused outright by strict mode. Neither the omission nor the later
+    // refusal disclosed where the accounting went.
+    //
+    // The snapshot is derived from THIS graph's own totals because the target
+    // is a different graph: the replay may have merged endpoints, so the
+    // source's fact and endpoint counts are not the target's. The source's
+    // accounting result supplies the candidate-side facts, the target supplies
+    // the graph-side ones, and finalization reconciles them or refuses.
+    try {
+      this.finalizeAndAttachAccounting(source.normalizedAccounting, this.storageAdmissionSummary())
+    } catch (error) {
+      // Atomic on failure. The guard above proved this graph carried no
+      // admissions of its own, so clearing restores it exactly -- and
+      // `finalizeAndAttachAccounting` assigns nothing unless it succeeds.
+      this.unregisteredRelationAdmissions.clear()
+      this.invalidateIntegritySnapshot()
+      throw error
+    }
   }
 
   copy(): KnowledgeGraph {
@@ -1028,6 +1377,10 @@ export class KnowledgeGraph {
     for (const [relation, count] of this.unregisteredRelationAdmissions) {
       copied.unregisteredRelationAdmissions.set(relation, count)
     }
+    // Same rule, same reason: a copy must never look cleaner than its source.
+    // Dropping this would let copy() launder away the candidate loss the
+    // accounting exists to report.
+    copied.normalizedAccounting = this.normalizedAccounting
 
     for (const [nodeId, attributes] of this.nodeMap) {
       if (!selectedNodeIds.has(nodeId)) continue
@@ -1058,6 +1411,14 @@ export class KnowledgeGraph {
         copied.addOccurrence(occurrence)
       }
     }
+
+    // After the facts, not before: copying them runs the same insertion path
+    // that invalidates a stale snapshot, so an earlier assignment would be
+    // wiped. A full copy describes the same graph, so it inherits the snapshot;
+    // a subgraph describes fewer facts, so it must not.
+    const isFullCopy = selectedNodeIds.size === this.nodeMap.size
+      && copied.numberOfFacts() === this.numberOfFacts()
+    copied.integritySnapshot = isFullCopy ? this.integritySnapshot : null
 
     return copied
   }

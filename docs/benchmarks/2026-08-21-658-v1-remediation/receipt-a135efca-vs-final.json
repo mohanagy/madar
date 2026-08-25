@@ -1,0 +1,354 @@
+{
+  "repository_revision": "276486caad590718caff729ebc39179f9516bf09",
+  "repository_dirty": false,
+  "candidate_code_revision": "276486caad590718caff729ebc39179f9516bf09",
+  "node_version": "v22.22.3",
+  "npm_version": "12.0.2",
+  "lockfile_checksum": "0144eb0ddf92f78c69f10089d0e0414485594966ff5be4f36f655c7aa5cff53e",
+  "platform": "darwin-arm64",
+  "supported_extraction_modes": {
+    "legacy": "measured below",
+    "spi": "not measured: the extraction handed to the normalized boundary in spi and auto modes is assembled inside generate() by unexported merge and node-precedence logic. Reproducing that assembly here would measure a reimplementation rather than production, so no spi receipt is fabricated. Measuring it requires exporting that assembly, which is out of scope for #658.",
+    "auto": "not measured: same reason as spi."
+  },
+  "scanner_control": {
+    "planted": 5,
+    "detected": 5,
+    "passes": true
+  },
+  "receipts": [
+    {
+      "corpus_scope": "src-only",
+      "extraction_mode": "legacy",
+      "command": "extract(files) -> buildFromJson(accounting: normalized_extraction_boundary)",
+      "file_count": 199,
+      "inventory_checksum": "309fe3cf312dba37844198cb1d1e657be67db8d7301d6d22024d15ffb0dd15e4",
+      "extraction_input_checksum": "a65162cc9befc85a34710115f143e50225693fb0bd8a2261f10527af38713b6e",
+      "cache_state": "no extractor cache used; extract() called directly on the inventory",
+      "raw_normalized_edges": 15005,
+      "emitted_candidates": 15005,
+      "terminal_counts": {
+        "retained_new_fact": 14565,
+        "retained_additional_occurrence": 24,
+        "deliberately_merged_duplicate": 0,
+        "unresolved": 416,
+        "rejected": 0,
+        "conflicting": 0,
+        "invariant_failed": 0
+      },
+      "terminal_sum": 15005,
+      "equation_balances": true,
+      "facts": 14565,
+      "occurrences": 14589,
+      "endpoint_pairs": 14463,
+      "record_retention": {
+        "unresolved": {
+          "retained": 416,
+          "total": 416,
+          "omitted": 0,
+          "truncated": false
+        },
+        "rejected": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        },
+        "conflicting": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        }
+      },
+      "scope_failure_retention": {
+        "retained": 0,
+        "total": 0,
+        "omitted": 0,
+        "truncated": false
+      },
+      "verification_targets": 416,
+      "share_safety_hazards": 0,
+      "hazard_examples": [],
+      "finalized_snapshot": "attached, status=degraded",
+      "build_median_ms": 691.9,
+      "build_samples_ms": [
+        749.8,
+        710.7,
+        671.1,
+        691.9,
+        671
+      ],
+      "build_spread_ms": 78.8
+    },
+    {
+      "corpus_scope": "src-plus-tests-js-ts",
+      "extraction_mode": "legacy",
+      "command": "extract(files) -> buildFromJson(accounting: normalized_extraction_boundary)",
+      "file_count": 682,
+      "inventory_checksum": "9f7ef37e483ae475c9e65e496757c735f539ccc575b718702abee3c1a895772d",
+      "extraction_input_checksum": "71b4fb426dcf70a742ff601aa978fccbc1bfc57fff072c30f79f37c89dd8899a",
+      "cache_state": "no extractor cache used; extract() called directly on the inventory",
+      "raw_normalized_edges": 21002,
+      "emitted_candidates": 21002,
+      "terminal_counts": {
+        "retained_new_fact": 19491,
+        "retained_additional_occurrence": 27,
+        "deliberately_merged_duplicate": 6,
+        "unresolved": 1478,
+        "rejected": 0,
+        "conflicting": 0,
+        "invariant_failed": 0
+      },
+      "terminal_sum": 21002,
+      "equation_balances": true,
+      "facts": 19491,
+      "occurrences": 19518,
+      "endpoint_pairs": 19382,
+      "record_retention": {
+        "unresolved": {
+          "retained": 1000,
+          "total": 1478,
+          "omitted": 478,
+          "truncated": true
+        },
+        "rejected": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        },
+        "conflicting": {
+          "retained": 0,
+          "total": 0,
+          "omitted": 0,
+          "truncated": false
+        }
+      },
+      "scope_failure_retention": {
+        "retained": 0,
+        "total": 0,
+        "omitted": 0,
+        "truncated": false
+      },
+      "verification_targets": 1000,
+      "share_safety_hazards": 0,
+      "hazard_examples": [],
+      "finalized_snapshot": "attached, status=degraded",
+      "build_median_ms": 996,
+      "build_samples_ms": [
+        996,
+        1006,
+        959.7,
+        1094.5,
+        936.9
+      ],
+      "build_spread_ms": 157.6
+    }
+  ],
+  "performance": {
+    "baseline_revision": "a135efca773f5b5f4690a7195e48ad5c44b18ef9",
+    "comparisons": [
+      {
+        "corpus_scope": "src-only",
+        "extraction_mode": "legacy",
+        "input_authority": "candidate head",
+        "input_files": 199,
+        "inventory_checksum": "309fe3cf312dba37844198cb1d1e657be67db8d7301d6d22024d15ffb0dd15e4",
+        "canonical_input_checksum": "a65162cc9befc85a34710115f143e50225693fb0bd8a2261f10527af38713b6e",
+        "identical_input": true,
+        "cache_state": "no extractor cache; one extraction shared by both arms",
+        "baseline_sha": "a135efca773f5b5f4690a7195e48ad5c44b18ef9",
+        "candidate_sha": "276486caad590718caff729ebc39179f9516bf09",
+        "sessions": [
+          {
+            "order": "baseline-first",
+            "baseline": {
+              "samples": [
+                781.9,
+                646.9,
+                668.2,
+                633.8,
+                680.6
+              ],
+              "medianMs": 668.2,
+              "spreadMs": 148.2,
+              "peakRssMb": 681,
+              "emittedCandidates": 15005
+            },
+            "candidate": {
+              "samples": [
+                725.1,
+                642.2,
+                652.3,
+                630.6,
+                668.5
+              ],
+              "medianMs": 652.3,
+              "spreadMs": 94.5,
+              "peakRssMb": 678,
+              "emittedCandidates": 15005
+            }
+          },
+          {
+            "order": "candidate-first",
+            "baseline": {
+              "samples": [
+                726.4,
+                643.1,
+                656.4,
+                686.8,
+                759.3
+              ],
+              "medianMs": 686.8,
+              "spreadMs": 116.2,
+              "peakRssMb": 680,
+              "emittedCandidates": 15005
+            },
+            "candidate": {
+              "samples": [
+                733.9,
+                658.9,
+                666.2,
+                728.1,
+                725.3
+              ],
+              "medianMs": 725.3,
+              "spreadMs": 75,
+              "peakRssMb": 681,
+              "emittedCandidates": 15005
+            }
+          }
+        ],
+        "baseline_median_ms": 677.4,
+        "candidate_median_ms": 687.8,
+        "ratio": 1.015,
+        "rss_ratio": 0.999,
+        "gate": "within budget",
+        "superseded_estimate": {
+          "reason": "PERF-PAIR-01",
+          "estimator": "independent per-arm minimum, mixed order conditions",
+          "baseline_median_ms": 668.2,
+          "candidate_median_ms": 652.3,
+          "ratio": 0.976,
+          "rss_ratio": 1,
+          "note": "the two arms were reduced independently, so the published pair could combine a baseline median from one order with a candidate median from the other -- a comparison no session produced. Recomputed from the same retained samples; no measurement was repeated and no session was discarded."
+        },
+        "estimator": "geometric mean of per-session candidate/baseline ratios",
+        "session_ratios": [
+          {
+            "order": "baseline-first",
+            "wall_ratio": 0.976,
+            "rss_ratio": 0.996
+          },
+          {
+            "order": "candidate-first",
+            "wall_ratio": 1.056,
+            "rss_ratio": 1.001
+          }
+        ]
+      },
+      {
+        "corpus_scope": "src-plus-tests-js-ts",
+        "extraction_mode": "legacy",
+        "input_authority": "candidate head",
+        "input_files": 682,
+        "inventory_checksum": "9f7ef37e483ae475c9e65e496757c735f539ccc575b718702abee3c1a895772d",
+        "canonical_input_checksum": "71b4fb426dcf70a742ff601aa978fccbc1bfc57fff072c30f79f37c89dd8899a",
+        "identical_input": true,
+        "cache_state": "no extractor cache; one extraction shared by both arms",
+        "baseline_sha": "a135efca773f5b5f4690a7195e48ad5c44b18ef9",
+        "candidate_sha": "276486caad590718caff729ebc39179f9516bf09",
+        "sessions": [
+          {
+            "order": "baseline-first",
+            "baseline": {
+              "samples": [
+                1091.2,
+                955.8,
+                910.3,
+                1066.8,
+                935.9
+              ],
+              "medianMs": 955.8,
+              "spreadMs": 180.8,
+              "peakRssMb": 866,
+              "emittedCandidates": 21002
+            },
+            "candidate": {
+              "samples": [
+                1005.5,
+                938.1,
+                926,
+                1095.7,
+                905.8
+              ],
+              "medianMs": 938.1,
+              "spreadMs": 189.9,
+              "peakRssMb": 892,
+              "emittedCandidates": 21002
+            }
+          },
+          {
+            "order": "candidate-first",
+            "baseline": {
+              "samples": [
+                1010.3,
+                969.1,
+                914.9,
+                967.8,
+                1080
+              ],
+              "medianMs": 969.1,
+              "spreadMs": 165.2,
+              "peakRssMb": 887,
+              "emittedCandidates": 21002
+            },
+            "candidate": {
+              "samples": [
+                1001.8,
+                947.9,
+                910,
+                951.6,
+                893
+              ],
+              "medianMs": 947.9,
+              "spreadMs": 108.8,
+              "peakRssMb": 860,
+              "emittedCandidates": 21002
+            }
+          }
+        ],
+        "baseline_median_ms": 962.4,
+        "candidate_median_ms": 943.0,
+        "ratio": 0.98,
+        "rss_ratio": 0.999,
+        "gate": "within budget",
+        "superseded_estimate": {
+          "reason": "PERF-PAIR-01",
+          "estimator": "independent per-arm minimum, mixed order conditions",
+          "baseline_median_ms": 955.8,
+          "candidate_median_ms": 938.1,
+          "ratio": 0.981,
+          "rss_ratio": 1.006,
+          "note": "the two arms were reduced independently, so the published pair could combine a baseline median from one order with a candidate median from the other -- a comparison no session produced. Recomputed from the same retained samples; no measurement was repeated and no session was discarded."
+        },
+        "estimator": "geometric mean of per-session candidate/baseline ratios",
+        "session_ratios": [
+          {
+            "order": "baseline-first",
+            "wall_ratio": 0.981,
+            "rss_ratio": 1.03
+          },
+          {
+            "order": "candidate-first",
+            "wall_ratio": 0.978,
+            "rss_ratio": 0.97
+          }
+        ]
+      }
+    ],
+    "invalidated_runs": []
+  },
+  "peak_rss_mb": 1144
+}

@@ -1,0 +1,513 @@
+/**
+ * Controls for the mutation harness's own evidence.
+ *
+ * An independent review found every mutant record in two 95-invocation matrices
+ * claiming `pre == mutated == post`: the harness restored the file and THEN
+ * read the "mutated" digest, so all three fields were the same reading of the
+ * same restored bytes, presented as a lifecycle. Nothing in the harness noticed,
+ * because nothing checked.
+ *
+ * These controls drive the real harness end to end against a small mutant table
+ * of their own, and read the artifacts it actually writes. Asserting about the
+ * harness by reading its source is the same class of mistake as the defect:
+ * a check that exists and does not check.
+ */
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { produceEvidenceMatrix, SCRATCH_PREFIX } from './helpers/evidence-matrix.js'
+import { checkStatusConcordance, deriveProcessStatus } from '../../scripts/lib/evidence-audit.mjs'
+
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const HARNESS = resolve(REPO, 'scripts/verify-integrity-mutations.mjs')
+const STUB = resolve(REPO, 'tests/fixtures/mutation-vitest-stub.mjs')
+
+const TARGET = 'src/target.ts'
+const SUITE = 'tests/unit/suite.test.ts'
+const PRISTINE = "export const KEEP = 'ORIGINAL_VALUE'\n"
+const MARKER = '__MUTATED__'
+const TEST_NAME = 'stub invariant test'
+
+const scratches: string[] = []
+afterEach(() => {
+  while (scratches.length > 0) {
+    const dir = scratches.pop() as string
+    // A restoration-failure control leaves the target read-only on purpose.
+    try { chmodSync(resolve(dir, TARGET), 0o644) } catch { /* already writable */ }
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+interface MutantOverrides {
+  readonly from?: string
+  readonly to?: string
+  readonly expect?: readonly string[]
+}
+
+interface RunResult {
+  readonly status: number | null
+  readonly stdout: string
+  readonly stderr: string
+  readonly root: string
+  readonly dirs: readonly string[]
+}
+
+interface HarnessOptions {
+  readonly fault?: string
+  readonly timeoutMs?: number
+  readonly mutant?: MutantOverrides
+  /** Commit the scratch project, so the startup guard has a baseline to read. */
+  readonly commit?: boolean
+  /** Leave a target differing from the commit, as a killed run does. */
+  readonly inheritMutation?: boolean
+  /** Commit everything EXCEPT the target, so it has no committed form. */
+  readonly untrackedTarget?: boolean
+  /** The harness is expected to refuse before producing any artifact root. */
+  readonly expectRefusal?: boolean
+  /** Replace the runner argv, e.g. with a binary that does not exist. */
+  readonly vitestArgv?: readonly string[]
+}
+
+function runHarness(options: HarnessOptions = {}): RunResult {
+  const root = mkdtempSync(resolve(tmpdir(), 'madar-mutation-evidence-'))
+  scratches.push(root)
+  mkdirSync(resolve(root, 'src'), { recursive: true })
+  mkdirSync(resolve(root, 'tests/unit'), { recursive: true })
+  writeFileSync(resolve(root, TARGET), PRISTINE)
+  writeFileSync(resolve(root, SUITE), '// stand-in; the stub decides the verdict\n')
+  writeFileSync(resolve(root, 'mutants.json'), JSON.stringify([{
+    name: 'demo mutant',
+    file: TARGET,
+    test: SUITE,
+    from: options.mutant?.from ?? "'ORIGINAL_VALUE'",
+    to: options.mutant?.to ?? `'${MARKER}'`,
+    expect: options.mutant?.expect ?? [TEST_NAME],
+  }]))
+
+  if (options.commit === true) {
+    const git = (...args: string[]): void => {
+      const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+      expect(result.status, `git ${args.join(' ')} failed: ${result.stderr ?? ''}`).toBe(0)
+    }
+    git('init', '-q')
+    if (options.untrackedTarget === true) {
+      git('add', SUITE, 'mutants.json')
+    } else {
+      git('add', '-A')
+    }
+    git('-c', 'user.email=controls@example.invalid', '-c', 'user.name=controls', 'commit', '-qm', 'scratch baseline')
+  }
+  if (options.inheritMutation === true) {
+    // Exactly what a process-group kill leaves behind: the target on disk no
+    // longer matches its committed form, and no run is in progress to notice.
+    writeFileSync(resolve(root, TARGET), PRISTINE.replace('ORIGINAL_VALUE', MARKER))
+  }
+
+  const child = spawnSync(process.execPath, [HARNESS, '--mutants', 'mutants.json'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      MADAR_MUTATION_VITEST_ARGV: JSON.stringify(options.vitestArgv ?? [process.execPath, STUB]),
+      MADAR_MUTATION_SUITE_TIMEOUT_MS: String(options.timeoutMs ?? 300_000),
+      MADAR_STUB_TARGET: TARGET,
+      MADAR_STUB_MARKER: MARKER,
+      MADAR_STUB_TEST_NAME: TEST_NAME,
+      ...(options.fault === undefined ? {} : { MADAR_STUB_FAULT: options.fault }),
+    },
+  })
+
+  const runs = resolve(root, 'node_modules/.cache/madar-mutations')
+  const runIds = existsSync(runs) ? readdirSync(runs) : []
+  if (options.expectRefusal === true) {
+    // A refusal must produce NOTHING: an artifact root here would mean the
+    // harness started measuring before deciding it should not.
+    expect(runIds).toHaveLength(0)
+    return {
+      status: child.status,
+      stdout: child.stdout ?? '',
+      stderr: child.stderr ?? '',
+      root: runs,
+      dirs: [],
+    }
+  }
+  expect(runIds).toHaveLength(1)
+  const runRoot = resolve(runs, runIds[0] as string)
+  return {
+    status: child.status,
+    stdout: child.stdout ?? '',
+    stderr: child.stderr ?? '',
+    root: runRoot,
+    dirs: readdirSync(runRoot).sort(),
+  }
+}
+
+const read = (run: RunResult, dir: string, file: string): Record<string, unknown> =>
+  JSON.parse(readFileSync(resolve(run.root, dir, file), 'utf8')) as Record<string, unknown>
+
+const baselineDir = (run: RunResult): string => run.dirs.find((name) => name.includes('baseline')) as string
+const mutantDir = (run: RunResult): string => run.dirs.find((name) => !name.includes('baseline')) as string
+
+describe('mutation evidence scratch projects', () => {
+  it('removes its scratch project when the harness under test fails', () => {
+    // Found by inspection after a matrix run: four stranded scratch projects,
+    // two per arm. The caller only learns the project path from a SUCCESSFUL
+    // return, so a throw stranded the directory with no one able to clean it.
+    // Counted by our own prefix rather than by watching the temp directory as a
+    // whole -- other fixtures leak there too, and a delta would blame them.
+    const ours = (): string[] => readdirSync(tmpdir()).filter((name) => name.startsWith(SCRATCH_PREFIX))
+    const failing = resolve(mkdtempSync(resolve(tmpdir(), 'madar-failing-harness-')), 'harness.mjs')
+    writeFileSync(failing, 'process.exit(1)\n')
+    scratches.push(dirname(failing))
+
+    const before = ours()
+    try {
+      expect(() => produceEvidenceMatrix({ harness: failing })).toThrow(/harness failed \(1\)/)
+      expect(ours()).toEqual(before)
+    } finally {
+      // The mutant that guards this control removes the helper's cleanup, so
+      // under it the helper really does strand a project. A control that
+      // detects a leak must not leave the leak behind: three directories
+      // survived a matrix pair for exactly this reason, one per run of that
+      // mutant.
+      for (const name of ours()) {
+        if (!before.includes(name)) rmSync(resolve(tmpdir(), name), { recursive: true, force: true })
+      }
+    }
+  })
+})
+
+describe('mutation evidence inherited from a killed run', () => {
+  it('refuses to start when a mutation target no longer matches its commit', () => {
+    // A process-group kill bypasses the exit, SIGINT and SIGTERM restore hooks.
+    // One did, leaving `assertDistinctArms` reading `if (false)`. Nothing
+    // noticed: residual detection compares against originals captured DURING a
+    // run, so at startup the stale mutation would have been adopted as the
+    // pristine baseline and every later attribution measured against it.
+    const run = runHarness({ commit: true, inheritMutation: true, expectRefusal: true })
+
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain('REFUSING TO START')
+    expect(run.stderr).toContain(TARGET)
+  })
+
+  it('starts normally when every target matches its commit', () => {
+    // The positive control: without it the refusal above could pass because the
+    // harness refuses everything. It asserts only that no refusal happened --
+    // `runHarness` already requires an artifact root to exist. Asserting the
+    // overall exit status here instead coupled this control to every unrelated
+    // harness defect and made three tests fail for one mutation.
+    expect(runHarness({ commit: true }).stderr).not.toContain('REFUSING TO START')
+  })
+
+  it('does not police a project that is not a repository at all', () => {
+    // The controls' own scratch projects have no git repository. Reading "no
+    // committed copy" as "mutated" refused to start in all of them -- the first
+    // version of this guard did exactly that.
+    expect(runHarness().stderr).not.toContain('REFUSING TO START')
+  })
+
+  it('does not police a target that has no committed form', () => {
+    // Distinct from the case above and governed by a different line: the
+    // project IS a repository, but this target was never committed, so there is
+    // nothing to compare against. Residue in an untracked target is caught
+    // during the run by digest instead.
+    const run = runHarness({ commit: true, untrackedTarget: true })
+
+    expect(run.stderr).not.toContain('REFUSING TO START')
+    expect(run.stderr).not.toContain(TARGET)
+  })
+})
+
+describe('mutation evidence when the runner cannot be spawned', () => {
+  it('records a real spawn failure as spawn_failed, not as a run that never started', () => {
+    // Driven through the real harness with a runner binary that does not
+    // exist. `spawn_error` used to be classified AFTER `child_started:false`,
+    // and the harness sets child_started from `spawnError === null`, so every
+    // spawn failure took the not-started branch and spawn_failed was
+    // unreachable for the only shape that can produce it.
+    const missing = resolve(tmpdir(), 'madar-no-such-runner-please-do-not-create-me')
+    expect(existsSync(missing)).toBe(false)
+
+    const run = runHarness({ vitestArgv: [missing] })
+    // The BASELINE invocation is the one that cannot spawn: it runs first, and
+    // the mutant is then abandoned because its baseline was never green. The
+    // spawn evidence lives where the spawn was attempted.
+    const scoring = read(run, baselineDir(run), 'scoring.json')
+    const outcome = scoring['process_outcome'] as Record<string, unknown>
+
+    expect(outcome['spawn_error']).toMatch(/ENOENT/)
+    expect(outcome['child_started']).toBe(false)
+    expect(outcome['timed_out']).toBe(false)
+    expect(outcome['termination_signal']).toBeNull()
+    expect(scoring['classification']).toBe('infrastructure_failure')
+
+    // The auditor must recompute the same fact independently.
+    expect(deriveProcessStatus(outcome)).toBe('spawn_failed')
+
+    // The mutant is abandoned rather than scored against a runner that never ran.
+    const abandoned = read(run, mutantDir(run), 'scoring.json')
+    expect(abandoned['classification']).toBe('infrastructure_failure')
+    expect(abandoned['reason_code']).toBe('baseline_not_green')
+
+    // Restoration truthful, tree left clean.
+    const restoration = read(run, mutantDir(run), 'restoration.json')
+    expect(restoration['tree_clean_after']).toBe(true)
+    expect(restoration['leftover_paths']).toEqual([])
+  })
+
+  it('keeps a genuine never-attempted invocation classified as not_started', () => {
+    // The positive counterpart: a stale anchor abandons the invocation before
+    // any spawn, so there is no spawn error to find.
+    const run = runHarness({ mutant: { from: 'THIS ANCHOR IS NOT IN THE FILE' } })
+    const outcome = read(run, mutantDir(run), 'scoring.json')['process_outcome'] as Record<string, unknown>
+
+    expect(outcome['spawn_error']).toBeNull()
+    expect(outcome['child_started']).toBe(false)
+    expect(deriveProcessStatus(outcome)).toBe('not_started')
+  })
+
+  it('applies no ordinary concordance rule to either infrastructure ending', () => {
+    // Neither shape has an ordinary exit code, so the report/exit invariant
+    // must not be reached for them at all.
+    for (const outcome of [
+      { spawn_error: 'ENOENT: missing', child_started: false, exit_code: null, termination_signal: null, timed_out: false },
+      { spawn_error: null, child_started: false, exit_code: null, termination_signal: null, timed_out: false },
+    ]) {
+      const status = deriveProcessStatus(outcome)
+      expect(['spawn_failed', 'not_started']).toContain(status)
+      expect(checkStatusConcordance({ reportStatus: 'red', processStatus: status, signatures: [] })).toBeNull()
+      expect(checkStatusConcordance({ reportStatus: 'green', processStatus: status, signatures: [] })).toBeNull()
+    }
+  })
+})
+
+describe('mutation evidence when a child exceeds its bound', () => {
+  it('times out a hung child and keeps its identity and raw evidence', { timeout: 30_000 }, () => {
+    // The bound must still fire. Six exact-ref rows once sat at 249-271s
+    // against 300s and two timed out in an independent matrix; the correction
+    // removed misplaced work rather than raising the bound, so the bound has to
+    // remain provably live.
+    const run = runHarness({ fault: 'hang', timeoutMs: 1_500 })
+    const dir = mutantDir(run)
+    const scoring = read(run, dir, 'scoring.json')
+    const outcome = scoring['process_outcome'] as Record<string, unknown>
+
+    expect(outcome['timed_out']).toBe(true)
+    expect(outcome['termination_signal']).toBe('SIGTERM')
+    expect(scoring['classification']).toBe('infrastructure_failure')
+    // Never silently absorbed into an ordinary result.
+    expect(scoring['classification']).not.toBe('caught')
+
+    // Exact identity retained.
+    expect(scoring['mutant_id']).toBe('demo mutant')
+    expect(scoring['requested_suite']).toBe(SUITE)
+    expect(read(run, dir, 'meta.json')['mutant']).toBe('demo mutant')
+
+    // Raw evidence retained on disk.
+    for (const file of ['stdout.txt', 'stderr.txt', 'display.log', 'command.json', 'report-identity.json']) {
+      expect(existsSync(resolve(run.root, dir, file)), `${file} missing`).toBe(true)
+    }
+
+    // Restoration truthful and complete despite the timeout.
+    const restoration = read(run, dir, 'restoration.json')
+    expect(restoration['restoration_succeeded']).toBe(true)
+    expect(restoration['tree_clean_after']).toBe(true)
+    expect(restoration['leftover_paths']).toEqual([])
+    const pre = restoration['pre_mutation_digests'] as Record<string, string>
+    const post = restoration['post_restoration_digests'] as Record<string, string>
+    const mutated = restoration['mutated_digests'] as Record<string, string>
+    expect(mutated[TARGET]).not.toBe(pre[TARGET])
+    expect(post[TARGET]).toBe(pre[TARGET])
+  })
+
+  it('leaves no child, report or residual mutation after a timeout', { timeout: 30_000 }, () => {
+    const run = runHarness({ fault: 'hang', timeoutMs: 1_500 })
+    const dir = mutantDir(run)
+
+    // A hung child that was killed produced no usable report.
+    expect(existsSync(resolve(run.root, dir, 'vitest-report.json'))).toBe(false)
+    expect(read(run, dir, 'report-identity.json')['report_present']).toBe(false)
+
+    // Residue is judged against THIS run's own paths. An earlier version
+    // counted `madar-evidence-golden-*` across the shared temp directory --
+    // a prefix owned by a different suite, which made the assertion race
+    // whenever the two files ran in parallel. Observing state you do not own
+    // is not a cleanliness check.
+    const restoration = read(run, dir, 'restoration.json')
+    expect(restoration['tree_clean_after']).toBe(true)
+    expect(restoration['leftover_paths']).toEqual([])
+    const pre = restoration['pre_mutation_digests'] as Record<string, string>
+    const post = restoration['post_restoration_digests'] as Record<string, string>
+    expect(post[TARGET]).toBe(pre[TARGET])
+  })
+
+  it('does not misclassify a worker-start failure as a timeout', () => {
+    // Both are infrastructure failures, but they are different facts and the
+    // #710 family is tracked by signature, not by bound.
+    const run = runHarness({ fault: 'worker-start' })
+    const scoring = read(run, mutantDir(run), 'scoring.json')
+    const outcome = scoring['process_outcome'] as Record<string, unknown>
+
+    expect(outcome['timed_out']).toBe(false)
+    expect(outcome['termination_signal']).toBeNull()
+    expect(deriveProcessStatus(outcome)).not.toBe('timed_out')
+    expect(scoring['classification']).toBe('infrastructure_failure')
+    const signatures = scoring['worker_start_signatures'] as Array<Record<string, unknown>>
+    expect(signatures.length).toBeGreaterThan(0)
+    expect(String(signatures[0]?.['signature'])).toContain('Failed to start forks worker')
+  })
+})
+
+describe('mutation lifecycle evidence', () => {
+  it('records a mutated digest that differs from the pre-mutation digest', () => {
+    const run = runHarness()
+    const restoration = read(run, mutantDir(run), 'restoration.json')
+    const pre = (restoration['pre_mutation_digests'] as Record<string, string>)[TARGET]
+    const mutated = (restoration['mutated_digests'] as Record<string, string>)[TARGET]
+
+    expect(pre).toMatch(/^[0-9a-f]{64}$/)
+    expect(mutated).toMatch(/^[0-9a-f]{64}$/)
+    // The defect: reading the digest after restore() made these identical.
+    expect(mutated).not.toBe(pre)
+  })
+
+  it('records a post-restoration digest equal to the pre-mutation digest', () => {
+    const run = runHarness()
+    const restoration = read(run, mutantDir(run), 'restoration.json')
+    const pre = (restoration['pre_mutation_digests'] as Record<string, string>)[TARGET]
+    const post = (restoration['post_restoration_digests'] as Record<string, string>)[TARGET]
+
+    expect(post).toBe(pre)
+    expect(restoration['restoration_succeeded']).toBe(true)
+    expect(restoration['leftover_paths']).toEqual([])
+  })
+
+  it('gives a baseline an explicit not-applicable lifecycle rather than fabricated digests', () => {
+    const run = runHarness()
+    const restoration = read(run, baselineDir(run), 'restoration.json')
+
+    expect(restoration['mutation_lifecycle']).toBe('not_applicable')
+    expect(restoration['restoration_attempted']).toBe(false)
+    expect(restoration['reason_code']).toBe('not_applicable_baseline')
+    // Present and empty, not absent: an absent field cannot be distinguished
+    // from one an audit forgot to write.
+    expect(restoration['pre_mutation_digests']).toEqual({})
+    expect(restoration['mutated_digests']).toEqual({})
+    expect(restoration['post_restoration_digests']).toEqual({})
+  })
+
+  it('retains the child exit code for baseline and mutant alike', () => {
+    const run = runHarness()
+    const mutant = read(run, mutantDir(run), 'scoring.json')
+    const baseline = read(run, baselineDir(run), 'scoring.json')
+
+    // The reviewer found null here for every mutant and nothing at all for
+    // baselines, while the children had plainly exited.
+    expect((mutant['process_outcome'] as Record<string, unknown>)['exit_code']).toBe(1)
+    expect((baseline['process_outcome'] as Record<string, unknown>)['exit_code']).toBe(0)
+    expect((mutant['process_outcome'] as Record<string, unknown>)['child_started']).toBe(true)
+  })
+
+  it('records the platform’s truthful account of a child that was killed', () => {
+    const run = runHarness({ fault: 'signal' })
+    const outcome = read(run, mutantDir(run), 'scoring.json')['process_outcome'] as Record<string, unknown>
+
+    // Cross-platform first: whatever the OS reports, this must not read as an
+    // ordinary successful run, and it must not read as a timeout.
+    expect(outcome['child_started']).toBe(true)
+    expect(outcome['timed_out']).toBe(false)
+    expect(outcome['spawn_error']).toBeNull()
+    expect(outcome['exit_code']).not.toBe(0)
+
+    // Then the raw fields, per platform, preserved rather than normalised.
+    // POSIX delivers a signal and no exit code. Windows has no signal delivery
+    // at all: a terminated process is reported through an exit code, and
+    // `termination_signal` is truthfully null. Asserting 'SIGKILL' there was
+    // asserting something the platform cannot produce, and both Windows lanes
+    // failed on `expected null to be 'SIGKILL'`.
+    if (process.platform === 'win32') {
+      expect(outcome['termination_signal']).toBeNull()
+      expect(typeof outcome['exit_code']).toBe('number')
+    } else {
+      expect(outcome['termination_signal']).toBe('SIGKILL')
+      expect(outcome['exit_code']).toBeNull()
+    }
+  })
+
+  it('stamps one invocation identity into every artifact that can carry one', () => {
+    const run = runHarness()
+    const dir = mutantDir(run)
+    const carriers = [
+      'meta.json', 'command.json', 'suite-identity.json',
+      'report-identity.json', 'scoring.json', 'restoration.json',
+    ]
+    const ids = new Set(carriers.map((file) => read(run, dir, file)['invocation_id']))
+
+    expect(ids.size).toBe(1)
+    const [only] = [...ids] as string[]
+    expect(only).toMatch(/^[0-9a-z]+-[0-9a-z]+-m\d{3}$/)
+    // Distinct from the baseline's: identity must name one invocation, not a
+    // run and a guess at which directory it came from.
+    expect(read(run, baselineDir(run), 'scoring.json')['invocation_id']).not.toBe(only)
+  })
+
+  it('writes scoring.json when the suite produced no report at all', () => {
+    const run = runHarness({ fault: 'no-report' })
+    const scoring = read(run, mutantDir(run), 'scoring.json')
+
+    expect(scoring['classification']).toBe('infrastructure_failure')
+    expect(scoring['classification']).not.toBe('caught')
+    expect((scoring['process_outcome'] as Record<string, unknown>)['exit_code']).toBe(0)
+  })
+
+  it('writes scoring.json when the suite timed out', { timeout: 30_000 }, () => {
+    const run = runHarness({ fault: 'hang', timeoutMs: 1_500 })
+    const scoring = read(run, mutantDir(run), 'scoring.json')
+    const outcome = scoring['process_outcome'] as Record<string, unknown>
+
+    expect(scoring['classification']).toBe('infrastructure_failure')
+    expect(outcome['timed_out']).toBe(true)
+    expect(outcome['termination_signal']).toBe('SIGTERM')
+  })
+
+  it('writes scoring.json for a failure that happens before any suite runs', () => {
+    // A stale anchor: the mutation cannot be applied, so the invocation is
+    // abandoned. It previously `continue`d with its reason only on the
+    // terminal -- the same place the first unexplained skip was lost.
+    const run = runHarness({ mutant: { from: 'THIS ANCHOR IS NOT IN THE FILE' } })
+    const scoring = read(run, mutantDir(run), 'scoring.json')
+
+    expect(scoring['classification']).toBe('infrastructure_failure')
+    expect(scoring['reason_code']).toBe('mutation_not_applied')
+    expect((scoring['process_outcome'] as Record<string, unknown>)['child_started']).toBe(false)
+    for (const file of ['meta.json', 'command.json', 'suite-identity.json', 'report-identity.json', 'restoration.json']) {
+      expect(existsSync(resolve(run.root, mutantDir(run), file))).toBe(true)
+    }
+  })
+
+  it('stops the matrix on a restoration failure and keeps the truthful digests', () => {
+    const run = runHarness({ fault: 'chmod-readonly' })
+    const restoration = read(run, mutantDir(run), 'restoration.json')
+    const digests = {
+      pre: (restoration['pre_mutation_digests'] as Record<string, string>)[TARGET],
+      mutated: (restoration['mutated_digests'] as Record<string, string>)[TARGET],
+      post: (restoration['post_restoration_digests'] as Record<string, string>)[TARGET],
+    }
+
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain('RESTORATION FAILED')
+    expect(restoration['restoration_succeeded']).toBe(false)
+    expect(restoration['tree_clean_after']).toBe(false)
+    expect(restoration['leftover_paths']).toEqual([TARGET])
+    // Truthful, not tidy: the file really is still mutated, and the record
+    // says so instead of reporting a restoration that did not happen.
+    expect(digests.mutated).not.toBe(digests.pre)
+    expect(digests.post).toBe(digests.mutated)
+    expect(read(run, mutantDir(run), 'scoring.json')['reason_code']).toBe('restoration_failed')
+  })
+})

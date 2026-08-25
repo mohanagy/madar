@@ -61,8 +61,13 @@ function hasSurrogate(value: string): boolean {
  * The slow path materialised two arrays per comparison. Inside an O(n log n)
  * key sort run once per object, that allocation dominated artifact loading --
  * 15.9% of load time in the comparator plus much of the 9.7% spent in GC.
+ *
+ * Exported because canonical ordering has exactly one owner. Any other wire
+ * path that must order keys deterministically calls this rather than reaching
+ * for `localeCompare`, whose result depends on the host's ICU collation and so
+ * can order the same key set differently on two machines.
  */
-function compareUnicodeCodePoints(left: string, right: string): number {
+export function compareUnicodeCodePoints(left: string, right: string): number {
   if (!hasSurrogate(left) && !hasSurrogate(right)) {
     return left < right ? -1 : left > right ? 1 : 0
   }
