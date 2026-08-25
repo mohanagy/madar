@@ -283,7 +283,7 @@ describe('policy — #658 qualification cannot return to raw multi-file Vitest',
     const manifest = new Set(JSON.parse(read(MANIFEST)) as string[])
     const onDisk = readdirSync(join(process.cwd(), 'tests/unit'))
       .filter((file) => file.endsWith('.test.ts'))
-      .filter((file) => /^(graph-integrity|normalized-|integrity-|verification-target-policy|detail-retention-shape|endpoint-qualification|mutation-harness-self|receipt-|exact-manifest)/.test(file))
+      .filter((file) => /^(graph-integrity|normalized-|integrity-|verification-target-policy|detail-retention-shape|endpoint-qualification|mutation-harness-self|receipt-|exact-manifest|child-runner-|worktree-path-)/.test(file))
       .map((file) => `tests/unit/${file}`)
     const missing = onDisk.filter((file) => !manifest.has(file))
     expect(missing, `focused suites absent from the manifest: ${missing.join(', ')}`).toEqual([])
