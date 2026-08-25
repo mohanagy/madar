@@ -54,6 +54,41 @@ function createGuardRoot(): string {
 /** Confines a child's `os.tmpdir()` to a root this suite owns. */
 const confineTemp = (root: string): Record<string, string> => ({ TMPDIR: root, TMP: root, TEMP: root })
 
+/**
+ * The environment for every nested guarded child this suite spawns.
+ *
+ * `run-guarded-vitest` prefers an explicit `VITEST_GUARD_LOG_PATH` over its own
+ * private `madar-vitest-guard-*` directory. CI sets that variable for the OUTER
+ * guarded run, so a nested child inheriting it writes into the outer CI log
+ * instead of the private root these controls own -- and because the guard opens
+ * that path with `flags: 'w'` and removes it on success, an inheriting child
+ * also truncates the outer log, and deletes it outright whenever it passes.
+ * The controls are then left inspecting an empty private root.
+ *
+ * The correction has to be an OMISSION. The guard rejects an empty
+ * `VITEST_GUARD_LOG_PATH` on purpose, so blanking the variable would trade this
+ * defect for a different failure. Everything unrelated is preserved: the child
+ * still needs PATH, the Node install, and the platform's own variables.
+ */
+function nestedGuardEnv(
+  parent: NodeJS.ProcessEnv,
+  root: string,
+  overrides: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv {
+  // Destructured out rather than deleted. `process.env` is the usual parent,
+  // and building a child's environment must not mutate the parent's.
+  const {
+    VITEST_GUARD_LOG_PATH: _outerGuardLog,
+    ...base
+  } = parent
+
+  return {
+    ...base,
+    ...confineTemp(root),
+    ...overrides,
+  }
+}
+
 /** What the guard retained inside our root, read before the root is removed. */
 function inspectGuardRoot(root: string): { dirs: string[]; logs: string[] } {
   if (!existsSync(root)) return { dirs: [], logs: [] }
@@ -98,12 +133,10 @@ function runWithArtifactRemoved(file: string, artifact: string): { status: numbe
     try {
       execFileSync(process.execPath, [RUNNER, manifestPath, '--out', artifacts], {
         cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
-        env: {
-          ...process.env,
-          ...confineTemp(guardRoot),
+        env: nestedGuardEnv(process.env, guardRoot, {
           VITEST_GUARD_EXEC_OVERRIDE: FAKE_VITEST,
           MADAR_FAKE_VITEST_MODE: 'ok',
-        },
+        }),
       })
     } catch {
       // A failure here would be reported by the assertions below.
@@ -116,7 +149,7 @@ function runWithArtifactRemoved(file: string, artifact: string): { status: numbe
     try {
       const stdout = execFileSync(process.execPath, [RUNNER, manifestPath, '--out', artifacts, '--validate-only'], {
         cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
-        env: { ...process.env, ...confineTemp(guardRoot) },
+        env: nestedGuardEnv(process.env, guardRoot),
       })
       return { status: 0, output: stdout }
     } catch (error) {
@@ -142,6 +175,12 @@ function run(options: {
   manifestPath?: string
   mode?: string
   rawManifest?: boolean
+  /**
+   * The environment the nested child inherits from. Defaults to this process's
+   * own; the isolation controls pass a synthetic one so they can present an
+   * inherited outer guard-log path without assigning to `process.env`.
+   */
+  parentEnv?: NodeJS.ProcessEnv
 }): ControlRun {
   const dir = mkdtempSync(join(tmpdir(), 'madar-manifest-control-'))
   scratch.push(dir)
@@ -163,14 +202,14 @@ function run(options: {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 300_000,
-        env: {
-          ...process.env,
-          ...confineTemp(guardRoot),
-          ...(options.mode === undefined ? {} : {
+        env: nestedGuardEnv(
+          options.parentEnv ?? process.env,
+          guardRoot,
+          options.mode === undefined ? {} : {
             VITEST_GUARD_EXEC_OVERRIDE: FAKE_VITEST,
             MADAR_FAKE_VITEST_MODE: options.mode,
-          }),
-        },
+          },
+        ),
       })
     } catch (error) {
       const failure = error as { status?: number; stdout?: string; stderr?: string }
@@ -266,6 +305,129 @@ describe('controls own the guard logs they provoke', () => {
     expect(existsSync(sentinelRoot)).toBe(true)
     expect(readFileSync(join(sentinelRoot, 'keep-me.txt'), 'utf8')).toBe('untouched')
     expect(readdirSync(sentinelRoot).filter((n) => n.startsWith(GUARD_PREFIX))).toHaveLength(1)
+  })
+})
+
+describe('nested guard children are isolated from an inherited outer log path', () => {
+  /**
+   * CI sets `VITEST_GUARD_LOG_PATH` for the OUTER guarded run, and every
+   * control in this file spawns nested guarded runs. Before this correction
+   * those children inherited the variable, so the guard inside them wrote to
+   * the outer CI log instead of creating the private `madar-vitest-guard-*`
+   * directory the controls own and inspect. Three controls then failed with an
+   * empty retained-log string on all six protected lanes while passing on every
+   * developer machine, because nothing sets that variable locally.
+   *
+   * The damage ran in both directions. The guard opens its log with `flags:
+   * 'w'`, so an inheriting child TRUNCATED the outer log and wrote its own
+   * deliberately planted signatures into the artifact CI uploads on failure;
+   * and the guard removes the log when the run succeeds, so an inheriting child
+   * that PASSED deleted that artifact outright. Both are asserted below, on the
+   * sentinel rather than by inspecting a real CI log.
+   *
+   * The synthetic parent is a plain object. Assigning to `process.env` to stage
+   * the defect would leak the outer path into every other test sharing this
+   * worker -- which is the very failure mode under repair.
+   */
+  const SENTINEL = 'outer guard log: written by the outer run, owned by the outer run\n'
+
+  interface Scenario {
+    readonly name: string
+    /** Builds the child's inherited environment for a given sentinel path. */
+    readonly parentEnv: (outerLog: string) => NodeJS.ProcessEnv
+  }
+
+  const SCENARIOS: readonly Scenario[] = [
+    {
+      name: 'with no inherited outer guard-log path',
+      // Removed explicitly rather than trusting the ambient environment, so the
+      // arm means the same thing under `npm run test:run` as it does under the
+      // guarded runner that sets the variable.
+      parentEnv: () => {
+        const { VITEST_GUARD_LOG_PATH: _absent, ...bare } = process.env
+        return bare
+      },
+    },
+    {
+      name: 'with an inherited outer guard-log path',
+      parentEnv: (outerLog) => ({ ...process.env, VITEST_GUARD_LOG_PATH: outerLog }),
+    },
+  ]
+
+  /** A sentinel outer log plus a neighbour, both outside any test-owned root. */
+  function outerRoot(): { outerLog: string; neighbour: string } {
+    const dir = mkdtempSync(join(tmpdir(), 'madar-manifest-outerlog-'))
+    scratch.push(dir)
+    const outerLog = join(dir, 'outer.log')
+    const neighbour = join(dir, 'neighbour.txt')
+    writeFileSync(outerLog, SENTINEL)
+    writeFileSync(neighbour, 'untouched')
+    return { outerLog, neighbour }
+  }
+
+  for (const scenario of SCENARIOS) {
+    it(`retains its own private evidence ${scenario.name}`, () => {
+      const { outerLog } = outerRoot()
+      const parentEnv = scenario.parentEnv(outerLog)
+
+      const workerStart = run({ manifest: [REAL_A], mode: 'worker-start', parentEnv })
+      expect(workerStart.status).not.toBe(0)
+      expect(workerStart.retainedGuardDirs.length).toBeGreaterThanOrEqual(1)
+      expect(workerStart.retainedLogs.length).toBeGreaterThanOrEqual(1)
+      expect(workerStart.retainedLogs.join('\n')).toContain('Failed to start forks worker')
+
+      const handshake = run({ manifest: [REAL_A], mode: 'handshake', parentEnv })
+      expect(handshake.retainedGuardDirs.length).toBeGreaterThanOrEqual(1)
+      expect(handshake.retainedLogs.length).toBeGreaterThanOrEqual(1)
+      expect(handshake.retainedLogs.join('\n')).toContain('Timeout waiting for worker to respond')
+
+      // The private roots are still cleaned up: isolation must not be bought by
+      // leaving residue behind.
+      expect(existsSync(workerStart.guardRoot)).toBe(false)
+      expect(existsSync(handshake.guardRoot)).toBe(false)
+    })
+
+    it(`leaves the outer log and its neighbour untouched ${scenario.name}`, () => {
+      const { outerLog, neighbour } = outerRoot()
+      const parentEnv = scenario.parentEnv(outerLog)
+
+      // A failing nested child is the truncation case; a passing one is the
+      // deletion case. Both are exercised against the same sentinel.
+      const failing = run({ manifest: [REAL_A], mode: 'worker-start', parentEnv })
+      expect(failing.status).not.toBe(0)
+
+      const passing = run({ manifest: [REAL_A, REAL_B], mode: 'ok', parentEnv })
+      expect(passing.status).toBe(0)
+      expect(passing.retainedGuardDirs).toEqual([])
+
+      expect(existsSync(outerLog)).toBe(true)
+      expect(readFileSync(outerLog, 'utf8')).toBe(SENTINEL)
+      expect(readFileSync(neighbour, 'utf8')).toBe('untouched')
+    })
+  }
+
+  it('never mutates this process\u2019s own environment while building a child\u2019s', () => {
+    const before = process.env.VITEST_GUARD_LOG_PATH
+    const built = nestedGuardEnv(
+      { ...process.env, VITEST_GUARD_LOG_PATH: '/outer/ci.log' },
+      '/tmp/does-not-need-to-exist',
+      { MADAR_FAKE_VITEST_MODE: 'ok' },
+    )
+
+    expect(built.VITEST_GUARD_LOG_PATH).toBeUndefined()
+    expect(process.env.VITEST_GUARD_LOG_PATH).toBe(before)
+    // Unrelated variables survive: the child still needs a usable environment.
+    expect(built.PATH).toBe(process.env.PATH)
+    expect(built.TMPDIR).toBe('/tmp/does-not-need-to-exist')
+    expect(built.MADAR_FAKE_VITEST_MODE).toBe('ok')
+  })
+
+  it('omits the variable rather than blanking it, which the guard rejects', () => {
+    // `createLogTarget` throws on an empty VITEST_GUARD_LOG_PATH deliberately.
+    // Setting '' would swap this defect for a different failure, so the
+    // correction has to be an absent key.
+    const built = nestedGuardEnv({ VITEST_GUARD_LOG_PATH: '/outer/ci.log' }, '/tmp/root')
+    expect('VITEST_GUARD_LOG_PATH' in built).toBe(false)
   })
 })
 
