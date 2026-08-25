@@ -44,13 +44,27 @@ export class OwnedProcessTreeUnprovableError extends Error {
  * pipes, the timeout fired, this function did nothing, and the wrapper waited
  * for `close` far past its own bound before reporting a timeout.
  */
-function killTree(child, signal) {
+function killTree(child, signal, onTreeKillOutcome = null) {
   const pid = child.pid
   // A pid of 0 or 1 addresses the caller's own group or init; never signal it.
   if (typeof pid !== 'number' || pid <= 1) return
   if (process.platform === 'win32') {
     // Narrowly scoped to this pid and its descendants, never a name match.
-    spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
+    //
+    // The outcome is OBSERVED rather than discarded. `taskkill` was previously
+    // spawned with its stdio ignored and its exit code unread, so a failure to
+    // terminate the tree was indistinguishable from success -- on the one
+    // platform where this command is the entire termination guarantee.
+    const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
+    if (onTreeKillOutcome !== null) {
+      // 128 is taskkill's "process not found", which means the tree is already
+      // gone. That is the goal, not a failure.
+      killer.once('exit', (code) => onTreeKillOutcome({
+        ok: code === 0 || code === 128,
+        code,
+      }))
+      killer.once('error', (error) => onTreeKillOutcome({ ok: false, code: null, error }))
+    }
     return
   }
   try {
@@ -69,8 +83,8 @@ function killTree(child, signal) {
   }
 }
 
-export function terminateChildTree(child, signal = 'SIGTERM') {
-  killTree(child, signal)
+export function terminateChildTree(child, signal = 'SIGTERM', onTreeKillOutcome = null) {
+  killTree(child, signal, onTreeKillOutcome)
 }
 
 /**
@@ -113,10 +127,55 @@ export function ownedTimerCount() {
  * and the bounded terminate/force-kill sequence is the guarantee instead.
  */
 export function ownedTreeState(pid) {
-  if (process.platform === 'win32') return 'unprovable'
+  if (process.platform === 'win32') return windowsLeaderState(pid)
   if (typeof pid !== 'number' || pid <= 1) return 'empty'
   try {
     process.kill(-pid, 0)
+    return 'populated'
+  } catch (error) {
+    if (error.code === 'ESRCH') return 'empty'
+    if (error.code === 'EPERM') return 'populated'
+    return 'unprovable'
+  }
+}
+
+/**
+ * How emptiness was established, so a caller is never told a Windows result
+ * carries POSIX-grade evidence.
+ *
+ * The two are genuinely different claims. `process_group_probe` asks the kernel
+ * whether an owned group has any member at all. `leader_exit_and_tree_kill`
+ * establishes that the leader is gone and that a tree kill scoped to its pid
+ * reported success -- which is the strongest proof Windows offers and is not
+ * the same as enumerating survivors.
+ */
+export const OWNED_TREE_PROOFS = Object.freeze({
+  processGroupProbe: 'process_group_probe',
+  leaderExit: 'leader_exit',
+  leaderExitAndTreeKill: 'leader_exit_and_tree_kill',
+  none: 'none',
+})
+
+/**
+ * The Windows half of the tree probe.
+ *
+ * Windows has no process groups, so there is nothing to ask about the tree as a
+ * unit. What CAN be established exactly is whether the leader is still running,
+ * and `taskkill /T /F` scoped to that pid is what owns its descendants.
+ *
+ * Returning a flat `'unprovable'` here, as this did, was not conservative --
+ * it was wrong in the other direction. `reapOwnedTree` settles only on
+ * `'empty'`, so EVERY Windows child, including one that exited cleanly with no
+ * descendants at all, waited out the full reap deadline and then rejected with
+ * `OwnedProcessTreeUnprovableError`. Both Windows lanes failed that way on
+ * normal completion, timeout, descendant and cleanup cases alike.
+ */
+function windowsLeaderState(pid) {
+  if (typeof pid !== 'number' || pid <= 1) return 'empty'
+  try {
+    // Signal 0 on Windows is a liveness query, exactly as on POSIX; only the
+    // negative-pid GROUP form is unsupported.
+    process.kill(pid, 0)
     return 'populated'
   } catch (error) {
     if (error.code === 'ESRCH') return 'empty'
@@ -175,20 +234,65 @@ export function runChild(command, args, options = {}) {
       return
     }
 
+    /**
+     * Rejects with the original error after the spawned child is actually gone.
+     *
+     * Both early-exit paths below deferred their rejection to `child.once
+     * ('close', ...)` alone. This file documents, at `killTree`, that a
+     * descendant which inherited stdout/stderr keeps those pipes open after the
+     * child itself exits -- so `close` can be delayed indefinitely, and in that
+     * case `runChild` never settled at all. The child is not registered on
+     * either path, so the coordinator could not reap it either: an unregistered
+     * process outliving a promise that never resolves.
+     *
+     * The lifecycle is therefore bounded and driven by termination rather than
+     * by stdio: terminate the tree, settle on `exit`, escalate to a force kill
+     * at the grace deadline, and reject on a hard bound regardless. The
+     * ORIGINAL typed error is what surfaces either way -- the caller needs to
+     * know the registry was shutting down, not that a kill took too long.
+     */
+    const rejectAfterTermination = (error) => {
+      let done = false
+      const finish = () => {
+        if (done) return
+        done = true
+        clearTimeout(graceTimer)
+        clearTimeout(hardTimer)
+        ownedTimers.delete(graceTimer)
+        ownedTimers.delete(hardTimer)
+        reject(error)
+      }
+
+      terminateChildTree(child, 'SIGTERM')
+      child.once('exit', finish)
+
+      const graceTimer = setTimeout(() => {
+        ownedTimers.delete(graceTimer)
+        if (done) return
+        terminateChildTree(child, 'SIGKILL')
+      }, graceMs)
+      const hardTimer = setTimeout(() => {
+        ownedTimers.delete(hardTimer)
+        // Even SIGKILL cannot make an unreachable holder release a pipe, so the
+        // wait ends here rather than trusting a further event to arrive.
+        finish()
+      }, graceMs * 2)
+      ownedTimers.add(graceTimer)
+      ownedTimers.add(hardTimer)
+    }
+
     let token = null
     if (registry !== null) {
       if (reservation !== null && !reservation.valid()) {
-        terminateChildTree(child, 'SIGTERM')
-        child.once('close', () => {
-          reject(new ResourceRegistryShuttingDownError(`child "${description}" (shutdown began during spawn)`))
-        })
+        rejectAfterTermination(
+          new ResourceRegistryShuttingDownError(`child "${description}" (shutdown began during spawn)`),
+        )
         return
       }
       try {
         token = registry.registerChild(description, child)
       } catch (error) {
-        terminateChildTree(child, 'SIGTERM')
-        child.once('close', () => reject(error))
+        rejectAfterTermination(error)
         return
       }
     }
@@ -223,6 +327,24 @@ export function runChild(command, args, options = {}) {
       descendantsHeldStdio: false,
       forceKilled: false,
       treeState: 'unknown',
+      treeProof: OWNED_TREE_PROOFS.none,
+      treeKilled: false,
+      treeKillFailure: null,
+    }
+
+    /**
+     * Records what a platform tree kill actually reported.
+     *
+     * On Windows this command IS the termination guarantee, so discarding its
+     * result would leave a failed kill indistinguishable from a successful one.
+     */
+    const noteTreeKill = (outcome) => {
+      facts.treeKilled = true
+      if (!outcome.ok) {
+        facts.treeKillFailure = outcome.error
+          ? `taskkill failed to start: ${outcome.error.message}`
+          : `taskkill exited ${outcome.code}`
+      }
     }
     let exitInfo = null
     let stdout = ''
@@ -240,6 +362,9 @@ export function runChild(command, args, options = {}) {
       cancelAllOwnedTimers()
       if (token !== null) registry?.releaseChild(token)
       resolve({
+        // Raw OS facts, reported exactly as the platform gave them. On POSIX a
+        // terminated child carries a signal and a null code; on Windows it
+        // carries an exit code and a null signal. Neither is normalised away.
         code: exitInfo?.code ?? null,
         signal: exitInfo?.signal ?? null,
         stdout,
@@ -248,8 +373,29 @@ export function runChild(command, args, options = {}) {
         descendantsHeldStdio: facts.descendantsHeldStdio,
         forceKilled: facts.forceKilled,
         ownedTreeState: facts.treeState,
+        ownedTreeProof: facts.treeProof,
+        // The semantic outcome, which IS the same on every platform. Controls
+        // that need to prove "this child was force-killed" assert on this;
+        // asserting on `signal` made them assert a POSIX implementation detail
+        // that Windows cannot produce, and both Windows lanes failed on
+        // `expected null to be 'SIGKILL'` for a child that was in fact killed.
+        outcome: classifyOutcome(),
         ...extra,
       })
+    }
+
+    /**
+     * One semantic verdict, derived from facts rather than from a raw signal.
+     *
+     * Ordered most-specific first: a timed-out child is also force-killed, and
+     * reporting it as merely `force_killed` would lose the reason.
+     */
+    const classifyOutcome = () => {
+      if (facts.timedOut) return 'timed_out'
+      if (facts.forceKilled) return 'force_killed'
+      if (facts.descendantsHeldStdio) return 'terminated'
+      if (exitInfo?.signal != null) return 'terminated'
+      return 'exited'
     }
 
     const failSettle = (error) => {
@@ -272,7 +418,24 @@ export function runChild(command, args, options = {}) {
       // ONLY `empty` is success. `unprovable` means the proof is unavailable,
       // not that the tree is gone -- a real descendant survived resolution when
       // those two were treated alike.
-      if (state === 'empty') { settle(); return }
+      if (state === 'empty') {
+        if (facts.treeKillFailure !== null) {
+          // The leader is gone, but the command that owns its descendants
+          // reported failure, so nothing establishes that they went with it.
+          // A dead leader is not a proof of an empty tree on Windows.
+          failSettle(new OwnedProcessTreeUnprovableError(
+            `"${command} ${args.join(' ')}" (${facts.treeKillFailure})`,
+          ))
+          return
+        }
+        facts.treeProof = process.platform !== 'win32'
+          ? OWNED_TREE_PROOFS.processGroupProbe
+          : facts.treeKilled
+            ? OWNED_TREE_PROOFS.leaderExitAndTreeKill
+            : OWNED_TREE_PROOFS.leaderExit
+        settle()
+        return
+      }
 
       if (Date.now() >= deadline) {
         if (state === 'unprovable') {
@@ -293,9 +456,9 @@ export function runChild(command, args, options = {}) {
       // match and never an unrelated group.
       if (!facts.forceKilled && Date.now() >= deadline - graceMs) {
         facts.forceKilled = true
-        terminateChildTree(child, 'SIGKILL')
+        terminateChildTree(child, 'SIGKILL', noteTreeKill)
       } else {
-        terminateChildTree(child, 'SIGTERM')
+        terminateChildTree(child, 'SIGTERM', noteTreeKill)
       }
       scheduleOwnedTimer(() => reapOwnedTree(deadline), 100)
     }

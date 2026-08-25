@@ -23,6 +23,10 @@ import { ownedTimerCount, runChild } from '../../scripts/lib/child-runner.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const HOLDER = resolve(REPO, 'tests/fixtures/descendant-holds-stdio.mjs')
+// `npm` is a .cmd shim on Windows, which `spawn` cannot execute by bare name,
+// so the whole worktree-preparation control failed there before it could
+// exercise anything it was written to prove.
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 const scratch: string[] = []
 const worktrees: string[] = []
@@ -50,15 +54,41 @@ const newDescendantMarker = (): string => {
   return marker
 }
 
+/**
+ * Lists `pid command` for every running process, in the platform's own way.
+ *
+ * `ps` and `bash` do not exist on Windows, and these controls have to run
+ * there: what they prove -- that no owned descendant survives resolution -- is
+ * a semantic guarantee, not a POSIX one. PowerShell's process table is the
+ * Windows equivalent, and both produce the same two-column shape, so every
+ * caller below is unchanged.
+ */
+function processTable(): string {
+  if (process.platform === 'win32') {
+    return execFileSync('powershell', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }',
+    ], { encoding: 'utf8', maxBuffer: 1 << 26 })
+  }
+  return execFileSync('ps', ['-eo', 'pid,command'], { encoding: 'utf8', maxBuffer: 1 << 26 })
+}
+
+/** Rows of the process table carrying `marker`, never the probe itself. */
+function markedRows(marker: string): string[] {
+  return processTable()
+    .split('\n')
+    .filter((line) => line.includes(marker))
+    // The probe's own command line mentions the marker on some shells.
+    .filter((line) => !line.includes('Get-CimInstance'))
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+}
+
 /** Counts processes still carrying one of this run's markers. */
-const livingMarked = (marker: string): number => Number(execFileSync('bash', ['-c',
-  `ps -eo command | grep -F ${JSON.stringify(marker)} | grep -v grep | wc -l`,
-], { encoding: 'utf8' }).trim())
+const livingMarked = (marker: string): number => markedRows(marker).length
 
 const reapMarked = (marker: string): void => {
-  for (const line of execFileSync('bash', ['-c',
-    `ps -eo pid,command | grep -F ${JSON.stringify(marker)} | grep -v grep || true`,
-  ], { encoding: 'utf8' }).split('\n')) {
+  for (const line of markedRows(marker)) {
     const pid = Number(line.trim().split(/\s+/)[0])
     if (Number.isSafeInteger(pid) && pid > 1) {
       try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
@@ -82,10 +112,7 @@ const scratchDir = (prefix: string): string => {
 
 /** Counts descendants still alive by their exact fixture marker. */
 const survivingHolders = (holdMs: number): number => {
-  const probe = execFileSync('bash', ['-c',
-    `ps -eo command | grep -F 'setTimeout(() => {}, ${holdMs})' | grep -v grep | wc -l`,
-  ], { encoding: 'utf8' })
-  return Number(probe.trim())
+  return markedRows(`setTimeout(() => {}, ${holdMs})`).length
 }
 
 describe('RCP-01 — a completed child is not a timeout', () => {
@@ -186,7 +213,19 @@ describe('RCP-01 — a completed child is not a timeout', () => {
       cwd: REPO, timeoutMs: 1_500, graceMs: 300,
     })
     expect(result.timedOut).toBe(true)
-    expect(result.signal).toBe('SIGTERM')
+    // The semantic verdict, which is the same on every platform. Asserting
+    // `result.signal` here asserted a POSIX implementation detail: Windows
+    // terminates through an exit code and reports a null signal, so the
+    // Windows lanes failed with `expected null to be 'SIGTERM'` for a child
+    // that had in fact been terminated exactly as intended.
+    expect(result.outcome).toBe('timed_out')
+    // The raw OS fields stay truthful rather than normalised, and are asserted
+    // for what each platform actually produces.
+    if (process.platform === 'win32') {
+      expect(result.signal).toBeNull()
+    } else {
+      expect(result.signal).toBe('SIGTERM')
+    }
     expect(Date.now() - started).toBeLessThan(20_000)
   }, 40_000)
 })
@@ -400,13 +439,13 @@ describe('RCP-01 — fresh-worktree preparation through the real runner', () => 
     expect(existsSync(join(target, 'package-lock.json'))).toBe(true)
     expect(existsSync(join(target, 'node_modules'))).toBe(false)
 
-    const install = await runChild('npm', ['ci'], { cwd: target, timeoutMs: 900_000, graceMs: 5_000 })
+    const install = await runChild(NPM, ['ci'], { cwd: target, timeoutMs: 900_000, graceMs: 5_000 })
     expect(install.timedOut).toBe(false)
     expect(install.code).toBe(0)
     expect(readdirSync(join(target, 'node_modules')).length).toBeGreaterThan(50)
     expect(existsSync(join(target, 'node_modules', 'typescript'))).toBe(true)
 
-    const build = await runChild('npm', ['run', 'build'], { cwd: target, timeoutMs: 900_000, graceMs: 5_000 })
+    const build = await runChild(NPM, ['run', 'build'], { cwd: target, timeoutMs: 900_000, graceMs: 5_000 })
     expect(build.timedOut).toBe(false)
     expect(build.code).toBe(0)
     expect(existsSync(join(target, 'dist'))).toBe(true)

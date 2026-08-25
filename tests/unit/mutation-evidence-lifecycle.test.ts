@@ -413,13 +413,30 @@ describe('mutation lifecycle evidence', () => {
     expect((mutant['process_outcome'] as Record<string, unknown>)['child_started']).toBe(true)
   })
 
-  it('retains the terminating signal when the child was killed rather than exiting', () => {
+  it('records the platform’s truthful account of a child that was killed', () => {
     const run = runHarness({ fault: 'signal' })
     const outcome = read(run, mutantDir(run), 'scoring.json')['process_outcome'] as Record<string, unknown>
 
-    expect(outcome['termination_signal']).toBe('SIGKILL')
-    expect(outcome['exit_code']).toBeNull()
+    // Cross-platform first: whatever the OS reports, this must not read as an
+    // ordinary successful run, and it must not read as a timeout.
+    expect(outcome['child_started']).toBe(true)
     expect(outcome['timed_out']).toBe(false)
+    expect(outcome['spawn_error']).toBeNull()
+    expect(outcome['exit_code']).not.toBe(0)
+
+    // Then the raw fields, per platform, preserved rather than normalised.
+    // POSIX delivers a signal and no exit code. Windows has no signal delivery
+    // at all: a terminated process is reported through an exit code, and
+    // `termination_signal` is truthfully null. Asserting 'SIGKILL' there was
+    // asserting something the platform cannot produce, and both Windows lanes
+    // failed on `expected null to be 'SIGKILL'`.
+    if (process.platform === 'win32') {
+      expect(outcome['termination_signal']).toBeNull()
+      expect(typeof outcome['exit_code']).toBe('number')
+    } else {
+      expect(outcome['termination_signal']).toBe('SIGKILL')
+      expect(outcome['exit_code']).toBeNull()
+    }
   })
 
   it('stamps one invocation identity into every artifact that can carry one', () => {

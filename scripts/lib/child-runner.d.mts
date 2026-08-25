@@ -18,6 +18,19 @@ export interface ChildResult {
   readonly forceKilled: boolean
   /** Proof state of the owned process group at settlement. */
   readonly ownedTreeState: string
+  /**
+   * HOW emptiness was established, so a Windows result is never read as
+   * carrying the same evidence as a POSIX process-group probe.
+   */
+  readonly ownedTreeProof: string
+  /**
+   * The semantic verdict, identical on every platform.
+   *
+   * Raw `code`/`signal` stay platform-truthful -- POSIX terminates with a
+   * signal and a null code, Windows with an exit code and a null signal -- so
+   * controls that need to prove "this was force-killed" assert this instead.
+   */
+  readonly outcome: 'exited' | 'terminated' | 'force_killed' | 'timed_out'
 }
 
 export interface RunChildOptions {
@@ -34,7 +47,19 @@ export interface RunChildOptions {
   graceMs?: number
 }
 
-export function terminateChildTree(child: ChildProcess, signal?: NodeJS.Signals): void
+export function terminateChildTree(
+  child: ChildProcess,
+  signal?: NodeJS.Signals,
+  onTreeKillOutcome?: ((outcome: { ok: boolean; code: number | null; error?: Error }) => void) | null,
+): void
+
+/** How an empty owned tree was proven. */
+export const OWNED_TREE_PROOFS: {
+  readonly processGroupProbe: 'process_group_probe'
+  readonly leaderExit: 'leader_exit'
+  readonly leaderExitAndTreeKill: 'leader_exit_and_tree_kill'
+  readonly none: 'none'
+}
 /** Raised when an owned process tree cannot be proven empty. */
 export class OwnedProcessTreeUnprovableError extends Error {
   readonly code: 'OWNED_PROCESS_TREE_UNPROVABLE'
