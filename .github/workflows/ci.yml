@@ -69,6 +69,16 @@ jobs:
       - name: Provision the pinned v0.32.1 compatibility ref
         run: node .github/scripts/ensure-v0321-compat-ref.mjs
 
+      # The actual-byte compatibility proof does not approximate the pre-#658
+      # reader, it compiles and runs the source that stood at 31ad2168, and the
+      # writer that stood at 580f59f6. The default shallow checkout carries
+      # neither commit, so `git show <commit>:<path>` fails and every
+      # history-dependent control in that suite fails with it. Two exact commits
+      # are fetched, not the repository's history, and a commit whose entry
+      # blobs differ fails the lane.
+      - name: Provision the pinned #658 compatibility refs
+        run: node .github/scripts/ensure-658-compat-refs.mjs
+
       - name: Run tests
         if: matrix.os != 'ubuntu-latest' || matrix.node-version != '22'
         env:
