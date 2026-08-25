@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, normalize } from 'node:path'
+import { dirname, join, posix } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import ts from 'typescript'
@@ -88,7 +88,13 @@ function closureFrom(
           + 'the pinned closure resolves relative specifiers only',
         )
       }
-      queue.push(normalize(join(dirname(path), specifier)).replace(/\.js$/, '.ts'))
+      // POSIX joining, deliberately. These are paths INSIDE a git tree, and git
+      // object paths always use forward slashes regardless of platform. Using
+      // the native separators produced `src\contracts\canonical-json.ts` on
+      // Windows, which `git show` reports as "exists on disk, but not in
+      // <commit>" -- a message that reads like a missing commit and is in fact
+      // a misspelled path.
+      queue.push(posix.normalize(posix.join(posix.dirname(path), specifier)).replace(/\.js$/, '.ts'))
     }
   }
   return sources

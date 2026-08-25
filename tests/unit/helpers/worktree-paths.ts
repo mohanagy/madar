@@ -50,9 +50,15 @@ export function canonicalPathKey(path: string): string {
 /** Resolves through symlinks where possible, and reports the path as given otherwise. */
 function resolved(path: string): string {
   try {
+    // `.native` matters on Windows: the runner's temp directory is reported in
+    // 8.3 short form (`C:\Users\RUNNER~1\...`) by one source and in long form
+    // by the other, and those normalise to different keys. The native resolver
+    // returns the canonical long spelling for both. On POSIX it behaves as
+    // `realpathSync` does, so this is one call for every platform.
+    //
     // On macOS the temp root is a symlink and git reports the resolved path,
-    // so this is required rather than defensive.
-    return realpathSync(path)
+    // so resolving at all is required rather than defensive.
+    return realpathSync.native(path)
   } catch {
     // A worktree directory that has already been removed is still listed by
     // git until it is pruned. Comparing the raw path is the honest fallback:

@@ -337,9 +337,17 @@ describe('C2 — an unprovable owned tree fails closed', () => {
     await new Promise((r) => setTimeout(r, 300))
 
     const realKill = process.kill.bind(process)
-    // Only the negative-pid signal-0 probe is broken; real delivery is intact.
+    // Only the tree-probe form is broken; real signal delivery is intact.
+    //
+    // Which form that is depends on the platform, and breaking the wrong one
+    // makes this control silently inert. POSIX probes the process GROUP with a
+    // negative pid. Windows has no process groups and probes the leader with a
+    // positive one, so breaking only the negative form left the Windows probe
+    // working: the tree resolved as empty, the run settled successfully, and
+    // the control could not provoke the state it exists to test.
+    const isTreeProbe = (pid: number): boolean => (process.platform === 'win32' ? pid > 1 : pid < 0)
     process.kill = ((pid: number, signal?: string | number) => {
-      if (pid < 0 && (signal === 0 || signal === '0')) {
+      if (isTreeProbe(pid) && (signal === 0 || signal === '0')) {
         const error = new Error('kill EINVAL') as Error & { code?: string }
         error.code = 'EINVAL'
         throw error
