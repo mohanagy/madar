@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
+import { worktreePaths } from './helpers/worktree-paths.js'
 
 import {
   createResourceRegistry,
@@ -23,18 +25,6 @@ const created: string[] = []
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' })
-}
-
-function worktreePaths(root: string): string[] {
-  // Compared through realpath: on macOS the temp root is a symlink, and git
-  // reports the resolved path, so a naive string compare fails to exclude the
-  // main worktree.
-  const main = realpathSync(root)
-  return git(root, 'worktree', 'list', '--porcelain')
-    .split('\n')
-    .filter((line) => line.startsWith('worktree '))
-    .map((line) => line.slice('worktree '.length))
-    .filter((path) => realpathSync(path) !== main)
 }
 
 beforeEach(() => {

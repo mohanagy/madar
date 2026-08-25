@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
+import { worktreePaths } from './helpers/worktree-paths.js'
 
 import { runChild, runChildOrThrow } from '../../scripts/lib/child-runner.mjs'
 import {
@@ -27,15 +29,6 @@ const created: string[] = []
 
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', args, { cwd, encoding: 'utf8' })
-
-function worktreePaths(root: string): string[] {
-  const main = realpathSync(root)
-  return git(root, 'worktree', 'list', '--porcelain')
-    .split('\n')
-    .filter((line) => line.startsWith('worktree '))
-    .map((line) => line.slice('worktree '.length))
-    .filter((path) => realpathSync(path) !== main)
-}
 
 const alive = (pid: number): boolean => {
   // pid 0 addresses the CALLER'S process group, so it always reports alive.

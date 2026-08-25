@@ -24,7 +24,7 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import { WORKER_FAILURE_SIGNATURES } from '../.github/scripts/assert-clean-vitest-log.mjs'
 
@@ -89,6 +89,23 @@ if (!Array.isArray(entries)) fail(`${FAILURE.manifestSchema}: manifest has no en
 if (entries.length === 0) fail(`${FAILURE.emptyManifest}: manifest lists no files`)
 
 const requested = []
+/**
+ * The repository-relative identity of a manifest entry, in the one spelling the
+ * manifest itself uses.
+ *
+ * `path.relative` returns the platform's own separator, so on Windows an entry
+ * declared as `tests/unit/x.test.ts` became `tests\\unit\\x.test.ts` the moment
+ * it was resolved. That is the same file under a different name, and the name
+ * is the identity here: the runner reports it, compares it against what the
+ * child says it executed, and prints it when a file fails to verify. The
+ * Windows lanes failed on exactly that -- an assertion looking for the declared
+ * path could not find it in output that spelled it the other way.
+ *
+ * Only the identity is normalised. `absolute` stays platform-native, because it
+ * is what actually touches the filesystem.
+ */
+const toPosix = (value) => value.split(sep).join('/')
+
 const seen = new Set()
 for (const entry of entries) {
   if (typeof entry !== 'string' || entry.trim().length === 0) {
@@ -111,7 +128,7 @@ for (const entry of entries) {
   }
   if (seen.has(real)) fail(`${FAILURE.duplicateEntry}: manifest entry is duplicated: ${entry}`)
   seen.add(real)
-  requested.push({ relative: inside, absolute })
+  requested.push({ relative: toPosix(inside), absolute })
 }
 
 mkdirSync(OUT_DIR, { recursive: true })
