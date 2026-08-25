@@ -27,6 +27,7 @@
   "tests/unit/normalized-accounting-actual-byte-compat.test.ts",
   "tests/unit/normalized-accounting-callsite-policy.test.ts",
   "tests/unit/normalized-accounting-detachment.test.ts",
+  "tests/unit/normalized-accounting-inherited-snapshot.test.ts",
   "tests/unit/normalized-accounting-load-modes.test.ts",
   "tests/unit/normalized-accounting-locale-determinism.test.ts",
   "tests/unit/normalized-accounting-round-trip.test.ts",
