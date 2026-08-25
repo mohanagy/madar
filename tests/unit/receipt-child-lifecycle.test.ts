@@ -23,10 +23,19 @@ import { ownedTimerCount, runChild } from '../../scripts/lib/child-runner.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const HOLDER = resolve(REPO, 'tests/fixtures/descendant-holds-stdio.mjs')
-// `npm` is a .cmd shim on Windows, which `spawn` cannot execute by bare name,
-// so the whole worktree-preparation control failed there before it could
-// exercise anything it was written to prove.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+/**
+ * How to invoke npm as a child on this platform.
+ *
+ * On Windows npm is a `.cmd` shim, and since Node 20 `spawn` refuses to
+ * execute `.cmd`/`.bat` directly without a shell -- it raises `EINVAL`, which
+ * is what the worktree-preparation control hit. Rather than turn on `shell`
+ * for a production runner that also detaches its children, the command becomes
+ * `cmd.exe`, which is an ordinary executable, with npm as its argument.
+ */
+const NPM = process.platform === 'win32' ? 'cmd.exe' : 'npm'
+const npmArgs = (args: readonly string[]): string[] => (
+  process.platform === 'win32' ? ['/d', '/s', '/c', 'npm', ...args] : [...args]
+)
 
 const scratch: string[] = []
 const worktrees: string[] = []
@@ -136,8 +145,19 @@ describe('RCP-01 — a completed child is not a timeout', () => {
 
     // The wait was bounded by the drain policy, not by the descendant's hold.
     expect(Date.now() - started).toBeLessThan(20_000)
-    // And the descendant was reclaimed rather than left running.
-    expect(result.descendantsHeldStdio).toBe(true)
+
+    // `descendantsHeldStdio` records the MECHANISM, and the mechanism is
+    // POSIX-shaped: a descendant inheriting the pipes keeps `close` from
+    // firing after the leader exits, so the runner has to reclaim them. Windows
+    // does not keep the handles open the same way, so the flag is truthfully
+    // false there and asserting it unconditionally reported a platform
+    // difference as a defect.
+    if (process.platform !== 'win32') {
+      expect(result.descendantsHeldStdio).toBe(true)
+    }
+
+    // The GUARANTEE is the same everywhere and is asserted everywhere: the
+    // descendant is reclaimed rather than left running.
     await new Promise((r) => setTimeout(r, 1000))
     expect(survivingHolders(25_000)).toBe(0)
   }, 60_000)
@@ -447,13 +467,13 @@ describe('RCP-01 — fresh-worktree preparation through the real runner', () => 
     expect(existsSync(join(target, 'package-lock.json'))).toBe(true)
     expect(existsSync(join(target, 'node_modules'))).toBe(false)
 
-    const install = await runChild(NPM, ['ci'], { cwd: target, timeoutMs: 900_000, graceMs: 5_000 })
+    const install = await runChild(NPM, npmArgs(['ci']), { cwd: target, timeoutMs: 900_000, graceMs: 5_000 })
     expect(install.timedOut).toBe(false)
     expect(install.code).toBe(0)
     expect(readdirSync(join(target, 'node_modules')).length).toBeGreaterThan(50)
     expect(existsSync(join(target, 'node_modules', 'typescript'))).toBe(true)
 
-    const build = await runChild(NPM, ['run', 'build'], { cwd: target, timeoutMs: 900_000, graceMs: 5_000 })
+    const build = await runChild(NPM, npmArgs(['run', 'build']), { cwd: target, timeoutMs: 900_000, graceMs: 5_000 })
     expect(build.timedOut).toBe(false)
     expect(build.code).toBe(0)
     expect(existsSync(join(target, 'dist'))).toBe(true)
