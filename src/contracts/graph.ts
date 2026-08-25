@@ -1,3 +1,4 @@
+import { compareUnicodeCodePoints } from './canonical-json.js'
 import type { NormalizedAccountingResult } from './graph-integrity-session.js'
 import {
   finalizeNormalizedIntegritySnapshot,
@@ -1138,7 +1139,7 @@ export class KnowledgeGraph {
    */
   storageAdmissionSummary(): StorageBoundaryAdmissionSummary {
     const counts = [...this.unregisteredRelationAdmissions.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareUnicodeCodePoints(left, right))
     return Object.freeze({
       unresolvedUnregisteredRelationCandidates: counts.reduce((total, [, count]) => total + count, 0),
       unregisteredRelationCounts: Object.freeze(Object.fromEntries(counts)),
@@ -1287,7 +1288,8 @@ export class KnowledgeGraph {
   /** Overlapping endpoint-reason fact counts, maintained on insertion. */
   endpointReasonFactSummary(): Readonly<Partial<Record<EndpointIdentityReason, number>>> {
     return Object.freeze(Object.fromEntries(
-      [...this.endpointReasonFactCounts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+      [...this.endpointReasonFactCounts.entries()]
+        .sort(([left], [right]) => compareUnicodeCodePoints(left, right)),
     ))
   }
 
@@ -1323,12 +1325,40 @@ export class KnowledgeGraph {
     for (const [relation, count] of source.unregisteredRelationAdmissions) {
       this.unregisteredRelationAdmissions.set(relation, count)
     }
-    if (source.normalizedAccounting !== null) {
-      this.normalizedAccounting = source.normalizedAccounting
+
+    if (source.normalizedAccounting === null) {
+      // Admissions only. There is no accounting to finalize, and whatever
+      // snapshot this graph held no longer describes the admissions it carries.
+      this.invalidateIntegritySnapshot()
+      return
     }
-    // The inherited accounting and admissions describe a different generation
-    // than any snapshot this graph already holds.
-    this.invalidateIntegritySnapshot()
+
+    // Finalize a NEW snapshot over this graph, rather than taking the
+    // accounting and leaving the snapshot null.
+    //
+    // Inheriting the field and invalidating the snapshot produced a state the
+    // artifact contract has no way to express: accounting attached, snapshot
+    // null. `serializeGraphArtifactV2` reads the SNAPSHOT, so it omitted
+    // `normalized_accounting` entirely -- a direction-changing generate wrote
+    // an artifact that had silently lost its accounting, and that artifact was
+    // then refused outright by strict mode. Neither the omission nor the later
+    // refusal disclosed where the accounting went.
+    //
+    // The snapshot is derived from THIS graph's own totals because the target
+    // is a different graph: the replay may have merged endpoints, so the
+    // source's fact and endpoint counts are not the target's. The source's
+    // accounting result supplies the candidate-side facts, the target supplies
+    // the graph-side ones, and finalization reconciles them or refuses.
+    try {
+      this.finalizeAndAttachAccounting(source.normalizedAccounting, this.storageAdmissionSummary())
+    } catch (error) {
+      // Atomic on failure. The guard above proved this graph carried no
+      // admissions of its own, so clearing restores it exactly -- and
+      // `finalizeAndAttachAccounting` assigns nothing unless it succeeds.
+      this.unregisteredRelationAdmissions.clear()
+      this.invalidateIntegritySnapshot()
+      throw error
+    }
   }
 
   copy(): KnowledgeGraph {

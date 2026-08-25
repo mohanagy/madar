@@ -1,3 +1,4 @@
+import { compareUnicodeCodePoints } from './canonical-json.js'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -348,7 +349,7 @@ function buildStorageReceipt(
       unregistered_relation_counts: Object.freeze(
         Object.fromEntries(
           Object.entries(admission.unregisteredRelationCounts)
-            .sort(([left], [right]) => left.localeCompare(right)),
+            .sort(([left], [right]) => compareUnicodeCodePoints(left, right)),
         ),
       ),
     }),
@@ -528,7 +529,7 @@ function nodePayload(
           : { ...attributes, community: attributes.community ?? nodeCommunities[id] },
       ),
     }))
-    .sort((left, right) => left.id.localeCompare(right.id))
+    .sort((left, right) => compareUnicodeCodePoints(left.id, right.id))
 }
 
 /**
@@ -597,7 +598,8 @@ function occurrencePayload(occurrence: EvidenceOccurrence): unknown {
 }
 
 function canonicalCommunityLabels(labels: Readonly<Record<string | number, string>>): Record<string, string> {
-  return Object.fromEntries(Object.entries(labels).sort(([left], [right]) => left.localeCompare(right)))
+  return Object.fromEntries(Object.entries(labels)
+    .sort(([left], [right]) => compareUnicodeCodePoints(left, right)))
 }
 
 /**
@@ -611,7 +613,8 @@ function canonicalProvenance(provenance: GraphArtifactProvenance | undefined): R
     throw new GraphArtifactInvariantError('provenance must not carry root_path; it belongs in the local sidecar')
   }
   const entries = Object.entries(provenance).filter(([, value]) => value !== undefined)
-  return withoutUndefined(Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right))))
+  return withoutUndefined(Object.fromEntries(entries
+    .sort(([left], [right]) => compareUnicodeCodePoints(left, right))))
 }
 
 function canonicalHyperedge(value: unknown): Record<string, unknown> {
@@ -694,13 +697,16 @@ function wireIntegrityReceipt(
 export function serializeGraphArtifactV2(input: SerializeGraphArtifactV2Input): Buffer {
   const facts = input.graph.factRecords()
     .map(({ fact, attributes }) => ({ fact, attributes }))
-    .sort((left, right) => left.fact.id.localeCompare(right.fact.id))
-  const occurrences = [...input.graph.occurrenceEntries()].sort((left, right) => left.id.localeCompare(right.id))
+    .sort((left, right) => compareUnicodeCodePoints(left.fact.id, right.fact.id))
+  const occurrences = [...input.graph.occurrenceEntries()]
+    .sort((left, right) => compareUnicodeCodePoints(left.id, right.id))
   const hyperedges = [...(input.hyperedges
     ?? (Array.isArray(input.graph.graph.hyperedges) ? input.graph.graph.hyperedges : []))]
     .map(canonicalHyperedge)
-    .sort((left, right) => serializeCanonicalJson(left, { arraySemantics: 'ordered' })
-      .localeCompare(serializeCanonicalJson(right, { arraySemantics: 'ordered' })))
+    .sort((left, right) => compareUnicodeCodePoints(
+      serializeCanonicalJson(left, { arraySemantics: 'ordered' }),
+      serializeCanonicalJson(right, { arraySemantics: 'ordered' }),
+    ))
   const communityLabels = input.communityLabels
     ?? (input.graph.graph.community_labels !== null
       && typeof input.graph.graph.community_labels === 'object'

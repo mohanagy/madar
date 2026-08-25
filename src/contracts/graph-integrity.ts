@@ -1,3 +1,4 @@
+import { compareUnicodeCodePoints } from './canonical-json.js'
 import { posix as pathPosix, win32 as pathWin32 } from 'node:path'
 import { createHash } from 'node:crypto'
 
@@ -1259,7 +1260,7 @@ export function withMultiplicityPreservingIdentity<T extends DurableCandidateRec
  * order.
  */
 export function sortDurableRecords<T extends DurableCandidateRecord>(records: readonly T[]): readonly T[] {
-  return Object.freeze([...records].sort((left, right) => left.id.localeCompare(right.id)))
+  return Object.freeze([...records].sort((left, right) => compareUnicodeCodePoints(left.id, right.id)))
 }
 
 /**

@@ -1,3 +1,4 @@
+import { compareUnicodeCodePoints } from './canonical-json.js'
 import { createHash } from 'node:crypto'
 
 import { canonicalJsonBytes, serializeCanonicalJson } from './canonical-json.js'
@@ -530,7 +531,8 @@ export class NormalizedAccountingSession {
       emittedCandidates: this.emitted,
       counts: Object.freeze({ ...this.counts }),
       terminalReasonCounts: Object.freeze(Object.fromEntries(
-        [...this.reasonCounts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+        [...this.reasonCounts.entries()]
+          .sort(([left], [right]) => compareUnicodeCodePoints(left, right)),
       )),
       unresolvedRecords,
       rejectedRecords,

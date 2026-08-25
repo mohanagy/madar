@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, normalize } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -33,6 +33,8 @@ export interface PinnedSourceModule {
   readonly commit: string
   readonly digest: string
   readonly files: readonly string[]
+  /** The temporary ESM tree, so a child process can be pointed at it. */
+  readonly root: string
   readonly load: <T>(entry: string) => Promise<T>
   readonly dispose: () => void
 }
@@ -54,19 +56,35 @@ function gitShow(commit: string, path: string): string {
  * like a different module rather than a missing file.
  */
 function closure(commit: string, entries: readonly string[]): Map<string, string> {
+  return closureFrom((path) => gitShow(commit, path), entries, commit)
+}
+
+/**
+ * The shared walk, parameterised by where the source comes from.
+ *
+ * Two callers need the identical traversal over different origins: a pinned
+ * commit, read through `git show`, and the working tree, read off disk. Keeping
+ * one walker means a change to how specifiers are resolved cannot apply to one
+ * caller and silently not the other.
+ */
+function closureFrom(
+  read: (path: string) => string,
+  entries: readonly string[],
+  origin: string,
+): Map<string, string> {
   const sources = new Map<string, string>()
   const queue = [...entries]
   while (queue.length > 0) {
     const path = queue.shift() as string
     if (sources.has(path)) continue
-    const source = gitShow(commit, path)
+    const source = read(path)
     sources.set(path, source)
     for (const match of source.matchAll(/from\s+'([^']+)'/g)) {
       const specifier = match[1] as string
       if (specifier.startsWith('node:')) continue
       if (!specifier.startsWith('.')) {
         throw new Error(
-          `${commit}:${path} imports the package ${JSON.stringify(specifier)}; `
+          `${origin}:${path} imports the package ${JSON.stringify(specifier)}; `
           + 'the pinned closure resolves relative specifiers only',
         )
       }
@@ -115,6 +133,15 @@ export function pinnedSourceModule(options: PinnedSourceOptions): PinnedSourceMo
     )
   }
 
+  return materialize(sources, options.commit, digest)
+}
+
+/** Writes a transpiled closure to a temporary ESM tree and exposes it. */
+function materialize(
+  sources: ReadonlyMap<string, string>,
+  commit: string,
+  digest: string,
+): PinnedSourceModule {
   const root = mkdtempSync(join(tmpdir(), 'madar-pinned-source-'))
   for (const [path, source] of sources) {
     const target = join(root, path.replace(/\.ts$/, '.js'))
@@ -132,9 +159,10 @@ export function pinnedSourceModule(options: PinnedSourceOptions): PinnedSourceMo
   writeFileSync(join(root, 'package.json'), '{"type":"module"}\n', 'utf8')
 
   return Object.freeze({
-    commit: options.commit,
+    commit,
     digest,
     files: Object.freeze([...sources.keys()].sort()),
+    root,
     load: <T>(entry: string): Promise<T> => import(
       pathToFileURL(join(root, entry.replace(/\.ts$/, '.js'))).href
     ) as Promise<T>,
@@ -142,4 +170,22 @@ export function pinnedSourceModule(options: PinnedSourceOptions): PinnedSourceMo
       rmSync(root, { recursive: true, force: true })
     },
   })
+}
+
+/**
+ * The same materialisation, for the source as it stands in the working tree.
+ *
+ * The locale-determinism control needs to execute today's serializer inside a
+ * child process that was started under a different `LC_ALL`, because a host's
+ * collation is fixed when the process starts and cannot be changed from inside
+ * it. Transpiling the closure to a standalone ESM tree is what makes that child
+ * possible; there is no commit to pin, so identity is the working tree itself.
+ */
+export function workingTreeSourceModule(entries: readonly string[]): PinnedSourceModule {
+  const sources = closureFrom(
+    (path) => readFileSync(join(process.cwd(), path), 'utf8'),
+    entries,
+    'working-tree',
+  )
+  return materialize(sources, 'working-tree', closureDigest(sources))
 }

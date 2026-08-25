@@ -1,3 +1,4 @@
+import { compareUnicodeCodePoints } from './canonical-json.js'
 import { ENDPOINT_IDENTITY_STATUSES, type EndpointIdentityReason } from './endpoint-identity.js'
 import {
   CANDIDATE_TERMINAL_STATES,
@@ -100,7 +101,13 @@ function normalizeTerminalReasonCounts(counts: TerminalReasonCounts): TerminalRe
     if (count === 0) continue
     entries.push([reason, count])
   }
-  return Object.freeze(Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right))))
+  // Code-unit order, not `localeCompare`: these keys are serialized into the
+  // artifact, and a locale-sensitive comparator lets two hosts with different
+  // ICU collation order the same reason set differently and so write different
+  // bytes for the same receipt.
+  return Object.freeze(Object.fromEntries(entries.sort(
+    ([left], [right]) => compareUnicodeCodePoints(left, right),
+  )))
 }
 
 function truncated(input: NormalizedIntegrityReceiptInput): boolean {
@@ -353,7 +360,7 @@ function assertTerminalReasonCounts(counts: TerminalReasonCounts): void {
       throw new GraphIntegrityInvariantError(`terminal_reason_counts.${reason} must be omitted rather than zero`)
     }
   }
-  const sorted = [...keys].sort((left, right) => left.localeCompare(right))
+  const sorted = [...keys].sort(compareUnicodeCodePoints)
   if (keys.some((key, index) => key !== sorted[index])) {
     throw new GraphIntegrityInvariantError('terminal_reason_counts keys must be sorted')
   }

@@ -1,5 +1,6 @@
 [
   "tests/unit/artifact-v2-upgrade-and-old-reader.test.ts",
+  "tests/unit/child-runner-platform-contract.test.ts",
   "tests/unit/detail-retention-shape.test.ts",
   "tests/unit/endpoint-qualification-invalidation.test.ts",
   "tests/unit/exact-manifest-controls.test.ts",
@@ -25,6 +26,7 @@
   "tests/unit/normalized-accounting-actual-byte-compat.test.ts",
   "tests/unit/normalized-accounting-callsite-policy.test.ts",
   "tests/unit/normalized-accounting-load-modes.test.ts",
+  "tests/unit/normalized-accounting-locale-determinism.test.ts",
   "tests/unit/normalized-accounting-round-trip.test.ts",
   "tests/unit/normalized-accounting-serialization.test.ts",
   "tests/unit/normalized-accounting-strict-warning-matrix.test.ts",
@@ -35,5 +37,6 @@
   "tests/unit/receipt-exact-ref-guards.test.ts",
   "tests/unit/receipt-resource-cleanup.test.ts",
   "tests/unit/receipt-signal-responsiveness.test.ts",
-  "tests/unit/verification-target-policy.test.ts"
+  "tests/unit/verification-target-policy.test.ts",
+  "tests/unit/worktree-path-comparison.test.ts"
 ]
