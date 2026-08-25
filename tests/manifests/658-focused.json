@@ -9,6 +9,7 @@
   "tests/unit/graph-integrity-receipt.test.ts",
   "tests/unit/integrity-closed-schemas.test.ts",
   "tests/unit/integrity-json-safety.test.ts",
+  "tests/unit/integrity-per-record-caps.test.ts",
   "tests/unit/integrity-record-identity.test.ts",
   "tests/unit/integrity-record-share-safety.test.ts",
   "tests/unit/integrity-snapshot-immutability.test.ts",

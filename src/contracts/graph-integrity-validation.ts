@@ -18,7 +18,8 @@ import {
   CANDIDATE_TERMINAL_STATES,
   GraphIntegrityInvariantError,
   isTerminalIntegrityReason,
-  MAX_DURABLE_RECORDS_PER_KIND,
+  MAX_CONFLICT_FINGERPRINTS,
+  MAX_RECORD_OCCURRENCES,
   MAX_VERIFICATION_TARGETS_PER_RECORD,
   normalizeVerificationTargetPath,
   safeEndpointIdentifier,
@@ -411,13 +412,51 @@ export function assertSerializerFacingRecord(
   // to check for each kind.
   assertRecordRetention(record as unknown as DurableCandidateRecord, field)
 
-  const retained = kind === 'unresolved'
-    ? (record['occurrenceRetention'] as { retained: number }).retained
+  // Per-RECORD detail caps, which are kind-specific and far smaller than the
+  // per-KIND bound.
+  //
+  // `MAX_DURABLE_RECORDS_PER_KIND` (1000) bounds how many RECORDS a kind may
+  // carry, and stays where it belongs, in the receipt's per-kind retention
+  // check. It says nothing about how much detail ONE record may carry, and
+  // construction bounds that detail with `MAX_RECORD_OCCURRENCES` (16) and
+  // `MAX_CONFLICT_FINGERPRINTS` (32). Checking the outer constant here meant a
+  // record claiming 900 retained occurrences passed the boundary this validator
+  // exists to guard -- the caps were enforced only on the trusted construction
+  // path and not at all on the untrusted one.
+  //
+  // `rejected` carries no per-record detail array, so it has no detail cap; its
+  // population is bounded by the per-kind array check alone.
+  const detail = kind === 'unresolved'
+    ? {
+      cap: MAX_RECORD_OCCURRENCES,
+      retained: (record['occurrenceRetention'] as { retained: number }).retained,
+      carried: (record['occurrences'] as readonly unknown[]).length,
+      noun: 'occurrences',
+    }
     : kind === 'conflicting'
-      ? (record['fingerprintRetention'] as { retained: number }).retained
-      : 0
-  if (retained > MAX_DURABLE_RECORDS_PER_KIND) {
-    throw new GraphIntegrityInvariantError(`${field} retains ${retained} entries, above the per-kind bound`)
+      ? {
+        cap: MAX_CONFLICT_FINGERPRINTS,
+        retained: (record['fingerprintRetention'] as { retained: number }).retained,
+        carried: (record['candidateFingerprints'] as readonly string[]).length,
+        noun: 'fingerprints',
+      }
+      : null
+
+  if (detail !== null) {
+    // Both halves are checked. `assertRecordRetention` above already requires
+    // the claim and the array to agree, so either alone would be sufficient
+    // today -- and stating only one would make this validator depend on that
+    // ordering holding forever.
+    if (detail.retained > detail.cap) {
+      throw new GraphIntegrityInvariantError(
+        `${field} claims ${detail.retained} retained ${detail.noun}, above the per-record bound of ${detail.cap}`,
+      )
+    }
+    if (detail.carried > detail.cap) {
+      throw new GraphIntegrityInvariantError(
+        `${field} carries ${detail.carried} ${detail.noun}, above the per-record bound of ${detail.cap}`,
+      )
+    }
   }
 }
 
