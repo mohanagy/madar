@@ -96,8 +96,13 @@ export interface SnapshotInput {
  *
  * Cycles are tracked because a projection that ever gains one must not turn a
  * freeze into a hang.
+ *
+ * Exported so the artifact parser can promise the same depth of immutability it
+ * does. Two independent freeze implementations would be two places for the
+ * depth to drift apart, and the shallow-freeze defect this fixes is exactly
+ * what that drift looks like.
  */
-function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
+export function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
   if (value === null || typeof value !== 'object') return value
   if (seen.has(value)) return value
   seen.add(value)

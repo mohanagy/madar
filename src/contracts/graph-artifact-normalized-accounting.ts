@@ -19,6 +19,7 @@
  * *inside* `integrity_receipt` rather than beside it as a new payload field.
  */
 
+import { deepFreeze } from './graph-integrity-snapshot.js'
 import {
   ENDPOINT_IDENTITY_REASONS,
   ENDPOINT_IDENTITY_STATUSES,
@@ -348,7 +349,17 @@ export function parseGraphArtifactNormalizedAccounting(
   const structureError = normalizedAccountingStructureError(value, field)
   if (structureError !== null) throw new GraphIntegrityInvariantError(structureError)
   assertGraphArtifactNormalizedAccounting(value, field)
-  return value
+  // Detached and deeply frozen, in that order, and only after validation.
+  //
+  // `value` is the live object graph `JSON.parse` produced inside the loader.
+  // Returning it handed every caller a writable alias into the decoded
+  // artifact: a consumer could rewrite a receipt count, a retained record or a
+  // retention object through the block it was given, and the loaded graph would
+  // then disagree with the bytes it came from. Cloning severs the alias;
+  // freezing stops the returned copy from being edited in turn. Freezing alone
+  // would not be enough, because it would also freeze the loader's own decoded
+  // value as a side effect of parsing it.
+  return deepFreeze(structuredClone(value))
 }
 
 /**
