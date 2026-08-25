@@ -220,11 +220,33 @@
             }
           }
         ],
-        "baseline_median_ms": 668.2,
-        "candidate_median_ms": 652.3,
-        "ratio": 0.976,
-        "rss_ratio": 1,
-        "gate": "within budget"
+        "baseline_median_ms": 677.4,
+        "candidate_median_ms": 687.8,
+        "ratio": 1.015,
+        "rss_ratio": 0.999,
+        "gate": "within budget",
+        "superseded_estimate": {
+          "reason": "PERF-PAIR-01",
+          "estimator": "independent per-arm minimum, mixed order conditions",
+          "baseline_median_ms": 668.2,
+          "candidate_median_ms": 652.3,
+          "ratio": 0.976,
+          "rss_ratio": 1,
+          "note": "the two arms were reduced independently, so the published pair could combine a baseline median from one order with a candidate median from the other -- a comparison no session produced. Recomputed from the same retained samples; no measurement was repeated and no session was discarded."
+        },
+        "estimator": "geometric mean of per-session candidate/baseline ratios",
+        "session_ratios": [
+          {
+            "order": "baseline-first",
+            "wall_ratio": 0.976,
+            "rss_ratio": 0.996
+          },
+          {
+            "order": "candidate-first",
+            "wall_ratio": 1.056,
+            "rss_ratio": 1.001
+          }
+        ]
       },
       {
         "corpus_scope": "src-plus-tests-js-ts",
@@ -297,11 +319,33 @@
             }
           }
         ],
-        "baseline_median_ms": 955.8,
-        "candidate_median_ms": 938.1,
-        "ratio": 0.981,
-        "rss_ratio": 1.006,
-        "gate": "within budget"
+        "baseline_median_ms": 962.4,
+        "candidate_median_ms": 943.0,
+        "ratio": 0.98,
+        "rss_ratio": 0.999,
+        "gate": "within budget",
+        "superseded_estimate": {
+          "reason": "PERF-PAIR-01",
+          "estimator": "independent per-arm minimum, mixed order conditions",
+          "baseline_median_ms": 955.8,
+          "candidate_median_ms": 938.1,
+          "ratio": 0.981,
+          "rss_ratio": 1.006,
+          "note": "the two arms were reduced independently, so the published pair could combine a baseline median from one order with a candidate median from the other -- a comparison no session produced. Recomputed from the same retained samples; no measurement was repeated and no session was discarded."
+        },
+        "estimator": "geometric mean of per-session candidate/baseline ratios",
+        "session_ratios": [
+          {
+            "order": "baseline-first",
+            "wall_ratio": 0.981,
+            "rss_ratio": 1.03
+          },
+          {
+            "order": "candidate-first",
+            "wall_ratio": 0.978,
+            "rss_ratio": 0.97
+          }
+        ]
       }
     ],
     "invalidated_runs": []

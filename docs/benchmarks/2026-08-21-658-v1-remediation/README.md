@@ -1,5 +1,17 @@
 # #658 V1/E1/M1 remediation evidence — 2026-08-21
 
+> **Estimator corrected (PERF-PAIR-01).** Every ratio in this directory was
+> originally computed by reducing the two arms independently — a minimum per
+> arm across sessions — which could combine a baseline median from one order
+> with a candidate median from the other, a comparison no session produced and
+> one that defeats the counterbalancing the sessions exist to provide. The
+> receipts have been recomputed from the same retained samples as the geometric
+> mean of the per-session candidate/baseline ratios. No measurement was
+> repeated and no session was discarded; each receipt carries its previous
+> figures under `superseded_estimate`. No gate verdict changed — every
+> corrected ratio remains far below 2.00×.
+
+
 Evidence for the V1-01, V1-02, V1-03, E1-04 and M1-05 remediation of the
 independent `HOLD-STAGE3` at `24ba54ef`. Every JSON file here is generated.
 
@@ -26,8 +38,9 @@ signal through one resource registry.
 
 | | src-only | src-plus-tests-js-ts |
 |---|---|---|
-| wall ratio | 0.976× | 0.981× |
-| RSS ratio | 1.000× | 1.006× |
+| wall ratio | 1.015× | 0.980× |
+| RSS ratio | 0.999× | 0.999× |
+| superseded wall ratio | 0.976× | 0.981× |
 | identical input | yes | yes |
 | candidates both arms | 15,005 | 21,002 |
 | invalidated sessions | 0 | 0 |
@@ -46,8 +59,8 @@ below 1.0 here is measurement scatter, and reporting it as a speedup would be
 the same error as reporting an earlier round's scatter as a regression.
 
 **Two measurements of `ba3fb9f1 → a135efca` exist** and both are preserved:
-this implementation's `1.000× / 0.999×` and the reviewer's independent `1.029×
-/ 0.976×`. The noise band described above is what explains the difference
+this implementation's `0.990× / 0.986×` (corrected from `1.000× / 0.999×`)
+and the reviewer's independent `1.029× / 0.976×`. The noise band described above is what explains the difference
 between them; it is an interpretation of those two measurements, not a third.
 
 ## Extraction modes
@@ -77,8 +90,9 @@ npm run verify:integrity-receipts -- \
 
 | | src-only | src-plus-tests-js-ts |
 |---|---|---|
-| wall ratio | 0.999× | 0.973× |
-| RSS ratio | 1.007× | 0.998× |
+| wall ratio | 1.005× | 0.987× |
+| RSS ratio | 1.009× | 1.001× |
+| superseded wall ratio | 0.999× | 0.973× |
 | identical input | yes | yes |
 | files | 199 | 690 |
 | candidates both arms | 15,005 | 21,143 |

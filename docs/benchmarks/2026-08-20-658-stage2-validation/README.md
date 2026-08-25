@@ -1,5 +1,17 @@
 # #658 Stage 2 validation evidence — 2026-08-20
 
+> **Estimator corrected (PERF-PAIR-01).** Every ratio in this directory was
+> originally computed by reducing the two arms independently — a minimum per
+> arm across sessions — which could combine a baseline median from one order
+> with a candidate median from the other, a comparison no session produced and
+> one that defeats the counterbalancing the sessions exist to provide. The
+> receipts have been recomputed from the same retained samples as the geometric
+> mean of the per-session candidate/baseline ratios. No measurement was
+> repeated and no session was discarded; each receipt carries its previous
+> figures under `superseded_estimate`. No gate verdict changed — every
+> corrected ratio remains far below 2.00×.
+
+
 Evidence for the V1–V3 and E1 remediation of the independent `HOLD-STAGE3` at
 `ba3fb9f1`. Every JSON file here is generated; none is hand-edited.
 

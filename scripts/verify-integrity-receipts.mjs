@@ -567,12 +567,37 @@ async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT,
       continue
     }
 
-    const baseMedian = Math.min(...usable.map((session) => session.base.medianMs))
-    const headMedian = Math.min(...usable.map((session) => session.head.medianMs))
-    const ratio = Number((headMedian / baseMedian).toFixed(3))
-    const rssRatio = Number((
-      Math.max(...usable.map((s) => s.head.peakRssMb)) / Math.max(...usable.map((s) => s.base.peakRssMb))
-    ).toFixed(3))
+    // One estimator, and it aggregates PAIRS.
+    //
+    // `Math.min` used to be applied to the two arms independently, so the
+    // baseline minimum could be taken from one order and the candidate minimum
+    // from the other -- a comparison no session ever produced. On
+    // `src-plus-tests-js-ts` that published 943.3 against 941.9 for a ratio of
+    // 0.999, while the two sessions actually measured 1.029 and 0.946. Mixing
+    // order conditions is precisely what counterbalancing exists to prevent,
+    // and taking the best of each arm biases the result toward whichever arm
+    // happened to get the luckiest run.
+    //
+    // Each session is now reduced to its own candidate/baseline ratio first,
+    // and those ratios are aggregated. The aggregate is the geometric mean
+    // because a ratio estimator must be symmetric: swapping baseline and
+    // candidate has to invert the result exactly, which an arithmetic mean of
+    // ratios does not do.
+    const sessionRatios = usable.map((session) => ({
+      order: session.order,
+      wall: session.head.medianMs / session.base.medianMs,
+      rss: session.head.peakRssMb / session.base.peakRssMb,
+    }))
+    const geometricMean = (values) => Math.exp(
+      values.reduce((total, value) => total + Math.log(value), 0) / values.length,
+    )
+    // Reported per arm as the same aggregate, so the published medians and the
+    // published ratio describe one estimator rather than two. This is exact,
+    // not approximate: geomean(head)/geomean(base) === geomean(head/base).
+    const baseMedian = Number(geometricMean(usable.map((s) => s.base.medianMs)).toFixed(1))
+    const headMedian = Number(geometricMean(usable.map((s) => s.head.medianMs)).toFixed(1))
+    const ratio = Number(geometricMean(sessionRatios.map((s) => s.wall)).toFixed(3))
+    const rssRatio = Number(geometricMean(sessionRatios.map((s) => s.rss)).toFixed(3))
     comparisons.push({
       corpus_scope: scope,
       extraction_mode: 'legacy',
@@ -597,6 +622,15 @@ async function comparePerformance(baselineDir, baselineSha, candidateDir = ROOT,
       })),
       baseline_median_ms: baseMedian,
       candidate_median_ms: headMedian,
+      // The raw per-session ratios are retained, never only the aggregate: an
+      // aggregate that hides two disagreeing sessions is how a mixed-order
+      // number looked reasonable in the first place.
+      estimator: 'geometric mean of per-session candidate/baseline ratios',
+      session_ratios: sessionRatios.map((s) => ({
+        order: s.order,
+        wall_ratio: Number(s.wall.toFixed(3)),
+        rss_ratio: Number(s.rss.toFixed(3)),
+      })),
       ratio,
       rss_ratio: rssRatio,
       gate: ratio > 2 || rssRatio > 2 ? 'HUMAN_GATE' : 'within budget',

@@ -38,6 +38,7 @@
   "tests/unit/receipt-arm-envelope.test.ts",
   "tests/unit/receipt-child-lifecycle.test.ts",
   "tests/unit/receipt-exact-ref-guards.test.ts",
+  "tests/unit/receipt-paired-estimator.test.ts",
   "tests/unit/receipt-resource-cleanup.test.ts",
   "tests/unit/receipt-signal-responsiveness.test.ts",
   "tests/unit/verification-target-policy.test.ts",
