@@ -40,7 +40,11 @@ const AUDITOR = resolve(REPO, 'scripts/audit-mutation-evidence.mjs')
 /** Failures that mean the probe itself was botched, never a real detection. */
 const MASKING = [
   'artifact_outside_invocation_bounds', 'report_digest_mismatch',
-  'report_bytes_mismatch', 'report_freshness_violation',
+  // The auditor emits `report_size_mismatch`; `report_bytes_mismatch` is a
+  // code no path produces, so a probe invalidated by a size mismatch was not
+  // recognised as masked and passed `expect(result.masked).toBe(false)` while
+  // detecting nothing.
+  'report_size_mismatch', 'report_freshness_violation',
 ]
 
 interface Mode { readonly project: string; readonly golden: string }

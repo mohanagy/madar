@@ -104,7 +104,11 @@ describe('R1/R2-02 — an unsafe payload cannot be attached', () => {
   it('refuses an unsafe string hidden in a rejected candidate projection', () => {
     const record = {
       kind: 'rejected',
-      id: 'cr_0000000000000000000000000000000000000000000000000000000000000000',
+      // `rc_` is the rejected-record prefix. With `cr_` the identifier was
+      // refused on format before validation ever reached `sanitizedCandidate`,
+      // so this passed for the wrong reason and proved nothing about whether an
+      // unsafe path inside the projection is caught.
+      id: 'rc_0000000000000000000000000000000000000000000000000000000000000000',
       multiplicity: 1,
       reasons: ['malformed_candidate'],
       verificationTargets: [],

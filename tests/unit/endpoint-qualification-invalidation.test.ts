@@ -96,13 +96,37 @@ describe('V3 — an identical re-add is still a no-op', () => {
   })
 
   it('preserves the snapshot when an explicit qualification is re-declared identically', () => {
-    const graph = withSnapshot()
-    graph.addNode('gamma', { label: 'G', endpointIdentity: QUALIFY.contextBound })
-    const reattached = withSnapshot()
-    reattached.addNode('gamma', { label: 'G', endpointIdentity: QUALIFY.contextBound })
-    const snapshot = reattached.normalizedIntegritySnapshot()
-    reattached.addNode('gamma', { label: 'G', endpointIdentity: QUALIFY.contextBound })
-    expect(reattached.normalizedIntegritySnapshot()).toBe(snapshot)
+    // Ordering is the whole control. Adding a node is a real change and
+    // invalidates, so a snapshot captured AFTER it is null -- and the previous
+    // version added `gamma` to a fixture that did not contain it, read the
+    // resulting null, re-added, and compared null to null. That passes whether
+    // or not an identical re-add preserves anything.
+    //
+    // The node therefore has to be present when the snapshot is finalized,
+    // which means declaring it in the extraction rather than adding it after.
+    const graph = buildFromJson({
+      schema_version: 2,
+      directed: true,
+      nodes: [
+        { id: 'alpha', label: 'Alpha', file_type: 'code', source_file: 'src/alpha.ts', endpointIdentity: QUALIFY.stable },
+        { id: 'gamma', label: 'G', file_type: 'code', source_file: 'src/gamma.ts', endpointIdentity: QUALIFY.contextBound },
+      ],
+      edges: [
+        { source: 'alpha', target: 'gamma', relation: 'contains', confidence: 'EXTRACTED', source_file: 'src/alpha.ts' },
+      ],
+    }, { directed: true, accounting: 'normalized_extraction_boundary' })
+
+    const snapshot = graph.normalizedIntegritySnapshot()
+    expect(snapshot, 'the control needs a live snapshot to preserve').not.toBeNull()
+    expect(graph.nodeEndpointIdentity('gamma')).toMatchObject({ status: 'context_bound' })
+
+    graph.addNode('gamma', {
+      ...graph.nodeAttributes('gamma'),
+      endpointIdentity: QUALIFY.contextBound,
+    } as never)
+
+    expect(graph.normalizedIntegritySnapshot()).toBe(snapshot)
+    expect(graph.normalizedIntegritySnapshot()).not.toBeNull()
   })
 
   it('treats dropping an explicit qualification as a change, not a round-trip', () => {

@@ -50,11 +50,17 @@ const { createVitest } = await import('vitest/node')
 
 const recorder = {
   onInit() {},
-  onPathsCollected(paths) {
-    for (const path of paths ?? []) mark(path, 'collected')
+  // Vitest 4 removed `onPathsCollected` and `onCollected`. They were still
+  // declared here, so they were simply never called: the `collected` stage went
+  // unmarked for every module and this diagnostic reported the whole run as
+  // uncollected -- the exact false signal it exists to rule out.
+  onTestRunStart(specifications) {
+    for (const specification of specifications ?? []) {
+      if (specification?.moduleId) mark(specification.moduleId, 'collected')
+    }
   },
-  onCollected(files) {
-    for (const file of files ?? []) mark(file.filepath, 'queued')
+  onTestModuleCollected(testModule) {
+    if (testModule?.moduleId) mark(testModule.moduleId, 'collected')
   },
   onTestModuleQueued(testModule) {
     if (testModule?.moduleId) mark(testModule.moduleId, 'queued')
@@ -65,7 +71,6 @@ const recorder = {
   onTestModuleEnd(testModule) {
     if (testModule?.moduleId) mark(testModule.moduleId, 'finished')
   },
-  onTaskUpdate() {},
   onUserConsoleLog() {},
   onTestRunEnd(testModules, unhandledErrors) {
     for (const testModule of testModules ?? []) {

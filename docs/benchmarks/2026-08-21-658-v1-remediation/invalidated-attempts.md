@@ -11,7 +11,7 @@ stays where it was generated, and this round adds a new one.
 | `../2026-08-20-658-stage2-validation/receipt-ba3fb9f1-vs-final.json` | `ba3fb9f1` → `a135efca` | 1.000× / 0.999× |
 | independent reviewer reproduction, `24ba54ef` review | `ba3fb9f1` → `a135efca` | 1.029× / 0.976× wall, 1.006× / 1.005× RSS |
 
-Three independent measurements of `ba3fb9f1 → a135efca` now exist: this
+Two independent measurements of `ba3fb9f1 → a135efca` now exist: this
 implementation's `1.000× / 0.999×` and the reviewer's `1.029× / 0.976×`. Neither
 is selected as the truth and neither is deleted. They differ by low single
 digits while a single arm's samples span roughly 11%, which is the same

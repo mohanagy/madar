@@ -45,9 +45,10 @@ detectable at this corpus size — not that they made anything faster. A ratio
 below 1.0 here is measurement scatter, and reporting it as a speedup would be
 the same error as reporting an earlier round's scatter as a regression.
 
-**Three measurements of `ba3fb9f1 → a135efca` exist** and all are preserved:
-this implementation's `1.000× / 0.999×`, the reviewer's independent `1.029× /
-0.976×`, and the noise band that explains why they differ.
+**Two measurements of `ba3fb9f1 → a135efca` exist** and both are preserved:
+this implementation's `1.000× / 0.999×` and the reviewer's independent `1.029×
+/ 0.976×`. The noise band described above is what explains the difference
+between them; it is an interpretation of those two measurements, not a third.
 
 ## Extraction modes
 

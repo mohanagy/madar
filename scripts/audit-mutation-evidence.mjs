@@ -24,13 +24,40 @@ import { auditEvidence } from './lib/evidence-audit.mjs'
 const ROOT = process.cwd()
 const argv = process.argv.slice(2)
 
+const usage = (message) => {
+  console.error(`audit-mutation-evidence.mjs: ${message}`)
+  console.error('usage: audit-mutation-evidence.mjs <artifact-root> [--expect-mutants N] [--expect-baselines N]')
+  process.exit(2)
+}
+
+/**
+ * A flag's value, or null when the flag was not given.
+ *
+ * A flag written last on the command line has no following argument, and
+ * `argv[index + 1]` is then `undefined`. Every downstream check compares
+ * against `=== null`, so `undefined` slipped past all of them: an absent value
+ * was neither treated as "not supplied" nor rejected. `--expect-mutants` with
+ * nothing after it reached `Number(undefined)` and became NaN, and a NaN
+ * expectation compares false against every real count, so the audit could not
+ * confirm or deny the number it was asked about.
+ *
+ * A flag given without a value is a usage error, not a silent default.
+ */
 const flag = (name) => {
   const index = argv.indexOf(name)
-  return index >= 0 ? argv[index + 1] : null
+  if (index < 0) return null
+  const value = argv[index + 1]
+  if (value === undefined || value.startsWith('--')) usage(`${name} requires a value`)
+  return value
 }
+
 const number = (name) => {
   const value = flag(name)
-  return value === null ? null : Number(value)
+  if (value === null) return null
+  const parsed = Number(value)
+  // NaN would silently disable the very expectation the caller asked for.
+  if (!Number.isFinite(parsed)) usage(`${name} expects a number, got ${JSON.stringify(value)}`)
+  return parsed
 }
 
 // The first bare argument, skipping any value that belongs to a flag.
