@@ -84,6 +84,10 @@ const ROUND_TRIP = 'tests/unit/normalized-accounting-round-trip.test.ts'
 const LOAD_MODES = 'tests/unit/normalized-accounting-load-modes.test.ts'
 const BYTE_COMPAT = 'tests/unit/normalized-accounting-actual-byte-compat.test.ts'
 const STRICT_WARNING = 'tests/unit/normalized-accounting-strict-warning-matrix.test.ts'
+const LOCALE_DETERMINISM = 'tests/unit/normalized-accounting-locale-determinism.test.ts'
+const DETACHMENT = 'tests/unit/normalized-accounting-detachment.test.ts'
+const PER_RECORD_CAPS = 'tests/unit/integrity-per-record-caps.test.ts'
+const INHERITED_SNAPSHOT = 'tests/unit/normalized-accounting-inherited-snapshot.test.ts'
 
 /**
  * Every mutant names the file it breaks and the ONE focused suite expected to
@@ -425,7 +429,10 @@ const MUTANTS = [
     name: 'graph: let a rebuilt graph launder accounting away',
     file: GRAPH,
     test: ACCOUNTING,
-    from: '      this.normalizedAccounting = source.normalizedAccounting',
+    // Re-anchored when inheritance began finalizing a snapshot over the target
+    // instead of assigning the field directly. The mutation is unchanged:
+    // transfer nothing, so a rebuilt graph loses the degradation it inherited.
+    from: '      this.finalizeAndAttachAccounting(source.normalizedAccounting, this.storageAdmissionSummary())',
     to: '',
     expect: [
       'a copy helper that rebuilds a graph cannot launder degradation carries accounting and admission counters onto a rebuilt graph',
@@ -547,8 +554,14 @@ const MUTANTS = [
     name: 'R3-04: stale snapshot after degradation inheritance',
     file: GRAPH,
     test: INVALIDATION,
-    from: '    this.invalidateIntegritySnapshot()\n  }\n\n  copy()',
-    to: '  }\n\n  copy()',
+    // Re-anchored when inheritance split into two paths. Inheriting ACCOUNTING
+    // now finalizes a fresh snapshot, so the stale-snapshot risk moved to the
+    // admissions-only path, which still invalidates and must keep doing so.
+    from: `      this.invalidateIntegritySnapshot()
+      return
+    }`,
+    to: `      return
+    }`,
     expect: [
       'R3-04 — every successful mutation invalidates the snapshot degradation inheritance',
     ],
@@ -927,8 +940,11 @@ const MUTANTS = [
     // The target suite is gated: without this the baseline would be "green"
     // only because its tests never ran, and the mutant would score UNCAUGHT.
     env: { MADAR_RECEIPT_SIGNAL_E2E: '1' },
-    from: '          reject(new ResourceRegistryShuttingDownError(`child \"${description}\" (shutdown began during spawn)`))',
-    to: '          reject(new Error(`refusing to admit child \"${description}\": shutdown began during spawn`))',
+    // Re-anchored when the spawn-race exit became a bounded
+    // terminate-then-reject rather than a bare `reject` on `close`. The
+    // mutation is unchanged: surface an untyped error instead of the typed one.
+    from: '          new ResourceRegistryShuttingDownError(`child \"${description}\" (shutdown began during spawn)`),',
+    to: '          new Error(`refusing to admit child \"${description}\": shutdown began during spawn`),',
     expect: [
       'terminates and reaps a child when shutdown wins the spawn race',
     ],
@@ -1375,8 +1391,12 @@ const MUTANTS = [
     name: 'C2-PROOF: treat an unprovable tree as empty',
     file: CHILD_RUNNER,
     test: RECEIPT_LIFECYCLE,
-    from: "      if (state === 'empty') { settle(); return }",
-    to: "      if (state === 'empty' || state === 'unprovable') { settle(); return }",
+    // Re-anchored when the settlement branch gained a tree-kill-failure check
+    // and an explicit proof kind, which turned a one-line body into a block.
+    // The mutation it expresses is unchanged: accept `unprovable` as if the
+    // tree had been proven empty.
+    from: "      if (state === 'empty') {",
+    to: "      if (state === 'empty' || state === 'unprovable') {",
     expect: [
       'rejects with the typed error, kills the descendant and spares a bystander',
     ],
@@ -1548,6 +1568,71 @@ const MUTANTS = [
     'S3-W — strict and qualification fail closed on every warning family strict refuses unknown_endpoint_identity',
     'S3-W — strict and qualification fail closed on every warning family strict refuses unknown_endpoint_identity with a typed artifact invariant',
     'S3-W — the retained partial discriminator is fatal on its own is refused by strict even though every candidate was retained',
+    ],
+  },
+  {
+    // Integration remediation. Host collation decided artifact bytes, so two
+    // runners with different locales serialized the same graph differently.
+    // Mutating the NODE id sort rather than the reason-count sort is
+    // deliberate: real terminal-reason keys are lowercase and underscored and
+    // happen to collate identically under root ICU, so that mutant would be
+    // equivalent on this host and prove nothing.
+    name: 'S3-DETERMINISM: order node ids by host collation instead of code units',
+    file: ARTIFACT,
+    test: LOCALE_DETERMINISM,
+    from: `    }))
+    .sort((left, right) => compareUnicodeCodePoints(left.id, right.id))`,
+    to: `    }))
+    .sort((left, right) => left.id.localeCompare(right.id))`,
+    expect: [
+      'emits node ids in code-unit order, not collation order',
+      'does not emit the order this host\u2019s collation would produce',
+      'produces identical bytes under en-US and sv-SE',
+    ],
+  },
+  {
+    // Integration remediation. The parser handed back the live decoded object,
+    // so a caller could rewrite a receipt count through the block it was given
+    // and the loaded graph would disagree with its own bytes.
+    name: 'S3-DETACH: return the live decoded block instead of detached data',
+    file: WIRE,
+    test: DETACHMENT,
+    from: '  return deepFreeze(structuredClone(value))',
+    to: '  return value',
+    expect: [
+      'does not return the object it was given',
+      'ignores a mutation made to the decoded input after parsing',
+      'refuses a write to a nested receipt counter',
+    ],
+  },
+  {
+    // Integration remediation. Per-record detail was bounded by the per-KIND
+    // constant, so a record claiming 900 retained occurrences passed the
+    // untrusted path while construction bounds it at 16.
+    name: 'S3-BOUND: bound per-record detail by the per-kind constant',
+    file: VALIDATION,
+    test: PER_RECORD_CAPS,
+    from: '      cap: MAX_RECORD_OCCURRENCES,',
+    to: '      cap: MAX_DURABLE_RECORDS_PER_KIND,',
+    expect: [
+      'refuses 17 occurrences',
+      'refuses the count the old per-kind bound would have accepted',
+    ],
+  },
+  {
+    // Integration remediation. Inheriting the accounting field without
+    // finalizing a snapshot produced a state the artifact cannot express, and
+    // the writer silently omitted the whole normalized block.
+    name: 'S3-INHERIT: inherit accounting without finalizing a snapshot',
+    file: GRAPH,
+    test: INHERITED_SNAPSHOT,
+    from: '      this.finalizeAndAttachAccounting(source.normalizedAccounting, this.storageAdmissionSummary())',
+    to: `      this.normalizedAccounting = source.normalizedAccounting
+      this.invalidateIntegritySnapshot()`,
+    expect: [
+      'never leaves accounting attached with a null snapshot',
+      'serializes a normalized_accounting block',
+      'loads that block back in normal mode',
     ],
   },
 ]
