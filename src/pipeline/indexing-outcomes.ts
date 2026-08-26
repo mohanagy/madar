@@ -75,8 +75,13 @@ export function deduplicateIndexingOutcomes(outcomes: readonly IndexingOutcome[]
   // Code point, not collation: this order is written into indexing-manifest.json,
   // and `localeCompare` answers according to the host's ICU locale, so two
   // machines published different bytes for the same repository. De-duplication
-  // above is by `kind:path` and has already happened, so this sort only decides
-  // byte order -- it can never change which outcome survives.
+  // above is by `kind:path` and has already happened, so this sort cannot change
+  // which outcome survives into the manifest.
+  //
+  // It does decide which ones a person sees: `doctor.ts` filters the incomplete
+  // outcomes and takes `slice(0, 20)` in two places, so the first twenty listed
+  // change with this comparator. That is a display consequence of making the
+  // manifest host-independent, and it is host-independent too.
   return [...deduplicated.values()].sort((left, right) =>
     compareUnicodeCodePoints(left.path, right.path) || compareUnicodeCodePoints(left.kind, right.kind))
 }
@@ -127,13 +132,23 @@ export function summarizeIndexingOutcomes(outcomes: readonly IndexingOutcome[]):
     }
   }
 
-  // The bucket key orders below are byte order: this summary is serialized with
-  // a plain `JSON.stringify`, so an object's insertion order IS its byte order.
+  // The bucket key orders below decide bytes: this summary is serialized with a
+  // plain `JSON.stringify`, which emits keys in ECMAScript enumeration order.
+  //
+  // That is NOT simply insertion order. Integer-index keys come first, ascending
+  // numerically, and only then the remaining string keys in insertion order. So
+  // capabilities `"10"` and `"2"` serialize as `"2"` before `"10"` whatever this
+  // comparator returns. That reordering is host-independent -- it is a language
+  // rule, not an ICU one -- so the guarantee here still holds; what the
+  // comparator fixes is the order of the string keys, which is the part
+  // `localeCompare` made depend on the host.
+  //
   // `reason`, `extraction_strategy` and `fallback_reason` are closed ASCII sets
-  // that every collation orders alike, but `capability` is an open domain --
-  // `parseIndexingManifest` accepts any string and incremental generation
-  // returns a prior outcome verbatim -- so a manifest on disk can round-trip a
-  // value the host locale orders differently. All four use the one comparator.
+  // with no integer-like member, so for them enumeration order and code-point
+  // order coincide. `capability` is an open domain -- `parseIndexingManifest`
+  // accepts any string and incremental generation returns a prior outcome
+  // verbatim -- so a manifest on disk can round-trip both a value the host locale
+  // orders differently and a value the language emits out of comparator order.
   return {
     state: completenessState(counts),
     candidates: outcomes.length,

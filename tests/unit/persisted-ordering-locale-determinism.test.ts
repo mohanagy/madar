@@ -290,6 +290,63 @@ process.stdout.write(createHash('sha256').update(bytes).digest('hex') + ' ' + In
   })
 })
 
+/**
+ * The guarantee is host-independence, which is not the same as "code-point order
+ * everywhere", and the difference is reachable.
+ *
+ * `JSON.stringify` emits object keys in ECMAScript enumeration order: integer-index
+ * keys first, ascending numerically, and only then string keys in insertion order.
+ * `capability` is an open domain, so `"10"` and `"2"` are accepted values, and they
+ * serialize as `"2"` before `"10"` whatever the comparator returns.
+ *
+ * That reordering is a language rule rather than an ICU one, so the bytes are still
+ * the same on every host -- which is what this issue promises. Asserting it here
+ * keeps the promise honest: an earlier draft of the comment claimed insertion order
+ * simply IS byte order, and that is false.
+ */
+describe('C1-integer-keys -- host-independent even where enumeration outranks the comparator', () => {
+  const NUMERIC_CAPABILITIES = ['10', '2', 'Ångström', 'apple'] as const
+
+  function numericManifest(): ReturnType<typeof createIndexingManifest> {
+    return createIndexingManifest({
+      outcomes: NUMERIC_CAPABILITIES.map((capability, index) => ({
+        path: `src/file-${index}.ts`, kind: 'file' as const, status: 'indexed' as const,
+        reason: 'indexed' as const, capability,
+      })),
+      now: FIXED_NOW,
+    })
+  }
+
+  it('emits integer-like keys first, then the comparator’s order for the rest', () => {
+    const emitted = Object.keys(numericManifest().summary.capability_buckets)
+    // "2" before "10" is the language ordering integer indices numerically;
+    // "apple" before "Ångström" is the comparator, still doing its job on the
+    // string keys.
+    expect(emitted).toEqual(['2', '10', 'apple', 'Ångström'])
+    // And so the emitted order is NOT code-point order overall, which would have
+    // put "10" first. That is the claim an earlier draft got wrong.
+    expect(byCodePoint(NUMERIC_CAPABILITIES)).toEqual(['10', '2', 'apple', 'Ångström'])
+    expect(emitted).not.toEqual(byCodePoint(NUMERIC_CAPABILITIES))
+  })
+
+  it('writes the same bytes under two host collations anyway', () => {
+    expectSameBytesAcrossLocales(MANIFEST_ENTRIES, 'manifest-integer-capabilities', `
+import { createHash } from 'node:crypto'
+import { createIndexingManifest } from './src/pipeline/indexing-outcomes.js'
+const capabilities = ${JSON.stringify(NUMERIC_CAPABILITIES)}
+const manifest = createIndexingManifest({
+  outcomes: capabilities.map((capability, index) => ({
+    path: 'src/file-' + index + '.ts', kind: 'file', status: 'indexed',
+    reason: 'indexed', capability,
+  })),
+  now: new Date(${JSON.stringify(FIXED_NOW.toISOString())}),
+})
+const bytes = JSON.stringify(manifest, null, 2) + '\\n'
+process.stdout.write(createHash('sha256').update(bytes).digest('hex') + ' ' + Intl.Collator().resolvedOptions().locale)
+`)
+  })
+})
+
 describe('C1 -- the share-safe manifest carries only closed-domain summary values', () => {
   it('is byte-stable across repeated serialization', () => {
     const manifest = createIndexingManifest({
