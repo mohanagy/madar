@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
 
@@ -118,13 +118,21 @@ interface ProbeResult {
 const SHA256 = /^[0-9a-f]{64}$/
 
 /**
- * The slowest probe here builds a git repository and a graph inside the child,
- * which takes about two seconds locally and rather longer on a cold Windows CI
- * runner. Sixty seconds is far above that and far below vitest's own per-test
- * timeout, so a hung child fails as *this* probe rather than stalling the file
- * and reporting nothing about which one stopped.
+ * A child timeout only attributes a hang to *this* probe if it fires before
+ * vitest gives up on the test. `vitest.config.ts` sets `testTimeout` to 15s, or
+ * 30s on Windows, so the child bound has to sit strictly below that.
+ *
+ * An earlier revision used a flat 60s, which the per-test timeout always beat:
+ * the option was dead code and the attribution it claimed never happened.
+ *
+ * Two thirds of the budget keeps roughly a tenfold margin over the measured
+ * cost -- the heaviest probe builds a git repository and a graph, about a second
+ * locally, and its two-arm test runs in ~1.9s -- while still firing well before
+ * vitest does. `mirrors vitest.config.ts` below fails if that file's budget
+ * changes without this one.
  */
-const PROBE_TIMEOUT_MS = 60_000
+const PER_TEST_TIMEOUT_MS = process.platform === 'win32' ? 30_000 : 15_000
+const PROBE_TIMEOUT_MS = Math.floor((PER_TEST_TIMEOUT_MS * 2) / 3)
 
 /** Runs `body` inside the materialized tree under `locale` and parses its stdout. */
 function runUnderLocale(entries: readonly string[], name: string, body: string, locale: string): ProbeResult {
@@ -181,6 +189,23 @@ function expectSameBytesAcrossLocales(entries: readonly string[], name: string, 
     ).not.toBe(swedish.locale)
   }
 }
+
+describe('the child bound is below vitest’s, so a hang is attributed to the probe', () => {
+  it('fires before the per-test timeout', () => {
+    expect(PROBE_TIMEOUT_MS).toBeLessThan(PER_TEST_TIMEOUT_MS)
+  })
+
+  it('mirrors vitest.config.ts, and fails if that budget moves without this one', () => {
+    // Read rather than assumed: a mirrored constant that nobody checks is how the
+    // 60s version went unnoticed.
+    const config = readFileSync(resolve(process.cwd(), 'vitest.config.ts'), 'utf8')
+    const declared = /DEFAULT_TEST_TIMEOUT\s*=\s*process\.platform\s*===\s*'win32'\s*\?\s*([\d_]+)\s*:\s*([\d_]+)/
+      .exec(config)
+    expect(declared, 'vitest.config.ts no longer declares DEFAULT_TEST_TIMEOUT in the expected shape').not.toBeNull()
+    const [windows, other] = [declared?.[1], declared?.[2]].map((value) => Number(value?.replaceAll('_', '')))
+    expect(PER_TEST_TIMEOUT_MS).toBe(process.platform === 'win32' ? windows : other)
+  })
+})
 
 // ─────────────────────────────────────────────────────────────────────────────
 // C1 -- indexing-manifest.json and its share-safe and failed variants
