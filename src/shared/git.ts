@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
+import { compareUnicodeCodePoints } from '../contracts/canonical-json.js'
+
 export function findGitRoot(path: string): string | null {
   let current = resolve(path)
   while (true) {
@@ -109,7 +111,13 @@ function parseStatusPaths(statusOutput: string): string[] {
 }
 
 function dedupePaths(paths: Iterable<string>): string[] {
-  return [...new Set([...paths].filter((path) => path.length > 0))].sort((left, right) => left.localeCompare(right))
+  // Code point, not collation. This order survives into
+  // `graph_build_freshness.git.dirty_files`, which canonical JSON serializes as
+  // an ORDERED array, so `localeCompare` made graph.madar bytes depend on the
+  // host's ICU locale whenever a build ran against a dirty worktree.
+  // De-duplication by exact string has already happened above, so this sort
+  // decides byte order only and can never drop a path.
+  return [...new Set([...paths].filter((path) => path.length > 0))].sort(compareUnicodeCodePoints)
 }
 
 export interface GitSnapshot {

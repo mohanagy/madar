@@ -18,6 +18,8 @@
 
 import { execFileSync } from 'node:child_process'
 
+import { compareUnicodeCodePoints } from '../../contracts/canonical-json.js'
+
 import type {
   SemanticProgramIndex,
   SpiDiffOverlay,
@@ -96,9 +98,14 @@ export function computeSpiDiffOverlay(opts: ComputeSpiDiffOverlayOptions): SpiDi
     head_ref: headRef,
     changed_files: [...changedFiles].sort(),
     changed_symbols: [...changedSymbols].sort(),
-    edges_added: edgesAdded.sort((a, b) =>
-      `${a.from}|${a.to}|${a.kind}`.localeCompare(`${b.from}|${b.to}|${b.kind}`),
-    ),
+    // Code point, not collation. The overlay is not persisted, but it sorts the
+    // same `from|to|kind` key as the SPI's own edge ordering, and symbol ids
+    // embed source identifiers -- so a host-dependent comparator here would make
+    // one member of that key's family disagree with the rest for no reason.
+    edges_added: edgesAdded.sort((a, b) => compareUnicodeCodePoints(
+      `${a.from}|${a.to}|${a.kind}`,
+      `${b.from}|${b.to}|${b.kind}`,
+    )),
   }
 }
 

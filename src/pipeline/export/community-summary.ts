@@ -34,6 +34,12 @@ export interface CommunitySummaryData {
   topFiles: Array<[string, number]>
 }
 
+/**
+ * Display ordering: these tie-breaks shape the generated community pages, which
+ * are written for a person to read and are never parsed back by Madar. Collation
+ * is the right order there, so `localeCompare` stays. Persisted collections order
+ * by code point -- see `compareUnicodeCodePoints` in src/contracts/canonical-json.ts.
+ */
 export function buildCommunitySummaryData(nodes: CommunitySummarySourceNode[]): CommunitySummaryData {
   const sortedNodes = [...nodes].sort((left, right) => right.degree - left.degree || left.label.localeCompare(right.label))
   const summaryNodes = sortedNodes.map((node) => ({

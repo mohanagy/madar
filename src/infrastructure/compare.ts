@@ -1041,6 +1041,15 @@ function isMadarToolDiscoveryToolUse(toolName: string, input: unknown): boolean 
   return collectTraceToolInputStrings(input).some((value) => isDeferredMadarToolSelectionQuery(value))
 }
 
+/**
+ * Display ordering: every comparator in this file shapes a compare run report,
+ * which carries wall-clock stamps and is not byte-reproducible by construction.
+ * `proof-report.ts` does parse `report.share-safe.json`, but reads only the
+ * question, the reduction ratios, `status.baseline` and `provider_proof` -- none
+ * of which any of these comparators order. Collation is the right order for a
+ * reader, so `localeCompare` stays. Persisted collections order by code point --
+ * see `compareUnicodeCodePoints` in src/contracts/canonical-json.ts.
+ */
 function traceToolCountSummary(toolCallsByName: Record<string, number>): string {
   return Object.entries(toolCallsByName)
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
+import { compareUnicodeCodePoints } from '../contracts/canonical-json.js'
 import { buildGraphSummary } from '../runtime/graph-summary.js'
 import { computeContextPackDiagnostics } from '../runtime/context-pack-diagnostics.js'
 import { loadGraph } from '../runtime/serve.js'
@@ -204,7 +205,11 @@ function findFilesByName(rootDir: string, fileName: string): string[] {
       matches.push(entryPath)
     }
   }
-  return matches.sort((left, right) => left.localeCompare(right))
+  // Code point, not collation. This sort exists solely to impose a deterministic
+  // order on a `readdirSync` walk, and a comparator that answers according to the
+  // host's ICU locale defeats the only reason it is here. Every discovered path
+  // is mapped by the caller, so the order decides presentation, never inclusion.
+  return matches.sort(compareUnicodeCodePoints)
 }
 
 function readCompareSummaries(compareDir: string, graphBase: string): ProofReportCompareSummary[] {

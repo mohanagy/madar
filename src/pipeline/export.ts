@@ -10,6 +10,17 @@ import { bridgePageFilename, buildOverviewBridgeSummaries, type OverviewBridgeSu
 import { buildCommunitySummaryData } from './export/community-summary.js'
 import { buildOverviewSearchIndex, buildOverviewTopNodes, type OverviewSearchIndexEntry, type OverviewTopNode } from './export/overview-navigation.js'
 
+/**
+ * Display ordering: every `localeCompare` in this file orders an export Madar
+ * writes for a person or an external tool -- interactive HTML, the overview
+ * pages, SVG, GEXF, GraphML and the Obsidian vault -- and never parses back.
+ * Collation is the right order there, so they stay. Persisted collections order
+ * by code point instead; see `compareUnicodeCodePoints` in
+ * src/contracts/canonical-json.ts.
+ *
+ * `toJson` / `serializeGraphJsonPayload` below have no production caller since
+ * the artifact-v2 cutover; `graph.madar` is the published graph.
+ */
 const COMMUNITY_COLORS = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7', '#9C755F', '#BAB0AC']
 
 const SVG_LAYOUT = {
