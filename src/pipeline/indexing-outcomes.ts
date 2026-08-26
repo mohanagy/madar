@@ -145,10 +145,18 @@ export function summarizeIndexingOutcomes(outcomes: readonly IndexingOutcome[]):
   //
   // `reason`, `extraction_strategy` and `fallback_reason` are closed ASCII sets
   // with no integer-like member, so for them enumeration order and code-point
-  // order coincide. `capability` is an open domain -- `parseIndexingManifest`
-  // accepts any string and incremental generation returns a prior outcome
-  // verbatim -- so a manifest on disk can round-trip both a value the host locale
-  // orders differently and a value the language emits out of comparator order.
+  // order coincide.
+  //
+  // Closed does not mean collation-insensitive, which an earlier comment here
+  // got wrong. `empty_extraction` and `extractor_error` are both valid reason
+  // codes, and az-AZ orders them the other way round because Azerbaijani places
+  // `x` between `h` and `ı`. So this comparator does real work even on a closed
+  // ASCII domain.
+  //
+  // `capability` is an open domain -- `parseIndexingManifest` accepts any string
+  // and incremental generation returns a prior outcome verbatim -- so a manifest
+  // on disk can round-trip both a value the host locale orders differently and a
+  // value the language emits out of comparator order.
   return {
     state: completenessState(counts),
     candidates: outcomes.length,

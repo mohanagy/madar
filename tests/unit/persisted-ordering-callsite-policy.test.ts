@@ -8,13 +8,20 @@ import { describe, expect, it } from 'vitest'
  * Guards the decision that cannot be re-derived from types: which sorts write
  * persisted bytes and therefore must not consult the host's collation.
  *
- * Three of the sites this file pins have **no behavioural coverage at all, and
- * cannot have any**. `reason`, `extraction_strategy` and `fallback_reason` are
- * closed lowercase-ASCII sets that `parseIndexingManifest` validates on the way
- * in, and their code-point, en-US and sv-SE orders are identical -- measured. No
- * fixture can make a runtime control fail for them, so a runtime control there
- * would be decorative. This audit is their only coverage, and saying so is the
- * point: the limitation is recorded rather than hidden behind a green test.
+ * Two of the sites this file pins have **no behavioural coverage, because none
+ * is possible**: `extraction_strategy` and `fallback_reason` are closed
+ * lowercase-ASCII sets that `parseIndexingManifest` validates on the way in, and
+ * an exhaustive search over every locale this build collates finds no pair whose
+ * collation order differs from code-point order. `fallback_reason` has a single
+ * member, so it cannot have a pair at all. For those two this audit is the only
+ * coverage, and saying so is the point.
+ *
+ * `reason` used to be listed here too, on a sweep of six hand-picked locales.
+ * That was wrong: `az-AZ` reverses `empty_extraction` against `extractor_error`,
+ * because Azerbaijani places `x` between `h` and `ı`. It now has a real
+ * behavioural control, and the classification of all three domains is derived by
+ * search in `persisted-ordering-locale-determinism.test.ts` rather than asserted
+ * here.
  *
  * It also catches what a byte-comparison cannot. Shadowing the imported
  * comparator with a local definition of the same name is legal TypeScript and

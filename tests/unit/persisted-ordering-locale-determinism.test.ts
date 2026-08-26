@@ -4,9 +4,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { afterAll, afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { compareUnicodeCodePoints } from '../../src/contracts/canonical-json.js'
+import {
+  EXTRACTION_FALLBACK_REASONS,
+  EXTRACTION_STRATEGIES,
+  INDEXING_REASON_CODES,
+} from '../../src/contracts/indexing.js'
 import { parseIndexingManifest } from '../../src/infrastructure/indexing-manifest.js'
 import { createIndexingManifest, shareSafeIndexingManifest } from '../../src/pipeline/indexing-outcomes.js'
 import { computeSpiDiffOverlay } from '../../src/pipeline/spi/diff-overlay.js'
@@ -26,17 +31,26 @@ import { workingTreeSourceModule, type PinnedSourceModule } from './helpers/pinn
  * Every control here asserts three things, because any one of them alone can be
  * satisfied by a broken implementation:
  *
- *   (a) the fixture actually discriminates -- code-point order differs from
- *       en-US order and from sv-SE order, and those two differ from each other.
- *       Without this the whole file passes on a corpus every comparator sorts
- *       alike, proving nothing.
- *   (b) the emitted order IS code-point order and is NEITHER collation order.
- *       This is the leg a comparator pinned to a fixed locale cannot survive:
- *       `localeCompare(a, b, 'sv-SE')` makes both host arms agree with each
- *       other while still emitting the wrong order.
+ *   (a) the fixture actually discriminates -- the control's two locale arms
+ *       disagree with each other, and at least one of them disagrees with
+ *       code-point order. Without this the whole file passes on a corpus every
+ *       comparator sorts alike, proving nothing.
+ *   (b) the emitted order IS code-point order, and is not the order any
+ *       divergent arm would have produced. This is the leg a comparator pinned
+ *       to a fixed locale cannot survive: `localeCompare(a, b, 'sv-SE')` makes
+ *       both host arms agree with each other while still emitting the wrong
+ *       order.
  *   (c) the published bytes are identical between two child processes started
  *       under different `LC_ALL` values. This is the leg a locale dependency
  *       OUTSIDE the comparator cannot survive.
+ *
+ * The locale arms are per fixture, not global. Accented file names split en-US
+ * from sv-SE. The closed reason-code domain is pure lowercase ASCII, where those
+ * two agree; it splits en-US from az-AZ instead, because Azerbaijani places `x`
+ * between `h` and `ı`. An earlier revision asserted that domain had no
+ * discriminating fixture at all and gave it static coverage only, which was
+ * wrong -- see `closed domains are classified from an exhaustive search` below,
+ * which derives the classification instead of assuming it.
  *
  * Ordering intended for human reading is deliberately left locale-sensitive;
  * this is not a repository-wide ban on `localeCompare`.
@@ -57,26 +71,65 @@ const ADVERSARIAL = [
 const PATHS = ADVERSARIAL.map((name) => `src/${name}.ts`)
 const FIXED_NOW = new Date('2026-08-25T00:00:00.000Z')
 
-const byEnglish = (values: readonly string[]): string[] =>
-  [...values].sort((left, right) => left.localeCompare(right, 'en-US'))
-const bySwedish = (values: readonly string[]): string[] =>
-  [...values].sort((left, right) => left.localeCompare(right, 'sv-SE'))
+/**
+ * The two host collations a control runs its writer under.
+ *
+ * Not a single global pair. Which collations disagree depends on the fixture:
+ * file paths with accented names split en-US from sv-SE, while the closed
+ * reason-code domain is ASCII and splits en-US from az-AZ instead, because
+ * Azerbaijani places `x` between `h` and `ı`. A pair that agrees on a given
+ * fixture makes leg (c) compare two identical configurations.
+ */
+interface LocaleArms {
+  /** BCP 47 tags, for in-process ordering. */
+  readonly tags: readonly [string, string]
+  /** The matching `LC_ALL` values, for the child processes. */
+  readonly lcAll: readonly [string, string]
+}
+
+const LATIN_ACCENTED: LocaleArms = { tags: ['en-US', 'sv-SE'], lcAll: ['en_US.UTF-8', 'sv_SE.UTF-8'] }
+const ASCII_REASON_CODES: LocaleArms = { tags: ['en-US', 'az-AZ'], lcAll: ['en_US.UTF-8', 'az_AZ.UTF-8'] }
+
+const byLocale = (values: readonly string[], tag: string): string[] =>
+  [...values].sort((left, right) => left.localeCompare(right, tag))
 const byCodePoint = (values: readonly string[]): string[] =>
   [...values].sort(compareUnicodeCodePoints)
 
-/** Leg (a). A control whose fixture every comparator sorts alike proves nothing. */
-function expectFixtureDiscriminates(values: readonly string[], what: string): void {
-  expect(byCodePoint(values), `${what}: code-point order equals en-US order`).not.toEqual(byEnglish(values))
-  expect(byCodePoint(values), `${what}: code-point order equals sv-SE order`).not.toEqual(bySwedish(values))
-  expect(byEnglish(values), `${what}: en-US and sv-SE agree, so the cross-host arm is vacuous`)
-    .not.toEqual(bySwedish(values))
+/**
+ * Leg (a). Two things must hold, and they are not the same thing.
+ *
+ * The arms must disagree with EACH OTHER, or leg (c) compares two identical
+ * configurations and proves nothing. And at least one arm must disagree with
+ * code point, or leg (b) cannot bite either. Requiring *both* arms to differ
+ * from code point would be too strong: on the reason-code fixture en-US happens
+ * to agree with code point, and az-AZ is the one that diverges.
+ */
+function expectFixtureDiscriminates(values: readonly string[], what: string, arms: LocaleArms): void {
+  const [first, second] = arms.tags
+  expect(
+    byLocale(values, first),
+    `${what}: ${first} and ${second} agree, so the cross-host arm is vacuous`,
+  ).not.toEqual(byLocale(values, second))
+  const divergent = arms.tags.filter((tag) => JSON.stringify(byLocale(values, tag)) !== JSON.stringify(byCodePoint(values)))
+  expect(
+    divergent,
+    `${what}: no arm disagrees with code-point order, so leg (b) cannot fail`,
+  ).not.toEqual([])
 }
 
-/** Leg (b). Pins the emitted order to a pure function of the strings. */
-function expectCodePointOrder(emitted: readonly string[], inputs: readonly string[], what: string): void {
+/**
+ * Leg (b). Pins the emitted order to a pure function of the strings, and shows
+ * it is not merely whatever some collation would have produced.
+ */
+function expectCodePointOrder(
+  emitted: readonly string[], inputs: readonly string[], what: string, arms: LocaleArms,
+): void {
   expect(emitted, `${what}: not code-point order`).toEqual(byCodePoint(inputs))
-  expect(emitted, `${what}: emitted this host's en-US collation order`).not.toEqual(byEnglish(inputs))
-  expect(emitted, `${what}: emitted sv-SE collation order`).not.toEqual(bySwedish(inputs))
+  for (const tag of arms.tags) {
+    const collated = byLocale(inputs, tag)
+    if (JSON.stringify(collated) === JSON.stringify(byCodePoint(inputs))) continue
+    expect(emitted, `${what}: emitted the ${tag} collation order`).not.toEqual(collated)
+  }
 }
 
 const digest = (input: Buffer | string): string => createHash('sha256').update(input).digest('hex')
@@ -119,23 +172,70 @@ const SHA256 = /^[0-9a-f]{64}$/
 
 /**
  * A child timeout only attributes a hang to *this* probe if it fires before
- * vitest gives up on the test. `vitest.config.ts` sets `testTimeout` to 15s, or
- * 30s on Windows, so the child bound has to sit strictly below that.
+ * vitest gives up on the whole test. Two earlier revisions got this wrong:
  *
- * An earlier revision used a flat 60s, which the per-test timeout always beat:
- * the option was dead code and the attribution it claimed never happened.
+ *   60s flat            the per-test budget (15s, or 30s on Windows) always won,
+ *                       so the option was dead code;
+ *   two thirds of it    fine for one probe, but each test runs TWO in sequence,
+ *                       so a first probe over 5s pushed the second's deadline
+ *                       past the budget and vitest won again.
  *
- * Two thirds of the budget keeps roughly a tenfold margin over the measured
- * cost -- the heaviest probe builds a git repository and a graph, about a second
- * locally, and its two-arm test runs in ~1.9s -- while still firing well before
- * vitest does. `mirrors vitest.config.ts` below fails if that file's budget
- * changes without this one.
+ * So the bound is not a fraction anyone picked. It is solved from the invariant
+ * every probing test must satisfy:
+ *
+ *   MAX_SEQUENTIAL_PROBES_PER_TEST * PROBE_TIMEOUT_MS
+ *     + SETUP_TEARDOWN_MARGIN_MS
+ *     <= TEST_TIMEOUT_MS
+ *
+ * The margin covers the work a test does outside its probes -- materialising the
+ * transpiled closure on first use, and building the fixture git repository --
+ * which is why the bound is not simply half the budget.
  */
+interface TimeoutBudget {
+  readonly testTimeoutMs: number
+  readonly maxSequentialProbesPerTest: number
+  readonly probeTimeoutMs: number
+  readonly setupTeardownMarginMs: number
+}
+
+/** The invariant itself, as a pure function so it can be tested when violated. */
+function hierarchyHolds(budget: TimeoutBudget): boolean {
+  return budget.maxSequentialProbesPerTest * budget.probeTimeoutMs
+    + budget.setupTeardownMarginMs <= budget.testTimeoutMs
+}
+
 const PER_TEST_TIMEOUT_MS = process.platform === 'win32' ? 30_000 : 15_000
-const PROBE_TIMEOUT_MS = Math.floor((PER_TEST_TIMEOUT_MS * 2) / 3)
+/** Every cross-locale control calls `runUnderLocale` exactly twice; asserted below. */
+const MAX_SEQUENTIAL_PROBES_PER_TEST = 2
+/** Closure materialisation plus fixture setup; measured at well under a second. */
+const SETUP_TEARDOWN_MARGIN_MS = 3_000
+const PROBE_TIMEOUT_MS = Math.floor(
+  (PER_TEST_TIMEOUT_MS - SETUP_TEARDOWN_MARGIN_MS) / MAX_SEQUENTIAL_PROBES_PER_TEST,
+)
+
+const TIMEOUT_BUDGET: TimeoutBudget = {
+  testTimeoutMs: PER_TEST_TIMEOUT_MS,
+  maxSequentialProbesPerTest: MAX_SEQUENTIAL_PROBES_PER_TEST,
+  probeTimeoutMs: PROBE_TIMEOUT_MS,
+  setupTeardownMarginMs: SETUP_TEARDOWN_MARGIN_MS,
+}
+
+/** Counts probes per test, so `MAX_SEQUENTIAL_PROBES_PER_TEST` is observed, not assumed. */
+let probesInCurrentTest = 0
+
+beforeEach(() => {
+  probesInCurrentTest = 0
+})
 
 /** Runs `body` inside the materialized tree under `locale` and parses its stdout. */
 function runUnderLocale(entries: readonly string[], name: string, body: string, locale: string): ProbeResult {
+  probesInCurrentTest += 1
+  expect(
+    probesInCurrentTest,
+    `${name}: this test ran ${probesInCurrentTest} probes, but PROBE_TIMEOUT_MS was solved `
+    + `for at most ${MAX_SEQUENTIAL_PROBES_PER_TEST}; the timeout invariant no longer holds`,
+  ).toBeLessThanOrEqual(MAX_SEQUENTIAL_PROBES_PER_TEST)
+
   const tree = moduleFor(entries)
   const entryPath = join(tree.root, `${name}.mjs`)
   writeFileSync(entryPath, body, 'utf8')
@@ -157,7 +257,7 @@ function runUnderLocale(entries: readonly string[], name: string, body: string, 
 }
 
 /**
- * Leg (c) for one writer: identical bytes under en-US and sv-SE.
+ * Leg (c) for one writer: identical bytes under the control's two locale arms.
  *
  * Both digests are validated by `runUnderLocale` before they get here, on every
  * platform including Windows. Two probes that died silently would otherwise
@@ -177,22 +277,45 @@ function runUnderLocale(entries: readonly string[], name: string, body: string, 
  * lanes (ubuntu, macOS and Windows on Node 20 and 22) pass with this assertion
  * in place.
  */
-function expectSameBytesAcrossLocales(entries: readonly string[], name: string, body: string): void {
-  const american = runUnderLocale(entries, name, body, 'en_US.UTF-8')
-  const swedish = runUnderLocale(entries, name, body, 'sv_SE.UTF-8')
-  expect(swedish.digest, `${name}: bytes differ between host collations`).toBe(american.digest)
+function expectSameBytesAcrossLocales(
+  entries: readonly string[], name: string, body: string, arms: LocaleArms,
+): void {
+  const [firstLcAll, secondLcAll] = arms.lcAll
+  const first = runUnderLocale(entries, name, body, firstLcAll)
+  const second = runUnderLocale(entries, name, body, secondLcAll)
+  expect(second.digest, `${name}: bytes differ between host collations`).toBe(first.digest)
   if (process.platform !== 'win32') {
     expect(
-      american.locale,
-      `${name}: both arms resolved to ${american.locale}, so this control compared two `
+      first.locale,
+      `${name}: both arms resolved to ${first.locale}, so this control compared two `
       + 'identical configurations and proved nothing about cross-host bytes',
-    ).not.toBe(swedish.locale)
+    ).not.toBe(second.locale)
   }
 }
 
-describe('the child bound is below vitest’s, so a hang is attributed to the probe', () => {
-  it('fires before the per-test timeout', () => {
-    expect(PROBE_TIMEOUT_MS).toBeLessThan(PER_TEST_TIMEOUT_MS)
+describe('the probe bound is solved from the timeout invariant, not chosen', () => {
+  it('satisfies the invariant with the configuration actually in use', () => {
+    expect(hierarchyHolds(TIMEOUT_BUDGET), JSON.stringify(TIMEOUT_BUDGET)).toBe(true)
+  })
+
+  it('rejects a configuration that violates it — the negative control', () => {
+    // Without this, `hierarchyHolds` could return true unconditionally and the
+    // check above would pass while guarding nothing. Each case below is one of
+    // the two mistakes actually made in this file's history.
+    expect(hierarchyHolds({ ...TIMEOUT_BUDGET, probeTimeoutMs: 60_000 }), 'the flat 60s bound')
+      .toBe(false)
+    expect(
+      hierarchyHolds({ ...TIMEOUT_BUDGET, probeTimeoutMs: Math.floor((PER_TEST_TIMEOUT_MS * 2) / 3) }),
+      'two thirds of the budget, which one probe survives and two do not',
+    ).toBe(false)
+    // And the boundary: one more millisecond than the invariant allows.
+    expect(hierarchyHolds({ ...TIMEOUT_BUDGET, probeTimeoutMs: PROBE_TIMEOUT_MS + 1 })).toBe(false)
+  })
+
+  it('leaves each probe a wide margin over its measured cost', () => {
+    // The heaviest probe builds a git repository and a graph: about a second
+    // locally, and its two-arm test runs in ~1.9s.
+    expect(PROBE_TIMEOUT_MS).toBeGreaterThanOrEqual(5_000)
   })
 
   it('mirrors vitest.config.ts, and fails if that budget moves without this one', () => {
@@ -218,7 +341,7 @@ const MANIFEST_ENTRIES = [
 
 describe('C1-paths -- manifest outcome ordering', () => {
   it('has a fixture where the collations genuinely disagree', () => {
-    expectFixtureDiscriminates(PATHS, 'outcome paths')
+    expectFixtureDiscriminates(PATHS, 'outcome paths', LATIN_ACCENTED)
   })
 
   it('emits outcomes in code-point order, not this host’s collation order', () => {
@@ -229,7 +352,7 @@ describe('C1-paths -- manifest outcome ordering', () => {
       })),
       now: FIXED_NOW,
     })
-    expectCodePointOrder(manifest.outcomes.map((outcome) => outcome.path), PATHS, 'manifest outcomes')
+    expectCodePointOrder(manifest.outcomes.map((outcome) => outcome.path), PATHS, 'manifest outcomes', LATIN_ACCENTED)
   })
 
   it('writes the same manifest bytes under two host collations', () => {
@@ -243,7 +366,7 @@ const manifest = createIndexingManifest({
 })
 const bytes = JSON.stringify(manifest, null, 2) + '\\n'
 process.stdout.write(createHash('sha256').update(bytes).digest('hex') + ' ' + Intl.Collator().resolvedOptions().locale)
-`)
+`, LATIN_ACCENTED)
   })
 })
 
@@ -272,7 +395,7 @@ function manifestOnDisk(): Record<string, unknown> {
 
 describe('C1-capability -- capability bucket ordering', () => {
   it('has a fixture where the collations genuinely disagree', () => {
-    expectFixtureDiscriminates(CAPABILITIES, 'capability values')
+    expectFixtureDiscriminates(CAPABILITIES, 'capability values', LATIN_ACCENTED)
   })
 
   /**
@@ -304,7 +427,26 @@ describe('C1-capability -- capability bucket ordering', () => {
       Object.keys(manifest.summary.capability_buckets),
       CAPABILITIES,
       'capability_buckets',
+      LATIN_ACCENTED,
     )
+
+    // Why no assertion can catch a fixture rebuilt from literals: the parser
+    // returns the same capability strings it was handed, so the two routes are
+    // equal by construction and produce identical bytes. That is recorded here
+    // rather than in a comment alone, so if the parser ever starts transforming
+    // capabilities this stops being true and says so.
+    const viaLiterals = createIndexingManifest({
+      outcomes: CAPABILITIES.map((capability, index) => ({
+        path: `src/file-${index}.ts`, kind: 'file' as const, status: 'indexed' as const,
+        reason: 'indexed' as const, capability,
+      })),
+      now: FIXED_NOW,
+    })
+    expect(
+      digest(`${JSON.stringify(viaLiterals, null, 2)}\n`),
+      'the parser route and a literal route now differ, so the literal-fixture mutation '
+      + 'became observable and needs a control',
+    ).toBe(digest(`${JSON.stringify(manifest, null, 2)}\n`))
   })
 
   it('writes the same manifest and share-safe bytes under two host collations', () => {
@@ -318,7 +460,7 @@ const manifest = createIndexingManifest({ outcomes: parsed.outcomes, now: new Da
 const bytes = JSON.stringify(manifest, null, 2) + '\\n'
   + JSON.stringify(shareSafeIndexingManifest(manifest), null, 2) + '\\n'
 process.stdout.write(createHash('sha256').update(bytes).digest('hex') + ' ' + Intl.Collator().resolvedOptions().locale)
-`)
+`, LATIN_ACCENTED)
   })
 })
 
@@ -331,7 +473,7 @@ const DIAGNOSTIC_IDS = ADVERSARIAL.map((name) => `spi.import.unresolved.${name}`
 
 describe('C1-diagnostics -- spi_diagnostics ordering', () => {
   it('has a fixture where the collations genuinely disagree', () => {
-    expectFixtureDiscriminates(DIAGNOSTIC_IDS, 'spi diagnostic ids')
+    expectFixtureDiscriminates(DIAGNOSTIC_IDS, 'spi diagnostic ids', LATIN_ACCENTED)
   })
 
   it('emits spi_diagnostics in code-point order', () => {
@@ -346,6 +488,7 @@ describe('C1-diagnostics -- spi_diagnostics ordering', () => {
       manifest.spi_diagnostics.map((diagnostic) => diagnostic.id),
       DIAGNOSTIC_IDS,
       'spi_diagnostics',
+      LATIN_ACCENTED,
     )
   })
 
@@ -361,7 +504,7 @@ const manifest = createIndexingManifest({
 })
 const bytes = JSON.stringify(manifest, null, 2) + '\\n'
 process.stdout.write(createHash('sha256').update(bytes).digest('hex') + ' ' + Intl.Collator().resolvedOptions().locale)
-`)
+`, LATIN_ACCENTED)
   })
 })
 
@@ -418,7 +561,154 @@ const manifest = createIndexingManifest({
 })
 const bytes = JSON.stringify(manifest, null, 2) + '\\n'
 process.stdout.write(createHash('sha256').update(bytes).digest('hex') + ' ' + Intl.Collator().resolvedOptions().locale)
-`)
+`, LATIN_ACCENTED)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The closed summary-bucket domains
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Which closed domains can be tested behaviourally, derived rather than asserted.
+ *
+ * An earlier revision claimed all three were comparator-invariant, on a sweep of
+ * six hand-picked locales. That claim was false: `az-AZ` reverses
+ * `empty_extraction` against `extractor_error`, because Azerbaijani places `x`
+ * between `h` and `ı`. Turkish, which the sweep did include, has no `x` in its
+ * alphabet at all, which is exactly why it slipped through.
+ *
+ * So the classification is now computed over every locale this Node build
+ * supports. If a future reason code, strategy or fallback introduces a
+ * discriminating pair into a domain recorded as having none, this fails and says
+ * so -- which is the signal to add a behavioural control rather than to widen the
+ * expectation.
+ */
+const CLOSED_DOMAINS = [
+  { name: 'INDEXING_REASON_CODES', members: [...INDEXING_REASON_CODES], discriminable: true },
+  { name: 'EXTRACTION_STRATEGIES', members: [...EXTRACTION_STRATEGIES], discriminable: false },
+  { name: 'EXTRACTION_FALLBACK_REASONS', members: [...EXTRACTION_FALLBACK_REASONS], discriminable: false },
+] as const
+
+/** Every locale this build collates, so the search is over the real space. */
+const SUPPORTED_LOCALES = Intl.Collator.supportedLocalesOf([
+  'af', 'am', 'ar', 'az', 'be', 'bg', 'bn', 'bs', 'ca', 'cs', 'cy', 'da', 'de', 'el', 'en', 'eo',
+  'es', 'et', 'eu', 'fa', 'fi', 'fil', 'fo', 'fr', 'ga', 'gl', 'gu', 'ha', 'haw', 'he', 'hi', 'hr',
+  'hu', 'hy', 'id', 'ig', 'is', 'it', 'ja', 'ka', 'kk', 'kl', 'km', 'kn', 'ko', 'kok', 'ky', 'lkt',
+  'ln', 'lo', 'lt', 'lv', 'mk', 'ml', 'mn', 'mr', 'ms', 'mt', 'my', 'nb', 'ne', 'nl', 'nn', 'om',
+  'or', 'pa', 'pl', 'ps', 'pt', 'ro', 'ru', 'se', 'si', 'sk', 'sl', 'smn', 'sq', 'sr', 'sv', 'sw',
+  'ta', 'te', 'th', 'ti', 'to', 'tr', 'uk', 'ur', 'uz', 'vi', 'wae', 'wo', 'yi', 'yo', 'zh', 'zu',
+])
+
+function discriminatingPairs(members: readonly string[]): { locale: string; a: string; b: string }[] {
+  const found: { locale: string; a: string; b: string }[] = []
+  for (const locale of SUPPORTED_LOCALES) {
+    const collator = new Intl.Collator(locale)
+    for (let i = 0; i < members.length; i += 1) {
+      for (let j = i + 1; j < members.length; j += 1) {
+        const [a, b] = [members[i] as string, members[j] as string]
+        if (Math.sign(compareUnicodeCodePoints(a, b)) !== Math.sign(collator.compare(a, b))) {
+          found.push({ locale, a, b })
+        }
+      }
+    }
+  }
+  return found
+}
+
+describe('closed domains are classified from an exhaustive search, not assumed', () => {
+  it('searches a non-trivial locale space', () => {
+    // A search over an empty locale set would report "no discriminator" forever.
+    expect(SUPPORTED_LOCALES.length).toBeGreaterThan(50)
+  })
+
+  for (const domain of CLOSED_DOMAINS) {
+    it(`${domain.name} is ${domain.discriminable ? '' : 'not '}discriminable, as recorded`, () => {
+      const found = discriminatingPairs(domain.members)
+      if (domain.discriminable) {
+        expect(
+          found,
+          `${domain.name} has no discriminating pair any more; its behavioural control is now vacuous`,
+        ).not.toEqual([])
+        return
+      }
+      expect(
+        found.slice(0, 3),
+        `${domain.name} now has a discriminating pair, so it needs a behavioural control `
+        + 'rather than static coverage alone',
+      ).toEqual([])
+    })
+  }
+})
+
+/**
+ * The reason-code domain, tested behaviourally under the arms that split it.
+ *
+ * `empty_extraction` and `extractor_error` are both members of
+ * `INDEXING_REASON_CODES` and both survive `parseIndexingManifest`, so this pair
+ * is reachable in a real manifest, not a synthetic one.
+ */
+describe('C4-reason-codes -- closed reason-code ordering', () => {
+  const REASON_PAIR = ['empty_extraction', 'extractor_error'] as const
+
+  function reasonManifest(): ReturnType<typeof createIndexingManifest> {
+    return createIndexingManifest({
+      outcomes: REASON_PAIR.map((reason, index) => ({
+        path: `src/reason-${index}.ts`, kind: 'file' as const, status: 'indexed' as const,
+        reason, capability: null,
+      })),
+      now: FIXED_NOW,
+    })
+  }
+
+  it('uses a pair that is valid in the real domain', () => {
+    for (const reason of REASON_PAIR) {
+      expect(INDEXING_REASON_CODES as readonly string[], `${reason} is not a real reason code`)
+        .toContain(reason)
+    }
+    // And the parser accepts it, so the pair reaches the sort through a manifest.
+    const parsed = parseIndexingManifest({
+      version: 1,
+      generated_at: FIXED_NOW.toISOString(),
+      summary: {},
+      outcomes: REASON_PAIR.map((reason, index) => ({
+        path: `src/reason-${index}.ts`, kind: 'file', status: 'indexed', reason, capability: null,
+      })),
+      spi_diagnostics: [],
+    })
+    expect(parsed, 'parseIndexingManifest rejected the reason pair').not.toBeNull()
+  })
+
+  it('has a fixture where code point and az-AZ collation genuinely disagree', () => {
+    expectFixtureDiscriminates(REASON_PAIR, 'reason codes', ASCII_REASON_CODES)
+    // Named explicitly, because this is the pair the six-locale sweep missed.
+    expect(byCodePoint(REASON_PAIR)).toEqual(['empty_extraction', 'extractor_error'])
+    expect(byLocale(REASON_PAIR, 'az-AZ')).toEqual(['extractor_error', 'empty_extraction'])
+  })
+
+  it('emits reason buckets in code-point order', () => {
+    expectCodePointOrder(
+      Object.keys(reasonManifest().summary.reason_buckets),
+      REASON_PAIR,
+      'reason_buckets',
+      ASCII_REASON_CODES,
+    )
+  })
+
+  it('writes the same manifest bytes under en-US and az-AZ', () => {
+    expectSameBytesAcrossLocales(MANIFEST_ENTRIES, 'manifest-reason-codes', `
+import { createHash } from 'node:crypto'
+import { createIndexingManifest } from './src/pipeline/indexing-outcomes.js'
+const reasons = ${JSON.stringify(REASON_PAIR)}
+const manifest = createIndexingManifest({
+  outcomes: reasons.map((reason, index) => ({
+    path: 'src/reason-' + index + '.ts', kind: 'file', status: 'indexed', reason, capability: null,
+  })),
+  now: new Date(${JSON.stringify(FIXED_NOW.toISOString())}),
+})
+const bytes = JSON.stringify(manifest, null, 2) + '\\n'
+process.stdout.write(createHash('sha256').update(bytes).digest('hex') + ' ' + Intl.Collator().resolvedOptions().locale)
+`, ASCII_REASON_CODES)
   })
 })
 
@@ -471,14 +761,14 @@ function dirtyRepository(): string {
 
 describe('C2 -- graph.madar build-freshness provenance ordering', () => {
   it('has a fixture where the collations genuinely disagree', () => {
-    expectFixtureDiscriminates(PATHS, 'dirty file paths')
+    expectFixtureDiscriminates(PATHS, 'dirty file paths', LATIN_ACCENTED)
   })
 
   it('orders dirty files by code point, not by this host’s collation', async () => {
     const { buildGraphBuildFreshnessMetadata } = await import('../../src/shared/graph-build-freshness.js')
     const freshness = buildGraphBuildFreshnessMetadata(dirtyRepository(), PATHS)
     expect(freshness.strategy).toBe('git')
-    expectCodePointOrder(freshness.git?.dirty_files ?? [], PATHS, 'graph_build_freshness.git.dirty_files')
+    expectCodePointOrder(freshness.git?.dirty_files ?? [], PATHS, 'graph_build_freshness.git.dirty_files', LATIN_ACCENTED)
   })
 
   it('serializes the same graph.madar bytes under two host collations', () => {
@@ -533,7 +823,7 @@ const bytes = serializeGraphArtifactV2({
   provenance: { schema_version: 2, graph_build_freshness: pinned },
 })
 process.stdout.write(createHash('sha256').update(bytes).digest('hex') + ' ' + Intl.Collator().resolvedOptions().locale)
-`)
+`, LATIN_ACCENTED)
   })
 
   it('leaves a clean worktree with no dirty files to order', async () => {
@@ -591,7 +881,7 @@ describe('C3 -- SPI diff overlay edge ordering', () => {
   )
 
   it('has a fixture where the collations genuinely disagree', () => {
-    expectFixtureDiscriminates(overlayKeys, 'overlay edge keys')
+    expectFixtureDiscriminates(overlayKeys, 'overlay edge keys', LATIN_ACCENTED)
   })
 
   it('orders edges_added by code point', () => {
@@ -606,6 +896,7 @@ describe('C3 -- SPI diff overlay edge ordering', () => {
       overlay.edges_added.map((edge) => `${edge.from}|${edge.to}|${edge.kind}`),
       overlayKeys,
       'overlay edges_added',
+      LATIN_ACCENTED,
     )
   })
 
@@ -619,7 +910,7 @@ const overlay = computeSpiDiffOverlay({
   runGitDiff: () => '+++ src/many.ts\\n@@ -1 +1 @@\\n',
 })
 process.stdout.write(createHash('sha256').update(JSON.stringify(overlay)).digest('hex') + ' ' + Intl.Collator().resolvedOptions().locale)
-`)
+`, LATIN_ACCENTED)
   })
 })
 
@@ -637,7 +928,7 @@ describe('C4 -- proof report compare-section ordering', () => {
   const compareNames = ADVERSARIAL.map((name) => `compare-${name}`)
 
   it('has a fixture where the collations genuinely disagree', () => {
-    expectFixtureDiscriminates(compareNames, 'compare directory names')
+    expectFixtureDiscriminates(compareNames, 'compare directory names', LATIN_ACCENTED)
   })
 
   it('orders compare summaries by code point', async () => {
@@ -686,7 +977,7 @@ describe('C4 -- proof report compare-section ordering', () => {
 
     expect(emitted, 'no compare questions reached the report; the fixture drifted')
       .toHaveLength(compareNames.length)
-    expectCodePointOrder(emitted, compareNames, 'proof-report compare sections')
+    expectCodePointOrder(emitted, compareNames, 'proof-report compare sections', LATIN_ACCENTED)
     expect(readFileSync(result.outputPath, 'utf8')).toBe(result.report)
   })
 })
