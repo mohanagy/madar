@@ -30,9 +30,9 @@ function overviewNodeHref(communityPagesDirname: string, communityId: number, no
 /**
  * Display ordering: the overview navigation is HTML for a person to read, never
  * parsed back by Madar, so collation is the right order and `localeCompare`
- * stays here and in `buildOverviewCommunityLinks` below. Persisted collections
- * order by code point -- see `compareUnicodeCodePoints` in
- * src/contracts/canonical-json.ts.
+ * stays in both label sorts in this file -- the top-node tie-break below and the
+ * search-index sort in `buildOverviewSearchIndex`. Persisted collections order by
+ * code point -- see `compareUnicodeCodePoints` in src/contracts/canonical-json.ts.
  */
 export function buildOverviewTopNodes(
   graph: KnowledgeGraph,

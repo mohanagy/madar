@@ -103,32 +103,82 @@ function moduleFor(entries: readonly string[]): PinnedSourceModule {
   return created
 }
 
-/** Runs `body` inside the materialized tree under `locale`; returns its stdout. */
-function runUnderLocale(entries: readonly string[], name: string, body: string, locale: string): string {
+/**
+ * A probe's stdout: a sha256 digest and the collator the child actually resolved.
+ *
+ * Parsed rather than destructured, so a probe that dies silently or prints
+ * something unexpected fails as a malformed result instead of flowing into the
+ * comparison as an empty string.
+ */
+interface ProbeResult {
+  readonly digest: string
+  readonly locale: string
+}
+
+const SHA256 = /^[0-9a-f]{64}$/
+
+/**
+ * The slowest probe here builds a git repository and a graph inside the child,
+ * which takes about two seconds locally and rather longer on a cold Windows CI
+ * runner. Sixty seconds is far above that and far below vitest's own per-test
+ * timeout, so a hung child fails as *this* probe rather than stalling the file
+ * and reporting nothing about which one stopped.
+ */
+const PROBE_TIMEOUT_MS = 60_000
+
+/** Runs `body` inside the materialized tree under `locale` and parses its stdout. */
+function runUnderLocale(entries: readonly string[], name: string, body: string, locale: string): ProbeResult {
   const tree = moduleFor(entries)
   const entryPath = join(tree.root, `${name}.mjs`)
   writeFileSync(entryPath, body, 'utf8')
-  return execFileSync(process.execPath, [entryPath], {
+  const stdout = execFileSync(process.execPath, [entryPath], {
     encoding: 'utf8',
     env: { ...process.env, LC_ALL: locale, LANG: locale },
+    timeout: PROBE_TIMEOUT_MS,
   }).trim()
+
+  const fields = stdout.split(' ')
+  expect(
+    fields,
+    `${name}: probe under ${locale} printed ${JSON.stringify(stdout)}, not "<digest> <locale>"`,
+  ).toHaveLength(2)
+  const [digest, resolvedLocale] = fields as [string, string]
+  expect(digest, `${name}: probe under ${locale} produced no sha256 digest`).toMatch(SHA256)
+  expect(resolvedLocale, `${name}: probe under ${locale} reported no collator`).not.toBe('')
+  return { digest, locale: resolvedLocale }
 }
 
 /**
  * Leg (c) for one writer: identical bytes under en-US and sv-SE.
  *
- * Whether the two arms genuinely resolved to different collations is a property
- * of the host -- Windows ICU follows the system locale and ignores `LC_ALL`, so
- * both arms there are the same configuration. The guarantee does not depend on
- * that: leg (b) already pins the order hermetically. So the byte equality is
- * asserted unconditionally and the divergence only where it is meaningful.
+ * Both digests are validated by `runUnderLocale` before they get here, on every
+ * platform including Windows. Two probes that died silently would otherwise
+ * compare `''` to `''` and pass while proving nothing -- the failure mode this
+ * file guards against everywhere else.
+ *
+ * The divergence check is deliberately an assertion and not a warning. This
+ * control's whole purpose is to run the writer under two genuinely different
+ * collations; if the arms resolve to the same one, the byte comparison is
+ * between two identical configurations and the control has silently stopped
+ * testing what it claims to. On Windows that is expected and unavoidable -- ICU
+ * there follows the system locale and ignores `LC_ALL` -- so Windows relies on
+ * leg (b), which pins the order to a pure function of the strings. Everywhere
+ * else a collapsed pair is a real loss of coverage and should fail loudly.
+ *
+ * Verified against the supported matrix rather than assumed: all six protected
+ * lanes (ubuntu, macOS and Windows on Node 20 and 22) pass with this assertion
+ * in place.
  */
 function expectSameBytesAcrossLocales(entries: readonly string[], name: string, body: string): void {
-  const [american, americanLocale] = runUnderLocale(entries, name, body, 'en_US.UTF-8').split(' ')
-  const [swedish, swedishLocale] = runUnderLocale(entries, name, body, 'sv_SE.UTF-8').split(' ')
-  expect(swedish, `${name}: bytes differ between host collations`).toBe(american)
+  const american = runUnderLocale(entries, name, body, 'en_US.UTF-8')
+  const swedish = runUnderLocale(entries, name, body, 'sv_SE.UTF-8')
+  expect(swedish.digest, `${name}: bytes differ between host collations`).toBe(american.digest)
   if (process.platform !== 'win32') {
-    expect(americanLocale, `${name}: both arms resolved to the same collator`).not.toBe(swedishLocale)
+    expect(
+      american.locale,
+      `${name}: both arms resolved to ${american.locale}, so this control compared two `
+      + 'identical configurations and proved nothing about cross-host bytes',
+    ).not.toBe(swedish.locale)
   }
 }
 
