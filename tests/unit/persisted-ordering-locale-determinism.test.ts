@@ -49,8 +49,9 @@ import { workingTreeSourceModule, type PinnedSourceModule } from './helpers/pinn
  * two agree; it splits en-US from az-AZ instead, because Azerbaijani places `x`
  * between `h` and `ı`. An earlier revision asserted that domain had no
  * discriminating fixture at all and gave it static coverage only, which was
- * wrong -- see `closed domains are classified from an exhaustive search` below,
- * which derives the classification instead of assuming it.
+ * wrong -- see `closed domains are classified by search, not assumed` below,
+ * which derives the classification over a documented search space instead of
+ * assuming it.
  *
  * Ordering intended for human reading is deliberately left locale-sensitive;
  * this is not a repository-wide ban on `localeCompare`.
@@ -578,11 +579,11 @@ process.stdout.write(createHash('sha256').update(bytes).digest('hex') + ' ' + In
  * between `h` and `ı`. Turkish, which the sweep did include, has no `x` in its
  * alphabet at all, which is exactly why it slipped through.
  *
- * So the classification is now computed over every locale this Node build
- * supports. If a future reason code, strategy or fallback introduces a
- * discriminating pair into a domain recorded as having none, this fails and says
- * so -- which is the signal to add a behavioural control rather than to widen the
- * expectation.
+ * So the classification is computed over the documented search space below
+ * rather than written down. If a future reason code, strategy or fallback
+ * introduces a discriminating pair into a domain recorded as having none, this
+ * fails and says so -- which is the signal to add a behavioural control rather
+ * than to widen the expectation.
  */
 const CLOSED_DOMAINS = [
   { name: 'INDEXING_REASON_CODES', members: [...INDEXING_REASON_CODES], discriminable: true },
@@ -590,19 +591,37 @@ const CLOSED_DOMAINS = [
   { name: 'EXTRACTION_FALLBACK_REASONS', members: [...EXTRACTION_FALLBACK_REASONS], discriminable: false },
 ] as const
 
-/** Every locale this build collates, so the search is over the real space. */
-const SUPPORTED_LOCALES = Intl.Collator.supportedLocalesOf([
-  'af', 'am', 'ar', 'az', 'be', 'bg', 'bn', 'bs', 'ca', 'cs', 'cy', 'da', 'de', 'el', 'en', 'eo',
-  'es', 'et', 'eu', 'fa', 'fi', 'fil', 'fo', 'fr', 'ga', 'gl', 'gu', 'ha', 'haw', 'he', 'hi', 'hr',
-  'hu', 'hy', 'id', 'ig', 'is', 'it', 'ja', 'ka', 'kk', 'kl', 'km', 'kn', 'ko', 'kok', 'ky', 'lkt',
-  'ln', 'lo', 'lt', 'lv', 'mk', 'ml', 'mn', 'mr', 'ms', 'mt', 'my', 'nb', 'ne', 'nl', 'nn', 'om',
-  'or', 'pa', 'pl', 'ps', 'pt', 'ro', 'ru', 'se', 'si', 'sk', 'sl', 'smn', 'sq', 'sr', 'sv', 'sw',
-  'ta', 'te', 'th', 'ti', 'to', 'tr', 'uk', 'ur', 'uz', 'vi', 'wae', 'wo', 'yi', 'yo', 'zh', 'zu',
-])
+/**
+ * The search space, stated exactly rather than called exhaustive.
+ *
+ * There is no API that enumerates every locale ICU can collate:
+ * `Intl.Collator.supportedLocalesOf` only filters the list it is given, so a
+ * hand-picked list silently bounds the search — which is how the first attempt
+ * here reported "no discriminator" for a domain that has four.
+ *
+ * So the candidates are generated instead of curated: every two-letter language
+ * subtag, all 676 of them, plus the longer tags below whose collations are known
+ * to reorder Latin letters. `supportedLocalesOf` then narrows that to what this
+ * build actually collates. This is a documented, mechanically-derived search
+ * space, not a proof that no other locale exists.
+ */
+const LONGER_SUBTAGS = [
+  'haw', 'fil', 'smn', 'wae', 'lkt', 'kok', 'ceb', 'chr', 'nso', 'dsb', 'hsb', 'sah', 'yue',
+  'kea', 'ckb', 'tzm', 'kab', 'bem', 'ewo', 'fur', 'gsw', 'jgo', 'kkj', 'ksh', 'lag', 'luy',
+  'mgo', 'naq', 'nnh', 'nyn', 'qut', 'rof', 'rwk', 'saq', 'seh', 'shi', 'teo', 'twq', 'vun',
+  'xog', 'yav', 'zgh',
+] as const
+
+const TWO_LETTER_SUBTAGS = ((): string[] => {
+  const letters = [...'abcdefghijklmnopqrstuvwxyz']
+  return letters.flatMap((first) => letters.map((second) => `${first}${second}`))
+})()
+
+const SEARCHED_LOCALES = Intl.Collator.supportedLocalesOf([...TWO_LETTER_SUBTAGS, ...LONGER_SUBTAGS])
 
 function discriminatingPairs(members: readonly string[]): { locale: string; a: string; b: string }[] {
   const found: { locale: string; a: string; b: string }[] = []
-  for (const locale of SUPPORTED_LOCALES) {
+  for (const locale of SEARCHED_LOCALES) {
     const collator = new Intl.Collator(locale)
     for (let i = 0; i < members.length; i += 1) {
       for (let j = i + 1; j < members.length; j += 1) {
@@ -616,10 +635,13 @@ function discriminatingPairs(members: readonly string[]): { locale: string; a: s
   return found
 }
 
-describe('closed domains are classified from an exhaustive search, not assumed', () => {
+describe('closed domains are classified by search, not assumed', () => {
   it('searches a non-trivial locale space', () => {
-    // A search over an empty locale set would report "no discriminator" forever.
-    expect(SUPPORTED_LOCALES.length).toBeGreaterThan(50)
+    // A search over an empty or tiny locale set would report "no discriminator"
+    // forever. The candidate list is generated, so this also catches the
+    // generation silently producing nothing.
+    expect(TWO_LETTER_SUBTAGS).toHaveLength(676)
+    expect(SEARCHED_LOCALES.length).toBeGreaterThan(100)
   })
 
   for (const domain of CLOSED_DOMAINS) {

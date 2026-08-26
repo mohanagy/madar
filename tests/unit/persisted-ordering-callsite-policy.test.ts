@@ -11,8 +11,9 @@ import { describe, expect, it } from 'vitest'
  * Two of the sites this file pins have **no behavioural coverage, because none
  * is possible**: `extraction_strategy` and `fallback_reason` are closed
  * lowercase-ASCII sets that `parseIndexingManifest` validates on the way in, and
- * an exhaustive search over every locale this build collates finds no pair whose
- * collation order differs from code-point order. `fallback_reason` has a single
+ * a search over every two-letter language subtag this build collates, plus a
+ * documented set of longer tags, finds no pair whose collation order differs
+ * from code-point order. `fallback_reason` has a single
  * member, so it cannot have a pair at all. For those two this audit is the only
  * coverage, and saying so is the point.
  *
