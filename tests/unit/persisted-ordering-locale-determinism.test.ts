@@ -200,18 +200,31 @@ describe('C1-capability -- capability bucket ordering', () => {
     expectFixtureDiscriminates(CAPABILITIES, 'capability values')
   })
 
-  it('reaches the sort through parseIndexingManifest, which is what opens the domain', () => {
-    // The route assertion. Leg (a) observes values, not where they came from, so
-    // without this a fixture rebuilt from literals would keep the file green
-    // while no longer testing the reachable path.
+  /**
+   * The route and the ordering are asserted together, in one test, on purpose.
+   *
+   * What makes `capability` an open domain is not the values themselves -- it is
+   * that `parseIndexingManifest` accepts any string for it and incremental
+   * generation hands a prior outcome straight back. Split across two tests, one
+   * could be rewritten to use literals while the other still passed, and the
+   * file would keep proving the ordering without proving it on the reachable
+   * path. Kept together, dropping the route means visibly deleting it.
+   *
+   * Note what this cannot do: a fixture built from literals equal to the parser's
+   * output would order identically, so no assertion can distinguish them. That
+   * is a property of the values being equal by construction, and it is why the
+   * parser call is structural here rather than something a control checks.
+   */
+  it('reaches the sort through parseIndexingManifest and orders by code point', () => {
     const parsed = parseIndexingManifest(manifestOnDisk())
     expect(parsed, 'parseIndexingManifest rejected the fixture; the route is gone').not.toBeNull()
-    expect(parsed?.outcomes.map((outcome) => outcome.capability)).toEqual([...CAPABILITIES])
-  })
+    const fromParser = parsed as NonNullable<typeof parsed>
+    expect(
+      fromParser.outcomes.map((outcome) => outcome.capability),
+      'the parser no longer round-trips these capabilities; the domain may have closed',
+    ).toEqual([...CAPABILITIES])
 
-  it('emits capability buckets in code-point order', () => {
-    const parsed = parseIndexingManifest(manifestOnDisk())
-    const manifest = createIndexingManifest({ outcomes: parsed!.outcomes, now: FIXED_NOW })
+    const manifest = createIndexingManifest({ outcomes: fromParser.outcomes, now: FIXED_NOW })
     expectCodePointOrder(
       Object.keys(manifest.summary.capability_buckets),
       CAPABILITIES,
