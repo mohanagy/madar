@@ -476,6 +476,12 @@ function writeJsonAtomic(targetPath: string, value: unknown): void {
   }
 }
 
+/**
+ * Display ordering: `readTelemetryReport` returns these lines as a string for a
+ * person to read; nothing writes them to disk. Collation is the right order for
+ * a reader, so `localeCompare` stays. Persisted collections order by code point
+ * instead -- see `compareUnicodeCodePoints` in src/contracts/canonical-json.ts.
+ */
 function summarizeCounts(values: string[]): string[] {
   const counts = new Map<string, number>()
   for (const value of values) {

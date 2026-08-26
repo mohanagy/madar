@@ -62,6 +62,12 @@ function connectionPrefix(direction: ConnectionDirection): string {
   return ''
 }
 
+/**
+ * Display ordering: every comparator in this file orders an Obsidian vault
+ * Madar writes for a person and never reads back. Collation is the right order
+ * there, so `localeCompare` stays. Persisted collections order by code point --
+ * see `compareUnicodeCodePoints` in src/contracts/canonical-json.ts.
+ */
 export function crossCommunityLinks(graph: KnowledgeGraph, nodes: string[], ownCommunityId: number, labels: Record<number, string>): Array<[string, number]> {
   const counts = new Map<string, number>()
 

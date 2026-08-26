@@ -1,5 +1,6 @@
 import { relative, sep } from 'node:path'
 
+import { compareUnicodeCodePoints } from '../contracts/canonical-json.js'
 import {
   INDEXING_MANIFEST_VERSION,
   type ExtractionFallbackReason,
@@ -71,8 +72,18 @@ export function deduplicateIndexingOutcomes(outcomes: readonly IndexingOutcome[]
       ...(diagnostics ? { diagnostics } : {}),
     })
   }
+  // Code point, not collation: this order is written into indexing-manifest.json,
+  // and `localeCompare` answers according to the host's ICU locale, so two
+  // machines published different bytes for the same repository. De-duplication
+  // above is by `kind:path` and has already happened, so this sort cannot change
+  // which outcome survives into the manifest.
+  //
+  // It does decide which ones a person sees: `doctor.ts` filters the incomplete
+  // outcomes and takes `slice(0, 20)` in two places, so the first twenty listed
+  // change with this comparator. That is a display consequence of making the
+  // manifest host-independent, and it is host-independent too.
   return [...deduplicated.values()].sort((left, right) =>
-    left.path.localeCompare(right.path) || left.kind.localeCompare(right.kind))
+    compareUnicodeCodePoints(left.path, right.path) || compareUnicodeCodePoints(left.kind, right.kind))
 }
 
 function emptyStatusCounts(): IndexingStatusCounts {
@@ -121,17 +132,42 @@ export function summarizeIndexingOutcomes(outcomes: readonly IndexingOutcome[]):
     }
   }
 
+  // The bucket key orders below decide bytes: this summary is serialized with a
+  // plain `JSON.stringify`, which emits keys in ECMAScript enumeration order.
+  //
+  // That is NOT simply insertion order. Integer-index keys come first, ascending
+  // numerically, and only then the remaining string keys in insertion order. So
+  // capabilities `"10"` and `"2"` serialize as `"2"` before `"10"` whatever this
+  // comparator returns. That reordering is host-independent -- it is a language
+  // rule, not an ICU one -- so the guarantee here still holds; what the
+  // comparator fixes is the order of the string keys, which is the part
+  // `localeCompare` made depend on the host.
+  //
+  // `reason`, `extraction_strategy` and `fallback_reason` are closed ASCII sets
+  // with no integer-like member, so for them enumeration order and code-point
+  // order coincide.
+  //
+  // Closed does not mean collation-insensitive, which an earlier comment here
+  // got wrong. `empty_extraction` and `extractor_error` are both valid reason
+  // codes, and az-AZ orders them the other way round because Azerbaijani places
+  // `x` between `h` and `ı`. So this comparator does real work even on a closed
+  // ASCII domain.
+  //
+  // `capability` is an open domain -- `parseIndexingManifest` accepts any string
+  // and incremental generation returns a prior outcome verbatim -- so a manifest
+  // on disk can round-trip both a value the host locale orders differently and a
+  // value the language emits out of comparator order.
   return {
     state: completenessState(counts),
     candidates: outcomes.length,
     counts,
-    reason_buckets: Object.fromEntries(Object.entries(reasonBuckets).sort(([left], [right]) => left.localeCompare(right))),
-    capability_buckets: Object.fromEntries(Object.entries(capabilityBuckets).sort(([left], [right]) => left.localeCompare(right))),
+    reason_buckets: Object.fromEntries(Object.entries(reasonBuckets).sort(([left], [right]) => compareUnicodeCodePoints(left, right))),
+    capability_buckets: Object.fromEntries(Object.entries(capabilityBuckets).sort(([left], [right]) => compareUnicodeCodePoints(left, right))),
     ...(Object.keys(strategyBuckets).length > 0
-      ? { extraction_strategy_buckets: Object.fromEntries(Object.entries(strategyBuckets).sort(([left], [right]) => left.localeCompare(right))) }
+      ? { extraction_strategy_buckets: Object.fromEntries(Object.entries(strategyBuckets).sort(([left], [right]) => compareUnicodeCodePoints(left, right))) }
       : {}),
     ...(Object.keys(fallbackReasonBuckets).length > 0
-      ? { fallback_reason_buckets: Object.fromEntries(Object.entries(fallbackReasonBuckets).sort(([left], [right]) => left.localeCompare(right))) }
+      ? { fallback_reason_buckets: Object.fromEntries(Object.entries(fallbackReasonBuckets).sort(([left], [right]) => compareUnicodeCodePoints(left, right))) }
       : {}),
   }
 }
@@ -149,7 +185,11 @@ export function createIndexingManifest(input: {
     ...(input.requestedExtractionMode ? { requested_extraction_mode: input.requestedExtractionMode } : {}),
     summary: summarizeIndexingOutcomes(outcomes),
     outcomes,
-    spi_diagnostics: [...(input.spiDiagnostics ?? [])].sort((left, right) => left.id.localeCompare(right.id)),
+    // Diagnostic ids are projected verbatim from the SPI, and the SPI cache
+    // shape-checks only version/workspace/files/symbols, so a cached index can
+    // carry any id at all. Code point keeps the manifest bytes host-independent.
+    spi_diagnostics: [...(input.spiDiagnostics ?? [])].sort((left, right) =>
+      compareUnicodeCodePoints(left.id, right.id)),
   }
 }
 
