@@ -67,7 +67,15 @@ function writeGraphArtifacts(root: string, relativeDir: string, schemaVersion = 
   return { graphPath, reportPath }
 }
 
-function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2, directed = true): void {
+const CURRENT_SNAPSHOT_FORMAT_VERSION = 3
+
+function writeCachedSnapshot(
+  root: string,
+  commitSha: string,
+  schemaVersion = 2,
+  directed = true,
+  snapshotFormatVersion = CURRENT_SNAPSHOT_FORMAT_VERSION,
+): void {
   const snapshotDir = join(root, 'out', 'time-travel', 'snapshots', commitSha)
   mkdirSync(snapshotDir, { recursive: true })
   writeFileSync(join(snapshotDir, 'graph.madar'), canonicalArtifactBytes(schemaVersion, directed))
@@ -76,7 +84,7 @@ function writeCachedSnapshot(root: string, commitSha: string, schemaVersion = 2,
     commitSha,
     extractorVersion: EXTRACTOR_CACHE_VERSION,
     schemaVersion,
-    snapshotFormatVersion: 2,
+    snapshotFormatVersion,
   }))
 }
 
@@ -166,6 +174,40 @@ describe('time travel infrastructure', () => {
     expect(result.fromCache).toBe(false)
     expect(deps.generateGraph).toHaveBeenCalled()
     expect(existsSync(join(snapshotDir, 'graph.json'))).toBe(false)
+  })
+
+  /**
+   * #722 FULL_GENERATE_ONLY_V1. A v2 snapshot may have been produced by a
+   * generation that consumed persisted semantic results, so it is not
+   * necessarily equal to a full generation of the same tree. Commit SHA and
+   * extractor version match in both regimes, which is exactly why the format
+   * version has to carry the cutover.
+   */
+  it('rebuilds a v2 snapshot from before the full-generate-only cutover', async () => {
+    const rootDir = createTestRoot('pre-full-generate-only')
+    writeCachedSnapshot(rootDir, 'cached-sha', 2, true, 2)
+    const deps = createSnapshotDependencies(rootDir)
+
+    const result = await loadOrBuildSnapshot({ ref: 'main', refresh: false }, deps)
+
+    expect(result.fromCache, 'PRE_CUTOVER_SNAPSHOT_REUSED').toBe(false)
+    expect(deps.generateGraph).toHaveBeenCalled()
+    expect(deps.git.createDetachedWorktree).toHaveBeenCalled()
+  })
+
+  /**
+   * The paired direction. Without this, "always rebuild" would satisfy the test
+   * above while silently destroying the cache the comparison path depends on.
+   */
+  it('still reuses a snapshot written at the current format version', async () => {
+    const rootDir = createTestRoot('post-full-generate-only')
+    writeCachedSnapshot(rootDir, 'cached-sha')
+    const deps = createSnapshotDependencies(rootDir)
+
+    const result = await loadOrBuildSnapshot({ ref: 'main', refresh: false }, deps)
+
+    expect(result.fromCache, 'CURRENT_SNAPSHOT_NEEDLESSLY_REBUILT').toBe(true)
+    expect(deps.generateGraph).not.toHaveBeenCalled()
   })
 
   it('materializes a ref and builds a snapshot on cache miss', async () => {

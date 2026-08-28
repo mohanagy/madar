@@ -19,12 +19,20 @@ const inflightSnapshotBuilds = new Map<string, Promise<TimeTravelSnapshot>>()
 /**
  * Snapshot layout version.
  *
- * Load-bearing: B1-era snapshots hold a canonical artifact beside a live v1
- * mirror, which is the ambiguous state #705 refuses to read. They cannot be
- * upgraded in place -- the two files may describe different runs -- so a
- * version mismatch invalidates the snapshot and it is rebuilt from source.
+ * Load-bearing twice over.
+ *
+ * v1 -> v2: B1-era snapshots hold a canonical artifact beside a live v1 mirror,
+ * which is the ambiguous state #705 refuses to read. They cannot be upgraded in
+ * place -- the two files may describe different runs.
+ *
+ * v2 -> v3 (#722 FULL_GENERATE_ONLY_V1): a v2 snapshot may have been produced by
+ * a generation that consumed persisted semantic results, so it is not
+ * necessarily equal to a full generation of the same tree. Commit SHA and
+ * extractor version cannot distinguish the two regimes, and comparing a
+ * pre-cutover snapshot against a post-cutover build would mix them inside one
+ * answer. A version mismatch invalidates the snapshot and it is rebuilt.
  */
-const SNAPSHOT_FORMAT_VERSION = 2 as const
+const SNAPSHOT_FORMAT_VERSION = 3 as const
 
 interface SnapshotMetadata {
   commitSha: string

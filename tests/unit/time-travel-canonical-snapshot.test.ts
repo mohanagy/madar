@@ -138,7 +138,7 @@ describe('a snapshot preserves the canonical artifact', () => {
       // Load-bearing: a B1-era snapshot holds a canonical artifact beside a
       // live v1 and cannot be upgraded in place, because the two files may
       // describe different runs. The version invalidates it instead.
-      expect(metadata.snapshotFormatVersion).toBe(2)
+      expect(metadata.snapshotFormatVersion).toBe(3)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
