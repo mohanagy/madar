@@ -226,15 +226,9 @@ export function runGeneratePerformanceBenchmark(options: RunGeneratePerformanceB
     'legacy',
   )
 
-  const clusterOnlyWorkspace = prepareWorkspace(fixtureRoot, workDir, 'cluster-only')
-  generateGraph(clusterOnlyWorkspace, { extractionMode: 'legacy', noHtml: true })
-  variants['cluster-only'] = runPreparedVariant(
-    clusterOnlyWorkspace,
-    workDir,
-    'cluster-only',
-    { extractionMode: 'legacy', clusterOnly: true, noHtml: true },
-    'legacy',
-  )
+  // #722 FULL_GENERATE_ONLY_V1: cluster-only is withdrawn from the stable
+  // surface and now refuses, so the harness no longer measures it. Reporting a
+  // number for a path callers cannot take would be a false disclosure.
 
   const summary: GeneratePerformanceBenchmarkSummary = {
     schema_version: 1,

@@ -6,13 +6,14 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { describe, expect, test, vi } from 'vitest'
 
-import { generateGraph, GenerateUnsupportedCorpusError } from '../../src/infrastructure/generate.js'
+import { generateGraph, GenerateUnsupportedCorpusError, UnsupportedGenerationModeError } from '../../src/infrastructure/generate.js'
 import { analyzeImpact, callChains } from '../../src/runtime/impact.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 import { serializeGraphJsonPayload } from '../../src/pipeline/export.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
 import { readGeneratedGraphJson, readGeneratedSidecar } from './helpers/generated-graph.js'
+import { runUpdateAsFreshScenario } from './helpers/update-as-fresh.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
 
@@ -4510,230 +4511,195 @@ describe('generateGraph', () => {
     })
   })
 
-  test('supports cluster-only regeneration from an existing graph', () => {
+  test('refuses cluster-only regeneration from an existing graph', () => {
+    // #722 FULL_GENERATE_ONLY_V1: cluster-only consumed the persisted graph by
+    // definition, so it is withdrawn rather than reinterpreted. The prior
+    // artifact must be left byte-identical.
     withTempDir((tempDir) => {
-      writeFileSync(join(tempDir, 'main.py'), 'def greet():\n    return 1\n', 'utf8')
-      generateGraph(tempDir)
+      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
+      const first = generateGraph(tempDir, { noHtml: true })
+      const before = readFileSync(first.graphPath)
 
-      const result = generateGraph(tempDir, { clusterOnly: true })
-
-      expect(result.mode).toBe('cluster-only')
-      expect(result.nodeCount).toBeGreaterThan(0)
-      expect(readFileSync(join(tempDir, 'out', 'GRAPH_REPORT.md'), 'utf8')).toContain('## Communities')
+      expect(() => generateGraph(tempDir, { clusterOnly: true, noHtml: true }))
+        .toThrow(UnsupportedGenerationModeError)
+      expect(readFileSync(first.graphPath).equals(before)).toBe(true)
+      expect(existsSync(join(tempDir, 'out/graph.madar.tmp'))).toBe(false)
     })
   })
 
-  test('tracks incremental update changes after a manifest exists', async () => {
-    await withTempDirAsync(async (tempDir) => {
-      const sourcePath = join(tempDir, 'main.py')
-      writeFileSync(sourcePath, 'def greet():\n    return 1\n', 'utf8')
-      generateGraph(tempDir)
-
-      await delay(10)
-      writeFileSync(sourcePath, 'def greet():\n    return 2\n\ndef other():\n    return greet()\n', 'utf8')
-
-      const result = generateGraph(tempDir, { update: true })
-
-      expect(result.mode).toBe('update')
-      expect(result.changedFiles).toBeGreaterThan(0)
-      expect(result.deletedFiles).toBe(0)
-      expect(existsSync(join(tempDir, 'out', 'manifest.json'))).toBe(true)
-    })
-  })
-
-  test('rebuilds incremental updates from full extraction when the existing graph predates anonymous default-export targets', async () => {
-    await withTempDirAsync(async (tempDir) => {
-      const backendDir = join(tempDir, 'backend')
-      const sharedDir = join(tempDir, 'shared')
-      mkdirSync(backendDir, { recursive: true })
-      mkdirSync(sharedDir, { recursive: true })
-
-      writeFileSync(
-        join(backendDir, 'api.ts'),
-        [
-          "import createSession from '../shared/auth.js'",
-          '',
-          'export function loginUser() {',
-          '  return createSession()',
-          '}',
-        ].join('\n'),
-        'utf8',
-      )
-      writeFileSync(
-        join(sharedDir, 'auth.ts'),
-        [
-          'export default function () {',
-          "  return 'session'",
-          '}',
-        ].join('\n'),
-        'utf8',
-      )
-
-      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
-      const staleGraphData = readGeneratedGraphJson(initial.graphPath) as {
-        extractor_version?: number
-        nodes: Array<Record<string, unknown>>
-        links: Array<Record<string, unknown>>
-      }
-
-      staleGraphData.extractor_version = 59
-      staleGraphData.nodes = staleGraphData.nodes.filter((node) => node.label !== 'default()')
-      staleGraphData.links = staleGraphData.links.filter((edge) => edge.target !== 'auth_default')
-      writeFileSync(join(tempDir, 'out', 'graph.json'), `${JSON.stringify(staleGraphData, null, 2)}\n`, 'utf8')
-      // Seeding an older graph means seeding a v1-only workspace: since B1 a
-      // current reader prefers the canonical graph.madar, so rewriting only the
-      // v1 mirror no longer simulates a graph produced by a previous binary.
-      rmSync(join(tempDir, 'out', 'graph.madar'), { force: true })
-
-      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
-      const updatedGraphData = readGeneratedGraphJson(updated.graphPath) as {
-        extractor_version?: number
-        nodes: Array<Record<string, unknown>>
-        links: Array<{ source: string; target: string; relation: string }>
-      }
-      const apiFileId = updatedGraphData.nodes.find((node) => node.label === 'api.ts')?.id
-      const loginUserId = updatedGraphData.nodes.find((node) => node.label === 'loginUser()')?.id
-      const defaultExportId = updatedGraphData.nodes.find((node) => node.label === 'default()' && String(node.source_file).endsWith('/shared/auth.ts'))?.id
-
-      expect(updated.changedFiles).toBe(0)
-      expect(updated.notes.join('\n')).toContain('Existing graph uses extractor version 59, so --update rebuilt the full graph.')
-      expect(updatedGraphData.extractor_version).not.toBe(59)
-      expect(apiFileId).toBeTruthy()
-      expect(loginUserId).toBeTruthy()
-      expect(defaultExportId).toBeTruthy()
-      expect(updatedGraphData.links.some((edge) => edge.source === apiFileId && edge.target === defaultExportId && edge.relation === 'imports_from')).toBe(true)
-      expect(updatedGraphData.links.some((edge) => edge.source === loginUserId && edge.target === defaultExportId && edge.relation === 'calls')).toBe(true)
-    })
-  })
-
-  test('rebuilds incremental updates from full extraction when the existing graph lacks extractor version metadata', async () => {
-    await withTempDirAsync(async (tempDir) => {
-      const backendDir = join(tempDir, 'backend')
-      const sharedDir = join(tempDir, 'shared')
-      mkdirSync(backendDir, { recursive: true })
-      mkdirSync(sharedDir, { recursive: true })
-
-      writeFileSync(
-        join(backendDir, 'api.ts'),
-        [
-          "import createSession from '../shared/auth.js'",
-          '',
-          'export function loginUser() {',
-          '  return createSession()',
-          '}',
-        ].join('\n'),
-        'utf8',
-      )
-      writeFileSync(
-        join(sharedDir, 'auth.ts'),
-        [
-          'export default function () {',
-          "  return 'session'",
-          '}',
-        ].join('\n'),
-        'utf8',
-      )
-
-      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
-      const staleGraphData = readGeneratedGraphJson(initial.graphPath) as {
-        extractor_version?: number
-        nodes: Array<Record<string, unknown>>
-        links: Array<Record<string, unknown>>
-      }
-
-      delete staleGraphData.extractor_version
-      staleGraphData.nodes = staleGraphData.nodes.filter((node) => node.label !== 'default()')
-      staleGraphData.links = staleGraphData.links.filter((edge) => edge.target !== 'auth_default')
-      writeFileSync(join(tempDir, 'out', 'graph.json'), `${JSON.stringify(staleGraphData, null, 2)}\n`, 'utf8')
-      // Seeding an older graph means seeding a v1-only workspace: since B1 a
-      // current reader prefers the canonical graph.madar, so rewriting only the
-      // v1 mirror no longer simulates a graph produced by a previous binary.
-      rmSync(join(tempDir, 'out', 'graph.madar'), { force: true })
-
-      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
-      const updatedGraphData = readGeneratedGraphJson(updated.graphPath) as {
-        extractor_version?: number
-        nodes: Array<Record<string, unknown>>
-        links: Array<{ source: string; target: string; relation: string }>
-      }
-      const apiFileId = updatedGraphData.nodes.find((node) => node.label === 'api.ts')?.id
-      const loginUserId = updatedGraphData.nodes.find((node) => node.label === 'loginUser()')?.id
-      const defaultExportId = updatedGraphData.nodes.find((node) => node.label === 'default()' && String(node.source_file).endsWith('/shared/auth.ts'))?.id
-
-      expect(updated.changedFiles).toBe(0)
-      expect(updated.notes.join('\n')).toContain('Existing graph predates extractor version metadata, so --update rebuilt the full graph.')
-      expect(typeof updatedGraphData.extractor_version).toBe('number')
-      expect(apiFileId).toBeTruthy()
-      expect(loginUserId).toBeTruthy()
-      expect(defaultExportId).toBeTruthy()
-      expect(updatedGraphData.links.some((edge) => edge.source === apiFileId && edge.target === defaultExportId && edge.relation === 'imports_from')).toBe(true)
-      expect(updatedGraphData.links.some((edge) => edge.source === loginUserId && edge.target === defaultExportId && edge.relation === 'calls')).toBe(true)
-    })
-  })
-
-  test('treats local media sidecar-only changes as incremental updates', async () => {
-    await withTempDirAsync(async (tempDir) => {
-      const audioPath = join(tempDir, 'episode.mp3')
-      const sidecarPath = binaryIngestSidecarPath(audioPath)
-      writeFileSync(audioPath, Buffer.from('ID3'))
-      writeFileSync(
-        sidecarPath,
-        JSON.stringify(
-          {
-            source_url: 'https://example.com/podcast/episodes/1',
-            captured_at: '2026-04-14T02:00:00Z',
-            contributor: 'madar',
+      test('update fully regenerates and reflects current source when a prior manifest and graph exist', async () => {
+        // #722 FULL_GENERATE_ONLY_V1. The old assertion was that changed-file
+        // tracking drove an incremental rebuild. What still matters is that a
+        // prior manifest cannot influence the result.
+        await delay(10)
+        runUpdateAsFreshScenario({
+          arrangeWorkspace: (dir) => {
+            writeFileSync(join(dir, 'main.py'), 'def greet():\n    return 1\n', 'utf8')
           },
-          null,
-          2,
-        ),
-        'utf8',
-      )
-
-      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
-      const initialGraphData = readGeneratedGraphJson(initial.graphPath) as {
-        nodes: Array<Record<string, unknown>>
-      }
-
-      expect(initialGraphData.nodes).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            file_type: 'audio',
-            source_url: 'https://example.com/podcast/episodes/1',
-          }),
-        ]),
-      )
-
-      await delay(10)
-      writeFileSync(
-        sidecarPath,
-        JSON.stringify(
-          {
-            source_url: 'https://example.com/podcast/episodes/2',
-            captured_at: '2026-04-14T02:05:00Z',
-            contributor: 'madar',
+          assertPersistedStatePrecondition: (dir) => {
+            expect(existsSync(join(dir, 'out', 'manifest.json'))).toBe(true)
           },
-          null,
-          2,
-        ),
-        'utf8',
-      )
+          mutateWorkspace: (dir) => {
+            writeFileSync(join(dir, 'main.py'), 'def greet():\n    return 2\n\ndef other():\n    return greet()\n', 'utf8')
+          },
+          assertFreshResult: ({ result, dir }) => {
+            const labels = [...loadGraph(result.graphPath).nodeIds()]
+              .map((id) => String(loadGraph(result.graphPath).nodeAttributes(id).label ?? id))
+            expect(labels).toContain('other()')
+            expect(existsSync(join(dir, 'out', 'manifest.json'))).toBe(true)
+          },
+        })
+      })
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
-      const updatedGraphData = readGeneratedGraphJson(updated.graphPath) as {
-        nodes: Array<Record<string, unknown>>
-      }
+      test('update reconstructs anonymous default-export targets from current source, ignoring a legacy graph that predates them', () => {
+        // #722 FULL_GENERATE_ONLY_V1. Retired: the changed-file count and the
+        // "rebuilt the full graph" continuation note. Preserved: that a legacy
+        // artifact predating anonymous default-export targets cannot influence
+        // the fresh result.
+        runUpdateAsFreshScenario({
+          arrangeWorkspace: (dir) => {
+            const backendDir = join(dir, 'backend')
+            const sharedDir = join(dir, 'shared')
+            mkdirSync(backendDir, { recursive: true })
+            mkdirSync(sharedDir, { recursive: true })
+            writeFileSync(join(backendDir, 'api.ts'), [
+              "import createSession from '../shared/auth.js'",
+              '',
+              'export function loginUser() {',
+              '  return createSession()',
+              '}',
+            ].join('\n'), 'utf8')
+            writeFileSync(join(sharedDir, 'auth.ts'), [
+              'export default function () {',
+              "  return 'session'",
+              '}',
+            ].join('\n'), 'utf8')
+          },
+          generateOptions: { noHtml: true, extractionMode: 'legacy' },
+          arrangePersistedState: (dir) => {
+            const stale = readGeneratedGraphJson(join(dir, 'out', 'graph.madar')) as Record<string, unknown>
+            stale.extractor_version = 59
+            writeFileSync(join(dir, 'out', 'graph.json'), `${JSON.stringify(stale, null, 2)}\n`, 'utf8')
+          },
+          assertPersistedStatePrecondition: (dir) => {
+            const seeded = JSON.parse(readFileSync(join(dir, 'out', 'graph.json'), 'utf8')) as Record<string, unknown>
+            expect(seeded.extractor_version).toBe(59)
+          },
+          assertFreshResult: ({ result }) => {
+            const meta = readGeneratedGraphJson(result.graphPath) as Record<string, unknown>
+            expect(meta.extractor_version).not.toBe(59)
+            const data = readGeneratedGraphJson(result.graphPath) as {
+              nodes: Array<Record<string, unknown>>
+              links: Array<Record<string, unknown>>
+            }
+            const idOf = (predicate: (n: Record<string, unknown>) => boolean): unknown =>
+              data.nodes.find(predicate)?.id
+            const apiFileId = idOf((n) => String(n.label ?? '').includes('api.ts'))
+            const loginUserId = idOf((n) => n.label === 'loginUser()')
+            const defaultExportId = idOf((n) => String(n.label ?? '').includes('default'))
+            expect(apiFileId).toBeTruthy()
+            expect(loginUserId).toBeTruthy()
+            expect(defaultExportId).toBeTruthy()
+            expect(data.links.some((e) => e.source === apiFileId && e.target === defaultExportId && e.relation === 'imports_from')).toBe(true)
+            expect(data.links.some((e) => e.source === loginUserId && e.target === defaultExportId && e.relation === 'calls')).toBe(true)
+          },
+        })
+      })
 
-      expect(updated.changedFiles).toBeGreaterThan(0)
-      expect(updatedGraphData.nodes).toEqual(
-        expect.arrayContaining([
+      test('update ignores a legacy graph with no extractor-version metadata and emits current metadata', () => {
+        // #722 FULL_GENERATE_ONLY_V1. Retired: the changed-file count and the
+        // "predates extractor version metadata" continuation note. Preserved:
+        // that missing legacy metadata is never treated as reusable state.
+        runUpdateAsFreshScenario({
+          arrangeWorkspace: (dir) => {
+            const backendDir = join(dir, 'backend')
+            const sharedDir = join(dir, 'shared')
+            mkdirSync(backendDir, { recursive: true })
+            mkdirSync(sharedDir, { recursive: true })
+            writeFileSync(join(backendDir, 'api.ts'), [
+              "import createSession from '../shared/auth.js'",
+              '',
+              'export function loginUser() {',
+              '  return createSession()',
+              '}',
+            ].join('\n'), 'utf8')
+            writeFileSync(join(sharedDir, 'auth.ts'), [
+              'export default function () {',
+              "  return 'session'",
+              '}',
+            ].join('\n'), 'utf8')
+          },
+          generateOptions: { noHtml: true, extractionMode: 'legacy' },
+          arrangePersistedState: (dir) => {
+            const stale = readGeneratedGraphJson(join(dir, 'out', 'graph.madar')) as Record<string, unknown>
+            delete stale.extractor_version
+            writeFileSync(join(dir, 'out', 'graph.json'), `${JSON.stringify(stale, null, 2)}\n`, 'utf8')
+          },
+          assertPersistedStatePrecondition: (dir) => {
+            const seeded = JSON.parse(readFileSync(join(dir, 'out', 'graph.json'), 'utf8')) as Record<string, unknown>
+            expect(seeded.extractor_version).toBeUndefined()
+          },
+          assertFreshResult: ({ result }) => {
+            const meta = readGeneratedGraphJson(result.graphPath) as Record<string, unknown>
+            expect(typeof meta.extractor_version).toBe('number')
+            const data = readGeneratedGraphJson(result.graphPath) as {
+              nodes: Array<Record<string, unknown>>
+              links: Array<Record<string, unknown>>
+            }
+            const idOf = (predicate: (n: Record<string, unknown>) => boolean): unknown =>
+              data.nodes.find(predicate)?.id
+            const apiFileId = idOf((n) => String(n.label ?? '').includes('api.ts'))
+            const loginUserId = idOf((n) => n.label === 'loginUser()')
+            const defaultExportId = idOf((n) => String(n.label ?? '').includes('default'))
+            expect(apiFileId).toBeTruthy()
+            expect(loginUserId).toBeTruthy()
+            expect(defaultExportId).toBeTruthy()
+            expect(data.links.some((e) => e.source === apiFileId && e.target === defaultExportId && e.relation === 'imports_from')).toBe(true)
+            expect(data.links.some((e) => e.source === loginUserId && e.target === defaultExportId && e.relation === 'calls')).toBe(true)
+          },
+        })
+      })
+
+  test('update reflects the current media sidecar input rather than prior graph state', () => {
+    // #722 FULL_GENERATE_ONLY_V1. Retired: the "sidecar-only change triggers an
+    // incremental update" assertion. Preserved: the binary-ingest sidecar is a
+    // repository input that lives beside the media file, so its current content
+    // must reach the freshly generated graph. The precondition proves the
+    // sidecar is genuinely read, otherwise the second assertion is vacuous.
+    const sidecarFor = (dir: string): string => binaryIngestSidecarPath(join(dir, 'episode.mp3'))
+    const writeSidecar = (dir: string, episode: string, capturedAt: string): void => {
+      writeFileSync(sidecarFor(dir), JSON.stringify({
+        source_url: `https://example.com/podcast/episodes/${episode}`,
+        captured_at: capturedAt,
+        contributor: 'madar',
+      }, null, 2), 'utf8')
+    }
+
+    runUpdateAsFreshScenario({
+      arrangeWorkspace: (dir) => {
+        writeFileSync(join(dir, 'episode.mp3'), Buffer.from('ID3'))
+        writeSidecar(dir, '1', '2026-04-14T02:00:00Z')
+      },
+      generateOptions: { noHtml: true, extractionMode: 'legacy' },
+      assertPersistedStatePrecondition: (_dir, initial) => {
+        const data = readGeneratedGraphJson(initial.graphPath) as { nodes: Array<Record<string, unknown>> }
+        expect(data.nodes).toEqual(expect.arrayContaining([
+          expect.objectContaining({ file_type: 'audio', source_url: 'https://example.com/podcast/episodes/1' }),
+        ]))
+      },
+      mutateWorkspace: (dir) => {
+        writeSidecar(dir, '2', '2026-04-14T02:05:00Z')
+      },
+      assertFreshResult: ({ result }) => {
+        const data = readGeneratedGraphJson(result.graphPath) as { nodes: Array<Record<string, unknown>> }
+        expect(data.nodes).toEqual(expect.arrayContaining([
           expect.objectContaining({
             file_type: 'audio',
             source_url: 'https://example.com/podcast/episodes/2',
             captured_at: '2026-04-14T02:05:00Z',
           }),
-        ]),
-      )
+        ]))
+      },
     })
   })
 
@@ -4779,93 +4745,60 @@ describe('generateGraph', () => {
     })
   })
 
-  test('preserves schema version during incremental updates', async () => {
-    await withTempDirAsync(async (tempDir) => {
-      const sourcePath = join(tempDir, 'main.py')
-      const helperPath = join(tempDir, 'helper.py')
-      writeFileSync(sourcePath, 'def greet():\n    return helper()\n', 'utf8')
-      writeFileSync(helperPath, 'def helper():\n    return 1\n', 'utf8')
+      test('update emits the current canonical schema version regardless of the prior artifact', () => {
+        // #722 FULL_GENERATE_ONLY_V1. The old name claimed the prior schema was
+        // "preserved". It is not preserved; the fresh artifact carries whatever
+        // a clean generation of the same source produces, and a seeded value
+        // does not survive.
+        runUpdateAsFreshScenario({
+          arrangeWorkspace: (dir) => {
+            writeFileSync(join(dir, 'main.py'), 'def greet():\n    return helper()\n', 'utf8')
+            writeFileSync(join(dir, 'helper.py'), 'def helper():\n    return 1\n', 'utf8')
+          },
+          generateOptions: { noHtml: true, extractionMode: 'legacy' },
+          arrangePersistedState: (dir, initial) => {
+            // Seed the canonical artifact itself. Writing a stray out/graph.json
+            // is refused by artifact activation, which would make the scenario
+            // fail for an unrelated reason.
+            const seeded = readGeneratedGraphJson(initial.graphPath) as Record<string, unknown>
+            seeded.schema_version = 99
+            writeFileSync(join(dir, 'out', 'graph.madar'), `${JSON.stringify(seeded)}\n`, 'utf8')
+          },
+          assertPersistedStatePrecondition: (dir) => {
+            const seeded = JSON.parse(readFileSync(join(dir, 'out', 'graph.madar'), 'utf8')) as Record<string, unknown>
+            expect(seeded.schema_version).toBe(99)
+          },
+          assertFreshResult: ({ result, clean }) => {
+            const fresh = readGeneratedGraphJson(result.graphPath) as Record<string, unknown>
+            const reference = readGeneratedGraphJson(clean.graphPath) as Record<string, unknown>
+            expect(fresh.schema_version).toBe(reference.schema_version)
+            expect(fresh.schema_version).not.toBe(99)
+          },
+        })
+      })
 
-      const initial = generateGraph(tempDir, { noHtml: true, extractionMode: 'legacy' })
-      const graphData = readGeneratedGraphJson(initial.graphPath) as {
-        schema_version?: number
-        nodes: Array<Record<string, unknown>>
-        links: Array<Record<string, unknown>>
-        hyperedges?: Array<Record<string, unknown>>
-      }
-
-      graphData.schema_version = 2
-      graphData.nodes = graphData.nodes.map((node) =>
-        node.label === 'helper()'
-          ? {
-              ...node,
-              layer: 'semantic',
-              provenance: [{ capability_id: 'test:seed-helper', stage: 'seed' }],
-            }
-          : node,
-      )
-      writeFileSync(join(tempDir, 'out', 'graph.json'), `${JSON.stringify(graphData, null, 2)}\n`, 'utf8')
-      // Seeding an older graph means seeding a v1-only workspace: since B1 a
-      // current reader prefers the canonical graph.madar, so rewriting only the
-      // v1 mirror no longer simulates a graph produced by a previous binary.
-      rmSync(join(tempDir, 'out', 'graph.madar'), { force: true })
-
-      await delay(10)
-      writeFileSync(sourcePath, 'def greet():\n    return helper()\n\ndef other():\n    return greet()\n', 'utf8')
-
-      const updated = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
-      const updatedGraphData = readGeneratedGraphJson(updated.graphPath) as {
-        schema_version?: number
-        nodes: Array<Record<string, unknown>>
-      }
-
-      expect(updatedGraphData.schema_version).toBe(2)
-      expect(updatedGraphData.nodes).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            label: 'helper()',
-            layer: 'semantic',
-            provenance: [expect.objectContaining({ capability_id: 'test:seed-helper' })],
-          }),
-        ]),
-      )
-    })
-  })
-
-  test('re-extracts only changed files during update while retaining unchanged graph context', async () => {
-    await withTempDirAsync(async (tempDir) => {
-      const sourcePath = join(tempDir, 'main.py')
-      const helperPath = join(tempDir, 'helper.py')
-      writeFileSync(sourcePath, 'def greet():\n    return helper()\n', 'utf8')
-      writeFileSync(helperPath, 'def helper():\n    return 1\n', 'utf8')
-      generateGraph(tempDir, { extractionMode: 'legacy' })
-
-      await delay(10)
-      writeFileSync(sourcePath, 'def greet():\n    return helper()\n\ndef other():\n    return greet()\n', 'utf8')
-
-      vi.resetModules()
-      const actualExtractModule = await vi.importActual<typeof import('../../src/pipeline/extract.js')>('../../src/pipeline/extract.js')
-      const extractSpy = vi.fn(actualExtractModule.extract)
-      vi.doMock('../../src/pipeline/extract.js', () => ({
-        ...actualExtractModule,
-        extract: extractSpy,
-      }))
-
-      try {
-        const generateModule = await import('../../src/infrastructure/generate.js')
-        const result = generateModule.generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
-        const graph = loadGraph(result.graphPath)
-
-        expect(extractSpy).toHaveBeenCalledTimes(1)
-        expect(normalizeAssertionPaths(extractSpy.mock.calls[0]?.[0] ?? [])).toEqual([normalizeAssertionPath(sourcePath)])
-        expect(graph.nodeEntries().some(([, attributes]) => attributes.label === 'helper()')).toBe(true)
-        expect(graph.nodeEntries().some(([, attributes]) => attributes.label === 'other()')).toBe(true)
-      } finally {
-        vi.doUnmock('../../src/pipeline/extract.js')
-        vi.resetModules()
-      }
-    })
-  })
+      test('update reconstructs a complete graph containing changed and unchanged context', () => {
+        // #722 FULL_GENERATE_ONLY_V1. Retired: the "only changed files were
+        // extracted" efficiency assertion and its extract() call-count spy.
+        // Preserved: that unchanged context is still correctly represented -
+        // now because it was re-extracted, not because it was retained.
+        runUpdateAsFreshScenario({
+          arrangeWorkspace: (dir) => {
+            writeFileSync(join(dir, 'main.py'), 'def greet():\n    return helper()\n', 'utf8')
+            writeFileSync(join(dir, 'helper.py'), 'def helper():\n    return 1\n', 'utf8')
+          },
+          generateOptions: { noHtml: true, extractionMode: 'legacy' },
+          mutateWorkspace: (dir) => {
+            writeFileSync(join(dir, 'main.py'), 'def greet():\n    return helper()\n\ndef other():\n    return greet()\n', 'utf8')
+          },
+          assertFreshResult: ({ result }) => {
+            const graph = loadGraph(result.graphPath)
+            const labels = [...graph.nodeIds()].map((id) => String(graph.nodeAttributes(id).label ?? id))
+            expect(labels).toContain('other()')    // changed file
+            expect(labels).toContain('helper()')   // unchanged file, freshly re-extracted
+          },
+        })
+      })
 
   test('writes optional wiki, obsidian, svg, graphml, and cypher artifacts when requested', () => {
     withTempDir((tempDir) => {
@@ -5006,53 +4939,53 @@ describe('generateGraph', () => {
     })
   })
 
-  test('makes a directed-to-undirected cluster-only downgrade explicit and disables directional analysis', () => {
-    withTempDir((tempDir) => {
-      writeFileSync(
-        join(tempDir, 'main.py'),
-        'def alpha():\n    return beta()\n\ndef beta():\n    return alpha()\n',
-        'utf8',
-      )
-      const directedResult = generateGraph(tempDir, { noHtml: true })
-      const directedGraph = loadGraph(directedResult.graphPath)
-      expect(directedGraph.isDirected()).toBe(true)
-      expect(callChains(directedGraph, 'alpha()', 'beta()')).not.toEqual([])
-      expect(callChains(directedGraph, 'beta()', 'alpha()')).not.toEqual([])
-
-      const downgraded = generateGraph(tempDir, { clusterOnly: true, directed: false, noHtml: true })
-      const undirectedGraph = loadGraph(downgraded.graphPath)
-
-      expect(undirectedGraph.isDirected()).toBe(false)
-      expect(undirectedGraph.numberOfEdges()).toBeLessThan(directedGraph.numberOfEdges())
-      expect(downgraded.notes).toContain('Migrated the existing graph from directed to undirected edge traversal.')
-      expect(() => callChains(undirectedGraph, 'alpha()', 'beta()')).toThrow(
-        'Call-chain analysis requires a directed graph',
-      )
-    })
-  })
-
-  test('migrates a legacy undirected graph during an unchanged update', () => {
+  test('refuses a directed-to-undirected cluster-only downgrade as an unsupported mode', () => {
+    // #722 FULL_GENERATE_ONLY_V1: the downgrade ran through cluster-only, which
+    // reused the persisted graph by definition. A direction change now requires
+    // a full regeneration.
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
-      const legacy = generateGraph(tempDir, { directed: false, noHtml: true })
-      expect(loadGraph(legacy.graphPath).isDirected()).toBe(false)
+      const first = generateGraph(tempDir, { directed: true, noHtml: true })
+      const before = readFileSync(first.graphPath)
 
-      const updated = generateGraph(tempDir, { update: true, noHtml: true })
-
-      expect(loadGraph(updated.graphPath).isDirected()).toBe(true)
-      expect(updated.extractedFiles).toBeGreaterThan(0)
-      expect(updated.notes).toContain('Existing graph was undirected, so --update rebuilt the full graph with directed edges.')
+      expect(() => generateGraph(tempDir, { clusterOnly: true, directed: false, noHtml: true }))
+        .toThrow(UnsupportedGenerationModeError)
+      expect(readFileSync(first.graphPath).equals(before)).toBe(true)
     })
   })
 
-  test('refuses to guess lost edge directions during cluster-only regeneration', () => {
+      test('update ignores legacy undirected state and emits current direction from repository inputs', () => {
+        // #722 FULL_GENERATE_ONLY_V1. Previously this asserted that --update
+        // *migrated* the legacy graph. There is no migration now: the legacy
+        // artifact is simply not an input, and direction comes from the current
+        // configuration and source.
+        runUpdateAsFreshScenario({
+          arrangeWorkspace: (dir) => {
+            writeFileSync(join(dir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
+          },
+          generateOptions: { directed: false, noHtml: true },
+          assertPersistedStatePrecondition: (_dir, initial) => {
+            // the seeded artifact really is undirected, or the test proves nothing
+            expect(loadGraph(initial.graphPath).isDirected()).toBe(false)
+          },
+          assertFreshResult: ({ result }) => {
+            expect(loadGraph(result.graphPath).isDirected()).toBe(false)
+            expect(result.extractedFiles).toBeGreaterThan(0)
+          },
+        })
+      })
+
+  test('refuses cluster-only regeneration as an unsupported mode', () => {
+    // #722 FULL_GENERATE_ONLY_V1: cluster-only is withdrawn from the stable
+    // surface. It previously refused only when edge directions could not be
+    // recovered; it now refuses as an unsupported mode, before reading the
+    // persisted graph at all.
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 1\n', 'utf8')
       generateGraph(tempDir, { directed: false, noHtml: true })
 
-      expect(() => generateGraph(tempDir, { clusterOnly: true, noHtml: true })).toThrow(
-        '--cluster-only cannot safely recover edge directions from an undirected graph.',
-      )
+      expect(() => generateGraph(tempDir, { clusterOnly: true, noHtml: true }))
+        .toThrow(UnsupportedGenerationModeError)
     })
   })
 
@@ -5107,7 +5040,10 @@ describe('generateGraph', () => {
     })
   })
 
-  test('returns structured extraction and cache metrics for generate, update, and cluster-only flows', async () => {
+  test('returns structured extraction and cache metrics for generate and update flows', async () => {
+    // #722 FULL_GENERATE_ONLY_V1. Retired: the "Generation policy changed"
+    // continuation note, the selective changedFiles/extractedFiles counts for
+    // update, and the cluster-only metrics section - cluster-only now refuses.
     await withTempDirAsync(async (tempDir) => {
       mkdirSync(join(tempDir, 'src'), { recursive: true })
       mkdirSync(join(tempDir, 'docs'), { recursive: true })
@@ -5125,48 +5061,34 @@ describe('generateGraph', () => {
       expect(legacy.cache).toBeNull()
 
       const spiCold = generateGraph(tempDir, { useSpi: true, noHtml: true })
-      expect(spiCold.extractableFiles).toBe(3)
       expect(spiCold.extractedFiles).toBe(3)
       expect(spiCold.cache).toEqual(expect.objectContaining({
-        strategy: 'spi',
-        hit: false,
-        reason: 'cache-disabled',
-        fileCount: 2,
+        strategy: 'spi', hit: false, reason: 'cache-disabled', fileCount: 2,
       }))
 
+      // A second run is a full fresh build, so its metrics match the first.
       const spiWarm = generateGraph(tempDir, { useSpi: true, noHtml: true })
-      expect(spiWarm.extractableFiles).toBe(3)
-      // #722 FULL_GENERATE_ONLY_V1: the warm run re-extracts everything the
-      // cold run did; it is no longer cheaper than a cold build.
-      expect(spiWarm.extractedFiles).toBe(3)
-      expect(spiWarm.cache).toEqual(expect.objectContaining({
-        strategy: 'spi',
-        hit: false,   // #722: the supported corridor never reports a cache hit
-        // #722 FULL_GENERATE_ONLY_V1: no cache is consulted, warm or cold.
-        reason: 'cache-disabled',
-        fileCount: 2,
-      }))
+      expect(spiWarm.extractedFiles).toBe(spiCold.extractedFiles)
+      expect(spiWarm.cache).toEqual(spiCold.cache)
 
+      // --update routes to ordinary full generation: same work, truthful mode.
       const updateNoop = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
+      expect(updateNoop.mode).toBe('generate')
       expect(updateNoop.extractableFiles).toBe(3)
-      expect(updateNoop.changedFiles).toBe(0)
       expect(updateNoop.extractedFiles).toBe(3)
       expect(updateNoop.cache).toBeNull()
-      expect(updateNoop.notes.join('\n')).toContain('Generation policy changed')
 
       await delay(10)
       writeFileSync(join(tempDir, 'src', 'beta.ts'), 'export function beta(): number { return 2 }\n', 'utf8')
       const updateChanged = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
+      expect(updateChanged.mode).toBe('generate')
       expect(updateChanged.extractableFiles).toBe(3)
-      expect(updateChanged.changedFiles).toBe(1)
-      expect(updateChanged.extractedFiles).toBe(1)
+      // every file is re-extracted, not just the changed one
+      expect(updateChanged.extractedFiles).toBe(3)
       expect(updateChanged.cache).toBeNull()
 
-      const clusterOnly = generateGraph(tempDir, { clusterOnly: true, noHtml: true })
-      expect(clusterOnly.mode).toBe('cluster-only')
-      expect(clusterOnly.extractableFiles).toBe(3)
-      expect(clusterOnly.extractedFiles).toBe(0)
-      expect(clusterOnly.cache).toBeNull()
+      expect(() => generateGraph(tempDir, { clusterOnly: true, noHtml: true }))
+        .toThrow(UnsupportedGenerationModeError)
     })
   })
 })

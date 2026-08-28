@@ -1,4 +1,4 @@
-# Performance benchmark plan for `generate`, `update`, and `cluster-only`
+# Performance benchmark plan for `generate` and `update`
 
 > **Tracking issue:** [#178](https://github.com/mohanagy/madar/issues/178)
 
@@ -13,7 +13,6 @@ The synthetic harness runs six variants on isolated fixture copies:
 3. `generate-spi-warm` — second `generate --spi` run on the same workspace to measure the cache-hit path
 4. `update-noop` — `generate --update` with no source changes
 5. `update-changed` — `generate --update` after mutating one code file
-6. `cluster-only` — `generate --cluster-only` after a baseline graph already exists
 
 ## Metrics tracked
 
@@ -61,13 +60,12 @@ Use the synthetic fixture in CI, and use the local-repo run when you want realis
 
 - initial `generate`
 - incremental `update` after a narrow change
-- `cluster-only` refresh cost
 - SPI cold vs warm cache behavior
 
 ## Interpreting results
 
 - `extractable_files` is the total corpus eligible for extraction in that workspace state.
-- `extracted_files` is the number of files freshly re-extracted for that run. It should drop to `0` for strict-SPI warm-cache hits, update no-op runs, and cluster-only refreshes. Auto mode still refreshes its legacy semantic augmentation after an SPI cache hit.
+- `extracted_files` is the number of files freshly re-extracted for that run. Under #722 FULL_GENERATE_ONLY_V1 it does **not** drop on a second run: there is no semantic cache hit, `--update` routes to ordinary full generation, and `--cluster-only` is withdrawn. A warm run therefore reports the same extraction count as a cold one.
 - `cache_reason` is only populated for SPI runs. Typical values are `no-cache`, `fresh-cache`, and `key-mismatch`.
 - Compare `graph_size_bytes` and `output_size_bytes` together: the graph file can stay flat while the total output directory still grows.
 
@@ -76,3 +74,8 @@ Use the synthetic fixture in CI, and use the local-repo run when you want realis
 - Do not turn this into a strict perf threshold in CI.
 - Do not claim broad performance wins from the synthetic fixture alone.
 - Do not optimize generation paths without a before/after measurement from this harness or a real local workspace run.
+
+
+> **#722 FULL_GENERATE_ONLY_V1.** `--cluster-only` is withdrawn from the
+> stable surface and is no longer measured. `--update` routes to ordinary full
+> generation, so its variant reports the ordinary generate mode.

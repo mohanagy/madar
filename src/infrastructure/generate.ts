@@ -159,6 +159,22 @@ export interface GenerateGraphCacheSummary {
 
 export type GenerateUnsupportedCorpusCode = 'NO_SUPPORTED_FILES' | 'NO_GRAPH_NODES'
 
+/**
+ * #722 FULL_GENERATE_ONLY_V1: a continuation mode that is not part of the
+ * stable release surface. Thrown before any persisted semantic state is read
+ * and before any artifact is published or modified.
+ */
+export class UnsupportedGenerationModeError extends Error {
+  readonly code = 'UNSUPPORTED_GENERATION_MODE' as const
+  readonly mode: string
+
+  constructor(mode: string, guidance: string) {
+    super(`${mode} is not supported in this release: ${guidance}`)
+    this.name = 'UnsupportedGenerationModeError'
+    this.mode = mode
+  }
+}
+
 export class GenerateUnsupportedCorpusError extends Error {
   readonly code: GenerateUnsupportedCorpusCode
   readonly discoverySafety: DiscoverySafetyMetadata | undefined
@@ -501,6 +517,25 @@ export function loadGraphExtractorVersion(graphPath: string): number | null {
 export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}): GenerateGraphResult {
   if (options.update && options.clusterOnly) {
     throw new Error('--update and --cluster-only cannot be used together')
+  }
+
+  // #722 FULL_GENERATE_ONLY_V1. Decided here, before any persisted semantic
+  // read, publication or artifact modification.
+  //
+  // --cluster-only means "reuse the loaded graph and only recluster", which
+  // cannot be expressed without consuming persisted semantic results, so it is
+  // refused rather than silently reinterpreted.
+  if (options.clusterOnly === true) {
+    throw new UnsupportedGenerationModeError(
+      'cluster-only',
+      'run `madar generate` for a full regeneration',
+    )
+  }
+  // --update keeps its meaning under a fresh-only contract: the caller wants a
+  // current graph. It is routed to the one supported full-generation path
+  // rather than refused.
+  if (options.update === true) {
+    options = { ...options, update: false }
   }
 
   const resolvedRootPath = resolve(rootPath)

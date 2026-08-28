@@ -133,7 +133,11 @@ describe('generate indexing completeness', () => {
       const retry = generateGraph(root, { update: true, noHtml: true })
       const retriedGraph = readGeneratedGraphJson(graphPath) as unknown as { nodes: Array<{ label?: string }> }
 
-      expect(retry.changedFiles).toBeGreaterThan(0)
+      // #722 FULL_GENERATE_ONLY_V1: there is no incremental diff, so
+      // changedFiles is 0. What still matters - and is asserted below - is that
+      // the failed strict run did not advance the fingerprints, so the retry
+      // does the work and produces the node.
+      expect(retry.extractedFiles).toBeGreaterThan(0)
       expect(retriedGraph.nodes.some((node) => node.label?.includes('updatedFlow'))).toBe(true)
       expect(existsSync(join(root, 'out', 'indexing-manifest.failed.json'))).toBe(false)
     })

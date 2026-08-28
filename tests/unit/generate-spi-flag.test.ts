@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, test } from 'vitest'
 
 import { parseGenerateArgs } from '../../src/cli/parser.js'
-import { generateGraph } from '../../src/infrastructure/generate.js'
+import { UnsupportedGenerationModeError, generateGraph } from '../../src/infrastructure/generate.js'
 import { readGeneratedGraphJson } from './helpers/generated-graph.js'
 
 function mkSandbox(prefix: string): string {
@@ -197,29 +197,20 @@ describe('generateGraph capability-aware auto extraction', () => {
     expect(graph.spi_mode).toBeUndefined()
   })
 
-  it('preserves an existing auto graph SPI marker during a cluster-only rebuild', () => {
+  it('refuses a cluster-only rebuild rather than reusing the existing graph', () => {
+    // #722 FULL_GENERATE_ONLY_V1. This previously asserted that a cluster-only
+    // rebuild preserved the prior graph's SPI marker; that mode is withdrawn,
+    // so the assertion is now that it refuses without touching the artifact.
     writeFile(sandbox, 'src/only-spi.ts', 'export const answer = 42\n')
-    generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
+    const first = generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
+    const before = readFileSync(first.graphPath)
 
     rmSync(join(sandbox, 'src/only-spi.ts'))
     writeFile(sandbox, 'cmd/main.go', 'package main\nfunc main() {}\n')
 
-    const clustered = generateGraph(sandbox, { clusterOnly: true, noHtml: true })
-    const graph = readGeneratedGraphJson(clustered.graphPath) as {
-      spi_mode?: unknown
-    }
-    const indexing = JSON.parse(readFileSync(clustered.indexingManifestPath!, 'utf8')) as {
-      outcomes: Array<Record<string, unknown>>
-    }
-
-    expect(graph.spi_mode).toBe(true)
-    expect(indexing.outcomes).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        path: 'cmd/main.go',
-        reason: 'retained_evidence_missing',
-        extraction_strategy: 'not_extracted',
-      }),
-    ]))
+    expect(() => generateGraph(sandbox, { clusterOnly: true, noHtml: true }))
+      .toThrow(UnsupportedGenerationModeError)
+    expect(readFileSync(first.graphPath).equals(before)).toBe(true)
   })
 
   test.runIf(process.platform !== 'win32')('keeps followed TypeScript symlinks on the SPI path', () => {
@@ -407,7 +398,9 @@ describe('generateGraph strict SPI extraction', () => {
     expect(afterSource?.id).toBe(beforeSource?.id)
   })
 
-  it('rejects a programmatic cluster-only request that conflicts with the stored extraction mode', () => {
+  it('refuses a programmatic cluster-only request as an unsupported mode', () => {
+    // #722 FULL_GENERATE_ONLY_V1: cluster-only is withdrawn, so the refusal now
+    // happens before the stored-extraction-mode conflict is ever reached.
     writeFile(sandbox, 'src/foo.ts', 'export const foo = 1\n')
     generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
 
@@ -415,6 +408,6 @@ describe('generateGraph strict SPI extraction', () => {
       clusterOnly: true,
       extractionMode: 'legacy',
       noHtml: true,
-    })).toThrow('cannot change extraction mode from spi to legacy')
+    })).toThrow(UnsupportedGenerationModeError)
   })
 })

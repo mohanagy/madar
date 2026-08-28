@@ -28,7 +28,7 @@ function writeFixture(root: string): void {
 }
 
 describe('generate performance benchmark harness', () => {
-  it('covers generate, update, cluster-only, and SPI cache variants with structured metrics', () => {
+  it('covers generate, update and SPI variants with structured metrics', () => {
     withTempDir((dir) => {
       const fixtureRoot = join(dir, 'fixture')
       const workDir = join(dir, 'runs')
@@ -57,7 +57,6 @@ describe('generate performance benchmark harness', () => {
         'generate-spi-warm',
         'update-noop',
         'update-changed',
-        'cluster-only',
       ])
 
       for (const variant of Object.values(summary.variants)) {
@@ -88,20 +87,19 @@ describe('generate performance benchmark harness', () => {
           // disclosure, not as a reuse claim.
           extracted_files: 3,
       }))
+      // #722 FULL_GENERATE_ONLY_V1: --update routes to ordinary full
+      // generation, so the mode is truthful and every file is re-extracted.
       expect(summary.variants['update-noop']).toEqual(expect.objectContaining({
-        mode: 'update',
-        changed_files: 0,
-        extracted_files: 0,
+        mode: 'generate',
+        extracted_files: 3,
       }))
       expect(summary.variants['update-changed']).toEqual(expect.objectContaining({
-        mode: 'update',
-        changed_files: 1,
-        extracted_files: 1,
+        mode: 'generate',
+        extracted_files: 3,
       }))
-      expect(summary.variants['cluster-only']).toEqual(expect.objectContaining({
-        mode: 'cluster-only',
-        extracted_files: 0,
-      }))
+      // #722 FULL_GENERATE_ONLY_V1: cluster-only is withdrawn, so the harness
+      // produces no variant for it.
+      expect(summary.variants['cluster-only']).toBeUndefined()
     })
   })
 
@@ -109,7 +107,7 @@ describe('generate performance benchmark harness', () => {
     const readme = readFileSync(resolve('docs/benchmarks/performance/README.md'), 'utf8')
     const runner = readFileSync(resolve('docs/benchmarks/performance/run.mjs'), 'utf8')
 
-    expect(readme).toContain('`generate`, `update`, and `cluster-only`')
+    expect(readme).toContain('`generate` and `update`')
     expect(readme).toContain('wall_clock_ms')
     expect(readme).toContain('cache_reason')
     expect(readme).toContain('Manual large-repo benchmark flow')
