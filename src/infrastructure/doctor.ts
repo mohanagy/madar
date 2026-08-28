@@ -300,15 +300,20 @@ function containsOutPathReference(value: unknown): boolean {
   return false
 }
 
-function hasWorkspaceAutoRefreshArgs(args: unknown): boolean {
+/**
+ * What actually selects the active workspace graph is `serve --stdio` with no
+ * fixed graph-path argument. #722 stopped emitting `--auto-refresh`, since
+ * automatic semantic refresh is not supported, so requiring it would report
+ * every newly installed profile as stale. It stays accepted, so profiles
+ * written by earlier versions keep passing too.
+ */
+function hasWorkspaceStdioArgs(args: unknown): boolean {
   if (!Array.isArray(args)) {
     return false
   }
 
   const normalizedArgs = args.filter((value): value is string => typeof value === 'string')
-  return normalizedArgs.includes('serve')
-    && normalizedArgs.includes('--stdio')
-    && normalizedArgs.includes('--auto-refresh')
+  return normalizedArgs.includes('serve') && normalizedArgs.includes('--stdio')
 }
 
 function readMcpCheck(
@@ -355,12 +360,28 @@ function readMcpCheck(
     }
   }
 
-  if (!hasWorkspaceAutoRefreshArgs(server.args)) {
+  if (!hasWorkspaceStdioArgs(server.args)) {
     return {
       label,
       configPath,
       status: 'stale',
-      reason: "server args must include 'serve --stdio --auto-refresh' to select the active workspace graph",
+      reason: "server args must include 'serve --stdio' to select the active workspace graph",
+    }
+  }
+
+  /*
+   * A pinned graph-path argument is the stale shape the registry docs warn
+   * about: it goes out of date and does not follow a linked worktree's isolated
+   * artifact directory. It used to be caught only as a side effect of requiring
+   * `--auto-refresh` -- a config carrying a fixed path did not carry the flag.
+   * #722 stopped requiring the flag, so this now says what it actually means.
+   */
+  if (containsOutPathReference(server.args)) {
+    return {
+      label,
+      configPath,
+      status: 'stale',
+      reason: 'server args pin a fixed graph path; remove it so the active workspace graph is selected',
     }
   }
 
@@ -529,7 +550,7 @@ function isOpencodeMcpConfigured(config: JsonObject | null): boolean {
     return false
   }
 
-  return hasWorkspaceAutoRefreshArgs(command)
+  return hasWorkspaceStdioArgs(command)
 }
 
 function computeNextCommands(report: Omit<DoctorReport, 'nextCommands' | 'healthy'>): string[] {

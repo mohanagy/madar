@@ -98,7 +98,9 @@ const registryManifestSchema = {
           },
           packageArguments: {
             type: 'array',
-            minItems: 3,
+            // #722: two, not three. `--auto-refresh` is no longer emitted --
+            // automatic semantic refresh is not supported in the stable profile.
+            minItems: 2,
             items: {
               type: 'object',
               additionalProperties: false,
@@ -206,8 +208,8 @@ function main() {
   const packageArguments = npmPackage.packageArguments ?? []
   assert.deepEqual(
     packageArguments.map((entry) => entry.value ?? entry.valueHint ?? null),
-    ['serve', '--stdio', '--auto-refresh'],
-    'server.json package arguments must model `madar serve --stdio --auto-refresh`',
+    ['serve', '--stdio'],
+    'server.json package arguments must model `madar serve --stdio`',
   )
 
   const graphPathArgument = packageArguments.find((entry) => entry.valueHint === 'graph_path')

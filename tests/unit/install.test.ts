@@ -571,7 +571,7 @@ describe('install helpers', () => {
           }
           expect(geminiSettings.mcpServers?.madar).toEqual(expect.objectContaining({
             command: 'madar',
-            args: ['serve', '--stdio', '--auto-refresh'],
+            args: ['serve', '--stdio'],
             env: { MADAR_TOOL_PROFILE: 'core' },
           }))
 
@@ -1030,7 +1030,6 @@ describe('install helpers', () => {
       expect(mcpConfig.mcpServers?.['madar']?.args).toEqual([
         'serve',
         '--stdio',
-        '--auto-refresh',
       ])
     })
   })
@@ -1138,7 +1137,6 @@ describe('install helpers', () => {
       expect(mcpConfig.mcpServers?.['madar']?.args).toEqual([
         'serve',
         '--stdio',
-        '--auto-refresh',
       ])
     })
   })
@@ -1247,7 +1245,6 @@ describe('install helpers', () => {
           normalizeAssertionPath(cliPath),
           'serve',
           '--stdio',
-          '--auto-refresh',
         ])
       })
     })
@@ -1452,7 +1449,7 @@ describe('install helpers', () => {
         expect(opencodeConfig.plugin).toContain('.opencode/plugins/madar.js')
         expect(opencodeConfig.mcp?.madar).toEqual({
           type: 'local',
-          command: [process.execPath, cliPath, 'serve', '--stdio', '--auto-refresh'],
+          command: [process.execPath, cliPath, 'serve', '--stdio'],
           environment: { MADAR_TOOL_PROFILE: 'strict' },
           enabled: true,
         })
@@ -2017,7 +2014,7 @@ describe('install helpers', () => {
         expect(opencodeConfig.mcp?.other).toEqual({ type: 'remote', url: 'https://example.com/mcp' })
         expect(opencodeConfig.mcp?.madar).toEqual({
           type: 'local',
-          command: [process.execPath, cliPath, 'serve', '--stdio', '--auto-refresh'],
+          command: [process.execPath, cliPath, 'serve', '--stdio'],
           enabled: true,
           environment: { MADAR_TOOL_PROFILE: 'strict', HTTP_PROXY: 'http://proxy.example' },
         })
@@ -2067,7 +2064,7 @@ describe('install helpers', () => {
         expect(installedConfig.mcp?.other).toEqual({ type: 'remote', url: 'https://example.com/mcp' })
         expect(installedConfig.mcp?.madar).toEqual({
           type: 'local',
-          command: [process.execPath, cliPath, 'serve', '--stdio', '--auto-refresh'],
+          command: [process.execPath, cliPath, 'serve', '--stdio'],
           environment: { MADAR_TOOL_PROFILE: 'strict' },
           enabled: true,
         })

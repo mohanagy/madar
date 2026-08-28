@@ -1832,7 +1832,7 @@ function installMcpServer(
   // Resolve the graph from the MCP process's workspace at startup. A static
   // install-time graph path would point every linked worktree back to the
   // primary checkout.
-  const cliArgs = ['serve', '--stdio', '--auto-refresh']
+  const cliArgs = ['serve', '--stdio']
   // VS Code uses "servers" key, Claude/Cursor use "mcpServers"
   const serversKey = isVscode ? 'servers' : 'mcpServers'
   const mcpServers = ensureRecord(mcpConfig, serversKey)
@@ -2393,7 +2393,7 @@ function renderCodexMcpBlock(
     ...(ownsPrecedingLineEnding ? [CODEX_MCP_OWNS_PRECEDING_LINE_ENDING_MARKER] : []),
     `[mcp_servers.${serverName}]`,
     'command = "madar"',
-    'args = ["serve", "--stdio", "--auto-refresh"]',
+    'args = ["serve", "--stdio"]',
     `cwd = ${JSON.stringify(resolve(projectDir))}`,
     'env = { MADAR_TOOL_PROFILE = "strict" }',
     'enabled = true',
@@ -2682,7 +2682,7 @@ function installOpencodeMcpServer(projectDir: string, packageRoot?: string): str
   const existingServer = isRecord(mcp[OPENCODE_MCP_SERVER_NAME]) ? (mcp[OPENCODE_MCP_SERVER_NAME] as Record<string, unknown>) : null
   const serverConfig: Record<string, unknown> = {
     type: 'local',
-    command: [process.execPath, resolvePackageCliPath(packageRoot), 'serve', '--stdio', '--auto-refresh'],
+    command: [process.execPath, resolvePackageCliPath(packageRoot), 'serve', '--stdio'],
     environment: {
       MADAR_TOOL_PROFILE: 'strict',
       ...(existingServer && isRecord(existingServer.environment) ? existingServer.environment : {}),

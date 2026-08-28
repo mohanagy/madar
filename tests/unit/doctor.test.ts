@@ -300,7 +300,11 @@ describe('doctor command', () => {
         mcpServers: {
           madar: {
             command: 'madar',
-            args: ['serve', '--stdio'],
+            // #722: a genuinely stale shape. `serve` without `--stdio` does not
+            // select the workspace graph over the MCP transport. This fixture
+            // previously relied on the absence of `--auto-refresh`, which is now
+            // the correct shape and no longer indicates staleness.
+            args: ['serve'],
           },
         },
       })
@@ -428,6 +432,32 @@ describe('doctor command', () => {
       expect(doctor).toContain('claude: partial')
       expect(doctor).toContain('rules=yes, hook=no, mcp=ok')
     })
+  })
+
+  /**
+   * #722. install now writes `serve --stdio`; profiles written by earlier
+   * versions carry `--auto-refresh`. Both must report healthy, or the change
+   * either breaks every existing profile or condemns every new one. The stale
+   * direction is covered by the fixed-graph-path case below, so this pair plus
+   * that case pins all three shapes.
+   */
+  test('accepts both the current and the legacy MCP argument shapes', () => {
+    for (const args of [
+      ['serve', '--stdio'],
+      ['serve', '--stdio', '--auto-refresh'],
+    ]) {
+      withSandbox((sandboxDir) => {
+        writeText(resolve(sandboxDir, 'out', 'graph.json'), '{"nodes":[],"edges":[]}\n')
+        writeText(resolve(sandboxDir, 'CLAUDE.md'), '## madar\n')
+        writeJson(resolve(sandboxDir, '.mcp.json'), {
+          mcpServers: { madar: { command: 'madar', args } },
+        })
+
+        const output = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
+
+        expect(output, `MCP_ARG_SHAPE_REJECTED: ${args.join(' ')}`).toContain('mcp=ok')
+      })
+    }
   })
 
   test('flags stale mcp path and recommends reinstall', () => {

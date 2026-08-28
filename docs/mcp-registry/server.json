@@ -28,10 +28,6 @@
                 {
                     "type": "positional",
                     "value": "--stdio"
-                },
-                {
-                    "type": "positional",
-                    "value": "--auto-refresh"
                 }
             ],
             "environmentVariables": [
@@ -50,7 +46,7 @@
     ],
     "_meta": {
         "io.modelcontextprotocol.registry/publisher-provided": {
-            "notes": "Public npm package plus local stdio MCP flow. When an MCP host launches `madar serve --stdio --auto-refresh` with a workspace as its cwd, Madar serves that workspace's local graph without a static graph-path argument. The `--auto-refresh` flag is accepted for compatibility but performs no refresh: automatic semantic refresh is not supported in the stable profile, so run `madar generate .` to refresh repository semantics. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
+            "notes": "Public npm package plus local stdio MCP flow. When an MCP host launches `madar serve --stdio` with a workspace as its cwd, Madar serves that workspace's local graph without a static graph-path argument. Automatic semantic refresh is not supported in the stable profile, so run `madar generate .` to refresh repository semantics; the legacy `--auto-refresh` flag is still accepted but performs no refresh. Madar is the renamed continuation of `graphify-ts`; use `@lubab/madar` and `https://github.com/mohanagy/madar` as the canonical package and repository.",
             "source": "docs/mcp-registry/server.json"
         }
     }
