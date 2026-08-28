@@ -1,10 +1,8 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 import {
   parseWatcherState,
-  WATCHER_STATE_VERSION,
-  type WatcherEventMode,
   type WatcherStateV1,
 } from '../contracts/watcher-state.js'
 
