@@ -75,15 +75,18 @@ describe('generate performance benchmark harness', () => {
         mode: 'generate',
         strategy: 'spi',
         cache_hit: false,
-        cache_reason: 'no-cache',
+        cache_reason: 'cache-disabled',
         extracted_files: 3,
       }))
       expect(summary.variants['generate-spi-warm']).toEqual(expect.objectContaining({
         mode: 'generate',
         strategy: 'spi',
-        cache_hit: true,
-        cache_reason: 'fresh-cache',
-        extracted_files: 1,
+        cache_hit: false,
+        cache_reason: 'cache-disabled',
+          // #722 FULL_GENERATE_ONLY_V1: the warm variant is a full fresh build
+          // and extracts the same count as cold. Retained as a performance
+          // disclosure, not as a reuse claim.
+          extracted_files: 3,
       }))
       expect(summary.variants['update-noop']).toEqual(expect.objectContaining({
         mode: 'update',

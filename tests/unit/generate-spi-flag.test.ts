@@ -140,7 +140,7 @@ describe('generateGraph capability-aware auto extraction', () => {
     expect(result.notes.join('\n')).toContain('Auto extraction: SPI routed 1 supported source file(s); legacy semantic augmentation routed 1 supported source file(s); legacy fallback routed 1 SPI-unsupported source file(s).')
   })
 
-  it('uses the SPI cache while retaining legacy semantics and re-extracting the fallback on a warm auto build', () => {
+  it('retains legacy semantics and re-extracts on a warm auto build without consulting the SPI cache', () => {
     writeMixedWorkspace()
 
     const first = generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
@@ -150,9 +150,12 @@ describe('generateGraph capability-aware auto extraction', () => {
     }
 
     expect(first.cache).toEqual(expect.objectContaining({ strategy: 'spi', hit: false, fileCount: 1 }))
-    expect(second.cache).toEqual(expect.objectContaining({ strategy: 'spi', hit: true, fileCount: 1 }))
+    // #722 FULL_GENERATE_ONLY_V1: a second build consults no cache.
+    expect(second.cache).toEqual(expect.objectContaining({ strategy: 'spi', hit: false, reason: 'cache-disabled', fileCount: 1 }))
     expect(first.extractedFiles).toBe(4)
-    expect(second.extractedFiles).toBe(3)
+    // #722 FULL_GENERATE_ONLY_V1: a warm build does the same work as a cold one,
+    // so the second run re-extracts every file rather than 3.
+    expect(second.extractedFiles).toBe(4)
     expect(secondGraph.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'main()', source_file: expect.stringMatching(/cmd\/main\.go$/) }),
     ]))
@@ -249,7 +252,8 @@ describe('generateGraph capability-aware auto extraction', () => {
       followSymlinks: true,
       noHtml: true,
     })
-    expect(warm.cache).toEqual(expect.objectContaining({ strategy: 'spi', hit: true, fileCount: 1 }))
+    // #722 FULL_GENERATE_ONLY_V1: the warm build is a full fresh build.
+    expect(warm.cache).toEqual(expect.objectContaining({ strategy: 'spi', hit: false, reason: 'cache-disabled', fileCount: 1 }))
   })
 })
 
@@ -304,17 +308,18 @@ describe('generateGraph strict SPI extraction', () => {
     expect(listUsersNode?.route_path).toBe('/users')
   })
 
-  it('uses the SPI cache on the second call (notes include "cache hit")', () => {
+  it('does not consult the SPI cache on the second call (#722 FULL_GENERATE_ONLY_V1)', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
 
     const first = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    expect(first.notes.some((n) => n.includes('SPI build'))).toBe(true)
+    expect(first.notes.some((n) => n.includes('SPI built fresh from repository inputs'))).toBe(true)
 
     const second = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
-    expect(second.notes.some((n) => n.toLowerCase().includes('cache hit'))).toBe(true)
+    expect(second.notes.some((n) => n.toLowerCase().includes('cache hit'))).toBe(false)
+    expect(second.notes.some((n) => n.includes('SPI built fresh from repository inputs'))).toBe(true)
   })
 
-  it('keeps non-code extraction alongside SPI-projected code and reports only the code subset as cached', () => {
+  it('keeps non-code extraction alongside SPI-projected code and reports the code subset as freshly built', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
     writeFile(sandbox, 'docs/notes.md', '# Notes\nGraph docs\n')
 
@@ -327,7 +332,7 @@ describe('generateGraph strict SPI extraction', () => {
     expect(first.cache).toEqual(expect.objectContaining({
       strategy: 'spi',
       hit: false,
-      reason: 'no-cache',
+      reason: 'cache-disabled',
       fileCount: 1,
     }))
     expect(firstGraph.nodes).toEqual(
@@ -339,11 +344,13 @@ describe('generateGraph strict SPI extraction', () => {
 
     const second = generateGraph(sandbox, { extractionMode: 'spi', noHtml: true })
     expect(second.extractableFiles).toBe(2)
-    expect(second.extractedFiles).toBe(1)
+    // #722 FULL_GENERATE_ONLY_V1: the second run re-extracts the same code
+    // subset as the first; nothing is served from the cache.
+    expect(second.extractedFiles).toBe(2)
     expect(second.cache).toEqual(expect.objectContaining({
       strategy: 'spi',
-      hit: true,
-      reason: 'fresh-cache',
+      hit: false,   // #722: the supported corridor never reports a cache hit
+      reason: 'cache-disabled',
       fileCount: 1,
     }))
   })

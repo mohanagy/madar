@@ -5130,17 +5130,20 @@ describe('generateGraph', () => {
       expect(spiCold.cache).toEqual(expect.objectContaining({
         strategy: 'spi',
         hit: false,
-        reason: 'no-cache',
+        reason: 'cache-disabled',
         fileCount: 2,
       }))
 
       const spiWarm = generateGraph(tempDir, { useSpi: true, noHtml: true })
       expect(spiWarm.extractableFiles).toBe(3)
-      expect(spiWarm.extractedFiles).toBe(1)
+      // #722 FULL_GENERATE_ONLY_V1: the warm run re-extracts everything the
+      // cold run did; it is no longer cheaper than a cold build.
+      expect(spiWarm.extractedFiles).toBe(3)
       expect(spiWarm.cache).toEqual(expect.objectContaining({
         strategy: 'spi',
-        hit: true,
-        reason: 'fresh-cache',
+        hit: false,   // #722: the supported corridor never reports a cache hit
+        // #722 FULL_GENERATE_ONLY_V1: no cache is consulted, warm or cold.
+        reason: 'cache-disabled',
         fileCount: 2,
       }))
 

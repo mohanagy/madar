@@ -124,6 +124,22 @@ export interface BuildSpiCachedResult {
  * existing `buildSpi` continues to do a full rebuild every time so any
  * code path that relies on freshness is not affected by this slice.
  */
+/**
+ * #722 FULL_GENERATE_ONLY_V1 — the supported generation corridor's SPI capability.
+ *
+ * This function has no cache reader. That is the whole point: there is no flag
+ * that makes it consult persisted semantic state, so there is no caller to
+ * discipline and no `noCache` boolean to thread correctly through layers. A
+ * persisted SPI payload cannot contribute symbols, edges or diagnostics here
+ * because the capability to read one is not present.
+ *
+ * `buildSpiCached` remains available for diagnostics and measurement; it must
+ * not be reachable from the supported command.
+ */
+export function buildSpiFresh(opts: BuildSpiOptions): SemanticProgramIndex {
+  return buildSpi(opts)
+}
+
 export function buildSpiCached(opts: BuildSpiCachedOptions): BuildSpiCachedResult {
   const start = Date.now()
   const root = resolve(opts.root)

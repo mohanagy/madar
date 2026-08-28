@@ -37,7 +37,7 @@ import {
   retainedIndexingOutcomes,
 } from '../pipeline/indexing-generation.js'
 import { createIndexingManifest, indexingStrictViolations, localIndexingPath } from '../pipeline/indexing-outcomes.js'
-import { buildSpiCached, type SpiCacheStats } from '../pipeline/spi/cache.js'
+import { buildSpiFresh, type SpiCacheStats } from '../pipeline/spi/cache.js'
 import { isSpiSupportedSourceFile } from '../pipeline/spi/build.js'
 import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
 import { generate as generateReport } from '../pipeline/report.js'
@@ -782,12 +782,17 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     const spiExtractorVersion = `spi-v1.0.0-enqueues-job-${EXTRACTOR_CACHE_VERSION}`
     const built =
       spiCodeFiles.length > 0
-        ? buildSpiCached({
-            root: resolvedRootPath,
-            madarVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
-            extractorVersion: spiExtractorVersion,
-            includedFiles: new Set(spiCodeFiles.map((filePath) => resolve(filePath))),
-          })
+        // #722 FULL_GENERATE_ONLY_V1: the supported corridor derives the SPI from
+        // repository inputs in this invocation. buildSpiFresh has no cache reader,
+        // so a persisted payload cannot contribute symbols, edges or diagnostics.
+        ? {
+            spi: buildSpiFresh({
+                root: resolvedRootPath,
+                madarVersion: `spi-extractor-${EXTRACTOR_CACHE_VERSION}`,
+                extractorVersion: spiExtractorVersion,
+                includedFiles: new Set(spiCodeFiles.map((filePath) => resolve(filePath))),
+            }),
+          }
         : null
     const spiExtraction = built
       ? withExtractionStrategy(projectSpiToExtraction(built.spi, {
@@ -842,7 +847,15 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       const spiIndexing = projectSpiIndexingOutcomes({
         rootPath: resolvedRootPath,
         codeFiles: spiCodeFiles,
-        result: built,
+        result: {
+          spi: built.spi,
+          // #722: no cache was consulted; report that truthfully rather than
+          // fabricating stats for a read that did not happen.
+          cache: {
+            hit: false, reason: 'cache-disabled',
+            file_count: built.spi.files.length, cache_key: '', duration_ms: 0,
+          },
+        },
       })
       indexingOutcomes.push(...spiIndexing.outcomes)
       spiDiagnostics.push(...spiIndexing.diagnostics)
@@ -851,25 +864,25 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       }
     }
 
-    extractedFiles = (built ? (built.cache.hit ? 0 : built.cache.file_count) : 0)
+    // #722: every SPI file is extracted fresh in this invocation, so the count
+    // is the files themselves rather than a cache-miss count.
+    extractedFiles = (built ? built.spi.files.length : 0)
       + legacyAugmentationCodeFiles.length
       + legacyFallbackCodeFiles.length
       + nonCodeExtractableFiles.length
     cacheSummary = built
       ? {
           strategy: 'spi',
-          hit: built.cache.hit,
-          reason: built.cache.reason,
-          fileCount: built.cache.file_count,
+          hit: false,
+          reason: 'cache-disabled',
+          fileCount: built.spi.files.length,
         }
       : null
 
     if (built) {
-      if (built.cache.hit) {
-        notes.push(`SPI cache hit (${built.cache.file_count} files, key ${built.cache.cache_key.slice(0, 8)}).`)
-      } else {
-        notes.push(`SPI build via projector (${built.cache.file_count} files, reason=${built.cache.reason}).`)
-      }
+      // #722 FULL_GENERATE_ONLY_V1: there is no cache hit to report here. The
+      // supported corridor builds the SPI from repository inputs every time.
+      notes.push(`SPI built fresh from repository inputs (${built.spi.files.length} files).`)
     }
     if (extractionMode === 'auto') {
       notes.push(
