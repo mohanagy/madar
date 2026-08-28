@@ -148,22 +148,44 @@ describe('generation policy contract', () => {
     })
   })
 
-  test('forces a full rebuild when corpus policy or exclusion controls change', () => {
+  /**
+   * #722 FULL_GENERATE_ONLY_V1. This used to assert the "Generation policy
+   * changed" note, which announced an incremental run deciding to rebuild.
+   * Every run is now a full generation, so there is no such transition to
+   * announce and the note was retired with the `--update` continuation.
+   *
+   * The substantive behaviour is unchanged and is what is asserted now:
+   * exclusion and document-inclusion controls decide the corpus. Membership is
+   * a stronger assertion than the old extracted-file counts, which were
+   * artifacts of what the incremental path happened to re-extract.
+   */
+  test('corpus policy and exclusion controls decide what a full generation covers', () => {
     withTempDir((tempDir) => {
       writeFileSync(join(tempDir, 'main.ts'), 'export const main = true\n', 'utf8')
       writeFileSync(join(tempDir, 'ignored.ts'), 'export const ignored = true\n', 'utf8')
       writeFileSync(join(tempDir, '.madarignore'), 'ignored.ts\n', 'utf8')
-      generateGraph(tempDir, { includeDocs: false, noHtml: true })
 
+      const excluded = generateGraph(tempDir, { includeDocs: false, noHtml: true })
+      const excludedFiles = readGeneratedGraphJson(excluded.graphPath).nodes
+        .map((node) => String(node.source_file ?? ''))
+      expect(excludedFiles.some((file) => file.endsWith('ignored.ts')), 'EXCLUSION_NOT_APPLIED').toBe(false)
+      expect(excludedFiles.some((file) => file.endsWith('main.ts'))).toBe(true)
+
+      // Removing the exclusion must bring the file into the corpus.
       writeFileSync(join(tempDir, '.madarignore'), '', 'utf8')
-      const exclusionsChanged = generateGraph(tempDir, { update: true, includeDocs: false, noHtml: true })
-      expect(exclusionsChanged.notes.join('\n')).toContain('Generation policy changed')
-      expect(exclusionsChanged.extractedFiles).toBe(4)
+      const included = generateGraph(tempDir, { update: true, includeDocs: false, noHtml: true })
+      expect(included.mode, 'UPDATE_DID_NOT_ROUTE_TO_FULL_GENERATION').toBe('generate')
+      expect(included.notes.join('\n'), 'CONTINUATION_NOTE_RESURFACED').not.toContain('Generation policy changed')
+      const includedFiles = readGeneratedGraphJson(included.graphPath).nodes
+        .map((node) => String(node.source_file ?? ''))
+      expect(includedFiles.some((file) => file.endsWith('ignored.ts')), 'EXCLUSION_CHANGE_IGNORED').toBe(true)
 
+      // Document inclusion is the same kind of control over the same corpus.
       writeFileSync(join(tempDir, 'README.md'), '# Included now\n', 'utf8')
-      const documentsChanged = generateGraph(tempDir, { update: true, includeDocs: true, noHtml: true })
-      expect(documentsChanged.notes.join('\n')).toContain('Generation policy changed')
-      expect(documentsChanged.extractedFiles).toBe(3)
+      const withDocs = generateGraph(tempDir, { update: true, includeDocs: true, noHtml: true })
+      const withDocsFiles = readGeneratedGraphJson(withDocs.graphPath).nodes
+        .map((node) => String(node.source_file ?? ''))
+      expect(withDocsFiles.some((file) => file.endsWith('README.md')), 'DOCUMENT_POLICY_IGNORED').toBe(true)
     })
   })
 })

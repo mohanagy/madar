@@ -508,8 +508,8 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --neo4j-user USER    Neo4j username (defaults to NEO4J_USER or neo4j)',
     '    --neo4j-password PW  Neo4j password (or set NEO4J_PASSWORD/.env)',
     '    --neo4j-database DB  Neo4j database (defaults to NEO4J_DATABASE or neo4j)',
-    '  federate <g1> <g2>... merge graphs from multiple repos into one',
-    '    --output DIR         output directory (default out-federated)',
+    '  federate <g1> <g2>... not supported in the stable profile; run `madar generate`',
+    '                         for a full regeneration of each repository',
     '  watch [path]          build once, then watch for code/doc changes',
     '    --follow-symlinks    include in-root symlink targets',
     '    --respect-gitignore  exclude files ignored by Git (falls back outside Git repositories)',
@@ -1202,13 +1202,10 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         graphPaths.push(argument)
       }
 
-      const result = federate(graphPaths, { outputDir })
-      io.log([
-        `[madar federate] merged ${result.repos.length} repos: ${result.repos.join(', ')}`,
-        `- Graph: ${result.totalNodes} nodes · ${result.totalEdges} edges · ${result.communityCount} communities`,
-        `- Cross-repo edges: ${result.crossRepoEdges} inferred connections`,
-        `- Outputs: ${result.graphPath}, ${result.reportPath}`,
-      ].join('\n'))
+      // #722: federate() refuses. Argument parsing is retained so every
+      // invocation shape reaches the same withdrawal rather than a usage error,
+      // and no success line survives for a command that cannot succeed.
+      federate(graphPaths, { outputDir })
       return 0
     }
 

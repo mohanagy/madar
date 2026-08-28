@@ -163,7 +163,7 @@ Madar complements agents and IDE indexing. It is not a hosted knowledge base, ru
 
 - **Privacy:** Madar graph generation runs locally and does not require an API key. Your coding agent may still send prompts or selected file context to its own model provider, depending on that agent's configuration.
 - **Sensitive files:** ordinary security source code remains indexable, while private keys, `.env*`, credential stores, and known non-source secret material are excluded. This is a path policy, not a content-level secret scanner.
-- **Freshness:** automatic semantic refresh is not supported in the stable profile. Run ordinary full generation to refresh repository semantics with `madar generate .`; strict workflows can require `--require-fresh-context` or `--require-fresh-graph`.
+- **Freshness:** automatic semantic refresh is not supported in the stable profile. Refresh semantics with `madar generate .`; strict workflows can require `--require-fresh-context` or `--require-fresh-graph`.
 - **Worktrees:** run Madar and the agent from the same linked Git worktree. Each worktree receives isolated graph artifacts outside the checkout; reconnect the MCP server after switching worktrees.
 - **Telemetry:** Telemetry is disabled unless you explicitly enable it. Controls and the exact source-safe event schema are documented in [telemetry](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md).
 

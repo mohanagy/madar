@@ -376,11 +376,19 @@ describe('public marketing copy honesty', () => {
       expect(lower).toContain('not yet five live design partners')
     })
 
-    it('treats federation as a bounded synthetic proof surface instead of a broad cross-repo benchmark headline', () => {
+    /**
+     * #722: this assertion used to require the "bounded synthetic proof" framing,
+     * which was the honest description while federation was supported. Federation
+     * is now withdrawn, so the honest description is the withdrawal. The test
+     * moves with the truth rather than being deleted -- an unclaimed capability
+     * still needs a control, otherwise the claim could quietly return.
+     */
+    it('states that federation is withdrawn and keeps the dated receipt as history, not a current claim', () => {
       expect(lower).toContain('federation')
-      expect(lower).toContain('synthetic federation receipt')
-      expect(lower).toContain('shared labels')
-      expect(lower).toContain('not a broad cross-repo benchmark headline')
+      expect(lower, 'FEDERATION_STILL_CLAIMED').toContain('federation is not supported in the stable profile')
+      expect(lower, 'FEDERATION_STILL_CLAIMED').toContain('withdrawn')
+      expect(lower, 'FEDERATION_RECEIPT_PRESENTED_AS_CURRENT').toContain('historical record')
+      expect(lower).not.toContain('flagship multi-repo enterprise workflow.**')
       expect(content).toContain('docs/benchmarks/2026-06-01-federation-flagship/')
     })
   })
