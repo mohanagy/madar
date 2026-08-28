@@ -3685,7 +3685,12 @@ function extractSingleFile(
 ): ExtractionDispatchResult {
   return dispatchSingleFileExtractionWithOutcome(filePath, allowedTargets, SINGLE_FILE_EXTRACTOR_HANDLERS, {
     registry: builtinCapabilityRegistry,
-    readCached: readCachedExtraction,
+    // #722 FULL_GENERATE_ONLY_V1: the supported corridor extracts from
+    // repository inputs. `readCached` is optional on the dispatcher, so
+    // omitting it removes the cache-reader capability entirely rather than
+    // gating it behind a flag a caller could get wrong. `writeCached` stays so
+    // the diagnostic cache still populates.
+    // readCached: intentionally absent — see #722 FULL_GENERATE_ONLY_V1.
     writeCached: writeCachedExtraction,
     classifySourceFile: classifyFile,
     ...(onFileOutcome ? { onOutcome: onFileOutcome } : {}),

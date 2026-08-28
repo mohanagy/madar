@@ -619,7 +619,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions)
     : detect(resolvedRootPath, detectionOptions)
   const discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
-  const previousIndexingManifest = existingGraphPath === null ? null : readIndexingManifestForGraph(existingGraphPath)
+  // #722 FULL_GENERATE_ONLY_V1: the prior indexing manifest is only consumed by
+  // the retained-outcome paths of `--update`. Reading it unconditionally made
+  // ordinary warm generation touch persisted semantic state before any decision
+  // was taken, so the read is now scoped to the path that uses it.
+  const previousIndexingManifest = options.update === true && existingGraphPath !== null
+    ? readIndexingManifestForGraph(existingGraphPath)
+    : null
   const indexingOutcomes: IndexingOutcome[] = (detected.indexing_outcomes ?? []).map((outcome) => ({
     ...outcome,
     extraction_strategy: outcome.extraction_strategy ?? 'not_extracted',
