@@ -7,7 +7,7 @@ import { describe, expect, test } from 'vitest'
 import { agentsInstall, claudeInstall, isMadarCodexMcpConfig, resolveCodexMcpConfigPath } from '../../src/infrastructure/install.js'
 import { runDoctorCommand, runStatusCommand } from '../../src/infrastructure/doctor.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
-import { createWatcherState, writeWatcherState } from '../../src/infrastructure/watcher-state.js'
+import { seedWatcherState } from './helpers/watcher-state-fixture.js'
 
 const PACKAGE_CLI_RELATIVE_PATH = join('dist', 'src', 'cli', 'bin.js')
 
@@ -87,17 +87,22 @@ describe('doctor command', () => {
       writeText(resolve(sandboxDir, 'main.ts'), 'export const value = 1\n')
       const generated = generateGraph(sandboxDir, { noHtml: true })
       writeText(resolve(sandboxDir, '.madarignore'), 'new-exclusion/**\n')
-      const watcher = createWatcherState('recursive-events', 30_000)
-      watcher.status = 'failed'
-      watcher.coverage = 'failed'
-      watcher.reconciliation_count = 2
-      watcher.last_reconciliation_at = '2026-07-15T00:00:00.000Z'
-      watcher.last_reconciliation_duration_ms = 42
-      watcher.last_reconciliation_file_count = 1
-      watcher.last_reconciliation_directory_count = 1
-      watcher.failure_reason = 'authoritative scan failed'
-      watcher.policy_match = false
-      writeWatcherState(generated.outputDir, watcher)
+      // #722: the production watcher-state writer was removed with the
+      // withdrawn subsystem, so this state is seeded directly. The diagnostic
+      // then reads state that no current production code produced.
+      seedWatcherState(generated.outputDir, {
+        // doctor reports "live" from a running pid; the fixture must present one
+        pid: process.pid,
+        status: 'failed',
+        coverage: 'failed',
+        reconciliation_count: 2,
+        last_reconciliation_at: '2026-07-15T00:00:00.000Z',
+        last_reconciliation_duration_ms: 42,
+        last_reconciliation_file_count: 1,
+        last_reconciliation_directory_count: 1,
+        failure_reason: 'authoritative scan failed',
+        policy_match: false,
+      })
 
       const doctor = runDoctorCommand({ projectDir: sandboxDir, now: Date.now() })
       const status = runStatusCommand({ projectDir: sandboxDir, now: Date.now() })

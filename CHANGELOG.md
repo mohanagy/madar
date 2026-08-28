@@ -4,6 +4,12 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Automatic semantic refresh is not supported in the stable profile**: the only stable semantic-generation operation is ordinary full generation (`madar generate <workspace>`). Semantic generation may read repository inputs, but it may not read persisted semantic results, so every path that reconstructed generation inputs from persisted state is withdrawn: `madar watch`, background automatic refresh and its worker, the filesystem watcher and its reconciliation schedule, the refresh lease, `watcher-state.json` publication, and the `madar_graph_not_ready` request-gating protocol. Each withdrawn entry point now refuses with a typed `UNSUPPORTED_GENERATION_MODE` error raised before any stored policy or prior graph is read, before a watcher, timer or worker is created, and before anything is written. Run `madar generate .` to refresh repository semantics.
+- **`serve --stdio --auto-refresh` keeps working and refreshes nothing**: the flag is accepted for compatibility so installed MCP profiles continue to serve. The server states the position once on stderr at startup and then answers from the graph artifact on disk. Requests no longer wait for reconciliation, and `madar_graph_not_ready` is no longer returned.
+- **Generation policy is a record, not a replayable input set**: `graph.madar` and `manifest.json` still carry the versioned `generation_policy` and its fingerprint for `madar status`, `madar doctor`, comparison and diagnostics. It is no longer replayed to reconstruct generation inputs — pass the options you want explicitly.
+
 ## [0.32.1] - 2026-08-11
 
 ### Fixed

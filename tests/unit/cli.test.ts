@@ -3197,8 +3197,11 @@ describe('cli main', () => {
     expect(stdioOptions).toMatchObject({
       graphPath: resolveWorkspaceGraphPath('out/graph.json', undefined, 'explicit'),
       autoRefresh: true,
-      workspaceRoot: process.cwd(),
     })
+    // #722 FULL_GENERATE_ONLY_V1: --auto-refresh is still routed and accepted,
+    // but the continuation-only workspaceRoot seam no longer exists. Asserting
+    // its absence is what keeps this a control rather than a silent deletion.
+    expect(stdioOptions).not.toHaveProperty('workspaceRoot')
     expect(logs[0]).toContain('[madar generate]')
   })
 

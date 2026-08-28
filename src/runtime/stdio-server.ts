@@ -1,20 +1,14 @@
 import { createInterface } from 'node:readline'
-import { realpathSync, statSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { statSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
-import { setTimeout as delay } from 'node:timers/promises'
 
 import type { ContextSessionState } from '../contracts/context-session.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
-import { startGraphAutoRefreshInBackground } from '../infrastructure/background-auto-refresh.js'
-import type { GraphAutoRefreshController } from '../infrastructure/watch.js'
-import { readWatcherStateForGraph } from '../infrastructure/watcher-state.js'
-import { readStoredGenerationPolicy } from '../infrastructure/generation-policy.js'
-import { watcherStateBlocksGraphReads } from '../contracts/watcher-state.js'
 import { DirectedGraphRequiredError } from './direction.js'
 import { diffGraphs } from './diff.js'
 import { buildGraphSummary } from './graph-summary.js'
-import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isToolEnabledInProfile, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
+import { MCP_TOOLS, activeMcpTools, isToolEnabledInProfile, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
 import { handleCompletion, handlePromptGet, promptDefinitionsForGraph, readStoredCommunityLabels } from './stdio/prompts.js'
 import {
   emitResourceNotifications,
@@ -51,7 +45,6 @@ import {
 } from '../shared/telemetry.js'
 import { findPackageRoot, readPackageVersion } from '../shared/package-metadata.js'
 import { resolveGraphSourceRoot } from '../shared/graph-source-root.js'
-import { resolveMadarWorkspace } from '../shared/workspace.js'
 
 const JSONRPC_PARSE_ERROR = -32700
 const JSONRPC_INVALID_REQUEST = -32600
@@ -75,18 +68,6 @@ const MAX_CONTEXT_PACK_CACHE_ENTRIES = 256
 const graphCache = new Map<string, { mtimeMs: number; size: number; graph: ReturnType<typeof loadGraph> }>()
 const MAX_COMPLETION_VALUES = 25
 const MAX_LOG_NOTIFICATION_CHARS = 10_000
-const DEFAULT_AUTO_REFRESH_REQUEST_WAIT_MS = 25_000
-const AUTO_REFRESH_READINESS_POLL_MS = 50
-
-const AUTO_REFRESH_CONTROL_METHODS = new Set([
-  'initialize',
-  'notifications/initialized',
-  'logging/setLevel',
-  'ping',
-  'prompts/list',
-  'resources/list',
-  'tools/list',
-])
 
 // These pre-MCP convenience methods are retained for existing clients, but
 // they must not provide an unadvertised graph-navigation escape hatch when a
@@ -175,32 +156,17 @@ interface StdioResponse {
 
 export interface ServeGraphStdioOptions {
   graphPath: string
-  /** Reconcile once and watch the selected workspace for this MCP process. */
+  /** Accepted for compatibility; automatic semantic refresh is not supported. */
   autoRefresh?: boolean
-  /** Source root selected when the MCP process was launched. */
-  workspaceRoot?: string
-  /** Internal/testing override for the filesystem change debounce. */
-  autoRefreshDebounceSeconds?: number
   input?: Readable
   output?: Writable
   errorOutput?: Writable
-  /** Internal/testing seam for the production background auto-refresh launcher. */
-  autoRefreshStarter?: typeof startGraphAutoRefreshInBackground
-  /** Internal/testing override for how long graph-backed requests await reconciliation. */
-  autoRefreshRequestWaitMs?: number
   logger?: {
     log(message?: string): void
     error(message?: string): void
   }
 }
 
-function sameFilesystemPath(left: string, right: string): boolean {
-  try {
-    return realpathSync(left) === realpathSync(right)
-  } catch {
-    return resolve(left) === resolve(right)
-  }
-}
 
 function graphRootPath(graphPath: string): string | null {
   try {
@@ -212,107 +178,9 @@ function graphRootPath(graphPath: string): string | null {
   }
 }
 
-function autoRefreshGraphReadiness(
-  controller: GraphAutoRefreshController,
-  graphPath: string,
-): { ready: boolean; detail: string; state: string; retryable: boolean; retryAfterMs?: number } {
-  const startupComplete = controller.startupComplete?.() ?? true
-  const backgroundFailure = controller.failureReason?.() ?? null
-  const watcherState = readWatcherStateForGraph(graphPath)
-  const publishedPolicy = readStoredGenerationPolicy(
-    graphPath,
-    join(dirname(graphPath), 'manifest.json'),
-  )
-  const watcherMatchesPublishedPolicy = watcherState !== null
-    && publishedPolicy !== null
-    && watcherState.stored_policy_fingerprint === publishedPolicy.fingerprint
-  const ready = startupComplete
-    && backgroundFailure === null
-    && watcherState !== null
-    && watcherState.status === 'idle'
-    && !watcherStateBlocksGraphReads(watcherState)
-    && watcherMatchesPublishedPolicy
-  const state = watcherState?.status ?? (startupComplete ? 'unavailable' : 'starting')
-  const retryable = !ready
-    && backgroundFailure === null
-    && (
-      !startupComplete
-      || watcherState?.status === 'starting'
-      || watcherState?.status === 'pending'
-      || watcherState?.status === 'reconciling'
-    )
 
-  if (watcherState) {
-    return {
-      ready,
-      state,
-      retryable,
-      ...(retryable ? { retryAfterMs: 1_000 } : {}),
-      detail: `status=${watcherState.status}, coverage=${watcherState.coverage}, policy=${watcherState.policy_match === null ? 'unknown' : watcherState.policy_match ? 'match' : 'mismatch'}, published_policy=${watcherMatchesPublishedPolicy ? 'match' : 'mismatch'}${watcherState.failure_reason ? `, failure=${watcherState.failure_reason}` : ''}${backgroundFailure ? `, background_failure=${backgroundFailure}` : ''}`,
-    }
-  }
 
-  return {
-    ready,
-    state,
-    retryable,
-    ...(retryable ? { retryAfterMs: 1_000 } : {}),
-    detail: backgroundFailure
-      ? `background startup failed: ${backgroundFailure}`
-      : startupComplete
-        ? 'watcher state is unavailable'
-        : 'background reconciliation is starting',
-  }
-}
 
-type AutoRefreshGraphReadiness = ReturnType<typeof autoRefreshGraphReadiness>
-
-async function waitForAutoRefreshGraphReadiness(
-  controller: GraphAutoRefreshController,
-  graphPath: string,
-  waitMs: number,
-): Promise<AutoRefreshGraphReadiness> {
-  let readiness = autoRefreshGraphReadiness(controller, graphPath)
-  if (readiness.ready || !readiness.retryable || waitMs <= 0) {
-    return readiness
-  }
-
-  const deadline = Date.now() + waitMs
-  while (Date.now() < deadline) {
-    await delay(Math.min(AUTO_REFRESH_READINESS_POLL_MS, Math.max(1, deadline - Date.now())))
-    readiness = autoRefreshGraphReadiness(controller, graphPath)
-    if (readiness.ready || !readiness.retryable) {
-      return readiness
-    }
-  }
-
-  return autoRefreshGraphReadiness(controller, graphPath)
-}
-
-function graphNotReadyResponse(
-  request: StdioRequest,
-  readiness: AutoRefreshGraphReadiness,
-  waitedMs: number,
-): StdioResponse {
-  const readinessData = {
-    type: 'madar_graph_not_ready',
-    state: readiness.state,
-    retryable: readiness.retryable,
-    ...(readiness.retryAfterMs !== undefined
-      ? { retry_after_ms: readiness.retryAfterMs }
-      : {}),
-    ...(waitedMs > 0 ? { waited_ms: waitedMs } : {}),
-    suggested_action: readiness.retryable ? 'retry_same_request' : 'repair_graph',
-  }
-  return failure(
-    requestId(request),
-    JSONRPC_SERVER_ERROR,
-    readiness.retryable
-      ? `Madar graph is temporarily ${readiness.state} (${readiness.detail}). Retry the same request after ${readiness.retryAfterMs ?? 1_000}ms; no manual graph generation is needed while reconciliation is active.`
-      : `Madar auto-refresh cannot guarantee a fresh graph (${readiness.detail}). Run \`madar status\`, then \`madar generate . --update\` if repair is required before retrying.`,
-    readinessData,
-  )
-}
 
 function ok(id: string | number | null, result: unknown): StdioResponse {
   return { jsonrpc: '2.0', id, result }
@@ -1125,90 +993,26 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
   const errorOutput = options.errorOutput ?? process.stderr
   const sessionState = createSessionState()
   const strictContextPackProfile = resolveToolProfileFromEnv() === 'strict'
-  let autoRefresh: GraphAutoRefreshController | null = null
 
   if (options.autoRefresh) {
-    const workspaceRoot = options.workspaceRoot ?? graphRootPath(options.graphPath)
-    if (!workspaceRoot) {
-      throw new Error('Cannot auto-refresh a graph without a workspace root. Run madar generate from the workspace first.')
-    }
-
-    const workspace = resolveMadarWorkspace(workspaceRoot)
-    // Either artifact the workspace can hold belongs to it. Comparing against
-    // one spelling refused the other: this checked only the legacy path, so
-    // after the cutover `serve --stdio --auto-refresh` -- the command the MCP
-    // registry entry runs -- rejected the canonical artifact of the very
-    // workspace it was started from.
-    const workspaceArtifacts = [workspace.canonicalGraphPath, workspace.legacyGraphPath]
-    if (!workspaceArtifacts.some((artifact) => sameFilesystemPath(options.graphPath, artifact))) {
-      throw new Error(
-        `Refusing to auto-refresh ${options.graphPath}: it is not the graph artifact for ${workspace.rootPath}. ` +
-        'Start the MCP server from the intended worktree instead.',
-      )
-    }
-
-    const startAutoRefresh = options.autoRefreshStarter ?? startGraphAutoRefreshInBackground
-    autoRefresh = startAutoRefresh(workspace.rootPath, options.autoRefreshDebounceSeconds ?? 1, {
-      // The MCP server needs graph.json; avoid regenerating the browser view on
-      // every coalesced agent edit.
-      noHtml: true,
-      logger: {
-        log() {},
-        error(message) {
-          errorOutput.write(`[madar serve] ${message ?? 'Auto-refresh failed'}\n`)
-        },
-      },
-    })
+    // Accepted and deliberately inert. Installed MCP client configs still pass
+    // `--auto-refresh`, so refusing here would withdraw the supported stdio
+    // server rather than the unsupported continuation. Say so rather than
+    // ignoring the flag silently.
+    errorOutput.write('[madar serve] automatic semantic refresh is not supported in the stable profile; run ordinary full generation to refresh repository semantics\n')
   }
 
   errorOutput.write(`[madar serve] stdio ready for ${options.graphPath}\n`)
 
   const readline = createInterface({ input, crlfDelay: Infinity })
-  let graphRequestQueue = Promise.resolve()
 
-  const handleAndWritePayload = async (
-    payload: unknown,
-    awaitReconciliation: boolean,
-    arrivalMs = Date.now(),
-  ): Promise<void> => {
+  const handleAndWritePayload = async (payload: unknown): Promise<void> => {
     let response: StdioResponse | null
     try {
-      const request = payload as StdioRequest
-      const requestMethod = typeof request.method === 'string' ? request.method : null
-      let refreshReadiness = autoRefresh && requestMethod
-        ? autoRefreshGraphReadiness(autoRefresh, options.graphPath)
-        : null
-      let waitedMs = 0
-
-      if (
-        awaitReconciliation
-        && autoRefresh
-        && refreshReadiness
-        && !refreshReadiness.ready
-        && refreshReadiness.retryable
-      ) {
-        const maxWaitMs = Math.max(0, options.autoRefreshRequestWaitMs ?? DEFAULT_AUTO_REFRESH_REQUEST_WAIT_MS)
-        const remainingWaitMs = Math.max(0, maxWaitMs - (Date.now() - arrivalMs))
-        refreshReadiness = await waitForAutoRefreshGraphReadiness(
-          autoRefresh,
-          options.graphPath,
-          remainingWaitMs,
-        )
-        waitedMs = Date.now() - arrivalMs
+      if (!strictContextPackProfile) {
+        emitResourceNotifications(output, options.graphPath, sessionState)
       }
-
-      if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'prompts/list') {
-        response = ok(requestId(request), { prompts: strictContextPackProfile ? [] : MCP_PROMPTS })
-      } else if (refreshReadiness && !refreshReadiness.ready && requestMethod === 'resources/list') {
-        response = ok(requestId(request), { resources: [] })
-      } else if (refreshReadiness && !refreshReadiness.ready && requestMethod !== null && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
-        response = graphNotReadyResponse(request, refreshReadiness, waitedMs)
-      } else {
-        if (!strictContextPackProfile) {
-          emitResourceNotifications(output, options.graphPath, sessionState)
-        }
-        response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
-      }
+      response = await Promise.resolve(handleStdioRequest(options.graphPath, payload, sessionState))
     } catch (error) {
       // A rejected handler must never tear down the whole stdio server: every
       // request gets an answer and the loop keeps serving (#crash).
@@ -1223,47 +1027,28 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
     }
   }
 
-  try {
-    for await (const line of readline) {
-      const trimmed = line.trim()
-      if (!trimmed) {
-        continue
-      }
-
-      if (trimmed.length > MAX_STDIO_LINE_BYTES) {
-        const response = failure(null, JSONRPC_INVALID_REQUEST, `Payload too large (max ${MAX_STDIO_LINE_BYTES} bytes)`)
-        output.write(`${JSON.stringify(response)}\n`)
-        continue
-      }
-
-      let payload: unknown
-      try {
-        payload = JSON.parse(trimmed)
-      } catch {
-        const response = failure(null, JSONRPC_PARSE_ERROR, 'Parse error')
-        emitLogNotification(output, sessionState, 'error', { message: response.error?.message ?? 'Parse error', code: JSONRPC_PARSE_ERROR })
-        output.write(`${JSON.stringify(response)}\n`)
-        continue
-      }
-
-      const request = payload as StdioRequest
-      const requestMethod = typeof request.method === 'string' ? request.method : null
-      if (autoRefresh && requestMethod !== null && !AUTO_REFRESH_CONTROL_METHODS.has(requestMethod)) {
-        // Keep control/discovery requests responsive while graph-backed work
-        // waits for one bounded reconciliation window. Graph requests remain
-        // serialized because context-pack calls mutate per-session state.
-        const arrivalMs = Date.now()
-        graphRequestQueue = graphRequestQueue.then(() => handleAndWritePayload(payload, true, arrivalMs))
-        continue
-      }
-
-      await handleAndWritePayload(payload, false)
+  for await (const line of readline) {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      continue
     }
-  } finally {
-    await graphRequestQueue
-    if (autoRefresh) {
-      autoRefresh.stop()
-      await autoRefresh.completed
+
+    if (trimmed.length > MAX_STDIO_LINE_BYTES) {
+      const response = failure(null, JSONRPC_INVALID_REQUEST, `Payload too large (max ${MAX_STDIO_LINE_BYTES} bytes)`)
+      output.write(`${JSON.stringify(response)}\n`)
+      continue
     }
+
+    let payload: unknown
+    try {
+      payload = JSON.parse(trimmed)
+    } catch {
+      const response = failure(null, JSONRPC_PARSE_ERROR, 'Parse error')
+      emitLogNotification(output, sessionState, 'error', { message: response.error?.message ?? 'Parse error', code: JSONRPC_PARSE_ERROR })
+      output.write(`${JSON.stringify(response)}\n`)
+      continue
+    }
+
+    await handleAndWritePayload(payload)
   }
 }

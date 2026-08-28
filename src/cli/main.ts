@@ -522,7 +522,8 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --http               explicit alias for HTTP transport',
     '    --stdio              serve graph query methods over stdio (JSON lines)',
     '    --mcp                alias for --stdio for installer/runtime parity',
-    '    --auto-refresh       reconcile and watch the active workspace while serving over stdio',
+    '    --auto-refresh       accepted for compatibility; automatic semantic refresh is not',
+    '                         supported -- run `madar generate .` to refresh semantics',
     '  summary [graph.madar]  print a compact deterministic graph summary as JSON',
     '  try "<question>" [path] one-command local first proof before agent install',
     '  query "<question>"     traverse the graph for a question',
@@ -1217,7 +1218,7 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
       if (options.transport === 'stdio') {
         await dependencies.serveGraphStdio({
           graphPath,
-          ...(options.autoRefresh ? { autoRefresh: true, workspaceRoot: process.cwd() } : {}),
+          ...(options.autoRefresh ? { autoRefresh: true } : {}),
           logger: io,
         })
         return 0

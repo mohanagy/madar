@@ -71,7 +71,7 @@ Madar supports these project-local installers:
 
 Installer details are in the [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md). Step-by-step setup and smoke tests are in the [agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md).
 
-After upgrading Madar, rerun your agent's install command to refresh its managed profile. Older profiles may lack automatic refresh or Codex's longer startup window.
+After upgrading Madar, rerun your agent's install command to refresh its managed profile. Older profiles may lack Codex's longer startup window.
 
 Codex installs create a workspace-scoped MCP block with longer startup and tool timeouts. Madar stays available during initial reconciliation; graph-backed calls become available once the graph is ready.
 
@@ -163,7 +163,7 @@ Madar complements agents and IDE indexing. It is not a hosted knowledge base, ru
 
 - **Privacy:** Madar graph generation runs locally and does not require an API key. Your coding agent may still send prompts or selected file context to its own model provider, depending on that agent's configuration.
 - **Sensitive files:** ordinary security source code remains indexable, while private keys, `.env*`, credential stores, and known non-source secret material are excluded. This is a path policy, not a content-level secret scanner.
-- **Freshness:** installed MCP profiles use automatic refresh. Manual CLI users can regenerate with `madar generate .`; strict workflows can require `--require-fresh-context` or `--require-fresh-graph`.
+- **Freshness:** automatic semantic refresh is not supported in the stable profile. Run ordinary full generation to refresh repository semantics with `madar generate .`; strict workflows can require `--require-fresh-context` or `--require-fresh-graph`.
 - **Worktrees:** run Madar and the agent from the same linked Git worktree. Each worktree receives isolated graph artifacts outside the checkout; reconnect the MCP server after switching worktrees.
 - **Telemetry:** Telemetry is disabled unless you explicitly enable it. Controls and the exact source-safe event schema are documented in [telemetry](https://github.com/mohanagy/madar/blob/main/docs/telemetry.md).
 
@@ -215,7 +215,7 @@ Read the full notes in the [0.32.1 changelog](https://github.com/mohanagy/madar/
 | Agent setup | [Agent quickstarts](https://github.com/mohanagy/madar/blob/main/docs/tutorials/agent-quickstarts.md) |
 | CLI and MCP tools | [CLI and MCP reference](https://github.com/mohanagy/madar/blob/main/docs/reference/cli-and-mcp.md) |
 | Context packs | [Context-pack concepts](https://github.com/mohanagy/madar/blob/main/docs/concepts/context-packs.md) |
-| Freshness and automatic refresh | [Auto-refresh policy](https://github.com/mohanagy/madar/blob/main/docs/auto-refresh.md) |
+| Freshness and generation policy | [Auto-refresh and generation policy](https://github.com/mohanagy/madar/blob/main/docs/auto-refresh.md) |
 | Indexing coverage | [Indexing completeness](https://github.com/mohanagy/madar/blob/main/docs/indexing-completeness.md) |
 | Privacy and MCP trust | [Threat model](https://github.com/mohanagy/madar/blob/main/docs/security/mcp-threat-model.md) |
 | Evidence and benchmarks | [Claims and evidence](https://github.com/mohanagy/madar/blob/main/docs/claims-and-evidence.md) |
