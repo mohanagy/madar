@@ -73,9 +73,9 @@ Installer details are in the [CLI and MCP reference](https://github.com/mohanagy
 
 After upgrading Madar, rerun your agent's install command to refresh its managed profile. Older profiles may lack Codex's longer startup window.
 
-Codex installs create a workspace-scoped MCP block with longer startup and tool timeouts. Madar stays available during initial reconciliation; graph-backed calls become available once the graph is ready.
+Codex installs create a workspace-scoped MCP block with longer startup and tool timeouts. Madar serves the graph artifact already on disk, so graph-backed calls are available as soon as the server starts.
 
-Starting with `0.31.3`, a graph-backed call made while Madar is `starting`, `pending`, or `reconciling` returns a structured retryable response. The agent should retry the same Madar request after the suggested delay instead of bypassing Madar or running generation manually. A dead refresh owner is recovered automatically; only failed, incomplete, or policy-mismatched graph states ask for repair.
+Nothing refreshes the graph in the background, so there is no readiness gate and no retry protocol: a graph-backed call is answered from the artifact on disk. Run `madar generate .` when the repository has changed.
 
 ## What Changes for the Agent
 

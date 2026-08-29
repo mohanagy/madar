@@ -83,7 +83,7 @@ Cached `context_pack` explain responses still refresh the current freshness rece
 
 Automatic semantic refresh is not supported in the stable profile. Run ordinary full generation to refresh repository semantics with `madar generate .`. `--auto-refresh` is still accepted so existing installed profiles keep serving: the server states the position once on stderr, then serves the graph artifact on disk without refreshing it. There is no readiness gate and `madar_graph_not_ready` is no longer returned. Generation policy is still versioned and fingerprinted in both `graph.madar` and `manifest.json`, but it is a record for `madar status` and `madar doctor` rather than a replayable input set -- pass the options you want explicitly. See [Auto-refresh and generation policy](../auto-refresh.md).
 
-The stdio transport and MCP discovery stay responsive while initial reconciliation runs in a background worker. Until the watcher reaches `idle` with matching published policy, graph-backed calls return the structured error type `madar_graph_not_ready`. For transient `starting`, `pending`, or `reconciling` states, `retryable` is `true`, `retry_after_ms` is `1000`, and the suggested action is to retry the same request without bypassing Madar. Terminal failures, incomplete graphs, and policy mismatches set `retryable` to `false` and suggest graph repair; inspect `madar status`, then run `madar generate . --update` when required.
+There is no background reconciliation and therefore no readiness gate: the stdio transport, MCP discovery and graph-backed calls are all served from the artifact on disk as soon as the server starts. The `madar_graph_not_ready` error type is no longer returned. If the artifact is missing or does not describe the current source, run `madar generate .`.
 
 ## Common commands
 
@@ -112,11 +112,10 @@ madar telemetry status
 madar telemetry clear
 madar telemetry report
 madar time-travel main HEAD --view risk
-madar federate frontend/out/graph.madar backend/out/graph.madar
 madar --help
 ```
 
-Generated code graphs are directed by default, including `try`, `watch`, automatic MCP refresh, and unchanged `--update` runs. An unchanged `--update` fully re-extracts a legacy undirected artifact because old storage may have collapsed opposite edges; `--cluster-only` refuses that unsafe migration. `--directed` remains accepted for compatibility. `--undirected` is an explicit visualization-only legacy mode that collapses reciprocal edges into one connection; `impact`, `call_chain`, and `slice-v1` retrieval reject that output rather than infer reverse edges. The two direction flags are mutually exclusive.
+Generated code graphs are directed by default. `--update` is a compatibility alias for ordinary full regeneration, so it fully re-extracts the corpus, including a legacy undirected artifact whose storage may have collapsed opposite edges. `--cluster-only`, `watch` and federation are not supported in the stable profile and refuse with a typed error. `--directed` remains accepted for compatibility. `--undirected` is an explicit visualization-only legacy mode that collapses reciprocal edges into one connection; `impact`, `call_chain`, and `slice-v1` retrieval reject that output rather than infer reverse edges. The two direction flags are mutually exclusive.
 
 Every generation also writes local and share-safe indexing-completeness manifests beside `graph.madar`. A valid graph is not a claim of complete source coverage. `--strict-indexing` uses zero failed and zero unsupported candidates as its thresholds; either `--max-indexing-failed N` or `--max-indexing-unsupported N` enables strict mode with the supplied allowance. See [Indexing completeness](../indexing-completeness.md) for outcome meanings, path-redaction behavior, and confidence effects.
 
