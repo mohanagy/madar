@@ -18,6 +18,15 @@ import {
   readIndexingManifestForGraph,
   relevantIndexingUncertainty,
 } from '../infrastructure/indexing-manifest.js'
+import {
+  applyGraphIntegrityCap,
+  capPublishedRecovery,
+  graphIntegrityCap,
+  graphIntegrityDiagnostic,
+  readGraphIntegrityCap,
+  NO_GRAPH_INTEGRITY_CAP,
+  type GraphIntegrityDiagnostic,
+} from '../shared/graph-integrity-answerability.js'
 import { readGraphSourceRoot } from '../shared/graph-source-root.js'
 import {
   readDiscoverySafetyMetadata,
@@ -54,6 +63,13 @@ export interface MadarResponseEvidence {
     reasons: Partial<Record<DiscoveryExclusionReason, number>>
     relevant_reasons: Partial<Record<DiscoveryExclusionReason, number>>
   }
+  /**
+   * Share-safe projection of the graph-integrity receipt.
+   *
+   * Absent entirely when the artifact carries no receipt, so a legacy graph is
+   * never described as having been checked.
+   */
+  graph_integrity?: GraphIntegrityDiagnostic
   /** Share-safe aggregate. Local paths remain only in indexing-manifest.json. */
   indexing_completeness?: {
     state: 'complete' | 'partial' | 'failed'
@@ -559,6 +575,11 @@ export function assessMadarResponseEvidence(input: {
   coveredWorkflowOwners?: readonly string[] | undefined
   discoverySafety?: DiscoverySafetyMetadata | null | undefined
   expandable?: readonly ContextPackExpandableRef[] | undefined
+  /**
+   * Raw integrity receipt override. `undefined` means "read it from
+   * `graphPath`"; `null` means "there is none", matching `discoverySafety`.
+   */
+  graphIntegrity?: unknown
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
   indexingManifest?: IndexingManifestV1 | null | undefined
@@ -767,7 +788,7 @@ export function assessMadarResponseEvidence(input: {
     coveredWorkflowOwners,
     coverageDetail.missing_obligations,
   )
-  const answerability = answerabilityAssessment({
+  const uncappedAnswerability = answerabilityAssessment({
     strength: evidenceStrength,
     coverage: coverageDetail,
     answerContained,
@@ -775,7 +796,26 @@ export function assessMadarResponseEvidence(input: {
     sourceReliabilityFailed,
     sourceVerificationBlocked,
   })
+  // The one place graph integrity meets answerability.
+  //
+  // Applied here, before `pack_confidence` and `agent_directive` are derived
+  // from it, so all three renderings agree structurally instead of by keeping
+  // three inventories in step. CLI, Pack and MCP all reach this function.
+  const integrityCap = input.graphIntegrity !== undefined
+    ? graphIntegrityCap(input.graphIntegrity)
+    : input.graphPath
+      ? readGraphIntegrityCap(input.graphPath)
+      : NO_GRAPH_INTEGRITY_CAP
+  const answerability = applyGraphIntegrityCap(uncappedAnswerability, integrityCap)
   const packConfidence = compatibilityConfidence(answerability, evidenceStrength, sourceReliabilityFailed)
+  // Bounded by the FINAL answerability, not by the integrity ceiling. The
+  // top-level result may already have been lowered by evidence, coverage or the
+  // answer contract, and a recovery plan bounded only by the ceiling could still
+  // publish a more optimistic state than the answer beside it.
+  const publishedRecovery = input.recovery
+    ? capPublishedRecovery(input.recovery, answerability.state)
+    : undefined
+  const integrityDiagnostic = graphIntegrityDiagnostic(integrityCap)
 
   return {
     score: effectiveScore,
@@ -784,7 +824,8 @@ export function assessMadarResponseEvidence(input: {
     coverage,
     coverage_detail: coverageDetail,
     answerability,
-    ...(input.recovery ? { recovery: input.recovery } : {}),
+    ...(publishedRecovery ? { recovery: publishedRecovery } : {}),
+    ...(integrityDiagnostic ? { graph_integrity: integrityDiagnostic } : {}),
     missing_phases: missingPhases,
     covered_workflow_owners: coveredWorkflowOwners,
     confidence_reasons: confidenceReasons,
@@ -822,6 +863,11 @@ export function buildMadarResponseEvidence(input: {
   coveredWorkflowOwners?: readonly string[] | undefined
   discoverySafety?: DiscoverySafetyMetadata | null | undefined
   expandable?: readonly ContextPackExpandableRef[] | undefined
+  /**
+   * Raw integrity receipt override. `undefined` means "read it from
+   * `graphPath`"; `null` means "there is none", matching `discoverySafety`.
+   */
+  graphIntegrity?: unknown
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
   indexingManifest?: IndexingManifestV1 | null | undefined

@@ -1,3 +1,4 @@
+import { readinessRank } from '../contracts/context-recovery.js'
 import type { ContextPackRecoveryPlan, MadarAnswerabilityState, MadarVerificationTarget } from '../contracts/context-recovery.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
 import { assessMadarResponseEvidence } from './mcp-response-evidence.js'
@@ -45,15 +46,6 @@ function assess(result: RetrieveResult, question: string): RecoveryAssessment {
     verificationTargets: assessment.answerability.verification_targets,
     strength: assessment.evidence_strength.level,
     selectedRelationships: assessment.evidence_strength.selected_relationships,
-  }
-}
-
-function readinessRank(state: MadarAnswerabilityState): number {
-  switch (state) {
-    case 'ready': return 4
-    case 'ready_with_caveat': return 3
-    case 'verify_targets': return 2
-    case 'insufficient': return 1
   }
 }
 

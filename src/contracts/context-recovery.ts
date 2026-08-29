@@ -74,3 +74,36 @@ export interface ContextPackRecoveryPlan {
   attempts: ContextPackRecoveryAttempt[]
   improved: boolean
 }
+
+/**
+ * The one ordering over answerability.
+ *
+ * It lived privately inside the recovery planner, which was fine while
+ * recovery was the only thing that had to compare two states. #659 introduces a
+ * second comparison -- the graph-integrity cap -- and two orderings that could
+ * ever disagree would be a defect class of its own, so the rank moved here,
+ * beside the union it ranks, and every consumer imports it.
+ */
+export function readinessRank(state: MadarAnswerabilityState): number {
+  switch (state) {
+    case 'ready': return 4
+    case 'ready_with_caveat': return 3
+    case 'verify_targets': return 2
+    case 'insufficient': return 1
+  }
+}
+
+/**
+ * The more restrictive of two answerability states.
+ *
+ * Total, pure and idempotent: `min(min(a, b), b) === min(a, b)`. Every cap in
+ * the product is expressed through this one helper rather than by re-deriving
+ * a comparison, so "may only lower, never raise" is a property of the helper
+ * instead of a rule each call site is trusted to re-implement.
+ */
+export function minByReadinessRank(
+  left: MadarAnswerabilityState,
+  right: MadarAnswerabilityState,
+): MadarAnswerabilityState {
+  return readinessRank(right) < readinessRank(left) ? right : left
+}

@@ -1600,6 +1600,17 @@ export interface GraphArtifactMetadata {
   readonly generationPolicy: Readonly<Record<string, unknown>> | null
   readonly graphBuildFreshness: unknown
   readonly discoverySafety: unknown
+  /**
+   * The raw normalized accounting block a v2 artifact carries, or
+   * `undefined` when the artifact predates it.
+   *
+   * Surfaced unvalidated and untyped on purpose. Validation belongs to the
+   * integrity contracts, and metadata reading never throws, so a reader that
+   * needs the receipt parses it through the owning validator rather than
+   * trusting a shape this function guessed at. Absence and a receipt that
+   * fails to validate are different answers and must stay distinguishable.
+   */
+  readonly integrityReceipt: unknown
   readonly communityLabels: Readonly<Record<string, unknown>>
   /** Machine-local; sourced from the sidecar for v2 and inline for v1. */
   readonly rootPath: string | null
@@ -1660,6 +1671,7 @@ const ABSENT_METADATA: GraphArtifactMetadata = Object.freeze({
   generationPolicy: null,
   graphBuildFreshness: undefined,
   discoverySafety: undefined,
+  integrityReceipt: undefined,
   communityLabels: Object.freeze({}),
   rootPath: null,
   nodeSourceFiles: Object.freeze([]),
@@ -1768,6 +1780,7 @@ export function readGraphArtifactMetadata(
         generationPolicy: optionalRecord(provenance.generation_policy),
         graphBuildFreshness: provenance.graph_build_freshness,
         discoverySafety: provenance.discovery_safety,
+        integrityReceipt: parsed.integrity_receipt,
         communityLabels: parsed.community_labels,
         rootPath: readLocalSidecarRootPath(resolvedPath),
         resolvedPath,
@@ -1786,6 +1799,8 @@ export function readGraphArtifactMetadata(
       generationPolicy: optionalRecord(payload.generation_policy),
       graphBuildFreshness: payload.graph_build_freshness,
       discoverySafety: payload.discovery_safety,
+      // A v1 artifact predates the receipt. Absence, never a fabricated valid one.
+      integrityReceipt: undefined,
       communityLabels: optionalRecord(payload.community_labels) ?? {},
       rootPath: nonEmptyStringOrNull(payload.root_path) ?? readLocalSidecarRootPath(resolvedPath),
       resolvedPath,
