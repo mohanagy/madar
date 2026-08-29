@@ -169,6 +169,11 @@ describe('R1 — the policy has one owner', () => {
         'src/contracts/graph-integrity.ts',
         'src/contracts/graph-integrity-session.ts',
         'src/pipeline/build.ts',
+        // #659 consumes targets the policy already sanitized and projects them
+        // into the Pack answerability domain. It reads `file` and `reason` off
+        // a retained record and never assembles an IntegrityVerificationTarget,
+        // so the sanitizer cannot be bypassed through it.
+        'src/shared/graph-integrity-answerability.ts',
       ]
       if (!permitted.includes(rel)) offenders.push(rel)
     }

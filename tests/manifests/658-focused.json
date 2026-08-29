@@ -5,6 +5,8 @@
   "tests/unit/endpoint-qualification-invalidation.test.ts",
   "tests/unit/exact-manifest-controls.test.ts",
   "tests/unit/graph-artifact-old-reader-compat.test.ts",
+  "tests/unit/graph-integrity-answerability-e2e.test.ts",
+  "tests/unit/graph-integrity-answerability.test.ts",
   "tests/unit/graph-integrity-contracts.test.ts",
   "tests/unit/graph-integrity-receipt.test.ts",
   "tests/unit/integrity-closed-schemas.test.ts",
