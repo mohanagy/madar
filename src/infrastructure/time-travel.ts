@@ -17,20 +17,19 @@ type MaybePromise<T> = T | Promise<T>
 const inflightSnapshotBuilds = new Map<string, Promise<TimeTravelSnapshot>>()
 
 /**
- * Snapshot layout version.
+ * Snapshot layout version — a FORMAT stamp, and nothing else.
  *
- * Load-bearing twice over.
+ * #722, PREQUAL occurrence 1: an earlier version of this file used
+ * `snapshotFormatVersion === 3` to vouch that a cached snapshot belonged to the
+ * post-cutover regime. That is a runtime freshness brand: relabelling old bytes
+ * as version 3 satisfied the check. This version now records how the snapshot
+ * is serialised and may select a parser; it may never establish freshness,
+ * currentness, cache-hit eligibility or continuation eligibility.
  *
- * v1 -> v2: B1-era snapshots hold a canonical artifact beside a live v1 mirror,
- * which is the ambiguous state #705 refuses to read. They cannot be upgraded in
- * place -- the two files may describe different runs.
- *
- * v2 -> v3 (#722 FULL_GENERATE_ONLY_V1): a v2 snapshot may have been produced by
- * a generation that consumed persisted semantic results, so it is not
- * necessarily equal to a full generation of the same tree. Commit SHA and
- * extractor version cannot distinguish the two regimes, and comparing a
- * pre-cutover snapshot against a post-cutover build would mix them inside one
- * answer. A version mismatch invalidates the snapshot and it is rebuilt.
+ * The real hazard it used to stand in for -- a B1-era snapshot holding a
+ * canonical artifact beside a live v1 mirror, the ambiguous two-artifact state
+ * #705 refuses to read -- is now detected structurally, by looking for the
+ * mirror, which is format validation rather than a claim about age.
  */
 const SNAPSHOT_FORMAT_VERSION = 3 as const
 
@@ -173,18 +172,32 @@ function readSnapshotMetadata(rootDir: string, commitSha: string): SnapshotMetad
   }
 }
 
-function canReuseSnapshot(rootDir: string, commitSha: string): boolean {
+/**
+ * Whether a persisted snapshot may be READ as historical comparison input.
+ *
+ * This is not a currentness test and must never become one. It answers a
+ * narrower question: does this directory hold one unambiguous, parseable
+ * artifact that identifies itself as the requested commit?
+ *
+ * `snapshotFormatVersion` is deliberately absent. It is a format stamp, and a
+ * relabelled snapshot must not become admissible by editing a number.
+ */
+function canReadHistoricalSnapshot(rootDir: string, commitSha: string): boolean {
   const metadata = readSnapshotMetadata(rootDir, commitSha)
   const graphPath = snapshotGraphPath(rootDir, commitSha)
   if (!metadata || !existsSync(graphPath)) {
     return false
   }
 
+  // The ambiguous two-artifact state, detected by looking rather than by
+  // trusting a version: a canonical artifact beside a live v1 mirror cannot be
+  // attributed to one run, so it is rebuilt.
+  if (existsSync(join(snapshotDir(rootDir, commitSha), 'graph.json'))) {
+    return false
+  }
+
   return (
     metadata.commitSha === commitSha
-    // A snapshot written before the cutover carries a live v1 mirror, so it is
-    // rebuilt rather than read.
-    && metadata.snapshotFormatVersion === SNAPSHOT_FORMAT_VERSION
     && metadata.extractorVersion === EXTRACTOR_CACHE_VERSION
     && metadata.schemaVersion !== null
     && metadata.schemaVersion === readGraphSchemaVersion(graphPath)
@@ -279,7 +292,7 @@ function createDeferred<T>(): {
 
 async function snapshotFromInflightBuild(input: SnapshotRequest, rootDir: string, commitSha: string, inflightBuild: Promise<TimeTravelSnapshot>): Promise<TimeTravelSnapshot> {
   const snapshot = await inflightBuild
-  if (!input.refresh && canReuseSnapshot(rootDir, commitSha)) {
+  if (!input.refresh && canReadHistoricalSnapshot(rootDir, commitSha)) {
     return cachedSnapshot(rootDir, input.ref, commitSha)
   }
   return {
@@ -349,7 +362,7 @@ export async function loadOrBuildSnapshot(input: SnapshotRequest, dependencies: 
   const commitSha = await deps.git.resolveRef(input.ref)
   const refresh = input.refresh === true
 
-  if (!refresh && canReuseSnapshot(deps.rootDir, commitSha)) {
+  if (!refresh && canReadHistoricalSnapshot(deps.rootDir, commitSha)) {
     return cachedSnapshot(deps.rootDir, input.ref, commitSha)
   }
 
@@ -411,14 +424,23 @@ export async function loadOrBuildSnapshot(input: SnapshotRequest, dependencies: 
 
 export async function compareRefs(input: CompareRefsInput, dependencies: CompareRefsDependencies = {}): Promise<TimeTravelResult> {
   const deps = resolvedCompareDependencies(dependencies)
+  /*
+   * #722 — two arms with different rules, and the difference is the point.
+   *
+   * HISTORICAL arm (fromRef): a persisted snapshot may be loaded read-only. It
+   * is never marked current, never mutated, never used to seed the other arm.
+   *
+   * CURRENT arm (toRef): always generated fresh, in an isolated transient
+   * worktree at the requested revision, through the ordinary full-generation
+   * owner. It never takes a cache hit -- an answer about "now" derived from a
+   * persisted result is exactly what this contract forbids, and no version
+   * stamp may be allowed to admit one.
+   */
   const fromSnapshot = await loadOrBuildSnapshot({
     ref: input.fromRef,
     ...(input.refresh !== undefined ? { refresh: input.refresh } : {}),
   }, deps)
-  const toSnapshot = await loadOrBuildSnapshot({
-    ref: input.toRef,
-    ...(input.refresh !== undefined ? { refresh: input.refresh } : {}),
-  }, deps)
+  const toSnapshot = await loadOrBuildSnapshot({ ref: input.toRef, refresh: true }, deps)
   const fromGraph = deps.loadGraph(fromSnapshot.graphPath)
   const toGraph = deps.loadGraph(toSnapshot.graphPath)
 

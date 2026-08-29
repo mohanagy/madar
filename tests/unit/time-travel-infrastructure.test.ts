@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
@@ -177,22 +177,50 @@ describe('time travel infrastructure', () => {
   })
 
   /**
-   * #722 FULL_GENERATE_ONLY_V1. A v2 snapshot may have been produced by a
-   * generation that consumed persisted semantic results, so it is not
-   * necessarily equal to a full generation of the same tree. Commit SHA and
-   * extractor version match in both regimes, which is exactly why the format
-   * version has to carry the cutover.
+   * #722, PREQUAL occurrence 1. An earlier correction used the snapshot format
+   * version to vouch that a cached snapshot was post-cutover. That is a runtime
+   * freshness brand: relabelling old bytes satisfies it. The version is now a
+   * format stamp only, and this is the control that keeps it one.
    */
-  it('rebuilds a v2 snapshot from before the full-generate-only cutover', async () => {
-    const rootDir = createTestRoot('pre-full-generate-only')
-    writeCachedSnapshot(rootDir, 'cached-sha', 2, true, 2)
+  it('does not admit a snapshot merely because its format version was relabelled', async () => {
+    const rootDir = createTestRoot('relabelled')
+    // A snapshot whose only distinguishing mark is the version number.
+    writeCachedSnapshot(rootDir, 'cached-sha', 2, true, 1)
+    const relabelled = join(rootDir, 'out', 'time-travel', 'snapshots', 'cached-sha', 'metadata.json')
+    const metadata = JSON.parse(readFileSync(relabelled, 'utf8')) as Record<string, unknown>
+    metadata.snapshotFormatVersion = CURRENT_SNAPSHOT_FORMAT_VERSION
+    writeFileSync(relabelled, JSON.stringify(metadata))
+
+    const deps = createSnapshotDependencies(rootDir)
+    const result = await loadOrBuildSnapshot({ ref: 'main', refresh: false }, deps)
+
+    // Relabelling must change nothing either way: admission is decided by the
+    // artifact's identity and format, never by the stamp.
+    const withoutRelabel = createTestRoot('not-relabelled')
+    writeCachedSnapshot(withoutRelabel, 'cached-sha', 2, true, 1)
+    const control = await loadOrBuildSnapshot({ ref: 'main', refresh: false }, createSnapshotDependencies(withoutRelabel))
+
+    expect(result.fromCache, 'SNAPSHOT_FORMAT_VERSION_IS_NOT_FRESHNESS').toBe(control.fromCache)
+  })
+
+  /**
+   * The real hazard the version used to stand in for: a canonical artifact
+   * beside a live v1 mirror cannot be attributed to one run. That is detected
+   * structurally now, by looking for the mirror.
+   */
+  it('refuses a snapshot directory holding a live v1 mirror', async () => {
+    const rootDir = createTestRoot('ambiguous-pair')
+    writeCachedSnapshot(rootDir, 'cached-sha')
+    writeFileSync(
+      join(rootDir, 'out', 'time-travel', 'snapshots', 'cached-sha', 'graph.json'),
+      JSON.stringify({ schema_version: 1, directed: true, nodes: [], links: [] }),
+    )
     const deps = createSnapshotDependencies(rootDir)
 
     const result = await loadOrBuildSnapshot({ ref: 'main', refresh: false }, deps)
 
-    expect(result.fromCache, 'PRE_CUTOVER_SNAPSHOT_REUSED').toBe(false)
+    expect(result.fromCache, 'AMBIGUOUS_SNAPSHOT_PAIR_REUSED').toBe(false)
     expect(deps.generateGraph).toHaveBeenCalled()
-    expect(deps.git.createDetachedWorktree).toHaveBeenCalled()
   })
 
   /**
