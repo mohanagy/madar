@@ -36,6 +36,7 @@ import {
 } from '../infrastructure/install.js'
 import { pushGraphToNeo4j } from '../infrastructure/neo4j.js'
 import { watch as watchGraph } from '../infrastructure/watch.js'
+import { UnsupportedGenerationModeError } from '../infrastructure/generate.js'
 import { serveGraph } from '../runtime/http-server.js'
 import { diffGraphs } from '../runtime/diff.js'
 import { buildGraphSummary, type GraphSummary } from '../runtime/graph-summary.js'
@@ -1074,6 +1075,18 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
     if (command === 'generate' || (command !== undefined && !isAgentPlatform(command) && isImplicitGenerateCommand(command))) {
       const generateArgs = command === 'generate' ? args : [command, ...args]
       const options = parseGenerateArgs(generateArgs)
+      /*
+       * #722 FULL_GENERATE_ONLY_V1 — refuse before anything happens.
+       *
+       * This used to generate and publish a graph and only then reach the watch
+       * refusal, so `--watch` produced a full side-effecting run before saying
+       * it was unsupported. The refusal belongs at dispatch: before the
+       * generation owner, before discovery, before any telemetry claims a run
+       * started, and before the prior artifact can be touched.
+       */
+      if (options.watch) {
+        throw new UnsupportedGenerationModeError('watch', 'run `madar generate` for a full regeneration')
+      }
       const spiTelemetry = options.clusterOnly
         ? {}
         : { spiEnabled: options.extractionMode !== 'legacy' }
@@ -1138,42 +1151,15 @@ export async function executeCli(argv: string[], io: CliIO = console, dependenci
         graphSizeBucket: graphSizeBucketFromNodeCount(result.nodeCount),
         ...spiTelemetry,
       }))
-      if (options.watch) {
-        await dependencies.watchGraph(options.path, options.debounceSeconds, {
-          followSymlinks: options.followSymlinks,
-          respectGitignore: options.respectGitignore,
-          noHtml: options.noHtml,
-          ...(options.strictIndexing
-            ? {
-                indexingStrict: {
-                  maxFailed: options.maxIndexingFailed,
-                  maxUnsupported: options.maxIndexingUnsupported,
-                },
-              }
-            : {}),
-          logger: io,
-        })
-      }
       return 0
     }
 
     if (command === 'watch') {
-      const options = parseWatchArgs(args)
-      const result = dependencies.generateGraph(options.path, {
-        extractionMode: 'auto',
-        followSymlinks: options.followSymlinks,
-        respectGitignore: options.respectGitignore,
-        noHtml: options.noHtml,
-        onProgress: (step) => io.log(formatProgress(step)),
-      })
-      io.log(formatGenerateSummary(result))
-      await dependencies.watchGraph(options.path, options.debounceSeconds, {
-        followSymlinks: options.followSymlinks,
-        respectGitignore: options.respectGitignore,
-        noHtml: options.noHtml,
-        logger: io,
-      })
-      return 0
+      // #722: parsed for usage errors, then refused before generating. The old
+      // order generated and published a graph first, which is a side effect an
+      // unsupported command must not have.
+      parseWatchArgs(args)
+      throw new UnsupportedGenerationModeError('watch', 'run `madar generate` for a full regeneration')
     }
 
     if (command === 'federate') {

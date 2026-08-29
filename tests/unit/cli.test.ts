@@ -3152,20 +3152,14 @@ describe('cli main', () => {
     expect(uninstallCopilotMcp).toHaveBeenCalledWith('.')
   })
 
-  it('executes watch and serve commands via injected dependencies', async () => {
+  it('refuses watch at dispatch and executes serve commands via injected dependencies', async () => {
     const { io, logs } = createIo()
     let watched = false
     let served = false
     let servedOverStdio = false
     let stdioOptions: unknown
-    let lastGenerateOptions: Record<string, unknown> | undefined
     let lastWatchOptions: Record<string, unknown> | undefined
     const dependencies = createDependencies()
-    const generateGraph = dependencies.generateGraph
-    dependencies.generateGraph = (path, options) => {
-      lastGenerateOptions = options as Record<string, unknown>
-      return generateGraph(path, options)
-    }
     dependencies.watchGraph = async (_path, _debounce, options) => {
       watched = true
       lastWatchOptions = options as Record<string, unknown>
@@ -3178,20 +3172,20 @@ describe('cli main', () => {
       stdioOptions = options
     }
 
+    // #722: `watch` is unsupported and refuses at dispatch, so it never reaches
+    // the injected watch dependency and never generates. The supported serve
+    // dispatch below is what this test still owns.
     const watchExitCode = await executeCli(['watch', 'src', '--respect-gitignore', '--debounce', '1', '--no-html'], io, dependencies)
     const serveExitCode = await executeCli(['serve', 'out/graph.json', '--port', '0'], io, dependencies)
     const stdioExitCode = await executeCli(['serve', 'out/graph.json', '--mcp', '--auto-refresh'], io, dependencies)
 
-    expect(watchExitCode).toBe(0)
+    expect(watchExitCode, 'WATCH_DID_NOT_REFUSE').toBe(1)
+    expect(watched, 'WATCH_REACHED_THE_WATCH_DEPENDENCY').toBe(false)
+    expect(lastWatchOptions, 'WATCH_REACHED_THE_WATCH_DEPENDENCY').toBeUndefined()
     expect(serveExitCode).toBe(0)
     expect(stdioExitCode).toBe(0)
-    expect(watched).toBe(true)
     expect(served).toBe(true)
     expect(servedOverStdio).toBe(true)
-    expect(lastGenerateOptions?.noHtml).toBe(true)
-    expect(lastGenerateOptions?.respectGitignore).toBe(true)
-    expect(lastWatchOptions?.noHtml).toBe(true)
-    expect(lastWatchOptions?.respectGitignore).toBe(true)
     // The command was given out/graph.json explicitly, so it resolves to this
     // workspace's legacy artifact rather than the canonical default.
     expect(stdioOptions).toMatchObject({
@@ -3202,7 +3196,6 @@ describe('cli main', () => {
     // but the continuation-only workspaceRoot seam no longer exists. Asserting
     // its absence is what keeps this a control rather than a silent deletion.
     expect(stdioOptions).not.toHaveProperty('workspaceRoot')
-    expect(logs[0]).toContain('[madar generate]')
   })
 
   it('returns usage exit codes for invalid usage', async () => {
