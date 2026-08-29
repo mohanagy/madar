@@ -6,7 +6,6 @@ import { strFromU8, unzipSync, type UnzipFileInfo } from 'fflate'
 import type { ExtractionEdge, ExtractionNode } from '../../contracts/types.js'
 import { appendDerivedProvenance, deriveIngestProvenanceFromRecord } from '../../core/provenance/ingest.js'
 import type { ExtractionProvenance } from '../../core/provenance/types.js'
-import { readBinaryIngestSidecar } from '../../shared/binary-ingest-sidecar.js'
 import { MAX_TEXT_BYTES, sanitizeLabel } from '../../shared/security.js'
 import { FileType, classifyFile } from '../detect.js'
 import {
@@ -33,8 +32,16 @@ interface ProvenanceBearingRecord {
   provenance?: ExtractionProvenance[]
 }
 
+/*
+ * #722 FULL_GENERATE_ONLY_V1 — no sidecar input.
+ *
+ * This used to merge the machine-local `.madar-ingest.json` sidecar into the
+ * generated file node, so persisted sidecar content became graph content.
+ * Everything below is derived from the binary file itself, which is a
+ * repository input. The sidecar reader remains available to supported
+ * read-only diagnostics; it is simply not a generation input.
+ */
 function createBinaryMetadataAwareFileNode(filePath: string, fileType: NonCodeFileType): ExtractionNode {
-  const sidecarMetadata = readBinaryIngestSidecar(filePath)
   const extension = extname(filePath).toLowerCase()
   const contentType = BINARY_CONTENT_TYPES.get(extension)
   let fileBytes: number | undefined
@@ -52,9 +59,7 @@ function createBinaryMetadataAwareFileNode(filePath: string, fileType: NonCodeFi
     ...extractBinaryVideoMetadata(filePath, extension, fileType, fileBytes),
   }
 
-  return sidecarMetadata
-    ? { ...sidecarMetadata, ...derivedMetadata, ...createFileNode(filePath, fileType) }
-    : { ...derivedMetadata, ...createFileNode(filePath, fileType) }
+  return { ...derivedMetadata, ...createFileNode(filePath, fileType) }
 }
 
 function roundDurationSeconds(value: number): number {

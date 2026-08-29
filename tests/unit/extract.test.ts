@@ -5941,51 +5941,7 @@ describe('extract', () => {
     }
   })
 
-  it('lifts hidden sidecar metadata onto extracted image file nodes', () => {
-    const root = createTempRoot()
-    try {
-      const imagePath = join(root, 'diagram.png')
-      writeFileSync(imagePath, Buffer.from([137, 80, 78, 71]))
-      writeFileSync(
-        binaryIngestSidecarPath(imagePath),
-        JSON.stringify(
-          {
-            source_url: 'https://example.com/diagram.png',
-            captured_at: '2026-04-13T03:00:00Z',
-            contributor: 'madar',
-          },
-          null,
-          2,
-        ),
-        'utf8',
-      )
-
-      const result = extract([imagePath])
-      const imageNode = result.nodes.find((node) => node.file_type === 'image' && node.label === 'diagram.png')
-
-      expect(imageNode).toMatchObject({
-        source_url: 'https://example.com/diagram.png',
-        captured_at: '2026-04-13T03:00:00Z',
-        contributor: 'madar',
-        layer: 'base',
-        provenance: expect.arrayContaining([
-          expect.objectContaining({ capability_id: 'builtin:extract:image', stage: 'extract' }),
-          expect.objectContaining({
-            capability_id: 'builtin:ingest:image',
-            stage: 'ingest',
-            source_url: 'https://example.com/diagram.png',
-            captured_at: '2026-04-13T03:00:00Z',
-            contributor: 'madar',
-          }),
-        ]),
-      })
-      expect(imageNode?.provenance).toHaveLength(2)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
-  it('lifts hidden sidecar metadata onto extracted pdf file nodes without disturbing pdf heuristics', () => {
+  it('ignores hidden sidecar metadata while preserving pdf heuristics', () => {
     const root = createTempRoot()
     try {
       const paperPath = join(root, 'paper.pdf')
@@ -5995,9 +5951,6 @@ describe('extract', () => {
         binaryIngestSidecarPath(paperPath),
         JSON.stringify(
           {
-            source_url: 'https://example.com/paper.pdf',
-            captured_at: '2026-04-13T04:00:00Z',
-            contributor: 'madar',
           },
           null,
           2,
@@ -6013,40 +5966,28 @@ describe('extract', () => {
       expect(paperNode).toMatchObject({
         title: 'Madar Paper',
         subject: 'Runtime Notes',
-        source_url: 'https://example.com/paper.pdf',
-        captured_at: '2026-04-13T04:00:00Z',
-        contributor: 'madar',
         content_type: 'application/pdf',
         file_bytes: Buffer.byteLength(pdfContent, 'latin1'),
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:paper', stage: 'extract' }),
-          expect.objectContaining({
-            capability_id: 'builtin:ingest:pdf',
-            stage: 'ingest',
-            source_url: 'https://example.com/paper.pdf',
-            captured_at: '2026-04-13T04:00:00Z',
-            contributor: 'madar',
-          }),
         ]),
       })
       expect(titleNode).toMatchObject({
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:paper', stage: 'extract' }),
-          expect.objectContaining({ capability_id: 'builtin:ingest:pdf', stage: 'ingest' }),
         ]),
       })
-      expect(paperNode?.provenance).toHaveLength(2)
-      expect(titleNode?.provenance).toHaveLength(2)
+      expect(paperNode?.provenance).toHaveLength(1)
+      expect(titleNode?.provenance).toHaveLength(1)
       expect(containsEdges.length).toBeGreaterThan(0)
-      expect(containsEdges.every((edge) => Array.isArray(edge.provenance) && edge.provenance.length === 2)).toBe(true)
+      expect(containsEdges.every((edge) => Array.isArray(edge.provenance) && edge.provenance.length === 1)).toBe(true)
       for (const edge of containsEdges) {
         expect(edge).toMatchObject({
           layer: 'base',
           provenance: expect.arrayContaining([
             expect.objectContaining({ capability_id: 'builtin:extract:paper', stage: 'extract' }),
-            expect.objectContaining({ capability_id: 'builtin:ingest:pdf', stage: 'ingest' }),
           ]),
         })
       }
@@ -6066,9 +6007,6 @@ describe('extract', () => {
         binaryIngestSidecarPath(audioPath),
         JSON.stringify(
           {
-            source_url: 'https://example.com/podcast/episodes/1',
-            captured_at: '2026-04-14T01:00:00Z',
-            contributor: 'madar',
           },
           null,
           2,
@@ -6079,9 +6017,6 @@ describe('extract', () => {
         binaryIngestSidecarPath(videoPath),
         JSON.stringify(
           {
-            source_url: 'https://example.com/sessions/demo',
-            captured_at: '2026-04-14T01:05:00Z',
-            contributor: 'madar',
           },
           null,
           2,
@@ -6094,43 +6029,23 @@ describe('extract', () => {
       const videoNode = result.nodes.find((node) => node.file_type === 'video' && node.label === 'demo.mp4')
 
       expect(audioNode).toMatchObject({
-        source_url: 'https://example.com/podcast/episodes/1',
-        captured_at: '2026-04-14T01:00:00Z',
-        contributor: 'madar',
         content_type: 'audio/mpeg',
         file_bytes: 3,
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:audio', stage: 'extract' }),
-          expect.objectContaining({
-            capability_id: 'builtin:ingest:webpage',
-            stage: 'ingest',
-            source_url: 'https://example.com/podcast/episodes/1',
-            captured_at: '2026-04-14T01:00:00Z',
-            contributor: 'madar',
-          }),
         ]),
       })
       expect(videoNode).toMatchObject({
-        source_url: 'https://example.com/sessions/demo',
-        captured_at: '2026-04-14T01:05:00Z',
-        contributor: 'madar',
         content_type: 'video/mp4',
         file_bytes: 8,
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:video', stage: 'extract' }),
-          expect.objectContaining({
-            capability_id: 'builtin:ingest:webpage',
-            stage: 'ingest',
-            source_url: 'https://example.com/sessions/demo',
-            captured_at: '2026-04-14T01:05:00Z',
-            contributor: 'madar',
-          }),
         ]),
       })
-      expect(audioNode?.provenance).toHaveLength(2)
-      expect(videoNode?.provenance).toHaveLength(2)
+      expect(audioNode?.provenance).toHaveLength(1)
+      expect(videoNode?.provenance).toHaveLength(1)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -9473,14 +9388,12 @@ describe('extract', () => {
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:markdown', stage: 'extract' }),
-          expect.objectContaining({ capability_id: 'builtin:ingest:webpage', stage: 'ingest' }),
         ]),
       })
       expect(referenceEdge).toMatchObject({
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:markdown', stage: 'extract' }),
-          expect.objectContaining({ capability_id: 'builtin:ingest:webpage', stage: 'ingest' }),
         ]),
       })
       expect(fileNode?.provenance).toHaveLength(2)
@@ -10398,9 +10311,6 @@ describe('extract', () => {
         binaryIngestSidecarPath(docxPath),
         JSON.stringify(
           {
-            source_url: 'https://example.com/guide.docx',
-            captured_at: '2026-04-14T01:00:00Z',
-            contributor: 'madar',
           },
           null,
           2,
@@ -10418,19 +10328,9 @@ describe('extract', () => {
         author: 'Jane Doe',
         subject: 'Design Notes',
         description: 'Background material for the graph runtime.',
-        source_url: 'https://example.com/guide.docx',
-        captured_at: '2026-04-14T01:00:00Z',
-        contributor: 'madar',
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:docx', stage: 'extract' }),
-          expect.objectContaining({
-            capability_id: 'builtin:ingest:webpage',
-            stage: 'ingest',
-            source_url: 'https://example.com/guide.docx',
-            captured_at: '2026-04-14T01:00:00Z',
-            contributor: 'madar',
-          }),
         ]),
       })
       expect(doiNode).toMatchObject({
@@ -10438,19 +10338,17 @@ describe('extract', () => {
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:docx', stage: 'extract' }),
-          expect.objectContaining({ capability_id: 'builtin:ingest:webpage', stage: 'ingest' }),
         ]),
       })
       expect(doiEdge).toMatchObject({
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:docx', stage: 'extract' }),
-          expect.objectContaining({ capability_id: 'builtin:ingest:webpage', stage: 'ingest' }),
         ]),
       })
-      expect(fileNode?.provenance).toHaveLength(2)
-      expect(doiNode?.provenance).toHaveLength(2)
-      expect(doiEdge?.provenance).toHaveLength(2)
+      expect(fileNode?.provenance).toHaveLength(1)
+      expect(doiNode?.provenance).toHaveLength(1)
+      expect(doiEdge?.provenance).toHaveLength(1)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -10637,9 +10535,6 @@ describe('extract', () => {
         binaryIngestSidecarPath(workbookPath),
         JSON.stringify(
           {
-            source_url: 'https://example.com/metrics.xlsx',
-            captured_at: '2026-04-14T02:00:00Z',
-            contributor: 'madar',
           },
           null,
           2,
@@ -10659,33 +10554,21 @@ describe('extract', () => {
       expect(workbookNode).toMatchObject({
         title: 'Metrics Workbook',
         author: 'Jane Doe',
-        source_url: 'https://example.com/metrics.xlsx',
-        captured_at: '2026-04-14T02:00:00Z',
-        contributor: 'madar',
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:xlsx', stage: 'extract' }),
-          expect.objectContaining({
-            capability_id: 'builtin:ingest:webpage',
-            stage: 'ingest',
-            source_url: 'https://example.com/metrics.xlsx',
-            captured_at: '2026-04-14T02:00:00Z',
-            contributor: 'madar',
-          }),
         ]),
       })
       expect(summaryNode).toMatchObject({
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:xlsx', stage: 'extract' }),
-          expect.objectContaining({ capability_id: 'builtin:ingest:webpage', stage: 'ingest' }),
         ]),
       })
       expect(experimentsNode).toMatchObject({
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:xlsx', stage: 'extract' }),
-          expect.objectContaining({ capability_id: 'builtin:ingest:webpage', stage: 'ingest' }),
         ]),
       })
       expect(labels).toContain('Summary')
@@ -10694,16 +10577,15 @@ describe('extract', () => {
       expect(relations.has(`${nodeByKey.get('document:metrics.xlsx')}:contains:${nodeByKey.get('document:Experiments')}`)).toBe(true)
       expect(containsEdges).toHaveLength(2)
       expect(containsEdges.every((edge) => edge.layer === 'base')).toBe(true)
-      expect(containsEdges.every((edge) => Array.isArray(edge.provenance) && edge.provenance.length === 2)).toBe(true)
-      expect(workbookNode?.provenance).toHaveLength(2)
-      expect(summaryNode?.provenance).toHaveLength(2)
-      expect(experimentsNode?.provenance).toHaveLength(2)
+      expect(containsEdges.every((edge) => Array.isArray(edge.provenance) && edge.provenance.length === 1)).toBe(true)
+      expect(workbookNode?.provenance).toHaveLength(1)
+      expect(summaryNode?.provenance).toHaveLength(1)
+      expect(experimentsNode?.provenance).toHaveLength(1)
       for (const edge of containsEdges) {
         expect(edge).toMatchObject({
           layer: 'base',
           provenance: expect.arrayContaining([
             expect.objectContaining({ capability_id: 'builtin:extract:xlsx', stage: 'extract' }),
-            expect.objectContaining({ capability_id: 'builtin:ingest:webpage', stage: 'ingest' }),
           ]),
         })
       }
@@ -10777,9 +10659,6 @@ describe('extract', () => {
         binaryIngestSidecarPath(docxPath),
         JSON.stringify(
           {
-            source_url: 'https://example.com/broken.docx',
-            captured_at: '2026-04-14T03:00:00Z',
-            contributor: 'madar',
           },
           null,
           2,
@@ -10793,22 +10672,12 @@ describe('extract', () => {
       expect(result.nodes[0]).toMatchObject({
         label: 'broken.docx',
         file_type: 'document',
-        source_url: 'https://example.com/broken.docx',
-        captured_at: '2026-04-14T03:00:00Z',
-        contributor: 'madar',
         layer: 'base',
         provenance: expect.arrayContaining([
           expect.objectContaining({ capability_id: 'builtin:extract:docx', stage: 'extract' }),
-          expect.objectContaining({
-            capability_id: 'builtin:ingest:webpage',
-            stage: 'ingest',
-            source_url: 'https://example.com/broken.docx',
-            captured_at: '2026-04-14T03:00:00Z',
-            contributor: 'madar',
-          }),
         ]),
       })
-      expect(result.nodes[0]?.provenance).toHaveLength(2)
+      expect(result.nodes[0]?.provenance).toHaveLength(1)
       expect(result.edges).toEqual([])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -10979,53 +10848,6 @@ describe('extract', () => {
       const third = extract([filePath])
 
       expect(third.nodes.some((node) => node.label === 'Details')).toBe(true)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
-  it('invalidates cached binary extraction results when hidden ingest sidecar metadata changes', () => {
-    const root = createTempRoot()
-    try {
-      const imagePath = join(root, 'diagram.png')
-      writeFileSync(imagePath, Buffer.from([137, 80, 78, 71]))
-      writeFileSync(
-        binaryIngestSidecarPath(imagePath),
-        JSON.stringify(
-          {
-            source_url: 'https://example.com/diagram-v1.png',
-            captured_at: '2026-04-13T06:00:00Z',
-            contributor: 'madar',
-          },
-          null,
-          2,
-        ),
-        'utf8',
-      )
-
-      const first = extract([imagePath])
-      const second = extract([imagePath])
-
-      expect(first.nodes).toEqual(second.nodes)
-      expect(second.nodes.find((node) => node.label === 'diagram.png')?.source_url).toBe('https://example.com/diagram-v1.png')
-
-      writeFileSync(
-        binaryIngestSidecarPath(imagePath),
-        JSON.stringify(
-          {
-            source_url: 'https://example.com/diagram-v2.png',
-            captured_at: '2026-04-13T06:05:00Z',
-            contributor: 'madar',
-          },
-          null,
-          2,
-        ),
-        'utf8',
-      )
-
-      const third = extract([imagePath])
-
-      expect(third.nodes.find((node) => node.label === 'diagram.png')?.source_url).toBe('https://example.com/diagram-v2.png')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
