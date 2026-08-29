@@ -307,6 +307,13 @@ function containsOutPathReference(value: unknown): boolean {
  * every newly installed profile as stale. It stays accepted, so profiles
  * written by earlier versions keep passing too.
  */
+/**
+ * What `madar doctor` says about a profile that still carries `--auto-refresh`.
+ * The profile works; the flag does not enable refresh.
+ */
+export const LEGACY_AUTO_REFRESH_PROFILE_NOTE =
+  "server args carry the legacy '--auto-refresh' flag; it is accepted for startup compatibility only and enables no automatic refresh. Re-run the agent's install command to update this profile, and run `madar generate .` to refresh repository semantics"
+
 function hasWorkspaceStdioArgs(args: unknown): boolean {
   if (!Array.isArray(args)) {
     return false
@@ -382,6 +389,21 @@ function readMcpCheck(
       configPath,
       status: 'stale',
       reason: 'server args pin a fixed graph path; remove it so the active workspace graph is selected',
+    }
+  }
+
+  /*
+   * #722 migration diagnostic. Profiles written by earlier installers carry
+   * `--auto-refresh`. They are healthy -- the flag is accepted for startup
+   * compatibility -- but the reader should be told it enables nothing, so a
+   * stale profile is not mistaken for a working refresh.
+   */
+  if (Array.isArray(server.args) && server.args.includes('--auto-refresh')) {
+    return {
+      label,
+      configPath,
+      status: 'ok',
+      reason: LEGACY_AUTO_REFRESH_PROFILE_NOTE,
     }
   }
 

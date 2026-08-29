@@ -150,9 +150,17 @@ describe('FULL-GENERATE-ONLY watch withdrawal', () => {
       const messages = outputText.trim().split(/\n+/).filter(Boolean).map((line) => JSON.parse(line))
       expect(messages).toEqual(expect.arrayContaining([expect.objectContaining({ jsonrpc: '2.0', id: 1 })]))
 
-      // Truthful about the stable profile - "not supported", never "deprecated".
-      expect(errorText).toContain('automatic semantic refresh is not supported in the stable profile')
-      expect(errorText).toContain('run ordinary full generation to refresh repository semantics')
+      // Exactly one machine-readable diagnostic, not a prose line and not silence.
+      const diagnostics = errorText.split('\n').filter(Boolean)
+        .map((line) => { try { return JSON.parse(line) as Record<string, unknown> } catch { return null } })
+        .filter((d): d is Record<string, unknown> => d?.code === 'UNSUPPORTED_GENERATION_MODE')
+      expect(diagnostics, 'LEGACY_AUTO_REFRESH_FLAG_SILENTLY_IGNORED').toHaveLength(1)
+      expect(diagnostics[0]).toStrictEqual({
+        code: 'UNSUPPORTED_GENERATION_MODE',
+        mode: 'auto-refresh',
+        compatibility_action: 'ignored',
+        message: 'automatic semantic refresh is unsupported; run ordinary full generation to refresh repository semantics',
+      })
       expect(errorText).not.toMatch(/deprecated/i)
 
       expect(starterCalls, 'WATCH_WORKER_STARTED_BEFORE_REFUSAL').toBe(0)

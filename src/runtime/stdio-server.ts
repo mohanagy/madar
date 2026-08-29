@@ -154,6 +154,18 @@ interface StdioResponse {
   }
 }
 
+/**
+ * The single diagnostic emitted when a legacy managed profile still passes
+ * `--auto-refresh`. Exported so callers and tests assert the real object rather
+ * than a paraphrase of it.
+ */
+export const LEGACY_AUTO_REFRESH_DIAGNOSTIC = Object.freeze({
+  code: 'UNSUPPORTED_GENERATION_MODE',
+  mode: 'auto-refresh',
+  compatibility_action: 'ignored',
+  message: 'automatic semantic refresh is unsupported; run ordinary full generation to refresh repository semantics',
+})
+
 export interface ServeGraphStdioOptions {
   graphPath: string
   /** Accepted for compatibility; automatic semantic refresh is not supported. */
@@ -995,11 +1007,18 @@ export async function serveGraphStdio(options: ServeGraphStdioOptions): Promise<
   const strictContextPackProfile = resolveToolProfileFromEnv() === 'strict'
 
   if (options.autoRefresh) {
-    // Accepted and deliberately inert. Installed MCP client configs still pass
-    // `--auto-refresh`, so refusing here would withdraw the supported stdio
-    // server rather than the unsupported continuation. Say so rather than
-    // ignoring the flag silently.
-    errorOutput.write('[madar serve] automatic semantic refresh is not supported in the stable profile; run ordinary full generation to refresh repository semantics\n')
+    /*
+     * #722 — startup compatibility, explicitly diagnosed.
+     *
+     * Installers written before this release put `--auto-refresh` into managed
+     * MCP profiles, so refusing process startup would break those profiles
+     * rather than the unsupported continuation. The flag is therefore accepted
+     * and inert -- but it is not silently ignored: exactly one machine-readable
+     * diagnostic is emitted on the diagnostic stream, and nothing else happens.
+     * No policy read, no prior graph, no watcher, timer, worker, generation,
+     * publication or sidecar.
+     */
+    errorOutput.write(`${JSON.stringify(LEGACY_AUTO_REFRESH_DIAGNOSTIC)}\n`)
   }
 
   errorOutput.write(`[madar serve] stdio ready for ${options.graphPath}\n`)
