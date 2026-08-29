@@ -1,8 +1,7 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
-import { rebindEvidenceOccurrence } from '../contracts/semantic-identity.js'
 import type { ExtractionMode } from '../contracts/generation-policy.js'
 import type {
   ExtractionFallbackReason,
@@ -13,7 +12,7 @@ import type {
   IndexingStrictThresholds,
   IndexingSummary,
 } from '../contracts/indexing.js'
-import type { ExtractionData, ExtractionEdge, ExtractionNode, ExtractionSchemaVersion, Hyperedge } from '../contracts/types.js'
+import type { ExtractionData, ExtractionSchemaVersion } from '../contracts/types.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../pipeline/analyze.js'
 import { buildFromJson } from '../pipeline/build.js'
 import { cluster, scoreAll } from '../pipeline/cluster.js'
@@ -24,7 +23,6 @@ import {
   detect,
   detectIncremental,
   FileType,
-  loadManifestMetadata,
   writeManifestSnapshot,
 } from '../pipeline/detect.js'
 import { generateDocs as generateDocsArtifacts } from '../pipeline/docs.js'
@@ -34,7 +32,6 @@ import { createFileStemMap } from '../pipeline/extract/core.js'
 import {
   localExtractionIndexingOutcome,
   projectSpiIndexingOutcomes,
-  retainedIndexingOutcomes,
 } from '../pipeline/indexing-generation.js'
 import { createIndexingManifest, indexingStrictViolations, localIndexingPath } from '../pipeline/indexing-outcomes.js'
 import { buildSpiFresh, type SpiCacheStats } from '../pipeline/spi/cache.js'
@@ -42,21 +39,17 @@ import { isSpiSupportedSourceFile } from '../pipeline/spi/build.js'
 import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
 import { generate as generateReport } from '../pipeline/report.js'
 import { toWiki } from '../pipeline/wiki.js'
-import { loadGraph } from '../runtime/serve.js'
 import { buildGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
 import { collectGitVisibleFiles } from '../shared/git.js'
 import { writeTextFileAtomically } from '../shared/atomic-file.js'
 import { resolveMadarOutputDirectory } from '../shared/workspace.js'
 import {
   INDEXING_MANIFEST_FILENAME,
-  readIndexingManifestForGraph,
   writeFailedIndexingManifests,
   writeIndexingManifests,
 } from './indexing-manifest.js'
 import {
   buildGenerationPolicy,
-  generationOptionsFromPolicy,
-  readGraphGenerationPolicy,
   resolveExtractionMode,
 } from './generation-policy.js'
 import {
@@ -299,110 +292,15 @@ function sourceFileKey(sourceFile: unknown): string | null {
   return typeof sourceFile === 'string' && sourceFile.length > 0 ? resolve(sourceFile) : null
 }
 
-function indexedSourceFilesFromGraph(graph: KnowledgeGraph | null, rootPath: string): ReadonlySet<string> | undefined {
-  if (!graph) {
-    return undefined
-  }
-  return new Set(
-    graph.nodeEntries().flatMap(([, attributes]) => {
-      const sourceFile = typeof attributes.source_file === 'string' ? attributes.source_file.trim() : ''
-      return sourceFile.length > 0 ? [resolve(rootPath, sourceFile)] : []
-    }),
-  )
-}
 
-function retainedExtractionFromGraph(graph: KnowledgeGraph, removedSourceFiles: ReadonlySet<string>): ExtractionData {
-  const nodes: ExtractionNode[] = graph
-    .nodeEntries()
-    .filter(([, attributes]) => {
-      const sourceFile = sourceFileKey(attributes.source_file)
-      return !sourceFile || !removedSourceFiles.has(sourceFile)
-    })
-    .map(([id, attributes]) => ({
-      id,
-      ...attributes,
-      label: String(attributes.label ?? id),
-      file_type: String(attributes.file_type ?? 'code') as ExtractionNode['file_type'],
-      source_file: String(attributes.source_file ?? ''),
-    }))
 
-  const nodeIds = new Set(nodes.map((node) => node.id))
-  const edges: ExtractionEdge[] = graph
-    .factEntries()
-    .filter(([source, target, attributes]) => {
-      const sourceFile = sourceFileKey(attributes.source_file)
-      return nodeIds.has(source) && nodeIds.has(target) && (!sourceFile || !removedSourceFiles.has(sourceFile))
-    })
-    .map(([source, target, attributes]) => ({
-      source,
-      target,
-      ...attributes,
-      relation: String(attributes.relation ?? 'related_to'),
-      confidence: String(attributes.confidence ?? 'EXTRACTED') as ExtractionEdge['confidence'],
-      source_file: String(attributes.source_file ?? ''),
-    }))
 
-  const hyperedges = (Array.isArray(graph.graph.hyperedges) ? graph.graph.hyperedges : []).filter((hyperedge): hyperedge is Hyperedge => {
-    if (!hyperedge || typeof hyperedge !== 'object' || Array.isArray(hyperedge)) {
-      return false
-    }
-
-    const sourceFile = sourceFileKey((hyperedge as Hyperedge).source_file)
-    if (sourceFile && removedSourceFiles.has(sourceFile)) {
-      return false
-    }
-
-    return Array.isArray((hyperedge as Hyperedge).nodes) && (hyperedge as Hyperedge).nodes.every((nodeId) => nodeIds.has(nodeId))
-  })
-
-  return {
-    schema_version: graph.graph.schema_version === 2 ? 2 : 1,
-    nodes,
-    edges,
-    hyperedges,
-    input_tokens: 0,
-    output_tokens: 0,
-  }
-}
 
 function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectResult): detection is IncrementalDetectResult {
   return 'new_total' in detection && 'new_files' in detection && 'deleted_files' in detection
 }
 
-function copyGraphWithDirection(graph: KnowledgeGraph, directed: boolean): KnowledgeGraph {
-  if (graph.isDirected() === directed) {
-    return graph.copy()
-  }
-  const copied = new KnowledgeGraph({ directed })
-  Object.assign(copied.graph, graph.graph, { directed })
 
-  for (const [nodeId, attributes] of graph.nodeEntries()) {
-    copied.addNode(nodeId, {
-      ...attributes,
-      endpointIdentity: graph.nodeEndpointIdentity(nodeId),
-    })
-  }
-  for (const { fact, attributes } of graph.factRecords()) {
-    const admission = copied.addEdge(fact.source, fact.target, { ...attributes }, {
-      discriminator: fact.discriminator,
-      recordOccurrence: false,
-    })
-    if (admission.status !== 'stored') {
-      throw new Error(`Direction-changing copy could not admit relation ${fact.relation}`)
-    }
-    for (const occurrence of graph.occurrencesForFact(fact.id)) {
-      copied.addOccurrence(rebindEvidenceOccurrence(occurrence, admission.factId))
-    }
-  }
-
-  // This helper builds a fresh graph rather than going through copy(), so the
-  // degradation copy() preserves has to be carried explicitly. Without it a
-  // direction change silently reset both the unregistered-admission counters
-  // and the candidate accounting to empty.
-  copied.inheritDegradationFrom(graph)
-
-  return copied
-}
 
 function outputDirectory(rootPath: string): string {
   return resolveMadarOutputDirectory(rootPath)
@@ -603,64 +501,39 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const progress = options.onProgress
 
   progress?.({ step: 'detect', message: 'Scanning files...' })
-  const graphGenerationPolicy = existingGraphPath === null ? null : readGraphGenerationPolicy(existingGraphPath)
-  if (options.clusterOnly && !graphGenerationPolicy) {
-    throw new Error(
-      '--cluster-only requires valid generation-policy metadata. Run `madar generate . --update` to migrate and re-extract the graph first.',
-    )
-  }
-  const storedClusterOptions = options.clusterOnly && graphGenerationPolicy
-    ? generationOptionsFromPolicy(graphGenerationPolicy)
-    : null
-  if (
-    options.clusterOnly
-    && options.extractionMode !== undefined
-    && storedClusterOptions
-    && options.extractionMode !== storedClusterOptions.extractionMode
-  ) {
-    throw new Error(
-      `--cluster-only cannot change extraction mode from ${storedClusterOptions.extractionMode} to ${options.extractionMode}. Run \`madar generate . --update\` instead.`,
-    )
-  }
-  const corpusOptions = storedClusterOptions ?? options
+  /*
+   * #722 FULL_GENERATE_ONLY_V1 — generation options come from the CURRENT run.
+   *
+   * This used to read the stored generation policy out of the prior artifact
+   * (readGraphGenerationPolicy) and, on the --cluster-only path, rebuild the
+   * option set from it. PREQUAL occurrence 1 reproduced the consequence: on a
+   * warm ordinary generation that reader was called once, so full generation
+   * was consuming a persisted semantic result before taking any decision.
+   *
+   * --cluster-only is refused above and --update is normalised to ordinary full
+   * generation, so nothing may reconstruct options from a prior artifact.
+   * Options are sourced from the caller's current options alone.
+   */
+  const corpusOptions = options
   const extractionMode = resolveExtractionMode(corpusOptions)
   const gitVisibleFiles = corpusOptions.respectGitignore ? collectGitVisibleFiles(resolvedRootPath) : null
-  if (storedClusterOptions && graphGenerationPolicy) {
-    const currentStoredPolicy = buildGenerationPolicy(resolvedRootPath, storedClusterOptions, EXTRACTOR_CACHE_VERSION, gitVisibleFiles)
-    if (currentStoredPolicy.fingerprint !== graphGenerationPolicy.fingerprint) {
-      throw new Error(
-        '--cluster-only cannot reuse a graph whose generation policy no longer matches current exclusion controls. Run `madar generate . --update`.',
-      )
-    }
-  }
   const generationPolicy = buildGenerationPolicy(
     resolvedRootPath,
-    storedClusterOptions
-      ? {
-          ...storedClusterOptions,
-          directed: options.directed !== false,
-          ...(options.indexingStrict ? { indexingStrict: options.indexingStrict } : {}),
-        }
-      : options,
+    options,
     EXTRACTOR_CACHE_VERSION,
     gitVisibleFiles,
   )
-  const manifestGenerationPolicy = existsSync(manifestPath) ? loadManifestMetadata(manifestPath).generation_policy ?? null : null
-  const storedPolicyMatches = graphGenerationPolicy?.fingerprint === generationPolicy.fingerprint
-    && manifestGenerationPolicy?.fingerprint === generationPolicy.fingerprint
-  const generationPolicyMismatch = options.update === true && existingGraphPath !== null && !storedPolicyMatches
   const detectionOptions = detectOptions(corpusOptions, gitVisibleFiles)
-  const detected = options.update && !generationPolicyMismatch
-    ? detectIncremental(resolvedRootPath, manifestPath, detectionOptions)
-    : detect(resolvedRootPath, detectionOptions)
+  // Always a full scan: incremental detection is a continuation and is withdrawn.
+  const detected = detect(resolvedRootPath, detectionOptions)
   const discoverySafety = buildDiscoverySafetyMetadata(detected.exclusions)
   // #722 FULL_GENERATE_ONLY_V1: the prior indexing manifest is only consumed by
   // the retained-outcome paths of `--update`. Reading it unconditionally made
   // ordinary warm generation touch persisted semantic state before any decision
   // was taken, so the read is now scoped to the path that uses it.
-  const previousIndexingManifest = options.update === true && existingGraphPath !== null
-    ? readIndexingManifestForGraph(existingGraphPath)
-    : null
+  // #722: no prior indexing manifest is consumed. --update is ordinary full
+  // generation, so there is no retained-outcome path left to feed.
+  const previousIndexingManifest = null
   const indexingOutcomes: IndexingOutcome[] = (detected.indexing_outcomes ?? []).map((outcome) => ({
     ...outcome,
     extraction_strategy: outcome.extraction_strategy ?? 'not_extracted',
@@ -695,14 +568,6 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   const mode: GenerateGraphResult['mode'] = options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate'
 
   notes.push(`Extraction mode: ${extractionMode}.`)
-
-  if (generationPolicyMismatch) {
-    notes.push(
-      graphGenerationPolicy && manifestGenerationPolicy
-        ? 'Generation policy changed, so --update rebuilt the full graph instead of reusing incompatible extraction state.'
-        : 'Existing graph predates complete generation-policy metadata, so --update rebuilt the full graph.',
-    )
-  }
 
   if (options.clusterOnly) {
     notes.push('Re-clustered the existing graph without re-extracting source files.')
@@ -774,45 +639,19 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
 
   progress?.({ step: 'detect', message: `Found ${detected.total_files} files (~${detected.total_words.toLocaleString()} words)` })
 
-  const loadedExistingGraph = options.clusterOnly || (options.update === true && existingGraphPath !== null) ? loadGraph(existingGraphPath as string) : null
-  const existingGraphExtractorVersion = options.update === true && existingGraphPath !== null ? loadGraphExtractorVersion(existingGraphPath) : null
+  /*
+   * #722 FULL_GENERATE_ONLY_V1: no prior graph is loaded, and no branch that
+   * consumed one survives. Both consumers were continuations -- --cluster-only
+   * (refused at entry) and --update (normalised to ordinary full generation).
+   * The direction-migration and retained-outcome branches existed only to carry
+   * a loaded graph forward, so they are removed rather than left unreachable.
+   */
+  const existingGraph: KnowledgeGraph | null = null
+  const existingGraphExtractorVersion: number | null = null
   const directed = options.directed !== false
   const generationPolicyToPublish = generationPolicy
-  const upgradingLegacyDirection = loadedExistingGraph?.isDirected() === false && directed
 
-  if (options.clusterOnly && upgradingLegacyDirection) {
-    throw new Error(
-      '--cluster-only cannot safely recover edge directions from an undirected graph. '
-      + 'Run `madar generate . --update` to re-extract the source graph with directed edges.',
-    )
-  }
-
-  const policyCompatibleGraph = generationPolicyMismatch ? null : loadedExistingGraph
-  const existingGraph = policyCompatibleGraph && policyCompatibleGraph.isDirected() !== directed && !upgradingLegacyDirection
-    ? copyGraphWithDirection(policyCompatibleGraph, directed)
-    : policyCompatibleGraph
-
-  if (options.clusterOnly) {
-    const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
-    indexingOutcomes.push(...retainedIndexingOutcomes({
-      rootPath: resolvedRootPath,
-      files: extractableFiles,
-      previousManifest: previousIndexingManifest,
-      ...(retainedSourceFiles ? { retainedSourceFiles } : {}),
-    }))
-  }
-
-  if (upgradingLegacyDirection) {
-    notes.push('Existing graph was undirected, so --update rebuilt the full graph with directed edges.')
-  } else if (loadedExistingGraph && loadedExistingGraph.isDirected() !== directed) {
-    notes.push(
-      'Migrated the existing graph from directed to undirected edge traversal.',
-    )
-  }
-
-  if (!options.clusterOnly) {
-    progress?.({ step: 'extract', message: `Extracting ${extractableFiles.length} files...`, current: 0, total: extractableFiles.length })
-  }
+  progress?.({ step: 'extract', message: `Extracting ${extractableFiles.length} files...`, current: 0, total: extractableFiles.length })
 
   // SPI builds are all-or-nothing at the TypeScript-program layer. In auto
   // mode we run that cacheable build only for SPI-capable files, then merge
@@ -936,85 +775,22 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     })
   }
 
-  const graph = options.clusterOnly
-    ? existingGraph
-    : extractionMode !== 'legacy'
-      ? buildViaSpi()
-    : options.update && existingGraph && upgradingLegacyDirection
-      ? (() => {
-          extractedFiles = extractableFiles.length
-          return extractableFiles.length > 0
-            ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
-                onFileOutcome: recordExtractionOutcome('legacy'),
-              }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary', repositoryRoot: resolvedRootPath })
-            : null
-        })()
-    : options.update && existingGraph && isIncrementalDetectResult(detected)
-        ? (() => {
-            if (existingGraphExtractorVersion == null || existingGraphExtractorVersion !== EXTRACTOR_CACHE_VERSION) {
-              notes.push(
-                existingGraphExtractorVersion == null
-                  ? 'Existing graph predates extractor version metadata, so --update rebuilt the full graph.'
-                  : `Existing graph uses extractor version ${existingGraphExtractorVersion}, so --update rebuilt the full graph.`,
-              )
-              extractedFiles = extractableFiles.length
-              return extractableFiles.length > 0
-                ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
-                    onFileOutcome: recordExtractionOutcome('legacy'),
-                  }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary', repositoryRoot: resolvedRootPath })
-                : null
-            }
-
-            const changedExtractableFiles = collectExtractableFiles(detected.new_files)
-            const removedSourceFiles = new Set([...changedExtractableFiles, ...detected.deleted_files].map((filePath) => resolve(filePath)))
-
-            if (changedExtractableFiles.length === 0 && detected.deleted_files.length === 0) {
-              notes.push('No changed files detected - reused the existing graph.')
-              extractedFiles = 0
-              const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
-              indexingOutcomes.push(...retainedIndexingOutcomes({
-                rootPath: resolvedRootPath,
-                files: extractableFiles,
-                previousManifest: previousIndexingManifest,
-                ...(retainedSourceFiles ? { retainedSourceFiles } : {}),
-              }))
-              return existingGraph
-            }
-
-            const retainedExtraction = retainedExtractionFromGraph(existingGraph, removedSourceFiles)
-            const changedExtraction =
-              changedExtractableFiles.length > 0
-                ? withExtractionStrategy(extract(changedExtractableFiles, {
-                    allowedTargets: extractableFiles,
-                    contextNodes: retainedExtraction.nodes,
-                    onFileOutcome: recordExtractionOutcome('legacy'),
-                  }), 'legacy')
-                : emptyExtraction()
-            const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
-            indexingOutcomes.push(...retainedIndexingOutcomes({
-              rootPath: resolvedRootPath,
-              files: collectExtractableFiles(detected.unchanged_files),
-              previousManifest: previousIndexingManifest,
-              ...(retainedSourceFiles ? { retainedSourceFiles } : {}),
-            }))
-            extractedFiles = changedExtractableFiles.length
-
-            notes.push(
-              `Incremental update re-extracted ${changedExtractableFiles.length} changed file(s) and retained ${new Set(retainedExtraction.nodes.map((node) => node.source_file)).size} unchanged file(s) from the existing graph.`,
-            )
-
-          return buildFromJson(mergeExtractions([retainedExtraction, changedExtraction]), {
-            directed,
-            accounting: 'normalized_extraction_boundary', repositoryRoot: resolvedRootPath,
-          })
-        })()
-      : extractableFiles.length > 0
-        ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
-            onFileOutcome: recordExtractionOutcome('legacy'),
-          }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary', repositoryRoot: resolvedRootPath })
-      : options.update && existingGraph
-          ? existingGraph
-          : null
+  /*
+   * #722 FULL_GENERATE_ONLY_V1 — two live arms, no continuation ladder.
+   *
+   * This was a chain of --update / --cluster-only continuations: reuse the
+   * loaded graph, retain unchanged extraction, re-extract only changed files,
+   * migrate edge direction. Every one of those consumed a persisted semantic
+   * result. --cluster-only is refused at entry and --update is ordinary full
+   * generation, so the arms are gone rather than left unreachable.
+   */
+  const graph = extractionMode !== 'legacy'
+    ? buildViaSpi()
+    : extractableFiles.length > 0
+      ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
+          onFileOutcome: recordExtractionOutcome('legacy'),
+        }), 'legacy'), { directed, accounting: 'normalized_extraction_boundary', repositoryRoot: resolvedRootPath })
+      : null
 
   const sourceManifestSnapshot = createManifestSnapshot(detected.files, {
     total_words: detected.total_words,
@@ -1065,7 +841,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     strategies: indexingManifest.summary.extraction_strategy_buckets ?? {},
     fallbacks: indexingManifest.summary.fallback_reason_buckets ?? {},
   }
-  const effectiveIndexingStrict = options.indexingStrict ?? storedClusterOptions?.indexingStrict
+  const effectiveIndexingStrict = options.indexingStrict
   if (effectiveIndexingStrict) {
     const violations = indexingStrictViolations(indexingManifest.summary, effectiveIndexingStrict)
     if (violations.length > 0) {
@@ -1104,11 +880,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
   graph.graph.root_path = resolvedRootPath
   graph.graph.discovery_safety = discoverySafety
   graph.graph.generation_policy = generationPolicyToPublish
-  // Cluster-only mode reuses the existing graph; it must not relabel that
-  // graph based on the currently discovered corpus without re-extracting it.
-  const graphUsesSpi = options.clusterOnly
-    ? existingGraph?.graph.spi_mode === true
-    : spiProducedEvidence
+  const graphUsesSpi = spiProducedEvidence
   if (graphUsesSpi) {
     graph.graph.spi_mode = true
   } else {
