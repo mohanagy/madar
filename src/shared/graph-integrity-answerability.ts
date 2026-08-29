@@ -6,7 +6,7 @@ import type {
   MadarAnswerabilityState,
   MadarVerificationTarget,
 } from '../contracts/context-recovery.js'
-import { minByReadinessRank } from '../contracts/context-recovery.js'
+import { isMadarAnswerabilityState, minByReadinessRank } from '../contracts/context-recovery.js'
 import {
   NORMALIZED_ACCOUNTING_ARTIFACT_KEY,
   parseGraphArtifactNormalizedAccounting,
@@ -356,4 +356,43 @@ export function readGraphIntegrityCap(graphPath: string): GraphIntegrityCap {
   } catch {
     return NO_GRAPH_INTEGRITY_CAP
   }
+}
+
+/**
+ * Bounds a published recovery projection by the final top-level answerability.
+ *
+ * The one helper both publication seams use. `pack.recovery` and
+ * `evidence.recovery` are separate serialisations of the same plan, and the
+ * pack is built before the answer is assessed, so the pack copy has to be
+ * bounded where the final answerability actually exists rather than where the
+ * pack is assembled.
+ *
+ * Only the two state fields move. Attempt counts, budgets, improvement flags
+ * and every other field are recovery-execution metadata that this cap has no
+ * business rewriting, and an absent plan stays absent rather than being
+ * fabricated into an empty one.
+ *
+ * Returns the original reference when nothing changed, which is what makes a
+ * second application a provable no-op.
+ */
+export function capPublishedRecoveryByFinalAnswerability<T>(
+  recovery: T,
+  finalAnswerability: MadarAnswerabilityState,
+): T {
+  if (recovery === null || typeof recovery !== 'object' || Array.isArray(recovery)) {
+    return recovery
+  }
+  const plan = recovery as Record<string, unknown>
+  const initial = plan.initial_state
+  const final = plan.final_state
+  const nextInitial = isMadarAnswerabilityState(initial)
+    ? minByReadinessRank(initial, finalAnswerability)
+    : initial
+  const nextFinal = isMadarAnswerabilityState(final)
+    ? minByReadinessRank(final, finalAnswerability)
+    : final
+  if (nextInitial === initial && nextFinal === final) {
+    return recovery
+  }
+  return { ...plan, initial_state: nextInitial, final_state: nextFinal } as T
 }

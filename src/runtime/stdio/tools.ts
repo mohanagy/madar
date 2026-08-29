@@ -52,6 +52,7 @@ import { collectPackNodeIds, computeDeltaContextPack } from '../context-pack-del
 import { buildContextPackGovernanceReceipt } from '../context-pack-governance.js'
 import { applyContextPackResolution, type ContextPackResolution } from '../context-pack-resolution.js'
 import { buildImplementationPackGuidance } from '../implementation-pack.js'
+import { capPublishedRecoveryByFinalAnswerability } from '../../shared/graph-integrity-answerability.js'
 import {
   buildMadarResponseEvidence,
   collectWorkflowOwners,
@@ -2021,10 +2022,22 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         matched_nodes: resolvedNodes.nodes,
         relationships: serializedPack.relationships,
       }, graphPath)
+      // The same helper the CLI seam uses. The serialized pack carries its own
+      // copy of the recovery plan, built before the answer was assessed, so it
+      // is bounded here rather than given an MCP-specific rule of its own.
+      const publishedPack = 'recovery' in serializedPack
+        ? {
+            ...serializedPack,
+            recovery: capPublishedRecoveryByFinalAnswerability(
+              serializedPack.recovery,
+              evidence.answerability.state,
+            ),
+          }
+        : serializedPack
       const basePayload = withContextPackGovernance({
         ...contextPackBasePayload(task, prompt, resolvedBudget, graphPath, initialPlan),
         resolution,
-        pack: serializedPack,
+        pack: publishedPack,
         ...(resolvedNodes.bytes_saved > 0
           ? { bytes_saved_by_resolution: resolvedNodes.bytes_saved, resolution_map: resolvedNodes.resolution_map }
           : {}),

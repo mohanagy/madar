@@ -84,6 +84,25 @@ export interface ContextPackRecoveryPlan {
  * ever disagree would be a defect class of its own, so the rank moved here,
  * beside the union it ranks, and every consumer imports it.
  */
+export const MADAR_ANSWERABILITY_STATES = Object.freeze([
+  'ready',
+  'ready_with_caveat',
+  'verify_targets',
+  'insufficient',
+] as const)
+
+/**
+ * Narrows an untyped value to the union.
+ *
+ * Needed where a published payload is handled as plain JSON rather than as the
+ * typed assessment -- the Pack projections travel as records, and a cap applied
+ * there still has to know it is looking at an answerability state.
+ */
+export function isMadarAnswerabilityState(value: unknown): value is MadarAnswerabilityState {
+  return typeof value === 'string'
+    && (MADAR_ANSWERABILITY_STATES as readonly string[]).includes(value)
+}
+
 export function readinessRank(state: MadarAnswerabilityState): number {
   switch (state) {
     case 'ready': return 4

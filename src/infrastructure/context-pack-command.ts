@@ -28,6 +28,7 @@ import { buildTaskContextPlan } from '../runtime/task-context-planner.js'
 import { resolveTaskSelection } from '../runtime/task-intent.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { buildImplementationPackGuidance } from '../runtime/implementation-pack.js'
+import { capPublishedRecoveryByFinalAnswerability } from '../shared/graph-integrity-answerability.js'
 import {
   assessMadarResponseEvidence,
   collectWorkflowOwners,
@@ -2795,12 +2796,27 @@ function buildPackSchemaV1<TPack extends PackPayload>(
       })
     : buildContextPackGovernanceReceipt(governanceBase)
 
+  // `pack.recovery` and `evidence.recovery` are two serialisations of the same
+  // plan, and the pack was built before the answer was assessed. This is the
+  // first point where the final answerability exists beside the pack, so it is
+  // where the published copy is bounded -- not the pressure-compaction path,
+  // which only runs when the response is over budget.
+  const publishedPack = 'recovery' in response.pack
+    ? {
+        ...response.pack,
+        recovery: capPublishedRecoveryByFinalAnswerability(
+          response.pack.recovery,
+          evidence.answerability.state,
+        ),
+      }
+    : response.pack
+
   return {
     schema_version: 1,
     ...serializableResponse,
     evidence,
     governance,
-    pack: packForSchema(response.task, response.pack, compatibilityFields),
+    pack: packForSchema(response.task, publishedPack, compatibilityFields),
     workflow_centers: centers,
     recommended_first_read: firstRead,
     likely_edit_files: response.implementation?.likely_edit_files ?? [],
