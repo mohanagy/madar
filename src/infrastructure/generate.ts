@@ -21,7 +21,6 @@ import {
   createManifestSnapshot,
   type DetectResult,
   detect,
-  detectIncremental,
   FileType,
   writeManifestSnapshot,
 } from '../pipeline/detect.js'
@@ -157,6 +156,13 @@ export type GenerateUnsupportedCorpusCode = 'NO_SUPPORTED_FILES' | 'NO_GRAPH_NOD
  * stable release surface. Thrown before any persisted semantic state is read
  * and before any artifact is published or modified.
  */
+/**
+ * What `--update` reports. It is an alias for ordinary full regeneration, so it
+ * must state that plainly rather than let a caller infer incremental reuse.
+ */
+export const UPDATE_SATISFIED_BY_FULL_REGENERATION_NOTE =
+  '--update was satisfied by ordinary full regeneration: the whole corpus was re-extracted and no persisted semantic state was reused.'
+
 export class UnsupportedGenerationModeError extends Error {
   readonly code = 'UNSUPPORTED_GENERATION_MODE' as const
   readonly mode: string
@@ -194,7 +200,6 @@ export class IndexingCompletenessError extends Error {
   }
 }
 
-type IncrementalDetectResult = ReturnType<typeof detectIncremental>
 
 function detectOptions(options: GenerateGraphOptions, gitVisibleFiles: string[] | null): { followSymlinks?: boolean; includedFiles?: ReadonlySet<string> } {
   const includedFiles = gitVisibleFiles ? new Set(gitVisibleFiles.map((filePath) => resolve(filePath))) : undefined
@@ -288,17 +293,13 @@ function mergeExtractions(extractions: ExtractionData[]): ExtractionData {
   }, emptyExtraction())
 }
 
-function sourceFileKey(sourceFile: unknown): string | null {
-  return typeof sourceFile === 'string' && sourceFile.length > 0 ? resolve(sourceFile) : null
-}
 
 
 
 
 
-function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectResult): detection is IncrementalDetectResult {
-  return 'new_total' in detection && 'new_files' in detection && 'deleted_files' in detection
-}
+
+
 
 
 
@@ -429,10 +430,14 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       'run `madar generate` for a full regeneration',
     )
   }
-  // --update keeps its meaning under a fresh-only contract: the caller wants a
-  // current graph. It is routed to the one supported full-generation path
-  // rather than refused.
-  if (options.update === true) {
+  /*
+   * --update is a compatibility alias for ordinary full regeneration. The
+   * caller wants a current graph, which is exactly what full generation
+   * produces, so it is satisfied rather than refused -- but it must say so, and
+   * it must not claim incremental reuse it did not perform.
+   */
+  const updateRequested = options.update === true
+  if (updateRequested) {
     options = { ...options, update: false }
   }
 
@@ -559,18 +564,15 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
       extraction_strategy: 'not_extracted',
     })))
     detected.files[FileType.DOCUMENT] = []
-    if (isIncrementalDetectResult(detected)) {
-      detected.new_files[FileType.DOCUMENT] = []
-      detected.unchanged_files[FileType.DOCUMENT] = []
-    }
   }
   const notes: string[] = []
-  const mode: GenerateGraphResult['mode'] = options.clusterOnly ? 'cluster-only' : options.update ? 'update' : 'generate'
+  // There is one supported outcome, so there is one mode to report.
+  const mode: GenerateGraphResult['mode'] = 'generate'
 
   notes.push(`Extraction mode: ${extractionMode}.`)
 
-  if (options.clusterOnly) {
-    notes.push('Re-clustered the existing graph without re-extracting source files.')
+  if (updateRequested) {
+    notes.push(UPDATE_SATISFIED_BY_FULL_REGENERATION_NOTE)
   }
 
   const nonCodeFiles = countNonCodeFiles(detected.files)
@@ -583,21 +585,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     )
   }
 
-  let changedFiles = 0
-  let deletedFiles = 0
-  if (isIncrementalDetectResult(detected)) {
-    changedFiles = detected.new_total
-    deletedFiles = detected.deleted_files.length
-
-    const changedNonCodeFiles = countNonCodeFiles(detected.new_files)
-    if (changedNonCodeFiles > 0) {
-      notes.push(`${changedNonCodeFiles} changed non-code file(s) were included during --update.`)
-    }
-
-    if (deletedFiles > 0) {
-      notes.push(`${deletedFiles} deleted file(s) were detected, so the graph was rebuilt from the current code corpus.`)
-    }
-  }
+  /*
+   * Full generation has no changed/deleted partition to report: every run
+   * extracts the whole current corpus. Reporting "N changed file(s)" here would
+   * be a changed-file-only extraction claim that never happened.
+   */
+  const changedFiles = 0
+  const deletedFiles = 0
 
   const codeFiles = detected.files[FileType.CODE]
   const extractableFiles = collectExtractableFiles(detected.files)

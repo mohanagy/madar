@@ -4,7 +4,12 @@ import { join } from 'node:path'
 
 import { expect } from 'vitest'
 
-import { generateGraph, type GenerateGraphOptions, type GenerateGraphResult } from '../../../src/infrastructure/generate.js'
+import {
+  generateGraph,
+  UPDATE_SATISFIED_BY_FULL_REGENERATION_NOTE,
+  type GenerateGraphOptions,
+  type GenerateGraphResult,
+} from '../../../src/infrastructure/generate.js'
 import { loadGraph } from '../../../src/runtime/serve.js'
 
 /**
@@ -73,7 +78,15 @@ export function runUpdateAsFreshScenario(scenario: UpdateAsFreshScenario): void 
     // ── shared invariants, asserted once ──────────────────────────────────────
     // `--update` is routed to the ordinary full-generation owner, so the public
     // mode is the truthful one and no continuation mode survives.
-    expect(result.mode).toBe('generate')
+    expect(result.mode, 'UPDATE_DID_NOT_REPORT_GENERATE').toBe('generate')
+    // It must also say so, rather than leave a caller to infer incremental reuse.
+    expect(result.notes.join('\n'), 'UPDATE_DID_NOT_STATE_FULL_REGENERATION')
+      .toContain(UPDATE_SATISFIED_BY_FULL_REGENERATION_NOTE)
+    // And it must make no incremental or changed-file-only claim.
+    for (const claim of [/incremental update re-extracted/i, /reused the existing graph/i,
+      /no changed files detected/i, /retained \d+ unchanged file/i]) {
+      expect(result.notes.join('\n'), `UPDATE_MADE_AN_INCREMENTAL_CLAIM: ${claim}`).not.toMatch(claim)
+    }
     expect(existsSync(join(dir, 'out/graph.madar.tmp'))).toBe(false)
 
     // The same final source, generated cleanly, must be semantically identical:
