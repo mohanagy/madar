@@ -396,3 +396,162 @@ export function capPublishedRecoveryByFinalAnswerability<T>(
   }
   return { ...plan, initial_state: nextInitial, final_state: nextFinal } as T
 }
+
+/**
+ * A published field that carries an answerability value.
+ *
+ * `bounded` separates a channel that states what the product IS answering from
+ * a diagnostic that describes policy. An integrity ceiling of
+ * `ready_with_caveat` beside a final answer of `insufficient` is correct and
+ * must survive; a recovery plan claiming `ready` beside it must not.
+ */
+export interface PublishedAnswerabilityChannel {
+  readonly path: string
+  readonly carrier: 'answerability' | 'recovery' | 'integrity_ceiling'
+  readonly bounded: boolean
+  readonly value: MadarAnswerabilityState | null
+}
+
+export interface PublishedAnswerabilityScan {
+  readonly channels: readonly PublishedAnswerabilityChannel[]
+  /**
+   * Answerability-shaped values at fields this contract does not recognise.
+   *
+   * Never empty-and-ignored: an unrecognised channel is the exact shape of
+   * every defect this boundary exists to stop, so it fails closed instead.
+   */
+  readonly unclassified: readonly string[]
+}
+
+function isRecoveryPlanShape(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return isMadarAnswerabilityState(record.initial_state) || isMadarAnswerabilityState(record.final_state)
+}
+
+function isAnswerabilityAssessmentShape(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && isMadarAnswerabilityState((value as Record<string, unknown>).state)
+}
+
+/**
+ * Walks a finished response and reports every answerability-bearing field.
+ *
+ * Schema-aware rather than textual: it recognises the declared carriers by key
+ * and shape, and it deliberately does NOT treat every `state` property as an
+ * answerability -- a retrieval plan status and a recovery status are both
+ * `state`-ish and neither is an answer. What it does treat as significant is a
+ * value drawn from the readiness union, because those four strings appear
+ * nowhere else in these payloads. One reached at a field this contract has not
+ * declared is reported rather than skipped.
+ */
+export function scanPublishedAnswerability(response: unknown): PublishedAnswerabilityScan {
+  const channels: PublishedAnswerabilityChannel[] = []
+  const unclassified: string[] = []
+
+  const visit = (value: unknown, path: string, key: string | null, parentKey: string | null): void => {
+    if (Array.isArray(value)) {
+      value.forEach((entry, index) => visit(entry, `${path}[${index}]`, key, parentKey))
+      return
+    }
+    if (value !== null && typeof value === 'object') {
+      const record = value as Record<string, unknown>
+
+      if (key === 'answerability' && isAnswerabilityAssessmentShape(record)) {
+        channels.push({
+          path: `${path}.state`,
+          carrier: 'answerability',
+          bounded: true,
+          value: record.state as MadarAnswerabilityState,
+        })
+        for (const [childKey, child] of Object.entries(record)) {
+          if (childKey === 'state') continue
+          visit(child, `${path}.${childKey}`, childKey, key)
+        }
+        return
+      }
+
+      if (key === 'recovery' && isRecoveryPlanShape(record)) {
+        for (const stateKey of ['initial_state', 'final_state'] as const) {
+          if (!isMadarAnswerabilityState(record[stateKey])) continue
+          channels.push({
+            path: `${path}.${stateKey}`,
+            carrier: 'recovery',
+            bounded: true,
+            value: record[stateKey] as MadarAnswerabilityState,
+          })
+        }
+        for (const [childKey, child] of Object.entries(record)) {
+          if (childKey === 'initial_state' || childKey === 'final_state') continue
+          visit(child, `${path}.${childKey}`, childKey, key)
+        }
+        return
+      }
+
+      for (const [childKey, child] of Object.entries(record)) {
+        visit(child, `${path}.${childKey}`, childKey, key)
+      }
+      return
+    }
+
+    if (!isMadarAnswerabilityState(value)) return
+
+    // A bare readiness value. Recognised carriers first, then fail closed.
+    if (key === 'answerability') {
+      channels.push({ path, carrier: 'answerability', bounded: true, value })
+      return
+    }
+    if (key === 'max_answerability' && parentKey === 'graph_integrity') {
+      // The integrity ceiling. It describes what integrity permits, not what
+      // the product is answering, so it is classified and left alone.
+      channels.push({ path, carrier: 'integrity_ceiling', bounded: false, value })
+      return
+    }
+    unclassified.push(path)
+  }
+
+  visit(response, '', null, null)
+  return { channels, unclassified }
+}
+
+/**
+ * Bounds every published answerability channel by the canonical final answer.
+ *
+ * The last thing a response passes through before serialization. Three separate
+ * channels in this product were found to bypass a per-seam cap, one at a time,
+ * so the boundary is placed once at the finished object rather than at each
+ * field somebody remembered.
+ *
+ * Only readiness values move. Selection, ranking, retrieval plans, recovery
+ * execution metadata, budgets, snippets, claims and non-answerability
+ * diagnostics are structurally untouched, and an absent channel stays absent.
+ *
+ * Idempotent: a second application finds every channel already at or below the
+ * bound and rewrites nothing.
+ */
+export function finalizePublishedAnswerability<T>(response: T, finalTopLevel: MadarAnswerabilityState): T {
+  const rewrite = (value: unknown, key: string | null): unknown => {
+    if (Array.isArray(value)) return value.map((entry) => rewrite(entry, key))
+    if (value !== null && typeof value === 'object') {
+      const record = value as Record<string, unknown>
+      const next: Record<string, unknown> = {}
+      const isAnswerability = key === 'answerability' && isAnswerabilityAssessmentShape(record)
+      const isRecovery = key === 'recovery' && isRecoveryPlanShape(record)
+      for (const [childKey, child] of Object.entries(record)) {
+        if (isAnswerability && childKey === 'state' && isMadarAnswerabilityState(child)) {
+          next[childKey] = minByReadinessRank(child, finalTopLevel)
+        } else if (isRecovery && (childKey === 'initial_state' || childKey === 'final_state') && isMadarAnswerabilityState(child)) {
+          next[childKey] = minByReadinessRank(child, finalTopLevel)
+        } else {
+          next[childKey] = rewrite(child, childKey)
+        }
+      }
+      return next
+    }
+    if (key === 'answerability' && isMadarAnswerabilityState(value)) {
+      return minByReadinessRank(value, finalTopLevel)
+    }
+    return value
+  }
+  return rewrite(response, null) as T
+}

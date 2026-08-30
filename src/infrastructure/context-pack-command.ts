@@ -28,7 +28,10 @@ import { buildTaskContextPlan } from '../runtime/task-context-planner.js'
 import { resolveTaskSelection } from '../runtime/task-intent.js'
 import { compactRetrieveResult, retrieveContext, type RetrieveResult } from '../runtime/retrieve.js'
 import { buildImplementationPackGuidance } from '../runtime/implementation-pack.js'
-import { capPublishedRecoveryByFinalAnswerability } from '../shared/graph-integrity-answerability.js'
+import {
+  capPublishedRecoveryByFinalAnswerability,
+  finalizePublishedAnswerability,
+} from '../shared/graph-integrity-answerability.js'
 import {
   assessMadarResponseEvidence,
   collectWorkflowOwners,
@@ -2811,7 +2814,10 @@ function buildPackSchemaV1<TPack extends PackPayload>(
       }
     : response.pack
 
-  return {
+  // The CLI response passes the same publication boundary the MCP surfaces use,
+  // so a channel added to this payload later cannot publish a readier state
+  // than the answer just computed for it.
+  return finalizePublishedAnswerability({
     schema_version: 1,
     ...serializableResponse,
     evidence,
@@ -2836,7 +2842,7 @@ function buildPackSchemaV1<TPack extends PackPayload>(
       response.implementation,
       evidence.confidence_reasons,
     ),
-  }
+  }, evidence.answerability.state)
 }
 
 function renderTextSection(title: string, lines: string[]): string[] {

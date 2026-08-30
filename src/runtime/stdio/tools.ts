@@ -52,7 +52,10 @@ import { collectPackNodeIds, computeDeltaContextPack } from '../context-pack-del
 import { buildContextPackGovernanceReceipt } from '../context-pack-governance.js'
 import { applyContextPackResolution, type ContextPackResolution } from '../context-pack-resolution.js'
 import { buildImplementationPackGuidance } from '../implementation-pack.js'
-import { capPublishedRecoveryByFinalAnswerability } from '../../shared/graph-integrity-answerability.js'
+import {
+  capPublishedRecoveryByFinalAnswerability,
+  finalizePublishedAnswerability,
+} from '../../shared/graph-integrity-answerability.js'
 import {
   buildMadarResponseEvidence,
   collectWorkflowOwners,
@@ -1581,10 +1584,17 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
               ...compactPayload,
               ...contextMetadata(compactPayload),
             }
-        return helpers.ok(id, helpers.textToolResult(JSON.stringify({
-          ...payload,
-          evidence: evidenceForRetrievePayload(payload, graphPath),
-        })))
+        const retrieveEvidence = evidenceForRetrievePayload(payload, graphPath)
+        // The whole response passes the publication boundary once, rather than
+        // each remembered field being capped on its own. `payload` carries its
+        // own serialisation of the recovery plan, and capping only `evidence`
+        // published a readier state beside the answer.
+        return helpers.ok(id, helpers.textToolResult(JSON.stringify(
+          finalizePublishedAnswerability(
+            { ...payload, evidence: retrieveEvidence },
+            retrieveEvidence.answerability.state,
+          ),
+        )))
       }).catch((error: unknown) => {
         // A rejected retrieve (e.g. missing optional semantic dependency) must
         // surface as an MCP tool error the agent can read and react to —
@@ -2063,7 +2073,14 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const unconstrainedResponsePayload = task === 'explain' && !includeSelectionDiagnostics
         ? buildAnswerReadyPackSchema(basePayload, resolvedBudget, fullPack.selection_diagnostics)
         : basePayload
-      const responsePayload = constrainStrictContextPackPayload(unconstrainedResponsePayload, helpers)
+      // The last thing the context_pack response passes through. Placed after
+      // the answer-ready schema builder and the strict constrainer, both of
+      // which rewrite the payload, so a channel either of them reintroduces is
+      // still bounded.
+      const responsePayload = finalizePublishedAnswerability(
+        constrainStrictContextPackPayload(unconstrainedResponsePayload, helpers),
+        evidence.answerability.state,
+      )
       storeFinalContextPackHandles(
         prompt,
         task,
