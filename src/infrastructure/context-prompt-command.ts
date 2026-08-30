@@ -1,6 +1,8 @@
 import type { PromptCliOptions, PromptCliProvider } from '../cli/parser.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
-import { buildMadarPromptPack, type ComparePromptPack } from './compare.js'
+// #660-A: the normal `madar prompt` path imports the neutral prompt-pack
+// owner, not the grader module.
+import { buildMadarPromptPack, type ComparePromptPack } from './prompt-pack.js'
 import {
   analyzeGraphContextFreshness,
   requireFreshGraph,

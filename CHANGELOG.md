@@ -4,6 +4,11 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Qualification grader truth is now structurally unreachable from normal product construction**: `buildMadarPromptPack` moved out of the benchmark comparison module into a neutral `prompt-pack` owner, so the normal `madar prompt` CLI path and the MCP `context_prompt` tool no longer carry the runtime-proof loader in their TypeScript module graph. A protected guard rebuilds the runtime module graph from the compiler's own resolution and works outward from the grader module, permitting exactly three narrow exemption shapes and no file-wide one: a dedicated grader module as a whole module, a mixed CLI-router edge pinned to its specifier, destination and imported bindings, and a computed import pinned to a single call site by enclosing declaration and expression. Normal product roots can never be allowlisted, and a surplus allowance fails like a missing one. Because one binary legitimately hosts `compare`, `benchmark` and `eval`, the CLI process is not claimed to be free of grader code; instead a behavioural control replaces grader truth with a poison the loader is required to observe and requires `madar prompt` and MCP `context_prompt` output to stay byte-identical. Prompt-pack output is byte-identical to the previous release across the normal, MCP, compare, optional-field, and narrow-budget shapes. This closes the enforcement gap that `docs/qualification/evidence-categories.md` recorded as open in E3. It does not remove qualification-repository knowledge from retrieval or claim generation, which remains open. Addresses #660.
+
+
 ## [0.32.1] - 2026-08-11
 
 ### Fixed

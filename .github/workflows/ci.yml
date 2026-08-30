@@ -62,6 +62,16 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # #660-A. Runs on every lane on purpose: grader/runtime separation is a
+      # structural property of the module graph, and a boundary that only holds
+      # on one platform is not a boundary. The self-test injects a real grader
+      # dependency into real production files, requires the exact rejection
+      # reason, then restores the bytes and proves they went back -- so the
+      # check is falsifiable rather than merely green. Pure local file I/O,
+      # no network and no spend.
+      - name: Verify grader/runtime structural boundary
+        run: npm run verify:grader-boundary-controls
+
       # The old-reader proof extracts the released v0.32.1 loader from the
       # in-repository tag. The default shallow checkout carries no tags, so the
       # proof cannot run without this. One pinned ref is fetched, not full
@@ -104,6 +114,16 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # #660-A, behavioural half. The static guard proves normal product
+      # CONSTRUCTION modules cannot reach the grader, but one CLI binary
+      # legitimately hosts compare/benchmark/eval, so "does a normal command
+      # read grader truth?" is answered by running it: grader truth is replaced
+      # by a poison the loader is required to observe, `madar prompt` and the
+      # MCP context_prompt tool are run for real, and their output must be
+      # byte-identical. Needs dist/, so it runs after Build.
+      - name: Verify normal commands read no grader truth
+        run: npm run verify:grader-boundary-runtime
 
       - name: Verify checkout and packed retrieval parity
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
