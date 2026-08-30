@@ -115,6 +115,16 @@ jobs:
       - name: Build
         run: npm run build
 
+      # #660-A, behavioural half. The static guard proves normal product
+      # CONSTRUCTION modules cannot reach the grader, but one CLI binary
+      # legitimately hosts compare/benchmark/eval, so "does a normal command
+      # read grader truth?" is answered by running it: grader truth is replaced
+      # by a poison the loader is required to observe, `madar prompt` and the
+      # MCP context_prompt tool are run for real, and their output must be
+      # byte-identical. Needs dist/, so it runs after Build.
+      - name: Verify normal commands read no grader truth
+        run: npm run verify:grader-boundary-runtime
+
       - name: Verify checkout and packed retrieval parity
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
         run: npm run verify:pack-parity

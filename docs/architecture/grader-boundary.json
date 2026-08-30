@@ -1,8 +1,8 @@
 {
-  "version": 1,
+  "version": 2,
   "issue": 660,
   "slice": "A",
-  "summary": "Structural separation between normal Madar product paths and qualification grader truth. Enforced by scripts/lib/grader-boundary.mjs using the TypeScript compiler's own module resolution, seeded from whichever src/** module names the grader data file.",
+  "summary": "Structural separation between normal Madar product paths and qualification grader truth. Enforced by scripts/lib/grader-boundary.mjs using the TypeScript compiler's own module resolution, seeded from whichever src/** module names the grader data file. Exemptions come in exactly three narrow shapes: a whole dedicated grader module, one exact edge of a mixed command router, or one exact computed-import call site. There is no file-wide exemption of any kind.",
   "grader_data_files": [
     "docs/benchmarks/suite/runtime-proof.json"
   ],
@@ -16,7 +16,7 @@
     "src/infrastructure/context-pack-command.ts",
     "src/infrastructure/prompt-pack.ts"
   ],
-  "normal_product_roots_rationale": "These are the modules that construct normal product retrieval, context packs and prompts. A violation inside any of them is never resolvable by adding an allowlist entry \u2014 the guard refuses such an entry outright \u2014 so the only fix is to cut the dependency. This is the anti-drift half of the boundary.",
+  "normal_product_roots_rationale": "These are the modules that construct normal product retrieval, context packs and prompts. A violation inside any of them is never resolvable by adding an allowlist entry — the guard refuses such an entry outright — so the only fix is to cut the dependency. This is the anti-drift half of the boundary.",
   "allowed_grader_ancestors": [
     {
       "path": "src/infrastructure/compare.ts",
@@ -47,27 +47,94 @@
       "path": "src/infrastructure/benchmark.ts",
       "role": "benchmark harness facade",
       "justification": "Aggregating entry point that re-exports the benchmark harness surface. It carries no grader logic of its own but necessarily depends on modules that do."
+    }
+  ],
+  "mixed_routers": [
+    "src/cli/main.ts",
+    "src/cli/bin.ts"
+  ],
+  "mixed_routers_rationale": "One CLI binary hosts both ordinary product commands (prompt, context-pack, explain, query, generate) and the compare, benchmark and eval grader commands, so the dispatcher legitimately reaches grader code. Trusting these files as whole modules would re-open the boundary they exist inside, so they are approved edge by edge instead: every grader-reaching edge must match an entry below by kind, specifier, resolved destination and imported bindings. An edge straight into the grader loader is refused no matter how it is justified.",
+  "allowed_mixed_router_edges": [
+    {
+      "from": "src/cli/main.ts",
+      "kind": "import",
+      "specifier": "../infrastructure/benchmark.js",
+      "resolved": "src/infrastructure/benchmark.ts",
+      "imported_bindings": [
+        "loadBenchmarkQuestions",
+        "printBenchmark",
+        "runBenchmark"
+      ],
+      "role": "benchmark command dispatch",
+      "justification": "Routes `madar benchmark` to the benchmark harness facade. The dispatcher passes CLI options in and prints the harness result; no grader truth crosses back into prompt or context construction."
     },
     {
-      "path": "src/cli/main.ts",
-      "role": "command dispatcher hosting the grader commands",
-      "justification": "The CLI dispatcher hosts madar compare, madar benchmark and madar eval, which ARE the grader entry points, so it must be able to load them. It dispatches commands and constructs no product prompt or context itself; every module that does is a normal_product_root and is denied."
+      "from": "src/cli/main.ts",
+      "kind": "import",
+      "specifier": "../infrastructure/benchmark/quality.js",
+      "resolved": "src/infrastructure/benchmark/quality.ts",
+      "imported_bindings": [
+        "evaluateRetrievalQuality",
+        "formatQualityReport"
+      ],
+      "role": "eval command dispatch",
+      "justification": "Routes `madar eval` to retrieval-quality scoring and its report formatter. Both operate on an already-produced retrieval result and return a formatted receipt."
     },
     {
-      "path": "src/cli/bin.ts",
-      "role": "command dispatcher entry",
-      "justification": "Process entry point whose only job is to load and invoke src/cli/main.ts. It inherits reachability from the dispatcher and contains no product construction logic."
+      "from": "src/cli/main.ts",
+      "kind": "import",
+      "specifier": "../infrastructure/benchmark/suite.js",
+      "resolved": "src/infrastructure/benchmark/suite.ts",
+      "imported_bindings": [
+        "runBenchmarkSuite"
+      ],
+      "role": "benchmark suite command dispatch",
+      "justification": "Routes `madar bench-suite` to the suite runner. The dispatcher hands it parsed CLI options and returns its text output unchanged."
+    },
+    {
+      "from": "src/cli/main.ts",
+      "kind": "import",
+      "specifier": "../infrastructure/compare.js",
+      "resolved": "src/infrastructure/compare.ts",
+      "imported_bindings": [
+        "BenchmarkReadinessError",
+        "NativeAgentInstallRequiredError",
+        "runCompareCommand"
+      ],
+      "role": "compare command dispatch and its two usage-error types",
+      "justification": "Routes `madar compare` to the grader command facade and converts its two declared readiness failures into CLI usage errors. Only the command entry point and those error classes are imported; the runtime-proof loader is never named here."
+    },
+    {
+      "from": "src/cli/bin.ts",
+      "kind": "import",
+      "specifier": "./main.js",
+      "resolved": "src/cli/main.ts",
+      "imported_bindings": [
+        "executeCli"
+      ],
+      "role": "process entry to the command dispatcher",
+      "justification": "The executable's only job is to invoke the dispatcher. It inherits reachability from main.ts and contains no command logic, no product construction and no grader reference of its own."
     }
   ],
   "allowed_computed_dynamic_imports": [
     {
       "path": "src/runtime/semantic.ts",
-      "role": "optional dependency loader",
-      "justification": "Loads the optional @huggingface/transformers package by package name, then falls back to a resolved file URL under the user's own project node_modules. Both specifiers resolve outside src/**, so neither can reach a grader module; they are computed only because the package may be absent and the fallback path is discovered at runtime."
+      "kind": "dynamic-import",
+      "enclosing_declaration": "importTransformersModule",
+      "expression": "OPTIONAL_TRANSFORMERS_PACKAGE",
+      "role": "optional external package loader",
+      "justification": "Loads the optional '@huggingface/transformers' package by its bare package name, which is a module-scope string constant in this file. It resolves into node_modules, never into src/**, so it cannot reach a grader module."
+    },
+    {
+      "path": "src/runtime/semantic.ts",
+      "kind": "dynamic-import",
+      "enclosing_declaration": "importProjectTransformers",
+      "expression": "pathToFileURL(entryPath).href",
+      "role": "project-local optional package loader",
+      "justification": "Fallback for the same optional package when it is installed in the user's own project rather than alongside Madar. entryPath is built from that project's package.json main entry, so it resolves inside the user's node_modules and never into this repository's src/**."
     }
   ],
-  "allowed_computed_dynamic_imports_rationale": "A computed specifier is invisible to the module graph, so `import(someVariable)` would otherwise be a silent way around this boundary. Every computed dynamic import that survives in src/** must be listed here with a justification, and an unlisted one fails the guard.",
-  "claim_boundary": "This guard proves that no normal product construction module can reach qualification grader truth through the TypeScript module graph, and that no src/** module outside the approved set names the grader data file directly. It does not prove full product generalization, and it is not the forbidden-knowledge scanner for qualification literals and task phrases \u2014 that boundary is owned by #660-B.",
+  "allowed_computed_dynamic_imports_rationale": "A computed specifier is invisible to the module graph, so `import(someVariable)` would otherwise be a silent way around this boundary. Allowances are matched per CALL SITE — path, kind, enclosing declaration and normalized expression — never per file, because one legitimate computed import must not license arbitrary later ones in the same file. Changing an approved expression breaks its fingerprint and fails until deliberately re-reviewed; a surplus allowance fails as an unreviewed standing permission. Line numbers are reported for convenience but are never the authority, since an unrelated edit can move them.",
   "sequencing": {
     "rationale": "The module graph proves normal product code cannot reach grader truth. This proves the remaining ordering property inside the grader: expected evidence is consulted only after the artifact being graded is fixed on disk, and the loaded profile flows only into grading.",
     "loader_function": "loadBenchmarkRuntimeProofProfiles",
@@ -78,5 +145,6 @@
       "assessNativeAgentPromptContract"
     ],
     "approved_profile_consumers_rationale": "matchBenchmarkRuntimeProofProfile selects the row profile; the other two grade an answer file or a finished report shell. None of them can reach prompt or context construction: every module that does is a normal_product_root and is denied by the module-graph rule above."
-  }
+  },
+  "claim_boundary": "This guard proves that no normal product construction module can reach qualification grader truth through the TypeScript module graph, that the shared CLI dispatcher carries only exactly approved edges to dedicated grader command facades, that every computed import is approved at one exact call site, and that no src/** module outside the approved set names the grader data file directly. It does not claim that the madar CLI process contains no grader module code at all — the same binary legitimately implements compare, benchmark and eval — and splitting those commands into a separate executable is outside #660-A. It does not prove full product generalization, and it is not the forbidden-knowledge scanner for qualification literals and task phrases, which is owned by #660-B."
 }

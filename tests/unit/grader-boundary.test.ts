@@ -10,14 +10,29 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-// @ts-expect-error -- plain ESM helper shared with the CLI wrapper
-import { analyzeGraderBoundary, analyzeGraderSequencing, GRADER_BOUNDARY_CONFIG_INVALID, GRADER_TRUTH_REACHABLE } from '../../scripts/lib/grader-boundary.mjs'
+import {
+  analyzeGraderBoundary,
+  analyzeGraderSequencing,
+  COMPUTED_DYNAMIC_IMPORT_NOT_EXACTLY_ALLOWED,
+  GRADER_BOUNDARY_CONFIG_INVALID,
+  GRADER_TRUTH_REACHABLE,
+  UNAPPROVED_MIXED_ROUTER_GRADER_EDGE,
+} from '../../scripts/lib/grader-boundary.mjs'
 
 const CONFIG_PATH = resolve('docs/architecture/grader-boundary.json')
 const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf8')) as {
   grader_data_files: string[]
   normal_product_roots: string[]
   allowed_grader_ancestors: Array<{ path: string; role: string; justification: string }>
+  mixed_routers: string[]
+  allowed_mixed_router_edges: Array<{
+    from: string; kind: string; specifier: string; resolved: string
+    imported_bindings: string[]; role: string; justification: string
+  }>
+  allowed_computed_dynamic_imports: Array<{
+    path: string; kind: string; enclosing_declaration: string; expression: string
+    role: string; justification: string
+  }>
   sequencing: {
     loader_function: string
     artifact_fix_function: string
@@ -25,33 +40,14 @@ const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf8')) as {
   }
 }
 
-function sequencing(overrides: Record<string, unknown> = {}): {
-  ok: boolean
-  problems: string[]
-  sites: Array<{
-    file: string
-    line: number
-    wrappers: Array<string | null>
-    artifactFixesBefore: number[]
-    profileConsumers: Array<{ line: number; consumer: string | null }>
-  }>
-} {
+function sequencing(overrides: Record<string, unknown> = {}) {
   return analyzeGraderSequencing({
     cache: false,
     config: { ...config, sequencing: { ...config.sequencing, ...overrides } },
   })
 }
 
-function analyze(overrides: Record<string, unknown> = {}): {
-  ok: boolean
-  reason: string | null
-  seeds: string[]
-  ancestors: string[]
-  unusedAllowances: string[]
-  configProblems: string[]
-  violations: Array<{ reason: string; file: string; rule: string; chain: string[] }>
-  dataReferences: Array<{ file: string; line: number; dataFile: string }>
-} {
+function analyze(overrides: Record<string, unknown> = {}) {
   return analyzeGraderBoundary({ config: { ...config, ...overrides } })
 }
 
@@ -145,6 +141,114 @@ describe('#660-A grader/runtime structural boundary', () => {
       .toBe(GRADER_BOUNDARY_CONFIG_INVALID)
   })
 
+  it('approves the mixed CLI routers edge by edge and never as whole modules', () => {
+    const result = analyze()
+    expect(result.mixedRouters).toEqual(['src/cli/bin.ts', 'src/cli/main.ts'])
+    // The routers reach the grader, but they are absent from the dedicated
+    // whole-module ancestor set: every one of their edges is approved singly.
+    for (const router of result.mixedRouters) {
+      expect(result.ancestors).toContain(router)
+      expect(result.dedicatedAncestors).not.toContain(router)
+    }
+    expect(result.routerEdges.length).toBe(config.allowed_mixed_router_edges.length)
+    for (const edge of result.routerEdges) expect(edge.approved).toBe(true)
+    expect(result.unusedRouterAllowances).toEqual([])
+  })
+
+  it('pins every router edge to its destination and imported bindings', () => {
+    const result = analyze()
+    for (const edge of result.routerEdges) {
+      const declared = config.allowed_mixed_router_edges.find((entry) => (
+        entry.from === edge.from && entry.kind === edge.kind && entry.specifier === edge.specifier
+      ))
+      expect(declared, `${edge.from} -> ${edge.specifier}`).toBeDefined()
+      expect(declared!.resolved).toBe(edge.resolved)
+      expect([...declared!.imported_bindings].sort()).toEqual([...edge.imported_bindings].sort())
+    }
+  })
+
+  it('approves every computed import at one exact call site, never file-wide', () => {
+    const result = analyze()
+    expect(result.computedSpecifiers.length).toBe(config.allowed_computed_dynamic_imports.length)
+    expect(result.unusedComputedAllowances).toEqual([])
+    for (const site of result.computedSpecifiers) {
+      const declared = config.allowed_computed_dynamic_imports.find((entry) => (
+        entry.path === site.path
+        && entry.kind === site.kind
+        && entry.enclosing_declaration === site.enclosing_declaration
+        && entry.expression === site.expression
+      ))
+      expect(declared, `${site.path}:${site.line} ${site.enclosing_declaration}`).toBeDefined()
+    }
+  })
+
+  it('refuses a surplus computed allowance that matches no call site', () => {
+    const result = analyze({
+      allowed_computed_dynamic_imports: [
+        ...config.allowed_computed_dynamic_imports,
+        {
+          path: 'src/runtime/semantic.ts',
+          kind: 'dynamic-import',
+          enclosing_declaration: 'noSuchFunction',
+          expression: 'noSuchExpression',
+          role: 'surplus',
+          justification: 'a standing permission for an import that exists nowhere in the tree',
+        },
+      ],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe(COMPUTED_DYNAMIC_IMPORT_NOT_EXACTLY_ALLOWED)
+    expect(result.violations.map((violation) => violation.rule)).toContain('computed_allowance_unused')
+  })
+
+  it('refuses a surplus router allowance that matches no edge', () => {
+    const result = analyze({
+      allowed_mixed_router_edges: [
+        ...config.allowed_mixed_router_edges,
+        {
+          from: 'src/cli/main.ts',
+          kind: 'import',
+          specifier: '../infrastructure/not-a-real-module.js',
+          resolved: 'src/infrastructure/compare.ts',
+          imported_bindings: [],
+          role: 'surplus',
+          justification: 'a standing permission for an edge that exists nowhere in the tree',
+        },
+      ],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.violations.map((violation) => violation.rule)).toContain('router_allowance_unused')
+  })
+
+  it('refuses every router edge when the router allowances are removed', () => {
+    const result = analyze({ allowed_mixed_router_edges: [] })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe(UNAPPROVED_MIXED_ROUTER_GRADER_EDGE)
+    expect(result.violations.filter((violation) => violation.rule === 'router_edge_not_approved').length)
+      .toBe(config.allowed_mixed_router_edges.length)
+  })
+
+  it('refuses a whole-module allowance for a mixed router', () => {
+    const result = analyze({
+      allowed_grader_ancestors: [
+        ...config.allowed_grader_ancestors,
+        { path: 'src/cli/main.ts', role: 'grader', justification: 'an attempt to trust the router as a whole module again' },
+      ],
+    })
+    expect(result.reason).toBe(GRADER_BOUNDARY_CONFIG_INVALID)
+    expect(result.configProblems.join('\n')).toContain('must be approved edge by edge')
+  })
+
+  it('refuses a computed allowance that omits its call-site identity', () => {
+    for (const entry of [
+      { path: 'src/runtime/semantic.ts', kind: 'dynamic-import', expression: 'X', role: 'r', justification: 'long enough justification text here' },
+      { path: 'src/runtime/semantic.ts', kind: 'dynamic-import', enclosing_declaration: 'f', role: 'r', justification: 'long enough justification text here' },
+    ]) {
+      const result = analyze({ allowed_computed_dynamic_imports: [entry] })
+      expect(result.reason, JSON.stringify(entry)).toBe(GRADER_BOUNDARY_CONFIG_INVALID)
+    }
+  })
+
   it('fails with the exact reason when the allowlist is emptied', () => {
     // Emptying the allowlist leaves the genuine grader ancestors unapproved,
     // which must surface as the reachability failure rather than as silence.
@@ -164,23 +268,30 @@ describe('#660-A grader/runtime structural boundary', () => {
     }
   })
 
-  it('refuses an unjustified computed dynamic specifier in production code', () => {
+  it('refuses every computed dynamic specifier when the call-site allowances are removed', () => {
     // A computed specifier is invisible to the module graph, so an unlisted one
     // would be a silent way around the whole boundary.
     const result = analyze({ allowed_computed_dynamic_imports: [] })
     expect(result.ok).toBe(false)
-    expect(result.violations.map((violation) => violation.rule)).toContain('computed_specifier_unverifiable')
-    for (const violation of result.violations.filter((entry) => entry.rule === 'computed_specifier_unverifiable')) {
-      expect(violation.reason).toBe(GRADER_TRUTH_REACHABLE)
-    }
+    expect(result.reason).toBe(COMPUTED_DYNAMIC_IMPORT_NOT_EXACTLY_ALLOWED)
+    const refused = result.violations.filter((entry) => entry.rule === 'computed_specifier_not_exactly_allowed')
+    expect(refused.length).toBe(config.allowed_computed_dynamic_imports.length)
+    for (const violation of refused) expect(violation.reason).toBe(COMPUTED_DYNAMIC_IMPORT_NOT_EXACTLY_ALLOWED)
   })
 
   it('rejects a computed-import allowance with a stub justification', () => {
     const result = analyze({
-      allowed_computed_dynamic_imports: [{ path: 'src/runtime/semantic.ts', role: 'x', justification: 'because' }],
+      allowed_computed_dynamic_imports: [{
+        path: 'src/runtime/semantic.ts',
+        kind: 'dynamic-import',
+        enclosing_declaration: 'importTransformersModule',
+        expression: 'OPTIONAL_TRANSFORMERS_PACKAGE',
+        role: 'x',
+        justification: 'because',
+      }],
     })
-    expect(result.ok).toBe(false)
-    expect(result.violations.map((violation) => violation.rule)).toContain('computed_specifier_unverifiable')
+    expect(result.reason).toBe(GRADER_BOUNDARY_CONFIG_INVALID)
+    expect(result.configProblems.join('\n')).toContain('substantive "justification"')
   })
 
   it('keeps every allowlist entry earning its place', () => {
