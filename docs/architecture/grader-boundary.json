@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "issue": 660,
+  "slice": "A",
+  "summary": "Structural separation between normal Madar product paths and qualification grader truth. Enforced by scripts/lib/grader-boundary.mjs using the TypeScript compiler's own module resolution, seeded from whichever src/** module names the grader data file.",
+  "grader_data_files": [
+    "docs/benchmarks/suite/runtime-proof.json"
+  ],
+  "normal_product_roots": [
+    "src/runtime/",
+    "src/pipeline/",
+    "src/contracts/",
+    "src/shared/",
+    "src/infrastructure/context-prompt.ts",
+    "src/infrastructure/context-prompt-command.ts",
+    "src/infrastructure/context-pack-command.ts",
+    "src/infrastructure/prompt-pack.ts"
+  ],
+  "normal_product_roots_rationale": "These are the modules that construct normal product retrieval, context packs and prompts. A violation inside any of them is never resolvable by adding an allowlist entry \u2014 the guard refuses such an entry outright \u2014 so the only fix is to cut the dependency. This is the anti-drift half of the boundary.",
+  "allowed_grader_ancestors": [
+    {
+      "path": "src/infrastructure/compare.ts",
+      "role": "grader",
+      "justification": "Owns the Madar-vs-native comparison grading itself: assessNativeAgentPromptContract, missingRuntimeProofCitations and the runtime-proof assessment merge. It is the module that is supposed to read grader truth."
+    },
+    {
+      "path": "src/infrastructure/benchmark/runtime-proof.ts",
+      "role": "grader",
+      "justification": "The grader truth loader and parser for docs/benchmarks/suite/runtime-proof.json. It is the seed of this analysis and is listed so the allowlist reads as the complete approved set."
+    },
+    {
+      "path": "src/infrastructure/benchmark/runner.ts",
+      "role": "benchmark harness",
+      "justification": "Executes benchmark rows and expands compare exec templates. It drives the graded arms, so reaching the grader is its purpose rather than an accident."
+    },
+    {
+      "path": "src/infrastructure/benchmark/suite.ts",
+      "role": "benchmark harness",
+      "justification": "Runs the benchmark suite matrix and native-agent compare cells. Grader reachability is inherent to running a graded suite."
+    },
+    {
+      "path": "src/infrastructure/benchmark/quality.ts",
+      "role": "benchmark receipt and reporting",
+      "justification": "Computes and formats retrieval-quality receipts from benchmark runner output. It reports on graded results and never feeds the Madar input arm."
+    },
+    {
+      "path": "src/infrastructure/benchmark.ts",
+      "role": "benchmark harness facade",
+      "justification": "Aggregating entry point that re-exports the benchmark harness surface. It carries no grader logic of its own but necessarily depends on modules that do."
+    },
+    {
+      "path": "src/cli/main.ts",
+      "role": "command dispatcher hosting the grader commands",
+      "justification": "The CLI dispatcher hosts madar compare, madar benchmark and madar eval, which ARE the grader entry points, so it must be able to load them. It dispatches commands and constructs no product prompt or context itself; every module that does is a normal_product_root and is denied."
+    },
+    {
+      "path": "src/cli/bin.ts",
+      "role": "command dispatcher entry",
+      "justification": "Process entry point whose only job is to load and invoke src/cli/main.ts. It inherits reachability from the dispatcher and contains no product construction logic."
+    }
+  ],
+  "claim_boundary": "This guard proves that no normal product construction module can reach qualification grader truth through the TypeScript module graph, and that no src/** module outside the approved set names the grader data file directly. It does not prove full product generalization, and it is not the forbidden-knowledge scanner for qualification literals and task phrases \u2014 that boundary is owned by #660-B.",
+  "sequencing": {
+    "rationale": "The module graph proves normal product code cannot reach grader truth. This proves the remaining ordering property inside the grader: expected evidence is consulted only after the artifact being graded is fixed on disk, and the loaded profile flows only into grading.",
+    "loader_function": "loadBenchmarkRuntimeProofProfiles",
+    "artifact_fix_function": "ensureCompareAnswerFile",
+    "approved_profile_consumers": [
+      "matchBenchmarkRuntimeProofProfile",
+      "evaluateNativeAgentAnswerQualityReport",
+      "assessNativeAgentPromptContract"
+    ],
+    "approved_profile_consumers_rationale": "matchBenchmarkRuntimeProofProfile selects the row profile; the other two grade an answer file or a finished report shell. None of them can reach prompt or context construction: every module that does is a normal_product_root and is denied by the module-graph rule above."
+  }
+}

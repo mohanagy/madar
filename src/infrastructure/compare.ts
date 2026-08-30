@@ -5,9 +5,13 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 
 import type { ContextPackExecutionPhase, ContextPackRoutingDebug, ContextPackTaskKind, ImplementationPackGuidance } from '../contracts/context-pack.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
-import type { ContextSessionDiagnostics, ContextSessionState } from '../contracts/context-session.js'
+import type { ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
-import { buildAnswerReadyPackSchema, buildExplainPackPayloadCore } from './context-pack-command.js'
+// #660-A: prompt-pack construction is owned by a neutral module so normal
+// product paths do not carry this grader module in their dependency graph.
+// The dependency runs one way only: compare.ts may consume the builder, the
+// builder may never consume compare.ts or any benchmark/grader module.
+import { buildMadarPromptPack, type BuildMadarPromptPackInput, type ComparePromptPack } from './prompt-pack.js'
 import { CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH, isMadarProjectHook } from './install.js'
 import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
@@ -59,18 +63,8 @@ export interface ComparePromptProviderProof {
   reduction_basis: 'provider_reported' | 'mixed' | 'estimated'
 }
 
-export interface ComparePromptPack {
-  kind: 'baseline' | 'madar'
-  question: string
-  prompt: string
-  session_payload: string
-  token_count: number
-  session_payload_token_count: number
-  effective_token_count: number
-  reused_context_tokens: number
-  session_diagnostics: ContextSessionDiagnostics
-  session_state: ContextSessionState
-}
+export { buildMadarPromptPack }
+export type { BuildMadarPromptPackInput, ComparePromptPack }
 
 export interface BuildBaselinePromptPackInput {
   question: string
@@ -78,13 +72,6 @@ export interface BuildBaselinePromptPackInput {
   corpusText: string
   mode: CompareBaselineMode
   maxTokens?: number
-  session?: ContextSessionState
-}
-
-export interface BuildMadarPromptPackInput {
-  graphPath?: string
-  question: string
-  retrieval: RetrieveResult
   session?: ContextSessionState
 }
 
@@ -383,78 +370,6 @@ const PROMPT_FILE_COMMAND_SUBSTITUTION_PATTERNS = [
 function timestampDirectoryName(date: Date): string {
   const iso = date.toISOString()
   return iso.slice(0, 19).replace(/:/g, '-')
-}
-
-function promptWantsReportGenerationCore(prompt: string): boolean {
-  return /\b(?:report(?:\s+generation)?|generated\s+report|validation\s+report|final\s+report|assembly|assemble|synthesis|renderer|render|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate)\b/i.test(prompt)
-}
-
-function answerContractInstructions(retrieval: RetrieveResult): string[] {
-  const answerContract = retrieval.answer_contract
-  if (!answerContract) {
-    return []
-  }
-
-  const instructions = [
-    'Treat HTTP/controller entrypoints as trigger context, not the full answer.',
-  ]
-
-  const requiredElements = new Set(answerContract.required_elements)
-  const phaseLabels = [
-    ['planner_phase', 'planner'],
-    ['research_phase', 'research'],
-    ['assembly_phase', 'assembly'],
-    ['scoring_phase', 'scoring'],
-    ['report_builder_phase', 'rendering'],
-  ] as const satisfies ReadonlyArray<readonly [string, string]>
-  const selectedPhaseLabels: string[] = phaseLabels.flatMap(([key, label]) => requiredElements.has(key) ? [label] : [])
-  if (selectedPhaseLabels.length > 0 || requiredElements.has('persistence_or_artifact_storage')) {
-    const segments = [...selectedPhaseLabels]
-    if (requiredElements.has('persistence_or_artifact_storage')) {
-      segments.push('persistence')
-    }
-    instructions.push(`Follow ${segments.join(', ')} evidence before concluding the flow.`)
-  } else if (requiredElements.has('main_pipeline_phases')) {
-    instructions.push('Cover the main runtime pipeline phases instead of stopping at the entrypoint.')
-  }
-
-  if (requiredElements.has('queue_worker_handoff')) {
-    instructions.push('Describe queue-to-worker handoffs explicitly when the flow crosses an enqueues_job boundary.')
-  }
-
-  if (answerContract.do_not_claim.includes('direct_producer_to_worker_calls_without_enqueues_boundary')) {
-    instructions.push('Do not collapse producer-to-worker handoffs into direct calls when the evidence is an enqueues_job boundary.')
-  }
-
-  if (answerContract.do_not_claim.includes('full_runtime_certainty_when_slice_is_partial')) {
-    instructions.push('Mention missing or uncertain phases when the execution slice is partial.')
-  }
-
-  if (answerContract.do_not_claim.includes('irrelevant_model_or_provider_details')) {
-    instructions.push('Do not mention model or provider details unless they are directly relevant to the question.')
-  }
-
-  return instructions
-}
-
-function generationCoreInstructions(question: string, retrieval: RetrieveResult): string[] {
-  const contractInstructions = answerContractInstructions(retrieval)
-  if (contractInstructions.length > 0) {
-    return contractInstructions
-  }
-
-  if (
-    retrieval.retrieval_gate?.signals.generation_intent !== 'runtime_generation'
-    || retrieval.retrieval_gate?.signals.target_domain_hint !== 'backend_runtime'
-    || !promptWantsReportGenerationCore(question)
-  ) {
-    return []
-  }
-
-  return [
-    'Treat HTTP/controller entrypoints as trigger context, not the full answer, when downstream generation-core evidence is present.',
-    'Follow planner, research, assembly, scoring, rendering, and persistence evidence before concluding the flow.',
-  ]
 }
 
 function summarizeExecTemplate(execTemplate: string): CompareExecCommandSummary {
@@ -2726,48 +2641,6 @@ export function buildBaselinePromptPack(input: BuildBaselinePromptPackInput): Co
 
   return {
     kind: 'baseline',
-    question: input.question,
-    prompt: builtPrompt.prompt,
-    session_payload: builtPrompt.session_payload,
-    token_count: builtPrompt.metrics.raw_prompt_tokens,
-    session_payload_token_count: builtPrompt.metrics.session_payload_tokens,
-    effective_token_count: builtPrompt.metrics.effective_prompt_tokens,
-    reused_context_tokens: builtPrompt.metrics.reused_context_tokens,
-    session_diagnostics: builtPrompt.session_diagnostics,
-    session_state: builtPrompt.session_state,
-  }
-}
-
-export function buildMadarPromptPack(input: BuildMadarPromptPackInput): ComparePromptPack {
-  const explainPayloadCore = buildAnswerReadyPackSchema(
-    buildExplainPackPayloadCore(compactRetrieveResult(input.retrieval), input.retrieval),
-    input.retrieval.task_contract?.budget ?? 3000,
-  )
-  delete explainPayloadCore.serialized_budget
-  const explainPayload = JSON.stringify(explainPayloadCore, null, 2)
-  const builtPrompt = buildContextPrompt({
-    instructions: [
-      'Answer the question using only the provided graph-guided retrieval output.',
-      'If the retrieval does not contain the answer, say so.',
-      ...generationCoreInstructions(input.question, input.retrieval),
-    ],
-    stable_prefix_title: 'Retrieved graph context',
-    stable_sections: [
-      {
-        ref: 'explain_pack_payload',
-        sort_key: '10-explain-pack-payload',
-        body: explainPayload,
-      },
-    ],
-    dynamic_sections: [
-      { title: 'Question', body: input.question },
-      { body: 'Answer:' },
-    ],
-    ...(input.session ? { session: input.session } : {}),
-  })
-
-  return {
-    kind: 'madar',
     question: input.question,
     prompt: builtPrompt.prompt,
     session_payload: builtPrompt.session_payload,

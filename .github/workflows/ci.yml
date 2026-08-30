@@ -62,6 +62,16 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # #660-A. Runs on every lane on purpose: grader/runtime separation is a
+      # structural property of the module graph, and a boundary that only holds
+      # on one platform is not a boundary. The self-test injects a real grader
+      # dependency into real production files, requires the exact rejection
+      # reason, then restores the bytes and proves they went back -- so the
+      # check is falsifiable rather than merely green. Pure local file I/O,
+      # no network and no spend.
+      - name: Verify grader/runtime structural boundary
+        run: npm run verify:grader-boundary-controls
+
       # The old-reader proof extracts the released v0.32.1 loader from the
       # in-repository tag. The default shallow checkout carries no tags, so the
       # proof cannot run without this. One pinned ref is fetched, not full

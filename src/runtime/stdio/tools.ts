@@ -1,6 +1,8 @@
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
-import { buildMadarPromptPack } from '../../infrastructure/compare.js'
+// #660-A: the MCP prompt path imports the neutral prompt-pack owner, not the
+// grader module, so no benchmark truth is reachable from normal product code.
+import { buildMadarPromptPack } from '../../infrastructure/prompt-pack.js'
 import { buildAnswerReadyPackSchema, buildExplainPackPayloadCore } from '../../infrastructure/context-pack-command.js'
 import type { TaskContextPlan } from '../../contracts/task-context-plan.js'
 import type { CompareRefsInput } from '../../infrastructure/time-travel.js'
