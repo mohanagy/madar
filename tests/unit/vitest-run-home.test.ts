@@ -75,32 +75,55 @@ describe('699 controls 3 and 4 — a real run cleans up after success and after 
   })
 
   /**
-   * Runs a real bounded Vitest child against this repository's own config, so
-   * the assertion covers the configured global setup rather than a re-creation
-   * of it inside the parent process.
+   * Runs a real bounded Vitest child in its own project directory.
+   *
+   * The spec deliberately does NOT live under this repository's `tests/`. An
+   * earlier revision wrote it there and the parent run's own glob collected it,
+   * so the deliberately-failing child spec failed the parent suite as well. The
+   * child gets its own root and its own config instead, and that config points
+   * at this repository's real `tests/setup.ts` and `tests/global-setup.ts` by
+   * absolute path -- so the mechanism under test is the shipped one, not a
+   * re-creation of it.
    */
   function runChild(shouldPass: boolean): { rootsBefore: string[], rootsAfter: string[], exitCode: number, output: string } {
     const repoRoot = resolve(__dirname, '..', '..')
-    const scratch = mkdtempSync(join(tmpdir(), 'madar-699-child-'))
-    workspaces.push(scratch)
-    const specPath = join(repoRoot, 'tests', 'unit', `zz-699-child-${process.pid}-${shouldPass ? 'pass' : 'fail'}.test.ts`)
-    workspaces.push(specPath)
-    writeFileSync(specPath, [
+    const projectRoot = mkdtempSync(join(tmpdir(), 'madar-699-child-'))
+    workspaces.push(projectRoot)
+
+    const posix = (value: string): string => value.split('\\').join('/')
+    writeFileSync(join(projectRoot, 'sample.test.ts'), [
       "import { describe, expect, it } from 'vitest'",
       `describe('699 child', () => { it('${shouldPass ? 'passes' : 'fails'}', () => {`,
       `  expect(1).toBe(${shouldPass ? '1' : '2'})`,
       '}) })',
       '',
     ].join('\n'))
+    // A plain object export, not `defineConfig`: the config lives outside this
+    // repository, so it cannot resolve `vitest/config` from its own directory.
+    writeFileSync(join(projectRoot, 'vitest.config.mjs'), [
+      'export default {',
+      '  test: {',
+      `    root: '${posix(projectRoot)}',`,
+      "    environment: 'node',",
+      "    include: ['*.test.ts'],",
+      `    setupFiles: ['${posix(join(repoRoot, 'tests', 'setup.ts'))}'],`,
+      `    globalSetup: ['${posix(join(repoRoot, 'tests', 'global-setup.ts'))}'],`,
+      '  },',
+      '}',
+      '',
+    ].join('\n'))
 
     const listRoots = (): string[] =>
       readdirSync(tmpdir()).filter((entry) => entry.startsWith(RUN_ROOT_PREFIX)).sort()
 
+    // The installed binary, not `npx`: in CI `npx` resolution produced no
+    // output at all, which is indistinguishable from a run that cleaned up.
+    const vitestBin = join(repoRoot, 'node_modules', 'vitest', 'vitest.mjs')
     const rootsBefore = listRoots()
     let exitCode = 0
     let output = ''
     try {
-      output = execFileSync('npx', ['vitest', 'run', specPath], {
+      output = execFileSync(process.execPath, [vitestBin, 'run', '--config', join(projectRoot, 'vitest.config.mjs')], {
         cwd: repoRoot, stdio: 'pipe', encoding: 'utf8', timeout: 180_000,
       })
     } catch (error) {
@@ -115,7 +138,7 @@ describe('699 controls 3 and 4 — a real run cleans up after success and after 
     const { rootsBefore, rootsAfter, exitCode, output } = runChild(true)
     // Prove the child really executed the spec, so a Vitest that failed to
     // start cannot be mistaken for a run that cleaned up after itself.
-    expect(output, `child produced no run summary: ${output.slice(0, 400)}`).toMatch(/Test Files\s+1 passed/)
+    expect(output, `child produced no run summary: ${output.slice(0, 600)}`).toMatch(/Test Files\s+1 passed/)
     expect(exitCode).toBe(0)
     // Nothing new survives. Pre-existing roots from a concurrent run are not
     // this run's to remove, so only the difference is asserted.
@@ -126,7 +149,7 @@ describe('699 controls 3 and 4 — a real run cleans up after success and after 
     const { rootsBefore, rootsAfter, exitCode, output } = runChild(false)
     // The run must genuinely have executed and genuinely have failed, or this
     // proves nothing about teardown on the failing path.
-    expect(output, `child produced no run summary: ${output.slice(0, 400)}`).toMatch(/Test Files\s+1 failed/)
+    expect(output, `child produced no run summary: ${output.slice(0, 600)}`).toMatch(/Test Files\s+1 failed/)
     expect(exitCode).not.toBe(0)
     expect(rootsAfter.filter((entry) => !rootsBefore.includes(entry))).toEqual([])
   }, 200_000)
