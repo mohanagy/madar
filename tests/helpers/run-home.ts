@@ -25,6 +25,27 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path'
  * one root. Nothing outside it is ever a deletion target.
  */
 
+/**
+ * The one removal policy, shared by both call sites.
+ *
+ * `force` only ignores a path that does not exist -- it does nothing for a
+ * transient `EBUSY`, `EPERM` or `ENOTEMPTY`, and Node's retry mechanism is off
+ * by default (`maxRetries` is 0, and it is ignored entirely unless `recursive`
+ * is true). A worker that has just exited, an antivirus scanner, or a Windows
+ * handle still closing can all produce exactly those errors for a moment.
+ *
+ * So retries are bounded and explicit. What is deliberately NOT here is a
+ * `try`/`catch`: if removal still fails after the retries, the error propagates
+ * and the run fails. Swallowing it would let an owned run root survive while CI
+ * reported success, which is the leak this issue exists to stop, made invisible.
+ */
+const REMOVAL_OPTIONS = {
+  recursive: true,
+  force: true,
+  maxRetries: 3,
+  retryDelay: 100,
+} as const
+
 /** Env var carrying the run root from global setup to every worker. */
 export const RUN_ROOT_ENV = 'MADAR_VITEST_RUN_ROOT'
 
@@ -82,7 +103,7 @@ export function isInsideRoot(root: string, candidate: string): boolean {
 export function removeOwnedPath(runRoot: string, target: string): boolean {
   if (!isInsideRoot(runRoot, target)) return false
   if (!existsSync(target)) return false
-  rmSync(target, { recursive: true, force: true })
+  rmSync(target, REMOVAL_OPTIONS)
   return true
 }
 
@@ -99,7 +120,7 @@ export function removeRunRoot(runRoot: string): boolean {
   const base = resolved.split(sep).pop() ?? ''
   if (!base.startsWith(RUN_ROOT_PREFIX)) return false
   if (!existsSync(resolved)) return false
-  rmSync(resolved, { recursive: true, force: true })
+  rmSync(resolved, REMOVAL_OPTIONS)
   return true
 }
 

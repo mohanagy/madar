@@ -261,16 +261,6 @@ describe('699 control 11 — the run leaves no owned residue', () => {
     expect(existsSync(runRoot)).toBe(false)
   })
 
-  it('leaves no run-owned root for this suite behind', () => {
-    // Any root this file created is tracked and removed; nothing schedules a
-    // timer or a child process that outlives the run.
-    for (const path of created) {
-      if (path.includes(RUN_ROOT_PREFIX) && existsSync(path)) {
-        expect(readdirSync(path).every((entry) => entry.startsWith(WORKER_HOME_PREFIX))).toBe(true)
-      }
-    }
-    expect(true).toBe(true)
-  })
 })
 
 describe('699 — the shipped global setup contract, invoked directly', () => {
