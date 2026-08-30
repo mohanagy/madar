@@ -34,10 +34,10 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path'
  * is true). A worker that has just exited, an antivirus scanner, or a Windows
  * handle still closing can all produce exactly those errors for a moment.
  *
- * So retries are bounded and explicit. What is deliberately NOT here is a
- * `try`/`catch`: if removal still fails after the retries, the error propagates
- * and the run fails. Swallowing it would let an owned run root survive while CI
- * reported success, which is the leak this issue exists to stop, made invisible.
+ * So retries are bounded and explicit. If they are exhausted the error is left
+ * to the caller rather than suppressed -- `tests/global-setup.ts` is where a
+ * terminal failure is turned into a non-zero exit status, because Vitest logs a
+ * rejected global teardown and neither rethrows it nor fails the run.
  */
 const REMOVAL_OPTIONS = {
   recursive: true,

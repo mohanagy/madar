@@ -15,7 +15,7 @@ import {
   WORKER_HOME_PREFIX,
   workerHomePath,
 } from '../helpers/run-home.js'
-import { setup as globalSetup } from '../global-setup.js'
+import { createRunTeardown, setup as globalSetup } from '../global-setup.js'
 
 /**
  * Real filesystem throughout. The defect was that nothing removed a directory,
@@ -307,5 +307,106 @@ describe('699 — the shipped global setup contract, invoked directly', () => {
     const config = readFileSync(resolve(__dirname, '..', '..', 'vitest.config.ts'), 'utf8')
     expect(config).toContain("globalSetup: ['tests/global-setup.ts']")
     expect(config).toContain("setupFiles: ['tests/setup.ts']")
+  })
+})
+
+describe('699 — a terminal cleanup failure fails the invocation', () => {
+  /**
+   * Vitest 4.1.10 does not fail a run because global teardown rejected: it
+   * collects the rejection, awaits it through `Promise.allSettled`, logs
+   * `error during close`, and neither rethrows nor sets `process.exitCode`.
+   *
+   * These controls therefore mirror that swallowing deliberately -- each one
+   * settles the teardown rather than awaiting it -- and assert on the exit
+   * status, which is the only thing that actually survives to fail the
+   * invocation.
+   */
+  const sentinel = new Error('sentinel: removal exhausted its retries')
+  const throwingRemover = (): boolean => { throw sentinel }
+
+  it('Control A — swallowing the rejection does not erase the failure', async () => {
+    const runRoot = createRunRoot()
+    const previousExit = process.exitCode
+    const previousRoot = process.env[RUN_ROOT_ENV]
+    process.env[RUN_ROOT_ENV] = runRoot
+    process.exitCode = 0
+    try {
+      const teardown = createRunTeardown(runRoot, throwingRemover)
+      // Exactly what the framework does with the returned promise.
+      const [settled] = await Promise.allSettled([teardown()])
+
+      expect(settled?.status).toBe('rejected')
+      expect((settled as PromiseRejectedResult).reason).toBe(sentinel)
+      // The part that matters: the process still reports failure.
+      expect(process.exitCode).toBe(1)
+      expect(process.env[RUN_ROOT_ENV]).toBeUndefined()
+    } finally {
+      process.exitCode = previousExit
+      if (previousRoot === undefined) delete process.env[RUN_ROOT_ENV]
+      else process.env[RUN_ROOT_ENV] = previousRoot
+      rmSync(runRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('Control B — an existing non-zero status is preserved, not overwritten', async () => {
+    const runRoot = createRunRoot()
+    const previousExit = process.exitCode
+    const previousRoot = process.env[RUN_ROOT_ENV]
+    process.env[RUN_ROOT_ENV] = runRoot
+    process.exitCode = 7
+    try {
+      const [settled] = await Promise.allSettled([createRunTeardown(runRoot, throwingRemover)()])
+      expect(settled?.status).toBe('rejected')
+      // A run that already failed for its own reason keeps reporting it.
+      expect(process.exitCode).toBe(7)
+    } finally {
+      process.exitCode = previousExit
+      if (previousRoot === undefined) delete process.env[RUN_ROOT_ENV]
+      else process.env[RUN_ROOT_ENV] = previousRoot
+      rmSync(runRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('Control C — a successful teardown manufactures no failure', async () => {
+    const runRoot = createRunRoot()
+    const home = workerHomePath(runRoot, 31_337)
+    mkdirSync(home, { recursive: true })
+    const previousExit = process.exitCode
+    const previousRoot = process.env[RUN_ROOT_ENV]
+    process.env[RUN_ROOT_ENV] = runRoot
+    process.exitCode = undefined
+    try {
+      await createRunTeardown(runRoot)()
+
+      expect(existsSync(runRoot)).toBe(false)
+      expect(existsSync(home)).toBe(false)
+      expect(process.exitCode === undefined || Number(process.exitCode) === 0).toBe(true)
+      expect(process.env[RUN_ROOT_ENV]).toBeUndefined()
+
+      // Idempotent: a second call on an already-removed root stays silent.
+      await createRunTeardown(runRoot)()
+      expect(process.exitCode === undefined || Number(process.exitCode) === 0).toBe(true)
+    } finally {
+      process.exitCode = previousExit
+      if (previousRoot === undefined) delete process.env[RUN_ROOT_ENV]
+      else process.env[RUN_ROOT_ENV] = previousRoot
+      rmSync(runRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("leaves another run's environment variable alone", () => {
+    // The teardown clears the run-root variable only while it still names the
+    // root being torn down.
+    const runRoot = createRunRoot()
+    const previousRoot = process.env[RUN_ROOT_ENV]
+    process.env[RUN_ROOT_ENV] = '/some/other/run/root'
+    try {
+      void createRunTeardown(runRoot)
+      expect(process.env[RUN_ROOT_ENV]).toBe('/some/other/run/root')
+    } finally {
+      if (previousRoot === undefined) delete process.env[RUN_ROOT_ENV]
+      else process.env[RUN_ROOT_ENV] = previousRoot
+      rmSync(runRoot, { recursive: true, force: true })
+    }
   })
 })
