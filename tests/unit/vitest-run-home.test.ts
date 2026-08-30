@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
 
@@ -16,6 +16,7 @@ import {
   WORKER_HOME_PREFIX,
   workerHomePath,
 } from '../helpers/run-home.js'
+import { setup as globalSetup } from '../global-setup.js'
 
 /**
  * Real filesystem throughout. The defect was that nothing removed a directory,
@@ -119,13 +120,26 @@ describe('699 controls 3 and 4 — a real run cleans up after success and after 
     // The installed binary, not `npx`: in CI `npx` resolution produced no
     // output at all, which is indistinguishable from a run that cleaned up.
     const vitestBin = join(repoRoot, 'node_modules', 'vitest', 'vitest.mjs')
+    // A Vitest run inside a Vitest run inherits the outer run's environment. On
+    // CI that meant the child emitted GitHub Actions annotations into the parent
+    // job and filled the pipe until `spawnSync` returned EPIPE with no captured
+    // output -- which an assertion cannot tell apart from a run that cleaned up.
+    // The child gets a plain environment, the quietest reporter, and room.
+    const childEnv: NodeJS.ProcessEnv = { ...process.env }
+    for (const key of Object.keys(childEnv)) {
+      if (key === 'CI' || key === 'GITHUB_ACTIONS' || key.startsWith('GITHUB_') || key.startsWith('VITEST') || key === RUN_ROOT_ENV) {
+        delete childEnv[key]
+      }
+    }
     const rootsBefore = listRoots()
     let exitCode = 0
     let output = ''
     try {
-      output = execFileSync(process.execPath, [vitestBin, 'run', '--config', join(projectRoot, 'vitest.config.mjs')], {
-        cwd: repoRoot, stdio: 'pipe', encoding: 'utf8', timeout: 180_000,
-      })
+      output = execFileSync(
+        process.execPath,
+        [vitestBin, 'run', '--reporter=dot', '--config', join(projectRoot, 'vitest.config.mjs')],
+        { cwd: repoRoot, stdio: 'pipe', encoding: 'utf8', timeout: 180_000, maxBuffer: 64 * 1024 * 1024, env: childEnv },
+      )
     } catch (error) {
       const failure = error as { status?: number, stdout?: string, stderr?: string }
       exitCode = failure.status ?? 1
@@ -335,5 +349,52 @@ describe('699 control 11 — the run leaves no owned residue', () => {
       }
     }
     expect(true).toBe(true)
+  })
+})
+
+describe('699 — the shipped global setup contract, invoked directly', () => {
+  it('creates a run root, publishes it, and removes exactly that root on teardown', async () => {
+    // Deterministic companion to controls 3 and 4. Those spawn a real Vitest to
+    // prove the runner calls teardown on both paths; this exercises the exact
+    // exported contract the runner calls, without a child process.
+    const previous = process.env[RUN_ROOT_ENV]
+    delete process.env[RUN_ROOT_ENV]
+    const before = readdirSync(tmpdir()).filter((entry) => entry.startsWith(RUN_ROOT_PREFIX))
+    try {
+      const teardown = await globalSetup()
+      const published = process.env[RUN_ROOT_ENV]
+      expect(published, 'global setup published no run root').toBeTruthy()
+      expect(existsSync(published!)).toBe(true)
+
+      // A worker home created the way tests/setup.ts creates one.
+      const home = workerHomePath(published!, 4242)
+      mkdirSync(home, { recursive: true })
+      writeFileSync(join(home, 'config.toml'), '# state')
+
+      // A sibling root belonging to a different run must survive teardown.
+      const sibling = track(createRunRoot())
+
+      await teardown()
+      expect(existsSync(published!)).toBe(false)
+      expect(existsSync(home)).toBe(false)
+      expect(existsSync(sibling)).toBe(true)
+
+      // Idempotent: the runner may call it again, and nothing else is taken.
+      await teardown()
+      expect(existsSync(sibling)).toBe(true)
+      const after = readdirSync(tmpdir()).filter((entry) => entry.startsWith(RUN_ROOT_PREFIX))
+      expect(after.filter((entry) => !before.includes(entry) && entry !== sibling.split(sep).pop())).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env[RUN_ROOT_ENV]
+      else process.env[RUN_ROOT_ENV] = previous
+    }
+  })
+
+  it('is the setup Vitest is actually configured to run', () => {
+    // Guards the wiring: the contract above is only worth proving if the runner
+    // is pointed at it.
+    const config = readFileSync(resolve(__dirname, '..', '..', 'vitest.config.ts'), 'utf8')
+    expect(config).toContain("globalSetup: ['tests/global-setup.ts']")
+    expect(config).toContain("setupFiles: ['tests/setup.ts']")
   })
 })
