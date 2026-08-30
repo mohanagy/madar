@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { compareUnicodeCodePoints } from '../contracts/canonical-json.js'
 import { safeFetchText } from './security.js'
 
 const UPDATE_CHECK_TTL_MS = 24 * 60 * 60 * 1000
@@ -134,7 +135,11 @@ function compareIdentifiers(left: string, right: string): number {
     return 1
   }
 
-  return left.localeCompare(right)
+  // Semver §11 orders identifiers with letters or hyphens in ASCII sort order.
+  // Host collation does not: it ranks `Alpha` after `alpha` on en-US and before
+  // it on da-DK, so the same pair of releases orders differently on two
+  // machines. Ordering has one owner in this repository.
+  return compareUnicodeCodePoints(left, right)
 }
 
 export function compareVersions(left: string, right: string): number {
@@ -142,7 +147,10 @@ export function compareVersions(left: string, right: string): number {
   const rightVersion = parseVersion(right)
 
   if (!leftVersion || !rightVersion) {
-    return left.localeCompare(right)
+    // Semver defines no precedence for input the parser rejects, but the answer
+    // still has to be the same everywhere: it selects what is reported to the
+    // user and what is written to the persisted update cache.
+    return compareUnicodeCodePoints(left, right)
   }
 
   for (let index = 0; index < leftVersion.core.length; index += 1) {
