@@ -7,6 +7,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['tests/setup.ts'],
+    // Owns the per-run root that every worker's CODEX_HOME lives inside.
+    // Its teardown runs after a failing run as well as a passing one, which
+    // is the only place able to remove directories a crashed worker left.
+    globalSetup: ['tests/global-setup.ts'],
     include: ['tests/**/*.test.ts'],
     maxWorkers: 4,
     // Heavy benchmark/install/runtime suites can exceed 15s on the slower
