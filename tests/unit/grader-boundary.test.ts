@@ -164,6 +164,25 @@ describe('#660-A grader/runtime structural boundary', () => {
     }
   })
 
+  it('refuses an unjustified computed dynamic specifier in production code', () => {
+    // A computed specifier is invisible to the module graph, so an unlisted one
+    // would be a silent way around the whole boundary.
+    const result = analyze({ allowed_computed_dynamic_imports: [] })
+    expect(result.ok).toBe(false)
+    expect(result.violations.map((violation) => violation.rule)).toContain('computed_specifier_unverifiable')
+    for (const violation of result.violations.filter((entry) => entry.rule === 'computed_specifier_unverifiable')) {
+      expect(violation.reason).toBe(GRADER_TRUTH_REACHABLE)
+    }
+  })
+
+  it('rejects a computed-import allowance with a stub justification', () => {
+    const result = analyze({
+      allowed_computed_dynamic_imports: [{ path: 'src/runtime/semantic.ts', role: 'x', justification: 'because' }],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.violations.map((violation) => violation.rule)).toContain('computed_specifier_unverifiable')
+  })
+
   it('keeps every allowlist entry earning its place', () => {
     const result = analyze()
     expect(result.unusedAllowances).toEqual([])

@@ -158,6 +158,37 @@ function cases(root) {
       },
     },
     {
+      id: 'G7',
+      title: 'grader import written as a backtick template specifier',
+      expectFile: 'src/infrastructure/context-prompt-command.ts',
+      expectRule: 'normal_product_root',
+      inject(snapshot) {
+        // A NoSubstitutionTemplateLiteral is not a StringLiteral. Missing this
+        // shape left a real runtime edge invisible to the graph.
+        snapshot.append('src/infrastructure/context-prompt-command.ts', [
+          '',
+          '// #660-A G7 injection',
+          'export const __g7Probe = async (): Promise<unknown> => await import(`./benchmark/runtime-proof.js`)',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
+      id: 'G8',
+      title: 'computed dynamic specifier in product code is refused as unverifiable',
+      expectFile: 'src/runtime/stdio/tools.ts',
+      expectRule: 'computed_specifier_unverifiable',
+      inject(snapshot) {
+        snapshot.append('src/runtime/stdio/tools.ts', [
+          '',
+          '// #660-A G8 injection',
+          "const __g8Target: string = ['../..', 'infrastructure', 'benchmark', 'runtime-proof.js'].join('/')",
+          'export const __g8Probe = async (): Promise<unknown> => await import(__g8Target)',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
       id: 'G6',
       title: 'direct filesystem read of the grader data file from normal product code',
       expectFile: 'src/infrastructure/context-prompt-command.ts',
@@ -207,7 +238,9 @@ export function runGraderBoundarySelfTest({ root = process.cwd(), log = console.
       // the guard. A silently no-op injection would otherwise look like a pass.
       const edgePresent = testCase.expectRule === 'direct_data_read_in_normal_product'
         ? (injected.dataReferences ?? []).some((reference) => reference.file === testCase.expectFile)
-        : (injected.ancestors ?? []).includes(testCase.expectFile)
+        : testCase.expectRule === 'computed_specifier_unverifiable'
+          ? (injected.computedSpecifiers ?? []).some((entry) => entry.file === testCase.expectFile)
+          : (injected.ancestors ?? []).includes(testCase.expectFile)
 
       if (!edgePresent) {
         detail = `injection did not create the expected edge into ${testCase.expectFile}; the control proves nothing`

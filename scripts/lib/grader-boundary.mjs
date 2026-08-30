@@ -93,6 +93,29 @@ function isRuntimeImport(node) {
 }
 
 /**
+ * The statically-known specifier of a dynamic `import()` / `require()`, or null
+ * when it is computed.
+ *
+ * A quoted string is not the only literal form TypeScript accepts here: a
+ * backtick specifier with no substitutions parses as a
+ * NoSubstitutionTemplateLiteral, and `ts.isStringLiteral` rejects it. Missing
+ * that shape would leave `import(\`./benchmark/runtime-proof.js\`)` as a real
+ * runtime edge the graph never sees. Parentheses and `as const` are unwrapped
+ * for the same reason.
+ */
+function literalSpecifier(node) {
+  let current = node
+  while (current) {
+    if (ts.isParenthesizedExpression(current)) { current = current.expression; continue }
+    if (ts.isAsExpression(current) || ts.isTypeAssertionExpression(current)) { current = current.expression; continue }
+    break
+  }
+  if (!current) return null
+  if (ts.isStringLiteral(current) || ts.isNoSubstitutionTemplateLiteral(current)) return current.text
+  return null
+}
+
+/**
  * Every runtime edge in `src/**`, resolved by the compiler rather than by text.
  * Dynamic `import()` and `require()` with a literal specifier count: a lazily
  * loaded grader module is still reachable, and treating it as absent would
@@ -103,6 +126,7 @@ function buildRuntimeGraph(root, program, options) {
   const cache = ts.createModuleResolutionCache(root, (value) => value, options)
   const forward = new Map()
   const reverse = new Map()
+  const computed = []
 
   const resolveSpecifier = (specifier, containingFile) => {
     const resolved = ts.resolveModuleName(specifier, containingFile, options, host, cache)
@@ -133,18 +157,28 @@ function buildRuntimeGraph(root, program, options) {
           if (to) addEdge(from, to, ts.isImportDeclaration(node) ? 'import' : 'export-from', node.moduleSpecifier.text, lineOf(node))
         }
       } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-        const argument = node.moduleReference.expression
-        if (ts.isStringLiteral(argument)) {
-          const to = resolveSpecifier(argument.text, sourceFile.fileName)
-          if (to) addEdge(from, to, 'import-equals', argument.text, lineOf(node))
+        const specifier = literalSpecifier(node.moduleReference.expression)
+        if (specifier !== null) {
+          const to = resolveSpecifier(specifier, sourceFile.fileName)
+          if (to) addEdge(from, to, 'import-equals', specifier, lineOf(node))
         }
       } else if (ts.isCallExpression(node)) {
         const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword
         const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require'
         const argument = node.arguments[0]
-        if ((isDynamicImport || isRequire) && argument && ts.isStringLiteral(argument)) {
-          const to = resolveSpecifier(argument.text, sourceFile.fileName)
-          if (to) addEdge(from, to, isDynamicImport ? 'dynamic-import' : 'require', argument.text, lineOf(node))
+        if ((isDynamicImport || isRequire) && argument) {
+          const specifier = literalSpecifier(argument)
+          const kind = isDynamicImport ? 'dynamic-import' : 'require'
+          if (specifier !== null) {
+            const to = resolveSpecifier(specifier, sourceFile.fileName)
+            if (to) addEdge(from, to, kind, specifier, lineOf(node))
+          } else {
+            // A computed specifier cannot be resolved, so the edge it creates is
+            // invisible to this graph. Rather than pretend otherwise, record it
+            // and require an explicit justified entry for every one that lives
+            // in product code.
+            computed.push({ file: from, line: lineOf(node), kind, text: argument.getText(sourceFile).slice(0, 120) })
+          }
         }
       }
       ts.forEachChild(node, visit)
@@ -152,7 +186,7 @@ function buildRuntimeGraph(root, program, options) {
     visit(sourceFile)
   }
 
-  return { forward, reverse }
+  return { forward, reverse, computed }
 }
 
 /**
@@ -273,7 +307,7 @@ export function analyzeGraderBoundary(input = {}) {
   }
 
   const { program, graph } = runtimeGraphFor(root, input.cache !== false)
-  const { reverse } = graph
+  const { reverse, computed } = graph
 
   const basenames = config.grader_data_files.map((dataFile) => toPosix(dataFile).split('/').pop())
   const dataReferences = textualDataReferences(root, program, basenames)
@@ -352,6 +386,26 @@ export function analyzeGraderBoundary(input = {}) {
     })
   }
 
+  // A computed dynamic specifier cannot be resolved, so the edge it creates is
+  // invisible to this graph. Every one that survives in production must be an
+  // explicit, justified entry, exactly like an allowlisted ancestor — otherwise
+  // `import(someVariable)` would be a silent way around the whole boundary.
+  const allowedComputed = new Map(
+    (config.allowed_computed_dynamic_imports ?? []).map((entry) => [entry?.path, entry]),
+  )
+  for (const entry of computed) {
+    const approved = allowedComputed.get(entry.file)
+    if (approved && typeof approved.justification === 'string' && approved.justification.trim().length >= 20) continue
+    violations.push({
+      reason: GRADER_TRUTH_REACHABLE,
+      file: entry.file,
+      line: entry.line,
+      rule: 'computed_specifier_unverifiable',
+      detail: `"${entry.file}" uses a computed ${entry.kind} specifier (${entry.text}), so this guard cannot prove where it resolves`,
+      chain: [entry.file],
+    })
+  }
+
   const unusedAllowances = [...allowed.keys()].filter((path) => !chains.has(path) && !seeds.includes(path)).sort()
 
   return {
@@ -361,6 +415,7 @@ export function analyzeGraderBoundary(input = {}) {
     seeds,
     ancestors: [...chains.keys()].sort(),
     dataReferences,
+    computedSpecifiers: computed,
     unusedAllowances,
     violations,
   }

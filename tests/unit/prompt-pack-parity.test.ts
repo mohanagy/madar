@@ -168,11 +168,15 @@ describe('#660-A prompt-pack output parity', () => {
       writeFileSync(GOLDEN_PATH, actual, 'utf8')
     }
 
-    const golden = readFileSync(GOLDEN_PATH, 'utf8')
+    // `.gitattributes` pins the golden to LF so a Windows checkout cannot rewrite
+    // it, but normalise anyway: a checkout that ignores the attribute must fail
+    // this control for a real output change, never for a line-ending convention.
+    const normalize = (value: string): string => value.replaceAll('\r\n', '\n')
+    const golden = normalize(readFileSync(GOLDEN_PATH, 'utf8'))
     // Byte equality on purpose. Ordering, whitespace, token counts and session
     // diagnostics are all product output; none of them may move because the
     // builder changed file.
-    expect(actual).toBe(golden)
+    expect(normalize(actual)).toBe(golden)
   })
 
   it('is deterministic across repeated construction', () => {

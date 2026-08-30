@@ -17,3 +17,10 @@ docs/qualification/patches/*.patch -text
 # serializer produces and no longer hashed to its pinned digest. Marked non-text
 # so the bytes are identical on every platform.
 *.madar -text
+
+# The #660-A prompt-pack golden is a byte-exact record of product output taken
+# at the pre-change commit. A CRLF checkout rewrites every newline in it, so the
+# candidate's LF output no longer matches the fixture and the parity control
+# fails on Windows for a reason that has nothing to do with the prompt pack.
+# Pinned to LF in the working copy on every platform.
+tests/fixtures/prompt-pack-parity.golden.json text eol=lf

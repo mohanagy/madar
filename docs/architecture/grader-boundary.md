@@ -74,8 +74,21 @@ Two rules apply, and the second is the one that matters over time:
   by cutting the dependency, never by widening the exception list.
 
 `import type` is erased under `verbatimModuleSyntax` and is correctly *not* a
-runtime edge. Dynamic `import()` and `require()` with a literal specifier *are*
-edges — a lazily loaded grader module is still reachable.
+runtime edge. Dynamic `import()` and `require()` *are* edges — a lazily loaded
+grader module is still reachable. "Literal specifier" means every statically
+known form, not just a quoted string: a backtick specifier with no substitutions
+parses as a `NoSubstitutionTemplateLiteral`, which `ts.isStringLiteral` rejects,
+so ``import(`./benchmark/runtime-proof.js`)`` would otherwise have been a real
+runtime edge the graph never saw. Parentheses and `as const` are unwrapped for
+the same reason. Control **G7** injects exactly that shape.
+
+A **computed** specifier — `import(someVariable)` — cannot be resolved at all,
+so the edge it creates is invisible here. Rather than quietly ignore that, every
+computed dynamic import surviving in `src/**` must be an explicit justified entry
+in `allowed_computed_dynamic_imports`; an unlisted one fails the guard. Today
+there are two, both in `src/runtime/semantic.ts`, loading the optional
+`@huggingface/transformers` package and its project-local fallback — both resolve
+outside `src/**`. Control **G8** proves a new one is refused.
 
 The compiler graph cannot represent a direct `readFileSync` of the grader JSON,
 so a secondary textual control reports any `src/**` literal naming that file. A
@@ -102,9 +115,12 @@ npm run verify:grader-boundary-controls   # boundary check + falsifiability inje
 The boundary and sequencing controls also run as
 `tests/unit/grader-boundary.test.ts`, so they execute on every protected CI lane.
 The injections (`G1` direct import, `G2` transitive helper, `G3` re-export, `G6`
-direct JSON read) mutate real production files, so they run outside the vitest
-worker pool via the `--self-test` flag, restore by verified byte snapshot, and
-never use `git checkout`/`reset`/`clean`.
+direct JSON read, `G7` backtick template specifier, `G8` computed specifier)
+mutate real production files, so they run outside the vitest worker pool via the
+`--self-test` flag, restore by verified byte snapshot, and never use
+`git checkout`/`reset`/`clean`. Each one first asserts the injected edge is
+actually present in the analyzed graph, so a no-op injection reports "the control
+proves nothing" instead of passing.
 
 ## What this does and does not prove
 

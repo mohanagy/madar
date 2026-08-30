@@ -59,6 +59,14 @@
       "justification": "Process entry point whose only job is to load and invoke src/cli/main.ts. It inherits reachability from the dispatcher and contains no product construction logic."
     }
   ],
+  "allowed_computed_dynamic_imports": [
+    {
+      "path": "src/runtime/semantic.ts",
+      "role": "optional dependency loader",
+      "justification": "Loads the optional @huggingface/transformers package by package name, then falls back to a resolved file URL under the user's own project node_modules. Both specifiers resolve outside src/**, so neither can reach a grader module; they are computed only because the package may be absent and the fallback path is discovered at runtime."
+    }
+  ],
+  "allowed_computed_dynamic_imports_rationale": "A computed specifier is invisible to the module graph, so `import(someVariable)` would otherwise be a silent way around this boundary. Every computed dynamic import that survives in src/** must be listed here with a justification, and an unlisted one fails the guard.",
   "claim_boundary": "This guard proves that no normal product construction module can reach qualification grader truth through the TypeScript module graph, and that no src/** module outside the approved set names the grader data file directly. It does not prove full product generalization, and it is not the forbidden-knowledge scanner for qualification literals and task phrases \u2014 that boundary is owned by #660-B.",
   "sequencing": {
     "rationale": "The module graph proves normal product code cannot reach grader truth. This proves the remaining ordering property inside the grader: expected evidence is consulted only after the artifact being graded is fixed on disk, and the loaded profile flows only into grading.",
