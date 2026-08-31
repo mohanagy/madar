@@ -239,7 +239,15 @@ function detectGenerationIntent(prompt: string): {
 } {
   const lower = prompt.toLowerCase()
   const displayShaped = /\b(?:display(?:ed|ing)?|render(?:ed|ing)?|show(?:n|ing)?|visible|view|ui|frontend|front-end|component|screen|page|footer|header|label|date|timestamp)\b/i.test(lower)
-  const genericGenerationShaped = /\b(?:generat(?:e|ed|es|ing|ion)|creat(?:e|ed|es|ing|ion)|build(?:s|ing|er)?|assembl(?:e|ed|es|ing)|produc(?:e|ed|es|ing))\b/i.test(lower)
+  // `assembl*` was dropped from this list in #660 Slice C. It is one of the six
+  // report workflow stages, and it was the only one of the six that could still
+  // reach a runtime-generation gate on its own: `Explain assemble` classified as
+  // runtime_generation while `Explain planner`, `Explain research`,
+  // `Explain assembly`, `Explain scoring` and `Explain persistence` all returned
+  // unknown. The remaining verbs carry the generic sense without naming a report
+  // stage, and any assembly question with real backend evidence still classifies
+  // through `backendRuntimeShaped` plus `explanationShaped`.
+  const genericGenerationShaped = /\b(?:generat(?:e|ed|es|ing|ion)|creat(?:e|ed|es|ing|ion)|build(?:s|ing|er)?|produc(?:e|ed|es|ing))\b/i.test(lower)
   const backendRuntimeShaped = /\b(?:pipeline|runtime|orchestrator|worker|job|repository|service|controller|api|backend|persist(?:ed|ing)?|sav(?:e|ed|es|ing)|db(?:sync|[- ]sync)?)\b/i.test(lower)
   const buildStaticShaped = /\b(?:next\.js|nextjs|app\s+router|route\s+segment|landing\s+page|static|ssg|isr|server\s+component)\b/i.test(lower)
   const explanationShaped = /\b(?:explain|how|why|trace|walk|flow|path|lifecycle|fail(?:s|ing|ed)?)\b/i.test(lower)

@@ -229,6 +229,44 @@ describe('#660 Slice C — report-generation independence', () => {
     expect(shape.member_ids.length).toBeLessThanOrEqual(2)
   })
 
+  it('A2: none of the six declared report workflow stages reaches a runtime gate on its own', () => {
+    // The gap that the first FINAL review found. Control A above tests ONE
+    // minimal pair, and its prompts already carried the generic verb
+    // "generated", so a report stage word that reached the gate through the
+    // generic generation-verb list stayed invisible. `assemble` did exactly
+    // that. This control walks the six declared stages one at a time.
+    for (const stage of ['planner', 'research', 'assembly', 'assemble', 'scoring', 'persistence']) {
+      const decision = classifyRetrievalLevel({ prompt: `Explain ${stage}` })
+      expect(
+        { stage, intent: decision.signals.generation_intent },
+        `"Explain ${stage}" must not earn a runtime-generation gate on report vocabulary alone`,
+      ).toEqual({ stage, intent: 'unknown' })
+      expect(decision.signals.generation_debug?.report_generation_shaped).toBe(false)
+    }
+
+    // `rendering` is the one stage word that still classifies, as
+    // display_rendering, through the generic frontend-display classifier that
+    // Slice C did not touch. That is a generic lexical outcome, not a report
+    // policy, and it is asserted rather than left ambiguous.
+    expect(classifyRetrievalLevel({ prompt: 'Explain rendering' }).signals.generation_intent).toBe('display_rendering')
+
+    // Not a constant: the SAME stage words earn a runtime gate the moment real
+    // backend evidence is present, so the control fails in both directions.
+    for (const stage of ['assembly', 'assemble', 'scoring', 'persistence']) {
+      const withEvidence = classifyRetrievalLevel({ prompt: `Explain ${stage} in the worker pipeline` })
+      expect(withEvidence.signals.generation_intent).toBe('runtime_generation')
+      expect(withEvidence.signals.target_domain_hint).toBe('backend_runtime')
+    }
+
+    // And the generic generation verbs that remain are untouched: the word
+    // "report" contributes nothing to them.
+    for (const verb of ['generate', 'generation', 'create', 'build', 'produce']) {
+      expect(classifyRetrievalLevel({ prompt: `Explain ${verb}` }).signals.generation_intent).toBe('runtime_generation')
+    }
+    expect(classifyRetrievalLevel({ prompt: 'Explain report generation' }).signals.generation_intent)
+      .toBe(classifyRetrievalLevel({ prompt: 'Explain generation' }).signals.generation_intent)
+  })
+
   // ------------------------------------------------------------- control B --
   it('B: the same repository and task intent yield the same structure under neutral and report wording', () => {
     // Equivalent intent over identical evidence. The only difference is the
