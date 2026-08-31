@@ -631,32 +631,69 @@ describe('production independence from qualification repositories', () => {
     })
 
     it('folds only the constructions whose JavaScript semantics are modelled', () => {
-      // Each entry states what JavaScript actually evaluates to. A fold that
-      // disagrees with the language is a false positive, and one did: a bare
-      // array literal was being treated as the concatenation of its elements,
-      // so ['status', 'Page'] -- an ARRAY, whose string coercion is
-      // 'status,Page' -- was reported as the forbidden name.
-      const folds = {
-        "'status' + 'Page'": true,
-        "'status'.concat('Page')": true,
-        "'status'.concat(...['Page'])": true,
-        "['status', 'Page'].join('')": true,
-        "['sta', ...['tus'], 'Page'].join('')": true,
-        "['status', , 'Page'].join('')": true,
-        // NOT folds: neither evaluates to a string at all.
-        "['status', 'Page']": false,
-        "['status'].concat('Page')": false,
-      }
+      // Every row carries the source the scanner sees AND the same expression
+      // evaluated for real, so the fold is compared against what JavaScript
+      // actually produces rather than against what would be convenient. Two
+      // false positives were found this way and are pinned here:
+      //
+      //   ['status', 'Page']              is an ARRAY, coercing to 'status,Page'
+      //   'status'.concat(...[, 'Page'])  is 'statusundefinedPage', because a
+      //                                   spread hole is undefined and
+      //                                   String.prototype.concat stringifies it
+      //
+      // A hole's rendering depends on its consumer: join renders it as '',
+      // string concat renders it as the text 'undefined'.
+      const expectations: Array<{ source: string; evaluate: () => unknown; foldsToString: boolean }> = [
+        { source: "'status' + 'Page'", evaluate: () => 'status' + 'Page', foldsToString: true },
+        { source: "'status'.concat('Page')", evaluate: () => 'status'.concat('Page'), foldsToString: true },
+        { source: "'status'.concat(...['Page'])", evaluate: () => 'status'.concat(...['Page']), foldsToString: true },
+        { source: "['status', 'Page'].join('')", evaluate: () => ['status', 'Page'].join(''), foldsToString: true },
+        { source: "['sta', ...['tus'], 'Page'].join('')", evaluate: () => ['sta', ...['tus'], 'Page'].join(''), foldsToString: true },
+        { source: "['status', , 'Page'].join('')", evaluate: () => ['status', , 'Page'].join(''), foldsToString: true },
+        { source: "['status', ...[, 'Page']].join('')", evaluate: () => ['status', ...[, 'Page']].join(''), foldsToString: true },
+        { source: "[, 'Page'].join('')", evaluate: () => [, 'Page'].join(''), foldsToString: true },
+        // Folds, but to what JavaScript really produces -- so the forbidden
+        // name is simply not present in the result.
+        { source: "'status'.concat(...[, 'Page'])", evaluate: () => 'status'.concat(...([, 'Page'] as unknown as string[])), foldsToString: true },
+        // Not strings at all, so no fold.
+        { source: "['status', 'Page']", evaluate: () => ['status', 'Page'], foldsToString: false },
+        { source: "['status'].concat('Page')", evaluate: () => ['status'].concat('Page'), foldsToString: false },
+      ]
 
-      for (const [expression, shouldFold] of Object.entries(folds)) {
-        const folded = knowledgeBearingSites(`const probe = ${expression}\n`, 'probe.ts')
+      for (const { source, evaluate, foldsToString } of expectations) {
+        const folded = knowledgeBearingSites(`const probe = ${source}\n`, 'probe.ts')
           .filter((site: { kind: string }) => site.kind === 'folded')
           .map((site: { text: string }) => site.text)
-        expect(
-          folded.includes('statusPage'),
-          `${expression} should ${shouldFold ? '' : 'NOT '}fold to statusPage; folded sites were ${JSON.stringify(folded)}`,
-        ).toBe(shouldFold)
+        const runtime = evaluate()
+
+        if (!foldsToString) {
+          expect(Array.isArray(runtime), `${source} should evaluate to an array`).toBe(true)
+          expect(folded, `${source} evaluates to an array and must not fold to a string`).toEqual([])
+          continue
+        }
+
+        expect(typeof runtime, `${source} should evaluate to a string`).toBe('string')
+        // The decisive assertion: the scanner's folded value must be exactly
+        // what JavaScript produces. A fold that disagrees is a false positive,
+        // whichever direction it errs in.
+        expect(folded, `${source} folded to something JavaScript does not produce`).toContain(runtime)
       }
+    })
+
+    it('does not report a forbidden name for a construction that does not produce it', () => {
+      // The reproduction from the FINAL review, kept as a standing control.
+      const source = "'status'.concat(...[, 'Page'])"
+      // The assertion is type-level only -- TypeScript types a sparse spread
+      // element as string | undefined, which concat rejects. The runtime array
+      // keeps its hole, which is the whole point of the case.
+      expect('status'.concat(...([, 'Page'] as unknown as string[]))).toBe('statusundefinedPage')
+
+      const result = analyzeForbiddenKnowledge({
+        root: process.cwd(),
+        files: ['probe.ts'],
+        readFile: () => `const probe = ${source}\n`,
+      })
+      expect(result.violations, 'a construction that never spells the name was reported').toEqual([])
     })
 
     it('still scans literal components of an array it refuses to fold', () => {

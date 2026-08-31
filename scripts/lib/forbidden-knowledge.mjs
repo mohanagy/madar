@@ -67,6 +67,23 @@ import { productionSourceFiles } from './grader-boundary.mjs'
  * the point: an accidental re-introduction of pattern evaluation cannot pass
  * silently.
  */
+/**
+ * One elided array element, kept distinct from the empty string.
+ *
+ * `Array.prototype.join` renders a hole as '', while spreading one into
+ * `String.prototype.concat` yields `undefined`, which stringifies as the text
+ * 'undefined'. Collapsing the two at collection time reported
+ * `'status'.concat(...[, 'Page'])` -- really `'statusundefinedPage'` -- as the
+ * forbidden name `statusPage`.
+ */
+const HOLE = Symbol('array-hole')
+
+/** How `Array.prototype.join` renders an element. */
+const renderForJoin = (part) => (part === HOLE ? '' : part)
+
+/** How `String.prototype.concat` renders an argument. */
+const renderForConcat = (part) => (part === HOLE ? 'undefined' : part)
+
 export const SCANNER_CAPABILITIES = Object.freeze({
   /** Literals, decoded escapes, normalized forms, bounded static folding. */
   literal_and_static_detection: true,
@@ -501,17 +518,27 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
   }
 
   /**
-   * Array ELEMENTS flattened to strings, or null if any is not statically
-   * known. Used only by the operations whose JavaScript semantics are modelled
-   * -- `.join(separator)` on an array literal, and static spread operands --
-   * never to give a bare array a string value of its own.
+   * Array ELEMENTS, or null if any is not statically known. Used only by the
+   * operations whose JavaScript semantics are modelled -- `.join(separator)` on
+   * an array literal, and static spread operands -- never to give a bare array
+   * a string value of its own.
+   *
+   * A hole is yielded as the HOLE sentinel rather than pre-rendered, because
+   * its rendering depends on who consumes it, and getting that wrong produced a
+   * false positive:
+   *
+   *   ['status', , 'Page'].join('')      -> 'statusPage'            hole is ''
+   *   'status'.concat(...[, 'Page'])     -> 'statusundefinedPage'   hole is undefined
+   *
+   * Spreading a hole materialises a real `undefined` element, which `join`
+   * still renders as '' and string `.concat` renders as the text 'undefined'.
+   * Both are the same sentinel here; only the consumer differs.
    */
   const staticList = (elements) => {
     const parts = []
     for (const element of elements) {
       if (ts.isOmittedExpression(element)) {
-        // A hole joins as the empty string.
-        parts.push('')
+        parts.push(HOLE)
         continue
       }
       if (ts.isSpreadElement(element)) {
@@ -565,7 +592,8 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
           return null
         }
         const parts = staticList(node.arguments)
-        return parts === null ? null : receiver + parts.join('')
+        // String.prototype.concat stringifies undefined as 'undefined'.
+        return parts === null ? null : receiver + parts.map(renderForConcat).join('')
       }
       // `['status', 'Page'].join('')`, including spreads and holes.
       if (method === 'join' && ts.isArrayLiteralExpression(node.expression.expression)) {
@@ -574,7 +602,8 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
           return null
         }
         const parts = staticList(node.expression.expression.elements)
-        return parts === null ? null : parts.join(separator)
+        // Array.prototype.join renders holes and undefined as the empty string.
+        return parts === null ? null : parts.map(renderForJoin).join(separator)
       }
     }
     if (ts.isTemplateExpression(node)) {
