@@ -1,3 +1,11 @@
+/** The scanner's declared capability boundary; asserted by its contract test. */
+export declare const SCANNER_CAPABILITIES: {
+  readonly literal_and_static_detection: true
+  readonly regex_semantic_evaluation: false
+  readonly runtime_constructed_value_proof: false
+  readonly semantic_overfitting_proof: false
+}
+
 export declare const FORBIDDEN_KNOWLEDGE_IN_PRODUCTION: 'FORBIDDEN_QUALIFICATION_KNOWLEDGE_IN_PRODUCTION'
 export declare const FORBIDDEN_KNOWLEDGE_MANIFEST_INVALID: 'FORBIDDEN_KNOWLEDGE_MANIFEST_INVALID'
 

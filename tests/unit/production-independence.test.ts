@@ -29,7 +29,9 @@ import {
   analyzeForbiddenKnowledge,
   buildProductionSourceIndex,
   decodeEscapes,
+  knowledgeBearingSites,
   loadForbiddenKnowledgeManifest,
+  SCANNER_CAPABILITIES,
 } from '../../scripts/lib/forbidden-knowledge.mjs'
 import { productionSourceFiles } from '../../scripts/lib/grader-boundary.mjs'
 
@@ -595,41 +597,79 @@ describe('production independence from qualification repositories', () => {
       expect(escapedPathHit, 'an escaped path rule was not applied to a regex source site').toBeDefined()
     })
 
-    it('does not detect a name that exists only in a pattern\'s matching semantics', () => {
-      // Asserted deliberately. `/statusP{1}age/` matches `statusPage` at runtime
-      // and no decoded textual run of its source spells the value, so it is
-      // outside this scanner's contract. Deciding what a regex CAN match is not
-      // a job a literal scanner can finish; that class is owned by the
-      // behavioural controls above. This test exists so the limitation is
-      // recorded rather than discovered, and so a future change that quietly
-      // reintroduces pattern evaluation has to confront it.
-      for (const literal of [String.raw`/statusP{1}age/i`, String.raw`/^(?=statusP{1}age$)/i`]) {
-        const result = analyzeForbiddenKnowledge({
-          root: process.cwd(),
-          files: ['probe.ts'],
-          readFile: () => `const probe = ${literal}\n`,
-        })
-        expect(result.violations, `unexpectedly classified ${literal}`).toEqual([])
+    it('declares arbitrary regex semantics outside the decoded-literal scanner contract', () => {
+      // The scanner's capability boundary, machine-enforced rather than
+      // documented. It is a bounded decoded-literal detector: it reads regex
+      // SOURCE as text and decodes escapes, and it does not interpret what a
+      // pattern can match. Changing that requires deliberately changing this
+      // declaration and this test.
+      expect(SCANNER_CAPABILITIES).toEqual({
+        literal_and_static_detection: true,
+        regex_semantic_evaluation: false,
+        runtime_constructed_value_proof: false,
+        semantic_overfitting_proof: false,
+      })
+
+      const classifies = (literal: string): boolean => analyzeForbiddenKnowledge({
+        root: process.cwd(),
+        files: ['probe.ts'],
+        readFile: () => `const probe = ${literal}\n`,
+      }).violations.some((violation: { rule: string }) => violation.rule === 'openstatus/symbol-status-page')
+
+      // Detected: the forbidden text is present in the source once decoded.
+      expect(classifies(String.raw`/statusPage/i`), 'direct literal source').toBe(true)
+      expect(classifies(String.raw`/\x73tatusPage/i`), 'hex-escaped source').toBe(true)
+      expect(classifies(String.raw`/\163tatusPage/i`), 'legacy-octal source').toBe(true)
+
+      // Not interpreted as equivalent: the value exists only in what the
+      // pattern MATCHES, and no decoded run of the source spells it. These two
+      // are asserted individually rather than as a general claim about complex
+      // patterns -- a pattern may coincidentally contain the text directly, and
+      // would then be detected, correctly.
+      expect(classifies(String.raw`/statusP{1}age/i`), 'quantifier pattern').toBe(false)
+      expect(classifies(String.raw`/^(?=statusP{1}age$)/i`), 'lookahead pattern').toBe(false)
+    })
+
+    it('folds only the constructions whose JavaScript semantics are modelled', () => {
+      // Each entry states what JavaScript actually evaluates to. A fold that
+      // disagrees with the language is a false positive, and one did: a bare
+      // array literal was being treated as the concatenation of its elements,
+      // so ['status', 'Page'] -- an ARRAY, whose string coercion is
+      // 'status,Page' -- was reported as the forbidden name.
+      const folds = {
+        "'status' + 'Page'": true,
+        "'status'.concat('Page')": true,
+        "'status'.concat(...['Page'])": true,
+        "['status', 'Page'].join('')": true,
+        "['sta', ...['tus'], 'Page'].join('')": true,
+        "['status', , 'Page'].join('')": true,
+        // NOT folds: neither evaluates to a string at all.
+        "['status', 'Page']": false,
+        "['status'].concat('Page')": false,
+      }
+
+      for (const [expression, shouldFold] of Object.entries(folds)) {
+        const folded = knowledgeBearingSites(`const probe = ${expression}\n`, 'probe.ts')
+          .filter((site: { kind: string }) => site.kind === 'folded')
+          .map((site: { text: string }) => site.text)
+        expect(
+          folded.includes('statusPage'),
+          `${expression} should ${shouldFold ? '' : 'NOT '}fold to statusPage; folded sites were ${JSON.stringify(folded)}`,
+        ).toBe(shouldFold)
       }
     })
 
-    it('folds a name assembled through spreads and array holes', () => {
-      const assemblies = {
-        spreadArgument: "'status'.concat(...['Page'])",
-        spreadInArray: "['sta', ...['tus'], 'Page'].join('')",
-        arrayHole: "['status',, 'Page'].join('')",
-        plainJoin: "['status', 'Page'].join('')",
-      }
-      for (const [name, expression] of Object.entries(assemblies)) {
-        const result = analyzeForbiddenKnowledge({
-          root: process.cwd(),
-          files: ['probe.ts'],
-          readFile: () => `const probe = ${expression}\n`,
-        })
-        const hit = result.violations.find((violation: { rule: string }) => violation.rule === 'openstatus/symbol-status-page')
-        expect(hit, `${name} was not folded`).toBeDefined()
-        expect(hit?.decoded).toContain('statusPage')
-      }
+    it('still scans literal components of an array it refuses to fold', () => {
+      // Declining to fold the array must not make its members invisible: a
+      // preferred-file list is exactly this shape.
+      const result = analyzeForbiddenKnowledge({
+        root: process.cwd(),
+        files: ['probe.ts'],
+        readFile: () => "const preferred = ['statusPage', 'unrelated']\n",
+      })
+      const hit = result.violations.find((violation: { rule: string }) => violation.rule === 'openstatus/symbol-status-page')
+      expect(hit, 'a literal inside an unfolded array escaped detection').toBeDefined()
+      expect(hit?.site).toBe('string')
     })
 
     it('finds no qualification-repository knowledge in production source', () => {

@@ -58,6 +58,26 @@ import { resolve } from 'node:path'
 import ts from 'typescript'
 import { productionSourceFiles } from './grader-boundary.mjs'
 
+/**
+ * What this scanner claims to do, declared rather than implied.
+ *
+ * The capability boundary is data so it can be asserted by a test instead of
+ * living in prose that drifts. A future implementation may widen it only by
+ * deliberately changing this declaration and the test that pins it -- which is
+ * the point: an accidental re-introduction of pattern evaluation cannot pass
+ * silently.
+ */
+export const SCANNER_CAPABILITIES = Object.freeze({
+  /** Literals, decoded escapes, normalized forms, bounded static folding. */
+  literal_and_static_detection: true,
+  /** Deciding what an arbitrary regular expression can match. Never. */
+  regex_semantic_evaluation: false,
+  /** Proving anything about values assembled at runtime. */
+  runtime_constructed_value_proof: false,
+  /** Proving the absence of semantic overfitting; owned by behavioural tests. */
+  semantic_overfitting_proof: false,
+})
+
 export const FORBIDDEN_KNOWLEDGE_IN_PRODUCTION = 'FORBIDDEN_QUALIFICATION_KNOWLEDGE_IN_PRODUCTION'
 export const FORBIDDEN_KNOWLEDGE_MANIFEST_INVALID = 'FORBIDDEN_KNOWLEDGE_MANIFEST_INVALID'
 
@@ -449,6 +469,43 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
    *     elided element is `undefined` and `join` renders it as the empty
    *     string, exactly as `Array.prototype.join` specifies.
    */
+  /**
+   * Whether an expression is a STRING at runtime, as opposed to an array.
+   *
+   * `.concat` exists on both, and the two have different semantics: a string
+   * receiver concatenates to a string, an array receiver produces an array.
+   * Only the string form may fold. This is a deliberately narrow shape test,
+   * not type inference: anything it cannot recognise as a string literal form
+   * returns false and the expression is left unfolded.
+   */
+  const isStringValuedExpression = (node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node)) {
+      return true
+    }
+    if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) {
+      return isStringValuedExpression(node.expression)
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+      return isStringValuedExpression(node.left) || isStringValuedExpression(node.right)
+    }
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const method = node.expression.name.text
+      if (method === 'join') {
+        return ts.isArrayLiteralExpression(node.expression.expression)
+      }
+      if (method === 'concat') {
+        return isStringValuedExpression(node.expression.expression)
+      }
+    }
+    return false
+  }
+
+  /**
+   * Array ELEMENTS flattened to strings, or null if any is not statically
+   * known. Used only by the operations whose JavaScript semantics are modelled
+   * -- `.join(separator)` on an array literal, and static spread operands --
+   * never to give a bare array a string value of its own.
+   */
   const staticList = (elements) => {
     const parts = []
     for (const element of elements) {
@@ -495,7 +552,14 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
       const method = node.expression.name.text
       // `'status'.concat('Page')`, and `'status'.concat(...['Page'])`.
+      //
+      // Only a STRING receiver folds. `['status'].concat('Page')` is
+      // Array.prototype.concat and evaluates to the ARRAY ['status','Page'],
+      // not to the string 'statusPage'; folding it produced a false positive.
       if (method === 'concat') {
+        if (!isStringValuedExpression(node.expression.expression)) {
+          return null
+        }
         const receiver = staticValue(node.expression.expression)
         if (receiver === null) {
           return null
@@ -512,10 +576,6 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
         const parts = staticList(node.expression.expression.elements)
         return parts === null ? null : parts.join(separator)
       }
-    }
-    if (ts.isArrayLiteralExpression(node)) {
-      const parts = staticList(node.elements)
-      return parts === null ? null : parts.join('')
     }
     if (ts.isTemplateExpression(node)) {
       let folded = node.head.text
@@ -545,7 +605,7 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
 
     // Fold whole static expressions too, so a name split across several nodes
     // is matched as the one string it actually denotes.
-    if (ts.isBinaryExpression(node) || ts.isTemplateExpression(node) || ts.isCallExpression(node) || ts.isArrayLiteralExpression(node)) {
+    if (ts.isBinaryExpression(node) || ts.isTemplateExpression(node) || ts.isCallExpression(node)) {
       const folded = staticValue(node)
       if (folded !== null) {
         record('folded', folded, node.getStart(source))
