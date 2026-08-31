@@ -18,7 +18,8 @@
  */
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 import { ByteSnapshot } from './grader-boundary-selftest.mjs'
@@ -43,6 +44,9 @@ const VITEST_BIN = resolveVitestBin()
 
 const FALLBACK = 'src/runtime/retrieve/conceptual-fallback.ts'
 const RETRIEVE = 'src/runtime/retrieve.ts'
+
+const OWNER_D = 'D. ranks a one-for-one substituted repository'
+const OWNER_D2 = 'D2. selects the same nodes end-to-end'
 const OWNING_TEST_FILE = 'tests/unit/production-independence.test.ts'
 
 /**
@@ -65,7 +69,15 @@ const RETRIEVE_ANCHOR = `      let orderedCandidates = inclusionOrder
       let sliceMetadata: ContextPackSliceMetadata | undefined
 `
 
-function runOwningTest(root, testNameFilter) {
+/**
+ * Where final membership is actually fixed. `orderedCandidates` is upstream of
+ * the pack's own budgeted selection, so an injection there can be discarded and
+ * prove nothing -- which is exactly what the membership premise caught.
+ */
+const MEMBERSHIP_ANCHOR = `  const matchedNodes = pack.nodes as RetrieveMatchedNode[]
+`
+
+function runOwningTest(root, testNameFilter, extraEnv = {}) {
   // `npx` is `npx.cmd` on Windows and spawnSync cannot execute it directly:
   // without a shell the call returns status null and every control below would
   // read as "the owning test failed", which is a false pass. Run the vitest
@@ -74,7 +86,7 @@ function runOwningTest(root, testNameFilter) {
   const result = spawnSync(
     process.execPath,
     [VITEST_BIN, 'run', OWNING_TEST_FILE, '-t', testNameFilter, '--reporter=dot'],
-    { cwd: root, encoding: 'utf8', env: { ...process.env, CI: '1' } },
+    { cwd: root, encoding: 'utf8', env: { ...process.env, CI: '1', ...extraEnv } },
   )
   if (result.error) {
     return { failed: true, status: null, output: `spawn failed: ${result.error.message}`, spawnFailed: true }
@@ -89,6 +101,33 @@ function runOwningTest(root, testNameFilter) {
   }
 }
 
+/**
+ * The membership D2 itself measured, read back through a file seam.
+ *
+ * The premise these controls need is not "the file changed" but "the selected
+ * SET changed". A reorder satisfies the first and not the second, and a control
+ * that accepted the first would pass while proving nothing. Reusing the real
+ * control rather than a generated spec means the observation cannot drift from
+ * what the control asserts.
+ */
+function measureD2Membership(root) {
+  const out = join(tmpdir(), `madar-d2-membership-${process.pid}-${Math.random().toString(36).slice(2)}.json`)
+  try {
+    runOwningTest(root, OWNER_D2, { MADAR_D2_MEMBERSHIP_OUT: out })
+    if (!existsSync(out)) {
+      return { ok: false, membership: [], detail: 'D2 did not emit a membership measurement' }
+    }
+    const parsed = JSON.parse(readFileSync(out, 'utf8'))
+    return { ok: true, membership: parsed.qualification?.membership ?? [], detail: '' }
+  } catch (error) {
+    return { ok: false, membership: [], detail: `membership read failed: ${error?.message ?? String(error)}` }
+  } finally {
+    if (existsSync(out)) {
+      rmSync(out, { force: true })
+    }
+  }
+}
+
 const run0Detail = (run) => run.output.slice(0, 300).replace(/\s+/g, ' ')
 
 function cases() {
@@ -97,7 +136,7 @@ function cases() {
       id: 'H1',
       title: 'a restored public+page task-phrase forced selection is caught by control D',
       file: FALLBACK,
-      testFilter: 'D. ranks a one-for-one substituted repository',
+      testFilter: OWNER_D,
       ownerPattern: /ranks a one-for-one substituted repository/,
       inject(snapshot) {
         // A task-phrase score adjustment: exactly the shape §5 names. It fires
@@ -119,7 +158,7 @@ function cases() {
       id: 'H2',
       title: 'a restored repository-path ranking boost is caught by control D',
       file: FALLBACK,
-      testFilter: 'D. ranks a one-for-one substituted repository',
+      testFilter: OWNER_D,
       ownerPattern: /ranks a one-for-one substituted repository/,
       inject(snapshot) {
         // A repository-path boost with no prompt vocabulary at all, so a
@@ -136,38 +175,83 @@ function cases() {
     },
     {
       id: 'H4',
-      title: 'a forced selection on the retrieval path is caught by the end-to-end control',
+      title: 'a forced final-membership change on the retrieval path is caught by D2',
       file: RETRIEVE,
-      testFilter: 'D2. selects the same nodes end-to-end',
+      testFilter: OWNER_D2,
       ownerPattern: /selects the same nodes end-to-end/,
+      // A reorder of already-selected candidates is NOT a sufficient premise:
+      // D2 asserts membership, so shuffling the same set proves nothing. This
+      // injection promotes a repository-path candidate the clean tree does not
+      // select at all, which is a genuine membership change.
+      membershipNode: 'h4-forced-membership',
       inject(snapshot) {
-        // Applied AFTER ranking, where a boost-watching control cannot see it.
-        snapshot.replaceOnce(RETRIEVE, RETRIEVE_ANCHOR, `${RETRIEVE_ANCHOR}
-      // #660-B H4 injection -- a repository-path forced selection.
-      orderedCandidates = [
-        ...orderedCandidates.filter((entry) => entry.sourceFile.includes('/checker/')),
-        ...orderedCandidates.filter((entry) => !entry.sourceFile.includes('/checker/')),
-      ]
+        snapshot.replaceOnce(RETRIEVE, MEMBERSHIP_ANCHOR, `${MEMBERSHIP_ANCHOR}
+  // #660-B1 H4 injection -- a payload entry pinned in because a repository
+  // path is present, which is the shape the removed claim-pinning path had.
+  // The pinned entry is one the clean tree never selects, so its appearance is
+  // a genuine final-membership change rather than a reordering.
+  if (orderedCandidates.some((entry) => entry.sourceFile.includes('/checker/'))) {
+    matchedNodes.push({
+      node_id: 'h4-forced-membership',
+      label: 'h4ForcedMembership()',
+      source_file: '/apps/checker/forced.go',
+      line_number: 1,
+      snippet: null,
+      relevance_band: 'direct',
+    } as RetrieveMatchedNode)
+  }
 `)
       },
     },
     {
       id: 'H5',
-      title: 'a slice-v1 bypass on the retrieval path is caught by the end-to-end control',
+      title: 'a question-shaped bypass inside the requested slice is caught by D2',
       file: RETRIEVE,
-      testFilter: 'D2. selects the same nodes end-to-end',
+      testFilter: OWNER_D2,
       ownerPattern: /selects the same nodes end-to-end/,
+      // Removes a candidate the clean tree DOES select, so membership shrinks
+      // on one side only. Gated on the requested slice, so it exercises the
+      // path D2 now requests rather than a strategy nothing asked for.
+      membershipNode: 'n2',
       inject(snapshot) {
-        snapshot.replaceOnce(RETRIEVE, RETRIEVE_ANCHOR, `${RETRIEVE_ANCHOR}
-      // #660-B H5 injection -- a question-shaped bypass of the requested slice.
-      const h5Bypass = /\\bstatus\\b/i.test(options.question ?? '')
-      if (h5Bypass) {
-        orderedCandidates = orderedCandidates.slice(0, 2)
+        snapshot.replaceOnce(RETRIEVE, MEMBERSHIP_ANCHOR, `${MEMBERSHIP_ANCHOR}
+  // #660-B1 H5 injection -- a question-shaped bypass applied where membership
+  // is final, gated on a slice actually having been requested.
+  if (options.retrievalStrategy === 'slice-v1' && /\\bstatus\\b/i.test(options.question ?? '')) {
+    for (let h5i = matchedNodes.length - 1; h5i >= 0; h5i -= 1) {
+      if ((matchedNodes[h5i]?.source_file ?? '').includes('/checker/')) {
+        matchedNodes.splice(h5i, 1)
       }
+    }
+  }
 `)
       },
     },
   ]
+}
+
+/**
+ * True when the injection actually moved the SELECTED SET, not just its order.
+ * `membershipNode` names the node whose selection state must flip.
+ */
+function membershipPremiseHolds(root, testCase, reportFailure) {
+  const probe = measureD2Membership(root)
+  if (!probe.ok) {
+    reportFailure(`membership probe failed, so the premise is unproven: ${probe.detail}`)
+    return false
+  }
+  const node = testCase.membershipNode
+  const present = probe.membership.includes(node)
+  // H4 adds a node the clean tree lacks; H5 removes one it has.
+  const flipped = testCase.id === 'H4' ? present : !present
+  if (!flipped) {
+    reportFailure(
+      `injection did not change final membership (${node} ${present ? 'present' : 'absent'}, `
+      + `set ${JSON.stringify(probe.membership)}); a reorder is not a sufficient premise`,
+    )
+    return false
+  }
+  return true
 }
 
 export function runSemanticIndependenceSelfTest({ root = process.cwd(), log = console.log } = {}) {
@@ -175,18 +259,27 @@ export function runSemanticIndependenceSelfTest({ root = process.cwd(), log = co
 
   // The owning test must pass on the untouched tree, or "it failed after the
   // injection" proves nothing at all.
-  const baseline = runOwningTest(root, 'D. ')
+  // Vitest -t is a substring match, so 'D. ' does NOT select 'D2. '. The two
+  // controls have to be run as two filters or the D2 baseline is never
+  // established -- which is exactly what a previous version of this harness
+  // claimed and did not do.
+  const runBothOwners = () => ({
+    d: runOwningTest(root, OWNER_D),
+    d2: runOwningTest(root, OWNER_D2),
+  })
+  const baseline = runBothOwners()
+  const baselineOk = !baseline.d.failed && !baseline.d2.failed
   results.push({
     id: 'H0',
-    title: 'both owning behavioural controls pass on the untouched tree',
-    passed: !baseline.failed,
-    detail: baseline.failed
-      ? `baseline controls are already failing (exit ${baseline.status}); nothing below proves anything: ${
-        run0Detail(baseline)}`
-      : 'controls D and D2 green before any injection',
+    title: 'controls D and D2 each pass on the untouched tree, run as separate filters',
+    passed: baselineOk,
+    detail: baselineOk
+      ? 'D green and D2 green before any injection'
+      : `baseline already failing -- D exit ${baseline.d.status}, D2 exit ${baseline.d2.status}; nothing below proves anything: ${
+        run0Detail(baseline.d.failed ? baseline.d : baseline.d2)}`,
   })
 
-  if (baseline.failed) {
+  if (!baselineOk) {
     for (const entry of results) {
       log(`  ${entry.passed ? 'PASS' : 'FAIL'}  ${entry.id}  ${entry.title}`)
       log(`        ${entry.detail}`)
@@ -201,11 +294,14 @@ export function runSemanticIndependenceSelfTest({ root = process.cwd(), log = co
     try {
       testCase.inject(snapshot)
 
-      // PREMISE: the injected rule is really on disk. Without this a no-op
-      // injection is indistinguishable from a working control.
+      // PREMISE 1: the injected rule is really on disk.
       const injected = readFileSync(resolve(root, testCase.file), 'utf8')
-      if (!injected.includes(`#660-B ${testCase.id} injection`)) {
+      const marker = `${testCase.id} injection`
+      if (!injected.includes(marker)) {
         detail = 'injection did not reach the file; the control proves nothing'
+      } else if (testCase.membershipNode !== undefined
+        && !membershipPremiseHolds(root, testCase, (message) => { detail = message })) {
+        // PREMISE 2 handled inside membershipPremiseHolds, which writes detail.
       } else {
         const run = runOwningTest(root, testCase.testFilter)
         // A crash, a type error or a missing test would also be a non-zero
@@ -234,14 +330,15 @@ export function runSemanticIndependenceSelfTest({ root = process.cwd(), log = co
   }
 
   // The tree must be exactly as green afterwards as before.
-  const after = runOwningTest(root, 'D. ')
+  const after = runBothOwners()
+  const afterOk = !after.d.failed && !after.d2.failed
   results.push({
     id: 'H3',
-    title: 'the tree is restored and both owning controls are green again',
-    passed: !after.failed,
-    detail: after.failed
-      ? `controls D/D2 still failing after restore (exit ${after.status})`
-      : 'controls D and D2 green after restore',
+    title: 'the tree is restored and controls D and D2 are each green again',
+    passed: afterOk,
+    detail: afterOk
+      ? 'D green and D2 green after restore'
+      : `still failing after restore -- D exit ${after.d.status}, D2 exit ${after.d2.status}`,
   })
 
   for (const entry of results) {

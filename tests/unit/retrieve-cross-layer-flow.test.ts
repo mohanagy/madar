@@ -32,64 +32,16 @@ function writeCrossLayerGraphFixture(root: string): string {
 }
 
 describe('cross-layer flow retrieval', () => {
-  it('covers every flow obligation without letting presentation vocabulary dominate', () => {
-    const started = performance.now()
-    const result = retrieveContext(buildCrossLayerMonitorFlowFixture(), {
-      question: QUESTION,
-      budget: 1_800,
-      retrievalStrategy: 'slice-v1',
-    })
-    const elapsedMs = performance.now() - started
-    const selectedFiles = new Set(result.matched_nodes.map((node) => node.source_file))
-    const relevantSelected = [...selectedFiles].filter((file) => (
-      CROSS_LAYER_MONITOR_FLOW_FILES.includes(file as typeof CROSS_LAYER_MONITOR_FLOW_FILES[number])
-    ))
-    const precision = relevantSelected.length / Math.max(selectedFiles.size, 1)
-    const evidence = assessMadarResponseEvidence({
-      evidencePlan: buildRetrievalEvidencePlanFromResult(result),
-      question: QUESTION,
-      recovery: result.recovery,
-    })
-    const snippetCoverage = evaluateQueryEvidenceCoverage(QUESTION, result.matched_nodes)
+  // #660-B1. Removed. This asserted a multi-service selection that only the
+  // conceptual-recovery slice bypass produced. Instrumenting that bypass's
+  // trigger across the retrieval, conceptual-fallback, pack-quality and
+  // production-correctness suites showed it firing on exactly three
+  // questions, all qualification-shaped, and on no independent fixture -- so
+  // it was removed rather than defended, and with it the selection this
+  // asserted. Recorded here rather than deleted silently: a requested slice
+  // is now always applied, and a cross-service question with no explicit
+  // anchor is sliced to a local slice.
 
-    expect(
-      CROSS_LAYER_MONITOR_FLOW_FILES.every((file) => selectedFiles.has(file)),
-      JSON.stringify({
-        selected: [...selectedFiles],
-        labels: result.matched_nodes.map((node) => node.label),
-        relationships: result.relationships,
-        retrievalPlan: result.retrieval_plan,
-        recovery: result.recovery,
-      }, null, 2),
-    ).toBe(true)
-    expect(precision).toBeGreaterThanOrEqual(0.7)
-    expect(result.matched_nodes.map((node) => node.label)).not.toContain('computeEffectiveStatus')
-    expect(result.relationships.length).toBeGreaterThanOrEqual(5)
-    expect(result.retrieval_plan).toMatchObject({
-      status: 'recovered',
-      reasons: expect.arrayContaining(['missing_query_obligations']),
-      query_obligations: {
-        total: 5,
-        finally_covered: 5,
-      },
-      attempts: [expect.objectContaining({
-        status: 'applied',
-        promoted_communities: expect.arrayContaining([1, 2, 3, 4, 5, 6]),
-      })],
-    })
-    expect(result.retrieval_plan?.query_obligations?.initially_covered).toBeLessThan(
-      result.retrieval_plan?.query_obligations?.finally_covered ?? 0,
-    )
-    expect(result.retrieval_plan?.query_obligations).toMatchObject({
-      total: snippetCoverage.total,
-      finally_covered: snippetCoverage.covered,
-    })
-    expect(evidence.answerability.state).toMatch(/^ready(?:_with_caveat)?$/)
-    expect(evidence.answerability.broad_search_fallback).toBe('not_needed')
-    expect(evidence.agent_directive).toBe('answer_from_pack')
-    expect(result.token_count).toBeLessThanOrEqual(1_800)
-    expect(elapsedMs).toBeLessThan(750)
-  })
 
   it('returns an answer-ready workflow through one context_pack MCP call', async () => {
     const fixtureParent = resolve('out', 'test-runtime')

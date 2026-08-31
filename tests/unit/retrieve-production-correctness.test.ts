@@ -431,7 +431,13 @@ describe('retrieveContext production retrieval regressions', () => {
     ]))
   })
 
-  it('compacts broad report-generation packs around the execution flow instead of status/title noise', () => {
+  // #660-B1. Was also asserting that '.getStatusMessage()' and
+  // '.generateTitle()' are absent. That exclusion was produced by a denylist of
+  // fourteen symbol names lifted from one repository, not by any structural
+  // property, so it is gone and those labels can appear again. What is still
+  // worth holding, and is kept, is that the execution flow itself is compacted
+  // around the traced steps.
+  it('compacts a broad pack around the traced execution flow', () => {
     const compact = compactRetrieveResult(retrieveContext(buildReverseFlowReportGenerationGraph(), {
       question: 'How idea report is being generated',
       budget: 4000,
@@ -448,85 +454,19 @@ describe('retrieveContext production retrieval regressions', () => {
       '.assembleReport()',
       '.scoreMetrics()',
     ]))
-    expect(labels).not.toEqual(expect.arrayContaining([
-      '.getStatusMessage()',
-      '.generateTitle()',
-    ]))
   })
 
-  it('keeps low-confidence report-generation slices honest when no runtime handoff was traced', () => {
-    const compact = compactRetrieveResult(retrieveContext(buildBroadReportGenerationGraph(), {
-      question: 'How idea report is being generated',
-      budget: 4000,
-      retrievalLevel: 4,
-      retrievalStrategy: 'slice-v1',
-    }))
+  // #660-B1. Two tests were removed here. Both asserted the EXPECTED phase
+  // vocabulary of one benchmark task -- planner, external_research_or_api,
+  // report_builder, scoring, quality_gate -- which production only enabled
+  // when a prompt classifier recognised that task. The classifier and the
+  // phase list it gated are gone, so the tests asserted a vocabulary that no
+  // longer exists rather than a property worth holding.
+  //
+  // The phases that ARE still derived structurally from execution steps
+  // (controller, service, queue, worker, persistence) remain covered by the
+  // surrounding tests. The remaining half of the report-generation class
+  // lives in the Slice-C files and is untouched here; Slice C re-derives any
+  // expectation that should survive it.
 
-    expect(compact.execution_slice?.confidence).toBe('low')
-    expect(compact.execution_slice?.confidence_reasons).toEqual(expect.arrayContaining([
-      'no_runtime_handoff',
-    ]))
-    expect(compact.execution_slice?.status).toBe('partial')
-    expect(compact.execution_slice?.phase_coverage).toEqual(expect.objectContaining({
-      missing: expect.arrayContaining([
-        'external_research_or_api',
-        'report_builder',
-        'scoring',
-        'quality_gate',
-        'renderer_or_synthesis',
-        'persistence',
-      ]),
-    }))
-    expect(compact.execution_slice?.phase_coverage?.observed).not.toContain('external_research_or_api')
-    expect(compact.execution_slice?.phase_coverage?.observed).not.toContain('report_builder')
-    expect(compact.execution_slice?.phase_coverage?.observed).not.toContain('scoring')
-    expect(compact.execution_slice?.phase_coverage?.observed).not.toContain('quality_gate')
-    expect(compact.execution_slice?.phase_coverage?.observed).not.toContain('renderer_or_synthesis')
-    expect(compact.execution_slice?.phase_coverage?.observed).not.toContain('persistence')
-    expect(compact.answer_contract).toEqual(expect.objectContaining({
-      observed_phases: compact.execution_slice?.phase_coverage?.observed,
-      missing_phases: compact.execution_slice?.phase_coverage?.missing,
-      do_not_claim: expect.arrayContaining([
-        'full_runtime_certainty_when_slice_is_partial',
-      ]),
-      uncertainty_notes: expect.arrayContaining([
-        expect.stringMatching(/not enough evidence; missing .*persistence/),
-      ]),
-    }))
-  })
-
-  it('retains richer report-generation expectations without overclaiming untraced phases', () => {
-    const compact = compactRetrieveResult(retrieveContext(buildBroadReportGenerationGraph(), {
-      question: 'How idea report is being generated',
-      budget: 4000,
-      retrievalLevel: 4,
-      retrievalStrategy: 'slice-v1',
-    }))
-
-    expect(compact.execution_slice?.phase_coverage).toEqual(expect.objectContaining({
-      expected: [
-        'planner',
-        'external_research_or_api',
-        'report_builder',
-        'scoring',
-        'quality_gate',
-        'renderer_or_synthesis',
-        'persistence',
-      ],
-      observed: expect.arrayContaining([
-        'controller',
-        'service',
-        'queue',
-      ]),
-      missing: expect.arrayContaining([
-        'planner',
-        'external_research_or_api',
-        'report_builder',
-        'scoring',
-        'quality_gate',
-        'renderer_or_synthesis',
-        'persistence',
-      ]),
-    }))
-  })
 })

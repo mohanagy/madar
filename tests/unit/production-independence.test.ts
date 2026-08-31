@@ -11,6 +11,9 @@
  * graphs with identical names and different structure must not. Together they
  * say retrieval follows the evidence, not the vocabulary.
  */
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import type { ContextPackNode } from '../../src/contracts/context-pack.js'
@@ -24,8 +27,11 @@ import { planConceptualFallback } from '../../src/runtime/retrieve/conceptual-fa
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import {
   analyzeForbiddenKnowledge,
+  buildProductionSourceIndex,
+  decodeEscapes,
   loadForbiddenKnowledgeManifest,
 } from '../../scripts/lib/forbidden-knowledge.mjs'
+import { productionSourceFiles } from '../../scripts/lib/grader-boundary.mjs'
 
 /** Claim prefixes that were produced by fixed, repository-keyed builders. */
 const REMOVED_FIXED_CLAIM_PREFIXES = [
@@ -274,19 +280,65 @@ describe('production independence from qualification repositories', () => {
 
   it('D2. selects the same nodes end-to-end for a one-for-one substituted repository', () => {
     // D observes conceptual boosts. This observes what retrieval actually
-    // returns, so a forced selection or a slice bypass added anywhere on the
-    // retrieval path -- not just in the fallback planner -- is caught here.
-    const selection = (nodes: readonly NodeSpec[], question: string): string[] =>
-      retrieveContext(buildGraph(nodes, SHARED_EDGES), { question, budget: 5000 })
-        .matched_nodes
-        .map((node) => node.node_id ?? node.label)
+    // RETURNS, under a requested slice-v1, so a forced selection or a slice
+    // bypass added anywhere on the retrieval path is caught here and not only
+    // in the fallback planner.
+    //
+    // The assertion is on final MEMBERSHIP, not ordering. A reorder that leaves
+    // the selected set intact is not evidence of contamination, and treating it
+    // as such would make this control fire on noise.
+    const observe = (nodes: readonly NodeSpec[], question: string) => {
+      const result = retrieveContext(buildGraph(nodes, SHARED_EDGES), {
+        question,
+        budget: 5000,
+        retrievalStrategy: 'slice-v1',
+      })
+      return {
+        ids: result.matched_nodes.map((node) => node.node_id ?? node.label),
+        membership: [...new Set(result.matched_nodes.map((node) => node.node_id ?? node.label))].sort(),
+        strategy: result.retrieval_strategy,
+        obligations: result.retrieval_plan?.query_obligations?.total ?? 0,
+        covered: result.retrieval_plan?.query_obligations?.finally_covered ?? 0,
+      }
+    }
 
-    const qualification = selection(QUALIFICATION_NAMES, QUALIFICATION_QUESTION)
-    const substituted = selection(SUBSTITUTED_NAMES, SUBSTITUTED_QUESTION)
+    const qualification = observe(QUALIFICATION_NAMES, QUALIFICATION_QUESTION)
+    const substituted = observe(SUBSTITUTED_NAMES, SUBSTITUTED_QUESTION)
 
-    expect(qualification.length).toBeGreaterThan(0)
-    expect(substituted, `qualification ${JSON.stringify(qualification)} vs substituted ${JSON.stringify(substituted)}`)
-      .toEqual(qualification)
+    // Measurement seam for the semantic falsifiability harness. It needs the
+    // SET this control actually observed, so that "the injection changed final
+    // membership" is a measured premise rather than an assumption. Written
+    // before the assertions so a failing run still reports what it saw.
+    const membershipOut = process.env.MADAR_D2_MEMBERSHIP_OUT
+    if (membershipOut !== undefined && membershipOut.length > 0) {
+      writeFileSync(membershipOut, JSON.stringify({ qualification, substituted }), 'utf8')
+    }
+
+    // Explicit, truthful baseline. These are the measured values on a clean
+    // tree; they are asserted so that a mutation cannot quietly satisfy the
+    // comparison below by emptying both sides.
+    expect(qualification.strategy).toBe('slice-v1')
+    expect(substituted.strategy).toBe('slice-v1')
+    // Measured, not hoped for. n5 (the cross-package router node) is dropped by
+    // the requested slice now that no recovery mode opts out of slicing, and n1
+    // is never selected. Both are asserted so the comparison below cannot be
+    // satisfied by a mutation that empties both sides.
+    expect(qualification.membership).toEqual(['n2', 'n3', 'n4'])
+    expect(qualification.obligations).toBe(4)
+    expect(qualification.membership).not.toContain('n1')
+    expect(substituted.membership).not.toContain('n1')
+    expect(qualification.membership).not.toContain('n5')
+    // Nothing may pin an entry into the payload because of a repository path.
+    // The falsifiability harness injects exactly this id, so a clean tree must
+    // not contain it and the injected tree must.
+    expect(qualification.membership).not.toContain('h4-forced-membership')
+
+    expect(
+      substituted.membership,
+      `qualification ${JSON.stringify(qualification)} vs substituted ${JSON.stringify(substituted)}`,
+    ).toEqual(qualification.membership)
+    expect(substituted.obligations).toBe(qualification.obligations)
+    expect(substituted.covered).toBe(qualification.covered)
   })
 
   /* ---------------- E. qualification strings alone ------------------------ */
@@ -364,6 +416,87 @@ describe('production independence from qualification repositories', () => {
       // the pinned corpus instead of drifting from it.
       expect(manifest.rules.some((rule: { origin: string }) => rule.origin.includes('corpus.json'))).toBe(true)
       expect(manifest.exceptions).toEqual([])
+    })
+
+    // #660-B1. The scan used to renormalize every site for every rule, which
+    // cost sites x rules string transformations and timed the control out at
+    // 15s on CI. These four assertions are the standing proof that the one-pass
+    // index is real: sources are read, parsed and normalized once, and the rule
+    // count no longer drives the work.
+    it('parses each production file exactly once, whatever the rule count', () => {
+      const files = productionSourceFiles(process.cwd())
+      const manifest = loadForbiddenKnowledgeManifest(process.cwd())
+
+      const full = analyzeForbiddenKnowledge({ root: process.cwd() })
+      expect(full.stats.parseCalls).toBe(files.length)
+      expect(full.stats.indexedFiles).toBe(files.length)
+      expect(new Set(files).size).toBe(files.length)
+
+      // Halving the rules must not change how much source work is done.
+      const halved = analyzeForbiddenKnowledge({
+        root: process.cwd(),
+        manifest: { ...manifest, rules: manifest.rules.slice(0, Math.floor(manifest.rules.length / 2)) },
+      })
+      expect(halved.stats.parseCalls).toBe(full.stats.parseCalls)
+      expect(halved.stats.siteCount).toBe(full.stats.siteCount)
+    })
+
+    it('never parses a file twice, even when the file list repeats one', () => {
+      const files = productionSourceFiles(process.cwd())
+      const duplicated = [...files, ...files.slice(0, 5)]
+      const index = buildProductionSourceIndex({
+        files: duplicated,
+        readFile: (file) => readFileSync(resolve(process.cwd(), file), 'utf8'),
+      })
+      expect(duplicated.length).toBeGreaterThan(files.length)
+      expect(index.stats.parseCalls).toBe(files.length)
+      expect(index.byFile.size).toBe(files.length)
+    })
+
+    it('represents every production file in the index', () => {
+      const files = productionSourceFiles(process.cwd())
+      const index = buildProductionSourceIndex({
+        files,
+        readFile: (file) => readFileSync(resolve(process.cwd(), file), 'utf8'),
+      })
+      for (const file of files) {
+        expect(index.byFile.has(file), `missing from index: ${file}`).toBe(true)
+      }
+    })
+
+    it('reports the same result whatever order the rules are declared in', () => {
+      const manifest = loadForbiddenKnowledgeManifest(process.cwd())
+      const reversed = { ...manifest, rules: [...manifest.rules].reverse() }
+      const forward = analyzeForbiddenKnowledge({ root: process.cwd(), manifest })
+      const backward = analyzeForbiddenKnowledge({ root: process.cwd(), manifest: reversed })
+      expect(backward.ok).toBe(forward.ok)
+      expect(backward.violations).toEqual(forward.violations)
+    })
+
+    // #660-B1. A legacy octal escape is executable inside a regex:
+    // /\163tatusPage/ runs as /statusPage/. Both directions are asserted, so a
+    // decoder that silently stopped working could not pass this.
+    it('decodes a legacy octal escape that the raw spelling hides', () => {
+      const raw = String.raw`/\163tatusPage/i`
+      expect(raw).not.toContain('statusPage')
+      expect(decodeEscapes(raw)).toContain('statusPage')
+
+      const result = analyzeForbiddenKnowledge({
+        root: process.cwd(),
+        files: ['probe.ts'],
+        readFile: () => `const probe = ${raw}\n`,
+      })
+      const hit = result.violations.find((violation: { rule: string }) => violation.rule === 'openstatus/symbol-status-page')
+      expect(hit, 'legacy octal escape was not classified').toBeDefined()
+      expect(hit?.raw).toContain('163')
+      expect(hit?.decoded).toContain('statusPage')
+    })
+
+    it('leaves a regex backreference alone rather than inventing a name', () => {
+      // \1..\9 decode to control characters, not printable text, so they stay
+      // backreferences. Resolving the ambiguity the other way would fabricate
+      // matches in ordinary regexes.
+      expect(decodeEscapes(String.raw`(status)\1`)).not.toContain('statusPage')
     })
 
     it('finds no qualification-repository knowledge in production source', () => {

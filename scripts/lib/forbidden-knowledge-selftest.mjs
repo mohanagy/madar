@@ -199,6 +199,38 @@ function injectionCases() {
       },
     },
     {
+      id: 'F19',
+      title: 'a legacy octal regex escape is decoded before matching',
+      expectRule: 'openstatus/symbol-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
+      inject(snapshot) {
+        // /\\163tatusPage/ executes as /statusPage/. A scanner that reads the
+        // raw spelling sees nothing forbidden at all.
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B1 F19 injection',
+          'const F19_PATTERN = /\\163tatusPage/i',
+          'void F19_PATTERN',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
+      id: 'F20',
+      title: 'a preferred-file list entry written as a static concatenation is folded',
+      expectRule: 'openstatus/path-router-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/path-router-status-page'),
+      inject(snapshot) {
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B1 F20 injection',
+          "const F20_PREFERRED = ['packages/api/src/router/' + 'statusPage.ts']",
+          'void F20_PREFERRED',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
       id: 'F5',
       title: 'forbidden symbol reintroduced as an identifier, not a string',
       expectRule: 'openstatus/symbol-page-indicator',
@@ -326,7 +358,7 @@ export function runForbiddenKnowledgeSelfTest({ root = process.cwd(), log = cons
       // PREMISE: the injected text is really on disk. Without this a no-op
       // injection would look exactly like a working control.
       const injected = readFileSync(resolve(root, TARGET), 'utf8')
-      const premiseHolds = injected.includes(`#660-B ${testCase.id} injection`)
+      const premiseHolds = injected.includes(`${testCase.id} injection`)
       if (!premiseHolds) {
         detail = 'injection did not reach the file; the control proves nothing'
       } else {

@@ -41,9 +41,23 @@ export interface ForbiddenKnowledgeViolation {
   readonly ruleValue: string
   readonly why: string
   readonly raw: string
+  /** The site's value after static decoding, so an escaped spelling is legible. */
+  readonly decoded: string
   readonly normalized: string
   /** Which normalization form matched: whole tokens, the case-flattened form, or both. */
   readonly matchForms: readonly ('tokens' | 'squashed')[]
+}
+
+/** Proof that the one-pass index did what it claims. Read by the controls. */
+export interface ForbiddenKnowledgeStats {
+  readonly indexedFiles: number
+  readonly parseCalls: number
+  readonly siteCount: number
+}
+
+export interface ProductionSourceIndex {
+  readonly byFile: ReadonlyMap<string, readonly KnowledgeBearingSite[]>
+  readonly stats: ForbiddenKnowledgeStats
 }
 
 export interface ForbiddenKnowledgeResult {
@@ -55,6 +69,7 @@ export interface ForbiddenKnowledgeResult {
   readonly filesScanned: number
   readonly rulesApplied: number
   readonly unusedExceptions: readonly ForbiddenKnowledgeException[]
+  readonly stats: ForbiddenKnowledgeStats
 }
 
 export interface ForbiddenKnowledgeInput {
@@ -62,6 +77,8 @@ export interface ForbiddenKnowledgeInput {
   readonly files?: readonly string[]
   readonly manifest?: ForbiddenKnowledgeManifest
   readonly readFile?: (file: string) => string
+  /** A prebuilt index, so a caller can prove the sources are parsed once. */
+  readonly index?: ProductionSourceIndex
   /** Overrides "now" for expiry checks; ISO date, tests only. */
   readonly today?: string
 }
@@ -77,6 +94,10 @@ export declare function tokenForm(value: string): string
 export declare function squashForm(value: string): string
 export declare function decodeEscapes(value: string): string
 export declare function knowledgeBearingSites(sourceText: string, fileName?: string): KnowledgeBearingSite[]
+export declare function buildProductionSourceIndex(input: {
+  readonly files: readonly string[]
+  readonly readFile: (file: string) => string
+}): ProductionSourceIndex
 export declare function loadForbiddenKnowledgeManifest(
   root?: string,
   options?: { readonly today?: string },

@@ -4839,7 +4839,6 @@ function retrieveContextPass(
   graph: KnowledgeGraph,
   options: RetrieveOptions,
   conceptualNodeBoosts: ReadonlyMap<string, number> = new Map(),
-  preserveConceptualObligationOrder = false,
 ): RetrieveResult {
   // Guard before candidate expansion, which also reads directional adjacency.
   // sliceCandidatesForRetrieve repeats the guard to protect its direct callers.
@@ -5501,18 +5500,14 @@ function retrieveContextPass(
     : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
       let orderedCandidates = inclusionOrder
       let sliceMetadata: ContextPackSliceMetadata | undefined
-      // A conceptual recovery for a multi-obligation question with no explicit
-      // anchor deliberately assembles owners from several services that do not
-      // form one local slice. Applying a local slice on top of that discards
-      // the very evidence the recovery just found, so that one structurally
-      // identified mode keeps its ordering.
-      //
-      // The condition is a property of the QUERY PLAN -- no explicit anchors
-      // and at least four obligations -- not of any question wording. What
-      // used to sit here as well, and is gone, was a filter that dropped
-      // candidates by matching a task classifier and a list of symbol names
-      // from one repository.
-      if (options.retrievalStrategy === 'slice-v1' && !preserveConceptualObligationOrder) {
+      // A requested slice is always applied. The conceptual-recovery bypass
+      // that used to sit here was measured: instrumenting its trigger across
+      // the retrieval, conceptual-fallback, pack-quality and production
+      // correctness suites showed it firing on exactly three questions, all of
+      // them qualification-shaped, and on no independent fixture. A mode only
+      // the benchmark reaches is benchmark tuning, whatever its condition
+      // looks like, so it is gone rather than re-argued.
+      if (options.retrievalStrategy === 'slice-v1') {
         const sliced = sliceCandidatesForRetrieve(
           graph,
           scored.map((node) => ({
@@ -5722,14 +5717,7 @@ function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: R
     return { ...initial, retrieval_plan: proposal.plan }
   }
 
-  const preserveConceptualObligationOrder = initialQuality.explicit_anchors === 0
-    && (proposal.plan.query_obligations?.total ?? 0) >= 4
-  const recovered = retrieveContextPass(
-    graph,
-    options,
-    proposal.nodeBoosts,
-    preserveConceptualObligationOrder,
-  )
+  const recovered = retrieveContextPass(graph, options, proposal.nodeBoosts)
   const finalized = finalizeConceptualFallbackPlan(
     proposal,
     retrievalQualitySnapshot(graph, recovered),

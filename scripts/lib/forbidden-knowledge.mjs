@@ -75,26 +75,63 @@ export function squashForm(value) {
  */
 export function decodeEscapes(value) {
   return String(value)
-    .replace(/\\u\{([0-9a-fA-F]+)\}/g, (_, hex) => safeFromCodePoint(hex))
-    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => safeFromCodePoint(hex))
-    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => safeFromCodePoint(hex))
+    .replace(/\\u\{([0-9a-fA-F]+)\}/g, (_, hex) => safeFromCodePoint(hex, 16))
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => safeFromCodePoint(hex, 16))
+    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => safeFromCodePoint(hex, 16))
+    // Legacy ECMAScript octal escapes, which are still executable inside a
+    // regex: /\163tatusPage/ runs as /statusPage/. Decoded BEFORE the generic
+    // stray-backslash rule below, which would otherwise turn \163 into 163 and
+    // destroy the evidence.
+    .replace(/\\([0-7]{1,3})/g, (whole, digits) => decodeLegacyOctal(whole, digits))
     .replace(/\\([A-Za-z0-9])/g, '$1')
 }
 
-function safeFromCodePoint(hex) {
-  const code = Number.parseInt(hex, 16)
+function safeFromCodePoint(digits, radix) {
+  const code = Number.parseInt(digits, radix)
   return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : ''
 }
 
-function matchForms(haystack, needle) {
-  const decoded = decodeEscapes(haystack)
+/**
+ * `\NNN` is ambiguous in a regex: it is a BACKREFERENCE when capture groups
+ * exist and a legacy octal escape otherwise, and a static scanner cannot always
+ * tell. The split used here is the one that matters for hiding a name: only
+ * escapes that decode to a PRINTABLE ASCII character are treated as octal.
+ *
+ * That resolves the ambiguity in the safe direction. `\163` decodes to `s` and
+ * is treated as text; `\1`..`\9` decode to control characters, are left alone,
+ * and continue to read as backreferences. Anything outside printable ASCII is
+ * returned unchanged rather than silently deleted, so an unsupported spelling
+ * stays visible in the decoded value instead of being called clean.
+ */
+function decodeLegacyOctal(whole, digits) {
+  const code = Number.parseInt(digits, 8)
+  if (!Number.isInteger(code) || code < 0x20 || code > 0x7e) {
+    return whole
+  }
+  return String.fromCodePoint(code)
+}
+
+/**
+ * Both normalized forms of one value, computed ONCE.
+ *
+ * The forms used to be recomputed for every (site, rule) pair, which made the
+ * scan cost sites x rules string transformations: measured at 8.7s for 36
+ * rules and 4.4s for 18, i.e. linear in the rule count, which is what tripped
+ * the protected 15s control. Precomputing on both sides makes matching a plain
+ * substring test and the rule count stops driving the cost.
+ */
+function normalizedForms(value) {
+  const decoded = decodeEscapes(value)
+  return { decoded, tokens: tokenForm(decoded), squashed: squashForm(decoded) }
+}
+
+/** Which precomputed forms of a site contain the precomputed forms of a rule. */
+function matchPrecomputedForms(site, rule) {
   const forms = []
-  const needleTokens = tokenForm(needle)
-  if (needleTokens.length > 0 && tokenForm(decoded).includes(needleTokens)) {
+  if (rule.tokens.length > 0 && site.tokens.includes(rule.tokens)) {
     forms.push('tokens')
   }
-  const needleSquashed = squashForm(needle)
-  if (needleSquashed.length > 0 && squashForm(decoded).includes(needleSquashed)) {
+  if (rule.squashed.length > 0 && site.squashed.includes(rule.squashed)) {
     forms.push('squashed')
   }
   return forms
@@ -426,6 +463,38 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
   return sites
 }
 
+/**
+ * Read, decode, parse and normalize every production file exactly ONCE.
+ *
+ * The index is the scanner's only view of the tree; rules are applied to it
+ * afterwards, so adding a rule costs one substring test per site rather than
+ * another pass over the sources. `stats` is not decoration: the controls read
+ * it to prove each file was parsed exactly once and that the parse count does
+ * not move when the rule count does.
+ */
+export function buildProductionSourceIndex({ files, readFile }) {
+  const byFile = new Map()
+  const stats = { indexedFiles: 0, parseCalls: 0, siteCount: 0 }
+
+  for (const file of files) {
+    if (byFile.has(file)) {
+      // A duplicate entry in the file list must not become a second parse.
+      continue
+    }
+    const text = readFile(file)
+    stats.parseCalls += 1
+    const sites = knowledgeBearingSites(text, file).map((site) => ({
+      ...site,
+      ...normalizedForms(site.text),
+    }))
+    byFile.set(file, sites)
+    stats.indexedFiles += 1
+    stats.siteCount += sites.length
+  }
+
+  return { byFile, stats }
+}
+
 function isExcepted(exceptions, ruleId, file) {
   return exceptions.some((exception) => exception.ruleId === ruleId && exception.file === file)
 }
@@ -444,29 +513,35 @@ export function analyzeForbiddenKnowledge(input = {}) {
       filesScanned: 0,
       rulesApplied: 0,
       unusedExceptions: [],
+      stats: { indexedFiles: 0, parseCalls: 0, siteCount: 0 },
     }
   }
 
   const files = input.files ?? productionSourceFiles(root)
   const readFile = input.readFile ?? ((file) => readFileSync(resolve(root, file), 'utf8'))
+
+  // Every file is read, decoded, parsed and normalized exactly once, BEFORE any
+  // rule is consulted. There is deliberately no raw-text pre-filter: it would
+  // read the file before escapes are decoded and before split literals are
+  // folded, so an escaped or split name would skip the AST walk entirely and
+  // the scan would report clean.
+  const index = input.index ?? buildProductionSourceIndex({ files, readFile })
+
+  // Rule needles are normalized once as well, not once per site.
+  const rules = manifest.rules.map((rule) => ({ ...rule, ...normalizedForms(rule.value) }))
+
   const violations = []
   const usedExceptions = new Set()
 
-  for (const file of files) {
-    const text = readFile(file)
-
-    // Every file is parsed. There is deliberately no raw-text pre-filter: it
-    // would read the file BEFORE escapes are decoded and before split literals
-    // are folded, so a name written as '\\x73tatusPage' or 'status' + 'Page'
-    // would skip the AST walk entirely and the scan would report clean.
-    for (const site of knowledgeBearingSites(text, file)) {
-      for (const rule of manifest.rules) {
-        const forms = matchForms(site.text, rule.value)
+  for (const [file, sites] of index.byFile) {
+    for (const site of sites) {
+      for (const rule of rules) {
+        const forms = matchPrecomputedForms(site, rule)
         if (forms.length === 0) {
           continue
         }
         if (isExcepted(manifest.exceptions, rule.id, file)) {
-          usedExceptions.add(`${rule.id}${file}`)
+          usedExceptions.add(`${rule.id}${file}`)
           continue
         }
         violations.push({
@@ -479,7 +554,8 @@ export function analyzeForbiddenKnowledge(input = {}) {
           ruleValue: rule.value,
           why: rule.why,
           raw: site.text.length > 200 ? `${site.text.slice(0, 200)}...` : site.text,
-          normalized: forms.includes('tokens') ? tokenForm(site.text).trim() : squashForm(site.text),
+          decoded: site.decoded.length > 200 ? `${site.decoded.slice(0, 200)}...` : site.decoded,
+          normalized: forms.includes('tokens') ? site.tokens.trim() : site.squashed,
           matchForms: forms,
         })
       }
@@ -505,9 +581,10 @@ export function analyzeForbiddenKnowledge(input = {}) {
     manifestProblems: [],
     manifestVersion: manifest.manifestVersion,
     violations,
-    filesScanned: files.length,
-    rulesApplied: manifest.rules.length,
+    filesScanned: index.stats.indexedFiles,
+    rulesApplied: rules.length,
     unusedExceptions,
+    stats: index.stats,
   }
 }
 
