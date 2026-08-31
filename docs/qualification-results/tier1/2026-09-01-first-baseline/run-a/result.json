@@ -1,0 +1,1295 @@
+{
+  "schema_version": 1,
+  "headline": "First Tier 1 measurement — gate not yet activated",
+  "holdout_notice": "sealed holdout unsatisfied; results measure regression only",
+  "contract_version": "1.0.0",
+  "run_id": "run-a",
+  "generated_at": "2026-08-31T22:16:55.937Z",
+  "madar": {
+    "revision": "72ecb4aa72899c5fa1ba4e2c27795070e74871eb",
+    "version": "0.32.1"
+  },
+  "frozen_input_manifest": {
+    "file_count": 22,
+    "digest": "e0ee3faf8ed2fd4be203a1c9b49fb1a66f4378a80f597197937cbc7a41050abd",
+    "path": "frozen-input-manifest.json"
+  },
+  "gate_activation": {
+    "state": "pre_baseline",
+    "active": false
+  },
+  "totals": {
+    "pass": 2,
+    "fail": 6,
+    "invalid": 0
+  },
+  "task_cell_count": 6,
+  "negative_probe_count": 2,
+  "cells": [
+    {
+      "cell_id": "arch-unstorage-driver-seam@unstorage",
+      "kind": "task",
+      "task_id": "arch-unstorage-driver-seam",
+      "target_id": "unstorage",
+      "target_sha": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+      "patch_digest": null,
+      "prompt_sha256": "5c3722d182b5c36478ecabd2d1fb24f4f3eb40eba6e12032da89bebf12ef1d9f",
+      "truth_version": "1.0.0",
+      "madar_revision": "72ecb4aa72899c5fa1ba4e2c27795070e74871eb",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 636,
+        "fact_count": 806,
+        "community_count": 333,
+        "integrity_receipt_present": true,
+        "identity_digest": "acb77534251573f3a88a2c82574792fbc9d55cfff6b319e7a3af242f82db68dc"
+      },
+      "preparation": {
+        "target_id": "unstorage",
+        "kind": "git",
+        "url": "https://github.com/unjs/unstorage",
+        "ref": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "head": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 10,
+        "cited_blobs_verified": 10,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-arch-unstorage-driver-seam--unstorage.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing [\"src/drivers/utils/index.ts\",\"src/storage.ts\",\"src/types.ts\",\"src/utils.ts\"]",
+        "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"Driver\",\"DriverFactory\",\"createStorage\",\"getMount\"]"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 4
+          },
+          "symbols": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 4
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0,
+          "matched": 0,
+          "required": 4,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false
+      },
+      "expected": {
+        "critical_files": [
+          "src/drivers/utils/index.ts",
+          "src/storage.ts",
+          "src/types.ts",
+          "src/utils.ts"
+        ],
+        "critical_symbols": [
+          "Driver",
+          "DriverFactory",
+          "createStorage",
+          "getMount"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [],
+        "critical_symbols": [],
+        "missing_critical_files": [
+          "src/drivers/utils/index.ts",
+          "src/storage.ts",
+          "src/types.ts",
+          "src/utils.ts"
+        ],
+        "missing_critical_symbols": [
+          "Driver",
+          "DriverFactory",
+          "createStorage",
+          "getMount"
+        ],
+        "answerability": "verify_targets",
+        "evidence_paths_strict": [
+          "src/drivers/cloudflare-kv-http.ts",
+          "src/drivers/memory.ts",
+          "src/drivers/vercel-runtime-cache.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/drivers/azure-key-vault.ts",
+          "src/drivers/cloudflare-kv-http.ts",
+          "src/drivers/memory.ts",
+          "src/drivers/vercel-runtime-cache.ts",
+          "test/drivers/azure-key-vault.test.ts",
+          "test/drivers/cloudflare-cache-binding.test.ts",
+          "test/drivers/cloudflare-kv-binding.test.ts",
+          "test/drivers/cloudflare-kv-http.test.ts",
+          "test/drivers/vercel-runtime-cache.test.ts"
+        ],
+        "evidence_symbols_strict": [
+          "$fetch.create",
+          "driver"
+        ],
+        "evidence_symbols_generous": [
+          "$fetch.create",
+          "_vcFunctionsLib",
+          "asyncCall()",
+          "clearTimeout()",
+          "driver",
+          "wrapToPromise()"
+        ],
+        "non_existent_cited_paths": [],
+        "missing_verification_targets": [
+          "evidence:primary",
+          "evidence:structural",
+          "query:obligation:1",
+          "query:obligation:2",
+          "query:obligation:3",
+          "query:obligation:4",
+          "query:obligation:5",
+          "semantic:structure"
+        ],
+        "verification_targets": [
+          "src/drivers/cloudflare-kv-http.ts"
+        ]
+      },
+      "ready_clauses": {
+        "applicable": false,
+        "violated": [],
+        "undetermined": [],
+        "detail": "answerability 'verify_targets' is not a ready state; clauses are vacuously satisfied"
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": true,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": true,
+          "flow_proof_shaped": false
+        }
+      }
+    },
+    {
+      "cell_id": "flow-hono-request-dispatch@hono",
+      "kind": "task",
+      "task_id": "flow-hono-request-dispatch",
+      "target_id": "hono",
+      "target_sha": "26de73133b8552f56ba72e025ecd82b08900d796",
+      "patch_digest": null,
+      "prompt_sha256": "c276d363f0b10c00b75df925f2e658f3ee7af085872bcbcc64a7a4252c7b3b35",
+      "truth_version": "1.0.0",
+      "madar_revision": "72ecb4aa72899c5fa1ba4e2c27795070e74871eb",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 2331,
+        "fact_count": 3627,
+        "community_count": 1035,
+        "integrity_receipt_present": true,
+        "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      "preparation": {
+        "target_id": "hono",
+        "kind": "git",
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 11,
+        "cited_blobs_verified": 11,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-flow-hono-request-dispatch--hono.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing [\"src/compose.ts\",\"src/context.ts\",\"src/hono-base.ts\",\"src/router/smart-router/router.ts\",\"src/utils/url.ts\"]",
+        "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"Context\",\"SmartRouter\",\"compose\",\"fetch\",\"getPath\"]"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 5
+          },
+          "symbols": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 5
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0,
+          "matched": 0,
+          "required": 5,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false
+      },
+      "expected": {
+        "critical_files": [
+          "src/compose.ts",
+          "src/context.ts",
+          "src/hono-base.ts",
+          "src/router/smart-router/router.ts",
+          "src/utils/url.ts"
+        ],
+        "critical_symbols": [
+          "Context",
+          "SmartRouter",
+          "compose",
+          "fetch",
+          "getPath"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [],
+        "critical_symbols": [],
+        "missing_critical_files": [
+          "src/compose.ts",
+          "src/context.ts",
+          "src/hono-base.ts",
+          "src/router/smart-router/router.ts",
+          "src/utils/url.ts"
+        ],
+        "missing_critical_symbols": [
+          "Context",
+          "SmartRouter",
+          "compose",
+          "fetch",
+          "getPath"
+        ],
+        "answerability": "verify_targets",
+        "evidence_paths_strict": [
+          "src/helper/route/index.test.ts",
+          "src/helper/route/index.ts",
+          "src/middleware/method-not-allowed/index.test.ts",
+          "src/middleware/method-not-allowed/index.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/helper/route/index.test.ts",
+          "src/helper/route/index.ts",
+          "src/middleware/method-not-allowed/index.test.ts",
+          "src/middleware/method-not-allowed/index.ts"
+        ],
+        "evidence_symbols_strict": [
+          "basePath",
+          "baseRoutePath",
+          "index.test.ts",
+          "index.ts",
+          "matchedRoutes",
+          "methodNotAllowed",
+          "routePath"
+        ],
+        "evidence_symbols_generous": [
+          "Users Index Test",
+          "basePath",
+          "baseRoutePath",
+          "index.test.ts",
+          "index.ts",
+          "matchedRoutes",
+          "methodNotAllowed",
+          "routePath"
+        ],
+        "non_existent_cited_paths": [],
+        "missing_verification_targets": [
+          "evidence:supporting",
+          "indexing:spi_diagnostic",
+          "semantic:configuration"
+        ],
+        "verification_targets": [
+          "src/helper/route/index.test.ts",
+          "src/helper/route/index.ts",
+          "src/middleware/method-not-allowed/index.test.ts"
+        ]
+      },
+      "ready_clauses": {
+        "applicable": false,
+        "violated": [],
+        "undetermined": [],
+        "detail": "answerability 'verify_targets' is not a ready state; clauses are vacuously satisfied"
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "unknown",
+        "target_domain_hint": "unknown",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": false,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": true,
+          "flow_proof_shaped": true
+        }
+      }
+    },
+    {
+      "cell_id": "impact-hono-drop-router-fallback@hono",
+      "kind": "task",
+      "task_id": "impact-hono-drop-router-fallback",
+      "target_id": "hono",
+      "target_sha": "26de73133b8552f56ba72e025ecd82b08900d796",
+      "patch_digest": null,
+      "prompt_sha256": "4d05391549ee28a142a9f24960e43e415cf6c831c29dce720aa74e72c7ab9ac2",
+      "truth_version": "1.0.0",
+      "madar_revision": "72ecb4aa72899c5fa1ba4e2c27795070e74871eb",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 2331,
+        "fact_count": 3627,
+        "community_count": 1035,
+        "integrity_receipt_present": true,
+        "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      "preparation": {
+        "target_id": "hono",
+        "kind": "git",
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 11,
+        "cited_blobs_verified": 11,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-impact-hono-drop-router-fallback--hono.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing [\"src/hono.ts\",\"src/router/reg-exp-router/router.ts\",\"src/router/smart-router/router.ts\",\"src/router/trie-router/router.ts\"]",
+        "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"RegExpRouter\",\"SmartRouter\",\"TrieRouter\",\"UnsupportedPathError\"]"
+      ],
+      "undecided_clauses": [
+        "reported ready state 'ready_with_caveat' and this clause could not be decided deterministically: the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved"
+      ],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 4
+          },
+          "symbols": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 4
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0,
+          "matched": 0,
+          "required": 4,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false
+      },
+      "expected": {
+        "critical_files": [
+          "src/hono.ts",
+          "src/router/reg-exp-router/router.ts",
+          "src/router/smart-router/router.ts",
+          "src/router/trie-router/router.ts"
+        ],
+        "critical_symbols": [
+          "RegExpRouter",
+          "SmartRouter",
+          "TrieRouter",
+          "UnsupportedPathError"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [],
+        "critical_symbols": [],
+        "missing_critical_files": [
+          "src/hono.ts",
+          "src/router/reg-exp-router/router.ts",
+          "src/router/smart-router/router.ts",
+          "src/router/trie-router/router.ts"
+        ],
+        "missing_critical_symbols": [
+          "RegExpRouter",
+          "SmartRouter",
+          "TrieRouter",
+          "UnsupportedPathError"
+        ],
+        "answerability": "ready_with_caveat",
+        "evidence_paths_strict": [
+          "src/helper/route/index.test.ts",
+          "src/helper/route/index.ts",
+          "src/middleware/method-not-allowed/index.test.ts",
+          "src/middleware/method-not-allowed/index.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/helper/route/index.test.ts",
+          "src/helper/route/index.ts",
+          "src/middleware/method-not-allowed/index.test.ts",
+          "src/middleware/method-not-allowed/index.ts"
+        ],
+        "evidence_symbols_strict": [
+          "basePath",
+          "baseRoutePath",
+          "index.test.ts",
+          "index.ts",
+          "matchedRoutes",
+          "methodNotAllowed",
+          "routePath"
+        ],
+        "evidence_symbols_generous": [
+          "Users Index Test",
+          "basePath",
+          "baseRoutePath",
+          "index.test.ts",
+          "index.ts",
+          "matchedRoutes",
+          "methodNotAllowed",
+          "routePath"
+        ],
+        "non_existent_cited_paths": [],
+        "missing_verification_targets": [],
+        "verification_targets": []
+      },
+      "ready_clauses": {
+        "applicable": true,
+        "violated": [],
+        "undetermined": [
+          "the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved"
+        ],
+        "detail": null
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "unknown",
+        "target_domain_hint": "unknown",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": false,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": false,
+          "flow_proof_shaped": false
+        },
+        "excluded_terms": [
+          "fallback to another router implementation? List every module whose behaviour changes",
+          "changes",
+          "say which modules are unaffected",
+          "unaffected",
+          "why",
+          "say whether each failure is loud",
+          "loud",
+          "silent"
+        ],
+        "excluded_path_hints": [
+          "fallback-to-another-router-implementation-list-every-module-whose-behaviour-changes",
+          "say-which-modules-are-unaffected",
+          "why",
+          "say-whether-each-failure-is-loud",
+          "silent"
+        ]
+      }
+    },
+    {
+      "cell_id": "neg-hono-absent-matcher-persistence",
+      "kind": "negative_probe",
+      "task_id": null,
+      "target_id": "hono",
+      "target_sha": "26de73133b8552f56ba72e025ecd82b08900d796",
+      "patch_digest": null,
+      "prompt_sha256": "6a173a57d204d86260380b3f9fedcb4dcc5c90962258e849b508fddaa3e07116",
+      "truth_version": "1.0.0",
+      "madar_revision": "72ecb4aa72899c5fa1ba4e2c27795070e74871eb",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 2331,
+        "fact_count": 3627,
+        "community_count": 1035,
+        "integrity_receipt_present": true,
+        "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      "preparation": {
+        "target_id": "hono",
+        "kind": "git",
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 11,
+        "cited_blobs_verified": 11,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-neg-hono-absent-matcher-persistence.log",
+      "state": "pass",
+      "reasons": [],
+      "metrics": {
+        "false_ready": false,
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "answerability_ceiling": "verify_targets"
+      },
+      "expected": {
+        "max_answerability": "verify_targets",
+        "ready_allowed": false
+      },
+      "observed": {
+        "answerability": "verify_targets",
+        "evidence_paths_strict": [
+          "src/router/reg-exp-router/router.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/router/reg-exp-router/router.ts",
+          "src/router/trie-router/node.ts"
+        ],
+        "evidence_symbols_strict": [
+          "Object.create"
+        ],
+        "evidence_symbols_generous": [
+          "Object.create"
+        ],
+        "non_existent_cited_paths": [],
+        "relabelling_candidates_present": []
+      },
+      "measurement_limits": [
+        "Tier 1 observes a context artifact, not an answer. The frozen requirement that the artifact \"declare the requested behaviour was not found\" in prose is not observable at this tier; only the readiness state, the answerability ceiling and fabricated-path absence are gated here."
+      ],
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": true,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": true,
+          "flow_proof_shaped": true
+        }
+      }
+    },
+    {
+      "cell_id": "neg-unstorage-absent-encryption",
+      "kind": "negative_probe",
+      "task_id": null,
+      "target_id": "unstorage",
+      "target_sha": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+      "patch_digest": null,
+      "prompt_sha256": "cab0b45defcdcaf0b88c5613384f84b237c1d365e0a1f3b3bbd16543fe6db37d",
+      "truth_version": "1.0.0",
+      "madar_revision": "72ecb4aa72899c5fa1ba4e2c27795070e74871eb",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 636,
+        "fact_count": 806,
+        "community_count": 333,
+        "integrity_receipt_present": true,
+        "identity_digest": "acb77534251573f3a88a2c82574792fbc9d55cfff6b319e7a3af242f82db68dc"
+      },
+      "preparation": {
+        "target_id": "unstorage",
+        "kind": "git",
+        "url": "https://github.com/unjs/unstorage",
+        "ref": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "head": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 10,
+        "cited_blobs_verified": 10,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-neg-unstorage-absent-encryption.log",
+      "state": "pass",
+      "reasons": [],
+      "metrics": {
+        "false_ready": false,
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "answerability_ceiling": "verify_targets"
+      },
+      "expected": {
+        "max_answerability": "verify_targets",
+        "ready_allowed": false
+      },
+      "observed": {
+        "answerability": "verify_targets",
+        "evidence_paths_strict": [
+          "src/drivers/azure-key-vault.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/drivers/azure-key-vault.ts"
+        ],
+        "evidence_symbols_strict": [
+          "Object.keys",
+          "Object.values"
+        ],
+        "evidence_symbols_generous": [
+          "Object.keys",
+          "Object.values"
+        ],
+        "non_existent_cited_paths": [],
+        "relabelling_candidates_present": []
+      },
+      "measurement_limits": [
+        "Tier 1 observes a context artifact, not an answer. The frozen requirement that the artifact \"declare the requested behaviour was not found\" in prose is not observable at this tier; only the readiness state, the answerability ceiling and fabricated-path absence are gated here."
+      ],
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": true,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": true,
+          "flow_proof_shaped": false
+        }
+      }
+    },
+    {
+      "cell_id": "plan-unstorage-add-driver@unstorage",
+      "kind": "task",
+      "task_id": "plan-unstorage-add-driver",
+      "target_id": "unstorage",
+      "target_sha": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+      "patch_digest": null,
+      "prompt_sha256": "b8a0a2b4a0593346d1333d96ada6c339a0763611df1ddab51079369e0c62c7ff",
+      "truth_version": "1.0.0",
+      "madar_revision": "72ecb4aa72899c5fa1ba4e2c27795070e74871eb",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 636,
+        "fact_count": 806,
+        "community_count": 333,
+        "integrity_receipt_present": true,
+        "identity_digest": "acb77534251573f3a88a2c82574792fbc9d55cfff6b319e7a3af242f82db68dc"
+      },
+      "preparation": {
+        "target_id": "unstorage",
+        "kind": "git",
+        "url": "https://github.com/unjs/unstorage",
+        "ref": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "head": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 10,
+        "cited_blobs_verified": 10,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-plan-unstorage-add-driver--unstorage.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.2500 < min_critical_fact_recall 1; missing [\"src/drivers/memory.ts\",\"src/drivers/utils/index.ts\",\"src/types.ts\"]",
+        "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"Driver\",\"DriverFactory\",\"createRequiredError\"]"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0.25,
+            "matched": 1,
+            "required": 4
+          },
+          "symbols": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 3
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0,
+          "matched": 0,
+          "required": 3,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false
+      },
+      "expected": {
+        "critical_files": [
+          "src/_drivers.ts",
+          "src/drivers/memory.ts",
+          "src/drivers/utils/index.ts",
+          "src/types.ts"
+        ],
+        "critical_symbols": [
+          "Driver",
+          "DriverFactory",
+          "createRequiredError"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [
+          "src/_drivers.ts"
+        ],
+        "critical_symbols": [],
+        "missing_critical_files": [
+          "src/drivers/memory.ts",
+          "src/drivers/utils/index.ts",
+          "src/types.ts"
+        ],
+        "missing_critical_symbols": [
+          "Driver",
+          "DriverFactory",
+          "createRequiredError"
+        ],
+        "answerability": "verify_targets",
+        "evidence_paths_strict": [
+          "src/_drivers.ts",
+          "src/drivers/planetscale.ts",
+          "src/drivers/s3.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/_drivers.ts",
+          "src/drivers/planetscale.ts",
+          "src/drivers/s3.ts",
+          "src/server.ts",
+          "src/utils.ts"
+        ],
+        "evidence_symbols_strict": [
+          "builtinDrivers",
+          "listObjects()",
+          "normalizeKey()",
+          "planetscale.ts",
+          "server.ts",
+          "stringify()"
+        ],
+        "evidence_symbols_generous": [
+          "Drivers Azure App Configuration",
+          "Drivers Capacitor Preferences",
+          "Drivers S3",
+          "Drivers S3 — S3",
+          "builtinDrivers",
+          "listObjects()",
+          "normalizeKey()",
+          "planetscale.ts",
+          "server.ts",
+          "stringify()"
+        ],
+        "non_existent_cited_paths": [],
+        "missing_verification_targets": [
+          "discovery:credential_store",
+          "query:obligation:5"
+        ],
+        "verification_targets": [
+          "src/drivers/planetscale.ts",
+          "src/drivers/s3.ts"
+        ]
+      },
+      "ready_clauses": {
+        "applicable": false,
+        "violated": [],
+        "undetermined": [],
+        "detail": "answerability 'verify_targets' is not a ready state; clauses are vacuously satisfied"
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "unknown",
+        "target_domain_hint": "unknown",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": true,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": false,
+          "flow_proof_shaped": false
+        },
+        "excluded_terms": [
+          "widen the public extension interface",
+          "interface",
+          "do not change modules unrelated to adding a backend",
+          "backend",
+          "hand-edit",
+          "why for each",
+          "each"
+        ],
+        "excluded_path_hints": [
+          "widen-the-public-extension-interface",
+          "do-not-change-modules-unrelated-to-adding-a-backend",
+          "hand-edit",
+          "why-for-each"
+        ]
+      }
+    },
+    {
+      "cell_id": "review-hono-error-handling@hono-seeded-error-disclosure",
+      "kind": "task",
+      "task_id": "review-hono-error-handling",
+      "target_id": "hono-seeded-error-disclosure",
+      "target_sha": "26de73133b8552f56ba72e025ecd82b08900d796",
+      "patch_digest": "edb79059b72b4f27f5dc8341ba2d9a3617901c402da9ef1f9daf5503e6528d6f",
+      "prompt_sha256": "722278ed3fa2386f1e407b4fd53a7d4b89272f2adba4297f878ad3fd645d8e47",
+      "truth_version": "1.0.0",
+      "madar_revision": "72ecb4aa72899c5fa1ba4e2c27795070e74871eb",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 2331,
+        "fact_count": 3627,
+        "community_count": 1035,
+        "integrity_receipt_present": true,
+        "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      "preparation": {
+        "target_id": "hono-seeded-error-disclosure",
+        "kind": "git_patched",
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch": "patches/hono-error-message-disclosure.patch",
+        "patch_digest": "edb79059b72b4f27f5dc8341ba2d9a3617901c402da9ef1f9daf5503e6528d6f",
+        "patch_applied": true,
+        "cited_blobs_total": 4,
+        "cited_blobs_verified": 4,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-review-hono-error-handling--hono-seeded-error-disclosure.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.6667 < min_critical_fact_recall 1; missing [\"src/http-exception.ts\"]",
+        "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"HTTPException\",\"compose\",\"errorHandler\"]"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0.6666666666666666,
+            "matched": 2,
+            "required": 3
+          },
+          "symbols": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 3
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0,
+          "matched": 0,
+          "required": 3,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false
+      },
+      "expected": {
+        "critical_files": [
+          "src/compose.ts",
+          "src/hono-base.ts",
+          "src/http-exception.ts"
+        ],
+        "critical_symbols": [
+          "HTTPException",
+          "compose",
+          "errorHandler"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [
+          "src/compose.ts",
+          "src/hono-base.ts"
+        ],
+        "critical_symbols": [],
+        "missing_critical_files": [
+          "src/http-exception.ts"
+        ],
+        "missing_critical_symbols": [
+          "HTTPException",
+          "compose",
+          "errorHandler"
+        ],
+        "answerability": "verify_targets",
+        "evidence_paths_strict": [
+          "src/hono-base.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/compose.ts",
+          "src/context.ts",
+          "src/hono-base.ts",
+          "src/router.ts",
+          "src/types.ts"
+        ],
+        "evidence_symbols_strict": [
+          ".#handleError()",
+          "Hono",
+          "HonoOptions",
+          "StatusCode",
+          "hono-base.ts",
+          "http-status.ts",
+          "index.ts",
+          "types.ts"
+        ],
+        "evidence_symbols_generous": [
+          ".#handleError()",
+          "Hono",
+          "HonoOptions",
+          "JSX Base",
+          "JSX Components",
+          "JSX Render",
+          "JSX Render — Node",
+          "StatusCode",
+          "hono-base.ts",
+          "http-status.ts",
+          "index.ts",
+          "types.ts"
+        ],
+        "non_existent_cited_paths": [],
+        "missing_verification_targets": [
+          "indexing:spi_diagnostic",
+          "semantic:tests"
+        ],
+        "verification_targets": [
+          "src/compose.ts",
+          "src/context.ts",
+          "src/hono-base.ts",
+          "src/router.ts",
+          "src/types.ts"
+        ]
+      },
+      "ready_clauses": {
+        "applicable": false,
+        "violated": [],
+        "undetermined": [],
+        "detail": "answerability 'verify_targets' is not a ready state; clauses are vacuously satisfied"
+      },
+      "artifact_signals": null
+    },
+    {
+      "cell_id": "rootcause-hono-middleware-rerun@hono-seeded-compose",
+      "kind": "task",
+      "task_id": "rootcause-hono-middleware-rerun",
+      "target_id": "hono-seeded-compose",
+      "target_sha": "26de73133b8552f56ba72e025ecd82b08900d796",
+      "patch_digest": "9355c5bbb05cd5ae4d998ace18d6381f0cba4fd080203d4d02579da3dcf6dea4",
+      "prompt_sha256": "637cd655712c2e7d96a3566ed0b311d9d7dcfe0d9cfb8b699f5f1c52a721eaf0",
+      "truth_version": "1.0.0",
+      "madar_revision": "72ecb4aa72899c5fa1ba4e2c27795070e74871eb",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 2331,
+        "fact_count": 3627,
+        "community_count": 1035,
+        "integrity_receipt_present": true,
+        "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      "preparation": {
+        "target_id": "hono-seeded-compose",
+        "kind": "git_patched",
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch": "patches/hono-compose-reentrancy-guard.patch",
+        "patch_digest": "9355c5bbb05cd5ae4d998ace18d6381f0cba4fd080203d4d02579da3dcf6dea4",
+        "patch_applied": true,
+        "cited_blobs_total": 3,
+        "cited_blobs_verified": 3,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-rootcause-hono-middleware-rerun--hono-seeded-compose.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing [\"src/compose.ts\",\"src/hono-base.ts\"]",
+        "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"compose\",\"dispatch\"]"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 2
+          },
+          "symbols": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 2
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0,
+          "matched": 0,
+          "required": 2,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false
+      },
+      "expected": {
+        "critical_files": [
+          "src/compose.ts",
+          "src/hono-base.ts"
+        ],
+        "critical_symbols": [
+          "compose",
+          "dispatch"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [],
+        "critical_symbols": [],
+        "missing_critical_files": [
+          "src/compose.ts",
+          "src/hono-base.ts"
+        ],
+        "missing_critical_symbols": [
+          "compose",
+          "dispatch"
+        ],
+        "answerability": "verify_targets",
+        "evidence_paths_strict": [
+          "src/adapter/service-worker/index.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/adapter/service-worker/index.ts"
+        ],
+        "evidence_symbols_strict": [
+          "fire",
+          "index.ts"
+        ],
+        "evidence_symbols_generous": [
+          "Users Handler — Handle",
+          "fire",
+          "index.ts"
+        ],
+        "non_existent_cited_paths": [],
+        "missing_verification_targets": [
+          "evidence:supporting",
+          "indexing:spi_diagnostic",
+          "semantic:configuration"
+        ],
+        "verification_targets": [
+          "src/adapter/service-worker/index.ts"
+        ]
+      },
+      "ready_clauses": {
+        "applicable": false,
+        "violated": [],
+        "undetermined": [],
+        "detail": "answerability 'verify_targets' is not a ready state; clauses are vacuously satisfied"
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": true,
+          "backend_runtime_shaped": false,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": true,
+          "flow_proof_shaped": false
+        }
+      }
+    }
+  ],
+  "inherited_signals": {
+    "summary": "No frozen Tier 1 cell or negative-trust probe measurably changed because of the name-driven signals disclosed by #660. Three of the four disclosed signals have their named symbol present in source at this revision, and 2 signal group(s) had a co-occurring retrieval classification flag on at least one cell. Neither fact establishes attribution: the flag-to-symbol mapping is a hypothesis, and proving a cell state depends on one of these symbols would require a production change, which Phase 1 forbids. Every one of the six task-cell failures below is fully explained by evidence-obligation recall against the frozen truth, with no appeal to these signals. A source-only suspicion is not a Tier 1 product failure.",
+    "signals": [
+      {
+        "name": "src/runtime/retrieve.ts :: pipelineBridgeText",
+        "file": "src/runtime/retrieve.ts",
+        "source_presence": {
+          "file_present": true,
+          "matches": [
+            "pipelineBridgeText"
+          ]
+        },
+        "co_occurring_flag_cells": [
+          {
+            "cell_id": "arch-unstorage-driver-seam@unstorage",
+            "flags": [
+              "backend_runtime_shaped"
+            ],
+            "cell_state": "fail"
+          },
+          {
+            "cell_id": "neg-hono-absent-matcher-persistence",
+            "flags": [
+              "backend_runtime_shaped"
+            ],
+            "cell_state": "pass"
+          },
+          {
+            "cell_id": "neg-unstorage-absent-encryption",
+            "flags": [
+              "backend_runtime_shaped"
+            ],
+            "cell_state": "pass"
+          },
+          {
+            "cell_id": "plan-unstorage-add-driver@unstorage",
+            "flags": [
+              "backend_runtime_shaped"
+            ],
+            "cell_state": "fail"
+          }
+        ],
+        "cell_state_attributable": false,
+        "attribution_status": "not_established_in_phase_1",
+        "attribution_note": "Establishing that this signal changed a cell would require altering production and re-measuring, which this phase forbids. Flag co-occurrence is recorded as an observation only.",
+        "measurably_changed_a_cell": false
+      },
+      {
+        "name": "src/runtime/context-pack-diagnostics.ts :: report-stage-like names (planenforcement, requireideasuserid, callllm)",
+        "file": "src/runtime/context-pack-diagnostics.ts",
+        "source_presence": {
+          "file_present": true,
+          "matches": [
+            "callllm",
+            "planenforcement",
+            "requireideasuserid"
+          ]
+        },
+        "co_occurring_flag_cells": [],
+        "cell_state_attributable": false,
+        "attribution_status": "not_established_in_phase_1",
+        "attribution_note": "Establishing that this signal changed a cell would require altering production and re-measuring, which this phase forbids. Flag co-occurrence is recorded as an observation only.",
+        "measurably_changed_a_cell": false
+      },
+      {
+        "name": "src/runtime/graph-summary.ts :: addjob",
+        "file": "src/runtime/graph-summary.ts",
+        "source_presence": {
+          "file_present": true,
+          "matches": [
+            "addjob"
+          ]
+        },
+        "co_occurring_flag_cells": [
+          {
+            "cell_id": "rootcause-hono-middleware-rerun@hono-seeded-compose",
+            "flags": [
+              "generic_generation_shaped"
+            ],
+            "cell_state": "fail"
+          }
+        ],
+        "cell_state_attributable": false,
+        "attribution_status": "not_established_in_phase_1",
+        "attribution_note": "Establishing that this signal changed a cell would require altering production and re-measuring, which this phase forbids. Flag co-occurrence is recorded as an observation only.",
+        "measurably_changed_a_cell": false
+      },
+      {
+        "name": "regex-alternation anchoring (a middle alternative can match the tail of a longer word)",
+        "file": null,
+        "source_presence": null,
+        "co_occurring_flag_cells": [],
+        "cell_state_attributable": false,
+        "attribution_status": "not_established_in_phase_1",
+        "attribution_note": "Establishing that this signal changed a cell would require altering production and re-measuring, which this phase forbids. Flag co-occurrence is recorded as an observation only.",
+        "measurably_changed_a_cell": false
+      }
+    ]
+  },
+  "environment": {
+    "node_version": "v22.22.3",
+    "platform": "darwin",
+    "arch": "arm64",
+    "commands": [
+      "node dist/src/cli/bin.js generate . --no-html",
+      "node dist/src/cli/bin.js pack \"<frozen prompt>\" --format json"
+    ]
+  },
+  "semantic_digest": "82902a3b6ac0bd7fc28eb849f69def9a52ab2482d3fceb647297f4d78216a959"
+}

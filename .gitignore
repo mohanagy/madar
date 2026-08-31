@@ -16,3 +16,6 @@ CLAUDE.md
 .mcp.json
 .test-artifacts/
 .issue-654-artifacts/
+
+# Tier 1 qualification target clone cache and prepared trees (never committed)
+.qualification-cache/
