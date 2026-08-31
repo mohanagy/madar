@@ -691,20 +691,13 @@ const QUERY_EVIDENCE_OPERATION_PATTERN = /(?:\b(?:await|case|catch|delete|dispat
 const QUERY_EVIDENCE_STATE_MUTATION_PATTERN = /(?:\b(?:create|insert|transition|upsert)\w*\s*\(|\.(?:create|insert|upsert)\s*\(|\bnew\s+\w+)/i
 const QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN = /^\s*(?:(?:import|package)\b|(?:export\s+)?type\b|interface\b|\/\/|\/\*|\*|[{}()[\],;]+\s*$)/i
 const QUERY_EVIDENCE_LOG_LINE_PATTERN = /\b(?:logger|log)\.\w+\s*\(/i
-const QUERY_EVIDENCE_HANDOFF_PATTERN = /(?:\b(?:createTask|dispatch|emit|enqueue|insert|publish|send|update|upsert)\w*\s*\(|\.(?:createTask|dispatch|emit|enqueue|insert|publish|send\w*|update|upsert)\s*\()/i
-const QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN = /(?:\b(?:createTask|dispatch|emit|enqueue|publish|send|trigger)\w*\s*\(|\.(?:createTask|dispatch|emit|enqueue|publish|send\w*)\s*\()/i
+const QUERY_EVIDENCE_HANDOFF_PATTERN = /(?:\b(?:dispatch|emit|enqueue|insert|publish|send|update|upsert)\w*\s*\(|\.(?:dispatch|emit|enqueue|insert|publish|send\w*|update|upsert)\s*\()/i
+const QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN = /(?:\b(?:dispatch|emit|enqueue|publish|send|trigger)\w*\s*\(|\.(?:dispatch|emit|enqueue|publish|send\w*)\s*\()/i
 const QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN = /(?:\b(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\(|\.(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\()/i
 const QUERY_EVIDENCE_RETRY_PATTERN = /\b(?:backoff|exponential|retr(?:y|ied|ies))\b/i
-const QUERY_EVIDENCE_OVERALL_RESULT_PATTERN = /\boverall\w*(?:result|state|status)\w*\s*=/i
 const QUERY_EVIDENCE_DECISION_PATTERN = /(?:\b\w*(?:result|state|status)\w*\s*=.*(?:\?|\.some\s*\()|\?\s*[\w.]+\s*:)/i
 const QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN = /\b\w*(?:result|state|status)\w*\s*=/i
-const QUERY_EVIDENCE_PAGE_RESULT_PATTERN = /(?:\bpage\w*(?:indicator|status)\w*\s*\(|\bstatus\s*:\s*page\w*\s*\()/i
-const QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN = /\breturn\s+page\.\w+/i
 const QUERY_EVIDENCE_COMPUTATION_PATTERN = /(?:\b(?:compute|derive|resolve)\w*\s*\(|\b\w*(?:indicator|result|state|status)\w*\s*=|\b\w*(?:indicator|status)\w*\s*\()/i
-const QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN = /(?:\b\w+\.type\s*===?\s*["']incident["'][^\n]*!\w+\.to|!\w+\.to[^\n]*\b\w+\.type\s*===?\s*["']incident["'])/i
-const QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN = /\bstatus\s*=\s*monitors\.some\s*\(/i
-const QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN = /\bRouterOutputs\b.*\[\s*["']statusPage["']\s*\].*\[\s*["']get["']\s*\]/i
-const QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN = /\btrpc\s*\.\s*statusPage\s*\.\s*get\s*\.\s*queryOptions\b/i
 const QUERY_EVIDENCE_DECLARATION_PATTERN = /^\s*(?:(?:export\s+)?(?:async\s+)?(?:function\b|const\s+\w+\s*=\s*async\b)|func\b)/i
 
 function boundedSourceRange(
@@ -725,10 +718,9 @@ interface QueryEvidenceFragment {
 const QUERY_EVIDENCE_CONTINUATION_START_PATTERN = /^\s*(?:[.?:]|&&|\|\|)/
 const QUERY_EVIDENCE_CONTINUATION_END_PATTERN = /(?:=>|&&|\|\||[=?:])\s*$/
 const QUERY_EVIDENCE_STRUCTURED_CALL_PATTERN = /(?:\b\w+\s*\(|:=\s*&?[\w.]+)[^;]*\{\s*$/
-const QUERY_EVIDENCE_DISCRIMINANT_PROPERTY_PATTERN = /^\s*([\w]*(?:action|event|incident|method|mode|monitor|notification|queue|route|status|type|url)[\w]*)\s*:/i
-const QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN = /\b([A-Za-z_]\w*)\.(?:createTask|deliver\w*|dispatch\w*|emit\w*|enqueue\w*|publish\w*|send\w*|trigger\w*)\s*\(/i
-const QUERY_EVIDENCE_PROVIDER_SETUP_PATTERN = /(?:\bnew\s+\w*(?:client|provider|queue|transport)\w*\s*\(|\b\w*newClient\s*\(|\b\w*(?:client|provider|queue|transport)\w*\.)/i
-const QUERY_EVIDENCE_CONTAINER_DECLARATION_PATTERN = /^\s*(?:export\s+const\s+\w*(?:route|router)\w*\s*=|\w+\s*:\s*\w*Procedure\.query\s*\()/i
+const QUERY_EVIDENCE_DISCRIMINANT_PROPERTY_PATTERN = /^\s*([\w]*(?:action|event|method|mode|queue|route|status|type|url)[\w]*)\s*:/i
+const QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN = /\b([A-Za-z_]\w*)\.(?:deliver\w*|dispatch\w*|emit\w*|enqueue\w*|publish\w*|send\w*|trigger\w*)\s*\(/i
+const QUERY_EVIDENCE_PROVIDER_SETUP_PATTERN = /(?:\bnew\s*\w*(?:client|provider|queue|transport)\w*\s*\(|\b\w*(?:client|provider|queue|transport)\w*\.)/i
 
 function braceDelta(value: string): number {
   return (value.match(/\{/g)?.length ?? 0) - (value.match(/\}/g)?.length ?? 0)
@@ -778,7 +770,7 @@ function structuredCallFragment(
   }
   const priority = (key: string): number => {
     if (/(?:action|event|mode|status|type)/.test(key)) return 0
-    if (/(?:incident|method|monitor|notification|queue|route|url)/.test(key)) return 1
+    if (/(?:method|queue|route|url)/.test(key)) return 1
     return 2
   }
   const discriminants = properties
@@ -820,94 +812,6 @@ function providerHandoffFragment(
   return null
 }
 
-function publicRouterFetchFragment(
-  lines: readonly string[],
-  lineNumber: number,
-  rangeStart: number,
-): { start: number; end: number; text: string } | null {
-  const queryOptions = lines[lineNumber - 1] ?? ''
-  if (!QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN.test(queryOptions)) {
-    return null
-  }
-
-  for (let candidate = lineNumber - 1; candidate >= Math.max(rangeStart, lineNumber - 3); candidate -= 1) {
-    const fetch = lines[candidate - 1] ?? ''
-    if (!/\b(?:const|let)\s+\w+\s*=\s*await\s+\w+\.fetchQuery\s*\(/.test(fetch)) {
-      continue
-    }
-    return {
-      start: candidate,
-      end: lineNumber,
-      text: `${fetch.trim()} ${queryOptions.trim()}`,
-    }
-  }
-
-  return null
-}
-
-function incidentStatusOwnerFragment(
-  lines: readonly string[],
-  lineNumber: number,
-  rangeStart: number,
-  rangeEnd: number,
-): { start: number; end: number; text: string } | null {
-  const first = lines[lineNumber - 1] ?? ''
-  if (!/^\s*const\s+status\s*=/.test(first)) {
-    return null
-  }
-  let decisionEnd = lineNumber
-  while (decisionEnd < rangeEnd && decisionEnd - lineNumber < 5) {
-    const current = lines[decisionEnd - 1] ?? ''
-    if (/;\s*$/.test(current)) {
-      break
-    }
-    decisionEnd += 1
-  }
-  const decision = lines.slice(lineNumber - 1, decisionEnd).join(' ')
-  if (!QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(decision)) {
-    return null
-  }
-
-  let ownerNumber: number | null = null
-  for (let candidate = lineNumber - 1; candidate >= Math.max(rangeStart, lineNumber - 16); candidate -= 1) {
-    if (/^\s*const\s+\w+\s*=.*\.map\s*\(/.test(lines[candidate - 1] ?? '')) {
-      ownerNumber = candidate
-      break
-    }
-  }
-  if (ownerNumber === null) {
-    return null
-  }
-
-  const returnEvidence: string[] = []
-  let returnEnd = decisionEnd
-  for (let candidate = decisionEnd + 1; candidate <= Math.min(rangeEnd, decisionEnd + 20); candidate += 1) {
-    const value = lines[candidate - 1] ?? ''
-    if (returnEvidence.length === 0 && /^\s*return\s*\{/.test(value)) {
-      returnEvidence.push(value.trim())
-      returnEnd = candidate
-      continue
-    }
-    if (returnEvidence.length > 0 && /^\s*(?:\.\.\.\w+(?:\.\w+)?,|status,|events,)/.test(value)) {
-      returnEvidence.push(value.trim())
-      returnEnd = candidate
-      if (returnEvidence.some((entry) => /^status,$/.test(entry))) {
-        break
-      }
-    }
-  }
-
-  return {
-    start: ownerNumber,
-    end: Math.max(decisionEnd, returnEnd),
-    text: [
-      (lines[ownerNumber - 1] ?? '').trim(),
-      ...returnEvidence,
-      `L${lineNumber}: ${decision.trim()}`,
-    ].join(' '),
-  }
-}
-
 function queryEvidenceScoringText(value: string): string {
   return value
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
@@ -935,20 +839,10 @@ function queryEvidenceFragments(
     ) {
       start -= 1
     }
-    const incidentStatusOwner = incidentStatusOwnerFragment(lines, lineNumber, range.start, range.end)
-    const publicRouterFetch = incidentStatusOwner ? null : publicRouterFetchFragment(lines, lineNumber, range.start)
-    const providerHandoff = incidentStatusOwner || publicRouterFetch ? null : providerHandoffFragment(lines, lineNumber, range.start)
-    const structured = incidentStatusOwner || publicRouterFetch || providerHandoff ? null : structuredCallFragment(lines, lineNumber, range.end)
+    const providerHandoff = providerHandoffFragment(lines, lineNumber, range.start)
+    const structured = providerHandoff ? null : structuredCallFragment(lines, lineNumber, range.end)
     let text: string | null = null
-    if (incidentStatusOwner) {
-      start = incidentStatusOwner.start
-      end = incidentStatusOwner.end
-      text = incidentStatusOwner.text
-    } else if (publicRouterFetch) {
-      start = publicRouterFetch.start
-      end = publicRouterFetch.end
-      text = publicRouterFetch.text
-    } else if (providerHandoff) {
+    if (providerHandoff) {
       start = providerHandoff.start
       end = providerHandoff.end
       text = providerHandoff.text
@@ -1091,18 +985,6 @@ function queryEvidenceRange(
     if (QUERY_EVIDENCE_COMPUTATION_PATTERN.test(scoringText)) {
       score += 1.2
     }
-    if (QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(scoringText)) {
-      score += 2.4
-    }
-    if (QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN.test(scoringText)) {
-      score += 2
-    }
-    if (QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN.test(scoringText)) {
-      score += 2.5
-    }
-    if (QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN.test(scoringText)) {
-      score += 4
-    }
     if (QUERY_EVIDENCE_DECLARATION_PATTERN.test(scoringText)) {
       score -= 1.25
     }
@@ -1132,10 +1014,7 @@ function queryEvidenceRange(
 }
 
 function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[] {
-  const valuableLines = range.lines.filter((line) => (
-    !QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(line.text)
-    || QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN.test(line.text)
-  ))
+  const valuableLines = range.lines.filter((line) => !QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(line.text))
   const remaining = [...(valuableLines.length > 0 ? valuableLines : range.lines)]
   const selected: QueryEvidenceLine[] = []
   const coveredTerms = new Set<string>()
@@ -1203,17 +1082,13 @@ function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[
     if (best) addSelected(best)
   }
 
+  // Reserve one line per generic evidence shape. Every entry is an ordinary
+  // programming construct -- a handoff call, a retry, a branch, a computation
+  // -- so this pass cannot prefer one repository's code over another's.
   for (const semanticPattern of [
     QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN,
     QUERY_EVIDENCE_RETRY_PATTERN,
-    QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN,
-    QUERY_EVIDENCE_OVERALL_RESULT_PATTERN,
     QUERY_EVIDENCE_DECISION_PATTERN,
-    QUERY_EVIDENCE_PAGE_RESULT_PATTERN,
-    QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN,
-    QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN,
-    QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN,
-    QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN,
     QUERY_EVIDENCE_COMPUTATION_PATTERN,
   ]) {
     if (selected.length >= QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
@@ -1245,14 +1120,7 @@ function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[
           const addsSemanticEvidence = [
             QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN,
             QUERY_EVIDENCE_RETRY_PATTERN,
-            QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN,
-            QUERY_EVIDENCE_OVERALL_RESULT_PATTERN,
             QUERY_EVIDENCE_DECISION_PATTERN,
-            QUERY_EVIDENCE_PAGE_RESULT_PATTERN,
-            QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN,
-            QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN,
-            QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN,
-            QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN,
             QUERY_EVIDENCE_COMPUTATION_PATTERN,
           ].some((pattern) => (
             pattern.test(queryEvidenceScoringText(line.text))
@@ -1360,13 +1228,7 @@ export function readQueryEvidenceSnippet(
       }
     }
 
-    let selectedLines = selectQueryEvidenceLines(selectedRange)
-    if (
-      options.fileNodeLike
-      && selectedLines.some((line) => QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(queryEvidenceScoringText(line.text)))
-    ) {
-      selectedLines = selectedLines.filter((line) => !QUERY_EVIDENCE_CONTAINER_DECLARATION_PATTERN.test(line.text))
-    }
+    const selectedLines = selectQueryEvidenceLines(selectedRange)
     const snippet = renderQueryEvidenceLines(selectedLines)
     if (!snippet || selectedLines.length === 0) {
       return null
@@ -2011,14 +1873,12 @@ function excludedTermMatches(value: string, excludedTerms: readonly string[], ex
     .some((termToken) => valueTokens.has(termToken))
 }
 
-function promptAllowsSourceDomain(domain: SourceDomain, intent: string, prompt: string, questionTokens: readonly string[]): boolean {
-  const lowerPrompt = prompt.toLowerCase()
+function promptAllowsSourceDomain(domain: SourceDomain, intent: string, questionTokens: readonly string[]): boolean {
   switch (domain) {
     case 'test':
       return intent === 'test' || includesAnyToken(questionTokens, ['test', 'tests', 'spec', 'coverage', 'e2e'])
     case 'benchmark':
       return includesAnyToken(questionTokens, ['bench', 'benchmark', 'benchmarks', 'perf', 'performance'])
-        || /\b(html reporter|reporter utilities?)\b/i.test(lowerPrompt)
     case 'fixture':
       return includesAnyToken(questionTokens, ['fixture', 'fixtures', 'mock', 'mocks'])
     case 'generated':
@@ -2041,7 +1901,7 @@ function defaultSourceDomainPenalty(
   prompt: string,
   questionTokens: readonly string[],
 ): number {
-  if (promptAllowsSourceDomain(domain, intent, prompt, questionTokens)) {
+  if (promptAllowsSourceDomain(domain, intent, questionTokens)) {
     return 0
   }
 
@@ -2138,10 +1998,10 @@ function runtimeGenerationNodeValue(
   if (/\b(?:nest_route|nest_controller|nest_provider|controller|service|repository|worker|orchestrator)\b/.test(lower)) {
     value += 1.75
   }
-  if (/\b(?:generate|generation|create|start|process|pipeline|queue|job|research|agent|scoring|score|report|repository|persist|save|builder)\b/.test(lower)) {
+  if (/\b(?:generate|generation|create|start|process|pipeline|queue|job|repository|persist|save)\b/.test(lower)) {
     value += 1.5
   }
-  if (/(?:^|[.#])(?:generate|create|start|process|save|score|search|update|claim|cancel)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)) {
+  if (/(?:^|[.#])(?:generate|create|start|process|save|search|update)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)) {
     value += 1
   }
 
@@ -2164,9 +2024,6 @@ function frontendDisplayNodePenalty(
   }
   if (/\b(?:display|render|shown?|visible|footer|header|label|date|timestamp|component)\b/.test(lower)) {
     penalty += 1.5
-  }
-  if (/^pick[A-Z]/.test(node.label)) {
-    penalty += 1.25
   }
 
   return penalty
@@ -2228,7 +2085,7 @@ function runtimeGenerationSourceDomainPenalty(
 }
 
 function promptAllowsScriptMigration(question: string): boolean {
-  return /\b(?:scripts?|migrat(?:e|ed|es|ing|ion)|backfill|cli|one-off|repair|old pipeline|seed(?:ing|ers?)|seeds?\s+(?:data|db|database|scripts?|files?))\b/i.test(question)
+  return /\b(?:scripts?|migrat(?:e|ed|es|ing|ion)|backfill|cli|one-off|repair|seed(?:ing|ers?)|seeds?\s+(?:data|db|database|scripts?|files?))\b/i.test(question)
 }
 
 function scriptMigrationPathPenalty(
@@ -2463,18 +2320,10 @@ function promptWantsRuntimePipeline(question: string): boolean {
   return /\b(runtime|pipeline|service|orchestrator|job|agent|scoring|report(?: builder)?|persistence|repository|queue|worker)\b/i.test(question)
 }
 
-function promptWantsReportGenerationCore(question: string): boolean {
-  return /\b(?:report(?:\s+generation)?|generated\s+report|validation\s+report|final\s+report|assembly|assemble|synthesis|renderer|render|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate)\b/i.test(question)
-}
-
 function promptHasExplicitExecutionAnchor(question: string): boolean {
   return containsUrlLikeRoutePath(question)
     || /`[^`]+`/.test(question)
     || /\b[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\b/.test(question)
-}
-
-function promptWantsDetailedReportGenerationPhases(question: string): boolean {
-  return promptWantsReportGenerationCore(question) && !promptHasExplicitExecutionAnchor(question)
 }
 
 function promptWantsAuthGuardPhase(question: string): boolean {
@@ -2502,8 +2351,7 @@ function promptExplicitlyWantsRuntimeHandoff(question: string): boolean {
 }
 
 function promptUsesExpandedExecutionTaxonomy(question: string): boolean {
-  return promptWantsDetailedReportGenerationPhases(question)
-    || promptWantsAuthGuardPhase(question)
+  return promptWantsAuthGuardPhase(question)
     || promptWantsValidationPhase(question)
     || promptWantsNotificationOrEventPhase(question)
 }
@@ -2536,7 +2384,7 @@ function supportingPolicyOrLoggerNode(
   node: Pick<RetrieveMatchedNode, 'label' | 'framework_role' | 'source_file'>,
 ): boolean {
   const lower = `${node.label} ${node.framework_role ?? ''} ${node.source_file}`.toLowerCase()
-  return /planenforcement|guard|interceptor|swagger|apioperation|apiresponse|apitags|logger|\.info\(\)|\.error\(\)|\.warn\(\)|\.debug\(\)/.test(lower)
+  return /guard|interceptor|swagger|apioperation|apiresponse|apitags|logger|\.info\(\)|\.error\(\)|\.warn\(\)|\.debug\(\)/.test(lower)
 }
 
 function pipelineBridgeNode(
@@ -2549,7 +2397,15 @@ function runtimeFlowRelation(relation: string): boolean {
   return relation === 'calls' || relation === 'enqueues_job'
 }
 
-function lowValueReportGenerationCompactNode(
+/**
+ * Whether a node is a low-value step for compaction.
+ *
+ * This asks the generic execution-step test and nothing else. It used to carry
+ * a list of symbol names observed in particular repositories, which demoted
+ * those exact symbols wherever they appeared and demoted nothing equivalent in
+ * a repository that had named things differently.
+ */
+function lowValueCompactNode(
   node: {
     label: string
     source_file: string
@@ -2557,83 +2413,17 @@ function lowValueReportGenerationCompactNode(
     framework_role?: string | undefined
   },
 ): boolean {
-  const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
   return lowValueExecutionStep({
     label: node.label,
     source_file: node.source_file,
     ...(node.node_kind !== undefined ? { node_kind: node.node_kind } : {}),
     ...(node.framework_role !== undefined ? { framework_role: node.framework_role } : {}),
   })
-    || /\b(?:title|status|suggest|guard|auth|interceptor|refund|claim|cancel|signedurl|buildperspective|letsbuild|publish|delete)\b/.test(lower)
-    || /(?:^|[.#])(?:generatefallbacktitle|generatetitle|getstatusmessage|claimqueuedpipelinerun|releasequeuedpipelineclaim|releaseunusedcreditreservation|generatebuildperspective|generatesignedurl|generateletsbuild|publishidea|getidea|listideas|deleteidea|suggestimprovements)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)
-}
-
-function recoveredReportGenerationNoise(
-  question: string,
-  node: Pick<ScoredNode, 'label' | 'sourceFile' | 'nodeKind' | 'frameworkRole'>,
-): boolean {
-  if (!promptWantsRuntimePipeline(question) || !promptWantsReportGenerationCore(question)) {
-    return false
-  }
-
-  return lowValueReportGenerationCompactNode({
-    label: node.label,
-    source_file: node.sourceFile,
-    node_kind: node.nodeKind,
-    framework_role: node.frameworkRole,
-  })
-}
-
-function reportGenerationCompactApplies(result: RetrieveResult): boolean {
-  if (
-    result.retrieval_strategy !== 'slice-v1'
-    || !promptWantsRuntimePipeline(result.question)
-    || !promptWantsReportGenerationCore(result.question)
-    || !result.slice
-    || promptExpectsPersistenceStep(result.question)
-  ) {
-    return false
-  }
-
-  if (result.slice.anchors.some((anchor) => anchor.reason === 'symbol mention' || anchor.reason === 'path mention')) {
-    return false
-  }
-
-  return result.slice.anchors.some((anchor) => anchor.reason === 'generation core heuristic')
-    || (result.execution_slice?.steps.length ?? 0) >= 3
-}
-
-function reportGenerationCompactPriority(
-  node: Pick<RetrieveMatchedNode, 'label' | 'source_file' | 'node_kind' | 'framework_role' | 'relevance_band'>,
-  executionStepLabels: ReadonlySet<string>,
-): number {
-  const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
-  let value = 0
-
-  if (executionStepLabels.has(node.label)) value += 80
-  if (/\b(?:planner|plan\b|research|assembly|assemble|renderer|render|synth|quality(?:-| )gate|dispatchwave|dispatchdbsync|broadcastrunstarted|broadcastrunfailed|queue|job|worker|orchestrator|process|persist|save)\b/.test(lower)) value += 40
-  if (/\bscoremetrics\b/.test(lower)) value += 35
-  if (pipelineBridgeNode(node)) value += 20
-  if (node.relevance_band === 'direct') value += 5
-
-  if (
-    /(?:^|[.#])(?:generatescoringledger|generatesensitivityanalysis|generatesuggestednextsteps|scoremetricbatch|deduplicateevidencerefs|mapcompositetorecommendation|normalizemetric|parsejson)\(?\)?$/i.test(node.label)
-    || /\b(?:metrichumanprompt|fallbackmetric)\b/.test(lower)
-  ) {
-    value -= 35
-  }
-  if (lowValueReportGenerationCompactNode(node)) value -= 100
-
-  return value
 }
 
 function compactSlicePromotionApplies(result: RetrieveResult): boolean {
   if (result.retrieval_strategy !== 'slice-v1' || !promptWantsRuntimePipeline(result.question)) {
     return false
-  }
-
-  if (reportGenerationCompactApplies(result)) {
-    return true
   }
 
   return (result.slice?.anchors ?? []).some((anchor) =>
@@ -2655,91 +2445,6 @@ function structuralSlicePromotionApplies(
 function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
   if (!compactSlicePromotionApplies(result) || !result.slice) {
     return []
-  }
-
-  if (reportGenerationCompactApplies(result)) {
-    const matchedById = new Map(
-      result.matched_nodes
-        .map((node) => (typeof node.node_id === 'string' && node.node_id.length > 0 ? [node.node_id, node] as const : null))
-        .filter((entry): entry is readonly [string, RetrieveMatchedNode] => entry !== null),
-    )
-    const executionStepLabels = new Set<string>()
-    const executionStepFiles = new Set<string>()
-    const promoted = new Set<string>()
-    const addPromoted = (nodeId: string | undefined): void => {
-      if (typeof nodeId !== 'string' || nodeId.length === 0) {
-        return
-      }
-      const node = matchedById.get(nodeId)
-      if (!node || supportingPolicyOrLoggerNode(node) || lowValueReportGenerationCompactNode(node)) {
-        return
-      }
-      promoted.add(nodeId)
-    }
-    const addPromotedByLabel = (label: string): void => {
-      for (const node of result.matched_nodes) {
-        if (node.label !== label) {
-          continue
-        }
-        addPromoted(node.node_id)
-      }
-    }
-
-    for (const anchor of result.slice.anchors) {
-      addPromoted(anchor.node_id)
-    }
-
-    for (const step of result.execution_slice?.steps ?? []) {
-      executionStepLabels.add(step.label)
-      executionStepFiles.add(step.source_file)
-      addPromoted(step.node_id)
-      addPromotedByLabel(step.label)
-    }
-    for (const step of result.execution_slice?.primary_path?.steps ?? []) {
-      executionStepLabels.add(step.label)
-      executionStepFiles.add(step.source_file)
-      addPromoted(step.node_id)
-      addPromotedByLabel(step.label)
-    }
-
-    for (const path of result.slice.selected_paths) {
-      if (!runtimeFlowRelation(path.relation)) {
-        continue
-      }
-
-      const fromNode = typeof path.from_id === 'string' ? matchedById.get(path.from_id) : undefined
-      const toNode = typeof path.to_id === 'string' ? matchedById.get(path.to_id) : undefined
-      if (fromNode && pipelineBridgeNode(fromNode)) {
-        addPromoted(path.from_id)
-      }
-      if (toNode && pipelineBridgeNode(toNode)) {
-        addPromoted(path.to_id)
-      }
-      if (fromNode && toNode && fromNode.source_file === toNode.source_file) {
-        if (executionStepFiles.has(fromNode.source_file)) {
-          addPromoted(path.from_id)
-          addPromoted(path.to_id)
-        }
-      }
-    }
-
-    return result.matched_nodes
-      .filter((node) => typeof node.node_id === 'string' && promoted.has(node.node_id))
-      .sort((left, right) => {
-        const priorityDelta = reportGenerationCompactPriority(right, executionStepLabels)
-          - reportGenerationCompactPriority(left, executionStepLabels)
-        if (priorityDelta !== 0) {
-          return priorityDelta
-        }
-        const leftPipeline = pipelineBridgeNode(left) ? 1 : 0
-        const rightPipeline = pipelineBridgeNode(right) ? 1 : 0
-        if (leftPipeline !== rightPipeline) {
-          return rightPipeline - leftPipeline
-        }
-        return right.match_score - left.match_score
-      })
-      .flatMap((node) => (typeof node.node_id === 'string' ? [node.node_id] : []))
-      .slice(0, 24)
   }
 
   const promoted = new Set<string>(
@@ -2782,83 +2487,6 @@ function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
 function promotedSliceCompactLabels(result: RetrieveResult): string[] {
   if (!compactSlicePromotionApplies(result) || !result.slice) {
     return []
-  }
-
-  if (reportGenerationCompactApplies(result)) {
-    const matchedById = new Map(
-    result.matched_nodes
-      .map((node) => (typeof node.node_id === 'string' && node.node_id.length > 0 ? [node.node_id, node] as const : null))
-      .filter((entry): entry is readonly [string, RetrieveMatchedNode] => entry !== null),
-    )
-    const representativeByLabel = new Map<string, RetrieveMatchedNode>()
-    for (const node of result.matched_nodes) {
-    if (!representativeByLabel.has(node.label)) {
-      representativeByLabel.set(node.label, node)
-    }
-    }
-
-    const executionStepLabels = new Set<string>()
-    const executionStepFiles = new Set<string>()
-    const promotedLabels = new Set<string>()
-    const addPromotedLabel = (label: string | undefined, node?: RetrieveMatchedNode): void => {
-    if (typeof label !== 'string' || label.length === 0) {
-      return
-    }
-    const candidate = node ?? representativeByLabel.get(label)
-    if (!candidate || supportingPolicyOrLoggerNode(candidate) || lowValueReportGenerationCompactNode(candidate)) {
-      return
-    }
-    promotedLabels.add(label)
-    }
-
-    for (const anchor of result.slice.anchors) {
-    addPromotedLabel(anchor.label, typeof anchor.node_id === 'string' ? matchedById.get(anchor.node_id) : undefined)
-    }
-
-    for (const step of result.execution_slice?.steps ?? []) {
-    executionStepLabels.add(step.label)
-    executionStepFiles.add(step.source_file)
-    addPromotedLabel(step.label, typeof step.node_id === 'string' ? matchedById.get(step.node_id) : undefined)
-    }
-    for (const step of result.execution_slice?.primary_path?.steps ?? []) {
-    executionStepLabels.add(step.label)
-    executionStepFiles.add(step.source_file)
-    addPromotedLabel(step.label, typeof step.node_id === 'string' ? matchedById.get(step.node_id) : undefined)
-    }
-
-    for (const path of result.slice.selected_paths) {
-    if (!runtimeFlowRelation(path.relation)) {
-      continue
-    }
-
-    const fromNode = typeof path.from_id === 'string' ? matchedById.get(path.from_id) : representativeByLabel.get(path.from)
-    const toNode = typeof path.to_id === 'string' ? matchedById.get(path.to_id) : representativeByLabel.get(path.to)
-    if (fromNode && pipelineBridgeNode(fromNode)) {
-      addPromotedLabel(fromNode.label, fromNode)
-    }
-    if (toNode && pipelineBridgeNode(toNode)) {
-      addPromotedLabel(toNode.label, toNode)
-    }
-    if (fromNode && toNode && fromNode.source_file === toNode.source_file) {
-      if (executionStepFiles.has(fromNode.source_file)) {
-        addPromotedLabel(fromNode.label, fromNode)
-        addPromotedLabel(toNode.label, toNode)
-      }
-    }
-    }
-
-    return [...promotedLabels]
-    .sort((left, right) => {
-      const leftNode = representativeByLabel.get(left)
-      const rightNode = representativeByLabel.get(right)
-      const priorityDelta = (rightNode ? reportGenerationCompactPriority(rightNode, executionStepLabels) : 0)
-        - (leftNode ? reportGenerationCompactPriority(leftNode, executionStepLabels) : 0)
-      if (priorityDelta !== 0) {
-        return priorityDelta
-      }
-      return left.localeCompare(right)
-    })
-    .slice(0, 24)
   }
 
   return result.slice.anchors.map((anchor) => anchor.label)
@@ -3422,15 +3050,6 @@ function executionPhaseOrder(question: string): ExecutionPhase[] {
   const enabled = new Set<ExecutionPhase>(['controller', 'service', 'queue', 'worker', 'persistence'])
   if (promptWantsAuthGuardPhase(question)) enabled.add('auth_guard')
   if (promptWantsValidationPhase(question)) enabled.add('validation')
-  if (promptWantsDetailedReportGenerationPhases(question)) {
-    enabled.add('orchestrator')
-    enabled.add('planner')
-    enabled.add('external_research_or_api')
-    enabled.add('report_builder')
-    enabled.add('scoring')
-    enabled.add('quality_gate')
-    enabled.add('renderer_or_synthesis')
-  }
   if (promptWantsNotificationOrEventPhase(question)) enabled.add('notification_or_event')
 
   const phaseOrder: ExecutionPhase[] = [
@@ -3477,20 +3096,10 @@ function expectedExecutionPhases(
   if (promptWantsServiceStep(question)) {
     phases.push('service')
   }
-  if (promptWantsDetailedReportGenerationPhases(question)) {
-    if (scopeHasExecutionPhase(scopeSteps, 'orchestrator')) phases.push('orchestrator')
-    if (scopeHasExecutionPhase(scopeSteps, 'planner')) phases.push('planner')
-    if (scopeHasExecutionPhase(scopeSteps, 'external_research_or_api')) phases.push('external_research_or_api')
-    if (scopeHasExecutionPhase(scopeSteps, 'report_builder')) phases.push('report_builder')
-    if (scopeHasExecutionPhase(scopeSteps, 'scoring')) phases.push('scoring')
-    if (scopeHasExecutionPhase(scopeSteps, 'quality_gate')) phases.push('quality_gate')
-    if (scopeHasExecutionPhase(scopeSteps, 'renderer_or_synthesis')) phases.push('renderer_or_synthesis')
-    if (scopeHasExecutionPhase(scopeSteps, 'persistence')) phases.push('persistence')
-  }
   const scopeHasRuntimeHandoff = scopeHasExecutionPhase(scopeSteps, 'queue') || scopeHasExecutionPhase(scopeSteps, 'worker')
   if (
     promptExplicitlyWantsRuntimeHandoff(question)
-    || (!promptWantsDetailedReportGenerationPhases(question) && promptWantsRuntimePipeline(question) && scopeHasRuntimeHandoff)
+    || (promptWantsRuntimePipeline(question) && scopeHasRuntimeHandoff)
   ) {
     phases.push('queue', 'worker')
   }
@@ -4063,10 +3672,6 @@ function walkExecutionSlice(
   return orderedPathIds
 }
 
-function runtimeGenerationAnswerContractWantsReportGenerationCore(question: string): boolean {
-  return /\b(?:report(?:\s+generation)?|generated\s+report|validation\s+report|final\s+report|assembly|assemble|synthesis|renderer|render|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate)\b/i.test(question)
-}
-
 function runtimeGenerationStepText(
   value: Pick<ContextPackExecutionSliceStep, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
 ): string {
@@ -4102,24 +3707,6 @@ function runtimeGenerationContractPhaseElements(
 
   if (executionSlice.status === 'partial') {
     elements.add('missing_or_uncertain_phases')
-  }
-
-  if (runtimeGenerationAnswerContractWantsReportGenerationCore(question)) {
-    if (/\b(?:planner|\.plan\(|plan\(\)|planning)\b/i.test(evidenceText)) {
-      elements.add('planner_phase')
-    }
-    if (/\b(?:research|search\(\)|processsection|processsection\(\)|section[-_\s]?research)\b/i.test(evidenceText)) {
-      elements.add('research_phase')
-    }
-    if (/\b(?:assembly|assemble|synthesis)\b/i.test(evidenceText)) {
-      elements.add('assembly_phase')
-    }
-    if (/\b(?:score|scoring|metrics?)\b/i.test(evidenceText)) {
-      elements.add('scoring_phase')
-    }
-    if (/\b(?:render|renderer|report builder|reportbuilder|final report)\b/i.test(evidenceText)) {
-      elements.add('report_builder_phase')
-    }
   }
 
   return [...elements]
@@ -5252,7 +4839,6 @@ function retrieveContextPass(
   graph: KnowledgeGraph,
   options: RetrieveOptions,
   conceptualNodeBoosts: ReadonlyMap<string, number> = new Map(),
-  preserveConceptualObligationOrder = false,
 ): RetrieveResult {
   // Guard before candidate expansion, which also reads directional adjacency.
   // sliceCandidatesForRetrieve repeats the guard to protect its direct callers.
@@ -5912,20 +5498,16 @@ function retrieveContextPass(
   const inclusionOrder = expansionPolicy.include_peripheral
     ? frameworkOrderedCandidates
     : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
-      // Cross-domain conceptual recovery can intentionally keep disconnected
-      // evidence outside one slice. For a report-generation workflow, exclude
-      // known side actions from that preserved set so controller siblings such
-      // as list/status/health do not displace the execution path.
-      let orderedCandidates = preserveConceptualObligationOrder
-        ? inclusionOrder.filter((node) => !recoveredReportGenerationNoise(question, node))
-        : inclusionOrder
+      let orderedCandidates = inclusionOrder
       let sliceMetadata: ContextPackSliceMetadata | undefined
-      // A multi-obligation conceptual fallback can deliberately assemble
-      // cross-service and cross-language owners that do not form one local
-      // slice. Only that explicitly selected recovery mode bypasses slice-v1;
-      // ordinary conceptual reranking and symbol/path-anchored questions keep
-      // the established slice contract.
-      if (options.retrievalStrategy === 'slice-v1' && !preserveConceptualObligationOrder) {
+      // A requested slice is always applied. The conceptual-recovery bypass
+      // that used to sit here was measured: instrumenting its trigger across
+      // the retrieval, conceptual-fallback, pack-quality and production
+      // correctness suites showed it firing on exactly three questions, all of
+      // them qualification-shaped, and on no independent fixture. A mode only
+      // the benchmark reaches is benchmark tuning, whatever its condition
+      // looks like, so it is gone rather than re-argued.
+      if (options.retrievalStrategy === 'slice-v1') {
         const sliced = sliceCandidatesForRetrieve(
           graph,
           scored.map((node) => ({
@@ -6135,14 +5717,7 @@ function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: R
     return { ...initial, retrieval_plan: proposal.plan }
   }
 
-  const preserveConceptualObligationOrder = initialQuality.explicit_anchors === 0
-    && (proposal.plan.query_obligations?.total ?? 0) >= 4
-  const recovered = retrieveContextPass(
-    graph,
-    options,
-    proposal.nodeBoosts,
-    preserveConceptualObligationOrder,
-  )
+  const recovered = retrieveContextPass(graph, options, proposal.nodeBoosts)
   const finalized = finalizeConceptualFallbackPlan(
     proposal,
     retrievalQualitySnapshot(graph, recovered),

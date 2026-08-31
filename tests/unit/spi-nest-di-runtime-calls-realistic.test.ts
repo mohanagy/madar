@@ -515,16 +515,17 @@ describe('SPI realistic Nest DI runtime-call fixture', () => {
           ]),
         }),
       ]),
+      // #660-B1. Was asserting the orchestrator / external_research_or_api /
+      // scoring vocabulary. Those phases were only enabled when a prompt
+      // classifier recognised one benchmark task; that classifier is gone, so
+      // they are neither expected nor observed. What remains asserted is the
+      // architectural spine this fixture really models.
       phase_coverage: expect.objectContaining({
-        expected: ['orchestrator', 'external_research_or_api', 'scoring', 'persistence'],
         observed: expect.arrayContaining([
           'controller',
           'service',
-          'orchestrator',
           'queue',
           'worker',
-          'external_research_or_api',
-          'scoring',
           'persistence',
         ]),
         missing: [],

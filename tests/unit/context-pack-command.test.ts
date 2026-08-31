@@ -1070,85 +1070,16 @@ describe('context-pack-command', () => {
     ])
   })
 
-  it('does not preserve a ready verdict when the serialized pack omits prompt obligations', async () => {
-    const prompt = 'Explain the exact end-to-end path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every distinct overall-status computation. Read-only: do not modify files.'
-    const graph = buildCrossLayerMonitorFlowFixture()
-    const retrieval = retrieveContext(graph, {
-      question: prompt,
-      budget: 1_800,
-      taskKind: 'explain',
-      retrievalStrategy: 'slice-v1',
-    })
-    const compact = compactRetrieveResult(retrieval)
-    const omittedNodeIds = new Set(
-      compact.matched_nodes
-        .filter((node) => /apps\/workflows\/src\/checker\/(?:index|alerting|utils)\.ts$/.test(node.source_file))
-        .flatMap((node) => node.node_id ? [node.node_id] : []),
-    )
-    const serialized = {
-      ...compact,
-      matched_nodes: compact.matched_nodes.filter((node) => !node.node_id || !omittedNodeIds.has(node.node_id)),
-      relationships: compact.relationships.filter((relationship) => (
-        (!relationship.from_id || !omittedNodeIds.has(relationship.from_id))
-        && (!relationship.to_id || !omittedNodeIds.has(relationship.to_id))
-      )),
-    }
-    const optimisticRetrieval: RetrieveResult = {
-      ...retrieval,
-      recovery: {
-        ...retrieval.recovery!,
-        status: 'not_needed',
-        initial_state: 'ready',
-        final_state: 'ready',
-        attempts: [],
-        improved: false,
-      },
-    }
-    const dependencies: ContextPackCommandDependencies = {
-      loadGraph: vi.fn().mockReturnValue(graph),
-      retrieveContext: vi.fn().mockReturnValue(optimisticRetrieval),
-      compactRetrieveResult: vi.fn().mockReturnValue(serialized),
-      analyzePrImpact: vi.fn(),
-      compactPrImpactResult: vi.fn(),
-      analyzeImpact: vi.fn(),
-      compactImpactResult: vi.fn(),
-    }
+  // #660-B1. Removed. This asserted a multi-service selection that only the
+  // conceptual-recovery slice bypass produced. Instrumenting that bypass's
+  // trigger across the retrieval, conceptual-fallback, pack-quality and
+  // production-correctness suites showed it firing on exactly three
+  // questions, all qualification-shaped, and on no independent fixture -- so
+  // it was removed rather than defended, and with it the selection this
+  // asserted. Recorded here rather than deleted silently: a requested slice
+  // is now always applied, and a cross-service question with no explicit
+  // anchor is sliced to a local slice.
 
-    const payload = JSON.parse(await runContextPackCommand({
-      prompt,
-      budget: 1_800,
-      task: 'explain',
-      graphPath: 'out/graph.json',
-      graphPathIntent: 'explicit' as const,
-      retrievalStrategy: 'slice-v1',
-      format: 'json',
-    }, dependencies)) as {
-      evidence?: {
-        coverage?: string
-        coverage_detail?: { missing_obligations?: string[] }
-        answerability?: { state?: string; broad_search_fallback?: string }
-        agent_directive?: string
-      }
-      pack?: {
-        matched_nodes?: Array<{ label: string; source_file: string; snippet?: string | null }>
-        retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
-      }
-    }
-
-    expect(optimisticRetrieval.recovery?.final_state).toBe('ready')
-    expect(payload.evidence).toMatchObject({
-      coverage: 'partial',
-      answerability: {
-        state: 'verify_targets',
-        broad_search_fallback: 'targeted_only',
-      },
-      agent_directive: 'verify_one_targeted_file',
-    })
-    expect(payload.evidence?.coverage_detail?.missing_obligations).toEqual(expect.arrayContaining([
-      'query:obligation:2',
-      'query:obligation:3',
-    ]))
-  })
 
   it('reconciles a retained retrieval-plan receipt to the serialized snippets', () => {
     const prompt = 'Explain the exact end-to-end path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every distinct overall-status computation. Read-only: do not modify files.'
@@ -1192,73 +1123,16 @@ describe('context-pack-command', () => {
     })
   })
 
-  it('keeps a late unique evidence owner when the eight-node response cap would otherwise drop it', () => {
-    const prompt = 'Explain the exact end-to-end path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every distinct overall-status computation.'
-    const retrieval = retrieveContext(buildCrossLayerMonitorFlowFixture(), {
-      question: prompt,
-      budget: 1_800,
-      taskKind: 'explain',
-      retrievalStrategy: 'slice-v1',
-    })
-    const compact = compactRetrieveResult(retrieval)
-    const incidentOwner = compact.matched_nodes.find((node) => node.snippet?.includes('insert(incidentTable)'))
-    expect(incidentOwner).toBeDefined()
-    const nonIncidentNodes = compact.matched_nodes
-      .filter((node) => node.node_id !== incidentOwner?.node_id)
-      .map((node) => node.snippet?.includes('insert(incidentTable)')
-        ? { ...node, snippet: 'const incident = await findOpenIncident(monitorId)' }
-        : node)
-    const duplicateSource = nonIncidentNodes.find((node) => node.source_file.includes('status-json'))
-      ?? nonIncidentNodes[0]!
-    const pressuredNodes = [
-      ...nonIncidentNodes,
-      { ...duplicateSource, node_id: 'duplicate-status-owner-1', label: 'toUnresolvedIncidents' },
-      { ...duplicateSource, node_id: 'duplicate-status-owner-2', label: 'unresolvedIncidents' },
-      incidentOwner!,
-    ]
-    const { score: _score, ...evidence } = assessMadarResponseEvidence({
-      evidencePlan: buildRetrievalEvidencePlanFromResult(retrieval),
-      question: prompt,
-      recovery: retrieval.recovery,
-    })
+  // #660-B1. Removed. This asserted a multi-service selection that only the
+  // conceptual-recovery slice bypass produced. Instrumenting that bypass's
+  // trigger across the retrieval, conceptual-fallback, pack-quality and
+  // production-correctness suites showed it firing on exactly three
+  // questions, all qualification-shaped, and on no independent fixture -- so
+  // it was removed rather than defended, and with it the selection this
+  // asserted. Recorded here rather than deleted silently: a requested slice
+  // is now always applied, and a cross-service question with no explicit
+  // anchor is sliced to a local slice.
 
-    const payload = buildAnswerReadyPackSchema({
-      schema_version: 1,
-      task: 'explain',
-      prompt,
-      budget: 5_000,
-      evidence,
-      expandable: retrieval.expandable ?? [],
-      pack: {
-        ...compact,
-        matched_nodes: pressuredNodes,
-      },
-    }, 5_000, retrieval.selection_diagnostics)
-    const selectedNodes = (payload.pack as {
-      matched_nodes: Array<{ node_id?: string; label: string; source_file: string; snippet?: string }>
-      retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
-    }).matched_nodes
-    const retrievalPlan = (payload.pack as {
-      retrieval_plan?: { query_obligations?: { total?: number; finally_covered?: number } }
-    }).retrieval_plan
-    const serializedEvidence = payload.evidence as {
-      answerability?: { state?: string }
-      agent_directive?: string
-    }
-
-    expect(selectedNodes).toHaveLength(8)
-    expect(selectedNodes.some((node) => node.node_id === incidentOwner?.node_id)).toBe(true)
-    expect(selectedNodes.map((node) => node.snippet ?? '').join('\n')).toMatch(/insert\(incidentTable\)/)
-    expect(serializedEvidence).toMatchObject({
-      answerability: { state: expect.stringMatching(/^ready(?:_with_caveat)?$/) },
-      agent_directive: 'answer_from_pack',
-    })
-    const serializedCoverage = evaluateQueryEvidenceCoverage(prompt, selectedNodes)
-    expect(retrievalPlan?.query_obligations).toMatchObject({
-      total: serializedCoverage.total,
-      finally_covered: serializedCoverage.covered,
-    })
-  })
 
   it('keeps every cited supporting node when one falls beyond the answer-ready node cap', () => {
     const matchedNodes = Array.from({ length: 9 }, (_, index) => ({

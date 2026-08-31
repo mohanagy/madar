@@ -217,17 +217,17 @@ describe('pack-quality fixtures (#298)', () => {
         'saveStructuredReport()',
       ]),
     )
+    // #660-B1. Was asserting the planner / external_research_or_api /
+    // report_builder vocabulary. Those phases were only ever enabled when a
+    // prompt classifier recognised one benchmark task; the classifier is gone,
+    // so they are neither expected nor observed. The phases below are derived
+    // structurally from the execution steps and are what remains true.
     expect(payload.pack?.execution_slice?.phase_coverage).toEqual(expect.objectContaining({
-      expected: expect.arrayContaining([
-        'planner',
-        'external_research_or_api',
-        'report_builder',
-        'persistence',
-      ]),
       observed: expect.arrayContaining([
-        'planner',
-        'external_research_or_api',
-        'report_builder',
+        'controller',
+        'service',
+        'queue',
+        'worker',
         'persistence',
       ]),
       missing: [],
