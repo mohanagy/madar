@@ -126,6 +126,120 @@ function normalizedForms(value) {
 }
 
 /** Which precomputed forms of a site contain the precomputed forms of a rule. */
+/**
+ * A regex is not text; it is a matcher. `/statusP{1}age/i` contains no
+ * forbidden substring but matches the forbidden name, so normalizing its source
+ * can never settle the question. The only faithful test is to ask the pattern
+ * itself.
+ *
+ * Bounded on purpose. The pattern is compiled with `new RegExp` -- which
+ * evaluates no production code and calls nothing -- and is tested against the
+ * short rule value only. Patterns that are over-long, or that carry enough
+ * quantifiers to risk catastrophic backtracking, are skipped rather than run;
+ * they remain covered by the normalized-text match, and a skipped pattern is
+ * never reported as clean on the strength of this check alone.
+ */
+const REGEX_LITERAL = /^\/(.*)\/([dgimsuvy]*)$/s
+const MAX_REGEX_SOURCE = 400
+const MAX_REGEX_QUANTIFIERS = 40
+
+/**
+ * A neutral string with the SAME length, case pattern and separator positions
+ * as the value, built by substituting letters and digits.
+ *
+ * A pattern written to recognise a forbidden name does not match its shape-mate;
+ * a general matcher -- `/^[\x20-\x7e]+$/`, `/^[A-Za-z0-9_-]{11}$/`, or one that
+ * merely looks for a slash -- matches both. Comparing against a shape-mate
+ * rather than a fixed decoy list is what separates those two cases: fixed
+ * decoys of the wrong length let every length-constrained pattern through.
+ *
+ * Measured on a clean tree: no guard 1662 violations, fixed decoys 126,
+ * shape-mates 0.
+ */
+function shapeDecoy(value, lower, upper, digit) {
+  let lowerIndex = 0
+  let upperIndex = 0
+  return [...value].map((character) => {
+    if (/[a-z]/.test(character)) {
+      const substitute = lower[lowerIndex % lower.length]
+      lowerIndex += 1
+      return substitute
+    }
+    if (/[A-Z]/.test(character)) {
+      const substitute = upper[upperIndex % upper.length]
+      upperIndex += 1
+      return substitute
+    }
+    if (/[0-9]/.test(character)) {
+      return digit
+    }
+    return character
+  }).join('')
+}
+
+/**
+ * Decoys in three families, because a pattern can be non-specific in three ways.
+ *
+ *   shape-mates  catch matchers keyed on length or character class
+ *                (`/^[A-Za-z0-9_-]{11}$/`)
+ *   tail-mates   catch matchers keyed on a PREFIX, i.e. a class of names
+ *                (`/(?:generate|create|...)\w*\(\)$/` matches every create*)
+ *   head-mates   catch matchers keyed on a suffix
+ *
+ * A pattern that recognises one specific name matches none of them.
+ */
+function specificityDecoys(value) {
+  const decoys = [
+    shapeDecoy(value, 'zqxjv', 'ZQXJV', '7'),
+    shapeDecoy(value, 'wkbhy', 'WKBHY', '4'),
+  ]
+  // A prefix-keyed matcher can key on a prefix of any length, so the split is
+  // swept rather than guessed: one tail-mate and one head-mate per position.
+  for (let split = 1; split < value.length; split += 1) {
+    decoys.push(value.slice(0, split) + shapeDecoy(value.slice(split), 'zqxjv', 'ZQXJV', '7'))
+    decoys.push(shapeDecoy(value.slice(0, split), 'zqxjv', 'ZQXJV', '7') + value.slice(split))
+  }
+  return [...new Set(decoys)].filter((decoy) => decoy !== value)
+}
+
+function regexMatchesValue(siteText, value) {
+  const parsed = REGEX_LITERAL.exec(siteText)
+  if (parsed === null) {
+    return false
+  }
+  const [, pattern, flags] = parsed
+  if (pattern.length === 0 || pattern.length > MAX_REGEX_SOURCE) {
+    return false
+  }
+  if ((pattern.match(/[*+?{]/g)?.length ?? 0) > MAX_REGEX_QUANTIFIERS) {
+    return false
+  }
+  let compiled
+  try {
+    compiled = new RegExp(pattern, flags.replace(/[gy]/g, ''))
+  } catch {
+    // An un-compilable literal is left to the text match rather than guessed at.
+    return false
+  }
+  try {
+    // The pattern must recognise the WHOLE name, not a fragment of it. An
+    // unanchored alternation containing the ordinary word `status` matches six
+    // of the ten characters of `statusPage`; that is a generic word list, not a
+    // hidden name, and treating it as a hit produced 96 false positives.
+    const coversWholeValue = (candidate) => {
+      const match = compiled.exec(candidate)
+      return match !== null && match[0].length === candidate.length
+    }
+    if (!coversWholeValue(value) && !coversWholeValue(value.toLowerCase())) {
+      return false
+    }
+    // Specific to this name, or a matcher that fires on anything of this shape?
+    return !specificityDecoys(value).some((decoy) => compiled.test(decoy))
+  } catch {
+    return false
+  }
+}
+
 function matchPrecomputedForms(site, rule) {
   const forms = []
   if (rule.tokens.length > 0 && site.tokens.includes(rule.tokens)) {
@@ -133,6 +247,15 @@ function matchPrecomputedForms(site, rule) {
   }
   if (rule.squashed.length > 0 && site.squashed.includes(rule.squashed)) {
     forms.push('squashed')
+  }
+  // The pattern test asks a regex whether it recognises the forbidden NAME.
+  // That question is only well posed for a single identifier. A path value is a
+  // multi-segment string full of ordinary words, so any generic path or word
+  // matcher "matches" it -- 118 such false positives on a clean tree. Paths stay
+  // with the text forms, and a regex hiding a path still trips the symbol rule
+  // for the distinctive name inside it.
+  if (site.kind === 'regex' && rule.class === 'symbol' && regexMatchesValue(site.text, rule.value)) {
+    forms.push('pattern')
   }
   return forms
 }
@@ -415,6 +538,41 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
       const right = staticValue(node.right)
       return left === null || right === null ? null : left + right
     }
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const method = node.expression.name.text
+      // `'status'.concat('Page')` is the same name as the plain spelling.
+      if (method === 'concat') {
+        const receiver = staticValue(node.expression.expression)
+        if (receiver === null) {
+          return null
+        }
+        let folded = receiver
+        for (const argument of node.arguments) {
+          const value = staticValue(argument)
+          if (value === null) {
+            return null
+          }
+          folded += value
+        }
+        return folded
+      }
+      // `['status', 'Page'].join('')` likewise.
+      if (method === 'join' && ts.isArrayLiteralExpression(node.expression.expression)) {
+        const separator = node.arguments.length === 0 ? ',' : staticValue(node.arguments[0])
+        if (separator === null) {
+          return null
+        }
+        const parts = []
+        for (const element of node.expression.expression.elements) {
+          const value = staticValue(element)
+          if (value === null) {
+            return null
+          }
+          parts.push(value)
+        }
+        return parts.join(separator)
+      }
+    }
     if (ts.isTemplateExpression(node)) {
       let folded = node.head.text
       for (const span of node.templateSpans) {
@@ -443,7 +601,7 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
 
     // Fold whole static expressions too, so a name split across several nodes
     // is matched as the one string it actually denotes.
-    if (ts.isBinaryExpression(node) || ts.isTemplateExpression(node)) {
+    if (ts.isBinaryExpression(node) || ts.isTemplateExpression(node) || ts.isCallExpression(node)) {
       const folded = staticValue(node)
       if (folded !== null) {
         record('folded', folded, node.getStart(source))
@@ -555,7 +713,7 @@ export function analyzeForbiddenKnowledge(input = {}) {
           why: rule.why,
           raw: site.text.length > 200 ? `${site.text.slice(0, 200)}...` : site.text,
           decoded: site.decoded.length > 200 ? `${site.decoded.slice(0, 200)}...` : site.decoded,
-          normalized: forms.includes('tokens') ? site.tokens.trim() : site.squashed,
+          normalized: forms.includes('tokens') ? site.tokens.trim() : (forms.includes('squashed') ? site.squashed : `pattern matches ${JSON.stringify(rule.value)}`),
           matchForms: forms,
         })
       }

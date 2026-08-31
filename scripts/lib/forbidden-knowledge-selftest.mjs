@@ -231,6 +231,53 @@ function injectionCases() {
       },
     },
     {
+      id: 'F21',
+      title: 'a regex that matches the name without containing it is recognised',
+      expectRule: 'openstatus/symbol-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
+      inject(snapshot) {
+        // /statusP{1}age/i contains no forbidden substring and matches the
+        // forbidden name. Only asking the pattern settles it.
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B1 F21 injection',
+          'const F21_PATTERN = /statusP{1}age/i',
+          'void F21_PATTERN',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
+      id: 'F22',
+      title: 'a name assembled with .concat() is folded before matching',
+      expectRule: 'openstatus/symbol-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
+      inject(snapshot) {
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B1 F22 injection',
+          "const F22_NAME = 'status'.concat('Page')",
+          'void F22_NAME',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
+      id: 'F23',
+      title: 'a path assembled with array join is folded before matching',
+      expectRule: 'openstatus/path-router-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/path-router-status-page'),
+      inject(snapshot) {
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B1 F23 injection',
+          "const F23_PATH = ['packages/api', 'src/router', 'statusPage.ts'].join('/')",
+          'void F23_PATH',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
       id: 'F5',
       title: 'forbidden symbol reintroduced as an identifier, not a string',
       expectRule: 'openstatus/symbol-page-indicator',

@@ -33,6 +33,23 @@ import {
 } from '../../scripts/lib/forbidden-knowledge.mjs'
 import { productionSourceFiles } from '../../scripts/lib/grader-boundary.mjs'
 
+/**
+ * The production index, built ONCE for this suite.
+ *
+ * Every assertion below reads the same index rather than re-parsing the tree,
+ * which is the point of the one-pass design and also what keeps this file
+ * inside the protected control's time budget under coverage instrumentation.
+ */
+let cachedIndex: ReturnType<typeof buildProductionSourceIndex> | null = null
+const readProductionFile = (file: string): string => readFileSync(resolve(process.cwd(), file), 'utf8')
+function sharedIndex(): ReturnType<typeof buildProductionSourceIndex> {
+  cachedIndex ??= buildProductionSourceIndex({
+    files: productionSourceFiles(process.cwd()),
+    readFile: readProductionFile,
+  })
+  return cachedIndex
+}
+
 /** Claim prefixes that were produced by fixed, repository-keyed builders. */
 const REMOVED_FIXED_CLAIM_PREFIXES = [
   'public runtime provenance:',
@@ -240,6 +257,34 @@ describe('production independence from qualification repositories', () => {
   })
 
   it('B2. recovers a framework-declared route handler after every name is changed', () => {
+    // POSITIVE half. Every identifier is unrelated to any qualification target
+    // and the role is one an extractor declares from framework structure, so a
+    // passing assertion means the claim was earned by that declared role rather
+    // than by any name. Asserting the exact text matters: an earlier version of
+    // this control supplied no role and asserted only the negative below, which
+    // meant deleting the claim builder outright left it green.
+    const pack = packFor(
+      [
+        {
+          id: 'route',
+          label: 'listCatalogEntries()',
+          source: 'apps/portal/src/routes/catalog.ts',
+          snippet: 'export async function listCatalogEntries() {}',
+          frameworkRole: 'fastify_route',
+        },
+      ],
+      [],
+      'Explain the public catalog endpoint.',
+    )
+
+    expect(pack.claims.map((claim) => claim.text)).toContain(
+      'runtime boundary: apps/portal/src/routes/catalog.ts listCatalogEntries() is a framework-declared fastify_route',
+    )
+  })
+
+  it('B2b. claims no runtime boundary from a route-shaped path with no declared role', () => {
+    // NEGATIVE half, kept separate. A path that looks like a route is not
+    // evidence; the role has to come from an extractor.
     const pack = packFor(
       [
         { id: 'route', label: 'GET()', source: 'apps/portal/src/app/api/summary/route.ts', snippet: 'export async function GET() {}' },
@@ -247,8 +292,6 @@ describe('production independence from qualification repositories', () => {
       [],
       'Explain the public summary endpoint.',
     )
-    // No framework_role on the candidate, so nothing is claimed from a path
-    // shape alone -- the role has to come from an extractor.
     expect(pack.claims.some((claim) => claim.text.startsWith('runtime boundary:'))).toBe(false)
   })
 
@@ -425,40 +468,42 @@ describe('production independence from qualification repositories', () => {
     // count no longer drives the work.
     it('parses each production file exactly once, whatever the rule count', () => {
       const files = productionSourceFiles(process.cwd())
+      const index = sharedIndex()
       const manifest = loadForbiddenKnowledgeManifest(process.cwd())
 
-      const full = analyzeForbiddenKnowledge({ root: process.cwd() })
-      expect(full.stats.parseCalls).toBe(files.length)
-      expect(full.stats.indexedFiles).toBe(files.length)
       expect(new Set(files).size).toBe(files.length)
+      expect(index.stats.parseCalls).toBe(files.length)
+      expect(index.stats.indexedFiles).toBe(files.length)
 
-      // Halving the rules must not change how much source work is done.
+      // The same index answers both scans, and halving the rules changes
+      // neither the source work done nor the verdict. Rules are applied to the
+      // index; they never drive another pass over the tree.
+      const full = analyzeForbiddenKnowledge({ root: process.cwd(), index })
       const halved = analyzeForbiddenKnowledge({
         root: process.cwd(),
+        index,
         manifest: { ...manifest, rules: manifest.rules.slice(0, Math.floor(manifest.rules.length / 2)) },
       })
-      expect(halved.stats.parseCalls).toBe(full.stats.parseCalls)
-      expect(halved.stats.siteCount).toBe(full.stats.siteCount)
+      expect(halved.stats).toEqual(full.stats)
+      expect(halved.stats.parseCalls).toBe(files.length)
+      expect(full.violations).toEqual([])
+      expect(halved.violations).toEqual([])
     })
 
     it('never parses a file twice, even when the file list repeats one', () => {
-      const files = productionSourceFiles(process.cwd())
-      const duplicated = [...files, ...files.slice(0, 5)]
-      const index = buildProductionSourceIndex({
-        files: duplicated,
-        readFile: (file) => readFileSync(resolve(process.cwd(), file), 'utf8'),
-      })
-      expect(duplicated.length).toBeGreaterThan(files.length)
+      // A small slice is enough: de-duplication is a property of the index, not
+      // of how many files it was handed.
+      const files = productionSourceFiles(process.cwd()).slice(0, 5)
+      const duplicated = [...files, ...files]
+      const index = buildProductionSourceIndex({ files: duplicated, readFile: readProductionFile })
+      expect(duplicated.length).toBe(files.length * 2)
       expect(index.stats.parseCalls).toBe(files.length)
       expect(index.byFile.size).toBe(files.length)
     })
 
     it('represents every production file in the index', () => {
       const files = productionSourceFiles(process.cwd())
-      const index = buildProductionSourceIndex({
-        files,
-        readFile: (file) => readFileSync(resolve(process.cwd(), file), 'utf8'),
-      })
+      const index = sharedIndex()
       for (const file of files) {
         expect(index.byFile.has(file), `missing from index: ${file}`).toBe(true)
       }
@@ -467,8 +512,9 @@ describe('production independence from qualification repositories', () => {
     it('reports the same result whatever order the rules are declared in', () => {
       const manifest = loadForbiddenKnowledgeManifest(process.cwd())
       const reversed = { ...manifest, rules: [...manifest.rules].reverse() }
-      const forward = analyzeForbiddenKnowledge({ root: process.cwd(), manifest })
-      const backward = analyzeForbiddenKnowledge({ root: process.cwd(), manifest: reversed })
+      const index = sharedIndex()
+      const forward = analyzeForbiddenKnowledge({ root: process.cwd(), index, manifest })
+      const backward = analyzeForbiddenKnowledge({ root: process.cwd(), index, manifest: reversed })
       expect(backward.ok).toBe(forward.ok)
       expect(backward.violations).toEqual(forward.violations)
     })
@@ -500,7 +546,7 @@ describe('production independence from qualification repositories', () => {
     })
 
     it('finds no qualification-repository knowledge in production source', () => {
-      const result = analyzeForbiddenKnowledge({ root: process.cwd() })
+      const result = analyzeForbiddenKnowledge({ root: process.cwd(), index: sharedIndex() })
       const detail = result.violations
         .map((violation: { file: string; line: number; rule: string; raw: string }) => (
           `${violation.file}:${violation.line} [${violation.rule}] ${violation.raw}`

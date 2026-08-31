@@ -45,6 +45,24 @@ const VITEST_BIN = resolveVitestBin()
 const FALLBACK = 'src/runtime/retrieve/conceptual-fallback.ts'
 const RETRIEVE = 'src/runtime/retrieve.ts'
 
+/**
+ * Apply an injection whose anchor is written with LF, to a file that may be
+ * checked out with CRLF.
+ *
+ * Only `docs/qualification/**` and `*.madar` are pinned to LF in .gitattributes,
+ * so `src/**` arrives with CRLF on Windows. A multi-line LF anchor then matches
+ * nothing, `replaceOnce` throws "injection target not found", and every control
+ * built on it fails for a reason that has nothing to do with the property under
+ * test. The anchor and its replacement are converted to the file's own line
+ * ending before matching, so the control tests behaviour on every platform.
+ */
+function replaceAnchor(snapshot, root, file, anchor, replacement) {
+  const text = readFileSync(resolve(root, file), 'utf8')
+  const usesCrlf = /\r\n/.test(text)
+  const toFileEol = (value) => (usesCrlf ? value.replaceAll('\r\n', '\n').replaceAll('\n', '\r\n') : value)
+  snapshot.replaceOnce(file, toFileEol(anchor), toFileEol(replacement))
+}
+
 const OWNER_D = 'D. ranks a one-for-one substituted repository'
 const OWNER_D2 = 'D2. selects the same nodes end-to-end'
 const OWNING_TEST_FILE = 'tests/unit/production-independence.test.ts'
@@ -138,11 +156,11 @@ function cases() {
       file: FALLBACK,
       testFilter: OWNER_D,
       ownerPattern: /ranks a one-for-one substituted repository/,
-      inject(snapshot) {
+      inject(snapshot, root) {
         // A task-phrase score adjustment: exactly the shape §5 names. It fires
         // only when the prompt carries both words, so it moves the original
         // fixture and leaves the substituted one alone.
-        snapshot.replaceOnce(FALLBACK, RESERVATION_ANCHOR, `${RESERVATION_ANCHOR}
+        replaceAnchor(snapshot, root, FALLBACK, RESERVATION_ANCHOR, `${RESERVATION_ANCHOR}
   // #660-B H1 injection -- an obligation-term score adjustment.
   if (obligations.some((entry) => entry.terms.includes('public') && entry.terms.includes('page'))) {
     for (const anchor of anchors) {
@@ -160,10 +178,10 @@ function cases() {
       file: FALLBACK,
       testFilter: OWNER_D,
       ownerPattern: /ranks a one-for-one substituted repository/,
-      inject(snapshot) {
+      inject(snapshot, root) {
         // A repository-path boost with no prompt vocabulary at all, so a
         // prompt-shaped control would not see it either.
-        snapshot.replaceOnce(FALLBACK, RESERVATION_ANCHOR, `${RESERVATION_ANCHOR}
+        replaceAnchor(snapshot, root, FALLBACK, RESERVATION_ANCHOR, `${RESERVATION_ANCHOR}
   // #660-B H2 injection -- a repository-path score adjustment.
   for (const anchor of anchors) {
     if (anchor.sourceFile.includes('/checker/')) {
@@ -184,8 +202,8 @@ function cases() {
       // injection promotes a repository-path candidate the clean tree does not
       // select at all, which is a genuine membership change.
       membershipNode: 'h4-forced-membership',
-      inject(snapshot) {
-        snapshot.replaceOnce(RETRIEVE, MEMBERSHIP_ANCHOR, `${MEMBERSHIP_ANCHOR}
+      inject(snapshot, root) {
+        replaceAnchor(snapshot, root, RETRIEVE, MEMBERSHIP_ANCHOR, `${MEMBERSHIP_ANCHOR}
   // #660-B1 H4 injection -- a payload entry pinned in because a repository
   // path is present, which is the shape the removed claim-pinning path had.
   // The pinned entry is one the clean tree never selects, so its appearance is
@@ -213,8 +231,8 @@ function cases() {
       // on one side only. Gated on the requested slice, so it exercises the
       // path D2 now requests rather than a strategy nothing asked for.
       membershipNode: 'n2',
-      inject(snapshot) {
-        snapshot.replaceOnce(RETRIEVE, MEMBERSHIP_ANCHOR, `${MEMBERSHIP_ANCHOR}
+      inject(snapshot, root) {
+        replaceAnchor(snapshot, root, RETRIEVE, MEMBERSHIP_ANCHOR, `${MEMBERSHIP_ANCHOR}
   // #660-B1 H5 injection -- a question-shaped bypass applied where membership
   // is final, gated on a slice actually having been requested.
   if (options.retrievalStrategy === 'slice-v1' && /\\bstatus\\b/i.test(options.question ?? '')) {
@@ -292,7 +310,7 @@ export function runSemanticIndependenceSelfTest({ root = process.cwd(), log = co
     let passed = false
     let detail = ''
     try {
-      testCase.inject(snapshot)
+      testCase.inject(snapshot, root)
 
       // PREMISE 1: the injected rule is really on disk.
       const injected = readFileSync(resolve(root, testCase.file), 'utf8')
