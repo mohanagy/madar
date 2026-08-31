@@ -72,6 +72,7 @@
         "verify:grader-boundary-controls": "node scripts/verify-grader-boundary.mjs --self-test",
         "verify:forbidden-knowledge": "node scripts/verify-forbidden-knowledge.mjs",
         "verify:forbidden-knowledge-controls": "node scripts/verify-forbidden-knowledge.mjs --self-test",
+        "verify:report-generation-injections": "node scripts/verify-report-generation-injections.mjs",
         "verify:grader-boundary-runtime": "node scripts/verify-grader-boundary-runtime.mjs",
         "verify:integrity-mutations": "node scripts/verify-integrity-mutations.mjs && MADAR_MUTATION_HARNESS_E2E=1 npx vitest run tests/unit/mutation-harness-self.test.ts",
         "verify:integrity-receipts": "node scripts/verify-integrity-receipts.mjs",

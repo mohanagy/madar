@@ -1,7 +1,7 @@
 {
   "manifest_version": "1.0.0",
   "issue": 660,
-  "slice": "B",
+  "slice": "B+C",
   "title": "Production independence from qualification-repository knowledge",
   "purpose": [
     "Madar's retrieval and claim behaviour must be driven by generic structural evidence,",
@@ -54,7 +54,13 @@
     { "id": "report-generation/symbol-dispatch-db-sync", "repository": "govalidate-report-generation", "class": "symbol", "value": "dispatchDbSync", "why": "Qualification-target symbol in a fixed promotion table." },
     { "id": "report-generation/symbol-broadcast-run-started", "repository": "govalidate-report-generation", "class": "symbol", "value": "broadcastRunStarted", "why": "Qualification-target symbol in a fixed promotion table." },
     { "id": "report-generation/symbol-broadcast-run-failed", "repository": "govalidate-report-generation", "class": "symbol", "value": "broadcastRunFailed", "why": "Qualification-target symbol in a fixed promotion table." },
-    { "id": "report-generation/symbol-score-metrics", "repository": "govalidate-report-generation", "class": "symbol", "value": "scoreMetrics", "why": "Qualification-target symbol in a fixed promotion table." }
+    { "id": "report-generation/symbol-score-metrics", "repository": "govalidate-report-generation", "class": "symbol", "value": "scoreMetrics", "why": "Qualification-target symbol in a fixed promotion table." },
+    { "id": "report-generation/symbol-prompt-wants-report-generation-core", "repository": "govalidate-report-generation", "class": "symbol", "value": "promptWantsReportGenerationCore", "why": "Name of the retired report-generation task-phrase classifier. It was duplicated in prompt-pack.ts and retrieve/slicing.ts and gated every report-only behaviour removed in #660 Slice C." },
+    { "id": "report-generation/symbol-semantic-generation-core-anchor-value", "repository": "govalidate-report-generation", "class": "symbol", "value": "semanticGenerationCoreAnchorValue", "why": "Name of the retired name-driven anchor score table that paid a symbol for resembling a report workflow stage." },
+    { "id": "report-generation/phrase-generation-core-heuristic-anchor", "repository": "govalidate-report-generation", "class": "phrase", "value": "generation core heuristic", "why": "Anchor reason emitted only by the retired forced report-anchor selection." },
+    { "id": "report-generation/phrase-fixed-report-workflow-instruction", "repository": "govalidate-report-generation", "class": "phrase", "value": "planner, research, assembly, scoring, rendering, and persistence evidence", "why": "The retired fixed report workflow instruction, manufactured from prompt vocabulary with no evidence behind it." },
+    { "id": "report-generation/phrase-final-report-score-entry", "repository": "govalidate-report-generation", "class": "phrase", "value": "final(?:-| )report", "why": "A distinctive +10 entry of the retired anchor score table." },
+    { "id": "report-generation/phrase-idea-report-gate-entry", "repository": "govalidate-report-generation", "class": "phrase", "value": "idea\\s+report", "why": "The qualification task name, matched by the retired reportGenerationShaped gate classifier." }
   ],
   "corpus_symbol_import": {
     "source": "docs/qualification/corpus.json",

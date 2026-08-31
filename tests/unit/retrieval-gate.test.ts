@@ -283,10 +283,20 @@ describe('classifyRetrievalLevel — signal extraction', () => {
     expect(decision.signals.target_domain_hint).toBe('frontend_display')
   })
 
-  it('prefers runtime generation for explanatory prompts that also mention display terms', () => {
+  // #660 Slice C. This test used to require that naming the qualification task
+  // ("idea report") pulled a display-shaped prompt to runtime_generation, which
+  // is exactly the `reportGenerationShaped` gate variant. Paired with the test
+  // above, it is now the independence control: the task name changes nothing,
+  // and only a genuine backend-runtime marker moves the gate.
+  it('does not prefer runtime generation merely because the prompt names the report task (#660 Slice C)', () => {
     const decision = classify({ prompt: 'Explain how the idea report is generated and displayed in the footer' })
-    expect(decision.signals.generation_intent).toBe('runtime_generation')
-    expect(decision.signals.target_domain_hint).toBe('backend_runtime')
+    expect(decision.signals.generation_debug?.report_generation_shaped).toBe(false)
+    expect(decision.signals.generation_intent).toBe('display_rendering')
+    expect(decision.signals.target_domain_hint).toBe('frontend_display')
+
+    const withBackendMarker = classify({ prompt: 'Explain how the idea report is generated and displayed in the footer by the worker pipeline' })
+    expect(withBackendMarker.signals.generation_intent).toBe('runtime_generation')
+    expect(withBackendMarker.signals.target_domain_hint).toBe('backend_runtime')
   })
 
   it('detects broad generation noun prompts without explanation verbs', () => {
