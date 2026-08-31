@@ -24,10 +24,12 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import type { ContextPackExecutionPhase } from '../../src/contracts/context-pack.js'
+import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { build } from '../../src/pipeline/build.js'
 import { buildMadarPromptPack } from '../../src/infrastructure/prompt-pack.js'
 import { classifyRetrievalLevel } from '../../src/runtime/retrieval-gate.js'
 import { retrieveContext, type RetrieveResult } from '../../src/runtime/retrieve.js'
+import { sliceCandidatesForRetrieve } from '../../src/runtime/retrieve/slicing.js'
 
 // The retired qualification vocabulary, split so a control never confuses a
 // LEGITIMATE lexical effect with a report-policy effect. `rendering`/`renderer`
@@ -314,6 +316,58 @@ describe('#660 Slice C — report-generation independence', () => {
     }
     // No special phase chain and no fixed report instruction.
     expect(instructionsFor(REPORT_Q)).toEqual(BASE_INSTRUCTIONS)
+  })
+
+  it('C3: a report-stage node name confers no runtime-expansion preference', () => {
+    // The gap CodeRabbit found. `highValueRuntimeExpansionNode` runs only under a
+    // runtime-flow-only forward policy, which control C never reaches, so a report
+    // stage name leaking back through an unrelated alternative stayed invisible:
+    // `research` matched the unanchored tail of `search`.
+    //
+    // The observable effect is INCLUSION, not ordering: at depth > 0 a forward
+    // walk continues past a node only when `shouldExpandRuntimePathNode` says so,
+    // and being "high value" is what says so. So the third hop is reachable only
+    // if the middle node earned the preference. Asserting on ordering instead
+    // would have been a control that cannot catch its own mutation.
+    const chain = (midLabel: string, midFile: string) => {
+      const graph = new KnowledgeGraph({ directed: true })
+      graph.addNode('entry', { label: '.startRun()', source_file: '/src/flow/trigger.service.ts', node_kind: 'method', file_type: 'code' })
+      graph.addNode('mid', { label: midLabel, source_file: midFile, node_kind: 'method', file_type: 'code' })
+      graph.addNode('deep', { label: '.writeLedger()', source_file: '/src/flow/ledger.service.ts', node_kind: 'method', file_type: 'code' })
+      graph.addEdge('entry', 'mid', { relation: 'calls' })
+      graph.addEdge('mid', 'deep', { relation: 'calls' })
+      return graph
+    }
+    const run = (midLabel: string, midFile: string) => sliceCandidatesForRetrieve(
+      chain(midLabel, midFile),
+      [
+        { id: 'entry', label: '.startRun()', sourceFile: '/src/flow/trigger.service.ts', nodeKind: 'method', exactLabelMatch: true, sourcePathMatch: false, literalPathMatch: false, score: 1 },
+        { id: 'mid', label: midLabel, sourceFile: midFile, nodeKind: 'method', exactLabelMatch: false, sourcePathMatch: false, literalPathMatch: false, score: 0.5 },
+        { id: 'deep', label: '.writeLedger()', sourceFile: '/src/flow/ledger.service.ts', nodeKind: 'method', exactLabelMatch: false, sourcePathMatch: false, literalPathMatch: false, score: 0.4 },
+      ],
+      'explain',
+      {
+        prompt: 'Explain how `.startRun()` moves through the runtime pipeline',
+        generationIntent: 'runtime_generation',
+        targetDomainHint: 'backend_runtime',
+      },
+    )?.ordered_ids ?? []
+
+    // The three labels are chosen so that ONLY the intended signal varies: none
+    // of them carries an unrelated generic runtime term. An earlier draft used
+    // `.researchAgent()`, whose "agent" is itself a generic runtime word that was
+    // deliberately kept, so the fixture could not isolate the report stage name.
+    const neutral = run('.lookupStep()', '/src/flow/lookup.service.ts')
+    const reportNamed = run('.researchStep()', '/src/flow/research.service.ts')
+
+    // Naming the middle hop after a report stage buys it nothing.
+    expect(reportNamed).toEqual(neutral)
+    expect(reportNamed).not.toContain('deep')
+
+    // Not a constant: a genuinely generic runtime name DOES earn the expansion,
+    // so this control can tell the two apart and fails in both directions.
+    const genericRuntime = run('.searchStep()', '/src/flow/search.service.ts')
+    expect(genericRuntime).toContain('deep')
   })
 
   // ------------------------------------------------------------- control D --

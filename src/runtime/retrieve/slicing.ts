@@ -604,14 +604,26 @@ function traverseDirection(
   }
 }
 
+// `search` is anchored on its left. Without that anchor it also matches the tail
+// of "research", so a symbol named ResearchAgent kept the runtime-expansion
+// preference that #660 Slice C removed for report workflow stage names — the
+// removal was silently defeated by an unrelated alternative. The other terms
+// keep their existing loose anchoring on purpose: they are meant to match
+// inflections such as "workers", "jobs" and "pipelines", and tightening every
+// alternative would change generic ranking well beyond this slice.
+//
+// `persist` deliberately still matches "persistence": it is a generic runtime
+// verb naming an ordinary backend layer, judged generic earlier in this slice
+// when removing it from the prompt classifier regressed a neutral login fixture.
+// A report stage NOUN must confer nothing; a generic runtime verb may.
 function pipelineBridgeLikeNode(node: SliceScoredNode): boolean {
   const lower = `${node.label} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
-  return /\bpipeline|trigger|queue|job|worker|orchestrator|agent|repository|save|process|search|addjob\b/.test(lower)
+  return /\bpipeline|trigger|queue|job|worker|orchestrator|agent|repository|save|process|\bsearch|addjob\b/.test(lower)
 }
 
 function highValueRuntimeExpansionNode(node: SliceScoredNode): boolean {
   const lower = `${node.label} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
-  return /\bpipeline|trigger|queue|job|worker|orchestrator|agent|repository|save|process|search|dispatch|persist|builder|addjob\b/.test(lower)
+  return /\bpipeline|trigger|queue|job|worker|orchestrator|agent|repository|save|process|\bsearch|dispatch|persist|builder|addjob\b/.test(lower)
 }
 
 function sharedHubLikeNode(graph: KnowledgeGraph, node: SliceScoredNode): boolean {

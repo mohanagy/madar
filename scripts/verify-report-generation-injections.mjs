@@ -107,6 +107,9 @@ const INJECTIONS = [
   },
 ]
 
+/** Thrown when the pre-injection baseline already fails, so the injection is void. */
+class SkipInjection extends Error {}
+
 function digest(text) {
   return createHash('sha256').update(text).digest('hex')
 }
@@ -156,23 +159,35 @@ function main() {
 
     let outcome
     try {
+      // BEFORE anything is mutated, the named control must be GREEN. Without
+      // this baseline a control that was already red would hand every injection
+      // free credit: the post-injection failure would prove nothing, because the
+      // failure was not caused by the injection.
+      const before = runControl(injection.control)
+      if (before.failed) {
+        outcome = { ok: false, detail: 'the named control was ALREADY FAILING before injection — its later failure would prove nothing' }
+        throw new SkipInjection()
+      }
+
       const injected = injection.apply(original)
       if (injected === original) throw new Error(`${injection.id}: injection changed nothing`)
       writeFileSync(path, injected)
 
       // The injected path must actually be REACHED, not merely present.
-      const baseline = runControl(injection.control)
-      if (!baseline.failed) {
+      const after = runControl(injection.control)
+      if (!after.failed) {
         outcome = { ok: false, detail: 'the named control still PASSED with the rule restored — it cannot catch its own mutation' }
       } else {
         // Credit only for the named control failing, not for any failure.
-        const named = baseline.output.includes(injection.control.name)
+        const named = after.output.includes(injection.control.name)
         outcome = named
-          ? { ok: true, detail: `${injection.marker}: named control failed as required` }
+          ? { ok: true, detail: `${injection.marker}: named control was green before injection and failed after, as required` }
           : { ok: false, detail: 'a failure occurred but it was not the named control' }
       }
     } catch (error) {
-      outcome = { ok: false, detail: `injection error: ${error.message}` }
+      if (!(error instanceof SkipInjection)) {
+        outcome = { ok: false, detail: `injection error: ${error.message}` }
+      }
     } finally {
       writeFileSync(path, original)
       chmodSync(path, originalMode)
