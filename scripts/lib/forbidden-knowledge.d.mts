@@ -34,7 +34,7 @@ export interface ForbiddenKnowledgeViolation {
   readonly file: string
   readonly line: number
   /** Where in the file the match sits: a literal, a regex, a template span, an identifier or a comment. */
-  readonly site: 'string' | 'regex' | 'template' | 'identifier' | 'comment'
+  readonly site: 'string' | 'regex' | 'template' | 'identifier' | 'comment' | 'folded'
   readonly rule: string
   readonly repository: string
   readonly ruleClass: 'path' | 'symbol' | 'phrase'
@@ -68,13 +68,14 @@ export interface ForbiddenKnowledgeInput {
 
 /** One place in a source file where a name, path or shape can be written down. */
 export interface KnowledgeBearingSite {
-  readonly kind: 'string' | 'regex' | 'template' | 'identifier' | 'comment'
+  readonly kind: 'string' | 'regex' | 'template' | 'identifier' | 'comment' | 'folded'
   readonly text: string
   readonly line: number
 }
 
 export declare function tokenForm(value: string): string
 export declare function squashForm(value: string): string
+export declare function decodeEscapes(value: string): string
 export declare function knowledgeBearingSites(sourceText: string, fileName?: string): KnowledgeBearingSite[]
 export declare function loadForbiddenKnowledgeManifest(
   root?: string,

@@ -21,6 +21,7 @@ import {
   type ContextPackNodeCandidate,
 } from '../../src/runtime/context-pack.js'
 import { planConceptualFallback } from '../../src/runtime/retrieve/conceptual-fallback.js'
+import { retrieveContext } from '../../src/runtime/retrieve.js'
 import {
   analyzeForbiddenKnowledge,
   loadForbiddenKnowledgeManifest,
@@ -54,6 +55,9 @@ function buildGraph(nodes: readonly NodeSpec[], edges: readonly EdgeSpec[]): Kno
     graph.addNode(node.id, {
       label: node.label,
       source_file: node.source,
+      source_location: 'L1-L3',
+      file_type: 'code',
+      node_kind: 'function',
       type: 'function',
       ...(node.snippet !== undefined ? { snippet: node.snippet } : {}),
       ...(node.frameworkRole !== undefined ? { framework_role: node.frameworkRole } : {}),
@@ -264,6 +268,25 @@ describe('production independence from qualification repositories', () => {
     const disconnected = boostOrder(buildGraph(QUALIFICATION_NAMES, []), QUALIFICATION_QUESTION)
 
     expect(disconnected).not.toEqual(connected)
+  })
+
+  /* ---------------- D2. the same isomorphism, end to end ------------------ */
+
+  it('D2. selects the same nodes end-to-end for a one-for-one substituted repository', () => {
+    // D observes conceptual boosts. This observes what retrieval actually
+    // returns, so a forced selection or a slice bypass added anywhere on the
+    // retrieval path -- not just in the fallback planner -- is caught here.
+    const selection = (nodes: readonly NodeSpec[], question: string): string[] =>
+      retrieveContext(buildGraph(nodes, SHARED_EDGES), { question, budget: 5000 })
+        .matched_nodes
+        .map((node) => node.node_id ?? node.label)
+
+    const qualification = selection(QUALIFICATION_NAMES, QUALIFICATION_QUESTION)
+    const substituted = selection(SUBSTITUTED_NAMES, SUBSTITUTED_QUESTION)
+
+    expect(qualification.length).toBeGreaterThan(0)
+    expect(substituted, `qualification ${JSON.stringify(qualification)} vs substituted ${JSON.stringify(substituted)}`)
+      .toEqual(qualification)
   })
 
   /* ---------------- E. qualification strings alone ------------------------ */

@@ -124,6 +124,81 @@ function injectionCases() {
       },
     },
     {
+      id: 'F12',
+      title: 'a hex-escaped string literal is decoded before matching',
+      expectRule: 'openstatus/symbol-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
+      inject(snapshot) {
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B F12 injection',
+          "const F12_NAME = '\\x73tatusPage'",
+          'void F12_NAME',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
+      id: 'F13',
+      title: 'a hex-escaped regex literal is decoded before matching',
+      expectRule: 'openstatus/symbol-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
+      inject(snapshot) {
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B F13 injection',
+          'const F13_PATTERN = /status\\x50age/i',
+          'void F13_PATTERN',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
+      id: 'F14',
+      title: 'a name split across a static concatenation is folded before matching',
+      expectRule: 'openstatus/symbol-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
+      inject(snapshot) {
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B F14 injection',
+          "const F14_NAME = 'status' + 'Page'",
+          'void F14_NAME',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
+      id: 'F15',
+      title: 'a name split across a static template is folded before matching',
+      expectRule: 'openstatus/symbol-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
+      inject(snapshot) {
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B F15 injection',
+          'const F15_NAME = `status${\'\'}Page`',
+          'void F15_NAME',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
+      id: 'F16',
+      title: 'a unicode-escaped string literal is decoded before matching',
+      expectRule: 'openstatus/symbol-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
+      inject(snapshot) {
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B F16 injection',
+          "const F16_NAME = '\\u0073tatusPage'",
+          'void F16_NAME',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
       id: 'F5',
       title: 'forbidden symbol reintroduced as an identifier, not a string',
       expectRule: 'openstatus/symbol-page-indicator',
@@ -183,6 +258,30 @@ function manifestCases() {
           id: 'expired', rule_id: manifest.rules[0].id, file: TARGET,
           why: 'stale on purpose', expires: '2020-01-01',
         }]
+        return manifest
+      },
+    },
+    {
+      id: 'F17',
+      title: 'an impossible calendar date is refused, not merely shape-checked',
+      verdict: expectManifestProblem('must be a real ISO calendar date'),
+      mutate(manifest) {
+        manifest.exceptions = [{
+          id: 'impossible-date', rule_id: manifest.rules[0].id, file: TARGET,
+          why: 'shaped like a date but is not one', expires: '2099-13-45',
+        }]
+        return manifest
+      },
+    },
+    {
+      id: 'F18',
+      title: 'two exemptions covering the same rule and file are refused',
+      verdict: expectManifestProblem('one exemption per rule per file'),
+      mutate(manifest) {
+        manifest.exceptions = [
+          { id: 'first', rule_id: manifest.rules[0].id, file: TARGET, why: 'first', expires: '2099-01-01' },
+          { id: 'second', rule_id: manifest.rules[0].id, file: TARGET, why: 'duplicate scope', expires: '2099-01-01' },
+        ]
         return manifest
       },
     },

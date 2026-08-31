@@ -2320,18 +2320,10 @@ function promptWantsRuntimePipeline(question: string): boolean {
   return /\b(runtime|pipeline|service|orchestrator|job|agent|scoring|report(?: builder)?|persistence|repository|queue|worker)\b/i.test(question)
 }
 
-function promptWantsReportGenerationCore(question: string): boolean {
-  return /\b(?:report(?:\s+generation)?|generated\s+report|validation\s+report|final\s+report|assembly|assemble|synthesis|renderer|render|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate)\b/i.test(question)
-}
-
 function promptHasExplicitExecutionAnchor(question: string): boolean {
   return containsUrlLikeRoutePath(question)
     || /`[^`]+`/.test(question)
     || /\b[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\b/.test(question)
-}
-
-function promptWantsDetailedReportGenerationPhases(question: string): boolean {
-  return promptWantsReportGenerationCore(question) && !promptHasExplicitExecutionAnchor(question)
 }
 
 function promptWantsAuthGuardPhase(question: string): boolean {
@@ -2359,8 +2351,7 @@ function promptExplicitlyWantsRuntimeHandoff(question: string): boolean {
 }
 
 function promptUsesExpandedExecutionTaxonomy(question: string): boolean {
-  return promptWantsDetailedReportGenerationPhases(question)
-    || promptWantsAuthGuardPhase(question)
+  return promptWantsAuthGuardPhase(question)
     || promptWantsValidationPhase(question)
     || promptWantsNotificationOrEventPhase(question)
 }
@@ -2430,68 +2421,9 @@ function lowValueCompactNode(
   })
 }
 
-function recoveredReportGenerationNoise(
-  question: string,
-  node: Pick<ScoredNode, 'label' | 'sourceFile' | 'nodeKind' | 'frameworkRole'>,
-): boolean {
-  if (!promptWantsRuntimePipeline(question) || !promptWantsReportGenerationCore(question)) {
-    return false
-  }
-
-  return lowValueCompactNode({
-    label: node.label,
-    source_file: node.sourceFile,
-    node_kind: node.nodeKind,
-    framework_role: node.frameworkRole,
-  })
-}
-
-function reportGenerationCompactApplies(result: RetrieveResult): boolean {
-  if (
-    result.retrieval_strategy !== 'slice-v1'
-    || !promptWantsRuntimePipeline(result.question)
-    || !promptWantsReportGenerationCore(result.question)
-    || !result.slice
-    || promptExpectsPersistenceStep(result.question)
-  ) {
-    return false
-  }
-
-  if (result.slice.anchors.some((anchor) => anchor.reason === 'symbol mention' || anchor.reason === 'path mention')) {
-    return false
-  }
-
-  return result.slice.anchors.some((anchor) => anchor.reason === 'generation core heuristic')
-    || (result.execution_slice?.steps.length ?? 0) >= 3
-}
-
-function reportGenerationCompactPriority(
-  node: Pick<RetrieveMatchedNode, 'label' | 'source_file' | 'node_kind' | 'framework_role' | 'relevance_band'>,
-  executionStepLabels: ReadonlySet<string>,
-): number {
-  const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
-  let value = 0
-
-  // Membership of the execution slice is structural: the node is on the path
-  // the graph actually recorded, whatever it is called.
-  if (executionStepLabels.has(node.label)) value += 80
-  // Generic runtime-stage vocabulary. Every term here names an architectural
-  // role rather than a symbol in some repository.
-  if (/\b(?:queue|job|worker|orchestrator|pipeline|process|persist|save|dispatch|handler|scheduler)\b/.test(lower)) value += 40
-  if (pipelineBridgeNode(node)) value += 20
-  if (node.relevance_band === 'direct') value += 5
-  if (lowValueCompactNode(node)) value -= 100
-
-  return value
-}
-
 function compactSlicePromotionApplies(result: RetrieveResult): boolean {
   if (result.retrieval_strategy !== 'slice-v1' || !promptWantsRuntimePipeline(result.question)) {
     return false
-  }
-
-  if (reportGenerationCompactApplies(result)) {
-    return true
   }
 
   return (result.slice?.anchors ?? []).some((anchor) =>
@@ -2513,91 +2445,6 @@ function structuralSlicePromotionApplies(
 function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
   if (!compactSlicePromotionApplies(result) || !result.slice) {
     return []
-  }
-
-  if (reportGenerationCompactApplies(result)) {
-    const matchedById = new Map(
-      result.matched_nodes
-        .map((node) => (typeof node.node_id === 'string' && node.node_id.length > 0 ? [node.node_id, node] as const : null))
-        .filter((entry): entry is readonly [string, RetrieveMatchedNode] => entry !== null),
-    )
-    const executionStepLabels = new Set<string>()
-    const executionStepFiles = new Set<string>()
-    const promoted = new Set<string>()
-    const addPromoted = (nodeId: string | undefined): void => {
-      if (typeof nodeId !== 'string' || nodeId.length === 0) {
-        return
-      }
-      const node = matchedById.get(nodeId)
-      if (!node || supportingPolicyOrLoggerNode(node) || lowValueCompactNode(node)) {
-        return
-      }
-      promoted.add(nodeId)
-    }
-    const addPromotedByLabel = (label: string): void => {
-      for (const node of result.matched_nodes) {
-        if (node.label !== label) {
-          continue
-        }
-        addPromoted(node.node_id)
-      }
-    }
-
-    for (const anchor of result.slice.anchors) {
-      addPromoted(anchor.node_id)
-    }
-
-    for (const step of result.execution_slice?.steps ?? []) {
-      executionStepLabels.add(step.label)
-      executionStepFiles.add(step.source_file)
-      addPromoted(step.node_id)
-      addPromotedByLabel(step.label)
-    }
-    for (const step of result.execution_slice?.primary_path?.steps ?? []) {
-      executionStepLabels.add(step.label)
-      executionStepFiles.add(step.source_file)
-      addPromoted(step.node_id)
-      addPromotedByLabel(step.label)
-    }
-
-    for (const path of result.slice.selected_paths) {
-      if (!runtimeFlowRelation(path.relation)) {
-        continue
-      }
-
-      const fromNode = typeof path.from_id === 'string' ? matchedById.get(path.from_id) : undefined
-      const toNode = typeof path.to_id === 'string' ? matchedById.get(path.to_id) : undefined
-      if (fromNode && pipelineBridgeNode(fromNode)) {
-        addPromoted(path.from_id)
-      }
-      if (toNode && pipelineBridgeNode(toNode)) {
-        addPromoted(path.to_id)
-      }
-      if (fromNode && toNode && fromNode.source_file === toNode.source_file) {
-        if (executionStepFiles.has(fromNode.source_file)) {
-          addPromoted(path.from_id)
-          addPromoted(path.to_id)
-        }
-      }
-    }
-
-    return result.matched_nodes
-      .filter((node) => typeof node.node_id === 'string' && promoted.has(node.node_id))
-      .sort((left, right) => {
-        const priorityDelta = reportGenerationCompactPriority(right, executionStepLabels)
-          - reportGenerationCompactPriority(left, executionStepLabels)
-        if (priorityDelta !== 0) {
-          return priorityDelta
-        }
-        const leftPipeline = pipelineBridgeNode(left) ? 1 : 0
-        const rightPipeline = pipelineBridgeNode(right) ? 1 : 0
-        if (leftPipeline !== rightPipeline) {
-          return rightPipeline - leftPipeline
-        }
-        return right.match_score - left.match_score
-      })
-      .flatMap((node) => (typeof node.node_id === 'string' ? [node.node_id] : []))
-      .slice(0, 24)
   }
 
   const promoted = new Set<string>(
@@ -2640,83 +2487,6 @@ function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
 function promotedSliceCompactLabels(result: RetrieveResult): string[] {
   if (!compactSlicePromotionApplies(result) || !result.slice) {
     return []
-  }
-
-  if (reportGenerationCompactApplies(result)) {
-    const matchedById = new Map(
-    result.matched_nodes
-      .map((node) => (typeof node.node_id === 'string' && node.node_id.length > 0 ? [node.node_id, node] as const : null))
-      .filter((entry): entry is readonly [string, RetrieveMatchedNode] => entry !== null),
-    )
-    const representativeByLabel = new Map<string, RetrieveMatchedNode>()
-    for (const node of result.matched_nodes) {
-    if (!representativeByLabel.has(node.label)) {
-      representativeByLabel.set(node.label, node)
-    }
-    }
-
-    const executionStepLabels = new Set<string>()
-    const executionStepFiles = new Set<string>()
-    const promotedLabels = new Set<string>()
-    const addPromotedLabel = (label: string | undefined, node?: RetrieveMatchedNode): void => {
-    if (typeof label !== 'string' || label.length === 0) {
-      return
-    }
-    const candidate = node ?? representativeByLabel.get(label)
-    if (!candidate || supportingPolicyOrLoggerNode(candidate) || lowValueCompactNode(candidate)) {
-      return
-    }
-    promotedLabels.add(label)
-    }
-
-    for (const anchor of result.slice.anchors) {
-    addPromotedLabel(anchor.label, typeof anchor.node_id === 'string' ? matchedById.get(anchor.node_id) : undefined)
-    }
-
-    for (const step of result.execution_slice?.steps ?? []) {
-    executionStepLabels.add(step.label)
-    executionStepFiles.add(step.source_file)
-    addPromotedLabel(step.label, typeof step.node_id === 'string' ? matchedById.get(step.node_id) : undefined)
-    }
-    for (const step of result.execution_slice?.primary_path?.steps ?? []) {
-    executionStepLabels.add(step.label)
-    executionStepFiles.add(step.source_file)
-    addPromotedLabel(step.label, typeof step.node_id === 'string' ? matchedById.get(step.node_id) : undefined)
-    }
-
-    for (const path of result.slice.selected_paths) {
-    if (!runtimeFlowRelation(path.relation)) {
-      continue
-    }
-
-    const fromNode = typeof path.from_id === 'string' ? matchedById.get(path.from_id) : representativeByLabel.get(path.from)
-    const toNode = typeof path.to_id === 'string' ? matchedById.get(path.to_id) : representativeByLabel.get(path.to)
-    if (fromNode && pipelineBridgeNode(fromNode)) {
-      addPromotedLabel(fromNode.label, fromNode)
-    }
-    if (toNode && pipelineBridgeNode(toNode)) {
-      addPromotedLabel(toNode.label, toNode)
-    }
-    if (fromNode && toNode && fromNode.source_file === toNode.source_file) {
-      if (executionStepFiles.has(fromNode.source_file)) {
-        addPromotedLabel(fromNode.label, fromNode)
-        addPromotedLabel(toNode.label, toNode)
-      }
-    }
-    }
-
-    return [...promotedLabels]
-    .sort((left, right) => {
-      const leftNode = representativeByLabel.get(left)
-      const rightNode = representativeByLabel.get(right)
-      const priorityDelta = (rightNode ? reportGenerationCompactPriority(rightNode, executionStepLabels) : 0)
-        - (leftNode ? reportGenerationCompactPriority(leftNode, executionStepLabels) : 0)
-      if (priorityDelta !== 0) {
-        return priorityDelta
-      }
-      return left.localeCompare(right)
-    })
-    .slice(0, 24)
   }
 
   return result.slice.anchors.map((anchor) => anchor.label)
@@ -3280,15 +3050,6 @@ function executionPhaseOrder(question: string): ExecutionPhase[] {
   const enabled = new Set<ExecutionPhase>(['controller', 'service', 'queue', 'worker', 'persistence'])
   if (promptWantsAuthGuardPhase(question)) enabled.add('auth_guard')
   if (promptWantsValidationPhase(question)) enabled.add('validation')
-  if (promptWantsDetailedReportGenerationPhases(question)) {
-    enabled.add('orchestrator')
-    enabled.add('planner')
-    enabled.add('external_research_or_api')
-    enabled.add('report_builder')
-    enabled.add('scoring')
-    enabled.add('quality_gate')
-    enabled.add('renderer_or_synthesis')
-  }
   if (promptWantsNotificationOrEventPhase(question)) enabled.add('notification_or_event')
 
   const phaseOrder: ExecutionPhase[] = [
@@ -3335,20 +3096,10 @@ function expectedExecutionPhases(
   if (promptWantsServiceStep(question)) {
     phases.push('service')
   }
-  if (promptWantsDetailedReportGenerationPhases(question)) {
-    if (scopeHasExecutionPhase(scopeSteps, 'orchestrator')) phases.push('orchestrator')
-    if (scopeHasExecutionPhase(scopeSteps, 'planner')) phases.push('planner')
-    if (scopeHasExecutionPhase(scopeSteps, 'external_research_or_api')) phases.push('external_research_or_api')
-    if (scopeHasExecutionPhase(scopeSteps, 'report_builder')) phases.push('report_builder')
-    if (scopeHasExecutionPhase(scopeSteps, 'scoring')) phases.push('scoring')
-    if (scopeHasExecutionPhase(scopeSteps, 'quality_gate')) phases.push('quality_gate')
-    if (scopeHasExecutionPhase(scopeSteps, 'renderer_or_synthesis')) phases.push('renderer_or_synthesis')
-    if (scopeHasExecutionPhase(scopeSteps, 'persistence')) phases.push('persistence')
-  }
   const scopeHasRuntimeHandoff = scopeHasExecutionPhase(scopeSteps, 'queue') || scopeHasExecutionPhase(scopeSteps, 'worker')
   if (
     promptExplicitlyWantsRuntimeHandoff(question)
-    || (!promptWantsDetailedReportGenerationPhases(question) && promptWantsRuntimePipeline(question) && scopeHasRuntimeHandoff)
+    || (promptWantsRuntimePipeline(question) && scopeHasRuntimeHandoff)
   ) {
     phases.push('queue', 'worker')
   }
@@ -3921,10 +3672,6 @@ function walkExecutionSlice(
   return orderedPathIds
 }
 
-function runtimeGenerationAnswerContractWantsReportGenerationCore(question: string): boolean {
-  return /\b(?:report(?:\s+generation)?|generated\s+report|validation\s+report|final\s+report|assembly|assemble|synthesis|renderer|render|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate)\b/i.test(question)
-}
-
 function runtimeGenerationStepText(
   value: Pick<ContextPackExecutionSliceStep, 'label' | 'source_file' | 'node_kind' | 'framework_role'>,
 ): string {
@@ -3960,24 +3707,6 @@ function runtimeGenerationContractPhaseElements(
 
   if (executionSlice.status === 'partial') {
     elements.add('missing_or_uncertain_phases')
-  }
-
-  if (runtimeGenerationAnswerContractWantsReportGenerationCore(question)) {
-    if (/\b(?:planner|\.plan\(|plan\(\)|planning)\b/i.test(evidenceText)) {
-      elements.add('planner_phase')
-    }
-    if (/\b(?:research|search\(\)|processsection|processsection\(\)|section[-_\s]?research)\b/i.test(evidenceText)) {
-      elements.add('research_phase')
-    }
-    if (/\b(?:assembly|assemble|synthesis)\b/i.test(evidenceText)) {
-      elements.add('assembly_phase')
-    }
-    if (/\b(?:score|scoring|metrics?)\b/i.test(evidenceText)) {
-      elements.add('scoring_phase')
-    }
-    if (/\b(?:render|renderer|report builder|reportbuilder|final report)\b/i.test(evidenceText)) {
-      elements.add('report_builder_phase')
-    }
   }
 
   return [...elements]
@@ -5770,19 +5499,19 @@ function retrieveContextPass(
   const inclusionOrder = expansionPolicy.include_peripheral
     ? frameworkOrderedCandidates
     : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
-      // Cross-domain conceptual recovery can intentionally keep disconnected
-      // evidence outside one slice. For a report-generation workflow, exclude
-      // known side actions from that preserved set so controller siblings such
-      // as list/status/health do not displace the execution path.
-      let orderedCandidates = preserveConceptualObligationOrder
-        ? inclusionOrder.filter((node) => !recoveredReportGenerationNoise(question, node))
-        : inclusionOrder
+      let orderedCandidates = inclusionOrder
       let sliceMetadata: ContextPackSliceMetadata | undefined
-      // A multi-obligation conceptual fallback can deliberately assemble
-      // cross-service and cross-language owners that do not form one local
-      // slice. Only that explicitly selected recovery mode bypasses slice-v1;
-      // ordinary conceptual reranking and symbol/path-anchored questions keep
-      // the established slice contract.
+      // A conceptual recovery for a multi-obligation question with no explicit
+      // anchor deliberately assembles owners from several services that do not
+      // form one local slice. Applying a local slice on top of that discards
+      // the very evidence the recovery just found, so that one structurally
+      // identified mode keeps its ordering.
+      //
+      // The condition is a property of the QUERY PLAN -- no explicit anchors
+      // and at least four obligations -- not of any question wording. What
+      // used to sit here as well, and is gone, was a filter that dropped
+      // candidates by matching a task classifier and a list of symbol names
+      // from one repository.
       if (options.retrievalStrategy === 'slice-v1' && !preserveConceptualObligationOrder) {
         const sliced = sliceCandidatesForRetrieve(
           graph,

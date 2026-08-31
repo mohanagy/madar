@@ -66,14 +66,35 @@ export function squashForm(value) {
   return String(value).toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
+/**
+ * Decode the escape forms a name can hide behind in regex source. TypeScript
+ * already decodes escapes inside string literals for us; regex source arrives
+ * raw, so \x50 and P have to be resolved here or /status\x50age/i reads as
+ * innocent text. A stray backslash before an ordinary word character is dropped
+ * for the same reason.
+ */
+export function decodeEscapes(value) {
+  return String(value)
+    .replace(/\\u\{([0-9a-fA-F]+)\}/g, (_, hex) => safeFromCodePoint(hex))
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => safeFromCodePoint(hex))
+    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => safeFromCodePoint(hex))
+    .replace(/\\([A-Za-z0-9])/g, '$1')
+}
+
+function safeFromCodePoint(hex) {
+  const code = Number.parseInt(hex, 16)
+  return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : ''
+}
+
 function matchForms(haystack, needle) {
+  const decoded = decodeEscapes(haystack)
   const forms = []
   const needleTokens = tokenForm(needle)
-  if (needleTokens.length > 0 && tokenForm(haystack).includes(needleTokens)) {
+  if (needleTokens.length > 0 && tokenForm(decoded).includes(needleTokens)) {
     forms.push('tokens')
   }
   const needleSquashed = squashForm(needle)
-  if (needleSquashed.length > 0 && squashForm(haystack).includes(needleSquashed)) {
+  if (needleSquashed.length > 0 && squashForm(decoded).includes(needleSquashed)) {
     forms.push('squashed')
   }
   return forms
@@ -86,6 +107,18 @@ function matchForms(haystack, needle) {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const RULE_CLASSES = new Set(['path', 'symbol', 'phrase'])
 const MINIMUM_DISTINCTIVE_LENGTH = 4
+
+/** `2099-13-45` matches the shape but is not a date. Reject it as malformed. */
+function isRealCalendarDate(value) {
+  const [year, month, day] = value.split('-').map(Number)
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return false
+  }
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day
+}
 
 /**
  * Fail-closed manifest validation. A guard whose configuration is not itself
@@ -226,6 +259,7 @@ export function loadForbiddenKnowledgeManifest(root = process.cwd(), options = {
     problems.push('exceptions must be an array')
   } else {
     const seenExceptionIds = new Set()
+    const seenExceptionScopes = new Map()
     const today = options.today ?? new Date().toISOString().slice(0, 10)
     for (const [index, entry] of rawExceptions.entries()) {
       const where = `exceptions[${index}]`
@@ -264,14 +298,21 @@ export function loadForbiddenKnowledgeManifest(root = process.cwd(), options = {
         continue
       }
 
-      if (!ISO_DATE.test(expires)) {
-        problems.push(`${where}.expires must be an ISO date (YYYY-MM-DD): ${expires}`)
+      if (!ISO_DATE.test(expires) || !isRealCalendarDate(expires)) {
+        problems.push(`${where}.expires must be a real ISO calendar date (YYYY-MM-DD): ${expires}`)
         continue
       }
       if (expires < today) {
         problems.push(`${where} (${id}) expired on ${expires}; renew it with a reason or delete it`)
         continue
       }
+
+      const scope = `${ruleId}\u0000${file}`
+      if (seenExceptionScopes.has(scope)) {
+        problems.push(`${where} (${id}) covers the same rule and file as ${seenExceptionScopes.get(scope)}; one exemption per rule per file`)
+        continue
+      }
+      seenExceptionScopes.set(scope, id)
 
       exceptions.push({ id, ruleId, file, why, expires })
     }
@@ -313,6 +354,44 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
     sites.push({ kind, text, line })
   }
 
+  /**
+   * The string a statically foldable expression evaluates to, or null.
+   *
+   * `'status' + 'Page'` and `` `status${''}Page` `` are the same name as the
+   * plain spelling, split across nodes that individually match nothing. Folding
+   * them is what stops "write it in two pieces" from being a way through.
+   * Only fully static expressions fold; anything computed at runtime returns
+   * null and is left to the behavioural controls.
+   */
+  const staticValue = (node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      return node.text
+    }
+    if (ts.isParenthesizedExpression(node)) {
+      return staticValue(node.expression)
+    }
+    if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isTypeAssertionExpression?.(node)) {
+      return staticValue(node.expression)
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+      const left = staticValue(node.left)
+      const right = staticValue(node.right)
+      return left === null || right === null ? null : left + right
+    }
+    if (ts.isTemplateExpression(node)) {
+      let folded = node.head.text
+      for (const span of node.templateSpans) {
+        const inner = staticValue(span.expression)
+        if (inner === null) {
+          return null
+        }
+        folded += inner + span.literal.text
+      }
+      return folded
+    }
+    return null
+  }
+
   const visit = (node) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       record('string', node.text, node.getStart(source))
@@ -324,6 +403,16 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
     } else if (ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) {
       record('identifier', node.text, node.getStart(source))
     }
+
+    // Fold whole static expressions too, so a name split across several nodes
+    // is matched as the one string it actually denotes.
+    if (ts.isBinaryExpression(node) || ts.isTemplateExpression(node)) {
+      const folded = staticValue(node)
+      if (folded !== null) {
+        record('folded', folded, node.getStart(source))
+      }
+    }
+
     ts.forEachChild(node, visit)
   }
   visit(source)
@@ -366,20 +455,12 @@ export function analyzeForbiddenKnowledge(input = {}) {
   for (const file of files) {
     const text = readFile(file)
 
-    // Cheap pre-filter: if neither normalized form of the whole file contains a
-    // rule value, no site inside it can either. Keeps the AST walk off the
-    // files that have nothing to find.
-    const fileTokens = tokenForm(text)
-    const fileSquashed = squashForm(text)
-    const candidateRules = manifest.rules.filter((rule) => (
-      fileTokens.includes(tokenForm(rule.value)) || fileSquashed.includes(squashForm(rule.value))
-    ))
-    if (candidateRules.length === 0) {
-      continue
-    }
-
+    // Every file is parsed. There is deliberately no raw-text pre-filter: it
+    // would read the file BEFORE escapes are decoded and before split literals
+    // are folded, so a name written as '\\x73tatusPage' or 'status' + 'Page'
+    // would skip the AST walk entirely and the scan would report clean.
     for (const site of knowledgeBearingSites(text, file)) {
-      for (const rule of candidateRules) {
+      for (const rule of manifest.rules) {
         const forms = matchForms(site.text, rule.value)
         if (forms.length === 0) {
           continue
