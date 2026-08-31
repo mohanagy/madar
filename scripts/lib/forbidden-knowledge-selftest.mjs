@@ -231,18 +231,48 @@ function injectionCases() {
       },
     },
     {
-      id: 'F21',
-      title: 'a regex that matches the name without containing it is recognised',
+      id: 'F24',
+      title: 'a name assembled through a spread argument is folded',
       expectRule: 'openstatus/symbol-status-page',
       verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
       inject(snapshot) {
-        // /statusP{1}age/i contains no forbidden substring and matches the
-        // forbidden name. Only asking the pattern settles it.
         snapshot.append(TARGET, [
           '',
-          '// #660-B1 F21 injection',
-          'const F21_PATTERN = /statusP{1}age/i',
-          'void F21_PATTERN',
+          '// #660-B1 F24 injection',
+          "const F24_NAME = 'status'.concat(...['Page'])",
+          'void F24_NAME',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
+      id: 'F25',
+      title: 'a name assembled across an array hole is folded',
+      expectRule: 'openstatus/symbol-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
+      inject(snapshot) {
+        // `['status',, 'Page'].join('')` is `statusPage`: the elided element is
+        // undefined and join renders it as the empty string.
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B1 F25 injection',
+          "const F25_NAME = ['status',, 'Page'].join('')",
+          'void F25_NAME',
+          '',
+        ].join('\n'))
+      },
+    },
+    {
+      id: 'F26',
+      title: 'a name assembled through a spread inside an array is folded',
+      expectRule: 'openstatus/symbol-status-page',
+      verdict: expectViolation(TARGET, 'openstatus/symbol-status-page'),
+      inject(snapshot) {
+        snapshot.append(TARGET, [
+          '',
+          '// #660-B1 F26 injection',
+          "const F26_NAME = ['sta', ...['tus'], 'Page'].join('')",
+          'void F26_NAME',
           '',
         ].join('\n'))
       },

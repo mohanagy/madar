@@ -17,11 +17,41 @@
  *   - identifiers and property names (symbols, preferred-symbol lists)
  *   - comments (a target named in prose is still that knowledge in production)
  *
- * It deliberately does NOT claim to detect all semantic overfitting. A rule
- * keyed on prompt vocabulary, a forced selection, or a reserved result slot
- * encodes the qualification task without containing any name in the manifest.
- * That class is owned by direct behavioural tests, and pretending a text
- * scanner covers it would be the more dangerous error.
+ * Encodings ARE decoded before matching, because a rule spelled
+ * `'\x73tatusPage'`, `/\163tatusPage/`, `'status' + 'Page'` or a static
+ * template is the same knowledge as the plain spelling. String literals are
+ * read through the compiler, which decodes escapes for us; regex SOURCE is
+ * decoded here as text; statically foldable concatenations, templates,
+ * `.concat` and `[].join` are folded before they are matched.
+ *
+ * WHAT IT IS NOT
+ *
+ * It does not execute, compile, simulate, or decide the semantic language of an
+ * arbitrary regular expression, and it must not start. An earlier version
+ * compiled patterns to ask whether they COULD match a forbidden value: that
+ * produced 1662 false positives on a clean tree, needed five rounds of
+ * narrowing to reach zero, and still failed OPEN whenever its own safety bounds
+ * were exceeded. Deciding what a regex can match is not a job a literal scanner
+ * can finish, and a guard that fails open is worse than one with a stated edge.
+ *
+ * THE EDGE, STATED RATHER THAN IMPLIED
+ *
+ * A pattern whose forbidden value exists only in its MATCHING SEMANTICS is
+ * outside this contract. `/statusP{1}age/` and `/^(?=statusP{1}age$)/` both
+ * match `statusPage` at runtime and are NOT detected here, because no decoded
+ * textual run of the source spells the value. Some semantically clever patterns
+ * are caught anyway when their source happens to contain the run -- that is a
+ * coincidence of spelling, not a capability, and is not claimed as one.
+ *
+ * Only STATICALLY foldable expressions fold. A name assembled at runtime is
+ * beyond any static scanner, and this one does not pretend otherwise.
+ *
+ * That class, and semantic overfitting generally -- a rule keyed on prompt
+ * vocabulary, a forced selection, a reserved result slot -- is owned by direct
+ * behavioural independence tests, unrelated-name controls,
+ * renamed-implementation controls, independent holdout evaluation, and code
+ * review. Pretending a text scanner covers it would be the more dangerous
+ * error.
  */
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -125,121 +155,14 @@ function normalizedForms(value) {
   return { decoded, tokens: tokenForm(decoded), squashed: squashForm(decoded) }
 }
 
-/** Which precomputed forms of a site contain the precomputed forms of a rule. */
 /**
- * A regex is not text; it is a matcher. `/statusP{1}age/i` contains no
- * forbidden substring but matches the forbidden name, so normalizing its source
- * can never settle the question. The only faithful test is to ask the pattern
- * itself.
+ * Which precomputed forms of a site contain the precomputed forms of a rule.
  *
- * Bounded on purpose. The pattern is compiled with `new RegExp` -- which
- * evaluates no production code and calls nothing -- and is tested against the
- * short rule value only. Patterns that are over-long, or that carry enough
- * quantifiers to risk catastrophic backtracking, are skipped rather than run;
- * they remain covered by the normalized-text match, and a skipped pattern is
- * never reported as clean on the strength of this check alone.
+ * Purely textual, and deliberately so. EVERY rule class is tested against EVERY
+ * site kind, including regex sources: there is no per-class or per-kind
+ * exclusion left to hide behind, and the result cannot depend on the order the
+ * rules were declared in.
  */
-const REGEX_LITERAL = /^\/(.*)\/([dgimsuvy]*)$/s
-const MAX_REGEX_SOURCE = 400
-const MAX_REGEX_QUANTIFIERS = 40
-
-/**
- * A neutral string with the SAME length, case pattern and separator positions
- * as the value, built by substituting letters and digits.
- *
- * A pattern written to recognise a forbidden name does not match its shape-mate;
- * a general matcher -- `/^[\x20-\x7e]+$/`, `/^[A-Za-z0-9_-]{11}$/`, or one that
- * merely looks for a slash -- matches both. Comparing against a shape-mate
- * rather than a fixed decoy list is what separates those two cases: fixed
- * decoys of the wrong length let every length-constrained pattern through.
- *
- * Measured on a clean tree: no guard 1662 violations, fixed decoys 126,
- * shape-mates 0.
- */
-function shapeDecoy(value, lower, upper, digit) {
-  let lowerIndex = 0
-  let upperIndex = 0
-  return [...value].map((character) => {
-    if (/[a-z]/.test(character)) {
-      const substitute = lower[lowerIndex % lower.length]
-      lowerIndex += 1
-      return substitute
-    }
-    if (/[A-Z]/.test(character)) {
-      const substitute = upper[upperIndex % upper.length]
-      upperIndex += 1
-      return substitute
-    }
-    if (/[0-9]/.test(character)) {
-      return digit
-    }
-    return character
-  }).join('')
-}
-
-/**
- * Decoys in three families, because a pattern can be non-specific in three ways.
- *
- *   shape-mates  catch matchers keyed on length or character class
- *                (`/^[A-Za-z0-9_-]{11}$/`)
- *   tail-mates   catch matchers keyed on a PREFIX, i.e. a class of names
- *                (`/(?:generate|create|...)\w*\(\)$/` matches every create*)
- *   head-mates   catch matchers keyed on a suffix
- *
- * A pattern that recognises one specific name matches none of them.
- */
-function specificityDecoys(value) {
-  const decoys = [
-    shapeDecoy(value, 'zqxjv', 'ZQXJV', '7'),
-    shapeDecoy(value, 'wkbhy', 'WKBHY', '4'),
-  ]
-  // A prefix-keyed matcher can key on a prefix of any length, so the split is
-  // swept rather than guessed: one tail-mate and one head-mate per position.
-  for (let split = 1; split < value.length; split += 1) {
-    decoys.push(value.slice(0, split) + shapeDecoy(value.slice(split), 'zqxjv', 'ZQXJV', '7'))
-    decoys.push(shapeDecoy(value.slice(0, split), 'zqxjv', 'ZQXJV', '7') + value.slice(split))
-  }
-  return [...new Set(decoys)].filter((decoy) => decoy !== value)
-}
-
-function regexMatchesValue(siteText, value) {
-  const parsed = REGEX_LITERAL.exec(siteText)
-  if (parsed === null) {
-    return false
-  }
-  const [, pattern, flags] = parsed
-  if (pattern.length === 0 || pattern.length > MAX_REGEX_SOURCE) {
-    return false
-  }
-  if ((pattern.match(/[*+?{]/g)?.length ?? 0) > MAX_REGEX_QUANTIFIERS) {
-    return false
-  }
-  let compiled
-  try {
-    compiled = new RegExp(pattern, flags.replace(/[gy]/g, ''))
-  } catch {
-    // An un-compilable literal is left to the text match rather than guessed at.
-    return false
-  }
-  try {
-    // The pattern must recognise the WHOLE name, not a fragment of it. An
-    // unanchored alternation containing the ordinary word `status` matches six
-    // of the ten characters of `statusPage`; that is a generic word list, not a
-    // hidden name, and treating it as a hit produced 96 false positives.
-    const coversWholeValue = (candidate) => {
-      const match = compiled.exec(candidate)
-      return match !== null && match[0].length === candidate.length
-    }
-    if (!coversWholeValue(value) && !coversWholeValue(value.toLowerCase())) {
-      return false
-    }
-    // Specific to this name, or a matcher that fires on anything of this shape?
-    return !specificityDecoys(value).some((decoy) => compiled.test(decoy))
-  } catch {
-    return false
-  }
-}
-
 function matchPrecomputedForms(site, rule) {
   const forms = []
   if (rule.tokens.length > 0 && site.tokens.includes(rule.tokens)) {
@@ -247,15 +170,6 @@ function matchPrecomputedForms(site, rule) {
   }
   if (rule.squashed.length > 0 && site.squashed.includes(rule.squashed)) {
     forms.push('squashed')
-  }
-  // The pattern test asks a regex whether it recognises the forbidden NAME.
-  // That question is only well posed for a single identifier. A path value is a
-  // multi-segment string full of ordinary words, so any generic path or word
-  // matcher "matches" it -- 118 such false positives on a clean tree. Paths stay
-  // with the text forms, and a regex hiding a path still trips the symbol rule
-  // for the distinctive name inside it.
-  if (site.kind === 'regex' && rule.class === 'symbol' && regexMatchesValue(site.text, rule.value)) {
-    forms.push('pattern')
   }
   return forms
 }
@@ -523,6 +437,46 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
    * Only fully static expressions fold; anything computed at runtime returns
    * null and is left to the behavioural controls.
    */
+  /**
+   * A list of expressions flattened to strings, or null if any element is not
+   * statically known.
+   *
+   * Two shapes are handled that a plain per-element fold misses, and both
+   * evaluate at runtime to exactly the plain spelling:
+   *
+   *   - SPREAD of a statically known array: `.concat(...['Page'])`
+   *   - a HOLE in an array literal: `['status',, 'Page'].join('')`, where the
+   *     elided element is `undefined` and `join` renders it as the empty
+   *     string, exactly as `Array.prototype.join` specifies.
+   */
+  const staticList = (elements) => {
+    const parts = []
+    for (const element of elements) {
+      if (ts.isOmittedExpression(element)) {
+        // A hole joins as the empty string.
+        parts.push('')
+        continue
+      }
+      if (ts.isSpreadElement(element)) {
+        if (!ts.isArrayLiteralExpression(element.expression)) {
+          return null
+        }
+        const inner = staticList(element.expression.elements)
+        if (inner === null) {
+          return null
+        }
+        parts.push(...inner)
+        continue
+      }
+      const value = staticValue(element)
+      if (value === null) {
+        return null
+      }
+      parts.push(value)
+    }
+    return parts
+  }
+
   const staticValue = (node) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       return node.text
@@ -540,38 +494,28 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
     }
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
       const method = node.expression.name.text
-      // `'status'.concat('Page')` is the same name as the plain spelling.
+      // `'status'.concat('Page')`, and `'status'.concat(...['Page'])`.
       if (method === 'concat') {
         const receiver = staticValue(node.expression.expression)
         if (receiver === null) {
           return null
         }
-        let folded = receiver
-        for (const argument of node.arguments) {
-          const value = staticValue(argument)
-          if (value === null) {
-            return null
-          }
-          folded += value
-        }
-        return folded
+        const parts = staticList(node.arguments)
+        return parts === null ? null : receiver + parts.join('')
       }
-      // `['status', 'Page'].join('')` likewise.
+      // `['status', 'Page'].join('')`, including spreads and holes.
       if (method === 'join' && ts.isArrayLiteralExpression(node.expression.expression)) {
         const separator = node.arguments.length === 0 ? ',' : staticValue(node.arguments[0])
         if (separator === null) {
           return null
         }
-        const parts = []
-        for (const element of node.expression.expression.elements) {
-          const value = staticValue(element)
-          if (value === null) {
-            return null
-          }
-          parts.push(value)
-        }
-        return parts.join(separator)
+        const parts = staticList(node.expression.expression.elements)
+        return parts === null ? null : parts.join(separator)
       }
+    }
+    if (ts.isArrayLiteralExpression(node)) {
+      const parts = staticList(node.elements)
+      return parts === null ? null : parts.join('')
     }
     if (ts.isTemplateExpression(node)) {
       let folded = node.head.text
@@ -601,7 +545,7 @@ export function knowledgeBearingSites(sourceText, fileName = 'file.ts') {
 
     // Fold whole static expressions too, so a name split across several nodes
     // is matched as the one string it actually denotes.
-    if (ts.isBinaryExpression(node) || ts.isTemplateExpression(node) || ts.isCallExpression(node)) {
+    if (ts.isBinaryExpression(node) || ts.isTemplateExpression(node) || ts.isCallExpression(node) || ts.isArrayLiteralExpression(node)) {
       const folded = staticValue(node)
       if (folded !== null) {
         record('folded', folded, node.getStart(source))
@@ -713,7 +657,7 @@ export function analyzeForbiddenKnowledge(input = {}) {
           why: rule.why,
           raw: site.text.length > 200 ? `${site.text.slice(0, 200)}...` : site.text,
           decoded: site.decoded.length > 200 ? `${site.decoded.slice(0, 200)}...` : site.decoded,
-          normalized: forms.includes('tokens') ? site.tokens.trim() : (forms.includes('squashed') ? site.squashed : `pattern matches ${JSON.stringify(rule.value)}`),
+          normalized: forms.includes('tokens') ? site.tokens.trim() : site.squashed,
           matchForms: forms,
         })
       }
