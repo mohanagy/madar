@@ -248,26 +248,28 @@ describe('pack-quality fixtures (#298)', () => {
     expect([...surfacedLabels]).not.toContain('.buildQueuedIdeaReportResponse()')
   })
 
-  it('promotes the quality-gate failure branch when the explain prompt asks what happens if it fails', async () => {
+  // #660 Slice C. This test required `handleQualityGateFailure()` onto the
+  // primary path for a report-shaped prompt. It got there through
+  // `semanticGenerationCoreAnchorValue`, which paid +10 to any label matching
+  // "quality gate" once a task-phrase classifier had seen report vocabulary in
+  // the question — a name-shaped promotion with no structural basis. Both are
+  // gone. What remains a real claim is that the prompt's wording alone does not
+  // decide the primary path, so this is now that independence control.
+  it('does not promote a branch onto the primary path from report wording alone (#660 Slice C)', async () => {
     const result = await runPackQualityFixture('runtime-generation-explain-report-flow', {
       prompt: 'How is idea report handled when it fails',
       task: 'explain',
       budget: 1800,
     })
     const payload = result.payload as typeof result.payload & {
-      pack?: {
-        execution_slice?: {
-          primary_path?: {
-            steps?: Array<{ label?: string }>
-          }
-        }
-      }
+      pack?: { execution_slice?: { primary_path?: { steps?: Array<{ label?: string }> } } }
     }
     const primaryLabels = payload.pack?.execution_slice?.primary_path?.steps?.map((entry) => entry.label) ?? []
 
-    expect(primaryLabels).toEqual(expect.arrayContaining([
-      'handleQualityGateFailure()',
-    ]))
+    // The retired table paid +10 for a label matching "quality gate" once the
+    // question had been classified as report-shaped. Nothing may reach the
+    // primary path on the strength of its name any more.
+    expect(primaryLabels).not.toContain('handleQualityGateFailure()')
     expect(primaryLabels).not.toContain('saveStructuredReport()')
   })
 

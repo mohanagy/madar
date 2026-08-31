@@ -345,7 +345,14 @@ describe('retrieveContext production retrieval regressions', () => {
     }
   })
 
-  it('adds a semantic generation-core anchor for broad report-generation prompts instead of centering only the HTTP trigger', () => {
+  // #660 Slice C. This test required a SECOND anchor to be forced in beside the
+  // real entry point whenever the question used report vocabulary. The anchor
+  // was picked by `semanticGenerationCoreAnchorValue`, a table that paid +11 for
+  // a label containing "planner", +10 for "assembly"/"renderer"/"final report"
+  // and +7 for "research"/"scoring" — a name-shaped ranking with no structural
+  // basis, reachable only through a task-phrase classifier over the question.
+  // Both the table and the forced pick are gone, so the assertion is inverted.
+  it('does not force a name-ranked second anchor for report-shaped questions (#660 Slice C)', () => {
     const result = retrieveContext(buildBroadReportGenerationGraph(), {
       question: 'How idea report is being generated',
       budget: 4000,
@@ -353,34 +360,23 @@ describe('retrieveContext production retrieval regressions', () => {
       retrievalStrategy: 'slice-v1',
     })
 
+    // The real entry point is still anchored by ordinary evidence.
     expect(result.slice?.anchors.map((anchor) => anchor.label)).toEqual(expect.arrayContaining([
       '.generateFromProblem()',
     ]))
-    expect(
-      result.slice?.anchors.some((anchor) => [
-        '.plan()',
-        '.processSection()',
-        '.search()',
-        '.assembleReport()',
-        '.score()',
-        '.validateReport()',
-        '.renderFinalReport()',
-        '.saveStructuredReport()',
-      ].includes(anchor.label)),
-    ).toBe(true)
-    expect(result.matched_nodes.map((node) => node.label)).toEqual(expect.arrayContaining([
-      '.plan()',
-      '.processSection()',
-      '.search()',
-      '.assembleReport()',
-      '.score()',
-      '.validateReport()',
-      '.renderFinalReport()',
-      '.saveStructuredReport()',
-    ]))
+    // Nothing is anchored by the retired heuristic.
+    expect(result.slice?.anchors.map((anchor) => anchor.reason)).not.toContain('generation core heuristic')
+    for (const anchor of result.slice?.anchors ?? []) {
+      expect(['symbol mention', 'path mention', 'source path token match', 'top lexical match']).toContain(anchor.reason)
+    }
   })
 
-  it('prefers central report-generation nodes over leaf helper generators for broad report-generation prompts', () => {
+  // #660 Slice C. This test asserted that `.plan()` / `.assembleReport()` /
+  // `.scoreReport()` beat `.generateScoringLedger()` and friends. Both groups sit
+  // at the same place in the graph; the winner was decided purely by which
+  // NAME resembled a report workflow stage. That is the same-name/wrong-semantics
+  // defect, so the preference is gone and only the evidence-backed anchor stays.
+  it('ranks no anchor by how much its name resembles a report stage (#660 Slice C)', () => {
     const result = retrieveContext(buildReportGenerationLeafHelperGraph(), {
       question: 'How idea report is being generated',
       budget: 4000,
@@ -388,72 +384,64 @@ describe('retrieveContext production retrieval regressions', () => {
       retrievalStrategy: 'slice-v1',
     })
 
-    const anchorLabels = result.slice?.anchors.map((anchor) => anchor.label) ?? []
-    expect(anchorLabels).toEqual(expect.arrayContaining([
+    const anchors = result.slice?.anchors ?? []
+    expect(anchors.map((anchor) => anchor.label)).toEqual(expect.arrayContaining([
       '.generateFromProblem()',
     ]))
-    expect(anchorLabels).toEqual(expect.arrayContaining([
-      expect.stringMatching(/^\.plan\(\)$|^\.assembleReport\(\)$|^\.scoreReport\(\)$/),
-    ]))
-    expect(anchorLabels).not.toEqual(expect.arrayContaining([
-      '.generateScoringLedger()',
-      '.generateSensitivityAnalysis()',
-      '.generateTitle()',
-    ]))
+    expect(anchors.map((anchor) => anchor.reason)).not.toContain('generation core heuristic')
+    for (const anchor of anchors) {
+      expect(['symbol mention', 'path mention', 'source path token match', 'top lexical match']).toContain(anchor.reason)
+    }
   })
 
-  it('keeps backward-selected runtime flow as structural evidence for broad report-generation prompts', () => {
-    const result = retrieveContext(buildReverseFlowReportGenerationGraph(), {
-      question: 'How idea report is being generated',
+  // #660 Slice C. This test required a deep BACKWARD walk over `calls` edges for
+  // report-shaped questions. That policy — backward depth 3 with `calls` added
+  // to the backward relation set — existed only inside the branch gated on the
+  // report task-phrase classifier. Measured at the pre-change commit, the very
+  // same graph asked with equivalent NEUTRAL wording ("How idea invoice is being
+  // generated") returned ordered_ids ["route"] and ZERO selected paths. So this
+  // evidence was never generic: it was an advantage that report vocabulary alone
+  // bought. The test is inverted into that independence control.
+  it('gives report wording no structural evidence that neutral wording cannot get (#660 Slice C)', () => {
+    const ask = (question: string) => retrieveContext(buildReverseFlowReportGenerationGraph(), {
+      question,
       budget: 4000,
       retrievalLevel: 4,
       retrievalStrategy: 'slice-v1',
     })
 
-    expect(result.slice?.selected_paths).toEqual(expect.arrayContaining([
-      expect.objectContaining({ from: '.startPipeline()', to: '.generateFromProblem()', relation: 'calls' }),
-      expect.objectContaining({ from: '.addJob()', to: '.startPipeline()', relation: 'calls' }),
-      expect.objectContaining({ from: '.process()', to: '.addJob()', relation: 'enqueues_job' }),
-      expect.objectContaining({ from: '.scoreMetrics()', to: '.assembleReport()', relation: 'calls' }),
-    ]))
+    const report = ask('How idea report is being generated')
+    const neutral = ask('How idea invoice is being generated')
 
-    const matched = result.matched_nodes.map((node) => ({ label: node.label, evidence_class: node.evidence_class }))
-    expect(matched).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: '.startPipeline()', evidence_class: 'structural' }),
-      expect.objectContaining({ label: '.addJob()', evidence_class: 'structural' }),
-      expect.objectContaining({ label: '.process()', evidence_class: 'structural' }),
-      expect.objectContaining({ label: '.assembleReport()', evidence_class: 'structural' }),
-      expect.objectContaining({ label: '.scoreMetrics()', evidence_class: 'structural' }),
-    ]))
-    expect(matched).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: '.getStatusMessage()', evidence_class: 'structural' }),
-      expect.objectContaining({ label: '.generateTitle()', evidence_class: 'structural' }),
-    ]))
+    const shape = (result: ReturnType<typeof ask>) => ({
+      member_ids: result.matched_nodes.map((node) => node.node_id ?? node.label),
+      paths: (result.slice?.selected_paths ?? []).map((path) => `${path.from}-[${path.relation}]->${path.to}`),
+      reasons: (result.slice?.anchors ?? []).map((anchor) => anchor.reason),
+    })
+
+    expect(shape(report)).toEqual(shape(neutral))
+    expect(shape(report).reasons).not.toContain('generation core heuristic')
   })
 
-  // #660-B1. Was also asserting that '.getStatusMessage()' and
-  // '.generateTitle()' are absent. That exclusion was produced by a denylist of
-  // fourteen symbol names lifted from one repository, not by any structural
-  // property, so it is gone and those labels can appear again. What is still
-  // worth holding, and is kept, is that the execution flow itself is compacted
-  // around the traced steps.
-  it('compacts a broad pack around the traced execution flow', () => {
-    const compact = compactRetrieveResult(retrieveContext(buildReverseFlowReportGenerationGraph(), {
-      question: 'How idea report is being generated',
+  // #660-B1 removed a fourteen-symbol denylist from this test. #660 Slice C
+  // removes the other half: the labels it still required were reachable only
+  // through the report-gated backward policy, so requiring them here is
+  // requiring the special behaviour. What survives as a genuine, generic claim
+  // is that compaction does not INVENT membership and stays wording-independent.
+  it('compacts a broad pack identically under report and neutral wording (#660 Slice C)', () => {
+    const compact = (question: string) => compactRetrieveResult(retrieveContext(buildReverseFlowReportGenerationGraph(), {
+      question,
       budget: 4000,
       retrievalLevel: 4,
       retrievalStrategy: 'slice-v1',
-    }))
+    })).matched_nodes.map((node) => node.label)
 
-    const labels = compact.matched_nodes.map((node) => node.label)
-    expect(labels).toEqual(expect.arrayContaining([
-      '.generateFromProblem()',
-      '.startPipeline()',
-      '.addJob()',
-      '.process()',
-      '.assembleReport()',
-      '.scoreMetrics()',
-    ]))
+    const report = compact('How idea report is being generated')
+    const neutral = compact('How idea invoice is being generated')
+
+    expect(report).toEqual(neutral)
+    // Compaction still reports the evidence it does have, rather than nothing.
+    expect(report).toEqual(expect.arrayContaining(['.generateFromProblem()']))
   })
 
   // #660-B1. Two tests were removed here. Both asserted the EXPECTED phase

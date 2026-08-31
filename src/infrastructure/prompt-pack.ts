@@ -54,20 +54,13 @@ function answerContractInstructions(retrieval: RetrieveResult): string[] {
   ]
 
   const requiredElements = new Set(answerContract.required_elements)
-  const phaseLabels = [
-    ['planner_phase', 'planner'],
-    ['research_phase', 'research'],
-    ['assembly_phase', 'assembly'],
-    ['scoring_phase', 'scoring'],
-    ['report_builder_phase', 'rendering'],
-  ] as const satisfies ReadonlyArray<readonly [string, string]>
-  const selectedPhaseLabels: string[] = phaseLabels.flatMap(([key, label]) => requiredElements.has(key) ? [label] : [])
-  if (selectedPhaseLabels.length > 0 || requiredElements.has('persistence_or_artifact_storage')) {
-    const segments = [...selectedPhaseLabels]
-    if (requiredElements.has('persistence_or_artifact_storage')) {
-      segments.push('persistence')
-    }
-    instructions.push(`Follow ${segments.join(', ')} evidence before concluding the flow.`)
+  // Every instruction below is keyed on a typed `required_elements` entry that
+  // `runtimeGenerationContractPhaseElements` derives from execution-slice
+  // evidence (phase coverage, an `enqueues_job` boundary, slice status). The
+  // question text is not an input here, so prompt vocabulary cannot manufacture
+  // a workflow that the repository evidence does not show.
+  if (requiredElements.has('persistence_or_artifact_storage')) {
+    instructions.push('Follow persistence evidence before concluding the flow.')
   } else if (requiredElements.has('main_pipeline_phases')) {
     instructions.push('Cover the main runtime pipeline phases instead of stopping at the entrypoint.')
   }
@@ -91,30 +84,6 @@ function answerContractInstructions(retrieval: RetrieveResult): string[] {
   return instructions
 }
 
-function promptWantsReportGenerationCore(prompt: string): boolean {
-  return /\b(?:report(?:\s+generation)?|generated\s+report|validation\s+report|final\s+report|assembly|assemble|synthesis|renderer|render|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate)\b/i.test(prompt)
-}
-
-function generationCoreInstructions(question: string, retrieval: RetrieveResult): string[] {
-  const contractInstructions = answerContractInstructions(retrieval)
-  if (contractInstructions.length > 0) {
-    return contractInstructions
-  }
-
-  if (
-    retrieval.retrieval_gate?.signals.generation_intent !== 'runtime_generation'
-    || retrieval.retrieval_gate?.signals.target_domain_hint !== 'backend_runtime'
-    || !promptWantsReportGenerationCore(question)
-  ) {
-    return []
-  }
-
-  return [
-    'Treat HTTP/controller entrypoints as trigger context, not the full answer, when downstream generation-core evidence is present.',
-    'Follow planner, research, assembly, scoring, rendering, and persistence evidence before concluding the flow.',
-  ]
-}
-
 export function buildMadarPromptPack(input: BuildMadarPromptPackInput): ComparePromptPack {
   const explainPayloadCore = buildAnswerReadyPackSchema(
     buildExplainPackPayloadCore(compactRetrieveResult(input.retrieval), input.retrieval),
@@ -126,7 +95,7 @@ export function buildMadarPromptPack(input: BuildMadarPromptPackInput): CompareP
     instructions: [
       'Answer the question using only the provided graph-guided retrieval output.',
       'If the retrieval does not contain the answer, say so.',
-      ...generationCoreInstructions(input.question, input.retrieval),
+      ...answerContractInstructions(input.retrieval),
     ],
     stable_prefix_title: 'Retrieved graph context',
     stable_sections: [

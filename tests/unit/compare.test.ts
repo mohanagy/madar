@@ -1067,7 +1067,7 @@ describe('compare runtime', () => {
     }
   })
 
-  it('tells broad runtime-generation answers not to stop at the HTTP trigger when downstream generation core evidence exists', () => {
+  it('does not manufacture a report workflow instruction from question vocabulary alone (#660 Slice C)', () => {
     const retrieval: MadarPromptPackRetrieval = {
       question: 'How idea report is being generated',
       token_count: 120,
@@ -1108,8 +1108,15 @@ describe('compare runtime', () => {
       retrieval,
     })
 
-    expect(pack.prompt).toContain('Treat HTTP/controller entrypoints as trigger context, not the full answer, when downstream generation-core evidence is present.')
-    expect(pack.prompt).toContain('Follow planner, research, assembly, scoring, rendering, and persistence evidence before concluding the flow.')
+    // #660 Slice C. This test used to REQUIRE both lines above. They were
+    // produced by a task-phrase classifier over the question text plus a fixed
+    // planner/research/assembly/scoring/rendering/persistence workflow, with no
+    // evidence behind either — the retrieval here carries no answer_contract and
+    // no execution_slice at all. The assertion is inverted into the independence
+    // control it should always have been: prompt vocabulary manufactures nothing.
+    expect(pack.prompt).not.toContain('Treat HTTP/controller entrypoints as trigger context, not the full answer, when downstream generation-core evidence is present.')
+    expect(pack.prompt).not.toContain('Follow planner, research, assembly, scoring, rendering, and persistence evidence before concluding the flow.')
+    expect(pack.prompt).not.toContain('planner, research, assembly, scoring, rendering')
   })
 
   it('includes a runtime-generation answer contract in the prompt core and tells partial slices to mention uncertainty', () => {

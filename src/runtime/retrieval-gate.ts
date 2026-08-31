@@ -241,7 +241,6 @@ function detectGenerationIntent(prompt: string): {
   const displayShaped = /\b(?:display(?:ed|ing)?|render(?:ed|ing)?|show(?:n|ing)?|visible|view|ui|frontend|front-end|component|screen|page|footer|header|label|date|timestamp)\b/i.test(lower)
   const genericGenerationShaped = /\b(?:generat(?:e|ed|es|ing|ion)|creat(?:e|ed|es|ing|ion)|build(?:s|ing|er)?|assembl(?:e|ed|es|ing)|produc(?:e|ed|es|ing))\b/i.test(lower)
   const backendRuntimeShaped = /\b(?:pipeline|runtime|orchestrator|worker|job|repository|service|controller|api|backend|persist(?:ed|ing)?|sav(?:e|ed|es|ing)|db(?:sync|[- ]sync)?)\b/i.test(lower)
-  const reportGenerationShaped = /\b(?:idea\s+report|report\s+generation|final\s+report|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate|renderer|synthesis|assemble|assembly)\b/i.test(lower)
   const buildStaticShaped = /\b(?:next\.js|nextjs|app\s+router|route\s+segment|landing\s+page|static|ssg|isr|server\s+component)\b/i.test(lower)
   const explanationShaped = /\b(?:explain|how|why|trace|walk|flow|path|lifecycle|fail(?:s|ing|ed)?)\b/i.test(lower)
   const flowProofShaped =
@@ -254,13 +253,20 @@ function detectGenerationIntent(prompt: string): {
     display_shaped: displayShaped,
     generic_generation_shaped: genericGenerationShaped,
     backend_runtime_shaped: backendRuntimeShaped,
-    report_generation_shaped: reportGenerationShaped,
+    // #660 Slice C retired the report-generation task-shape classifier. This
+    // signal is a required member of the published `RetrievalGenerationDebugSignals`
+    // shape, which is outside this slice's three-file production boundary, so it
+    // is reported as the constant it now is rather than removed. Nothing reads it
+    // to reach a gate outcome: no prompt vocabulary can turn it true.
+    report_generation_shaped: false,
     build_static_shaped: buildStaticShaped,
     explanation_shaped: explanationShaped,
     flow_proof_shaped: flowProofShaped,
   }
 
-  const strongRuntimeShaped = backendRuntimeShaped || reportGenerationShaped
+  // Gate outcomes follow generic evidence only: a prompt that merely resembles
+  // the old qualification report task no longer earns a runtime-generation gate.
+  const strongRuntimeShaped = backendRuntimeShaped
 
   if (buildStaticShaped && !strongRuntimeShaped) {
     return { intent: 'unknown', debug }

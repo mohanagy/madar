@@ -123,20 +123,19 @@ function policyForIntent(intent: RetrievalIntent): SlicePolicy {
   }
 }
 
+// Generic runtime-architecture vocabulary only. `scoring` and `report builder`
+// were report-workflow stage names and are gone with the rest of the #660
+// report-generation class; `persistence` and `repository` stay because they
+// name ordinary backend layers, are independently treated as backend-runtime
+// markers by the retrieval gate's generic `backendRuntimeShaped` signal, and are
+// exercised by the pre-existing non-qualification direct-persistence fixture in
+// tests/unit/retrieve-slice-v1.test.ts.
 function promptWantsRuntimePipeline(prompt: string | undefined): boolean {
   if (!prompt) {
     return false
   }
 
-  return /\b(runtime|pipeline|service|orchestrator|job|agent|scoring|report(?: builder)?|persistence|repository|generat(?:e|ed|es|ing|ion)|create|created)\b/i.test(prompt)
-}
-
-function promptWantsReportGenerationCore(prompt: string | undefined): boolean {
-  if (!prompt) {
-    return false
-  }
-
-  return /\b(?:report(?:\s+generation)?|generated\s+report|validation\s+report|final\s+report|assembly|assemble|synthesis|renderer|render|planner|research|metrics?|scor(?:e|ing)|quality(?:\s|-)?gate)\b/i.test(prompt)
+  return /\b(runtime|pipeline|service|orchestrator|job|agent|persistence|repository|generat(?:e|ed|es|ing|ion)|create|created)\b/i.test(prompt)
 }
 
 function promptMentionsHttpRoute(prompt: string | undefined): boolean {
@@ -184,23 +183,9 @@ function effectivePolicy(
   const broadRuntimeGeneration = options.generationIntent === 'runtime_generation'
     && options.targetDomainHint === 'backend_runtime'
     && !hasExactMethodAnchor
-  const hasGenerationCoreAnchor = anchors.some((anchor) => anchor.reason === 'generation core heuristic')
 
   if (!hasMethodAnchor && !pipelinePrompt) {
     return base
-  }
-
-  if (broadRuntimeGeneration && pipelinePrompt && hasGenerationCoreAnchor && promptWantsReportGenerationCore(options.prompt)) {
-    return {
-      ...base,
-      directions: ['backward', 'forward'],
-      backward_relations: new Set(['calls', 'enqueues_job', 'controller_route', 'route_handler', 'method']),
-      forward_relations: new Set(RUNTIME_FLOW_RELATIONS),
-      helper_relations: new Set(['injects', 'depends_on', 'module_provides']),
-      backward_depth: Math.max(base.backward_depth, 3),
-      forward_depth: Math.max(base.forward_depth, 4),
-      runtime_flow_only: true,
-    }
   }
 
   if (broadRuntimeGeneration && hasMethodAnchor && pipelinePrompt) {
@@ -320,7 +305,7 @@ function runtimeGenerationAnchorValue(node: SliceScoredNode): number {
   if (methodLikeNode(node)) value += 1
   if (/\b(?:nest_route|route|controller)\b/.test(lower)) value += 5
   if (/\b(?:src|server|backend|api|modules)\b/.test(lower)) value += 1
-  if (/\b(?:generate|generation|create|start|pipeline|queue|process|orchestrator|worker|job|repository|save|report|scoring|research|agent)\b/.test(lower)) value += 2
+  if (/\b(?:generate|generation|create|start|pipeline|queue|process|orchestrator|worker|job|repository|save|agent)\b/.test(lower)) value += 2
   if (/(?:^|[.#])(?:generate|create|start|process|save|score|search|update|claim|cancel)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)) value += 3
   if (/\b(?:service|provider|repository|queue|worker|orchestrator)\b/.test(lower)) value += 1
   if (frontendDisplayLikeNode(node)) value -= 6
@@ -328,27 +313,6 @@ function runtimeGenerationAnchorValue(node: SliceScoredNode): number {
   return value
 }
 
-
-function semanticGenerationCoreAnchorValue(node: SliceScoredNode, prompt: string | undefined): number {
-  const lower = `${node.label} ${node.nodeKind ?? ''} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
-  let value = runtimeGenerationAnchorValue(node)
-
-  if (!promptWantsReportGenerationCore(prompt)) {
-    return value
-  }
-
-  if (routeOrControllerLikeNode(node)) value -= 7
-  if (/\b(?:title|status|guard|auth|interceptor|refund|suggest|list|health|planenforcement)\b/.test(lower)) value -= 4
-  if (/\b(?:planner|plan\b)\b/.test(lower)) value += 11
-  if (/\b(?:assembly|assemble|quality(?:-| )gate|renderer|render|synthesis|final(?:-| )report)\b/.test(lower)) value += 10
-  if (/\b(?:research|extract|metrics?|scor(?:e|ing))\b/.test(lower)) value += 7
-  if (/\b(?:orchestrator|pipeline)\b/.test(lower)) value += 4
-  if (/\b(?:worker|section)\b/.test(lower)) value += 2
-  if (/\b(?:persist|repository|db(?:-| )sync|save)\b/.test(lower)) value += 3
-  if (/\b(?:index\.json|state)\b/.test(lower)) value += 2
-
-  return value
-}
 
 function runtimeFlowRelationPriority(
   relation: string,
@@ -444,7 +408,6 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
     ))
   const nonBarrelMatchedAnchors = matchedAnchors.filter((node) => !isBarrelLike(node.label, node.sourceFile))
   const broadRuntimeGeneration = broadRuntimeGenerationPrompt(options)
-  const reportGenerationPrompt = promptWantsReportGenerationCore(options.prompt)
   const explicitPathAnchor = matchedAnchors.find((node) => node.literalPathMatch)
   const routePromptAnchors = broadRuntimeGeneration && promptMentionsHttpRoute(options.prompt)
     ? scored
@@ -458,20 +421,6 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
           + (right.sourcePathMatch ? 1 : 0)
         return rightPriority - leftPriority || right.score - left.score
       })
-    : []
-  const semanticCoreAnchors = broadRuntimeGeneration && reportGenerationPrompt
-    ? scored
-      .filter((node) =>
-        methodLikeNode(node)
-        && !routeOrControllerLikeNode(node)
-        && !isBarrelLike(node.label, node.sourceFile)
-        && !frontendDisplayLikeNode(node)
-        && node.score > 0,
-      )
-      .map((node) => ({ node, value: semanticGenerationCoreAnchorValue(node, options.prompt) }))
-      .filter((entry) => entry.value > 0)
-      .sort((left, right) => right.value - left.value || right.node.score - left.node.score)
-      .map((entry) => entry.node)
     : []
   const intentAnchors = (() => {
     if (options.generationIntent === 'runtime_generation' && options.targetDomainHint === 'backend_runtime') {
@@ -494,28 +443,11 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
 
     return []
   })()
-  const generationCoreAnchorIds = new Set<string>()
   let anchorPool: SliceScoredNode[]
   if (exactMethodAnchors.length > 0) {
     anchorPool = exactMethodAnchors.slice(0, 1)
   } else if (explicitPathAnchor) {
     anchorPool = [explicitPathAnchor]
-  } else if (broadRuntimeGeneration && reportGenerationPrompt && semanticCoreAnchors.length > 0) {
-    const primaryRuntimeAnchor = routePromptAnchors[0]
-      ?? intentAnchors[0]
-      ?? nonBarrelMatchedAnchors[0]
-      ?? matchedAnchors[0]
-    const selected = [
-      ...(primaryRuntimeAnchor ? [primaryRuntimeAnchor] : []),
-      ...semanticCoreAnchors.filter((node) => node.id !== primaryRuntimeAnchor?.id).slice(0, 2),
-    ]
-    anchorPool = selected
-    for (const node of selected) {
-      if (primaryRuntimeAnchor && node.id === primaryRuntimeAnchor.id) {
-        continue
-      }
-      generationCoreAnchorIds.add(node.id)
-    }
   } else if (routePromptAnchors.length > 0) {
     anchorPool = routePromptAnchors.slice(0, 1)
   } else if (intentAnchors.length > 0) {
@@ -527,9 +459,7 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
   }
 
   for (const node of anchorPool) {
-    const reason = generationCoreAnchorIds.has(node.id)
-      ? 'generation core heuristic'
-      : node.exactLabelMatch
+    const reason = node.exactLabelMatch
       ? 'symbol mention'
       : node.literalPathMatch
         ? 'path mention'
@@ -545,8 +475,7 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
       reason,
     })
     seen.add(node.id)
-    const maxAnchors = broadRuntimeGeneration && reportGenerationPrompt ? 3 : 2
-    if (anchors.length >= maxAnchors) {
+    if (anchors.length >= 2) {
       break
     }
   }
@@ -677,18 +606,18 @@ function traverseDirection(
 
 function pipelineBridgeLikeNode(node: SliceScoredNode): boolean {
   const lower = `${node.label} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
-  return /\bpipeline|trigger|queue|job|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score|addjob\b/.test(lower)
+  return /\bpipeline|trigger|queue|job|worker|orchestrator|agent|repository|save|process|search|addjob\b/.test(lower)
 }
 
 function highValueRuntimeExpansionNode(node: SliceScoredNode): boolean {
   const lower = `${node.label} ${node.frameworkRole ?? ''} ${node.sourceFile}`.toLowerCase()
-  return /\bpipeline|trigger|queue|job|worker|orchestrator|planner|research|agent|scoring|report|repository|persistence|save|process|search|score|dispatch|assemble|persist|builder|addjob\b/.test(lower)
+  return /\bpipeline|trigger|queue|job|worker|orchestrator|agent|repository|save|process|search|dispatch|persist|builder|addjob\b/.test(lower)
 }
 
 function sharedHubLikeNode(graph: KnowledgeGraph, node: SliceScoredNode): boolean {
   const lower = `${node.label} ${node.frameworkRole ?? ''}`.toLowerCase()
   return graph.uniqueNeighborDegree(node.id) >= 12
-    || /requireideasuserid|addjob|callllm|resolve|logger|\.info\(\)|\.error\(\)|\.warn\(\)|planenforcement/.test(lower)
+    || /resolve|logger|\.info\(\)|\.error\(\)|\.warn\(\)/.test(lower)
 }
 
 function shouldExpandRuntimePathNode(
@@ -790,14 +719,6 @@ function addAnchorPredecessors(
 
       const predecessor = scoredById.get(predecessorId) ?? sliceNodeFromGraph(graph, predecessorId)
       scoredById.set(predecessorId, predecessor)
-      if (
-        broadRuntimeGenerationPrompt(options)
-        && promptWantsReportGenerationCore(options.prompt)
-        && routeOrControllerLikeNode(predecessor)
-        && !anchoredIds.has(predecessorId)
-      ) {
-        continue
-      }
       if (shouldSuppressNode(graph, predecessor, anchoredIds, options)) {
         continue
       }
