@@ -118,7 +118,7 @@ describe('cross-layer flow retrieval', () => {
           matched_nodes?: Array<{ label: string; source_file: string }>
           relationships?: unknown[]
         }
-        claims?: Array<{ text: string }>
+        claims?: Array<{ text: string; node_labels: string[] }>
         evidence?: {
           answerability?: { state?: string; broad_search_fallback?: string }
           agent_directive?: string
@@ -140,10 +140,17 @@ describe('cross-layer flow retrieval', () => {
         'packages/api/src/router/external-service/effective-status.ts',
       )
       expect(payload.pack?.matched_nodes?.map((node) => node.label)).toContain('computeOverallStatus')
-      expect(payload.claims?.some((claim) => (
-        claim.text.includes('treats an open incident event as "error" outside manual mode')
-        && claim.text.includes('derives overall status from active status reports and maintenance')
-      ))).toBe(true)
+      // #660-B. Was an assertion on one fixed claim string keyed on this
+      // repository's wording. What is worth holding is that every claim cites
+      // a node the pack actually carries -- source attribution, not prose.
+      const packLabels = new Set(payload.pack?.matched_nodes?.map((node) => node.label) ?? [])
+      expect((payload.claims?.length ?? 0)).toBeGreaterThan(0)
+      for (const claim of payload.claims ?? []) {
+        expect(claim.node_labels.length).toBeGreaterThan(0)
+        for (const label of claim.node_labels) {
+          expect(packLabels, `claim cites a node absent from the pack: ${claim.text}`).toContain(label)
+        }
+      }
       expect(
         payload.pack?.relationships?.length ?? 0,
         JSON.stringify(payload, null, 2),
@@ -260,84 +267,11 @@ describe('cross-layer flow retrieval', () => {
     }
   })
 
-  it('keeps the derived monitor-status owner attached to the public page rollup', () => {
-    const fixtureParent = resolve('out', 'test-runtime')
-    mkdirSync(fixtureParent, { recursive: true })
-    const root = mkdtempSync(join(fixtureParent, 'madar-status-rollup-'))
-    const sourceFile = join(root, 'statusPage.ts')
-    try {
-      writeFileSync(sourceFile, [
-        'export const statusPageRouter = createTRPCRouter({',
-        '  get: publicProcedure.query(async () => {',
-        '    const monitorComponents = page.components.filter(isMonitorComponent)',
-        '    const monitors = monitorComponents.map((c) => {',
-        '      const events = getEvents({ incidents: c.monitor.incidents })',
-        '      const status =',
-        '        events.some((e) => e.type === "incident" && !e.to) &&',
-        '        barType !== "manual"',
-        '          ? "error"',
-        '          : "success";',
-        '      return {',
-        '        ...c.monitor,',
-        '        status,',
-        '        events,',
-        '      }',
-        '    })',
-        '    const status = monitors.some((m) => m.status === "error")',
-        '      ? "error"',
-        '      : "success"',
-        '    return { ...page, monitors, status }',
-        '  }),',
-        '})',
-      ].join('\n'), 'utf8')
-
-      const evidence = readQueryEvidenceSnippet(sourceFile, 1, {
-        question: QUESTION,
-        label: 'statusPage.ts',
-        sourceLocation: 'L1-L22',
-        fileNodeLike: true,
-      })
-
-      expect(evidence?.snippet).toContain('monitorComponents.map')
-      expect(evidence?.snippet).toContain('...c.monitor')
-      expect(evidence?.snippet).toContain('e.type === "incident"')
-      expect(evidence?.snippet).toContain('monitors.some')
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
-  it('keeps the tRPC output provenance attached to machine-status serialization', () => {
-    const fixtureParent = resolve('out', 'test-runtime')
-    mkdirSync(fixtureParent, { recursive: true })
-    const root = mkdtempSync(join(fixtureParent, 'madar-status-json-'))
-    const sourceFile = join(root, 'status-json.ts')
-    try {
-      writeFileSync(sourceFile, [
-        'import type { RouterOutputs } from "@openstatus/api"',
-        'type Page = NonNullable<RouterOutputs["statusPage"]["get"]>',
-        'export function toStatus(page: Page) {',
-        '  return { status: pageIndicator(page.status) }',
-        '}',
-        'export function unresolvedIncidents(page: Page) {',
-        '  return page.statusReports.filter((report) => report.status !== "resolved")',
-        '}',
-      ].join('\n'), 'utf8')
-
-      const evidence = readQueryEvidenceSnippet(sourceFile, 1, {
-        question: QUESTION,
-        label: 'status-json.ts',
-        sourceLocation: 'L1-L8',
-        fileNodeLike: true,
-      })
-
-      expect(evidence?.snippet).toContain('RouterOutputs["statusPage"]["get"]')
-      expect(evidence?.snippet).toContain('pageIndicator(page.status)')
-      expect(evidence?.snippet).toContain('page.statusReports')
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
+  // #660-B. Two tests were removed here. Their only subjects were
+  // `incidentStatusOwnerFragment` and `QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN`,
+  // which recognised one qualification repository's exact source lines. Both
+  // are gone from production, so a test asserting they fire would assert a
+  // behaviour that no longer exists rather than a property worth holding.
 
   it('keeps the public route fetch beside the status JSON serializer dispatch', () => {
     const fixtureParent = resolve('out', 'test-runtime')
@@ -411,33 +345,37 @@ describe('cross-layer flow retrieval', () => {
     }
   })
 
+  // #660-B. The subject is the generic provider-handoff shape: a transport is
+  // constructed, then a delivery call is made on it. Every identifier here is
+  // deliberately unrelated to any qualification target, so passing proves the
+  // fragment extractor follows the code shape rather than remembered names.
   it('keeps the concrete transport provider beside a delivery handoff', () => {
     const fixtureParent = resolve('out', 'test-runtime')
     mkdirSync(fixtureParent, { recursive: true })
     const root = mkdtempSync(join(fixtureParent, 'madar-query-provider-'))
-    const sourceFile = join(root, 'update.go')
+    const sourceFile = join(root, 'sync.go')
     try {
       writeFileSync(sourceFile, [
-        'package checker',
+        'package ledger',
         '',
-        'func UpdateStatus(ctx context.Context, updateData UpdateData) error {',
-        '  url := "https://workflows.example/updateStatus"',
-        '  client, err := cloudtasks.NewClient(ctx, option.WithAuthCredentials(creds))',
+        'func SyncRecord(ctx context.Context, payload RecordPayload) error {',
+        '  url := "https://workflows.example/syncRecord"',
+        '  queueClient, err := messaging.NewQueueClient(ctx, option.WithAuthCredentials(creds))',
         '  if err != nil { return err }',
-        '  req := &taskspb.CreateTaskRequest{Parent: queuePath}',
-        '  _, err = client.CreateTask(ctx, req)',
+        '  req := &messagingpb.DispatchRequest{Parent: queuePath}',
+        '  _, err = queueClient.Dispatch(ctx, req)',
         '  return err',
         '}',
       ].join('\n'), 'utf8')
 
       const evidence = readQueryEvidenceSnippet(sourceFile, 3, {
         question: QUESTION,
-        label: 'UpdateStatus()',
+        label: 'SyncRecord()',
         sourceLocation: 'L3',
       })
 
-      expect(evidence?.snippet).toContain('cloudtasks.NewClient')
-      expect(evidence?.snippet).toContain('client.CreateTask')
+      expect(evidence?.snippet).toContain('messaging.NewQueueClient')
+      expect(evidence?.snippet).toContain('queueClient.Dispatch')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

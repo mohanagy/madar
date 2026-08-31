@@ -41,7 +41,6 @@ const QUERY_DIRECTIVE_TERMS = new Set([
   'note', 'relevant', 'remaining', 'path', 'paths', 'state', 'symbols', 'trace',
   'uncertainty',
 ])
-const DIVERGENCE_SCOPE_NOISE = new Set(['across', 'logic', 'these'])
 
 const CHANGE_LIFECYCLE_TERMS = new Set([
   'change', 'changed', 'changes', 'changing',
@@ -106,11 +105,11 @@ const TRANSITION_PREFIXES = ['becom', 'creat', 'insert', 'open', 'transition', '
 const PRESENTATION_QUERY_PATTERN = /\b(?:component|dashboard|frontend|render|screen|ui|visual|widget)\b/i
 const PRESENTATION_PATH_PATTERN = /(?:\.(?:jsx|tsx)$|\/(?:components?|dashboard|views?|widgets?)\/)/i
 const PRESENTATION_LABEL_PATTERN = /^(?:page\s+\/|.*(?:badge|card|component|screen|widget).*)$/i
-const RUNTIME_PATH_PATTERN = /\/(?:api|checker|content|db|handlers?|persistence|routes?|schema|server|services?|workflows?)\//i
-const CORE_BEHAVIOR_OWNER_PATH_PATTERN = /\/(?:api|checker|content|handlers?|services?|workflows?)\//i
+const RUNTIME_PATH_PATTERN = /\/(?:api|db|handlers?|persistence|routes?|schema|server|services?|workflows?)\//i
+const CORE_BEHAVIOR_OWNER_PATH_PATTERN = /\/(?:api|handlers?|services?|workflows?)\//i
 const PERSISTENCE_PATH_PATTERN = /\/(?:db|persistence|repositories?|schema)(?:\/|\.)/i
-const LOW_VALUE_OWNER_PATH_PATTERN = /(?:\.pb\.go$|(?:_pb|\.pb)\.ts$|\/(?:errors?|limits)\.[^/]+$|\/lib\/http\/etag\.[^/]+$|statusPage\.utils\.[^/]+$|\/content\/markdown\/)/i
-const LOW_VALUE_OWNER_LABEL_PATTERN = /(?:Error\(\)?$|(?:create)?ErrorResponse\(\)?$|ErrorResponse$|Limits?\(\)?$|(?:assert|check)?\w*Quota\(\)?$|computeETag\(\)?$|validate\w*Access\(\)?$|(?:statusLabel|statusGlyph|generate\w*)\(\)?$)/i
+const LOW_VALUE_OWNER_PATH_PATTERN = /(?:\.pb\.go$|(?:_pb|\.pb)\.ts$|\/(?:errors?|limits)\.[^/]+$)/i
+const LOW_VALUE_OWNER_LABEL_PATTERN = /(?:Error\(\)?$|(?:create)?ErrorResponse\(\)?$|ErrorResponse$|Limits?\(\)?$)/i
 const EXTERNAL_SCOPE_PATTERN = /(?:^|[\/_-])external(?:[\/_-]|$)/i
 const FLOW_TEST_SOURCE_PATTERN = /(?:^|\/)(?:tests?|__tests__)(?:\/|$)|(?:^|\/)(?:test|tests?[-_.][^/]*)\.[^/]+$|(?:\.test\.[^/]+$|\.spec\.[^/]+$|_test\.go$)/i
 const FLOW_TYPE_SOURCE_PATTERN = /(?:^|\/)(?:types?|interfaces?)(?:\/|\.[^/]+$)|(?:^|\/)(?:types?|interfaces?)\.[^/]+$/i
@@ -121,7 +120,6 @@ const QUERY_EVIDENCE_STATE_MUTATION_PATTERN = /(?:\b(?:create|insert|transition|
 const QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN = /(?:\b(?:deliver|dispatch|emit|enqueue|notify|publish|send|trigger)\w*\s*\(|\.(?:deliver|dispatch|emit|enqueue|notify|publish|send|trigger)\w*\s*\()/i
 const QUERY_EVIDENCE_COMPUTATION_OPERATION_PATTERN = /(?:\b(?:compute|derive|resolve)\w*\s*\(|\b\w*(?:indicator|result|state|status)\w*\s*=|\b\w*(?:indicator|status)\w*\s*\()/i
 const EXPLICIT_ERROR_QUERY_PATTERN = /\b(?:error|exception|throw|throws|thrown)\b/i
-const FLOW_OUTCOME_TERMS = new Set(['error', 'fail', 'failed', 'failure', 'result', 'response', 'status'])
 
 const QUERY_STOP_WORDS = new Set([
   'a', 'about', 'after', 'again', 'agent', 'also', 'an', 'and', 'are', 'be',
@@ -187,9 +185,6 @@ interface AnchorCandidate {
   persistenceShaped: boolean
   lowValueOwner: boolean
   behaviorOwner: boolean
-  fileOwner: boolean
-  publicBoundaryOwner: boolean
-  runtimeScope: string
 }
 
 export interface QueryEvidenceObligation {
@@ -315,9 +310,7 @@ function divergenceScopeTerms(obligation: QueryEvidenceObligation | undefined): 
   if (!obligation) {
     return []
   }
-  const literalTerms = obligation.terms.filter((term) => !term.startsWith('@'))
-  const scopedTerms = literalTerms.filter((term) => !DIVERGENCE_SCOPE_NOISE.has(term))
-  return scopedTerms.length > 0 ? scopedTerms : literalTerms
+  return obligation.terms.filter((term) => !term.startsWith('@'))
 }
 
 function lexicalTermsMatch(left: string, right: string): boolean {
@@ -816,34 +809,9 @@ function presentationShapedNode(node: VocabularyNode): boolean {
     || /^(?:component|page|screen|view|widget)$/.test(node.frameworkRole)
 }
 
-function runtimeScopeForSource(sourceFile: string): string {
-  const normalized = sourceFile.replaceAll('\\', '/')
-  const match = normalized.match(/(?:^|\/)(apps|packages)\/([^/]+)/i)
-  if (match?.[1] && match[2]) {
-    return `${match[1].toLowerCase()}/${match[2].toLowerCase()}`
-  }
-  const parts = normalized.split('/').filter(Boolean)
-  return parts.slice(-3, -1).join('/') || normalized
-}
 
-function fileOwnerNode(node: Pick<VocabularyNode, 'label' | 'sourceFile' | 'nodeKind'>): boolean {
-  const basename = node.sourceFile.replaceAll('\\', '/').split('/').at(-1)?.toLowerCase() ?? ''
-  const normalizedLabel = node.label.replaceAll('\\', '/').split('/').at(-1)?.toLowerCase() ?? ''
-  return normalizedLabel === basename
-    || (node.nodeKind.trim().length === 0 && normalizedLabel.replace(/\.[^.]+$/, '') === basename.replace(/\.[^.]+$/, ''))
-}
 
-function publicBoundaryOwnerNode(node: Pick<VocabularyNode, 'label' | 'sourceFile' | 'frameworkRole'>): boolean {
-  const normalizedSource = node.sourceFile.replaceAll('\\', '/')
-  const routePath = /\/(?:app\/)?api\//i.test(normalizedSource)
-    && /\/route\.[^/]+$/i.test(normalizedSource)
-  const routeLabel = /^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)(?:\(\)|\s|$)|^route\.[^.]+$/i.test(node.label)
-  return (routePath && routeLabel) || /(?:route|request)_handler/i.test(node.frameworkRole)
-}
 
-function runtimeLanguageForSource(sourceFile: string): string {
-  return sourceFile.replaceAll('\\', '/').split('.').at(-1)?.toLowerCase() ?? ''
-}
 
 function vocabularyDocumentFrequency(index: RepositoryVocabularyIndex, queryTerm: string): number {
   let count = 0
@@ -947,9 +915,6 @@ function anchorForNode(
     lowValueOwner: LOW_VALUE_OWNER_PATH_PATTERN.test(node.sourceFile)
       || LOW_VALUE_OWNER_LABEL_PATTERN.test(node.label),
     behaviorOwner: CORE_BEHAVIOR_OWNER_PATH_PATTERN.test(node.sourceFile),
-    fileOwner: fileOwnerNode(node),
-    publicBoundaryOwner: publicBoundaryOwnerNode(node),
-    runtimeScope: runtimeScopeForSource(node.sourceFile),
   }
 }
 
@@ -1055,9 +1020,6 @@ function diversifyAnchors(
         : 0)
       || (obligation.terms.includes(TRANSITION_CONCEPT)
         ? Number(right.transitionOwner) - Number(left.transitionOwner)
-        : 0)
-      || (obligation.terms.includes('public') && obligation.terms.includes('page')
-        ? Number(right.fileOwner) - Number(left.fileOwner)
         : 0)
       || obligationSymbolMatchCount(right, obligation) - obligationSymbolMatchCount(left, obligation)
       || (right.obligationMatches.get(obligation.index) ?? 0) - (left.obligationMatches.get(obligation.index) ?? 0)
@@ -1186,19 +1148,6 @@ function diversifyAnchors(
         if (behaviorOrder !== 0) {
           return behaviorOrder
         }
-        const publicFileOwnerOrder = obligation.terms.includes('public') && obligation.terms.includes('page')
-          ? Number(right.fileOwner) - Number(left.fileOwner)
-          : 0
-        if (publicFileOwnerOrder !== 0) {
-          return publicFileOwnerOrder
-        }
-        const publicOwnerGrounding = obligation.terms.includes('public') && obligation.terms.includes('page')
-          ? obligationSymbolMatchCount(right, obligation) - obligationSymbolMatchCount(left, obligation)
-            || obligationSpecificMatchCount(right, obligation) - obligationSpecificMatchCount(left, obligation)
-          : 0
-        if (publicOwnerGrounding !== 0) {
-          return publicOwnerGrounding
-        }
         const workflowContextOrder = crossObligationContextMatchCount(right, obligation)
           - crossObligationContextMatchCount(left, obligation)
         if (workflowContextOrder !== 0) {
@@ -1224,34 +1173,6 @@ function diversifyAnchors(
       }
       preferredByObligation.set(obligation.index, candidate.id)
       reservedByObligation.add(candidate.id)
-    }
-  }
-
-  // A public status computation is incomplete without the HTTP boundary that
-  // fetches and serializes it. Reserve that owner separately from the status
-  // implementation so runtime provenance is explicit rather than inferred
-  // from a shared output type.
-  for (const obligation of obligations.filter((candidate) => (
-    candidate.terms.includes('public') && candidate.terms.includes('page')
-  ))) {
-    const publicTerms = obligation.terms.filter((term) => !term.startsWith('@'))
-    const boundary = ranked
-      .filter((anchor) => (
-        anchor.publicBoundaryOwner
-        && publicTerms.filter((term) => anchor.matchedQueryTerms.has(term)).length >= 2
-        && !anchor.lowValueOwner
-      ))
-      .sort((left, right) => (
-        Number(/\(\)$/.test(right.label)) - Number(/\(\)$/.test(left.label))
-        || obligationSymbolMatchCount(right, obligation) - obligationSymbolMatchCount(left, obligation)
-        || obligationSpecificMatchCount(right, obligation) - obligationSpecificMatchCount(left, obligation)
-        || right.structuralDegree - left.structuralDegree
-        || right.score - left.score
-        || left.id.localeCompare(right.id)
-      ))[0]
-    if (boundary) {
-      if (!selectedIds.has(boundary.id)) add(boundary)
-      reservedByObligation.add(boundary.id)
     }
   }
 
@@ -1302,89 +1223,6 @@ function diversifyAnchors(
     if (stateOwner) {
       if (!selectedIds.has(stateOwner.id)) add(stateOwner)
       reservedByObligation.add(stateOwner.id)
-    }
-  }
-
-  // Cross-language transports are often not linked statically. Keep one
-  // lifecycle-shaped owner from a second runtime scope for the first stage so
-  // the pack can expose that boundary and state the remaining uncertainty.
-  const firstObligation = obligations[0]
-  const firstPrimaryId = firstObligation ? preferredByObligation.get(firstObligation.index) : undefined
-  const firstPrimaryScope = firstPrimaryId ? ranked.find((anchor) => anchor.id === firstPrimaryId)?.runtimeScope : undefined
-  const firstPrimaryLanguage = firstPrimaryId
-    ? runtimeLanguageForSource(ranked.find((anchor) => anchor.id === firstPrimaryId)?.sourceFile ?? '')
-    : undefined
-  if (firstObligation) {
-    const headTerm = firstObligation.terms.at(-1)
-    const outcomeLabel = (anchor: AnchorCandidate): boolean => (
-      tokenize(anchor.label).some((term) => FLOW_OUTCOME_TERMS.has(term))
-    )
-    const boundaryOwner = ranked
-      .filter((anchor) => (
-        anchor.id !== firstPrimaryId
-        && anchor.runtimeScope !== firstPrimaryScope
-        && anchor.transitionOwner
-        && !anchor.lowValueOwner
-        && (anchor.symbolQueryTerms.size > 0 || anchor.pathQueryTerms.size > 0)
-        && firstObligation.terms.some((term) => anchor.matchedQueryTerms.has(term))
-      ))
-      .sort((left, right) => (
-        Number(
-          firstPrimaryLanguage !== undefined
-          && runtimeLanguageForSource(right.sourceFile) !== firstPrimaryLanguage,
-        ) - Number(
-          firstPrimaryLanguage !== undefined
-          && runtimeLanguageForSource(left.sourceFile) !== firstPrimaryLanguage,
-        )
-        || Number(outcomeLabel(right)) - Number(outcomeLabel(left))
-        || Number(headTerm !== undefined && right.pathQueryTerms.has(headTerm))
-          - Number(headTerm !== undefined && left.pathQueryTerms.has(headTerm))
-        || firstObligation.terms.filter((term) => right.matchedQueryTerms.has(term)).length
-          - firstObligation.terms.filter((term) => left.matchedQueryTerms.has(term)).length
-        || right.structuralDegree - left.structuralDegree
-        || right.score - left.score
-        || left.id.localeCompare(right.id)
-      ))[0]
-    if (boundaryOwner) {
-      if (!selectedIds.has(boundaryOwner.id)) add(boundaryOwner)
-      reservedByObligation.add(boundaryOwner.id)
-
-      const rankedById = new Map(ranked.map((anchor) => [anchor.id, anchor]))
-      const boundaryCaller = graph.predecessors(boundaryOwner.id)
-        .flatMap((nodeId) => {
-          const anchor = rankedById.get(nodeId)
-          if (!anchor) return []
-          const isBoundaryCall = graph.relationsBetween(nodeId, boundaryOwner.id)
-            .some((relation) => /^(?:calls|dispatches|emits|enqueues|invokes|publishes|triggers)$/.test(relation))
-          return isBoundaryCall
-            ? [anchor]
-            : []
-        })
-        .filter((anchor) => (
-          anchor.sourceFile !== boundaryOwner.sourceFile
-          && anchor.behaviorOwner
-          && !anchor.lowValueOwner
-          && firstObligation.terms.some((term) => anchor.matchedQueryTerms.has(term))
-        ))
-        .sort((left, right) => (
-          Number(right.obligationMatches.has(firstObligation.index))
-            - Number(left.obligationMatches.has(firstObligation.index))
-          || firstObligation.terms.filter((term) => right.symbolQueryTerms.has(term)).length
-            - firstObligation.terms.filter((term) => left.symbolQueryTerms.has(term)).length
-          || firstObligation.terms.filter((term) => right.matchedQueryTerms.has(term)).length
-            - firstObligation.terms.filter((term) => left.matchedQueryTerms.has(term)).length
-          || right.structuralDegree - left.structuralDegree
-          || right.score - left.score
-          || left.id.localeCompare(right.id)
-        ))[0]
-      if (boundaryCaller) {
-        if (!selectedIds.has(boundaryCaller.id)) add(boundaryCaller)
-        if (firstPrimaryId && preferredByObligation.get(firstObligation.index) === firstPrimaryId) {
-          reservedByObligation.delete(firstPrimaryId)
-        }
-        preferredByObligation.set(firstObligation.index, boundaryCaller.id)
-        reservedByObligation.add(boundaryCaller.id)
-      }
     }
   }
 

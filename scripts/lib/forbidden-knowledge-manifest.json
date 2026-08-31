@@ -1,0 +1,74 @@
+{
+  "manifest_version": "1.0.0",
+  "issue": 660,
+  "slice": "B",
+  "title": "Production independence from qualification-repository knowledge",
+  "purpose": [
+    "Madar's retrieval and claim behaviour must be driven by generic structural evidence,",
+    "never by knowledge of a specific benchmark or qualification repository. This manifest",
+    "enumerates names, paths and shapes that belong to qualification targets. Their presence",
+    "anywhere in production source (src/**) means production behaviour has been shaped around",
+    "a qualification repository rather than around evidence.",
+    "",
+    "SCOPE LIMIT (deliberate, do not remove): this manifest and its scanner own LITERAL and",
+    "NORMALIZED contamination only. They cannot prove the absence of semantic overfitting --",
+    "a rule keyed on prompt vocabulary or a forced selection encodes the qualification task",
+    "without containing any name listed here. That class is owned by direct behavioural tests",
+    "(see tests/unit/production-independence.test.ts), not by this scanner."
+  ],
+  "scope": {
+    "production_roots": ["src"],
+    "note": "Enumerated by productionSourceFiles() -- every src/**/*.ts that is not a .d.ts."
+  },
+  "normalization": {
+    "forms": ["tokens", "squashed"],
+    "tokens": "camel/Pascal boundaries split, backslashes to forward slashes, every run of non-alphanumerics collapsed to one space, lowercased, matched as a contiguous whole-token run. Catches camelCase, snake_case, kebab-case, dotted and path-separated spellings.",
+    "squashed": "every non-alphanumeric removed, lowercased, matched as a plain substring. Catches the case-flattened spelling a rule uses when it lowercases a label before testing it -- the form in which most of the removed demotion table was actually written."
+  },
+  "rules": [
+    { "id": "openstatus/path-router-status-page", "repository": "openstatus", "class": "path", "value": "packages/api/src/router/statusPage.ts", "why": "Exact file path of a qualification target's public status router." },
+    { "id": "openstatus/path-status-page-utils", "repository": "openstatus", "class": "path", "value": "statusPage.utils", "why": "Qualification-target module name used to demote a candidate by path." },
+    { "id": "openstatus/path-lib-http-etag", "repository": "openstatus", "class": "path", "value": "lib/http/etag", "why": "Qualification-target file path used to demote a candidate by path." },
+    { "id": "openstatus/path-content-markdown", "repository": "openstatus", "class": "path", "value": "content/markdown", "why": "Qualification-target directory used to demote a candidate by path." },
+    { "id": "openstatus/symbol-status-page", "repository": "openstatus", "class": "symbol", "value": "statusPage", "why": "Qualification-target router symbol." },
+    { "id": "openstatus/symbol-http-checker-handler", "repository": "openstatus", "class": "symbol", "value": "HTTPCheckerHandler", "why": "Qualification-target Go handler symbol." },
+    { "id": "openstatus/symbol-update-status", "repository": "openstatus", "class": "symbol", "value": "UpdateStatus", "why": "Qualification-target Go symbol used to key a fixed claim." },
+    { "id": "openstatus/symbol-cloudtasks", "repository": "openstatus", "class": "symbol", "value": "cloudtasks", "why": "Queue client package used by a qualification target." },
+    { "id": "openstatus/symbol-new-client", "repository": "openstatus", "class": "symbol", "value": "NewClient", "why": "Queue client constructor used by a qualification target to key a fixed claim." },
+    { "id": "openstatus/symbol-create-task", "repository": "openstatus", "class": "symbol", "value": "CreateTask", "why": "Queue enqueue call used by a qualification target to key a fixed claim." },
+    { "id": "openstatus/symbol-page-indicator", "repository": "openstatus", "class": "symbol", "value": "pageIndicator", "why": "Qualification-target status projection symbol." },
+    { "id": "openstatus/symbol-status-reports", "repository": "openstatus", "class": "symbol", "value": "statusReports", "why": "Qualification-target model field used to key a fixed claim." },
+    { "id": "openstatus/symbol-bar-type", "repository": "openstatus", "class": "symbol", "value": "barType", "why": "Qualification-target model field used to key a fixed claim." },
+    { "id": "openstatus/symbol-status-glyph", "repository": "openstatus", "class": "symbol", "value": "statusGlyph", "why": "Qualification-target presentation symbol used to demote a candidate." },
+    { "id": "openstatus/symbol-compute-etag", "repository": "openstatus", "class": "symbol", "value": "computeETag", "why": "Qualification-target utility symbol used to demote a candidate." },
+    { "id": "report-generation/symbol-generate-scoring-ledger", "repository": "govalidate-report-generation", "class": "symbol", "value": "generateScoringLedger", "why": "Qualification-target symbol in a fixed demotion table." },
+    { "id": "report-generation/symbol-generate-sensitivity-analysis", "repository": "govalidate-report-generation", "class": "symbol", "value": "generateSensitivityAnalysis", "why": "Qualification-target symbol in a fixed demotion table." },
+    { "id": "report-generation/symbol-generate-suggested-next-steps", "repository": "govalidate-report-generation", "class": "symbol", "value": "generateSuggestedNextSteps", "why": "Qualification-target symbol in a fixed demotion table." },
+    { "id": "report-generation/symbol-score-metric-batch", "repository": "govalidate-report-generation", "class": "symbol", "value": "scoreMetricBatch", "why": "Qualification-target symbol in a fixed demotion table." },
+    { "id": "report-generation/symbol-deduplicate-evidence-refs", "repository": "govalidate-report-generation", "class": "symbol", "value": "deduplicateEvidenceRefs", "why": "Qualification-target symbol in a fixed demotion table." },
+    { "id": "report-generation/symbol-map-composite-to-recommendation", "repository": "govalidate-report-generation", "class": "symbol", "value": "mapCompositeToRecommendation", "why": "Qualification-target symbol in a fixed demotion table." },
+    { "id": "report-generation/symbol-normalize-metric", "repository": "govalidate-report-generation", "class": "symbol", "value": "normalizeMetric", "why": "Qualification-target symbol in a fixed demotion table." },
+    { "id": "report-generation/symbol-metric-human-prompt", "repository": "govalidate-report-generation", "class": "symbol", "value": "metricHumanPrompt", "why": "Qualification-target symbol in a fixed demotion table." },
+    { "id": "report-generation/symbol-fallback-metric", "repository": "govalidate-report-generation", "class": "symbol", "value": "fallbackMetric", "why": "Qualification-target symbol in a fixed demotion table." },
+    { "id": "report-generation/symbol-dispatch-wave", "repository": "govalidate-report-generation", "class": "symbol", "value": "dispatchWave", "why": "Qualification-target symbol in a fixed promotion table." },
+    { "id": "report-generation/symbol-dispatch-db-sync", "repository": "govalidate-report-generation", "class": "symbol", "value": "dispatchDbSync", "why": "Qualification-target symbol in a fixed promotion table." },
+    { "id": "report-generation/symbol-broadcast-run-started", "repository": "govalidate-report-generation", "class": "symbol", "value": "broadcastRunStarted", "why": "Qualification-target symbol in a fixed promotion table." },
+    { "id": "report-generation/symbol-broadcast-run-failed", "repository": "govalidate-report-generation", "class": "symbol", "value": "broadcastRunFailed", "why": "Qualification-target symbol in a fixed promotion table." },
+    { "id": "report-generation/symbol-score-metrics", "repository": "govalidate-report-generation", "class": "symbol", "value": "scoreMetrics", "why": "Qualification-target symbol in a fixed promotion table." }
+  ],
+  "corpus_symbol_import": {
+    "source": "docs/qualification/corpus.json",
+    "pointer": "forbidden_target_symbols",
+    "why": "The live frozen contract already names the distinctive symbols of the currently pinned targets. Importing them keeps this manifest in step with the contract instead of drifting from it. The contract file is read, never written."
+  },
+  "exceptions": [],
+  "exception_policy": {
+    "required_fields": ["id", "rule_id", "file", "why", "expires"],
+    "forbidden": [
+      "an exception for any known qualification-specific production behaviour",
+      "a wildcard file pattern, or any pattern matching more than one file",
+      "an exception that matches nothing (a stale exception hides a rule that no longer fires)",
+      "an exception whose expiry date has passed"
+    ]
+  }
+}

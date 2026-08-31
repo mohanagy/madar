@@ -72,6 +72,19 @@ jobs:
       - name: Verify grader/runtime structural boundary
         run: npm run verify:grader-boundary-controls
 
+      # #660-B. Runs on every lane on purpose: production independence from a
+      # qualification repository is a property of the source, and a guarantee
+      # that only holds on one platform is not one. The self-test reintroduces
+      # real qualification knowledge into real production files -- in each
+      # encoding the manifest claims to normalize -- requires the exact
+      # attributable rejection, then restores the bytes and proves they went
+      # back. It also injects a task-phrase ranking rule and requires the
+      # behavioural control that owns that class to fail on its own assertion,
+      # because a text scanner cannot see that class and must not pretend to.
+      # Pure local file I/O, no network and no spend.
+      - name: Verify production independence from qualification repositories
+        run: npm run verify:forbidden-knowledge-controls
+
       # The old-reader proof extracts the released v0.32.1 loader from the
       # in-repository tag. The default shallow checkout carries no tags, so the
       # proof cannot run without this. One pinned ref is fetched, not full

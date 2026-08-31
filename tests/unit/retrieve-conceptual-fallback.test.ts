@@ -407,34 +407,15 @@ describe('conceptual-query fallback planner', () => {
     expect(labels.filter((label) => label !== 'SearchStatusBadge').length / labels.length).toBeGreaterThanOrEqual(0.75)
   })
 
-  it('reserves the cross-runtime caller that owns the first failure transition', () => {
-    const graph = new KnowledgeGraph({ directed: true })
-    addNode(graph, 'failure-log', 'FailedMonitorLog', '/packages/services/monitor/failure-log.ts')
-    addNode(graph, 'status-update', 'UpdateStatus()', '/apps/checker/checker/update.go')
-    addNode(graph, 'http-checker', '.HTTPCheckerHandler()', '/apps/checker/handlers/checker.go', {
-      framework: 'gin',
-      framework_role: 'gin_handler',
-    })
-    addNode(graph, 'incident', 'createIncident()', '/apps/workflows/checker/incident.ts')
-    addNode(graph, 'notifications', 'triggerNotifications()', '/apps/workflows/checker/alerting.ts')
-    addNode(graph, 'public-status', 'statusPage.ts', '/packages/api/router/statusPage.ts')
-    addNode(graph, 'alternate-status', 'computeOverallStatus()', '/apps/server/status-page/index.ts')
-    graph.addEdge('http-checker', 'status-update', { relation: 'calls' })
-    graph.addEdge('status-update', 'incident', { relation: 'calls' })
-    graph.addEdge('incident', 'notifications', { relation: 'calls' })
-    graph.addEdge('public-status', 'incident', { relation: 'uses' })
-    graph.addEdge('alternate-status', 'public-status', { relation: 'references' })
-
-    const proposal = planConceptualFallback(graph, {
-      question: 'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify inconsistent status-computation paths.',
-      initialQuality: lowQuality(),
-      selectedNodes: [],
-    })
-
-    expect(proposal.preferredObligationAnchors?.get(0)).toBe('http-checker')
-    expect(proposal.nodeBoosts.get('http-checker')).toBeGreaterThanOrEqual(9)
-    expect(proposal.nodeBoosts.get('status-update')).toBeGreaterThanOrEqual(9)
-  })
+  // #660-B. Two tests were removed here. One pinned a reservation gated on the
+  // prompt containing both 'public' and 'page'; the other pinned a forced
+  // cross-runtime selection that also overwrote an obligation's preferred
+  // anchor. Both are gone from production. Measured consequence, recorded
+  // rather than papered over: with no generic signal reserving it, a
+  // framework-declared route handler is no longer force-selected into the
+  // proposal. That is the intended removal of an unsupported selection, not a
+  // replacement -- see tests/unit/production-independence.test.ts for the
+  // relationships that ARE recovered from typed evidence after renaming.
 
   it('reserves workflow-local creation and delivery owners for natural wording', () => {
     const graph = new KnowledgeGraph({ directed: true })
@@ -465,34 +446,6 @@ describe('conceptual-query fallback planner', () => {
     expect(proposal.nodeBoosts.has('test-delivery')).toBe(false)
   })
 
-  it('reserves the public HTTP boundary separately from status computation owners', () => {
-    const graph = new KnowledgeGraph({ directed: true })
-    addNode(graph, 'public-json-route', 'GET()', '/apps/status-page/src/app/api/status/[[...path]]/route.ts', {
-      framework_role: 'next_route_handler',
-    })
-    addNode(graph, 'status-json', 'status-json.ts', '/apps/status-page/src/content/status-json.ts')
-    addNode(graph, 'public-status', 'statusPage.ts', '/packages/api/src/router/statusPage.ts')
-    addNode(graph, 'overall-status', 'computeOverallStatus()', '/apps/server/src/routes/status-page/index.ts')
-    addNode(graph, 'failed-check', '.HTTPCheckerHandler()', '/apps/checker/handlers/checker.go')
-    addNode(graph, 'incident-owner', 'createIncident()', '/apps/workflows/src/checker/incident.ts')
-    addNode(graph, 'notification-owner', 'triggerNotifications()', '/apps/workflows/src/checker/alerting.ts')
-    graph.addEdge('public-json-route', 'status-json', { relation: 'calls' })
-    graph.addEdge('status-json', 'public-status', { relation: 'provides' })
-    graph.addEdge('overall-status', 'public-status', { relation: 'references' })
-    graph.addEdge('failed-check', 'incident-owner', { relation: 'calls' })
-    graph.addEdge('incident-owner', 'notification-owner', { relation: 'calls' })
-    graph.addEdge('incident-owner', 'public-status', { relation: 'updates_slice' })
-
-    const proposal = planConceptualFallback(graph, {
-      question: 'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify inconsistent status-computation paths.',
-      initialQuality: lowQuality(),
-      selectedNodes: [],
-    })
-
-    expect(proposal.nodeBoosts.get('public-json-route')).toBeGreaterThanOrEqual(9)
-    expect(proposal.nodeBoosts.has('public-status')).toBe(true)
-    expect(proposal.nodeBoosts.has('overall-status')).toBe(true)
-  })
 
   it('caps every BFS neighbor read on a hub-heavy graph', () => {
     const graph = new KnowledgeGraph({ directed: true })

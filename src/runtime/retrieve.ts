@@ -691,20 +691,13 @@ const QUERY_EVIDENCE_OPERATION_PATTERN = /(?:\b(?:await|case|catch|delete|dispat
 const QUERY_EVIDENCE_STATE_MUTATION_PATTERN = /(?:\b(?:create|insert|transition|upsert)\w*\s*\(|\.(?:create|insert|upsert)\s*\(|\bnew\s+\w+)/i
 const QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN = /^\s*(?:(?:import|package)\b|(?:export\s+)?type\b|interface\b|\/\/|\/\*|\*|[{}()[\],;]+\s*$)/i
 const QUERY_EVIDENCE_LOG_LINE_PATTERN = /\b(?:logger|log)\.\w+\s*\(/i
-const QUERY_EVIDENCE_HANDOFF_PATTERN = /(?:\b(?:createTask|dispatch|emit|enqueue|insert|publish|send|update|upsert)\w*\s*\(|\.(?:createTask|dispatch|emit|enqueue|insert|publish|send\w*|update|upsert)\s*\()/i
-const QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN = /(?:\b(?:createTask|dispatch|emit|enqueue|publish|send|trigger)\w*\s*\(|\.(?:createTask|dispatch|emit|enqueue|publish|send\w*)\s*\()/i
+const QUERY_EVIDENCE_HANDOFF_PATTERN = /(?:\b(?:dispatch|emit|enqueue|insert|publish|send|update|upsert)\w*\s*\(|\.(?:dispatch|emit|enqueue|insert|publish|send\w*|update|upsert)\s*\()/i
+const QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN = /(?:\b(?:dispatch|emit|enqueue|publish|send|trigger)\w*\s*\(|\.(?:dispatch|emit|enqueue|publish|send\w*)\s*\()/i
 const QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN = /(?:\b(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\(|\.(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\()/i
 const QUERY_EVIDENCE_RETRY_PATTERN = /\b(?:backoff|exponential|retr(?:y|ied|ies))\b/i
-const QUERY_EVIDENCE_OVERALL_RESULT_PATTERN = /\boverall\w*(?:result|state|status)\w*\s*=/i
 const QUERY_EVIDENCE_DECISION_PATTERN = /(?:\b\w*(?:result|state|status)\w*\s*=.*(?:\?|\.some\s*\()|\?\s*[\w.]+\s*:)/i
 const QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN = /\b\w*(?:result|state|status)\w*\s*=/i
-const QUERY_EVIDENCE_PAGE_RESULT_PATTERN = /(?:\bpage\w*(?:indicator|status)\w*\s*\(|\bstatus\s*:\s*page\w*\s*\()/i
-const QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN = /\breturn\s+page\.\w+/i
 const QUERY_EVIDENCE_COMPUTATION_PATTERN = /(?:\b(?:compute|derive|resolve)\w*\s*\(|\b\w*(?:indicator|result|state|status)\w*\s*=|\b\w*(?:indicator|status)\w*\s*\()/i
-const QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN = /(?:\b\w+\.type\s*===?\s*["']incident["'][^\n]*!\w+\.to|!\w+\.to[^\n]*\b\w+\.type\s*===?\s*["']incident["'])/i
-const QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN = /\bstatus\s*=\s*monitors\.some\s*\(/i
-const QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN = /\bRouterOutputs\b.*\[\s*["']statusPage["']\s*\].*\[\s*["']get["']\s*\]/i
-const QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN = /\btrpc\s*\.\s*statusPage\s*\.\s*get\s*\.\s*queryOptions\b/i
 const QUERY_EVIDENCE_DECLARATION_PATTERN = /^\s*(?:(?:export\s+)?(?:async\s+)?(?:function\b|const\s+\w+\s*=\s*async\b)|func\b)/i
 
 function boundedSourceRange(
@@ -725,10 +718,9 @@ interface QueryEvidenceFragment {
 const QUERY_EVIDENCE_CONTINUATION_START_PATTERN = /^\s*(?:[.?:]|&&|\|\|)/
 const QUERY_EVIDENCE_CONTINUATION_END_PATTERN = /(?:=>|&&|\|\||[=?:])\s*$/
 const QUERY_EVIDENCE_STRUCTURED_CALL_PATTERN = /(?:\b\w+\s*\(|:=\s*&?[\w.]+)[^;]*\{\s*$/
-const QUERY_EVIDENCE_DISCRIMINANT_PROPERTY_PATTERN = /^\s*([\w]*(?:action|event|incident|method|mode|monitor|notification|queue|route|status|type|url)[\w]*)\s*:/i
-const QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN = /\b([A-Za-z_]\w*)\.(?:createTask|deliver\w*|dispatch\w*|emit\w*|enqueue\w*|publish\w*|send\w*|trigger\w*)\s*\(/i
-const QUERY_EVIDENCE_PROVIDER_SETUP_PATTERN = /(?:\bnew\s+\w*(?:client|provider|queue|transport)\w*\s*\(|\b\w*newClient\s*\(|\b\w*(?:client|provider|queue|transport)\w*\.)/i
-const QUERY_EVIDENCE_CONTAINER_DECLARATION_PATTERN = /^\s*(?:export\s+const\s+\w*(?:route|router)\w*\s*=|\w+\s*:\s*\w*Procedure\.query\s*\()/i
+const QUERY_EVIDENCE_DISCRIMINANT_PROPERTY_PATTERN = /^\s*([\w]*(?:action|event|method|mode|queue|route|status|type|url)[\w]*)\s*:/i
+const QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN = /\b([A-Za-z_]\w*)\.(?:deliver\w*|dispatch\w*|emit\w*|enqueue\w*|publish\w*|send\w*|trigger\w*)\s*\(/i
+const QUERY_EVIDENCE_PROVIDER_SETUP_PATTERN = /(?:\bnew\s*\w*(?:client|provider|queue|transport)\w*\s*\(|\b\w*(?:client|provider|queue|transport)\w*\.)/i
 
 function braceDelta(value: string): number {
   return (value.match(/\{/g)?.length ?? 0) - (value.match(/\}/g)?.length ?? 0)
@@ -778,7 +770,7 @@ function structuredCallFragment(
   }
   const priority = (key: string): number => {
     if (/(?:action|event|mode|status|type)/.test(key)) return 0
-    if (/(?:incident|method|monitor|notification|queue|route|url)/.test(key)) return 1
+    if (/(?:method|queue|route|url)/.test(key)) return 1
     return 2
   }
   const discriminants = properties
@@ -820,94 +812,6 @@ function providerHandoffFragment(
   return null
 }
 
-function publicRouterFetchFragment(
-  lines: readonly string[],
-  lineNumber: number,
-  rangeStart: number,
-): { start: number; end: number; text: string } | null {
-  const queryOptions = lines[lineNumber - 1] ?? ''
-  if (!QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN.test(queryOptions)) {
-    return null
-  }
-
-  for (let candidate = lineNumber - 1; candidate >= Math.max(rangeStart, lineNumber - 3); candidate -= 1) {
-    const fetch = lines[candidate - 1] ?? ''
-    if (!/\b(?:const|let)\s+\w+\s*=\s*await\s+\w+\.fetchQuery\s*\(/.test(fetch)) {
-      continue
-    }
-    return {
-      start: candidate,
-      end: lineNumber,
-      text: `${fetch.trim()} ${queryOptions.trim()}`,
-    }
-  }
-
-  return null
-}
-
-function incidentStatusOwnerFragment(
-  lines: readonly string[],
-  lineNumber: number,
-  rangeStart: number,
-  rangeEnd: number,
-): { start: number; end: number; text: string } | null {
-  const first = lines[lineNumber - 1] ?? ''
-  if (!/^\s*const\s+status\s*=/.test(first)) {
-    return null
-  }
-  let decisionEnd = lineNumber
-  while (decisionEnd < rangeEnd && decisionEnd - lineNumber < 5) {
-    const current = lines[decisionEnd - 1] ?? ''
-    if (/;\s*$/.test(current)) {
-      break
-    }
-    decisionEnd += 1
-  }
-  const decision = lines.slice(lineNumber - 1, decisionEnd).join(' ')
-  if (!QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(decision)) {
-    return null
-  }
-
-  let ownerNumber: number | null = null
-  for (let candidate = lineNumber - 1; candidate >= Math.max(rangeStart, lineNumber - 16); candidate -= 1) {
-    if (/^\s*const\s+\w+\s*=.*\.map\s*\(/.test(lines[candidate - 1] ?? '')) {
-      ownerNumber = candidate
-      break
-    }
-  }
-  if (ownerNumber === null) {
-    return null
-  }
-
-  const returnEvidence: string[] = []
-  let returnEnd = decisionEnd
-  for (let candidate = decisionEnd + 1; candidate <= Math.min(rangeEnd, decisionEnd + 20); candidate += 1) {
-    const value = lines[candidate - 1] ?? ''
-    if (returnEvidence.length === 0 && /^\s*return\s*\{/.test(value)) {
-      returnEvidence.push(value.trim())
-      returnEnd = candidate
-      continue
-    }
-    if (returnEvidence.length > 0 && /^\s*(?:\.\.\.\w+(?:\.\w+)?,|status,|events,)/.test(value)) {
-      returnEvidence.push(value.trim())
-      returnEnd = candidate
-      if (returnEvidence.some((entry) => /^status,$/.test(entry))) {
-        break
-      }
-    }
-  }
-
-  return {
-    start: ownerNumber,
-    end: Math.max(decisionEnd, returnEnd),
-    text: [
-      (lines[ownerNumber - 1] ?? '').trim(),
-      ...returnEvidence,
-      `L${lineNumber}: ${decision.trim()}`,
-    ].join(' '),
-  }
-}
-
 function queryEvidenceScoringText(value: string): string {
   return value
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
@@ -935,20 +839,10 @@ function queryEvidenceFragments(
     ) {
       start -= 1
     }
-    const incidentStatusOwner = incidentStatusOwnerFragment(lines, lineNumber, range.start, range.end)
-    const publicRouterFetch = incidentStatusOwner ? null : publicRouterFetchFragment(lines, lineNumber, range.start)
-    const providerHandoff = incidentStatusOwner || publicRouterFetch ? null : providerHandoffFragment(lines, lineNumber, range.start)
-    const structured = incidentStatusOwner || publicRouterFetch || providerHandoff ? null : structuredCallFragment(lines, lineNumber, range.end)
+    const providerHandoff = providerHandoffFragment(lines, lineNumber, range.start)
+    const structured = providerHandoff ? null : structuredCallFragment(lines, lineNumber, range.end)
     let text: string | null = null
-    if (incidentStatusOwner) {
-      start = incidentStatusOwner.start
-      end = incidentStatusOwner.end
-      text = incidentStatusOwner.text
-    } else if (publicRouterFetch) {
-      start = publicRouterFetch.start
-      end = publicRouterFetch.end
-      text = publicRouterFetch.text
-    } else if (providerHandoff) {
+    if (providerHandoff) {
       start = providerHandoff.start
       end = providerHandoff.end
       text = providerHandoff.text
@@ -1091,18 +985,6 @@ function queryEvidenceRange(
     if (QUERY_EVIDENCE_COMPUTATION_PATTERN.test(scoringText)) {
       score += 1.2
     }
-    if (QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(scoringText)) {
-      score += 2.4
-    }
-    if (QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN.test(scoringText)) {
-      score += 2
-    }
-    if (QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN.test(scoringText)) {
-      score += 2.5
-    }
-    if (QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN.test(scoringText)) {
-      score += 4
-    }
     if (QUERY_EVIDENCE_DECLARATION_PATTERN.test(scoringText)) {
       score -= 1.25
     }
@@ -1132,10 +1014,7 @@ function queryEvidenceRange(
 }
 
 function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[] {
-  const valuableLines = range.lines.filter((line) => (
-    !QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(line.text)
-    || QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN.test(line.text)
-  ))
+  const valuableLines = range.lines.filter((line) => !QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(line.text))
   const remaining = [...(valuableLines.length > 0 ? valuableLines : range.lines)]
   const selected: QueryEvidenceLine[] = []
   const coveredTerms = new Set<string>()
@@ -1203,17 +1082,13 @@ function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[
     if (best) addSelected(best)
   }
 
+  // Reserve one line per generic evidence shape. Every entry is an ordinary
+  // programming construct -- a handoff call, a retry, a branch, a computation
+  // -- so this pass cannot prefer one repository's code over another's.
   for (const semanticPattern of [
     QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN,
     QUERY_EVIDENCE_RETRY_PATTERN,
-    QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN,
-    QUERY_EVIDENCE_OVERALL_RESULT_PATTERN,
     QUERY_EVIDENCE_DECISION_PATTERN,
-    QUERY_EVIDENCE_PAGE_RESULT_PATTERN,
-    QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN,
-    QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN,
-    QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN,
-    QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN,
     QUERY_EVIDENCE_COMPUTATION_PATTERN,
   ]) {
     if (selected.length >= QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
@@ -1245,14 +1120,7 @@ function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[
           const addsSemanticEvidence = [
             QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN,
             QUERY_EVIDENCE_RETRY_PATTERN,
-            QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN,
-            QUERY_EVIDENCE_OVERALL_RESULT_PATTERN,
             QUERY_EVIDENCE_DECISION_PATTERN,
-            QUERY_EVIDENCE_PAGE_RESULT_PATTERN,
-            QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN,
-            QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN,
-            QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN,
-            QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN,
             QUERY_EVIDENCE_COMPUTATION_PATTERN,
           ].some((pattern) => (
             pattern.test(queryEvidenceScoringText(line.text))
@@ -1360,13 +1228,7 @@ export function readQueryEvidenceSnippet(
       }
     }
 
-    let selectedLines = selectQueryEvidenceLines(selectedRange)
-    if (
-      options.fileNodeLike
-      && selectedLines.some((line) => QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(queryEvidenceScoringText(line.text)))
-    ) {
-      selectedLines = selectedLines.filter((line) => !QUERY_EVIDENCE_CONTAINER_DECLARATION_PATTERN.test(line.text))
-    }
+    const selectedLines = selectQueryEvidenceLines(selectedRange)
     const snippet = renderQueryEvidenceLines(selectedLines)
     if (!snippet || selectedLines.length === 0) {
       return null
@@ -2011,14 +1873,12 @@ function excludedTermMatches(value: string, excludedTerms: readonly string[], ex
     .some((termToken) => valueTokens.has(termToken))
 }
 
-function promptAllowsSourceDomain(domain: SourceDomain, intent: string, prompt: string, questionTokens: readonly string[]): boolean {
-  const lowerPrompt = prompt.toLowerCase()
+function promptAllowsSourceDomain(domain: SourceDomain, intent: string, questionTokens: readonly string[]): boolean {
   switch (domain) {
     case 'test':
       return intent === 'test' || includesAnyToken(questionTokens, ['test', 'tests', 'spec', 'coverage', 'e2e'])
     case 'benchmark':
       return includesAnyToken(questionTokens, ['bench', 'benchmark', 'benchmarks', 'perf', 'performance'])
-        || /\b(html reporter|reporter utilities?)\b/i.test(lowerPrompt)
     case 'fixture':
       return includesAnyToken(questionTokens, ['fixture', 'fixtures', 'mock', 'mocks'])
     case 'generated':
@@ -2041,7 +1901,7 @@ function defaultSourceDomainPenalty(
   prompt: string,
   questionTokens: readonly string[],
 ): number {
-  if (promptAllowsSourceDomain(domain, intent, prompt, questionTokens)) {
+  if (promptAllowsSourceDomain(domain, intent, questionTokens)) {
     return 0
   }
 
@@ -2138,10 +1998,10 @@ function runtimeGenerationNodeValue(
   if (/\b(?:nest_route|nest_controller|nest_provider|controller|service|repository|worker|orchestrator)\b/.test(lower)) {
     value += 1.75
   }
-  if (/\b(?:generate|generation|create|start|process|pipeline|queue|job|research|agent|scoring|score|report|repository|persist|save|builder)\b/.test(lower)) {
+  if (/\b(?:generate|generation|create|start|process|pipeline|queue|job|repository|persist|save)\b/.test(lower)) {
     value += 1.5
   }
-  if (/(?:^|[.#])(?:generate|create|start|process|save|score|search|update|claim|cancel)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)) {
+  if (/(?:^|[.#])(?:generate|create|start|process|save|search|update)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)) {
     value += 1
   }
 
@@ -2164,9 +2024,6 @@ function frontendDisplayNodePenalty(
   }
   if (/\b(?:display|render|shown?|visible|footer|header|label|date|timestamp|component)\b/.test(lower)) {
     penalty += 1.5
-  }
-  if (/^pick[A-Z]/.test(node.label)) {
-    penalty += 1.25
   }
 
   return penalty
@@ -2228,7 +2085,7 @@ function runtimeGenerationSourceDomainPenalty(
 }
 
 function promptAllowsScriptMigration(question: string): boolean {
-  return /\b(?:scripts?|migrat(?:e|ed|es|ing|ion)|backfill|cli|one-off|repair|old pipeline|seed(?:ing|ers?)|seeds?\s+(?:data|db|database|scripts?|files?))\b/i.test(question)
+  return /\b(?:scripts?|migrat(?:e|ed|es|ing|ion)|backfill|cli|one-off|repair|seed(?:ing|ers?)|seeds?\s+(?:data|db|database|scripts?|files?))\b/i.test(question)
 }
 
 function scriptMigrationPathPenalty(
@@ -2536,7 +2393,7 @@ function supportingPolicyOrLoggerNode(
   node: Pick<RetrieveMatchedNode, 'label' | 'framework_role' | 'source_file'>,
 ): boolean {
   const lower = `${node.label} ${node.framework_role ?? ''} ${node.source_file}`.toLowerCase()
-  return /planenforcement|guard|interceptor|swagger|apioperation|apiresponse|apitags|logger|\.info\(\)|\.error\(\)|\.warn\(\)|\.debug\(\)/.test(lower)
+  return /guard|interceptor|swagger|apioperation|apiresponse|apitags|logger|\.info\(\)|\.error\(\)|\.warn\(\)|\.debug\(\)/.test(lower)
 }
 
 function pipelineBridgeNode(
@@ -2549,7 +2406,15 @@ function runtimeFlowRelation(relation: string): boolean {
   return relation === 'calls' || relation === 'enqueues_job'
 }
 
-function lowValueReportGenerationCompactNode(
+/**
+ * Whether a node is a low-value step for compaction.
+ *
+ * This asks the generic execution-step test and nothing else. It used to carry
+ * a list of symbol names observed in particular repositories, which demoted
+ * those exact symbols wherever they appeared and demoted nothing equivalent in
+ * a repository that had named things differently.
+ */
+function lowValueCompactNode(
   node: {
     label: string
     source_file: string
@@ -2557,15 +2422,12 @@ function lowValueReportGenerationCompactNode(
     framework_role?: string | undefined
   },
 ): boolean {
-  const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
   return lowValueExecutionStep({
     label: node.label,
     source_file: node.source_file,
     ...(node.node_kind !== undefined ? { node_kind: node.node_kind } : {}),
     ...(node.framework_role !== undefined ? { framework_role: node.framework_role } : {}),
   })
-    || /\b(?:title|status|suggest|guard|auth|interceptor|refund|claim|cancel|signedurl|buildperspective|letsbuild|publish|delete)\b/.test(lower)
-    || /(?:^|[.#])(?:generatefallbacktitle|generatetitle|getstatusmessage|claimqueuedpipelinerun|releasequeuedpipelineclaim|releaseunusedcreditreservation|generatebuildperspective|generatesignedurl|generateletsbuild|publishidea|getidea|listideas|deleteidea|suggestimprovements)[A-Za-z_$\w]*\(?\)?$/i.test(node.label)
 }
 
 function recoveredReportGenerationNoise(
@@ -2576,7 +2438,7 @@ function recoveredReportGenerationNoise(
     return false
   }
 
-  return lowValueReportGenerationCompactNode({
+  return lowValueCompactNode({
     label: node.label,
     source_file: node.sourceFile,
     node_kind: node.nodeKind,
@@ -2610,19 +2472,15 @@ function reportGenerationCompactPriority(
   const lower = `${node.label} ${node.source_file} ${node.node_kind ?? ''} ${node.framework_role ?? ''}`.toLowerCase()
   let value = 0
 
+  // Membership of the execution slice is structural: the node is on the path
+  // the graph actually recorded, whatever it is called.
   if (executionStepLabels.has(node.label)) value += 80
-  if (/\b(?:planner|plan\b|research|assembly|assemble|renderer|render|synth|quality(?:-| )gate|dispatchwave|dispatchdbsync|broadcastrunstarted|broadcastrunfailed|queue|job|worker|orchestrator|process|persist|save)\b/.test(lower)) value += 40
-  if (/\bscoremetrics\b/.test(lower)) value += 35
+  // Generic runtime-stage vocabulary. Every term here names an architectural
+  // role rather than a symbol in some repository.
+  if (/\b(?:queue|job|worker|orchestrator|pipeline|process|persist|save|dispatch|handler|scheduler)\b/.test(lower)) value += 40
   if (pipelineBridgeNode(node)) value += 20
   if (node.relevance_band === 'direct') value += 5
-
-  if (
-    /(?:^|[.#])(?:generatescoringledger|generatesensitivityanalysis|generatesuggestednextsteps|scoremetricbatch|deduplicateevidencerefs|mapcompositetorecommendation|normalizemetric|parsejson)\(?\)?$/i.test(node.label)
-    || /\b(?:metrichumanprompt|fallbackmetric)\b/.test(lower)
-  ) {
-    value -= 35
-  }
-  if (lowValueReportGenerationCompactNode(node)) value -= 100
+  if (lowValueCompactNode(node)) value -= 100
 
   return value
 }
@@ -2671,7 +2529,7 @@ function promotedSliceCompactNodeIds(result: RetrieveResult): string[] {
         return
       }
       const node = matchedById.get(nodeId)
-      if (!node || supportingPolicyOrLoggerNode(node) || lowValueReportGenerationCompactNode(node)) {
+      if (!node || supportingPolicyOrLoggerNode(node) || lowValueCompactNode(node)) {
         return
       }
       promoted.add(nodeId)
@@ -2805,7 +2663,7 @@ function promotedSliceCompactLabels(result: RetrieveResult): string[] {
       return
     }
     const candidate = node ?? representativeByLabel.get(label)
-    if (!candidate || supportingPolicyOrLoggerNode(candidate) || lowValueReportGenerationCompactNode(candidate)) {
+    if (!candidate || supportingPolicyOrLoggerNode(candidate) || lowValueCompactNode(candidate)) {
       return
     }
     promotedLabels.add(label)

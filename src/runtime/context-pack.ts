@@ -423,101 +423,113 @@ function buildInputProvenanceClaims(nodes: readonly ContextPackNode[]): ContextP
   return claims
 }
 
-function buildStatusProjectionSplitClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
-  const projection = nodes.find((node) => (
-    node.snippet?.includes('pageIndicator(page.status)') === true
-    && node.snippet.includes('page.statusReports')
-  ))
-  const incidentRollup = nodes.find((node) => (
-    /e\.type\s*===\s*["']incident["']/.test(node.snippet ?? '')
-    && /barType\s*!==\s*["']manual["']/.test(node.snippet ?? '')
-  ))
-  if (!projection || !incidentRollup) {
-    return []
-  }
+/**
+ * Typed execution relationships worth stating in prose, with the noun used to
+ * introduce the claim. Every key is a relation an extractor emits from
+ * framework structure -- a route registration, a queue handoff, a render edge
+ * -- never a name or a phrase read out of a snippet.
+ */
+const EXECUTION_RELATION_CLAIMS = new Map<string, string>([
+  ['enqueues_job', 'queue handoff'],
+  ['handles_route', 'route handling'],
+  ['registers_route', 'route registration'],
+  ['controller_route', 'route handling'],
+  ['route_handler', 'route handling'],
+  ['declares_controller', 'controller declaration'],
+  ['loads_route', 'route loading'],
+  ['submits_route', 'route submission'],
+  ['renders', 'render path'],
+])
 
-  return [{
-    evidence_class: projection.evidence_class ?? 'supporting',
-    text: `public payload divergence: when barType is not manual, an open incident event can make page.status "error" in ${incidentRollup.source_file}; ${projection.source_file} builds unresolved incident entries only from page.statusReports, so an auto-created incident without a status report can yield an error indicator with an empty incidents list`,
-    node_labels: [projection.label, incidentRollup.label],
-  }]
+function nodeByLabelOrId(
+  nodes: readonly ContextPackNode[],
+  label: string,
+  nodeId: string | undefined,
+): ContextPackNode | undefined {
+  if (nodeId !== undefined) {
+    const byId = nodes.find((node) => node.node_id === nodeId)
+    if (byId) {
+      return byId
+    }
+  }
+  return nodes.find((node) => node.label === label)
 }
 
-function buildPublicStatusRuntimeProvenanceClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
-  const boundary = nodes.find((node) => (
-    /\btrpc\s*\.\s*statusPage\s*\.\s*get\s*\.\s*queryOptions\b/i.test(node.snippet ?? '')
-    && /\bto(?:Status|Summary|UnresolvedIncidents)\s*\(\s*data\b/.test(node.snippet ?? '')
-  ))
-  const publicRouter = nodes.find((node) => (
-    /(?:^|\/)packages\/api\/src\/router\/statusPage\.ts$/i.test(node.source_file.replaceAll('\\', '/'))
-    && /e\.type\s*===\s*["']incident["']/.test(node.snippet ?? '')
-  ))
-  const incidentAwarePublicRouter = publicRouter && (
-    /e\.type\s*===\s*["']incident["']/.test(publicRouter.snippet ?? '')
-    && /barType\s*!==\s*["']manual["']/.test(publicRouter.snippet ?? '')
-  )
-  // Prefer a source-range excerpt that proves a distinct status decision over
-  // a symbol-name-only fallback. This intentionally relies on the selected
-  // evidence, not a repository-specific path or an absence-of-query claim.
-  const semanticAlternate = nodes.find((node) => (
-    node !== publicRouter
-    && /overall\s*status/i.test(node.snippet ?? '')
-    && /status\s*report/i.test(node.snippet ?? '')
-    && /maintenance/i.test(node.snippet ?? '')
-  ))
-  const alternate = semanticAlternate ?? nodes.find((node) => (
-    node !== publicRouter && /(?:compute|derive|resolve).*status/i.test(node.label)
-  ))
-  if (!boundary || !publicRouter) {
-    return []
+/**
+ * Claims earned from structure the extractors actually recorded.
+ *
+ * A relationship claim is emitted only when a typed edge connects two nodes
+ * that are both in the pack, so the claim cites two real source locations and
+ * names the relation that produced it. Two files mentioning the same word are
+ * not a relationship, and no amount of matching text will make one here: this
+ * builder never reads a snippet.
+ *
+ * A framework-role claim is emitted only when an extractor declared the role
+ * from framework structure, which is why it survives a repository renaming
+ * every identifier.
+ */
+function buildStructuralEvidenceClaims(
+  nodes: readonly ContextPackNode[],
+  relationships: readonly ContextPackRelationship[],
+): ContextPackClaim[] {
+  const claims: ContextPackClaim[] = []
+  const seen = new Set<string>()
+
+  for (const relationship of relationships) {
+    const kind = EXECUTION_RELATION_CLAIMS.get(relationship.relation)
+    if (kind === undefined) {
+      continue
+    }
+
+    const from = nodeByLabelOrId(nodes, relationship.from, relationship.from_id)
+    const to = nodeByLabelOrId(nodes, relationship.to, relationship.to_id)
+    if (!from || !to || from === to) {
+      continue
+    }
+
+    const dedupeKey = `${kind}\u0000${from.label}\u0000${to.label}`
+    if (seen.has(dedupeKey)) {
+      continue
+    }
+    seen.add(dedupeKey)
+
+    claims.push({
+      evidence_class: from.evidence_class ?? 'supporting',
+      text: `${kind}: ${from.source_file} ${from.label} ${relationship.relation} ${to.source_file} ${to.label}`,
+      node_labels: [from.label, to.label],
+    })
   }
 
-  const alternateClaim = semanticAlternate && incidentAwarePublicRouter
-    ? `; ${publicRouter.source_file} treats an open incident event as "error" outside manual mode, while ${semanticAlternate.source_file} ${semanticAlternate.label} derives overall status from active status reports and maintenance`
-    : alternate
-      ? `; ${alternate.source_file} ${alternate.label} is a separate computation path`
-      : ''
+  for (const node of nodes) {
+    const role = node.framework_role
+    if (role === undefined || role.trim().length === 0) {
+      continue
+    }
+    if (!/(?:route|controller|handler|middleware|job|queue|worker)/i.test(role)) {
+      continue
+    }
 
-  return [{
-    evidence_class: boundary.evidence_class ?? 'supporting',
-    text: `public runtime provenance: ${boundary.source_file} ${boundary.label} fetches trpc.statusPage.get and passes that data to the public status-json serializers backed by ${publicRouter.source_file}${alternateClaim}`,
-    node_labels: [boundary.label, publicRouter.label, ...(alternate ? [alternate.label] : [])],
-  }]
-}
+    const dedupeKey = `role\u0000${node.label}\u0000${role}`
+    if (seen.has(dedupeKey)) {
+      continue
+    }
+    seen.add(dedupeKey)
 
-function buildFailureHandoffClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
-  const detector = nodes.find((node) => (
-    /HTTPCheckerHandler/.test(node.label)
-    && /\bUpdateStatus\s*\(/.test(node.snippet ?? '')
-    && /\bStatus\s*:\s*["']error["']/.test(node.snippet ?? '')
-  ))
-  const handoff = nodes.find((node) => (
-    node.label === 'UpdateStatus()'
-    && /\bcloudtasks\.NewClient\s*\(/.test(node.snippet ?? '')
-    && /\.CreateTask\s*\(/.test(node.snippet ?? '')
-  ))
-  if (!detector || !handoff) {
-    return []
+    claims.push({
+      evidence_class: node.evidence_class ?? 'supporting',
+      text: `runtime boundary: ${node.source_file} ${node.label} is a framework-declared ${role}`,
+      node_labels: [node.label],
+    })
   }
 
-  return [
-    {
-      evidence_class: detector.evidence_class ?? 'supporting',
-      text: `failure detection: ${detector.source_file} ${detector.label} sends Status "error" to UpdateStatus`,
-      node_labels: [detector.label],
-    },
-    {
-      evidence_class: handoff.evidence_class ?? 'supporting',
-      text: `cross-runtime handoff: ${handoff.source_file} ${handoff.label} enqueues the checker status update with Cloud Tasks`,
-      node_labels: [handoff.label],
-    },
-  ]
+  return claims
 }
 
 function buildClaims(
   taskContract: ContextPackTaskContract,
   labelsByEvidence: ReadonlyMap<ContextPackEvidenceClass, string[]>,
   nodes: readonly ContextPackNode[],
+  relationships: readonly ContextPackRelationship[],
 ): ContextPackClaim[] {
   const evidenceOrder = orderedEvidence(taskContract, labelsByEvidence.keys())
 
@@ -535,9 +547,7 @@ function buildClaims(
   })
 
   return [
-    ...buildPublicStatusRuntimeProvenanceClaims(nodes),
-    ...buildStatusProjectionSplitClaims(nodes),
-    ...buildFailureHandoffClaims(nodes),
+    ...buildStructuralEvidenceClaims(nodes, relationships),
     ...buildInputProvenanceClaims(nodes),
     ...evidenceClaims,
   ]
@@ -895,7 +905,7 @@ function looksScriptMigration(sourceFile: string, label: string): boolean {
 }
 
 function promptAllowsScriptMigration(prompt: string | undefined): boolean {
-  return /\b(?:scripts?|migrat(?:e|ed|es|ing|ion)|backfill|cli|one-off|repair|old pipeline|seed(?:ing|ers?)|seeds?\s+(?:data|db|database|scripts?|files?))\b/i.test(prompt ?? '')
+  return /\b(?:scripts?|migrat(?:e|ed|es|ing|ion)|backfill|cli|one-off|repair|seed(?:ing|ers?)|seeds?\s+(?:data|db|database|scripts?|files?))\b/i.test(prompt ?? '')
 }
 
 function sourceDomainPenalty(view: CandidateScoringView, taskContract: ContextPackTaskContract): number {
@@ -1402,7 +1412,7 @@ export function compileContextPack<
     nodes: renderedNodes.nodes,
     relationships,
     community_context: (input.community_context ?? []).filter((community) => selectedCommunities.has(community.id)),
-    claims: buildClaims(input.task_contract, selectedLabelsByEvidence, renderedNodes.nodes),
+    claims: buildClaims(input.task_contract, selectedLabelsByEvidence, renderedNodes.nodes, relationships),
     expandable: buildExpandableRefs(input.task_contract, omittedNodes),
     coverage: coverageEntriesForCandidates(
       input.task_contract,
