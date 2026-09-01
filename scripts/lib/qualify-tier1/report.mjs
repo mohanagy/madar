@@ -143,8 +143,11 @@ export function renderReport(result) {
       lines.push('- Reasons:')
       for (const reason of cell.reasons) lines.push(`  - ${reason}`)
     }
+    if (cell.observed?.ungrounded_symbols?.length) {
+      lines.push(`- Symbols not found in the pinned target (reported only — the frozen task method gates on cited paths, not symbols): ${cell.observed.ungrounded_symbols.map((v) => `\`${v}\``).join(', ')}`)
+    }
     if (cell.observed?.fabricated_symbols?.length) {
-      lines.push(`- Symbols absent from the pinned target: ${cell.observed.fabricated_symbols.map((v) => `\`${v}\``).join(', ')}`)
+      lines.push(`- Fabricated symbols in the evidence set: ${cell.observed.fabricated_symbols.map((v) => `\`${v}\``).join(', ')}`)
     }
     if (cell.observed?.required_symbols_seen_only_in_snippets?.length) {
       lines.push(`- Required symbols visible ONLY in retained snippet text (reported, never counted): ${cell.observed.required_symbols_seen_only_in_snippets.map((entry) => `\`${entry.symbol}\` at \`${entry.schema_path}\``).join(', ')}`)
@@ -165,6 +168,9 @@ export function renderReport(result) {
       const absence = cell.observed.absence_declaration
       lines.push(`- Absence declaration: ${absence.observed ? 'observed' : '**not observed**'} across ${absence.channels_searched.length} declaration channel(s); ${absence.declarations_seen} declaration string(s) searched for subject terms ${absence.subject_terms.map((v) => `\`${v}\``).join(', ')}`)
       for (const match of absence.matches.slice(0, 4)) lines.push(`  - \`${match.schema_path}\` matched \`${match.term}\`: ${match.text}`)
+      for (const near of (absence.subject_mentioned_without_asserting_absence ?? []).slice(0, 4)) {
+        lines.push(`  - named the subject but asserted presence, so it is not a declaration: \`${near.schema_path}\` — ${near.text}`)
+      }
     }
     if (cell.evidence_reference) lines.push(`- Evidence: \`${cell.evidence_reference}\``)
   }

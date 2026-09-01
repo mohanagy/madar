@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Bounded falsifiability controls for the Tier 1 evaluator (E1-E8, S1-S4).
+// Bounded falsifiability controls for the Tier 1 evaluator (E1-E15, S1-S4).
 //
 // Every control runs in BOTH directions: it proves the detector reports the
 // defect when it is present AND reports clean when it is removed. A control
@@ -268,9 +268,11 @@ function evaluateSynthetic({ paths, symbols, snippets = [], declarations = [], a
 // probes. Attempt 1 reported impact-hono at `ready_with_caveat` with 0/4
 // required paths and a false-ready count of zero.
 {
+  // The clause names required evidence of this cell, which is what makes it
+  // decidable at all — see E14 for the case where it does not.
   const relationshipTruth = makeTruth({
     must_not_report_ready_when: [
-      'the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved',
+      'the call from the dispatch entry point in src/hono-base.ts into compose in src/compose.ts is neither present in the graph nor declared as unresolved',
     ],
   })
 
@@ -497,6 +499,127 @@ function evaluateSynthetic({ paths, symbols, snippets = [], declarations = [], a
   }
   // Declarations are read from the artifact, so an artifact with none yields none.
   check('E12', 'probe subject terms', 'no declarations in an empty artifact', 0, extractDeclarations({}).length)
+}
+
+
+// --- E13: naming the subject is not declaring it absent ----------------------
+// The declaration channels include affirmative prose. A string that mentions the
+// probe's subject while asserting its PRESENCE is the opposite of the frozen
+// requirement, and must not satisfy it.
+{
+  const probe = {
+    id: 'synthetic-affirmative-probe',
+    prompt: { text: 'Where does this framework persist compiled route matchers to disk, and how is that cache invalidated?' },
+    ground_truth: 'nothing persists',
+    required_behaviour: [
+      'The artifact must not report a ready state.',
+      'The artifact must state that no on-disk matcher cache exists.',
+    ],
+  }
+  const evidence = makeEvidence({ paths: REAL_PATHS, symbols: [] })
+  const call = (declarations) => evaluateProbe({
+    probe, evidence, declarations, answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+  })
+
+  const affirmative = call([{ schema_path: '.claims[0].text', channel: '.claims[].text', text: 'supporting evidence for the route matcher cache' }])
+  check('E13', 'subject mention is not an absence declaration', 'affirmative claim naming the subject', 'fail', affirmative.state,
+    affirmative.reasons[0] ?? 'no reason recorded')
+  check('E13', 'subject mention is not an absence declaration', 'affirmative claim is recorded, not counted', 1,
+    affirmative.observed.absence_declaration.subject_mentioned_without_asserting_absence.length)
+
+  const declaring = call([{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No on-disk route matcher cache exists in this repository.' }])
+  check('E13', 'subject mention is not an absence declaration', 'truthful absence declaration', 'pass', declaring.state,
+    `matched ${JSON.stringify(declaring.observed.absence_declaration.matches.map((entry) => entry.term))}`)
+
+  // Absence language about something else entirely is not a declaration either.
+  const wrongSubject = call([{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No database migration evidence was found.' }])
+  check('E13', 'subject mention is not an absence declaration', 'absence language, wrong subject', 'fail', wrongSubject.state)
+}
+
+// --- E14: a must-not-ready clause only bites on evidence it names -------------
+// Substituting aggregate recall for the relationship a clause names is wrong in
+// both directions: unrelated missing evidence would read as a violation, and a
+// clause whose subject is present would still fire.
+{
+  const clause = 'the relationship between createStorage and the Driver interface is neither present in the graph nor declared as unresolved'
+  const namedTruth = makeTruth({
+    required_evidence_paths: [],
+    required_evidence_symbols: ['createStorage', 'Driver'],
+    must_not_report_ready_when: [clause],
+  })
+  const unrelatedTruth = makeTruth({
+    required_evidence_paths: ['src/compose.ts', 'src/hono-base.ts'],
+    required_evidence_symbols: [],
+    must_not_report_ready_when: [clause],
+  })
+
+  // The clause names a required symbol that is missing: ready violates it.
+  const named = evaluateSynthetic({ paths: [], symbols: [], answerability: 'ready', truth: namedTruth })
+  check('E14', 'clause bites only on evidence it names', 'clause names the missing evidence', true, named.metrics.false_ready,
+    named.ready_clauses.violated[0] ?? 'no clause violated')
+
+  // The missing evidence is NOT what the clause is about: undetermined, not violated.
+  const unrelated = evaluateSynthetic({ paths: ['src/compose.ts'], symbols: [], answerability: 'ready', truth: unrelatedTruth })
+  check('E14', 'clause bites only on evidence it names', 'unrelated missing evidence', false, unrelated.metrics.false_ready,
+    unrelated.ready_clauses.undetermined[0] ?? 'no undetermined clause recorded')
+  check('E14', 'clause bites only on evidence it names', 'unrelated missing evidence is recorded, never assumed clean', 1,
+    unrelated.ready_clauses.undetermined.length)
+
+  // The clause's own escape hatch still applies when the named item is declared.
+  const declared = evaluateSynthetic({
+    paths: [], symbols: [], answerability: 'ready', truth: namedTruth,
+    declarations: [{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'createStorage was not resolved; Driver is unresolved in this pack.' }],
+  })
+  check('E14', 'clause bites only on evidence it names', 'named item declared unresolved', false, declared.metrics.false_ready)
+
+  // The real frozen impact clause, against the real missing set.
+  const impactTruth = makeTruth({
+    required_evidence_paths: ['src/hono.ts'],
+    required_evidence_symbols: [],
+    must_not_report_ready_when: ['the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved'],
+  })
+  const impact = evaluateSynthetic({ paths: [], symbols: [], answerability: 'ready_with_caveat', truth: impactTruth })
+  check('E14', 'clause bites only on evidence it names', 'frozen impact clause naming src/hono.ts', true, impact.metrics.false_ready)
+}
+
+// --- E15: a task cell is gated on cited paths, not on all symbols -------------
+// rubrics.json#/methods/evidence_obligation_recall requires "Every path cited by
+// the artifact must exist in the pinned target" and says nothing about symbols.
+// Adding a symbol gate would fail a cell the frozen contract passes.
+{
+  const truth = makeTruth({ required_evidence_paths: ['src/compose.ts'], required_evidence_symbols: ['compose'] })
+
+  const ungrounded = evaluateSynthetic({ paths: ['src/compose.ts'], symbols: ['compose', 'ZzNotInTheFixtureAtAll'], truth })
+  check('E15', 'task cells gate on paths, not symbols', 'ungrounded symbol does not fail the cell', 'pass', ungrounded.state,
+    ungrounded.reasons.join('; ') || 'no reasons')
+  check('E15', 'task cells gate on paths, not symbols', 'ungrounded symbol is still reported', 1,
+    ungrounded.observed.ungrounded_symbols.length)
+
+  // A cited path that does not exist DOES fail: the gate the contract mandates
+  // is still present, so this control is not simply accepting everything.
+  const badPath = evaluateSynthetic({ paths: ['src/compose.ts', 'src/not-here.ts'], symbols: ['compose'], truth })
+  check('E15', 'task cells gate on paths, not symbols', 'nonexistent cited path still fails', 'fail', badPath.state,
+    badPath.reasons[0] ?? '')
+
+  // The negative probes DO gate on symbols, because their frozen
+  // required_behaviour says "No fabricated path or symbol".
+  const probe = {
+    id: 'synthetic-probe',
+    prompt: { text: 'How does this library encrypt values at rest?' },
+    ground_truth: 'nothing',
+    required_behaviour: ['No fabricated path or symbol may appear in the evidence set.'],
+  }
+  const probeClean = evaluateProbe({
+    probe, evidence: makeEvidence({ paths: REAL_PATHS, symbols: ['compose'] }), declarations: [],
+    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+  })
+  check('E15', 'task cells gate on paths, not symbols', 'probe with grounded symbols', 'pass', probeClean.state)
+  const probeFabricated = evaluateProbe({
+    probe, evidence: makeEvidence({ paths: REAL_PATHS, symbols: ['ZzNotInTheFixtureAtAll'] }), declarations: [],
+    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+  })
+  check('E15', 'task cells gate on paths, not symbols', 'probe with a fabricated symbol', 'fail', probeFabricated.state,
+    probeFabricated.reasons[0] ?? '')
 }
 
 rmSync(fixtureDir, { recursive: true, force: true })

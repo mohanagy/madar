@@ -65,8 +65,8 @@ Every one of those cells still fails — `min_critical_fact_recall` is 1.0 — b
 that was wrong is now right, and "zero recall everywhere" was a stronger claim than the
 evidence supported.
 
-Two related corrections came out of the same audit and are recorded because both would
-otherwise have produced **false accusations against the product**:
+Three related corrections came out of the same audit and are recorded because each would
+otherwise have produced **a false accusation against the product**:
 
 - `workflow_centers[].label` is polymorphic. For community-shaped entries it carries a
   cluster name such as `Users Index Test` or `Drivers Github — Driver`. Admitting those
@@ -75,6 +75,13 @@ otherwise have produced **false accusations against the product**:
 - `pack.execution_slice.steps[].source_file` carries a bare basename (`router.ts`). Calling
   that a fabricated path was an artefact of resolving it from the target root, not a
   product defect. Basename references are now recorded separately and never accused.
+- Symbol grounding is **reported only** for task cells.
+  `rubrics.json#/methods/evidence_obligation_recall` mandates exactly one existence check —
+  "Every path cited by the artifact must exist in the pinned target" — and says nothing
+  about symbols. Gating a task cell on ungrounded symbols would fail a cell the frozen
+  contract passes, which is as much an infidelity as relaxing a threshold. The negative
+  probes are different: their frozen `required_behaviour` says "No fabricated path **or
+  symbol**", so `evaluateProbe` gates on both.
 
 ### D3 — both negative probes passed with a frozen requirement unmeasured
 
@@ -114,10 +121,20 @@ ranks it above `verify_targets`; the installed consumer directives say both are 
 ("answer from the pack … make no later MCP, Read, Bash, Glob, or Grep call") and that
 neither may be expanded. A consumer that receives it proceeds as answer-ready.
 
-The corrected evaluator enforces the contract's own floor: when the frozen critical evidence
-is missing and nothing in the artifact declares it unresolved, a ready state violates the
-clause. The published channel is `evidence.answerability.state`, mirrored at
+The corrected evaluator does not parse that English, and it does not substitute aggregate
+recall for it either — unrelated missing evidence would then read as a violation of a clause
+it has nothing to do with. What is decidable without interpretation is whether the clause's
+own text **literally names** a required item the artifact failed to surface. The impact
+clause names `src/hono.ts`, and `src/hono.ts` is in the missing set; with no declaration
+reporting it unresolved and a ready state published, the clause is violated. A clause that
+names no missing required item stays `undetermined` — recorded, never assumed clean. The
+published channel is `evidence.answerability.state`, mirrored at
 `governance.directive.answerability`.
+
+A related correction: a declaration must both name the probe's subject **and** assert that
+it is absent. Mentioning the subject is not declaring it missing — the declaration channels
+include affirmative prose, and a claim such as "supporting evidence for the route matcher
+cache" names the subject while asserting the opposite of what the frozen probe requires.
 
 ## What is NOT superseded
 

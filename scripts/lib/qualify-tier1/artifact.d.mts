@@ -101,6 +101,9 @@ export declare const DECLARATION_CHANNELS: readonly string[]
 
 export declare function extractDeclarations(artifact: Record<string, unknown>): DeclarationSighting[]
 
+/** True when `text` asserts that something is absent, missing or unestablished. */
+export declare function assertsAbsence(text: string): boolean
+
 /** Whole-word, case-insensitive containment. Never a substring match. */
 export declare function mentionsToken(text: string, token: string): boolean
 

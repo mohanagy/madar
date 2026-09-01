@@ -5,6 +5,7 @@
 import {
   READY_STATES,
   answerabilityRank,
+  assertsAbsence,
   mentionsToken,
   normaliseSymbol,
   probeSubjectTerms,
@@ -79,7 +80,7 @@ function declaredUnresolved(declarations, items) {
  * it unresolved, then a ready state violates the clause. The clause text is
  * carried verbatim so nothing is glossed.
  */
-function evaluateReadyClauses({ clauses, answerability, evidencePathSet, requiredPaths, criticalEvidenceSatisfied, missingCritical, declarations }) {
+function evaluateReadyClauses({ clauses, answerability, evidencePathSet, requiredPaths, missingCritical, declarations }) {
   if (!READY_STATES.has(answerability)) {
     return { applicable: false, violated: [], undetermined: [], unresolved_declarations: [], detail: `answerability '${answerability}' is not a ready state; clauses are vacuously satisfied` }
   }
@@ -97,23 +98,28 @@ function evaluateReadyClauses({ clauses, answerability, evidencePathSet, require
       if (!evidencePathSet.has(explicit[1])) violated.push(text)
       continue
     }
-    // Relationship and representation clauses. The frozen condition each names
-    // is about evidence the truth file also lists as required, so the decidable
-    // floor is: required evidence missing AND nothing declares it unresolved.
-    if (!criticalEvidenceSatisfied && unresolved.length === 0) {
-      violated.push(text)
+
+    // Relationship and representation clauses name their subject in English.
+    // This evaluator does not parse that English, and it must not substitute
+    // aggregate recall for it: unrelated missing evidence would then read as a
+    // violation of a clause it has nothing to do with.
+    //
+    // What IS decidable without interpretation is whether the clause's own text
+    // literally names a required item the artifact failed to surface. When it
+    // does, the evidence the clause is about is demonstrably missing, and a ready
+    // state with no unresolved declaration violates it. When it does not, the
+    // clause stays `undetermined` — recorded, never assumed clean.
+    const namedMissing = missingCritical.filter((item) => mentionsToken(text, item) || text.includes(item))
+    if (namedMissing.length === 0) {
+      undetermined.push(`${text} — this clause names no required item that is missing, so it cannot be decided from the artifact alone`)
       continue
     }
-    if (criticalEvidenceSatisfied) {
-      // The clause's specific relationship cannot be adjudicated from the
-      // artifact alone once the evidence it concerns IS present. Recorded, never
-      // assumed clean.
-      undetermined.push(text)
+    const namedUnresolved = unresolved.filter((hit) => namedMissing.includes(hit.item))
+    if (namedUnresolved.length > 0) {
+      undetermined.push(`${text} — ${JSON.stringify(namedUnresolved.map((hit) => hit.item))} is missing but the artifact declares it unresolved (${namedUnresolved.map((hit) => hit.schema_path).join(', ')})`)
       continue
     }
-    // Evidence missing, but the artifact declared it unresolved: the clause's
-    // own escape hatch applies.
-    undetermined.push(`${text} — required evidence is missing but the artifact declares it unresolved (${unresolved.map((hit) => hit.schema_path).join(', ')})`)
+    violated.push(`${text} [clause names missing required evidence ${JSON.stringify(namedMissing)}, and no declaration channel reports it unresolved]`)
   }
   return { applicable: true, violated, undetermined, unresolved_declarations: unresolved, detail: null }
 }
@@ -138,16 +144,20 @@ export function evaluateTaskCell({ cell, task, target, truth, preparation, artif
     lenientObservedSymbols,
   )
 
-  // Every path cited by the artifact must exist in the pinned target, and every
-  // symbol it prints must be grounded there.
+  // The frozen method mandates exactly one existence check for a task cell:
+  // "Every path cited by the artifact must exist in the pinned target." It says
+  // nothing about symbols, so ungrounded symbols are REPORTED here and never
+  // gate the verdict — adding a gate the contract does not have would fail a
+  // cell the contract passes, which is as much an infidelity as relaxing one.
+  // The negative probes are different: their frozen required_behaviour says
+  // "No fabricated path or symbol", and evaluateProbe gates on both.
   const nonExistentPaths = evidence.generous.paths
     .filter((path) => !pathExistsInTarget(targetDir, path))
     .sort()
-  const fabricatedSymbols = evidence.generous.symbols
+  const ungroundedSymbols = evidence.generous.symbols
     .filter((symbol) => !symbolExistsInTarget(targetDir, symbol))
     .sort()
 
-  const criticalEvidenceSatisfied = pathRecall.ratio >= threshold && symbolRecall.ratio >= threshold
   const missingCritical = [...pathRecall.missing, ...symbolRecall.missing]
 
   const readyClauses = evaluateReadyClauses({
@@ -155,7 +165,6 @@ export function evaluateTaskCell({ cell, task, target, truth, preparation, artif
     answerability,
     evidencePathSet: observedPaths,
     requiredPaths: obligations.required_evidence_paths ?? [],
-    criticalEvidenceSatisfied,
     missingCritical,
     declarations,
   })
@@ -169,9 +178,6 @@ export function evaluateTaskCell({ cell, task, target, truth, preparation, artif
   }
   if (nonExistentPaths.length > 0) {
     reasons.push(`artifact cited ${nonExistentPaths.length} path(s) absent from the pinned target: ${JSON.stringify(nonExistentPaths)}`)
-  }
-  if (fabricatedSymbols.length > 0) {
-    reasons.push(`artifact printed ${fabricatedSymbols.length} symbol(s) absent from the pinned target: ${JSON.stringify(fabricatedSymbols)}`)
   }
   for (const clause of readyClauses.violated) {
     reasons.push(`reported ready state '${answerability}' while a must_not_report_ready_when clause held: ${clause}`)
@@ -205,7 +211,9 @@ export function evaluateTaskCell({ cell, task, target, truth, preparation, artif
           lenientSymbolRecall.ratio >= threshold && symbolRecall.ratio < threshold && pathRecall.ratio >= threshold,
       },
       citation_evidence_failures: nonExistentPaths.length,
-      unsupported_claims: nonExistentPaths.length + fabricatedSymbols.length,
+      unsupported_claims: nonExistentPaths.length,
+      // Reported only; the frozen task method gates on cited paths, not symbols.
+      ungrounded_symbols: ungroundedSymbols.length,
       false_ready: readyClauses.violated.length > 0,
       false_ready_clauses: readyClauses.violated.length,
     },
@@ -228,7 +236,8 @@ export function evaluateTaskCell({ cell, task, target, truth, preparation, artif
       evidence_symbols_strict: evidence.strict.symbols,
       evidence_symbols_generous: evidence.generous.symbols,
       non_existent_cited_paths: nonExistentPaths,
-      fabricated_symbols: fabricatedSymbols,
+      // Reported only — not a task-cell gate. See the note above.
+      ungrounded_symbols: ungroundedSymbols,
       // Reported only. Snippets are never mined for recall; this records what
       // mining them WOULD have found so the distinction is visible.
       required_symbols_seen_only_in_snippets: snippetSymbolSightings(
@@ -298,14 +307,22 @@ export function evaluateProbe({ probe, evidence, declarations = [], answerabilit
   }
 
   // The frozen "declare the behaviour was not found" requirement.
+  //
+  // Two conditions, both on the SAME string: it must name the probe's subject,
+  // and it must assert absence. Naming alone is not declaring — the declaration
+  // channels include affirmative prose, and "supporting evidence for the route
+  // matcher cache" mentions the subject while asserting the opposite of what the
+  // frozen probe requires.
   const subjectTerms = probeSubjectTerms(probe.prompt?.text ?? '')
   const absenceMatches = []
+  const subjectMentionsWithoutAbsence = []
   for (const declaration of declarations) {
-    for (const term of subjectTerms) {
-      if (mentionsToken(declaration.text, term)) {
-        absenceMatches.push({ term, schema_path: declaration.schema_path, text: declaration.text })
-        break
-      }
+    const term = subjectTerms.find((candidate) => mentionsToken(declaration.text, candidate))
+    if (!term) continue
+    if (assertsAbsence(declaration.text)) {
+      absenceMatches.push({ term, schema_path: declaration.schema_path, text: declaration.text })
+    } else {
+      subjectMentionsWithoutAbsence.push({ term, schema_path: declaration.schema_path, text: declaration.text })
     }
   }
   const absence = {
@@ -315,9 +332,15 @@ export function evaluateProbe({ probe, evidence, declarations = [], answerabilit
     declarations_seen: declarations.length,
     observed: absenceMatches.length > 0,
     matches: absenceMatches,
+    // Recorded so the difference between naming the subject and declaring it
+    // absent is visible in the evidence rather than only in this comment.
+    subject_mentioned_without_asserting_absence: subjectMentionsWithoutAbsence,
   }
   if (absence.required && !absence.observed) {
-    reasons.push(`${MISSING_ABSENCE_DECLARATION}: no declaration channel names any subject term of the frozen prompt (${JSON.stringify(subjectTerms)}); ${declarations.length} declaration string(s) were searched and every one describes the pack's own evidence coverage, not the requested behaviour`)
+    const detail = subjectMentionsWithoutAbsence.length > 0
+      ? `${subjectMentionsWithoutAbsence.length} declaration string(s) name a subject term but assert presence rather than absence (e.g. ${JSON.stringify(subjectMentionsWithoutAbsence[0].text.slice(0, 120))})`
+      : `${declarations.length} declaration string(s) were searched and none names a subject term at all`
+    reasons.push(`${MISSING_ABSENCE_DECLARATION}: no declaration channel both names a subject term of the frozen prompt (${JSON.stringify(subjectTerms)}) and asserts that it is absent; ${detail}`)
   }
 
   // Relabelling: naming one of these while ALSO reporting ready is the frozen

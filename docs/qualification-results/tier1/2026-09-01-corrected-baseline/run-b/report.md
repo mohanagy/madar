@@ -20,8 +20,8 @@ Invalid cells are reported separately and are never folded into a quality percen
 
 - Contract version: `1.0.0`
 - Frozen-input manifest: 22 files, digest `e0ee3faf8ed2fd4be203a1c9b49fb1a66f4378a80f597197937cbc7a41050abd`
-- Madar revision: `3a2e8b92acdcc95054462ccc3513f6ce4c96dd63` (version `0.32.1`)
-- Semantic digest: `b11d4c3ecbdc0f4f289099720ac3366f57a14bd7fa0e9e76cc0640a3bdbd2e43`
+- Madar revision: `d53bbd1a6301ba9481f71af54b2856cf978ab91a` (version `0.32.1`)
+- Semantic digest: `0c45822d53a8dd9e94fc1e5d75b1d631d32ec3bda3f86d05b60d897ce1ee6051`
 
 ## Per-cell results
 
@@ -93,9 +93,9 @@ Invalid cells are reported separately and are never folded into a quality percen
 - Reasons:
   - required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing ["src/hono.ts","src/router/reg-exp-router/router.ts","src/router/smart-router/router.ts","src/router/trie-router/router.ts"]
   - required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing ["RegExpRouter","SmartRouter","TrieRouter","UnsupportedPathError"]
-  - reported ready state 'ready_with_caveat' while a must_not_report_ready_when clause held: the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved
+  - reported ready state 'ready_with_caveat' while a must_not_report_ready_when clause held: the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved [clause names missing required evidence ["src/hono.ts"], and no declaration channel reports it unresolved]
 - must_not_report_ready_when: 1 violated, 0 undetermined
-  - **violated**: the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved
+  - **violated**: the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved [clause names missing required evidence ["src/hono.ts"], and no declaration channel reports it unresolved]
 - Evidence: `logs/pack-impact-hono-drop-router-fallback--hono.log`
 
 ### `neg-hono-absent-matcher-persistence` — fail
@@ -107,7 +107,7 @@ Invalid cells are reported separately and are never folded into a quality percen
 - Unsupported claims / citation failures: 0 / 0
 - Evidence set actually presented (generous): `src/router/reg-exp-router/router.ts`, `src/router/trie-router/node.ts`
 - Reasons:
-  - missing_required_absence_declaration: no declaration channel names any subject term of the frozen prompt (["cache","compiled","framework","invalidated","matchers","persist","process","restart","route","survive"]); 48 declaration string(s) were searched and every one describes the pack's own evidence coverage, not the requested behaviour
+  - missing_required_absence_declaration: no declaration channel both names a subject term of the frozen prompt (["cache","compiled","framework","invalidated","matchers","persist","process","restart","route","survive"]) and asserts that it is absent; 48 declaration string(s) were searched and none names a subject term at all
 - Frozen required_behaviour coverage:
   - satisfied — The artifact must not report a ready state. _(evidence.answerability.state against the frozen ceiling)_
   - **not satisfied** — The artifact must state that no on-disk matcher cache exists. _(absence declaration searched across 18 declaration channels for the probe's subject terms)_
@@ -124,7 +124,7 @@ Invalid cells are reported separately and are never folded into a quality percen
 - Unsupported claims / citation failures: 0 / 0
 - Evidence set actually presented (generous): `src/drivers/azure-key-vault.ts`
 - Reasons:
-  - missing_required_absence_declaration: no declaration channel names any subject term of the frozen prompt (["backend","encrypt","managed","writing"]); 32 declaration string(s) were searched and every one describes the pack's own evidence coverage, not the requested behaviour
+  - missing_required_absence_declaration: no declaration channel both names a subject term of the frozen prompt (["backend","encrypt","managed","writing"]) and asserts that it is absent; 32 declaration string(s) were searched and none names a subject term at all
 - Frozen required_behaviour coverage:
   - satisfied — The artifact must not report a ready state. _(evidence.answerability.state against the frozen ceiling)_
   - **not satisfied** — The artifact must declare that the requested behaviour was not found rather than presenting stringify, destr, or a driver's own storage as encryption. _(absence declaration searched across 18 declaration channels for the probe's subject terms)_
@@ -501,14 +501,14 @@ Generated state for this arm lives under `.qualification-cache/work-corrected-ru
 
 | Cell | Artifact digest | Channels observed |
 | --- | --- | --- |
-| `arch-unstorage-driver-seam@unstorage` | `d6a64bad69d28a22` | 170 |
-| `flow-hono-request-dispatch@hono` | `ec07d709c8d3ed21` | 91 |
-| `impact-hono-drop-router-fallback@hono` | `5cc909696bcc3486` | 84 |
-| `neg-hono-absent-matcher-persistence` | `bdc4e7fd32594751` | 118 |
-| `neg-unstorage-absent-encryption` | `436e2b40279e9bb2` | 133 |
-| `plan-unstorage-add-driver@unstorage` | `82978c78f4345c91` | 78 |
-| `review-hono-error-handling@hono-seeded-error-disclosure` | `83aaa2e0b0b193c6` | 122 |
-| `rootcause-hono-middleware-rerun@hono-seeded-compose` | `e5f04d656d149eb2` | 88 |
+| `arch-unstorage-driver-seam@unstorage` | `89cf944ba0127b2f` | 170 |
+| `flow-hono-request-dispatch@hono` | `06455657794c7eeb` | 91 |
+| `impact-hono-drop-router-fallback@hono` | `b2fb7d2bd20ea32d` | 84 |
+| `neg-hono-absent-matcher-persistence` | `25c9d540c342d581` | 118 |
+| `neg-unstorage-absent-encryption` | `a22f11b1756e6bad` | 133 |
+| `plan-unstorage-add-driver@unstorage` | `5d03ef2889b41ccd` | 78 |
+| `review-hono-error-handling@hono-seeded-error-disclosure` | `e6ac935489045a6f` | 122 |
+| `rootcause-hono-middleware-rerun@hono-seeded-compose` | `60a2f6acc766b965` | 88 |
 
 ## Inherited #660 signal observation (read-only)
 

@@ -296,6 +296,93 @@ describe('negative-trust probes', () => {
   })
 })
 
+describe('what counts as a declaration of absence', () => {
+  const probe = {
+    id: 'unit-probe',
+    prompt: { text: 'Where does this framework persist compiled route matchers to disk, and how is that cache invalidated?' },
+    ground_truth: 'nothing persists',
+    required_behaviour: [
+      'The artifact must not report a ready state.',
+      'The artifact must state that no on-disk matcher cache exists.',
+    ],
+  }
+  const call = (declarations: { schema_path: string; channel: string; text: string }[]) => evaluateProbe({
+    probe, evidence: evidenceOf(['src/compose.ts'], []), declarations,
+    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+  })
+
+  it('does not accept an affirmative claim that merely names the subject', () => {
+    const verdict = call([{ schema_path: '.claims[0].text', channel: '.claims[].text', text: 'supporting evidence for the route matcher cache' }])
+    expect(verdict.state).toBe('fail')
+    const absence = verdict.observed.absence_declaration as {
+      observed: boolean
+      subject_mentioned_without_asserting_absence: unknown[]
+    }
+    expect(absence.observed).toBe(false)
+    expect(absence.subject_mentioned_without_asserting_absence).toHaveLength(1)
+  })
+
+  it('accepts a statement that names the subject and asserts it is absent', () => {
+    const verdict = call([{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No on-disk route matcher cache exists here.' }])
+    expect(verdict.state).toBe('pass')
+  })
+
+  it('does not accept absence language about a different subject', () => {
+    const verdict = call([{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No database migration evidence was found.' }])
+    expect(verdict.state).toBe('fail')
+  })
+})
+
+describe('must_not_report_ready_when scope', () => {
+  const clause = 'the relationship between createStorage and the Driver interface is neither present in the graph nor declared as unresolved'
+  const evaluateWith = (obligations: Record<string, unknown>, answerability: string) => evaluateTaskCell({
+    cell: { cell_id: 'unit@fixture' }, task: { id: 'unit' }, target: { id: 'fixture', source: { ref: 'x' } },
+    truth: { tier1_obligations: { min_critical_fact_recall: 1.0, must_not_report_ready_when: [clause], ...obligations } },
+    preparation: { valid: true },
+    artifact: { evidence: { answerability: { state: answerability, missing_obligations: [], verification_targets: [] } } },
+    evidence: evidenceOf([], []), declarations: [], answerability, targetDir: fixtureDir,
+  })
+
+  it('fires when the clause names required evidence that is missing', () => {
+    const verdict = evaluateWith({ required_evidence_paths: [], required_evidence_symbols: ['createStorage', 'Driver'] }, 'ready_with_caveat')
+    expect(verdict.metrics.false_ready).toBe(true)
+  })
+
+  it('does not fire on missing evidence the clause says nothing about', () => {
+    const verdict = evaluateWith({ required_evidence_paths: ['src/compose.ts'], required_evidence_symbols: [] }, 'ready')
+    expect(verdict.metrics.false_ready).toBe(false)
+    expect(verdict.ready_clauses?.undetermined).toHaveLength(1)
+  })
+})
+
+describe('task cells gate on cited paths, not on every symbol', () => {
+  const truth = {
+    tier1_obligations: {
+      required_evidence_paths: ['src/compose.ts'],
+      required_evidence_symbols: ['compose'],
+      min_critical_fact_recall: 1.0,
+      must_not_report_ready_when: [],
+    },
+  }
+  const evaluateWith = (paths: string[], symbols: string[]) => evaluateTaskCell({
+    cell: { cell_id: 'unit@fixture' }, task: { id: 'unit' }, target: { id: 'fixture', source: { ref: 'x' } },
+    truth, preparation: { valid: true },
+    artifact: { evidence: { answerability: { state: 'verify_targets', missing_obligations: [], verification_targets: [] } } },
+    evidence: evidenceOf(paths, symbols), declarations: [], answerability: 'verify_targets', targetDir: fixtureDir,
+  })
+
+  it('reports an ungrounded symbol without failing the cell', () => {
+    const verdict = evaluateWith(['src/compose.ts'], ['compose', 'ZzNotInTheFixture'])
+    expect(verdict.state).toBe('pass')
+    expect(verdict.observed.ungrounded_symbols).toEqual(['ZzNotInTheFixture'])
+  })
+
+  it('still fails a cited path that does not exist in the pinned target', () => {
+    const verdict = evaluateWith(['src/compose.ts', 'src/not-here.ts'], ['compose'])
+    expect(verdict.state).toBe('fail')
+  })
+})
+
 describe('evidence surface', () => {
   it('reads the selected-node channels of every artifact shape', () => {
     for (const artifact of [

@@ -4,9 +4,9 @@
   "holdout_notice": "sealed holdout unsatisfied; results measure regression only",
   "contract_version": "1.0.0",
   "run_id": "corrected-run-b",
-  "generated_at": "2026-09-01T04:24:35.396Z",
+  "generated_at": "2026-09-01T05:04:26.802Z",
   "madar": {
-    "revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+    "revision": "d53bbd1a6301ba9481f71af54b2856cf978ab91a",
     "version": "0.32.1"
   },
   "frozen_input_manifest": {
@@ -35,7 +35,7 @@
       "patch_digest": null,
       "prompt_sha256": "5c3722d182b5c36478ecabd2d1fb24f4f3eb40eba6e12032da89bebf12ef1d9f",
       "truth_version": "1.0.0",
-      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "madar_revision": "d53bbd1a6301ba9481f71af54b2856cf978ab91a",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -91,6 +91,7 @@
         },
         "citation_evidence_failures": 0,
         "unsupported_claims": 0,
+        "ungrounded_symbols": 0,
         "false_ready": false,
         "false_ready_clauses": 0
       },
@@ -200,7 +201,7 @@
           "wrapToPromise()"
         ],
         "non_existent_cited_paths": [],
-        "fabricated_symbols": [],
+        "ungrounded_symbols": [],
         "required_symbols_seen_only_in_snippets": [],
         "missing_verification_targets": [
           "evidence:primary",
@@ -250,7 +251,7 @@
       "patch_digest": null,
       "prompt_sha256": "c276d363f0b10c00b75df925f2e658f3ee7af085872bcbcc64a7a4252c7b3b35",
       "truth_version": "1.0.0",
-      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "madar_revision": "d53bbd1a6301ba9481f71af54b2856cf978ab91a",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -306,6 +307,7 @@
         },
         "citation_evidence_failures": 0,
         "unsupported_claims": 0,
+        "ungrounded_symbols": 0,
         "false_ready": false,
         "false_ready_clauses": 0
       },
@@ -376,7 +378,7 @@
           "routePath"
         ],
         "non_existent_cited_paths": [],
-        "fabricated_symbols": [],
+        "ungrounded_symbols": [],
         "required_symbols_seen_only_in_snippets": [],
         "missing_verification_targets": [
           "evidence:supporting",
@@ -423,7 +425,7 @@
       "patch_digest": null,
       "prompt_sha256": "4d05391549ee28a142a9f24960e43e415cf6c831c29dce720aa74e72c7ab9ac2",
       "truth_version": "1.0.0",
-      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "madar_revision": "d53bbd1a6301ba9481f71af54b2856cf978ab91a",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -455,7 +457,7 @@
       "reasons": [
         "required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing [\"src/hono.ts\",\"src/router/reg-exp-router/router.ts\",\"src/router/smart-router/router.ts\",\"src/router/trie-router/router.ts\"]",
         "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"RegExpRouter\",\"SmartRouter\",\"TrieRouter\",\"UnsupportedPathError\"]",
-        "reported ready state 'ready_with_caveat' while a must_not_report_ready_when clause held: the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved"
+        "reported ready state 'ready_with_caveat' while a must_not_report_ready_when clause held: the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved [clause names missing required evidence [\"src/hono.ts\"], and no declaration channel reports it unresolved]"
       ],
       "undecided_clauses": [],
       "metrics": {
@@ -480,6 +482,7 @@
         },
         "citation_evidence_failures": 0,
         "unsupported_claims": 0,
+        "ungrounded_symbols": 0,
         "false_ready": true,
         "false_ready_clauses": 1
       },
@@ -546,7 +549,7 @@
           "routePath"
         ],
         "non_existent_cited_paths": [],
-        "fabricated_symbols": [],
+        "ungrounded_symbols": [],
         "required_symbols_seen_only_in_snippets": [],
         "missing_verification_targets": [],
         "verification_targets": []
@@ -554,7 +557,7 @@
       "ready_clauses": {
         "applicable": true,
         "violated": [
-          "the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved"
+          "the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved [clause names missing required evidence [\"src/hono.ts\"], and no declaration channel reports it unresolved]"
         ],
         "undetermined": [],
         "unresolved_declarations": [],
@@ -604,7 +607,7 @@
       "patch_digest": null,
       "prompt_sha256": "6a173a57d204d86260380b3f9fedcb4dcc5c90962258e849b508fddaa3e07116",
       "truth_version": "1.0.0",
-      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "madar_revision": "d53bbd1a6301ba9481f71af54b2856cf978ab91a",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -634,7 +637,7 @@
       "evidence_reference": "logs/pack-neg-hono-absent-matcher-persistence.log",
       "state": "fail",
       "reasons": [
-        "missing_required_absence_declaration: no declaration channel names any subject term of the frozen prompt ([\"cache\",\"compiled\",\"framework\",\"invalidated\",\"matchers\",\"persist\",\"process\",\"restart\",\"route\",\"survive\"]); 48 declaration string(s) were searched and every one describes the pack's own evidence coverage, not the requested behaviour"
+        "missing_required_absence_declaration: no declaration channel both names a subject term of the frozen prompt ([\"cache\",\"compiled\",\"framework\",\"invalidated\",\"matchers\",\"persist\",\"process\",\"restart\",\"route\",\"survive\"]) and asserts that it is absent; 48 declaration string(s) were searched and none names a subject term at all"
       ],
       "requirement_coverage": [
         {
@@ -725,7 +728,8 @@
           ],
           "declarations_seen": 48,
           "observed": false,
-          "matches": []
+          "matches": [],
+          "subject_mentioned_without_asserting_absence": []
         }
       },
       "artifact_signals": {
@@ -755,7 +759,7 @@
       "patch_digest": null,
       "prompt_sha256": "cab0b45defcdcaf0b88c5613384f84b237c1d365e0a1f3b3bbd16543fe6db37d",
       "truth_version": "1.0.0",
-      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "madar_revision": "d53bbd1a6301ba9481f71af54b2856cf978ab91a",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -785,7 +789,7 @@
       "evidence_reference": "logs/pack-neg-unstorage-absent-encryption.log",
       "state": "fail",
       "reasons": [
-        "missing_required_absence_declaration: no declaration channel names any subject term of the frozen prompt ([\"backend\",\"encrypt\",\"managed\",\"writing\"]); 32 declaration string(s) were searched and every one describes the pack's own evidence coverage, not the requested behaviour"
+        "missing_required_absence_declaration: no declaration channel both names a subject term of the frozen prompt ([\"backend\",\"encrypt\",\"managed\",\"writing\"]) and asserts that it is absent; 32 declaration string(s) were searched and none names a subject term at all"
       ],
       "requirement_coverage": [
         {
@@ -870,7 +874,8 @@
           ],
           "declarations_seen": 32,
           "observed": false,
-          "matches": []
+          "matches": [],
+          "subject_mentioned_without_asserting_absence": []
         }
       },
       "artifact_signals": {
@@ -900,7 +905,7 @@
       "patch_digest": null,
       "prompt_sha256": "b8a0a2b4a0593346d1333d96ada6c339a0763611df1ddab51079369e0c62c7ff",
       "truth_version": "1.0.0",
-      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "madar_revision": "d53bbd1a6301ba9481f71af54b2856cf978ab91a",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -956,6 +961,7 @@
         },
         "citation_evidence_failures": 0,
         "unsupported_claims": 0,
+        "ungrounded_symbols": 0,
         "false_ready": false,
         "false_ready_clauses": 0
       },
@@ -1033,7 +1039,7 @@
           "stringify()"
         ],
         "non_existent_cited_paths": [],
-        "fabricated_symbols": [],
+        "ungrounded_symbols": [],
         "required_symbols_seen_only_in_snippets": [],
         "missing_verification_targets": [
           "discovery:credential_store",
@@ -1093,7 +1099,7 @@
       "patch_digest": "edb79059b72b4f27f5dc8341ba2d9a3617901c402da9ef1f9daf5503e6528d6f",
       "prompt_sha256": "722278ed3fa2386f1e407b4fd53a7d4b89272f2adba4297f878ad3fd645d8e47",
       "truth_version": "1.0.0",
-      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "madar_revision": "d53bbd1a6301ba9481f71af54b2856cf978ab91a",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -1149,6 +1155,7 @@
         },
         "citation_evidence_failures": 0,
         "unsupported_claims": 0,
+        "ungrounded_symbols": 0,
         "false_ready": false,
         "false_ready_clauses": 0
       },
@@ -1247,7 +1254,7 @@
           "types.ts"
         ],
         "non_existent_cited_paths": [],
-        "fabricated_symbols": [],
+        "ungrounded_symbols": [],
         "required_symbols_seen_only_in_snippets": [],
         "missing_verification_targets": [
           "indexing:spi_diagnostic",
@@ -1279,7 +1286,7 @@
       "patch_digest": "9355c5bbb05cd5ae4d998ace18d6381f0cba4fd080203d4d02579da3dcf6dea4",
       "prompt_sha256": "637cd655712c2e7d96a3566ed0b311d9d7dcfe0d9cfb8b699f5f1c52a721eaf0",
       "truth_version": "1.0.0",
-      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "madar_revision": "d53bbd1a6301ba9481f71af54b2856cf978ab91a",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -1335,6 +1342,7 @@
         },
         "citation_evidence_failures": 0,
         "unsupported_claims": 0,
+        "ungrounded_symbols": 0,
         "false_ready": false,
         "false_ready_clauses": 0
       },
@@ -1377,7 +1385,7 @@
           "index.ts"
         ],
         "non_existent_cited_paths": [],
-        "fabricated_symbols": [],
+        "ungrounded_symbols": [],
         "required_symbols_seen_only_in_snippets": [],
         "missing_verification_targets": [
           "evidence:supporting",
@@ -3249,49 +3257,49 @@
     "cells": [
       {
         "cell_id": "arch-unstorage-driver-seam@unstorage",
-        "artifact_digest": "d6a64bad69d28a22561450741c62a36a7dbe97b74e4b78d3103fa1f00958e65e",
+        "artifact_digest": "89cf944ba0127b2f002951c395b82107081228d3669ed3aaefe3cc5240b48074",
         "artifact_log": "logs/pack-arch-unstorage-driver-seam--unstorage.log",
         "evidence_channels_observed": 170
       },
       {
         "cell_id": "flow-hono-request-dispatch@hono",
-        "artifact_digest": "ec07d709c8d3ed214fea8222dff3a8b31973afc4388a81bea8542e558f11daed",
+        "artifact_digest": "06455657794c7eeba3566f9e6679b5b892435ca1afc5045709aa4fe1628c6622",
         "artifact_log": "logs/pack-flow-hono-request-dispatch--hono.log",
         "evidence_channels_observed": 91
       },
       {
         "cell_id": "impact-hono-drop-router-fallback@hono",
-        "artifact_digest": "5cc909696bcc3486d98ed447f4e4980bac2f7d5acb1eac6bf596094a7c007dbe",
+        "artifact_digest": "b2fb7d2bd20ea32d61bd4d4770196a2a0b1ed1b8d73ac7ae14bcd8e53bca06fe",
         "artifact_log": "logs/pack-impact-hono-drop-router-fallback--hono.log",
         "evidence_channels_observed": 84
       },
       {
         "cell_id": "rootcause-hono-middleware-rerun@hono-seeded-compose",
-        "artifact_digest": "e5f04d656d149eb26fb7d81e1ca838ee05680b9d43978197aaa3bec05112fec2",
+        "artifact_digest": "60a2f6acc766b965e0c378258f2ac8ad6b4f4e0598552fb020cb292b99d0417f",
         "artifact_log": "logs/pack-rootcause-hono-middleware-rerun--hono-seeded-compose.log",
         "evidence_channels_observed": 88
       },
       {
         "cell_id": "plan-unstorage-add-driver@unstorage",
-        "artifact_digest": "82978c78f4345c91a583621664c8b422c93d072a11d1ef631201cd8cc2675771",
+        "artifact_digest": "5d03ef2889b41ccd5986b50741ca9369c1c676fe1a358a9fedbced0c868d09ab",
         "artifact_log": "logs/pack-plan-unstorage-add-driver--unstorage.log",
         "evidence_channels_observed": 78
       },
       {
         "cell_id": "review-hono-error-handling@hono-seeded-error-disclosure",
-        "artifact_digest": "83aaa2e0b0b193c65b8bd7a0c275c14662140736ca274f447454b93caf736510",
+        "artifact_digest": "e6ac935489045a6fe31bfcdef37381b4103c663675b89d71e977f64e3524340a",
         "artifact_log": "logs/pack-review-hono-error-handling--hono-seeded-error-disclosure.log",
         "evidence_channels_observed": 122
       },
       {
         "cell_id": "neg-unstorage-absent-encryption",
-        "artifact_digest": "436e2b40279e9bb26d93d4b6cb235bf22cc65660388b7a646aedb02613a95bb7",
+        "artifact_digest": "a22f11b1756e6bad5aee79af996c4e1f7f814341dca3f69643bfdcd497d38937",
         "artifact_log": "logs/pack-neg-unstorage-absent-encryption.log",
         "evidence_channels_observed": 133
       },
       {
         "cell_id": "neg-hono-absent-matcher-persistence",
-        "artifact_digest": "bdc4e7fd32594751eb9785fb132e096d9e7ce86e612773df63759bc5600fa724",
+        "artifact_digest": "25c9d540c342d58135715ebae1418c33f3dfa6ff0746dd7ed97c07056703d880",
         "artifact_log": "logs/pack-neg-hono-absent-matcher-persistence.log",
         "evidence_channels_observed": 118
       }
@@ -3306,5 +3314,5 @@
       "node dist/src/cli/bin.js pack \"<frozen prompt>\" --format json"
     ]
   },
-  "semantic_digest": "b11d4c3ecbdc0f4f289099720ac3366f57a14bd7fa0e9e76cc0640a3bdbd2e43"
+  "semantic_digest": "0c45822d53a8dd9e94fc1e5d75b1d631d32ec3bda3f86d05b60d897ce1ee6051"
 }

@@ -309,6 +309,29 @@ export function extractDeclarations(artifact) {
   return declarations
 }
 
+/**
+ * Markers that make a sentence a statement of ABSENCE rather than of presence.
+ *
+ * Mentioning the subject is not declaring it missing. `claims[].text` and
+ * `why_explanation[]` are declaration-bearing channels but are affirmative by
+ * nature: "supporting evidence for the route matcher cache" names the subject
+ * while asserting the opposite of what the frozen probe requires. A declaration
+ * must therefore carry negation, not merely the topic.
+ */
+const ABSENCE_MARKERS = [
+  /\bno\b/i, /\bnot\b/i, /\bnone\b/i, /\bnever\b/i, /\bnothing\b/i,
+  /\babsent\b/i, /\babsence\b/i, /\bmissing\b/i, /\bunresolved\b/i,
+  /\bunsupported\b/i, /\bunobserved\b/i, /\bunknown\b/i,
+  /\blacks?\b/i, /\blacking\b/i, /\bwithout\b/i, /\bcannot\b/i,
+  /\bdoes\s+not\b/i, /\bdo\s+not\b/i, /\bdoesn't\b/i, /\bdon't\b/i,
+  /\bis\s+n\/a\b/i, /\bnot\s+found\b/i, /\binsufficient\b/i,
+]
+
+/** True when `text` asserts that something is absent, missing or unestablished. */
+export function assertsAbsence(text) {
+  return ABSENCE_MARKERS.some((marker) => marker.test(String(text)))
+}
+
 /** Whole-word, case-insensitive containment. Never a substring match. */
 export function mentionsToken(text, token) {
   if (!token) return false

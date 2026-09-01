@@ -18,7 +18,7 @@ byte-identical and independently verifiable.
 ```bash
 npm run build                       # the evaluator uses the real built CLI
 npm run qualify:tier1 -- --out docs/qualification-results/tier1/<run-id>/run-a --run-id run-a
-npm run qualify:tier1-controls      # E1-E12 and S1-S4 evaluator falsifiability controls
+npm run qualify:tier1-controls      # E1-E15 and S1-S4 evaluator falsifiability controls
 npm run qualify:tier1-compare -- <run-a-dir> <run-b-dir>
 ```
 
@@ -60,6 +60,9 @@ naming the smallest differing field.
 | S2 | A symbol present only in frozen truth stays missing. |
 | S3 | `Hono.fetch` satisfies `fetch` (the projection `rubrics.json` authorises); `SmartRouter.match` does **not** satisfy `SmartRouter`. |
 | S4 | A name appearing only in prose, in the echoed prompt, in a community label, or in retained snippet text does not count. |
+| E13 | Naming a probe's subject is not declaring it absent: an affirmative claim that mentions the subject fails, a statement that names it and asserts absence passes, and absence language about a different subject fails. |
+| E14 | A `must_not_report_ready_when` clause fires only on evidence its own text names. Unrelated missing evidence leaves it `undetermined`, never violated. |
+| E15 | Task cells gate on cited paths, as `rubrics.json` mandates, not on every printed symbol; the negative probes gate on both, as their frozen `required_behaviour` mandates. |
 
 ## Result directories
 
