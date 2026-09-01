@@ -2,6 +2,8 @@
   "contract_version": "1.0.0",
   "frozen_at": "2026-08-12",
   "purpose": "The small deterministic subset that a pull request can run. It measures whether the evidence needed to answer each frozen task was present in the context artifact, and whether readiness was correctly refused on the negative-trust probes. It never scores answer quality and never runs an agent.",
+  "adjudication_ref": "tier1-adjudication.json",
+  "adjudication_note": "The clauses in this file and in the truth files remain the authority and are unchanged. tier1-adjudication.json binds each prose clause, by the SHA-256 of its exact bytes, to one deterministic typed predicate, so the evaluator never interprets English. A clause whose wording changes stops matching its binding and the run refuses rather than applying a stale interpretation.",
   "properties": {
     "deterministic": true,
     "requires_network": true,

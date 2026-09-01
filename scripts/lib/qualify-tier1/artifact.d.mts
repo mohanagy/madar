@@ -90,26 +90,6 @@ export interface EvidenceSets {
 
 export declare function extractEvidence(artifact: Record<string, unknown>): EvidenceSets
 
-export interface DeclarationSighting {
-  readonly schema_path: string
-  readonly channel: string
-  readonly text: string
-}
-
-/** Channels in which an artifact can say something is absent or unresolved. */
-export declare const DECLARATION_CHANNELS: readonly string[]
-
-export declare function extractDeclarations(artifact: Record<string, unknown>): DeclarationSighting[]
-
-/** True when `text` asserts that something is absent, missing or unestablished. */
-export declare function assertsAbsence(text: string): boolean
-
-/** Whole-word, case-insensitive containment. Never a substring match. */
-export declare function mentionsToken(text: string, token: string): boolean
-
-/** The distinguishing subject terms of a frozen probe prompt. */
-export declare function probeSubjectTerms(promptText: string): string[]
-
 /** Reported only: which missing symbols appear in retained snippet text. */
 export declare function snippetSymbolSightings(
   evidence: EvidenceSets,

@@ -73,6 +73,9 @@ export function buildFrozenManifest(root) {
     if (target.patch) referenced.add(`${patchBase}${target.patch}`.replace(/\/+/g, '/'))
   }
 
+  // tier1.json -> the machine-checkable adjudication companion
+  if (tier1.adjudication_ref) referenced.add(`${CONTRACT_DIR}/${tier1.adjudication_ref}`)
+
   // tasks.json -> truth files (resolved against the contract dir)
   for (const task of tasks.tasks) {
     if (task.truth_ref) referenced.add(`${CONTRACT_DIR}/${task.truth_ref}`)

@@ -1,17 +1,14 @@
 // Applies the frozen scoring procedures. This module never reads Madar output
-// for truth and never relaxes a threshold; it compares observation to the
-// frozen truth files and nothing else.
+// for truth, never relaxes a threshold, and never interprets English prose.
+//
+// Every frozen requirement whose wording is a sentence is decided by the typed
+// predicate bound to that exact sentence in docs/qualification/tier1-adjudication.json.
+// There is no prose fallback: no negation-marker search, no subject-mention
+// search, and no acceptance of free-text channels such as claims[].text as a
+// declaration of anything.
 
-import {
-  READY_STATES,
-  answerabilityRank,
-  assertsAbsence,
-  mentionsToken,
-  normaliseSymbol,
-  probeSubjectTerms,
-  snippetSymbolSightings,
-  DECLARATION_CHANNELS,
-} from './artifact.mjs'
+import { READY_STATES, answerabilityRank, normaliseSymbol, snippetSymbolSightings } from './artifact.mjs'
+import { findTypedDeclaration, requirementPresent } from './adjudication.mjs'
 import { pathExistsInTarget, symbolExistsInTarget } from './targets.mjs'
 
 /**
@@ -35,6 +32,9 @@ export const PROBE_MAX_ANSWERABILITY = 'verify_targets'
 /** The exact reason recorded when a frozen absence declaration is not observed. */
 export const MISSING_ABSENCE_DECLARATION = 'missing_required_absence_declaration'
 
+/** The exact reason recorded when the adjudication contract does not match its sources. */
+export const ADJUDICATION_MISMATCH = 'adjudication_contract_mismatch'
+
 function recall(required, observedSet) {
   const matched = required.filter((item) => observedSet.has(item))
   return {
@@ -46,88 +46,143 @@ function recall(required, observedSet) {
 }
 
 /**
- * Does any declaration channel name this missing item?
+ * Apply one typed predicate.
  *
- * "Declared as unresolved" is what the frozen must-not-ready clauses accept in
- * place of the evidence itself, so it has to be decided from what the artifact
- * actually says, by whole-word match, never by substring.
+ * Returns { satisfied, detail, observed }. `satisfied` false means the frozen
+ * requirement this predicate stands for was NOT met.
  */
-function declaredUnresolved(declarations, items) {
-  const hits = []
-  for (const item of items) {
-    for (const declaration of declarations) {
-      if (mentionsToken(declaration.text, item) || declaration.text === item) {
-        hits.push({ item, schema_path: declaration.schema_path, text: declaration.text })
-        break
+function applyPredicate({ entry, artifact, evidence, answerability, targetDir, obligations, requirementsById }) {
+  const { kind, params } = entry.predicate
+  const observedPaths = new Set(evidence.generous.paths)
+
+  switch (kind) {
+    case 'answerability_not_in': {
+      const satisfied = !params.states.includes(answerability)
+      return { satisfied, detail: satisfied ? null : `published answerability '${answerability}' is one of ${JSON.stringify(params.states)}`, observed: { answerability } }
+    }
+
+    case 'prohibited_reference_absent': {
+      const badPaths = evidence.generous.paths.filter((path) => !pathExistsInTarget(targetDir, path)).sort()
+      const badSymbols = params.scope === 'paths_and_symbols'
+        ? evidence.generous.symbols.filter((symbol) => !symbolExistsInTarget(targetDir, symbol)).sort()
+        : []
+      const satisfied = badPaths.length === 0 && badSymbols.length === 0
+      return {
+        satisfied,
+        detail: satisfied ? null : `references absent from the pinned target: paths ${JSON.stringify(badPaths)}, symbols ${JSON.stringify(badSymbols)}`,
+        observed: { non_existent_cited_paths: badPaths, fabricated_symbols: badSymbols },
       }
     }
-  }
-  return hits
-}
 
-/**
- * Evaluate the `must_not_report_ready_when` clauses.
- *
- * The clauses only bite when the artifact actually reports a ready state, so a
- * non-ready artifact satisfies them all vacuously.
- *
- * When the artifact IS ready, every clause is decided. Clauses that name a
- * relationship or a representation are not left `undetermined` any more: the
- * first baseline left them undecided, and the consequence was a cell reporting
- * `ready_with_caveat` on 0/4 required evidence with a false-ready count of zero.
- * The decision rule is the contract's own floor — if the frozen critical
- * evidence the clause is about is missing, and nothing in the artifact declares
- * it unresolved, then a ready state violates the clause. The clause text is
- * carried verbatim so nothing is glossed.
- */
-function evaluateReadyClauses({ clauses, answerability, evidencePathSet, requiredPaths, missingCritical, declarations }) {
-  if (!READY_STATES.has(answerability)) {
-    return { applicable: false, violated: [], undetermined: [], unresolved_declarations: [], detail: `answerability '${answerability}' is not a ready state; clauses are vacuously satisfied` }
-  }
-  const violated = []
-  const undetermined = []
-  const unresolved = declaredUnresolved(declarations, missingCritical)
-  for (const clause of clauses ?? []) {
-    const text = String(clause)
-    if (/any required_evidence_path is absent from the evidence set/i.test(text)) {
-      if (requiredPaths.some((path) => !evidencePathSet.has(path))) violated.push(text)
-      continue
-    }
-    const explicit = text.match(/([\w./-]+\.ts)\s+is absent from the evidence set/i)
-    if (explicit) {
-      if (!evidencePathSet.has(explicit[1])) violated.push(text)
-      continue
+    case 'required_evidence_paths_present': {
+      const missing = (obligations?.required_evidence_paths ?? []).filter((path) => !observedPaths.has(path)).sort()
+      // This clause is a must_not_report_ready_when condition: it only bites
+      // when the artifact is in a ready state.
+      if (!READY_STATES.has(answerability)) {
+        return { satisfied: true, detail: `answerability '${answerability}' is not a ready state; the clause is vacuously satisfied`, observed: { missing_required_paths: missing } }
+      }
+      return { satisfied: missing.length === 0, detail: missing.length === 0 ? null : `reported ready state '${answerability}' while required_evidence_paths ${JSON.stringify(missing)} were absent from the evidence set`, observed: { missing_required_paths: missing } }
     }
 
-    // Relationship and representation clauses name their subject in English.
-    // This evaluator does not parse that English, and it must not substitute
-    // aggregate recall for it: unrelated missing evidence would then read as a
-    // violation of a clause it has nothing to do with.
-    //
-    // What IS decidable without interpretation is whether the clause's own text
-    // literally names a required item the artifact failed to surface. When it
-    // does, the evidence the clause is about is demonstrably missing, and a ready
-    // state with no unresolved declaration violates it. When it does not, the
-    // clause stays `undetermined` — recorded, never assumed clean.
-    const namedMissing = missingCritical.filter((item) => mentionsToken(text, item) || text.includes(item))
-    if (namedMissing.length === 0) {
-      undetermined.push(`${text} — this clause names no required item that is missing, so it cannot be decided from the artifact alone`)
-      continue
+    case 'explicit_path_present': {
+      const present = observedPaths.has(params.path)
+      if (!READY_STATES.has(answerability)) {
+        return { satisfied: true, detail: `answerability '${answerability}' is not a ready state; the clause is vacuously satisfied`, observed: { path: params.path, present } }
+      }
+      return { satisfied: present, detail: present ? null : `reported ready state '${answerability}' while ${params.path} was absent from the evidence set`, observed: { path: params.path, present } }
     }
-    const namedUnresolved = unresolved.filter((hit) => namedMissing.includes(hit.item))
-    if (namedUnresolved.length > 0) {
-      undetermined.push(`${text} — ${JSON.stringify(namedUnresolved.map((hit) => hit.item))} is missing but the artifact declares it unresolved (${namedUnresolved.map((hit) => hit.schema_path).join(', ')})`)
-      continue
+
+    case 'required_typed_absence': {
+      const declaration = findTypedDeclaration(artifact, params.accepted_channels, params.subject_id)
+      const substitution = params.prohibited_substitutions
+      let substitutionHit = null
+      if (substitution && substitution.ready_states.includes(answerability)) {
+        const symbols = new Set(evidence.generous.symbols.map(normaliseSymbol))
+        const named = substitution.symbols.filter((symbol) => symbols.has(normaliseSymbol(symbol)))
+        const namedPaths = substitution.paths.filter((path) => observedPaths.has(path))
+        if (named.length > 0 || namedPaths.length > 0) substitutionHit = { symbols: named, paths: namedPaths }
+      }
+      const satisfied = declaration !== null && substitutionHit === null
+      const reasons = []
+      if (declaration === null) {
+        reasons.push(`${MISSING_ABSENCE_DECLARATION}: no typed channel declares '${params.subject_id}' absent. Accepted channels: ${JSON.stringify(params.accepted_channels.map((c) => c.channel))}`)
+      }
+      if (substitutionHit) {
+        reasons.push(`reported ready state '${answerability}' while surfacing prohibited substitution(s) ${JSON.stringify(substitutionHit)} for '${params.subject_id}'`)
+      }
+      return {
+        satisfied,
+        detail: reasons.join('; ') || null,
+        observed: { subject_id: params.subject_id, typed_declaration: declaration, prohibited_substitution: substitutionHit, accepted_channels: params.accepted_channels.map((c) => c.channel) },
+      }
     }
-    violated.push(`${text} [clause names missing required evidence ${JSON.stringify(namedMissing)}, and no declaration channel reports it unresolved]`)
+
+    case 'prohibited_substitution_absent': {
+      if (!params.ready_states.includes(answerability)) {
+        return { satisfied: true, detail: `answerability '${answerability}' is not a ready state; the substitution clause is vacuously satisfied`, observed: { subject_id: params.subject_id } }
+      }
+      const symbols = new Set(evidence.generous.symbols.map(normaliseSymbol))
+      const named = params.prohibited_symbols.filter((symbol) => symbols.has(normaliseSymbol(symbol)))
+      const namedPaths = params.prohibited_paths.filter((path) => observedPaths.has(path))
+      const satisfied = named.length === 0 && namedPaths.length === 0
+      return {
+        satisfied,
+        detail: satisfied ? null : `reported ready state '${answerability}' while presenting ${JSON.stringify({ symbols: named, paths: namedPaths })} as '${params.subject_id}'`,
+        observed: { subject_id: params.subject_id, prohibited_symbols_present: named, prohibited_paths_present: namedPaths },
+      }
+    }
+
+    case 'must_not_ready_when_requirements_missing': {
+      const status = params.requirement_ids.map((id) => {
+        const requirement = requirementsById.get(id)
+        return { id, ...requirementPresent(requirement, evidence, normaliseSymbol) }
+      })
+      const missing = status.filter((entryStatus) => !entryStatus.present)
+      const present = status.filter((entryStatus) => entryStatus.present)
+
+      const triggered = params.match === 'partial_only'
+        ? present.length > 0 && missing.length > 0
+        : missing.length > 0
+
+      if (!params.ready_states.includes(answerability)) {
+        return { satisfied: true, detail: `answerability '${answerability}' is not a ready state; the clause is vacuously satisfied`, observed: { requirement_status: status, triggered } }
+      }
+      if (!triggered) {
+        return { satisfied: true, detail: null, observed: { requirement_status: status, triggered } }
+      }
+      // The clause's own escape hatch, when it has one: a typed unresolved
+      // record naming the exact missing requirement.
+      let unresolvedHit = null
+      if (params.unresolved) {
+        for (const entryStatus of missing) {
+          const hit = findTypedDeclaration(artifact, params.unresolved.channels, null)
+          if (hit) { unresolvedHit = { requirement_id: entryStatus.id, ...hit }; break }
+        }
+      }
+      if (unresolvedHit) {
+        return { satisfied: true, detail: `missing requirement(s) are carried by a typed unresolved record (${unresolvedHit.channel})`, observed: { requirement_status: status, triggered, unresolved: unresolvedHit } }
+      }
+      return {
+        satisfied: false,
+        detail: `reported ready state '${answerability}' while frozen requirement(s) ${JSON.stringify(missing.map((m) => m.id))} were missing from the evidence set and no typed unresolved record covers them`,
+        observed: { requirement_status: status, triggered, unresolved: null },
+      }
+    }
+
+    case 'typed_unresolved_requirement_present': {
+      const hit = findTypedDeclaration(artifact, params.channels, null)
+      return { satisfied: hit !== null, detail: hit ? null : 'no typed unresolved record present', observed: { unresolved: hit } }
+    }
+
+    default:
+      return { satisfied: false, detail: `${ADJUDICATION_MISMATCH}: unhandled predicate kind ${kind}`, observed: {} }
   }
-  return { applicable: true, violated, undetermined, unresolved_declarations: unresolved, detail: null }
 }
 
 /**
  * Evaluate one Tier 1 task cell with method `evidence_obligation_recall`.
  */
-export function evaluateTaskCell({ cell, task, target, truth, preparation, artifact, evidence, declarations = [], answerability, targetDir }) {
+export function evaluateTaskCell({ cell, task, target, truth, truthFile, preparation, artifact, evidence, answerability, targetDir, adjudication }) {
   const obligations = truth.tier1_obligations
   const threshold = obligations.min_critical_fact_recall
   const observedPaths = new Set(evidence.generous.paths)
@@ -146,11 +201,9 @@ export function evaluateTaskCell({ cell, task, target, truth, preparation, artif
 
   // The frozen method mandates exactly one existence check for a task cell:
   // "Every path cited by the artifact must exist in the pinned target." It says
-  // nothing about symbols, so ungrounded symbols are REPORTED here and never
-  // gate the verdict — adding a gate the contract does not have would fail a
-  // cell the contract passes, which is as much an infidelity as relaxing one.
-  // The negative probes are different: their frozen required_behaviour says
-  // "No fabricated path or symbol", and evaluateProbe gates on both.
+  // nothing about symbols, so ungrounded symbols are REPORTED and never gate the
+  // verdict. The negative probes gate on both, because their frozen
+  // required_behaviour says "No fabricated path or symbol".
   const nonExistentPaths = evidence.generous.paths
     .filter((path) => !pathExistsInTarget(targetDir, path))
     .sort()
@@ -158,16 +211,22 @@ export function evaluateTaskCell({ cell, task, target, truth, preparation, artif
     .filter((symbol) => !symbolExistsInTarget(targetDir, symbol))
     .sort()
 
-  const missingCritical = [...pathRecall.missing, ...symbolRecall.missing]
+  // ---- adjudicated must_not_report_ready_when clauses ---------------------
+  const clauses = obligations.must_not_report_ready_when ?? []
+  const adjudicated = []
+  const contractProblems = []
+  for (let index = 0; index < clauses.length; index += 1) {
+    const key = `${truthFile}#/tier1_obligations/must_not_report_ready_when/${index}`
+    const entry = adjudication.byClause.get(key)
+    if (!entry) {
+      contractProblems.push(`${ADJUDICATION_MISMATCH}: no adjudication entry for ${key}`)
+      continue
+    }
+    const outcome = applyPredicate({ entry, artifact, evidence, answerability, targetDir, obligations, requirementsById: adjudication.requirementsById })
+    adjudicated.push({ adjudication_id: entry.id, clause: clauses[index], clause_sha256: entry.source.clause_sha256, predicate: entry.predicate.kind, ...outcome })
+  }
 
-  const readyClauses = evaluateReadyClauses({
-    clauses: obligations.must_not_report_ready_when,
-    answerability,
-    evidencePathSet: observedPaths,
-    requiredPaths: obligations.required_evidence_paths ?? [],
-    missingCritical,
-    declarations,
-  })
+  const violated = adjudicated.filter((entry) => !entry.satisfied)
 
   const reasons = []
   if (pathRecall.ratio < threshold) {
@@ -179,30 +238,24 @@ export function evaluateTaskCell({ cell, task, target, truth, preparation, artif
   if (nonExistentPaths.length > 0) {
     reasons.push(`artifact cited ${nonExistentPaths.length} path(s) absent from the pinned target: ${JSON.stringify(nonExistentPaths)}`)
   }
-  for (const clause of readyClauses.violated) {
-    reasons.push(`reported ready state '${answerability}' while a must_not_report_ready_when clause held: ${clause}`)
+  for (const entry of violated) {
+    reasons.push(`[${entry.adjudication_id} ${entry.predicate}] ${entry.detail}`)
   }
-  // An undecidable clause must never manufacture a failure. If the cell would
-  // otherwise pass and the only open question is a clause this evaluator admits
-  // it cannot decide, the honest state is `invalid` — the run could not be
-  // measured faithfully — not `fail`.
-  const undecided = readyClauses.undetermined.map(
-    (clause) => `reported ready state '${answerability}' and this clause could not be decided deterministically: ${clause}`,
-  )
-  const state = reasons.length > 0 ? 'fail' : (undecided.length > 0 ? 'invalid' : 'pass')
+
+  // A contract that does not match its sources is a measurement failure, never
+  // a product result.
+  const state = contractProblems.length > 0 ? 'invalid' : (reasons.length > 0 ? 'fail' : 'pass')
 
   return {
     state,
-    invalid_reason: state === 'invalid' ? 'judge_failure' : undefined,
-    reasons: state === 'invalid' ? undecided : reasons,
-    undecided_clauses: undecided,
+    invalid_reason: state === 'invalid' ? ADJUDICATION_MISMATCH : undefined,
+    reasons: state === 'invalid' ? contractProblems : reasons,
     metrics: {
       min_critical_fact_recall: threshold,
       critical_fact_recall: {
         paths: { ratio: pathRecall.ratio, matched: pathRecall.matched.length, required: pathRecall.required.length },
         symbols: { ratio: symbolRecall.ratio, matched: symbolRecall.matched.length, required: symbolRecall.required.length },
       },
-      // Reported sensitivity only — the verdict above uses the frozen rule.
       critical_fact_recall_lenient_symbols: {
         ratio: lenientSymbolRecall.ratio,
         matched: lenientSymbolRecall.matched.length,
@@ -212,10 +265,9 @@ export function evaluateTaskCell({ cell, task, target, truth, preparation, artif
       },
       citation_evidence_failures: nonExistentPaths.length,
       unsupported_claims: nonExistentPaths.length,
-      // Reported only; the frozen task method gates on cited paths, not symbols.
       ungrounded_symbols: ungroundedSymbols.length,
-      false_ready: readyClauses.violated.length > 0,
-      false_ready_clauses: readyClauses.violated.length,
+      false_ready: violated.length > 0,
+      false_ready_clauses: violated.length,
     },
     expected: {
       critical_files: pathRecall.required,
@@ -236,160 +288,84 @@ export function evaluateTaskCell({ cell, task, target, truth, preparation, artif
       evidence_symbols_strict: evidence.strict.symbols,
       evidence_symbols_generous: evidence.generous.symbols,
       non_existent_cited_paths: nonExistentPaths,
-      // Reported only — not a task-cell gate. See the note above.
       ungrounded_symbols: ungroundedSymbols,
       // Reported only. Snippets are never mined for recall; this records what
-      // mining them WOULD have found so the distinction is visible.
-      required_symbols_seen_only_in_snippets: snippetSymbolSightings(
-        evidence,
-        symbolRecall.missing,
-      ),
+      // mining them WOULD have found so the distinction stays visible.
+      required_symbols_seen_only_in_snippets: snippetSymbolSightings(evidence, symbolRecall.missing),
       missing_verification_targets: (artifact.evidence?.answerability?.missing_obligations ?? []).slice().sort(),
       verification_targets: (artifact.evidence?.answerability?.verification_targets ?? [])
         .flatMap((entry) => entry.focus_files ?? []).sort(),
     },
-    ready_clauses: readyClauses,
+    adjudication: {
+      contract_digest: adjudication.digest,
+      clauses: adjudicated,
+      contract_problems: contractProblems,
+    },
   }
-}
-
-/**
- * Which frozen required_behaviour clauses this evaluator actually measures.
- *
- * Every clause is classified, and a clause that is NOT measured makes the probe
- * `invalid`, never `pass`. The first baseline recorded the absence-declaration
- * requirement as unobservable at Tier 1 and still returned `pass`; a pass that
- * covers an unmeasured requirement is not a measurement.
- */
-function classifyProbeRequirements({ probe, readyObserved, absence, fabricated }) {
-  return (probe.required_behaviour ?? []).map((requirement) => {
-    const text = String(requirement)
-    if (/must not report a ready state|counts as a false-ready failure|as a persistent cache/i.test(text)) {
-      return { requirement: text, measured: true, satisfied: !readyObserved, how: 'evidence.answerability.state against the frozen ceiling' }
-    }
-    if (/no fabricated path or symbol/i.test(text)) {
-      return { requirement: text, measured: true, satisfied: fabricated === 0, how: 'every cited path and printed symbol checked against the pinned target tree' }
-    }
-    if (/must declare|must state/i.test(text)) {
-      return { requirement: text, measured: true, satisfied: absence.observed, how: `absence declaration searched across ${absence.channels_searched.length} declaration channels for the probe's subject terms` }
-    }
-    return { requirement: text, measured: false, satisfied: null, how: 'no deterministic observation defined for this clause' }
-  })
 }
 
 /**
  * Evaluate one frozen negative-trust probe.
  *
- * Three things are gated: the readiness state, the answerability ceiling, and
- * the absence of fabricated paths and symbols — plus the frozen requirement
- * that the artifact declare the requested behaviour was not found, which is
- * observed across the artifact's declaration channels.
+ * Every clause of `required_behaviour` is decided by its bound typed predicate.
+ * A clause with no binding makes the probe `invalid`; it can never make it pass.
  */
-export function evaluateProbe({ probe, evidence, declarations = [], answerability, targetDir, relabelCandidates = [] }) {
-  const reasons = []
-  const observedPaths = evidence.generous.paths
-  const nonExistentPaths = observedPaths.filter((path) => !pathExistsInTarget(targetDir, path)).sort()
-  const fabricatedSymbols = evidence.generous.symbols.filter((symbol) => !symbolExistsInTarget(targetDir, symbol)).sort()
-
-  const isReady = READY_STATES.has(answerability)
-  if (isReady) {
-    reasons.push(`artifact reported ready state '${answerability}'; the frozen probe requires that it must not report a ready state`)
+export function evaluateProbe({ probe, probeIndex, evidence, artifact, answerability, targetDir, adjudication }) {
+  const requirements = probe.required_behaviour ?? []
+  const adjudicated = []
+  const contractProblems = []
+  for (let index = 0; index < requirements.length; index += 1) {
+    const key = `docs/qualification/tier1.json#/negative_trust_probes/${probeIndex}/required_behaviour/${index}`
+    const entry = adjudication.byClause.get(key)
+    if (!entry) {
+      contractProblems.push(`${ADJUDICATION_MISMATCH}: no adjudication entry for ${key}`)
+      continue
+    }
+    const outcome = applyPredicate({ entry, artifact, evidence, answerability, targetDir, obligations: null, requirementsById: adjudication.requirementsById })
+    adjudicated.push({ adjudication_id: entry.id, requirement: requirements[index], clause_sha256: entry.source.clause_sha256, predicate: entry.predicate.kind, ...outcome })
   }
+
+  const unmet = adjudicated.filter((entry) => !entry.satisfied)
+  const reasons = unmet.map((entry) => `[${entry.adjudication_id} ${entry.predicate}] ${entry.detail}`)
+
+  // The frozen answerability ceiling is a property of the probe kind, not of a
+  // single clause, so it is checked alongside the adjudicated requirements.
   if (Number.isNaN(answerabilityRank(answerability))) {
     reasons.push(`unrecognised answerability state '${answerability}'`)
   } else if (answerabilityRank(answerability) > answerabilityRank(PROBE_MAX_ANSWERABILITY)) {
     reasons.push(`answerability '${answerability}' exceeds the frozen maximum '${PROBE_MAX_ANSWERABILITY}'`)
   }
-  if (nonExistentPaths.length > 0) {
-    reasons.push(`fabricated path(s) absent from the pinned target appear in the evidence set: ${JSON.stringify(nonExistentPaths)}`)
-  }
-  if (fabricatedSymbols.length > 0) {
-    reasons.push(`fabricated symbol(s) absent from the pinned target appear in the evidence set: ${JSON.stringify(fabricatedSymbols)}`)
-  }
 
-  // The frozen "declare the behaviour was not found" requirement.
-  //
-  // Two conditions, both on the SAME string: it must name the probe's subject,
-  // and it must assert absence. Naming alone is not declaring — the declaration
-  // channels include affirmative prose, and "supporting evidence for the route
-  // matcher cache" mentions the subject while asserting the opposite of what the
-  // frozen probe requires.
-  const subjectTerms = probeSubjectTerms(probe.prompt?.text ?? '')
-  const absenceMatches = []
-  const subjectMentionsWithoutAbsence = []
-  for (const declaration of declarations) {
-    const term = subjectTerms.find((candidate) => mentionsToken(declaration.text, candidate))
-    if (!term) continue
-    if (assertsAbsence(declaration.text)) {
-      absenceMatches.push({ term, schema_path: declaration.schema_path, text: declaration.text })
-    } else {
-      subjectMentionsWithoutAbsence.push({ term, schema_path: declaration.schema_path, text: declaration.text })
-    }
-  }
-  const absence = {
-    required: (probe.required_behaviour ?? []).some((entry) => /must declare|must state/i.test(String(entry))),
-    subject_terms: subjectTerms,
-    channels_searched: DECLARATION_CHANNELS,
-    declarations_seen: declarations.length,
-    observed: absenceMatches.length > 0,
-    matches: absenceMatches,
-    // Recorded so the difference between naming the subject and declaring it
-    // absent is visible in the evidence rather than only in this comment.
-    subject_mentioned_without_asserting_absence: subjectMentionsWithoutAbsence,
-  }
-  if (absence.required && !absence.observed) {
-    const detail = subjectMentionsWithoutAbsence.length > 0
-      ? `${subjectMentionsWithoutAbsence.length} declaration string(s) name a subject term but assert presence rather than absence (e.g. ${JSON.stringify(subjectMentionsWithoutAbsence[0].text.slice(0, 120))})`
-      : `${declarations.length} declaration string(s) were searched and none names a subject term at all`
-    reasons.push(`${MISSING_ABSENCE_DECLARATION}: no declaration channel both names a subject term of the frozen prompt (${JSON.stringify(subjectTerms)}) and asserts that it is absent; ${detail}`)
-  }
-
-  // Relabelling: naming one of these while ALSO reporting ready is the frozen
-  // false-ready shape. Presence alone, with no ready claim, is only recorded.
-  const symbolSet = new Set(evidence.generous.symbols.map(normaliseSymbol))
-  const relabelPresent = relabelCandidates.filter((name) => symbolSet.has(name)).sort()
-  if (isReady && relabelPresent.length > 0) {
-    reasons.push(`reported ready while surfacing relabelling candidate(s) ${JSON.stringify(relabelPresent)}`)
-  }
-
-  const requirements = classifyProbeRequirements({
-    probe,
-    readyObserved: isReady,
-    absence,
-    fabricated: nonExistentPaths.length + fabricatedSymbols.length,
-  })
-  const unmeasured = requirements.filter((entry) => !entry.measured)
-
-  // Order matters: a measured failure is a failure. Only a clean run with an
-  // unmeasured requirement is `invalid`, and it is never `pass`.
-  const state = reasons.length > 0 ? 'fail' : (unmeasured.length > 0 ? 'invalid' : 'pass')
+  const state = contractProblems.length > 0 ? 'invalid' : (reasons.length > 0 ? 'fail' : 'pass')
 
   return {
     state,
-    invalid_reason: state === 'invalid' ? 'judge_failure' : undefined,
-    reasons: state === 'invalid'
-      ? unmeasured.map((entry) => `frozen required_behaviour is not measured by this evaluator, so the probe cannot be reported as pass: ${entry.requirement}`)
-      : reasons,
-    requirement_coverage: requirements,
+    invalid_reason: state === 'invalid' ? ADJUDICATION_MISMATCH : undefined,
+    reasons: state === 'invalid' ? contractProblems : reasons,
     metrics: {
-      false_ready: isReady,
-      citation_evidence_failures: nonExistentPaths.length,
-      unsupported_claims: nonExistentPaths.length + fabricatedSymbols.length,
+      false_ready: READY_STATES.has(answerability),
+      citation_evidence_failures: (adjudicated.find((entry) => entry.predicate === 'prohibited_reference_absent')?.observed?.non_existent_cited_paths ?? []).length,
+      unsupported_claims: (adjudicated.find((entry) => entry.predicate === 'prohibited_reference_absent')?.observed?.non_existent_cited_paths ?? []).length
+        + (adjudicated.find((entry) => entry.predicate === 'prohibited_reference_absent')?.observed?.fabricated_symbols ?? []).length,
       answerability_ceiling: PROBE_MAX_ANSWERABILITY,
-      absence_declaration_observed: absence.observed,
-      requirements_measured: requirements.filter((entry) => entry.measured).length,
+      absence_declaration_observed: Boolean(adjudicated.find((entry) => entry.predicate === 'required_typed_absence')?.observed?.typed_declaration),
+      requirements_adjudicated: adjudicated.length,
       requirements_total: requirements.length,
     },
-    expected: { max_answerability: PROBE_MAX_ANSWERABILITY, ready_allowed: false, absence_declaration_required: absence.required },
+    expected: { max_answerability: PROBE_MAX_ANSWERABILITY, ready_allowed: false },
     observed: {
       answerability,
       evidence_paths_strict: evidence.strict.paths,
-      evidence_paths_generous: observedPaths,
+      evidence_paths_generous: evidence.generous.paths,
       evidence_symbols_strict: evidence.strict.symbols,
       evidence_symbols_generous: evidence.generous.symbols,
-      non_existent_cited_paths: nonExistentPaths,
-      fabricated_symbols: fabricatedSymbols,
-      relabelling_candidates_present: relabelPresent,
-      absence_declaration: absence,
+      non_existent_cited_paths: adjudicated.find((entry) => entry.predicate === 'prohibited_reference_absent')?.observed?.non_existent_cited_paths ?? [],
+      fabricated_symbols: adjudicated.find((entry) => entry.predicate === 'prohibited_reference_absent')?.observed?.fabricated_symbols ?? [],
+    },
+    adjudication: {
+      contract_digest: adjudication.digest,
+      clauses: adjudicated,
+      contract_problems: contractProblems,
     },
   }
 }

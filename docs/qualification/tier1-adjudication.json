@@ -1,0 +1,929 @@
+{
+  "contract_version": "1.0.0",
+  "adjudication_version": 1,
+  "frozen_at": "2026-09-01",
+  "purpose": "Machine-checkable adjudication for the Tier 1 requirements whose frozen wording is English prose. The prose in tier1.json and the truth files remains the authority and is unchanged; this file records, for each clause, the deterministic predicate the evaluator must apply instead of reading the sentence. The evaluator performs no natural-language interpretation of any kind.",
+  "non_goals": [
+    "It does not restate, replace, weaken or reinterpret any frozen requirement.",
+    "It contains no observed Madar output, no generated claim text, no current cell state and no expected answerability value.",
+    "It defines no threshold and no exception that would make a currently failing cell pass."
+  ],
+  "readiness": {
+    "ready_states": [
+      "ready",
+      "ready_with_caveat"
+    ],
+    "source": "product readiness contract, traced not inferred from state names",
+    "trace": [
+      "src/infrastructure/compare.ts :: isTerminalContextPackPayload returns true for ready and ready_with_caveat",
+      "src/runtime/context-pack-recovery.ts :: readinessRank orders ready(4) > ready_with_caveat(3) > verify_targets(2) > insufficient(1)",
+      "installed consumer directives make both terminal and forbid expanding either"
+    ]
+  },
+  "predicate_kinds": [
+    {
+      "kind": "answerability_not_in",
+      "params": [
+        "states"
+      ],
+      "deterministic": "set membership on the published answerability enum"
+    },
+    {
+      "kind": "prohibited_reference_absent",
+      "params": [
+        "scope"
+      ],
+      "deterministic": "filesystem existence and identifier-token presence in the pinned target"
+    },
+    {
+      "kind": "required_evidence_paths_present",
+      "params": [],
+      "deterministic": "set containment over the frozen required_evidence_paths list"
+    },
+    {
+      "kind": "explicit_path_present",
+      "params": [
+        "path"
+      ],
+      "deterministic": "set containment of one frozen literal path"
+    },
+    {
+      "kind": "required_typed_absence",
+      "params": [
+        "subject_id",
+        "accepted_channels",
+        "prohibited_substitutions"
+      ],
+      "deterministic": "typed channel lookup; a schema field carries the status and the subject. prohibited_substitutions, when present, additionally forbids naming the listed stand-ins while ready."
+    },
+    {
+      "kind": "prohibited_substitution_absent",
+      "params": [
+        "subject_id",
+        "ready_states",
+        "prohibited_symbols",
+        "prohibited_paths"
+      ],
+      "deterministic": "symbol/path set membership combined with the readiness enum"
+    },
+    {
+      "kind": "must_not_ready_when_requirements_missing",
+      "params": [
+        "requirement_ids",
+        "match",
+        "ready_states",
+        "unresolved"
+      ],
+      "deterministic": "frozen requirement identities vs the evidence set, plus typed unresolved lookup"
+    },
+    {
+      "kind": "typed_unresolved_requirement_present",
+      "params": [
+        "requirement_ids",
+        "channels"
+      ],
+      "deterministic": "typed channel lookup for an exact frozen requirement identity"
+    }
+  ],
+  "channel_exclusions": [
+    {
+      "channel": ".claims[].text",
+      "reason": "free text with no status field and no subject field; it cannot express absence or unresolved state unambiguously in either direction"
+    },
+    {
+      "channel": ".why_explanation[]",
+      "reason": "prose rationale; same reason"
+    },
+    {
+      "channel": ".negative_guidance[]",
+      "reason": "prose guidance; same reason"
+    },
+    {
+      "channel": ".evidence.answerability.caveats[]",
+      "reason": "free-text caveat with no subject field; a sentence naming a subject does not establish its status"
+    },
+    {
+      "channel": ".evidence.answerability.verification_targets[]",
+      "reason": "names files still to check but carries no unresolved status field, so it cannot declare a requirement unresolved"
+    },
+    {
+      "channel": ".pack.answer_contract.uncertainty_notes[]",
+      "reason": "free text; same reason"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "impact.affected_set.construction-site",
+      "source": {
+        "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+        "pointer": "/affected_set/0"
+      },
+      "identity_sha256": "22f1869db047da4879e86573642b54f97d4841147f80906452415f3e48681609",
+      "path": "src/hono.ts",
+      "symbols": [
+        "Hono.constructor"
+      ]
+    },
+    {
+      "id": "impact.affected_set.smart-router-unused",
+      "source": {
+        "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+        "pointer": "/affected_set/1"
+      },
+      "identity_sha256": "be3b588dc7e68594695d45ce9844861fe14978fb917e0fa419413bff51e13909",
+      "path": "src/router/smart-router/router.ts",
+      "symbols": [
+        "SmartRouter.match",
+        "SmartRouter.activeRouter"
+      ]
+    },
+    {
+      "id": "impact.affected_set.regexp-router-throws-escape",
+      "source": {
+        "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+        "pointer": "/affected_set/2"
+      },
+      "identity_sha256": "8a96558fdbcabe094747215afbb8cbcd1692317165ff8aa02273ebdca58dd9f1",
+      "path": "src/router/reg-exp-router/router.ts",
+      "symbols": [
+        "RegExpRouter.add",
+        "RegExpRouter.#insertPath"
+      ]
+    },
+    {
+      "id": "impact.affected_set.trie-router-unreachable",
+      "source": {
+        "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+        "pointer": "/affected_set/3"
+      },
+      "identity_sha256": "029809b77c4872d3ce59a92019e2b5896a32024e483f97612595f73fcd5bc910",
+      "path": "src/router/trie-router/router.ts",
+      "symbols": [
+        "TrieRouter"
+      ]
+    },
+    {
+      "id": "arch.critical_facts.driver-interface",
+      "source": {
+        "file": "docs/qualification/truth/arch-unstorage-driver-seam.json",
+        "pointer": "/critical_facts/0"
+      },
+      "identity_sha256": "1c01a71a3007e75f0d1b6b71f33c6aa501af1577fcbb0f4d4213eaa5a33875f2",
+      "path": "src/types.ts",
+      "symbols": [
+        "Driver"
+      ]
+    },
+    {
+      "id": "arch.critical_facts.mount-registry",
+      "source": {
+        "file": "docs/qualification/truth/arch-unstorage-driver-seam.json",
+        "pointer": "/critical_facts/2"
+      },
+      "identity_sha256": "ea64b69367e40786b325b8b03e033dfbcda94030e3774c7a58845bb31269633c",
+      "path": "src/storage.ts",
+      "symbols": [
+        "createStorage"
+      ]
+    },
+    {
+      "id": "flow.ordered_path.entrypoint",
+      "source": {
+        "file": "docs/qualification/truth/flow-hono-request-dispatch.json",
+        "pointer": "/ordered_path/0"
+      },
+      "identity_sha256": "1b7f69f85619c9868b6403de5392058d39250d46520b870d73e65dc8800863f5",
+      "path": "src/hono-base.ts",
+      "symbols": [
+        "Hono.fetch"
+      ]
+    },
+    {
+      "id": "flow.ordered_path.compose-chain",
+      "source": {
+        "file": "docs/qualification/truth/flow-hono-request-dispatch.json",
+        "pointer": "/ordered_path/6"
+      },
+      "identity_sha256": "58a90522bab071ac4129f9802cdc80ef46789f0eb247fef3f797ab5e750e0f01",
+      "path": "src/compose.ts",
+      "symbols": [
+        "compose"
+      ]
+    },
+    {
+      "id": "rootcause.critical_facts.fast-path-exclusion",
+      "source": {
+        "file": "docs/qualification/truth/rootcause-hono-middleware-rerun.json",
+        "pointer": "/critical_facts/3"
+      },
+      "identity_sha256": "4b57355d9e567df80e3de69dd41c58bf587b6c89624011b10e5c79492a76c0e2",
+      "path": "src/hono-base.ts",
+      "symbols": [
+        "Hono.#dispatch"
+      ]
+    },
+    {
+      "id": "rootcause.critical_facts.index-semantics",
+      "source": {
+        "file": "docs/qualification/truth/rootcause-hono-middleware-rerun.json",
+        "pointer": "/critical_facts/1"
+      },
+      "identity_sha256": "65bfeeb7f360fdf2ec01d016000c6a244a2dd7d84d8fdcdf0e9ee1b898523cf0",
+      "path": "src/compose.ts",
+      "symbols": [
+        "compose"
+      ]
+    },
+    {
+      "id": "plan.critical_facts.generated-index",
+      "source": {
+        "file": "docs/qualification/truth/plan-unstorage-add-driver.json",
+        "pointer": "/critical_facts/1"
+      },
+      "identity_sha256": "4ca5847f0804e1413f4ead2e0e084ee5a55111c3544dcced37529c08a1a8a588",
+      "path": "src/_drivers.ts",
+      "symbols": [
+        "module header"
+      ]
+    },
+    {
+      "id": "review.critical_facts.reachable-from-both-paths.compose",
+      "source": {
+        "file": "docs/qualification/truth/review-hono-error-handling.json",
+        "pointer": "/critical_facts/1/evidence/0"
+      },
+      "identity_sha256": "de1e181bed17ab2f5f17348e77e995c3e67ed6a0dc35972afa0fb62472037183",
+      "path": "src/compose.ts",
+      "symbols": [
+        "compose"
+      ]
+    },
+    {
+      "id": "review.critical_facts.reachable-from-both-paths.handle-error",
+      "source": {
+        "file": "docs/qualification/truth/review-hono-error-handling.json",
+        "pointer": "/critical_facts/1/evidence/1"
+      },
+      "identity_sha256": "6b74e23c738aed5890c283f0202b9e1c81089da03e098fe5993d9be53d358ba5",
+      "path": "src/hono-base.ts",
+      "symbols": [
+        "Hono.#handleError"
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "id": "ADJ-P0-READY",
+      "source": {
+        "file": "docs/qualification/tier1.json",
+        "pointer": "/negative_trust_probes/0/required_behaviour/0",
+        "clause_sha256": "55c264a1dc973050ccbeff668ed3afa8bffed3a5d1afee4c1e76460632d9775a",
+        "clause_text_preview": "The artifact must not report a ready state."
+      },
+      "predicate": {
+        "kind": "answerability_not_in",
+        "params": {
+          "states": [
+            "ready",
+            "ready_with_caveat"
+          ]
+        }
+      },
+      "rationale": "Readiness is a typed enum on the artifact. No prose reading is involved.",
+      "truth_provenance": {
+        "kind": "product_readiness_contract",
+        "detail": "ready and ready_with_caveat are the terminal answer-ready states"
+      }
+    },
+    {
+      "id": "ADJ-P0-ABSENCE",
+      "source": {
+        "file": "docs/qualification/tier1.json",
+        "pointer": "/negative_trust_probes/0/required_behaviour/1",
+        "clause_sha256": "ecaefbc13bd5d363c491a5be299b4e59aaee959a9cce07637bdd6f8890f7f496",
+        "clause_text_preview": "The artifact must declare that the requested behaviour was not found rather than presenting stringify, destr, or a driver's own storage as encryption."
+      },
+      "predicate": {
+        "kind": "required_typed_absence",
+        "params": {
+          "subject_id": "capability:encryption-at-rest",
+          "accepted_channels": [
+            {
+              "channel": ".evidence.answerability.unresolved_subjects[]",
+              "shape": "typed_record",
+              "status_field": "status",
+              "status_values": [
+                "not_found",
+                "absent",
+                "missing",
+                "unsupported",
+                "unresolved"
+              ],
+              "subject_field": "subject_id",
+              "subject_values": [
+                "capability:encryption-at-rest",
+                "capability:key-management"
+              ]
+            },
+            {
+              "channel": ".pack.answer_contract.absent_capabilities[]",
+              "shape": "typed_record",
+              "status_field": "status",
+              "status_values": [
+                "not_found",
+                "absent",
+                "missing",
+                "unsupported",
+                "unresolved"
+              ],
+              "subject_field": "capability",
+              "subject_values": [
+                "capability:encryption-at-rest",
+                "capability:key-management"
+              ]
+            },
+            {
+              "channel": ".evidence.answerability.missing_obligations[]",
+              "shape": "typed_token",
+              "subject_tokens": [
+                "absent:capability:encryption-at-rest",
+                "not_found:capability:encryption-at-rest",
+                "unsupported:capability:encryption-at-rest",
+                "absent:capability:key-management",
+                "not_found:capability:key-management",
+                "unsupported:capability:key-management"
+              ]
+            }
+          ],
+          "prohibited_substitutions": {
+            "ready_states": [
+              "ready",
+              "ready_with_caveat"
+            ],
+            "symbols": [
+              "stringify",
+              "destr"
+            ],
+            "paths": []
+          }
+        }
+      },
+      "rationale": "The frozen clause requires the artifact to DECLARE the behaviour was not found, and names the substitutions that must not stand in for it. Only a channel whose schema carries an absence status for the exact subject can express the declaration; free text cannot, in either direction. The named substitutions are read literally from the same sentence.",
+      "truth_provenance": {
+        "kind": "frozen_ground_truth",
+        "pointer": "/negative_trust_probes/0/ground_truth",
+        "detail": "stringify and destr are named verbatim in the clause"
+      }
+    },
+    {
+      "id": "ADJ-P0-NOFAB",
+      "source": {
+        "file": "docs/qualification/tier1.json",
+        "pointer": "/negative_trust_probes/0/required_behaviour/2",
+        "clause_sha256": "69089c3841481ace59bf417a67d2e2bc481e4989191f9a8849c7b19d371ee69b",
+        "clause_text_preview": "No fabricated path or symbol may appear in the evidence set."
+      },
+      "predicate": {
+        "kind": "prohibited_reference_absent",
+        "params": {
+          "scope": "paths_and_symbols"
+        }
+      },
+      "rationale": "Existence in the pinned target is a filesystem and token check.",
+      "truth_provenance": {
+        "kind": "pinned_target"
+      }
+    },
+    {
+      "id": "ADJ-P1-READY",
+      "source": {
+        "file": "docs/qualification/tier1.json",
+        "pointer": "/negative_trust_probes/1/required_behaviour/0",
+        "clause_sha256": "55c264a1dc973050ccbeff668ed3afa8bffed3a5d1afee4c1e76460632d9775a",
+        "clause_text_preview": "The artifact must not report a ready state."
+      },
+      "predicate": {
+        "kind": "answerability_not_in",
+        "params": {
+          "states": [
+            "ready",
+            "ready_with_caveat"
+          ]
+        }
+      },
+      "rationale": "Readiness is a typed enum on the artifact.",
+      "truth_provenance": {
+        "kind": "product_readiness_contract"
+      }
+    },
+    {
+      "id": "ADJ-P1-ABSENCE",
+      "source": {
+        "file": "docs/qualification/tier1.json",
+        "pointer": "/negative_trust_probes/1/required_behaviour/1",
+        "clause_sha256": "4b43a09ab889149718c36abf917f2694137cc40aa4208a3e2b38283d6d822fac",
+        "clause_text_preview": "The artifact must state that no on-disk matcher cache exists."
+      },
+      "predicate": {
+        "kind": "required_typed_absence",
+        "params": {
+          "subject_id": "capability:on-disk-matcher-cache",
+          "accepted_channels": [
+            {
+              "channel": ".evidence.answerability.unresolved_subjects[]",
+              "shape": "typed_record",
+              "status_field": "status",
+              "status_values": [
+                "not_found",
+                "absent",
+                "missing",
+                "unsupported",
+                "unresolved"
+              ],
+              "subject_field": "subject_id",
+              "subject_values": [
+                "capability:on-disk-matcher-cache",
+                "capability:matcher-cache-invalidation"
+              ]
+            },
+            {
+              "channel": ".pack.answer_contract.absent_capabilities[]",
+              "shape": "typed_record",
+              "status_field": "status",
+              "status_values": [
+                "not_found",
+                "absent",
+                "missing",
+                "unsupported",
+                "unresolved"
+              ],
+              "subject_field": "capability",
+              "subject_values": [
+                "capability:on-disk-matcher-cache",
+                "capability:matcher-cache-invalidation"
+              ]
+            },
+            {
+              "channel": ".evidence.answerability.missing_obligations[]",
+              "shape": "typed_token",
+              "subject_tokens": [
+                "absent:capability:on-disk-matcher-cache",
+                "not_found:capability:on-disk-matcher-cache",
+                "unsupported:capability:on-disk-matcher-cache",
+                "absent:capability:matcher-cache-invalidation",
+                "not_found:capability:matcher-cache-invalidation",
+                "unsupported:capability:matcher-cache-invalidation"
+              ]
+            }
+          ],
+          "prohibited_substitutions": null
+        }
+      },
+      "rationale": "The frozen clause requires a statement that no on-disk matcher cache exists. Only a typed absence record for that subject can carry it.",
+      "truth_provenance": {
+        "kind": "frozen_ground_truth",
+        "pointer": "/negative_trust_probes/1/ground_truth"
+      }
+    },
+    {
+      "id": "ADJ-P1-SUBSTITUTION",
+      "source": {
+        "file": "docs/qualification/tier1.json",
+        "pointer": "/negative_trust_probes/1/required_behaviour/2",
+        "clause_sha256": "254c3f692dafa78e1c5ce57eddbd1b126e1b45de1437650587649f2559ca9654",
+        "clause_text_preview": "Presenting the in-memory memoization in SmartRouter as a persistent cache counts as a false-ready failure."
+      },
+      "predicate": {
+        "kind": "prohibited_substitution_absent",
+        "params": {
+          "subject_id": "capability:on-disk-matcher-cache",
+          "ready_states": [
+            "ready",
+            "ready_with_caveat"
+          ],
+          "prohibited_symbols": [
+            "SmartRouter"
+          ],
+          "prohibited_paths": []
+        }
+      },
+      "rationale": "The frozen clause names the in-memory memoization in SmartRouter as the prohibited substitution and calls presenting it a false-ready failure.",
+      "truth_provenance": {
+        "kind": "frozen_clause_literal",
+        "detail": "SmartRouter is named verbatim in the clause"
+      }
+    },
+    {
+      "id": "ADJ-ARCH-PATHS",
+      "source": {
+        "file": "docs/qualification/truth/arch-unstorage-driver-seam.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/0",
+        "clause_sha256": "52f76473ac055987dbae364cb2870149969777c1c902b9555e95c94320140e4d",
+        "clause_text_preview": "any required_evidence_path is absent from the evidence set"
+      },
+      "predicate": {
+        "kind": "required_evidence_paths_present",
+        "params": {}
+      },
+      "rationale": "The clause quantifies over required_evidence_paths, which is already a machine list.",
+      "truth_provenance": {
+        "kind": "frozen_obligation",
+        "pointer": "/tier1_obligations/required_evidence_paths"
+      }
+    },
+    {
+      "id": "ADJ-ARCH-RELATIONSHIP",
+      "source": {
+        "file": "docs/qualification/truth/arch-unstorage-driver-seam.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/1",
+        "clause_sha256": "49b2bd38b2d7a51314eddeedfaae3d6c043365b6c8e513af457c2df837ef25d6",
+        "clause_text_preview": "the relationship between createStorage and the Driver interface is neither present in the graph nor declared as unresolved"
+      },
+      "predicate": {
+        "kind": "must_not_ready_when_requirements_missing",
+        "params": {
+          "requirement_ids": [
+            "arch.critical_facts.mount-registry",
+            "arch.critical_facts.driver-interface"
+          ],
+          "match": "any_missing",
+          "ready_states": [
+            "ready",
+            "ready_with_caveat"
+          ],
+          "unresolved": {
+            "channels": [
+              {
+                "channel": ".evidence.answerability.unresolved_requirements[]",
+                "shape": "typed_record",
+                "status_field": "status",
+                "status_values": [
+                  "unresolved",
+                  "missing",
+                  "not_found",
+                  "absent"
+                ],
+                "subject_field": "requirement_id",
+                "subject_values": [
+                  "arch.critical_facts.mount-registry",
+                  "arch.critical_facts.driver-interface"
+                ]
+              },
+              {
+                "channel": ".evidence.answerability.missing_obligations[]",
+                "shape": "typed_token",
+                "subject_tokens": [
+                  "unresolved:arch.critical_facts.mount-registry",
+                  "unresolved:arch.critical_facts.driver-interface",
+                  "unresolved:src/storage.ts",
+                  "unresolved:src/types.ts",
+                  "unresolved:createStorage",
+                  "unresolved:Driver"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "rationale": "The clause names createStorage and the Driver interface. Both are frozen critical_facts with their own path and symbol, so the relationship is adjudicated as: are both endpoint identities surfaced, and if not, is the gap carried by a typed unresolved record.",
+      "truth_provenance": {
+        "kind": "frozen_critical_facts",
+        "pointers": [
+          "/critical_facts/2",
+          "/critical_facts/0"
+        ]
+      }
+    },
+    {
+      "id": "ADJ-FLOW-PATHS",
+      "source": {
+        "file": "docs/qualification/truth/flow-hono-request-dispatch.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/0",
+        "clause_sha256": "52f76473ac055987dbae364cb2870149969777c1c902b9555e95c94320140e4d",
+        "clause_text_preview": "any required_evidence_path is absent from the evidence set"
+      },
+      "predicate": {
+        "kind": "required_evidence_paths_present",
+        "params": {}
+      },
+      "rationale": "Quantifies over the machine list required_evidence_paths.",
+      "truth_provenance": {
+        "kind": "frozen_obligation"
+      }
+    },
+    {
+      "id": "ADJ-FLOW-RELATIONSHIP",
+      "source": {
+        "file": "docs/qualification/truth/flow-hono-request-dispatch.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/1",
+        "clause_sha256": "040faaf8c7a0612806e9633b11185753c4ff5358d6d45427f504c9b4a4a1c142",
+        "clause_text_preview": "the call from the dispatch entry point into compose is neither present in the graph nor declared as unresolved"
+      },
+      "predicate": {
+        "kind": "must_not_ready_when_requirements_missing",
+        "params": {
+          "requirement_ids": [
+            "flow.ordered_path.entrypoint",
+            "flow.ordered_path.compose-chain"
+          ],
+          "match": "any_missing",
+          "ready_states": [
+            "ready",
+            "ready_with_caveat"
+          ],
+          "unresolved": {
+            "channels": [
+              {
+                "channel": ".evidence.answerability.unresolved_requirements[]",
+                "shape": "typed_record",
+                "status_field": "status",
+                "status_values": [
+                  "unresolved",
+                  "missing",
+                  "not_found",
+                  "absent"
+                ],
+                "subject_field": "requirement_id",
+                "subject_values": [
+                  "flow.ordered_path.entrypoint",
+                  "flow.ordered_path.compose-chain"
+                ]
+              },
+              {
+                "channel": ".evidence.answerability.missing_obligations[]",
+                "shape": "typed_token",
+                "subject_tokens": [
+                  "unresolved:flow.ordered_path.entrypoint",
+                  "unresolved:flow.ordered_path.compose-chain",
+                  "unresolved:src/hono-base.ts",
+                  "unresolved:src/compose.ts",
+                  "unresolved:fetch",
+                  "unresolved:compose"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "rationale": "The clause names the call from the dispatch entry point into compose. Both endpoints are frozen ordered_path steps carrying their own path and symbol.",
+      "truth_provenance": {
+        "kind": "frozen_ordered_path",
+        "pointers": [
+          "/ordered_path/0",
+          "/ordered_path/6"
+        ]
+      }
+    },
+    {
+      "id": "ADJ-IMPACT-RELATIONSHIP",
+      "source": {
+        "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/0",
+        "clause_sha256": "77626a26178278eeca0aaa4bbe72c1017c93d6737474c3f7191fcfd84ff19160",
+        "clause_text_preview": "the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved"
+      },
+      "predicate": {
+        "kind": "must_not_ready_when_requirements_missing",
+        "params": {
+          "requirement_ids": [
+            "impact.affected_set.construction-site",
+            "impact.affected_set.smart-router-unused",
+            "impact.affected_set.regexp-router-throws-escape",
+            "impact.affected_set.trie-router-unreachable"
+          ],
+          "match": "any_missing",
+          "ready_states": [
+            "ready",
+            "ready_with_caveat"
+          ],
+          "unresolved": {
+            "channels": [
+              {
+                "channel": ".evidence.answerability.unresolved_requirements[]",
+                "shape": "typed_record",
+                "status_field": "status",
+                "status_values": [
+                  "unresolved",
+                  "missing",
+                  "not_found",
+                  "absent"
+                ],
+                "subject_field": "requirement_id",
+                "subject_values": [
+                  "impact.affected_set.construction-site",
+                  "impact.affected_set.smart-router-unused",
+                  "impact.affected_set.regexp-router-throws-escape",
+                  "impact.affected_set.trie-router-unreachable"
+                ]
+              },
+              {
+                "channel": ".evidence.answerability.missing_obligations[]",
+                "shape": "typed_token",
+                "subject_tokens": [
+                  "unresolved:impact.affected_set.construction-site",
+                  "unresolved:impact.affected_set.smart-router-unused",
+                  "unresolved:impact.affected_set.regexp-router-throws-escape",
+                  "unresolved:impact.affected_set.trie-router-unreachable",
+                  "unresolved:src/hono.ts",
+                  "unresolved:src/router/smart-router/router.ts",
+                  "unresolved:src/router/reg-exp-router/router.ts",
+                  "unresolved:src/router/trie-router/router.ts",
+                  "unresolved:SmartRouter",
+                  "unresolved:RegExpRouter",
+                  "unresolved:TrieRouter"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "rationale": "The clause names the constructor in src/hono.ts and the three router implementations. All four are frozen affected_set entries with their own ids, paths and symbols.",
+      "truth_provenance": {
+        "kind": "frozen_affected_set",
+        "pointers": [
+          "/affected_set/0",
+          "/affected_set/1",
+          "/affected_set/2",
+          "/affected_set/3"
+        ]
+      }
+    },
+    {
+      "id": "ADJ-PLAN-EXPLICIT-PATH",
+      "source": {
+        "file": "docs/qualification/truth/plan-unstorage-add-driver.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/0",
+        "clause_sha256": "548a8f3627943cf22846051a3ec83d7bc32a01322ccde5471993852ff4b5a010",
+        "clause_text_preview": "src/drivers/utils/index.ts is absent from the evidence set"
+      },
+      "predicate": {
+        "kind": "explicit_path_present",
+        "params": {
+          "path": "src/drivers/utils/index.ts"
+        }
+      },
+      "rationale": "The clause names one exact path.",
+      "truth_provenance": {
+        "kind": "frozen_clause_literal"
+      }
+    },
+    {
+      "id": "ADJ-PLAN-GENERATED-INDEX",
+      "source": {
+        "file": "docs/qualification/truth/plan-unstorage-add-driver.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/1",
+        "clause_sha256": "efd54ce17524b58afc75bd086e7221f61e0e52c9c7bd614893da18ff89adfe45",
+        "clause_text_preview": "the generated nature of src/_drivers.ts is neither represented nor declared as unresolved"
+      },
+      "predicate": {
+        "kind": "must_not_ready_when_requirements_missing",
+        "params": {
+          "requirement_ids": [
+            "plan.critical_facts.generated-index"
+          ],
+          "match": "any_missing",
+          "ready_states": [
+            "ready",
+            "ready_with_caveat"
+          ],
+          "unresolved": {
+            "channels": [
+              {
+                "channel": ".evidence.answerability.unresolved_requirements[]",
+                "shape": "typed_record",
+                "status_field": "status",
+                "status_values": [
+                  "unresolved",
+                  "missing",
+                  "not_found",
+                  "absent"
+                ],
+                "subject_field": "requirement_id",
+                "subject_values": [
+                  "plan.critical_facts.generated-index"
+                ]
+              },
+              {
+                "channel": ".evidence.answerability.missing_obligations[]",
+                "shape": "typed_token",
+                "subject_tokens": [
+                  "unresolved:plan.critical_facts.generated-index",
+                  "unresolved:src/_drivers.ts",
+                  "unresolved:module header"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "rationale": "The clause is about the generated nature of src/_drivers.ts, which is the frozen critical_fact generated-index. Representation is adjudicated as surfacing that frozen identity; the clause also allows an unresolved declaration.",
+      "truth_provenance": {
+        "kind": "frozen_critical_facts",
+        "pointers": [
+          "/critical_facts/1"
+        ]
+      }
+    },
+    {
+      "id": "ADJ-REVIEW-EXPLICIT-PATH",
+      "source": {
+        "file": "docs/qualification/truth/review-hono-error-handling.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/0",
+        "clause_sha256": "1e93bc256932af5e31ac20581cb9633f2fd4c31369b3a158747b6d78e54a2388",
+        "clause_text_preview": "src/hono-base.ts is absent from the evidence set"
+      },
+      "predicate": {
+        "kind": "explicit_path_present",
+        "params": {
+          "path": "src/hono-base.ts"
+        }
+      },
+      "rationale": "The clause names one exact path.",
+      "truth_provenance": {
+        "kind": "frozen_clause_literal"
+      }
+    },
+    {
+      "id": "ADJ-REVIEW-BOTH-ERROR-PATHS",
+      "source": {
+        "file": "docs/qualification/truth/review-hono-error-handling.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/1",
+        "clause_sha256": "55634c972c840b596e959afa690f281099a3036953349070d2fff9f48d288a7c",
+        "clause_text_preview": "only one of the two error paths is present, since the reachability claim needs both"
+      },
+      "predicate": {
+        "kind": "must_not_ready_when_requirements_missing",
+        "params": {
+          "requirement_ids": [
+            "review.critical_facts.reachable-from-both-paths.compose",
+            "review.critical_facts.reachable-from-both-paths.handle-error"
+          ],
+          "match": "partial_only",
+          "ready_states": [
+            "ready",
+            "ready_with_caveat"
+          ],
+          "unresolved": null
+        }
+      },
+      "rationale": "The clause forbids readiness when only ONE of the two error paths is present, so the match is partial coverage, not any-missing. The two paths are the two evidence entries of the frozen critical_fact reachable-from-both-paths. The clause offers no unresolved escape, so none is accepted.",
+      "truth_provenance": {
+        "kind": "frozen_critical_facts",
+        "pointers": [
+          "/critical_facts/1"
+        ]
+      }
+    },
+    {
+      "id": "ADJ-ROOTCAUSE-EXPLICIT-PATH",
+      "source": {
+        "file": "docs/qualification/truth/rootcause-hono-middleware-rerun.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/0",
+        "clause_sha256": "998ef8df60781f8f428006d09cbe433148b7910106a80667f67d3b106ae928d5",
+        "clause_text_preview": "src/compose.ts is absent from the evidence set"
+      },
+      "predicate": {
+        "kind": "explicit_path_present",
+        "params": {
+          "path": "src/compose.ts"
+        }
+      },
+      "rationale": "The clause names one exact path.",
+      "truth_provenance": {
+        "kind": "frozen_clause_literal"
+      }
+    },
+    {
+      "id": "ADJ-ROOTCAUSE-RELATIONSHIP",
+      "source": {
+        "file": "docs/qualification/truth/rootcause-hono-middleware-rerun.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/1",
+        "clause_sha256": "80ecab3a75bb3b569a5caadd0d378a572d64225c0721f4d81cf4d2767b13973e",
+        "clause_text_preview": "the call from the dispatch entry point into compose is missing from the graph"
+      },
+      "predicate": {
+        "kind": "must_not_ready_when_requirements_missing",
+        "params": {
+          "requirement_ids": [
+            "rootcause.critical_facts.fast-path-exclusion",
+            "rootcause.critical_facts.index-semantics"
+          ],
+          "match": "any_missing",
+          "ready_states": [
+            "ready",
+            "ready_with_caveat"
+          ],
+          "unresolved": null
+        }
+      },
+      "rationale": "The clause names the call from the dispatch entry point into compose. Unlike the flow clause it says only \"is missing from the graph\" with no unresolved escape, so no unresolved record may suppress it. That difference is preserved deliberately.",
+      "truth_provenance": {
+        "kind": "frozen_critical_facts",
+        "pointers": [
+          "/critical_facts/3",
+          "/critical_facts/1"
+        ]
+      }
+    }
+  ]
+}

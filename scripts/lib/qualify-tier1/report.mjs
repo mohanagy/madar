@@ -62,6 +62,10 @@ export function semanticDigest(result) {
   const view = {
     contract_version: result.contract_version,
     frozen_manifest_digest: result.frozen_input_manifest.digest,
+    // A result produced under a different adjudication contract is a different
+    // measurement, so the contract identity is inside the digest. Results from
+    // the old prose evaluator can never compare equal to these.
+    adjudication_contract_digest: result.adjudication_contract?.digest ?? null,
     madar_revision: result.madar.revision,
     cells: result.cells.map(semanticView).sort((a, b) => a.cell_id.localeCompare(b.cell_id)),
   }

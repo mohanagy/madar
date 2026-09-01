@@ -19,7 +19,8 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { buildFrozenManifest, sha256 } from './lib/qualify-tier1/frozen.mjs'
-import { declaredChannels, extractDeclarations, extractEvidence, readAnswerability, readGraphIdentity, redact, runGenerate, runPack } from './lib/qualify-tier1/artifact.mjs'
+import { declaredChannels, extractEvidence, readAnswerability, readGraphIdentity, redact, runGenerate, runPack } from './lib/qualify-tier1/artifact.mjs'
+import { ADJUDICATION_PATH, loadAdjudication } from './lib/qualify-tier1/adjudication.mjs'
 import { evaluateProbe, evaluateTaskCell } from './lib/qualify-tier1/evaluate.mjs'
 import { renderReport, semanticDigest } from './lib/qualify-tier1/report.mjs'
 import { ensureMirror, prepareTarget } from './lib/qualify-tier1/targets.mjs'
@@ -39,17 +40,6 @@ function writeEvidence(path, contents) {
     throw new Error(`refusing to write ${path}: an absolute local path survived redaction`)
   }
   writeFileSync(path, safe)
-}
-
-/**
- * Symbols whose appearance alongside a ready claim is the frozen false-ready
- * shape for each probe. Each candidate is validated against the frozen probe
- * text below, so a change to the frozen wording refuses the run instead of
- * silently scoring against a stale assumption.
- */
-const PROBE_RELABEL_CANDIDATES = {
-  'neg-unstorage-absent-encryption': ['stringify', 'destr'],
-  'neg-hono-absent-matcher-persistence': ['SmartRouter'],
 }
 
 function parseArgs(argv) {
@@ -115,16 +105,29 @@ async function main() {
     process.exit(1)
   }
 
-  // Validate the relabel map against the frozen probe text.
-  for (const probe of frozen.probes) {
-    const candidates = PROBE_RELABEL_CANDIDATES[probe.id] ?? []
-    const frozenText = `${probe.ground_truth} ${(probe.required_behaviour ?? []).join(' ')}`
-    for (const candidate of candidates) {
-      if (!frozenText.includes(candidate)) {
-        console.error(`HUMAN_GATE-661-FROZEN-CONTRACT: relabelling candidate '${candidate}' for probe ${probe.id} no longer appears in the frozen probe text.`)
-        process.exit(1)
-      }
-    }
+  // ---- 1b. Machine-checkable adjudication contract ------------------------
+  // Every frozen clause whose wording is prose must be bound, by the hash of its
+  // exact bytes, to one typed predicate. A binding that no longer matches its
+  // source is a measurement failure, not a softer contract.
+  const requiredClauses = []
+  frozen.tier1.negative_trust_probes.forEach((probe, probeIndex) => {
+    (probe.required_behaviour ?? []).forEach((_, index) => {
+      requiredClauses.push({ file: 'docs/qualification/tier1.json', pointer: `/negative_trust_probes/${probeIndex}/required_behaviour/${index}` })
+    })
+  })
+  for (const cell of frozen.cells) {
+    const entry = frozen.truthByTask.get(cell.task_id)
+    ;(entry.truth.tier1_obligations?.must_not_report_ready_when ?? []).forEach((_, index) => {
+      requiredClauses.push({ file: entry.path, pointer: `/tier1_obligations/must_not_report_ready_when/${index}` })
+    })
+  }
+  const adjudication = loadAdjudication(ROOT, { requiredClauses })
+  if (adjudication.problems.length > 0) {
+    const payload = { status: 'adjudication_contract_mismatch', problems: adjudication.problems }
+    writeEvidence(join(outDir, 'result.json'), `${JSON.stringify(payload, null, 2)}\n`)
+    console.error('adjudication_contract_mismatch: the frozen adjudication contract does not match its sources.')
+    for (const problem of adjudication.problems) console.error(`  - ${problem}`)
+    process.exit(1)
   }
 
   const madarRevision = git(['rev-parse', 'HEAD'])
@@ -246,7 +249,6 @@ async function main() {
       cells.push(invalidCell(base, 'judge_failure', `${evidence.unclassified.length} unclassified evidence channel(s); see HUMAN_GATE-661-EVIDENCE-SURFACE`))
       continue
     }
-    const declarations = extractDeclarations(pack.artifact)
     const answerability = readAnswerability(pack.artifact)
     if (answerability === null) {
       cells.push(invalidCell(base, 'incomplete_receipt', 'context artifact reports no answerability state'))
@@ -254,8 +256,9 @@ async function main() {
     }
     const verdict = evaluateTaskCell({
       cell, task, target, truth: truthEntry.truth,
-      preparation: prep.receipt, artifact: pack.artifact, evidence, declarations, answerability,
-      targetDir: prep.destDir,
+      truthFile: truthEntry.path,
+      preparation: prep.receipt, artifact: pack.artifact, evidence, answerability,
+      targetDir: prep.destDir, adjudication,
     })
     cells.push({ ...base, ...verdict, artifact_signals: pack.artifact.retrieval_gate?.signals ?? null })
   }
@@ -301,15 +304,14 @@ async function main() {
       cells.push(invalidCell(base, 'judge_failure', `${evidence.unclassified.length} unclassified evidence channel(s); see HUMAN_GATE-661-EVIDENCE-SURFACE`))
       continue
     }
-    const declarations = extractDeclarations(pack.artifact)
     const answerability = readAnswerability(pack.artifact)
     if (answerability === null) {
       cells.push(invalidCell(base, 'incomplete_receipt', 'context artifact reports no answerability state'))
       continue
     }
     const verdict = evaluateProbe({
-      probe, evidence, declarations, answerability, targetDir: prep.destDir,
-      relabelCandidates: PROBE_RELABEL_CANDIDATES[probe.id] ?? [],
+      probe, probeIndex: frozen.probes.indexOf(probe), evidence, artifact: pack.artifact,
+      answerability, targetDir: prep.destDir, adjudication,
     })
     cells.push({ ...base, ...verdict, artifact_signals: pack.artifact.retrieval_gate?.signals ?? null })
   }
@@ -334,6 +336,15 @@ async function main() {
       file_count: frozen.manifest.file_count,
       digest: frozen.manifest.digest,
       path: 'frozen-input-manifest.json',
+    },
+    adjudication_contract: {
+      path: ADJUDICATION_PATH,
+      digest: adjudication.digest,
+      entry_count: adjudication.byClause.size,
+      requirement_count: adjudication.requirementsById.size,
+      clause_sha256: [...adjudication.byClause.entries()]
+        .map(([key, entry]) => ({ clause: key, adjudication_id: entry.id, predicate: entry.predicate.kind, clause_sha256: entry.source.clause_sha256 }))
+        .sort((a, b) => a.clause.localeCompare(b.clause)),
     },
     gate_activation: { state: 'pre_baseline', active: false },
     totals,

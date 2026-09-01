@@ -1,9 +1,16 @@
-# Attempt 1 — provisional, superseded by an evaluator-contract audit
+# Attempt 1 — superseded
 
-**Status:** Phase 1 attempt 1 — provisional pending evaluator-contract audit.
+**Status:** `superseded_evaluator_incomplete_evidence_surface`
 **Bytes:** preserved exactly as produced. Nothing in `run-a/` or `run-b/` has been
 edited, regenerated, or relabelled.
-**Superseded by:** [`../2026-09-01-corrected-baseline/`](../2026-09-01-corrected-baseline/)
+**Superseded by:** [`../2026-09-01-adjudicated-baseline/`](../2026-09-01-adjudicated-baseline/), which is the
+measurement of record. The intermediate
+[`../2026-09-01-corrected-baseline/`](../2026-09-01-corrected-baseline/) is itself superseded —
+see its own `CLASSIFICATION.md`.
+
+Results produced under different adjudication contracts are **not comparable**. The semantic
+digest now covers the adjudication contract identity, so a digest from this attempt can never
+equal one from the adjudicated baseline even if every cell agreed.
 
 This directory holds the first execution of the frozen Tier 1 subset (issue #661,
 PR #733) at Madar revision `72ecb4aa72899c5fa1ba4e2c27795070e74871eb`. It reported

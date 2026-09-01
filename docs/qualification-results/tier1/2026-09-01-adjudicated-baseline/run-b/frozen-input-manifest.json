@@ -1,0 +1,153 @@
+{
+  "contract_version": "1.0.0",
+  "file_count": 23,
+  "files": [
+    {
+      "path": "docs/qualification/README.md",
+      "sha256": "8153515a9daa7b5bb253c2d5439d8b485c0c6c03958cac2d3f287c74f9675162"
+    },
+    {
+      "path": "docs/qualification/corpus.json",
+      "sha256": "8d2fd2ae3386498010fe716dcc8c7903f4759135ca0380cc453ee1f2c1dd8a52"
+    },
+    {
+      "path": "docs/qualification/evidence-categories.md",
+      "sha256": "1f75b04229b805050584eadda201bc67906224d34f562afa2098558296a952cd"
+    },
+    {
+      "path": "docs/qualification/examples/receipt-tier1-valid.json",
+      "sha256": "a68f8d58d1f940ac10e5d5cb1c124644a51e722f886abe53f1e06c7d53f490fd"
+    },
+    {
+      "path": "docs/qualification/examples/receipt-tier2-invalid-no-madar-call.json",
+      "sha256": "2783cad80b8a00d12b8d84718f3c4b3e31846111abc4830c47677dd3422a80aa"
+    },
+    {
+      "path": "docs/qualification/freeze.json",
+      "sha256": "f71cdd443edf97760103f41b0d72816843a736f5dd95edaf79f1ef478b05f17e"
+    },
+    {
+      "path": "docs/qualification/holdout-policy.md",
+      "sha256": "f5671c4cd5f5487e21dcb44e34fa98b5520a7b9ec58391ce1f086ebd33e23616"
+    },
+    {
+      "path": "docs/qualification/patches/hono-compose-reentrancy-guard.patch",
+      "sha256": "9355c5bbb05cd5ae4d998ace18d6381f0cba4fd080203d4d02579da3dcf6dea4"
+    },
+    {
+      "path": "docs/qualification/patches/hono-error-message-disclosure.patch",
+      "sha256": "edb79059b72b4f27f5dc8341ba2d9a3617901c402da9ef1f9daf5503e6528d6f"
+    },
+    {
+      "path": "docs/qualification/receipt-schema.json",
+      "sha256": "e849ba4b28c0cad119a8a23fda82bf39a91f2d53ac6b6900806d0157ac91f0be"
+    },
+    {
+      "path": "docs/qualification/rubrics.json",
+      "sha256": "bf176381b6d6df5da41c4a3685bfaf8bf31f0767feef571ee7b85ce4644eba6f"
+    },
+    {
+      "path": "docs/qualification/stop-rule.md",
+      "sha256": "36246356a456d5839e0670b298ee7c34a80e89f47481991eb791d029b972e1c9"
+    },
+    {
+      "path": "docs/qualification/tasks.json",
+      "sha256": "c941088446f21e4f233185794821639ba8095ba3f9984f9cd24a9fc039cbc02b"
+    },
+    {
+      "path": "docs/qualification/tier1-adjudication.json",
+      "sha256": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136"
+    },
+    {
+      "path": "docs/qualification/tier1.json",
+      "sha256": "27760602c1ca4d4e61155131a8f8e6ef2d2c401ec8127df0b1c1742d21310dcd"
+    },
+    {
+      "path": "docs/qualification/tier2-matrix.json",
+      "sha256": "449d807630fad5adb46691c6d7c7329992c0674ab099cec8c29329e7fc1f638b"
+    },
+    {
+      "path": "docs/qualification/truth/arch-unstorage-driver-seam.json",
+      "sha256": "82e3a9d52c8a19716b30eceb87ca2a2eb9e2107dd3d07498145c0aae70586b89"
+    },
+    {
+      "path": "docs/qualification/truth/flow-hono-request-dispatch.json",
+      "sha256": "eb39c4e14a1932c5440fcdac2c6ba20928fba89120879f2667c8bfafabb612fb"
+    },
+    {
+      "path": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+      "sha256": "b500e8d16d32069ed4c6ab8014199e01cd0f0ae4d785ee96eed212b3eaa98f2d"
+    },
+    {
+      "path": "docs/qualification/truth/plan-unstorage-add-driver.json",
+      "sha256": "e6332e047475f88ff41358b17211a22b3096be992a3f523673362163ea9f37f2"
+    },
+    {
+      "path": "docs/qualification/truth/review-hono-error-handling.json",
+      "sha256": "5e0653e0fa613cc7a4ee72aad1175d7a95ccce603aaf68afe5cc59b2e15854dd"
+    },
+    {
+      "path": "docs/qualification/truth/rootcause-hono-middleware-rerun.json",
+      "sha256": "6e2005ced5ba7ff768d1b9b3135eb909e98d6c1ead04712bc1b0185c480e429d"
+    },
+    {
+      "path": "docs/qualification/validity-rules.md",
+      "sha256": "ee3898f57210693405840f926513205fb7c5c1645c348dc6ee5ea1d45967d18f"
+    }
+  ],
+  "derived_references": [
+    "docs/qualification/corpus.json",
+    "docs/qualification/freeze.json",
+    "docs/qualification/patches/hono-compose-reentrancy-guard.patch",
+    "docs/qualification/patches/hono-error-message-disclosure.patch",
+    "docs/qualification/rubrics.json",
+    "docs/qualification/tasks.json",
+    "docs/qualification/tier1-adjudication.json",
+    "docs/qualification/tier1.json",
+    "docs/qualification/truth/arch-unstorage-driver-seam.json",
+    "docs/qualification/truth/flow-hono-request-dispatch.json",
+    "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+    "docs/qualification/truth/plan-unstorage-add-driver.json",
+    "docs/qualification/truth/review-hono-error-handling.json",
+    "docs/qualification/truth/rootcause-hono-middleware-rerun.json"
+  ],
+  "referenced_ids": {
+    "target_ids": [
+      "hono",
+      "hono-seeded-compose",
+      "hono-seeded-error-disclosure",
+      "sealed-holdout-a",
+      "unstorage"
+    ],
+    "task_ids": [
+      "arch-unstorage-driver-seam",
+      "flow-hono-request-dispatch",
+      "impact-hono-drop-router-fallback",
+      "plan-unstorage-add-driver",
+      "review-hono-error-handling",
+      "rootcause-hono-middleware-rerun"
+    ],
+    "tier1_cell_ids": [
+      "arch-unstorage-driver-seam@unstorage",
+      "flow-hono-request-dispatch@hono",
+      "impact-hono-drop-router-fallback@hono",
+      "plan-unstorage-add-driver@unstorage",
+      "review-hono-error-handling@hono-seeded-error-disclosure",
+      "rootcause-hono-middleware-rerun@hono-seeded-compose"
+    ],
+    "negative_probe_ids": [
+      "neg-hono-absent-matcher-persistence",
+      "neg-unstorage-absent-encryption"
+    ],
+    "rubric_methods": [
+      "affected_set_precision_recall",
+      "blinded_rubric",
+      "evidence_obligation_recall",
+      "ordered_path_rubric",
+      "seeded_defect_detection",
+      "single_root_cause_adjudication"
+    ]
+  },
+  "cross_reference_valid": true,
+  "digest": "36ca51eb5b729bab944db0998e78bb70682da9fa369a8f498c8d614d2e953e23"
+}

@@ -254,118 +254,16 @@ export function readAnswerability(artifact) {
     ?? null
 }
 
-/**
- * Channels in which an artifact can say that something is absent, missing, or
- * unresolved.
- *
- * These overlap the `ignored` evidence classifications on purpose. A caveat is
- * not evidence ABOUT the target — counting it as evidence would let a pack earn
- * recall by describing its own gaps — but it is exactly where a declaration of
- * absence belongs. The two readings are separate and both are recorded.
- */
-export const DECLARATION_CHANNELS = [
-  '.evidence.answerability.caveats[]',
-  '.evidence.answerability.missing_obligations[]',
-  '.evidence.answerability.verification_targets[].reason',
-  '.evidence.coverage_detail.missing_obligations[]',
-  '.evidence.confidence_reasons[]',
-  '.evidence.missing_phases[]',
-  '.governance.directive.missing_phases[]',
-  '.pack.answer_contract.uncertainty_notes[]',
-  '.pack.answer_contract.missing_phases[]',
-  '.pack.answer_contract.do_not_claim[]',
-  '.pack.execution_slice.phase_coverage.missing[]',
-  '.pack.execution_slice.boundary_reason',
-  '.pack.execution_slice.primary_path.boundary_reason',
-  '.negative_guidance[]',
-  '.missing_context[]',
-  '.missing_semantic[]',
-  '.claims[].text',
-  '.why_explanation[]',
-]
-
-const DECLARATION_CHANNEL_SET = new Set(DECLARATION_CHANNELS)
-
-/**
- * Everything the artifact says about what it did NOT establish, with the exact
- * schema path it said it at. Nothing is interpreted here.
- */
-export function extractDeclarations(artifact) {
-  const declarations = []
-  for (const leaf of stringLeaves(artifact)) {
-    if (!DECLARATION_CHANNEL_SET.has(leaf.channel)) continue
-    const text = leaf.value.trim()
-    if (text) declarations.push({ schema_path: leaf.schemaPath, channel: leaf.channel, text })
-  }
-  // Verification targets name a file the artifact says still needs checking,
-  // which is a declaration that the matter is unresolved as well as a pointer.
-  for (const target of artifact.evidence?.answerability?.verification_targets ?? []) {
-    for (const file of target.focus_files ?? []) {
-      if (typeof file === 'string' && file.trim()) {
-        declarations.push({ schema_path: '.evidence.answerability.verification_targets[].focus_files[]', channel: '.evidence.answerability.verification_targets[].focus_files[]', text: file.trim() })
-      }
-    }
-  }
-  return declarations
-}
-
-/**
- * Markers that make a sentence a statement of ABSENCE rather than of presence.
- *
- * Mentioning the subject is not declaring it missing. `claims[].text` and
- * `why_explanation[]` are declaration-bearing channels but are affirmative by
- * nature: "supporting evidence for the route matcher cache" names the subject
- * while asserting the opposite of what the frozen probe requires. A declaration
- * must therefore carry negation, not merely the topic.
- */
-const ABSENCE_MARKERS = [
-  /\bno\b/i, /\bnot\b/i, /\bnone\b/i, /\bnever\b/i, /\bnothing\b/i,
-  /\babsent\b/i, /\babsence\b/i, /\bmissing\b/i, /\bunresolved\b/i,
-  /\bunsupported\b/i, /\bunobserved\b/i, /\bunknown\b/i,
-  /\blacks?\b/i, /\blacking\b/i, /\bwithout\b/i, /\bcannot\b/i,
-  /\bdoes\s+not\b/i, /\bdo\s+not\b/i, /\bdoesn't\b/i, /\bdon't\b/i,
-  /\bis\s+n\/a\b/i, /\bnot\s+found\b/i, /\binsufficient\b/i,
-]
-
-/** True when `text` asserts that something is absent, missing or unestablished. */
-export function assertsAbsence(text) {
-  return ABSENCE_MARKERS.some((marker) => marker.test(String(text)))
-}
-
-/** Whole-word, case-insensitive containment. Never a substring match. */
-export function mentionsToken(text, token) {
-  if (!token) return false
-  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(^|[^A-Za-z0-9_$])${escaped}([^A-Za-z0-9_$]|$)`, 'i').test(text)
-}
-
-const GENERIC_PROMPT_WORDS = new Set([
-  'about', 'after', 'again', 'against', 'along', 'already', 'also', 'although', 'always', 'among',
-  'another', 'anything', 'around', 'because', 'been', 'before', 'being', 'below', 'between', 'both',
-  'could', 'describe', 'design', 'does', 'doing', 'during', 'each', 'either', 'else', 'enough',
-  'every', 'explain', 'from', 'further', 'given', 'happens', 'have', 'here', 'however', 'into',
-  'itself', 'library', 'might', 'more', 'most', 'much', 'must', 'name', 'need', 'never', 'other',
-  'over', 'part', 'people', 'project', 'repository', 'same', 'should', 'since', 'some', 'such',
-  'system', 'than', 'that', 'their', 'them', 'then', 'there', 'these', 'they', 'thing', 'this',
-  'those', 'through', 'under', 'until', 'using', 'value', 'values', '什么', 'what', 'when', 'where',
-  'whether', 'which', 'while', 'will', 'with', 'within', 'would', 'your',
-])
-
-/**
- * The distinguishing subject terms of a frozen probe prompt.
- *
- * Derived from the frozen bytes by a fixed rule so the same prompt always
- * yields the same terms: content tokens of five characters or more that are not
- * generic English. The terms are recorded in the result, so the judgement a
- * verdict rests on is inspectable rather than implicit.
- */
-export function probeSubjectTerms(promptText) {
-  const tokens = String(promptText).toLowerCase().match(/[a-z][a-z0-9_]*/g) ?? []
-  const terms = new Set()
-  for (const token of tokens) {
-    if (token.length < 5) continue
-    if (GENERIC_PROMPT_WORDS.has(token)) continue
-    terms.add(token)
-  }
-  return [...terms].sort()
-}
+// Prose adjudication has been REMOVED, not disabled.
+//
+// Earlier revisions read declaration channels and asked whether a sentence
+// asserted absence or unresolved state. That question is not decidable by
+// matching: "There is no doubt that an on-disk matcher cache exists" carries a
+// negation and the subject while asserting the opposite, and "supporting
+// evidence for src/hono.ts" names a missing requirement while asserting its
+// presence. Both directions were wrong.
+//
+// `DECLARATION_CHANNELS`, `extractDeclarations`, `assertsAbsence`,
+// `probeSubjectTerms` and `mentionsToken` are gone. Absence and unresolved state
+// are now decided only by typed artifact channels declared in
+// docs/qualification/tier1-adjudication.json — see adjudication.mjs.

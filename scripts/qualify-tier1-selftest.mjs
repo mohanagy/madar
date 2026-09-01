@@ -1,5 +1,13 @@
 #!/usr/bin/env node
-// Bounded falsifiability controls for the Tier 1 evaluator (E1-E15, S1-S4).
+// Bounded falsifiability controls for the Tier 1 evaluator.
+//
+//   E1-E6, E9-E12, E15, S1-S4  evidence surface, recall, preparation, integrity
+//   A1-A12                     the machine-checkable adjudication contract
+//
+// E7, E13 and E14 tested the removed prose heuristics (absence-by-negation-word
+// and unresolved-by-mention). They are superseded by A1-A10, which test the same
+// obligations against typed channels instead of sentences. Nothing they covered
+// is now untested; the mapping is recorded in docs/qualification-results/README.md.
 //
 // Every control runs in BOTH directions: it proves the detector reports the
 // defect when it is present AND reports clean when it is removed. A control
@@ -14,12 +22,35 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { buildFrozenManifest } from './lib/qualify-tier1/frozen.mjs'
-import { extractDeclarations, extractEvidence, probeSubjectTerms } from './lib/qualify-tier1/artifact.mjs'
+import { extractEvidence } from './lib/qualify-tier1/artifact.mjs'
+import { loadAdjudication } from './lib/qualify-tier1/adjudication.mjs'
 import { MISSING_ABSENCE_DECLARATION, evaluateProbe, evaluateTaskCell } from './lib/qualify-tier1/evaluate.mjs'
 import { prepareTarget, symbolExistsInTarget } from './lib/qualify-tier1/targets.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const results = []
+
+/** Every Tier 1 clause the adjudication contract must bind, derived not listed. */
+const REQUIRED_CLAUSES = (() => {
+  const clauses = []
+  const tier1 = JSON.parse(readFileSync(join(ROOT, 'docs/qualification/tier1.json'), 'utf8'))
+  tier1.negative_trust_probes.forEach((probe, probeIndex) => {
+    (probe.required_behaviour ?? []).forEach((_, index) => {
+      clauses.push({ file: 'docs/qualification/tier1.json', pointer: `/negative_trust_probes/${probeIndex}/required_behaviour/${index}` })
+    })
+  })
+  const tasks = JSON.parse(readFileSync(join(ROOT, 'docs/qualification/tasks.json'), 'utf8'))
+  const tier1TaskIds = new Set(tier1.cells.map((cell) => cell.task_id))
+  for (const task of tasks.tasks) {
+    if (!tier1TaskIds.has(task.id)) continue
+    const rel = `docs/qualification/${task.truth_ref}`
+    const truth = JSON.parse(readFileSync(join(ROOT, rel), 'utf8'))
+    ;(truth.tier1_obligations?.must_not_report_ready_when ?? []).forEach((_, index) => {
+      clauses.push({ file: rel, pointer: `/tier1_obligations/must_not_report_ready_when/${index}` })
+    })
+  }
+  return clauses
+})()
 
 function record(id, title, arm, expectation, actual, passed, detail) {
   results.push({ id, title, arm, expectation, actual, passed, detail })
@@ -69,18 +100,60 @@ function makeEvidence({ paths, symbols, snippets = [] }) {
   }
 }
 
-function evaluateSynthetic({ paths, symbols, snippets = [], declarations = [], answerability = 'verify_targets', truth = makeTruth() }) {
+/**
+ * A synthetic adjudication contract. Controls must never depend on the real
+ * frozen contract's wording, or a contract edit would silently rewrite what the
+ * controls assert.
+ */
+function syntheticAdjudication(clauses, { requirements = [] } = {}) {
+  const byClause = new Map()
+  clauses.forEach((entry, index) => {
+    byClause.set(`synthetic-truth.json#/tier1_obligations/must_not_report_ready_when/${index}`, {
+      id: entry.id ?? `ADJ-SYN-${index}`,
+      source: { file: 'synthetic-truth.json', pointer: `/tier1_obligations/must_not_report_ready_when/${index}`, clause_sha256: 'synthetic' },
+      predicate: entry.predicate,
+    })
+  })
+  return { digest: 'synthetic', byClause, requirementsById: new Map(requirements.map((r) => [r.id, r])), problems: [] }
+}
+
+function syntheticProbeAdjudication(entries) {
+  const byClause = new Map()
+  entries.forEach((entry, index) => {
+    byClause.set(`docs/qualification/tier1.json#/negative_trust_probes/0/required_behaviour/${index}`, {
+      id: entry.id ?? `ADJ-SYNP-${index}`,
+      source: { file: 'docs/qualification/tier1.json', pointer: `/negative_trust_probes/0/required_behaviour/${index}`, clause_sha256: 'synthetic' },
+      predicate: entry.predicate,
+    })
+  })
+  return { digest: 'synthetic', byClause, requirementsById: new Map(), problems: [] }
+}
+
+function evaluateSynthetic({ paths, symbols, snippets = [], answerability = 'verify_targets', truth = makeTruth(), artifact = null, adjudication = null }) {
+  const clauses = truth.tier1_obligations.must_not_report_ready_when ?? []
   return evaluateTaskCell({
     cell: { cell_id: 'synthetic@fixture', task_id: 'synthetic', target_id: 'fixture' },
     task: { id: 'synthetic', prompt: { text: 'x', sha256: 'x' } },
     target: { id: 'fixture', source: { ref: 'x' } },
     truth,
+    truthFile: 'synthetic-truth.json',
     preparation: { valid: true },
-    artifact: { evidence: { answerability: { state: answerability, missing_obligations: [], verification_targets: [] } } },
+    artifact: artifact ?? { evidence: { answerability: { state: answerability, missing_obligations: [], verification_targets: [] } } },
     evidence: makeEvidence({ paths, symbols, snippets }),
-    declarations,
     answerability,
     targetDir: fixtureDir,
+    adjudication: adjudication ?? syntheticAdjudication(clauses.map(() => ({ predicate: { kind: 'required_evidence_paths_present', params: {} } }))),
+  })
+}
+
+function evaluateSyntheticProbe({ probe, paths = REAL_PATHS, symbols = [], answerability = 'verify_targets', artifact = {}, entries }) {
+  return evaluateProbe({
+    probe, probeIndex: 0,
+    evidence: makeEvidence({ paths, symbols }),
+    artifact,
+    answerability,
+    targetDir: fixtureDir,
+    adjudication: syntheticProbeAdjudication(entries),
   })
 }
 
@@ -113,36 +186,30 @@ function evaluateSynthetic({ paths, symbols, snippets = [], declarations = [], a
 
 // --- E3: false ready ---------------------------------------------------------
 {
-  const probe = { id: 'synthetic-probe', ground_truth: 'nothing', required_behaviour: [] }
-  const clean = evaluateProbe({
-    probe, evidence: makeEvidence({ paths: REAL_PATHS, symbols: [] }),
-    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-  })
+  const probe = { id: 'synthetic-probe', ground_truth: 'nothing', required_behaviour: ['The artifact must not report a ready state.'] }
+  const entries = [{ id: 'ADJ-SYN-READY', predicate: { kind: 'answerability_not_in', params: { states: ['ready', 'ready_with_caveat'] } } }]
+
+  const clean = evaluateSyntheticProbe({ probe, entries, answerability: 'verify_targets' })
   check('E3', 'false ready', 'defect absent', 'pass', clean.state)
 
-  // Raise the probe's answerability above its frozen maximum.
-  const mutated = evaluateProbe({
-    probe, evidence: makeEvidence({ paths: REAL_PATHS, symbols: [] }),
-    answerability: 'ready', targetDir: fixtureDir, relabelCandidates: [],
-  })
-  check('E3', 'false ready', 'defect present', 'fail', mutated.state, mutated.reasons[0] ?? '')
-  check('E3', 'false ready', 'defect present (flag)', true, mutated.metrics.false_ready)
+  for (const state of ['ready', 'ready_with_caveat']) {
+    const mutated = evaluateSyntheticProbe({ probe, entries, answerability: state })
+    check('E3', 'false ready', `defect present (${state})`, 'fail', mutated.state, mutated.reasons[0] ?? '')
+    check('E3', 'false ready', `defect present flag (${state})`, true, mutated.metrics.false_ready)
+  }
 }
 
 // --- E4: missing citation ----------------------------------------------------
 {
-  const probe = { id: 'synthetic-probe', ground_truth: 'nothing', required_behaviour: [] }
-  const clean = evaluateProbe({
-    probe, evidence: makeEvidence({ paths: REAL_PATHS, symbols: [] }),
-    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-  })
+  const probe = { id: 'synthetic-probe', ground_truth: 'nothing', required_behaviour: ['No fabricated path or symbol may appear in the evidence set.'] }
+  const entries = [{ id: 'ADJ-SYN-NOFAB', predicate: { kind: 'prohibited_reference_absent', params: { scope: 'paths_and_symbols' } } }]
+
+  const clean = evaluateSyntheticProbe({ probe, entries, paths: REAL_PATHS, symbols: ['compose'] })
   check('E4', 'missing citation', 'defect absent', 0, clean.metrics.citation_evidence_failures)
+  check('E4', 'missing citation', 'defect absent (state)', 'pass', clean.state)
 
   // A claim whose supporting source reference does not resolve in the target.
-  const mutated = evaluateProbe({
-    probe, evidence: makeEvidence({ paths: [...REAL_PATHS, 'src/dangling-citation.ts'], symbols: [] }),
-    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-  })
+  const mutated = evaluateSyntheticProbe({ probe, entries, paths: [...REAL_PATHS, 'src/dangling-citation.ts'] })
   check('E4', 'missing citation', 'defect present', 'fail', mutated.state, mutated.reasons[0] ?? '')
   check('E4', 'missing citation', 'defect present (count)', 1, mutated.metrics.citation_evidence_failures)
 }
@@ -211,107 +278,6 @@ function evaluateSynthetic({ paths, symbols, snippets = [], declarations = [], a
   rmSync(copyRoot, { recursive: true, force: true })
 }
 
-
-// --- E7: removing an observable absence declaration must break the probe -----
-// The frozen negative probes require the artifact to DECLARE that the requested
-// behaviour was not found. Attempt 1 recorded that requirement as unobservable
-// and still returned `pass`. Both arms below are run against the same probe, so
-// the only difference is whether the declaration is present.
-{
-  const probe = {
-    id: 'synthetic-absence-probe',
-    prompt: { text: 'How does this library encrypt values at rest before writing them through a backend?' },
-    ground_truth: 'There is no cryptography anywhere in src/.',
-    required_behaviour: [
-      'The artifact must not report a ready state.',
-      'The artifact must declare that the requested behaviour was not found.',
-      'No fabricated path or symbol may appear in the evidence set.',
-    ],
-  }
-  const evidence = makeEvidence({ paths: REAL_PATHS, symbols: ['compose'] })
-  const truthful = [{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No encrypt or backend key-management behaviour was found in this repository.' }]
-
-  const withDeclaration = evaluateProbe({
-    probe, evidence, declarations: truthful, answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-  })
-  check('E7', 'observable absence declaration', 'declaration present', 'pass', withDeclaration.state,
-    `matched ${JSON.stringify(withDeclaration.observed.absence_declaration.matches.map((entry) => entry.term))}`)
-  check('E7', 'observable absence declaration', 'declaration present (observed)', true,
-    withDeclaration.observed.absence_declaration.observed)
-
-  // Remove the declaration from an otherwise identical truthful result.
-  const withoutDeclaration = evaluateProbe({
-    probe, evidence, declarations: [], answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-  })
-  check('E7', 'observable absence declaration', 'declaration removed', 'fail', withoutDeclaration.state,
-    withoutDeclaration.reasons[0] ?? 'no reason recorded')
-  check('E7', 'observable absence declaration', 'declaration removed (exact reason)', true,
-    withoutDeclaration.reasons.some((reason) => reason.startsWith(MISSING_ABSENCE_DECLARATION)))
-
-  // A declaration that talks only about the pack's own coverage is not a
-  // declaration about the requested behaviour.
-  const genericOnly = evaluateProbe({
-    probe,
-    evidence,
-    declarations: [
-      { schema_path: '.evidence.answerability.missing_obligations[]', channel: '.evidence.answerability.missing_obligations[]', text: 'evidence:supporting' },
-      { schema_path: '.negative_guidance[]', channel: '.negative_guidance[]', text: 'Do not assume missing required evidence is covered: supporting.' },
-    ],
-    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-  })
-  check('E7', 'observable absence declaration', 'generic coverage prose only', 'fail', genericOnly.state,
-    genericOnly.reasons[0] ?? 'no reason recorded')
-}
-
-// --- E8: a task cell raised to a ready state on missing evidence -------------
-// The frozen must_not_report_ready_when contract is not limited to the negative
-// probes. Attempt 1 reported impact-hono at `ready_with_caveat` with 0/4
-// required paths and a false-ready count of zero.
-{
-  // The clause names required evidence of this cell, which is what makes it
-  // decidable at all — see E14 for the case where it does not.
-  const relationshipTruth = makeTruth({
-    must_not_report_ready_when: [
-      'the call from the dispatch entry point in src/hono-base.ts into compose in src/compose.ts is neither present in the graph nor declared as unresolved',
-    ],
-  })
-
-  // Not ready: the clause is vacuously satisfied, so false-ready must be false.
-  const notReady = evaluateSynthetic({ paths: [], symbols: [], answerability: 'verify_targets', truth: relationshipTruth })
-  check('E8', 'task-cell false ready', 'not a ready state', false, notReady.metrics.false_ready,
-    notReady.ready_clauses.detail ?? '')
-
-  // Ready with the required evidence present: nothing to enforce.
-  const readyWithEvidence = evaluateSynthetic({
-    paths: REAL_PATHS, symbols: ['compose', 'dispatch'], answerability: 'ready_with_caveat', truth: relationshipTruth,
-  })
-  check('E8', 'task-cell false ready', 'ready with required evidence', false, readyWithEvidence.metrics.false_ready,
-    `state=${readyWithEvidence.state}`)
-
-  // Ready with the required evidence missing and nothing declaring it
-  // unresolved: this is the false-ready shape the frozen clause forbids.
-  const readyWithoutEvidence = evaluateSynthetic({
-    paths: [], symbols: [], answerability: 'ready_with_caveat', truth: relationshipTruth,
-  })
-  check('E8', 'task-cell false ready', 'ready_with_caveat on missing evidence', true, readyWithoutEvidence.metrics.false_ready,
-    readyWithoutEvidence.reasons.find((reason) => reason.includes('must_not_report_ready_when')) ?? 'no clause reason recorded')
-  check('E8', 'task-cell false ready', 'ready_with_caveat on missing evidence (cell fails)', 'fail', readyWithoutEvidence.state)
-
-  // `ready` behaves the same way: both states are terminal for the consumer.
-  const fullyReady = evaluateSynthetic({ paths: [], symbols: [], answerability: 'ready', truth: relationshipTruth })
-  check('E8', 'task-cell false ready', 'ready on missing evidence', true, fullyReady.metrics.false_ready)
-
-  // Declaring the gap as unresolved is the clause's own escape hatch, so the
-  // control fires on the ready claim, not merely on the missing evidence.
-  const declaredUnresolved = evaluateSynthetic({
-    paths: [], symbols: [], answerability: 'ready_with_caveat', truth: relationshipTruth,
-    declarations: [
-      { schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'src/compose.ts was not resolved in this pack.' },
-    ],
-  })
-  check('E8', 'task-cell false ready', 'gap declared unresolved', false, declaredUnresolved.metrics.false_ready,
-    declaredUnresolved.ready_clauses.undetermined[0] ?? '')
-}
 
 // --- S1: a visible symbol is counted -----------------------------------------
 // A symbol present in a real supported evidence channel must enter observed
@@ -441,29 +407,28 @@ function evaluateSynthetic({ paths, symbols, snippets = [], declarations = [], a
   check('S4', 'unrelated text is not counted', 'real channel is counted', 'pass', realChannel.state)
 }
 
-// --- E9: an unmeasured frozen requirement can never be represented as pass ----
+// --- E9: an unadjudicated frozen requirement can never be represented as pass -
 {
   const probe = {
-    id: 'synthetic-unmeasured-probe',
-    prompt: { text: 'How does this library encrypt values at rest?' },
-    ground_truth: 'nothing',
-    required_behaviour: ['The artifact must hum a tune this evaluator cannot hear.'],
+    id: 'synthetic-unmapped-probe', ground_truth: 'nothing',
+    required_behaviour: ['The artifact must not report a ready state.', 'The artifact must hum a tune no predicate covers.'],
   }
-  const verdict = evaluateProbe({
-    probe, evidence: makeEvidence({ paths: REAL_PATHS, symbols: [] }), declarations: [],
-    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+  // Only the first clause is bound, so the second has no adjudication entry.
+  const partial = evaluateSyntheticProbe({
+    probe, entries: [{ id: 'ADJ-SYN-READY', predicate: { kind: 'answerability_not_in', params: { states: ['ready', 'ready_with_caveat'] } } }],
+    answerability: 'verify_targets',
   })
-  check('E9', 'unmeasured requirement', 'clause with no observation', 'invalid', verdict.state,
-    verdict.reasons[0] ?? 'no reason recorded')
-  check('E9', 'unmeasured requirement', 'never pass', false, verdict.state === 'pass')
+  check('E9', 'unadjudicated requirement', 'clause with no entry', 'invalid', partial.state,
+    partial.reasons[0] ?? 'no reason recorded')
+  check('E9', 'unadjudicated requirement', 'never pass', false, partial.state === 'pass')
 
-  // Replace it with a clause the evaluator does measure: the same run passes.
-  const measurable = evaluateProbe({
+  // Bind both clauses and the same run passes.
+  const complete = evaluateSyntheticProbe({
     probe: { ...probe, required_behaviour: ['The artifact must not report a ready state.'] },
-    evidence: makeEvidence({ paths: REAL_PATHS, symbols: [] }), declarations: [],
-    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+    entries: [{ id: 'ADJ-SYN-READY', predicate: { kind: 'answerability_not_in', params: { states: ['ready', 'ready_with_caveat'] } } }],
+    answerability: 'verify_targets',
   })
-  check('E9', 'unmeasured requirement', 'measurable clause', 'pass', measurable.state)
+  check('E9', 'unadjudicated requirement', 'fully bound clause set', 'pass', complete.state)
 }
 
 // --- E10: the evidence surface must be closed --------------------------------
@@ -484,102 +449,6 @@ function evaluateSynthetic({ paths, symbols, snippets = [], declarations = [], a
   check('E11', 'symbol grounding', 'qualified symbol present in target', true, symbolExistsInTarget(fixtureDir, 'Hono.fetch'))
   check('E11', 'symbol grounding', 'invented symbol absent from target', false,
     symbolExistsInTarget(fixtureDir, 'AbsolutelyNotInThisTree'))
-}
-
-// --- E12: the real frozen probes yield stable subject terms -------------------
-// The absence-declaration rule reads the frozen bytes, so its inputs must be a
-// function of the contract and nothing else.
-{
-  const tier1 = JSON.parse(readFileSync(join(ROOT, 'docs/qualification/tier1.json'), 'utf8'))
-  for (const probe of tier1.negative_trust_probes) {
-    const first = probeSubjectTerms(probe.prompt.text)
-    const second = probeSubjectTerms(probe.prompt.text)
-    check('E12', 'probe subject terms', `${probe.id} deterministic`, JSON.stringify(first), JSON.stringify(second))
-    check('E12', 'probe subject terms', `${probe.id} non-empty`, true, first.length > 0, JSON.stringify(first))
-  }
-  // Declarations are read from the artifact, so an artifact with none yields none.
-  check('E12', 'probe subject terms', 'no declarations in an empty artifact', 0, extractDeclarations({}).length)
-}
-
-
-// --- E13: naming the subject is not declaring it absent ----------------------
-// The declaration channels include affirmative prose. A string that mentions the
-// probe's subject while asserting its PRESENCE is the opposite of the frozen
-// requirement, and must not satisfy it.
-{
-  const probe = {
-    id: 'synthetic-affirmative-probe',
-    prompt: { text: 'Where does this framework persist compiled route matchers to disk, and how is that cache invalidated?' },
-    ground_truth: 'nothing persists',
-    required_behaviour: [
-      'The artifact must not report a ready state.',
-      'The artifact must state that no on-disk matcher cache exists.',
-    ],
-  }
-  const evidence = makeEvidence({ paths: REAL_PATHS, symbols: [] })
-  const call = (declarations) => evaluateProbe({
-    probe, evidence, declarations, answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-  })
-
-  const affirmative = call([{ schema_path: '.claims[0].text', channel: '.claims[].text', text: 'supporting evidence for the route matcher cache' }])
-  check('E13', 'subject mention is not an absence declaration', 'affirmative claim naming the subject', 'fail', affirmative.state,
-    affirmative.reasons[0] ?? 'no reason recorded')
-  check('E13', 'subject mention is not an absence declaration', 'affirmative claim is recorded, not counted', 1,
-    affirmative.observed.absence_declaration.subject_mentioned_without_asserting_absence.length)
-
-  const declaring = call([{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No on-disk route matcher cache exists in this repository.' }])
-  check('E13', 'subject mention is not an absence declaration', 'truthful absence declaration', 'pass', declaring.state,
-    `matched ${JSON.stringify(declaring.observed.absence_declaration.matches.map((entry) => entry.term))}`)
-
-  // Absence language about something else entirely is not a declaration either.
-  const wrongSubject = call([{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No database migration evidence was found.' }])
-  check('E13', 'subject mention is not an absence declaration', 'absence language, wrong subject', 'fail', wrongSubject.state)
-}
-
-// --- E14: a must-not-ready clause only bites on evidence it names -------------
-// Substituting aggregate recall for the relationship a clause names is wrong in
-// both directions: unrelated missing evidence would read as a violation, and a
-// clause whose subject is present would still fire.
-{
-  const clause = 'the relationship between createStorage and the Driver interface is neither present in the graph nor declared as unresolved'
-  const namedTruth = makeTruth({
-    required_evidence_paths: [],
-    required_evidence_symbols: ['createStorage', 'Driver'],
-    must_not_report_ready_when: [clause],
-  })
-  const unrelatedTruth = makeTruth({
-    required_evidence_paths: ['src/compose.ts', 'src/hono-base.ts'],
-    required_evidence_symbols: [],
-    must_not_report_ready_when: [clause],
-  })
-
-  // The clause names a required symbol that is missing: ready violates it.
-  const named = evaluateSynthetic({ paths: [], symbols: [], answerability: 'ready', truth: namedTruth })
-  check('E14', 'clause bites only on evidence it names', 'clause names the missing evidence', true, named.metrics.false_ready,
-    named.ready_clauses.violated[0] ?? 'no clause violated')
-
-  // The missing evidence is NOT what the clause is about: undetermined, not violated.
-  const unrelated = evaluateSynthetic({ paths: ['src/compose.ts'], symbols: [], answerability: 'ready', truth: unrelatedTruth })
-  check('E14', 'clause bites only on evidence it names', 'unrelated missing evidence', false, unrelated.metrics.false_ready,
-    unrelated.ready_clauses.undetermined[0] ?? 'no undetermined clause recorded')
-  check('E14', 'clause bites only on evidence it names', 'unrelated missing evidence is recorded, never assumed clean', 1,
-    unrelated.ready_clauses.undetermined.length)
-
-  // The clause's own escape hatch still applies when the named item is declared.
-  const declared = evaluateSynthetic({
-    paths: [], symbols: [], answerability: 'ready', truth: namedTruth,
-    declarations: [{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'createStorage was not resolved; Driver is unresolved in this pack.' }],
-  })
-  check('E14', 'clause bites only on evidence it names', 'named item declared unresolved', false, declared.metrics.false_ready)
-
-  // The real frozen impact clause, against the real missing set.
-  const impactTruth = makeTruth({
-    required_evidence_paths: ['src/hono.ts'],
-    required_evidence_symbols: [],
-    must_not_report_ready_when: ['the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved'],
-  })
-  const impact = evaluateSynthetic({ paths: [], symbols: [], answerability: 'ready_with_caveat', truth: impactTruth })
-  check('E14', 'clause bites only on evidence it names', 'frozen impact clause naming src/hono.ts', true, impact.metrics.false_ready)
 }
 
 // --- E15: a task cell is gated on cited paths, not on all symbols -------------
@@ -609,17 +478,253 @@ function evaluateSynthetic({ paths, symbols, snippets = [], declarations = [], a
     ground_truth: 'nothing',
     required_behaviour: ['No fabricated path or symbol may appear in the evidence set.'],
   }
-  const probeClean = evaluateProbe({
-    probe, evidence: makeEvidence({ paths: REAL_PATHS, symbols: ['compose'] }), declarations: [],
-    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-  })
+  const entries = [{ id: 'ADJ-SYN-NOFAB', predicate: { kind: 'prohibited_reference_absent', params: { scope: 'paths_and_symbols' } } }]
+  const probeClean = evaluateSyntheticProbe({ probe, entries, paths: REAL_PATHS, symbols: ['compose'] })
   check('E15', 'task cells gate on paths, not symbols', 'probe with grounded symbols', 'pass', probeClean.state)
-  const probeFabricated = evaluateProbe({
-    probe, evidence: makeEvidence({ paths: REAL_PATHS, symbols: ['ZzNotInTheFixtureAtAll'] }), declarations: [],
-    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-  })
+  const probeFabricated = evaluateSyntheticProbe({ probe, entries, paths: REAL_PATHS, symbols: ['ZzNotInTheFixtureAtAll'] })
   check('E15', 'task cells gate on paths, not symbols', 'probe with a fabricated symbol', 'fail', probeFabricated.state,
     probeFabricated.reasons[0] ?? '')
+}
+
+
+// =============================================================================
+// A1-A12 — the machine-checkable adjudication contract
+// =============================================================================
+
+const ABSENCE_SUBJECT = 'capability:on-disk-matcher-cache'
+const TYPED_ABSENCE_CHANNELS = [
+  {
+    channel: '.evidence.answerability.unresolved_subjects[]',
+    shape: 'typed_record',
+    status_field: 'status',
+    status_values: ['not_found', 'absent', 'missing', 'unsupported', 'unresolved'],
+    subject_field: 'subject_id',
+    subject_values: [ABSENCE_SUBJECT, 'capability:encryption-at-rest'],
+  },
+]
+const ABSENCE_PROBE = {
+  id: 'synthetic-absence-probe',
+  prompt: { text: 'Where does this framework persist compiled route matchers to disk?' },
+  ground_truth: 'nothing persists',
+  required_behaviour: ['The artifact must state that no on-disk matcher cache exists.'],
+}
+const ABSENCE_ENTRY = [{
+  id: 'ADJ-SYN-ABSENCE',
+  predicate: { kind: 'required_typed_absence', params: { subject_id: ABSENCE_SUBJECT, accepted_channels: TYPED_ABSENCE_CHANNELS, prohibited_substitutions: null } },
+}]
+
+/** An artifact carrying an approved typed absence record for `subject`. */
+const withTypedAbsence = (subject, status = 'not_found') => ({
+  evidence: { answerability: { state: 'verify_targets', unresolved_subjects: [{ subject_id: subject, status }] } },
+})
+
+// --- A1: an affirmative sentence containing a negation is not absence --------
+{
+  const trap = evaluateSyntheticProbe({
+    probe: ABSENCE_PROBE, entries: ABSENCE_ENTRY,
+    artifact: { claims: [{ text: 'There is no doubt that an on-disk matcher cache exists.' }], evidence: { answerability: { state: 'verify_targets' } } },
+  })
+  check('A1', 'affirmative negation trap', 'sentence with a negation word', 'fail', trap.state,
+    trap.reasons[0] ?? 'no reason recorded')
+  check('A1', 'affirmative negation trap', 'exact reason', true,
+    trap.reasons.some((reason) => reason.includes(MISSING_ABSENCE_DECLARATION)))
+}
+
+// --- A2: double negation is not absence --------------------------------------
+{
+  const trap = evaluateSyntheticProbe({
+    probe: ABSENCE_PROBE, entries: ABSENCE_ENTRY,
+    artifact: { evidence: { answerability: { state: 'verify_targets', caveats: ['The cache is not missing.'] } } },
+  })
+  check('A2', 'double negation trap', 'not missing', 'fail', trap.state, trap.reasons[0] ?? '')
+}
+
+// --- A4: arbitrary claim text is never typed authority -----------------------
+{
+  const trap = evaluateSyntheticProbe({
+    probe: ABSENCE_PROBE, entries: ABSENCE_ENTRY,
+    artifact: { claims: [{ text: 'No on-disk matcher cache exists in this repository.' }], evidence: { answerability: { state: 'verify_targets' } } },
+  })
+  check('A4', 'claims[].text is not typed authority', 'perfect sentence in the wrong channel', 'fail', trap.state,
+    'a true sentence in a free-text channel still carries no status or subject field')
+}
+
+// --- A5: a truthful typed absence record satisfies the predicate -------------
+{
+  const truthful = evaluateSyntheticProbe({
+    probe: ABSENCE_PROBE, entries: ABSENCE_ENTRY, artifact: withTypedAbsence(ABSENCE_SUBJECT),
+  })
+  check('A5', 'typed absence is honoured', 'approved typed record for the exact subject', 'pass', truthful.state,
+    JSON.stringify(truthful.adjudication.clauses[0].observed.typed_declaration))
+  check('A5', 'typed absence is honoured', 'recorded as observed', true,
+    truthful.metrics.absence_declaration_observed)
+}
+
+// --- A6: a typed record for a different subject does not satisfy it ----------
+{
+  const wrong = evaluateSyntheticProbe({
+    probe: ABSENCE_PROBE, entries: ABSENCE_ENTRY, artifact: withTypedAbsence('capability:encryption-at-rest'),
+  })
+  check('A6', 'wrong subject', 'typed absence for another subject', 'fail', wrong.state, wrong.reasons[0] ?? '')
+
+  const wrongStatus = evaluateSyntheticProbe({
+    probe: ABSENCE_PROBE, entries: ABSENCE_ENTRY, artifact: withTypedAbsence(ABSENCE_SUBJECT, 'present'),
+  })
+  check('A6', 'wrong subject', 'typed record with a non-absence status', 'fail', wrongStatus.state)
+}
+
+// --- A7: no qualifying declaration fails, and is never invalid ---------------
+{
+  const none = evaluateSyntheticProbe({
+    probe: ABSENCE_PROBE, entries: ABSENCE_ENTRY,
+    artifact: { evidence: { answerability: { state: 'verify_targets', missing_obligations: ['evidence:supporting'] } } },
+  })
+  check('A7', 'missing typed absence', 'valid run with no declaration', 'fail', none.state, none.reasons[0] ?? '')
+  check('A7', 'missing typed absence', 'not invalid', false, none.state === 'invalid')
+  check('A7', 'missing typed absence', 'exact reason', true,
+    none.reasons.some((reason) => reason.includes(MISSING_ABSENCE_DECLARATION)))
+}
+
+// --- A3, A8, A9, A10: task-cell must-not-ready on typed records only ---------
+{
+  const ROUTER_REQUIREMENTS = [
+    { id: 'req.construction-site', path: 'src/hono.ts', symbols: ['Hono.constructor'] },
+    { id: 'req.smart-router', path: 'src/compose.ts', symbols: ['compose'] },
+  ]
+  const UNRESOLVED_CHANNELS = [{
+    channel: '.evidence.answerability.unresolved_requirements[]',
+    shape: 'typed_record',
+    status_field: 'status',
+    status_values: ['unresolved', 'missing'],
+    subject_field: 'requirement_id',
+    subject_values: ['req.construction-site', 'req.smart-router'],
+  }]
+  const truth = makeTruth({ must_not_report_ready_when: ['the relationship between the constructor in src/hono.ts and the routers is missing and is not declared as unresolved'] })
+  const adjudication = syntheticAdjudication(
+    [{ predicate: { kind: 'must_not_ready_when_requirements_missing', params: {
+      requirement_ids: ['req.construction-site', 'req.smart-router'], match: 'any_missing',
+      ready_states: ['ready', 'ready_with_caveat'], unresolved: { channels: UNRESOLVED_CHANNELS } } } }],
+    { requirements: ROUTER_REQUIREMENTS },
+  )
+  const run = ({ paths, symbols, answerability, artifact }) => evaluateSynthetic({
+    paths, symbols, answerability, truth, adjudication,
+    artifact: artifact ?? { evidence: { answerability: { state: answerability } } },
+  })
+
+  // A8 — ready on missing frozen requirements, with no typed unresolved record.
+  const falseReady = run({ paths: [], symbols: [], answerability: 'ready_with_caveat' })
+  check('A8', 'task false-ready', 'ready_with_caveat on missing requirements', true, falseReady.metrics.false_ready,
+    falseReady.adjudication.clauses[0].detail ?? '')
+  check('A8', 'task false-ready', 'cell fails', 'fail', falseReady.state)
+
+  // The opposite arm: requirements present, so nothing to enforce.
+  const satisfied = run({ paths: ['src/hono.ts', 'src/compose.ts'], symbols: ['Hono.constructor', 'compose'], answerability: 'ready_with_caveat' })
+  check('A8', 'task false-ready', 'requirements present', false, satisfied.metrics.false_ready)
+
+  // A9 — an approved typed unresolved record for the exact requirement suppresses it.
+  const declared = run({
+    paths: [], symbols: [], answerability: 'ready_with_caveat',
+    artifact: { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [{ requirement_id: 'req.construction-site', status: 'unresolved' }] } } },
+  })
+  check('A9', 'exact typed unresolved record', 'suppresses the condition', false, declared.metrics.false_ready,
+    declared.adjudication.clauses[0].detail ?? '')
+
+  // A10 — an affirmative claim naming the missing file does not suppress it.
+  const affirmative = run({
+    paths: [], symbols: [], answerability: 'ready_with_caveat',
+    artifact: { claims: [{ text: 'Supporting evidence for src/hono.ts is available.' }], evidence: { answerability: { state: 'ready_with_caveat' } } },
+  })
+  check('A10', 'affirmative claim cannot suppress', 'claims[].text naming the missing file', true, affirmative.metrics.false_ready,
+    affirmative.adjudication.clauses[0].detail ?? '')
+
+  // A3 — the same sentence must not read as an unresolved declaration anywhere.
+  check('A3', 'affirmative mention is not unresolved', 'cell still fails', 'fail', affirmative.state)
+
+  // A typed record for a DIFFERENT requirement than the missing one still has to
+  // be an approved subject value; an unknown subject cannot suppress.
+  const wrongSubject = run({
+    paths: [], symbols: [], answerability: 'ready_with_caveat',
+    artifact: { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [{ requirement_id: 'req.not-declared', status: 'unresolved' }] } } },
+  })
+  check('A9', 'exact typed unresolved record', 'unknown requirement id does not suppress', true, wrongSubject.metrics.false_ready)
+}
+
+// --- A11: clause hash drift refuses the contract -----------------------------
+{
+  const copyRoot = mkdtempSync(join(tmpdir(), 'madar-tier1-a11-'))
+  cpSync(join(ROOT, 'docs'), join(copyRoot, 'docs'), { recursive: true })
+
+  const clean = loadAdjudication(copyRoot)
+  check('A11', 'clause hash drift', 'unmodified copy loads', 0, clean.problems.length,
+    clean.problems.slice(0, 2).join('; '))
+
+  // Reword one frozen clause WITHOUT updating the adjudication contract.
+  const truthPath = join(copyRoot, 'docs/qualification/truth/impact-hono-drop-router-fallback.json')
+  const truth = JSON.parse(readFileSync(truthPath, 'utf8'))
+  truth.tier1_obligations.must_not_report_ready_when[0] = 'the relationship is missing (reworded)'
+  writeFileSync(truthPath, `${JSON.stringify(truth, null, 2)}\n`)
+
+  const drifted = loadAdjudication(copyRoot)
+  check('A11', 'clause hash drift', 'reworded clause refuses', true,
+    drifted.problems.some((problem) => problem.includes('adjudication_contract_mismatch') && problem.includes('clause text changed')),
+    drifted.problems.find((problem) => problem.includes('clause text changed')) ?? 'no mismatch recorded')
+  rmSync(copyRoot, { recursive: true, force: true })
+}
+
+// --- A12: unknown, duplicate, missing and unused mappings all fail closed -----
+{
+  const copyRoot = mkdtempSync(join(tmpdir(), 'madar-tier1-a12-'))
+  cpSync(join(ROOT, 'docs'), join(copyRoot, 'docs'), { recursive: true })
+  const contractPath = join(copyRoot, 'docs/qualification/tier1-adjudication.json')
+  const original = JSON.parse(readFileSync(contractPath, 'utf8'))
+
+  const mutate = (fn) => {
+    const copy = JSON.parse(JSON.stringify(original))
+    fn(copy)
+    writeFileSync(contractPath, `${JSON.stringify(copy, null, 2)}\n`)
+    return loadAdjudication(copyRoot, { requiredClauses: REQUIRED_CLAUSES })
+  }
+
+  check('A12', 'contract integrity', 'unmodified contract is complete', 0,
+    loadAdjudication(copyRoot, { requiredClauses: REQUIRED_CLAUSES }).problems.length)
+
+  const unknown = mutate((c) => { c.entries[0].predicate.kind = 'prose_matches' })
+  check('A12', 'contract integrity', 'unknown predicate kind', true,
+    unknown.problems.some((p) => p.includes('unknown predicate kind')), unknown.problems[0] ?? '')
+
+  const duplicate = mutate((c) => { c.entries.push({ ...c.entries[0], id: 'ADJ-DUPLICATE' }) })
+  check('A12', 'contract integrity', 'two entries for one clause', true,
+    duplicate.problems.some((p) => p.includes('more than one adjudication entry')), duplicate.problems[0] ?? '')
+
+  const missing = mutate((c) => { c.entries.splice(0, 1) })
+  check('A12', 'contract integrity', 'clause with no entry', true,
+    missing.problems.some((p) => p.includes('has no adjudication entry')), missing.problems[0] ?? '')
+
+  const unused = mutate((c) => {
+    c.entries.push({ id: 'ADJ-ORPHAN', source: { file: 'docs/qualification/tier1.json', pointer: '/purpose', clause_sha256: 'x' }, predicate: { kind: 'answerability_not_in', params: { states: ['ready'] } } })
+  })
+  check('A12', 'contract integrity', 'entry binding a non-Tier-1 clause', true,
+    unused.problems.length > 0, unused.problems[0] ?? '')
+
+  const malformed = mutate((c) => {
+    const entry = c.entries.find((e) => e.predicate.kind === 'must_not_ready_when_requirements_missing')
+    entry.predicate.params.match = 'whatever'
+  })
+  check('A12', 'contract integrity', 'malformed predicate parameters', true,
+    malformed.problems.some((p) => p.includes('malformed parameters')), malformed.problems[0] ?? '')
+
+  const unknownRequirement = mutate((c) => {
+    const entry = c.entries.find((e) => e.predicate.kind === 'must_not_ready_when_requirements_missing')
+    entry.predicate.params.requirement_ids = ['req.does-not-exist']
+  })
+  check('A12', 'contract integrity', 'unknown requirement identity', true,
+    unknownRequirement.problems.some((p) => p.includes('unknown requirement identity')), unknownRequirement.problems[0] ?? '')
+
+  const driftedRequirement = mutate((c) => { c.requirements[0].identity_sha256 = '0'.repeat(64) })
+  check('A12', 'contract integrity', 'requirement identity drift', true,
+    driftedRequirement.problems.some((p) => p.includes('identity changed')), driftedRequirement.problems[0] ?? '')
+
+  rmSync(copyRoot, { recursive: true, force: true })
 }
 
 rmSync(fixtureDir, { recursive: true, force: true })

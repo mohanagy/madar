@@ -1,0 +1,102 @@
+[
+  {
+    "target_id": "hono",
+    "kind": "git",
+    "url": "https://github.com/honojs/hono",
+    "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+    "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+    "patch": null,
+    "patch_digest": null,
+    "patch_applied": false,
+    "cited_blobs_total": 11,
+    "cited_blobs_verified": 11,
+    "cited_blob_mismatches": [],
+    "valid": true,
+    "invalid_reason": null,
+    "detail": null,
+    "graph_identity": {
+      "header": "MADAR_GRAPH_ARTIFACT/2",
+      "generation_mode": "spi",
+      "node_count": 2331,
+      "fact_count": 3627,
+      "community_count": 1035,
+      "integrity_receipt_present": true,
+      "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+    }
+  },
+  {
+    "target_id": "hono-seeded-compose",
+    "kind": "git_patched",
+    "url": "https://github.com/honojs/hono",
+    "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+    "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+    "patch": "patches/hono-compose-reentrancy-guard.patch",
+    "patch_digest": "9355c5bbb05cd5ae4d998ace18d6381f0cba4fd080203d4d02579da3dcf6dea4",
+    "patch_applied": true,
+    "cited_blobs_total": 3,
+    "cited_blobs_verified": 3,
+    "cited_blob_mismatches": [],
+    "valid": true,
+    "invalid_reason": null,
+    "detail": null,
+    "graph_identity": {
+      "header": "MADAR_GRAPH_ARTIFACT/2",
+      "generation_mode": "spi",
+      "node_count": 2331,
+      "fact_count": 3627,
+      "community_count": 1035,
+      "integrity_receipt_present": true,
+      "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+    }
+  },
+  {
+    "target_id": "hono-seeded-error-disclosure",
+    "kind": "git_patched",
+    "url": "https://github.com/honojs/hono",
+    "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+    "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+    "patch": "patches/hono-error-message-disclosure.patch",
+    "patch_digest": "edb79059b72b4f27f5dc8341ba2d9a3617901c402da9ef1f9daf5503e6528d6f",
+    "patch_applied": true,
+    "cited_blobs_total": 4,
+    "cited_blobs_verified": 4,
+    "cited_blob_mismatches": [],
+    "valid": true,
+    "invalid_reason": null,
+    "detail": null,
+    "graph_identity": {
+      "header": "MADAR_GRAPH_ARTIFACT/2",
+      "generation_mode": "spi",
+      "node_count": 2331,
+      "fact_count": 3627,
+      "community_count": 1035,
+      "integrity_receipt_present": true,
+      "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+    }
+  },
+  {
+    "target_id": "unstorage",
+    "kind": "git",
+    "url": "https://github.com/unjs/unstorage",
+    "ref": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+    "head": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+    "patch": null,
+    "patch_digest": null,
+    "patch_applied": false,
+    "cited_blobs_total": 10,
+    "cited_blobs_verified": 10,
+    "cited_blob_mismatches": [],
+    "valid": true,
+    "invalid_reason": null,
+    "detail": null,
+    "graph_identity": {
+      "header": "MADAR_GRAPH_ARTIFACT/2",
+      "generation_mode": "spi",
+      "node_count": 636,
+      "fact_count": 806,
+      "community_count": 333,
+      "integrity_receipt_present": true,
+      "identity_digest": "acb77534251573f3a88a2c82574792fbc9d55cfff6b319e7a3af242f82db68dc"
+    }
+  }
+]

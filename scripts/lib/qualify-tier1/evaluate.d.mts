@@ -1,4 +1,5 @@
-import type { DeclarationSighting, EvidenceSets } from './artifact.d.mts'
+import type { EvidenceSets } from './artifact.d.mts'
+import type { LoadedAdjudication } from './adjudication.d.mts'
 
 /** The highest answerability a negative-trust probe may report. */
 export declare const PROBE_MAX_ANSWERABILITY: 'verify_targets'
@@ -6,22 +7,27 @@ export declare const PROBE_MAX_ANSWERABILITY: 'verify_targets'
 /** The exact reason recorded when a frozen absence declaration is not observed. */
 export declare const MISSING_ABSENCE_DECLARATION: 'missing_required_absence_declaration'
 
+/** The exact reason recorded when the adjudication contract does not match its sources. */
+export declare const ADJUDICATION_MISMATCH: 'adjudication_contract_mismatch'
+
 export type CellState = 'pass' | 'fail' | 'invalid'
 
-export interface ReadyClauseOutcome {
-  readonly applicable: boolean
-  readonly violated: readonly string[]
-  readonly undetermined: readonly string[]
-  readonly unresolved_declarations: readonly { item: string; schema_path: string; text: string }[]
+/** The outcome of one frozen clause, decided by its bound typed predicate. */
+export interface AdjudicatedClause {
+  readonly adjudication_id: string
+  readonly clause?: string
+  readonly requirement?: string
+  readonly clause_sha256: string
+  readonly predicate: string
+  readonly satisfied: boolean
   readonly detail: string | null
+  readonly observed: Record<string, unknown>
 }
 
-/** How each frozen `required_behaviour` clause was, or was not, measured. */
-export interface RequirementCoverage {
-  readonly requirement: string
-  readonly measured: boolean
-  readonly satisfied: boolean | null
-  readonly how: string
+export interface AdjudicationOutcome {
+  readonly contract_digest: string | null
+  readonly clauses: readonly AdjudicatedClause[]
+  readonly contract_problems: readonly string[]
 }
 
 export interface CellVerdict {
@@ -32,9 +38,8 @@ export interface CellVerdict {
   readonly metrics: Record<string, unknown>
   readonly expected: Record<string, unknown>
   readonly observed: Record<string, unknown>
-  readonly ready_clauses?: ReadyClauseOutcome
-  /** Present on negative probes; an unmeasured clause forbids `pass`. */
-  readonly requirement_coverage?: readonly RequirementCoverage[]
+  /** Every frozen prose clause and the typed predicate that decided it. */
+  readonly adjudication: AdjudicationOutcome
 }
 
 export declare function evaluateTaskCell(input: {
@@ -44,17 +49,19 @@ export declare function evaluateTaskCell(input: {
   truth: Record<string, unknown>
   preparation: Record<string, unknown>
   artifact: Record<string, unknown>
+  truthFile: string
   evidence: EvidenceSets
-  declarations?: readonly DeclarationSighting[]
   answerability: string
   targetDir: string
+  adjudication: LoadedAdjudication
 }): CellVerdict
 
 export declare function evaluateProbe(input: {
   probe: Record<string, unknown>
+  probeIndex: number
   evidence: EvidenceSets
-  declarations?: readonly DeclarationSighting[]
+  artifact: Record<string, unknown>
   answerability: string
   targetDir: string
-  relabelCandidates?: readonly string[]
+  adjudication: LoadedAdjudication
 }): CellVerdict

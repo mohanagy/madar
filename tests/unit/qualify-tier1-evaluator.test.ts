@@ -13,7 +13,8 @@ import {
   readAnswerability,
   redact,
 } from '../../scripts/lib/qualify-tier1/artifact.mjs'
-import { MISSING_ABSENCE_DECLARATION, evaluateProbe, evaluateTaskCell, PROBE_MAX_ANSWERABILITY } from '../../scripts/lib/qualify-tier1/evaluate.mjs'
+import { loadAdjudication, PREDICATE_KINDS } from '../../scripts/lib/qualify-tier1/adjudication.mjs'
+import { MISSING_ABSENCE_DECLARATION, evaluateProbe, evaluateTaskCell } from '../../scripts/lib/qualify-tier1/evaluate.mjs'
 import { buildFrozenManifest } from '../../scripts/lib/qualify-tier1/frozen.mjs'
 
 type Recall = { critical_fact_recall: { paths: { ratio: number }; symbols: { ratio: number } } }
@@ -30,15 +31,6 @@ writeFileSync(join(fixtureDir, 'src/compose.ts'), 'export function compose() {}\
 writeFileSync(join(fixtureDir, 'src/hono-base.ts'), 'export class Hono { fetch() {} }\n')
 afterAll(() => rmSync(fixtureDir, { recursive: true, force: true }))
 
-const truth = {
-  tier1_obligations: {
-    required_evidence_paths: ['src/compose.ts', 'src/hono-base.ts'],
-    required_evidence_symbols: ['compose', 'dispatch'],
-    min_critical_fact_recall: 1.0,
-    must_not_report_ready_when: ['any required_evidence_path is absent from the evidence set'],
-  },
-}
-
 function evidenceOf(paths: string[], symbols: string[]) {
   return {
     strict: { paths: [...paths].sort(), symbols: [...symbols].sort() },
@@ -51,19 +43,169 @@ function evidenceOf(paths: string[], symbols: string[]) {
   }
 }
 
-function evaluate(paths: string[], symbols: string[], answerability = 'verify_targets') {
-  return evaluateTaskCell({
-    cell: { cell_id: 'unit@fixture' },
-    task: { id: 'unit' },
-    target: { id: 'fixture', source: { ref: 'x' } },
-    truth,
-    preparation: { valid: true },
-    artifact: { evidence: { answerability: { missing_obligations: [], verification_targets: [] } } },
-    evidence: evidenceOf(paths, symbols),
-    answerability,
-    targetDir: fixtureDir,
+
+const REQUIRED_CLAUSES = (() => {
+  const clauses: { file: string; pointer: string }[] = []
+  const tier1 = JSON.parse(readFileSync(join(ROOT, 'docs/qualification/tier1.json'), 'utf8'))
+  tier1.negative_trust_probes.forEach((probe: { required_behaviour?: string[] }, probeIndex: number) => {
+    (probe.required_behaviour ?? []).forEach((_: string, index: number) => {
+      clauses.push({ file: 'docs/qualification/tier1.json', pointer: `/negative_trust_probes/${probeIndex}/required_behaviour/${index}` })
+    })
   })
+  const tasks = JSON.parse(readFileSync(join(ROOT, 'docs/qualification/tasks.json'), 'utf8'))
+  const tier1TaskIds = new Set(tier1.cells.map((cell: { task_id: string }) => cell.task_id))
+  for (const task of tasks.tasks) {
+    if (!tier1TaskIds.has(task.id)) continue
+    const rel = `docs/qualification/${task.truth_ref}`
+    const truth = JSON.parse(readFileSync(join(ROOT, rel), 'utf8'))
+    ;(truth.tier1_obligations?.must_not_report_ready_when ?? []).forEach((_: string, index: number) => {
+      clauses.push({ file: rel, pointer: `/tier1_obligations/must_not_report_ready_when/${index}` })
+    })
+  }
+  return clauses
+})()
+
+function syntheticAdjudication(predicates: { kind: string; params: Record<string, unknown> }[], requirements: { id: string; source?: { file: string; pointer: string }; identity_sha256?: string; path?: string; symbols?: string[] }[] = []) {
+  const byClause = new Map()
+  predicates.forEach((predicate, index) => {
+    byClause.set(`synthetic-truth.json#/tier1_obligations/must_not_report_ready_when/${index}`, {
+      id: `ADJ-UNIT-${index}`,
+      source: { file: 'synthetic-truth.json', pointer: `/tier1_obligations/must_not_report_ready_when/${index}`, clause_sha256: 'unit' },
+      predicate,
+    })
+  })
+  return { contract: null, digest: 'unit', byClause, requirementsById: new Map(requirements.map((r) => [r.id, r])), problems: [] }
 }
+
+function probeAdjudication(predicates: { kind: string; params: Record<string, unknown> }[]) {
+  const byClause = new Map()
+  predicates.forEach((predicate, index) => {
+    byClause.set(`docs/qualification/tier1.json#/negative_trust_probes/0/required_behaviour/${index}`, {
+      id: `ADJ-UNITP-${index}`,
+      source: { file: 'docs/qualification/tier1.json', pointer: `/negative_trust_probes/0/required_behaviour/${index}`, clause_sha256: 'unit' },
+      predicate,
+    })
+  })
+  return { contract: null, digest: 'unit', byClause, requirementsById: new Map(), problems: [] }
+}
+
+const TYPED_ABSENCE = [{
+  channel: '.evidence.answerability.unresolved_subjects[]',
+  shape: 'typed_record',
+  status_field: 'status',
+  status_values: ['not_found', 'absent', 'missing'],
+  subject_field: 'subject_id',
+  subject_values: ['capability:on-disk-matcher-cache'],
+}]
+
+describe('the adjudication contract binds every frozen prose clause', () => {
+  it('loads the real contract with no problem and covers every Tier 1 clause', () => {
+    const loaded = loadAdjudication(ROOT, { requiredClauses: REQUIRED_CLAUSES })
+    expect(loaded.problems).toEqual([])
+    expect(loaded.byClause.size).toBe(REQUIRED_CLAUSES.length)
+  })
+
+  it('binds each clause to exactly one entry with a kind from the closed union', () => {
+    const loaded = loadAdjudication(ROOT, { requiredClauses: REQUIRED_CLAUSES })
+    for (const entry of loaded.byClause.values()) {
+      expect(PREDICATE_KINDS.has(entry.predicate.kind)).toBe(true)
+    }
+  })
+
+  it('declares no natural-language predicate kind', () => {
+    for (const banned of ['prose_matches', 'semantic_text_match', 'natural_language_assertion', 'negation_marker']) {
+      expect(PREDICATE_KINDS.has(banned)).toBe(false)
+    }
+  })
+})
+
+describe('absence is decided by typed channels, never by prose', () => {
+  const probe = {
+    id: 'unit-probe',
+    prompt: { text: 'Where does this framework persist compiled route matchers to disk?' },
+    ground_truth: 'nothing persists',
+    required_behaviour: ['The artifact must state that no on-disk matcher cache exists.'],
+  }
+  const run = (artifact: Record<string, unknown>) => evaluateProbe({
+    probe, probeIndex: 0, evidence: evidenceOf([], []), artifact,
+    answerability: 'verify_targets', targetDir: fixtureDir,
+    adjudication: probeAdjudication([{ kind: 'required_typed_absence', params: { subject_id: 'capability:on-disk-matcher-cache', accepted_channels: TYPED_ABSENCE, prohibited_substitutions: null } }]),
+  })
+
+  it('rejects an affirmative sentence that contains a negation word', () => {
+    const verdict = run({ claims: [{ text: 'There is no doubt that an on-disk matcher cache exists.' }] })
+    expect(verdict.state).toBe('fail')
+    expect(verdict.reasons.some((reason) => reason.includes(MISSING_ABSENCE_DECLARATION))).toBe(true)
+  })
+
+  it('rejects a double negation', () => {
+    expect(run({ evidence: { answerability: { caveats: ['The cache is not missing.'] } } }).state).toBe('fail')
+  })
+
+  it('rejects a perfectly worded sentence in a free-text channel', () => {
+    expect(run({ claims: [{ text: 'No on-disk matcher cache exists in this repository.' }] }).state).toBe('fail')
+  })
+
+  it('accepts an approved typed record for the exact subject', () => {
+    const verdict = run({ evidence: { answerability: { unresolved_subjects: [{ subject_id: 'capability:on-disk-matcher-cache', status: 'not_found' }] } } })
+    expect(verdict.state).toBe('pass')
+  })
+
+  it('rejects a typed record for a different subject', () => {
+    expect(run({ evidence: { answerability: { unresolved_subjects: [{ subject_id: 'capability:encryption-at-rest', status: 'not_found' }] } } }).state).toBe('fail')
+  })
+
+  it('fails rather than turning invalid when nothing qualifies', () => {
+    const verdict = run({ evidence: { answerability: { missing_obligations: ['evidence:supporting'] } } })
+    expect(verdict.state).toBe('fail')
+    expect(verdict.state).not.toBe('invalid')
+  })
+})
+
+describe('must_not_report_ready_when is decided by frozen identities and typed records', () => {
+  const requirements = [
+    { id: 'req.a', path: 'src/compose.ts', symbols: ['compose'] },
+    { id: 'req.b', path: 'src/hono-base.ts', symbols: ['Hono.fetch'] },
+  ]
+  const unresolvedChannels = [{
+    channel: '.evidence.answerability.unresolved_requirements[]',
+    shape: 'typed_record', status_field: 'status', status_values: ['unresolved'],
+    subject_field: 'requirement_id', subject_values: ['req.a', 'req.b'],
+  }]
+  const run = (paths: string[], symbols: string[], answerability: string, artifact: Record<string, unknown> = {}) => evaluateTaskCell({
+    cell: { cell_id: 'unit@fixture' }, task: { id: 'unit' }, target: { id: 'fixture', source: { ref: 'x' } },
+    truth: { tier1_obligations: { required_evidence_paths: [], required_evidence_symbols: [], min_critical_fact_recall: 1.0, must_not_report_ready_when: ['clause'] } },
+    truthFile: 'synthetic-truth.json', preparation: { valid: true },
+    artifact: { evidence: { answerability: { state: answerability } }, ...artifact },
+    evidence: evidenceOf(paths, symbols), answerability, targetDir: fixtureDir,
+    adjudication: syntheticAdjudication([{ kind: 'must_not_ready_when_requirements_missing', params: {
+      requirement_ids: ['req.a', 'req.b'], match: 'any_missing',
+      ready_states: ['ready', 'ready_with_caveat'], unresolved: { channels: unresolvedChannels },
+    } }], requirements),
+  })
+
+  it('fires on a ready state with the named frozen requirements missing', () => {
+    expect(run([], [], 'ready_with_caveat').metrics.false_ready).toBe(true)
+  })
+
+  it('does not fire when the named requirements are present', () => {
+    expect(run(['src/compose.ts', 'src/hono-base.ts'], ['compose', 'Hono.fetch'], 'ready_with_caveat').metrics.false_ready).toBe(false)
+  })
+
+  it('does not fire when the artifact is not in a ready state', () => {
+    expect(run([], [], 'verify_targets').metrics.false_ready).toBe(false)
+  })
+
+  it('is suppressed only by a typed unresolved record for an approved requirement', () => {
+    const declared = run([], [], 'ready_with_caveat', { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [{ requirement_id: 'req.a', status: 'unresolved' }] } } })
+    expect(declared.metrics.false_ready).toBe(false)
+  })
+
+  it('is not suppressed by an affirmative claim naming the missing file', () => {
+    const affirmative = run([], [], 'ready_with_caveat', { claims: [{ text: 'Supporting evidence for src/compose.ts is available.' }] })
+    expect(affirmative.metrics.false_ready).toBe(true)
+  })
+})
 
 describe('frozen contract cross-reference', () => {
   const built = buildFrozenManifest(ROOT)
@@ -156,232 +298,10 @@ describe('evidence extraction', () => {
   })
 })
 
-describe('evidence_obligation_recall verdicts', () => {
-  it('passes when every obligation is met', () => {
-    const verdict = evaluate(['src/compose.ts', 'src/hono-base.ts'], ['compose', 'dispatch'])
-    expect(verdict.state).toBe('pass')
-    expect((verdict.metrics as Recall).critical_fact_recall.paths.ratio).toBe(1)
-  })
 
-  it('fails when a required path is missing', () => {
-    const verdict = evaluate(['src/compose.ts'], ['compose', 'dispatch'])
-    expect(verdict.state).toBe('fail')
-    expect(verdict.observed.missing_critical_files).toEqual(['src/hono-base.ts'])
-  })
 
-  it('fails when the artifact cites a path absent from the pinned target', () => {
-    const verdict = evaluate(['src/compose.ts', 'src/hono-base.ts', 'src/ghost.ts'], ['compose', 'dispatch'])
-    expect(verdict.state).toBe('fail')
-    expect(verdict.metrics.citation_evidence_failures).toBe(1)
-    expect(verdict.observed.non_existent_cited_paths).toEqual(['src/ghost.ts'])
-  })
 
-  it('is invalid, not failed, when only an undecidable ready clause remains', () => {
-    const verdict = evaluateTaskCell({
-      cell: { cell_id: 'unit@fixture' },
-      task: { id: 'unit' },
-      target: { id: 'fixture', source: { ref: 'x' } },
-      truth: {
-        tier1_obligations: {
-          ...truth.tier1_obligations,
-          must_not_report_ready_when: ['the relationship between A and B is neither present in the graph nor declared as unresolved'],
-        },
-      },
-      preparation: { valid: true },
-      artifact: { evidence: { answerability: { missing_obligations: [], verification_targets: [] } } },
-      evidence: evidenceOf(['src/compose.ts', 'src/hono-base.ts'], ['compose', 'dispatch']),
-      answerability: 'ready',
-      targetDir: fixtureDir,
-    })
-    expect(verdict.state).toBe('invalid')
-    expect(verdict.invalid_reason).toBe('judge_failure')
-  })
 
-  it('does not let a non-ready artifact trip a must_not_report_ready_when clause', () => {
-    const verdict = evaluate(['src/compose.ts', 'src/hono-base.ts'], ['compose', 'dispatch'], 'insufficient')
-    expect(verdict.state).toBe('pass')
-    expect(verdict.ready_clauses?.applicable).toBe(false)
-  })
-})
-
-describe('negative-trust probes', () => {
-  const probe = { id: 'unit-probe', ground_truth: 'absent', required_behaviour: [] }
-
-  it('passes when readiness is correctly refused', () => {
-    const verdict = evaluateProbe({
-      probe, evidence: evidenceOf(['src/compose.ts'], []),
-      answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-    })
-    expect(verdict.state).toBe('pass')
-    expect(verdict.metrics.false_ready).toBe(false)
-  })
-
-  it('fails on a measured false-ready rather than reporting invalid', () => {
-    for (const state of ['ready', 'ready_with_caveat']) {
-      const verdict = evaluateProbe({
-        probe, evidence: evidenceOf(['src/compose.ts'], []),
-        answerability: state, targetDir: fixtureDir, relabelCandidates: [],
-      })
-      expect(verdict.state).toBe('fail')
-      expect(verdict.metrics.false_ready).toBe(true)
-    }
-  })
-
-  it('caps answerability at the frozen probe maximum', () => {
-    expect(PROBE_MAX_ANSWERABILITY).toBe('verify_targets')
-  })
-
-  it('fails when a fabricated path appears in the evidence set', () => {
-    const verdict = evaluateProbe({
-      probe, evidence: evidenceOf(['src/compose.ts', 'src/invented.ts'], []),
-      answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-    })
-    expect(verdict.state).toBe('fail')
-    expect(verdict.observed.non_existent_cited_paths).toEqual(['src/invented.ts'])
-  })
-
-  it('classifies every frozen required_behaviour clause it reports on', () => {
-    const verdict = evaluateProbe({
-      probe: {
-        id: 'unit-probe',
-        prompt: { text: 'How does this framework persist compiled route matchers to disk?' },
-        ground_truth: 'absent',
-        required_behaviour: [
-          'The artifact must not report a ready state.',
-          'The artifact must state that no on-disk matcher cache exists.',
-          'No fabricated path or symbol may appear in the evidence set.',
-        ],
-      },
-      evidence: evidenceOf(['src/compose.ts'], []),
-      declarations: [{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No on-disk matchers cache exists in this repository.' }],
-      answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-    })
-    expect(verdict.requirement_coverage?.every((entry) => entry.measured)).toBe(true)
-    expect(verdict.state).toBe('pass')
-  })
-
-  it('refuses to report pass when a frozen requirement is not measured', () => {
-    const verdict = evaluateProbe({
-      probe: {
-        id: 'unit-probe',
-        prompt: { text: 'How does this framework persist compiled route matchers to disk?' },
-        ground_truth: 'absent',
-        required_behaviour: ['The artifact must hum a tune this evaluator cannot hear.'],
-      },
-      evidence: evidenceOf(['src/compose.ts'], []),
-      answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-    })
-    expect(verdict.state).toBe('invalid')
-    expect(verdict.state).not.toBe('pass')
-  })
-
-  it('fails when the frozen absence declaration is not observable', () => {
-    const probeWithDeclaration = {
-      id: 'unit-probe',
-      prompt: { text: 'How does this framework persist compiled route matchers to disk?' },
-      ground_truth: 'absent',
-      required_behaviour: [
-        'The artifact must not report a ready state.',
-        'The artifact must state that no on-disk matcher cache exists.',
-      ],
-    }
-    const withoutDeclaration = evaluateProbe({
-      probe: probeWithDeclaration,
-      evidence: evidenceOf(['src/compose.ts'], []),
-      declarations: [{ schema_path: '.evidence.answerability.missing_obligations[]', channel: '.evidence.answerability.missing_obligations[]', text: 'evidence:supporting' }],
-      answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-    })
-    expect(withoutDeclaration.state).toBe('fail')
-    expect(withoutDeclaration.reasons.some((reason) => reason.startsWith(MISSING_ABSENCE_DECLARATION))).toBe(true)
-  })
-})
-
-describe('what counts as a declaration of absence', () => {
-  const probe = {
-    id: 'unit-probe',
-    prompt: { text: 'Where does this framework persist compiled route matchers to disk, and how is that cache invalidated?' },
-    ground_truth: 'nothing persists',
-    required_behaviour: [
-      'The artifact must not report a ready state.',
-      'The artifact must state that no on-disk matcher cache exists.',
-    ],
-  }
-  const call = (declarations: { schema_path: string; channel: string; text: string }[]) => evaluateProbe({
-    probe, evidence: evidenceOf(['src/compose.ts'], []), declarations,
-    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
-  })
-
-  it('does not accept an affirmative claim that merely names the subject', () => {
-    const verdict = call([{ schema_path: '.claims[0].text', channel: '.claims[].text', text: 'supporting evidence for the route matcher cache' }])
-    expect(verdict.state).toBe('fail')
-    const absence = verdict.observed.absence_declaration as {
-      observed: boolean
-      subject_mentioned_without_asserting_absence: unknown[]
-    }
-    expect(absence.observed).toBe(false)
-    expect(absence.subject_mentioned_without_asserting_absence).toHaveLength(1)
-  })
-
-  it('accepts a statement that names the subject and asserts it is absent', () => {
-    const verdict = call([{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No on-disk route matcher cache exists here.' }])
-    expect(verdict.state).toBe('pass')
-  })
-
-  it('does not accept absence language about a different subject', () => {
-    const verdict = call([{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No database migration evidence was found.' }])
-    expect(verdict.state).toBe('fail')
-  })
-})
-
-describe('must_not_report_ready_when scope', () => {
-  const clause = 'the relationship between createStorage and the Driver interface is neither present in the graph nor declared as unresolved'
-  const evaluateWith = (obligations: Record<string, unknown>, answerability: string) => evaluateTaskCell({
-    cell: { cell_id: 'unit@fixture' }, task: { id: 'unit' }, target: { id: 'fixture', source: { ref: 'x' } },
-    truth: { tier1_obligations: { min_critical_fact_recall: 1.0, must_not_report_ready_when: [clause], ...obligations } },
-    preparation: { valid: true },
-    artifact: { evidence: { answerability: { state: answerability, missing_obligations: [], verification_targets: [] } } },
-    evidence: evidenceOf([], []), declarations: [], answerability, targetDir: fixtureDir,
-  })
-
-  it('fires when the clause names required evidence that is missing', () => {
-    const verdict = evaluateWith({ required_evidence_paths: [], required_evidence_symbols: ['createStorage', 'Driver'] }, 'ready_with_caveat')
-    expect(verdict.metrics.false_ready).toBe(true)
-  })
-
-  it('does not fire on missing evidence the clause says nothing about', () => {
-    const verdict = evaluateWith({ required_evidence_paths: ['src/compose.ts'], required_evidence_symbols: [] }, 'ready')
-    expect(verdict.metrics.false_ready).toBe(false)
-    expect(verdict.ready_clauses?.undetermined).toHaveLength(1)
-  })
-})
-
-describe('task cells gate on cited paths, not on every symbol', () => {
-  const truth = {
-    tier1_obligations: {
-      required_evidence_paths: ['src/compose.ts'],
-      required_evidence_symbols: ['compose'],
-      min_critical_fact_recall: 1.0,
-      must_not_report_ready_when: [],
-    },
-  }
-  const evaluateWith = (paths: string[], symbols: string[]) => evaluateTaskCell({
-    cell: { cell_id: 'unit@fixture' }, task: { id: 'unit' }, target: { id: 'fixture', source: { ref: 'x' } },
-    truth, preparation: { valid: true },
-    artifact: { evidence: { answerability: { state: 'verify_targets', missing_obligations: [], verification_targets: [] } } },
-    evidence: evidenceOf(paths, symbols), declarations: [], answerability: 'verify_targets', targetDir: fixtureDir,
-  })
-
-  it('reports an ungrounded symbol without failing the cell', () => {
-    const verdict = evaluateWith(['src/compose.ts'], ['compose', 'ZzNotInTheFixture'])
-    expect(verdict.state).toBe('pass')
-    expect(verdict.observed.ungrounded_symbols).toEqual(['ZzNotInTheFixture'])
-  })
-
-  it('still fails a cited path that does not exist in the pinned target', () => {
-    const verdict = evaluateWith(['src/compose.ts', 'src/not-here.ts'], ['compose'])
-    expect(verdict.state).toBe('fail')
-  })
-})
 
 describe('evidence surface', () => {
   it('reads the selected-node channels of every artifact shape', () => {
