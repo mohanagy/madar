@@ -19,9 +19,9 @@ Invalid cells are reported separately and are never folded into a quality percen
 ## Identity
 
 - Contract version: `1.0.0`
-- Frozen-input manifest: 23 files, digest `36ca51eb5b729bab944db0998e78bb70682da9fa369a8f498c8d614d2e953e23`
-- Madar revision: `4f6cf6f32653bf6865b1327c7fb0c3fd16d1ff4f` (version `0.32.1`)
-- Semantic digest: `6958d684d45bcd01f8478dbde7f7381a1aa9dd618aeef42517532ce5fe6ab4f8`
+- Frozen-input manifest: 23 files, digest `c0b5d4cfc8a64649eaa0593a13e9a658e266f576717b0bb6885e304a40643ee9`
+- Madar revision: `0fe3d4670e54c37546f5cb719aa5a0140a404bbf` (version `0.32.1`)
+- Semantic digest: `251824578ca4cb8daec7aba7435bde3a6d6842fdb6669f5f1b8b6e692c10c886`
 
 ## Per-cell results
 
@@ -93,7 +93,7 @@ Invalid cells are reported separately and are never folded into a quality percen
 - Reasons:
   - required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing ["src/hono.ts","src/router/reg-exp-router/router.ts","src/router/smart-router/router.ts","src/router/trie-router/router.ts"]
   - required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing ["RegExpRouter","SmartRouter","TrieRouter","UnsupportedPathError"]
-  - [ADJ-IMPACT-RELATIONSHIP must_not_ready_when_requirements_missing] reported ready state 'ready_with_caveat' while frozen requirement(s) ["impact.affected_set.construction-site","impact.affected_set.smart-router-unused","impact.affected_set.regexp-router-throws-escape","impact.affected_set.trie-router-unreachable"] were missing from the evidence set and no typed unresolved record covers them
+  - [ADJ-IMPACT-RELATIONSHIP must_not_ready_when_requirements_missing] reported ready state 'ready_with_caveat' while frozen requirement(s) ["impact.affected_set.construction-site","impact.affected_set.smart-router-unused","impact.affected_set.regexp-router-throws-escape","impact.affected_set.trie-router-unreachable"] were missing from the evidence set, and so is the relationship between them, and ["impact.affected_set.construction-site","impact.affected_set.smart-router-unused","impact.affected_set.regexp-router-throws-escape","impact.affected_set.trie-router-unreachable","relationship"] are not covered by a typed unresolved record
 - Evidence: `logs/pack-impact-hono-drop-router-fallback--hono.log`
 
 ### `neg-hono-absent-matcher-persistence` — fail
@@ -181,7 +181,7 @@ Invalid cells are reported separately and are never folded into a quality percen
 
 ## Evidence surface
 
-The consumer-visible evidence surface is declared channel by channel in `scripts/lib/qualify-tier1/channels.mjs`: 281 channels — 215 ignored, 28 path, 2 snippet, 36 symbol.
+The consumer-visible evidence surface is declared channel by channel in `scripts/lib/qualify-tier1/channels.mjs`: 287 channels — 221 ignored, 28 path, 2 snippet, 36 symbol.
 
 A run refuses to measure a cell whose artifact presents a channel the registry does not classify, so closure is a checked property rather than a claim. Closed on this run: **yes**.
 
@@ -270,6 +270,12 @@ A run refuses to measure a cell whose artifact presents a channel the registry d
 | `.pack.retrieval_gate.signals.excluded_path_hints[]` | exclusion hints derived from the prompt, not retrieved evidence |
 | `.pack.retrieval_gate.signals.excluded_terms[]` | exclusion hints derived from the prompt, not retrieved evidence |
 | `.graph_path` | path of the graph artifact this tool wrote, not a path in the target |
+| `.evidence.answerability.unresolved_subjects[].subject_id` | typed absence declaration; consumed by the adjudication contract, never as evidence |
+| `.evidence.answerability.unresolved_subjects[].status` | typed absence declaration status |
+| `.evidence.answerability.unresolved_requirements[].requirement_id` | typed unresolved declaration; consumed by the adjudication contract, never as evidence |
+| `.evidence.answerability.unresolved_requirements[].status` | typed unresolved declaration status |
+| `.pack.answer_contract.absent_capabilities[].capability` | typed absence declaration; consumed by the adjudication contract, never as evidence |
+| `.pack.answer_contract.absent_capabilities[].status` | typed absence declaration status |
 | `.pack.base_branch` | git ref name, not a code symbol or path |
 | `.pack.affected_communities[].label` | community/cluster name, not a code symbol. "Drivers Github — Driver" must not satisfy the obligation "Driver". |
 | `.pack.community_context[].label` | community/cluster name, not a code symbol |
@@ -478,25 +484,25 @@ A run refuses to measure a cell whose artifact presents a channel the registry d
 
 ## Run independence
 
-Generated state for this arm lives under `.qualification-cache/work-adj-run-a`. The only shared artefact is the bare clone mirror in `.qualification-cache`, which is immutable and identity-verified per run.
+Generated state for this arm lives under `.qualification-cache/work-adj2-run-a`. The only shared artefact is the bare clone mirror in `.qualification-cache`, which is immutable and identity-verified per run.
 
 | Target | Prepared worktree | HEAD | Clone cache | Graph artifact digest |
 | --- | --- | --- | --- | --- |
-| `hono` | `.qualification-cache/work-adj-run-a/targets/hono` | `26de73133b85` | warm_mirror_reused | `64c8bd03558b812d` |
-| `hono-seeded-compose` | `.qualification-cache/work-adj-run-a/targets/hono-seeded-compose` | `26de73133b85` | warm_mirror_reused | `64c8bd03558b812d` |
-| `hono-seeded-error-disclosure` | `.qualification-cache/work-adj-run-a/targets/hono-seeded-error-disclosure` | `26de73133b85` | warm_mirror_reused | `64c8bd03558b812d` |
-| `unstorage` | `.qualification-cache/work-adj-run-a/targets/unstorage` | `e6be6135832f` | warm_mirror_reused | `acb77534251573f3` |
+| `hono` | `.qualification-cache/work-adj2-run-a/targets/hono` | `26de73133b85` | warm_mirror_reused | `64c8bd03558b812d` |
+| `hono-seeded-compose` | `.qualification-cache/work-adj2-run-a/targets/hono-seeded-compose` | `26de73133b85` | warm_mirror_reused | `64c8bd03558b812d` |
+| `hono-seeded-error-disclosure` | `.qualification-cache/work-adj2-run-a/targets/hono-seeded-error-disclosure` | `26de73133b85` | warm_mirror_reused | `64c8bd03558b812d` |
+| `unstorage` | `.qualification-cache/work-adj2-run-a/targets/unstorage` | `e6be6135832f` | warm_mirror_reused | `acb77534251573f3` |
 
 | Cell | Artifact digest | Channels observed |
 | --- | --- | --- |
-| `arch-unstorage-driver-seam@unstorage` | `a65566b127cb5e79` | 170 |
-| `flow-hono-request-dispatch@hono` | `a6eb1c3d275edcfe` | 91 |
-| `impact-hono-drop-router-fallback@hono` | `1c33d152754e378e` | 84 |
-| `neg-hono-absent-matcher-persistence` | `98b0d4523bd5fd65` | 118 |
+| `arch-unstorage-driver-seam@unstorage` | `b5c3538781155b9d` | 170 |
+| `flow-hono-request-dispatch@hono` | `213266ac0faf4e06` | 91 |
+| `impact-hono-drop-router-fallback@hono` | `222fdc6ec091880e` | 84 |
+| `neg-hono-absent-matcher-persistence` | `8341fa3b5b3f055e` | 118 |
 | `neg-unstorage-absent-encryption` | `78df83c69d3def2d` | 133 |
-| `plan-unstorage-add-driver@unstorage` | `d36646accbabeb87` | 78 |
-| `review-hono-error-handling@hono-seeded-error-disclosure` | `9048c7c4c520cb28` | 122 |
-| `rootcause-hono-middleware-rerun@hono-seeded-compose` | `fc7a870462cc1bf5` | 88 |
+| `plan-unstorage-add-driver@unstorage` | `462739740062dafe` | 78 |
+| `review-hono-error-handling@hono-seeded-error-disclosure` | `1a65b7762037f108` | 122 |
+| `rootcause-hono-middleware-rerun@hono-seeded-compose` | `f9f347b78469d6aa` | 88 |
 
 ## Inherited #660 signal observation (read-only)
 

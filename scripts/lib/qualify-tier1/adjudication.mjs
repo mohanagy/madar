@@ -194,6 +194,14 @@ function validateParams(entry, requirementsById) {
       if (!strings(p.requirement_ids) || p.requirement_ids.length === 0) return 'requirement_ids must be a non-empty string array'
       for (const id of p.requirement_ids) if (!requirementsById.has(id)) return `unknown requirement identity ${id}`
       if (!['any_missing', 'partial_only'].includes(p.match)) return 'match must be any_missing or partial_only'
+      if (p.relationship != null) {
+        const strs = (v) => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string')
+        if (!strs(p.relationship.from) || !strs(p.relationship.to)) return 'relationship endpoints are malformed'
+        for (const id of [...p.relationship.from, ...p.relationship.to]) {
+          if (!requirementsById.has(id)) return `relationship names unknown requirement identity ${id}`
+          if (!p.requirement_ids.includes(id)) return `relationship endpoint ${id} is not among requirement_ids`
+        }
+      }
       if (!strings(p.ready_states)) return 'ready_states must be a string array'
       if (p.unresolved != null) {
         const channelProblem = validateChannels(p.unresolved.channels)
@@ -279,6 +287,57 @@ export function findTypedDeclaration(artifact, channels, subjectId) {
         return { channel: spec.channel, shape: spec.shape, status, subject }
       }
     }
+  }
+  return null
+}
+
+/**
+ * Every relationship the artifact actually presents, as endpoint-label pairs.
+ *
+ * A clause that speaks of "the relationship between A and B" is not satisfied by
+ * A and B both appearing somewhere: two isolated nodes are not an edge. These
+ * are the channels in which Madar states that two things are connected.
+ */
+export function extractRelationshipEdges(artifact) {
+  const edges = []
+  const push = (from, to, channel) => {
+    if (typeof from === 'string' && typeof to === 'string' && from && to) edges.push({ from, to, channel })
+  }
+  const pack = artifact.pack ?? {}
+  for (const rel of pack.relationships ?? []) push(rel.from, rel.to, '.pack.relationships[]')
+  for (const rel of pack.review_bundle?.relationships ?? []) push(rel.from, rel.to, '.pack.review_bundle.relationships[]')
+  for (const rel of pack.slice?.selected_paths ?? []) push(rel.from, rel.to, '.pack.slice.selected_paths[]')
+  for (const key of ['direct_dependents', 'transitive_dependents']) {
+    for (const entry of pack[key] ?? []) push(pack.target, entry.label, `.pack.${key}[]`)
+  }
+  for (const community of pack.top_paths_per_community ?? []) {
+    const path = community.path ?? []
+    for (let index = 0; index + 1 < path.length; index += 1) push(path[index], path[index + 1], '.pack.top_paths_per_community[].path[]')
+  }
+  for (const key of ['steps', 'primary_path']) {
+    const steps = key === 'steps' ? pack.execution_slice?.steps : pack.execution_slice?.primary_path?.steps
+    for (let index = 0; index + 1 < (steps ?? []).length; index += 1) {
+      push(steps[index].label, steps[index + 1].label, `.pack.execution_slice.${key}[]`)
+    }
+  }
+  return edges
+}
+
+/**
+ * Does the artifact connect any endpoint of `from` to any endpoint of `to`?
+ * Direction-insensitive: the frozen clauses speak of "the relationship between",
+ * not of an ordered edge.
+ */
+export function relationshipPresent(edges, fromRequirements, toRequirements, normaliseSymbol) {
+  const labels = (requirements) => new Set(
+    requirements.flatMap((requirement) => (requirement.symbols ?? []).map(normaliseSymbol)),
+  )
+  const left = labels(fromRequirements)
+  const right = labels(toRequirements)
+  for (const edge of edges) {
+    const a = normaliseSymbol(edge.from)
+    const b = normaliseSymbol(edge.to)
+    if ((left.has(a) && right.has(b)) || (left.has(b) && right.has(a))) return { ...edge }
   }
   return null
 }

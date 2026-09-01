@@ -70,11 +70,12 @@
       "kind": "must_not_ready_when_requirements_missing",
       "params": [
         "requirement_ids",
+        "relationship",
         "match",
         "ready_states",
         "unresolved"
       ],
-      "deterministic": "frozen requirement identities vs the evidence set, plus typed unresolved lookup"
+      "deterministic": "frozen requirement identities vs the evidence set; when the clause names a relationship, the edge itself is looked up in the declared relationship channels; plus typed unresolved lookup keyed on the exact missing requirement"
     },
     {
       "kind": "typed_unresolved_requirement_present",
@@ -84,6 +85,31 @@
       ],
       "deterministic": "typed channel lookup for an exact frozen requirement identity"
     }
+  ],
+  "status_vocabularies": {
+    "absence": [
+      "not_found",
+      "absent",
+      "does_not_exist",
+      "unsupported"
+    ],
+    "unresolved": [
+      "unresolved",
+      "not_established",
+      "missing",
+      "unknown"
+    ],
+    "note": "Deliberately disjoint. \"unresolved\" and \"missing\" say the pack did not establish something; the frozen probes require the artifact to state the requested behaviour is NOT PRESENT. Accepting a gap status as an absence declaration would let a pack satisfy a negative probe by reporting its own incompleteness."
+  },
+  "relationship_channels": [
+    ".pack.relationships[]",
+    ".pack.review_bundle.relationships[]",
+    ".pack.slice.selected_paths[]",
+    ".pack.direct_dependents[]",
+    ".pack.transitive_dependents[]",
+    ".pack.top_paths_per_community[].path[]",
+    ".pack.execution_slice.steps[]",
+    ".pack.execution_slice.primary_path[]"
   ],
   "channel_exclusions": [
     {
@@ -315,9 +341,8 @@
               "status_values": [
                 "not_found",
                 "absent",
-                "missing",
-                "unsupported",
-                "unresolved"
+                "does_not_exist",
+                "unsupported"
               ],
               "subject_field": "subject_id",
               "subject_values": [
@@ -332,9 +357,8 @@
               "status_values": [
                 "not_found",
                 "absent",
-                "missing",
-                "unsupported",
-                "unresolved"
+                "does_not_exist",
+                "unsupported"
               ],
               "subject_field": "capability",
               "subject_values": [
@@ -436,9 +460,8 @@
               "status_values": [
                 "not_found",
                 "absent",
-                "missing",
-                "unsupported",
-                "unresolved"
+                "does_not_exist",
+                "unsupported"
               ],
               "subject_field": "subject_id",
               "subject_values": [
@@ -453,9 +476,8 @@
               "status_values": [
                 "not_found",
                 "absent",
-                "missing",
-                "unsupported",
-                "unresolved"
+                "does_not_exist",
+                "unsupported"
               ],
               "subject_field": "capability",
               "subject_values": [
@@ -546,6 +568,14 @@
             "arch.critical_facts.mount-registry",
             "arch.critical_facts.driver-interface"
           ],
+          "relationship": {
+            "from": [
+              "arch.critical_facts.mount-registry"
+            ],
+            "to": [
+              "arch.critical_facts.driver-interface"
+            ]
+          },
           "match": "any_missing",
           "ready_states": [
             "ready",
@@ -559,9 +589,9 @@
                 "status_field": "status",
                 "status_values": [
                   "unresolved",
+                  "not_established",
                   "missing",
-                  "not_found",
-                  "absent"
+                  "unknown"
                 ],
                 "subject_field": "requirement_id",
                 "subject_values": [
@@ -626,6 +656,14 @@
             "flow.ordered_path.entrypoint",
             "flow.ordered_path.compose-chain"
           ],
+          "relationship": {
+            "from": [
+              "flow.ordered_path.entrypoint"
+            ],
+            "to": [
+              "flow.ordered_path.compose-chain"
+            ]
+          },
           "match": "any_missing",
           "ready_states": [
             "ready",
@@ -639,9 +677,9 @@
                 "status_field": "status",
                 "status_values": [
                   "unresolved",
+                  "not_established",
                   "missing",
-                  "not_found",
-                  "absent"
+                  "unknown"
                 ],
                 "subject_field": "requirement_id",
                 "subject_values": [
@@ -691,6 +729,16 @@
             "impact.affected_set.regexp-router-throws-escape",
             "impact.affected_set.trie-router-unreachable"
           ],
+          "relationship": {
+            "from": [
+              "impact.affected_set.construction-site"
+            ],
+            "to": [
+              "impact.affected_set.smart-router-unused",
+              "impact.affected_set.regexp-router-throws-escape",
+              "impact.affected_set.trie-router-unreachable"
+            ]
+          },
           "match": "any_missing",
           "ready_states": [
             "ready",
@@ -704,9 +752,9 @@
                 "status_field": "status",
                 "status_values": [
                   "unresolved",
+                  "not_established",
                   "missing",
-                  "not_found",
-                  "absent"
+                  "unknown"
                 ],
                 "subject_field": "requirement_id",
                 "subject_values": [
@@ -794,9 +842,9 @@
                 "status_field": "status",
                 "status_values": [
                   "unresolved",
+                  "not_established",
                   "missing",
-                  "not_found",
-                  "absent"
+                  "unknown"
                 ],
                 "subject_field": "requirement_id",
                 "subject_values": [
@@ -908,6 +956,14 @@
             "rootcause.critical_facts.fast-path-exclusion",
             "rootcause.critical_facts.index-semantics"
           ],
+          "relationship": {
+            "from": [
+              "rootcause.critical_facts.fast-path-exclusion"
+            ],
+            "to": [
+              "rootcause.critical_facts.index-semantics"
+            ]
+          },
           "match": "any_missing",
           "ready_states": [
             "ready",

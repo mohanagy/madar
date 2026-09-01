@@ -621,13 +621,40 @@ const withTypedAbsence = (subject, status = 'not_found') => ({
   const satisfied = run({ paths: ['src/hono.ts', 'src/compose.ts'], symbols: ['Hono.constructor', 'compose'], answerability: 'ready_with_caveat' })
   check('A8', 'task false-ready', 'requirements present', false, satisfied.metrics.false_ready)
 
-  // A9 — an approved typed unresolved record for the exact requirement suppresses it.
-  const declared = run({
+  // A9 — EVERY missing requirement needs its own record. One record covering one
+  // of two missing requirements leaves the other gap uncovered.
+  const partiallyDeclared = run({
     paths: [], symbols: [], answerability: 'ready_with_caveat',
     artifact: { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [{ requirement_id: 'req.construction-site', status: 'unresolved' }] } } },
   })
-  check('A9', 'exact typed unresolved record', 'suppresses the condition', false, declared.metrics.false_ready,
-    declared.adjudication.clauses[0].detail ?? '')
+  check('A9', 'exact typed unresolved record', 'one of two missing requirements declared', true, partiallyDeclared.metrics.false_ready,
+    partiallyDeclared.adjudication.clauses[0].detail ?? '')
+
+  const fullyDeclared = run({
+    paths: [], symbols: [], answerability: 'ready_with_caveat',
+    artifact: { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [
+      { requirement_id: 'req.construction-site', status: 'unresolved' },
+      { requirement_id: 'req.smart-router', status: 'unresolved' },
+    ] } } },
+  })
+  check('A9', 'exact typed unresolved record', 'every missing requirement declared', false, fullyDeclared.metrics.false_ready,
+    fullyDeclared.adjudication.clauses[0].detail ?? '')
+
+  // A13 — a record for a requirement that is PRESENT cannot cover a different,
+  // missing one. This is the defect the second review found.
+  const wrongRequirement = evaluateSynthetic({
+    paths: ['src/hono.ts'], symbols: ['Hono.constructor'], answerability: 'ready_with_caveat', truth, adjudication,
+    artifact: { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [{ requirement_id: 'req.construction-site', status: 'unresolved' }] } } },
+  })
+  check('A13', 'unresolved must name the missing requirement', 'record names the PRESENT requirement', true,
+    wrongRequirement.metrics.false_ready, wrongRequirement.adjudication.clauses[0].detail ?? '')
+
+  const rightRequirement = evaluateSynthetic({
+    paths: ['src/hono.ts'], symbols: ['Hono.constructor'], answerability: 'ready_with_caveat', truth, adjudication,
+    artifact: { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [{ requirement_id: 'req.smart-router', status: 'unresolved' }] } } },
+  })
+  check('A13', 'unresolved must name the missing requirement', 'record names the MISSING requirement', false,
+    rightRequirement.metrics.false_ready)
 
   // A10 — an affirmative claim naming the missing file does not suppress it.
   const affirmative = run({
@@ -725,6 +752,125 @@ const withTypedAbsence = (subject, status = 'not_found') => ({
     driftedRequirement.problems.some((p) => p.includes('identity changed')), driftedRequirement.problems[0] ?? '')
 
   rmSync(copyRoot, { recursive: true, force: true })
+}
+
+
+// --- A14: a gap status is not an absence assertion ---------------------------
+// "unresolved" and "missing" say the pack did not establish something. The
+// frozen probes require the artifact to state the behaviour is NOT THERE.
+{
+  const absenceOnly = [{
+    channel: '.evidence.answerability.unresolved_subjects[]',
+    shape: 'typed_record', status_field: 'status',
+    status_values: ['not_found', 'absent', 'does_not_exist', 'unsupported'],
+    subject_field: 'subject_id', subject_values: [ABSENCE_SUBJECT],
+  }]
+  const entries = [{ id: 'ADJ-SYN-ABS', predicate: { kind: 'required_typed_absence', params: { subject_id: ABSENCE_SUBJECT, accepted_channels: absenceOnly, prohibited_substitutions: null } } }]
+  const withStatus = (status) => evaluateSyntheticProbe({
+    probe: ABSENCE_PROBE, entries,
+    artifact: { evidence: { answerability: { state: 'verify_targets', unresolved_subjects: [{ subject_id: ABSENCE_SUBJECT, status }] } } },
+  })
+  for (const status of ['unresolved', 'missing', 'unknown', 'not_established']) {
+    check('A14', 'gap status is not absence', `status '${status}'`, 'fail', withStatus(status).state)
+  }
+  for (const status of ['not_found', 'absent', 'does_not_exist', 'unsupported']) {
+    check('A14', 'gap status is not absence', `status '${status}'`, 'pass', withStatus(status).state)
+  }
+
+  // The real frozen contract must use the disjoint vocabularies.
+  const contract = JSON.parse(readFileSync(join(ROOT, 'docs/qualification/tier1-adjudication.json'), 'utf8'))
+  const absence = new Set(contract.status_vocabularies.absence)
+  const unresolved = new Set(contract.status_vocabularies.unresolved)
+  check('A14', 'gap status is not absence', 'vocabularies are disjoint', 0,
+    [...absence].filter((value) => unresolved.has(value)).length,
+    `absence=${JSON.stringify([...absence])} unresolved=${JSON.stringify([...unresolved])}`)
+  for (const entry of contract.entries.filter((e) => e.predicate.kind === 'required_typed_absence')) {
+    for (const channel of entry.predicate.params.accepted_channels.filter((c) => c.shape === 'typed_record')) {
+      check('A14', 'gap status is not absence', `${entry.id} accepts no gap status`, 0,
+        channel.status_values.filter((value) => unresolved.has(value)).length)
+    }
+  }
+}
+
+// --- A15: every typed channel the contract reads is a classified channel ------
+// If a declaration channel is not in the evidence registry, the closure guard
+// invalidates the cell before adjudication ever runs, making the predicate
+// unsatisfiable in practice.
+{
+  const contract = JSON.parse(readFileSync(join(ROOT, 'docs/qualification/tier1-adjudication.json'), 'utf8'))
+  const declared = new Set()
+  for (const entry of contract.entries) {
+    const params = entry.predicate.params
+    for (const channel of params.accepted_channels ?? []) declared.add(channel)
+    for (const channel of params.unresolved?.channels ?? []) declared.add(channel)
+  }
+  let unclassified = 0
+  const details = []
+  for (const spec of declared) {
+    // Build a minimal artifact that actually exercises the channel, then check
+    // the evidence registry classifies every field it produces.
+    const segments = spec.channel.replace(/^\./, '').replace(/\[\]$/, '').split('.')
+    const leaf = spec.shape === 'typed_record'
+      ? [{ [spec.status_field]: spec.status_values[0], [spec.subject_field]: spec.subject_values[0] }]
+      : [spec.subject_tokens[0]]
+    let node = leaf
+    for (let index = segments.length - 1; index >= 1; index -= 1) node = { [segments[index]]: node }
+    const artifact = { [segments[0]]: node }
+    const observed = extractEvidence(artifact)
+    if (observed.unclassified.length > 0) {
+      unclassified += 1
+      details.push(`${spec.channel} -> ${observed.unclassified.map((u) => u.channel).join(', ')}`)
+    }
+  }
+  check('A15', 'declaration channels are classified', 'every contract channel survives the closure guard', 0,
+    unclassified, details.join(' | '))
+  check('A15', 'declaration channels are classified', 'the contract declares at least one channel', true, declared.size > 0)
+}
+
+// --- A16: a relationship clause needs the edge, not just the endpoints --------
+{
+  const requirements = [
+    { id: 'req.ctor', path: 'src/hono.ts', symbols: ['Hono.constructor'] },
+    { id: 'req.router', path: 'src/compose.ts', symbols: ['SmartRouter'] },
+  ]
+  const truth = makeTruth({ required_evidence_paths: [], required_evidence_symbols: [], must_not_report_ready_when: ['the relationship between the constructor and the router is missing and is not declared as unresolved'] })
+  const adjudication = syntheticAdjudication([{ predicate: { kind: 'must_not_ready_when_requirements_missing', params: {
+    requirement_ids: ['req.ctor', 'req.router'],
+    relationship: { from: ['req.ctor'], to: ['req.router'] },
+    match: 'any_missing', ready_states: ['ready', 'ready_with_caveat'], unresolved: null } } }], { requirements })
+
+  // Both endpoints surfaced, but NO relationship between them.
+  const endpointsOnly = evaluateSynthetic({
+    paths: ['src/hono.ts', 'src/compose.ts'], symbols: ['Hono.constructor', 'SmartRouter'],
+    answerability: 'ready_with_caveat', truth, adjudication,
+    artifact: { evidence: { answerability: { state: 'ready_with_caveat' } }, pack: { relationships: [] } },
+  })
+  check('A16', 'relationship clause needs the edge', 'endpoints present, no edge', true, endpointsOnly.metrics.false_ready,
+    endpointsOnly.adjudication.clauses[0].detail ?? '')
+
+  // The same endpoints, now actually connected.
+  const withEdge = evaluateSynthetic({
+    paths: ['src/hono.ts', 'src/compose.ts'], symbols: ['Hono.constructor', 'SmartRouter'],
+    answerability: 'ready_with_caveat', truth, adjudication,
+    artifact: { evidence: { answerability: { state: 'ready_with_caveat' } }, pack: { relationships: [{ from: 'Hono.constructor', to: 'SmartRouter', relation: 'calls' }] } },
+  })
+  check('A16', 'relationship clause needs the edge', 'endpoints connected', false, withEdge.metrics.false_ready,
+    JSON.stringify(withEdge.adjudication.clauses[0].observed.relationship?.edge))
+
+  // An edge between unrelated nodes is not the relationship the clause names.
+  const wrongEdge = evaluateSynthetic({
+    paths: ['src/hono.ts', 'src/compose.ts'], symbols: ['Hono.constructor', 'SmartRouter'],
+    answerability: 'ready_with_caveat', truth, adjudication,
+    artifact: { evidence: { answerability: { state: 'ready_with_caveat' } }, pack: { relationships: [{ from: 'somethingElse', to: 'anotherThing', relation: 'calls' }] } },
+  })
+  check('A16', 'relationship clause needs the edge', 'unrelated edge does not count', true, wrongEdge.metrics.false_ready)
+
+  // Every frozen relationship clause must declare its endpoints.
+  const contract = JSON.parse(readFileSync(join(ROOT, 'docs/qualification/tier1-adjudication.json'), 'utf8'))
+  const relationshipClauses = contract.entries.filter((e) => /relationship|call from|error paths/i.test(e.source.clause_text_preview ?? ''))
+  const declared = relationshipClauses.filter((e) => e.predicate.params.relationship != null)
+  check('A16', 'relationship clause needs the edge', 'frozen relationship clauses declare endpoints', true,
+    declared.length >= 4, `${declared.length} of ${relationshipClauses.length} relationship-shaped clauses declare endpoints`)
 }
 
 rmSync(fixtureDir, { recursive: true, force: true })

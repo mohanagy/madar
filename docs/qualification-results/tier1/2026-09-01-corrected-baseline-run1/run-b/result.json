@@ -1,0 +1,3310 @@
+{
+  "schema_version": 1,
+  "headline": "First Tier 1 measurement — gate not yet activated",
+  "holdout_notice": "sealed holdout unsatisfied; results measure regression only",
+  "contract_version": "1.0.0",
+  "run_id": "corrected-run-b",
+  "generated_at": "2026-09-01T04:24:35.396Z",
+  "madar": {
+    "revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+    "version": "0.32.1"
+  },
+  "frozen_input_manifest": {
+    "file_count": 22,
+    "digest": "e0ee3faf8ed2fd4be203a1c9b49fb1a66f4378a80f597197937cbc7a41050abd",
+    "path": "frozen-input-manifest.json"
+  },
+  "gate_activation": {
+    "state": "pre_baseline",
+    "active": false
+  },
+  "totals": {
+    "pass": 0,
+    "fail": 8,
+    "invalid": 0
+  },
+  "task_cell_count": 6,
+  "negative_probe_count": 2,
+  "cells": [
+    {
+      "cell_id": "arch-unstorage-driver-seam@unstorage",
+      "kind": "task",
+      "task_id": "arch-unstorage-driver-seam",
+      "target_id": "unstorage",
+      "target_sha": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+      "patch_digest": null,
+      "prompt_sha256": "5c3722d182b5c36478ecabd2d1fb24f4f3eb40eba6e12032da89bebf12ef1d9f",
+      "truth_version": "1.0.0",
+      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 636,
+        "fact_count": 806,
+        "community_count": 333,
+        "integrity_receipt_present": true,
+        "identity_digest": "acb77534251573f3a88a2c82574792fbc9d55cfff6b319e7a3af242f82db68dc"
+      },
+      "preparation": {
+        "target_id": "unstorage",
+        "kind": "git",
+        "url": "https://github.com/unjs/unstorage",
+        "ref": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "head": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 10,
+        "cited_blobs_verified": 10,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-arch-unstorage-driver-seam--unstorage.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.2500 < min_critical_fact_recall 1; missing [\"src/drivers/utils/index.ts\",\"src/types.ts\",\"src/utils.ts\"]",
+        "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"Driver\",\"DriverFactory\",\"createStorage\",\"getMount\"]"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0.25,
+            "matched": 1,
+            "required": 4
+          },
+          "symbols": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 4
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0,
+          "matched": 0,
+          "required": 4,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false,
+        "false_ready_clauses": 0
+      },
+      "expected": {
+        "critical_files": [
+          "src/drivers/utils/index.ts",
+          "src/storage.ts",
+          "src/types.ts",
+          "src/utils.ts"
+        ],
+        "critical_symbols": [
+          "Driver",
+          "DriverFactory",
+          "createStorage",
+          "getMount"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [
+          "src/storage.ts"
+        ],
+        "critical_symbols": [],
+        "missing_critical_files": [
+          "src/drivers/utils/index.ts",
+          "src/types.ts",
+          "src/utils.ts"
+        ],
+        "missing_critical_symbols": [
+          "Driver",
+          "DriverFactory",
+          "createStorage",
+          "getMount"
+        ],
+        "answerability": "verify_targets",
+        "answerability_channel": ".evidence.answerability.state",
+        "evidence_paths_strict": [
+          "src/drivers/cloudflare-kv-http.ts",
+          "src/drivers/memory.ts",
+          "src/drivers/vercel-runtime-cache.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/_utils.ts",
+          "src/drivers/azure-key-vault.ts",
+          "src/drivers/cloudflare-kv-http.ts",
+          "src/drivers/memory.ts",
+          "src/drivers/vercel-runtime-cache.ts",
+          "src/index.ts",
+          "src/storage.ts",
+          "test/drivers/azure-app-configuration.test.ts",
+          "test/drivers/azure-cosmos.test.ts",
+          "test/drivers/azure-key-vault.test.ts",
+          "test/drivers/azure-storage-blob.test.ts",
+          "test/drivers/azure-storage-table.test.ts",
+          "test/drivers/capacitor-preferences.test.ts",
+          "test/drivers/cloudflare-cache-binding.test.ts",
+          "test/drivers/cloudflare-kv-binding.test.ts",
+          "test/drivers/cloudflare-kv-http.test.ts",
+          "test/drivers/cloudflare-r2-binding.test.ts",
+          "test/drivers/db0.test.ts",
+          "test/drivers/deno-kv-node.test.ts",
+          "test/drivers/deno-kv.fixture.ts",
+          "test/drivers/deno-kv.test.ts",
+          "test/drivers/fs-lite.test.ts",
+          "test/drivers/fs.test.ts",
+          "test/drivers/github.test.ts",
+          "test/drivers/http.test.ts",
+          "test/drivers/indexedb.test.ts",
+          "test/drivers/localstorage.test.ts",
+          "test/drivers/lru-cache.test.ts",
+          "test/drivers/memory.test.ts",
+          "test/drivers/mongodb.test.ts",
+          "test/drivers/netlify-blobs.test.ts",
+          "test/drivers/null.test.ts",
+          "test/drivers/overlay.test.ts",
+          "test/drivers/redis.test.ts",
+          "test/drivers/s3.test.ts",
+          "test/drivers/session-storage.test.ts",
+          "test/drivers/uploadthing.test.ts",
+          "test/drivers/upstash.test.ts",
+          "test/drivers/utils.ts",
+          "test/drivers/vercel-blob.test.ts",
+          "test/drivers/vercel-runtime-cache.test.ts",
+          "test/server.bench.ts",
+          "test/server.test.ts",
+          "test/storage.test-d.ts",
+          "test/storage.test.ts",
+          "test/tracing.test.ts"
+        ],
+        "evidence_symbols_strict": [
+          "$fetch.create",
+          "driver"
+        ],
+        "evidence_symbols_generous": [
+          "$fetch.create",
+          "Object.keys",
+          "_vcFunctionsLib",
+          "asyncCall()",
+          "azure-key-vault.test.ts",
+          "clearTimeout()",
+          "cloudflare-cache-binding.test.ts",
+          "cloudflare-kv-binding.test.ts",
+          "cloudflare-kv-http.test.ts",
+          "driver",
+          "setTimeout()",
+          "vercel-runtime-cache.test.ts",
+          "wrapToPromise()"
+        ],
+        "non_existent_cited_paths": [],
+        "fabricated_symbols": [],
+        "required_symbols_seen_only_in_snippets": [],
+        "missing_verification_targets": [
+          "evidence:primary",
+          "evidence:structural",
+          "query:obligation:1",
+          "query:obligation:2",
+          "query:obligation:3",
+          "query:obligation:4",
+          "query:obligation:5",
+          "semantic:structure"
+        ],
+        "verification_targets": [
+          "src/drivers/cloudflare-kv-http.ts"
+        ]
+      },
+      "ready_clauses": {
+        "applicable": false,
+        "violated": [],
+        "undetermined": [],
+        "unresolved_declarations": [],
+        "detail": "answerability 'verify_targets' is not a ready state; clauses are vacuously satisfied"
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": true,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": true,
+          "flow_proof_shaped": false
+        }
+      }
+    },
+    {
+      "cell_id": "flow-hono-request-dispatch@hono",
+      "kind": "task",
+      "task_id": "flow-hono-request-dispatch",
+      "target_id": "hono",
+      "target_sha": "26de73133b8552f56ba72e025ecd82b08900d796",
+      "patch_digest": null,
+      "prompt_sha256": "c276d363f0b10c00b75df925f2e658f3ee7af085872bcbcc64a7a4252c7b3b35",
+      "truth_version": "1.0.0",
+      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 2331,
+        "fact_count": 3627,
+        "community_count": 1035,
+        "integrity_receipt_present": true,
+        "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      "preparation": {
+        "target_id": "hono",
+        "kind": "git",
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 11,
+        "cited_blobs_verified": 11,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-flow-hono-request-dispatch--hono.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing [\"src/compose.ts\",\"src/context.ts\",\"src/hono-base.ts\",\"src/router/smart-router/router.ts\",\"src/utils/url.ts\"]",
+        "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"Context\",\"SmartRouter\",\"compose\",\"fetch\",\"getPath\"]"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 5
+          },
+          "symbols": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 5
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0,
+          "matched": 0,
+          "required": 5,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false,
+        "false_ready_clauses": 0
+      },
+      "expected": {
+        "critical_files": [
+          "src/compose.ts",
+          "src/context.ts",
+          "src/hono-base.ts",
+          "src/router/smart-router/router.ts",
+          "src/utils/url.ts"
+        ],
+        "critical_symbols": [
+          "Context",
+          "SmartRouter",
+          "compose",
+          "fetch",
+          "getPath"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [],
+        "critical_symbols": [],
+        "missing_critical_files": [
+          "src/compose.ts",
+          "src/context.ts",
+          "src/hono-base.ts",
+          "src/router/smart-router/router.ts",
+          "src/utils/url.ts"
+        ],
+        "missing_critical_symbols": [
+          "Context",
+          "SmartRouter",
+          "compose",
+          "fetch",
+          "getPath"
+        ],
+        "answerability": "verify_targets",
+        "answerability_channel": ".evidence.answerability.state",
+        "evidence_paths_strict": [
+          "src/helper/route/index.test.ts",
+          "src/helper/route/index.ts",
+          "src/middleware/method-not-allowed/index.test.ts",
+          "src/middleware/method-not-allowed/index.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/helper/route/index.test.ts",
+          "src/helper/route/index.ts",
+          "src/middleware/method-not-allowed/index.test.ts",
+          "src/middleware/method-not-allowed/index.ts"
+        ],
+        "evidence_symbols_strict": [
+          "basePath",
+          "baseRoutePath",
+          "index.test.ts",
+          "index.ts",
+          "matchedRoutes",
+          "methodNotAllowed",
+          "routePath"
+        ],
+        "evidence_symbols_generous": [
+          "basePath",
+          "baseRoutePath",
+          "index.test.ts",
+          "index.ts",
+          "matchedRoutes",
+          "methodNotAllowed",
+          "routePath"
+        ],
+        "non_existent_cited_paths": [],
+        "fabricated_symbols": [],
+        "required_symbols_seen_only_in_snippets": [],
+        "missing_verification_targets": [
+          "evidence:supporting",
+          "indexing:spi_diagnostic",
+          "semantic:configuration"
+        ],
+        "verification_targets": [
+          "src/helper/route/index.test.ts",
+          "src/helper/route/index.ts",
+          "src/middleware/method-not-allowed/index.test.ts"
+        ]
+      },
+      "ready_clauses": {
+        "applicable": false,
+        "violated": [],
+        "undetermined": [],
+        "unresolved_declarations": [],
+        "detail": "answerability 'verify_targets' is not a ready state; clauses are vacuously satisfied"
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "unknown",
+        "target_domain_hint": "unknown",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": false,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": true,
+          "flow_proof_shaped": true
+        }
+      }
+    },
+    {
+      "cell_id": "impact-hono-drop-router-fallback@hono",
+      "kind": "task",
+      "task_id": "impact-hono-drop-router-fallback",
+      "target_id": "hono",
+      "target_sha": "26de73133b8552f56ba72e025ecd82b08900d796",
+      "patch_digest": null,
+      "prompt_sha256": "4d05391549ee28a142a9f24960e43e415cf6c831c29dce720aa74e72c7ab9ac2",
+      "truth_version": "1.0.0",
+      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 2331,
+        "fact_count": 3627,
+        "community_count": 1035,
+        "integrity_receipt_present": true,
+        "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      "preparation": {
+        "target_id": "hono",
+        "kind": "git",
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 11,
+        "cited_blobs_verified": 11,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-impact-hono-drop-router-fallback--hono.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing [\"src/hono.ts\",\"src/router/reg-exp-router/router.ts\",\"src/router/smart-router/router.ts\",\"src/router/trie-router/router.ts\"]",
+        "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"RegExpRouter\",\"SmartRouter\",\"TrieRouter\",\"UnsupportedPathError\"]",
+        "reported ready state 'ready_with_caveat' while a must_not_report_ready_when clause held: the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 4
+          },
+          "symbols": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 4
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0,
+          "matched": 0,
+          "required": 4,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": true,
+        "false_ready_clauses": 1
+      },
+      "expected": {
+        "critical_files": [
+          "src/hono.ts",
+          "src/router/reg-exp-router/router.ts",
+          "src/router/smart-router/router.ts",
+          "src/router/trie-router/router.ts"
+        ],
+        "critical_symbols": [
+          "RegExpRouter",
+          "SmartRouter",
+          "TrieRouter",
+          "UnsupportedPathError"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [],
+        "critical_symbols": [],
+        "missing_critical_files": [
+          "src/hono.ts",
+          "src/router/reg-exp-router/router.ts",
+          "src/router/smart-router/router.ts",
+          "src/router/trie-router/router.ts"
+        ],
+        "missing_critical_symbols": [
+          "RegExpRouter",
+          "SmartRouter",
+          "TrieRouter",
+          "UnsupportedPathError"
+        ],
+        "answerability": "ready_with_caveat",
+        "answerability_channel": ".evidence.answerability.state",
+        "evidence_paths_strict": [
+          "src/helper/route/index.test.ts",
+          "src/helper/route/index.ts",
+          "src/middleware/method-not-allowed/index.test.ts",
+          "src/middleware/method-not-allowed/index.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/helper/route/index.test.ts",
+          "src/helper/route/index.ts",
+          "src/middleware/method-not-allowed/index.test.ts",
+          "src/middleware/method-not-allowed/index.ts"
+        ],
+        "evidence_symbols_strict": [
+          "basePath",
+          "baseRoutePath",
+          "index.test.ts",
+          "index.ts",
+          "matchedRoutes",
+          "methodNotAllowed",
+          "routePath"
+        ],
+        "evidence_symbols_generous": [
+          "basePath",
+          "baseRoutePath",
+          "index.test.ts",
+          "index.ts",
+          "matchedRoutes",
+          "methodNotAllowed",
+          "routePath"
+        ],
+        "non_existent_cited_paths": [],
+        "fabricated_symbols": [],
+        "required_symbols_seen_only_in_snippets": [],
+        "missing_verification_targets": [],
+        "verification_targets": []
+      },
+      "ready_clauses": {
+        "applicable": true,
+        "violated": [
+          "the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved"
+        ],
+        "undetermined": [],
+        "unresolved_declarations": [],
+        "detail": null
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "unknown",
+        "target_domain_hint": "unknown",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": false,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": false,
+          "flow_proof_shaped": false
+        },
+        "excluded_terms": [
+          "fallback to another router implementation? List every module whose behaviour changes",
+          "changes",
+          "say which modules are unaffected",
+          "unaffected",
+          "why",
+          "say whether each failure is loud",
+          "loud",
+          "silent"
+        ],
+        "excluded_path_hints": [
+          "fallback-to-another-router-implementation-list-every-module-whose-behaviour-changes",
+          "say-which-modules-are-unaffected",
+          "why",
+          "say-whether-each-failure-is-loud",
+          "silent"
+        ]
+      }
+    },
+    {
+      "cell_id": "neg-hono-absent-matcher-persistence",
+      "kind": "negative_probe",
+      "task_id": null,
+      "target_id": "hono",
+      "target_sha": "26de73133b8552f56ba72e025ecd82b08900d796",
+      "patch_digest": null,
+      "prompt_sha256": "6a173a57d204d86260380b3f9fedcb4dcc5c90962258e849b508fddaa3e07116",
+      "truth_version": "1.0.0",
+      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 2331,
+        "fact_count": 3627,
+        "community_count": 1035,
+        "integrity_receipt_present": true,
+        "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      "preparation": {
+        "target_id": "hono",
+        "kind": "git",
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 11,
+        "cited_blobs_verified": 11,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-neg-hono-absent-matcher-persistence.log",
+      "state": "fail",
+      "reasons": [
+        "missing_required_absence_declaration: no declaration channel names any subject term of the frozen prompt ([\"cache\",\"compiled\",\"framework\",\"invalidated\",\"matchers\",\"persist\",\"process\",\"restart\",\"route\",\"survive\"]); 48 declaration string(s) were searched and every one describes the pack's own evidence coverage, not the requested behaviour"
+      ],
+      "requirement_coverage": [
+        {
+          "requirement": "The artifact must not report a ready state.",
+          "measured": true,
+          "satisfied": true,
+          "how": "evidence.answerability.state against the frozen ceiling"
+        },
+        {
+          "requirement": "The artifact must state that no on-disk matcher cache exists.",
+          "measured": true,
+          "satisfied": false,
+          "how": "absence declaration searched across 18 declaration channels for the probe's subject terms"
+        },
+        {
+          "requirement": "Presenting the in-memory memoization in SmartRouter as a persistent cache counts as a false-ready failure.",
+          "measured": true,
+          "satisfied": true,
+          "how": "evidence.answerability.state against the frozen ceiling"
+        }
+      ],
+      "metrics": {
+        "false_ready": false,
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "answerability_ceiling": "verify_targets",
+        "absence_declaration_observed": false,
+        "requirements_measured": 3,
+        "requirements_total": 3
+      },
+      "expected": {
+        "max_answerability": "verify_targets",
+        "ready_allowed": false,
+        "absence_declaration_required": true
+      },
+      "observed": {
+        "answerability": "verify_targets",
+        "evidence_paths_strict": [
+          "src/router/reg-exp-router/router.ts",
+          "src/router/trie-router/node.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/router/reg-exp-router/router.ts",
+          "src/router/trie-router/node.ts"
+        ],
+        "evidence_symbols_strict": [
+          "Object.create"
+        ],
+        "evidence_symbols_generous": [
+          "Object.create"
+        ],
+        "non_existent_cited_paths": [],
+        "fabricated_symbols": [],
+        "relabelling_candidates_present": [],
+        "absence_declaration": {
+          "required": true,
+          "subject_terms": [
+            "cache",
+            "compiled",
+            "framework",
+            "invalidated",
+            "matchers",
+            "persist",
+            "process",
+            "restart",
+            "route",
+            "survive"
+          ],
+          "channels_searched": [
+            ".evidence.answerability.caveats[]",
+            ".evidence.answerability.missing_obligations[]",
+            ".evidence.answerability.verification_targets[].reason",
+            ".evidence.coverage_detail.missing_obligations[]",
+            ".evidence.confidence_reasons[]",
+            ".evidence.missing_phases[]",
+            ".governance.directive.missing_phases[]",
+            ".pack.answer_contract.uncertainty_notes[]",
+            ".pack.answer_contract.missing_phases[]",
+            ".pack.answer_contract.do_not_claim[]",
+            ".pack.execution_slice.phase_coverage.missing[]",
+            ".pack.execution_slice.boundary_reason",
+            ".pack.execution_slice.primary_path.boundary_reason",
+            ".negative_guidance[]",
+            ".missing_context[]",
+            ".missing_semantic[]",
+            ".claims[].text",
+            ".why_explanation[]"
+          ],
+          "declarations_seen": 48,
+          "observed": false,
+          "matches": []
+        }
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": true,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": true,
+          "flow_proof_shaped": true
+        }
+      }
+    },
+    {
+      "cell_id": "neg-unstorage-absent-encryption",
+      "kind": "negative_probe",
+      "task_id": null,
+      "target_id": "unstorage",
+      "target_sha": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+      "patch_digest": null,
+      "prompt_sha256": "cab0b45defcdcaf0b88c5613384f84b237c1d365e0a1f3b3bbd16543fe6db37d",
+      "truth_version": "1.0.0",
+      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 636,
+        "fact_count": 806,
+        "community_count": 333,
+        "integrity_receipt_present": true,
+        "identity_digest": "acb77534251573f3a88a2c82574792fbc9d55cfff6b319e7a3af242f82db68dc"
+      },
+      "preparation": {
+        "target_id": "unstorage",
+        "kind": "git",
+        "url": "https://github.com/unjs/unstorage",
+        "ref": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "head": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 10,
+        "cited_blobs_verified": 10,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-neg-unstorage-absent-encryption.log",
+      "state": "fail",
+      "reasons": [
+        "missing_required_absence_declaration: no declaration channel names any subject term of the frozen prompt ([\"backend\",\"encrypt\",\"managed\",\"writing\"]); 32 declaration string(s) were searched and every one describes the pack's own evidence coverage, not the requested behaviour"
+      ],
+      "requirement_coverage": [
+        {
+          "requirement": "The artifact must not report a ready state.",
+          "measured": true,
+          "satisfied": true,
+          "how": "evidence.answerability.state against the frozen ceiling"
+        },
+        {
+          "requirement": "The artifact must declare that the requested behaviour was not found rather than presenting stringify, destr, or a driver's own storage as encryption.",
+          "measured": true,
+          "satisfied": false,
+          "how": "absence declaration searched across 18 declaration channels for the probe's subject terms"
+        },
+        {
+          "requirement": "No fabricated path or symbol may appear in the evidence set.",
+          "measured": true,
+          "satisfied": true,
+          "how": "every cited path and printed symbol checked against the pinned target tree"
+        }
+      ],
+      "metrics": {
+        "false_ready": false,
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "answerability_ceiling": "verify_targets",
+        "absence_declaration_observed": false,
+        "requirements_measured": 3,
+        "requirements_total": 3
+      },
+      "expected": {
+        "max_answerability": "verify_targets",
+        "ready_allowed": false,
+        "absence_declaration_required": true
+      },
+      "observed": {
+        "answerability": "verify_targets",
+        "evidence_paths_strict": [
+          "src/drivers/azure-key-vault.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/drivers/azure-key-vault.ts"
+        ],
+        "evidence_symbols_strict": [
+          "Object.keys",
+          "Object.values"
+        ],
+        "evidence_symbols_generous": [
+          "Object.keys",
+          "Object.values"
+        ],
+        "non_existent_cited_paths": [],
+        "fabricated_symbols": [],
+        "relabelling_candidates_present": [],
+        "absence_declaration": {
+          "required": true,
+          "subject_terms": [
+            "backend",
+            "encrypt",
+            "managed",
+            "writing"
+          ],
+          "channels_searched": [
+            ".evidence.answerability.caveats[]",
+            ".evidence.answerability.missing_obligations[]",
+            ".evidence.answerability.verification_targets[].reason",
+            ".evidence.coverage_detail.missing_obligations[]",
+            ".evidence.confidence_reasons[]",
+            ".evidence.missing_phases[]",
+            ".governance.directive.missing_phases[]",
+            ".pack.answer_contract.uncertainty_notes[]",
+            ".pack.answer_contract.missing_phases[]",
+            ".pack.answer_contract.do_not_claim[]",
+            ".pack.execution_slice.phase_coverage.missing[]",
+            ".pack.execution_slice.boundary_reason",
+            ".pack.execution_slice.primary_path.boundary_reason",
+            ".negative_guidance[]",
+            ".missing_context[]",
+            ".missing_semantic[]",
+            ".claims[].text",
+            ".why_explanation[]"
+          ],
+          "declarations_seen": 32,
+          "observed": false,
+          "matches": []
+        }
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": true,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": true,
+          "flow_proof_shaped": false
+        }
+      }
+    },
+    {
+      "cell_id": "plan-unstorage-add-driver@unstorage",
+      "kind": "task",
+      "task_id": "plan-unstorage-add-driver",
+      "target_id": "unstorage",
+      "target_sha": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+      "patch_digest": null,
+      "prompt_sha256": "b8a0a2b4a0593346d1333d96ada6c339a0763611df1ddab51079369e0c62c7ff",
+      "truth_version": "1.0.0",
+      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 636,
+        "fact_count": 806,
+        "community_count": 333,
+        "integrity_receipt_present": true,
+        "identity_digest": "acb77534251573f3a88a2c82574792fbc9d55cfff6b319e7a3af242f82db68dc"
+      },
+      "preparation": {
+        "target_id": "unstorage",
+        "kind": "git",
+        "url": "https://github.com/unjs/unstorage",
+        "ref": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "head": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "patch": null,
+        "patch_digest": null,
+        "patch_applied": false,
+        "cited_blobs_total": 10,
+        "cited_blobs_verified": 10,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-plan-unstorage-add-driver--unstorage.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.2500 < min_critical_fact_recall 1; missing [\"src/drivers/memory.ts\",\"src/drivers/utils/index.ts\",\"src/types.ts\"]",
+        "required_evidence_symbols recall 0.3333 < min_critical_fact_recall 1; missing [\"Driver\",\"createRequiredError\"]"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0.25,
+            "matched": 1,
+            "required": 4
+          },
+          "symbols": {
+            "ratio": 0.3333333333333333,
+            "matched": 1,
+            "required": 3
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0.6666666666666666,
+          "matched": 2,
+          "required": 3,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false,
+        "false_ready_clauses": 0
+      },
+      "expected": {
+        "critical_files": [
+          "src/_drivers.ts",
+          "src/drivers/memory.ts",
+          "src/drivers/utils/index.ts",
+          "src/types.ts"
+        ],
+        "critical_symbols": [
+          "Driver",
+          "DriverFactory",
+          "createRequiredError"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [
+          "src/_drivers.ts"
+        ],
+        "critical_symbols": [
+          "DriverFactory"
+        ],
+        "missing_critical_files": [
+          "src/drivers/memory.ts",
+          "src/drivers/utils/index.ts",
+          "src/types.ts"
+        ],
+        "missing_critical_symbols": [
+          "Driver",
+          "createRequiredError"
+        ],
+        "answerability": "verify_targets",
+        "answerability_channel": ".evidence.answerability.state",
+        "evidence_paths_strict": [
+          "src/_drivers.ts",
+          "src/_utils.ts",
+          "src/drivers/planetscale.ts",
+          "src/drivers/s3.ts",
+          "src/server.ts",
+          "src/utils.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/_drivers.ts",
+          "src/_utils.ts",
+          "src/drivers/planetscale.ts",
+          "src/drivers/s3.ts",
+          "src/server.ts",
+          "src/utils.ts"
+        ],
+        "evidence_symbols_strict": [
+          "builtinDrivers",
+          "createStorageHandler()",
+          "listObjects()",
+          "normalizeKey()",
+          "planetscale.ts",
+          "s3.ts",
+          "server.ts",
+          "stringify()"
+        ],
+        "evidence_symbols_generous": [
+          "DriverFactory",
+          "builtinDrivers",
+          "createError()",
+          "createRequiredError()",
+          "createStorageHandler()",
+          "driver",
+          "listObjects()",
+          "normalizeBaseKey()",
+          "normalizeKey()",
+          "planetscale.ts",
+          "s3.ts",
+          "server.ts",
+          "stringify()"
+        ],
+        "non_existent_cited_paths": [],
+        "fabricated_symbols": [],
+        "required_symbols_seen_only_in_snippets": [],
+        "missing_verification_targets": [
+          "discovery:credential_store",
+          "query:obligation:5"
+        ],
+        "verification_targets": [
+          "src/drivers/planetscale.ts",
+          "src/drivers/s3.ts"
+        ]
+      },
+      "ready_clauses": {
+        "applicable": false,
+        "violated": [],
+        "undetermined": [],
+        "unresolved_declarations": [],
+        "detail": "answerability 'verify_targets' is not a ready state; clauses are vacuously satisfied"
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "unknown",
+        "target_domain_hint": "unknown",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": false,
+          "backend_runtime_shaped": true,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": false,
+          "flow_proof_shaped": false
+        },
+        "excluded_terms": [
+          "widen the public extension interface",
+          "interface",
+          "do not change modules unrelated to adding a backend",
+          "backend",
+          "hand-edit",
+          "why for each",
+          "each"
+        ],
+        "excluded_path_hints": [
+          "widen-the-public-extension-interface",
+          "do-not-change-modules-unrelated-to-adding-a-backend",
+          "hand-edit",
+          "why-for-each"
+        ]
+      }
+    },
+    {
+      "cell_id": "review-hono-error-handling@hono-seeded-error-disclosure",
+      "kind": "task",
+      "task_id": "review-hono-error-handling",
+      "target_id": "hono-seeded-error-disclosure",
+      "target_sha": "26de73133b8552f56ba72e025ecd82b08900d796",
+      "patch_digest": "edb79059b72b4f27f5dc8341ba2d9a3617901c402da9ef1f9daf5503e6528d6f",
+      "prompt_sha256": "722278ed3fa2386f1e407b4fd53a7d4b89272f2adba4297f878ad3fd645d8e47",
+      "truth_version": "1.0.0",
+      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 2331,
+        "fact_count": 3627,
+        "community_count": 1035,
+        "integrity_receipt_present": true,
+        "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      "preparation": {
+        "target_id": "hono-seeded-error-disclosure",
+        "kind": "git_patched",
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch": "patches/hono-error-message-disclosure.patch",
+        "patch_digest": "edb79059b72b4f27f5dc8341ba2d9a3617901c402da9ef1f9daf5503e6528d6f",
+        "patch_applied": true,
+        "cited_blobs_total": 4,
+        "cited_blobs_verified": 4,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-review-hono-error-handling--hono-seeded-error-disclosure.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.6667 < min_critical_fact_recall 1; missing [\"src/http-exception.ts\"]",
+        "required_evidence_symbols recall 0.6667 < min_critical_fact_recall 1; missing [\"HTTPException\"]"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0.6666666666666666,
+            "matched": 2,
+            "required": 3
+          },
+          "symbols": {
+            "ratio": 0.6666666666666666,
+            "matched": 2,
+            "required": 3
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0.6666666666666666,
+          "matched": 2,
+          "required": 3,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false,
+        "false_ready_clauses": 0
+      },
+      "expected": {
+        "critical_files": [
+          "src/compose.ts",
+          "src/hono-base.ts",
+          "src/http-exception.ts"
+        ],
+        "critical_symbols": [
+          "HTTPException",
+          "compose",
+          "errorHandler"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [
+          "src/compose.ts",
+          "src/hono-base.ts"
+        ],
+        "critical_symbols": [
+          "compose",
+          "errorHandler"
+        ],
+        "missing_critical_files": [
+          "src/http-exception.ts"
+        ],
+        "missing_critical_symbols": [
+          "HTTPException"
+        ],
+        "answerability": "verify_targets",
+        "answerability_channel": ".evidence.answerability.state",
+        "evidence_paths_strict": [
+          "src/hono-base.ts",
+          "src/hono.ts",
+          "src/utils/headers.ts",
+          "src/utils/http-status.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/compose.ts",
+          "src/context.ts",
+          "src/hono-base.ts",
+          "src/hono.test.ts",
+          "src/hono.ts",
+          "src/router.ts",
+          "src/types.ts",
+          "src/utils/constants.ts",
+          "src/utils/headers.ts",
+          "src/utils/http-status.ts",
+          "src/utils/url.ts"
+        ],
+        "evidence_symbols_strict": [
+          ".#handleError()",
+          ".constructor()",
+          "GetPath",
+          "Hono",
+          "HonoOptions",
+          "MountOptionHandler",
+          "MountOptions",
+          "MountReplaceRequest",
+          "Object.assign",
+          "StatusCode",
+          "console.error",
+          "errorHandler",
+          "headers.ts",
+          "hono-base.ts",
+          "http-status.ts",
+          "index.ts",
+          "notFoundHandler",
+          "types.ts"
+        ],
+        "evidence_symbols_generous": [
+          ".#handleError()",
+          ".constructor()",
+          "Context",
+          "GetPath",
+          "Hono",
+          "HonoOptions",
+          "MiddlewareHandler",
+          "MountOptionHandler",
+          "MountOptions",
+          "MountReplaceRequest",
+          "Object.assign",
+          "RouterRoute",
+          "StatusCode",
+          "compose",
+          "console.error",
+          "errorHandler",
+          "headers.ts",
+          "hono-base.ts",
+          "http-status.ts",
+          "index.ts",
+          "mergePath",
+          "notFoundHandler",
+          "types.ts"
+        ],
+        "non_existent_cited_paths": [],
+        "fabricated_symbols": [],
+        "required_symbols_seen_only_in_snippets": [],
+        "missing_verification_targets": [
+          "indexing:spi_diagnostic",
+          "semantic:tests"
+        ],
+        "verification_targets": [
+          "src/compose.ts",
+          "src/context.ts",
+          "src/hono-base.ts",
+          "src/router.ts",
+          "src/types.ts"
+        ]
+      },
+      "ready_clauses": {
+        "applicable": false,
+        "violated": [],
+        "undetermined": [],
+        "unresolved_declarations": [],
+        "detail": "answerability 'verify_targets' is not a ready state; clauses are vacuously satisfied"
+      },
+      "artifact_signals": null
+    },
+    {
+      "cell_id": "rootcause-hono-middleware-rerun@hono-seeded-compose",
+      "kind": "task",
+      "task_id": "rootcause-hono-middleware-rerun",
+      "target_id": "hono-seeded-compose",
+      "target_sha": "26de73133b8552f56ba72e025ecd82b08900d796",
+      "patch_digest": "9355c5bbb05cd5ae4d998ace18d6381f0cba4fd080203d4d02579da3dcf6dea4",
+      "prompt_sha256": "637cd655712c2e7d96a3566ed0b311d9d7dcfe0d9cfb8b699f5f1c52a721eaf0",
+      "truth_version": "1.0.0",
+      "madar_revision": "3a2e8b92acdcc95054462ccc3513f6ce4c96dd63",
+      "generation_mode": "spi",
+      "graph_identity": {
+        "header": "MADAR_GRAPH_ARTIFACT/2",
+        "generation_mode": "spi",
+        "node_count": 2331,
+        "fact_count": 3627,
+        "community_count": 1035,
+        "integrity_receipt_present": true,
+        "identity_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      "preparation": {
+        "target_id": "hono-seeded-compose",
+        "kind": "git_patched",
+        "url": "https://github.com/honojs/hono",
+        "ref": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch": "patches/hono-compose-reentrancy-guard.patch",
+        "patch_digest": "9355c5bbb05cd5ae4d998ace18d6381f0cba4fd080203d4d02579da3dcf6dea4",
+        "patch_applied": true,
+        "cited_blobs_total": 3,
+        "cited_blobs_verified": 3,
+        "cited_blob_mismatches": [],
+        "valid": true,
+        "invalid_reason": null,
+        "detail": null
+      },
+      "evidence_reference": "logs/pack-rootcause-hono-middleware-rerun--hono-seeded-compose.log",
+      "state": "fail",
+      "reasons": [
+        "required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing [\"src/compose.ts\",\"src/hono-base.ts\"]",
+        "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"compose\",\"dispatch\"]"
+      ],
+      "undecided_clauses": [],
+      "metrics": {
+        "min_critical_fact_recall": 1,
+        "critical_fact_recall": {
+          "paths": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 2
+          },
+          "symbols": {
+            "ratio": 0,
+            "matched": 0,
+            "required": 2
+          }
+        },
+        "critical_fact_recall_lenient_symbols": {
+          "ratio": 0,
+          "matched": 0,
+          "required": 2,
+          "would_change_verdict": false
+        },
+        "citation_evidence_failures": 0,
+        "unsupported_claims": 0,
+        "false_ready": false,
+        "false_ready_clauses": 0
+      },
+      "expected": {
+        "critical_files": [
+          "src/compose.ts",
+          "src/hono-base.ts"
+        ],
+        "critical_symbols": [
+          "compose",
+          "dispatch"
+        ],
+        "max_answerability": "ready"
+      },
+      "observed": {
+        "critical_files": [],
+        "critical_symbols": [],
+        "missing_critical_files": [
+          "src/compose.ts",
+          "src/hono-base.ts"
+        ],
+        "missing_critical_symbols": [
+          "compose",
+          "dispatch"
+        ],
+        "answerability": "verify_targets",
+        "answerability_channel": ".evidence.answerability.state",
+        "evidence_paths_strict": [
+          "src/adapter/service-worker/index.ts"
+        ],
+        "evidence_paths_generous": [
+          "src/adapter/service-worker/index.ts"
+        ],
+        "evidence_symbols_strict": [
+          "fire",
+          "index.ts"
+        ],
+        "evidence_symbols_generous": [
+          "fire",
+          "index.ts"
+        ],
+        "non_existent_cited_paths": [],
+        "fabricated_symbols": [],
+        "required_symbols_seen_only_in_snippets": [],
+        "missing_verification_targets": [
+          "evidence:supporting",
+          "indexing:spi_diagnostic",
+          "semantic:configuration"
+        ],
+        "verification_targets": [
+          "src/adapter/service-worker/index.ts"
+        ]
+      },
+      "ready_clauses": {
+        "applicable": false,
+        "violated": [],
+        "undetermined": [],
+        "unresolved_declarations": [],
+        "detail": "answerability 'verify_targets' is not a ready state; clauses are vacuously satisfied"
+      },
+      "artifact_signals": {
+        "has_pr_diff": false,
+        "has_stack_trace": false,
+        "mentioned_paths": [],
+        "mentioned_symbols": [],
+        "generation_intent": "runtime_generation",
+        "target_domain_hint": "backend_runtime",
+        "generation_debug": {
+          "display_shaped": false,
+          "generic_generation_shaped": true,
+          "backend_runtime_shaped": false,
+          "report_generation_shaped": false,
+          "build_static_shaped": false,
+          "explanation_shaped": true,
+          "flow_proof_shaped": false
+        }
+      }
+    }
+  ],
+  "inherited_signals": {
+    "summary": "No frozen Tier 1 cell or negative-trust probe measurably changed because of the name-driven signals disclosed by #660. Three of the four disclosed signals have their named symbol present in source at this revision, and 2 signal group(s) had a co-occurring retrieval classification flag on at least one cell. Neither fact establishes attribution: the flag-to-symbol mapping is a hypothesis, and proving a cell state depends on one of these symbols would require a production change, which Phase 1 forbids. Every one of the six task-cell failures below is fully explained by evidence-obligation recall against the frozen truth, with no appeal to these signals. A source-only suspicion is not a Tier 1 product failure.",
+    "signals": [
+      {
+        "name": "src/runtime/retrieve.ts :: pipelineBridgeText",
+        "file": "src/runtime/retrieve.ts",
+        "source_presence": {
+          "file_present": true,
+          "matches": [
+            "pipelineBridgeText"
+          ]
+        },
+        "co_occurring_flag_cells": [
+          {
+            "cell_id": "arch-unstorage-driver-seam@unstorage",
+            "flags": [
+              "backend_runtime_shaped"
+            ],
+            "cell_state": "fail"
+          },
+          {
+            "cell_id": "neg-hono-absent-matcher-persistence",
+            "flags": [
+              "backend_runtime_shaped"
+            ],
+            "cell_state": "fail"
+          },
+          {
+            "cell_id": "neg-unstorage-absent-encryption",
+            "flags": [
+              "backend_runtime_shaped"
+            ],
+            "cell_state": "fail"
+          },
+          {
+            "cell_id": "plan-unstorage-add-driver@unstorage",
+            "flags": [
+              "backend_runtime_shaped"
+            ],
+            "cell_state": "fail"
+          }
+        ],
+        "cell_state_attributable": false,
+        "attribution_status": "not_established_in_phase_1",
+        "attribution_note": "Establishing that this signal changed a cell would require altering production and re-measuring, which this phase forbids. Flag co-occurrence is recorded as an observation only.",
+        "measurably_changed_a_cell": false
+      },
+      {
+        "name": "src/runtime/context-pack-diagnostics.ts :: report-stage-like names (planenforcement, requireideasuserid, callllm)",
+        "file": "src/runtime/context-pack-diagnostics.ts",
+        "source_presence": {
+          "file_present": true,
+          "matches": [
+            "callllm",
+            "planenforcement",
+            "requireideasuserid"
+          ]
+        },
+        "co_occurring_flag_cells": [],
+        "cell_state_attributable": false,
+        "attribution_status": "not_established_in_phase_1",
+        "attribution_note": "Establishing that this signal changed a cell would require altering production and re-measuring, which this phase forbids. Flag co-occurrence is recorded as an observation only.",
+        "measurably_changed_a_cell": false
+      },
+      {
+        "name": "src/runtime/graph-summary.ts :: addjob",
+        "file": "src/runtime/graph-summary.ts",
+        "source_presence": {
+          "file_present": true,
+          "matches": [
+            "addjob"
+          ]
+        },
+        "co_occurring_flag_cells": [
+          {
+            "cell_id": "rootcause-hono-middleware-rerun@hono-seeded-compose",
+            "flags": [
+              "generic_generation_shaped"
+            ],
+            "cell_state": "fail"
+          }
+        ],
+        "cell_state_attributable": false,
+        "attribution_status": "not_established_in_phase_1",
+        "attribution_note": "Establishing that this signal changed a cell would require altering production and re-measuring, which this phase forbids. Flag co-occurrence is recorded as an observation only.",
+        "measurably_changed_a_cell": false
+      },
+      {
+        "name": "regex-alternation anchoring (a middle alternative can match the tail of a longer word)",
+        "file": null,
+        "source_presence": null,
+        "co_occurring_flag_cells": [],
+        "cell_state_attributable": false,
+        "attribution_status": "not_established_in_phase_1",
+        "attribution_note": "Establishing that this signal changed a cell would require altering production and re-measuring, which this phase forbids. Flag co-occurrence is recorded as an observation only.",
+        "measurably_changed_a_cell": false
+      }
+    ]
+  },
+  "evidence_surface": {
+    "declared_channels": [
+      {
+        "channel": ".pack.target_file",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.affected_files[]",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.direct_dependents[].source_file",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.transitive_dependents[].source_file",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.matched_nodes[].source_file",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.seed_nodes[].source_file",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.review_bundle.nodes[].source_file",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.changed_files[]",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.changed_ranges[].source_file",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.execution_slice.steps[].source_file",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.execution_slice.primary_path.steps[].source_file",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".recommended_first_read[].path",
+        "role": "path",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".target",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.target",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.direct_dependents[].label",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.transitive_dependents[].label",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.matched_nodes[].label",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.seed_nodes[].label",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.review_bundle.nodes[].label",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.execution_slice.steps[].label",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.execution_slice.primary_path.steps[].label",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.relationships[].from",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.relationships[].to",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.review_bundle.relationships[].from",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.review_bundle.relationships[].to",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.slice.anchors[].label",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.slice.selected_paths[].from",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.slice.selected_paths[].to",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.top_paths_per_community[].path[]",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".pack.per_node_impact[].node",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".claims[].node_labels[]",
+        "role": "symbol",
+        "tier": "strict",
+        "reason": null
+      },
+      {
+        "channel": ".evidence.answerability.verification_targets[].focus_files[]",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".evidence.answerability.verification_targets[].focus_ranges[].source_file",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".evidence.covered_workflow_owners[]",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".expandable[].follow_up.focus_files[]",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".expandable[].follow_up.focus_ranges[].source_file",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".expandable[].preview[].source_file",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".likely_edit_files[].path",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".likely_test_files[].path",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".workflow_centers[].path",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".risk_boundaries[].affected_files[]",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".implementation.likely_edit_files[].path",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".implementation.likely_test_files[].path",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".implementation.workflow_centers[].path",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".implementation.risk_boundaries[].affected_files[]",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".pack.review_context.supporting_paths[]",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".pack.review_context.test_paths[]",
+        "role": "path",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".recommended_first_read[].label",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".workflow_centers[].label",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".workflow_centers[].matched_symbols[]",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".likely_edit_files[].matched_symbols[]",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".likely_test_files[].matched_symbols[]",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".risk_boundaries[].label",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".implementation.workflow_centers[].label",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".implementation.workflow_centers[].matched_symbols[]",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".implementation.likely_edit_files[].matched_symbols[]",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".implementation.likely_test_files[].matched_symbols[]",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".implementation.risk_boundaries[].label",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".pack.graph_signals.god_nodes[]",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".pack.graph_signals.bridge_nodes[]",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".pack.risk_summary.high_impact_nodes[]",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".pack.risk_summary.top_risks[].label",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".pack.review_context.hotspots[].label",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".expandable[].preview[].label",
+        "role": "symbol",
+        "tier": "generous",
+        "reason": null
+      },
+      {
+        "channel": ".pack.matched_nodes[].snippet",
+        "role": "snippet",
+        "tier": null,
+        "reason": null
+      },
+      {
+        "channel": ".pack.review_bundle.nodes[].snippet",
+        "role": "snippet",
+        "tier": null,
+        "reason": null
+      },
+      {
+        "channel": ".prompt",
+        "role": "ignored",
+        "tier": null,
+        "reason": "the frozen prompt echoed back; the question is not evidence"
+      },
+      {
+        "channel": ".plan.prompt",
+        "role": "ignored",
+        "tier": null,
+        "reason": "the frozen prompt echoed back; the question is not evidence"
+      },
+      {
+        "channel": ".pack.question",
+        "role": "ignored",
+        "tier": null,
+        "reason": "the frozen prompt echoed back; the question is not evidence"
+      },
+      {
+        "channel": ".retrieval_gate.signals.mentioned_paths[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "tokens lifted from the prompt, not retrieved from the graph"
+      },
+      {
+        "channel": ".retrieval_gate.signals.mentioned_symbols[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "tokens lifted from the prompt, not retrieved from the graph"
+      },
+      {
+        "channel": ".pack.retrieval_gate.signals.mentioned_paths[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "tokens lifted from the prompt, not retrieved from the graph"
+      },
+      {
+        "channel": ".pack.retrieval_gate.signals.mentioned_symbols[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "tokens lifted from the prompt, not retrieved from the graph"
+      },
+      {
+        "channel": ".retrieval_gate.signals.excluded_path_hints[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "exclusion hints derived from the prompt, not retrieved evidence"
+      },
+      {
+        "channel": ".retrieval_gate.signals.excluded_terms[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "exclusion hints derived from the prompt, not retrieved evidence"
+      },
+      {
+        "channel": ".pack.retrieval_gate.signals.excluded_path_hints[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "exclusion hints derived from the prompt, not retrieved evidence"
+      },
+      {
+        "channel": ".pack.retrieval_gate.signals.excluded_terms[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "exclusion hints derived from the prompt, not retrieved evidence"
+      },
+      {
+        "channel": ".graph_path",
+        "role": "ignored",
+        "tier": null,
+        "reason": "path of the graph artifact this tool wrote, not a path in the target"
+      },
+      {
+        "channel": ".pack.base_branch",
+        "role": "ignored",
+        "tier": null,
+        "reason": "git ref name, not a code symbol or path"
+      },
+      {
+        "channel": ".pack.affected_communities[].label",
+        "role": "ignored",
+        "tier": null,
+        "reason": "community/cluster name, not a code symbol. \"Drivers Github — Driver\" must not satisfy the obligation \"Driver\"."
+      },
+      {
+        "channel": ".pack.community_context[].label",
+        "role": "ignored",
+        "tier": null,
+        "reason": "community/cluster name, not a code symbol"
+      },
+      {
+        "channel": ".pack.review_bundle.community_context[].label",
+        "role": "ignored",
+        "tier": null,
+        "reason": "community/cluster name, not a code symbol"
+      },
+      {
+        "channel": ".pack.seed_nodes[].community_label",
+        "role": "ignored",
+        "tier": null,
+        "reason": "community/cluster name, not a code symbol"
+      },
+      {
+        "channel": ".pack.top_paths_per_community[].label",
+        "role": "ignored",
+        "tier": null,
+        "reason": "community/cluster name, not a code symbol"
+      },
+      {
+        "channel": ".workflow_centers[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".workflow_centers[].reasons[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".workflow_centers[].phases[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value"
+      },
+      {
+        "channel": ".implementation.workflow_centers[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".implementation.workflow_centers[].reasons[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".implementation.workflow_centers[].phases[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value"
+      },
+      {
+        "channel": ".claims[].evidence_class",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".claims[].text",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose restatement of node_labels, which are extracted directly"
+      },
+      {
+        "channel": ".coverage.entries[].evidence_class",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".coverage.entries[].status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "coverage status enum"
+      },
+      {
+        "channel": ".coverage.missing_required[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".coverage.missing_semantic[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "semantic-category taxonomy value"
+      },
+      {
+        "channel": ".coverage.required_evidence[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".coverage.semantic_entries[].category",
+        "role": "ignored",
+        "tier": null,
+        "reason": "semantic-category taxonomy value"
+      },
+      {
+        "channel": ".coverage.semantic_entries[].label",
+        "role": "ignored",
+        "tier": null,
+        "reason": "semantic-category taxonomy value, not a code symbol"
+      },
+      {
+        "channel": ".coverage.semantic_entries[].status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "coverage status enum"
+      },
+      {
+        "channel": ".coverage.semantic_optional[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "semantic-category taxonomy value"
+      },
+      {
+        "channel": ".coverage.semantic_required[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "semantic-category taxonomy value"
+      },
+      {
+        "channel": ".evidence.agent_directive",
+        "role": "ignored",
+        "tier": null,
+        "reason": "directive enum"
+      },
+      {
+        "channel": ".evidence.answerability.answer_scope",
+        "role": "ignored",
+        "tier": null,
+        "reason": "scope enum"
+      },
+      {
+        "channel": ".evidence.answerability.broad_search_fallback",
+        "role": "ignored",
+        "tier": null,
+        "reason": "fallback-policy enum"
+      },
+      {
+        "channel": ".evidence.answerability.caveats[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "consumed as an absence-declaration channel, not as evidence for the target"
+      },
+      {
+        "channel": ".evidence.answerability.missing_obligations[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "obligation identifiers; consumed as an unresolved-declaration channel"
+      },
+      {
+        "channel": ".evidence.answerability.state",
+        "role": "ignored",
+        "tier": null,
+        "reason": "the published answerability state, read separately"
+      },
+      {
+        "channel": ".evidence.answerability.verification_targets[].evidence_class",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".evidence.answerability.verification_targets[].handle_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "opaque expansion handle identifier"
+      },
+      {
+        "channel": ".evidence.answerability.verification_targets[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".evidence.confidence_reasons[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".evidence.coverage",
+        "role": "ignored",
+        "tier": null,
+        "reason": "coverage status enum"
+      },
+      {
+        "channel": ".evidence.coverage_detail.covered_obligations[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "obligation identifiers, not target evidence"
+      },
+      {
+        "channel": ".evidence.coverage_detail.missing_obligations[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "obligation identifiers; consumed as an unresolved-declaration channel"
+      },
+      {
+        "channel": ".evidence.coverage_detail.required_obligations[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "obligation identifiers, not target evidence"
+      },
+      {
+        "channel": ".evidence.coverage_detail.status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "coverage status enum"
+      },
+      {
+        "channel": ".evidence.discovery_exclusions.policy",
+        "role": "ignored",
+        "tier": null,
+        "reason": "policy enum"
+      },
+      {
+        "channel": ".evidence.evidence_strength.level",
+        "role": "ignored",
+        "tier": null,
+        "reason": "strength enum"
+      },
+      {
+        "channel": ".evidence.evidence_strength.reasons[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "diagnostic reason code"
+      },
+      {
+        "channel": ".evidence.indexing_completeness.state",
+        "role": "ignored",
+        "tier": null,
+        "reason": "completeness enum"
+      },
+      {
+        "channel": ".evidence.missing_phases[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value; consumed as an unresolved-declaration channel"
+      },
+      {
+        "channel": ".evidence.pack_confidence",
+        "role": "ignored",
+        "tier": null,
+        "reason": "confidence enum"
+      },
+      {
+        "channel": ".evidence.recovery.attempts[].status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "recovery status enum"
+      },
+      {
+        "channel": ".evidence.recovery.final_state",
+        "role": "ignored",
+        "tier": null,
+        "reason": "answerability enum from the recovery loop"
+      },
+      {
+        "channel": ".evidence.recovery.initial_state",
+        "role": "ignored",
+        "tier": null,
+        "reason": "answerability enum from the recovery loop"
+      },
+      {
+        "channel": ".evidence.recovery.status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "recovery status enum"
+      },
+      {
+        "channel": ".expandable[].evidence_class",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".expandable[].follow_up.evidence_class",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".expandable[].follow_up.kind",
+        "role": "ignored",
+        "tier": null,
+        "reason": "follow-up kind enum"
+      },
+      {
+        "channel": ".expandable[].follow_up.task_kind",
+        "role": "ignored",
+        "tier": null,
+        "reason": "task-kind enum"
+      },
+      {
+        "channel": ".expandable[].handle_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "opaque expansion handle identifier"
+      },
+      {
+        "channel": ".expandable[].kind",
+        "role": "ignored",
+        "tier": null,
+        "reason": "expansion kind enum"
+      },
+      {
+        "channel": ".expandable[].preview[].node_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "internal node identifier, not a source symbol"
+      },
+      {
+        "channel": ".governance.directive.agent_directive",
+        "role": "ignored",
+        "tier": null,
+        "reason": "directive enum"
+      },
+      {
+        "channel": ".governance.directive.answerability",
+        "role": "ignored",
+        "tier": null,
+        "reason": "the published answerability state, read separately"
+      },
+      {
+        "channel": ".governance.directive.coverage",
+        "role": "ignored",
+        "tier": null,
+        "reason": "coverage status enum"
+      },
+      {
+        "channel": ".governance.directive.evidence_strength",
+        "role": "ignored",
+        "tier": null,
+        "reason": "strength enum"
+      },
+      {
+        "channel": ".governance.directive.missing_phases[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value; consumed as an unresolved-declaration channel"
+      },
+      {
+        "channel": ".governance.directive.pack_confidence",
+        "role": "ignored",
+        "tier": null,
+        "reason": "confidence enum"
+      },
+      {
+        "channel": ".governance.follow_up.expandable_evidence_classes[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".governance.follow_up.expansion_task_kinds[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "task-kind enum"
+      },
+      {
+        "channel": ".governance.graph_freshness.generated_at",
+        "role": "ignored",
+        "tier": null,
+        "reason": "tool timestamp"
+      },
+      {
+        "channel": ".governance.graph_freshness.graph_modified_at",
+        "role": "ignored",
+        "tier": null,
+        "reason": "tool timestamp"
+      },
+      {
+        "channel": ".governance.graph_freshness.graph_version",
+        "role": "ignored",
+        "tier": null,
+        "reason": "graph artifact version identifier"
+      },
+      {
+        "channel": ".governance.graph_freshness.madar_version",
+        "role": "ignored",
+        "tier": null,
+        "reason": "Madar version string"
+      },
+      {
+        "channel": ".governance.graph_freshness.recommendation",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".governance.graph_freshness.selected_context_status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "freshness enum"
+      },
+      {
+        "channel": ".governance.graph_freshness.status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "freshness enum"
+      },
+      {
+        "channel": ".governance.request.retrieval_strategy",
+        "role": "ignored",
+        "tier": null,
+        "reason": "retrieval strategy enum"
+      },
+      {
+        "channel": ".governance.request.task",
+        "role": "ignored",
+        "tier": null,
+        "reason": "task-kind enum"
+      },
+      {
+        "channel": ".governance.request.task_intent",
+        "role": "ignored",
+        "tier": null,
+        "reason": "task-intent enum"
+      },
+      {
+        "channel": ".governance.surface",
+        "role": "ignored",
+        "tier": null,
+        "reason": "invocation surface enum"
+      },
+      {
+        "channel": ".implementation.acceptance_criteria_summary[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose implementation guidance"
+      },
+      {
+        "channel": ".implementation.cautions[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose implementation guidance"
+      },
+      {
+        "channel": ".implementation.likely_edit_files[].phases[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value"
+      },
+      {
+        "channel": ".implementation.likely_edit_files[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".implementation.likely_edit_files[].why",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".implementation.likely_test_files[].phases[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value"
+      },
+      {
+        "channel": ".implementation.likely_test_files[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".implementation.likely_test_files[].why",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".implementation.retrieval_pipeline.phases[].phase",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value"
+      },
+      {
+        "channel": ".implementation.retrieval_pipeline.phases[].summary",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".implementation.risk_boundaries[].affected_communities[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "community/cluster name, not a code symbol"
+      },
+      {
+        "channel": ".implementation.risk_boundaries[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".implementation.risk_boundaries[].severity",
+        "role": "ignored",
+        "tier": null,
+        "reason": "severity enum"
+      },
+      {
+        "channel": ".implementation.summary",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose implementation guidance"
+      },
+      {
+        "channel": ".implementation.validation_commands[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "shell command suggestion, not target evidence"
+      },
+      {
+        "channel": ".implementation.contracts_and_public_surfaces[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose implementation guidance"
+      },
+      {
+        "channel": ".implementation.existing_patterns[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose implementation guidance"
+      },
+      {
+        "channel": ".likely_edit_files[].phases[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value"
+      },
+      {
+        "channel": ".likely_edit_files[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".likely_edit_files[].why",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".likely_test_files[].phases[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value"
+      },
+      {
+        "channel": ".likely_test_files[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".likely_test_files[].why",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".missing_context[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value; consumed as an unresolved-declaration channel"
+      },
+      {
+        "channel": ".missing_semantic[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "semantic-category taxonomy value; consumed as an unresolved-declaration channel"
+      },
+      {
+        "channel": ".negative_guidance[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose guidance; consumed as an absence-declaration channel"
+      },
+      {
+        "channel": ".public_contracts[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose guidance"
+      },
+      {
+        "channel": ".pack.answer_contract.answer_focus",
+        "role": "ignored",
+        "tier": null,
+        "reason": "answer-contract enum"
+      },
+      {
+        "channel": ".pack.answer_contract.confidence",
+        "role": "ignored",
+        "tier": null,
+        "reason": "confidence enum"
+      },
+      {
+        "channel": ".pack.answer_contract.do_not_claim[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prohibition identifiers; consumed as an absence-declaration channel"
+      },
+      {
+        "channel": ".pack.answer_contract.entrypoint_scope",
+        "role": "ignored",
+        "tier": null,
+        "reason": "answer-contract enum"
+      },
+      {
+        "channel": ".pack.answer_contract.missing_phases[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value; consumed as an absence-declaration channel"
+      },
+      {
+        "channel": ".pack.answer_contract.required_elements[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "answer-contract element identifiers"
+      },
+      {
+        "channel": ".pack.answer_contract.uncertainty_notes[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose; consumed as an absence-declaration channel"
+      },
+      {
+        "channel": ".pack.execution_slice.boundary_reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "diagnostic reason code"
+      },
+      {
+        "channel": ".pack.execution_slice.confidence",
+        "role": "ignored",
+        "tier": null,
+        "reason": "confidence enum"
+      },
+      {
+        "channel": ".pack.execution_slice.confidence_reasons[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "diagnostic reason code"
+      },
+      {
+        "channel": ".pack.execution_slice.phase_coverage.expected[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value"
+      },
+      {
+        "channel": ".pack.execution_slice.phase_coverage.missing[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value; consumed as an unresolved-declaration channel"
+      },
+      {
+        "channel": ".pack.execution_slice.phase_coverage.observed[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value"
+      },
+      {
+        "channel": ".pack.execution_slice.primary_path.boundary_reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "diagnostic reason code"
+      },
+      {
+        "channel": ".pack.execution_slice.status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "slice status enum"
+      },
+      {
+        "channel": ".pack.direct_dependents[].relation",
+        "role": "ignored",
+        "tier": null,
+        "reason": "relation-kind taxonomy value"
+      },
+      {
+        "channel": ".pack.transitive_dependents[].relation",
+        "role": "ignored",
+        "tier": null,
+        "reason": "relation-kind taxonomy value"
+      },
+      {
+        "channel": ".pack.relationships[].relation",
+        "role": "ignored",
+        "tier": null,
+        "reason": "relation-kind taxonomy value"
+      },
+      {
+        "channel": ".pack.relationships[].from_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "internal node identifier, not a source symbol"
+      },
+      {
+        "channel": ".pack.relationships[].to_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "internal node identifier, not a source symbol"
+      },
+      {
+        "channel": ".pack.review_bundle.relationships[].relation",
+        "role": "ignored",
+        "tier": null,
+        "reason": "relation-kind taxonomy value"
+      },
+      {
+        "channel": ".pack.review_bundle.nodes[].node_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "internal node identifier, not a source symbol"
+      },
+      {
+        "channel": ".pack.review_bundle.nodes[].node_kind",
+        "role": "ignored",
+        "tier": null,
+        "reason": "node-kind taxonomy value"
+      },
+      {
+        "channel": ".pack.review_bundle.nodes[].relevance_band",
+        "role": "ignored",
+        "tier": null,
+        "reason": "relevance band enum"
+      },
+      {
+        "channel": ".pack.review_bundle.nodes[].representation_reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".pack.review_bundle.nodes[].representation_type",
+        "role": "ignored",
+        "tier": null,
+        "reason": "representation enum"
+      },
+      {
+        "channel": ".pack.review_bundle.shared_file_type",
+        "role": "ignored",
+        "tier": null,
+        "reason": "file-type enum"
+      },
+      {
+        "channel": ".pack.review_context.hotspots[].type",
+        "role": "ignored",
+        "tier": null,
+        "reason": "hotspot-kind enum"
+      },
+      {
+        "channel": ".pack.review_context.hotspots[].why",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".pack.risk_summary.top_risks[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".pack.risk_summary.top_risks[].severity",
+        "role": "ignored",
+        "tier": null,
+        "reason": "severity enum"
+      },
+      {
+        "channel": ".pack.matched_nodes[].node_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "internal node identifier, not a source symbol"
+      },
+      {
+        "channel": ".pack.matched_nodes[].node_kind",
+        "role": "ignored",
+        "tier": null,
+        "reason": "node-kind taxonomy value"
+      },
+      {
+        "channel": ".pack.matched_nodes[].relevance_band",
+        "role": "ignored",
+        "tier": null,
+        "reason": "relevance band enum"
+      },
+      {
+        "channel": ".pack.matched_nodes[].representation_reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".pack.matched_nodes[].representation_type",
+        "role": "ignored",
+        "tier": null,
+        "reason": "representation enum"
+      },
+      {
+        "channel": ".pack.matched_nodes[].snippet_scope",
+        "role": "ignored",
+        "tier": null,
+        "reason": "snippet scope enum"
+      },
+      {
+        "channel": ".pack.matched_nodes[].source_domain",
+        "role": "ignored",
+        "tier": null,
+        "reason": "source-domain enum"
+      },
+      {
+        "channel": ".pack.seed_nodes[].match_kind",
+        "role": "ignored",
+        "tier": null,
+        "reason": "match-kind enum"
+      },
+      {
+        "channel": ".pack.seed_nodes[].node_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "internal node identifier, not a source symbol"
+      },
+      {
+        "channel": ".pack.seed_nodes[].node_kind",
+        "role": "ignored",
+        "tier": null,
+        "reason": "node-kind taxonomy value"
+      },
+      {
+        "channel": ".pack.seed_nodes[].source_location",
+        "role": "ignored",
+        "tier": null,
+        "reason": "line marker such as \"L31\", not a path"
+      },
+      {
+        "channel": ".pack.slice.anchors[].node_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "internal node identifier, not a source symbol"
+      },
+      {
+        "channel": ".pack.slice.anchors[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".pack.slice.directions[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "traversal-direction enum"
+      },
+      {
+        "channel": ".pack.slice.mode",
+        "role": "ignored",
+        "tier": null,
+        "reason": "slice mode enum"
+      },
+      {
+        "channel": ".pack.slice.selected_paths[].direction",
+        "role": "ignored",
+        "tier": null,
+        "reason": "traversal-direction enum"
+      },
+      {
+        "channel": ".pack.slice.selected_paths[].from_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "internal node identifier, not a source symbol"
+      },
+      {
+        "channel": ".pack.slice.selected_paths[].relation",
+        "role": "ignored",
+        "tier": null,
+        "reason": "relation-kind taxonomy value"
+      },
+      {
+        "channel": ".pack.slice.selected_paths[].to_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "internal node identifier, not a source symbol"
+      },
+      {
+        "channel": ".pack.retrieval_gate.intent",
+        "role": "ignored",
+        "tier": null,
+        "reason": "retrieval-gate enum"
+      },
+      {
+        "channel": ".pack.retrieval_gate.reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".pack.retrieval_gate.signals.generation_intent",
+        "role": "ignored",
+        "tier": null,
+        "reason": "retrieval-gate enum"
+      },
+      {
+        "channel": ".pack.retrieval_gate.signals.target_domain_hint",
+        "role": "ignored",
+        "tier": null,
+        "reason": "retrieval-gate enum"
+      },
+      {
+        "channel": ".pack.retrieval_plan.attempts[].expansion_terms[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "query expansion terms, derived from the prompt not the graph"
+      },
+      {
+        "channel": ".pack.retrieval_plan.attempts[].fallback",
+        "role": "ignored",
+        "tier": null,
+        "reason": "fallback enum"
+      },
+      {
+        "channel": ".pack.retrieval_plan.attempts[].reasons[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "diagnostic reason code"
+      },
+      {
+        "channel": ".pack.retrieval_plan.attempts[].status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "retrieval status enum"
+      },
+      {
+        "channel": ".pack.retrieval_plan.attempts[].vocabulary_sources[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "vocabulary source enum"
+      },
+      {
+        "channel": ".pack.retrieval_plan.attempts[].promoted_communities[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "community/cluster name, not a code symbol"
+      },
+      {
+        "channel": ".pack.retrieval_plan.reasons[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "diagnostic reason code"
+      },
+      {
+        "channel": ".pack.retrieval_plan.selected_fallback",
+        "role": "ignored",
+        "tier": null,
+        "reason": "fallback enum"
+      },
+      {
+        "channel": ".pack.retrieval_plan.status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "retrieval status enum"
+      },
+      {
+        "channel": ".pack.retrieval_strategy",
+        "role": "ignored",
+        "tier": null,
+        "reason": "retrieval strategy enum"
+      },
+      {
+        "channel": ".pack.recovery.attempts[].status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "recovery status enum"
+      },
+      {
+        "channel": ".pack.recovery.final_state",
+        "role": "ignored",
+        "tier": null,
+        "reason": "answerability enum from the recovery loop"
+      },
+      {
+        "channel": ".pack.recovery.initial_state",
+        "role": "ignored",
+        "tier": null,
+        "reason": "answerability enum from the recovery loop"
+      },
+      {
+        "channel": ".pack.recovery.status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "recovery status enum"
+      },
+      {
+        "channel": ".pack.shared_file_type",
+        "role": "ignored",
+        "tier": null,
+        "reason": "file-type enum"
+      },
+      {
+        "channel": ".pack.target_file_type",
+        "role": "ignored",
+        "tier": null,
+        "reason": "file-type enum"
+      },
+      {
+        "channel": ".pack.uncovered_hotspots[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "hotspot identifiers reported as NOT covered; an uncovered hotspot is not evidence the pack surfaced"
+      },
+      {
+        "channel": ".pack.uncovered_hotspot_severities[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "severity enum"
+      },
+      {
+        "channel": ".plan.evidence.preferred[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".plan.evidence.recipe_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "planner recipe identifier"
+      },
+      {
+        "channel": ".plan.evidence.required[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".plan.evidence.semantic_optional[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "semantic-category taxonomy value"
+      },
+      {
+        "channel": ".plan.evidence.semantic_required[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "semantic-category taxonomy value"
+      },
+      {
+        "channel": ".plan.scope.changed_paths[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "planner scope input, not retrieved evidence"
+      },
+      {
+        "channel": ".plan.scope.focus_paths[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "planner scope input, not retrieved evidence"
+      },
+      {
+        "channel": ".plan.scope.seed_mode",
+        "role": "ignored",
+        "tier": null,
+        "reason": "planner scope enum"
+      },
+      {
+        "channel": ".plan.steps[].evidence[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "evidence-class taxonomy value"
+      },
+      {
+        "channel": ".plan.steps[].id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "planner step identifier"
+      },
+      {
+        "channel": ".plan.steps[].kind",
+        "role": "ignored",
+        "tier": null,
+        "reason": "planner step kind enum"
+      },
+      {
+        "channel": ".plan.steps[].scope_mode",
+        "role": "ignored",
+        "tier": null,
+        "reason": "planner scope enum"
+      },
+      {
+        "channel": ".plan.steps[].scope_paths[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "planner scope input, not retrieved evidence"
+      },
+      {
+        "channel": ".plan.steps[].title",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose planner step title"
+      },
+      {
+        "channel": ".plan.task_kind",
+        "role": "ignored",
+        "tier": null,
+        "reason": "task-kind enum"
+      },
+      {
+        "channel": ".recommended_first_read[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".retrieval_gate.intent",
+        "role": "ignored",
+        "tier": null,
+        "reason": "retrieval-gate enum"
+      },
+      {
+        "channel": ".retrieval_gate.reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".retrieval_gate.signals.generation_intent",
+        "role": "ignored",
+        "tier": null,
+        "reason": "retrieval-gate enum"
+      },
+      {
+        "channel": ".retrieval_gate.signals.target_domain_hint",
+        "role": "ignored",
+        "tier": null,
+        "reason": "retrieval-gate enum"
+      },
+      {
+        "channel": ".retrieval_pipeline.phases[].phase",
+        "role": "ignored",
+        "tier": null,
+        "reason": "pipeline-phase taxonomy value"
+      },
+      {
+        "channel": ".retrieval_pipeline.phases[].summary",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".risk_boundaries[].affected_communities[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "community/cluster name, not a code symbol"
+      },
+      {
+        "channel": ".risk_boundaries[].reason",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale"
+      },
+      {
+        "channel": ".risk_boundaries[].severity",
+        "role": "ignored",
+        "tier": null,
+        "reason": "severity enum"
+      },
+      {
+        "channel": ".task",
+        "role": "ignored",
+        "tier": null,
+        "reason": "task-kind enum"
+      },
+      {
+        "channel": ".task_intent",
+        "role": "ignored",
+        "tier": null,
+        "reason": "task-intent enum"
+      },
+      {
+        "channel": ".validation_commands[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "shell command suggestion, not target evidence"
+      },
+      {
+        "channel": ".why_explanation[]",
+        "role": "ignored",
+        "tier": null,
+        "reason": "prose rationale. Paths named here are already carried by the structured channels they explain; mining prose would count text, not evidence."
+      }
+    ],
+    "unclassified": [],
+    "closed": true
+  },
+  "run_independence": {
+    "work_dir": ".qualification-cache/work-corrected-run-b",
+    "shared_immutable_clone_cache": ".qualification-cache",
+    "targets": [
+      {
+        "target_id": "hono",
+        "prepared_worktree": ".qualification-cache/work-corrected-run-b/targets/hono",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch_applied": false,
+        "clone_cache_read": "warm_mirror_reused",
+        "generation_output_path": ".qualification-cache/work-corrected-run-b/targets/hono/out/graph.madar",
+        "graph_artifact_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      {
+        "target_id": "hono-seeded-compose",
+        "prepared_worktree": ".qualification-cache/work-corrected-run-b/targets/hono-seeded-compose",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch_applied": true,
+        "clone_cache_read": "warm_mirror_reused",
+        "generation_output_path": ".qualification-cache/work-corrected-run-b/targets/hono-seeded-compose/out/graph.madar",
+        "graph_artifact_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      {
+        "target_id": "hono-seeded-error-disclosure",
+        "prepared_worktree": ".qualification-cache/work-corrected-run-b/targets/hono-seeded-error-disclosure",
+        "head": "26de73133b8552f56ba72e025ecd82b08900d796",
+        "patch_applied": true,
+        "clone_cache_read": "warm_mirror_reused",
+        "generation_output_path": ".qualification-cache/work-corrected-run-b/targets/hono-seeded-error-disclosure/out/graph.madar",
+        "graph_artifact_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
+      },
+      {
+        "target_id": "unstorage",
+        "prepared_worktree": ".qualification-cache/work-corrected-run-b/targets/unstorage",
+        "head": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
+        "patch_applied": false,
+        "clone_cache_read": "warm_mirror_reused",
+        "generation_output_path": ".qualification-cache/work-corrected-run-b/targets/unstorage/out/graph.madar",
+        "graph_artifact_digest": "acb77534251573f3a88a2c82574792fbc9d55cfff6b319e7a3af242f82db68dc"
+      }
+    ],
+    "cells": [
+      {
+        "cell_id": "arch-unstorage-driver-seam@unstorage",
+        "artifact_digest": "d6a64bad69d28a22561450741c62a36a7dbe97b74e4b78d3103fa1f00958e65e",
+        "artifact_log": "logs/pack-arch-unstorage-driver-seam--unstorage.log",
+        "evidence_channels_observed": 170
+      },
+      {
+        "cell_id": "flow-hono-request-dispatch@hono",
+        "artifact_digest": "ec07d709c8d3ed214fea8222dff3a8b31973afc4388a81bea8542e558f11daed",
+        "artifact_log": "logs/pack-flow-hono-request-dispatch--hono.log",
+        "evidence_channels_observed": 91
+      },
+      {
+        "cell_id": "impact-hono-drop-router-fallback@hono",
+        "artifact_digest": "5cc909696bcc3486d98ed447f4e4980bac2f7d5acb1eac6bf596094a7c007dbe",
+        "artifact_log": "logs/pack-impact-hono-drop-router-fallback--hono.log",
+        "evidence_channels_observed": 84
+      },
+      {
+        "cell_id": "rootcause-hono-middleware-rerun@hono-seeded-compose",
+        "artifact_digest": "e5f04d656d149eb26fb7d81e1ca838ee05680b9d43978197aaa3bec05112fec2",
+        "artifact_log": "logs/pack-rootcause-hono-middleware-rerun--hono-seeded-compose.log",
+        "evidence_channels_observed": 88
+      },
+      {
+        "cell_id": "plan-unstorage-add-driver@unstorage",
+        "artifact_digest": "82978c78f4345c91a583621664c8b422c93d072a11d1ef631201cd8cc2675771",
+        "artifact_log": "logs/pack-plan-unstorage-add-driver--unstorage.log",
+        "evidence_channels_observed": 78
+      },
+      {
+        "cell_id": "review-hono-error-handling@hono-seeded-error-disclosure",
+        "artifact_digest": "83aaa2e0b0b193c65b8bd7a0c275c14662140736ca274f447454b93caf736510",
+        "artifact_log": "logs/pack-review-hono-error-handling--hono-seeded-error-disclosure.log",
+        "evidence_channels_observed": 122
+      },
+      {
+        "cell_id": "neg-unstorage-absent-encryption",
+        "artifact_digest": "436e2b40279e9bb26d93d4b6cb235bf22cc65660388b7a646aedb02613a95bb7",
+        "artifact_log": "logs/pack-neg-unstorage-absent-encryption.log",
+        "evidence_channels_observed": 133
+      },
+      {
+        "cell_id": "neg-hono-absent-matcher-persistence",
+        "artifact_digest": "bdc4e7fd32594751eb9785fb132e096d9e7ce86e612773df63759bc5600fa724",
+        "artifact_log": "logs/pack-neg-hono-absent-matcher-persistence.log",
+        "evidence_channels_observed": 118
+      }
+    ]
+  },
+  "environment": {
+    "node_version": "v22.22.3",
+    "platform": "darwin",
+    "arch": "arm64",
+    "commands": [
+      "node dist/src/cli/bin.js generate . --no-html",
+      "node dist/src/cli/bin.js pack \"<frozen prompt>\" --format json"
+    ]
+  },
+  "semantic_digest": "b11d4c3ecbdc0f4f289099720ac3366f57a14bd7fa0e9e76cc0640a3bdbd2e43"
+}

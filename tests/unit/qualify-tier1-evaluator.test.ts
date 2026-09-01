@@ -196,9 +196,25 @@ describe('must_not_report_ready_when is decided by frozen identities and typed r
     expect(run([], [], 'verify_targets').metrics.false_ready).toBe(false)
   })
 
-  it('is suppressed only by a typed unresolved record for an approved requirement', () => {
-    const declared = run([], [], 'ready_with_caveat', { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [{ requirement_id: 'req.a', status: 'unresolved' }] } } })
-    expect(declared.metrics.false_ready).toBe(false)
+  it('is suppressed only when every missing requirement has its own record', () => {
+    const partial = run([], [], 'ready_with_caveat', { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [{ requirement_id: 'req.a', status: 'unresolved' }] } } })
+    expect(partial.metrics.false_ready).toBe(true)
+
+    const complete = run([], [], 'ready_with_caveat', { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [
+      { requirement_id: 'req.a', status: 'unresolved' },
+      { requirement_id: 'req.b', status: 'unresolved' },
+    ] } } })
+    expect(complete.metrics.false_ready).toBe(false)
+  })
+
+  it('is not suppressed by a record naming a requirement that is present', () => {
+    // req.a is surfaced; req.b is the one actually missing. A record for req.a
+    // carries nothing about the req.b gap.
+    const wrong = run(['src/compose.ts'], ['compose'], 'ready_with_caveat', { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [{ requirement_id: 'req.a', status: 'unresolved' }] } } })
+    expect(wrong.metrics.false_ready).toBe(true)
+
+    const right = run(['src/compose.ts'], ['compose'], 'ready_with_caveat', { evidence: { answerability: { state: 'ready_with_caveat', unresolved_requirements: [{ requirement_id: 'req.b', status: 'unresolved' }] } } })
+    expect(right.metrics.false_ready).toBe(false)
   })
 
   it('is not suppressed by an affirmative claim naming the missing file', () => {

@@ -137,6 +137,18 @@ export const EVIDENCE_CHANNELS = [
   X('.pack.retrieval_gate.signals.excluded_path_hints[]', 'exclusion hints derived from the prompt, not retrieved evidence'),
   X('.pack.retrieval_gate.signals.excluded_terms[]', 'exclusion hints derived from the prompt, not retrieved evidence'),
   X('.graph_path', 'path of the graph artifact this tool wrote, not a path in the target'),
+
+  // Typed declaration channels. These are what the frozen adjudication contract
+  // reads to decide absence and unresolved state, so they must be classified
+  // here or the closure guard would invalidate a cell before adjudication ever
+  // ran. They are NOT evidence about the target: a pack must not earn recall by
+  // describing what it could not establish.
+  X('.evidence.answerability.unresolved_subjects[].subject_id', 'typed absence declaration; consumed by the adjudication contract, never as evidence'),
+  X('.evidence.answerability.unresolved_subjects[].status', 'typed absence declaration status'),
+  X('.evidence.answerability.unresolved_requirements[].requirement_id', 'typed unresolved declaration; consumed by the adjudication contract, never as evidence'),
+  X('.evidence.answerability.unresolved_requirements[].status', 'typed unresolved declaration status'),
+  X('.pack.answer_contract.absent_capabilities[].capability', 'typed absence declaration; consumed by the adjudication contract, never as evidence'),
+  X('.pack.answer_contract.absent_capabilities[].status', 'typed absence declaration status'),
   X('.pack.base_branch', 'git ref name, not a code symbol or path'),
 
   X('.pack.affected_communities[].label', 'community/cluster name, not a code symbol. "Drivers Github — Driver" must not satisfy the obligation "Driver".'),

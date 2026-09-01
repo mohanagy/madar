@@ -1,10 +1,19 @@
 # Provisional corrected attempt — superseded
 
 **Status:** `provisional_untrusted_prose_adjudication`
-**Bytes:** preserved exactly as produced. Nothing in `run-a/` or `run-b/` has been edited,
-regenerated, or relabelled.
 **Result:** 0 pass / 8 fail / 0 invalid, semantic digest
 `0c45822d53a8dd9e94fc1e5d75b1d631d32ec3bda3f86d05b60d897ce1ee6051`.
+
+**Bytes — read this before citing them.** This directory holds the **second** run of the
+provisional corrected evaluator. An earlier run (`b11d4c3e…`) was written here first and
+was then **overwritten in place** when the evaluator was corrected again, rather than being
+written to a new sibling directory. An earlier version of this file claimed the bytes were
+"preserved exactly as produced"; that was wrong, and an independent review caught it by
+diffing this directory against commit `d53bbd1a`.
+
+The overwritten bytes were recoverable from git and are restored, unmodified, at
+[`../2026-09-01-corrected-baseline-run1/`](../2026-09-01-corrected-baseline-run1/). No
+measurement was lost, but the preservation claim was false while it stood.
 **Superseded by:** [`../2026-09-01-adjudicated-baseline/`](../2026-09-01-adjudicated-baseline/)
 
 ## What this attempt fixed, and kept

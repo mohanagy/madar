@@ -3,20 +3,20 @@
   "headline": "First Tier 1 measurement — gate not yet activated",
   "holdout_notice": "sealed holdout unsatisfied; results measure regression only",
   "contract_version": "1.0.0",
-  "run_id": "adj-run-b",
-  "generated_at": "2026-09-01T07:14:14.745Z",
+  "run_id": "adj2-run-b",
+  "generated_at": "2026-09-01T08:04:01.139Z",
   "madar": {
-    "revision": "4f6cf6f32653bf6865b1327c7fb0c3fd16d1ff4f",
+    "revision": "0fe3d4670e54c37546f5cb719aa5a0140a404bbf",
     "version": "0.32.1"
   },
   "frozen_input_manifest": {
     "file_count": 23,
-    "digest": "36ca51eb5b729bab944db0998e78bb70682da9fa369a8f498c8d614d2e953e23",
+    "digest": "c0b5d4cfc8a64649eaa0593a13e9a658e266f576717b0bb6885e304a40643ee9",
     "path": "frozen-input-manifest.json"
   },
   "adjudication_contract": {
     "path": "docs/qualification/tier1-adjudication.json",
-    "digest": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136",
+    "digest": "9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372",
     "entry_count": 17,
     "requirement_count": 13,
     "clause_sha256": [
@@ -145,7 +145,7 @@
       "patch_digest": null,
       "prompt_sha256": "5c3722d182b5c36478ecabd2d1fb24f4f3eb40eba6e12032da89bebf12ef1d9f",
       "truth_version": "1.0.0",
-      "madar_revision": "4f6cf6f32653bf6865b1327c7fb0c3fd16d1ff4f",
+      "madar_revision": "0fe3d4670e54c37546f5cb719aa5a0140a404bbf",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -327,7 +327,7 @@
         ]
       },
       "adjudication": {
-        "contract_digest": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136",
+        "contract_digest": "9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372",
         "clauses": [
           {
             "adjudication_id": "ADJ-ARCH-PATHS",
@@ -366,6 +366,16 @@
                   "symbol_present": false
                 }
               ],
+              "relationship": {
+                "from": [
+                  "arch.critical_facts.mount-registry"
+                ],
+                "to": [
+                  "arch.critical_facts.driver-interface"
+                ],
+                "edge": null,
+                "edges_observed": 2
+              },
               "triggered": true
             }
           }
@@ -399,7 +409,7 @@
       "patch_digest": null,
       "prompt_sha256": "c276d363f0b10c00b75df925f2e658f3ee7af085872bcbcc64a7a4252c7b3b35",
       "truth_version": "1.0.0",
-      "madar_revision": "4f6cf6f32653bf6865b1327c7fb0c3fd16d1ff4f",
+      "madar_revision": "0fe3d4670e54c37546f5cb719aa5a0140a404bbf",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -539,7 +549,7 @@
         ]
       },
       "adjudication": {
-        "contract_digest": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136",
+        "contract_digest": "9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372",
         "clauses": [
           {
             "adjudication_id": "ADJ-FLOW-PATHS",
@@ -580,6 +590,16 @@
                   "symbol_present": false
                 }
               ],
+              "relationship": {
+                "from": [
+                  "flow.ordered_path.entrypoint"
+                ],
+                "to": [
+                  "flow.ordered_path.compose-chain"
+                ],
+                "edge": null,
+                "edges_observed": 9
+              },
               "triggered": true
             }
           }
@@ -613,7 +633,7 @@
       "patch_digest": null,
       "prompt_sha256": "4d05391549ee28a142a9f24960e43e415cf6c831c29dce720aa74e72c7ab9ac2",
       "truth_version": "1.0.0",
-      "madar_revision": "4f6cf6f32653bf6865b1327c7fb0c3fd16d1ff4f",
+      "madar_revision": "0fe3d4670e54c37546f5cb719aa5a0140a404bbf",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -645,7 +665,7 @@
       "reasons": [
         "required_evidence_paths recall 0.0000 < min_critical_fact_recall 1; missing [\"src/hono.ts\",\"src/router/reg-exp-router/router.ts\",\"src/router/smart-router/router.ts\",\"src/router/trie-router/router.ts\"]",
         "required_evidence_symbols recall 0.0000 < min_critical_fact_recall 1; missing [\"RegExpRouter\",\"SmartRouter\",\"TrieRouter\",\"UnsupportedPathError\"]",
-        "[ADJ-IMPACT-RELATIONSHIP must_not_ready_when_requirements_missing] reported ready state 'ready_with_caveat' while frozen requirement(s) [\"impact.affected_set.construction-site\",\"impact.affected_set.smart-router-unused\",\"impact.affected_set.regexp-router-throws-escape\",\"impact.affected_set.trie-router-unreachable\"] were missing from the evidence set and no typed unresolved record covers them"
+        "[ADJ-IMPACT-RELATIONSHIP must_not_ready_when_requirements_missing] reported ready state 'ready_with_caveat' while frozen requirement(s) [\"impact.affected_set.construction-site\",\"impact.affected_set.smart-router-unused\",\"impact.affected_set.regexp-router-throws-escape\",\"impact.affected_set.trie-router-unreachable\"] were missing from the evidence set, and so is the relationship between them, and [\"impact.affected_set.construction-site\",\"impact.affected_set.smart-router-unused\",\"impact.affected_set.regexp-router-throws-escape\",\"impact.affected_set.trie-router-unreachable\",\"relationship\"] are not covered by a typed unresolved record"
       ],
       "metrics": {
         "min_critical_fact_recall": 1,
@@ -742,7 +762,7 @@
         "verification_targets": []
       },
       "adjudication": {
-        "contract_digest": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136",
+        "contract_digest": "9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372",
         "clauses": [
           {
             "adjudication_id": "ADJ-IMPACT-RELATIONSHIP",
@@ -750,7 +770,7 @@
             "clause_sha256": "77626a26178278eeca0aaa4bbe72c1017c93d6737474c3f7191fcfd84ff19160",
             "predicate": "must_not_ready_when_requirements_missing",
             "satisfied": false,
-            "detail": "reported ready state 'ready_with_caveat' while frozen requirement(s) [\"impact.affected_set.construction-site\",\"impact.affected_set.smart-router-unused\",\"impact.affected_set.regexp-router-throws-escape\",\"impact.affected_set.trie-router-unreachable\"] were missing from the evidence set and no typed unresolved record covers them",
+            "detail": "reported ready state 'ready_with_caveat' while frozen requirement(s) [\"impact.affected_set.construction-site\",\"impact.affected_set.smart-router-unused\",\"impact.affected_set.regexp-router-throws-escape\",\"impact.affected_set.trie-router-unreachable\"] were missing from the evidence set, and so is the relationship between them, and [\"impact.affected_set.construction-site\",\"impact.affected_set.smart-router-unused\",\"impact.affected_set.regexp-router-throws-escape\",\"impact.affected_set.trie-router-unreachable\",\"relationship\"] are not covered by a typed unresolved record",
             "observed": {
               "requirement_status": [
                 {
@@ -778,8 +798,27 @@
                   "symbol_present": false
                 }
               ],
+              "relationship": {
+                "from": [
+                  "impact.affected_set.construction-site"
+                ],
+                "to": [
+                  "impact.affected_set.smart-router-unused",
+                  "impact.affected_set.regexp-router-throws-escape",
+                  "impact.affected_set.trie-router-unreachable"
+                ],
+                "edge": null,
+                "edges_observed": 9
+              },
               "triggered": true,
-              "unresolved": null
+              "unresolved": [],
+              "uncovered": [
+                "impact.affected_set.construction-site",
+                "impact.affected_set.smart-router-unused",
+                "impact.affected_set.regexp-router-throws-escape",
+                "impact.affected_set.trie-router-unreachable",
+                "relationship"
+              ]
             }
           }
         ],
@@ -829,7 +868,7 @@
       "patch_digest": null,
       "prompt_sha256": "6a173a57d204d86260380b3f9fedcb4dcc5c90962258e849b508fddaa3e07116",
       "truth_version": "1.0.0",
-      "madar_revision": "4f6cf6f32653bf6865b1327c7fb0c3fd16d1ff4f",
+      "madar_revision": "0fe3d4670e54c37546f5cb719aa5a0140a404bbf",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -894,7 +933,7 @@
         "fabricated_symbols": []
       },
       "adjudication": {
-        "contract_digest": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136",
+        "contract_digest": "9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372",
         "clauses": [
           {
             "adjudication_id": "ADJ-P1-READY",
@@ -966,7 +1005,7 @@
       "patch_digest": null,
       "prompt_sha256": "cab0b45defcdcaf0b88c5613384f84b237c1d365e0a1f3b3bbd16543fe6db37d",
       "truth_version": "1.0.0",
-      "madar_revision": "4f6cf6f32653bf6865b1327c7fb0c3fd16d1ff4f",
+      "madar_revision": "0fe3d4670e54c37546f5cb719aa5a0140a404bbf",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -1031,7 +1070,7 @@
         "fabricated_symbols": []
       },
       "adjudication": {
-        "contract_digest": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136",
+        "contract_digest": "9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372",
         "clauses": [
           {
             "adjudication_id": "ADJ-P0-READY",
@@ -1104,7 +1143,7 @@
       "patch_digest": null,
       "prompt_sha256": "b8a0a2b4a0593346d1333d96ada6c339a0763611df1ddab51079369e0c62c7ff",
       "truth_version": "1.0.0",
-      "madar_revision": "4f6cf6f32653bf6865b1327c7fb0c3fd16d1ff4f",
+      "madar_revision": "0fe3d4670e54c37546f5cb719aa5a0140a404bbf",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -1249,7 +1288,7 @@
         ]
       },
       "adjudication": {
-        "contract_digest": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136",
+        "contract_digest": "9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372",
         "clauses": [
           {
             "adjudication_id": "ADJ-PLAN-EXPLICIT-PATH",
@@ -1279,6 +1318,7 @@
                   "symbol_present": false
                 }
               ],
+              "relationship": null,
               "triggered": true
             }
           }
@@ -1327,7 +1367,7 @@
       "patch_digest": "edb79059b72b4f27f5dc8341ba2d9a3617901c402da9ef1f9daf5503e6528d6f",
       "prompt_sha256": "722278ed3fa2386f1e407b4fd53a7d4b89272f2adba4297f878ad3fd645d8e47",
       "truth_version": "1.0.0",
-      "madar_revision": "4f6cf6f32653bf6865b1327c7fb0c3fd16d1ff4f",
+      "madar_revision": "0fe3d4670e54c37546f5cb719aa5a0140a404bbf",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -1496,7 +1536,7 @@
         ]
       },
       "adjudication": {
-        "contract_digest": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136",
+        "contract_digest": "9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372",
         "clauses": [
           {
             "adjudication_id": "ADJ-REVIEW-EXPLICIT-PATH",
@@ -1532,6 +1572,7 @@
                   "symbol_present": false
                 }
               ],
+              "relationship": null,
               "triggered": true
             }
           }
@@ -1549,7 +1590,7 @@
       "patch_digest": "9355c5bbb05cd5ae4d998ace18d6381f0cba4fd080203d4d02579da3dcf6dea4",
       "prompt_sha256": "637cd655712c2e7d96a3566ed0b311d9d7dcfe0d9cfb8b699f5f1c52a721eaf0",
       "truth_version": "1.0.0",
-      "madar_revision": "4f6cf6f32653bf6865b1327c7fb0c3fd16d1ff4f",
+      "madar_revision": "0fe3d4670e54c37546f5cb719aa5a0140a404bbf",
       "generation_mode": "spi",
       "graph_identity": {
         "header": "MADAR_GRAPH_ARTIFACT/2",
@@ -1659,7 +1700,7 @@
         ]
       },
       "adjudication": {
-        "contract_digest": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136",
+        "contract_digest": "9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372",
         "clauses": [
           {
             "adjudication_id": "ADJ-ROOTCAUSE-EXPLICIT-PATH",
@@ -1695,6 +1736,16 @@
                   "symbol_present": false
                 }
               ],
+              "relationship": {
+                "from": [
+                  "rootcause.critical_facts.fast-path-exclusion"
+                ],
+                "to": [
+                  "rootcause.critical_facts.index-semantics"
+                ],
+                "edge": null,
+                "edges_observed": 2
+              },
               "triggered": true
             }
           }
@@ -2288,6 +2339,42 @@
         "role": "ignored",
         "tier": null,
         "reason": "path of the graph artifact this tool wrote, not a path in the target"
+      },
+      {
+        "channel": ".evidence.answerability.unresolved_subjects[].subject_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "typed absence declaration; consumed by the adjudication contract, never as evidence"
+      },
+      {
+        "channel": ".evidence.answerability.unresolved_subjects[].status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "typed absence declaration status"
+      },
+      {
+        "channel": ".evidence.answerability.unresolved_requirements[].requirement_id",
+        "role": "ignored",
+        "tier": null,
+        "reason": "typed unresolved declaration; consumed by the adjudication contract, never as evidence"
+      },
+      {
+        "channel": ".evidence.answerability.unresolved_requirements[].status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "typed unresolved declaration status"
+      },
+      {
+        "channel": ".pack.answer_contract.absent_capabilities[].capability",
+        "role": "ignored",
+        "tier": null,
+        "reason": "typed absence declaration; consumed by the adjudication contract, never as evidence"
+      },
+      {
+        "channel": ".pack.answer_contract.absent_capabilities[].status",
+        "role": "ignored",
+        "tier": null,
+        "reason": "typed absence declaration status"
       },
       {
         "channel": ".pack.base_branch",
@@ -3512,92 +3599,92 @@
     "closed": true
   },
   "run_independence": {
-    "work_dir": ".qualification-cache/work-adj-run-b",
+    "work_dir": ".qualification-cache/work-adj2-run-b",
     "shared_immutable_clone_cache": ".qualification-cache",
     "targets": [
       {
         "target_id": "hono",
-        "prepared_worktree": ".qualification-cache/work-adj-run-b/targets/hono",
+        "prepared_worktree": ".qualification-cache/work-adj2-run-b/targets/hono",
         "head": "26de73133b8552f56ba72e025ecd82b08900d796",
         "patch_applied": false,
         "clone_cache_read": "warm_mirror_reused",
-        "generation_output_path": ".qualification-cache/work-adj-run-b/targets/hono/out/graph.madar",
+        "generation_output_path": ".qualification-cache/work-adj2-run-b/targets/hono/out/graph.madar",
         "graph_artifact_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
       },
       {
         "target_id": "hono-seeded-compose",
-        "prepared_worktree": ".qualification-cache/work-adj-run-b/targets/hono-seeded-compose",
+        "prepared_worktree": ".qualification-cache/work-adj2-run-b/targets/hono-seeded-compose",
         "head": "26de73133b8552f56ba72e025ecd82b08900d796",
         "patch_applied": true,
         "clone_cache_read": "warm_mirror_reused",
-        "generation_output_path": ".qualification-cache/work-adj-run-b/targets/hono-seeded-compose/out/graph.madar",
+        "generation_output_path": ".qualification-cache/work-adj2-run-b/targets/hono-seeded-compose/out/graph.madar",
         "graph_artifact_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
       },
       {
         "target_id": "hono-seeded-error-disclosure",
-        "prepared_worktree": ".qualification-cache/work-adj-run-b/targets/hono-seeded-error-disclosure",
+        "prepared_worktree": ".qualification-cache/work-adj2-run-b/targets/hono-seeded-error-disclosure",
         "head": "26de73133b8552f56ba72e025ecd82b08900d796",
         "patch_applied": true,
         "clone_cache_read": "warm_mirror_reused",
-        "generation_output_path": ".qualification-cache/work-adj-run-b/targets/hono-seeded-error-disclosure/out/graph.madar",
+        "generation_output_path": ".qualification-cache/work-adj2-run-b/targets/hono-seeded-error-disclosure/out/graph.madar",
         "graph_artifact_digest": "64c8bd03558b812dd58a9f46315d966f5c2aa4831cd45a9d363ab93a526f0c7f"
       },
       {
         "target_id": "unstorage",
-        "prepared_worktree": ".qualification-cache/work-adj-run-b/targets/unstorage",
+        "prepared_worktree": ".qualification-cache/work-adj2-run-b/targets/unstorage",
         "head": "e6be6135832f350ca16f9a77432e1d4f0aa85ed7",
         "patch_applied": false,
         "clone_cache_read": "warm_mirror_reused",
-        "generation_output_path": ".qualification-cache/work-adj-run-b/targets/unstorage/out/graph.madar",
+        "generation_output_path": ".qualification-cache/work-adj2-run-b/targets/unstorage/out/graph.madar",
         "graph_artifact_digest": "acb77534251573f3a88a2c82574792fbc9d55cfff6b319e7a3af242f82db68dc"
       }
     ],
     "cells": [
       {
         "cell_id": "arch-unstorage-driver-seam@unstorage",
-        "artifact_digest": "bd2c55868b8f403f01c4560d0040399a2d3a9deff7615295215f09f2bd308ac3",
+        "artifact_digest": "9d8414b04733de31e26077afc5cce7c73fad3f5a9e7fd11befe4e4bc0e2d4e7a",
         "artifact_log": "logs/pack-arch-unstorage-driver-seam--unstorage.log",
         "evidence_channels_observed": 170
       },
       {
         "cell_id": "flow-hono-request-dispatch@hono",
-        "artifact_digest": "8dfe5d697b9d295a00bdf81b3897c81dda95aecb6ad079f2e6f0211a8a2aea16",
+        "artifact_digest": "24da8d2fd39605773f05f1979039d883e26f2c0e0288a0cc584b3f127f6af9ae",
         "artifact_log": "logs/pack-flow-hono-request-dispatch--hono.log",
         "evidence_channels_observed": 91
       },
       {
         "cell_id": "impact-hono-drop-router-fallback@hono",
-        "artifact_digest": "c728d47b7a74efb5c1bc054ab20f1a9221e82af3e1638871b315dc27c426ce32",
+        "artifact_digest": "3dc2d0413686775f331b8c5863ebb4e1bc32ffdd65222d47bfbfe9a122707be2",
         "artifact_log": "logs/pack-impact-hono-drop-router-fallback--hono.log",
         "evidence_channels_observed": 84
       },
       {
         "cell_id": "rootcause-hono-middleware-rerun@hono-seeded-compose",
-        "artifact_digest": "40dbc9fd1e25ebafe67777926bd8b1d776f9732d21e0640fd2576bc15a22c4cc",
+        "artifact_digest": "ff7052d16795d81c2942f6b46bccf2f896f59be078fbf1c183a1eceb29fc952c",
         "artifact_log": "logs/pack-rootcause-hono-middleware-rerun--hono-seeded-compose.log",
         "evidence_channels_observed": 88
       },
       {
         "cell_id": "plan-unstorage-add-driver@unstorage",
-        "artifact_digest": "a16738679d9056b54b454ae612b939fc0d82e95a993eabae10c91f7e3020342b",
+        "artifact_digest": "09fdea8400211f2ea3eee726a877f74031e8cde7ad920a3e6ec573b69e541f12",
         "artifact_log": "logs/pack-plan-unstorage-add-driver--unstorage.log",
         "evidence_channels_observed": 78
       },
       {
         "cell_id": "review-hono-error-handling@hono-seeded-error-disclosure",
-        "artifact_digest": "a0d0f97eee6f8ffeb970706003d6ecd6b101e634b45a3c3703da3604c1ee7271",
+        "artifact_digest": "384ad590e94866bac94c0e3c644cf9684dccff263278a158eb6f94d69204a43b",
         "artifact_log": "logs/pack-review-hono-error-handling--hono-seeded-error-disclosure.log",
         "evidence_channels_observed": 122
       },
       {
         "cell_id": "neg-unstorage-absent-encryption",
-        "artifact_digest": "f3aa4818160a177df213604d1d10bcc185eaf525da6907af9629ee9ee8dbba0e",
+        "artifact_digest": "bf4c78573ff21583f6684ef8046463bb63bd450fe22dfef6e5cc26e574594a8c",
         "artifact_log": "logs/pack-neg-unstorage-absent-encryption.log",
         "evidence_channels_observed": 133
       },
       {
         "cell_id": "neg-hono-absent-matcher-persistence",
-        "artifact_digest": "6275d2c03ce28a4d69b50c78a550c7bc2c847837b30ca955737b907122743bf2",
+        "artifact_digest": "8341fa3b5b3f055e73f14cf25362a087e0f8d0a011d970eefc7a8b0d0a5442fb",
         "artifact_log": "logs/pack-neg-hono-absent-matcher-persistence.log",
         "evidence_channels_observed": 118
       }
@@ -3612,5 +3699,5 @@
       "node dist/src/cli/bin.js pack \"<frozen prompt>\" --format json"
     ]
   },
-  "semantic_digest": "6958d684d45bcd01f8478dbde7f7381a1aa9dd618aeef42517532ce5fe6ab4f8"
+  "semantic_digest": "251824578ca4cb8daec7aba7435bde3a6d6842fdb6669f5f1b8b6e692c10c886"
 }

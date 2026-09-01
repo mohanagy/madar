@@ -8,7 +8,7 @@
 // declaration of anything.
 
 import { READY_STATES, answerabilityRank, normaliseSymbol, snippetSymbolSightings } from './artifact.mjs'
-import { findTypedDeclaration, requirementPresent } from './adjudication.mjs'
+import { extractRelationshipEdges, findTypedDeclaration, relationshipPresent, requirementPresent } from './adjudication.mjs'
 import { pathExistsInTarget, symbolExistsInTarget } from './targets.mjs'
 
 /**
@@ -140,32 +140,65 @@ function applyPredicate({ entry, artifact, evidence, answerability, targetDir, o
       const missing = status.filter((entryStatus) => !entryStatus.present)
       const present = status.filter((entryStatus) => entryStatus.present)
 
-      const triggered = params.match === 'partial_only'
-        ? present.length > 0 && missing.length > 0
-        : missing.length > 0
-
-      if (!params.ready_states.includes(answerability)) {
-        return { satisfied: true, detail: `answerability '${answerability}' is not a ready state; the clause is vacuously satisfied`, observed: { requirement_status: status, triggered } }
-      }
-      if (!triggered) {
-        return { satisfied: true, detail: null, observed: { requirement_status: status, triggered } }
-      }
-      // The clause's own escape hatch, when it has one: a typed unresolved
-      // record naming the exact missing requirement.
-      let unresolvedHit = null
-      if (params.unresolved) {
-        for (const entryStatus of missing) {
-          const hit = findTypedDeclaration(artifact, params.unresolved.channels, null)
-          if (hit) { unresolvedHit = { requirement_id: entryStatus.id, ...hit }; break }
+      // A clause about a RELATIONSHIP is not satisfied by its endpoints merely
+      // appearing: two isolated nodes are not an edge. When the clause declares
+      // its endpoint groups, the edge itself is checked.
+      let relationship = null
+      if (params.relationship) {
+        const edges = extractRelationshipEdges(artifact)
+        const requirementsFor = (ids) => ids.map((id) => requirementsById.get(id)).filter(Boolean)
+        relationship = {
+          from: params.relationship.from,
+          to: params.relationship.to,
+          edge: relationshipPresent(edges, requirementsFor(params.relationship.from), requirementsFor(params.relationship.to), normaliseSymbol),
+          edges_observed: edges.length,
         }
       }
-      if (unresolvedHit) {
-        return { satisfied: true, detail: `missing requirement(s) are carried by a typed unresolved record (${unresolvedHit.channel})`, observed: { requirement_status: status, triggered, unresolved: unresolvedHit } }
+      const relationshipMissing = params.relationship ? relationship.edge === null : false
+
+      const endpointTrigger = params.match === 'partial_only'
+        ? present.length > 0 && missing.length > 0
+        : missing.length > 0
+      const triggered = endpointTrigger || relationshipMissing
+
+      if (!params.ready_states.includes(answerability)) {
+        return { satisfied: true, detail: `answerability '${answerability}' is not a ready state; the clause is vacuously satisfied`, observed: { requirement_status: status, relationship, triggered } }
       }
+      if (!triggered) {
+        return { satisfied: true, detail: null, observed: { requirement_status: status, relationship, triggered } }
+      }
+
+      // The clause's own escape hatch, when it has one: a typed unresolved
+      // record naming the EXACT requirement that is missing. A record for a
+      // different requirement carries nothing about this gap.
+      const uncovered = []
+      const covered = []
+      if (params.unresolved) {
+        for (const entryStatus of missing) {
+          const hit = findTypedDeclaration(artifact, params.unresolved.channels, entryStatus.id)
+          if (hit) covered.push({ requirement_id: entryStatus.id, ...hit })
+          else uncovered.push(entryStatus.id)
+        }
+        if (relationshipMissing) {
+          const hit = findTypedDeclaration(artifact, params.unresolved.channels, `${params.relationship.from[0]}->${params.relationship.to[0]}`)
+          if (hit) covered.push({ relationship: true, ...hit })
+          else uncovered.push('relationship')
+        }
+      } else {
+        uncovered.push(...missing.map((entryStatus) => entryStatus.id))
+        if (relationshipMissing) uncovered.push('relationship')
+      }
+
+      if (uncovered.length === 0) {
+        return { satisfied: true, detail: `every missing requirement is carried by its own typed unresolved record (${covered.map((c) => c.channel).join(', ')})`, observed: { requirement_status: status, relationship, triggered, unresolved: covered } }
+      }
+      const what = relationshipMissing && missing.length === 0
+        ? `the relationship between ${JSON.stringify(params.relationship.from)} and ${JSON.stringify(params.relationship.to)} is absent from every relationship channel`
+        : `frozen requirement(s) ${JSON.stringify(missing.map((m) => m.id))} were missing from the evidence set${relationshipMissing ? ', and so is the relationship between them' : ''}`
       return {
         satisfied: false,
-        detail: `reported ready state '${answerability}' while frozen requirement(s) ${JSON.stringify(missing.map((m) => m.id))} were missing from the evidence set and no typed unresolved record covers them`,
-        observed: { requirement_status: status, triggered, unresolved: null },
+        detail: `reported ready state '${answerability}' while ${what}, and ${JSON.stringify(uncovered)} ${uncovered.length === 1 ? 'is' : 'are'} not covered by a typed unresolved record`,
+        observed: { requirement_status: status, relationship, triggered, unresolved: covered, uncovered },
       }
     }
 

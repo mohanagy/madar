@@ -24,7 +24,7 @@
     },
     {
       "path": "docs/qualification/freeze.json",
-      "sha256": "f71cdd443edf97760103f41b0d72816843a736f5dd95edaf79f1ef478b05f17e"
+      "sha256": "574b671e40b444667efd725e90607aff88f284e3fcd98c3e1675e95c7903211f"
     },
     {
       "path": "docs/qualification/holdout-policy.md",
@@ -56,7 +56,7 @@
     },
     {
       "path": "docs/qualification/tier1-adjudication.json",
-      "sha256": "3f6ac7055d00fefc4796a87e4c21137f93b9a1697bdf675d0261d7936592b136"
+      "sha256": "9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372"
     },
     {
       "path": "docs/qualification/tier1.json",
@@ -149,5 +149,5 @@
     ]
   },
   "cross_reference_valid": true,
-  "digest": "36ca51eb5b729bab944db0998e78bb70682da9fa369a8f498c8d614d2e953e23"
+  "digest": "c0b5d4cfc8a64649eaa0593a13e9a658e266f576717b0bb6885e304a40643ee9"
 }
