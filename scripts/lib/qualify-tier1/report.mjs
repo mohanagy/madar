@@ -176,6 +176,18 @@ export function renderReport(result) {
         lines.push(`  - named the subject but asserted presence, so it is not a declaration: \`${near.schema_path}\` — ${near.text}`)
       }
     }
+    if (cell.adjudication?.relationships) {
+      const rel = cell.adjudication.relationships
+      lines.push('- Frozen relationships:')
+      lines.push(`  - required: ${rel.required_relationship_ids.map((v) => `\`${v}\``).join(', ') || '—'}`)
+      lines.push(`  - present: ${rel.present_relationship_ids.map((v) => `\`${v}\``).join(', ') || '**none**'}`)
+      lines.push(`  - missing: ${rel.missing_relationship_ids.map((v) => `\`${v}\``).join(', ') || '—'}`)
+      lines.push(`  - exactly unresolved: ${rel.exactly_unresolved_relationship_ids.map((v) => `\`${v}\``).join(', ') || '—'}`)
+      lines.push(`  - uncovered: ${rel.uncovered_relationship_ids.map((v) => `\`${v}\``).join(', ') || '—'}`)
+      lines.push(`  - direction(s) evaluated: ${rel.directions_evaluated.join(', ')}; relation kind(s): ${rel.relation_kinds_evaluated.join(', ')}`)
+      lines.push(`  - channels consulted: ${rel.channels_consulted.map((v) => `\`${v}\``).join(', ')} (${rel.typed_edges_observed} typed edge(s) observed)`)
+      lines.push(`  - false-ready decision: **${rel.false_ready_decision}**`)
+    }
     if (cell.evidence_reference) lines.push(`- Evidence: \`${cell.evidence_reference}\``)
   }
   lines.push('')

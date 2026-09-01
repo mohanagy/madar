@@ -24,10 +24,27 @@ export interface AdjudicatedClause {
   readonly observed: Record<string, unknown>
 }
 
+/** The relationship picture for one cell, flattened for the reader. */
+export interface RelationshipSummary {
+  readonly required_relationship_ids: readonly string[]
+  readonly present_relationship_ids: readonly string[]
+  readonly missing_relationship_ids: readonly string[]
+  readonly exactly_unresolved_relationship_ids: readonly string[]
+  readonly uncovered_relationship_ids: readonly string[]
+  readonly channels_consulted: readonly string[]
+  readonly directions_evaluated: readonly string[]
+  readonly relation_kinds_evaluated: readonly string[]
+  readonly typed_edges_observed: number
+  readonly false_ready_decision: boolean
+}
+
 export interface AdjudicationOutcome {
   readonly contract_digest: string | null
+  readonly adjudication_version?: number | null
   readonly clauses: readonly AdjudicatedClause[]
   readonly contract_problems: readonly string[]
+  /** Null on cells whose frozen clauses name no relationship. */
+  readonly relationships?: RelationshipSummary | null
 }
 
 export interface CellVerdict {

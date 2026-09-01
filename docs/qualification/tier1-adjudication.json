@@ -1,6 +1,6 @@
 {
   "contract_version": "1.0.0",
-  "adjudication_version": 1,
+  "adjudication_version": 2,
   "frozen_at": "2026-09-01",
   "purpose": "Machine-checkable adjudication for the Tier 1 requirements whose frozen wording is English prose. The prose in tier1.json and the truth files remains the authority and is unchanged; this file records, for each clause, the deterministic predicate the evaluator must apply instead of reading the sentence. The evaluator performs no natural-language interpretation of any kind.",
   "non_goals": [
@@ -70,12 +70,22 @@
       "kind": "must_not_ready_when_requirements_missing",
       "params": [
         "requirement_ids",
-        "relationship",
         "match",
         "ready_states",
         "unresolved"
       ],
-      "deterministic": "frozen requirement identities vs the evidence set; when the clause names a relationship, the edge itself is looked up in the declared relationship channels; plus typed unresolved lookup keyed on the exact missing requirement"
+      "deterministic": "frozen requirement identities vs the evidence set, plus typed unresolved lookup keyed on the exact missing requirement. Carries no relationship: relationships have their own predicate."
+    },
+    {
+      "kind": "must_not_ready_when_relationships_missing",
+      "params": [
+        "relationship_ids",
+        "group_match",
+        "ready_states",
+        "unresolved_policy",
+        "unresolved_channels"
+      ],
+      "deterministic": "each declared relationship is looked up through the declared channel adapters with endpoint identity, direction and relation kind all enforced; the group is all-of; only a typed record naming the exact relationship id may suppress one, and only where the frozen clause offers that alternative"
     },
     {
       "kind": "typed_unresolved_requirement_present",
@@ -102,14 +112,52 @@
     "note": "Deliberately disjoint. \"unresolved\" and \"missing\" say the pack did not establish something; the frozen probes require the artifact to state the requested behaviour is NOT PRESENT. Accepting a gap status as an absence declaration would let a pack satisfy a negative probe by reporting its own incompleteness."
   },
   "relationship_channels": [
-    ".pack.relationships[]",
-    ".pack.review_bundle.relationships[]",
-    ".pack.slice.selected_paths[]",
-    ".pack.direct_dependents[]",
-    ".pack.transitive_dependents[]",
-    ".pack.top_paths_per_community[].path[]",
-    ".pack.execution_slice.steps[]",
-    ".pack.execution_slice.primary_path[]"
+    {
+      "channel": ".pack.relationships[]",
+      "source_field": "from",
+      "target_field": "to",
+      "relation_field": "relation",
+      "source_id_field": "from_id",
+      "target_id_field": "to_id",
+      "semantic_direction": "source_to_target",
+      "endpoint_resolution": "node_id",
+      "node_record_channels": [
+        ".pack.matched_nodes[]",
+        ".pack.seed_nodes[]",
+        ".pack.review_bundle.nodes[]"
+      ],
+      "rationale": "Carries explicit endpoints, endpoint ids and a relation kind; from -> to is the semantic edge."
+    },
+    {
+      "channel": ".pack.review_bundle.relationships[]",
+      "source_field": "from",
+      "target_field": "to",
+      "relation_field": "relation",
+      "source_id_field": null,
+      "target_id_field": null,
+      "semantic_direction": "source_to_target",
+      "endpoint_resolution": "unique_label_in_scope",
+      "node_record_channels": [
+        ".pack.review_bundle.nodes[]"
+      ],
+      "rationale": "Carries endpoints and a relation kind but no endpoint ids, so an endpoint resolves only when exactly one node record in the same bundle carries that label. An ambiguous label fails closed."
+    },
+    {
+      "channel": ".pack.slice.selected_paths[]",
+      "source_field": "from",
+      "target_field": "to",
+      "relation_field": "relation",
+      "source_id_field": "from_id",
+      "target_id_field": "to_id",
+      "semantic_direction": "source_to_target",
+      "endpoint_resolution": "node_id",
+      "node_record_channels": [
+        ".pack.matched_nodes[]",
+        ".pack.seed_nodes[]",
+        ".pack.slice.anchors[]"
+      ],
+      "rationale": "from/to describe the semantic edge; the sibling `direction` field describes traversal order and is deliberately not read as edge direction. Verified against .pack.relationships[] on the retained artifacts."
+    }
   ],
   "channel_exclusions": [
     {
@@ -135,6 +183,233 @@
     {
       "channel": ".pack.answer_contract.uncertainty_notes[]",
       "reason": "free text; same reason"
+    }
+  ],
+  "relationship_requirements": [
+    {
+      "id": "relationship:arch:create-storage-to-driver",
+      "source_selector": {
+        "path": "src/storage.ts",
+        "symbols": [
+          "createStorage"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/arch-unstorage-driver-seam.json",
+          "pointer": "/critical_facts/2",
+          "identity_sha256": "ea64b69367e40786b325b8b03e033dfbcda94030e3774c7a58845bb31269633c"
+        }
+      },
+      "target_selector": {
+        "path": "src/types.ts",
+        "symbols": [
+          "Driver"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/arch-unstorage-driver-seam.json",
+          "pointer": "/critical_facts/0",
+          "identity_sha256": "1c01a71a3007e75f0d1b6b71f33c6aa501af1577fcbb0f4d4213eaa5a33875f2"
+        }
+      },
+      "direction": "forward",
+      "topology": "direct_edge",
+      "relation_kinds": [
+        "param_type",
+        "uses",
+        "references",
+        "depends_on"
+      ],
+      "required_edge_count": 1,
+      "unresolved_subject_id": "relationship:arch:create-storage-to-driver",
+      "frozen_clause": {
+        "file": "docs/qualification/truth/arch-unstorage-driver-seam.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/1"
+      },
+      "rationale": "Structural dependency of createStorage on the Driver interface. A reverse edge, or a relation outside the allowlist, does not establish it."
+    },
+    {
+      "id": "relationship:flow:dispatch-calls-compose",
+      "source_selector": {
+        "path": "src/hono-base.ts",
+        "symbols": [
+          "Hono.#dispatch"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/flow-hono-request-dispatch.json",
+          "pointer": "/ordered_path/1",
+          "identity_sha256": "95503260de69e9cb250a3bc9fecfe05116ff843a57248ce86aba1ccf45f004a6"
+        }
+      },
+      "target_selector": {
+        "path": "src/compose.ts",
+        "symbols": [
+          "compose"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/flow-hono-request-dispatch.json",
+          "pointer": "/ordered_path/6",
+          "identity_sha256": "58a90522bab071ac4129f9802cdc80ef46789f0eb247fef3f797ab5e750e0f01"
+        }
+      },
+      "direction": "forward",
+      "topology": "direct_edge",
+      "relation_kinds": [
+        "calls"
+      ],
+      "required_edge_count": 1,
+      "unresolved_subject_id": "relationship:flow:dispatch-calls-compose",
+      "frozen_clause": {
+        "file": "docs/qualification/truth/flow-hono-request-dispatch.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/1"
+      },
+      "rationale": "The frozen clause names the CALL from the dispatch entry point into compose. Hono.fetch -> compose is a different source; compose -> Hono.#dispatch is the reverse; references/contains/imports_from are different relations."
+    },
+    {
+      "id": "relationship:impact:hono-constructor-calls-smart-router",
+      "source_selector": {
+        "path": "src/hono.ts",
+        "symbols": [
+          "Hono.constructor"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+          "pointer": "/affected_set/0",
+          "identity_sha256": "22f1869db047da4879e86573642b54f97d4841147f80906452415f3e48681609"
+        }
+      },
+      "target_selector": {
+        "path": "src/router/smart-router/router.ts",
+        "symbols": [
+          "SmartRouter"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+          "pointer": "/affected_set/1",
+          "identity_sha256": "be3b588dc7e68594695d45ce9844861fe14978fb917e0fa419413bff51e13909"
+        }
+      },
+      "direction": "forward",
+      "topology": "direct_edge",
+      "relation_kinds": [
+        "calls"
+      ],
+      "required_edge_count": 1,
+      "unresolved_subject_id": "relationship:impact:hono-constructor-calls-smart-router",
+      "frozen_clause": {
+        "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/0"
+      },
+      "rationale": "One of the three router implementations the frozen clause names."
+    },
+    {
+      "id": "relationship:impact:hono-constructor-calls-regexp-router",
+      "source_selector": {
+        "path": "src/hono.ts",
+        "symbols": [
+          "Hono.constructor"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+          "pointer": "/affected_set/0",
+          "identity_sha256": "22f1869db047da4879e86573642b54f97d4841147f80906452415f3e48681609"
+        }
+      },
+      "target_selector": {
+        "path": "src/router/reg-exp-router/router.ts",
+        "symbols": [
+          "RegExpRouter"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+          "pointer": "/affected_set/2",
+          "identity_sha256": "8a96558fdbcabe094747215afbb8cbcd1692317165ff8aa02273ebdca58dd9f1"
+        }
+      },
+      "direction": "forward",
+      "topology": "direct_edge",
+      "relation_kinds": [
+        "calls"
+      ],
+      "required_edge_count": 1,
+      "unresolved_subject_id": "relationship:impact:hono-constructor-calls-regexp-router",
+      "frozen_clause": {
+        "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/0"
+      },
+      "rationale": "One of the three router implementations the frozen clause names."
+    },
+    {
+      "id": "relationship:impact:hono-constructor-calls-trie-router",
+      "source_selector": {
+        "path": "src/hono.ts",
+        "symbols": [
+          "Hono.constructor"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+          "pointer": "/affected_set/0",
+          "identity_sha256": "22f1869db047da4879e86573642b54f97d4841147f80906452415f3e48681609"
+        }
+      },
+      "target_selector": {
+        "path": "src/router/trie-router/router.ts",
+        "symbols": [
+          "TrieRouter"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+          "pointer": "/affected_set/3",
+          "identity_sha256": "029809b77c4872d3ce59a92019e2b5896a32024e483f97612595f73fcd5bc910"
+        }
+      },
+      "direction": "forward",
+      "topology": "direct_edge",
+      "relation_kinds": [
+        "calls"
+      ],
+      "required_edge_count": 1,
+      "unresolved_subject_id": "relationship:impact:hono-constructor-calls-trie-router",
+      "frozen_clause": {
+        "file": "docs/qualification/truth/impact-hono-drop-router-fallback.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/0"
+      },
+      "rationale": "One of the three router implementations the frozen clause names."
+    },
+    {
+      "id": "relationship:rootcause:dispatch-calls-compose",
+      "source_selector": {
+        "path": "src/hono-base.ts",
+        "symbols": [
+          "Hono.#dispatch"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/rootcause-hono-middleware-rerun.json",
+          "pointer": "/critical_facts/3",
+          "identity_sha256": "4b57355d9e567df80e3de69dd41c58bf587b6c89624011b10e5c79492a76c0e2"
+        }
+      },
+      "target_selector": {
+        "path": "src/compose.ts",
+        "symbols": [
+          "compose"
+        ],
+        "frozen_source": {
+          "file": "docs/qualification/truth/rootcause-hono-middleware-rerun.json",
+          "pointer": "/critical_facts/1",
+          "identity_sha256": "65bfeeb7f360fdf2ec01d016000c6a244a2dd7d84d8fdcdf0e9ee1b898523cf0"
+        }
+      },
+      "direction": "forward",
+      "topology": "direct_edge",
+      "relation_kinds": [
+        "calls"
+      ],
+      "required_edge_count": 1,
+      "unresolved_subject_id": null,
+      "frozen_clause": {
+        "file": "docs/qualification/truth/rootcause-hono-middleware-rerun.json",
+        "pointer": "/tier1_obligations/must_not_report_ready_when/1"
+      },
+      "rationale": "Same edge as the flow clause but with no unresolved escape, because the frozen wording provides none."
     }
   ],
   "requirements": [
@@ -562,60 +837,37 @@
         "clause_text_preview": "the relationship between createStorage and the Driver interface is neither present in the graph nor declared as unresolved"
       },
       "predicate": {
-        "kind": "must_not_ready_when_requirements_missing",
+        "kind": "must_not_ready_when_relationships_missing",
         "params": {
-          "requirement_ids": [
-            "arch.critical_facts.mount-registry",
-            "arch.critical_facts.driver-interface"
+          "relationship_ids": [
+            "relationship:arch:create-storage-to-driver"
           ],
-          "relationship": {
-            "from": [
-              "arch.critical_facts.mount-registry"
-            ],
-            "to": [
-              "arch.critical_facts.driver-interface"
-            ]
-          },
-          "match": "any_missing",
+          "group_match": "all_required",
           "ready_states": [
             "ready",
             "ready_with_caveat"
           ],
-          "unresolved": {
-            "channels": [
-              {
-                "channel": ".evidence.answerability.unresolved_requirements[]",
-                "shape": "typed_record",
-                "status_field": "status",
-                "status_values": [
-                  "unresolved",
-                  "not_established",
-                  "missing",
-                  "unknown"
-                ],
-                "subject_field": "requirement_id",
-                "subject_values": [
-                  "arch.critical_facts.mount-registry",
-                  "arch.critical_facts.driver-interface"
-                ]
-              },
-              {
-                "channel": ".evidence.answerability.missing_obligations[]",
-                "shape": "typed_token",
-                "subject_tokens": [
-                  "unresolved:arch.critical_facts.mount-registry",
-                  "unresolved:arch.critical_facts.driver-interface",
-                  "unresolved:src/storage.ts",
-                  "unresolved:src/types.ts",
-                  "unresolved:createStorage",
-                  "unresolved:Driver"
-                ]
-              }
-            ]
-          }
+          "unresolved_policy": "exact_per_relationship",
+          "unresolved_channels": [
+            {
+              "channel": ".evidence.answerability.unresolved_relationships[]",
+              "shape": "typed_record",
+              "status_field": "status",
+              "status_values": [
+                "unresolved",
+                "not_established",
+                "missing",
+                "unknown"
+              ],
+              "subject_field": "relationship_id",
+              "subject_values": [
+                "relationship:arch:create-storage-to-driver"
+              ]
+            }
+          ]
         }
       },
-      "rationale": "The clause names createStorage and the Driver interface. Both are frozen critical_facts with their own path and symbol, so the relationship is adjudicated as: are both endpoint identities surfaced, and if not, is the gap carried by a typed unresolved record.",
+      "rationale": "The clause names the relationship between createStorage and the Driver interface, and offers a declared-unresolved alternative. Only a typed record naming this exact relationship id may take it.",
       "truth_provenance": {
         "kind": "frozen_critical_facts",
         "pointers": [
@@ -650,64 +902,41 @@
         "clause_text_preview": "the call from the dispatch entry point into compose is neither present in the graph nor declared as unresolved"
       },
       "predicate": {
-        "kind": "must_not_ready_when_requirements_missing",
+        "kind": "must_not_ready_when_relationships_missing",
         "params": {
-          "requirement_ids": [
-            "flow.ordered_path.entrypoint",
-            "flow.ordered_path.compose-chain"
+          "relationship_ids": [
+            "relationship:flow:dispatch-calls-compose"
           ],
-          "relationship": {
-            "from": [
-              "flow.ordered_path.entrypoint"
-            ],
-            "to": [
-              "flow.ordered_path.compose-chain"
-            ]
-          },
-          "match": "any_missing",
+          "group_match": "all_required",
           "ready_states": [
             "ready",
             "ready_with_caveat"
           ],
-          "unresolved": {
-            "channels": [
-              {
-                "channel": ".evidence.answerability.unresolved_requirements[]",
-                "shape": "typed_record",
-                "status_field": "status",
-                "status_values": [
-                  "unresolved",
-                  "not_established",
-                  "missing",
-                  "unknown"
-                ],
-                "subject_field": "requirement_id",
-                "subject_values": [
-                  "flow.ordered_path.entrypoint",
-                  "flow.ordered_path.compose-chain"
-                ]
-              },
-              {
-                "channel": ".evidence.answerability.missing_obligations[]",
-                "shape": "typed_token",
-                "subject_tokens": [
-                  "unresolved:flow.ordered_path.entrypoint",
-                  "unresolved:flow.ordered_path.compose-chain",
-                  "unresolved:src/hono-base.ts",
-                  "unresolved:src/compose.ts",
-                  "unresolved:fetch",
-                  "unresolved:compose"
-                ]
-              }
-            ]
-          }
+          "unresolved_policy": "exact_per_relationship",
+          "unresolved_channels": [
+            {
+              "channel": ".evidence.answerability.unresolved_relationships[]",
+              "shape": "typed_record",
+              "status_field": "status",
+              "status_values": [
+                "unresolved",
+                "not_established",
+                "missing",
+                "unknown"
+              ],
+              "subject_field": "relationship_id",
+              "subject_values": [
+                "relationship:flow:dispatch-calls-compose"
+              ]
+            }
+          ]
         }
       },
-      "rationale": "The clause names the call from the dispatch entry point into compose. Both endpoints are frozen ordered_path steps carrying their own path and symbol.",
+      "rationale": "The clause names the CALL from the dispatch entry point into compose, and offers a declared-unresolved alternative.",
       "truth_provenance": {
         "kind": "frozen_ordered_path",
         "pointers": [
-          "/ordered_path/0",
+          "/ordered_path/1",
           "/ordered_path/6"
         ]
       }
@@ -721,71 +950,41 @@
         "clause_text_preview": "the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved"
       },
       "predicate": {
-        "kind": "must_not_ready_when_requirements_missing",
+        "kind": "must_not_ready_when_relationships_missing",
         "params": {
-          "requirement_ids": [
-            "impact.affected_set.construction-site",
-            "impact.affected_set.smart-router-unused",
-            "impact.affected_set.regexp-router-throws-escape",
-            "impact.affected_set.trie-router-unreachable"
+          "relationship_ids": [
+            "relationship:impact:hono-constructor-calls-smart-router",
+            "relationship:impact:hono-constructor-calls-regexp-router",
+            "relationship:impact:hono-constructor-calls-trie-router"
           ],
-          "relationship": {
-            "from": [
-              "impact.affected_set.construction-site"
-            ],
-            "to": [
-              "impact.affected_set.smart-router-unused",
-              "impact.affected_set.regexp-router-throws-escape",
-              "impact.affected_set.trie-router-unreachable"
-            ]
-          },
-          "match": "any_missing",
+          "group_match": "all_required",
           "ready_states": [
             "ready",
             "ready_with_caveat"
           ],
-          "unresolved": {
-            "channels": [
-              {
-                "channel": ".evidence.answerability.unresolved_requirements[]",
-                "shape": "typed_record",
-                "status_field": "status",
-                "status_values": [
-                  "unresolved",
-                  "not_established",
-                  "missing",
-                  "unknown"
-                ],
-                "subject_field": "requirement_id",
-                "subject_values": [
-                  "impact.affected_set.construction-site",
-                  "impact.affected_set.smart-router-unused",
-                  "impact.affected_set.regexp-router-throws-escape",
-                  "impact.affected_set.trie-router-unreachable"
-                ]
-              },
-              {
-                "channel": ".evidence.answerability.missing_obligations[]",
-                "shape": "typed_token",
-                "subject_tokens": [
-                  "unresolved:impact.affected_set.construction-site",
-                  "unresolved:impact.affected_set.smart-router-unused",
-                  "unresolved:impact.affected_set.regexp-router-throws-escape",
-                  "unresolved:impact.affected_set.trie-router-unreachable",
-                  "unresolved:src/hono.ts",
-                  "unresolved:src/router/smart-router/router.ts",
-                  "unresolved:src/router/reg-exp-router/router.ts",
-                  "unresolved:src/router/trie-router/router.ts",
-                  "unresolved:SmartRouter",
-                  "unresolved:RegExpRouter",
-                  "unresolved:TrieRouter"
-                ]
-              }
-            ]
-          }
+          "unresolved_policy": "exact_per_relationship",
+          "unresolved_channels": [
+            {
+              "channel": ".evidence.answerability.unresolved_relationships[]",
+              "shape": "typed_record",
+              "status_field": "status",
+              "status_values": [
+                "unresolved",
+                "not_established",
+                "missing",
+                "unknown"
+              ],
+              "subject_field": "relationship_id",
+              "subject_values": [
+                "relationship:impact:hono-constructor-calls-smart-router",
+                "relationship:impact:hono-constructor-calls-regexp-router",
+                "relationship:impact:hono-constructor-calls-trie-router"
+              ]
+            }
+          ]
         }
       },
-      "rationale": "The clause names the constructor in src/hono.ts and the three router implementations. All four are frozen affected_set entries with their own ids, paths and symbols.",
+      "rationale": "The clause names the constructor in src/hono.ts and THE THREE router implementations, so all three edges are required. One or two are insufficient, and a record for one router cannot cover another.",
       "truth_provenance": {
         "kind": "frozen_affected_set",
         "pointers": [
@@ -950,29 +1149,21 @@
         "clause_text_preview": "the call from the dispatch entry point into compose is missing from the graph"
       },
       "predicate": {
-        "kind": "must_not_ready_when_requirements_missing",
+        "kind": "must_not_ready_when_relationships_missing",
         "params": {
-          "requirement_ids": [
-            "rootcause.critical_facts.fast-path-exclusion",
-            "rootcause.critical_facts.index-semantics"
+          "relationship_ids": [
+            "relationship:rootcause:dispatch-calls-compose"
           ],
-          "relationship": {
-            "from": [
-              "rootcause.critical_facts.fast-path-exclusion"
-            ],
-            "to": [
-              "rootcause.critical_facts.index-semantics"
-            ]
-          },
-          "match": "any_missing",
+          "group_match": "all_required",
           "ready_states": [
             "ready",
             "ready_with_caveat"
           ],
-          "unresolved": null
+          "unresolved_policy": "forbidden",
+          "unresolved_channels": null
         }
       },
-      "rationale": "The clause names the call from the dispatch entry point into compose. Unlike the flow clause it says only \"is missing from the graph\" with no unresolved escape, so no unresolved record may suppress it. That difference is preserved deliberately.",
+      "rationale": "Same edge as the flow clause, but the frozen wording says only that the call is missing from the graph and offers no declared-unresolved alternative, so none is accepted.",
       "truth_provenance": {
         "kind": "frozen_critical_facts",
         "pointers": [

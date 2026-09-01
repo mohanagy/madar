@@ -27,6 +27,76 @@ export interface RequirementIdentity {
   readonly symbols?: readonly string[]
 }
 
+/** Topologies, directions, cardinalities and policies the model supports. */
+export declare const RELATIONSHIP_TOPOLOGIES: ReadonlySet<string>
+export declare const RELATIONSHIP_DIRECTIONS: ReadonlySet<string>
+export declare const RELATIONSHIP_GROUP_MATCH: ReadonlySet<string>
+export declare const UNRESOLVED_POLICIES: ReadonlySet<string>
+
+export interface EndpointSelector {
+  readonly path: string
+  readonly symbols: readonly string[]
+  readonly frozen_source?: { file: string; pointer: string; identity_sha256: string }
+}
+
+export interface RelationshipRequirement {
+  readonly id: string
+  readonly source_selector: EndpointSelector
+  readonly target_selector: EndpointSelector
+  readonly direction: 'forward'
+  readonly topology: 'direct_edge'
+  readonly relation_kinds: readonly string[]
+  readonly required_edge_count: number
+  /** Equals `id`, or null when the frozen clause offers no unresolved escape. */
+  readonly unresolved_subject_id: string | null
+}
+
+/** How one relationship-bearing channel is read. */
+export interface RelationshipAdapter {
+  readonly channel: string
+  readonly source_field: string
+  readonly target_field: string
+  readonly relation_field: string
+  readonly source_id_field: string | null
+  readonly target_id_field: string | null
+  readonly semantic_direction: 'source_to_target'
+  readonly endpoint_resolution: 'node_id' | 'unique_label_in_scope'
+  readonly node_record_channels: readonly string[]
+}
+
+export interface TypedEdge {
+  readonly channel: string
+  readonly relation: string
+  readonly source_label: string
+  readonly target_label: string
+  readonly source: { label: string; source_file: string; node_id: string | null } | null
+  readonly target: { label: string; source_file: string; node_id: string | null } | null
+}
+
+export interface RelationshipOutcome {
+  readonly id: string
+  readonly present: boolean
+  readonly matches: readonly Record<string, unknown>[]
+  /** Edges touching both endpoints but rejected for direction or relation kind. */
+  readonly rejected: readonly Record<string, unknown>[]
+  readonly required_edge_count: number
+  readonly direction: string
+  readonly relation_kinds: readonly string[]
+}
+
+/** Typed relationships the artifact presents, through the declared adapters. */
+export declare function extractTypedEdges(
+  artifact: Record<string, unknown>,
+  adapters: readonly RelationshipAdapter[],
+): TypedEdge[]
+
+/** Is one frozen relationship satisfied? Direction and relation kind enforced. */
+export declare function evaluateRelationship(
+  requirement: RelationshipRequirement,
+  edges: readonly TypedEdge[],
+  normaliseSymbol: (symbol: string) => string,
+): RelationshipOutcome
+
 export interface LoadedAdjudication {
   readonly contract: Record<string, unknown> | null
   readonly digest: string | null
@@ -35,6 +105,8 @@ export interface LoadedAdjudication {
   /** Keyed by `<file>#<json-pointer>`; exactly one entry per frozen clause. */
   readonly byClause: ReadonlyMap<string, AdjudicationEntry>
   readonly requirementsById: ReadonlyMap<string, RequirementIdentity>
+  readonly relationshipsById: ReadonlyMap<string, RelationshipRequirement>
+  readonly adapters: readonly RelationshipAdapter[]
 }
 
 export declare function loadAdjudication(

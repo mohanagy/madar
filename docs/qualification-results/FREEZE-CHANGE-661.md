@@ -79,3 +79,52 @@ All 17 Tier 1 prose clauses are bound. None was dropped as "human-only".
 It does not make any cell pass. A requirement that the product cannot currently express
 in a typed channel now fails with an exact reason — `missing_required_absence_declaration`
 — rather than being rescued by a sentence or excused as unmeasurable. That is the point.
+
+
+---
+
+# Second deliberate freeze change — relationship contract v2
+
+Regenerated again with `npm run qualify:validate -- --write` after the maintainer supplied
+the exact relationship semantics an independent review had shown were missing.
+
+| | |
+| --- | --- |
+| Prior adjudication contract | `9f88d294592a355064f92e11238f2ca81841fe04016af09bed7db55c26cc1372` (version 1) |
+| New adjudication contract | `cc64f9b01db15f80fff402a539e16559eb838acda86d0f0f0f568789598ebfaf` (version 2) |
+| Prior `freeze.json` | `574b671e40b444667efd725e90607aff88f284e3fcd98c3e1675e95c7903211f` |
+| New `freeze.json` | `6dd4d38bb307ec225021687b6f94a739bf4d2bef2336206cb14108ab0cda2fc1` |
+| Files added | 0 |
+| Files whose bytes changed | 2 — `tier1-adjudication.json`, `freeze.json` |
+| Files removed | 0 |
+
+## Why
+
+The v1 relationship predicate was not faithful to the clauses it decided: it ignored relation
+kind and edge direction, treated the impact clause's three router implementations as any-one,
+and queried a synthetic `from->to` unresolved subject the contract never declared — so a
+relationship could never be declared unresolved even where the frozen wording permits it.
+
+## What v2 adds
+
+`relationship_requirements` — six closed entries, each binding a frozen source and target
+selector (path + symbols, hashed against the truth entry it cites), a direction, a topology,
+an explicit relation-kind allowlist, a required edge count, and an unresolved subject id that
+must equal the relationship id or be null.
+
+`relationship_channels` — three adapters, one per channel whose schema actually carries an
+explicit source, an explicit target, a relation kind and a defined semantic direction.
+Adjacency-only channels are excluded by construction: consecutive execution-slice steps,
+community path adjacency, and dependants without an explicit source endpoint cannot prove a
+relationship, though they remain part of general evidence recall.
+
+`must_not_ready_when_relationships_missing` — a dedicated predicate with `group_match:
+all_required` and `unresolved_policy` of `exact_per_relationship` or `forbidden`. The
+overloaded `relationship` parameter on the endpoint predicate is removed entirely.
+
+## Not changed
+
+Every prompt and prompt hash, every target SHA, every patch, every truth statement, every
+critical path and symbol, every threshold, every prohibited claim, and every
+`required_behaviour` and `must_not_report_ready_when` sentence. No file was added or removed
+in this second change; only the adjudication contract and the freeze that records it.

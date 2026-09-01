@@ -4,6 +4,12 @@
 //   E1-E6, E9-E12, E15, S1-S4  evidence surface, recall, preparation, integrity
 //   A1-A12                     the machine-checkable adjudication contract
 //
+// A16 tested the relationship param that used to be overloaded onto
+// must_not_ready_when_requirements_missing. That param is gone; relationships
+// have their own predicate and REL1-REL18 test it far more strictly, including
+// direction, relation kind, endpoint identity and group cardinality, none of
+// which A16 covered.
+//
 // E7, E13 and E14 tested the removed prose heuristics (absence-by-negation-word
 // and unresolved-by-mention). They are superseded by A1-A10, which test the same
 // obligations against typed channels instead of sentences. Nothing they covered
@@ -16,6 +22,7 @@
 // All controls operate on COPIED inputs. The real frozen contract is never
 // modified, and these controls never write inside docs/qualification.
 
+import { createHash } from 'node:crypto'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -827,50 +834,301 @@ const withTypedAbsence = (subject, status = 'not_found') => ({
   check('A15', 'declaration channels are classified', 'the contract declares at least one channel', true, declared.size > 0)
 }
 
-// --- A16: a relationship clause needs the edge, not just the endpoints --------
+// =============================================================================
+// REL1-REL18 — the relationship model
+// =============================================================================
+//
+// Endpoints are resolved to node records and compared on path AND symbol.
+// Direction and relation kind are enforced. The impact group is all-of. Only an
+// exact typed record naming a relationship id may declare it unresolved, and
+// only where the frozen clause offers that alternative.
+
+const REL_ADAPTERS = [
+  {
+    channel: '.pack.relationships[]',
+    source_field: 'from', target_field: 'to', relation_field: 'relation',
+    source_id_field: 'from_id', target_id_field: 'to_id',
+    semantic_direction: 'source_to_target', endpoint_resolution: 'node_id',
+    node_record_channels: ['.pack.matched_nodes[]'],
+  },
+]
+
+const relSelector = (path, symbols) => ({ path, symbols })
+const REL_FLOW = {
+  id: 'relationship:flow:dispatch-calls-compose',
+  source_selector: relSelector('src/hono-base.ts', ['Hono.#dispatch']),
+  target_selector: relSelector('src/compose.ts', ['compose']),
+  direction: 'forward', topology: 'direct_edge', relation_kinds: ['calls'],
+  required_edge_count: 1, unresolved_subject_id: 'relationship:flow:dispatch-calls-compose',
+}
+const REL_ROOT = { ...REL_FLOW, id: 'relationship:rootcause:dispatch-calls-compose', unresolved_subject_id: null }
+const REL_ARCH = {
+  id: 'relationship:arch:create-storage-to-driver',
+  source_selector: relSelector('src/storage.ts', ['createStorage']),
+  target_selector: relSelector('src/types.ts', ['Driver']),
+  direction: 'forward', topology: 'direct_edge',
+  relation_kinds: ['param_type', 'uses', 'references', 'depends_on'],
+  required_edge_count: 1, unresolved_subject_id: 'relationship:arch:create-storage-to-driver',
+}
+const REL_IMPACT = ['smart-router', 'regexp-router', 'trie-router'].map((slug, index) => ({
+  id: `relationship:impact:hono-constructor-calls-${slug}`,
+  source_selector: relSelector('src/hono.ts', ['Hono.constructor']),
+  target_selector: relSelector(
+    ['src/router/smart-router/router.ts', 'src/router/reg-exp-router/router.ts', 'src/router/trie-router/router.ts'][index],
+    [['SmartRouter', 'RegExpRouter', 'TrieRouter'][index]],
+  ),
+  direction: 'forward', topology: 'direct_edge', relation_kinds: ['calls'],
+  required_edge_count: 1, unresolved_subject_id: `relationship:impact:hono-constructor-calls-${slug}`,
+}))
+
+/** Build an artifact with node records and typed edges. */
+function relArtifact({ nodes = [], edges = [], answerability = 'ready_with_caveat', unresolved = [] }) {
+  return {
+    pack: {
+      matched_nodes: nodes.map((n, i) => ({ node_id: `n${i}`, label: n.label, source_file: n.file })),
+      relationships: edges.map((e) => ({
+        from: e.from, to: e.to, relation: e.relation,
+        from_id: `n${nodes.findIndex((n) => n.label === e.from && (!e.fromFile || n.file === e.fromFile))}`,
+        to_id: `n${nodes.findIndex((n) => n.label === e.to && (!e.toFile || n.file === e.toFile))}`,
+      })),
+    },
+    evidence: { answerability: { state: answerability, unresolved_relationships: unresolved } },
+  }
+}
+
+function relAdjudication(relationships, { policy = 'exact_per_relationship' } = {}) {
+  const byClause = new Map()
+  byClause.set('synthetic-truth.json#/tier1_obligations/must_not_report_ready_when/0', {
+    id: 'ADJ-REL', source: { file: 'synthetic-truth.json', pointer: '/tier1_obligations/must_not_report_ready_when/0', clause_sha256: 'unit' },
+    predicate: { kind: 'must_not_ready_when_relationships_missing', params: {
+      relationship_ids: relationships.map((r) => r.id),
+      group_match: 'all_required', ready_states: ['ready', 'ready_with_caveat'],
+      unresolved_policy: policy,
+      unresolved_channels: policy === 'exact_per_relationship' ? [{
+        channel: '.evidence.answerability.unresolved_relationships[]',
+        shape: 'typed_record', status_field: 'status', status_values: ['unresolved', 'missing'],
+        subject_field: 'relationship_id', subject_values: relationships.map((r) => r.id),
+      }] : null,
+    } },
+  })
+  return { contract: { adjudication_version: 2 }, digest: 'unit', byClause,
+    requirementsById: new Map(), relationshipsById: new Map(relationships.map((r) => [r.id, r])),
+    adapters: REL_ADAPTERS, problems: [] }
+}
+
+function relRun(relationships, artifact, options = {}) {
+  return evaluateTaskCell({
+    cell: { cell_id: 'rel@fixture' }, task: { id: 'rel' }, target: { id: 'fixture', source: { ref: 'x' } },
+    truth: { tier1_obligations: { required_evidence_paths: [], required_evidence_symbols: [], min_critical_fact_recall: 1.0, must_not_report_ready_when: ['relationship clause'] } },
+    truthFile: 'synthetic-truth.json', preparation: { valid: true },
+    artifact, evidence: makeEvidence({ paths: [], symbols: [] }),
+    answerability: artifact.evidence.answerability.state, targetDir: fixtureDir,
+    adjudication: relAdjudication(relationships, options),
+  })
+}
+
+const DISPATCH_NODES = [{ label: 'Hono.#dispatch', file: 'src/hono-base.ts' }, { label: 'compose', file: 'src/compose.ts' }]
+const relOf = (verdict) => verdict.adjudication.relationships
+
+// --- REL1: isolated endpoints ------------------------------------------------
 {
-  const requirements = [
-    { id: 'req.ctor', path: 'src/hono.ts', symbols: ['Hono.constructor'] },
-    { id: 'req.router', path: 'src/compose.ts', symbols: ['SmartRouter'] },
+  const v = relRun([REL_FLOW], relArtifact({ nodes: DISPATCH_NODES, edges: [] }))
+  check('REL1', 'isolated endpoints', 'both endpoints visible, no edge', true, v.metrics.false_ready,
+    v.adjudication.clauses[0].detail ?? '')
+  check('REL1', 'isolated endpoints', 'reported missing', 1, relOf(v).missing_relationship_ids.length)
+}
+
+// --- REL2: reverse edge ------------------------------------------------------
+{
+  const reverse = relArtifact({ nodes: DISPATCH_NODES, edges: [{ from: 'compose', to: 'Hono.#dispatch', relation: 'calls' }] })
+  check('REL2', 'reverse edge', 'flow not satisfied', true, relRun([REL_FLOW], reverse).metrics.false_ready)
+  check('REL2', 'reverse edge', 'root cause not satisfied', true, relRun([REL_ROOT], reverse, { policy: 'forbidden' }).metrics.false_ready)
+}
+
+// --- REL3: wrong relation ----------------------------------------------------
+{
+  const v = relRun([REL_FLOW], relArtifact({ nodes: DISPATCH_NODES, edges: [{ from: 'Hono.#dispatch', to: 'compose', relation: 'references' }] }))
+  check('REL3', 'wrong relation', 'references does not satisfy calls', true, v.metrics.false_ready,
+    v.adjudication.clauses[0].detail ?? '')
+}
+
+// --- REL4: exact flow edge ---------------------------------------------------
+{
+  const v = relRun([REL_FLOW], relArtifact({ nodes: DISPATCH_NODES, edges: [{ from: 'Hono.#dispatch', to: 'compose', relation: 'calls' }] }))
+  check('REL4', 'exact flow edge', 'satisfied', false, v.metrics.false_ready)
+  check('REL4', 'exact flow edge', 'reported present', 1, relOf(v).present_relationship_ids.length)
+}
+
+// --- REL5: wrong flow source -------------------------------------------------
+{
+  const nodes = [...DISPATCH_NODES, { label: 'Hono.fetch', file: 'src/hono-base.ts' }]
+  const v = relRun([REL_FLOW], relArtifact({ nodes, edges: [{ from: 'Hono.fetch', to: 'compose', relation: 'calls' }] }))
+  check('REL5', 'wrong flow source', 'Hono.fetch does not satisfy Hono.#dispatch', true, v.metrics.false_ready)
+}
+
+// --- REL6: same label, wrong file --------------------------------------------
+{
+  const nodes = [{ label: 'Hono.#dispatch', file: 'src/hono-base.ts' }, { label: 'compose', file: 'src/other/compose.ts' }]
+  const v = relRun([REL_FLOW], relArtifact({ nodes, edges: [{ from: 'Hono.#dispatch', to: 'compose', relation: 'calls' }] }))
+  check('REL6', 'same label, wrong file', 'endpoint not satisfied', true, v.metrics.false_ready)
+
+  const right = relRun([REL_FLOW], relArtifact({ nodes: DISPATCH_NODES, edges: [{ from: 'Hono.#dispatch', to: 'compose', relation: 'calls' }] }))
+  check('REL6', 'same label, wrong file', 'correct file is satisfied', false, right.metrics.false_ready)
+}
+
+// --- REL7-REL10: impact cardinality ------------------------------------------
+{
+  const impactNodes = [
+    { label: 'Hono.constructor', file: 'src/hono.ts' },
+    { label: 'SmartRouter', file: 'src/router/smart-router/router.ts' },
+    { label: 'RegExpRouter', file: 'src/router/reg-exp-router/router.ts' },
+    { label: 'TrieRouter', file: 'src/router/trie-router/router.ts' },
   ]
-  const truth = makeTruth({ required_evidence_paths: [], required_evidence_symbols: [], must_not_report_ready_when: ['the relationship between the constructor and the router is missing and is not declared as unresolved'] })
-  const adjudication = syntheticAdjudication([{ predicate: { kind: 'must_not_ready_when_requirements_missing', params: {
-    requirement_ids: ['req.ctor', 'req.router'],
-    relationship: { from: ['req.ctor'], to: ['req.router'] },
-    match: 'any_missing', ready_states: ['ready', 'ready_with_caveat'], unresolved: null } } }], { requirements })
+  const edge = (to, relation = 'calls') => ({ from: 'Hono.constructor', to, relation })
 
-  // Both endpoints surfaced, but NO relationship between them.
-  const endpointsOnly = evaluateSynthetic({
-    paths: ['src/hono.ts', 'src/compose.ts'], symbols: ['Hono.constructor', 'SmartRouter'],
-    answerability: 'ready_with_caveat', truth, adjudication,
-    artifact: { evidence: { answerability: { state: 'ready_with_caveat' } }, pack: { relationships: [] } },
-  })
-  check('A16', 'relationship clause needs the edge', 'endpoints present, no edge', true, endpointsOnly.metrics.false_ready,
-    endpointsOnly.adjudication.clauses[0].detail ?? '')
+  const one = relRun(REL_IMPACT, relArtifact({ nodes: impactNodes, edges: [edge('SmartRouter')] }))
+  check('REL7', 'impact one of three', 'false-ready remains', true, one.metrics.false_ready)
+  check('REL7', 'impact one of three', 'two still missing', 2, relOf(one).missing_relationship_ids.length)
 
-  // The same endpoints, now actually connected.
-  const withEdge = evaluateSynthetic({
-    paths: ['src/hono.ts', 'src/compose.ts'], symbols: ['Hono.constructor', 'SmartRouter'],
-    answerability: 'ready_with_caveat', truth, adjudication,
-    artifact: { evidence: { answerability: { state: 'ready_with_caveat' } }, pack: { relationships: [{ from: 'Hono.constructor', to: 'SmartRouter', relation: 'calls' }] } },
-  })
-  check('A16', 'relationship clause needs the edge', 'endpoints connected', false, withEdge.metrics.false_ready,
-    JSON.stringify(withEdge.adjudication.clauses[0].observed.relationship?.edge))
+  const two = relRun(REL_IMPACT, relArtifact({ nodes: impactNodes, edges: [edge('SmartRouter'), edge('RegExpRouter')] }))
+  check('REL8', 'impact two of three', 'third still reported', 1, relOf(two).missing_relationship_ids.length)
+  check('REL8', 'impact two of three', 'false-ready remains', true, two.metrics.false_ready)
 
-  // An edge between unrelated nodes is not the relationship the clause names.
-  const wrongEdge = evaluateSynthetic({
-    paths: ['src/hono.ts', 'src/compose.ts'], symbols: ['Hono.constructor', 'SmartRouter'],
-    answerability: 'ready_with_caveat', truth, adjudication,
-    artifact: { evidence: { answerability: { state: 'ready_with_caveat' } }, pack: { relationships: [{ from: 'somethingElse', to: 'anotherThing', relation: 'calls' }] } },
-  })
-  check('A16', 'relationship clause needs the edge', 'unrelated edge does not count', true, wrongEdge.metrics.false_ready)
+  const all = relRun(REL_IMPACT, relArtifact({ nodes: impactNodes, edges: [edge('SmartRouter'), edge('RegExpRouter'), edge('TrieRouter')] }))
+  check('REL9', 'impact all three', 'group satisfied', false, all.metrics.false_ready)
+  check('REL9', 'impact all three', 'all present', 3, relOf(all).present_relationship_ids.length)
 
-  // Every frozen relationship clause must declare its endpoints.
-  const contract = JSON.parse(readFileSync(join(ROOT, 'docs/qualification/tier1-adjudication.json'), 'utf8'))
-  const relationshipClauses = contract.entries.filter((e) => /relationship|call from|error paths/i.test(e.source.clause_text_preview ?? ''))
-  const declared = relationshipClauses.filter((e) => e.predicate.params.relationship != null)
-  check('A16', 'relationship clause needs the edge', 'frozen relationship clauses declare endpoints', true,
-    declared.length >= 4, `${declared.length} of ${relationshipClauses.length} relationship-shaped clauses declare endpoints`)
+  const wrongKind = relRun(REL_IMPACT, relArtifact({ nodes: impactNodes, edges: [edge('SmartRouter', 'references'), edge('RegExpRouter', 'references'), edge('TrieRouter', 'references')] }))
+  check('REL10', 'wrong impact edge kind', 'references does not satisfy', true, wrongKind.metrics.false_ready)
+  const reversed = relRun(REL_IMPACT, relArtifact({ nodes: impactNodes, edges: [
+    { from: 'SmartRouter', to: 'Hono.constructor', relation: 'calls' },
+    { from: 'RegExpRouter', to: 'Hono.constructor', relation: 'calls' },
+    { from: 'TrieRouter', to: 'Hono.constructor', relation: 'calls' }] }))
+  check('REL10', 'wrong impact edge kind', 'reverse calls does not satisfy', true, reversed.metrics.false_ready)
+
+  // --- REL11: an exact typed record covers only its own edge
+  const oneDeclared = relRun(REL_IMPACT, relArtifact({
+    nodes: impactNodes, edges: [edge('SmartRouter'), edge('RegExpRouter')],
+    unresolved: [{ relationship_id: 'relationship:impact:hono-constructor-calls-trie-router', status: 'unresolved' }],
+  }))
+  check('REL11', 'exact unresolved edge', 'covers the one missing edge', false, oneDeclared.metrics.false_ready,
+    JSON.stringify(relOf(oneDeclared).exactly_unresolved_relationship_ids))
+
+  // --- REL12: a record for another edge cannot cover this one
+  const wrongEdgeRecord = relRun(REL_IMPACT, relArtifact({
+    nodes: impactNodes, edges: [edge('SmartRouter'), edge('RegExpRouter')],
+    unresolved: [{ relationship_id: 'relationship:impact:hono-constructor-calls-smart-router', status: 'unresolved' }],
+  }))
+  check('REL12', 'unresolved wrong edge', 'SmartRouter record cannot cover TrieRouter', true, wrongEdgeRecord.metrics.false_ready,
+    JSON.stringify(relOf(wrongEdgeRecord).uncovered_relationship_ids))
+
+  // --- REL13: an endpoint-level record is not a relationship-level record
+  for (const subject of ['Hono.constructor', 'TrieRouter', 'src/router/trie-router/router.ts', 'impact.affected_set.trie-router-unreachable']) {
+    const endpointOnly = relRun(REL_IMPACT, relArtifact({
+      nodes: impactNodes, edges: [edge('SmartRouter'), edge('RegExpRouter')],
+      unresolved: [{ relationship_id: subject, status: 'unresolved' }],
+    }))
+    check('REL13', 'endpoint unresolved is insufficient', `subject ${subject}`, true, endpointOnly.metrics.false_ready)
+  }
+
+  // --- REL14: a synthetic arrow token is not a declared subject
+  const arrow = relRun(REL_IMPACT, relArtifact({
+    nodes: impactNodes, edges: [edge('SmartRouter'), edge('RegExpRouter')],
+    unresolved: [{ relationship_id: 'Hono.constructor->TrieRouter', status: 'unresolved' }],
+  }))
+  check('REL14', 'synthetic arrow rejected', 'from->to token does not cover', true, arrow.metrics.false_ready)
+}
+
+// --- REL15: root cause accepts no unresolved record --------------------------
+{
+  const declared = relRun([REL_ROOT], relArtifact({
+    nodes: DISPATCH_NODES, edges: [],
+    unresolved: [{ relationship_id: 'relationship:rootcause:dispatch-calls-compose', status: 'unresolved' }],
+  }), { policy: 'forbidden' })
+  check('REL15', 'root-cause unresolved forbidden', 'exact record does not suppress', true, declared.metrics.false_ready,
+    declared.adjudication.clauses[0].detail ?? '')
+
+  const satisfied = relRun([REL_ROOT], relArtifact({ nodes: DISPATCH_NODES, edges: [{ from: 'Hono.#dispatch', to: 'compose', relation: 'calls' }] }), { policy: 'forbidden' })
+  check('REL15', 'root-cause unresolved forbidden', 'a real edge does satisfy it', false, satisfied.metrics.false_ready)
+}
+
+// --- REL16: arch structural relations ----------------------------------------
+{
+  const archNodes = [{ label: 'createStorage', file: 'src/storage.ts' }, { label: 'Driver', file: 'src/types.ts' }]
+  for (const relation of ['param_type', 'uses', 'references', 'depends_on']) {
+    const v = relRun([REL_ARCH], relArtifact({ nodes: archNodes, edges: [{ from: 'createStorage', to: 'Driver', relation }] }))
+    check('REL16', 'arch structural relation', `relation ${relation} accepted`, false, v.metrics.false_ready)
+  }
+  const reverse = relRun([REL_ARCH], relArtifact({ nodes: archNodes, edges: [{ from: 'Driver', to: 'createStorage', relation: 'uses' }] }))
+  check('REL16', 'arch structural relation', 'reverse rejected', true, reverse.metrics.false_ready)
+  const unrelated = relRun([REL_ARCH], relArtifact({ nodes: archNodes, edges: [{ from: 'createStorage', to: 'Driver', relation: 'contains' }] }))
+  check('REL16', 'arch structural relation', 'unrelated relation rejected', true, unrelated.metrics.false_ready)
+}
+
+// --- REL17: adjacency-only channels prove nothing ----------------------------
+{
+  const adjacency = {
+    pack: {
+      matched_nodes: [{ node_id: 'n0', label: 'Hono.#dispatch', source_file: 'src/hono-base.ts' }, { node_id: 'n1', label: 'compose', source_file: 'src/compose.ts' }],
+      execution_slice: { steps: [{ label: 'Hono.#dispatch', source_file: 'src/hono-base.ts' }, { label: 'compose', source_file: 'src/compose.ts' }] },
+      top_paths_per_community: [{ label: 'c', path: ['Hono.#dispatch', 'compose'] }],
+      direct_dependents: [{ label: 'compose', source_file: 'src/compose.ts', relation: 'calls' }],
+      target: 'Hono.#dispatch',
+    },
+    evidence: { answerability: { state: 'ready_with_caveat' } },
+  }
+  const v = relRun([REL_FLOW], adjacency)
+  check('REL17', 'adjacency proves nothing', 'consecutive steps are not an edge', true, v.metrics.false_ready,
+    `${relOf(v).typed_edges_observed} typed edge(s) observed`)
+  check('REL17', 'adjacency proves nothing', 'no typed edge extracted', 0, relOf(v).typed_edges_observed)
+
+  // The same two nodes, now joined by a declared typed channel.
+  const typed = relRun([REL_FLOW], relArtifact({ nodes: DISPATCH_NODES, edges: [{ from: 'Hono.#dispatch', to: 'compose', relation: 'calls' }] }))
+  check('REL17', 'adjacency proves nothing', 'a typed edge does count', false, typed.metrics.false_ready)
+}
+
+// --- REL18: relationship contract drift --------------------------------------
+{
+  const copyRoot = mkdtempSync(join(tmpdir(), 'madar-tier1-rel18-'))
+  cpSync(join(ROOT, 'docs'), join(copyRoot, 'docs'), { recursive: true })
+  const contractPath = join(copyRoot, 'docs/qualification/tier1-adjudication.json')
+  const original = readFileSync(contractPath, 'utf8')
+  const baseDigest = createHash('sha256').update(original).digest('hex')
+
+  const mutate = (fn) => {
+    const copy = JSON.parse(original)
+    fn(copy)
+    writeFileSync(contractPath, `${JSON.stringify(copy, null, 2)}\n`)
+    const loaded = loadAdjudication(copyRoot, { requiredClauses: REQUIRED_CLAUSES })
+    return { loaded, digest: createHash('sha256').update(readFileSync(contractPath, 'utf8')).digest('hex') }
+  }
+
+  const clean = loadAdjudication(copyRoot, { requiredClauses: REQUIRED_CLAUSES })
+  check('REL18', 'relationship contract drift', 'unmodified copy loads', 0, clean.problems.length,
+    clean.problems.slice(0, 2).join('; '))
+
+  for (const [name, fn, expectProblem] of [
+    ['direction', (c) => { c.relationship_requirements[0].direction = 'either' }, true],
+    ['relation kinds emptied', (c) => { c.relationship_requirements[0].relation_kinds = [] }, true],
+    ['cardinality', (c) => { c.relationship_requirements[0].required_edge_count = 0 }, true],
+    ['endpoint path', (c) => { c.relationship_requirements[0].source_selector.path = 'src/elsewhere.ts' }, false],
+    ['unresolved subject', (c) => { c.relationship_requirements[0].unresolved_subject_id = 'relationship:something-else' }, true],
+    ['unknown field', (c) => { c.relationship_requirements[0].fuzzy = true }, true],
+    ['duplicate id', (c) => { c.relationship_requirements.push({ ...c.relationship_requirements[0] }) }, true],
+    ['unknown relationship reference', (c) => { const e = c.entries.find((x) => x.predicate.kind === 'must_not_ready_when_relationships_missing'); e.predicate.params.relationship_ids = ['relationship:nope'] }, true],
+    ['unsupported topology', (c) => { c.relationship_requirements[0].topology = 'transitive_path' }, true],
+    ['adapter without relation field', (c) => { delete c.relationship_channels[0].relation_field }, true],
+  ]) {
+    const { loaded, digest } = mutate(fn)
+    check('REL18', 'relationship contract drift', `${name} changes the digest`, true, digest !== baseDigest)
+    if (expectProblem) {
+      check('REL18', 'relationship contract drift', `${name} is refused`, true,
+        loaded.problems.some((problem) => problem.includes('adjudication_contract_mismatch')),
+        loaded.problems[0] ?? 'no mismatch recorded')
+    }
+  }
+  writeFileSync(contractPath, original)
+  rmSync(copyRoot, { recursive: true, force: true })
 }
 
 rmSync(fixtureDir, { recursive: true, force: true })

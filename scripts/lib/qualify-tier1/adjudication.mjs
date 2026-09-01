@@ -29,8 +29,18 @@ export const PREDICATE_KINDS = new Set([
   'required_typed_absence',
   'prohibited_substitution_absent',
   'must_not_ready_when_requirements_missing',
+  'must_not_ready_when_relationships_missing',
   'typed_unresolved_requirement_present',
 ])
+
+/** Topologies the relationship model supports. Anything else fails closed. */
+export const RELATIONSHIP_TOPOLOGIES = new Set(['direct_edge'])
+/** Directions the relationship model supports. */
+export const RELATIONSHIP_DIRECTIONS = new Set(['forward'])
+/** Group cardinalities. */
+export const RELATIONSHIP_GROUP_MATCH = new Set(['all_required'])
+/** What may suppress a missing relationship. */
+export const UNRESOLVED_POLICIES = new Set(['exact_per_relationship', 'forbidden'])
 
 const sha256 = (text) => createHash('sha256').update(text, 'utf8').digest('hex')
 
@@ -108,6 +118,69 @@ export function loadAdjudication(root, { requiredClauses = [] } = {}) {
     requirementsById.set(requirement.id, requirement)
   }
 
+  // ---- relationship adapters ----------------------------------------------
+  const adapters = requireArray(contract.relationship_channels)
+  const ADAPTER_FIELDS = new Set(['channel', 'source_field', 'target_field', 'relation_field',
+    'source_id_field', 'target_id_field', 'semantic_direction', 'endpoint_resolution',
+    'node_record_channels', 'rationale'])
+  const seenAdapters = new Set()
+  for (const adapter of adapters) {
+    for (const key of Object.keys(adapter)) {
+      if (!ADAPTER_FIELDS.has(key)) problems.push(`${CONTRACT_MISMATCH}: relationship adapter ${adapter.channel} declares unknown field ${key}`)
+    }
+    if (typeof adapter.channel !== 'string' || !adapter.channel.startsWith('.')) { problems.push(`${CONTRACT_MISMATCH}: relationship adapter has no schema-path channel`); continue }
+    if (seenAdapters.has(adapter.channel)) problems.push(`${CONTRACT_MISMATCH}: duplicate relationship adapter ${adapter.channel}`)
+    seenAdapters.add(adapter.channel)
+    for (const key of ['source_field', 'target_field', 'relation_field', 'semantic_direction', 'endpoint_resolution']) {
+      if (typeof adapter[key] !== 'string' || !adapter[key]) problems.push(`${CONTRACT_MISMATCH}: relationship adapter ${adapter.channel} is missing ${key}`)
+    }
+    if (adapter.semantic_direction !== 'source_to_target') problems.push(`${CONTRACT_MISMATCH}: relationship adapter ${adapter.channel} declares unsupported semantic_direction ${JSON.stringify(adapter.semantic_direction)}`)
+    if (!['node_id', 'unique_label_in_scope'].includes(adapter.endpoint_resolution)) problems.push(`${CONTRACT_MISMATCH}: relationship adapter ${adapter.channel} declares unsupported endpoint_resolution ${JSON.stringify(adapter.endpoint_resolution)}`)
+    if (!Array.isArray(adapter.node_record_channels) || adapter.node_record_channels.length === 0) problems.push(`${CONTRACT_MISMATCH}: relationship adapter ${adapter.channel} declares no node record channels`)
+  }
+
+  // ---- relationship requirements -------------------------------------------
+  const relationshipsById = new Map()
+  const REL_FIELDS = new Set(['id', 'source_selector', 'target_selector', 'direction', 'topology',
+    'relation_kinds', 'required_edge_count', 'unresolved_subject_id', 'rationale', 'frozen_clause'])
+  for (const requirement of requireArray(contract.relationship_requirements)) {
+    for (const key of Object.keys(requirement)) {
+      if (!REL_FIELDS.has(key)) { problems.push(`${CONTRACT_MISMATCH}: relationship ${requirement.id} declares unknown field ${key}`) }
+    }
+    if (typeof requirement.id !== 'string' || !requirement.id) { problems.push(`${CONTRACT_MISMATCH}: a relationship requirement has no id`); continue }
+    if (relationshipsById.has(requirement.id)) { problems.push(`${CONTRACT_MISMATCH}: duplicate relationship id ${requirement.id}`); continue }
+    let bad = false
+    for (const side of ['source_selector', 'target_selector']) {
+      const selector = requirement[side]
+      if (!selector || typeof selector.path !== 'string' || !selector.path
+        || !Array.isArray(selector.symbols) || selector.symbols.length === 0
+        || !selector.symbols.every((symbol) => typeof symbol === 'string' && symbol)) {
+        problems.push(`${CONTRACT_MISMATCH}: relationship ${requirement.id} has a malformed ${side}`); bad = true; continue
+      }
+      const doc = readDoc(selector.frozen_source?.file)
+      if (!doc) { problems.push(`${CONTRACT_MISMATCH}: relationship ${requirement.id} ${side} references unreadable ${selector.frozen_source?.file}`); bad = true; continue }
+      const node = resolvePointer(doc, selector.frozen_source?.pointer ?? '')
+      if (node === undefined) { problems.push(`${CONTRACT_MISMATCH}: relationship ${requirement.id} ${side} pointer does not resolve`); bad = true; continue }
+      const actual = sha256(JSON.stringify(node))
+      if (actual !== selector.frozen_source?.identity_sha256) {
+        problems.push(`${CONTRACT_MISMATCH}: relationship ${requirement.id} ${side} frozen identity changed (recorded ${selector.frozen_source?.identity_sha256}, actual ${actual})`); bad = true
+      }
+    }
+    if (!RELATIONSHIP_TOPOLOGIES.has(requirement.topology)) { problems.push(`${CONTRACT_MISMATCH}: relationship ${requirement.id} declares unsupported topology ${JSON.stringify(requirement.topology)}`); bad = true }
+    if (!RELATIONSHIP_DIRECTIONS.has(requirement.direction)) { problems.push(`${CONTRACT_MISMATCH}: relationship ${requirement.id} declares unsupported direction ${JSON.stringify(requirement.direction)}`); bad = true }
+    if (!Array.isArray(requirement.relation_kinds) || requirement.relation_kinds.length === 0
+      || !requirement.relation_kinds.every((kind) => typeof kind === 'string' && kind)) {
+      problems.push(`${CONTRACT_MISMATCH}: relationship ${requirement.id} declares an empty or malformed relation kind set`); bad = true
+    }
+    if (!Number.isInteger(requirement.required_edge_count) || requirement.required_edge_count < 1) {
+      problems.push(`${CONTRACT_MISMATCH}: relationship ${requirement.id} has a malformed required_edge_count`); bad = true
+    }
+    if (requirement.unresolved_subject_id !== null && requirement.unresolved_subject_id !== requirement.id) {
+      problems.push(`${CONTRACT_MISMATCH}: relationship ${requirement.id} declares unresolved_subject_id ${JSON.stringify(requirement.unresolved_subject_id)}; it must equal the relationship id or be null`); bad = true
+    }
+    if (!bad) relationshipsById.set(requirement.id, requirement)
+  }
+
   // ---- entries -------------------------------------------------------------
   const byClause = new Map()
   const seenIds = new Set()
@@ -140,7 +213,7 @@ export function loadAdjudication(root, { requiredClauses = [] } = {}) {
       problems.push(`${CONTRACT_MISMATCH}: entry ${entry.id} declares unknown predicate kind ${JSON.stringify(entry.predicate?.kind)}`)
       continue
     }
-    const malformed = validateParams(entry, requirementsById)
+    const malformed = validateParams(entry, requirementsById, relationshipsById)
     if (malformed) { problems.push(`${CONTRACT_MISMATCH}: entry ${entry.id} has malformed parameters: ${malformed}`); continue }
 
     byClause.set(key, entry)
@@ -161,10 +234,20 @@ export function loadAdjudication(root, { requiredClauses = [] } = {}) {
     }
   }
 
-  return { contract, digest, problems, byClause, requirementsById }
+  // Every declared relationship must be used by some entry, and no entry may
+  // name one that does not exist.
+  const used = new Set()
+  for (const entry of byClause.values()) {
+    for (const id of entry.predicate?.params?.relationship_ids ?? []) used.add(id)
+  }
+  for (const id of relationshipsById.keys()) {
+    if (!used.has(id)) problems.push(`${CONTRACT_MISMATCH}: relationship ${id} is declared but no clause uses it`)
+  }
+
+  return { contract, digest, problems, byClause, requirementsById, relationshipsById, adapters }
 }
 
-function validateParams(entry, requirementsById) {
+function validateParams(entry, requirementsById, relationshipsById) {
   const p = entry.predicate?.params
   if (p === null || typeof p !== 'object') return 'params is not an object'
   const strings = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string')
@@ -194,14 +277,7 @@ function validateParams(entry, requirementsById) {
       if (!strings(p.requirement_ids) || p.requirement_ids.length === 0) return 'requirement_ids must be a non-empty string array'
       for (const id of p.requirement_ids) if (!requirementsById.has(id)) return `unknown requirement identity ${id}`
       if (!['any_missing', 'partial_only'].includes(p.match)) return 'match must be any_missing or partial_only'
-      if (p.relationship != null) {
-        const strs = (v) => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string')
-        if (!strs(p.relationship.from) || !strs(p.relationship.to)) return 'relationship endpoints are malformed'
-        for (const id of [...p.relationship.from, ...p.relationship.to]) {
-          if (!requirementsById.has(id)) return `relationship names unknown requirement identity ${id}`
-          if (!p.requirement_ids.includes(id)) return `relationship endpoint ${id} is not among requirement_ids`
-        }
-      }
+      if (p.relationship != null) return 'must_not_ready_when_requirements_missing no longer carries a relationship; use must_not_ready_when_relationships_missing'
       if (!strings(p.ready_states)) return 'ready_states must be a string array'
       if (p.unresolved != null) {
         const channelProblem = validateChannels(p.unresolved.channels)
@@ -209,6 +285,28 @@ function validateParams(entry, requirementsById) {
       }
       return null
     }
+    case 'must_not_ready_when_relationships_missing': {
+      if (!strings(p.relationship_ids) || p.relationship_ids.length === 0) return 'relationship_ids must be a non-empty string array'
+      for (const id of p.relationship_ids) if (!relationshipsById.has(id)) return `unknown relationship id ${id}`
+      if (!RELATIONSHIP_GROUP_MATCH.has(p.group_match)) return `unsupported group_match ${JSON.stringify(p.group_match)}`
+      if (!strings(p.ready_states) || p.ready_states.length === 0) return 'ready_states must be a non-empty string array'
+      if (!UNRESOLVED_POLICIES.has(p.unresolved_policy)) return `unsupported unresolved_policy ${JSON.stringify(p.unresolved_policy)}`
+      if (p.unresolved_policy === 'exact_per_relationship') {
+        const channelProblem = validateChannels(p.unresolved_channels)
+        if (channelProblem) return channelProblem
+        // Every accepted subject value must be a declared relationship id.
+        for (const channel of p.unresolved_channels) {
+          const values = channel.shape === 'typed_record' ? channel.subject_values : channel.subject_tokens
+          for (const value of values) {
+            if (!relationshipsById.has(value)) return `unresolved channel ${channel.channel} accepts subject ${JSON.stringify(value)}, which is not a declared relationship id`
+          }
+        }
+      } else if (p.unresolved_channels != null) {
+        return 'unresolved_policy forbidden must not declare unresolved channels'
+      }
+      return null
+    }
+
     case 'typed_unresolved_requirement_present': {
       if (!strings(p.requirement_ids)) return 'requirement_ids must be a string array'
       return validateChannels(p.channels)
@@ -292,57 +390,116 @@ export function findTypedDeclaration(artifact, channels, subjectId) {
 }
 
 /**
- * Every relationship the artifact actually presents, as endpoint-label pairs.
+ * Node records the artifact publishes, indexed for endpoint resolution.
  *
- * A clause that speaks of "the relationship between A and B" is not satisfied by
- * A and B both appearing somewhere: two isolated nodes are not an edge. These
- * are the channels in which Madar states that two things are connected.
+ * A relationship endpoint is never matched by label alone. An edge names its
+ * endpoints; those names are resolved to a node record carrying a source file,
+ * and only then compared against the frozen path AND symbol. A same-named
+ * symbol in another file, or the right file with another symbol, does not
+ * satisfy a frozen selector.
  */
-export function extractRelationshipEdges(artifact) {
+function collectNodeRecords(artifact, channels) {
+  const byId = new Map()
+  const byLabel = new Map()
+  for (const channel of channels) {
+    for (const node of readChannel(artifact, channel)) {
+      if (node === null || typeof node !== 'object' || Array.isArray(node)) continue
+      const label = typeof node.label === 'string' ? node.label : null
+      const file = typeof node.source_file === 'string' ? node.source_file : null
+      if (!label || !file) continue
+      const record = { label, source_file: file, node_id: typeof node.node_id === 'string' ? node.node_id : null, channel }
+      if (record.node_id && !byId.has(record.node_id)) byId.set(record.node_id, record)
+      const seen = byLabel.get(label)
+      if (seen === undefined) byLabel.set(label, record)
+      else if (seen && seen.source_file !== file) byLabel.set(label, null) // ambiguous: fail closed
+    }
+  }
+  return { byId, byLabel }
+}
+
+/** Does a resolved node record satisfy a frozen endpoint selector? */
+function endpointMatches(record, selector, normaliseSymbol) {
+  if (!record) return false
+  if (record.source_file !== selector.path) return false
+  const wanted = new Set((selector.symbols ?? []).map(normaliseSymbol))
+  return wanted.has(normaliseSymbol(record.label))
+}
+
+/**
+ * Every typed relationship the artifact presents, through declared adapters.
+ *
+ * Only a channel whose schema carries an explicit source, an explicit target, an
+ * explicit relation kind and a defined semantic direction can prove a
+ * relationship. Adjacency — two nodes next to each other in a traversal, or
+ * merely both present in a Pack — proves nothing and is not read here.
+ */
+export function extractTypedEdges(artifact, adapters) {
   const edges = []
-  const push = (from, to, channel) => {
-    if (typeof from === 'string' && typeof to === 'string' && from && to) edges.push({ from, to, channel })
-  }
-  const pack = artifact.pack ?? {}
-  for (const rel of pack.relationships ?? []) push(rel.from, rel.to, '.pack.relationships[]')
-  for (const rel of pack.review_bundle?.relationships ?? []) push(rel.from, rel.to, '.pack.review_bundle.relationships[]')
-  for (const rel of pack.slice?.selected_paths ?? []) push(rel.from, rel.to, '.pack.slice.selected_paths[]')
-  for (const key of ['direct_dependents', 'transitive_dependents']) {
-    for (const entry of pack[key] ?? []) push(pack.target, entry.label, `.pack.${key}[]`)
-  }
-  for (const community of pack.top_paths_per_community ?? []) {
-    const path = community.path ?? []
-    for (let index = 0; index + 1 < path.length; index += 1) push(path[index], path[index + 1], '.pack.top_paths_per_community[].path[]')
-  }
-  for (const key of ['steps', 'primary_path']) {
-    const steps = key === 'steps' ? pack.execution_slice?.steps : pack.execution_slice?.primary_path?.steps
-    for (let index = 0; index + 1 < (steps ?? []).length; index += 1) {
-      push(steps[index].label, steps[index + 1].label, `.pack.execution_slice.${key}[]`)
+  for (const adapter of adapters ?? []) {
+    const nodes = collectNodeRecords(artifact, adapter.node_record_channels ?? [])
+    for (const raw of readChannel(artifact, adapter.channel)) {
+      if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) continue
+      const relation = raw[adapter.relation_field]
+      const sourceLabel = raw[adapter.source_field]
+      const targetLabel = raw[adapter.target_field]
+      if (typeof relation !== 'string' || typeof sourceLabel !== 'string' || typeof targetLabel !== 'string') continue
+
+      const resolve = (idField, label) => {
+        const id = idField ? raw[idField] : null
+        if (typeof id === 'string' && nodes.byId.has(id)) return nodes.byId.get(id)
+        if (adapter.endpoint_resolution === 'node_id') return null
+        // `unique_label_in_scope`: exactly one node record may carry the label.
+        return nodes.byLabel.get(label) ?? null
+      }
+      edges.push({
+        channel: adapter.channel,
+        relation,
+        source_label: sourceLabel,
+        target_label: targetLabel,
+        source: resolve(adapter.source_id_field, sourceLabel),
+        target: resolve(adapter.target_id_field, targetLabel),
+      })
     }
   }
   return edges
 }
 
 /**
- * Does the artifact connect any endpoint of `from` to any endpoint of `to`?
- * Direction-insensitive: the frozen clauses speak of "the relationship between",
- * not of an ordered edge.
+ * Is one frozen relationship requirement satisfied?
+ *
+ * Direction and relation kind are both enforced. `forward` means the edge runs
+ * source → target as the channel's schema defines it; a reverse edge does not
+ * satisfy a forward requirement, and a relation outside the allowlist does not
+ * satisfy it either.
  */
-export function relationshipPresent(edges, fromRequirements, toRequirements, normaliseSymbol) {
-  const labels = (requirements) => new Set(
-    requirements.flatMap((requirement) => (requirement.symbols ?? []).map(normaliseSymbol)),
-  )
-  const left = labels(fromRequirements)
-  const right = labels(toRequirements)
+export function evaluateRelationship(requirement, edges, normaliseSymbol) {
+  const allowed = new Set(requirement.relation_kinds ?? [])
+  const matches = []
+  const nearMisses = []
   for (const edge of edges) {
-    const a = normaliseSymbol(edge.from)
-    const b = normaliseSymbol(edge.to)
-    if ((left.has(a) && right.has(b)) || (left.has(b) && right.has(a))) return { ...edge }
+    const forward = endpointMatches(edge.source, requirement.source_selector, normaliseSymbol)
+      && endpointMatches(edge.target, requirement.target_selector, normaliseSymbol)
+    const reverse = endpointMatches(edge.source, requirement.target_selector, normaliseSymbol)
+      && endpointMatches(edge.target, requirement.source_selector, normaliseSymbol)
+    if (!forward && !reverse) continue
+    const relationAllowed = allowed.has(edge.relation)
+    const directionOk = requirement.direction === 'forward' ? forward : (forward || reverse)
+    if (directionOk && relationAllowed) matches.push({ channel: edge.channel, relation: edge.relation, from: edge.source_label, to: edge.target_label })
+    else nearMisses.push({ channel: edge.channel, relation: edge.relation, from: edge.source_label, to: edge.target_label, rejected_for: !directionOk ? 'direction' : 'relation_kind' })
   }
-  return null
+  const required = requirement.required_edge_count ?? 1
+  return {
+    id: requirement.id,
+    present: matches.length >= required,
+    matches,
+    rejected: nearMisses,
+    required_edge_count: required,
+    direction: requirement.direction,
+    relation_kinds: [...allowed].sort(),
+  }
 }
 
-/** Is one frozen requirement identity surfaced by the evidence set? */
+/** Is one frozen requirement identity surfaced by the evidence set? *//** Is one frozen requirement identity surfaced by the evidence set? */
 export function requirementPresent(requirement, evidence, normaliseSymbol) {
   const paths = new Set(evidence.generous.paths)
   const symbols = new Set(evidence.generous.symbols.map(normaliseSymbol))

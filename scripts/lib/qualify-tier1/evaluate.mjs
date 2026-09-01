@@ -8,7 +8,7 @@
 // declaration of anything.
 
 import { READY_STATES, answerabilityRank, normaliseSymbol, snippetSymbolSightings } from './artifact.mjs'
-import { extractRelationshipEdges, findTypedDeclaration, relationshipPresent, requirementPresent } from './adjudication.mjs'
+import { evaluateRelationship, extractTypedEdges, findTypedDeclaration, requirementPresent } from './adjudication.mjs'
 import { pathExistsInTarget, symbolExistsInTarget } from './targets.mjs'
 
 /**
@@ -51,7 +51,7 @@ function recall(required, observedSet) {
  * Returns { satisfied, detail, observed }. `satisfied` false means the frozen
  * requirement this predicate stands for was NOT met.
  */
-function applyPredicate({ entry, artifact, evidence, answerability, targetDir, obligations, requirementsById }) {
+function applyPredicate({ entry, artifact, evidence, answerability, targetDir, obligations, requirementsById, relationshipsById, adapters }) {
   const { kind, params } = entry.predicate
   const observedPaths = new Set(evidence.generous.paths)
 
@@ -139,66 +139,76 @@ function applyPredicate({ entry, artifact, evidence, answerability, targetDir, o
       })
       const missing = status.filter((entryStatus) => !entryStatus.present)
       const present = status.filter((entryStatus) => entryStatus.present)
-
-      // A clause about a RELATIONSHIP is not satisfied by its endpoints merely
-      // appearing: two isolated nodes are not an edge. When the clause declares
-      // its endpoint groups, the edge itself is checked.
-      let relationship = null
-      if (params.relationship) {
-        const edges = extractRelationshipEdges(artifact)
-        const requirementsFor = (ids) => ids.map((id) => requirementsById.get(id)).filter(Boolean)
-        relationship = {
-          from: params.relationship.from,
-          to: params.relationship.to,
-          edge: relationshipPresent(edges, requirementsFor(params.relationship.from), requirementsFor(params.relationship.to), normaliseSymbol),
-          edges_observed: edges.length,
-        }
-      }
-      const relationshipMissing = params.relationship ? relationship.edge === null : false
-
-      const endpointTrigger = params.match === 'partial_only'
+      const triggered = params.match === 'partial_only'
         ? present.length > 0 && missing.length > 0
         : missing.length > 0
-      const triggered = endpointTrigger || relationshipMissing
 
       if (!params.ready_states.includes(answerability)) {
-        return { satisfied: true, detail: `answerability '${answerability}' is not a ready state; the clause is vacuously satisfied`, observed: { requirement_status: status, relationship, triggered } }
+        return { satisfied: true, detail: `answerability '${answerability}' is not a ready state; the clause is vacuously satisfied`, observed: { requirement_status: status, triggered } }
       }
-      if (!triggered) {
-        return { satisfied: true, detail: null, observed: { requirement_status: status, relationship, triggered } }
-      }
+      if (!triggered) return { satisfied: true, detail: null, observed: { requirement_status: status, triggered } }
 
-      // The clause's own escape hatch, when it has one: a typed unresolved
-      // record naming the EXACT requirement that is missing. A record for a
-      // different requirement carries nothing about this gap.
+      // Every missing requirement needs its own typed record naming it exactly.
       const uncovered = []
       const covered = []
-      if (params.unresolved) {
-        for (const entryStatus of missing) {
-          const hit = findTypedDeclaration(artifact, params.unresolved.channels, entryStatus.id)
-          if (hit) covered.push({ requirement_id: entryStatus.id, ...hit })
-          else uncovered.push(entryStatus.id)
-        }
-        if (relationshipMissing) {
-          const hit = findTypedDeclaration(artifact, params.unresolved.channels, `${params.relationship.from[0]}->${params.relationship.to[0]}`)
-          if (hit) covered.push({ relationship: true, ...hit })
-          else uncovered.push('relationship')
-        }
-      } else {
-        uncovered.push(...missing.map((entryStatus) => entryStatus.id))
-        if (relationshipMissing) uncovered.push('relationship')
+      for (const entryStatus of missing) {
+        const hit = params.unresolved ? findTypedDeclaration(artifact, params.unresolved.channels, entryStatus.id) : null
+        if (hit) covered.push({ requirement_id: entryStatus.id, ...hit })
+        else uncovered.push(entryStatus.id)
       }
-
       if (uncovered.length === 0) {
-        return { satisfied: true, detail: `every missing requirement is carried by its own typed unresolved record (${covered.map((c) => c.channel).join(', ')})`, observed: { requirement_status: status, relationship, triggered, unresolved: covered } }
+        return { satisfied: true, detail: `every missing requirement is carried by its own typed unresolved record`, observed: { requirement_status: status, triggered, unresolved: covered } }
       }
-      const what = relationshipMissing && missing.length === 0
-        ? `the relationship between ${JSON.stringify(params.relationship.from)} and ${JSON.stringify(params.relationship.to)} is absent from every relationship channel`
-        : `frozen requirement(s) ${JSON.stringify(missing.map((m) => m.id))} were missing from the evidence set${relationshipMissing ? ', and so is the relationship between them' : ''}`
       return {
         satisfied: false,
-        detail: `reported ready state '${answerability}' while ${what}, and ${JSON.stringify(uncovered)} ${uncovered.length === 1 ? 'is' : 'are'} not covered by a typed unresolved record`,
-        observed: { requirement_status: status, relationship, triggered, unresolved: covered, uncovered },
+        detail: `reported ready state '${answerability}' while frozen requirement(s) ${JSON.stringify(missing.map((m) => m.id))} were missing, and ${JSON.stringify(uncovered)} ${uncovered.length === 1 ? 'is' : 'are'} not covered by a typed unresolved record`,
+        observed: { requirement_status: status, triggered, unresolved: covered, uncovered },
+      }
+    }
+
+    case 'must_not_ready_when_relationships_missing': {
+      const edges = extractTypedEdges(artifact, adapters)
+      const outcomes = params.relationship_ids.map((id) => evaluateRelationship(relationshipsById.get(id), edges, normaliseSymbol))
+      const missing = outcomes.filter((outcome) => !outcome.present)
+      const observedBase = {
+        required_relationship_ids: params.relationship_ids,
+        present_relationship_ids: outcomes.filter((o) => o.present).map((o) => o.id),
+        missing_relationship_ids: missing.map((o) => o.id),
+        relationship_outcomes: outcomes,
+        relationship_channels_consulted: adapters.map((a) => a.channel),
+        typed_edges_observed: edges.length,
+        group_match: params.group_match,
+        unresolved_policy: params.unresolved_policy,
+      }
+
+      if (!params.ready_states.includes(answerability)) {
+        return { satisfied: true, detail: `answerability '${answerability}' is not a ready state; the clause is vacuously satisfied`, observed: { ...observedBase, exactly_unresolved_relationship_ids: [], uncovered_relationship_ids: [] } }
+      }
+      // group_match is all_required: every declared relationship must hold.
+      if (missing.length === 0) {
+        return { satisfied: true, detail: null, observed: { ...observedBase, exactly_unresolved_relationship_ids: [], uncovered_relationship_ids: [] } }
+      }
+
+      const exactlyUnresolved = []
+      const uncovered = []
+      for (const outcome of missing) {
+        const requirement = relationshipsById.get(outcome.id)
+        const eligible = params.unresolved_policy === 'exact_per_relationship' && requirement.unresolved_subject_id !== null
+        const hit = eligible ? findTypedDeclaration(artifact, params.unresolved_channels, requirement.unresolved_subject_id) : null
+        if (hit) exactlyUnresolved.push({ relationship_id: outcome.id, ...hit })
+        else uncovered.push(outcome.id)
+      }
+      const observed = { ...observedBase, exactly_unresolved_relationship_ids: exactlyUnresolved.map((e) => e.relationship_id), uncovered_relationship_ids: uncovered, unresolved_records: exactlyUnresolved }
+      if (uncovered.length === 0) {
+        return { satisfied: true, detail: `every missing relationship is carried by a typed unresolved record naming it exactly`, observed }
+      }
+      const rejected = missing.flatMap((o) => o.rejected.map((r) => `${o.id}: ${r.from} -${r.relation}-> ${r.to} rejected for ${r.rejected_for}`))
+      return {
+        satisfied: false,
+        detail: `reported ready state '${answerability}' while relationship(s) ${JSON.stringify(uncovered)} were neither present in any declared relationship channel nor declared unresolved by an exact typed record`
+          + (rejected.length > 0 ? `; edges rejected: ${JSON.stringify(rejected)}` : '')
+          + ` (${edges.length} typed edge(s) observed, policy ${params.unresolved_policy})`,
+        observed,
       }
     }
 
@@ -255,7 +265,7 @@ export function evaluateTaskCell({ cell, task, target, truth, truthFile, prepara
       contractProblems.push(`${ADJUDICATION_MISMATCH}: no adjudication entry for ${key}`)
       continue
     }
-    const outcome = applyPredicate({ entry, artifact, evidence, answerability, targetDir, obligations, requirementsById: adjudication.requirementsById })
+    const outcome = applyPredicate({ entry, artifact, evidence, answerability, targetDir, obligations, requirementsById: adjudication.requirementsById, relationshipsById: adjudication.relationshipsById, adapters: adjudication.adapters })
     adjudicated.push({ adjudication_id: entry.id, clause: clauses[index], clause_sha256: entry.source.clause_sha256, predicate: entry.predicate.kind, ...outcome })
   }
 
@@ -331,9 +341,33 @@ export function evaluateTaskCell({ cell, task, target, truth, truthFile, prepara
     },
     adjudication: {
       contract_digest: adjudication.digest,
+      adjudication_version: adjudication.contract?.adjudication_version ?? null,
       clauses: adjudicated,
       contract_problems: contractProblems,
+      relationships: summariseRelationships(adjudicated),
     },
+  }
+}
+
+/**
+ * The relationship picture for one cell, flattened so a reader does not have to
+ * reassemble it from predicate internals.
+ */
+function summariseRelationships(adjudicated) {
+  const relationshipClauses = adjudicated.filter((entry) => entry.predicate === 'must_not_ready_when_relationships_missing')
+  if (relationshipClauses.length === 0) return null
+  const merge = (key) => [...new Set(relationshipClauses.flatMap((entry) => entry.observed[key] ?? []))].sort()
+  return {
+    required_relationship_ids: merge('required_relationship_ids'),
+    present_relationship_ids: merge('present_relationship_ids'),
+    missing_relationship_ids: merge('missing_relationship_ids'),
+    exactly_unresolved_relationship_ids: merge('exactly_unresolved_relationship_ids'),
+    uncovered_relationship_ids: merge('uncovered_relationship_ids'),
+    channels_consulted: merge('relationship_channels_consulted'),
+    directions_evaluated: [...new Set(relationshipClauses.flatMap((entry) => (entry.observed.relationship_outcomes ?? []).map((o) => o.direction)))].sort(),
+    relation_kinds_evaluated: [...new Set(relationshipClauses.flatMap((entry) => (entry.observed.relationship_outcomes ?? []).flatMap((o) => o.relation_kinds)))].sort(),
+    typed_edges_observed: Math.max(0, ...relationshipClauses.map((entry) => entry.observed.typed_edges_observed ?? 0)),
+    false_ready_decision: relationshipClauses.some((entry) => !entry.satisfied),
   }
 }
 
@@ -354,7 +388,7 @@ export function evaluateProbe({ probe, probeIndex, evidence, artifact, answerabi
       contractProblems.push(`${ADJUDICATION_MISMATCH}: no adjudication entry for ${key}`)
       continue
     }
-    const outcome = applyPredicate({ entry, artifact, evidence, answerability, targetDir, obligations: null, requirementsById: adjudication.requirementsById })
+    const outcome = applyPredicate({ entry, artifact, evidence, answerability, targetDir, obligations: null, requirementsById: adjudication.requirementsById, relationshipsById: adjudication.relationshipsById, adapters: adjudication.adapters })
     adjudicated.push({ adjudication_id: entry.id, requirement: requirements[index], clause_sha256: entry.source.clause_sha256, predicate: entry.predicate.kind, ...outcome })
   }
 

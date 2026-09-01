@@ -74,7 +74,7 @@ function syntheticAdjudication(predicates: { kind: string; params: Record<string
       predicate,
     })
   })
-  return { contract: null, digest: 'unit', byClause, requirementsById: new Map(requirements.map((r) => [r.id, r])), problems: [] }
+  return { contract: null, digest: 'unit', byClause, requirementsById: new Map(requirements.map((r) => [r.id, r])), relationshipsById: new Map(), adapters: [], problems: [] }
 }
 
 function probeAdjudication(predicates: { kind: string; params: Record<string, unknown> }[]) {
@@ -86,7 +86,7 @@ function probeAdjudication(predicates: { kind: string; params: Record<string, un
       predicate,
     })
   })
-  return { contract: null, digest: 'unit', byClause, requirementsById: new Map(), problems: [] }
+  return { contract: null, digest: 'unit', byClause, requirementsById: new Map(), relationshipsById: new Map(), adapters: [], problems: [] }
 }
 
 const TYPED_ABSENCE = [{
@@ -115,6 +115,46 @@ describe('the adjudication contract binds every frozen prose clause', () => {
   it('declares no natural-language predicate kind', () => {
     for (const banned of ['prose_matches', 'semantic_text_match', 'natural_language_assertion', 'negation_marker']) {
       expect(PREDICATE_KINDS.has(banned)).toBe(false)
+    }
+  })
+})
+
+describe('the relationship contract is version 2 and fully declared', () => {
+  const loaded = loadAdjudication(ROOT, { requiredClauses: REQUIRED_CLAUSES })
+
+  it('declares adjudication_version 2 with six relationships and three adapters', () => {
+    expect(loaded.problems).toEqual([])
+    expect((loaded.contract as { adjudication_version: number }).adjudication_version).toBe(2)
+    expect(loaded.relationshipsById.size).toBe(6)
+    expect(loaded.adapters).toHaveLength(3)
+  })
+
+  it('binds the flow source to Hono.#dispatch, not Hono.fetch', () => {
+    const flow = loaded.relationshipsById.get('relationship:flow:dispatch-calls-compose')
+    expect(flow?.source_selector.symbols).toEqual(['Hono.#dispatch'])
+    expect(flow?.source_selector.path).toBe('src/hono-base.ts')
+    expect(flow?.relation_kinds).toEqual(['calls'])
+    expect(flow?.direction).toBe('forward')
+  })
+
+  it('requires all three impact router relationships', () => {
+    const ids = [...loaded.relationshipsById.keys()].filter((id) => id.startsWith('relationship:impact:'))
+    expect(ids).toHaveLength(3)
+  })
+
+  it('gives root cause no unresolved escape', () => {
+    expect(loaded.relationshipsById.get('relationship:rootcause:dispatch-calls-compose')?.unresolved_subject_id).toBeNull()
+    expect(loaded.relationshipsById.get('relationship:flow:dispatch-calls-compose')?.unresolved_subject_id)
+      .toBe('relationship:flow:dispatch-calls-compose')
+  })
+
+  it('reads only channels that carry source, target and relation', () => {
+    expect(loaded.adapters.map((a) => a.channel).sort()).toEqual([
+      '.pack.relationships[]', '.pack.review_bundle.relationships[]', '.pack.slice.selected_paths[]',
+    ])
+    for (const adapter of loaded.adapters) {
+      expect(adapter.semantic_direction).toBe('source_to_target')
+      expect(adapter.relation_field).toBeTruthy()
     }
   })
 })

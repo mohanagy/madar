@@ -14,7 +14,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -92,6 +92,14 @@ async function main() {
   const runId = options.runId ?? new Date().toISOString().replace(/[:.]/g, '-')
   const outDir = resolve(ROOT, options.out)
   const logsDir = join(outDir, 'logs')
+  // A result directory is written once. Re-running into an existing one would
+  // overwrite evidence in place, which is exactly how a preserved attempt was
+  // lost earlier in this phase.
+  if (existsSync(outDir) && readdirSync(outDir).length > 0) {
+    console.error(`refusing to write into a non-empty output directory: ${options.out}`)
+    console.error('A superseded result is preserved, never regenerated in place. Choose a new directory.')
+    process.exit(1)
+  }
   mkdirSync(logsDir, { recursive: true })
 
   // ---- 1. Frozen inputs ---------------------------------------------------
@@ -340,6 +348,15 @@ async function main() {
     adjudication_contract: {
       path: ADJUDICATION_PATH,
       digest: adjudication.digest,
+      adjudication_version: adjudication.contract?.adjudication_version ?? null,
+      relationship_requirements: [...adjudication.relationshipsById.values()].map((r) => ({
+        id: r.id, direction: r.direction, topology: r.topology,
+        relation_kinds: r.relation_kinds, required_edge_count: r.required_edge_count,
+        source: `${r.source_selector.path}::${r.source_selector.symbols.join('|')}`,
+        target: `${r.target_selector.path}::${r.target_selector.symbols.join('|')}`,
+        unresolved_subject_id: r.unresolved_subject_id,
+      })).sort((a, b) => a.id.localeCompare(b.id)),
+      relationship_channels: adjudication.adapters.map((a) => a.channel).sort(),
       entry_count: adjudication.byClause.size,
       requirement_count: adjudication.requirementsById.size,
       clause_sha256: [...adjudication.byClause.entries()]
