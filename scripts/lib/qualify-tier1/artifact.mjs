@@ -6,6 +6,8 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { EVIDENCE_CHANNELS, channelFor, stringLeaves } from './channels.mjs'
+
 const GENERATE_TIMEOUT_MS = 900_000
 const PACK_TIMEOUT_MS = 600_000
 
@@ -112,85 +114,127 @@ export function readGraphIdentity(graphPath) {
   }
 }
 
-function addPath(set, value) {
-  if (typeof value !== 'string') return
+/**
+ * A repository-relative path, normalised for comparison against the frozen
+ * obligations. Absolute paths must never enter the evidence set or any durable
+ * output, so they are dropped rather than rewritten.
+ */
+function normalisePath(value) {
+  if (typeof value !== 'string') return null
   const trimmed = value.trim()
-  if (!trimmed) return
-  // Absolute paths must never enter the evidence set or any durable output.
-  if (trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) return
-  set.add(trimmed.split('\\').join('/'))
+  if (!trimmed) return null
+  if (trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) return null
+  return trimmed.split('\\').join('/')
 }
 
-function addPathish(set, value) {
-  if (typeof value === 'string') addPath(set, value)
-  else if (value && typeof value === 'object') {
-    addPath(set, value.path)
-    addPath(set, value.source_file)
-    addPath(set, value.file)
-  }
-}
-
-function addLabel(set, value) {
-  if (typeof value !== 'string') return
+function normaliseLabel(value) {
+  if (typeof value !== 'string') return null
   const trimmed = value.trim()
-  if (trimmed) set.add(trimmed)
+  return trimmed === '' ? null : trimmed
 }
 
 /**
  * Extract the evidence set the artifact presents as supporting material.
  *
+ * Every string channel is resolved through the declared registry in
+ * channels.mjs. A channel the registry does not classify is returned in
+ * `unclassified`; the caller must refuse to measure rather than guess, because
+ * a silently dropped channel is exactly how a symbol the product did surface
+ * gets scored as missing.
+ *
  * Two sets are produced deliberately:
  *   `strict`   — material the pack selected and presents as its evidence;
- *   `generous` — strict plus everything the pack merely points at (recommended
- *                reads, verification targets, workflow owners, hints).
+ *   `generous` — strict plus everything the pack merely points at.
  *
  * The verdict uses `generous`, which gives the product the maximum benefit of
- * the doubt: a cell that fails under the generous set cannot be dismissed as an
- * artefact of a narrow extraction rule. Both are recorded so the sensitivity of
- * the result to that choice is visible rather than hidden.
+ * the doubt. Both are recorded so the sensitivity of the result to that choice
+ * is visible rather than hidden.
+ *
+ * Snippets are recorded, never mined: substring-matching retained source text
+ * for symbol names is the fuzzy matching the frozen rubric forbids. Any effect
+ * mining them WOULD have is reported separately by `snippetSymbolSightings`.
  */
 export function extractEvidence(artifact) {
   const strictPaths = new Set()
   const strictSymbols = new Set()
   const generousPaths = new Set()
   const generousSymbols = new Set()
+  const snippets = []
+  const unclassified = []
+  const guarded = []
+  const basenameReferences = new Set()
+  const observedChannels = new Map()
 
-  const pack = artifact.pack ?? {}
-  addPath(strictPaths, pack.target_file)
-  addLabel(strictSymbols, pack.target ?? artifact.target)
-  for (const key of ['direct_dependents', 'transitive_dependents']) {
-    for (const entry of pack[key] ?? []) {
-      addPath(strictPaths, entry.source_file)
-      addLabel(strictSymbols, entry.label)
+  for (const leaf of stringLeaves(artifact)) {
+    const entry = channelFor(leaf.channel)
+    if (!entry) {
+      unclassified.push({ schema_path: leaf.schemaPath, channel: leaf.channel, value: leaf.value })
+      continue
+    }
+    if (!observedChannels.has(leaf.channel)) observedChannels.set(leaf.channel, { channel: leaf.channel, role: entry.role, tier: entry.tier, count: 0, sample: leaf.value })
+    observedChannels.get(leaf.channel).count += 1
+
+    if (entry.guard && !entry.guard(leaf.parent)) {
+      guarded.push({ schema_path: leaf.schemaPath, channel: leaf.channel, value: leaf.value })
+      continue
+    }
+    if (entry.role === 'path') {
+      const value = normalisePath(leaf.value)
+      if (!value) continue
+      // A value with no separator names a file but does not locate it. It can
+      // never satisfy a repository-relative obligation, and calling it
+      // fabricated because it does not resolve from the target root would be an
+      // artefact of this normalisation, not a product defect.
+      if (!value.includes('/')) { basenameReferences.add(value); continue }
+      generousPaths.add(value)
+      if (entry.tier === 'strict') strictPaths.add(value)
+    } else if (entry.role === 'symbol') {
+      const value = normaliseLabel(leaf.value)
+      if (!value) continue
+      generousSymbols.add(value)
+      if (entry.tier === 'strict') strictSymbols.add(value)
+    } else if (entry.role === 'snippet') {
+      snippets.push({ schema_path: leaf.schemaPath, channel: leaf.channel, text: leaf.value })
     }
   }
-  for (const file of pack.affected_files ?? []) addPath(strictPaths, file)
-  for (const entry of artifact.recommended_first_read ?? []) addPathish(strictPaths, entry)
-  for (const claim of artifact.claims ?? []) {
-    for (const label of claim.node_labels ?? []) addLabel(strictSymbols, label)
-  }
-
-  for (const value of strictPaths) generousPaths.add(value)
-  for (const value of strictSymbols) generousSymbols.add(value)
-
-  for (const entry of artifact.recommended_first_read ?? []) addLabel(generousSymbols, entry.label)
-  for (const owner of artifact.evidence?.covered_workflow_owners ?? []) addPathish(generousPaths, owner)
-  for (const target of artifact.evidence?.answerability?.verification_targets ?? []) {
-    for (const file of target.focus_files ?? []) addPath(generousPaths, file)
-  }
-  for (const key of ['likely_edit_files', 'likely_test_files', 'public_contracts', 'risk_boundaries']) {
-    for (const entry of artifact[key] ?? []) {
-      addPathish(generousPaths, entry)
-      if (entry && typeof entry === 'object') addLabel(generousSymbols, entry.label ?? entry.symbol ?? entry.name)
-    }
-  }
-  for (const center of artifact.workflow_centers ?? []) addLabel(generousSymbols, center.label)
 
   const sorted = (set) => [...set].sort()
   return {
     strict: { paths: sorted(strictPaths), symbols: sorted(strictSymbols) },
     generous: { paths: sorted(generousPaths), symbols: sorted(generousSymbols) },
+    basename_references: sorted(basenameReferences),
+    snippets,
+    unclassified,
+    guarded,
+    channels: [...observedChannels.values()].sort((a, b) => a.channel.localeCompare(b.channel)),
   }
+}
+
+/**
+ * Which of `symbols` appear as a token inside a retained snippet.
+ *
+ * REPORTED ONLY. A sighting here never enters observed symbols and never moves
+ * a verdict: the frozen rubric compares symbol entries the artifact enumerates,
+ * not source text it happens to include. Recording it makes the size of that
+ * distinction visible instead of leaving it to be argued about.
+ */
+export function snippetSymbolSightings(evidence, symbols) {
+  const sightings = []
+  for (const symbol of symbols) {
+    const token = new RegExp(`(^|[^A-Za-z0-9_$])${symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9_$]|$)`)
+    for (const snippet of evidence.snippets ?? []) {
+      if (token.test(snippet.text)) {
+        sightings.push({ symbol, schema_path: snippet.schema_path })
+        break
+      }
+    }
+  }
+  return sightings
+}
+
+/** The registry itself, for reports and controls. */
+export function declaredChannels() {
+  return EVIDENCE_CHANNELS.map((entry) => ({ channel: entry.channel, role: entry.role, tier: entry.tier ?? null, reason: entry.reason ?? null }))
 }
 
 /**
@@ -208,4 +252,97 @@ export function readAnswerability(artifact) {
   return artifact.evidence?.answerability?.state
     ?? artifact.governance?.directive?.answerability
     ?? null
+}
+
+/**
+ * Channels in which an artifact can say that something is absent, missing, or
+ * unresolved.
+ *
+ * These overlap the `ignored` evidence classifications on purpose. A caveat is
+ * not evidence ABOUT the target — counting it as evidence would let a pack earn
+ * recall by describing its own gaps — but it is exactly where a declaration of
+ * absence belongs. The two readings are separate and both are recorded.
+ */
+export const DECLARATION_CHANNELS = [
+  '.evidence.answerability.caveats[]',
+  '.evidence.answerability.missing_obligations[]',
+  '.evidence.answerability.verification_targets[].reason',
+  '.evidence.coverage_detail.missing_obligations[]',
+  '.evidence.confidence_reasons[]',
+  '.evidence.missing_phases[]',
+  '.governance.directive.missing_phases[]',
+  '.pack.answer_contract.uncertainty_notes[]',
+  '.pack.answer_contract.missing_phases[]',
+  '.pack.answer_contract.do_not_claim[]',
+  '.pack.execution_slice.phase_coverage.missing[]',
+  '.pack.execution_slice.boundary_reason',
+  '.pack.execution_slice.primary_path.boundary_reason',
+  '.negative_guidance[]',
+  '.missing_context[]',
+  '.missing_semantic[]',
+  '.claims[].text',
+  '.why_explanation[]',
+]
+
+const DECLARATION_CHANNEL_SET = new Set(DECLARATION_CHANNELS)
+
+/**
+ * Everything the artifact says about what it did NOT establish, with the exact
+ * schema path it said it at. Nothing is interpreted here.
+ */
+export function extractDeclarations(artifact) {
+  const declarations = []
+  for (const leaf of stringLeaves(artifact)) {
+    if (!DECLARATION_CHANNEL_SET.has(leaf.channel)) continue
+    const text = leaf.value.trim()
+    if (text) declarations.push({ schema_path: leaf.schemaPath, channel: leaf.channel, text })
+  }
+  // Verification targets name a file the artifact says still needs checking,
+  // which is a declaration that the matter is unresolved as well as a pointer.
+  for (const target of artifact.evidence?.answerability?.verification_targets ?? []) {
+    for (const file of target.focus_files ?? []) {
+      if (typeof file === 'string' && file.trim()) {
+        declarations.push({ schema_path: '.evidence.answerability.verification_targets[].focus_files[]', channel: '.evidence.answerability.verification_targets[].focus_files[]', text: file.trim() })
+      }
+    }
+  }
+  return declarations
+}
+
+/** Whole-word, case-insensitive containment. Never a substring match. */
+export function mentionsToken(text, token) {
+  if (!token) return false
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^A-Za-z0-9_$])${escaped}([^A-Za-z0-9_$]|$)`, 'i').test(text)
+}
+
+const GENERIC_PROMPT_WORDS = new Set([
+  'about', 'after', 'again', 'against', 'along', 'already', 'also', 'although', 'always', 'among',
+  'another', 'anything', 'around', 'because', 'been', 'before', 'being', 'below', 'between', 'both',
+  'could', 'describe', 'design', 'does', 'doing', 'during', 'each', 'either', 'else', 'enough',
+  'every', 'explain', 'from', 'further', 'given', 'happens', 'have', 'here', 'however', 'into',
+  'itself', 'library', 'might', 'more', 'most', 'much', 'must', 'name', 'need', 'never', 'other',
+  'over', 'part', 'people', 'project', 'repository', 'same', 'should', 'since', 'some', 'such',
+  'system', 'than', 'that', 'their', 'them', 'then', 'there', 'these', 'they', 'thing', 'this',
+  'those', 'through', 'under', 'until', 'using', 'value', 'values', '什么', 'what', 'when', 'where',
+  'whether', 'which', 'while', 'will', 'with', 'within', 'would', 'your',
+])
+
+/**
+ * The distinguishing subject terms of a frozen probe prompt.
+ *
+ * Derived from the frozen bytes by a fixed rule so the same prompt always
+ * yields the same terms: content tokens of five characters or more that are not
+ * generic English. The terms are recorded in the result, so the judgement a
+ * verdict rests on is inspectable rather than implicit.
+ */
+export function probeSubjectTerms(promptText) {
+  const tokens = String(promptText).toLowerCase().match(/[a-z][a-z0-9_]*/g) ?? []
+  const terms = new Set()
+  for (const token of tokens) {
+    if (token.length < 5) continue
+    if (GENERIC_PROMPT_WORDS.has(token)) continue
+    terms.add(token)
+  }
+  return [...terms].sort()
 }

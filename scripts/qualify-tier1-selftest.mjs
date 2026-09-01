@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Bounded falsifiability controls for the Tier 1 evaluator (E1-E6).
+// Bounded falsifiability controls for the Tier 1 evaluator (E1-E8, S1-S4).
 //
 // Every control runs in BOTH directions: it proves the detector reports the
 // defect when it is present AND reports clean when it is removed. A control
@@ -14,8 +14,9 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { buildFrozenManifest } from './lib/qualify-tier1/frozen.mjs'
-import { evaluateProbe, evaluateTaskCell } from './lib/qualify-tier1/evaluate.mjs'
-import { prepareTarget } from './lib/qualify-tier1/targets.mjs'
+import { extractDeclarations, extractEvidence, probeSubjectTerms } from './lib/qualify-tier1/artifact.mjs'
+import { MISSING_ABSENCE_DECLARATION, evaluateProbe, evaluateTaskCell } from './lib/qualify-tier1/evaluate.mjs'
+import { prepareTarget, symbolExistsInTarget } from './lib/qualify-tier1/targets.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const results = []
@@ -34,9 +35,12 @@ function check(id, title, arm, expectation, actual, detail = null) {
 const fixtureDir = mkdtempSync(join(tmpdir(), 'madar-tier1-selftest-'))
 const REAL_PATHS = ['src/compose.ts', 'src/hono-base.ts']
 mkdirSync(join(fixtureDir, 'src'), { recursive: true })
-for (const rel of REAL_PATHS) {
-  writeFileSync(join(fixtureDir, rel), '// selftest fixture\n')
-}
+// The fixture carries the identifiers the controls treat as real, so the
+// symbol-grounding check is exercised against genuine source text rather than a
+// stub that would agree with anything.
+writeFileSync(join(fixtureDir, 'src/compose.ts'), 'export function compose() {}\nexport const dispatch = 1\n')
+writeFileSync(join(fixtureDir, 'src/hono-base.ts'), 'export class Hono { fetch() {} }\nexport const SmartRouter = 1\nexport const match = 2\n')
+writeFileSync(join(fixtureDir, 'src/storage.ts'), 'export function createStorage() {}\nexport function getMount() {}\nexport interface Driver {}\n')
 
 function makeTruth(overrides = {}) {
   return {
@@ -52,23 +56,29 @@ function makeTruth(overrides = {}) {
   }
 }
 
-function makeEvidence({ paths, symbols }) {
+function makeEvidence({ paths, symbols, snippets = [] }) {
   const sorted = (values) => [...values].sort()
   return {
     strict: { paths: sorted(paths), symbols: sorted(symbols) },
     generous: { paths: sorted(paths), symbols: sorted(symbols) },
+    basename_references: [],
+    snippets,
+    unclassified: [],
+    guarded: [],
+    channels: [],
   }
 }
 
-function evaluateSynthetic({ paths, symbols, answerability = 'verify_targets', truth = makeTruth() }) {
+function evaluateSynthetic({ paths, symbols, snippets = [], declarations = [], answerability = 'verify_targets', truth = makeTruth() }) {
   return evaluateTaskCell({
     cell: { cell_id: 'synthetic@fixture', task_id: 'synthetic', target_id: 'fixture' },
     task: { id: 'synthetic', prompt: { text: 'x', sha256: 'x' } },
     target: { id: 'fixture', source: { ref: 'x' } },
     truth,
     preparation: { valid: true },
-    artifact: { evidence: { answerability: { missing_obligations: [], verification_targets: [] } } },
-    evidence: makeEvidence({ paths, symbols }),
+    artifact: { evidence: { answerability: { state: answerability, missing_obligations: [], verification_targets: [] } } },
+    evidence: makeEvidence({ paths, symbols, snippets }),
+    declarations,
     answerability,
     targetDir: fixtureDir,
   })
@@ -199,6 +209,294 @@ function evaluateSynthetic({ paths, symbols, answerability = 'verify_targets', t
     mutatedRules.problems.find((problem) => /tier1\.json content changed/.test(problem)) ?? 'no digest refusal recorded')
 
   rmSync(copyRoot, { recursive: true, force: true })
+}
+
+
+// --- E7: removing an observable absence declaration must break the probe -----
+// The frozen negative probes require the artifact to DECLARE that the requested
+// behaviour was not found. Attempt 1 recorded that requirement as unobservable
+// and still returned `pass`. Both arms below are run against the same probe, so
+// the only difference is whether the declaration is present.
+{
+  const probe = {
+    id: 'synthetic-absence-probe',
+    prompt: { text: 'How does this library encrypt values at rest before writing them through a backend?' },
+    ground_truth: 'There is no cryptography anywhere in src/.',
+    required_behaviour: [
+      'The artifact must not report a ready state.',
+      'The artifact must declare that the requested behaviour was not found.',
+      'No fabricated path or symbol may appear in the evidence set.',
+    ],
+  }
+  const evidence = makeEvidence({ paths: REAL_PATHS, symbols: ['compose'] })
+  const truthful = [{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No encrypt or backend key-management behaviour was found in this repository.' }]
+
+  const withDeclaration = evaluateProbe({
+    probe, evidence, declarations: truthful, answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+  })
+  check('E7', 'observable absence declaration', 'declaration present', 'pass', withDeclaration.state,
+    `matched ${JSON.stringify(withDeclaration.observed.absence_declaration.matches.map((entry) => entry.term))}`)
+  check('E7', 'observable absence declaration', 'declaration present (observed)', true,
+    withDeclaration.observed.absence_declaration.observed)
+
+  // Remove the declaration from an otherwise identical truthful result.
+  const withoutDeclaration = evaluateProbe({
+    probe, evidence, declarations: [], answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+  })
+  check('E7', 'observable absence declaration', 'declaration removed', 'fail', withoutDeclaration.state,
+    withoutDeclaration.reasons[0] ?? 'no reason recorded')
+  check('E7', 'observable absence declaration', 'declaration removed (exact reason)', true,
+    withoutDeclaration.reasons.some((reason) => reason.startsWith(MISSING_ABSENCE_DECLARATION)))
+
+  // A declaration that talks only about the pack's own coverage is not a
+  // declaration about the requested behaviour.
+  const genericOnly = evaluateProbe({
+    probe,
+    evidence,
+    declarations: [
+      { schema_path: '.evidence.answerability.missing_obligations[]', channel: '.evidence.answerability.missing_obligations[]', text: 'evidence:supporting' },
+      { schema_path: '.negative_guidance[]', channel: '.negative_guidance[]', text: 'Do not assume missing required evidence is covered: supporting.' },
+    ],
+    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+  })
+  check('E7', 'observable absence declaration', 'generic coverage prose only', 'fail', genericOnly.state,
+    genericOnly.reasons[0] ?? 'no reason recorded')
+}
+
+// --- E8: a task cell raised to a ready state on missing evidence -------------
+// The frozen must_not_report_ready_when contract is not limited to the negative
+// probes. Attempt 1 reported impact-hono at `ready_with_caveat` with 0/4
+// required paths and a false-ready count of zero.
+{
+  const relationshipTruth = makeTruth({
+    must_not_report_ready_when: [
+      'the relationship between the constructor in src/hono.ts and the three router implementations is missing from the evidence set and is not declared as unresolved',
+    ],
+  })
+
+  // Not ready: the clause is vacuously satisfied, so false-ready must be false.
+  const notReady = evaluateSynthetic({ paths: [], symbols: [], answerability: 'verify_targets', truth: relationshipTruth })
+  check('E8', 'task-cell false ready', 'not a ready state', false, notReady.metrics.false_ready,
+    notReady.ready_clauses.detail ?? '')
+
+  // Ready with the required evidence present: nothing to enforce.
+  const readyWithEvidence = evaluateSynthetic({
+    paths: REAL_PATHS, symbols: ['compose', 'dispatch'], answerability: 'ready_with_caveat', truth: relationshipTruth,
+  })
+  check('E8', 'task-cell false ready', 'ready with required evidence', false, readyWithEvidence.metrics.false_ready,
+    `state=${readyWithEvidence.state}`)
+
+  // Ready with the required evidence missing and nothing declaring it
+  // unresolved: this is the false-ready shape the frozen clause forbids.
+  const readyWithoutEvidence = evaluateSynthetic({
+    paths: [], symbols: [], answerability: 'ready_with_caveat', truth: relationshipTruth,
+  })
+  check('E8', 'task-cell false ready', 'ready_with_caveat on missing evidence', true, readyWithoutEvidence.metrics.false_ready,
+    readyWithoutEvidence.reasons.find((reason) => reason.includes('must_not_report_ready_when')) ?? 'no clause reason recorded')
+  check('E8', 'task-cell false ready', 'ready_with_caveat on missing evidence (cell fails)', 'fail', readyWithoutEvidence.state)
+
+  // `ready` behaves the same way: both states are terminal for the consumer.
+  const fullyReady = evaluateSynthetic({ paths: [], symbols: [], answerability: 'ready', truth: relationshipTruth })
+  check('E8', 'task-cell false ready', 'ready on missing evidence', true, fullyReady.metrics.false_ready)
+
+  // Declaring the gap as unresolved is the clause's own escape hatch, so the
+  // control fires on the ready claim, not merely on the missing evidence.
+  const declaredUnresolved = evaluateSynthetic({
+    paths: [], symbols: [], answerability: 'ready_with_caveat', truth: relationshipTruth,
+    declarations: [
+      { schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'src/compose.ts was not resolved in this pack.' },
+    ],
+  })
+  check('E8', 'task-cell false ready', 'gap declared unresolved', false, declaredUnresolved.metrics.false_ready,
+    declaredUnresolved.ready_clauses.undetermined[0] ?? '')
+}
+
+// --- S1: a visible symbol is counted -----------------------------------------
+// A symbol present in a real supported evidence channel must enter observed
+// symbols. `pack.matched_nodes[].label` is the channel attempt 1 never read.
+{
+  const withMatchedNodes = extractEvidence({
+    pack: { matched_nodes: [{ label: 'createStorage', source_file: 'src/storage.ts' }] },
+  })
+  check('S1', 'visible symbol is counted', 'symbol present', true,
+    withMatchedNodes.generous.symbols.includes('createStorage'),
+    `symbols=${JSON.stringify(withMatchedNodes.generous.symbols)}`)
+  check('S1', 'visible symbol is counted', 'path present', true,
+    withMatchedNodes.generous.paths.includes('src/storage.ts'))
+
+  // Remove the channel: the symbol must stop being observed.
+  const withoutMatchedNodes = extractEvidence({ pack: { matched_nodes: [] } })
+  check('S1', 'visible symbol is counted', 'channel emptied', false,
+    withoutMatchedNodes.generous.symbols.includes('createStorage'))
+
+  // Every non-`impact` artifact shape must be reachable, not just this one.
+  for (const [channel, artifact] of [
+    ['pack.seed_nodes', { pack: { seed_nodes: [{ label: 'errorHandler', source_file: 'src/hono-base.ts' }] } }],
+    ['pack.review_bundle.nodes', { pack: { review_bundle: { nodes: [{ label: 'errorHandler', source_file: 'src/hono-base.ts' }] } } }],
+    ['pack.relationships', { pack: { relationships: [{ from: 'Hono', to: 'errorHandler', relation: 'contains' }] } }],
+    ['pack.execution_slice.steps', { pack: { execution_slice: { steps: [{ label: 'errorHandler', source_file: 'src/hono-base.ts' }] } } }],
+    ['likely_edit_files.matched_symbols', { likely_edit_files: [{ path: 'src/hono-base.ts', matched_symbols: ['errorHandler'] }] }],
+  ]) {
+    const observed = extractEvidence(artifact)
+    check('S1', 'visible symbol is counted', `channel ${channel}`, true,
+      observed.generous.symbols.includes('errorHandler'),
+      `symbols=${JSON.stringify(observed.generous.symbols)}`)
+  }
+}
+
+// --- S2: a symbol present only in frozen truth is not counted ----------------
+{
+  const truth = makeTruth({ required_evidence_symbols: ['createStorage'] })
+  // The artifact surfaced nothing; the obligation names `createStorage`.
+  const missing = evaluateSynthetic({ paths: REAL_PATHS, symbols: [], truth })
+  check('S2', 'truth-only symbol stays missing', 'obligation not surfaced', true,
+    missing.observed.missing_critical_symbols.includes('createStorage'),
+    `observed=${JSON.stringify(missing.observed.critical_symbols)}`)
+  check('S2', 'truth-only symbol stays missing', 'obligation not surfaced (fails)', 'fail', missing.state)
+
+  // The same obligation, now genuinely surfaced by the artifact.
+  const surfaced = evaluateSynthetic({ paths: REAL_PATHS, symbols: ['createStorage'], truth })
+  check('S2', 'truth-only symbol stays missing', 'obligation surfaced', 'pass', surfaced.state)
+}
+
+// --- S3: method qualification -------------------------------------------------
+// rubrics.json authorises exactly one projection: the LAST dot-separated
+// segment, after stripping a leading '#'. `Hono.fetch` therefore satisfies
+// `fetch`; a bare class name is NOT satisfied by one of its methods.
+{
+  const bareClass = makeTruth({ required_evidence_symbols: ['SmartRouter'], required_evidence_paths: [] })
+  const qualifiedMethod = evaluateSynthetic({ paths: [], symbols: ['SmartRouter.match'], truth: bareClass })
+  check('S3', 'method qualification', 'SmartRouter.match does not satisfy SmartRouter', 'fail', qualifiedMethod.state,
+    `missing=${JSON.stringify(qualifiedMethod.observed.missing_critical_symbols)}`)
+
+  const bareSurfaced = evaluateSynthetic({ paths: [], symbols: ['SmartRouter'], truth: bareClass })
+  check('S3', 'method qualification', 'SmartRouter satisfies SmartRouter', 'pass', bareSurfaced.state)
+
+  // The projection the contract DOES authorise still works in the other
+  // direction: an owner-qualified member satisfies a bare member obligation.
+  const bareMember = makeTruth({ required_evidence_symbols: ['fetch'], required_evidence_paths: [] })
+  const ownerQualified = evaluateSynthetic({ paths: [], symbols: ['Hono.fetch'], truth: bareMember })
+  check('S3', 'method qualification', 'Hono.fetch satisfies fetch', 'pass', ownerQualified.state)
+
+  const privateQualified = evaluateSynthetic({
+    paths: [], symbols: ['Hono.#insertPath'], truth: makeTruth({ required_evidence_symbols: ['insertPath'], required_evidence_paths: [] }),
+  })
+  check('S3', 'method qualification', 'Hono.#insertPath satisfies insertPath', 'pass', privateQualified.state)
+}
+
+// --- S4: a symbol only in unrelated text does not count ----------------------
+{
+  const truth = makeTruth({ required_evidence_symbols: ['createStorage'], required_evidence_paths: [] })
+
+  // Prose channels are classified `ignored`, so a name that appears only in a
+  // rationale, a claim sentence or the echoed prompt never enters the set.
+  const prose = extractEvidence({
+    why_explanation: ['Start with createStorage because it is the entry point.'],
+    prompt: 'Explain createStorage and getMount.',
+    claims: [{ text: 'primary evidence: createStorage', evidence_class: 'primary', node_labels: [] }],
+    pack: { affected_communities: [{ label: 'Drivers Github — Driver' }] },
+  })
+  check('S4', 'unrelated text is not counted', 'prose and prompt only', 0, prose.generous.symbols.length,
+    `symbols=${JSON.stringify(prose.generous.symbols)}`)
+
+  // A community/cluster name must not satisfy a code-symbol obligation. The
+  // assertion is on the RECALL reason specifically: passing merely because the
+  // label is also ungrounded would not test what this control claims to test.
+  const communityOnly = evaluateSynthetic({
+    paths: [], symbols: ['Drivers Github — Driver'],
+    truth: makeTruth({ required_evidence_symbols: ['Driver'], required_evidence_paths: [] }),
+  })
+  check('S4', 'unrelated text is not counted', 'community label does not satisfy Driver', true,
+    communityOnly.observed.missing_critical_symbols.includes('Driver'),
+    communityOnly.reasons.find((reason) => reason.includes('required_evidence_symbols recall')) ?? 'no recall reason')
+
+  // ... and the registry drops it before it can even reach the comparison.
+  const communityChannel = extractEvidence({
+    workflow_centers: [{ label: 'Drivers Github — Driver', node_count: 8, reason: 'community' }],
+  })
+  check('S4', 'unrelated text is not counted', 'community-shaped workflow center is guarded', 0,
+    communityChannel.generous.symbols.length, `guarded=${JSON.stringify(communityChannel.guarded.map((entry) => entry.value))}`)
+
+  // The same channel, node-shaped, IS read.
+  const nodeChannel = extractEvidence({
+    workflow_centers: [{ label: 'createStorage', path: 'src/storage.ts', matched_symbols: ['createStorage'] }],
+  })
+  check('S4', 'unrelated text is not counted', 'node-shaped workflow center is read', true,
+    nodeChannel.generous.symbols.includes('createStorage'))
+
+  // A snippet containing the identifier is recorded, never counted.
+  const snippetOnly = evaluateSynthetic({
+    paths: [], symbols: [], truth,
+    snippets: [{ schema_path: '.pack.matched_nodes[0].snippet', channel: '.pack.matched_nodes[].snippet', text: 'export function createStorage() {}' }],
+  })
+  check('S4', 'unrelated text is not counted', 'snippet text does not satisfy the obligation', 'fail', snippetOnly.state)
+  check('S4', 'unrelated text is not counted', 'snippet sighting is still reported', 1,
+    snippetOnly.observed.required_symbols_seen_only_in_snippets.length)
+
+  // The same name in a real supported channel IS counted, so the control is not
+  // simply refusing everything.
+  const realChannel = evaluateSynthetic({ paths: [], symbols: ['createStorage'], truth })
+  check('S4', 'unrelated text is not counted', 'real channel is counted', 'pass', realChannel.state)
+}
+
+// --- E9: an unmeasured frozen requirement can never be represented as pass ----
+{
+  const probe = {
+    id: 'synthetic-unmeasured-probe',
+    prompt: { text: 'How does this library encrypt values at rest?' },
+    ground_truth: 'nothing',
+    required_behaviour: ['The artifact must hum a tune this evaluator cannot hear.'],
+  }
+  const verdict = evaluateProbe({
+    probe, evidence: makeEvidence({ paths: REAL_PATHS, symbols: [] }), declarations: [],
+    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+  })
+  check('E9', 'unmeasured requirement', 'clause with no observation', 'invalid', verdict.state,
+    verdict.reasons[0] ?? 'no reason recorded')
+  check('E9', 'unmeasured requirement', 'never pass', false, verdict.state === 'pass')
+
+  // Replace it with a clause the evaluator does measure: the same run passes.
+  const measurable = evaluateProbe({
+    probe: { ...probe, required_behaviour: ['The artifact must not report a ready state.'] },
+    evidence: makeEvidence({ paths: REAL_PATHS, symbols: [] }), declarations: [],
+    answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+  })
+  check('E9', 'unmeasured requirement', 'measurable clause', 'pass', measurable.state)
+}
+
+// --- E10: the evidence surface must be closed --------------------------------
+{
+  const closed = extractEvidence({ pack: { matched_nodes: [{ label: 'compose', source_file: 'src/compose.ts' }] } })
+  check('E10', 'evidence surface closure', 'every channel classified', 0, closed.unclassified.length)
+
+  // An artifact that grows a channel the registry does not know must be
+  // detected rather than silently dropped.
+  const grown = extractEvidence({ pack: { matched_nodes: [{ label: 'compose', source_file: 'src/compose.ts' }] }, brand_new_channel: ['src/secret.ts'] })
+  check('E10', 'evidence surface closure', 'unclassified channel detected', 1, grown.unclassified.length,
+    grown.unclassified.map((entry) => entry.channel).join(', '))
+}
+
+// --- E11: symbol grounding ----------------------------------------------------
+{
+  check('E11', 'symbol grounding', 'symbol present in target', true, symbolExistsInTarget(fixtureDir, 'compose'))
+  check('E11', 'symbol grounding', 'qualified symbol present in target', true, symbolExistsInTarget(fixtureDir, 'Hono.fetch'))
+  check('E11', 'symbol grounding', 'invented symbol absent from target', false,
+    symbolExistsInTarget(fixtureDir, 'AbsolutelyNotInThisTree'))
+}
+
+// --- E12: the real frozen probes yield stable subject terms -------------------
+// The absence-declaration rule reads the frozen bytes, so its inputs must be a
+// function of the contract and nothing else.
+{
+  const tier1 = JSON.parse(readFileSync(join(ROOT, 'docs/qualification/tier1.json'), 'utf8'))
+  for (const probe of tier1.negative_trust_probes) {
+    const first = probeSubjectTerms(probe.prompt.text)
+    const second = probeSubjectTerms(probe.prompt.text)
+    check('E12', 'probe subject terms', `${probe.id} deterministic`, JSON.stringify(first), JSON.stringify(second))
+    check('E12', 'probe subject terms', `${probe.id} non-empty`, true, first.length > 0, JSON.stringify(first))
+  }
+  // Declarations are read from the artifact, so an artifact with none yields none.
+  check('E12', 'probe subject terms', 'no declarations in an empty artifact', 0, extractDeclarations({}).length)
 }
 
 rmSync(fixtureDir, { recursive: true, force: true })

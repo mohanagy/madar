@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -13,7 +13,7 @@ import {
   readAnswerability,
   redact,
 } from '../../scripts/lib/qualify-tier1/artifact.mjs'
-import { evaluateProbe, evaluateTaskCell, PROBE_MAX_ANSWERABILITY } from '../../scripts/lib/qualify-tier1/evaluate.mjs'
+import { MISSING_ABSENCE_DECLARATION, evaluateProbe, evaluateTaskCell, PROBE_MAX_ANSWERABILITY } from '../../scripts/lib/qualify-tier1/evaluate.mjs'
 import { buildFrozenManifest } from '../../scripts/lib/qualify-tier1/frozen.mjs'
 
 type Recall = { critical_fact_recall: { paths: { ratio: number }; symbols: { ratio: number } } }
@@ -24,9 +24,10 @@ const ROOT = resolve('.')
 // than stubbed: asserting against a mock would prove nothing about the check.
 const fixtureDir = mkdtempSync(join(tmpdir(), 'madar-tier1-unit-'))
 mkdirSync(join(fixtureDir, 'src'), { recursive: true })
-for (const rel of ['src/compose.ts', 'src/hono-base.ts']) {
-  writeFileSync(join(fixtureDir, rel), '// fixture\n')
-}
+// The fixture carries the identifiers the obligations name, so the
+// symbol-grounding check runs against real source text rather than a stub.
+writeFileSync(join(fixtureDir, 'src/compose.ts'), 'export function compose() {}\nexport const dispatch = 1\n')
+writeFileSync(join(fixtureDir, 'src/hono-base.ts'), 'export class Hono { fetch() {} }\n')
 afterAll(() => rmSync(fixtureDir, { recursive: true, force: true }))
 
 const truth = {
@@ -42,6 +43,11 @@ function evidenceOf(paths: string[], symbols: string[]) {
   return {
     strict: { paths: [...paths].sort(), symbols: [...symbols].sort() },
     generous: { paths: [...paths].sort(), symbols: [...symbols].sort() },
+    basename_references: [],
+    snippets: [],
+    unclassified: [],
+    guarded: [],
+    channels: [],
   }
 }
 
@@ -234,12 +240,110 @@ describe('negative-trust probes', () => {
     expect(verdict.observed.non_existent_cited_paths).toEqual(['src/invented.ts'])
   })
 
-  it('records the limits of what a context artifact can evidence', () => {
+  it('classifies every frozen required_behaviour clause it reports on', () => {
     const verdict = evaluateProbe({
-      probe, evidence: evidenceOf(['src/compose.ts'], []),
+      probe: {
+        id: 'unit-probe',
+        prompt: { text: 'How does this framework persist compiled route matchers to disk?' },
+        ground_truth: 'absent',
+        required_behaviour: [
+          'The artifact must not report a ready state.',
+          'The artifact must state that no on-disk matcher cache exists.',
+          'No fabricated path or symbol may appear in the evidence set.',
+        ],
+      },
+      evidence: evidenceOf(['src/compose.ts'], []),
+      declarations: [{ schema_path: '.evidence.answerability.caveats[]', channel: '.evidence.answerability.caveats[]', text: 'No on-disk matchers cache exists in this repository.' }],
       answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
     })
-    expect((verdict.measurement_limits ?? []).join(' ')).toMatch(/not observable at this tier/)
+    expect(verdict.requirement_coverage?.every((entry) => entry.measured)).toBe(true)
+    expect(verdict.state).toBe('pass')
+  })
+
+  it('refuses to report pass when a frozen requirement is not measured', () => {
+    const verdict = evaluateProbe({
+      probe: {
+        id: 'unit-probe',
+        prompt: { text: 'How does this framework persist compiled route matchers to disk?' },
+        ground_truth: 'absent',
+        required_behaviour: ['The artifact must hum a tune this evaluator cannot hear.'],
+      },
+      evidence: evidenceOf(['src/compose.ts'], []),
+      answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+    })
+    expect(verdict.state).toBe('invalid')
+    expect(verdict.state).not.toBe('pass')
+  })
+
+  it('fails when the frozen absence declaration is not observable', () => {
+    const probeWithDeclaration = {
+      id: 'unit-probe',
+      prompt: { text: 'How does this framework persist compiled route matchers to disk?' },
+      ground_truth: 'absent',
+      required_behaviour: [
+        'The artifact must not report a ready state.',
+        'The artifact must state that no on-disk matcher cache exists.',
+      ],
+    }
+    const withoutDeclaration = evaluateProbe({
+      probe: probeWithDeclaration,
+      evidence: evidenceOf(['src/compose.ts'], []),
+      declarations: [{ schema_path: '.evidence.answerability.missing_obligations[]', channel: '.evidence.answerability.missing_obligations[]', text: 'evidence:supporting' }],
+      answerability: 'verify_targets', targetDir: fixtureDir, relabelCandidates: [],
+    })
+    expect(withoutDeclaration.state).toBe('fail')
+    expect(withoutDeclaration.reasons.some((reason) => reason.startsWith(MISSING_ABSENCE_DECLARATION))).toBe(true)
+  })
+})
+
+describe('evidence surface', () => {
+  it('reads the selected-node channels of every artifact shape', () => {
+    for (const artifact of [
+      { pack: { matched_nodes: [{ label: 'compose', source_file: 'src/compose.ts' }] } },
+      { pack: { seed_nodes: [{ label: 'compose', source_file: 'src/compose.ts' }] } },
+      { pack: { review_bundle: { nodes: [{ label: 'compose', source_file: 'src/compose.ts' }] } } },
+      { pack: { direct_dependents: [{ label: 'compose', source_file: 'src/compose.ts', relation: 'calls' }] } },
+    ]) {
+      const evidence = extractEvidence(artifact)
+      expect(evidence.generous.symbols).toContain('compose')
+      expect(evidence.generous.paths).toContain('src/compose.ts')
+      expect(evidence.unclassified).toEqual([])
+    }
+  })
+
+  it('refuses to silently drop a channel the registry does not classify', () => {
+    const evidence = extractEvidence({ pack: {}, an_unknown_future_channel: ['src/x.ts'] })
+    expect(evidence.unclassified.map((entry) => entry.channel)).toEqual(['.an_unknown_future_channel[]'])
+  })
+
+  it('classifies every channel the real retained artifacts present', () => {
+    // The declared registry has to cover what Madar actually emits, not a
+    // sample of it: a channel that falls through is scored as if the product
+    // never surfaced it.
+    const logs = join(ROOT, 'docs/qualification-results/tier1/2026-09-01-first-baseline/run-a/logs')
+    const packs = readdirSync(logs).filter((name) => name.startsWith('pack-'))
+    expect(packs.length).toBe(8)
+    for (const name of packs) {
+      const artifact = JSON.parse(readFileSync(join(logs, name), 'utf8'))
+      expect({ name, unclassified: extractEvidence(artifact).unclassified }).toEqual({ name, unclassified: [] })
+    }
+  })
+
+  it('keeps a community label out of the symbol set but reads a node-shaped entry', () => {
+    const community = extractEvidence({ workflow_centers: [{ label: 'Drivers Github — Driver', node_count: 4 }] })
+    expect(community.generous.symbols).toEqual([])
+    expect(community.guarded.map((entry) => entry.value)).toEqual(['Drivers Github — Driver'])
+
+    const node = extractEvidence({ workflow_centers: [{ label: 'createStorage', path: 'src/storage.ts' }] })
+    expect(node.generous.symbols).toEqual(['createStorage'])
+  })
+
+  it('never mines snippet text for obligation recall', () => {
+    const evidence = extractEvidence({
+      pack: { matched_nodes: [{ label: 'other', source_file: 'src/compose.ts', snippet: 'export function compose() {}' }] },
+    })
+    expect(evidence.generous.symbols).not.toContain('compose')
+    expect(evidence.snippets).toHaveLength(1)
   })
 })
 

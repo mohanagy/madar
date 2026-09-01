@@ -33,3 +33,13 @@ export declare function prepareTarget(input: {
 }): PreparationReceipt
 
 export declare function pathExistsInTarget(destDir: string, path: string): boolean
+
+/** Every identifier token and file basename in the prepared target. */
+export declare function targetTokenIndex(destDir: string): ReadonlySet<string>
+
+/**
+ * True when `symbol` is grounded in the pinned target. Used ONLY to detect
+ * fabrication; never for obligation recall, which compares enumerated symbol
+ * entries and never source text.
+ */
+export declare function symbolExistsInTarget(destDir: string, symbol: string): boolean

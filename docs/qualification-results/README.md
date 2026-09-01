@@ -18,7 +18,7 @@ byte-identical and independently verifiable.
 ```bash
 npm run build                       # the evaluator uses the real built CLI
 npm run qualify:tier1 -- --out docs/qualification-results/tier1/<run-id>/run-a --run-id run-a
-npm run qualify:tier1-controls      # E1-E6 evaluator falsifiability controls
+npm run qualify:tier1-controls      # E1-E12 and S1-S4 evaluator falsifiability controls
 npm run qualify:tier1-compare -- <run-a-dir> <run-b-dir>
 ```
 
@@ -40,7 +40,36 @@ hide behind an infrastructure excuse.
 `qualify:tier1-compare` exits `0` when two runs are semantically identical and `1` otherwise,
 naming the smallest differing field.
 
-`qualify:tier1-controls` exits `0` only when every E1-E6 control fires in **both** directions.
+`qualify:tier1-controls` exits `0` only when every control fires in **both** directions:
+
+| Control | Proves |
+| --- | --- |
+| E1 | A missing critical path or symbol fails the cell. |
+| E2 | An unsupported claim — a cited path or printed symbol absent from the pinned target — fails. |
+| E3 | A false ready on a negative probe fails. |
+| E4 | A missing citation fails. |
+| E5 | A target-revision mismatch is `invalid`, never `fail`. |
+| E6 | A mutated frozen truth file or probe rule is refused. |
+| E7 | Removing the observable absence declaration from a truthful result stops the probe passing. |
+| E8 | Raising a task cell with missing required evidence to `ready` or `ready_with_caveat` increments false-ready and fails the cell. |
+| E9 | A frozen `required_behaviour` this evaluator does not measure yields `invalid`, never `pass`. |
+| E10 | An artifact channel the registry does not classify is detected, not silently dropped. |
+| E11 | Symbol grounding distinguishes a real identifier from an invented one. |
+| E12 | Probe subject terms are a deterministic function of the frozen bytes. |
+| S1 | A symbol in a real supported evidence channel enters observed symbols — for every artifact shape. |
+| S2 | A symbol present only in frozen truth stays missing. |
+| S3 | `Hono.fetch` satisfies `fetch` (the projection `rubrics.json` authorises); `SmartRouter.match` does **not** satisfy `SmartRouter`. |
+| S4 | A name appearing only in prose, in the echoed prompt, in a community label, or in retained snippet text does not count. |
+
+## Result directories
+
+| Directory | Status |
+| --- | --- |
+| `tier1/2026-09-01-first-baseline/` | Attempt 1 — provisional, superseded. Bytes preserved; see its `CLASSIFICATION.md`. |
+| `tier1/2026-09-01-corrected-baseline/` | The measurement of record, produced by the audited evaluator. |
+
+A superseded result is never edited, regenerated, or relabelled as though it came from the
+corrected evaluator. It is kept, classified, and pointed at.
 
 ## Gate status
 
@@ -58,6 +87,11 @@ This directory holds that first baseline. Activation is a separate maintainer de
   metrics, excluding declared-volatile fields (timestamps, run ids, durations, paths).
 - `logs/` — retained stdout for each `generate` and `pack` invocation, with absolute local
   paths redacted at write time.
+- `result.evidence_surface` — the declared channel registry, and whether the run's evidence
+  set was closed over every channel the artifacts actually presented.
+- `result.run_independence` — per-arm prepared worktree, graph artifact digest, clone-cache
+  read status, and a digest of every Pack artifact, so two arms can be shown to have
+  executed independently rather than one reading the other's output.
 
 `pass`, `fail` and `invalid` counts are always reported separately. Invalid cells are never
 folded into a quality percentage, per

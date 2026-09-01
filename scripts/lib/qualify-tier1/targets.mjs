@@ -5,7 +5,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const GIT_TIMEOUT_MS = 600_000
@@ -137,4 +137,70 @@ export function prepareTarget({ target, baseTarget, contractRoot, cacheDir, dest
 /** True when `path` exists in the prepared working tree. */
 export function pathExistsInTarget(destDir, path) {
   return existsSync(resolve(destDir, path))
+}
+
+/**
+ * Every identifier token that occurs in the prepared target's source, plus
+ * every file basename. Built once per target directory.
+ *
+ * This answers ONE question: is a symbol the artifact printed actually present
+ * in the pinned target, or was it invented? It is never used for recall —
+ * matching an obligation against source text would be the fuzzy matching the
+ * frozen rubric forbids. Fabrication and recall are different questions and are
+ * measured differently on purpose.
+ */
+const TOKEN_INDEX = new Map()
+
+const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts', '.json', '.md'])
+const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage'])
+
+function collectTokens(dir, tokens, depth = 0) {
+  if (depth > 24) return
+  let entries
+  try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) continue
+      collectTokens(join(dir, entry.name), tokens, depth + 1)
+      continue
+    }
+    if (!entry.isFile()) continue
+    tokens.add(entry.name)
+    tokens.add(entry.name.replace(/\.[^.]+$/, ''))
+    const dot = entry.name.lastIndexOf('.')
+    if (dot === -1 || !SOURCE_EXTENSIONS.has(entry.name.slice(dot))) continue
+    let text
+    try { text = readFileSync(join(dir, entry.name), 'utf8') } catch { continue }
+    for (const token of text.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? []) tokens.add(token)
+  }
+}
+
+export function targetTokenIndex(destDir) {
+  const key = resolve(destDir)
+  const cached = TOKEN_INDEX.get(key)
+  if (cached) return cached
+  const tokens = new Set()
+  collectTokens(key, tokens)
+  TOKEN_INDEX.set(key, tokens)
+  return tokens
+}
+
+/**
+ * True when `symbol` is grounded in the pinned target: the printed label, its
+ * bare identifier form, or a file basename it names occurs in the source.
+ * Deliberately generous — a false fabrication report would be worse than a
+ * missed one, because fabrication is an accusation.
+ */
+export function symbolExistsInTarget(destDir, symbol) {
+  const tokens = targetTokenIndex(destDir)
+  const raw = String(symbol).trim()
+  if (!raw) return true
+  if (tokens.has(raw)) return true
+  const withoutCall = raw.replace(/\s*\([^)]*\)\s*$/, '')
+  if (tokens.has(withoutCall)) return true
+  for (const part of withoutCall.split(/[.#]/)) {
+    const piece = part.trim()
+    if (piece && tokens.has(piece)) return true
+  }
+  return false
 }

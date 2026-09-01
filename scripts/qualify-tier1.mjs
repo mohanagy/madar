@@ -15,14 +15,14 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { buildFrozenManifest, sha256 } from './lib/qualify-tier1/frozen.mjs'
-import { extractEvidence, readAnswerability, readGraphIdentity, redact, runGenerate, runPack } from './lib/qualify-tier1/artifact.mjs'
+import { declaredChannels, extractDeclarations, extractEvidence, readAnswerability, readGraphIdentity, redact, runGenerate, runPack } from './lib/qualify-tier1/artifact.mjs'
 import { evaluateProbe, evaluateTaskCell } from './lib/qualify-tier1/evaluate.mjs'
 import { renderReport, semanticDigest } from './lib/qualify-tier1/report.mjs'
-import { prepareTarget } from './lib/qualify-tier1/targets.mjs'
+import { ensureMirror, prepareTarget } from './lib/qualify-tier1/targets.mjs'
 import { observeInheritedSignals } from './lib/qualify-tier1/inherited-signals.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -67,6 +67,22 @@ function parseArgs(argv) {
 
 function git(args) {
   return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', timeout: 60_000 }).trim()
+}
+
+/**
+ * A closure failure is a measurement failure.
+ *
+ * If the artifact presents a string channel channels.mjs does not classify, the
+ * evidence set cannot be shown to be closed over what the consumer can see, and
+ * a symbol the product surfaced could be scored as missing. Stopping is the only
+ * honest option; guessing is what produced the first baseline's zero recall.
+ */
+function refuseUnclassifiedSurface(cellId, unclassified) {
+  console.error(`HUMAN_GATE-661-EVIDENCE-SURFACE: cell ${cellId} presents ${unclassified.length} unclassified evidence channel(s).`)
+  for (const entry of unclassified.slice(0, 40)) {
+    console.error(`  - ${entry.channel} :: ${JSON.stringify(entry.value).slice(0, 160)}`)
+  }
+  console.error('Classify each channel in scripts/lib/qualify-tier1/channels.mjs before measuring again.')
 }
 
 function invalidCell(base, reason, detail) {
@@ -126,9 +142,22 @@ async function main() {
     ...frozen.probes.map((probe) => probe.target_id),
   ])
   const prepared = new Map()
+  const runIndependence = {
+    // Recorded so two arms can be shown to have executed independently rather
+    // than one reading the other's results. Only the bare clone mirror is
+    // shared; every generated artefact below is per-run.
+    work_dir: relative(ROOT, workDir).split('\\').join('/'),
+    shared_immutable_clone_cache: relative(ROOT, cacheDir).split('\\').join('/'),
+    targets: [],
+    cells: [],
+  }
   for (const targetId of [...neededTargets].sort()) {
     const target = frozen.targetsById.get(targetId)
     const destDir = join(workDir, 'targets', targetId)
+    let mirrorWarm = null
+    try {
+      mirrorWarm = !ensureMirror(cacheDir, target.source.url, target.source.ref, { allowNetwork: options.allowNetwork }).fetched
+    } catch { mirrorWarm = null }
     const receipt = prepareTarget({
       target,
       baseTarget: target.base_target ? frozen.targetsById.get(target.base_target) : null,
@@ -155,6 +184,15 @@ async function main() {
       }
     }
     prepared.set(targetId, { receipt, destDir, graphIdentity })
+    runIndependence.targets.push({
+      target_id: targetId,
+      prepared_worktree: relative(ROOT, destDir).split('\\').join('/'),
+      head: receipt.head,
+      patch_applied: receipt.patch_applied,
+      clone_cache_read: mirrorWarm === null ? 'unknown' : (mirrorWarm ? 'warm_mirror_reused' : 'mirror_fetched'),
+      generation_output_path: relative(ROOT, join(destDir, 'out', 'graph.madar')).split('\\').join('/'),
+      graph_artifact_digest: graphIdentity?.identity_digest ?? null,
+    })
   }
   writeEvidence(
     join(outDir, 'prepared-target-receipt.json'),
@@ -163,6 +201,7 @@ async function main() {
 
   // ---- 3. Cells -----------------------------------------------------------
   const cells = []
+  const surfaceFailures = []
 
   for (const cell of frozen.cells) {
     const task = frozen.tasksById.get(cell.task_id)
@@ -195,6 +234,19 @@ async function main() {
       continue
     }
     const evidence = extractEvidence(pack.artifact)
+    runIndependence.cells.push({
+      cell_id: cell.cell_id,
+      artifact_digest: sha256(Buffer.from(JSON.stringify(pack.artifact))),
+      artifact_log: base.evidence_reference,
+      evidence_channels_observed: evidence.channels.length,
+    })
+    if (evidence.unclassified.length > 0) {
+      refuseUnclassifiedSurface(cell.cell_id, evidence.unclassified)
+      surfaceFailures.push({ cell_id: cell.cell_id, unclassified: evidence.unclassified })
+      cells.push(invalidCell(base, 'judge_failure', `${evidence.unclassified.length} unclassified evidence channel(s); see HUMAN_GATE-661-EVIDENCE-SURFACE`))
+      continue
+    }
+    const declarations = extractDeclarations(pack.artifact)
     const answerability = readAnswerability(pack.artifact)
     if (answerability === null) {
       cells.push(invalidCell(base, 'incomplete_receipt', 'context artifact reports no answerability state'))
@@ -202,7 +254,7 @@ async function main() {
     }
     const verdict = evaluateTaskCell({
       cell, task, target, truth: truthEntry.truth,
-      preparation: prep.receipt, artifact: pack.artifact, evidence, answerability,
+      preparation: prep.receipt, artifact: pack.artifact, evidence, declarations, answerability,
       targetDir: prep.destDir,
     })
     cells.push({ ...base, ...verdict, artifact_signals: pack.artifact.retrieval_gate?.signals ?? null })
@@ -237,13 +289,26 @@ async function main() {
       continue
     }
     const evidence = extractEvidence(pack.artifact)
+    runIndependence.cells.push({
+      cell_id: probe.id,
+      artifact_digest: sha256(Buffer.from(JSON.stringify(pack.artifact))),
+      artifact_log: base.evidence_reference,
+      evidence_channels_observed: evidence.channels.length,
+    })
+    if (evidence.unclassified.length > 0) {
+      refuseUnclassifiedSurface(probe.id, evidence.unclassified)
+      surfaceFailures.push({ cell_id: probe.id, unclassified: evidence.unclassified })
+      cells.push(invalidCell(base, 'judge_failure', `${evidence.unclassified.length} unclassified evidence channel(s); see HUMAN_GATE-661-EVIDENCE-SURFACE`))
+      continue
+    }
+    const declarations = extractDeclarations(pack.artifact)
     const answerability = readAnswerability(pack.artifact)
     if (answerability === null) {
       cells.push(invalidCell(base, 'incomplete_receipt', 'context artifact reports no answerability state'))
       continue
     }
     const verdict = evaluateProbe({
-      probe, evidence, answerability, targetDir: prep.destDir,
+      probe, evidence, declarations, answerability, targetDir: prep.destDir,
       relabelCandidates: PROBE_RELABEL_CANDIDATES[probe.id] ?? [],
     })
     cells.push({ ...base, ...verdict, artifact_signals: pack.artifact.retrieval_gate?.signals ?? null })
@@ -276,6 +341,12 @@ async function main() {
     negative_probe_count: cells.filter((cell) => cell.kind === 'negative_probe').length,
     cells,
     inherited_signals: observeInheritedSignals({ root: ROOT, cells }),
+    evidence_surface: {
+      declared_channels: declaredChannels(),
+      unclassified: surfaceFailures,
+      closed: surfaceFailures.length === 0,
+    },
+    run_independence: runIndependence,
     environment: {
       node_version: process.version,
       platform: process.platform,
@@ -296,6 +367,10 @@ async function main() {
   console.log(`semantic digest: ${result.semantic_digest}`)
   console.log(`output: ${options.out}`)
 
+  if (surfaceFailures.length > 0) {
+    console.error('HUMAN_GATE-661-EVIDENCE-SURFACE: the consumer-visible evidence surface could not be finitely defined for every cell.')
+    process.exit(1)
+  }
   if (totals.invalid > 0) {
     console.error(`${totals.invalid} cell(s) could not be measured faithfully; this is not a product-quality result.`)
     process.exit(1)

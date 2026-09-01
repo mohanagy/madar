@@ -1,0 +1,35 @@
+[madar detect] Scanning files...
+[madar detect] Found 117 files (~38,060 words)
+[madar extract] Extracting 89 files... (0/89)
+[madar build] Built graph: 636 nodes, 806 edges
+[madar cluster] Clustering communities...
+[madar cluster] Found 333 communities
+[madar analyze] Analyzing structure...
+[madar export] Writing outputs...
+[madar generate] generate completed for <target>
+- Corpus: 117 file(s) · ~38,060 words
+- Extraction mode: auto (non_code=2, not_extracted=34, spi=87)
+- Extracted: 87 code file(s) (+2 non-code detected)
+- Graph: 636 nodes · 806 edges · 333 communities
+- Indexing: PARTIAL (89 indexed, 0 warnings, 34 policy skips, 0 unsupported, 0 failed)
+- Indexing manifest: <target>/out/indexing-manifest.json
+- Semantic anomalies: 5 high-signal item(s)
+- Outputs: <target>/out/graph.madar, <target>/out/GRAPH_REPORT.md
+- Safety exclusions: 3 (3 sensitive, 0 unreadable)
+  - ".env.example" (environment_file)
+  - ".npmrc" (credential_store)
+  - "docs/.npmrc" (credential_store)
+- Warning: Corpus is ~38,060 words - fits in a single context window. You may not need a graph.
+- Note: Extraction mode: auto.
+- Note: 2 non-code file(s) were included in extraction alongside source code.
+- Note: 3 safety exclusion(s) were not indexed (3 sensitive, 0 unreadable).
+- Note: SPI build via projector (87 files, reason=no-cache).
+- Note: Auto extraction: SPI routed 87 supported source file(s); legacy semantic augmentation routed 87 supported source file(s); legacy fallback routed 0 SPI-unsupported source file(s).
+- Note: Indexing partial: 89 indexed, 0 with warnings, 34 skipped by policy, 0 unsupported, 0 failed. See <target>/out/indexing-manifest.json.
+
+Next: connect your AI assistant:
+  madar claude install    # Claude Code
+  madar codex install     # Codex CLI
+  madar cursor install    # Cursor
+  madar copilot install   # GitHub Copilot
+  madar gemini install    # Gemini CLI

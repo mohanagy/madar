@@ -143,11 +143,80 @@ export function renderReport(result) {
       lines.push('- Reasons:')
       for (const reason of cell.reasons) lines.push(`  - ${reason}`)
     }
-    if (cell.measurement_limits?.length) {
-      lines.push('- Measurement limits:')
-      for (const limit of cell.measurement_limits) lines.push(`  - ${limit}`)
+    if (cell.observed?.fabricated_symbols?.length) {
+      lines.push(`- Symbols absent from the pinned target: ${cell.observed.fabricated_symbols.map((v) => `\`${v}\``).join(', ')}`)
+    }
+    if (cell.observed?.required_symbols_seen_only_in_snippets?.length) {
+      lines.push(`- Required symbols visible ONLY in retained snippet text (reported, never counted): ${cell.observed.required_symbols_seen_only_in_snippets.map((entry) => `\`${entry.symbol}\` at \`${entry.schema_path}\``).join(', ')}`)
+    }
+    if (cell.ready_clauses?.applicable) {
+      lines.push(`- must_not_report_ready_when: ${cell.ready_clauses.violated.length} violated, ${cell.ready_clauses.undetermined.length} undetermined`)
+      for (const clause of cell.ready_clauses.violated) lines.push(`  - **violated**: ${clause}`)
+      for (const clause of cell.ready_clauses.undetermined) lines.push(`  - undetermined: ${clause}`)
+    }
+    if (cell.requirement_coverage?.length) {
+      lines.push('- Frozen required_behaviour coverage:')
+      for (const entry of cell.requirement_coverage) {
+        const verdict = entry.measured ? (entry.satisfied ? 'satisfied' : '**not satisfied**') : '**not measured**'
+        lines.push(`  - ${verdict} — ${entry.requirement} _(${entry.how})_`)
+      }
+    }
+    if (cell.observed?.absence_declaration) {
+      const absence = cell.observed.absence_declaration
+      lines.push(`- Absence declaration: ${absence.observed ? 'observed' : '**not observed**'} across ${absence.channels_searched.length} declaration channel(s); ${absence.declarations_seen} declaration string(s) searched for subject terms ${absence.subject_terms.map((v) => `\`${v}\``).join(', ')}`)
+      for (const match of absence.matches.slice(0, 4)) lines.push(`  - \`${match.schema_path}\` matched \`${match.term}\`: ${match.text}`)
     }
     if (cell.evidence_reference) lines.push(`- Evidence: \`${cell.evidence_reference}\``)
+  }
+  lines.push('')
+  lines.push('## Evidence surface')
+  lines.push('')
+  if (result.evidence_surface) {
+    const declared = result.evidence_surface.declared_channels
+    const counts = declared.reduce((totals, entry) => ({ ...totals, [entry.role]: (totals[entry.role] ?? 0) + 1 }), {})
+    lines.push(`The consumer-visible evidence surface is declared channel by channel in \`scripts/lib/qualify-tier1/channels.mjs\`: ${declared.length} channels — ${Object.entries(counts).sort().map(([role, count]) => `${count} ${role}`).join(', ')}.`)
+    lines.push('')
+    lines.push(`A run refuses to measure a cell whose artifact presents a channel the registry does not classify, so closure is a checked property rather than a claim. Closed on this run: **${result.evidence_surface.closed ? 'yes' : 'no'}**.`)
+    if (!result.evidence_surface.closed) {
+      lines.push('')
+      for (const failure of result.evidence_surface.unclassified) {
+        lines.push(`- \`${failure.cell_id}\`: ${failure.unclassified.map((entry) => `\`${entry.channel}\``).join(', ')}`)
+      }
+    }
+    lines.push('')
+    lines.push('| Channel | Role | Tier | Why ignored |')
+    lines.push('| --- | --- | --- | --- |')
+    for (const entry of declared.filter((channel) => channel.role !== 'ignored')) {
+      lines.push(`| \`${entry.channel}\` | ${entry.role} | ${entry.tier ?? '—'} | — |`)
+    }
+    lines.push('')
+    lines.push('<details><summary>Channels deliberately not treated as evidence</summary>')
+    lines.push('')
+    lines.push('| Channel | Reason |')
+    lines.push('| --- | --- |')
+    for (const entry of declared.filter((channel) => channel.role === 'ignored')) {
+      lines.push(`| \`${entry.channel}\` | ${entry.reason ?? '—'} |`)
+    }
+    lines.push('')
+    lines.push('</details>')
+  }
+  lines.push('')
+  lines.push('## Run independence')
+  lines.push('')
+  if (result.run_independence) {
+    lines.push(`Generated state for this arm lives under \`${result.run_independence.work_dir}\`. The only shared artefact is the bare clone mirror in \`${result.run_independence.shared_immutable_clone_cache}\`, which is immutable and identity-verified per run.`)
+    lines.push('')
+    lines.push('| Target | Prepared worktree | HEAD | Clone cache | Graph artifact digest |')
+    lines.push('| --- | --- | --- | --- | --- |')
+    for (const target of result.run_independence.targets) {
+      lines.push(`| \`${target.target_id}\` | \`${target.prepared_worktree}\` | \`${(target.head ?? '—').slice(0, 12)}\` | ${target.clone_cache_read} | \`${(target.graph_artifact_digest ?? '—').slice(0, 16)}\` |`)
+    }
+    lines.push('')
+    lines.push('| Cell | Artifact digest | Channels observed |')
+    lines.push('| --- | --- | --- |')
+    for (const cell of [...result.run_independence.cells].sort((a, b) => a.cell_id.localeCompare(b.cell_id))) {
+      lines.push(`| \`${cell.cell_id}\` | \`${cell.artifact_digest.slice(0, 16)}\` | ${cell.evidence_channels_observed} |`)
+    }
   }
   lines.push('')
   lines.push('## Inherited #660 signal observation (read-only)')
