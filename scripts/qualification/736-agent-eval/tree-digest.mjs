@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 
 const root = resolve(process.argv[2] ?? '.')
-const files = []
+const entries = []
 
 function compareCodePoints(left, right) {
   const a = Array.from(left, (value) => value.codePointAt(0) ?? 0)
@@ -17,30 +17,35 @@ function compareCodePoints(left, right) {
 }
 
 function visit(directory) {
-  const entries = readdirSync(directory, { withFileTypes: true })
+  const children = readdirSync(directory, { withFileTypes: true })
     .sort((left, right) => compareCodePoints(left.name, right.name))
-  for (const entry of entries) {
-    if (entry.name === '.git') continue
-    const absolute = resolve(directory, entry.name)
-    if (entry.isSymbolicLink()) continue
-    if (entry.isDirectory()) {
+  for (const child of children) {
+    if (child.name === '.git') continue
+    const absolute = resolve(directory, child.name)
+    if (child.isDirectory()) {
       visit(absolute)
       continue
     }
-    if (entry.isFile()) files.push(absolute)
+    if (child.isFile() || child.isSymbolicLink()) entries.push(absolute)
   }
 }
 
 visit(root)
-files.sort((left, right) => compareCodePoints(relative(root, left), relative(root, right)))
+entries.sort((left, right) => compareCodePoints(relative(root, left), relative(root, right)))
 
 const digest = createHash('sha256')
-for (const file of files) {
-  const path = relative(root, file).replaceAll('\\', '/')
-  const stat = statSync(file)
-  const content = readFileSync(file)
+for (const entry of entries) {
+  const path = relative(root, entry).replaceAll('\\', '/')
+  const stat = lstatSync(entry)
+  if (stat.isSymbolicLink()) {
+    const target = readlinkSync(entry)
+    const targetDigest = createHash('sha256').update(target).digest('hex')
+    digest.update(`${path}\u0000symlink\u0000${targetDigest}\n`)
+    continue
+  }
+  const content = readFileSync(entry)
   const fileDigest = createHash('sha256').update(content).digest('hex')
-  digest.update(`${path}\u0000${stat.mode & 0o111 ? 'x' : '-'}\u0000${fileDigest}\n`)
+  digest.update(`${path}\u0000file\u0000${stat.mode & 0o111 ? 'x' : '-'}\u0000${fileDigest}\n`)
 }
 
 process.stdout.write(`${digest.digest('hex')}\n`)
