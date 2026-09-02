@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "status": "DO_NOT_RUN_UNTIL_FILLED_FROM_ORIGINAL_FROZEN_MD",
+  "required_source": {
+    "name": "FROZEN.md",
+    "reported_sha256_prefix": "a45f2562",
+    "note": "Copy the exact three task texts from the original anchored checkpoint. Do not rewrite, summarize, or reconstruct them from source/history after the prototype result."
+  },
+  "arm_order": {
+    "regression-govalidate-users-me": ["madar", "native"],
+    "regression-govalidate-section-research-queue": ["native", "madar"],
+    "regression-govalidate-refundCredit": ["madar", "native"]
+  },
+  "tasks": [
+    {
+      "id": "regression-govalidate-users-me",
+      "repository": "mohanagy/govalidate-backend",
+      "revision": "06f4e2705af78de2200b28f1b0170898dbd8f93c",
+      "task": "__COPY_EXACT_TASK_TEXT_FROM_ORIGINAL_FROZEN_MD__",
+      "anchor": "GET /users/me"
+    },
+    {
+      "id": "regression-govalidate-section-research-queue",
+      "repository": "mohanagy/govalidate-backend",
+      "revision": "06f4e2705af78de2200b28f1b0170898dbd8f93c",
+      "task": "__COPY_EXACT_TASK_TEXT_FROM_ORIGINAL_FROZEN_MD__",
+      "anchor": "section-research-queue"
+    },
+    {
+      "id": "regression-govalidate-refundCredit",
+      "repository": "mohanagy/govalidate-backend",
+      "revision": "06f4e2705af78de2200b28f1b0170898dbd8f93c",
+      "task": "__COPY_EXACT_TASK_TEXT_FROM_ORIGINAL_FROZEN_MD__",
+      "anchor": "refundCredit"
+    }
+  ]
+}
