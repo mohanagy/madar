@@ -63,8 +63,13 @@ TASK_ID=$(node -e 'const v=require(process.argv[1]); if(typeof v.id!=="string"||
 TASK_TEXT=$(node -e 'const v=require(process.argv[1]); process.stdout.write(v.task)' "$TASK_JSON")
 
 RUN_HOME=$(mktemp -d "${TMPDIR:-/tmp}/madar-736-codex.XXXXXX")
-trap 'rm -rf "$RUN_HOME"' EXIT
+cleanup() {
+  chmod -R u+w "$RUN_HOME" 2>/dev/null || true
+  rm -rf "$RUN_HOME"
+}
+trap cleanup EXIT
 chmod 700 "$RUN_HOME"
+mkdir -p "$RUN_HOME/home" "$RUN_HOME/tmp" "$RUN_HOME/xdg-config" "$RUN_HOME/xdg-cache"
 if [[ -f "$SOURCE_HOME/auth.json" ]]; then
   cp "$SOURCE_HOME/auth.json" "$RUN_HOME/auth.json"
   chmod 600 "$RUN_HOME/auth.json"
@@ -80,7 +85,7 @@ network_access = false
 
 [shell_environment_policy]
 inherit = "core"
-set = { MADAR_736_EVAL = "1" }
+set = { MADAR_736_EVAL = "1", HOME = "$RUN_HOME/home", TMPDIR = "$RUN_HOME/tmp", XDG_CONFIG_HOME = "$RUN_HOME/xdg-config", XDG_CACHE_HOME = "$RUN_HOME/xdg-cache" }
 EOF
 
 if [[ "$ARM" == madar ]]; then
@@ -107,7 +112,12 @@ RUN_META="$OUTPUT_DIR/run-meta.json"
 BEFORE=$(node "$SCRIPT_DIR/tree-digest.mjs" "$WORKSPACE")
 START_NS=$(python3 -c 'import time; print(time.time_ns())')
 set +e
-CODEX_HOME="$RUN_HOME" codex --ask-for-approval never exec \
+HOME="$RUN_HOME/home" \
+TMPDIR="$RUN_HOME/tmp" \
+XDG_CONFIG_HOME="$RUN_HOME/xdg-config" \
+XDG_CACHE_HOME="$RUN_HOME/xdg-cache" \
+CODEX_HOME="$RUN_HOME" \
+codex --ask-for-approval never exec \
   --sandbox workspace-write \
   --ephemeral \
   --skip-git-repo-check \
