@@ -19,7 +19,7 @@ const cases = [
   {
     id: 'H2',
     root: resolve(workspace, 'targets/typeorm-h2'),
-    anchor: 'coord_dimension',
+    anchor: 'PostgresQueryRunner',
     expectedPath: 'src/driver/postgres/PostgresQueryRunner.ts',
     expectedRevision: '8cf22582d32f9b33ff2f2f5ab5c5f98832ab0d84',
   },
