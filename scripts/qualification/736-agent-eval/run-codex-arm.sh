@@ -75,27 +75,12 @@ if [[ -f "$SOURCE_HOME/auth.json" ]]; then
   chmod 600 "$RUN_HOME/auth.json"
 fi
 
-cat > "$RUN_HOME/config.toml" <<EOF
-model = "$MODEL"
-model_reasoning_effort = "$EFFORT"
-web_search = "disabled"
-
-[sandbox_workspace_write]
-network_access = false
-
-[shell_environment_policy]
-inherit = "core"
-set = { MADAR_736_EVAL = "1", HOME = "$RUN_HOME/home", TMPDIR = "$RUN_HOME/tmp", XDG_CONFIG_HOME = "$RUN_HOME/xdg-config", XDG_CACHE_HOME = "$RUN_HOME/xdg-cache" }
-EOF
-
-if [[ "$ARM" == madar ]]; then
-  cat >> "$RUN_HOME/config.toml" <<EOF
-
-[mcp_servers.madar_evidence]
-command = "node"
-args = ["$MADAR_ROOT/dist/src/cli/evidence-bin.js", "--root", "$WORKSPACE"]
-EOF
-fi
+# Arm config is rendered by the shared helper so CI can assert on the exact
+# bytes both arms receive. Arm B differs only by the frozen madar_evidence
+# server plus the per-server tool-approval policy that makes it reachable while
+# the global command approval policy stays `never`.
+node "$SCRIPT_DIR/arm-harness.mjs" render-config \
+  "$ARM" "$RUN_HOME" "$MADAR_ROOT" "$WORKSPACE" "$MODEL" "$EFFORT" > "$RUN_HOME/config.toml"
 
 PROMPT_FILE="$OUTPUT_DIR/prompt.txt"
 {
@@ -136,45 +121,11 @@ print((int(sys.argv[2]) - int(sys.argv[1])) // 1_000_000)
 PY
 )
 
-node "$SCRIPT_DIR/summarize-events.mjs" "$EVENTS" "$EVENT_SUMMARY"
+node "$SCRIPT_DIR/arm-harness.mjs" summarize-events "$EVENTS" "$EVENT_SUMMARY"
 
-node - "$TASK_ID" "$ARM" "$MODEL" "$EFFORT" "$CODEX_RC" "$WALL_MS" "$BEFORE" "$AFTER" "$EVENT_SUMMARY" "$FINAL_JSON" > "$RUN_META" <<'NODE'
-const fs = require('node:fs')
-const [taskId, arm, model, effort, rcRaw, wallRaw, before, after, summaryPath, finalPath] = process.argv.slice(2)
-const events = JSON.parse(fs.readFileSync(summaryPath, 'utf8'))
-const invalidReasons = []
-const rc = Number(rcRaw)
-if (rc !== 0) invalidReasons.push(`codex_exit_${rc}`)
-if (before !== after) invalidReasons.push('workspace_mutated')
-if (events.file_changes > 0) invalidReasons.push('agent_file_change_event')
-if (events.web_searches > 0) invalidReasons.push('web_search_used')
-if (!fs.existsSync(finalPath)) invalidReasons.push('missing_final_json')
-else {
-  try { JSON.parse(fs.readFileSync(finalPath, 'utf8')) } catch { invalidReasons.push('invalid_final_json') }
-}
-const payload = {
-  schema_version: 1,
-  task_id: taskId,
-  arm,
-  model,
-  reasoning_effort: effort,
-  codex_exit_code: rc,
-  wall_ms: Number(wallRaw),
-  workspace_digest_before: before,
-  workspace_digest_after: after,
-  command_calls: events.command_calls,
-  mcp_calls: events.mcp_calls,
-  mcp_calls_by_tool: events.mcp_calls_by_tool,
-  web_searches: events.web_searches,
-  file_changes: events.file_changes,
-  usage: events.usage,
-  event_errors: events.errors,
-  madar_mcp_used: events.mcp_calls > 0,
-  valid: invalidReasons.length === 0,
-  invalid_reasons: invalidReasons,
-}
-process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`)
-NODE
+node "$SCRIPT_DIR/arm-harness.mjs" run-meta \
+  "$TASK_ID" "$ARM" "$MODEL" "$EFFORT" "$CODEX_RC" "$WALL_MS" \
+  "$BEFORE" "$AFTER" "$EVENT_SUMMARY" "$FINAL_JSON" > "$RUN_META"
 
 cat "$RUN_META"
 if [[ $(node -e 'const v=require(process.argv[1]); process.stdout.write(v.valid?"yes":"no")' "$RUN_META") != yes ]]; then

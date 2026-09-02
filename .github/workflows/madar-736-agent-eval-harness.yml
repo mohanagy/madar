@@ -23,6 +23,7 @@ jobs:
           bash -n scripts/qualification/736-agent-eval/run-codex-arm.sh
           bash -n scripts/qualification/736-agent-eval/run-suite.sh
           bash -n scripts/qualification/736-agent-eval/find-original-freeze.sh
+          node --check scripts/qualification/736-agent-eval/arm-harness.mjs
           node --check scripts/qualification/736-agent-eval/tree-digest.mjs
           node --check scripts/qualification/736-agent-eval/summarize-events.mjs
           node --check scripts/qualification/736-agent-eval/merge-task-manifests.mjs
@@ -40,6 +41,105 @@ jobs:
             if (actual !== task.task_text_sha256) throw new Error(`${task.id}: task text hash mismatch`)
           }
           NODE
+
+      - name: Arm B config delivers the frozen madar_evidence server under a workable approval policy
+        run: |
+          node --input-type=module <<'NODE'
+          const { renderArmConfig } = await import('./scripts/qualification/736-agent-eval/arm-harness.mjs')
+          const args = { runHome: '/run', madarRoot: '/cand', workspace: '/ws', model: 'gpt-5.6-sol', effort: 'medium' }
+          const madar = renderArmConfig({ arm: 'madar', ...args })
+          const native = renderArmConfig({ arm: 'native', ...args })
+
+          if (!madar.includes('[mcp_servers.madar_evidence]')) throw new Error('Arm B is missing the madar_evidence server')
+          if (!madar.includes('default_tools_approval_mode = "approve"')) throw new Error('Arm B is missing the per-server tool approval policy')
+          if (!madar.includes('"/cand/dist/src/cli/evidence-bin.js", "--root", "/ws"')) throw new Error('Arm B server command/root changed')
+          if (native.includes('madar_evidence')) throw new Error('Native arm was contaminated with the evidence server')
+          if (native.includes('default_tools_approval_mode')) throw new Error('Native arm approval policy changed')
+
+          // Both arms must be otherwise byte-identical.
+          if (!madar.startsWith(native)) throw new Error('arms diverge outside the madar_evidence block')
+          for (const cfg of [madar, native]) {
+            if (!cfg.includes('web_search = "disabled"')) throw new Error('web search must stay disabled')
+            if (!cfg.includes('network_access = false')) throw new Error('agent network must stay disabled')
+          }
+          console.log('arm config control: OK')
+          NODE
+
+      - name: Run-metadata controls — treatment delivery must fail closed
+        run: |
+          node --input-type=module <<'NODE'
+          const { summarizeEvents, buildRunMeta } = await import('./scripts/qualification/736-agent-eval/arm-harness.mjs')
+          const base = { taskId: 't', model: 'gpt-5.6-sol', effort: 'medium', rc: 0, wallMs: 1,
+                         before: 'd', after: 'd', finalExists: true, finalParses: true }
+          const meta = (arm, lines) => buildRunMeta({ ...base, arm, events: summarizeEvents(lines) })
+          const call = (o) => JSON.stringify({ type: 'item.completed', item: { type: 'mcp_tool_call', server: 'madar_evidence', tool: 'resolve_anchor', ...o } })
+          const started = JSON.stringify({ type: 'item.started', item: { type: 'mcp_tool_call', server: 'madar_evidence', tool: 'resolve_anchor', status: 'in_progress' } })
+          const eq = (label, actual, expected) => { if (actual !== expected) throw new Error(`${label}: expected ${expected}, got ${actual}`) }
+
+          // A. successful MCP call
+          const a = meta('madar', [started, call({ status: 'completed', result: { content: [{ type: 'text', text: '{"resolution":"exact_resolved"}' }] }, error: null })])
+          eq('A attempted', a.mcp_calls_attempted, 1); eq('A succeeded', a.mcp_calls_succeeded, 1)
+          eq('A failed', a.mcp_calls_failed, 0); eq('A refused', a.mcp_calls_refused, 0)
+          eq('A used', a.madar_mcp_used, true); eq('A valid', a.valid, true)
+          eq('A delivery', a.treatment_delivery, 'madar_delivered')
+
+          // B. approval-refused MCP call — the exact shape observed in the invalid 2026-09-02 run
+          const b = meta('madar', [started, call({ status: 'failed', error: { message: 'MCP tool call requires approval, but approval policy is never' } })])
+          eq('B attempted', b.mcp_calls_attempted, 1); eq('B succeeded', b.mcp_calls_succeeded, 0)
+          eq('B failed', b.mcp_calls_failed, 1); eq('B refused', b.mcp_calls_refused, 1)
+          eq('B used', b.madar_mcp_used, false); eq('B valid', b.valid, false)
+          eq('B delivery', b.treatment_delivery, 'madar_blocked_by_approval')
+          if (!b.invalid_reasons.includes('mcp_approval_refused')) throw new Error('B: missing mcp_approval_refused')
+
+          // C. Madar arm that never attempted an MCP call stays valid evidence
+          const c = meta('madar', [JSON.stringify({ type: 'item.completed', item: { type: 'command_execution' } })])
+          eq('C valid', c.valid, true); eq('C used', c.madar_mcp_used, false)
+          eq('C delivery', c.treatment_delivery, 'madar_not_attempted')
+
+          // D. Native contamination
+          const d = meta('native', [started, call({ status: 'completed', result: {}, error: null })])
+          eq('D valid', d.valid, false)
+          if (!d.invalid_reasons.includes('native_arm_mcp_contamination')) throw new Error('D: missing contamination reason')
+
+          // E. truthful unresolved/unsupported payloads are product results, not harness failures
+          for (const resolution of ['unresolved', 'unsupported', 'ambiguous', 'truncated']) {
+            const e = meta('madar', [call({ status: 'completed', result: { content: [{ type: 'text', text: JSON.stringify({ resolution }) }] }, error: null })])
+            eq(`E ${resolution} succeeded`, e.mcp_calls_succeeded, 1)
+            eq(`E ${resolution} refused`, e.mcp_calls_refused, 0)
+            eq(`E ${resolution} valid`, e.valid, true)
+            eq(`E ${resolution} delivery`, e.treatment_delivery, 'madar_delivered')
+          }
+
+          // E2. a non-approval operational MCP failure is retained but is NOT an approval refusal
+          const e2 = meta('madar', [call({ status: 'failed', error: { message: 'evidence-bin exited with code 1' } })])
+          eq('E2 failed', e2.mcp_calls_failed, 1); eq('E2 refused', e2.mcp_calls_refused, 0)
+          eq('E2 delivery', e2.treatment_delivery, 'madar_operational_failure_only')
+          if (e2.invalid_reasons.includes('mcp_approval_refused')) throw new Error('E2: operational failure misclassified as approval refusal')
+
+          // F. unknown status must fail closed, never count as success
+          const f = meta('madar', [call({ status: 'weird-new-status' })])
+          eq('F succeeded', f.mcp_calls_succeeded, 0); eq('F unknown', f.mcp_calls_unknown, 1)
+          eq('F valid', f.valid, false)
+          if (!f.invalid_reasons.includes('mcp_status_unclassifiable')) throw new Error('F: missing unclassifiable reason')
+
+          // G. mcp_calls back-compat means ATTEMPTED
+          eq('G back-compat', b.mcp_calls, b.mcp_calls_attempted)
+
+          // H. existing validity gates still bite
+          const h = buildRunMeta({ ...base, arm: 'madar', rc: 1, events: summarizeEvents([]) })
+          if (!h.invalid_reasons.includes('codex_exit_1')) throw new Error('H: exit gate lost')
+          const i = buildRunMeta({ ...base, arm: 'madar', after: 'other', events: summarizeEvents([]) })
+          if (!i.invalid_reasons.includes('workspace_mutated')) throw new Error('I: mutation gate lost')
+          const j = buildRunMeta({ ...base, arm: 'madar', events: summarizeEvents([JSON.stringify({ type: 'item.completed', item: { type: 'web_search' } })]) })
+          if (!j.invalid_reasons.includes('web_search_used')) throw new Error('J: web-search gate lost')
+          const k = buildRunMeta({ ...base, arm: 'madar', events: summarizeEvents([JSON.stringify({ type: 'item.completed', item: { type: 'file_change' } })]) })
+          if (!k.invalid_reasons.includes('agent_file_change_event')) throw new Error('K: file-change gate lost')
+          const l = buildRunMeta({ ...base, arm: 'madar', finalExists: false, events: summarizeEvents([]) })
+          if (!l.invalid_reasons.includes('missing_final_json')) throw new Error('L: final.json gate lost')
+
+          console.log('run-metadata controls: OK')
+          NODE
+
       - name: Prove workspace digest covers symlink mutation
         run: |
           root=$(mktemp -d)
