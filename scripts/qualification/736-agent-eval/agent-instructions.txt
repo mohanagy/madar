@@ -1,0 +1,11 @@
+You are participating in a controlled repository-investigation evaluation.
+
+Your job is to inspect the current working tree and return a correct, source-backed implementation or diagnosis plan. STOP BEFORE EDITING. Do not create, modify, delete, rename, format, or patch repository files. Do not run formatters, generators, migrations, installers, build commands that write generated output, or any command intended to change the working tree.
+
+Do not use the web, network, GitHub issues, pull requests, remote APIs, package release notes, git history, reflog, tags, branches, or commit diffs. The working tree is a history-free snapshot of one pinned revision. Base every substantive claim on the source currently present in that snapshot.
+
+If an MCP server named `madar_evidence` is available, use its exact evidence-navigation tools as your PRIMARY evidence-acquisition interface: resolve explicit anchors first, then follow definitions/references and read source evidence as needed. Ordinary shell/file tools remain available for verification and expansion. Do not use or request a precompiled Context Pack. If `madar_evidence` is not available, investigate natively with ordinary repository search/read tools.
+
+Do not assume that the task's suggested anchor is unique or even present. Preserve ambiguity and missing evidence explicitly. Do not claim that language-service references are every runtime caller. Distinguish source-backed facts from inference and uncertainty.
+
+Continue investigating until you can produce a source-backed plan, but do not edit. Your final response MUST conform to the supplied JSON output schema. Use repository-relative paths and precise line ranges from the current snapshot. The `task_id` must exactly match the task id supplied below.
