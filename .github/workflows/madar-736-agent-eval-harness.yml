@@ -1,0 +1,39 @@
+name: Madar 736 agent-eval harness checks
+
+on:
+  push:
+    branches:
+      - qualification/736-agent-eval-harness
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate shell and Node syntax
+        run: |
+          bash -n scripts/qualification/736-agent-eval/prepare-snapshot.sh
+          bash -n scripts/qualification/736-agent-eval/run-codex-arm.sh
+          bash -n scripts/qualification/736-agent-eval/run-suite.sh
+          node --check scripts/qualification/736-agent-eval/tree-digest.mjs
+          node --check scripts/qualification/736-agent-eval/summarize-events.mjs
+          node --check scripts/qualification/736-agent-eval/merge-task-manifests.mjs
+          node -e "JSON.parse(require('node:fs').readFileSync('scripts/qualification/736-agent-eval/output-schema.json','utf8'))"
+          node -e "JSON.parse(require('node:fs').readFileSync('scripts/qualification/736-agent-eval/holdout-tasks.public.json','utf8'))"
+      - name: Prove placeholder regression truth fails closed
+        run: |
+          if node scripts/qualification/736-agent-eval/merge-task-manifests.mjs \
+            scripts/qualification/736-agent-eval/regression-tasks.REQUIRED.example.json \
+            scripts/qualification/736-agent-eval/holdout-tasks.public.json \
+            /tmp/should-not-exist.json; then
+            echo 'placeholder unexpectedly accepted' >&2
+            exit 1
+          fi
+          test ! -e /tmp/should-not-exist.json
