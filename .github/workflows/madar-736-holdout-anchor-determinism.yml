@@ -1,0 +1,61 @@
+name: Madar 736 holdout anchor and determinism gate
+
+on:
+  push:
+    branches:
+      - qualification/736-holdout-anchor-determinism
+
+permissions:
+  contents: read
+
+jobs:
+  holdout-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qualification/736-holdout-anchor-determinism
+          path: qualification
+      - uses: actions/checkout@v4
+        with:
+          ref: 736fe89603822a3003da11cfa2cc96983af8f30b
+          path: madar
+      - uses: actions/checkout@v4
+        with:
+          repository: nestjs/nest
+          ref: 24db9f733537903f373ba5e68260ce37ef259ce9
+          path: targets/nest
+      - uses: actions/checkout@v4
+        with:
+          repository: typeorm/typeorm
+          ref: 8cf22582d32f9b33ff2f2f5ab5c5f98832ab0d84
+          path: targets/typeorm-h2
+      - uses: actions/checkout@v4
+        with:
+          repository: typeorm/typeorm
+          ref: 30f9fc717bcfaa472d56680437105a6b9581014d
+          path: targets/typeorm-h3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build frozen candidate
+        working-directory: madar
+        run: npm ci --ignore-scripts && npm run build
+      - name: Run three repetitions in C locale
+        env:
+          LC_ALL: C
+          LANG: C
+          OUTPUT_FILE: ${{ runner.temp }}/holdout-C.json
+        run: node qualification/scripts/qualification/madar-736-holdout-driver.mjs
+      - name: Run three repetitions in C.UTF-8 locale
+        env:
+          LC_ALL: C.UTF-8
+          LANG: C.UTF-8
+          OUTPUT_FILE: ${{ runner.temp }}/holdout-CUTF8.json
+        run: node qualification/scripts/qualification/madar-736-holdout-driver.mjs
+      - name: Compare canonical digests across locales
+        env:
+          C_RESULT: ${{ runner.temp }}/holdout-C.json
+          CUTF8_RESULT: ${{ runner.temp }}/holdout-CUTF8.json
+        run: node qualification/scripts/qualification/madar-736-compare-locales.mjs
