@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "candidate_sha": "736fe89603822a3003da11cfa2cc96983af8f30b",
+  "evaluation_classification": "internal_falsification",
+  "arm_order": {
+    "holdout-nest-17614": ["native", "madar"],
+    "holdout-typeorm-12747": ["madar", "native"],
+    "holdout-typeorm-12629": ["native", "madar"]
+  },
+  "tasks": [
+    {
+      "id": "holdout-nest-17614",
+      "repository": "nestjs/nest",
+      "revision": "24db9f733537903f373ba5e68260ce37ef259ce9",
+      "task": "NestJS built-in HTTP exceptions accept HttpExceptionOptions.errorCode, and the exception instance exposes errorCode, but new BadRequestException('Password is too weak', { errorCode: 'WEAK_PASSWORD' }).getResponse() omits it. Investigate why built-in exceptions fail to serialize errorCode and produce a source-backed implementation plan that fixes the built-in exception family without changing behavior when no errorCode is supplied or when a custom object response is used. Stop before editing.",
+      "anchors": ["HttpExceptionOptions.errorCode", "BadRequestException", "errorCode", "HttpException.createBody"]
+    },
+    {
+      "id": "holdout-typeorm-12747",
+      "repository": "typeorm/typeorm",
+      "revision": "8cf22582d32f9b33ff2f2f5ab5c5f98832ab0d84",
+      "task": "When TypeORM loads PostGIS spatial columns, the PostgreSQL driver ignores the geometry_columns coord_dimension field. A declared GeometryZ/PointZ column is loaded without its dimensional suffix, so migration generation repeatedly proposes the same ALTER. Investigate the loading path and produce a source-backed implementation plan that reconstructs dimensional spatialFeatureType correctly, preserves geography behavior, and prevents repeated schema drift. Stop before editing.",
+      "anchors": ["coord_dimension", "geometry_columns", "spatialFeatureType", "GeometryZ", "PostgresQueryRunner"]
+    },
+    {
+      "id": "holdout-typeorm-12629",
+      "repository": "typeorm/typeorm",
+      "revision": "30f9fc717bcfaa472d56680437105a6b9581014d",
+      "task": "EntityManager.update/delete/softDelete/restore validate criteria before normalization, but normalization can reduce apparently non-empty criteria to no predicate; an empty condition can render as WHERE 1=1 and turn a targeted write into an unscoped write. Investigate the path through EntityManager, OrmUtils.normalizeWhereCriteria, and QueryBuilder WHERE construction, and produce a source-backed implementation plan that rejects normalized-empty/degenerate write criteria while preserving intentional full-table APIs and primitive-id behavior. Stop before editing.",
+      "anchors": ["EntityManager.update", "OrmUtils.normalizeWhereCriteria", "invalidWhereValuesBehavior", "QueryBuilder", "WHERE 1=1"]
+    }
+  ]
+}
