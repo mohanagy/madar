@@ -22,11 +22,35 @@ jobs:
           bash -n scripts/qualification/736-agent-eval/prepare-snapshot.sh
           bash -n scripts/qualification/736-agent-eval/run-codex-arm.sh
           bash -n scripts/qualification/736-agent-eval/run-suite.sh
+          bash -n scripts/qualification/736-agent-eval/find-original-freeze.sh
           node --check scripts/qualification/736-agent-eval/tree-digest.mjs
           node --check scripts/qualification/736-agent-eval/summarize-events.mjs
           node --check scripts/qualification/736-agent-eval/merge-task-manifests.mjs
           node -e "JSON.parse(require('node:fs').readFileSync('scripts/qualification/736-agent-eval/output-schema.json','utf8'))"
           node -e "JSON.parse(require('node:fs').readFileSync('scripts/qualification/736-agent-eval/holdout-tasks.public.json','utf8'))"
+      - name: Verify exact frozen holdout task hashes
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const crypto = require('node:crypto')
+          const manifest = JSON.parse(fs.readFileSync('scripts/qualification/736-agent-eval/holdout-tasks.public.json', 'utf8'))
+          if (manifest.tasks.length !== 3) throw new Error('expected exactly three holdout tasks')
+          for (const task of manifest.tasks) {
+            const actual = crypto.createHash('sha256').update(task.task).digest('hex')
+            if (actual !== task.task_text_sha256) throw new Error(`${task.id}: task text hash mismatch`)
+          }
+          NODE
+      - name: Prove workspace digest covers symlink mutation
+        run: |
+          root=$(mktemp -d)
+          trap 'rm -rf "$root"' EXIT
+          printf 'target-a\n' > "$root/a.txt"
+          ln -s a.txt "$root/link"
+          before=$(node scripts/qualification/736-agent-eval/tree-digest.mjs "$root")
+          rm "$root/link"
+          ln -s missing.txt "$root/link"
+          after=$(node scripts/qualification/736-agent-eval/tree-digest.mjs "$root")
+          test "$before" != "$after"
       - name: Prove placeholder regression truth fails closed
         run: |
           if node scripts/qualification/736-agent-eval/merge-task-manifests.mjs \
