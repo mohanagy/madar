@@ -1,5 +1,58 @@
 # Public roadmap
 
+Updated 5 September 2026. The active roadmap is [#740](https://github.com/mohanagy/madar/issues/740). Historical version buckets are retained below for reference; they are not the current work queue or release promises.
+
+## Current product decision
+
+Madar should help coding agents understand relevant TypeScript/Node behavior and complete correct changes with less total work. We have not established a repeatable advantage over Native exploration or relevant existing tools. Local graph correctness, compact context and fewer ordinary shell calls are useful measurements, but cannot substitute for final-answer correctness and complete-task cost.
+
+The accepted [#736 result](https://github.com/mohanagy/madar/issues/736#issuecomment-5516711380) remains a failed prototype qualification: two of six read-only investigations met its combined evidence, planning and benefit conditions. It was not a 33% coding-success rate. The six exposed tasks remain diagnostic history, not fresh holdouts. Existing package behavior remains available; this roadmap does not authorize a new architecture, package release, or promotion of unreleased changes.
+
+## Work queue
+
+| Work | Status | Purpose |
+|---|---|---|
+| [#740 roadmap and workspace reconciliation](https://github.com/mohanagy/madar/issues/740) | Coordination | Keep documentation, GitHub and retained work consistent with the actual decisions. |
+| [#741 prospective evidence-use contract](https://github.com/mohanagy/madar/issues/741) | Next product-decision work | Define one fixed-evidence handoff experiment, comparison arms, independent scoring, numeric limits and a finite budget before implementation or execution. |
+| [#710 test timing and worker lifecycle](https://github.com/mohanagy/madar/issues/710) | Independent maintenance | Make required execution trustworthy; distinguish deterministic timing from worker-start failures. |
+| [#697 workspace Git process policy](https://github.com/mohanagy/madar/issues/697) | Independent maintenance | Bound discovery while preserving distinct timeout, command failure and non-repository outcomes. |
+| [#739 namespace bracket calls](https://github.com/mohanagy/madar/issues/739) | Blocked; mechanism stopped | Preserve the defect and rejected candidates. A new mechanism decision and corrected control specification are required before another author run. |
+
+These are not a mandatory sequential chain. #710 and #697 do not block preparation of #741. #739 is not required for testing evidence use with an unchanged provider. Dependency PRs remain separate maintenance, requiring their own review and CI evidence.
+
+## What the code review changes
+
+- Retain exact source references, explicit uncertainty, bounded selection, local indexing and existing TypeScript compiler-backed components.
+- Default-auto currently retains legacy relations with supplemental SPI metadata. A switch to SPI-owned topology is a separate compatibility decision, not a consequence of a local fixture passing.
+- The #736 Language Service navigator remains a frozen prototype. Its session-freshness boundary needs attention before editable-workspace production use.
+- Existing context-pack recovery measures retrieval state; it does not inspect the consuming agent's final plan. Evidence can be returned successfully and still be omitted or misused.
+- Keep #739's heritage traversal regression, invalid decorator positive and incomplete validation distinct. Neither candidate is accepted for integration.
+
+The pinned source references and complete dispositions are recorded in [#740](https://github.com/mohanagy/madar/issues/740). The revisited code supports investigating the handoff between evidence and decisions; it does not establish that the proposed handoff will succeed.
+
+## How future evidence will be judged
+
+Report tool/source correctness, final-answer/plan correctness, and whole-task benefit separately. Patch/test success applies only to experiments that actually implement and verify patches. Count all ordinary and MCP operations, startup/index/refresh work, elapsed time, tokens/cache and monetary cost. Report per-task outliers as well as aggregates; call reduction cannot conceal a severe time or cost regression.
+
+Before accessing fresh held-out tasks, freeze expected behaviors, semantic equivalents, evaluator controls, compared tools and model settings, execution-validity rules, numeric quality/cost/latency limits, and a finite run budget. The completed #736 verdict is not rescored. [#741](https://github.com/mohanagy/madar/issues/741) owns the prospective contract, without authorizing an experiment or product implementation.
+
+Relevant mechanisms come from [CodePlan](https://www.microsoft.com/en-us/research/publication/codeplan-repository-level-coding-using-llms-and-planning-2/), [RepoGraph](https://arxiv.org/html/2410.14684v2), [SWE-agent](https://arxiv.org/html/2405.15793v3), [Agentless](https://arxiv.org/html/2407.01489v2), and [Lost in the Middle](https://aclanthology.org/2024.tacl-1.9/). These papers support testable hypotheses, not guaranteed recovery.
+
+## Boundaries and history
+
+The lead coordinates planning, documentation, issue state and cleanup. Codex CLI owns separately scoped production implementation and tests. No author, benchmark, merge or release starts automatically from this roadmap.
+
+[#734](https://github.com/mohanagy/madar/issues/734), [#735](https://github.com/mohanagy/madar/issues/735), [#736](https://github.com/mohanagy/madar/issues/736), and [#738](https://github.com/mohanagy/madar/issues/738) retain their closed dispositions. Closure may record rejection or a completed investigation, rather than a shipped fix. Broad ranker rewrites, language expansion, hosted services, new general-memory work and release promises remain deferred.
+
+## Historical roadmap archive
+
+The following is the previous contributor roadmap, preserved verbatim for links and context. Its future-tense statements and version headings describe historical planning only. Use the current queue above to select work.
+
+<details>
+<summary>Previous roadmap through the v0.26–v0.30 planning buckets</summary>
+
+# Public roadmap
+
 This page is the contributor-facing roadmap for `madar`. It is the current source of truth for post-rename roadmap work, and it intentionally separates **recently shipped** work from the **future roadmap** so contributors do not have to know the rename history to understand what is current.
 
 ## How to read the roadmap
@@ -78,3 +131,5 @@ Focus: make Madar easier to adopt, evaluate, and contribute to after the runtime
 ## Where to start
 
 Start with the open `priority:p0` and `priority:p1` issues first. Before starting work, check the issue for active discussion, confirm there is no open PR already covering it, and keep your branch scoped to a single issue.
+
+</details>
