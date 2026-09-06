@@ -1230,8 +1230,41 @@ export function readQueryEvidenceSnippet(
 
     let selectedLines = selectQueryEvidenceLines(selectedRange)
     if (scope === 'source_file' && !options.fileNodeLike) {
-      const symbolLine = [...selectQueryEvidenceLines(symbolEvidence)]
-        .sort((left, right) => right.score - left.score || left.index - right.index)[0]
+      const scoredSymbolLines = [...selectQueryEvidenceLines(symbolEvidence)]
+        .sort((left, right) => right.score - left.score || left.index - right.index)
+      let symbolLine = scoredSymbolLines[0]
+
+      if (!symbolLine) {
+        const fragmentRank = (fragment: QueryEvidenceFragment): number => {
+          if (QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(fragment.text)) {
+            return 3
+          }
+          if (QUERY_EVIDENCE_OPERATION_PATTERN.test(fragment.text)) {
+            return 0
+          }
+          if (QUERY_EVIDENCE_DECLARATION_PATTERN.test(fragment.text)) {
+            return 2
+          }
+          return 1
+        }
+
+        const symbolFragment = queryEvidenceFragments(lines, symbolRange)
+          .sort((left, right) => (
+            fragmentRank(left) - fragmentRank(right)
+            || left.index - right.index
+          ))[0]
+        if (symbolFragment) {
+          symbolLine = {
+            index: symbolFragment.index,
+            endIndex: symbolFragment.endIndex,
+            text: symbolFragment.text,
+            score: 0,
+            matchedTerms: new Set<string>(),
+            matchedObligations: new Set<number>(),
+            identifierTerms: new Set<string>(),
+          }
+        }
+      }
       const symbolSnippet = symbolLine ? renderQueryEvidenceLines([symbolLine]) : null
       if (symbolLine && symbolSnippet) {
         let mergedLines = [symbolLine]
