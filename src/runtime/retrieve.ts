@@ -1228,7 +1228,31 @@ export function readQueryEvidenceSnippet(
       }
     }
 
-    const selectedLines = selectQueryEvidenceLines(selectedRange)
+    let selectedLines = selectQueryEvidenceLines(selectedRange)
+    if (scope === 'source_file' && !options.fileNodeLike) {
+      const symbolLine = [...selectQueryEvidenceLines(symbolEvidence)]
+        .sort((left, right) => right.score - left.score || left.index - right.index)[0]
+      const symbolSnippet = symbolLine ? renderQueryEvidenceLines([symbolLine]) : null
+      if (symbolLine && symbolSnippet) {
+        let mergedLines = [symbolLine]
+        for (const fileLine of selectedLines) {
+          if (mergedLines.length >= QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
+            break
+          }
+          if (mergedLines.some((line) => (
+            fileLine.index <= line.endIndex && line.index <= fileLine.endIndex
+          ))) {
+            continue
+          }
+          const candidateLines = [...mergedLines, fileLine]
+            .sort((left, right) => left.index - right.index)
+          if (renderQueryEvidenceLines(candidateLines)?.split('\n').includes(symbolSnippet)) {
+            mergedLines = candidateLines
+          }
+        }
+        selectedLines = mergedLines
+      }
+    }
     const snippet = renderQueryEvidenceLines(selectedLines)
     if (!snippet || selectedLines.length === 0) {
       return null
