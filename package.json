@@ -83,7 +83,7 @@
         "gpt-tokenizer": "^3.4.0",
         "neo4j-driver": "^6.0.1",
         "typescript": "^6.0.3",
-        "web-tree-sitter": "^0.26.8"
+        "web-tree-sitter": "^0.27.0"
     },
     "peerDependencies": {
         "@huggingface/transformers": "^4.2.0"
