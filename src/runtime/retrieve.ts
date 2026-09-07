@@ -534,6 +534,7 @@ function truncateSnippetToTokenBudget(
 function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | null }>(
   nodes: readonly TNode[],
   options: RetrieveSnippetOptions = {},
+  eligibleNodeIndexes?: ReadonlySet<number>,
 ): {
   nodes: Array<TNode & { snippet: string | null; snippet_truncated: boolean }>
   usedTokens: number
@@ -555,7 +556,10 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
       }
     }
 
-    if (index >= topNWithSnippet) {
+    const snippetEligible = eligibleNodeIndexes === undefined
+      ? index < topNWithSnippet
+      : eligibleNodeIndexes.has(index)
+    if (!snippetEligible) {
       return {
         ...node,
         snippet: null,
@@ -587,6 +591,78 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
     usedTokens: serializedSnippetTokensUsed,
     remainingTokens: Math.max(0, snippetBudget - serializedSnippetTokensUsed),
   }
+}
+
+function preferredCallEndpointSnippetNodeIndexes<
+  TNode extends { node_id?: string | undefined; snippet?: string | null | undefined },
+  TRelationship extends { from_id?: string | undefined; to_id?: string | undefined; relation: string },
+>(
+  nodes: readonly TNode[],
+  relationships: readonly TRelationship[],
+): ReadonlySet<number> | undefined {
+  const nodeIndexesById = new Map<string, number[]>()
+  nodes.forEach((node, index) => {
+    if (typeof node.node_id !== 'string') {
+      return
+    }
+    const existingIndexes = nodeIndexesById.get(node.node_id)
+    if (existingIndexes) {
+      existingIndexes.push(index)
+    } else {
+      nodeIndexesById.set(node.node_id, [index])
+    }
+  })
+
+  const preferredNodeIndexes = new Set<number>()
+  for (const relationship of relationships) {
+    const fromId = relationship.from_id
+    const toId = relationship.to_id
+    if (
+      relationship.relation !== 'calls'
+      || typeof fromId !== 'string'
+      || fromId.trim().length === 0
+      || typeof toId !== 'string'
+      || toId.trim().length === 0
+    ) {
+      continue
+    }
+
+    const fromNodeIndexes = nodeIndexesById.get(fromId)
+    const toNodeIndexes = nodeIndexesById.get(toId)
+    if (fromNodeIndexes?.length !== 1 || toNodeIndexes?.length !== 1) {
+      continue
+    }
+    const fromIndex = fromNodeIndexes[0]!
+    const toIndex = toNodeIndexes[0]!
+    const fromNode = nodes[fromIndex]!
+    const toNode = nodes[toIndex]!
+    if (
+      typeof fromNode.snippet !== 'string'
+      || fromNode.snippet.trim().length === 0
+      || typeof toNode.snippet !== 'string'
+      || toNode.snippet.trim().length === 0
+    ) {
+      continue
+    }
+
+    preferredNodeIndexes.add(fromIndex)
+    preferredNodeIndexes.add(toIndex)
+  }
+
+  if (preferredNodeIndexes.size === 0) {
+    return undefined
+  }
+
+  const eligibleNodeIndexes = new Set<number>()
+  for (let index = 0; index < nodes.length && eligibleNodeIndexes.size < DEFAULT_RETRIEVE_TOP_N_WITH_SNIPPET; index += 1) {
+    if (preferredNodeIndexes.has(index)) {
+      eligibleNodeIndexes.add(index)
+    }
+  }
+  for (let index = 0; index < nodes.length && eligibleNodeIndexes.size < DEFAULT_RETRIEVE_TOP_N_WITH_SNIPPET; index += 1) {
+    eligibleNodeIndexes.add(index)
+  }
+  return eligibleNodeIndexes
 }
 
 export function withRetrieveSnippetBudget(
@@ -5999,7 +6075,8 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
   const executionSlice = compactExecutionSlice(result.execution_slice)
   const promotedSliceNodeIds = promotedSliceCompactNodeIds(result)
   const promotedSliceLabels = promotedSliceCompactLabels(result)
-  const compactPack = promotedSliceNodeIds.length > 0 || promotedSliceLabels.length > 0
+  const promotedSlice = promotedSliceNodeIds.length > 0 || promotedSliceLabels.length > 0
+  const compactPack = promotedSlice
     ? compactContextPack(fullPack, {
         kind: 'review',
         seed_node_ids: promotedSliceNodeIds,
@@ -6010,7 +6087,20 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
         kind: 'retrieve',
         ...(Number.isFinite(compactFrameworkLimit) ? { max_nodes: compactFrameworkLimit } : {}),
       })
-  const shapedNodes = applyRetrieveSnippetBudgetToNodes(compactPack.nodes, options)
+  const useCallEndpointSnippetAllocation =
+    !promotedSlice
+    && options.topNWithSnippet === undefined
+  const preferredSnippetNodeIndexes = useCallEndpointSnippetAllocation
+    ? preferredCallEndpointSnippetNodeIndexes(
+        compactPack.nodes,
+        compactPack.relationships,
+      )
+    : undefined
+  const shapedNodes = applyRetrieveSnippetBudgetToNodes(
+    compactPack.nodes,
+    options,
+    preferredSnippetNodeIndexes,
+  )
   const compactPackNodeTokenCount = compactPack.nodes.reduce(
     (total, node) => total + estimateRetrieveEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
     0,
