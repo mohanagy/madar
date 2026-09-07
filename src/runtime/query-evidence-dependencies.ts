@@ -171,6 +171,19 @@ function normalizedSource(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
+function physicalSourceForLineRange(
+  range: { start: number; end: number },
+  sourceFile: ts.SourceFile,
+): string {
+  const lineStarts = sourceFile.getLineStarts()
+  const start = lineStarts[range.start - 1]
+  if (start === undefined) {
+    return ''
+  }
+  const end = lineStarts[range.end] ?? sourceFile.text.length
+  return sourceFile.text.slice(start, end)
+}
+
 function representedStatements(
   owner: FunctionOwner,
   representedSource: readonly RepresentedQueryEvidenceSource[],
@@ -193,7 +206,7 @@ function representedStatements(
       if (ts.isStatement(node)) {
         const range = lineRangeOf(node, sourceFile)
         const texts = representedByRange.get(`${range.start}:${range.end}`)
-        if (texts?.has(normalizedSource(node.getText(sourceFile)))) {
+        if (texts?.has(normalizedSource(physicalSourceForLineRange(range, sourceFile)))) {
           statements.push(node)
         }
       }

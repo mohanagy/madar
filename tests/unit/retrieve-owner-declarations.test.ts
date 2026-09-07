@@ -259,6 +259,52 @@ describe('owner-local declaration completion', () => {
     ].join('\n'))
   })
 
+  it.each([
+    {
+      name: 'ordinary trailing line comment',
+      statement: '  return dispatchOutcome(datum) // selected result',
+    },
+    {
+      name: 'trailing block comment',
+      statement: '  return dispatchOutcome(datum) /* selected result */',
+    },
+    {
+      name: 'leading and trailing block-comment trivia',
+      statement: '  /* selected result */ return dispatchOutcome(datum) /* trailing context */',
+    },
+    {
+      name: 'comment-like string and template contents with trailing trivia',
+      statement: '  return dispatchOutcome(datum, "// literal", `/* template */`) // selected result',
+    },
+  ])('attributes a fully represented statement with $name', ({ statement }) => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = 12.5',
+      statement,
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const datum = 12.5',
+      `L3: ${statement.trim()}`,
+    ].join('\n'))
+  })
+
+  it('does not attribute a statement from a truncated partial physical line', () => {
+    const statement = `  return dispatchOutcome(datum) // ${'partial'.repeat(40)}`
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = 12.5',
+      statement,
+      '}',
+    ])
+
+    expect(evidence?.snippet).not.toContain('const datum = 12.5')
+    expect(evidence?.snippet).toContain('return dispatchOutcome(datum)')
+    expect(evidence?.snippet).toContain('...')
+    expect(evidence?.snippet).not.toContain(statement.trim())
+  })
+
   it('uses a selected multiline statement only when its complete text is represented', () => {
     const evidence = evidenceFor([
       'export function executeSample() {',
