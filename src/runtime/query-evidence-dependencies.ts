@@ -480,6 +480,17 @@ function literalDelimiterPreservingLines(
     })
 }
 
+function isStrictAncestorOf(ancestor: ts.Node, descendant: ts.Node): boolean {
+  let current = descendant.parent
+  while (current) {
+    if (current === ancestor) {
+      return true
+    }
+    current = current.parent
+  }
+  return false
+}
+
 /**
  * Projects already-shaped query evidence back onto its authenticated physical
  * source while normalizing layout only outside string/template/regex tokens.
@@ -597,7 +608,10 @@ export function completeQueryEvidenceLiteralStatement(input: {
       return null
     }
     const representedRange = { start: represented.startLine, end: represented.endLine }
-    const candidates: Array<{ start: number; end: number }> = []
+    const candidates: Array<{
+      statement: ts.Statement
+      range: { start: number; end: number }
+    }> = []
     const visit = (node: ts.Node): void => {
       if (node !== owner && isNestedFunctionOrClass(node)) {
         return
@@ -634,17 +648,23 @@ export function completeQueryEvidenceLiteralStatement(input: {
           }
           findCrossingLiteral(node)
           if (crossesRepresentedBoundary) {
-            candidates.push(range)
+            candidates.push({ statement: node, range })
           }
         }
       }
       ts.forEachChild(node, visit)
     }
     visit(owner)
-    if (candidates.length !== 1) {
+    const innermostCandidates = candidates.filter((candidate) => (
+      !candidates.some((other) => (
+        other !== candidate
+        && isStrictAncestorOf(candidate.statement, other.statement)
+      ))
+    ))
+    if (innermostCandidates.length !== 1) {
       return null
     }
-    const range = candidates[0]!
+    const range = innermostCandidates[0]!.range
     return {
       startLine: range.start,
       endLine: range.end,

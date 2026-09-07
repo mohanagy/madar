@@ -1444,6 +1444,56 @@ describe('bounded multiline literal statement completion', () => {
     })
   })
 
+  it.each([
+    { name: 'LF', lineEnding: '\n' as const, literalDelimiter: '\n' },
+    { name: 'CRLF', lineEnding: '\r\n' as const, literalDelimiter: '\r\n' },
+  ])('completes an inline-if $name multiline literal return and its declaration', ({
+    lineEnding,
+    literalDelimiter,
+  }) => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  if (true) return dispatchOutcome(datum, `  alpha',
+      ' beta  `)',
+      '}',
+    ], { question: 'What is the dispatch outcome?', label: 'assemble', lineEnding })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        `L3: if (true) return dispatchOutcome(datum, \`  alpha${literalDelimiter}L4:  beta  \`)`,
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it.each([
+    { name: 'LF', lineEnding: '\n' as const, literalDelimiter: '\n' },
+    { name: 'CRLF', lineEnding: '\r\n' as const, literalDelimiter: '\r\n' },
+  ])('completes a block/loop-nested $name multiline literal return and its declaration', ({
+    lineEnding,
+    literalDelimiter,
+  }) => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  for (;;) { if (true) { return dispatchOutcome(datum, `  alpha',
+      ' beta  `) } }',
+      '}',
+    ], { question: 'What is the dispatch outcome?', label: 'assemble', lineEnding })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        `L3: for (;;) { if (true) { return dispatchOutcome(datum, \`  alpha${literalDelimiter}L4:  beta  \`) } }`,
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
   it('keeps an owner-clipped literal fragment faithful without inferring its declaration', () => {
     const evidence = evidenceFor([
       'function assemble() {',
