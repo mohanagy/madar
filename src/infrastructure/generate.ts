@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { rebindEvidenceOccurrence } from '../contracts/semantic-identity.js'
@@ -39,8 +39,13 @@ import {
 import { createIndexingManifest, indexingStrictViolations, localIndexingPath } from '../pipeline/indexing-outcomes.js'
 import { buildSpiCached, type SpiCacheStats } from '../pipeline/spi/cache.js'
 import { isSpiSupportedSourceFile } from '../pipeline/spi/build.js'
-import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
-import type { SemanticProgramIndex, SpiSymbol, SpiSymbolKind } from '../pipeline/spi/types.js'
+import {
+  createProjectedFileStemById,
+  PROJECTABLE_SYMBOL_KINDS,
+  projectSpiToExtraction,
+  projectSymbol,
+} from '../pipeline/spi/projector.js'
+import type { SemanticProgramIndex, SpiSymbol } from '../pipeline/spi/types.js'
 import { generate as generateReport } from '../pipeline/report.js'
 import { toWiki } from '../pipeline/wiki.js'
 import { loadGraph } from '../runtime/serve.js'
@@ -284,18 +289,6 @@ const AUTO_SOURCE_LOCATION = /^L([1-9]\d*)(?:-L([1-9]\d*))?$/
 const AUTO_SOURCE_MAX_LINES = 25
 const AUTO_SOURCE_MAX_CHARS = 2_000
 const AUTO_SOURCE_MAX_TRUNCATED_CHARS = AUTO_SOURCE_MAX_CHARS + 3
-const AUTO_SOURCE_PROJECTABLE_KINDS: ReadonlySet<SpiSymbolKind> = new Set([
-  'function',
-  'class',
-  'interface',
-  'type-alias',
-  'enum',
-  'method',
-  'constant',
-  'variable',
-  'namespace',
-])
-
 type AutoSourceRange = {
   start: number
   end: number
@@ -375,7 +368,7 @@ function validSpiOwnerRange(symbol: SpiSymbol): AutoSourceRange | null {
 }
 
 function expectedSpiLabel(symbol: SpiSymbol): string | null {
-  if (!AUTO_SOURCE_PROJECTABLE_KINDS.has(symbol.kind) || symbol.framework_metadata?.external_call === true) {
+  if (!PROJECTABLE_SYMBOL_KINDS.has(symbol.kind) || symbol.framework_metadata?.external_call === true) {
     return null
   }
   if (symbol.kind === 'method') {
@@ -430,6 +423,7 @@ function composeDefaultAutoSourceEvidence(args: {
   spi: SemanticProgramIndex
   legacy: ExtractionData
   projectedSpi: ExtractionData
+  sharedFileStems?: ReadonlyMap<string, string>
 }): { legacy: ExtractionData; projectedSpi: ExtractionData } {
   const rootPath = resolve(args.rootPath)
   const allowedFiles = new Set(
@@ -438,6 +432,26 @@ function composeDefaultAutoSourceEvidence(args: {
       return canonical ? [canonical] : []
     }),
   )
+
+  const projectedFileById = new Map(args.spi.files.map((file) => [file.id, file]))
+  const projectedFileStemById = createProjectedFileStemById(
+    args.spi.files,
+    rootPath,
+    args.sharedFileStems,
+  )
+  const rawProjectionCountByDestination = new Map<string, number>()
+  for (const symbol of args.spi.symbols) {
+    if (!PROJECTABLE_SYMBOL_KINDS.has(symbol.kind)) continue
+    const file = projectedFileById.get(symbol.file_id)
+    if (!file) continue
+    const fileBaseStem = projectedFileStemById.get(file.id) ?? basename(file.path, extname(file.path))
+    const projection = projectSymbol(symbol, fileBaseStem)
+    if (!projection) continue
+    rawProjectionCountByDestination.set(
+      projection.id,
+      (rawProjectionCountByDestination.get(projection.id) ?? 0) + 1,
+    )
+  }
 
   const spiFilesById = new Map<string, typeof args.spi.files>()
   const spiFilesByPath = new Map<string, typeof args.spi.files>()
@@ -479,6 +493,7 @@ function composeDefaultAutoSourceEvidence(args: {
 
   const composedNodeIds = new Set<string>()
   const composedProjectedNodes = args.projectedSpi.nodes.map((spiNode) => {
+    if (rawProjectionCountByDestination.get(spiNode.id) !== 1) return spiNode
     const legacyNodes = legacyById.get(spiNode.id)
     if (!legacyNodes || legacyNodes.length !== 1 || projectedById.get(spiNode.id)?.length !== 1) return spiNode
     const legacyNode = legacyNodes[0]!
@@ -1084,6 +1099,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
           spi: built.spi,
           legacy: legacyAugmentationExtraction,
           projectedSpi: spiSupplementalExtraction,
+          ...(sharedFileStems ? { sharedFileStems } : {}),
         })
       : null
     const codeExtraction = extractionMode === 'auto'

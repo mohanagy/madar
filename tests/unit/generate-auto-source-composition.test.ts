@@ -184,6 +184,87 @@ describe('default-auto source composition', () => {
     })
   })
 
+  it.each([
+    ['case', 'A', 'a'],
+    ['leading underscore', 'A', '_A'],
+  ])('does not compose source for a %s-normalized destination collision', (_collision, firstClass, secondClass) => {
+    writeFile(sandbox, 'src/methods.js', [
+      `export class ${firstClass} {`,
+      '  run() {',
+      "    return 'first'",
+      '  }',
+      '}',
+      '',
+      `export class ${secondClass} {`,
+      '  run() {',
+      "    return 'second'",
+      '  }',
+      '}',
+      '',
+      'export class B {',
+      '  run() {',
+      "    return 'distinct'",
+      '  }',
+      '}',
+    ].join('\n') + '\n')
+
+    let rawSpi: SemanticProgramIndex | undefined
+    let rawLegacy: ExtractionData | undefined
+    compositionControls.spiTransform = (spi) => {
+      const distinct = spi.symbols.find((symbol) => symbol.kind === 'method' && symbol.name === 'B.run')!
+      rawSpi = {
+        ...spi,
+        symbols: [
+          ...[...spi.symbols].sort((left, right) => left.range.start.line - right.range.start.line),
+          {
+            ...distinct,
+            id: `${distinct.id}:missing-file-peer`,
+            file_id: 'file:missing-file-peer',
+          },
+        ],
+      }
+      return rawSpi
+    }
+    compositionControls.legacyTransform = (extraction) => {
+      rawLegacy = extraction
+      return extraction
+    }
+
+    const nodes = generatedNodes(sandbox)
+    const collidingSymbols = rawSpi!.symbols.filter((symbol) => (
+      symbol.kind === 'method'
+      && (symbol.name === `${firstClass}.run` || symbol.name === `${secondClass}.run`)
+    )).sort((left, right) => left.range.start.line - right.range.start.line)
+    expect(collidingSymbols.map((symbol) => ({ name: symbol.name, start: symbol.range.start.line }))).toEqual([
+      { name: `${firstClass}.run`, start: 2 },
+      { name: `${secondClass}.run`, start: 8 },
+    ])
+
+    const collidedLegacy = rawLegacy!.nodes.find((node) => (
+      node.label === '.run()' && node.source_location === 'L2-L4'
+    ))!
+    expect(collidedLegacy).toMatchObject({
+      snippet: "run() {\n    return 'first'\n  }",
+    })
+    const collidedDestination = nodeById(nodes, collidedLegacy.id)
+    expect(collidedDestination.source_location).toBe('L2')
+    expect(collidedDestination.snippet).toBeUndefined()
+
+    const distinctLegacy = rawLegacy!.nodes.find((node) => (
+      node.label === '.run()' && node.source_location === 'L14-L16'
+    ))!
+    const distinctDestination = nodeById(nodes, distinctLegacy.id)
+    expect(distinctDestination).toMatchObject({
+      source_location: 'L14-L16',
+      snippet: "run() {\n    return 'distinct'\n  }",
+    })
+    expect(rawSpi!.symbols).toContainEqual(expect.objectContaining({
+      id: expect.stringContaining(':missing-file-peer'),
+      file_id: 'file:missing-file-peer',
+      name: 'B.run',
+    }))
+  })
+
   it('does not borrow same-named method evidence from another qualified destination', () => {
     writeFile(sandbox, 'src/methods.js', [
       'export class A {',
