@@ -85,6 +85,10 @@ import {
   type RetrievalStageObserver,
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
+import {
+  ownerLocalDeclarationEvidence,
+  type RepresentedQueryEvidenceSource,
+} from './query-evidence-dependencies.js'
 
 export { tokenizeLabel, tokenizeQuestion } from './retrieve/pipeline.js'
 
@@ -751,6 +755,7 @@ interface QueryEvidenceLine {
   index: number
   endIndex: number
   text: string
+  representedSource: RepresentedQueryEvidenceSource[]
   score: number
   matchedTerms: Set<string>
   matchedObligations: Set<number>
@@ -789,6 +794,7 @@ interface QueryEvidenceFragment {
   index: number
   endIndex: number
   text: string
+  representedSource: RepresentedQueryEvidenceSource[]
 }
 
 const QUERY_EVIDENCE_CONTINUATION_START_PATTERN = /^\s*(?:[.?:]|&&|\|\|)/
@@ -806,7 +812,7 @@ function structuredCallFragment(
   lines: readonly string[],
   lineNumber: number,
   rangeEnd: number,
-): { end: number; text: string } | null {
+): { end: number; text: string; representedSource: RepresentedQueryEvidenceSource[] } | null {
   const first = lines[lineNumber - 1] ?? ''
   if (
     QUERY_EVIDENCE_DECLARATION_PATTERN.test(first)
@@ -856,6 +862,22 @@ function structuredCallFragment(
   return {
     end,
     text: [first, ...nestedHandoffs.slice(0, 1).map((handoff) => handoff.text), ...discriminants].join(' '),
+    representedSource: [
+      { startLine: lineNumber, endLine: lineNumber, text: first },
+      ...nestedHandoffs.slice(0, 1).map((handoff) => ({
+        startLine: handoff.index,
+        endLine: handoff.index,
+        text: lines[handoff.index - 1] ?? '',
+      })),
+      ...properties
+        .sort((left, right) => priority(left.key) - priority(right.key) || left.index - right.index)
+        .slice(0, 3)
+        .map((property) => ({
+          startLine: property.index,
+          endLine: property.index,
+          text: lines[property.index - 1] ?? '',
+        })),
+    ],
   }
 }
 
@@ -863,7 +885,12 @@ function providerHandoffFragment(
   lines: readonly string[],
   lineNumber: number,
   rangeStart: number,
-): { start: number; end: number; text: string } | null {
+): {
+  start: number
+  end: number
+  text: string
+  representedSource: RepresentedQueryEvidenceSource[]
+} | null {
   const handoff = lines[lineNumber - 1] ?? ''
   const match = handoff.match(QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN)
   const receiver = match?.[1]
@@ -883,6 +910,10 @@ function providerHandoffFragment(
       start: candidateNumber,
       end: lineNumber,
       text: `${candidate.trim()} L${lineNumber}: ${handoff.trim()}`,
+      representedSource: [
+        { startLine: candidateNumber, endLine: candidateNumber, text: candidate },
+        { startLine: lineNumber, endLine: lineNumber, text: handoff },
+      ],
     }
   }
   return null
@@ -948,6 +979,13 @@ function queryEvidenceFragments(
       index: start,
       endIndex: end,
       text: text ?? lines.slice(start - 1, end).join(' '),
+      representedSource: providerHandoff?.representedSource
+        ?? structured?.representedSource
+        ?? [{
+          startLine: start,
+          endLine: end,
+          text: lines.slice(start - 1, end).join(' '),
+        }],
     })
   }
   return fragments
@@ -1075,6 +1113,7 @@ function queryEvidenceRange(
       index: candidate.index,
       endIndex: candidate.endIndex,
       text,
+      representedSource: candidate.representedSource,
       score,
       matchedTerms,
       matchedObligations,
@@ -1230,8 +1269,13 @@ function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[
   return selected.sort((left, right) => left.index - right.index)
 }
 
-function renderQueryEvidenceLines(lines: readonly QueryEvidenceLine[]): string | null {
-  const rendered: string[] = []
+interface RenderedQueryEvidenceLine {
+  source: QueryEvidenceLine
+  text: string
+}
+
+function renderQueryEvidenceLineEntries(lines: readonly QueryEvidenceLine[]): RenderedQueryEvidenceLine[] {
+  const rendered: RenderedQueryEvidenceLine[] = []
   let usedChars = 0
   for (const line of lines) {
     const normalized = line.text.replace(/\s+/g, ' ').trim()
@@ -1245,10 +1289,146 @@ function renderQueryEvidenceLines(lines: readonly QueryEvidenceLine[]): string |
       break
     }
     const bounded = `${prefix}${content}`.slice(0, remaining).trimEnd()
-    rendered.push(bounded)
+    rendered.push({
+      source: line,
+      text: bounded,
+    })
     usedChars += bounded.length + separatorChars
   }
-  return rendered.length > 0 ? rendered.join('\n') : null
+  return rendered
+}
+
+function renderQueryEvidenceLines(lines: readonly QueryEvidenceLine[]): string | null {
+  const rendered = renderQueryEvidenceLineEntries(lines)
+  return rendered.length > 0 ? rendered.map((line) => line.text).join('\n') : null
+}
+
+function explicitOwnerRange(
+  sourceLocation: string | null | undefined,
+  parsedRange: { start: number; end: number } | null,
+  lineNumber: number,
+  lineCount: number,
+  derived: boolean | undefined,
+  fileNodeLike: boolean | undefined,
+): { start: number; end: number } | null {
+  if (derived || fileNodeLike || !parsedRange || typeof sourceLocation !== 'string') {
+    return null
+  }
+  const match = /^L(\d+)(?:-L?(\d+))?$/.exec(sourceLocation)
+  if (!match?.[1]) {
+    return null
+  }
+  const start = Number.parseInt(match[1], 10)
+  const end = Number.parseInt(match[2] ?? match[1], 10)
+  if (
+    start <= 0
+    || end < start
+    || end > lineCount
+    || parsedRange.start !== start
+    || parsedRange.end !== end
+    || lineNumber < start
+    || lineNumber > end
+  ) {
+    return null
+  }
+  return { start, end }
+}
+
+function completeOwnerDeclarationEvidence(
+  sourceFile: string,
+  sourceLines: readonly string[],
+  ownerRange: { start: number; end: number },
+  baseline: readonly RenderedQueryEvidenceLine[],
+): { snippet: string; lineNumber: number } | null {
+  try {
+    const representedSource = baseline.flatMap((rendered) => {
+      const fullContent = rendered.source.text.replace(/\s+/g, ' ').trim()
+      const prefix = `L${rendered.source.index}: `
+      const renderedContent = rendered.text.startsWith(prefix)
+        ? rendered.text.slice(prefix.length)
+        : ''
+      let searchFrom = 0
+      return rendered.source.representedSource.flatMap((represented) => {
+        const representedText = represented.text.replace(/\s+/g, ' ').trim()
+        const index = representedText.length > 0
+          ? fullContent.indexOf(representedText, searchFrom)
+          : -1
+        if (index < 0) {
+          return []
+        }
+        const end = index + representedText.length
+        searchFrom = end
+        return renderedContent.slice(index, end) === fullContent.slice(index, end)
+          ? [represented]
+          : []
+      })
+    })
+    if (representedSource.length === 0) {
+      return null
+    }
+    const declarations = ownerLocalDeclarationEvidence({
+      sourceFilePath: sourceFile,
+      sourceLines,
+      ownerRange,
+      representedSource,
+    })
+    if (declarations.length === 0) {
+      return null
+    }
+
+    const additions = declarations.flatMap((declaration) => declaration.lines.map((line) => {
+      const content = line.text.replace(/\s+/g, ' ').trim()
+      return {
+        lineNumber: line.lineNumber,
+        content,
+        text: `L${line.lineNumber}: ${content}`,
+      }
+    }))
+    if (
+      additions.some((line) => (
+        line.content.length === 0 || line.content.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+      ))
+    ) {
+      return null
+    }
+
+    const merged = [
+      ...baseline.map((line, baselineIndex) => ({
+        lineNumber: line.source.index,
+        text: line.text,
+        baselineIndex,
+      })),
+      ...additions.map((line) => ({
+        lineNumber: line.lineNumber,
+        text: line.text,
+        baselineIndex: null,
+      })),
+    ].sort((left, right) => (
+      left.lineNumber - right.lineNumber
+      || (left.baselineIndex === null ? -1 : left.baselineIndex)
+      - (right.baselineIndex === null ? -1 : right.baselineIndex)
+    ))
+    if (merged.length > QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
+      return null
+    }
+    const snippet = merged.map((line) => line.text).join('\n')
+    if (snippet.length > QUERY_EVIDENCE_SNIPPET_CHAR_CAP) {
+      return null
+    }
+    const preservedBaseline = merged
+      .filter((line) => line.baselineIndex !== null)
+      .sort((left, right) => left.baselineIndex! - right.baselineIndex!)
+      .map((line) => line.text)
+    if (
+      preservedBaseline.length !== baseline.length
+      || preservedBaseline.some((line, index) => line !== baseline[index]?.text)
+    ) {
+      return null
+    }
+    return { snippet, lineNumber: merged[0]!.lineNumber }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -1334,6 +1514,7 @@ export function readQueryEvidenceSnippet(
             index: symbolFragment.index,
             endIndex: symbolFragment.endIndex,
             text: symbolFragment.text,
+            representedSource: symbolFragment.representedSource,
             score: 0,
             matchedTerms: new Set<string>(),
             matchedObligations: new Set<number>(),
@@ -1362,13 +1543,25 @@ export function readQueryEvidenceSnippet(
         selectedLines = mergedLines
       }
     }
-    const snippet = renderQueryEvidenceLines(selectedLines)
-    if (!snippet || selectedLines.length === 0) {
+    const baseline = renderQueryEvidenceLineEntries(selectedLines)
+    if (baseline.length === 0) {
       return null
     }
+    const baselineSnippet = baseline.map((line) => line.text).join('\n')
+    const ownerRange = explicitOwnerRange(
+      options.sourceLocation,
+      parsedRange,
+      lineNumber,
+      lines.length,
+      options.derived,
+      options.fileNodeLike,
+    )
+    const completed = ownerRange
+      ? completeOwnerDeclarationEvidence(sourceFile, lines, ownerRange, baseline)
+      : null
     return {
-      snippet,
-      lineNumber: selectedLines[0]!.index,
+      snippet: completed?.snippet ?? baselineSnippet,
+      lineNumber: completed?.lineNumber ?? baseline[0]!.source.index,
       scope,
     }
   } catch {

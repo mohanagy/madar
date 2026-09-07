@@ -1,0 +1,659 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('typescript', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('typescript')>()
+  return {
+    ...actual,
+    createSourceFile: vi.fn(actual.createSourceFile),
+  }
+})
+
+import * as ts from 'typescript'
+
+import { readQueryEvidenceSnippet, type QueryEvidenceSnippet } from '../../src/runtime/retrieve.js'
+
+const QUESTION = 'How does dispatch outcome return a validated result with retry handling?'
+const roots: string[] = []
+
+function sourceFixture(
+  sourceLines: readonly string[],
+  extension = '.ts',
+): { sourceFile: string; sourceLocation: string } {
+  const fixtureParent = resolve('out', 'test-runtime')
+  mkdirSync(fixtureParent, { recursive: true })
+  const root = mkdtempSync(join(fixtureParent, 'owner-declaration-'))
+  roots.push(root)
+  const sourceFile = join(root, `sample${extension}`)
+  writeFileSync(sourceFile, sourceLines.join('\n'), 'utf8')
+  return {
+    sourceFile,
+    sourceLocation: `L1-L${sourceLines.length}`,
+  }
+}
+
+function evidenceFor(
+  sourceLines: readonly string[],
+  options: {
+    extension?: string
+    label?: string
+    lineNumber?: number
+    question?: string
+    sourceLocation?: string | null
+    derived?: boolean
+    fileCache?: Map<string, string[] | null>
+  } = {},
+): QueryEvidenceSnippet | null {
+  const fixture = sourceFixture(sourceLines, options.extension)
+  return readQueryEvidenceSnippet(fixture.sourceFile, options.lineNumber ?? 1, {
+    question: options.question ?? QUESTION,
+    label: options.label ?? 'executeSample',
+    sourceLocation: options.sourceLocation === undefined
+      ? fixture.sourceLocation
+      : options.sourceLocation,
+    ...(options.derived === undefined ? {} : { derived: options.derived }),
+    ...(options.fileCache ? { fileCache: options.fileCache } : {}),
+  })
+}
+
+afterEach(() => {
+  for (const root of roots.splice(0)) {
+    rmSync(root, { recursive: true, force: true })
+  }
+  vi.mocked(ts.createSourceFile).mockClear()
+})
+
+describe('owner-local declaration completion', () => {
+  it('includes a direct preceding const used by a selected return', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ])
+
+    expect(evidence).toEqual({
+      snippet: 'L2: const datum = 12.5\nL3: return dispatchOutcome(datum)',
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it('includes a separated declaration without inventing an interval excerpt', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      "  const datum = 'ready'",
+      '  observeUnrelatedWork()',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe("L2: const datum = 'ready'\nL4: return dispatchOutcome(datum)")
+    expect(evidence?.snippet).not.toContain('observeUnrelatedWork')
+  })
+
+  it('includes an acyclic const alias closure once in source order', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const origin = 12.5',
+      '  const alias = origin',
+      '  return dispatchOutcome(alias)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe([
+      'L2: const origin = 12.5',
+      'L3: const alias = origin',
+      'L4: return dispatchOutcome(alias)',
+    ].join('\n'))
+  })
+
+  it('deduplicates repeated uses and resolves multiple simple declarators by identity', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const origin = 12.5, alias = origin',
+      '  return dispatchOutcome(alias, alias)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe([
+      'L2: const origin = 12.5, alias = origin',
+      'L3: return dispatchOutcome(alias, alias)',
+    ].join('\n'))
+    expect(evidence?.snippet.match(/const origin/g)).toHaveLength(1)
+  })
+
+  it.each(['.js', '.mjs'])(
+    'supports JavaScript function owners in %s files',
+    (extension) => {
+      const evidence = evidenceFor([
+        'export function executeSample() {',
+        '  const datum = 12.5',
+        '  return dispatchOutcome(datum)',
+        '}',
+      ], { extension })
+
+      expect(evidence?.snippet).toContain('L2: const datum = 12.5')
+    },
+  )
+
+  it.each([
+    {
+      name: 'function expression',
+      source: [
+        'export const executeSample = function () {',
+        '  const datum = 12.5',
+        '  return dispatchOutcome(datum)',
+        '}',
+      ],
+      lineNumber: 1,
+      sourceLocation: 'L1-L4',
+    },
+    {
+      name: 'arrow function',
+      source: [
+        'export const executeSample = () => {',
+        '  const datum = 12.5',
+        '  return dispatchOutcome(datum)',
+        '}',
+      ],
+      lineNumber: 1,
+      sourceLocation: 'L1-L4',
+    },
+    {
+      name: 'line-split arrow variable owner',
+      source: [
+        'export const executeSample =',
+        '  () => {',
+        '    const datum = 12.5',
+        '    return dispatchOutcome(datum)',
+        '  }',
+      ],
+      lineNumber: 1,
+      sourceLocation: 'L1-L5',
+    },
+    {
+      name: 'class method',
+      source: [
+        'export class SampleProcessor {',
+        '  executeSample() {',
+        '    const datum = 12.5',
+        '    return dispatchOutcome(datum)',
+        '  }',
+        '}',
+      ],
+      lineNumber: 2,
+      sourceLocation: 'L2-L5',
+    },
+  ])('supports a complete $name owner', ({ source, lineNumber, sourceLocation }) => {
+    const evidence = evidenceFor(source, { lineNumber, sourceLocation })
+
+    expect(evidence?.snippet).toContain('const datum = 12.5')
+    expect(evidence?.snippet).toContain('return dispatchOutcome(datum)')
+  })
+
+  it('supports TypeScript syntax and gives every multiline initializer line its physical prefix', () => {
+    const evidence = evidenceFor([
+      'export function executeSample(): unknown {',
+      '  const datum: number = buildDatum(',
+      '    12.5,',
+      '  )',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe([
+      'L2: const datum: number = buildDatum(',
+      'L3: 12.5,',
+      'L4: )',
+      'L5: return dispatchOutcome(datum)',
+    ].join('\n'))
+  })
+
+  it('uses a selected multiline statement only when its complete text is represented', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      "  const datum = 'ready'",
+      '  return datum',
+      '    ? dispatchOutcome(datum)',
+      '    : retryOutcome()',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toContain("L2: const datum = 'ready'")
+    expect(evidence?.snippet).toContain('return datum ? dispatchOutcome(datum) : retryOutcome()')
+  })
+
+  it('resolves a closer block const and never attributes the outer binding', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      "  const datum = 'outer'",
+      '  {',
+      "    const datum = 'inner'",
+      '    return dispatchOutcome(datum)',
+      '  }',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toContain("L4: const datum = 'inner'")
+    expect(evidence?.snippet).not.toContain("const datum = 'outer'")
+  })
+
+  it('resolves an ancestor-block const when no closer lexical binding exists', () => {
+    const evidence = evidenceFor([
+      'export function executeSample(flag: boolean) {',
+      "  const datum = 'owner'",
+      '  if (flag) {',
+      '    return dispatchOutcome(datum)',
+      '  }',
+      '  return retryOutcome()',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toContain("L2: const datum = 'owner'")
+    expect(evidence?.snippet).toContain('return dispatchOutcome(datum)')
+  })
+
+  it('does not cross a parameter binding or a nested-function owner boundary', () => {
+    const parameterEvidence = evidenceFor([
+      "const datum = 'outside'",
+      'export function executeSample(datum: string) {',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ], { lineNumber: 2, sourceLocation: 'L2-L4' })
+    const nestedEvidence = evidenceFor([
+      'export function executeSample() {',
+      "  const datum = 'outer'",
+      '  function nestedTask() {',
+      '    return dispatchOutcome(datum)',
+      '  }',
+      '  return finishOuterWork()',
+      '}',
+    ])
+
+    expect(parameterEvidence?.snippet).not.toContain("const datum = 'outside'")
+    expect(nestedEvidence?.snippet).not.toContain("const datum = 'outer'")
+  })
+
+  it('does not cross a for-loop binding to an outer const with the same name', () => {
+    const evidence = evidenceFor([
+      'export function executeSample(values: string[]) {',
+      "  const datum = 'outer'",
+      '  for (const datum of values) {',
+      '    return dispatchOutcome(datum)',
+      '  }',
+      '  return retryOutcome()',
+      '}',
+    ])
+
+    expect(evidence?.snippet).not.toContain("const datum = 'outer'")
+  })
+
+  it.each([
+    {
+      name: 'let binding',
+      source: ['export function executeSample() {', '  let datum = 12.5', '  return dispatchOutcome(datum)', '}'],
+      forbidden: 'let datum',
+    },
+    {
+      name: 'var binding',
+      source: ['export function executeSample() {', '  var datum = 12.5', '  return dispatchOutcome(datum)', '}'],
+      forbidden: 'var datum',
+    },
+    {
+      name: 'written const binding',
+      source: ['export function executeSample() {', '  const datum = 12.5', '  datum = 14', '  return dispatchOutcome(datum)', '}'],
+      forbidden: 'const datum',
+    },
+    {
+      name: 'destructured binding',
+      source: ['export function executeSample(input: Input) {', '  const { datum } = input', '  return dispatchOutcome(datum)', '}'],
+      forbidden: 'const { datum }',
+    },
+    {
+      name: 'declaration after use',
+      source: ['export function executeSample() {', '  dispatchOutcome(datum)', '  const datum = 12.5', '  return retryOutcome()', '}'],
+      forbidden: 'const datum',
+    },
+    {
+      name: 'foreign lexical block',
+      source: ['export function executeSample(flag: boolean) {', '  if (flag) {', '    const datum = 12.5', '  }', '  return dispatchOutcome(datum)', '}'],
+      forbidden: 'const datum',
+    },
+    {
+      name: 'cyclic or forward alias closure',
+      source: ['export function executeSample() {', '  const first = second', '  const second = first', '  return dispatchOutcome(second)', '}'],
+      forbidden: 'const first',
+    },
+    {
+      name: 'initializer containing a nested function',
+      source: ['export function executeSample() {', '  const datum = (() => 12.5)()', '  return dispatchOutcome(datum)', '}'],
+      forbidden: 'const datum',
+    },
+  ])('does not guess through a $name', ({ source, forbidden }) => {
+    expect(evidenceFor(source)?.snippet).not.toContain(forbidden)
+  })
+
+  it('does not use a declaration from a sibling function', () => {
+    const evidence = evidenceFor([
+      'function siblingTask() {',
+      "  const datum = 'sibling'",
+      '  return datum',
+      '}',
+      'export function executeSample() {',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ], { lineNumber: 5, sourceLocation: 'L5-L7' })
+
+    expect(evidence?.snippet).not.toContain("const datum = 'sibling'")
+  })
+
+  it('ignores non-value identifier positions but keeps shorthand and computed value uses', () => {
+    const propertyOnly = evidenceFor([
+      'export function executeSample(service: Service) {',
+      "  const datum = 'not-a-value-use'",
+      '  return dispatchOutcome({ datum: service.datum }, "datum")',
+      '}',
+    ])
+    const typeOnly = evidenceFor([
+      'export function executeSample() {',
+      '  const DatumType = 12.5',
+      '  return dispatchOutcome(createValue<DatumType>())',
+      '}',
+    ])
+    const shorthand = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome({ datum })',
+      '}',
+    ])
+    const computed = evidenceFor([
+      'export function executeSample() {',
+      "  const datum = 'key'",
+      '  return dispatchOutcome({ [datum]: true })',
+      '}',
+    ])
+
+    expect(propertyOnly?.snippet).not.toContain("const datum = 'not-a-value-use'")
+    expect(typeOnly?.snippet).not.toContain('const DatumType')
+    expect(shorthand?.snippet).toContain('L2: const datum = 12.5')
+    expect(computed?.snippet).toContain("L2: const datum = 'key'")
+  })
+
+  it('ignores labels, comments, and string text as dependency uses', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      "  const datum = 'not-a-value-use'",
+      '  datum: dispatchOutcome(12.5) // datum is only text here',
+      '  return retryOutcome("datum")',
+      '}',
+    ])
+
+    expect(evidence?.snippet).not.toContain("const datum = 'not-a-value-use'")
+  })
+
+  it('preserves no-dependency and unsupported-language output byte for byte', () => {
+    const expected = {
+      snippet: 'L2: return dispatchOutcome(12.5)',
+      lineNumber: 2,
+      scope: 'symbol' as const,
+    }
+    const source = [
+      'export function executeSample() {',
+      '  return dispatchOutcome(12.5)',
+      '}',
+    ]
+
+    expect(evidenceFor(source)).toEqual(expected)
+    expect(evidenceFor(source, { extension: '.py' })).toEqual(expected)
+  })
+
+  it.each([
+    { name: 'missing range', sourceLocation: null, derived: false, expected: 'return' },
+    { name: 'malformed range', sourceLocation: 'not-a-range', derived: false, expected: 'return' },
+    { name: 'clamped range', sourceLocation: 'L1-L99', derived: false, expected: 'return' },
+    {
+      name: 'incomplete range',
+      sourceLocation: 'L1-L2',
+      derived: false,
+      expected: {
+        snippet: 'L2: const datum = 12.5\nL3: return dispatchOutcome(datum)',
+        lineNumber: 2,
+        scope: 'source_file' as const,
+      },
+    },
+    {
+      name: 'declaration-only range',
+      sourceLocation: 'L1',
+      derived: false,
+      expected: {
+        snippet: 'L1: export function executeSample() {\nL3: return dispatchOutcome(datum)',
+        lineNumber: 1,
+        scope: 'source_file' as const,
+      },
+    },
+    { name: 'derived range', sourceLocation: 'L1-L4', derived: true, expected: 'return' },
+  ])('preserves the baseline for a $name', ({ sourceLocation, derived, expected }) => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ], { sourceLocation, derived })
+
+    if (expected === 'return') {
+      expect(evidence).toEqual({
+        snippet: 'L3: return dispatchOutcome(datum)',
+        lineNumber: 3,
+        scope: 'symbol',
+      })
+    } else {
+      expect(evidence).toEqual(expected)
+    }
+  })
+
+  it('preserves an ambiguous same-line function range byte for byte', () => {
+    const sourceLine = 'export const executeSample = () => (() => dispatchOutcome(12.5))()'
+    expect(evidenceFor([sourceLine], { sourceLocation: 'L1' })).toEqual({
+      snippet: `L1: ${sourceLine}`,
+      lineNumber: 1,
+      scope: 'symbol',
+    })
+  })
+
+  it('contains parser failure and preserves malformed-source output', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum)',
+    ])
+
+    expect(evidence).toEqual({
+      snippet: 'L3: return dispatchOutcome(datum)',
+      lineNumber: 3,
+      scope: 'symbol',
+    })
+  })
+
+  it('does not infer dependencies from a synthesized noncontiguous fragment', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      "  const datum = 'hidden'",
+      '  dispatchOutcome({',
+      "    eventType: 'ready',",
+      '    hiddenPayload: datum,',
+      '  })',
+      '}',
+    ], { question: 'How does dispatch outcome use the ready event type?' })
+
+    expect(evidence?.snippet).toContain("eventType: 'ready'")
+    expect(evidence?.snippet).not.toContain("const datum = 'hidden'")
+  })
+
+  it('does not mistake duplicate string text for a represented statement truncated later', () => {
+    const statementText = 'return dispatchOutcome(datum)'
+    const evidence = evidenceFor([
+      `export const executeSample = function (label = "${statementText}${'x'.repeat(220)}") {`,
+      "  const datum = 'hidden'",
+      `  ${statementText}`,
+      '}',
+    ])
+
+    expect(evidence?.snippet).toContain(statementText)
+    expect(evidence?.snippet).not.toContain('L3:')
+    expect(evidence?.snippet).not.toContain("const datum = 'hidden'")
+  })
+
+  it('completes only protected owner evidence during source-file supplementation', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      "  const datum = 'owner'",
+      '  return computeWidget(datum)',
+      '}',
+      '',
+      'async function workflowTask() {',
+      "  const remote = 'foreign'",
+      '  return retryDelivery(await dispatchRecord(validateRequest(remote)))',
+      '}',
+    ], {
+      sourceLocation: 'L1-L4',
+      question: 'How does compute widget validate and dispatch a record with retry delivery?',
+    })
+
+    expect(evidence?.scope).toBe('source_file')
+    expect(evidence?.snippet).toContain("L2: const datum = 'owner'")
+    expect(evidence?.snippet).toContain('return computeWidget(datum)')
+    expect(evidence?.snippet).not.toContain("const remote = 'foreign'")
+  })
+})
+
+describe('owner declaration completion budgets and atomic preservation', () => {
+  it('admits a declaration closure that exactly fills the 300-character cap', () => {
+    const returnSource = `  return dispatchOutcome(datum, '${'r'.repeat(48)}')`
+    const renderedReturn = `L3: ${returnSource.trim()}`
+    const declarationShell = "L2: const datum = ''"
+    const fillLength = 300 - renderedReturn.length - declarationShell.length - 1
+    const declarationSource = `  const datum = '${'d'.repeat(fillLength)}'`
+    const renderedDeclaration = `L2: ${declarationSource.trim()}`
+
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      declarationSource,
+      returnSource,
+      '}',
+    ])
+
+    expect(renderedDeclaration.slice(4).length).toBeLessThanOrEqual(220)
+    expect(evidence?.snippet).toBe(`${renderedDeclaration}\n${renderedReturn}`)
+    expect(evidence?.snippet).toHaveLength(300)
+  })
+
+  it('rejects a declaration whose physical fragment exceeds 220 characters', () => {
+    const declaration = `  const datum = '${'d'.repeat(205)}'`
+    const baseline = 'L3: return dispatchOutcome(datum)'
+    expect(declaration.trim()).toHaveLength(221)
+
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      declaration,
+      '  return dispatchOutcome(datum)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe(baseline)
+  })
+
+  it('rejects an atomic closure that would exceed four rendered fragments', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const first = 1',
+      '  const second = first',
+      '  const third = second',
+      '  const fourth = third',
+      '  return dispatchOutcome(fourth)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe('L6: return dispatchOutcome(fourth)')
+  })
+
+  it('rejects total overflow without removing or truncating prior selected evidence', () => {
+    const declaration = `  const datum = '${'d'.repeat(190)}'`
+    const source = [
+      'export function executeSample() {',
+      declaration,
+      '  await dispatchOutcome(datum)',
+      '  await retryOutcome(datum)',
+      '  return validateResult(datum)',
+      '}',
+    ]
+    const baseline = [
+      'L3: await dispatchOutcome(datum)',
+      'L4: await retryOutcome(datum)',
+      'L5: return validateResult(datum)',
+    ].join('\n')
+
+    const evidence = evidenceFor(source)
+
+    expect(evidence?.snippet).toBe(baseline)
+    expect(evidence?.snippet).toContain('L5: return validateResult(datum)')
+  })
+})
+
+describe('owner declaration parse snapshot cache', () => {
+  it('does not reuse a parsed source after content changes at the same path', () => {
+    const firstSource = [
+      'export function executeSample() {',
+      "  const datum = 'first'",
+      '  return dispatchOutcome(datum)',
+      '}',
+    ]
+    const secondSource = [
+      'export function executeSample() {',
+      "  const datum = 'second'",
+      '  return dispatchOutcome(datum)',
+      '}',
+    ]
+    const { sourceFile, sourceLocation } = sourceFixture(firstSource)
+    const fileCache = new Map<string, string[] | null>()
+    const options = {
+      question: QUESTION,
+      label: 'executeSample',
+      sourceLocation,
+      fileCache,
+    }
+
+    const first = readQueryEvidenceSnippet(sourceFile, 1, options)
+    writeFileSync(sourceFile, secondSource.join('\n'), 'utf8')
+    fileCache.set(sourceFile, [...secondSource])
+    const second = readQueryEvidenceSnippet(sourceFile, 1, options)
+
+    expect(first?.snippet).toContain("const datum = 'first'")
+    expect(second?.snippet).toContain("const datum = 'second'")
+    expect(second?.snippet).not.toContain("const datum = 'first'")
+  })
+
+  it('parses an unchanged cached source snapshot at most once', () => {
+    const source = [
+      'export function executeSample() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ]
+    const { sourceFile, sourceLocation } = sourceFixture(source)
+    const fileCache = new Map<string, string[] | null>()
+    const options = {
+      question: QUESTION,
+      label: 'executeSample',
+      sourceLocation,
+      fileCache,
+    }
+
+    readQueryEvidenceSnippet(sourceFile, 1, options)
+    readQueryEvidenceSnippet(sourceFile, 1, options)
+
+    expect(ts.createSourceFile).toHaveBeenCalledTimes(1)
+  })
+})
