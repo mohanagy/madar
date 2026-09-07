@@ -66,6 +66,12 @@ function nodeByLabel(nodes: GraphNode[], label: string): GraphNode {
   return matches[0]!
 }
 
+function nodeById(nodes: GraphNode[], id: string): GraphNode {
+  const matches = nodes.filter((node) => node.id === id)
+  expect(matches, 'expected one generated node with ID ' + id).toHaveLength(1)
+  return matches[0]!
+}
+
 describe('default-auto source composition', () => {
   let sandbox: string
 
@@ -107,6 +113,105 @@ describe('default-auto source composition', () => {
         source_location: 'L3',
       }),
     ])
+  })
+
+  it('preserves each qualified owner when distinct classes use the same method name', () => {
+    const source = [
+      'export class A {',
+      '  run() {',
+      "    return 'alpha'",
+      '  }',
+      '}',
+      '',
+      'export class B {',
+      '  run() {',
+      "    return 'beta'",
+      '  }',
+      '}',
+    ].join('\n') + '\n'
+    writeFile(sandbox, 'src/methods.js', source)
+
+    let rawSpi: SemanticProgramIndex | undefined
+    let rawLegacy: ExtractionData | undefined
+    compositionControls.spiTransform = (spi) => {
+      rawSpi = spi
+      return spi
+    }
+    compositionControls.legacyTransform = (extraction) => {
+      rawLegacy = extraction
+      return extraction
+    }
+
+    const nodes = generatedNodes(sandbox)
+    const spiMethods = rawSpi!.symbols
+      .filter((symbol) => symbol.kind === 'method' && (symbol.name === 'A.run' || symbol.name === 'B.run'))
+      .sort((left, right) => left.range.start.line - right.range.start.line)
+    expect(spiMethods.map((symbol) => ({
+      name: symbol.name,
+      kind: symbol.kind,
+      start: symbol.range.start.line,
+      end: symbol.range.end.line,
+    }))).toEqual([
+      { name: 'A.run', kind: 'method', start: 2, end: 4 },
+      { name: 'B.run', kind: 'method', start: 8, end: 10 },
+    ])
+
+    const legacyMethods = rawLegacy!.nodes
+      .filter((node) => node.id === 'methods_a_run' || node.id === 'methods_b_run')
+      .sort((left, right) => left.id.localeCompare(right.id))
+    expect(legacyMethods.map(({ id, source_location, snippet }) => ({ id, source_location, snippet }))).toEqual([
+      {
+        id: 'methods_a_run',
+        source_location: 'L2-L4',
+        snippet: "run() {\n    return 'alpha'\n  }",
+      },
+      {
+        id: 'methods_b_run',
+        source_location: 'L8-L10',
+        snippet: "run() {\n    return 'beta'\n  }",
+      },
+    ])
+
+    expect(nodeById(nodes, 'methods_a_run')).toMatchObject({
+      label: '.run()',
+      source_location: 'L2-L4',
+      snippet: "run() {\n    return 'alpha'\n  }",
+    })
+    expect(nodeById(nodes, 'methods_b_run')).toMatchObject({
+      label: '.run()',
+      source_location: 'L8-L10',
+      snippet: "run() {\n    return 'beta'\n  }",
+    })
+  })
+
+  it('does not borrow same-named method evidence from another qualified destination', () => {
+    writeFile(sandbox, 'src/methods.js', [
+      'export class A {',
+      '  run() {',
+      "    return 'alpha'",
+      '  }',
+      '}',
+      '',
+      'export class B {',
+      '  run() {',
+      "    return 'beta'",
+      '  }',
+      '}',
+    ].join('\n') + '\n')
+    compositionControls.legacyTransform = (extraction) => ({
+      ...extraction,
+      nodes: extraction.nodes.map((node) => node.id === 'methods_a_run'
+        ? {
+            ...node,
+            source_location: 'L8-L10',
+            snippet: "run() {\n    return 'beta'\n  }",
+          }
+        : node),
+    })
+
+    const nodes = generatedNodes(sandbox)
+    expect(nodeById(nodes, 'methods_a_run')).toMatchObject({ source_location: 'L2' })
+    expect(nodeById(nodes, 'methods_a_run').snippet).toBeUndefined()
   })
 
   it('rejects wrong-path legacy source ownership', () => {

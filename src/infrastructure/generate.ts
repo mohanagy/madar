@@ -493,14 +493,20 @@ function composeDefaultAutoSourceEvidence(args: {
     if (!projectedStart || projectedStart.start !== projectedStart.end) return spiNode
 
     const fileSymbols = symbolsByFile.get(spiFile) ?? []
-    const compatibleSymbols = fileSymbols.filter((symbol) =>
-      expectedSpiLabel(symbol) === spiNode.label && compatibleSpiNodeKind(symbol, spiNode),
-    )
+    const compatibleSymbols = fileSymbols.filter((symbol) => {
+      const range = validSpiOwnerRange(symbol)
+      return range?.start === projectedStart.start
+        && expectedSpiLabel(symbol) === spiNode.label
+        && compatibleSpiNodeKind(symbol, spiNode)
+    })
     if (compatibleSymbols.length !== 1) return spiNode
     const symbol = compatibleSymbols[0]!
     const ownerRange = validSpiOwnerRange(symbol)
     if (!ownerRange || ownerRange.start !== projectedStart.start) return spiNode
-    if (fileSymbols.some((other) => other !== symbol && validSpiOwnerRange(other)?.start === ownerRange.start)) return spiNode
+    if (fileSymbols.some((other) => other !== symbol && (
+      validSpiOwnerRange(other)?.start === ownerRange.start
+      || (other.name === symbol.name && other.kind === symbol.kind)
+    ))) return spiNode
 
     const owner: AutoSourceOwner = { file: spiFile, start: ownerRange.start, end: ownerRange.end, symbol }
     const legacySourceLocation = legacyNode.source_location
