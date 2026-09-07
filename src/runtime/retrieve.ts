@@ -88,6 +88,7 @@ import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 import {
   ownerLocalDeclarationEvidence,
   queryEvidenceSourceProjection,
+  retainQueryEvidenceSourceSnapshot,
   type RepresentedQueryEvidenceSource,
 } from './query-evidence-dependencies.js'
 
@@ -703,7 +704,9 @@ function fileLinesForSnippet(sourceFile: string, fileCache?: Map<string, string[
     return null
   }
 
-  const lines = readFileSync(sourceFile, 'utf8').split(/\r?\n/)
+  const sourceText = readFileSync(sourceFile, 'utf8')
+  const lines = sourceText.split(/\r?\n/)
+  retainQueryEvidenceSourceSnapshot({ sourceFilePath: sourceFile, sourceLines: lines, sourceText })
   fileCache?.set(sourceFile, lines)
   return lines
 }

@@ -37,6 +37,12 @@ interface ParsedSourceSnapshot {
   sourceFile: ts.SourceFile
 }
 
+interface SourceSnapshotProvenance {
+  sourceFilePath: string
+  normalizedSourceText: string
+  sourceText: string
+}
+
 interface ConstBinding {
   declaration: ts.VariableDeclaration
   statement: ts.VariableStatement
@@ -53,7 +59,27 @@ type FunctionOwner = (
 ) & { body: ts.ConciseBody }
 
 const parsedSourceSnapshots = new WeakMap<readonly string[], ParsedSourceSnapshot>()
+const sourceSnapshotProvenance = new WeakMap<readonly string[], SourceSnapshotProvenance>()
+const sourceFilesWithNormalizedLineCaches = new WeakSet<ts.SourceFile>()
 const JS_TS_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'])
+
+/** Retains bytes from the existing source read alongside its normalized line cache. */
+export function retainQueryEvidenceSourceSnapshot(input: {
+  sourceFilePath: string
+  sourceLines: readonly string[]
+  sourceText: string
+}): void {
+  const normalizedSourceText = input.sourceLines.join('\n')
+  if (input.sourceText.split(/\r?\n/).join('\n') !== normalizedSourceText) {
+    sourceSnapshotProvenance.delete(input.sourceLines)
+    return
+  }
+  sourceSnapshotProvenance.set(input.sourceLines, {
+    sourceFilePath: input.sourceFilePath,
+    normalizedSourceText,
+    sourceText: input.sourceText,
+  })
+}
 
 function scriptKindForPath(sourceFilePath: string): ts.ScriptKind | null {
   switch (extname(sourceFilePath).toLowerCase()) {
@@ -87,7 +113,14 @@ function parsedSourceForSnapshot(
     return null
   }
 
-  const sourceText = sourceLines.join('\n')
+  const normalizedSourceText = sourceLines.join('\n')
+  const provenance = sourceSnapshotProvenance.get(sourceLines)
+  const sourceText = (
+    provenance?.sourceFilePath === sourceFilePath
+    && provenance.normalizedSourceText === normalizedSourceText
+  )
+    ? provenance.sourceText
+    : normalizedSourceText
   const cached = parsedSourceSnapshots.get(sourceLines)
   if (
     cached
@@ -104,6 +137,9 @@ function parsedSourceForSnapshot(
     true,
     scriptKind,
   )
+  if (sourceText !== normalizedSourceText) {
+    sourceFilesWithNormalizedLineCaches.add(sourceFile)
+  }
   parsedSourceSnapshots.set(sourceLines, { sourceFilePath, sourceText, sourceFile })
   return sourceFile
 }
@@ -223,6 +259,7 @@ interface ProtectedSourceToken {
   start: number
   end: number
   text: string
+  representedText: string
 }
 
 interface PhysicalSourceProjection extends QueryEvidenceSourceProjection {
@@ -273,10 +310,14 @@ function protectedTokensForRange(
           clippedToken = true
           return
         }
+        const text = sourceFile.text.slice(start, end)
         tokens.push({
           start,
           end,
-          text: sourceFile.text.slice(start, end),
+          text,
+          representedText: sourceFilesWithNormalizedLineCaches.has(sourceFile)
+            ? text.replace(/\r\n/g, '\n')
+            : text,
         })
       }
     }
@@ -359,13 +400,13 @@ function representedSourceIdentity(
   let marked = ''
   let cursor = 0
   for (const [index, token] of projection.tokens.entries()) {
-    const tokenOffset = representedText.indexOf(token.text, cursor)
+    const tokenOffset = representedText.indexOf(token.representedText, cursor)
     if (tokenOffset < 0) {
       return null
     }
     marked += representedText.slice(cursor, tokenOffset)
     marked += tokenMarker(index)
-    cursor = tokenOffset + token.text.length
+    cursor = tokenOffset + token.representedText.length
   }
   marked += representedText.slice(cursor)
   return normalizedSource(marked)
@@ -379,6 +420,30 @@ function representedSourceMatchesPhysicalRange(
   const projection = physicalProjectionForRange(range, sourceFile)
   return projection !== null
     && representedSourceIdentity(representedText, projection) === projection.identityText
+}
+
+function literalDelimiterPreservingLines(
+  range: { start: number; end: number },
+  sourceFile: ts.SourceFile,
+  sourceLines: readonly string[],
+): OwnerDeclarationEvidenceLine[] {
+  const tokens = protectedTokensForRange(range, sourceFile) ?? []
+  const lineStarts = sourceFile.getLineStarts()
+  return sourceLines
+    .slice(range.start - 1, range.end)
+    .map((text, offset) => {
+      const lineNumber = range.start + offset
+      const nextLineStart = lineStarts[lineNumber]
+      const hasProtectedCRLF = nextLineStart !== undefined
+        && sourceFile.text.slice(nextLineStart - 2, nextLineStart) === '\r\n'
+        && tokens.some((token) => (
+          token.start <= nextLineStart - 2 && nextLineStart <= token.end
+        ))
+      return {
+        lineNumber,
+        text: hasProtectedCRLF && !text.endsWith('\r') ? `${text}\r` : text,
+      }
+    })
 }
 
 /**
@@ -1004,9 +1069,7 @@ export function ownerLocalDeclarationEvidence(
         return {
           startLine: range.start,
           endLine: range.end,
-          lines: input.sourceLines
-            .slice(range.start - 1, range.end)
-            .map((text, offset) => ({ lineNumber: range.start + offset, text })),
+          lines: literalDelimiterPreservingLines(range, sourceFile, input.sourceLines),
         }
       })
       .filter((declaration) => (

@@ -301,6 +301,86 @@ describe('owner-local declaration completion', () => {
     })).toEqual([])
   })
 
+  it('authenticates exact raw CRLF template delimiters and rejects altered delimiters directly', () => {
+    const rawSource = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, `  alpha  ?',
+      ' beta  `)',
+      '}',
+    ].join('\r\n')
+    const sourceLines = rawSource.split('\n')
+    const represented = sourceLines.slice(2, 4).join('\n')
+    const input = {
+      sourceFilePath: 'sample.ts',
+      sourceLines,
+      ownerRange: { start: 1, end: 5 },
+    }
+
+    expect(ownerLocalDeclarationEvidence({
+      ...input,
+      representedSource: [{ startLine: 3, endLine: 4, text: represented }],
+    })).toEqual([{
+      startLine: 2,
+      endLine: 2,
+      lines: [{ lineNumber: 2, text: '  const datum = 12.5\r' }],
+    }])
+    expect(ownerLocalDeclarationEvidence({
+      ...input,
+      representedSource: [{
+        startLine: 3,
+        endLine: 4,
+        text: represented.replace(/\r\n/g, '\n'),
+      }],
+    })).toEqual([])
+  })
+
+  it.each([
+    { name: 'CRLF', lineEnding: '\r\n' as const, literalDelimiter: '\r\n' },
+    { name: 'LF', lineEnding: '\n' as const, literalDelimiter: '\n' },
+  ])('preserves raw multiline template delimiters from a public $name read', ({ lineEnding, literalDelimiter }) => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, `  alpha  ?',
+      ' beta  `)',
+      '}',
+    ], { question: 'What is the dispatch outcome?', label: 'assemble', lineEnding })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        `L3: return dispatchOutcome(datum, \`  alpha  ?${literalDelimiter}L4:  beta  \`)`,
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it.each(['\n', '\r\n'] as const)(
+    'normalizes %j source layout outside literals while retaining ordinary indentation',
+    (lineEnding) => {
+      const evidence = evidenceFor([
+        'function assemble() {',
+        '\tconst datum = 12.5',
+        '\treturn datum ?',
+        '\t\tdispatchOutcome(datum, `single line`)',
+        '\t\t: retryOutcome()',
+        '}',
+      ], {
+        question: 'What are the dispatch outcome and retry outcome?',
+        label: 'assemble',
+        lineEnding,
+      })
+
+      expect(evidence?.snippet).toBe([
+        'L2: \tconst datum = 12.5',
+        'L3: return datum ? dispatchOutcome(datum, `single line`) : retryOutcome()',
+      ].join('\n'))
+      expect(evidence?.snippet).not.toContain('\r')
+    },
+  )
+
   it('preserves selected string, template, and regex literal bytes while completing their const', () => {
     const statement = '  return dispatchOutcome(datum, "alpha  beta \\"// literal", `left\tright`, /x  y\\/\\/z/)'
     const evidence = evidenceFor([
@@ -1417,6 +1497,97 @@ describe('owner declaration completion budgets and atomic preservation', () => {
 })
 
 describe('owner declaration parse snapshot cache', () => {
+  it('preserves raw CRLF literal provenance across a warm public cache hit', () => {
+    const source = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, `  alpha  ?',
+      ' beta  `)',
+      '}',
+    ]
+    const { sourceFile, sourceLocation } = sourceFixture(source, '.ts', '\r\n')
+    const fileCache = new Map<string, string[] | null>()
+    const read = () => readQueryEvidenceSnippet(sourceFile, 1, {
+      question: 'What is the dispatch outcome?',
+      label: 'assemble',
+      sourceLocation,
+      fileCache,
+    })
+
+    const cold = read()
+    const warm = read()
+
+    expect(cold?.snippet).toContain('`  alpha  ?\r\nL4:  beta  `')
+    expect(warm).toEqual(cold)
+    expect(fileCache.get(sourceFile)).toEqual(source)
+    expect(ts.createSourceFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not invent CRLF bytes for a caller-supplied normalized cache', () => {
+    const source = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, `  alpha  ?',
+      ' beta  `)',
+      '}',
+    ]
+    const { sourceFile, sourceLocation } = sourceFixture(source, '.ts', '\r\n')
+    const fileCache = new Map<string, string[] | null>([[sourceFile, [...source]]])
+    const evidence = readQueryEvidenceSnippet(sourceFile, 1, {
+      question: 'What is the dispatch outcome?',
+      label: 'assemble',
+      sourceLocation,
+      fileCache,
+    })
+
+    expect(evidence?.snippet).toContain('`  alpha  ?\nL4:  beta  `')
+    expect(evidence?.snippet).not.toContain('\r')
+  })
+
+  it('does not reuse raw provenance after the cache array content or path changes', () => {
+    const source = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, `  alpha  ?',
+      ' beta  `)',
+      '}',
+    ]
+    const firstFixture = sourceFixture(source, '.ts', '\r\n')
+    const secondFixture = sourceFixture(source, '.mts', '\r\n')
+    const fileCache = new Map<string, string[] | null>()
+    const options = (sourceLocation: string) => ({
+      question: 'What is the dispatch outcome?',
+      label: 'assemble',
+      sourceLocation,
+      fileCache,
+    })
+
+    const cold = readQueryEvidenceSnippet(
+      firstFixture.sourceFile,
+      1,
+      options(firstFixture.sourceLocation),
+    )
+    const cachedLines = fileCache.get(firstFixture.sourceFile)!
+    fileCache.set(secondFixture.sourceFile, cachedLines)
+    const changedPath = readQueryEvidenceSnippet(
+      secondFixture.sourceFile,
+      1,
+      options(secondFixture.sourceLocation),
+    )
+    cachedLines[2] = '  return dispatchOutcome(datum, `  changed  ?'
+    const changedContent = readQueryEvidenceSnippet(
+      firstFixture.sourceFile,
+      1,
+      options(firstFixture.sourceLocation),
+    )
+
+    expect(cold?.snippet).toContain('`  alpha  ?\r\nL4:  beta  `')
+    expect(changedPath?.snippet).toContain('`  alpha  ?\nL4:  beta  `')
+    expect(changedPath?.snippet).not.toContain('\r')
+    expect(changedContent?.snippet).toContain('`  changed  ?\nL4:  beta  `')
+    expect(changedContent?.snippet).not.toContain('\r')
+  })
+
   it('invalidates changed content or paths even when the source-line array identity is reused', () => {
     const sourceLines = [
       'export function executeSample() {',
