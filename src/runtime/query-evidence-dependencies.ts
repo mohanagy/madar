@@ -29,6 +29,7 @@ export interface OwnerDeclarationCompletionInput {
 export interface QueryEvidenceSourceProjection {
   text: string
   literalLineBreaks: Array<{ offset: number; lineNumber: number }>
+  hasProtectedTokens: boolean
 }
 
 interface ParsedSourceSnapshot {
@@ -294,6 +295,7 @@ function physicalSourceBounds(
 function protectedTokensForRange(
   range: { start: number; end: number },
   sourceFile: ts.SourceFile,
+  allowClippedTokens = false,
 ): ProtectedSourceToken[] | null {
   const bounds = physicalSourceBounds(range, sourceFile)
   if (!bounds) {
@@ -307,7 +309,32 @@ function protectedTokensForRange(
       const end = node.getEnd()
       if (start < bounds.end && bounds.start < end) {
         if (start < bounds.start || end > bounds.end) {
-          clippedToken = true
+          if (!allowClippedTokens) {
+            clippedToken = true
+            return
+          }
+          const segmentStart = Math.max(start, bounds.start)
+          let segmentEnd = Math.min(end, bounds.end)
+          if (end > bounds.end) {
+            if (sourceFile.text.slice(segmentEnd - 2, segmentEnd) === '\r\n') {
+              segmentEnd -= 2
+            } else if (/^[\r\n]$/.test(sourceFile.text.slice(segmentEnd - 1, segmentEnd))) {
+              segmentEnd -= 1
+            }
+          }
+          if (segmentStart >= segmentEnd) {
+            clippedToken = true
+            return
+          }
+          const text = sourceFile.text.slice(segmentStart, segmentEnd)
+          tokens.push({
+            start: segmentStart,
+            end: segmentEnd,
+            text,
+            representedText: sourceFilesWithNormalizedLineCaches.has(sourceFile)
+              ? text.replace(/\r\n/g, '\n')
+              : text,
+          })
           return
         }
         const text = sourceFile.text.slice(start, end)
@@ -337,9 +364,10 @@ function tokenMarker(index: number): string {
 function physicalProjectionForRange(
   range: { start: number; end: number },
   sourceFile: ts.SourceFile,
+  allowClippedTokens = false,
 ): PhysicalSourceProjection | null {
   const bounds = physicalSourceBounds(range, sourceFile)
-  const tokens = protectedTokensForRange(range, sourceFile)
+  const tokens = protectedTokensForRange(range, sourceFile, allowClippedTokens)
   if (!bounds || !tokens) {
     return null
   }
@@ -390,7 +418,13 @@ function physicalProjectionForRange(
     identityCursor = markerOffset + marker.length
   }
 
-  return { text, identityText, literalLineBreaks, tokens }
+  return {
+    text,
+    identityText,
+    literalLineBreaks,
+    hasProtectedTokens: tokens.length > 0,
+    tokens,
+  }
 }
 
 function representedSourceIdentity(
@@ -472,6 +506,7 @@ export function queryEvidenceSourceProjection(input: {
     const shapedText = normalizedSource(input.shapedText)
     let cursor = 0
     let projectedText = ''
+    let hasProtectedTokens = false
     const literalLineBreaks: Array<{ offset: number; lineNumber: number }> = []
     for (const represented of input.representedSource) {
       if (
@@ -484,13 +519,14 @@ export function queryEvidenceSourceProjection(input: {
         return null
       }
       const range = { start: represented.startLine, end: represented.endLine }
-      const projection = physicalProjectionForRange(range, sourceFile)
+      const projection = physicalProjectionForRange(range, sourceFile, true)
       if (
         !projection
         || representedSourceIdentity(represented.text, projection) !== projection.identityText
       ) {
         return null
       }
+      hasProtectedTokens ||= projection.hasProtectedTokens
       const normalizedComponent = normalizedSource(represented.text)
       const componentOffset = shapedText.indexOf(normalizedComponent, cursor)
       if (normalizedComponent.length === 0 || componentOffset < 0) {
@@ -508,7 +544,112 @@ export function queryEvidenceSourceProjection(input: {
       cursor = componentOffset + normalizedComponent.length
     }
     projectedText += shapedText.slice(cursor)
-    return { text: projectedText, literalLineBreaks }
+    return {
+      text: projectedText,
+      literalLineBreaks,
+      hasProtectedTokens,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Expands one exact selected source fragment to its containing literal-bearing
+ * statement when both the statement and its unambiguous owner are supplied.
+ */
+export function completeQueryEvidenceLiteralStatement(input: {
+  sourceFilePath: string
+  sourceLines: readonly string[]
+  ownerRange: { start: number; end: number }
+  representedSource: readonly RepresentedQueryEvidenceSource[]
+}): RepresentedQueryEvidenceSource | null {
+  try {
+    if (input.representedSource.length !== 1) {
+      return null
+    }
+    const sourceFile = parsedSourceForSnapshot(input.sourceFilePath, input.sourceLines)
+    if (!sourceFile) {
+      return null
+    }
+    const parseDiagnostics = (sourceFile as ts.SourceFile & {
+      parseDiagnostics?: readonly ts.Diagnostic[]
+    }).parseDiagnostics
+    if (parseDiagnostics && parseDiagnostics.length > 0) {
+      return null
+    }
+
+    const owner = uniquelyIdentifiedOwner(sourceFile, input.ownerRange)
+    if (!owner || !ts.isBlock(owner.body)) {
+      return null
+    }
+    const represented = input.representedSource[0]!
+    if (
+      !Number.isInteger(represented.startLine)
+      || !Number.isInteger(represented.endLine)
+      || represented.startLine < input.ownerRange.start
+      || represented.endLine > input.ownerRange.end
+      || represented.startLine > represented.endLine
+      || represented.text !== input.sourceLines
+        .slice(represented.startLine - 1, represented.endLine)
+        .join('\n')
+    ) {
+      return null
+    }
+    const representedRange = { start: represented.startLine, end: represented.endLine }
+    const candidates: Array<{ start: number; end: number }> = []
+    const visit = (node: ts.Node): void => {
+      if (node !== owner && isNestedFunctionOrClass(node)) {
+        return
+      }
+      if (node !== owner && ts.isStatement(node)) {
+        const range = evidenceLineRangeOf(node, sourceFile)
+        if (
+          input.ownerRange.start <= range.start
+          && range.end <= input.ownerRange.end
+          && range.start <= representedRange.start
+          && representedRange.end <= range.end
+          && (range.start !== representedRange.start || range.end !== representedRange.end)
+        ) {
+          let crossesRepresentedBoundary = false
+          const findCrossingLiteral = (descendant: ts.Node): void => {
+            if (crossesRepresentedBoundary || (descendant !== node && isNestedFunctionOrClass(descendant))) {
+              return
+            }
+            if (PROTECTED_LITERAL_KINDS.has(descendant.kind)) {
+              const literalRange = lineRangeOf(descendant, sourceFile)
+              if (
+                literalRange.start <= representedRange.end
+                && representedRange.start <= literalRange.end
+                && (
+                  literalRange.start < representedRange.start
+                  || literalRange.end > representedRange.end
+                )
+              ) {
+                crossesRepresentedBoundary = true
+                return
+              }
+            }
+            ts.forEachChild(descendant, findCrossingLiteral)
+          }
+          findCrossingLiteral(node)
+          if (crossesRepresentedBoundary) {
+            candidates.push(range)
+          }
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(owner)
+    if (candidates.length !== 1) {
+      return null
+    }
+    const range = candidates[0]!
+    return {
+      startLine: range.start,
+      endLine: range.end,
+      text: input.sourceLines.slice(range.start - 1, range.end).join('\n'),
+    }
   } catch {
     return null
   }

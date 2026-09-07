@@ -86,6 +86,7 @@ import {
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 import {
+  completeQueryEvidenceLiteralStatement,
   ownerLocalDeclarationEvidence,
   queryEvidenceSourceProjection,
   retainQueryEvidenceSourceSnapshot,
@@ -1283,59 +1284,106 @@ function renderQueryEvidenceLineEntries(
   lines: readonly QueryEvidenceLine[],
   sourceFile: string,
   sourceLines: readonly string[],
+  ownerRange?: { start: number; end: number } | null,
 ): RenderedQueryEvidenceLine[] {
   const rendered: RenderedQueryEvidenceLine[] = []
   let usedChars = 0
+  let usedRows = 0
   for (const line of lines) {
-    const normalized = line.text.replace(/\s+/g, ' ').trim()
-    const projection = queryEvidenceSourceProjection({
-      sourceFilePath: sourceFile,
-      sourceLines,
-      representedSource: line.representedSource,
-      shapedText: line.text,
-    })
-    let projectedContent = projection?.text ?? normalized
-    if (projection) {
-      for (let index = projection.literalLineBreaks.length - 1; index >= 0; index -= 1) {
-        const lineBreak = projection.literalLineBreaks[index]!
-        projectedContent = [
-          projectedContent.slice(0, lineBreak.offset + 1),
-          `L${lineBreak.lineNumber}: `,
-          projectedContent.slice(lineBreak.offset + 1),
-        ].join('')
-      }
-    }
-    const projectedRows = projectedContent.split('\n')
-    const lineCapExceeded = projectedRows.some((row, index) => {
-      const content = index === 0 ? row : row.replace(/^L\d+: /, '')
-      return content.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
-    })
-    const content = lineCapExceeded
-      ? projectedRows.map((row, index) => {
-          const match = index > 0 ? /^(L\d+: )(.*)$/.exec(row) : null
-          const rowPrefix = match?.[1] ?? ''
-          const rowContent = match?.[2] ?? row
-          return rowContent.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
-            ? `${rowPrefix}${rowContent.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3)}...`
-            : row
-        }).join('\n')
-      : projectedContent
-    const prefix = `L${line.index}: `
     const separatorChars = rendered.length > 0 ? 1 : 0
     const remaining = QUERY_EVIDENCE_SNIPPET_CHAR_CAP - usedChars - separatorChars
-    if (remaining <= prefix.length + 8) {
+    const completedSource = ownerRange
+      ? completeQueryEvidenceLiteralStatement({
+          sourceFilePath: sourceFile,
+          sourceLines,
+          ownerRange,
+          representedSource: line.representedSource,
+        })
+      : null
+    const completedLine: QueryEvidenceLine | null = completedSource
+      ? {
+          ...line,
+          index: completedSource.startLine,
+          endIndex: completedSource.endLine,
+          text: completedSource.text,
+          representedSource: [completedSource],
+        }
+      : null
+    let selected: {
+      source: QueryEvidenceLine
+      projection: ReturnType<typeof queryEvidenceSourceProjection>
+      content: string
+      lineCapExceeded: boolean
+      faithful: string
+    } | null = null
+
+    for (const candidate of completedLine ? [completedLine, line] : [line]) {
+      const normalized = candidate.text.replace(/\s+/g, ' ').trim()
+      const projection = queryEvidenceSourceProjection({
+        sourceFilePath: sourceFile,
+        sourceLines,
+        representedSource: candidate.representedSource,
+        shapedText: candidate.text,
+      })
+      let projectedContent = projection?.text ?? normalized
+      if (projection) {
+        for (let index = projection.literalLineBreaks.length - 1; index >= 0; index -= 1) {
+          const lineBreak = projection.literalLineBreaks[index]!
+          projectedContent = [
+            projectedContent.slice(0, lineBreak.offset + 1),
+            `L${lineBreak.lineNumber}: `,
+            projectedContent.slice(lineBreak.offset + 1),
+          ].join('')
+        }
+      }
+      const projectedRows = projectedContent.split('\n')
+      const lineCapExceeded = projectedRows.some((row, index) => {
+        const content = index === 0 ? row : row.replace(/^L\d+: /, '')
+        return content.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+      })
+      const completedSourceWouldBeAltered = candidate === completedLine && (
+        projection === null
+        || projection.hasProtectedTokens === false
+        || lineCapExceeded
+        || usedRows + projectedRows.length > QUERY_EVIDENCE_SNIPPET_MAX_LINES
+        || `L${candidate.index}: ${projectedContent}`.length > remaining
+      )
+      if (completedSourceWouldBeAltered) {
+        continue
+      }
+      const content = lineCapExceeded
+        ? projectedRows.map((row, index) => {
+            const match = index > 0 ? /^(L\d+: )(.*)$/.exec(row) : null
+            const rowPrefix = match?.[1] ?? ''
+            const rowContent = match?.[2] ?? row
+            return rowContent.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+              ? `${rowPrefix}${rowContent.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3)}...`
+              : row
+          }).join('\n')
+        : projectedContent
+      const prefix = `L${candidate.index}: `
+      const faithful = `${prefix}${content}`
+      if (
+        remaining <= prefix.length + 8
+      ) {
+        continue
+      }
+      selected = { source: candidate, projection, content, lineCapExceeded, faithful }
       break
     }
-    const faithful = `${prefix}${content}`
-    const bounded = faithful.slice(0, remaining).trimEnd()
+    if (!selected) {
+      continue
+    }
+    const bounded = selected.faithful.slice(0, remaining).trimEnd()
     rendered.push({
-      source: line,
+      source: selected.source,
       text: bounded,
-      representedSource: projection && !lineCapExceeded && bounded === faithful
-        ? line.representedSource
+      representedSource: selected.projection && !selected.lineCapExceeded && bounded === selected.faithful
+        ? selected.source.representedSource
         : [],
     })
     usedChars += bounded.length + separatorChars
+    usedRows += bounded.split('\n').length
   }
   return rendered
 }
@@ -1481,6 +1529,14 @@ export function readQueryEvidenceSnippet(
         .map((obligation) => obligation.index),
     )
     const parsedRange = lineRangeFromSourceLocation(options.sourceLocation)
+    const ownerRange = explicitOwnerRange(
+      options.sourceLocation,
+      parsedRange,
+      lineNumber,
+      lines.length,
+      options.derived,
+      options.fileNodeLike,
+    )
     const fallbackHalfWindow = options.derived ? DERIVED_SNIPPET_HALF_WINDOW : SNIPPET_HALF_WINDOW
     const symbolRange = boundedSourceRange(lines.length, parsedRange ?? {
       start: lineNumber - fallbackHalfWindow,
@@ -1570,19 +1626,11 @@ export function readQueryEvidenceSnippet(
         selectedLines = mergedLines
       }
     }
-    const baseline = renderQueryEvidenceLineEntries(selectedLines, sourceFile, lines)
+    const baseline = renderQueryEvidenceLineEntries(selectedLines, sourceFile, lines, ownerRange)
     if (baseline.length === 0) {
       return null
     }
     const baselineSnippet = baseline.map((line) => line.text).join('\n')
-    const ownerRange = explicitOwnerRange(
-      options.sourceLocation,
-      parsedRange,
-      lineNumber,
-      lines.length,
-      options.derived,
-      options.fileNodeLike,
-    )
     const completed = ownerRange
       ? completeOwnerDeclarationEvidence(sourceFile, lines, ownerRange, baseline)
       : null

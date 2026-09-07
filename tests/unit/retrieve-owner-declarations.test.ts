@@ -1381,6 +1381,137 @@ describe('owner-local binding identity correction', () => {
   })
 })
 
+describe('bounded multiline literal statement completion', () => {
+  it.each([
+    { name: 'LF', lineEnding: '\n' as const, literalDelimiter: '\n' },
+    { name: 'CRLF', lineEnding: '\r\n' as const, literalDelimiter: '\r\n' },
+  ])('completes an ordinary $name no-substitution template statement', ({ lineEnding, literalDelimiter }) => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, `  alpha',
+      ' beta  `)',
+      '}',
+    ], { question: 'What is the dispatch outcome?', label: 'assemble', lineEnding })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        `L3: return dispatchOutcome(datum, \`  alpha${literalDelimiter}L4:  beta  \`)`,
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it('completes an ordinary interpolated template statement', () => {
+    const evidence = evidenceFor([
+      'function assemble(suffix: string) {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, `  alpha',
+      ' ${suffix} beta  `)',
+      '}',
+    ], { question: 'What is the dispatch outcome?', label: 'assemble' })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        'L3: return dispatchOutcome(datum, `  alpha',
+        'L4:  ${suffix} beta  `)',
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it('completes a supported physical-line continued string statement', () => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, "  alpha\\',
+      ' beta  ")',
+      '}',
+    ], { question: 'What is the dispatch outcome?', label: 'assemble' })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        'L3: return dispatchOutcome(datum, "  alpha\\',
+        'L4:  beta  ")',
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it('keeps an owner-clipped literal fragment faithful without inferring its declaration', () => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, `  alpha',
+      ' beta  `)',
+      '}',
+    ], {
+      question: 'What is the dispatch outcome?',
+      label: 'assemble',
+      sourceLocation: 'L1-L3',
+    })
+
+    expect(evidence).toEqual({
+      snippet: 'L3: return dispatchOutcome(datum, `  alpha',
+      lineNumber: 3,
+      scope: 'symbol',
+    })
+  })
+
+  it('does not complete a literal statement from a foreign owner', () => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      "  const datum = 'owner'",
+      '  return computeWidget(datum)',
+      '}',
+      'async function transmit() {',
+      "  const remote = 'foreign'",
+      '  return retryDelivery(await dispatchRecord(validateRequest(remote), `  alpha',
+      ' beta  `))',
+      '}',
+    ], {
+      question: 'How does compute widget validate and dispatch a record with retry delivery?',
+      label: 'assemble',
+      sourceLocation: 'L1-L4',
+    })
+
+    expect(evidence?.scope).toBe('source_file')
+    expect(evidence?.snippet).toContain("L2:   const datum = 'owner'")
+    expect(evidence?.snippet).toContain('return computeWidget(datum)')
+    expect(evidence?.snippet).toContain('`  alpha')
+    expect(evidence?.snippet).not.toContain('beta  `')
+    expect(evidence?.snippet).not.toContain("const remote = 'foreign'")
+  })
+
+  it('declines an overflowing completion while retaining other selected evidence', () => {
+    const firstLiteralRow = `  return dispatchOutcome(datum, \`  ${'a'.repeat(160)}`
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  await retryOutcome()',
+      firstLiteralRow,
+      ` ${'b'.repeat(160)}  \`)`,
+      '}',
+    ], {
+      question: 'What are the dispatch outcome and retry outcome?',
+      label: 'assemble',
+    })
+
+    expect(evidence?.snippet).toBe([
+      'L3: await retryOutcome()',
+      `L4: ${firstLiteralRow.trimStart()}`,
+    ].join('\n'))
+    expect(evidence?.snippet).not.toContain('const datum')
+    expect(evidence?.snippet).not.toContain('...')
+  })
+})
+
 describe('owner declaration completion budgets and atomic preservation', () => {
   it('admits faithful literal whitespace when the completed snippet exactly fills the cap', () => {
     const literal = `${'value  '.repeat(22)}end`
