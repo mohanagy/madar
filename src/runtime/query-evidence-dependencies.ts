@@ -1263,23 +1263,30 @@ export function ownerLocalDeclarationEvidence(
       start: represented.startLine,
       end: represented.endLine,
     }))
-    return closure
-      .map((statement): OwnerDeclarationEvidence => {
-        const range = evidenceLineRangeOf(statement, sourceFile)
-        return {
-          startLine: range.start,
-          endLine: range.end,
-          lines: literalDelimiterPreservingLines(range, sourceFile, input.sourceLines),
-        }
-      })
-      .filter((declaration) => (
-        input.ownerRange.start <= declaration.startLine
-        && declaration.endLine <= input.ownerRange.end
+    const eligibleRanges = closure
+      .map((statement) => evidenceLineRangeOf(statement, sourceFile))
+      .filter((range) => (
+        input.ownerRange.start <= range.start
+        && range.end <= input.ownerRange.end
       ))
-      .filter((declaration) => !representedRanges.some((range) => (
-        range.start <= declaration.endLine && declaration.startLine <= range.end
+      .filter((range) => !representedRanges.some((represented) => (
+        represented.start <= range.end && range.start <= represented.end
       )))
-      .sort((left, right) => left.startLine - right.startLine || left.endLine - right.endLine)
+      .sort((left, right) => left.start - right.start || left.end - right.end)
+    const physicalRanges: Array<{ start: number; end: number }> = []
+    for (const range of eligibleRanges) {
+      const previous = physicalRanges.at(-1)
+      if (previous && range.start <= previous.end) {
+        previous.end = Math.max(previous.end, range.end)
+      } else {
+        physicalRanges.push({ ...range })
+      }
+    }
+    return physicalRanges.map((range) => ({
+      startLine: range.start,
+      endLine: range.end,
+      lines: literalDelimiterPreservingLines(range, sourceFile, input.sourceLines),
+    }))
   } catch {
     return []
   }

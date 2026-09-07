@@ -16,6 +16,7 @@ import * as ts from 'typescript'
 import {
   completeQueryEvidenceLiteralStatement,
   ownerLocalDeclarationEvidence,
+  retainQueryEvidenceSourceSnapshot,
 } from '../../src/runtime/query-evidence-dependencies.js'
 import { readQueryEvidenceSnippet, type QueryEvidenceSnippet } from '../../src/runtime/retrieve.js'
 
@@ -114,6 +115,205 @@ describe('owner-local declaration completion', () => {
       'L3:   const alias = origin',
       'L4: return dispatchOutcome(alias)',
     ].join('\n'))
+  })
+
+  it.each([
+    { name: 'LF', lineEnding: '\n' as const },
+    { name: 'CRLF', lineEnding: '\r\n' as const },
+  ])('projects one direct physical declaration row for same-line $name bindings', ({ lineEnding }) => {
+    const sourceLines = [
+      'export function executeSample() {',
+      '  const origin = 12.5; const alias = origin',
+      '  return dispatchOutcome(origin, alias)',
+      '}',
+    ]
+    const sourceText = sourceLines.join(lineEnding)
+    retainQueryEvidenceSourceSnapshot({ sourceFilePath: 'sample.ts', sourceLines, sourceText })
+
+    expect(ownerLocalDeclarationEvidence({
+      sourceFilePath: 'sample.ts',
+      sourceLines,
+      ownerRange: { start: 1, end: 4 },
+      representedSource: [{ startLine: 3, endLine: 3, text: sourceLines[2]! }],
+    })).toEqual([{
+      startLine: 2,
+      endLine: 2,
+      lines: [{ lineNumber: 2, text: sourceLines[1]! }],
+    }])
+  })
+
+  it.each([
+    { name: 'LF', lineEnding: '\n' as const },
+    { name: 'CRLF', lineEnding: '\r\n' as const },
+  ])('projects one direct overlapping declaration range for multiline-boundary $name bindings', ({ lineEnding }) => {
+    const sourceLines = [
+      'export function executeSample() {',
+      '  const origin = 12.5; const alias =',
+      '    origin',
+      '  return dispatchOutcome(origin, alias)',
+      '}',
+    ]
+    const sourceText = sourceLines.join(lineEnding)
+    retainQueryEvidenceSourceSnapshot({ sourceFilePath: 'sample.ts', sourceLines, sourceText })
+
+    expect(ownerLocalDeclarationEvidence({
+      sourceFilePath: 'sample.ts',
+      sourceLines,
+      ownerRange: { start: 1, end: 5 },
+      representedSource: [{ startLine: 4, endLine: 4, text: sourceLines[3]! }],
+    })).toEqual([{
+      startLine: 2,
+      endLine: 3,
+      lines: [
+        { lineNumber: 2, text: sourceLines[1]! },
+        { lineNumber: 3, text: sourceLines[2]! },
+      ],
+    }])
+  })
+
+  it.each([
+    {
+      name: 'same-line LF',
+      lineEnding: '\n' as const,
+      source: [
+        'export function executeSample() {',
+        '  const origin = 12.5; const alias = origin',
+        '  return dispatchOutcome(origin, alias)',
+        '}',
+      ],
+      expected: [
+        'L2:   const origin = 12.5; const alias = origin',
+        'L3: return dispatchOutcome(origin, alias)',
+      ].join('\n'),
+    },
+    {
+      name: 'same-line CRLF',
+      lineEnding: '\r\n' as const,
+      source: [
+        'export function executeSample() {',
+        '  const origin = 12.5; const alias = origin',
+        '  return dispatchOutcome(origin, alias)',
+        '}',
+      ],
+      expected: [
+        'L2:   const origin = 12.5; const alias = origin',
+        'L3: return dispatchOutcome(origin, alias)',
+      ].join('\n'),
+    },
+    {
+      name: 'multiline-boundary LF',
+      lineEnding: '\n' as const,
+      source: [
+        'export function executeSample() {',
+        '  const origin = 12.5; const alias =',
+        '    origin',
+        '  return dispatchOutcome(origin, alias)',
+        '}',
+      ],
+      expected: [
+        'L2:   const origin = 12.5; const alias =',
+        'L3:     origin',
+        'L4: return dispatchOutcome(origin, alias)',
+      ].join('\n'),
+    },
+    {
+      name: 'multiline-boundary CRLF',
+      lineEnding: '\r\n' as const,
+      source: [
+        'export function executeSample() {',
+        '  const origin = 12.5; const alias =',
+        '    origin',
+        '  return dispatchOutcome(origin, alias)',
+        '}',
+      ],
+      expected: [
+        'L2:   const origin = 12.5; const alias =',
+        'L3:     origin',
+        'L4: return dispatchOutcome(origin, alias)',
+      ].join('\n'),
+    },
+  ])('emits each physical declaration row once through the public $name layout', ({
+    lineEnding,
+    source,
+    expected,
+  }) => {
+    const evidence = evidenceFor(source, { lineEnding })
+
+    expect(evidence).toEqual({
+      snippet: expected,
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+    expect(evidence?.snippet.match(/const origin/g)).toHaveLength(1)
+    expect(evidence?.snippet.match(/return dispatchOutcome/g)).toHaveLength(1)
+  })
+
+  it('keeps equal declaration text at distinct physical locations separate', () => {
+    const sourceLines = [
+      'export function executeSample() {',
+      '  {',
+      '    const datum = 12.5',
+      '    dispatchOutcome(datum)',
+      '  }',
+      '  {',
+      '    const datum = 12.5',
+      '    return dispatchOutcome(datum)',
+      '  }',
+      '}',
+    ]
+
+    expect(ownerLocalDeclarationEvidence({
+      sourceFilePath: 'sample.ts',
+      sourceLines,
+      ownerRange: { start: 1, end: 10 },
+      representedSource: [
+        { startLine: 4, endLine: 4, text: sourceLines[3]! },
+        { startLine: 8, endLine: 8, text: sourceLines[7]! },
+      ],
+    })).toEqual([
+      {
+        startLine: 3,
+        endLine: 3,
+        lines: [{ lineNumber: 3, text: sourceLines[2]! }],
+      },
+      {
+        startLine: 7,
+        endLine: 7,
+        lines: [{ lineNumber: 7, text: sourceLines[6]! }],
+      },
+    ])
+  })
+
+  it.each([
+    { name: 'LF', lineEnding: '\n' as const, literalLineSuffix: '' },
+    { name: 'CRLF', lineEnding: '\r\n' as const, literalLineSuffix: '\r' },
+  ])('normalizes overlapping $name ranges before projecting multiline literal and trivia bytes', ({
+    lineEnding,
+    literalLineSuffix,
+  }) => {
+    const sourceLines = [
+      'export function executeSample() {',
+      '  const origin = 12.5; /* declaration trivia */ const alias = `  alpha',
+      ' beta  ` ? origin : origin',
+      '  return dispatchOutcome(origin, alias)',
+      '}',
+    ]
+    const sourceText = sourceLines.join(lineEnding)
+    retainQueryEvidenceSourceSnapshot({ sourceFilePath: 'sample.ts', sourceLines, sourceText })
+
+    expect(ownerLocalDeclarationEvidence({
+      sourceFilePath: 'sample.ts',
+      sourceLines,
+      ownerRange: { start: 1, end: 5 },
+      representedSource: [{ startLine: 4, endLine: 4, text: sourceLines[3]! }],
+    })).toEqual([{
+      startLine: 2,
+      endLine: 3,
+      lines: [
+        { lineNumber: 2, text: `${sourceLines[1]}${literalLineSuffix}` },
+        { lineNumber: 3, text: sourceLines[2]! },
+      ],
+    }])
   })
 
   it('deduplicates repeated uses and resolves multiple simple declarators by identity', () => {
@@ -1933,6 +2133,41 @@ describe('bounded multiline literal statement completion', () => {
 })
 
 describe('owner declaration completion budgets and atomic preservation', () => {
+  it('still rejects an overlapping declaration row above the 220-character cap', () => {
+    const declaration = `  const origin = '${'d'.repeat(190)}'; const alias = origin`
+    const baseline = 'L3: return dispatchOutcome(origin, alias)'
+    expect(declaration.length).toBeGreaterThan(220)
+
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      declaration,
+      '  return dispatchOutcome(origin, alias)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe(baseline)
+    expect(evidence?.snippet).not.toContain('const origin')
+  })
+
+  it('still rejects an overlapping declaration closure above the total character cap', () => {
+    const declaration = `  const origin = '${'d'.repeat(160)}'; const alias = origin`
+    const returnSource = `  return dispatchOutcome(origin, alias, '${'r'.repeat(80)}')`
+    const baseline = `L3: ${returnSource.trim()}`
+    expect(declaration.length).toBeLessThanOrEqual(220)
+    expect(`L2: ${declaration}\n${baseline}`.length).toBeGreaterThan(300)
+
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      declaration,
+      returnSource,
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe(baseline)
+    expect(evidence?.snippet).not.toContain('const origin')
+    expect(evidence?.snippet).not.toContain('...')
+  })
+
   it('admits faithful literal whitespace when the completed snippet exactly fills the cap', () => {
     const literal = `${'value  '.repeat(22)}end`
     const returnSource = `  return dispatchOutcome(datum, '${literal}')`
