@@ -75,7 +75,7 @@ describe('owner-local declaration completion', () => {
     ])
 
     expect(evidence).toEqual({
-      snippet: 'L2: const datum = 12.5\nL3: return dispatchOutcome(datum)',
+      snippet: 'L2:   const datum = 12.5\nL3: return dispatchOutcome(datum)',
       lineNumber: 2,
       scope: 'symbol',
     })
@@ -90,7 +90,7 @@ describe('owner-local declaration completion', () => {
       '}',
     ])
 
-    expect(evidence?.snippet).toBe("L2: const datum = 'ready'\nL4: return dispatchOutcome(datum)")
+    expect(evidence?.snippet).toBe("L2:   const datum = 'ready'\nL4: return dispatchOutcome(datum)")
     expect(evidence?.snippet).not.toContain('observeUnrelatedWork')
   })
 
@@ -104,8 +104,8 @@ describe('owner-local declaration completion', () => {
     ])
 
     expect(evidence?.snippet).toBe([
-      'L2: const origin = 12.5',
-      'L3: const alias = origin',
+      'L2:   const origin = 12.5',
+      'L3:   const alias = origin',
       'L4: return dispatchOutcome(alias)',
     ].join('\n'))
   })
@@ -119,7 +119,7 @@ describe('owner-local declaration completion', () => {
     ])
 
     expect(evidence?.snippet).toBe([
-      'L2: const origin = 12.5, alias = origin',
+      'L2:   const origin = 12.5, alias = origin',
       'L3: return dispatchOutcome(alias, alias)',
     ].join('\n'))
     expect(evidence?.snippet.match(/const origin/g)).toHaveLength(1)
@@ -135,7 +135,7 @@ describe('owner-local declaration completion', () => {
         '}',
       ], { extension })
 
-      expect(evidence?.snippet).toContain('L2: const datum = 12.5')
+      expect(evidence?.snippet).toContain('L2:   const datum = 12.5')
     },
   )
 
@@ -205,10 +205,57 @@ describe('owner-local declaration completion', () => {
     ])
 
     expect(evidence?.snippet).toBe([
-      'L2: const datum: number = buildDatum(',
-      'L3: 12.5,',
-      'L4: )',
+      'L2:   const datum: number = buildDatum(',
+      'L3:     12.5,',
+      'L4:   )',
       'L5: return dispatchOutcome(datum)',
+    ].join('\n'))
+  })
+
+  it('preserves meaningful whitespace in a newly added string-literal declaration', () => {
+    const evidence = evidenceFor([
+      'export function assemble() {',
+      "  const input = 'alpha  beta';",
+      '  return { displayedText: input };',
+      '}',
+    ], { question: 'What is the displayed text?', label: 'assemble' })
+
+    expect(evidence?.snippet).toBe([
+      "L2:   const input = 'alpha  beta';",
+      'L3: return { displayedText: input };',
+    ].join('\n'))
+  })
+
+  it('preserves a literal tab in a string and repeated spaces in a regex', () => {
+    const declaration = "  const input = ['alpha\tbeta', /alpha  beta/];"
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      declaration,
+      '  return dispatchOutcome(input)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe([
+      `L2: ${declaration}`,
+      'L3: return dispatchOutcome(input)',
+    ].join('\n'))
+  })
+
+  it('preserves physical multiline template content, including a blank line', () => {
+    const evidence = evidenceFor([
+      'export function assemble() {',
+      '  const input = `  alpha  ',
+      '',
+      ' beta  `',
+      '  return { displayedText: input };',
+      '}',
+    ], { question: 'What is the displayed text?', label: 'assemble' })
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const input = `  alpha  ',
+      'L3: ',
+      'L4:  beta  `',
+      'L5: return { displayedText: input };',
     ].join('\n'))
   })
 
@@ -222,7 +269,7 @@ describe('owner-local declaration completion', () => {
       '}',
     ])
 
-    expect(evidence?.snippet).toContain("L2: const datum = 'ready'")
+    expect(evidence?.snippet).toContain("L2:   const datum = 'ready'")
     expect(evidence?.snippet).toContain('return datum ? dispatchOutcome(datum) : retryOutcome()')
   })
 
@@ -237,7 +284,7 @@ describe('owner-local declaration completion', () => {
       '}',
     ])
 
-    expect(evidence?.snippet).toContain("L4: const datum = 'inner'")
+    expect(evidence?.snippet).toContain("L4:     const datum = 'inner'")
     expect(evidence?.snippet).not.toContain("const datum = 'outer'")
   })
 
@@ -252,7 +299,7 @@ describe('owner-local declaration completion', () => {
       '}',
     ])
 
-    expect(evidence?.snippet).toContain("L2: const datum = 'owner'")
+    expect(evidence?.snippet).toContain("L2:   const datum = 'owner'")
     expect(evidence?.snippet).toContain('return dispatchOutcome(datum)')
   })
 
@@ -289,6 +336,20 @@ describe('owner-local declaration completion', () => {
     ])
 
     expect(evidence?.snippet).not.toContain("const datum = 'outer'")
+  })
+
+  it.each([
+    { declaration: 'using datum = acquireDatum()' },
+    { declaration: 'await using datum = acquireDatum()' },
+  ])('does not complete an unsupported $declaration binding', ({ declaration }) => {
+    const evidence = evidenceFor([
+      'export async function executeSample() {',
+      `  ${declaration}`,
+      '  return dispatchOutcome(datum)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe('L3: return dispatchOutcome(datum)')
   })
 
   it.each([
@@ -378,8 +439,8 @@ describe('owner-local declaration completion', () => {
 
     expect(propertyOnly?.snippet).not.toContain("const datum = 'not-a-value-use'")
     expect(typeOnly?.snippet).not.toContain('const DatumType')
-    expect(shorthand?.snippet).toContain('L2: const datum = 12.5')
-    expect(computed?.snippet).toContain("L2: const datum = 'key'")
+    expect(shorthand?.snippet).toContain('L2:   const datum = 12.5')
+    expect(computed?.snippet).toContain("L2:   const datum = 'key'")
   })
 
   it('ignores labels, comments, and string text as dependency uses', () => {
@@ -523,7 +584,7 @@ describe('owner-local declaration completion', () => {
     })
 
     expect(evidence?.scope).toBe('source_file')
-    expect(evidence?.snippet).toContain("L2: const datum = 'owner'")
+    expect(evidence?.snippet).toContain("L2:   const datum = 'owner'")
     expect(evidence?.snippet).toContain('return computeWidget(datum)')
     expect(evidence?.snippet).not.toContain("const remote = 'foreign'")
   })
@@ -533,10 +594,10 @@ describe('owner declaration completion budgets and atomic preservation', () => {
   it('admits a declaration closure that exactly fills the 300-character cap', () => {
     const returnSource = `  return dispatchOutcome(datum, '${'r'.repeat(48)}')`
     const renderedReturn = `L3: ${returnSource.trim()}`
-    const declarationShell = "L2: const datum = ''"
+    const declarationShell = "L2:   const datum = ''"
     const fillLength = 300 - renderedReturn.length - declarationShell.length - 1
     const declarationSource = `  const datum = '${'d'.repeat(fillLength)}'`
-    const renderedDeclaration = `L2: ${declarationSource.trim()}`
+    const renderedDeclaration = `L2: ${declarationSource}`
 
     const evidence = evidenceFor([
       'export function executeSample() {',
@@ -553,7 +614,7 @@ describe('owner declaration completion budgets and atomic preservation', () => {
   it('rejects a declaration whose physical fragment exceeds 220 characters', () => {
     const declaration = `  const datum = '${'d'.repeat(205)}'`
     const baseline = 'L3: return dispatchOutcome(datum)'
-    expect(declaration.trim()).toHaveLength(221)
+    expect(declaration).toHaveLength(223)
 
     const evidence = evidenceFor([
       'export function executeSample() {',

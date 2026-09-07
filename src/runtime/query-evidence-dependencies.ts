@@ -421,7 +421,8 @@ function constBindingForReference(
         : []
     for (const statement of statements) {
       if (ts.isVariableStatement(statement)) {
-        const declarationKind = (statement.declarationList.flags & ts.NodeFlags.Const) !== 0
+        const blockScopedFlags = statement.declarationList.flags & ts.NodeFlags.BlockScoped
+        const declarationKind = blockScopedFlags === ts.NodeFlags.Const
           ? 'const'
           : 'mutable'
         for (const declaration of statement.declarationList.declarations) {

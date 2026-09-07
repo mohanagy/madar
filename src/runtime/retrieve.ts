@@ -1377,7 +1377,7 @@ function completeOwnerDeclarationEvidence(
     }
 
     const additions = declarations.flatMap((declaration) => declaration.lines.map((line) => {
-      const content = line.text.replace(/\s+/g, ' ').trim()
+      const content = line.text
       return {
         lineNumber: line.lineNumber,
         content,
@@ -1386,7 +1386,7 @@ function completeOwnerDeclarationEvidence(
     }))
     if (
       additions.some((line) => (
-        line.content.length === 0 || line.content.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+        line.content.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
       ))
     ) {
       return null
