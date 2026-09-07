@@ -87,6 +87,7 @@ import {
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 import {
   ownerLocalDeclarationEvidence,
+  queryEvidenceSourceProjection,
   type RepresentedQueryEvidenceSource,
 } from './query-evidence-dependencies.js'
 
@@ -984,7 +985,7 @@ function queryEvidenceFragments(
         ?? [{
           startLine: start,
           endLine: end,
-          text: lines.slice(start - 1, end).join(' '),
+          text: lines.slice(start - 1, end).join('\n'),
         }],
     })
   }
@@ -1272,34 +1273,76 @@ function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[
 interface RenderedQueryEvidenceLine {
   source: QueryEvidenceLine
   text: string
+  representedSource: readonly RepresentedQueryEvidenceSource[]
 }
 
-function renderQueryEvidenceLineEntries(lines: readonly QueryEvidenceLine[]): RenderedQueryEvidenceLine[] {
+function renderQueryEvidenceLineEntries(
+  lines: readonly QueryEvidenceLine[],
+  sourceFile: string,
+  sourceLines: readonly string[],
+): RenderedQueryEvidenceLine[] {
   const rendered: RenderedQueryEvidenceLine[] = []
   let usedChars = 0
   for (const line of lines) {
     const normalized = line.text.replace(/\s+/g, ' ').trim()
-    const content = normalized.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
-      ? `${normalized.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3).trimEnd()}...`
-      : normalized
+    const projection = queryEvidenceSourceProjection({
+      sourceFilePath: sourceFile,
+      sourceLines,
+      representedSource: line.representedSource,
+      shapedText: line.text,
+    })
+    let projectedContent = projection?.text ?? normalized
+    if (projection) {
+      for (let index = projection.literalLineBreaks.length - 1; index >= 0; index -= 1) {
+        const lineBreak = projection.literalLineBreaks[index]!
+        projectedContent = [
+          projectedContent.slice(0, lineBreak.offset + 1),
+          `L${lineBreak.lineNumber}: `,
+          projectedContent.slice(lineBreak.offset + 1),
+        ].join('')
+      }
+    }
+    const projectedRows = projectedContent.split('\n')
+    const lineCapExceeded = projectedRows.some((row, index) => {
+      const content = index === 0 ? row : row.replace(/^L\d+: /, '')
+      return content.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+    })
+    const content = lineCapExceeded
+      ? projectedRows.map((row, index) => {
+          const match = index > 0 ? /^(L\d+: )(.*)$/.exec(row) : null
+          const rowPrefix = match?.[1] ?? ''
+          const rowContent = match?.[2] ?? row
+          return rowContent.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+            ? `${rowPrefix}${rowContent.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3)}...`
+            : row
+        }).join('\n')
+      : projectedContent
     const prefix = `L${line.index}: `
     const separatorChars = rendered.length > 0 ? 1 : 0
     const remaining = QUERY_EVIDENCE_SNIPPET_CHAR_CAP - usedChars - separatorChars
     if (remaining <= prefix.length + 8) {
       break
     }
-    const bounded = `${prefix}${content}`.slice(0, remaining).trimEnd()
+    const faithful = `${prefix}${content}`
+    const bounded = faithful.slice(0, remaining).trimEnd()
     rendered.push({
       source: line,
       text: bounded,
+      representedSource: projection && !lineCapExceeded && bounded === faithful
+        ? line.representedSource
+        : [],
     })
     usedChars += bounded.length + separatorChars
   }
   return rendered
 }
 
-function renderQueryEvidenceLines(lines: readonly QueryEvidenceLine[]): string | null {
-  const rendered = renderQueryEvidenceLineEntries(lines)
+function renderQueryEvidenceLines(
+  lines: readonly QueryEvidenceLine[],
+  sourceFile: string,
+  sourceLines: readonly string[],
+): string | null {
+  const rendered = renderQueryEvidenceLineEntries(lines, sourceFile, sourceLines)
   return rendered.length > 0 ? rendered.map((line) => line.text).join('\n') : null
 }
 
@@ -1341,28 +1384,7 @@ function completeOwnerDeclarationEvidence(
   baseline: readonly RenderedQueryEvidenceLine[],
 ): { snippet: string; lineNumber: number } | null {
   try {
-    const representedSource = baseline.flatMap((rendered) => {
-      const fullContent = rendered.source.text.replace(/\s+/g, ' ').trim()
-      const prefix = `L${rendered.source.index}: `
-      const renderedContent = rendered.text.startsWith(prefix)
-        ? rendered.text.slice(prefix.length)
-        : ''
-      let searchFrom = 0
-      return rendered.source.representedSource.flatMap((represented) => {
-        const representedText = represented.text.replace(/\s+/g, ' ').trim()
-        const index = representedText.length > 0
-          ? fullContent.indexOf(representedText, searchFrom)
-          : -1
-        if (index < 0) {
-          return []
-        }
-        const end = index + representedText.length
-        searchFrom = end
-        return renderedContent.slice(index, end) === fullContent.slice(index, end)
-          ? [represented]
-          : []
-      })
-    })
+    const representedSource = baseline.flatMap((rendered) => rendered.representedSource)
     if (representedSource.length === 0) {
       return null
     }
@@ -1408,11 +1430,11 @@ function completeOwnerDeclarationEvidence(
       || (left.baselineIndex === null ? -1 : left.baselineIndex)
       - (right.baselineIndex === null ? -1 : right.baselineIndex)
     ))
-    if (merged.length > QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
-      return null
-    }
     const snippet = merged.map((line) => line.text).join('\n')
-    if (snippet.length > QUERY_EVIDENCE_SNIPPET_CHAR_CAP) {
+    if (
+      snippet.split('\n').length > QUERY_EVIDENCE_SNIPPET_MAX_LINES
+      || snippet.length > QUERY_EVIDENCE_SNIPPET_CHAR_CAP
+    ) {
       return null
     }
     const preservedBaseline = merged
@@ -1522,7 +1544,9 @@ export function readQueryEvidenceSnippet(
           }
         }
       }
-      const symbolSnippet = symbolLine ? renderQueryEvidenceLines([symbolLine]) : null
+      const symbolSnippet = symbolLine
+        ? renderQueryEvidenceLines([symbolLine], sourceFile, lines)
+        : null
       if (symbolLine && symbolSnippet) {
         let mergedLines = [symbolLine]
         for (const fileLine of selectedLines) {
@@ -1536,14 +1560,14 @@ export function readQueryEvidenceSnippet(
           }
           const candidateLines = [...mergedLines, fileLine]
             .sort((left, right) => left.index - right.index)
-          if (renderQueryEvidenceLines(candidateLines)?.split('\n').includes(symbolSnippet)) {
+          if (renderQueryEvidenceLines(candidateLines, sourceFile, lines)?.split('\n').includes(symbolSnippet)) {
             mergedLines = candidateLines
           }
         }
         selectedLines = mergedLines
       }
     }
-    const baseline = renderQueryEvidenceLineEntries(selectedLines)
+    const baseline = renderQueryEvidenceLineEntries(selectedLines, sourceFile, lines)
     if (baseline.length === 0) {
       return null
     }

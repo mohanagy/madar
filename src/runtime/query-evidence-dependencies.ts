@@ -26,6 +26,11 @@ export interface OwnerDeclarationCompletionInput {
   representedSource: readonly RepresentedQueryEvidenceSource[]
 }
 
+export interface QueryEvidenceSourceProjection {
+  text: string
+  literalLineBreaks: Array<{ offset: number; lineNumber: number }>
+}
+
 interface ParsedSourceSnapshot {
   sourceFilePath: string
   sourceText: string
@@ -214,17 +219,234 @@ function normalizedSource(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
-function physicalSourceForLineRange(
+interface ProtectedSourceToken {
+  start: number
+  end: number
+  text: string
+}
+
+interface PhysicalSourceProjection extends QueryEvidenceSourceProjection {
+  identityText: string
+  tokens: ProtectedSourceToken[]
+}
+
+const PROTECTED_LITERAL_KINDS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.StringLiteral,
+  ts.SyntaxKind.NoSubstitutionTemplateLiteral,
+  ts.SyntaxKind.RegularExpressionLiteral,
+  ts.SyntaxKind.TemplateHead,
+  ts.SyntaxKind.TemplateMiddle,
+  ts.SyntaxKind.TemplateTail,
+])
+
+function physicalSourceBounds(
   range: { start: number; end: number },
   sourceFile: ts.SourceFile,
-): string {
+): { start: number; end: number } | null {
   const lineStarts = sourceFile.getLineStarts()
   const start = lineStarts[range.start - 1]
   if (start === undefined) {
-    return ''
+    return null
   }
-  const end = lineStarts[range.end] ?? sourceFile.text.length
-  return sourceFile.text.slice(start, end)
+  return {
+    start,
+    end: lineStarts[range.end] ?? sourceFile.text.length,
+  }
+}
+
+function protectedTokensForRange(
+  range: { start: number; end: number },
+  sourceFile: ts.SourceFile,
+): ProtectedSourceToken[] | null {
+  const bounds = physicalSourceBounds(range, sourceFile)
+  if (!bounds) {
+    return null
+  }
+  const tokens: ProtectedSourceToken[] = []
+  let clippedToken = false
+  const visit = (node: ts.Node): void => {
+    if (PROTECTED_LITERAL_KINDS.has(node.kind)) {
+      const start = node.getStart(sourceFile)
+      const end = node.getEnd()
+      if (start < bounds.end && bounds.start < end) {
+        if (start < bounds.start || end > bounds.end) {
+          clippedToken = true
+          return
+        }
+        tokens.push({
+          start,
+          end,
+          text: sourceFile.text.slice(start, end),
+        })
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  if (clippedToken) {
+    return null
+  }
+  return tokens.sort((left, right) => left.start - right.start || left.end - right.end)
+}
+
+function tokenMarker(index: number): string {
+  return `\u0000literal-${index}\u0000`
+}
+
+function physicalProjectionForRange(
+  range: { start: number; end: number },
+  sourceFile: ts.SourceFile,
+): PhysicalSourceProjection | null {
+  const bounds = physicalSourceBounds(range, sourceFile)
+  const tokens = protectedTokensForRange(range, sourceFile)
+  if (!bounds || !tokens) {
+    return null
+  }
+
+  let marked = ''
+  let cursor = bounds.start
+  for (const [index, token] of tokens.entries()) {
+    marked += sourceFile.text.slice(cursor, token.start)
+    marked += tokenMarker(index)
+    cursor = token.end
+  }
+  marked += sourceFile.text.slice(cursor, bounds.end)
+  const identityText = normalizedSource(marked)
+
+  let text = identityText
+  const literalLineBreaks: Array<{ offset: number; lineNumber: number }> = []
+  for (let index = tokens.length - 1; index >= 0; index -= 1) {
+    const token = tokens[index]!
+    const marker = tokenMarker(index)
+    const markerOffset = text.indexOf(marker)
+    if (markerOffset < 0) {
+      return null
+    }
+    text = `${text.slice(0, markerOffset)}${token.text}${text.slice(markerOffset + marker.length)}`
+  }
+
+  let projectedOffset = 0
+  let identityCursor = 0
+  for (const [index, token] of tokens.entries()) {
+    const marker = tokenMarker(index)
+    const markerOffset = identityText.indexOf(marker, identityCursor)
+    if (markerOffset < 0) {
+      return null
+    }
+    projectedOffset += markerOffset - identityCursor
+    let lineNumber = sourceFile.getLineAndCharacterOfPosition(token.start).line + 1
+    for (let tokenOffset = 0; tokenOffset < token.text.length; tokenOffset += 1) {
+      if (token.text[tokenOffset] !== '\n') {
+        continue
+      }
+      lineNumber += 1
+      literalLineBreaks.push({
+        offset: projectedOffset + tokenOffset,
+        lineNumber,
+      })
+    }
+    projectedOffset += token.text.length
+    identityCursor = markerOffset + marker.length
+  }
+
+  return { text, identityText, literalLineBreaks, tokens }
+}
+
+function representedSourceIdentity(
+  representedText: string,
+  projection: PhysicalSourceProjection,
+): string | null {
+  let marked = ''
+  let cursor = 0
+  for (const [index, token] of projection.tokens.entries()) {
+    const tokenOffset = representedText.indexOf(token.text, cursor)
+    if (tokenOffset < 0) {
+      return null
+    }
+    marked += representedText.slice(cursor, tokenOffset)
+    marked += tokenMarker(index)
+    cursor = tokenOffset + token.text.length
+  }
+  marked += representedText.slice(cursor)
+  return normalizedSource(marked)
+}
+
+function representedSourceMatchesPhysicalRange(
+  representedText: string,
+  range: { start: number; end: number },
+  sourceFile: ts.SourceFile,
+): boolean {
+  const projection = physicalProjectionForRange(range, sourceFile)
+  return projection !== null
+    && representedSourceIdentity(representedText, projection) === projection.identityText
+}
+
+/**
+ * Projects already-shaped query evidence back onto its authenticated physical
+ * source while normalizing layout only outside string/template/regex tokens.
+ */
+export function queryEvidenceSourceProjection(input: {
+  sourceFilePath: string
+  sourceLines: readonly string[]
+  representedSource: readonly RepresentedQueryEvidenceSource[]
+  shapedText: string
+}): QueryEvidenceSourceProjection | null {
+  try {
+    const sourceFile = parsedSourceForSnapshot(input.sourceFilePath, input.sourceLines)
+    if (!sourceFile) {
+      return null
+    }
+    const parseDiagnostics = (sourceFile as ts.SourceFile & {
+      parseDiagnostics?: readonly ts.Diagnostic[]
+    }).parseDiagnostics
+    if (parseDiagnostics && parseDiagnostics.length > 0) {
+      return null
+    }
+
+    const lineCount = sourceFile.getLineStarts().length
+    const shapedText = normalizedSource(input.shapedText)
+    let cursor = 0
+    let projectedText = ''
+    const literalLineBreaks: Array<{ offset: number; lineNumber: number }> = []
+    for (const represented of input.representedSource) {
+      if (
+        !Number.isInteger(represented.startLine)
+        || !Number.isInteger(represented.endLine)
+        || represented.startLine < 1
+        || represented.endLine > lineCount
+        || represented.startLine > represented.endLine
+      ) {
+        return null
+      }
+      const range = { start: represented.startLine, end: represented.endLine }
+      const projection = physicalProjectionForRange(range, sourceFile)
+      if (
+        !projection
+        || representedSourceIdentity(represented.text, projection) !== projection.identityText
+      ) {
+        return null
+      }
+      const normalizedComponent = normalizedSource(represented.text)
+      const componentOffset = shapedText.indexOf(normalizedComponent, cursor)
+      if (normalizedComponent.length === 0 || componentOffset < 0) {
+        return null
+      }
+      projectedText += shapedText.slice(cursor, componentOffset)
+      const projectionStart = projectedText.length
+      projectedText += projection.text
+      for (const lineBreak of projection.literalLineBreaks) {
+        literalLineBreaks.push({
+          offset: projectionStart + lineBreak.offset,
+          lineNumber: lineBreak.lineNumber,
+        })
+      }
+      cursor = componentOffset + normalizedComponent.length
+    }
+    projectedText += shapedText.slice(cursor)
+    return { text: projectedText, literalLineBreaks }
+  } catch {
+    return null
+  }
 }
 
 function representedStatements(
@@ -246,7 +468,7 @@ function representedStatements(
       return []
     }
     const range = { start: represented.startLine, end: represented.endLine }
-    return normalizedSource(represented.text) === normalizedSource(physicalSourceForLineRange(range, sourceFile))
+    return representedSourceMatchesPhysicalRange(represented.text, range, sourceFile)
       ? [range]
       : []
   })

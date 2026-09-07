@@ -22,13 +22,14 @@ const roots: string[] = []
 function sourceFixture(
   sourceLines: readonly string[],
   extension = '.ts',
+  lineEnding = '\n',
 ): { sourceFile: string; sourceLocation: string } {
   const fixtureParent = resolve('out', 'test-runtime')
   mkdirSync(fixtureParent, { recursive: true })
   const root = mkdtempSync(join(fixtureParent, 'owner-declaration-'))
   roots.push(root)
   const sourceFile = join(root, `sample${extension}`)
-  writeFileSync(sourceFile, sourceLines.join('\n'), 'utf8')
+  writeFileSync(sourceFile, sourceLines.join(lineEnding), 'utf8')
   return {
     sourceFile,
     sourceLocation: `L1-L${sourceLines.length}`,
@@ -45,9 +46,10 @@ function evidenceFor(
     sourceLocation?: string | null
     derived?: boolean
     fileCache?: Map<string, string[] | null>
+    lineEnding?: '\n' | '\r\n'
   } = {},
 ): QueryEvidenceSnippet | null {
-  const fixture = sourceFixture(sourceLines, options.extension)
+  const fixture = sourceFixture(sourceLines, options.extension, options.lineEnding)
   return readQueryEvidenceSnippet(fixture.sourceFile, options.lineNumber ?? 1, {
     question: options.question ?? QUESTION,
     label: options.label ?? 'executeSample',
@@ -226,6 +228,160 @@ describe('owner-local declaration completion', () => {
       'L3: return { displayedText: input };',
     ].join('\n'))
   })
+
+  it.each([
+    {
+      literalKind: 'escaped string with comment-looking text',
+      statement: '  return dispatchOutcome(datum, "alpha  beta \\"// literal")',
+      changed: (statement: string) => statement.replace('alpha  beta', 'alpha beta'),
+    },
+    {
+      literalKind: 'template with a tab and escaped delimiter',
+      statement: '  return dispatchOutcome(datum, `alpha\tbeta \\` /* literal */`)',
+      changed: (statement: string) => statement.replace('\t', ' '),
+    },
+    {
+      literalKind: 'regex with repeated spaces and escaped slashes',
+      statement: '  return dispatchOutcome(datum, /alpha  beta\\/\\/tail/)',
+      changed: (statement: string) => statement.replace('alpha  beta', 'alpha beta'),
+    },
+  ])('authenticates exact $literalKind bytes and rejects changed bytes directly', ({ statement, changed }) => {
+    const sourceLines = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      statement,
+      '}',
+    ]
+    const input = {
+      sourceFilePath: 'sample.ts',
+      sourceLines,
+      ownerRange: { start: 1, end: 4 },
+    }
+
+    expect(ownerLocalDeclarationEvidence({
+      ...input,
+      representedSource: [{ startLine: 3, endLine: 3, text: statement }],
+    })).toEqual([{
+      startLine: 2,
+      endLine: 2,
+      lines: [{ lineNumber: 2, text: '  const datum = 12.5' }],
+    }])
+    expect(ownerLocalDeclarationEvidence({
+      ...input,
+      representedSource: [{ startLine: 3, endLine: 3, text: changed(statement) }],
+    })).toEqual([])
+  })
+
+  it('authenticates complete multiline template boundaries without normalizing literal edges', () => {
+    const sourceLines = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, `  alpha  ?',
+      ' beta  `)',
+      '}',
+    ]
+    const represented = sourceLines.slice(2, 4).join('\n')
+    const input = {
+      sourceFilePath: 'sample.ts',
+      sourceLines,
+      ownerRange: { start: 1, end: 5 },
+    }
+
+    expect(ownerLocalDeclarationEvidence({
+      ...input,
+      representedSource: [{ startLine: 3, endLine: 4, text: represented }],
+    })).toHaveLength(1)
+    expect(ownerLocalDeclarationEvidence({
+      ...input,
+      representedSource: [{
+        startLine: 3,
+        endLine: 4,
+        text: represented.replace('  alpha  ?\n beta  ', ' alpha ?\nbeta '),
+      }],
+    })).toEqual([])
+  })
+
+  it('preserves selected string, template, and regex literal bytes while completing their const', () => {
+    const statement = '  return dispatchOutcome(datum, "alpha  beta \\"// literal", `left\tright`, /x  y\\/\\/z/)'
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      statement,
+      '}',
+    ], { question: 'What is the dispatch outcome?', label: 'assemble' })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        `L3: ${statement.trim()}`,
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it('preserves the sealed two-space selected literal instead of authenticating altered display bytes', () => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      "  return dispatchOutcome(datum, 'alpha  beta')",
+      '}',
+    ], { question: 'What is the dispatch outcome?', label: 'assemble' })
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const datum = 12.5',
+      "L3: return dispatchOutcome(datum, 'alpha  beta')",
+    ].join('\n'))
+  })
+
+  it('keeps a whitespace-sensitive literal in a complete joined multiline expression', () => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return datum ?',
+      "    dispatchOutcome(datum, 'alpha  beta')",
+      '    : retryOutcome()',
+      '}',
+    ], { question: 'What are the dispatch outcome and retry outcome?', label: 'assemble' })
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const datum = 12.5',
+      "L3: return datum ? dispatchOutcome(datum, 'alpha  beta') : retryOutcome()",
+    ].join('\n'))
+  })
+
+  it('retains multiline template line breaks and line-edge spaces with physical prefixes', () => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum, `  alpha  ?',
+      ' beta  `)',
+      '}',
+    ], { question: 'What is the dispatch outcome?', label: 'assemble' })
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const datum = 12.5',
+      'L3: return dispatchOutcome(datum, `  alpha  ?',
+      'L4:  beta  `)',
+    ].join('\n'))
+  })
+
+  it.each(['\n', '\r\n'] as const)(
+    'preserves literal content and intended indentation from %j source',
+    (lineEnding) => {
+      const evidence = evidenceFor([
+        'function assemble() {',
+        '\tconst datum = 12.5',
+        '\treturn dispatchOutcome(datum, `left\tright`, /x  y/)',
+        '}',
+      ], { question: 'What is the dispatch outcome?', label: 'assemble', lineEnding })
+
+      expect(evidence?.snippet).toBe([
+        'L2: \tconst datum = 12.5',
+        'L3: return dispatchOutcome(datum, `left\tright`, /x  y/)',
+      ].join('\n'))
+    },
+  )
 
   it('preserves a literal tab in a string and repeated spaces in a regex', () => {
     const declaration = "  const input = ['alpha\tbeta', /alpha  beta/];"
@@ -1146,6 +1302,48 @@ describe('owner-local binding identity correction', () => {
 })
 
 describe('owner declaration completion budgets and atomic preservation', () => {
+  it('admits faithful literal whitespace when the completed snippet exactly fills the cap', () => {
+    const literal = `${'value  '.repeat(22)}end`
+    const returnSource = `  return dispatchOutcome(datum, '${literal}')`
+    const renderedReturn = `L3: ${returnSource.trim()}`
+    const declarationShell = "L2:   const datum = ''"
+    const fillLength = 300 - renderedReturn.length - declarationShell.length - 1
+    const declarationSource = `  const datum = '${'d'.repeat(fillLength)}'`
+    const renderedDeclaration = `L2: ${declarationSource}`
+
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      declarationSource,
+      returnSource,
+      '}',
+    ])
+
+    expect(fillLength).toBeGreaterThan(0)
+    expect(returnSource.length).toBeLessThanOrEqual(220)
+    expect(evidence?.snippet).toBe(`${renderedDeclaration}\n${renderedReturn}`)
+    expect(evidence?.snippet).toHaveLength(300)
+  })
+
+  it('counts literal whitespace for overflow without clipping selected source or adding its declaration', () => {
+    const literal = `${'value  '.repeat(24)}end`
+    const returnSource = `  return dispatchOutcome(datum, '${literal}')`
+    const declarationSource = `  const datum = '${'d'.repeat(105)}'`
+    const baseline = `L3: ${returnSource.trim()}`
+    expect(returnSource.length).toBeLessThanOrEqual(220)
+    expect(`L2: ${declarationSource}\n${baseline}`.length).toBeGreaterThan(300)
+
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      declarationSource,
+      returnSource,
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe(baseline)
+    expect(evidence?.snippet).not.toContain('const datum')
+    expect(evidence?.snippet).not.toContain('...')
+  })
+
   it('admits a declaration closure that exactly fills the 300-character cap', () => {
     const returnSource = `  return dispatchOutcome(datum, '${'r'.repeat(48)}')`
     const renderedReturn = `L3: ${returnSource.trim()}`
@@ -1219,6 +1417,27 @@ describe('owner declaration completion budgets and atomic preservation', () => {
 })
 
 describe('owner declaration parse snapshot cache', () => {
+  it('invalidates changed content or paths even when the source-line array identity is reused', () => {
+    const sourceLines = [
+      'export function executeSample() {',
+      "  const datum = 'first'",
+      '  return dispatchOutcome(datum)',
+      '}',
+    ]
+    const evidence = (sourceFilePath: string) => ownerLocalDeclarationEvidence({
+      sourceFilePath,
+      sourceLines,
+      ownerRange: { start: 1, end: 4 },
+      representedSource: [{ startLine: 3, endLine: 3, text: sourceLines[2]! }],
+    })
+
+    expect(evidence('sample.ts')[0]?.lines[0]?.text).toContain("'first'")
+    sourceLines[1] = "  const datum = 'second'"
+    expect(evidence('sample.ts')[0]?.lines[0]?.text).toContain("'second'")
+    expect(evidence('sample.mts')[0]?.lines[0]?.text).toContain("'second'")
+    expect(ts.createSourceFile).toHaveBeenCalledTimes(3)
+  })
+
   it('does not reuse a parsed source after content changes at the same path', () => {
     const firstSource = [
       'export function executeSample() {',
