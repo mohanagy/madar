@@ -59,6 +59,7 @@ import {
   relationIsPrimaryForPolicy,
 } from './retrieve/expansion.js'
 import { sliceCandidatesForRetrieve } from './retrieve/slicing.js'
+import { reconcileStoredSourceTerms } from './retrieve-source-terms.js'
 import {
   CONCEPTUAL_WORKFLOW_RESERVATION_BOOST,
   finalizeConceptualFallbackPlan,
@@ -1581,6 +1582,7 @@ interface SeedScoreBreakdown {
   labelExactScore: number
   labelPhraseScore: number
   labelTokenScore: number
+  sourceTokenScore: number
   sourcePathScore: number
   promptIdentifierScore: number
   communityScore: number
@@ -2311,6 +2313,7 @@ function scoreSeedCandidate(
     labelExactScore,
     labelPhraseScore,
     labelTokenScore,
+    sourceTokenScore: 0,
     sourcePathScore,
     promptIdentifierScore,
     communityScore,
@@ -4992,6 +4995,7 @@ function retrieveContextPass(
     ? graph.graph.root_path
     : undefined
   const classificationRootPath = inferredGraphRoot(graph)
+  const storedSourceTerms = reconcileStoredSourceTerms(graph, classificationRootPath)
   const retrievalGate = queryStage.retrieval_gate
   const effectiveRetrievalLevel = queryStage.effective_retrieval_level
   const underScopedDivergenceIds = underScopedDivergenceNodeIds(graph, question)
@@ -5072,6 +5076,10 @@ function retrieveContextPass(
   const excludedDomains = retrievalGate.signals.excluded_domains ?? []
   const excludedTerms = retrievalGate.signals.excluded_terms ?? []
   const excludedPathHints = retrievalGate.signals.excluded_path_hints ?? []
+  const excludedSourceTokens = new Set(
+    [...excludedTerms, ...excludedPathHints].flatMap((term) => tokenizeLabel(term)),
+  )
+  const sourceQuestionTokens = [...new Set(questionTokens)].filter((token) => !excludedSourceTokens.has(token))
 
   // Step 1+2: Score all nodes with explicit seed evidence weights.
   const tokenWeights = tokenWeightsForQuestion(graph, questionTokens)
@@ -5164,11 +5172,18 @@ function retrieveContextPass(
         allowRuntimeBoundaryBoost: effectiveScore.total + anchorScore > 0 || explicitlyAnchored,
       },
     )
+    const sourceTokens = storedSourceTerms.get(id)?.tokens ?? []
+    const sourceTokenScore = 0.5 * Math.min(2, scoreNode(
+      sourceQuestionTokens,
+      sourceTokens,
+      undefined,
+      Math.max(sourceTokens.length, 1),
+    ))
 
     const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, explicitlyAnchored)
     const scriptMigrationPenalty = scriptMigrationPathPenalty(retrievalGate, sourceFile, label, question, explicitlyAnchored)
     const conceptualFallbackScore = conceptualNodeBoosts.get(id) ?? 0
-    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment + conceptualFallbackScore
+    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment + conceptualFallbackScore + sourceTokenScore
       - sourceDomainPenalty - domainIntentPenalty - scriptMigrationPenalty
     const hasPositiveSeedEvidence = totalSeedScore > 0 || exactAnchorMatch || mentionedPathMatch
     if (hasPositiveSeedEvidence) {
@@ -5194,6 +5209,7 @@ function retrieveContextPass(
         seedScore: {
           ...effectiveScore,
           labelExactScore: effectiveScore.labelExactScore + anchorScore,
+          sourceTokenScore,
           conceptualFallbackScore,
           total: totalSeedScore,
         },
@@ -5234,12 +5250,13 @@ function retrieveContextPass(
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelExactScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelPhraseScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelTokenScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.sourceTokenScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.promptIdentifierScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.sourcePathScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.communityScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.conceptualFallbackScore),
   ], {
-    weights: [2, 1.5, 1.5, 0.5, 0.25, 0.25, 1.75],
+    weights: [2, 1.5, 1.5, 0.75, 0.5, 0.25, 0.25, 1.75],
   })
   const scored: ScoredNode[] = filteredSeedCandidates.map((candidate) => ({
     id: candidate.id,
