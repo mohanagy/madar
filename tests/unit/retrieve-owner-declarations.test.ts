@@ -393,6 +393,126 @@ describe('owner-local declaration completion', () => {
     ].join('\n'))
   })
 
+  it('completes an ordinary multiline statement represented by exact physical fragments', () => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return { displayedText: datum,',
+      '    recordedValue: datum };',
+      '}',
+    ], {
+      label: 'assemble',
+      question: 'What are the displayed text and recorded value?',
+    })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        'L3: return { displayedText: datum,',
+        'L4: recordedValue: datum };',
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it('completes a trailing-comment statement represented by exact physical fragments', () => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return { displayedText: datum }; /* detail',
+      '    displayed text */',
+      '}',
+    ], {
+      label: 'assemble',
+      question: 'What is the displayed text?',
+    })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        'L3: return { displayedText: datum }; /* detail',
+        'L4: displayed text */',
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it.each([
+    {
+      coverage: 'split-incomplete',
+      representedSource: (sourceLines: readonly string[]) => [
+        { startLine: 3, endLine: 3, text: sourceLines[2]! },
+        { startLine: 4, endLine: 4, text: sourceLines[3]! },
+        { startLine: 5, endLine: 5, text: sourceLines[4]! },
+      ],
+    },
+    {
+      coverage: 'gapped',
+      representedSource: (sourceLines: readonly string[]) => [
+        { startLine: 3, endLine: 3, text: sourceLines[2]! },
+        { startLine: 4, endLine: 4, text: sourceLines[3]! },
+        { startLine: 6, endLine: 6, text: sourceLines[5]! },
+      ],
+    },
+    {
+      coverage: 'clipped',
+      representedSource: (sourceLines: readonly string[]) => [
+        { startLine: 3, endLine: 3, text: sourceLines[2]! },
+        { startLine: 4, endLine: 4, text: sourceLines[3]!.slice(0, -1) },
+        { startLine: 5, endLine: 5, text: sourceLines[4]! },
+        { startLine: 6, endLine: 6, text: sourceLines[5]! },
+      ],
+    },
+    {
+      coverage: 'wrong-byte',
+      representedSource: (sourceLines: readonly string[]) => [
+        { startLine: 3, endLine: 3, text: sourceLines[2]! },
+        { startLine: 4, endLine: 4, text: sourceLines[3]!.replace('datum', 'other') },
+        { startLine: 5, endLine: 5, text: sourceLines[4]! },
+        { startLine: 6, endLine: 6, text: sourceLines[5]! },
+      ],
+    },
+    {
+      coverage: 'foreign-owner',
+      representedSource: (sourceLines: readonly string[]) => [
+        { startLine: 3, endLine: 3, text: sourceLines[2]! },
+        { startLine: 4, endLine: 4, text: sourceLines[3]! },
+        { startLine: 5, endLine: 8, text: sourceLines.slice(4, 8).join('\n') },
+      ],
+    },
+    {
+      coverage: 'invalid-overlap',
+      representedSource: (sourceLines: readonly string[]) => [
+        { startLine: 3, endLine: 4, text: sourceLines.slice(2, 4).join('\n') },
+        {
+          startLine: 4,
+          endLine: 6,
+          text: sourceLines.slice(3, 6).join('\n').replace('datum', 'other'),
+        },
+      ],
+    },
+  ])('rejects $coverage represented coverage for a multiline statement', ({ representedSource }) => {
+    const sourceLines = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return {',
+      '    displayedText: datum,',
+      '    recordedValue: datum,',
+      '  }',
+      '}',
+      'function foreignOwner() { return null }',
+    ]
+
+    expect(ownerLocalDeclarationEvidence({
+      sourceFilePath: 'sample.ts',
+      sourceLines,
+      ownerRange: { start: 1, end: 7 },
+      representedSource: representedSource(sourceLines),
+    })).toEqual([])
+  })
+
   it('does not attribute a statement whose multiline trailing comment is only partially represented', () => {
     const evidence = evidenceFor([
       'export function executeSample() {',

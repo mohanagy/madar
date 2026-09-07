@@ -233,13 +233,23 @@ function representedStatements(
   sourceFile: ts.SourceFile,
 ): ts.Statement[] {
   const ownerRange = lineRangeOf(owner, sourceFile)
-  const representedByRange = new Map<string, Set<string>>()
-  for (const represented of representedSource) {
-    const key = `${represented.startLine}:${represented.endLine}`
-    const texts = representedByRange.get(key) ?? new Set<string>()
-    texts.add(normalizedSource(represented.text))
-    representedByRange.set(key, texts)
-  }
+  const lineCount = sourceFile.getLineStarts().length
+  const verifiedRepresentedRanges = representedSource.flatMap((represented) => {
+    if (
+      !Number.isInteger(represented.startLine)
+      || !Number.isInteger(represented.endLine)
+      || represented.startLine < ownerRange.start
+      || represented.endLine > ownerRange.end
+      || represented.startLine > represented.endLine
+      || represented.endLine > lineCount
+    ) {
+      return []
+    }
+    const range = { start: represented.startLine, end: represented.endLine }
+    return normalizedSource(represented.text) === normalizedSource(physicalSourceForLineRange(range, sourceFile))
+      ? [range]
+      : []
+  })
 
   const statements: ts.Statement[] = []
   const visit = (node: ts.Node): void => {
@@ -252,8 +262,20 @@ function representedStatements(
         if (range.start < ownerRange.start || range.end > ownerRange.end) {
           return
         }
-        const texts = representedByRange.get(`${range.start}:${range.end}`)
-        if (texts?.has(normalizedSource(physicalSourceForLineRange(range, sourceFile)))) {
+        const coveredLines = new Set<number>()
+        for (const represented of verifiedRepresentedRanges) {
+          if (represented.start < range.start || represented.end > range.end) {
+            continue
+          }
+          for (let line = represented.start; line <= represented.end; line += 1) {
+            coveredLines.add(line)
+          }
+        }
+        if (
+          coveredLines.size === range.end - range.start + 1
+          && coveredLines.has(range.start)
+          && coveredLines.has(range.end)
+        ) {
           statements.push(node)
         }
       }
