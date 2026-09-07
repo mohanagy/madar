@@ -13,6 +13,7 @@ vi.mock('typescript', async (importOriginal) => {
 
 import * as ts from 'typescript'
 
+import { ownerLocalDeclarationEvidence } from '../../src/runtime/query-evidence-dependencies.js'
 import { readQueryEvidenceSnippet, type QueryEvidenceSnippet } from '../../src/runtime/retrieve.js'
 
 const QUESTION = 'How does dispatch outcome return a validated result with retry handling?'
@@ -256,6 +257,197 @@ describe('owner-local declaration completion', () => {
       'L3: ',
       'L4:  beta  `',
       'L5: return { displayedText: input };',
+    ].join('\n'))
+  })
+
+  it('preserves every physical line of trailing multiline declaration trivia', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = 12.5 /* declaration context',
+      '    continued */',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const datum = 12.5 /* declaration context',
+      'L3:     continued */',
+      'L4: return dispatchOutcome(datum)',
+    ].join('\n'))
+  })
+
+  it('preserves a chain of adjacent multiline declaration trivia atomically', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = 12.5 /* first context',
+      '    second context */ /* third context',
+      '    fourth context */',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const datum = 12.5 /* first context',
+      'L3:     second context */ /* third context',
+      'L4:     fourth context */',
+      'L5: return dispatchOutcome(datum)',
+    ].join('\n'))
+  })
+
+  it('preserves leading multiline trivia only when it intersects an emitted line', () => {
+    const intersecting = evidenceFor([
+      'export function executeSample() {',
+      '  /* declaration context',
+      '     closes here */ const datum = 12.5',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ])
+    const standalone = evidenceFor([
+      'export function executeSample() {',
+      '  /* standalone context',
+      '     remains separate */',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ])
+
+    expect(intersecting?.snippet).toBe([
+      'L2:   /* declaration context',
+      'L3:      closes here */ const datum = 12.5',
+      'L4: return dispatchOutcome(datum)',
+    ].join('\n'))
+    expect(standalone?.snippet).toBe([
+      'L4:   const datum = 12.5',
+      'L5: return dispatchOutcome(datum)',
+    ].join('\n'))
+  })
+
+  it('uses syntax trivia without mistaking comment-like template content for comments', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = `/* template text',
+      '    // remains literal */` /* declaration context',
+      '    continued */',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const datum = `/* template text',
+      'L3:     // remains literal */` /* declaration context',
+      'L4:     continued */',
+      'L5: return dispatchOutcome(datum)',
+    ].join('\n'))
+  })
+
+  it.each([
+    {
+      boundary: 'four rendered lines',
+      declaration: [
+        '  const datum = 12.5 /* declaration context',
+        '    continued',
+        '    across another physical line',
+        '    through the fifth rendered line */',
+      ],
+    },
+    {
+      boundary: '220-character physical line',
+      declaration: [
+        '  const datum = 12.5 /* declaration context',
+        `    ${'x'.repeat(215)} */`,
+      ],
+    },
+    {
+      boundary: '300-character aggregate',
+      declaration: [
+        '  const datum = 12.5 /* declaration context',
+        `    ${'x'.repeat(205)} */`,
+      ],
+    },
+  ])('declines all declaration lines when closing trivia exceeds the $boundary limit', ({ declaration }) => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      ...declaration,
+      "  return dispatchOutcome(datum, 'selected result with enough context to cross the aggregate boundary')",
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe(
+      "L4: return dispatchOutcome(datum, 'selected result with enough context to cross the aggregate boundary')"
+        .replace('L4', `L${declaration.length + 2}`),
+    )
+  })
+
+  it('attributes a statement whose multiline trailing comment is fully represented', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum) /* selected context ?',
+      '    complete */',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const datum = 12.5',
+      'L3: return dispatchOutcome(datum) /* selected context ? complete */',
+    ].join('\n'))
+  })
+
+  it('does not attribute a statement whose multiline trailing comment is only partially represented', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum) /* selected context',
+      '    complete */',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe('L3: return dispatchOutcome(datum) /* selected context')
+  })
+
+  it.each([
+    { representation: 'fully', endLine: 3 },
+    { representation: 'partially', endLine: 2 },
+  ])('does not re-emit a $representation represented declaration comment', ({ endLine }) => {
+    const sourceLines = [
+      'export function executeSample() {',
+      '  const datum = 12.5 /* declaration context',
+      '    complete */',
+      '  return dispatchOutcome(datum)',
+      '}',
+    ]
+
+    expect(ownerLocalDeclarationEvidence({
+      sourceFilePath: 'sample.ts',
+      sourceLines,
+      ownerRange: { start: 1, end: 5 },
+      representedSource: [
+        {
+          startLine: 2,
+          endLine,
+          text: sourceLines.slice(1, endLine).join('\n'),
+        },
+        {
+          startLine: 4,
+          endLine: 4,
+          text: sourceLines[3]!,
+        },
+      ],
+    })).toEqual([])
+  })
+
+  it('keeps function-owner authority token-bounded before trailing multiline trivia', () => {
+    const evidence = evidenceFor([
+      'export const executeSample = () => {',
+      '  const datum = 12.5',
+      '  return dispatchOutcome(datum)',
+      '} /* outside owner context',
+      '  continued */',
+    ], { sourceLocation: 'L1-L4' })
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const datum = 12.5',
+      'L3: return dispatchOutcome(datum)',
     ].join('\n'))
   })
 

@@ -110,6 +110,49 @@ function lineRangeOf(node: ts.Node, sourceFile: ts.SourceFile): { start: number;
   return { start, end }
 }
 
+function evidenceLineRangeOf(
+  statement: ts.Statement,
+  sourceFile: ts.SourceFile,
+): { start: number; end: number } {
+  const tokenRange = lineRangeOf(statement, sourceFile)
+  let start = tokenRange.start
+  let end = tokenRange.end
+
+  const leadingComments = ts.getLeadingCommentRanges(
+    sourceFile.text,
+    statement.getFullStart(),
+  ) ?? []
+  for (let index = leadingComments.length - 1; index >= 0; index -= 1) {
+    const comment = leadingComments[index]!
+    const commentEnd = sourceFile.getLineAndCharacterOfPosition(
+      Math.max(comment.pos, comment.end - 1),
+    ).line + 1
+    if (commentEnd !== start) {
+      break
+    }
+    start = sourceFile.getLineAndCharacterOfPosition(comment.pos).line + 1
+  }
+
+  const trailingComments = ts.getTrailingCommentRanges(
+    sourceFile.text,
+    statement.getEnd(),
+  ) ?? []
+  for (const comment of trailingComments) {
+    const commentStart = sourceFile.getLineAndCharacterOfPosition(comment.pos).line + 1
+    if (commentStart > end) {
+      break
+    }
+    end = Math.max(
+      end,
+      sourceFile.getLineAndCharacterOfPosition(
+        Math.max(comment.pos, comment.end - 1),
+      ).line + 1,
+    )
+  }
+
+  return { start, end }
+}
+
 function functionOwnerWithBody(node: ts.Node): FunctionOwner | null {
   if (
     !ts.isFunctionDeclaration(node)
@@ -189,6 +232,7 @@ function representedStatements(
   representedSource: readonly RepresentedQueryEvidenceSource[],
   sourceFile: ts.SourceFile,
 ): ts.Statement[] {
+  const ownerRange = lineRangeOf(owner, sourceFile)
   const representedByRange = new Map<string, Set<string>>()
   for (const represented of representedSource) {
     const key = `${represented.startLine}:${represented.endLine}`
@@ -204,7 +248,10 @@ function representedStatements(
         return
       }
       if (ts.isStatement(node)) {
-        const range = lineRangeOf(node, sourceFile)
+        const range = evidenceLineRangeOf(node, sourceFile)
+        if (range.start < ownerRange.start || range.end > ownerRange.end) {
+          return
+        }
         const texts = representedByRange.get(`${range.start}:${range.end}`)
         if (texts?.has(normalizedSource(physicalSourceForLineRange(range, sourceFile)))) {
           statements.push(node)
@@ -709,7 +756,7 @@ export function ownerLocalDeclarationEvidence(
     }))
     return closure
       .map((statement): OwnerDeclarationEvidence => {
-        const range = lineRangeOf(statement, sourceFile)
+        const range = evidenceLineRangeOf(statement, sourceFile)
         return {
           startLine: range.start,
           endLine: range.end,
@@ -718,8 +765,12 @@ export function ownerLocalDeclarationEvidence(
             .map((text, offset) => ({ lineNumber: range.start + offset, text })),
         }
       })
+      .filter((declaration) => (
+        input.ownerRange.start <= declaration.startLine
+        && declaration.endLine <= input.ownerRange.end
+      ))
       .filter((declaration) => !representedRanges.some((range) => (
-        range.start <= declaration.startLine && declaration.endLine <= range.end
+        range.start <= declaration.endLine && declaration.startLine <= range.end
       )))
       .sort((left, right) => left.startLine - right.startLine || left.endLine - right.endLine)
   } catch {
