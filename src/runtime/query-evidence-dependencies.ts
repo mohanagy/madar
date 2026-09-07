@@ -566,17 +566,17 @@ export function queryEvidenceSourceProjection(input: {
 }
 
 /**
- * Expands one exact selected source fragment to its containing literal-bearing
- * statement when both the statement and its unambiguous owner are supplied.
+ * Expands exact selected source fragments to their uniquely containing
+ * literal-bearing statement while preserving other authenticated fragments.
  */
 export function completeQueryEvidenceLiteralStatement(input: {
   sourceFilePath: string
   sourceLines: readonly string[]
   ownerRange: { start: number; end: number }
   representedSource: readonly RepresentedQueryEvidenceSource[]
-}): RepresentedQueryEvidenceSource | null {
+}): RepresentedQueryEvidenceSource[] | null {
   try {
-    if (input.representedSource.length !== 1) {
+    if (input.representedSource.length === 0) {
       return null
     }
     const sourceFile = parsedSourceForSnapshot(input.sourceFilePath, input.sourceLines)
@@ -594,20 +594,36 @@ export function completeQueryEvidenceLiteralStatement(input: {
     if (!owner || !ts.isBlock(owner.body)) {
       return null
     }
-    const represented = input.representedSource[0]!
-    if (
-      !Number.isInteger(represented.startLine)
-      || !Number.isInteger(represented.endLine)
-      || represented.startLine < input.ownerRange.start
-      || represented.endLine > input.ownerRange.end
-      || represented.startLine > represented.endLine
-      || represented.text !== input.sourceLines
-        .slice(represented.startLine - 1, represented.endLine)
-        .join('\n')
-    ) {
-      return null
+    const authenticated = [...input.representedSource]
+      .sort((left, right) => left.startLine - right.startLine || left.endLine - right.endLine)
+    const representedSource: RepresentedQueryEvidenceSource[] = []
+    for (const represented of authenticated) {
+      if (
+        !Number.isInteger(represented.startLine)
+        || !Number.isInteger(represented.endLine)
+        || represented.startLine < input.ownerRange.start
+        || represented.endLine > input.ownerRange.end
+        || represented.startLine > represented.endLine
+        || represented.text !== input.sourceLines
+          .slice(represented.startLine - 1, represented.endLine)
+          .join('\n')
+      ) {
+        return null
+      }
+      const previous = representedSource.at(-1)
+      if (
+        previous
+        && previous.startLine === represented.startLine
+        && previous.endLine === represented.endLine
+        && previous.text === represented.text
+      ) {
+        continue
+      }
+      if (previous && represented.startLine <= previous.endLine) {
+        return null
+      }
+      representedSource.push(represented)
     }
-    const representedRange = { start: represented.startLine, end: represented.endLine }
     const candidates: Array<{
       statement: ts.Statement
       range: { start: number; end: number }
@@ -618,13 +634,17 @@ export function completeQueryEvidenceLiteralStatement(input: {
       }
       if (node !== owner && ts.isStatement(node)) {
         const range = evidenceLineRangeOf(node, sourceFile)
-        if (
-          input.ownerRange.start <= range.start
-          && range.end <= input.ownerRange.end
-          && range.start <= representedRange.start
-          && representedRange.end <= range.end
-          && (range.start !== representedRange.start || range.end !== representedRange.end)
-        ) {
+        const completesRepresentedFragment = representedSource.some((represented) => {
+          const representedRange = { start: represented.startLine, end: represented.endLine }
+          if (
+            input.ownerRange.start > range.start
+            || range.end > input.ownerRange.end
+            || range.start > representedRange.start
+            || representedRange.end > range.end
+            || (range.start === representedRange.start && range.end === representedRange.end)
+          ) {
+            return false
+          }
           let crossesRepresentedBoundary = false
           const findCrossingLiteral = (descendant: ts.Node): void => {
             if (crossesRepresentedBoundary || (descendant !== node && isNestedFunctionOrClass(descendant))) {
@@ -647,9 +667,10 @@ export function completeQueryEvidenceLiteralStatement(input: {
             ts.forEachChild(descendant, findCrossingLiteral)
           }
           findCrossingLiteral(node)
-          if (crossesRepresentedBoundary) {
-            candidates.push({ statement: node, range })
-          }
+          return crossesRepresentedBoundary
+        })
+        if (completesRepresentedFragment) {
+          candidates.push({ statement: node, range })
         }
       }
       ts.forEachChild(node, visit)
@@ -665,11 +686,29 @@ export function completeQueryEvidenceLiteralStatement(input: {
       return null
     }
     const range = innermostCandidates[0]!.range
-    return {
+    const completed: RepresentedQueryEvidenceSource = {
       startLine: range.start,
       endLine: range.end,
       text: input.sourceLines.slice(range.start - 1, range.end).join('\n'),
     }
+    const result: RepresentedQueryEvidenceSource[] = []
+    let insertedCompletion = false
+    for (const represented of representedSource) {
+      const insideCompletion = range.start <= represented.startLine && represented.endLine <= range.end
+      const overlapsCompletion = represented.startLine <= range.end && range.start <= represented.endLine
+      if (overlapsCompletion && !insideCompletion) {
+        return null
+      }
+      if (insideCompletion) {
+        if (!insertedCompletion) {
+          result.push(completed)
+          insertedCompletion = true
+        }
+      } else {
+        result.push(represented)
+      }
+    }
+    return insertedCompletion ? result : null
   } catch {
     return null
   }

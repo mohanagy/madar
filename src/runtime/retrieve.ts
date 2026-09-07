@@ -1280,6 +1280,40 @@ interface RenderedQueryEvidenceLine {
   representedSource: readonly RepresentedQueryEvidenceSource[]
 }
 
+function completedQueryEvidenceSourceProjection(
+  sourceFilePath: string,
+  sourceLines: readonly string[],
+  representedSource: readonly RepresentedQueryEvidenceSource[],
+): ReturnType<typeof queryEvidenceSourceProjection> {
+  let text = ''
+  let hasProtectedTokens = false
+  const literalLineBreaks: Array<{ offset: number; lineNumber: number }> = []
+  for (const [index, represented] of representedSource.entries()) {
+    const projection = queryEvidenceSourceProjection({
+      sourceFilePath,
+      sourceLines,
+      representedSource: [represented],
+      shapedText: represented.text,
+    })
+    if (!projection) {
+      return null
+    }
+    if (index > 0) {
+      text += `\nL${represented.startLine}: `
+    }
+    const projectionStart = text.length
+    text += projection.text
+    hasProtectedTokens ||= projection.hasProtectedTokens
+    for (const lineBreak of projection.literalLineBreaks) {
+      literalLineBreaks.push({
+        offset: projectionStart + lineBreak.offset,
+        lineNumber: lineBreak.lineNumber,
+      })
+    }
+  }
+  return { text, literalLineBreaks, hasProtectedTokens }
+}
+
 function renderQueryEvidenceLineEntries(
   lines: readonly QueryEvidenceLine[],
   sourceFile: string,
@@ -1303,10 +1337,10 @@ function renderQueryEvidenceLineEntries(
     const completedLine: QueryEvidenceLine | null = completedSource
       ? {
           ...line,
-          index: completedSource.startLine,
-          endIndex: completedSource.endLine,
-          text: completedSource.text,
-          representedSource: [completedSource],
+          index: completedSource[0]!.startLine,
+          endIndex: completedSource.at(-1)!.endLine,
+          text: completedSource.map((source) => source.text).join(' '),
+          representedSource: completedSource,
         }
       : null
     let selected: {
@@ -1319,12 +1353,14 @@ function renderQueryEvidenceLineEntries(
 
     for (const candidate of completedLine ? [completedLine, line] : [line]) {
       const normalized = candidate.text.replace(/\s+/g, ' ').trim()
-      const projection = queryEvidenceSourceProjection({
-        sourceFilePath: sourceFile,
-        sourceLines,
-        representedSource: candidate.representedSource,
-        shapedText: candidate.text,
-      })
+      const projection = candidate === completedLine
+        ? completedQueryEvidenceSourceProjection(sourceFile, sourceLines, candidate.representedSource)
+        : queryEvidenceSourceProjection({
+            sourceFilePath: sourceFile,
+            sourceLines,
+            representedSource: candidate.representedSource,
+            shapedText: candidate.text,
+          })
       let projectedContent = projection?.text ?? normalized
       if (projection) {
         for (let index = projection.literalLineBreaks.length - 1; index >= 0; index -= 1) {

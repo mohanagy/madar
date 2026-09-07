@@ -13,7 +13,10 @@ vi.mock('typescript', async (importOriginal) => {
 
 import * as ts from 'typescript'
 
-import { ownerLocalDeclarationEvidence } from '../../src/runtime/query-evidence-dependencies.js'
+import {
+  completeQueryEvidenceLiteralStatement,
+  ownerLocalDeclarationEvidence,
+} from '../../src/runtime/query-evidence-dependencies.js'
 import { readQueryEvidenceSnippet, type QueryEvidenceSnippet } from '../../src/runtime/retrieve.js'
 
 const QUESTION = 'How does dispatch outcome return a validated result with retry handling?'
@@ -1492,6 +1495,133 @@ describe('bounded multiline literal statement completion', () => {
       lineNumber: 2,
       scope: 'symbol',
     })
+  })
+
+  it.each([
+    { name: 'LF', lineEnding: '\n' as const, literalDelimiter: '\n' },
+    { name: 'CRLF', lineEnding: '\r\n' as const, literalDelimiter: '\r\n' },
+  ])('completes a separate-line loop/if $name multiline literal return without dropping the header', ({
+    lineEnding,
+    literalDelimiter,
+  }) => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  for (const ready of [true]) {',
+      '    if (ready) {',
+      '      return dispatchOutcome(datum, `  alpha',
+      ' beta  `)',
+      '    }',
+      '  }',
+      '}',
+    ], { question: 'What is the dispatch outcome?', label: 'assemble', lineEnding })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        'L3: for (const ready of [true]) {',
+        `L5: return dispatchOutcome(datum, \`  alpha${literalDelimiter}L6:  beta  \`)`,
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it('preserves authenticated disjoint fragments while completing only their unique literal statement', () => {
+    const source = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  for (const ready of [true]) {',
+      '    if (ready) {',
+      '      return dispatchOutcome(datum, `  alpha',
+      ' beta  `)',
+      '    }',
+      '  }',
+      '}',
+    ]
+    const { sourceFile } = sourceFixture(source)
+
+    expect(completeQueryEvidenceLiteralStatement({
+      sourceFilePath: sourceFile,
+      sourceLines: source,
+      ownerRange: { start: 1, end: 9 },
+      representedSource: [
+        { startLine: 3, endLine: 3, text: source[2]! },
+        { startLine: 5, endLine: 5, text: source[4]! },
+      ],
+    })).toEqual([
+      { startLine: 3, endLine: 3, text: source[2] },
+      { startLine: 5, endLine: 6, text: `${source[4]}\n${source[5]}` },
+    ])
+  })
+
+  it.each([
+    {
+      name: 'clipped source bytes',
+      represented: { startLine: 5, endLine: 5, text: 'return dispatchOutcome(datum, `  alpha' },
+    },
+    {
+      name: 'wrong source coordinates',
+      represented: { startLine: 4, endLine: 4, text: '      return dispatchOutcome(datum, `  alpha' },
+    },
+    {
+      name: 'a foreign owner fragment',
+      represented: { startLine: 11, endLine: 11, text: '  return dispatchOutcome(remote, `  gamma' },
+    },
+  ])('rejects $name in an otherwise authenticated multi-fragment selection', ({ represented }) => {
+    const source = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  for (const ready of [true]) {',
+      '    if (ready) {',
+      '      return dispatchOutcome(datum, `  alpha',
+      ' beta  `)',
+      '    }',
+      '  }',
+      '}',
+      'function transmit() {',
+      '  return dispatchOutcome(remote, `  gamma',
+      ' delta  `)',
+      '}',
+    ]
+    const { sourceFile } = sourceFixture(source)
+
+    expect(completeQueryEvidenceLiteralStatement({
+      sourceFilePath: sourceFile,
+      sourceLines: source,
+      ownerRange: { start: 1, end: 9 },
+      representedSource: [
+        { startLine: 3, endLine: 3, text: source[2]! },
+        represented,
+      ],
+    })).toBeNull()
+  })
+
+  it('does not coalesce clipped sibling literal statements across a source gap', () => {
+    const source = [
+      'function assemble() {',
+      "  const first = 'first'",
+      '  if (first) {',
+      '    return dispatchOutcome(first, `  alpha',
+      ' beta  `)',
+      '  }',
+      '  if (second) {',
+      '    return dispatchOutcome(second, `  gamma',
+      ' delta  `)',
+      '  }',
+      '}',
+    ]
+    const { sourceFile } = sourceFixture(source)
+
+    expect(completeQueryEvidenceLiteralStatement({
+      sourceFilePath: sourceFile,
+      sourceLines: source,
+      ownerRange: { start: 1, end: 11 },
+      representedSource: [
+        { startLine: 4, endLine: 4, text: source[3]! },
+        { startLine: 8, endLine: 8, text: source[7]! },
+      ],
+    })).toBeNull()
   })
 
   it('keeps an owner-clipped literal fragment faithful without inferring its declaration', () => {
