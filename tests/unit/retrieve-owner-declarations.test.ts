@@ -1527,6 +1527,116 @@ describe('bounded multiline literal statement completion', () => {
     })
   })
 
+  it.each([
+    { name: 'LF', lineEnding: '\n' as const, literalDelimiter: '\n' },
+    { name: 'CRLF', lineEnding: '\r\n' as const, literalDelimiter: '\r\n' },
+  ])('coalesces overlapping selected fragments of one $name literal statement before declaration completion', ({
+    lineEnding,
+    literalDelimiter,
+  }) => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  return { displayedText: datum, note: `alpha',
+      ' recordedValue: beta` }',
+      '}',
+    ], {
+      question: 'What are the displayed text and recorded value?',
+      label: 'assemble',
+      lineEnding,
+    })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        `L3: return { displayedText: datum, note: \`alpha${literalDelimiter}L4:  recordedValue: beta\` }`,
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it('retains an unrelated selected header and later fragment while coalescing one statement', () => {
+    const source = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      '  for (const readyState of [true]) {',
+      '    return { displayedText: datum, note: `alpha',
+      ' recordedValue: beta` }',
+      '  }',
+      '  return summarizeResult()',
+      '}',
+    ]
+    const evidence = evidenceFor(source, {
+      question: 'What are the ready state, displayed text, recorded value, and summarize result?',
+      label: 'assemble',
+    })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L3: for (const readyState of [true]) {',
+        'L4: return { displayedText: datum, note: `alpha',
+        'L5:  recordedValue: beta` }',
+        'L7: return summarizeResult()',
+      ].join('\n'),
+      lineNumber: 3,
+      scope: 'symbol',
+    })
+  })
+
+  it('keeps sibling literal statements independent within the four-row reservation', () => {
+    const evidence = evidenceFor([
+      'function assemble() {',
+      "  const first = 'first'",
+      "  const second = 'second'",
+      '  if (first) return { displayedText: first, note: `alpha',
+      ' recordedValue: first` }',
+      '  if (second) return { retryText: second, note: `gamma',
+      ' deliveryValue: second` }',
+      '}',
+    ], {
+      question: 'What are the displayed text, recorded value, retry text, and delivery value?',
+      label: 'assemble',
+    })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L4: if (first) return { displayedText: first, note: `alpha',
+        'L5:  recordedValue: first` }',
+        'L6: if (second) return { retryText: second, note: `gamma',
+        'L7:  deliveryValue: second` }',
+      ].join('\n'),
+      lineNumber: 4,
+      scope: 'symbol',
+    })
+  })
+
+  it('retains a coalesced statement when its declaration would exceed the total reservation', () => {
+    const declaration = `  const datum = '${'d'.repeat(202)}'`
+    const completedSnippet = [
+      'L3: return { displayedText: datum, note: `alphaX',
+      'L4:  recordedValue: beta` }',
+    ].join('\n')
+    const evidence = evidenceFor([
+      'function assemble() {',
+      declaration,
+      '  return { displayedText: datum, note: `alphaX',
+      ' recordedValue: beta` }',
+      '}',
+    ], {
+      question: 'What are the displayed text and recorded value?',
+      label: 'assemble',
+    })
+
+    expect(declaration).toHaveLength(220)
+    expect(`L2: ${declaration}\n${completedSnippet}`).toHaveLength(301)
+    expect(evidence).toEqual({
+      snippet: completedSnippet,
+      lineNumber: 3,
+      scope: 'symbol',
+    })
+  })
+
   it('preserves authenticated disjoint fragments while completing only their unique literal statement', () => {
     const source = [
       'function assemble() {',

@@ -1400,6 +1400,47 @@ function renderUnexpandedQueryEvidenceLineEntries(
   return rendered
 }
 
+function sameRepresentedQueryEvidenceSource(
+  left: RepresentedQueryEvidenceSource,
+  right: RepresentedQueryEvidenceSource,
+): boolean {
+  return left.startLine === right.startLine
+    && left.endLine === right.endLine
+    && left.text === right.text
+}
+
+function insertedLiteralStatementCompletion(input: {
+  sourceFile: string
+  sourceLines: readonly string[]
+  ownerRange: { start: number; end: number }
+  representedSource: readonly RepresentedQueryEvidenceSource[]
+}): RepresentedQueryEvidenceSource | null {
+  const completedSource = completeQueryEvidenceLiteralStatement({
+    sourceFilePath: input.sourceFile,
+    sourceLines: input.sourceLines,
+    ownerRange: input.ownerRange,
+    representedSource: input.representedSource,
+  })
+  if (!completedSource) {
+    return null
+  }
+  const inserted = completedSource.filter((completed) => (
+    !input.representedSource.some((represented) => (
+      sameRepresentedQueryEvidenceSource(completed, represented)
+    ))
+  ))
+  if (
+    inserted.length !== 1
+    || !input.representedSource.some((represented) => (
+      inserted[0]!.startLine <= represented.startLine
+      && represented.endLine <= inserted[0]!.endLine
+    ))
+  ) {
+    return null
+  }
+  return inserted[0]!
+}
+
 function renderQueryEvidenceLineEntries(
   lines: readonly QueryEvidenceLine[],
   sourceFile: string,
@@ -1411,17 +1452,67 @@ function renderQueryEvidenceLineEntries(
     return baseline
   }
 
-  let reserved = baseline
-  for (const [baselineIndex, baselineLine] of baseline.entries()) {
-    const completedSource = completeQueryEvidenceLiteralStatement({
-      sourceFilePath: sourceFile,
+  const authenticatedStatements: RepresentedQueryEvidenceSource[] = []
+  for (const baselineLine of baseline) {
+    const statement = insertedLiteralStatementCompletion({
+      sourceFile,
       sourceLines,
       ownerRange,
       representedSource: baselineLine.representedSource,
     })
-    if (!completedSource) {
+    if (
+      statement
+      && !authenticatedStatements.some((candidate) => (
+        sameRepresentedQueryEvidenceSource(candidate, statement)
+      ))
+    ) {
+      authenticatedStatements.push(statement)
+    }
+  }
+
+  const plans = authenticatedStatements.map((statement) => ({
+    statement,
+    baselineIndices: baseline.flatMap((line, baselineIndex) => (
+      line.representedSource.some((represented) => (
+        statement.startLine <= represented.startLine
+        && represented.endLine <= statement.endLine
+      ))
+        ? [baselineIndex]
+        : []
+    )),
+  })).filter((plan, planIndex, allPlans) => (
+    plan.baselineIndices.length > 0
+    && !allPlans.some((other, otherIndex) => (
+      otherIndex !== planIndex
+      && other.baselineIndices.some((baselineIndex) => plan.baselineIndices.includes(baselineIndex))
+    ))
+  )).sort((left, right) => (
+    left.baselineIndices[0]! - right.baselineIndices[0]!
+  ))
+
+  let reserved = baseline.map((line, baselineIndex) => ({
+    line,
+    baselineIndices: [baselineIndex],
+  }))
+  for (const plan of plans) {
+    const representedSource = plan.baselineIndices.flatMap((baselineIndex) => (
+      baseline[baselineIndex]!.representedSource
+    ))
+    const completedSource = completeQueryEvidenceLiteralStatement({
+      sourceFilePath: sourceFile,
+      sourceLines,
+      ownerRange,
+      representedSource,
+    })
+    if (
+      !completedSource
+      || completedSource.filter((completed) => (
+        sameRepresentedQueryEvidenceSource(completed, plan.statement)
+      )).length !== 1
+    ) {
       continue
     }
+    const baselineLine = baseline[plan.baselineIndices[0]!]!
     const completedLine: QueryEvidenceLine = {
       ...baselineLine.source,
       index: completedSource[0]!.startLine,
@@ -1437,16 +1528,34 @@ function renderQueryEvidenceLineEntries(
     ) {
       continue
     }
-    const proposed = reserved.map((line, index): RenderedQueryEvidenceLine => (
-      index === baselineIndex
-        ? {
-            source: candidate.source,
-            text: candidate.faithful,
-            representedSource: candidate.source.representedSource,
-          }
-        : line
+    const plannedIndices = new Set(plan.baselineIndices)
+    const removed = reserved.filter((entry) => (
+      entry.baselineIndices.some((baselineIndex) => plannedIndices.has(baselineIndex))
     ))
-    const proposedSnippet = proposed.map((line) => line.text).join('\n')
+    const removedIndices = new Set(removed.flatMap((entry) => entry.baselineIndices))
+    if (
+      removedIndices.size !== plannedIndices.size
+      || [...removedIndices].some((baselineIndex) => !plannedIndices.has(baselineIndex))
+    ) {
+      continue
+    }
+    const proposed = [
+      ...reserved.filter((entry) => (
+        !entry.baselineIndices.some((baselineIndex) => plannedIndices.has(baselineIndex))
+      )),
+      {
+        line: {
+          source: candidate.source,
+          text: candidate.faithful,
+          representedSource: candidate.source.representedSource,
+        },
+        baselineIndices: plan.baselineIndices,
+      },
+    ].sort((left, right) => (
+      left.line.source.index - right.line.source.index
+      || left.baselineIndices[0]! - right.baselineIndices[0]!
+    ))
+    const proposedSnippet = proposed.map((entry) => entry.line.text).join('\n')
     if (
       proposedSnippet.split('\n').length > QUERY_EVIDENCE_SNIPPET_MAX_LINES
       || proposedSnippet.length > QUERY_EVIDENCE_SNIPPET_CHAR_CAP
@@ -1455,7 +1564,7 @@ function renderQueryEvidenceLineEntries(
     }
     reserved = proposed
   }
-  return reserved
+  return reserved.map((entry) => entry.line)
 }
 
 function renderQueryEvidenceLines(
