@@ -391,12 +391,7 @@ function lexicalEnvironmentChain(
       if (functionOwner !== owner && !crossNestedOwners) {
         return null
       }
-      const preceding = environments.length - 1
-      if (preceding >= 0 && environments[preceding] === functionOwner.body) {
-        environments.splice(preceding, 0, functionOwner)
-      } else {
-        environments.push(functionOwner)
-      }
+      environments.push(functionOwner)
       if (functionOwner === owner) {
         foundOwner = true
         break
@@ -434,7 +429,7 @@ function resolveLexicalBinding(
     const scopes = lexicalScopeChain(identifier, owner)
     environments = scopes
       ? scopes.flatMap<LexicalEnvironment>((scope) => (
-          scope === owner.body ? [owner, scope] : [scope]
+          scope === owner.body ? [scope, owner] : [scope]
         ))
       : null
   }

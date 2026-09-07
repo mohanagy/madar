@@ -591,6 +591,61 @@ describe('owner-local declaration completion', () => {
 })
 
 describe('owner-local binding identity correction', () => {
+  it('resolves a function-declaration body const before the function name', () => {
+    const evidence = evidenceFor([
+      'export function assemble() {',
+      '  const assemble = 12.5',
+      '  return { displayedText: assemble }',
+      '}',
+    ], { question: 'What is the displayed text?', label: 'assemble' })
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const assemble = 12.5',
+      'L3: return { displayedText: assemble }',
+    ].join('\n'))
+  })
+
+  it('resolves a named-function-expression body const before the function name', () => {
+    const evidence = evidenceFor([
+      'export const assemble = function assemble() {',
+      '  const assemble = 12.5',
+      '  return { displayedText: assemble }',
+      '}',
+    ], { question: 'What is the displayed text?', label: 'assemble' })
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const assemble = 12.5',
+      'L3: return { displayedText: assemble }',
+    ].join('\n'))
+  })
+
+  it('does not let a nested named-owner shadow write poison the body const', () => {
+    const evidence = evidenceFor([
+      'export function assemble() {',
+      '  const assemble = 12.5',
+      '  const changeNested = function assemble() { assemble = 99 }',
+      '  return { displayedText: assemble }',
+      '}',
+    ], { question: 'What is the displayed text?', label: 'assemble' })
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const assemble = 12.5',
+      'L4: return { displayedText: assemble }',
+    ].join('\n'))
+  })
+
+  it('rejects the body const across a genuine nested-owner captured write', () => {
+    const evidence = evidenceFor([
+      'export function assemble() {',
+      '  const assemble = 12.5',
+      '  const changeNested = () => { assemble = 99 }',
+      '  return { displayedText: assemble }',
+      '}',
+    ], { question: 'What is the displayed text?', label: 'assemble' })
+
+    expect(evidence?.snippet).toBe('L4: return { displayedText: assemble }')
+  })
+
   it.each([
     {
       barrier: 'function-scoped var',
