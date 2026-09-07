@@ -1280,6 +1280,14 @@ interface RenderedQueryEvidenceLine {
   representedSource: readonly RepresentedQueryEvidenceSource[]
 }
 
+interface QueryEvidenceLineRenderCandidate {
+  source: QueryEvidenceLine
+  projection: ReturnType<typeof queryEvidenceSourceProjection>
+  content: string
+  lineCapExceeded: boolean
+  faithful: string
+}
+
 function completedQueryEvidenceSourceProjection(
   sourceFilePath: string,
   sourceLines: readonly string[],
@@ -1314,100 +1322,69 @@ function completedQueryEvidenceSourceProjection(
   return { text, literalLineBreaks, hasProtectedTokens }
 }
 
-function renderQueryEvidenceLineEntries(
+function queryEvidenceLineRenderCandidate(
+  candidate: QueryEvidenceLine,
+  sourceFile: string,
+  sourceLines: readonly string[],
+  completed: boolean,
+): QueryEvidenceLineRenderCandidate {
+  const normalized = candidate.text.replace(/\s+/g, ' ').trim()
+  const projection = completed
+    ? completedQueryEvidenceSourceProjection(sourceFile, sourceLines, candidate.representedSource)
+    : queryEvidenceSourceProjection({
+        sourceFilePath: sourceFile,
+        sourceLines,
+        representedSource: candidate.representedSource,
+        shapedText: candidate.text,
+      })
+  let projectedContent = projection?.text ?? normalized
+  if (projection) {
+    for (let index = projection.literalLineBreaks.length - 1; index >= 0; index -= 1) {
+      const lineBreak = projection.literalLineBreaks[index]!
+      projectedContent = [
+        projectedContent.slice(0, lineBreak.offset + 1),
+        `L${lineBreak.lineNumber}: `,
+        projectedContent.slice(lineBreak.offset + 1),
+      ].join('')
+    }
+  }
+  const projectedRows = projectedContent.split('\n')
+  const lineCapExceeded = projectedRows.some((row, index) => {
+    const content = index === 0 ? row : row.replace(/^L\d+: /, '')
+    return content.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+  })
+  const content = lineCapExceeded
+    ? projectedRows.map((row, index) => {
+        const match = index > 0 ? /^(L\d+: )(.*)$/.exec(row) : null
+        const rowPrefix = match?.[1] ?? ''
+        const rowContent = match?.[2] ?? row
+        return rowContent.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+          ? `${rowPrefix}${rowContent.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3)}...`
+          : row
+      }).join('\n')
+    : projectedContent
+  return {
+    source: candidate,
+    projection,
+    content,
+    lineCapExceeded,
+    faithful: `L${candidate.index}: ${content}`,
+  }
+}
+
+function renderUnexpandedQueryEvidenceLineEntries(
   lines: readonly QueryEvidenceLine[],
   sourceFile: string,
   sourceLines: readonly string[],
-  ownerRange?: { start: number; end: number } | null,
 ): RenderedQueryEvidenceLine[] {
   const rendered: RenderedQueryEvidenceLine[] = []
   let usedChars = 0
-  let usedRows = 0
   for (const line of lines) {
     const separatorChars = rendered.length > 0 ? 1 : 0
     const remaining = QUERY_EVIDENCE_SNIPPET_CHAR_CAP - usedChars - separatorChars
-    const completedSource = ownerRange
-      ? completeQueryEvidenceLiteralStatement({
-          sourceFilePath: sourceFile,
-          sourceLines,
-          ownerRange,
-          representedSource: line.representedSource,
-        })
-      : null
-    const completedLine: QueryEvidenceLine | null = completedSource
-      ? {
-          ...line,
-          index: completedSource[0]!.startLine,
-          endIndex: completedSource.at(-1)!.endLine,
-          text: completedSource.map((source) => source.text).join(' '),
-          representedSource: completedSource,
-        }
-      : null
-    let selected: {
-      source: QueryEvidenceLine
-      projection: ReturnType<typeof queryEvidenceSourceProjection>
-      content: string
-      lineCapExceeded: boolean
-      faithful: string
-    } | null = null
-
-    for (const candidate of completedLine ? [completedLine, line] : [line]) {
-      const normalized = candidate.text.replace(/\s+/g, ' ').trim()
-      const projection = candidate === completedLine
-        ? completedQueryEvidenceSourceProjection(sourceFile, sourceLines, candidate.representedSource)
-        : queryEvidenceSourceProjection({
-            sourceFilePath: sourceFile,
-            sourceLines,
-            representedSource: candidate.representedSource,
-            shapedText: candidate.text,
-          })
-      let projectedContent = projection?.text ?? normalized
-      if (projection) {
-        for (let index = projection.literalLineBreaks.length - 1; index >= 0; index -= 1) {
-          const lineBreak = projection.literalLineBreaks[index]!
-          projectedContent = [
-            projectedContent.slice(0, lineBreak.offset + 1),
-            `L${lineBreak.lineNumber}: `,
-            projectedContent.slice(lineBreak.offset + 1),
-          ].join('')
-        }
-      }
-      const projectedRows = projectedContent.split('\n')
-      const lineCapExceeded = projectedRows.some((row, index) => {
-        const content = index === 0 ? row : row.replace(/^L\d+: /, '')
-        return content.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
-      })
-      const completedSourceWouldBeAltered = candidate === completedLine && (
-        projection === null
-        || projection.hasProtectedTokens === false
-        || lineCapExceeded
-        || usedRows + projectedRows.length > QUERY_EVIDENCE_SNIPPET_MAX_LINES
-        || `L${candidate.index}: ${projectedContent}`.length > remaining
-      )
-      if (completedSourceWouldBeAltered) {
-        continue
-      }
-      const content = lineCapExceeded
-        ? projectedRows.map((row, index) => {
-            const match = index > 0 ? /^(L\d+: )(.*)$/.exec(row) : null
-            const rowPrefix = match?.[1] ?? ''
-            const rowContent = match?.[2] ?? row
-            return rowContent.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
-              ? `${rowPrefix}${rowContent.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3)}...`
-              : row
-          }).join('\n')
-        : projectedContent
-      const prefix = `L${candidate.index}: `
-      const faithful = `${prefix}${content}`
-      if (
-        remaining <= prefix.length + 8
-      ) {
-        continue
-      }
-      selected = { source: candidate, projection, content, lineCapExceeded, faithful }
-      break
-    }
-    if (!selected) {
+    const selected = queryEvidenceLineRenderCandidate(line, sourceFile, sourceLines, false)
+    const prefix = `L${line.index}: `
+    if (remaining <= prefix.length + 8) {
       continue
     }
     const bounded = selected.faithful.slice(0, remaining).trimEnd()
@@ -1419,9 +1396,66 @@ function renderQueryEvidenceLineEntries(
         : [],
     })
     usedChars += bounded.length + separatorChars
-    usedRows += bounded.split('\n').length
   }
   return rendered
+}
+
+function renderQueryEvidenceLineEntries(
+  lines: readonly QueryEvidenceLine[],
+  sourceFile: string,
+  sourceLines: readonly string[],
+  ownerRange?: { start: number; end: number } | null,
+): RenderedQueryEvidenceLine[] {
+  const baseline = renderUnexpandedQueryEvidenceLineEntries(lines, sourceFile, sourceLines)
+  if (!ownerRange || baseline.some((line) => line.representedSource.length === 0)) {
+    return baseline
+  }
+
+  let reserved = baseline
+  for (const [baselineIndex, baselineLine] of baseline.entries()) {
+    const completedSource = completeQueryEvidenceLiteralStatement({
+      sourceFilePath: sourceFile,
+      sourceLines,
+      ownerRange,
+      representedSource: baselineLine.representedSource,
+    })
+    if (!completedSource) {
+      continue
+    }
+    const completedLine: QueryEvidenceLine = {
+      ...baselineLine.source,
+      index: completedSource[0]!.startLine,
+      endIndex: completedSource.at(-1)!.endLine,
+      text: completedSource.map((source) => source.text).join(' '),
+      representedSource: completedSource,
+    }
+    const candidate = queryEvidenceLineRenderCandidate(completedLine, sourceFile, sourceLines, true)
+    if (
+      !candidate.projection
+      || !candidate.projection.hasProtectedTokens
+      || candidate.lineCapExceeded
+    ) {
+      continue
+    }
+    const proposed = reserved.map((line, index): RenderedQueryEvidenceLine => (
+      index === baselineIndex
+        ? {
+            source: candidate.source,
+            text: candidate.faithful,
+            representedSource: candidate.source.representedSource,
+          }
+        : line
+    ))
+    const proposedSnippet = proposed.map((line) => line.text).join('\n')
+    if (
+      proposedSnippet.split('\n').length > QUERY_EVIDENCE_SNIPPET_MAX_LINES
+      || proposedSnippet.length > QUERY_EVIDENCE_SNIPPET_CHAR_CAP
+    ) {
+      continue
+    }
+    reserved = proposed
+  }
+  return reserved
 }
 
 function renderQueryEvidenceLines(

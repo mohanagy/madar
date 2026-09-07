@@ -1690,6 +1690,136 @@ describe('bounded multiline literal statement completion', () => {
     expect(evidence?.snippet).not.toContain('const datum')
     expect(evidence?.snippet).not.toContain('...')
   })
+
+  it.each([
+    { name: 'LF', lineEnding: '\n' as const },
+    { name: 'CRLF', lineEnding: '\r\n' as const },
+  ])('reserves the full $name selected baseline before declining an oversized expansion', ({
+    lineEnding,
+  }) => {
+    const source = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      `  dispatchOutcome(datum, \`  ${'a'.repeat(150)}`,
+      ` ${'b'.repeat(90)}  \`)`,
+      '  return retryOutcome()',
+      '}',
+    ]
+    const evidence = evidenceFor(source, {
+      question: 'What are the dispatch outcome and retry outcome?',
+      label: 'assemble',
+      lineEnding,
+    })
+
+    expect(evidence).toEqual({
+      snippet: [
+        `L3: ${source[2]!.trimStart()}`,
+        'L5: return retryOutcome()',
+      ].join('\n'),
+      lineNumber: 3,
+      scope: 'symbol',
+    })
+  })
+
+  it('admits a fitting expansion while retaining later selected evidence', () => {
+    const source = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      `  dispatchOutcome(datum, \`  ${'a'.repeat(60)}`,
+      ` ${'b'.repeat(30)}  \`)`,
+      '  return retryOutcome()',
+      '}',
+    ]
+    const evidence = evidenceFor(source, {
+      question: 'What are the dispatch outcome and retry outcome?',
+      label: 'assemble',
+    })
+
+    expect(evidence).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        `L3: ${source[2]!.trimStart()}`,
+        `L4: ${source[3]}`,
+        'L5: return retryOutcome()',
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it('declines an expansion that would overflow the full selection by one character', () => {
+    const firstLiteralRow = `  dispatchOutcome(\`  ${'a'.repeat(120)}`
+    const laterSource = '  return retryOutcome()'
+    const firstRendered = `L2: ${firstLiteralRow.trimStart()}`
+    const laterRendered = `L4: ${laterSource.trim()}`
+    const closingShell = '   \`)'
+    const fillLength = 301
+      - firstRendered.length
+      - 1
+      - `L3: ${closingShell}`.length
+      - 1
+      - laterRendered.length
+    const closingLiteralRow = ` ${'b'.repeat(fillLength)}  \`)`
+    const completed = [firstRendered, `L3: ${closingLiteralRow}`, laterRendered].join('\n')
+    const evidence = evidenceFor([
+      'function assemble() {',
+      firstLiteralRow,
+      closingLiteralRow,
+      laterSource,
+      '}',
+    ], {
+      question: 'What are the dispatch outcome and retry outcome?',
+      label: 'assemble',
+    })
+
+    expect(fillLength).toBeGreaterThan(0)
+    expect(completed).toHaveLength(301)
+    expect(evidence?.snippet).toBe([firstRendered, laterRendered].join('\n'))
+  })
+
+  it('declines an expansion that would exceed the four-row reservation', () => {
+    const source = [
+      'function assemble() {',
+      '  dispatchOutcome(`  alpha',
+      ' beta  `)',
+      '  retryOutcome()',
+      '  validateResult()',
+      '  return finalizeResponse()',
+      '}',
+    ]
+    const evidence = evidenceFor(source, {
+      question: 'What are the dispatch outcome, retry outcome, validate result, and finalize response?',
+      label: 'assemble',
+    })
+
+    expect(evidence?.snippet).toBe([
+      `L2: ${source[1]!.trimStart()}`,
+      'L4: retryOutcome()',
+      'L5: validateResult()',
+      'L6: return finalizeResponse()',
+    ].join('\n'))
+  })
+
+  it('reserves an accepted expansion while evaluating a second candidate expansion', () => {
+    const source = [
+      'function assemble() {',
+      `  dispatchOutcome(\`  ${'a'.repeat(80)}`,
+      ` ${'b'.repeat(45)}  \`)`,
+      `  return retryOutcome(\`  ${'c'.repeat(80)}`,
+      ` ${'d'.repeat(45)}  \`)`,
+      '}',
+    ]
+    const evidence = evidenceFor(source, {
+      question: 'What are the dispatch outcome and retry outcome?',
+      label: 'assemble',
+    })
+
+    expect(evidence?.snippet).toBe([
+      `L2: ${source[1]!.trimStart()}`,
+      `L3: ${source[2]}`,
+      `L4: ${source[3]!.trimStart()}`,
+    ].join('\n'))
+  })
 })
 
 describe('owner declaration completion budgets and atomic preservation', () => {
