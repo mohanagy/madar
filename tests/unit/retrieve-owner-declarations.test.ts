@@ -590,6 +590,148 @@ describe('owner-local declaration completion', () => {
   })
 })
 
+describe('owner-local binding identity correction', () => {
+  it.each([
+    {
+      barrier: 'function-scoped var',
+      source: [
+        'export function executeSample() {',
+        "  var datum = 'function binding'",
+        '  {',
+        "    const datum = 'block binding'",
+        '    return dispatchOutcome(datum)',
+        '  }',
+        '}',
+      ],
+      forbidden: 'var datum',
+    },
+    {
+      barrier: 'owner parameter',
+      source: [
+        'export function executeSample(datum: string) {',
+        '  {',
+        "    const datum = 'block binding'",
+        '    return dispatchOutcome(datum)',
+        '  }',
+        '}',
+      ],
+      forbidden: 'executeSample(datum',
+    },
+  ])('resolves a closer block const before a $barrier barrier', ({ source, forbidden }) => {
+    const evidence = evidenceFor(source)
+
+    expect(evidence?.snippet).toContain("const datum = 'block binding'")
+    expect(evidence?.snippet).not.toContain(forbidden)
+  })
+
+  it.each([
+    {
+      location: 'sibling block write',
+      source: [
+        'export function executeSample() {',
+        "  const datum = 'owner binding'",
+        "  { let datum = 'sibling binding'; datum = 'changed' }",
+        '  return dispatchOutcome(datum)',
+        '}',
+      ],
+    },
+    {
+      location: 'nested-owner write',
+      source: [
+        'export function executeSample() {',
+        "  const datum = 'owner binding'",
+        "  function changeNested() { let datum = 'nested binding'; datum = 'changed' }",
+        '  return dispatchOutcome(datum)',
+        '}',
+      ],
+    },
+  ])('does not let a $location to a different binding poison the owner const', ({ source }) => {
+    const evidence = evidenceFor(source)
+
+    expect(evidence?.snippet).toContain("L2:   const datum = 'owner binding'")
+    expect(evidence?.snippet).toContain('return dispatchOutcome(datum)')
+  })
+
+  it('resolves a transitive const chain through sibling and nested-owner shadow writes', () => {
+    const evidence = evidenceFor([
+      'export function executeSample() {',
+      '  const origin = 12.5',
+      '  const alias = origin',
+      '  { let origin = 99; origin = 100 }',
+      "  function changeNested() { let alias = 'nested'; alias = 'changed' }",
+      '  return dispatchOutcome(alias)',
+      '}',
+    ])
+
+    expect(evidence?.snippet).toBe([
+      'L2:   const origin = 12.5',
+      'L3:   const alias = origin',
+      'L6: return dispatchOutcome(alias)',
+    ].join('\n'))
+  })
+
+  it.each([
+    {
+      location: 'sibling block',
+      source: [
+        'export function executeSample() {',
+        "  const datum = 'owner binding'",
+        "  { datum = 'changed' }",
+        '  return dispatchOutcome(datum)',
+        '}',
+      ],
+    },
+    {
+      location: 'nested owner',
+      source: [
+        'export function executeSample() {',
+        "  const datum = 'owner binding'",
+        "  function changeNested() { datum = 'changed' }",
+        '  return dispatchOutcome(datum)',
+        '}',
+      ],
+    },
+  ])('rejects the owner const when a $location writes that same binding', ({ source }) => {
+    const evidence = evidenceFor(source)
+
+    expect(evidence?.snippet).not.toContain("const datum = 'owner binding'")
+    expect(evidence?.snippet).toContain('return dispatchOutcome(datum)')
+  })
+
+  it.each([
+    {
+      barrier: 'for-loop binding',
+      source: [
+        'export function executeSample(values: string[]) {',
+        "  const datum = 'owner binding'",
+        '  for (const datum of values) {',
+        '    return dispatchOutcome(datum)',
+        '  }',
+        '  return retryOutcome()',
+        '}',
+      ],
+    },
+    {
+      barrier: 'catch binding',
+      source: [
+        'export function executeSample() {',
+        "  const datum = 'owner binding'",
+        '  try {',
+        "    throw new Error('failed')",
+        '  } catch (datum) {',
+        '    return dispatchOutcome(datum)',
+        '  }',
+        '}',
+      ],
+    },
+  ])('keeps a nearer $barrier as a barrier to the outer const', ({ source }) => {
+    const evidence = evidenceFor(source)
+
+    expect(evidence?.snippet).not.toContain("const datum = 'owner binding'")
+    expect(evidence?.snippet).toContain('return dispatchOutcome(datum)')
+  })
+})
+
 describe('owner declaration completion budgets and atomic preservation', () => {
   it('admits a declaration closure that exactly fills the 300-character cap', () => {
     const returnSource = `  return dispatchOutcome(datum, '${'r'.repeat(48)}')`

@@ -279,60 +279,41 @@ function bindingNames(name: ts.BindingName): string[] {
   ))
 }
 
-function assignmentTargetNames(node: ts.Node): string[] {
+function assignmentTargetIdentifiers(node: ts.Node): ts.Identifier[] {
   if (ts.isIdentifier(node)) {
-    return [node.text]
+    return [node]
   }
   if (ts.isParenthesizedExpression(node)) {
-    return assignmentTargetNames(node.expression)
+    return assignmentTargetIdentifiers(node.expression)
   }
   if (ts.isArrayLiteralExpression(node)) {
-    return node.elements.flatMap((element) => assignmentTargetNames(element))
+    return node.elements.flatMap((element) => assignmentTargetIdentifiers(element))
   }
   if (ts.isObjectLiteralExpression(node)) {
     return node.properties.flatMap((property) => {
       if (ts.isShorthandPropertyAssignment(property)) {
-        return [property.name.text]
+        return [property.name]
       }
       if (ts.isPropertyAssignment(property)) {
-        return assignmentTargetNames(property.initializer)
+        return assignmentTargetIdentifiers(property.initializer)
       }
       if (ts.isSpreadAssignment(property)) {
-        return assignmentTargetNames(property.expression)
+        return assignmentTargetIdentifiers(property.expression)
       }
       return []
     })
   }
+  if (ts.isSpreadElement(node)) {
+    return assignmentTargetIdentifiers(node.expression)
+  }
   return []
 }
 
-function writtenBindingNames(owner: FunctionOwner): Set<string> {
-  const names = new Set<string>()
-  const visit = (node: ts.Node): void => {
-    if (
-      ts.isBinaryExpression(node)
-      && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment
-      && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
-    ) {
-      for (const name of assignmentTargetNames(node.left)) names.add(name)
-    } else if (
-      (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
-      && (node.operator === ts.SyntaxKind.PlusPlusToken || node.operator === ts.SyntaxKind.MinusMinusToken)
-    ) {
-      for (const name of assignmentTargetNames(node.operand)) names.add(name)
-    } else if (ts.isForInStatement(node) || ts.isForOfStatement(node)) {
-      if (!ts.isVariableDeclarationList(node.initializer)) {
-        for (const name of assignmentTargetNames(node.initializer)) names.add(name)
-      }
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(owner)
-  return names
-}
-
-function functionScopedVarBindingNames(owner: FunctionOwner): Set<string> {
-  const names = new Set<string>()
+function functionScopedVarDeclarations(
+  owner: FunctionOwner,
+  expected: string,
+): ts.VariableDeclaration[] {
+  const declarations: ts.VariableDeclaration[] = []
   const visit = (node: ts.Node): void => {
     if (node !== owner && isNestedFunctionOrClass(node)) {
       return
@@ -342,13 +323,15 @@ function functionScopedVarBindingNames(owner: FunctionOwner): Set<string> {
       && (node.flags & ts.NodeFlags.BlockScoped) === 0
     ) {
       for (const declaration of node.declarations) {
-        for (const name of bindingNames(declaration.name)) names.add(name)
+        if (hasBindingName(declaration.name, expected)) {
+          declarations.push(declaration)
+        }
       }
     }
     ts.forEachChild(node, visit)
   }
   visit(owner)
-  return names
+  return declarations
 }
 
 type LexicalScope =
@@ -381,31 +364,132 @@ function lexicalScopeChain(node: ts.Node, owner: FunctionOwner): LexicalScope[] 
   return ts.isBlock(owner.body) && scopes.includes(owner.body) ? scopes : null
 }
 
+type LexicalEnvironment = (
+  | LexicalScope
+  | FunctionOwner
+  | ts.ClassDeclaration
+  | ts.ClassExpression
+)
+
+interface ResolvedLexicalBinding {
+  binding: ConstBinding | null
+  identity: ts.Node | null
+  invalidDependency: boolean
+}
+
+function lexicalEnvironmentChain(
+  node: ts.Node,
+  owner: FunctionOwner,
+  crossNestedOwners: boolean,
+): LexicalEnvironment[] | null {
+  const environments: LexicalEnvironment[] = []
+  let foundOwner = false
+  let current: ts.Node | undefined = node.parent
+  while (current) {
+    const functionOwner = functionOwnerWithBody(current)
+    if (functionOwner) {
+      if (functionOwner !== owner && !crossNestedOwners) {
+        return null
+      }
+      const preceding = environments.length - 1
+      if (preceding >= 0 && environments[preceding] === functionOwner.body) {
+        environments.splice(preceding, 0, functionOwner)
+      } else {
+        environments.push(functionOwner)
+      }
+      if (functionOwner === owner) {
+        foundOwner = true
+        break
+      }
+    } else if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) {
+      environments.push(current)
+    } else if (
+      ts.isBlock(current)
+      || ts.isCaseBlock(current)
+      || ts.isCatchClause(current)
+      || ts.isForStatement(current)
+      || ts.isForInStatement(current)
+      || ts.isForOfStatement(current)
+    ) {
+      environments.push(current)
+    }
+    current = current.parent
+  }
+  return foundOwner ? environments : null
+}
+
 function hasBindingName(name: ts.BindingName, expected: string): boolean {
   return bindingNames(name).includes(expected)
 }
 
-function constBindingForReference(
+function resolveLexicalBinding(
   identifier: ts.Identifier,
   owner: FunctionOwner,
-  writtenNames: ReadonlySet<string>,
-  functionVarNames: ReadonlySet<string>,
-): { binding: ConstBinding | null; invalidDependency: boolean } {
-  const scopes = lexicalScopeChain(identifier, owner)
-  if (!scopes || functionVarNames.has(identifier.text)) {
-    return { binding: null, invalidDependency: false }
+  crossNestedOwners: boolean,
+): ResolvedLexicalBinding {
+  let environments: LexicalEnvironment[] | null
+  if (crossNestedOwners) {
+    environments = lexicalEnvironmentChain(identifier, owner, true)
+  } else {
+    const scopes = lexicalScopeChain(identifier, owner)
+    environments = scopes
+      ? scopes.flatMap<LexicalEnvironment>((scope) => (
+          scope === owner.body ? [owner, scope] : [scope]
+        ))
+      : null
+  }
+  if (!environments) {
+    return { binding: null, identity: null, invalidDependency: false }
   }
 
-  for (const scope of scopes) {
-    if (scope === owner.body && owner.parameters.some((parameter) => hasBindingName(parameter.name, identifier.text))) {
-      return { binding: null, invalidDependency: false }
+  for (const environment of environments) {
+    const functionOwner = functionOwnerWithBody(environment)
+    if (functionOwner) {
+      const parameter = functionOwner.parameters.find((candidate) => (
+        hasBindingName(candidate.name, identifier.text)
+      ))
+      const functionName = (
+        (ts.isFunctionDeclaration(functionOwner) || ts.isFunctionExpression(functionOwner))
+        && functionOwner.name?.text === identifier.text
+      )
+        ? functionOwner
+        : null
+      const varDeclarations = functionScopedVarDeclarations(functionOwner, identifier.text)
+      const identity = parameter ?? functionName ?? varDeclarations[0] ?? null
+      if (identity) {
+        return { binding: null, identity, invalidDependency: false }
+      }
+      continue
+    }
+
+    if (
+      (ts.isClassDeclaration(environment) || ts.isClassExpression(environment))
+      && environment.name?.text === identifier.text
+    ) {
+      return { binding: null, identity: environment, invalidDependency: false }
     }
     if (
-      ts.isCatchClause(scope)
-      && scope.variableDeclaration
-      && hasBindingName(scope.variableDeclaration.name, identifier.text)
+      ts.isCatchClause(environment)
+      && environment.variableDeclaration
+      && hasBindingName(environment.variableDeclaration.name, identifier.text)
     ) {
-      return { binding: null, invalidDependency: false }
+      return {
+        binding: null,
+        identity: environment.variableDeclaration,
+        invalidDependency: false,
+      }
+    }
+    if (ts.isForStatement(environment) || ts.isForInStatement(environment) || ts.isForOfStatement(environment)) {
+      const initializer = environment.initializer
+      if (initializer && ts.isVariableDeclarationList(initializer)) {
+        const declaration = initializer.declarations.find((candidate) => (
+          hasBindingName(candidate.name, identifier.text)
+        ))
+        if (declaration) {
+          return { binding: null, identity: declaration, invalidDependency: false }
+        }
+      }
+      continue
     }
 
     const declarations: Array<{
@@ -413,11 +497,11 @@ function constBindingForReference(
       statement: ts.VariableStatement
       declarationKind: 'const' | 'mutable'
     }> = []
-    let unsupportedBinding = false
-    const statements = ts.isBlock(scope)
-      ? scope.statements
-      : ts.isCaseBlock(scope)
-        ? scope.clauses.flatMap((clause) => [...clause.statements])
+    const unsupportedBindings: ts.Node[] = []
+    const statements = ts.isBlock(environment)
+      ? environment.statements
+      : ts.isCaseBlock(environment)
+        ? environment.clauses.flatMap((clause) => [...clause.statements])
         : []
     for (const statement of statements) {
       if (ts.isVariableStatement(statement)) {
@@ -435,23 +519,19 @@ function constBindingForReference(
         ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement))
           && statement.name?.text === identifier.text)
       ) {
-        unsupportedBinding = true
-      }
-    }
-    if (ts.isForStatement(scope) || ts.isForInStatement(scope) || ts.isForOfStatement(scope)) {
-      const initializer = scope.initializer
-      if (initializer && ts.isVariableDeclarationList(initializer)) {
-        unsupportedBinding ||= initializer.declarations.some((declaration) => (
-          hasBindingName(declaration.name, identifier.text)
-        ))
+        unsupportedBindings.push(statement)
       }
     }
 
-    if (declarations.length === 0 && !unsupportedBinding) {
+    if (declarations.length === 0 && unsupportedBindings.length === 0) {
       continue
     }
-    if (declarations.length !== 1 || unsupportedBinding) {
-      return { binding: null, invalidDependency: true }
+    if (declarations.length !== 1 || unsupportedBindings.length > 0) {
+      return {
+        binding: null,
+        identity: declarations[0]?.declaration ?? unsupportedBindings[0] ?? environment,
+        invalidDependency: true,
+      }
     }
 
     const candidate = declarations[0]!
@@ -459,32 +539,83 @@ function constBindingForReference(
       candidate.declarationKind !== 'const'
       || !ts.isIdentifier(candidate.declaration.name)
       || !candidate.declaration.initializer
-      || writtenNames.has(identifier.text)
     ) {
-      return { binding: null, invalidDependency: false }
-    }
-    if (candidate.declaration.getStart() >= identifier.getStart()) {
-      return { binding: null, invalidDependency: true }
-    }
-    if (candidate.statement.declarationList.declarations.some((declaration) => (
-      !ts.isIdentifier(declaration.name) || !declaration.initializer
-    ))) {
-      return { binding: null, invalidDependency: true }
+      return {
+        binding: null,
+        identity: candidate.declaration,
+        invalidDependency: false,
+      }
     }
     return {
       binding: { declaration: candidate.declaration, statement: candidate.statement },
+      identity: candidate.declaration,
       invalidDependency: false,
     }
   }
-  return { binding: null, invalidDependency: false }
+  return { binding: null, identity: null, invalidDependency: false }
+}
+
+function writtenBindings(owner: FunctionOwner): Set<ts.Node> {
+  const bindings = new Set<ts.Node>()
+  const visit = (node: ts.Node): void => {
+    let targets: ts.Identifier[] = []
+    if (
+      ts.isBinaryExpression(node)
+      && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment
+      && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+    ) {
+      targets = assignmentTargetIdentifiers(node.left)
+    } else if (
+      (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
+      && (node.operator === ts.SyntaxKind.PlusPlusToken || node.operator === ts.SyntaxKind.MinusMinusToken)
+    ) {
+      targets = assignmentTargetIdentifiers(node.operand)
+    } else if (ts.isForInStatement(node) || ts.isForOfStatement(node)) {
+      if (!ts.isVariableDeclarationList(node.initializer)) {
+        targets = assignmentTargetIdentifiers(node.initializer)
+      }
+    }
+    for (const target of targets) {
+      const resolved = resolveLexicalBinding(target, owner, true)
+      if (resolved.identity) {
+        bindings.add(resolved.identity)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(owner)
+  return bindings
+}
+
+function constBindingForReference(
+  identifier: ts.Identifier,
+  owner: FunctionOwner,
+  written: ReadonlySet<ts.Node>,
+): { binding: ConstBinding | null; invalidDependency: boolean } {
+  const resolved = resolveLexicalBinding(identifier, owner, false)
+  if (!resolved.binding || resolved.invalidDependency) {
+    return { binding: null, invalidDependency: resolved.invalidDependency }
+  }
+  const candidate = resolved.binding
+  if (candidate.declaration.getStart() >= identifier.getStart()) {
+    return { binding: null, invalidDependency: true }
+  }
+  if (candidate.statement.declarationList.declarations.some((declaration) => (
+    !ts.isIdentifier(declaration.name) || !declaration.initializer
+  ))) {
+    return { binding: null, invalidDependency: true }
+  }
+  if (written.has(candidate.declaration)) {
+    return { binding: null, invalidDependency: false }
+  }
+  return { binding: candidate, invalidDependency: false }
 }
 
 function declarationClosure(
   owner: FunctionOwner,
   seedStatements: readonly ts.Statement[],
 ): ts.VariableStatement[] | null {
-  const writtenNames = writtenBindingNames(owner)
-  const functionVarNames = functionScopedVarBindingNames(owner)
+  const written = writtenBindings(owner)
   const statements = new Set<ts.VariableStatement>()
   const completed = new Set<ts.VariableDeclaration>()
   const visiting = new Set<ts.VariableDeclaration>()
@@ -502,7 +633,7 @@ function declarationClosure(
       return false
     }
     for (const reference of references.identifiers) {
-      const resolved = constBindingForReference(reference, owner, writtenNames, functionVarNames)
+      const resolved = constBindingForReference(reference, owner, written)
       if (resolved.invalidDependency) {
         return false
       }
@@ -519,7 +650,7 @@ function declarationClosure(
   for (const statement of seedStatements) {
     const references = collectValueReferences(statement, false)
     for (const reference of references.identifiers) {
-      const resolved = constBindingForReference(reference, owner, writtenNames, functionVarNames)
+      const resolved = constBindingForReference(reference, owner, written)
       if (resolved.invalidDependency) {
         continue
       }
