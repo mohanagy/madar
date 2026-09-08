@@ -57,6 +57,161 @@ describe('stored-source term cache controls', () => {
     expect(storedSourceTermCacheInspection(target).tokenizationCount).toBe(3)
   })
 
+  it('distinguishes absent, own undefined, and own null kind across warm controlled views', () => {
+    const target = graph()
+    const original = owner(`${ROOT}/src/one.ts`, { label: 'operate()' })
+    delete original.node_kind
+    target.addNode('one', original)
+    target.addNode('peer', owner(`${ROOT}/src/peer.ts`, { snippet: 'function neutral() {\n  return peer_signal\n}' }))
+
+    const entriesFor = (attributes: Attributes): Array<[string, Attributes]> => (
+      target.nodeEntries().map<[string, Attributes]>(([id, current]) => [
+        id,
+        id === 'one' ? attributes : current,
+      ])
+    )
+    const ownsKind = (entries: readonly [string, Attributes][]): boolean => Object.prototype.hasOwnProperty.call(
+      entries.find(([id]) => id === 'one')?.[1],
+      'node_kind',
+    )
+    const assertPeerAndCardinality = (peerTokens: readonly string[] | undefined): void => {
+      const inspection = storedSourceTermCacheInspection(target)
+      expect(inspection.entryCount).toBe(target.numberOfNodes())
+      expect(inspection.tokenArrays.get('peer')).toBe(peerTokens)
+    }
+
+    const absentEntries = entriesFor(original)
+    expect(ownsKind(absentEntries)).toBe(false)
+    const absent = reconcileStoredSourceTerms(target, ROOT, absentEntries)
+    const absentEntry = absent.get('one')
+    const peerTokens = absent.get('peer')?.tokens
+    expect(absentEntry?.eligible).toBe(true)
+    const absentWarm = reconcileStoredSourceTerms(target, ROOT, absentEntries)
+    expect(absentWarm.get('one')).toBe(absentEntry)
+    assertPeerAndCardinality(peerTokens)
+
+    const ownUndefinedEntries = entriesFor({ ...original, node_kind: undefined })
+    expect(ownsKind(ownUndefinedEntries)).toBe(true)
+    const ownUndefined = reconcileStoredSourceTerms(target, ROOT, ownUndefinedEntries)
+    const ownUndefinedEntry = ownUndefined.get('one')
+    expect(ownUndefinedEntry?.eligible).toBe(false)
+    expect(ownUndefinedEntry).not.toBe(absentEntry)
+    const ownUndefinedWarm = reconcileStoredSourceTerms(target, ROOT, ownUndefinedEntries)
+    expect(ownUndefinedWarm.get('one')).toBe(ownUndefinedEntry)
+    assertPeerAndCardinality(peerTokens)
+
+    const ownNullEntries = entriesFor({ ...original, node_kind: null })
+    expect(ownsKind(ownNullEntries)).toBe(true)
+    const ownNull = reconcileStoredSourceTerms(target, ROOT, ownNullEntries)
+    const ownNullEntry = ownNull.get('one')
+    expect(ownNullEntry?.eligible).toBe(false)
+    expect(ownNullEntry).not.toBe(ownUndefinedEntry)
+    const ownNullWarm = reconcileStoredSourceTerms(target, ROOT, ownNullEntries)
+    expect(ownNullWarm.get('one')).toBe(ownNullEntry)
+    assertPeerAndCardinality(peerTokens)
+
+    const restoredEntries = entriesFor(original)
+    expect(ownsKind(restoredEntries)).toBe(false)
+    const restored = reconcileStoredSourceTerms(target, ROOT, restoredEntries)
+    const restoredEntry = restored.get('one')
+    expect(restoredEntry?.eligible).toBe(true)
+    expect(restoredEntry).not.toBe(ownNullEntry)
+    expect(restoredEntry?.tokens).toEqual(absentEntry?.tokens)
+    const restoredWarm = reconcileStoredSourceTerms(target, ROOT, restoredEntries)
+    expect(restoredWarm.get('one')).toBe(restoredEntry)
+    assertPeerAndCardinality(peerTokens)
+
+    const options = { question: 'parcelChecksum', budget: 800, retrievalLevel: 1 as const }
+    const cold = retrieveContext(target, options)
+    const warm = retrieveContext(target, options)
+    expect(cold.matched_nodes.map((node) => node.node_id)).toContain('one')
+    expect(JSON.stringify(warm)).toBe(JSON.stringify(cold))
+    assertPeerAndCardinality(peerTokens)
+  })
+
+  it('distinguishes valid, own undefined, absent, and own null snippet across warm controlled views', () => {
+    const target = graph()
+    const original = owner(`${ROOT}/src/one.ts`)
+    target.addNode('one', original)
+    target.addNode('peer', owner(`${ROOT}/src/peer.ts`, { snippet: 'function neutral() {\n  return peer_signal\n}' }))
+
+    const entriesFor = (attributes: Attributes): Array<[string, Attributes]> => (
+      target.nodeEntries().map<[string, Attributes]>(([id, current]) => [
+        id,
+        id === 'one' ? attributes : current,
+      ])
+    )
+    const ownsSnippet = (entries: readonly [string, Attributes][]): boolean => Object.prototype.hasOwnProperty.call(
+      entries.find(([id]) => id === 'one')?.[1],
+      'snippet',
+    )
+    const assertPeerAndCardinality = (peerTokens: readonly string[] | undefined): void => {
+      const inspection = storedSourceTermCacheInspection(target)
+      expect(inspection.entryCount).toBe(target.numberOfNodes())
+      expect(inspection.tokenArrays.get('peer')).toBe(peerTokens)
+    }
+
+    const validEntries = entriesFor(original)
+    expect(ownsSnippet(validEntries)).toBe(true)
+    const valid = reconcileStoredSourceTerms(target, ROOT, validEntries)
+    const validEntry = valid.get('one')
+    const peerTokens = valid.get('peer')?.tokens
+    expect(validEntry?.eligible).toBe(true)
+    const validWarm = reconcileStoredSourceTerms(target, ROOT, validEntries)
+    expect(validWarm.get('one')).toBe(validEntry)
+    assertPeerAndCardinality(peerTokens)
+
+    const ownUndefinedEntries = entriesFor({ ...original, snippet: undefined })
+    expect(ownsSnippet(ownUndefinedEntries)).toBe(true)
+    const ownUndefined = reconcileStoredSourceTerms(target, ROOT, ownUndefinedEntries)
+    const ownUndefinedEntry = ownUndefined.get('one')
+    expect(ownUndefinedEntry?.eligible).toBe(false)
+    expect(ownUndefinedEntry).not.toBe(validEntry)
+    const ownUndefinedWarm = reconcileStoredSourceTerms(target, ROOT, ownUndefinedEntries)
+    expect(ownUndefinedWarm.get('one')).toBe(ownUndefinedEntry)
+    assertPeerAndCardinality(peerTokens)
+
+    const absentSnippet: Attributes = { ...original }
+    delete absentSnippet.snippet
+    const absentEntries = entriesFor(absentSnippet)
+    expect(ownsSnippet(absentEntries)).toBe(false)
+    const absent = reconcileStoredSourceTerms(target, ROOT, absentEntries)
+    const absentEntry = absent.get('one')
+    expect(absentEntry?.eligible).toBe(false)
+    expect(absentEntry).not.toBe(ownUndefinedEntry)
+    const absentWarm = reconcileStoredSourceTerms(target, ROOT, absentEntries)
+    expect(absentWarm.get('one')).toBe(absentEntry)
+    assertPeerAndCardinality(peerTokens)
+
+    const ownNullEntries = entriesFor({ ...original, snippet: null })
+    expect(ownsSnippet(ownNullEntries)).toBe(true)
+    const ownNull = reconcileStoredSourceTerms(target, ROOT, ownNullEntries)
+    const ownNullEntry = ownNull.get('one')
+    expect(ownNullEntry?.eligible).toBe(false)
+    expect(ownNullEntry).not.toBe(absentEntry)
+    const ownNullWarm = reconcileStoredSourceTerms(target, ROOT, ownNullEntries)
+    expect(ownNullWarm.get('one')).toBe(ownNullEntry)
+    assertPeerAndCardinality(peerTokens)
+
+    const restoredEntries = entriesFor(original)
+    expect(ownsSnippet(restoredEntries)).toBe(true)
+    const restored = reconcileStoredSourceTerms(target, ROOT, restoredEntries)
+    const restoredEntry = restored.get('one')
+    expect(restoredEntry?.eligible).toBe(true)
+    expect(restoredEntry).not.toBe(ownNullEntry)
+    expect(restoredEntry?.tokens).toEqual(validEntry?.tokens)
+    const restoredWarm = reconcileStoredSourceTerms(target, ROOT, restoredEntries)
+    expect(restoredWarm.get('one')).toBe(restoredEntry)
+    assertPeerAndCardinality(peerTokens)
+
+    const options = { question: 'parcelChecksum', budget: 800, retrievalLevel: 1 as const }
+    const cold = retrieveContext(target, options)
+    const warm = retrieveContext(target, options)
+    expect(cold.matched_nodes.map((node) => node.node_id)).toContain('one')
+    expect(JSON.stringify(warm)).toBe(JSON.stringify(cold))
+    assertPeerAndCardinality(peerTokens)
+  })
+
   it('detects nested object edits even when the containing reference is reused', () => {
     const target = graph()
     const metadata: Attributes = { external_call: false }
