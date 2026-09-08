@@ -99,13 +99,16 @@ const MEMBERSHIP_ANCHOR = `  const matchedNodes = packedNodes.map((node) => {
     if (!state) {
       return node
     }
+    if (state.allocationOnly) {
+      return attachCompleteOwnerState(node, state)
+    }
     return attachCompleteOwnerState({
       ...node,
       snippet: state.fullSnippet,
       snippet_line_number: state.fullLineNumber,
       snippet_scope: 'symbol' as const,
       representation_type: 'detail' as const,
-      representation_reason: COMPLETE_OWNER_REPRESENTATION_REASON,
+      representation_reason: state.representationReason,
     }, state)
   })
 `
