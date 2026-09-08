@@ -265,6 +265,8 @@ interface ProtectedSourceToken {
 
 interface PhysicalSourceProjection extends QueryEvidenceSourceProjection {
   identityText: string
+  sourceStart: number
+  sourceEnd: number
   tokens: ProtectedSourceToken[]
 }
 
@@ -421,28 +423,92 @@ function physicalProjectionForRange(
   return {
     text,
     identityText,
+    sourceStart: bounds.start,
+    sourceEnd: bounds.end,
     literalLineBreaks,
     hasProtectedTokens: tokens.length > 0,
     tokens,
   }
 }
 
+function alignedOutsideSourceEnd(
+  physicalText: string,
+  representedText: string,
+  representedStart: number,
+  trimStart: boolean,
+  trimEnd: boolean,
+): number | null {
+  let physicalOffset = 0
+  let representedOffset = representedStart
+  if (trimStart && physicalText.length > 0) {
+    while (/\s/.test(representedText[representedOffset] ?? '')) {
+      representedOffset += 1
+    }
+  }
+  while (physicalOffset < physicalText.length) {
+    if (/\s/.test(physicalText[physicalOffset]!)) {
+      const whitespaceStart = physicalOffset
+      while (physicalOffset < physicalText.length && /\s/.test(physicalText[physicalOffset]!)) {
+        physicalOffset += 1
+      }
+      const optional = (trimStart && whitespaceStart === 0)
+        || (trimEnd && physicalOffset === physicalText.length)
+      if (!optional && !/\s/.test(representedText[representedOffset] ?? '')) {
+        return null
+      }
+      while (/\s/.test(representedText[representedOffset] ?? '')) {
+        representedOffset += 1
+      }
+      continue
+    }
+    if (representedText[representedOffset] !== physicalText[physicalOffset]) {
+      return null
+    }
+    physicalOffset += 1
+    representedOffset += 1
+  }
+  return representedOffset
+}
+
 function representedSourceIdentity(
   representedText: string,
   projection: PhysicalSourceProjection,
+  sourceFile: ts.SourceFile,
 ): string | null {
   let marked = ''
-  let cursor = 0
+  let physicalCursor = projection.sourceStart
+  let representedCursor = 0
   for (const [index, token] of projection.tokens.entries()) {
-    const tokenOffset = representedText.indexOf(token.representedText, cursor)
-    if (tokenOffset < 0) {
+    const tokenOffset = alignedOutsideSourceEnd(
+      sourceFile.text.slice(physicalCursor, token.start),
+      representedText,
+      representedCursor,
+      physicalCursor === projection.sourceStart,
+      false,
+    )
+    if (
+      tokenOffset === null
+      || representedText.slice(tokenOffset, tokenOffset + token.representedText.length)
+        !== token.representedText
+    ) {
       return null
     }
-    marked += representedText.slice(cursor, tokenOffset)
+    marked += representedText.slice(representedCursor, tokenOffset)
     marked += tokenMarker(index)
-    cursor = tokenOffset + token.representedText.length
+    physicalCursor = token.end
+    representedCursor = tokenOffset + token.representedText.length
   }
-  marked += representedText.slice(cursor)
+  const representedEnd = alignedOutsideSourceEnd(
+    sourceFile.text.slice(physicalCursor, projection.sourceEnd),
+    representedText,
+    representedCursor,
+    projection.tokens.length === 0,
+    true,
+  )
+  if (representedEnd === null || representedText.slice(representedEnd).trim().length > 0) {
+    return null
+  }
+  marked += representedText.slice(representedCursor, representedEnd)
   return normalizedSource(marked)
 }
 
@@ -453,7 +519,7 @@ function representedSourceMatchesPhysicalRange(
 ): boolean {
   const projection = physicalProjectionForRange(range, sourceFile)
   return projection !== null
-    && representedSourceIdentity(representedText, projection) === projection.identityText
+    && representedSourceIdentity(representedText, projection, sourceFile) === projection.identityText
 }
 
 function literalDelimiterPreservingLines(
@@ -533,7 +599,7 @@ export function queryEvidenceSourceProjection(input: {
       const projection = physicalProjectionForRange(range, sourceFile, true)
       if (
         !projection
-        || representedSourceIdentity(represented.text, projection) !== projection.identityText
+        || representedSourceIdentity(represented.text, projection, sourceFile) !== projection.identityText
       ) {
         return null
       }

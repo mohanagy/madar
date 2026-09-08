@@ -16,6 +16,7 @@ import * as ts from 'typescript'
 import {
   completeQueryEvidenceLiteralStatement,
   ownerLocalDeclarationEvidence,
+  queryEvidenceSourceProjection,
   retainQueryEvidenceSourceSnapshot,
 } from '../../src/runtime/query-evidence-dependencies.js'
 import { readQueryEvidenceSnippet, type QueryEvidenceSnippet } from '../../src/runtime/retrieve.js'
@@ -429,6 +430,138 @@ describe('owner-local declaration completion', () => {
     expect(evidence?.snippet).toBe([
       "L2:   const input = 'alpha  beta';",
       'L3: return { displayedText: input };',
+    ].join('\n'))
+  })
+
+  it.each([
+    { name: 'LF', lineEnding: '\n' as const },
+    { name: 'CRLF', lineEnding: '\r\n' as const },
+  ])('authenticates a matching-comment literal at its physical $name token location', ({ lineEnding }) => {
+    const statement = '  return dispatchOutcome(datum, /* "alpha  beta" */ "alpha  beta")'
+    const sourceLines = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      statement,
+      '}',
+    ]
+    const fixture = sourceFixture(sourceLines, '.ts', lineEnding)
+    retainQueryEvidenceSourceSnapshot({
+      sourceFilePath: fixture.sourceFile,
+      sourceLines,
+      sourceText: sourceLines.join(lineEnding),
+    })
+    const input = {
+      sourceFilePath: fixture.sourceFile,
+      sourceLines,
+      representedSource: [{ startLine: 3, endLine: 3, text: statement }],
+    }
+    const expectedStatement = 'return dispatchOutcome(datum, /* "alpha beta" */ "alpha  beta")'
+
+    expect(ownerLocalDeclarationEvidence({
+      ...input,
+      ownerRange: { start: 1, end: 4 },
+    })).toEqual([{
+      startLine: 2,
+      endLine: 2,
+      lines: [{ lineNumber: 2, text: '  const datum = 12.5' }],
+    }])
+    expect(queryEvidenceSourceProjection({ ...input, shapedText: statement })).toEqual({
+      text: expectedStatement,
+      literalLineBreaks: [],
+      hasProtectedTokens: true,
+    })
+    expect(readQueryEvidenceSnippet(fixture.sourceFile, 1, {
+      question: 'What is the dispatch outcome?',
+      label: 'assemble',
+      sourceLocation: fixture.sourceLocation,
+      fileCache: new Map(),
+    })).toEqual({
+      snippet: [
+        'L2:   const datum = 12.5',
+        `L3: ${expectedStatement}`,
+      ].join('\n'),
+      lineNumber: 2,
+      scope: 'symbol',
+    })
+  })
+
+  it.each([
+    {
+      name: 'repeated string literals',
+      statement: '  return dispatchOutcome(datum, "alpha  beta", /* "alpha  beta" */ "alpha  beta")',
+      expectedStatement: 'return dispatchOutcome(datum, "alpha  beta", /* "alpha beta" */ "alpha  beta")',
+    },
+    {
+      name: 'a regular expression literal',
+      statement: '  return dispatchOutcome(datum, /* /alpha  beta/ */ /alpha  beta/)',
+      expectedStatement: 'return dispatchOutcome(datum, /* /alpha beta/ */ /alpha  beta/)',
+    },
+  ])('authenticates $name by physical token location when matching bytes precede a token', ({
+    statement,
+    expectedStatement,
+  }) => {
+    const sourceLines = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      statement,
+      '}',
+    ]
+    const fixture = sourceFixture(sourceLines)
+    const input = {
+      sourceFilePath: fixture.sourceFile,
+      sourceLines,
+      representedSource: [{ startLine: 3, endLine: 3, text: statement }],
+    }
+
+    expect(ownerLocalDeclarationEvidence({
+      ...input,
+      ownerRange: { start: 1, end: 4 },
+    })).toHaveLength(1)
+    expect(queryEvidenceSourceProjection({ ...input, shapedText: statement })?.text).toBe(expectedStatement)
+    expect(readQueryEvidenceSnippet(fixture.sourceFile, 1, {
+      question: 'What is the dispatch outcome?',
+      label: 'assemble',
+      sourceLocation: fixture.sourceLocation,
+      fileCache: new Map(),
+    })?.snippet).toBe([
+      'L2:   const datum = 12.5',
+      `L3: ${expectedStatement}`,
+    ].join('\n'))
+  })
+
+  it('rejects deceptive changed literal bytes despite an unchanged matching comment', () => {
+    const statement = '  return dispatchOutcome(datum, /* "alpha  beta" */ "alpha beta")'
+    const deceptive = statement.replace('*/ "alpha beta"', '*/ "alpha  beta"')
+    const sourceLines = [
+      'function assemble() {',
+      '  const datum = 12.5',
+      statement,
+      '}',
+    ]
+    const fixture = sourceFixture(sourceLines)
+    const input = {
+      sourceFilePath: fixture.sourceFile,
+      sourceLines,
+    }
+
+    expect(ownerLocalDeclarationEvidence({
+      ...input,
+      ownerRange: { start: 1, end: 4 },
+      representedSource: [{ startLine: 3, endLine: 3, text: deceptive }],
+    })).toEqual([])
+    expect(queryEvidenceSourceProjection({
+      ...input,
+      representedSource: [{ startLine: 3, endLine: 3, text: deceptive }],
+      shapedText: deceptive,
+    })).toBeNull()
+    expect(readQueryEvidenceSnippet(fixture.sourceFile, 1, {
+      question: 'What is the dispatch outcome?',
+      label: 'assemble',
+      sourceLocation: fixture.sourceLocation,
+      fileCache: new Map(),
+    })?.snippet).toBe([
+      'L2:   const datum = 12.5',
+      'L3: return dispatchOutcome(datum, /* "alpha beta" */ "alpha beta")',
     ].join('\n'))
   })
 
