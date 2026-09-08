@@ -42,7 +42,9 @@ function nodesFromGraph(graph: ReturnType<typeof loadGraph>): GeneratedNode[] {
 }
 
 function oneNode(nodes: readonly GeneratedNode[], label: string, relativePath: string): GeneratedNode {
-  const matches = nodes.filter((node) => node.label === label && node.source_file.endsWith(relativePath))
+  const matches = nodes.filter(
+    (node) => node.label === label && node.source_file.replaceAll('\\', '/').endsWith(relativePath),
+  )
   expect(matches, `expected one ${label} node in ${relativePath}`).toHaveLength(1)
   return matches[0]!
 }
