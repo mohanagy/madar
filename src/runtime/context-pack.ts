@@ -1219,14 +1219,15 @@ export function renderCompiledContextPackNodes<
     }
   }
 
-  const renderedNodes = nodes.some((node) => typeof node.representation_type === 'string')
-    ? [...nodes]
-    : applyContextPackResolution(nodes, {
-        resolution: resolutionForTaskBudget(taskContract, nodes),
-        relationships,
-        task_kind: taskContract.task_kind,
-      }).nodes.map((node, index) => {
+  const renderedNodes = applyContextPackResolution(nodes, {
+    resolution: resolutionForTaskBudget(taskContract, nodes),
+    relationships,
+    task_kind: taskContract.task_kind,
+  }).nodes.map((node, index) => {
         const originalNode = nodes[index]!
+        if (typeof originalNode.representation_type === 'string') {
+          return originalNode
+        }
         const originalCost = estimateContextPackEntryTokens(
           originalNode.label,
           originalNode.source_file,

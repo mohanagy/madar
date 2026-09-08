@@ -306,7 +306,7 @@ describe('indexing extraction cache', () => {
       })
 
       expect(JSON.parse(readFileSync(cachePath, 'utf8'))).toMatchObject({
-        __madarTsExtractorVersion: 68,
+        __madarTsExtractorVersion: 69,
         diagnostics: [{
           code: 'tree_sitter_python_fallback',
           level: 'warning',

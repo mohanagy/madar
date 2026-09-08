@@ -84,7 +84,7 @@ export type ProjectSpiToExtractionOptions = {
   fileStemByAbsolutePath?: ReadonlyMap<string, string>
 }
 
-const PROJECTABLE_SYMBOL_KINDS: ReadonlySet<SpiSymbolKind> = new Set([
+export const PROJECTABLE_SYMBOL_KINDS: ReadonlySet<SpiSymbolKind> = new Set([
   'function',
   'class',
   'interface',
@@ -356,7 +356,7 @@ function normalizeStemPath(filePath: string): string {
   return resolve(filePath).replaceAll('\\', '/')
 }
 
-function createProjectedFileStemById(
+export function createProjectedFileStemById(
   files: readonly SpiFile[],
   root: string,
   fileStemByAbsolutePath?: ReadonlyMap<string, string>,
@@ -393,7 +393,7 @@ function uniqueProjectedFileStem(filePath: string): string {
   return withoutExtension.split('/').filter(Boolean).join('_')
 }
 
-function projectSymbol(symbol: SpiSymbol, fileBaseStem: string): SymbolProjection | null {
+export function projectSymbol(symbol: SpiSymbol, fileBaseStem: string): SymbolProjection | null {
   const storageOperation = typeof symbol.framework_metadata?.storage_operation === 'string'
     ? symbol.framework_metadata.storage_operation
     : null

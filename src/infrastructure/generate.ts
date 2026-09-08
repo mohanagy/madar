@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { rebindEvidenceOccurrence } from '../contracts/semantic-identity.js'
@@ -39,7 +39,13 @@ import {
 import { createIndexingManifest, indexingStrictViolations, localIndexingPath } from '../pipeline/indexing-outcomes.js'
 import { buildSpiCached, type SpiCacheStats } from '../pipeline/spi/cache.js'
 import { isSpiSupportedSourceFile } from '../pipeline/spi/build.js'
-import { projectSpiToExtraction } from '../pipeline/spi/projector.js'
+import {
+  createProjectedFileStemById,
+  PROJECTABLE_SYMBOL_KINDS,
+  projectSpiToExtraction,
+  projectSymbol,
+} from '../pipeline/spi/projector.js'
+import type { SemanticProgramIndex, SpiSymbol } from '../pipeline/spi/types.js'
 import { generate as generateReport } from '../pipeline/report.js'
 import { toWiki } from '../pipeline/wiki.js'
 import { loadGraph } from '../runtime/serve.js'
@@ -277,6 +283,271 @@ function mergeExtractions(extractions: ExtractionData[]): ExtractionData {
     combined.output_tokens = (combined.output_tokens ?? 0) + (extraction.output_tokens ?? 0)
     return combined
   }, emptyExtraction())
+}
+
+const AUTO_SOURCE_LOCATION = /^L([1-9]\d*)(?:-L([1-9]\d*))?$/
+const AUTO_SOURCE_MAX_LINES = 25
+const AUTO_SOURCE_MAX_CHARS = 2_000
+const AUTO_SOURCE_MAX_TRUNCATED_CHARS = AUTO_SOURCE_MAX_CHARS + 3
+type AutoSourceRange = {
+  start: number
+  end: number
+}
+
+type AutoSourceOwner = {
+  file: string
+  start: number
+  end: number
+  symbol: SpiSymbol
+}
+
+function canonicalCorpusPath(rootPath: string, candidate: unknown): string | null {
+  if (typeof candidate !== 'string' || candidate.length === 0 || candidate.includes('\0')) {
+    return null
+  }
+
+  const absolutePath = resolve(rootPath, candidate)
+  const fromRoot = relative(rootPath, absolutePath)
+  if (fromRoot === '' || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+    return null
+  }
+  return absolutePath.replaceAll('\\', '/')
+}
+
+function parseAutoSourceLocation(value: unknown): AutoSourceRange | null {
+  if (typeof value !== 'string') return null
+  const match = AUTO_SOURCE_LOCATION.exec(value)
+  if (!match) return null
+  const start = Number(match[1])
+  const end = match[2] === undefined ? start : Number(match[2])
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start <= 0 || end < start) {
+    return null
+  }
+  return { start, end }
+}
+
+function validAutoSourceSnippet(value: unknown, symbol: SpiSymbol): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value !== value.trim() || value.includes('\r')) {
+    return false
+  }
+  if (value.split('\n').length > AUTO_SOURCE_MAX_LINES || value.length > AUTO_SOURCE_MAX_TRUNCATED_CHARS) {
+    return false
+  }
+  if (value.length > AUTO_SOURCE_MAX_CHARS && !value.endsWith('...')) {
+    return false
+  }
+
+  const declarationName = symbol.kind === 'method'
+    ? symbol.name.slice(symbol.name.lastIndexOf('.') + 1)
+    : symbol.name
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(declarationName)) {
+    return false
+  }
+  const escapedName = declarationName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^A-Za-z0-9_$])${escapedName}([^A-Za-z0-9_$]|$)`).test(value)
+}
+
+function validSpiOwnerRange(symbol: SpiSymbol): AutoSourceRange | null {
+  const coordinates = [
+    symbol.range?.start?.line,
+    symbol.range?.start?.column,
+    symbol.range?.end?.line,
+    symbol.range?.end?.column,
+  ]
+  if (!coordinates.every((coordinate) => Number.isSafeInteger(coordinate) && coordinate > 0)) {
+    return null
+  }
+
+  const [startLine, startColumn, endLine, endColumn] = coordinates as [number, number, number, number]
+  if (endLine < startLine || (endLine === startLine && endColumn <= startColumn)) {
+    return null
+  }
+  const inclusiveEnd = endColumn === 1 && endLine > startLine ? endLine - 1 : endLine
+  if (inclusiveEnd < startLine) return null
+  return { start: startLine, end: inclusiveEnd }
+}
+
+function expectedSpiLabel(symbol: SpiSymbol): string | null {
+  if (!PROJECTABLE_SYMBOL_KINDS.has(symbol.kind) || symbol.framework_metadata?.external_call === true) {
+    return null
+  }
+  if (symbol.kind === 'method') {
+    const dotAt = symbol.name.lastIndexOf('.')
+    return dotAt > 0 && dotAt < symbol.name.length - 1 ? `.${symbol.name.slice(dotAt + 1)}()` : null
+  }
+  if (symbol.kind === 'function') return `${symbol.name}()`
+  return symbol.name
+}
+
+function compatibleSpiNodeKind(symbol: SpiSymbol, node: ExtractionNode): boolean {
+  const kind = node.node_kind
+  if (kind === undefined) return true
+  if (symbol.kind === 'function') {
+    return kind !== 'class' && kind !== 'controller' && kind !== 'method'
+  }
+  if (symbol.kind === 'method') {
+    return kind === 'method' || kind === 'function' || kind === 'route'
+  }
+  if (symbol.kind === 'class') {
+    return kind === 'class' || kind === 'controller'
+  }
+  return false
+}
+
+function provenanceMatchesOwner(node: ExtractionNode, rootPath: string, owner: AutoSourceOwner): boolean {
+  if (node.provenance === undefined) return true
+  if (!Array.isArray(node.provenance) || node.provenance.length === 0) return false
+
+  return node.provenance.every((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false
+    if ('source_file' in entry && entry.source_file !== undefined) {
+      if (canonicalCorpusPath(rootPath, entry.source_file) !== owner.file) return false
+    }
+    if ('source_location' in entry && entry.source_location !== undefined) {
+      const location = parseAutoSourceLocation(entry.source_location)
+      if (!location || location.start !== owner.start) return false
+    }
+    return true
+  })
+}
+
+/**
+ * Auto mode deliberately combines two views of supported source. SPI owns
+ * identity and metadata; legacy owns its already-normalized bounded source
+ * evidence. Join those views only when the raw SPI declaration uniquely
+ * proves that both extraction nodes describe the same in-corpus declaration.
+ */
+function composeDefaultAutoSourceEvidence(args: {
+  rootPath: string
+  spiCodeFiles: readonly string[]
+  spi: SemanticProgramIndex
+  legacy: ExtractionData
+  projectedSpi: ExtractionData
+  sharedFileStems?: ReadonlyMap<string, string>
+}): { legacy: ExtractionData; projectedSpi: ExtractionData } {
+  const rootPath = resolve(args.rootPath)
+  const allowedFiles = new Set(
+    args.spiCodeFiles.flatMap((filePath) => {
+      const canonical = canonicalCorpusPath(rootPath, filePath)
+      return canonical ? [canonical] : []
+    }),
+  )
+
+  const projectedFileById = new Map(args.spi.files.map((file) => [file.id, file]))
+  const projectedFileStemById = createProjectedFileStemById(
+    args.spi.files,
+    rootPath,
+    args.sharedFileStems,
+  )
+  const rawProjectionCountByDestination = new Map<string, number>()
+  for (const symbol of args.spi.symbols) {
+    if (!PROJECTABLE_SYMBOL_KINDS.has(symbol.kind)) continue
+    const file = projectedFileById.get(symbol.file_id)
+    if (!file) continue
+    const fileBaseStem = projectedFileStemById.get(file.id) ?? basename(file.path, extname(file.path))
+    const projection = projectSymbol(symbol, fileBaseStem)
+    if (!projection) continue
+    rawProjectionCountByDestination.set(
+      projection.id,
+      (rawProjectionCountByDestination.get(projection.id) ?? 0) + 1,
+    )
+  }
+
+  const spiFilesById = new Map<string, typeof args.spi.files>()
+  const spiFilesByPath = new Map<string, typeof args.spi.files>()
+  for (const file of args.spi.files) {
+    const byId = spiFilesById.get(file.id) ?? []
+    byId.push(file)
+    spiFilesById.set(file.id, byId)
+    const filePath = canonicalCorpusPath(rootPath, file.path)
+    if (filePath) {
+      const byPath = spiFilesByPath.get(filePath) ?? []
+      byPath.push(file)
+      spiFilesByPath.set(filePath, byPath)
+    }
+  }
+
+  const symbolsByFile = new Map<string, SpiSymbol[]>()
+  for (const symbol of args.spi.symbols) {
+    const files = spiFilesById.get(symbol.file_id)
+    if (!files || files.length !== 1) continue
+    const filePath = canonicalCorpusPath(rootPath, files[0]?.path)
+    if (!filePath || !allowedFiles.has(filePath) || spiFilesByPath.get(filePath)?.length !== 1) continue
+    const symbols = symbolsByFile.get(filePath) ?? []
+    symbols.push(symbol)
+    symbolsByFile.set(filePath, symbols)
+  }
+
+  const legacyById = new Map<string, ExtractionNode[]>()
+  for (const node of args.legacy.nodes) {
+    const nodes = legacyById.get(node.id) ?? []
+    nodes.push(node)
+    legacyById.set(node.id, nodes)
+  }
+  const projectedById = new Map<string, ExtractionNode[]>()
+  for (const node of args.projectedSpi.nodes) {
+    const nodes = projectedById.get(node.id) ?? []
+    nodes.push(node)
+    projectedById.set(node.id, nodes)
+  }
+
+  const composedNodeIds = new Set<string>()
+  const composedProjectedNodes = args.projectedSpi.nodes.map((spiNode) => {
+    if (rawProjectionCountByDestination.get(spiNode.id) !== 1) return spiNode
+    const legacyNodes = legacyById.get(spiNode.id)
+    if (!legacyNodes || legacyNodes.length !== 1 || projectedById.get(spiNode.id)?.length !== 1) return spiNode
+    const legacyNode = legacyNodes[0]!
+    if (legacyNode.label !== spiNode.label || legacyNode.file_type !== 'code' || spiNode.file_type !== 'code') return spiNode
+    if (legacyNode.virtual === true || spiNode.virtual === true) return spiNode
+
+    const spiFile = canonicalCorpusPath(rootPath, spiNode.source_file)
+    const legacyFile = canonicalCorpusPath(rootPath, legacyNode.source_file)
+    if (!spiFile || legacyFile !== spiFile || !allowedFiles.has(spiFile)) return spiNode
+
+    const projectedStart = parseAutoSourceLocation(spiNode.source_location)
+    if (!projectedStart || projectedStart.start !== projectedStart.end) return spiNode
+
+    const fileSymbols = symbolsByFile.get(spiFile) ?? []
+    const compatibleSymbols = fileSymbols.filter((symbol) => {
+      const range = validSpiOwnerRange(symbol)
+      return range?.start === projectedStart.start
+        && expectedSpiLabel(symbol) === spiNode.label
+        && compatibleSpiNodeKind(symbol, spiNode)
+    })
+    if (compatibleSymbols.length !== 1) return spiNode
+    const symbol = compatibleSymbols[0]!
+    const ownerRange = validSpiOwnerRange(symbol)
+    if (!ownerRange || ownerRange.start !== projectedStart.start) return spiNode
+    if (fileSymbols.some((other) => other !== symbol && expectedSpiLabel(other) !== null && (
+      validSpiOwnerRange(other)?.start === ownerRange.start
+      || (other.name === symbol.name && other.kind === symbol.kind)
+    ))) return spiNode
+
+    const owner: AutoSourceOwner = { file: spiFile, start: ownerRange.start, end: ownerRange.end, symbol }
+    const legacySourceLocation = legacyNode.source_location
+    const legacyRange = parseAutoSourceLocation(legacySourceLocation)
+    if (!legacyRange || legacyRange.start !== owner.start || legacyRange.end !== owner.end) return spiNode
+    if (!validAutoSourceSnippet(legacyNode.snippet, symbol)) return spiNode
+    if (!provenanceMatchesOwner(spiNode, rootPath, owner) || !provenanceMatchesOwner(legacyNode, rootPath, owner)) return spiNode
+
+    composedNodeIds.add(spiNode.id)
+    return {
+      ...spiNode,
+      source_location: legacySourceLocation!,
+      snippet: legacyNode.snippet,
+    }
+  })
+
+  return {
+    legacy: {
+      ...args.legacy,
+      nodes: args.legacy.nodes.filter((node) => !composedNodeIds.has(node.id)),
+    },
+    projectedSpi: {
+      ...args.projectedSpi,
+      nodes: composedProjectedNodes,
+    },
+  }
 }
 
 function sourceFileKey(sourceFile: unknown): string | null {
@@ -821,10 +1092,20 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
             onFileOutcome: recordExtractionOutcome('legacy_fallback', 'spi_unsupported_language'),
           }), 'legacy_fallback')
         : emptyExtraction()
+    const composedAutoExtractions = extractionMode === 'auto' && built
+      ? composeDefaultAutoSourceEvidence({
+          rootPath: resolvedRootPath,
+          spiCodeFiles,
+          spi: built.spi,
+          legacy: legacyAugmentationExtraction,
+          projectedSpi: spiSupplementalExtraction,
+          ...(sharedFileStems ? { sharedFileStems } : {}),
+        })
+      : null
     const codeExtraction = extractionMode === 'auto'
       ? mergeExtractions([
-          legacyAugmentationExtraction,
-          spiSupplementalExtraction,
+          composedAutoExtractions?.legacy ?? legacyAugmentationExtraction,
+          composedAutoExtractions?.projectedSpi ?? spiSupplementalExtraction,
           legacyFallbackExtraction,
         ])
       : spiExtraction
