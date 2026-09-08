@@ -567,7 +567,7 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends {
       ? node.snippet
       : null
 
-    if (originalSnippet === null && !completeOwner) {
+    if (originalSnippet === null && (!completeOwner || completeOwner.allocationOnly)) {
       return attachCompleteOwnerState({
         ...withoutCompleteOwnerRepresentationClaim(node),
         snippet: null,
@@ -6798,14 +6798,20 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
         ...(Number.isFinite(compactFrameworkLimit) ? { max_nodes: compactFrameworkLimit } : {}),
       })
   for (const compactNode of compactPack.nodes) {
-    if (typeof compactNode.snippet !== 'string' || compactNode.snippet.length === 0) {
-      continue
-    }
     const sourceNode = fullPack.nodes.find((node) => (
       typeof compactNode.node_id === 'string'
       && compactNode.node_id === node.node_id
     ))
-    if (sourceNode) {
+    const sourceState = sourceNode
+      ? completeOwnerMatchedNodes.get(sourceNode)
+      : undefined
+    if (
+      sourceNode
+      && (
+        (typeof compactNode.snippet === 'string' && compactNode.snippet.length > 0)
+        || sourceState?.allocationOnly === true
+      )
+    ) {
       copyCompleteOwnerState(sourceNode, compactNode)
     }
   }
