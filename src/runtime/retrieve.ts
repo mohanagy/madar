@@ -5264,7 +5264,7 @@ function buildRetrieveResultFromOrderedCandidates(
         label: node.label,
         sourceLocation: node.sourceLocation,
         fileNodeLike: node.fileNodeLike,
-        derived: node.lineNumberDerived,
+        derived: node.lineNumberDerived && lineRangeFromSourceLocation(node.sourceLocation) === null,
         fileCache: snippetFileCache,
       })
       const snippet = queryEvidenceSnippet?.snippet ?? node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {

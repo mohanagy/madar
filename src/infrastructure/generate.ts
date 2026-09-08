@@ -518,7 +518,7 @@ function composeDefaultAutoSourceEvidence(args: {
     const symbol = compatibleSymbols[0]!
     const ownerRange = validSpiOwnerRange(symbol)
     if (!ownerRange || ownerRange.start !== projectedStart.start) return spiNode
-    if (fileSymbols.some((other) => other !== symbol && (
+    if (fileSymbols.some((other) => other !== symbol && expectedSpiLabel(other) !== null && (
       validSpiOwnerRange(other)?.start === ownerRange.start
       || (other.name === symbol.name && other.kind === symbol.kind)
     ))) return spiNode
