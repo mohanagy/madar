@@ -14,6 +14,7 @@ vi.mock('typescript', async (importOriginal) => {
 import * as ts from 'typescript'
 
 import {
+  completeSmallOwnerSourceEvidence,
   completeQueryEvidenceLiteralStatement,
   ownerLocalDeclarationEvidence,
   queryEvidenceSourceProjection,
@@ -2579,6 +2580,30 @@ describe('owner declaration parse snapshot cache', () => {
     readQueryEvidenceSnippet(sourceFile, 1, options)
     readQueryEvidenceSnippet(sourceFile, 1, options)
 
+    expect(ts.createSourceFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the cached AST when authenticating the same complete small owner', () => {
+    const sourceLines = [
+      'export function cachedOwner() {',
+      '  return 1',
+      '}',
+    ]
+    retainQueryEvidenceSourceSnapshot({
+      sourceFilePath: 'cached-owner.ts',
+      sourceLines,
+      sourceText: sourceLines.join('\n'),
+    })
+    const authenticate = () => completeSmallOwnerSourceEvidence({
+      sourceFilePath: 'cached-owner.ts',
+      sourceLines,
+      ownerRange: { start: 1, end: 3 },
+      label: 'cachedOwner()',
+      nodeKind: 'function',
+    })
+
+    expect(authenticate()?.snippet).toContain('L2:   return 1')
+    expect(authenticate()?.snippet).toContain('L2:   return 1')
     expect(ts.createSourceFile).toHaveBeenCalledTimes(1)
   })
 })

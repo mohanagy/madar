@@ -32,6 +32,20 @@ export interface QueryEvidenceSourceProjection {
   hasProtectedTokens: boolean
 }
 
+export interface CompleteSmallOwnerSourceInput {
+  sourceFilePath: string
+  sourceLines: readonly string[]
+  ownerRange: { start: number; end: number }
+  label: string
+  nodeKind?: string
+  externalCall?: boolean
+}
+
+export interface CompleteSmallOwnerSourceEvidence {
+  snippet: string
+  lineNumber: number
+}
+
 interface ParsedSourceSnapshot {
   sourceFilePath: string
   sourceText: string
@@ -63,6 +77,8 @@ const parsedSourceSnapshots = new WeakMap<readonly string[], ParsedSourceSnapsho
 const sourceSnapshotProvenance = new WeakMap<readonly string[], SourceSnapshotProvenance>()
 const sourceFilesWithNormalizedLineCaches = new WeakSet<ts.SourceFile>()
 const JS_TS_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'])
+const COMPLETE_SMALL_OWNER_MAX_LINES = 25
+const COMPLETE_SMALL_OWNER_MAX_CHARACTERS = 2000
 
 /** Retains bytes from the existing source read alongside its normalized line cache. */
 export function retainQueryEvidenceSourceSnapshot(input: {
@@ -250,6 +266,260 @@ function uniquelyIdentifiedOwner(
   }
   visit(sourceFile)
   return owners.length === 1 ? owners[0]! : null
+}
+
+interface IdentifiedCompleteOwner {
+  owner: FunctionOwner
+  sourceNode: ts.Node
+  ownerKind: 'function' | 'method'
+  label: string
+  alternateLabel?: string
+}
+
+function unwrapOwnerExpression(owner: ts.FunctionExpression | ts.ArrowFunction): ts.Expression {
+  let expression: ts.Expression = owner
+  while (
+    (ts.isParenthesizedExpression(expression.parent)
+      || ts.isAsExpression(expression.parent)
+      || ts.isSatisfiesExpression(expression.parent)
+      || ts.isTypeAssertionExpression(expression.parent)
+      || ts.isNonNullExpression(expression.parent))
+    && expression.parent.expression === expression
+  ) {
+    expression = expression.parent
+  }
+  return expression
+}
+
+function simplePropertyName(name: ts.PropertyName | undefined): string | null {
+  if (!name) {
+    return null
+  }
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
+    return name.text
+  }
+  return null
+}
+
+function identifiedCompleteOwner(owner: FunctionOwner): IdentifiedCompleteOwner | null {
+  if (ts.isFunctionDeclaration(owner)) {
+    if (owner.name) {
+      return {
+        owner,
+        sourceNode: owner,
+        ownerKind: 'function',
+        label: `${owner.name.text}()`,
+        alternateLabel: owner.name.text,
+      }
+    }
+    const modifiers = ts.canHaveModifiers(owner) ? ts.getModifiers(owner) : undefined
+    const defaultExport = modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword)
+      && modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
+    return defaultExport
+      ? { owner, sourceNode: owner, ownerKind: 'function', label: 'default()', alternateLabel: 'default' }
+      : null
+  }
+
+  if (ts.isMethodDeclaration(owner)) {
+    const name = simplePropertyName(owner.name)
+    return name
+      ? { owner, sourceNode: owner, ownerKind: 'method', label: `.${name}()`, alternateLabel: name }
+      : null
+  }
+
+  if (ts.isConstructorDeclaration(owner)) {
+    return {
+      owner,
+      sourceNode: owner,
+      ownerKind: 'method',
+      label: '.constructor()',
+      alternateLabel: 'constructor',
+    }
+  }
+
+  if (!ts.isFunctionExpression(owner) && !ts.isArrowFunction(owner)) {
+    return null
+  }
+  const expression = unwrapOwnerExpression(owner)
+  const parent = expression.parent
+  if (
+    ts.isVariableDeclaration(parent)
+    && parent.initializer === expression
+    && ts.isIdentifier(parent.name)
+    && ts.isVariableDeclarationList(parent.parent)
+    && parent.parent.declarations.length === 1
+    && ts.isVariableStatement(parent.parent.parent)
+  ) {
+    return {
+      owner,
+      sourceNode: parent.parent.parent,
+      ownerKind: 'function',
+      label: `${parent.name.text}()`,
+      alternateLabel: parent.name.text,
+    }
+  }
+  if (
+    ts.isPropertyDeclaration(parent)
+    && parent.initializer === expression
+  ) {
+    const name = simplePropertyName(parent.name)
+    return name
+      ? { owner, sourceNode: parent, ownerKind: 'method', label: `.${name}()`, alternateLabel: name }
+      : null
+  }
+  if (ts.isExportAssignment(parent) && parent.expression === expression && !parent.isExportEquals) {
+    return {
+      owner,
+      sourceNode: parent,
+      ownerKind: 'function',
+      label: 'default()',
+      alternateLabel: 'default',
+    }
+  }
+  return null
+}
+
+function compatibleCompleteOwnerNodeKind(
+  ownerKind: IdentifiedCompleteOwner['ownerKind'],
+  nodeKind: string | undefined,
+): boolean {
+  const kind = nodeKind?.trim().toLowerCase() ?? ''
+  if (kind.length === 0) {
+    return true
+  }
+  return ownerKind === 'function'
+    ? kind === 'function' || kind === 'component'
+    : kind === 'method' || kind === 'function' || kind === 'route'
+}
+
+function sourceSpanForCompleteOwner(
+  identified: IdentifiedCompleteOwner,
+  sourceFile: ts.SourceFile,
+): { text: string; startLine: number; endLine: number } | null {
+  let start = identified.sourceNode.getStart(sourceFile)
+  let end = identified.sourceNode.getEnd()
+  const lineStarts = sourceFile.getLineStarts()
+  const startLineIndex = sourceFile.getLineAndCharacterOfPosition(start).line
+  const endLineIndex = sourceFile.getLineAndCharacterOfPosition(Math.max(start, end - 1)).line
+  const lineStart = lineStarts[startLineIndex]
+  const nextLineStart = lineStarts[endLineIndex + 1] ?? sourceFile.text.length
+  if (lineStart === undefined) {
+    return null
+  }
+
+  if (sourceFile.text.slice(lineStart, start).trim().length === 0) {
+    start = lineStart
+  }
+  let lineContentEnd = nextLineStart
+  if (sourceFile.text.slice(Math.max(0, lineContentEnd - 2), lineContentEnd) === '\r\n') {
+    lineContentEnd -= 2
+  } else if (/^[\r\n]$/.test(sourceFile.text.slice(Math.max(0, lineContentEnd - 1), lineContentEnd))) {
+    lineContentEnd -= 1
+  }
+  if (sourceFile.text.slice(end, lineContentEnd).trim().length === 0) {
+    end = lineContentEnd
+  }
+  if (start >= end) {
+    return null
+  }
+
+  return {
+    text: sourceFile.text.slice(start, end),
+    startLine: startLineIndex + 1,
+    endLine: endLineIndex + 1,
+  }
+}
+
+function numberPhysicalSourceRows(sourceText: string, startLine: number): {
+  snippet: string
+  endLine: number
+} {
+  const lineBreakPattern = /\r\n|\r|\n/g
+  let snippet = ''
+  let cursor = 0
+  let lineNumber = startLine
+  for (const match of sourceText.matchAll(lineBreakPattern)) {
+    const offset = match.index
+    snippet += `L${lineNumber}: ${sourceText.slice(cursor, offset)}${match[0]}`
+    cursor = offset + match[0].length
+    lineNumber += 1
+  }
+  snippet += `L${lineNumber}: ${sourceText.slice(cursor)}`
+  return { snippet, endLine: lineNumber }
+}
+
+/**
+ * Authenticates and serializes a complete, exact, small JS/TS function or
+ * method owner from the source snapshot already retained by retrieval.
+ */
+export function completeSmallOwnerSourceEvidence(
+  input: CompleteSmallOwnerSourceInput,
+): CompleteSmallOwnerSourceEvidence | null {
+  try {
+    if (
+      input.externalCall === true
+      || !Number.isInteger(input.ownerRange.start)
+      || !Number.isInteger(input.ownerRange.end)
+      || input.ownerRange.start < 1
+      || input.ownerRange.end < input.ownerRange.start
+      || input.ownerRange.end - input.ownerRange.start + 1 > COMPLETE_SMALL_OWNER_MAX_LINES
+    ) {
+      return null
+    }
+    const sourceFile = parsedSourceForSnapshot(input.sourceFilePath, input.sourceLines)
+    if (!sourceFile || input.ownerRange.end > sourceFile.getLineStarts().length) {
+      return null
+    }
+    const parseDiagnostics = (sourceFile as ts.SourceFile & {
+      parseDiagnostics?: readonly ts.Diagnostic[]
+    }).parseDiagnostics
+    if (parseDiagnostics && parseDiagnostics.length > 0) {
+      return null
+    }
+
+    const candidates: IdentifiedCompleteOwner[] = []
+    const visit = (node: ts.Node): void => {
+      const owner = functionOwnerWithBody(node)
+      if (owner) {
+        const identified = identifiedCompleteOwner(owner)
+        if (
+          identified
+          && (identified.label === input.label || identified.alternateLabel === input.label)
+          && compatibleCompleteOwnerNodeKind(identified.ownerKind, input.nodeKind)
+        ) {
+          const range = lineRangeOf(identified.sourceNode, sourceFile)
+          if (range.start === input.ownerRange.start && range.end === input.ownerRange.end) {
+            candidates.push(identified)
+          }
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sourceFile)
+    if (candidates.length !== 1) {
+      return null
+    }
+
+    const source = sourceSpanForCompleteOwner(candidates[0]!, sourceFile)
+    if (
+      !source
+      || source.startLine !== input.ownerRange.start
+      || source.endLine !== input.ownerRange.end
+      || source.text.length > COMPLETE_SMALL_OWNER_MAX_CHARACTERS
+    ) {
+      return null
+    }
+    const numbered = numberPhysicalSourceRows(source.text, source.startLine)
+    if (numbered.endLine !== source.endLine) {
+      return null
+    }
+    return {
+      snippet: numbered.snippet,
+      lineNumber: source.startLine,
+    }
+  } catch {
+    return null
+  }
 }
 
 function normalizedSource(value: string): string {

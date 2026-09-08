@@ -87,6 +87,7 @@ import {
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 import {
+  completeSmallOwnerSourceEvidence,
   completeQueryEvidenceLiteralStatement,
   ownerLocalDeclarationEvidence,
   queryEvidenceSourceProjection,
@@ -552,41 +553,76 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
   let usedTokens = 0
 
   const shapedNodes = nodes.map((node, index) => {
+    const completeOwner = completeOwnerMatchedNodes.get(node)
+    const priorTruncation = 'snippet_truncated' in node
+      && (node as { snippet_truncated?: boolean }).snippet_truncated === true
     const originalSnippet = typeof node.snippet === 'string' && node.snippet.trim().length > 0
       ? node.snippet
       : null
 
-    if (originalSnippet === null) {
-      return {
+    if (originalSnippet === null && !completeOwner) {
+      return attachCompleteOwnerState({
         ...node,
         snippet: null,
-        snippet_truncated: false,
-      }
+        snippet_truncated: priorTruncation,
+      }, completeOwner)
     }
 
     const snippetEligible = eligibleNodeIndexes === undefined
       ? index < topNWithSnippet
       : eligibleNodeIndexes.has(index)
     if (!snippetEligible) {
-      return {
-        ...node,
+      return attachCompleteOwnerState({
+        ...(completeOwner ? withoutCompleteOwnerRepresentationClaim(node) : node),
         snippet: null,
-        snippet_truncated: false,
-      }
+        snippet_truncated: completeOwner ? true : priorTruncation,
+      }, completeOwner)
     }
 
     const remainingSnippetBudget = Math.max(0, snippetBudget - usedTokens)
-    const shapedSnippet = truncateSnippetToTokenBudget(originalSnippet, remainingSnippetBudget)
+    if (completeOwner) {
+      const fullTokens = snippetTokenCount(completeOwner.fullSnippet)
+      if (fullTokens <= remainingSnippetBudget) {
+        usedTokens += fullTokens
+        return attachCompleteOwnerState({
+          ...node,
+          snippet: completeOwner.fullSnippet,
+          snippet_line_number: completeOwner.fullLineNumber,
+          snippet_scope: 'symbol' as const,
+          snippet_truncated: priorTruncation,
+          representation_reason: COMPLETE_OWNER_REPRESENTATION_REASON,
+        }, completeOwner)
+      }
+
+      const fallbackTokens = snippetTokenCount(completeOwner.fallbackSnippet)
+      if (fallbackTokens <= remainingSnippetBudget) {
+        usedTokens += fallbackTokens
+        return attachCompleteOwnerState({
+          ...withoutCompleteOwnerRepresentationClaim(node),
+          snippet: completeOwner.fallbackSnippet,
+          snippet_line_number: completeOwner.fallbackLineNumber,
+          snippet_scope: completeOwner.fallbackScope,
+          snippet_truncated: true,
+        }, completeOwner)
+      }
+      return attachCompleteOwnerState({
+        ...withoutCompleteOwnerRepresentationClaim(node),
+        snippet: null,
+        snippet_truncated: true,
+      }, completeOwner)
+    }
+
+    const shapedSnippet = truncateSnippetToTokenBudget(originalSnippet!, remainingSnippetBudget)
     const serializedSnippetTokens = snippetTokenCount(shapedSnippet.snippet)
     const boundedSnippet = serializedSnippetTokens <= remainingSnippetBudget
       ? shapedSnippet
       : truncateSnippetToTokenBudget(shapedSnippet.snippet ?? '', remainingSnippetBudget)
     usedTokens += snippetTokenCount(boundedSnippet.snippet)
-    return {
+    return attachCompleteOwnerState({
       ...node,
       snippet: boundedSnippet.snippet,
-      snippet_truncated: shapedSnippet.truncated || boundedSnippet.truncated,
-    }
+      snippet_truncated: priorTruncation || shapedSnippet.truncated || boundedSnippet.truncated,
+    }, completeOwner)
   })
 
   const serializedSnippetTokensUsed = shapedNodes.reduce(
@@ -751,10 +787,47 @@ export interface QueryEvidenceSnippet {
 interface QueryEvidenceSnippetOptions {
   question: string
   label: string
+  nodeKind?: string
+  externalCall?: boolean
+  authenticatedOwner?: boolean
   sourceLocation?: string | null
   fileNodeLike?: boolean
   derived?: boolean
   fileCache?: Map<string, string[] | null>
+}
+
+interface CompleteOwnerSnippetState {
+  fullSnippet: string
+  fullLineNumber: number
+  fallbackSnippet: string
+  fallbackLineNumber: number
+  fallbackScope: QueryEvidenceSnippet['scope']
+}
+
+const completeOwnerQuerySnippets = new WeakMap<QueryEvidenceSnippet, CompleteOwnerSnippetState>()
+const completeOwnerMatchedNodes = new WeakMap<object, CompleteOwnerSnippetState>()
+const COMPLETE_OWNER_REPRESENTATION_REASON = 'complete small owner source'
+
+function attachCompleteOwnerState<T extends object>(
+  target: T,
+  state: CompleteOwnerSnippetState | undefined,
+): T {
+  if (state) {
+    completeOwnerMatchedNodes.set(target, state)
+  }
+  return target
+}
+
+function copyCompleteOwnerState<T extends object>(source: object, target: T): T {
+  return attachCompleteOwnerState(target, completeOwnerMatchedNodes.get(source))
+}
+
+function withoutCompleteOwnerRepresentationClaim<T extends object>(source: T): T {
+  const output = { ...source } as T & { representation_reason?: string }
+  if (output.representation_reason === COMPLETE_OWNER_REPRESENTATION_REASON) {
+    delete output.representation_reason
+  }
+  return output
 }
 
 interface QueryEvidenceLine {
@@ -1814,11 +1887,38 @@ export function readQueryEvidenceSnippet(
     const completed = ownerRange
       ? completeOwnerDeclarationEvidence(sourceFile, lines, ownerRange, baseline)
       : null
-    return {
+    const fallback: QueryEvidenceSnippet = {
       snippet: completed?.snippet ?? baselineSnippet,
       lineNumber: completed?.lineNumber ?? baseline[0]!.source.index,
       scope,
     }
+    const completeOwner = ownerRange && options.authenticatedOwner === true
+      ? completeSmallOwnerSourceEvidence({
+          sourceFilePath: sourceFile,
+          sourceLines: lines,
+          ownerRange,
+          label: options.label,
+          ...(options.nodeKind ? { nodeKind: options.nodeKind } : {}),
+          ...(options.externalCall !== undefined ? { externalCall: options.externalCall } : {}),
+        })
+      : null
+    if (!completeOwner) {
+      return fallback
+    }
+
+    const result: QueryEvidenceSnippet = {
+      snippet: completeOwner.snippet,
+      lineNumber: completeOwner.lineNumber,
+      scope: 'symbol',
+    }
+    completeOwnerQuerySnippets.set(result, {
+      fullSnippet: completeOwner.snippet,
+      fullLineNumber: completeOwner.lineNumber,
+      fallbackSnippet: fallback.snippet,
+      fallbackLineNumber: fallback.lineNumber,
+      fallbackScope: fallback.scope,
+    })
+    return result
   } catch {
     return null
   }
@@ -1964,6 +2064,7 @@ function scoredNodeFromGraphEntry(
     lineNumberDerived: resolvedLine.derived,
     storedSnippet: storedSnippetFromAttributes(attributes),
     nodeKind,
+    externalCall: attributes.external_call === true,
     framework: typeof attributes.framework === 'string' ? attributes.framework : undefined,
     frameworkRole: frameworkRole || undefined,
     sourceDomain: classifySourceDomain(String(attributes.source_file ?? ''), rootPath),
@@ -2046,6 +2147,7 @@ interface SeedCandidate {
   lineNumberDerived: boolean
   storedSnippet: string | null
   nodeKind: string
+  externalCall: boolean
   framework?: string | undefined
   frameworkRole?: string | undefined
   sourceDomain: SourceDomain
@@ -2071,6 +2173,7 @@ interface ScoredNode {
   lineNumberDerived: boolean
   storedSnippet: string | null
   nodeKind: string
+  externalCall: boolean
   framework?: string | undefined
   frameworkRole?: string | undefined
   sourceDomain: SourceDomain
@@ -2101,6 +2204,7 @@ function scoredNodeFromGraph(graph: KnowledgeGraph, nodeId: string, score: numbe
     lineNumberDerived: resolvedLine.derived,
     storedSnippet: storedSnippetFromAttributes(attributes),
     nodeKind: String(attributes.node_kind ?? ''),
+    externalCall: attributes.external_call === true,
     framework: typeof attributes.framework === 'string' ? attributes.framework : undefined,
     frameworkRole: typeof attributes.framework_role === 'string' ? attributes.framework_role : undefined,
     sourceDomain: classifySourceDomain(String(attributes.source_file ?? ''), rootPath),
@@ -5183,14 +5287,21 @@ export function contextPackFromRetrieveResult(
     budget: result.token_count,
     prompt: result.question,
   })
+  const sourceNodes = result.matched_nodes.map((node) => copyCompleteOwnerState(node, {
+    ...node,
+    evidence_class: node.evidence_class ?? retrieveEvidenceClassForBand(node.relevance_band),
+  }))
   const renderedNodes = renderCompiledContextPackNodes(
     taskContract,
-    result.matched_nodes.map((node) => ({
-      ...node,
-      evidence_class: node.evidence_class ?? retrieveEvidenceClassForBand(node.relevance_band),
-    })),
+    sourceNodes,
     result.relationships,
   )
+  renderedNodes.nodes.forEach((node, index) => {
+    const sourceNode = sourceNodes[index]
+    if (sourceNode) {
+      copyCompleteOwnerState(sourceNode, node)
+    }
+  })
 
   return {
     task_contract: taskContract,
@@ -5241,6 +5352,7 @@ function buildRetrieveResultFromOrderedCandidates(
     sliceMetadata,
     rootPath,
   )
+  const completeOwnerStatesByNodeId = new Map<string, CompleteOwnerSnippetState>()
   const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidates.map((node) => {
     let builtEntry: RetrieveMatchedNode | undefined
     let tokenCost: number | undefined
@@ -5262,17 +5374,23 @@ function buildRetrieveResultFromOrderedCandidates(
       const queryEvidenceSnippet = readQueryEvidenceSnippet(node.sourceFile, node.lineNumber, {
         question: options.question,
         label: node.label,
+        nodeKind: node.nodeKind,
+        externalCall: node.externalCall,
+        authenticatedOwner: true,
         sourceLocation: node.sourceLocation,
         fileNodeLike: node.fileNodeLike,
         derived: node.lineNumberDerived && lineRangeFromSourceLocation(node.sourceLocation) === null,
         fileCache: snippetFileCache,
       })
+      const completeOwnerState = queryEvidenceSnippet
+        ? completeOwnerQuerySnippets.get(queryEvidenceSnippet)
+        : undefined
       const snippet = queryEvidenceSnippet?.snippet ?? node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {
         derived: node.lineNumberDerived,
         fileCache: snippetFileCache,
       })
       const serializedSourceFile = relativizeSourceFile(node.sourceFile, rootPath)
-      builtEntry = {
+      builtEntry = attachCompleteOwnerState({
         node_id: node.id,
         label: node.label,
         source_file: serializedSourceFile,
@@ -5295,6 +5413,9 @@ function buildRetrieveResultFromOrderedCandidates(
         ...(node.framework ? { framework: node.framework } : {}),
         ...(node.frameworkRole ? { framework_role: node.frameworkRole } : {}),
         ...(node.nodeKind.trim().length > 0 ? { node_kind: node.nodeKind } : {}),
+      }, completeOwnerState)
+      if (completeOwnerState) {
+        completeOwnerStatesByNodeId.set(node.id, completeOwnerState)
       }
       tokenCost = estimateRetrieveEntryTokens(node.label, serializedSourceFile, node.lineNumber, snippet)
       return builtEntry
@@ -5358,7 +5479,25 @@ function buildRetrieveResultFromOrderedCandidates(
     selection_strategy: 'value-per-token',
     retrieval_gate: retrievalGate,
   }), options.onStageDiagnostic)
-  const matchedNodes = pack.nodes as RetrieveMatchedNode[]
+  const packedNodes = pack.nodes as RetrieveMatchedNode[]
+  const matchedNodes = packedNodes.map((node) => {
+    const state = typeof node.node_id === 'string'
+      ? completeOwnerStatesByNodeId.get(node.node_id)
+      : undefined
+    if (!state) {
+      return node
+    }
+    return attachCompleteOwnerState({
+      ...node,
+      snippet: state.fullSnippet,
+      snippet_line_number: state.fullLineNumber,
+      snippet_scope: 'symbol' as const,
+      representation_type: 'detail' as const,
+      representation_reason: COMPLETE_OWNER_REPRESENTATION_REASON,
+    }, state)
+  })
+  const packedNodeTokens = tokenCountForMatchedNodes(packedNodes)
+  const matchedNodeTokens = tokenCountForMatchedNodes(matchedNodes)
   const answerContract = buildRuntimeGenerationAnswerContract(
     taskContract,
     retrievalGate,
@@ -5381,7 +5520,7 @@ function buildRetrieveResultFromOrderedCandidates(
 
   return {
     question: options.question,
-    token_count: pack.token_count,
+    token_count: Math.max(0, pack.token_count - packedNodeTokens + matchedNodeTokens),
     matched_nodes: matchedNodes,
     relationships: pack.relationships,
     community_context: pack.community_context,
@@ -5646,6 +5785,7 @@ function retrieveContextPass(
         lineNumberDerived: resolvedLine.derived,
         storedSnippet: storedSnippetFromAttributes(attributes),
         nodeKind,
+        externalCall: attributes.external_call === true,
         framework,
         frameworkRole: frameworkRole || undefined,
         sourceDomain,
@@ -5714,6 +5854,7 @@ function retrieveContextPass(
     lineNumberDerived: candidate.lineNumberDerived,
     storedSnippet: candidate.storedSnippet,
     nodeKind: candidate.nodeKind,
+    externalCall: candidate.externalCall,
     framework: candidate.framework,
     frameworkRole: candidate.frameworkRole,
     fileType: candidate.fileType,
@@ -5995,6 +6136,7 @@ function retrieveContextPass(
       lineNumberDerived: resolvedLine.derived,
       storedSnippet: storedSnippetFromAttributes(attributes),
       nodeKind: String(attributes.node_kind ?? ''),
+      externalCall: attributes.external_call === true,
       framework: typeof attributes.framework === 'string' ? attributes.framework : undefined,
       frameworkRole: typeof attributes.framework_role === 'string' ? attributes.framework_role : undefined,
       sourceDomain,
@@ -6551,6 +6693,18 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
         kind: 'retrieve',
         ...(Number.isFinite(compactFrameworkLimit) ? { max_nodes: compactFrameworkLimit } : {}),
       })
+  for (const compactNode of compactPack.nodes) {
+    if (typeof compactNode.snippet !== 'string' || compactNode.snippet.length === 0) {
+      continue
+    }
+    const sourceNode = fullPack.nodes.find((node) => (
+      typeof compactNode.node_id === 'string'
+      && compactNode.node_id === node.node_id
+    ))
+    if (sourceNode) {
+      copyCompleteOwnerState(sourceNode, compactNode)
+    }
+  }
   const useCallEndpointSnippetAllocation =
     !promotedSlice
     && options.topNWithSnippet === undefined
@@ -6573,7 +6727,10 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
     (total, node) => total + estimateRetrieveEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
     0,
   )
-  const matchedNodes = shapedNodes.nodes.map(({ evidence_class: _evidenceClass, ...node }) => node as CompactRetrieveMatchedNode)
+  const matchedNodes = shapedNodes.nodes.map((shapedNode) => {
+    const { evidence_class: _evidenceClass, ...node } = shapedNode
+    return copyCompleteOwnerState(shapedNode, node as CompactRetrieveMatchedNode)
+  })
   const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
     result.retrieval_plan,
     result.question,

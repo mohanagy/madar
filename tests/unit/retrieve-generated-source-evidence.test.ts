@@ -83,7 +83,7 @@ function writeRoundingLayout(root: string, layout: 'same-file' | 'relative-impor
       helperFile: '/src/engine.js',
       ownerLocation: 'L3-L6',
       ownerConst: 'L4:   const input = 12.5;',
-      ownerReturn: 'L5: return { displayedEstimate: readSavedValue(input), chargedTotal: rebuildValue(input) };',
+      ownerReturn: 'L5:   return { displayedEstimate: readSavedValue(input), chargedTotal: rebuildValue(input) };',
     }
   }
 
@@ -100,7 +100,7 @@ function writeRoundingLayout(root: string, layout: 'same-file' | 'relative-impor
     helperFile: '/src/rounding.js',
     ownerLocation: 'L2-L5',
     ownerConst: 'L3:   const input = 12.5;',
-    ownerReturn: 'L4: return { displayedEstimate: readSavedValue(input), chargedTotal: rebuildValue(input) };',
+    ownerReturn: 'L4:   return { displayedEstimate: readSavedValue(input), chargedTotal: rebuildValue(input) };',
   }
 }
 

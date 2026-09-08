@@ -5,6 +5,7 @@ import type {
   ContextPackRelationship,
   ContextPackTaskKind,
 } from '../../src/contracts/context-pack.js'
+import { classifyTaskContract, renderCompiledContextPackNodes } from '../../src/runtime/context-pack.js'
 import { applyContextPackResolution } from '../../src/runtime/context-pack-resolution.js'
 
 type TaskAwareResolutionOptions = Parameters<typeof applyContextPackResolution>[1]
@@ -162,6 +163,27 @@ function renderForTask(taskKind: ContextPackTaskKind) {
 }
 
 describe('adaptive context representation modes (#176)', () => {
+  it('preserves one explicit detail node without bypassing resolution for its peers', () => {
+    const { nodes, relationships } = makeFixture()
+    const mixed = nodes.slice(0, 2).map((entry, index) => (
+      index === 0
+        ? {
+            ...entry,
+            representation_type: 'detail' as const,
+            representation_reason: 'authenticated complete owner',
+          }
+        : entry
+    ))
+    const rendered = renderCompiledContextPackNodes(
+      classifyTaskContract('review', { budget: 256, prompt: 'Review authentication' }),
+      mixed,
+      relationships,
+    )
+
+    expect(rendered.nodes[0]).toEqual(mixed[0])
+    expect(rendered.nodes[1]?.representation_type).toBe('signature')
+  })
+
   it('keeps the same selected nodes while task-aware rendering changes representations', () => {
     const { nodes } = makeFixture()
     const explain = renderForTask('explain')
