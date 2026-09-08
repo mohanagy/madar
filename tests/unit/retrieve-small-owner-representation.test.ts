@@ -8,6 +8,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import {
   compactRetrieveResultForStdio,
+  contextPackFromRetrieveResult,
+  readQueryEvidenceSnippet,
   retrieveContext,
   withRetrieveSnippetBudget,
   type RetrieveOptions,
@@ -432,6 +434,182 @@ describe('complete small-owner source representation', () => {
     })).toBeNull()
   })
 
+  it('promotes an authenticated 26-line owner only when its exact representation fits allocation', () => {
+    const ownerSource = [
+      'export function adaptiveOwner(input: string) {',
+      '  const normalized = input.trim();',
+      "  recordCheckpoint('adaptive-owner-start');",
+      "  if (normalized === '') {",
+      "    return { status: 'empty' };",
+      '  }',
+      '  let attempt = 0;',
+      '  while (attempt < 3) {',
+      '    attempt += 1;',
+      '    try {',
+      '      const loaded = loadCandidate(normalized);',
+      '      if (!loaded.allowed) {',
+      "        continue;",
+      '      }',
+      '      const transformed = transformCandidate(loaded);',
+      '      if (transformed.requiresReview) {',
+      '        queueReview(transformed);',
+      "        return { status: 'queued' };",
+      '      }',
+      '      persistCandidate(transformed);',
+      "      return { status: 'stored' };",
+      '    } catch (error) {',
+      "      recordCheckpoint('adaptive-owner-finish');",
+      '    }',
+      '  }',
+      '}',
+    ].join('\n')
+    const source = `${ownerSource}\nexport function adaptiveOwnerLexicalDecoy() { return 'adaptive-owner-start adaptive-owner-finish'; }\n`
+    const fixture = generatedFixture(source)
+    const ownerSourceLocation = fixture.graph.nodeEntries()
+      .find(([, attributes]) => attributes.label === 'adaptiveOwner()')?.[1].source_location
+    expect(ownerSourceLocation).toBe('L1-L26')
+    const retrieved = retrieveContext(fixture.graph, {
+      question: 'Show adaptiveOwner start and finish checkpoints with the intervening persistence control flow',
+      budget: 4_000,
+      retrievalLevel: 5,
+    })
+    const expected = numberedLines(ownerSource)
+    const owner = matchedByLabel(retrieved, 'adaptiveOwner()')
+    const exactCost = estimateQueryTokens(expected)
+    const baselineSnippetCost = retrieved.matched_nodes.reduce(
+      (total, node) => total + estimateQueryTokens(node.snippet ?? ''),
+      0,
+    )
+    const allocationBudget = baselineSnippetCost - estimateQueryTokens(owner.snippet!) + exactCost
+
+    expect(owner.snippet).not.toBe(expected)
+    expect(owner.snippet).toContain('adaptive-owner-start')
+    expect(owner.snippet).toContain('adaptive-owner-finish')
+    expect(owner.snippet).not.toContain('persistCandidate(transformed)')
+
+    const allocated = withRetrieveSnippetBudget(retrieved, {
+      snippetBudget: allocationBudget,
+      topNWithSnippet: retrieved.matched_nodes.length,
+    })
+    const allocatedOwner = matchedByLabel(allocated, 'adaptiveOwner()')
+    expect(allocatedOwner.snippet).toBe(expected)
+    expect(allocatedOwner.snippet_truncated).toBe(false)
+    expect(allocatedOwner.representation_reason).toBe('complete owner source within snippet allocation')
+    expect(allocated.snippet_budget_tokens_used).toBe(allocationBudget)
+    expect(allocated.matched_nodes.map((node) => node.node_id)).toEqual(
+      retrieved.matched_nodes.map((node) => node.node_id),
+    )
+
+    const projected = contextPackFromRetrieveResult(allocated)
+    const projectedOwner = projected.nodes.find((node) => node.label === 'adaptiveOwner()')
+    expect(projectedOwner?.snippet).toBe(expected)
+    expect(projected.token_count).toBeLessThanOrEqual(projected.task_contract.budget)
+
+    const compact = compactRetrieveResultForStdio(retrieved, {
+      snippetBudget: allocationBudget,
+      topNWithSnippet: retrieved.matched_nodes.length,
+    })
+    expect(matchedByLabel(compact, 'adaptiveOwner()').snippet).toBe(expected)
+
+    const insufficient = withRetrieveSnippetBudget(retrieved, {
+      snippetBudget: allocationBudget - 1,
+      topNWithSnippet: retrieved.matched_nodes.length,
+    })
+    const insufficientOwner = matchedByLabel(insufficient, 'adaptiveOwner()')
+    expect(insufficientOwner.snippet).not.toBe(expected)
+    expect(insufficientOwner.snippet).not.toBeNull()
+    expect(insufficientOwner.snippet_truncated).toBe(true)
+    expect(insufficientOwner.representation_reason).not.toBe('complete owner source within snippet allocation')
+    expect(insufficient.snippet_budget_tokens_used).toBeLessThanOrEqual(allocationBudget - 1)
+
+    const totalConstrained = {
+      ...retrieved,
+      task_contract: {
+      ...retrieved.task_contract!,
+      budget: retrieved.token_count,
+      },
+    }
+    const noTotalHeadroom = withRetrieveSnippetBudget(totalConstrained, {
+      snippetBudget: allocationBudget,
+      topNWithSnippet: retrieved.matched_nodes.length,
+    })
+    expect(matchedByLabel(noTotalHeadroom, 'adaptiveOwner()').snippet).not.toBe(expected)
+    expect(noTotalHeadroom.token_count).toBeLessThanOrEqual(totalConstrained.task_contract.budget)
+
+    const directOwnerSource = ownerSource.replace('    attempt += 1;\n', '')
+    const directFixture = generatedFixture(`${directOwnerSource}\n`)
+    const directExpected = numberedLines(directOwnerSource)
+    const directOwnerSourceLocation = directFixture.graph.nodeEntries()
+      .find(([, attributes]) => attributes.label === 'adaptiveOwner()')?.[1].source_location
+    expect(directOwnerSourceLocation).toBe('L1-L25')
+
+    const authenticatedComplete = readQueryEvidenceSnippet(directFixture.sourceFile, 1, {
+      question: 'Show adaptiveOwner start and finish checkpoints',
+      label: 'adaptiveOwner()',
+      nodeKind: 'function',
+      authenticatedOwner: true,
+      sourceLocation: String(directOwnerSourceLocation),
+    })
+    expect(authenticatedComplete?.snippet).toBe(directExpected)
+
+    const externalFallback = readQueryEvidenceSnippet(directFixture.sourceFile, 1, {
+      question: 'Show adaptiveOwner start and finish checkpoints',
+      label: 'adaptiveOwner()',
+      nodeKind: 'function',
+      externalCall: true,
+      authenticatedOwner: true,
+      sourceLocation: String(directOwnerSourceLocation),
+    })
+    expect(externalFallback?.snippet).not.toBe(directExpected)
+    expect(externalFallback?.snippet).toContain('adaptive-owner-start')
+    expect(externalFallback?.snippet).toContain('adaptive-owner-finish')
+
+    const unauthenticatedFallback = readQueryEvidenceSnippet(directFixture.sourceFile, 1, {
+      question: 'Show adaptiveOwner start and finish checkpoints',
+      label: 'adaptiveOwner()',
+      nodeKind: 'function',
+      authenticatedOwner: false,
+      sourceLocation: String(directOwnerSourceLocation),
+    })
+    expect(unauthenticatedFallback?.snippet).not.toBe(directExpected)
+    expect(unauthenticatedFallback?.snippet).toContain('adaptive-owner-start')
+    expect(unauthenticatedFallback?.snippet).toContain('adaptive-owner-finish')
+
+    const omitted = withRetrieveSnippetBudget(retrieved, {
+      snippetBudget: allocationBudget,
+      topNWithSnippet: 0,
+    })
+    const omittedOwner = matchedByLabel(omitted, 'adaptiveOwner()')
+    expect(omittedOwner.snippet).toBeNull()
+    expect(omittedOwner.snippet_truncated).toBe(true)
+    expect(omittedOwner.representation_reason).not.toBe('complete owner source within snippet allocation')
+    expect(omitted.matched_nodes.map((node) => node.node_id)).toEqual(
+      retrieved.matched_nodes.map((node) => node.node_id),
+    )
+
+    const projectedOmitted = contextPackFromRetrieveResult(omitted)
+    expect(projectedOmitted.nodes.find((node) => node.label === 'adaptiveOwner()')?.snippet).toBeNull()
+
+    const restored = withRetrieveSnippetBudget(omitted, {
+      snippetBudget: allocationBudget,
+      topNWithSnippet: omitted.matched_nodes.length,
+    })
+    expect(matchedByLabel(restored, 'adaptiveOwner()').snippet).toBe(expected)
+    expect(restored.snippet_budget_tokens_used).toBeLessThanOrEqual(allocationBudget)
+    expect(restored.token_count).toBeLessThanOrEqual(restored.task_contract!.budget)
+    expect(restored.matched_nodes.map((node) => node.node_id)).toEqual(
+      omitted.matched_nodes.map((node) => node.node_id),
+    )
+
+    const compactRestored = compactRetrieveResultForStdio(omitted, {
+      snippetBudget: allocationBudget,
+      topNWithSnippet: omitted.matched_nodes.length,
+    })
+    expect(matchedByLabel(compactRestored, 'adaptiveOwner()').snippet).toBe(expected)
+    expect(compactRestored.snippet_budget_tokens_used).toBeLessThanOrEqual(allocationBudget)
+    expect(compactRestored.token_count).toBeLessThanOrEqual(omitted.task_contract!.budget)
+  }, 120_000)
+
   it('admits exactly 2000 original owner characters and rejects 2001', () => {
     const owner = (characterCount: number) => {
       const prefix = 'export function characterBoundary() {\n  /*'
@@ -642,6 +820,9 @@ describe('complete small-owner source representation', () => {
       retrievalLevel: 5,
       retrievalStrategy: 'slice-v1',
     })
+    const full = fresh()
+    const fullSnippet = ownerSnippet(full)!
+    const exactCost = estimateQueryTokens(fullSnippet)
     for (const options of [
       { snippetBudget: 0, topNWithSnippet: 12 },
       { snippetBudget: 2_400, topNWithSnippet: 0 },
@@ -650,6 +831,21 @@ describe('complete small-owner source representation', () => {
       expect(ownerSnippet(shaped)).toBeNull()
       expect(matchedByLabel(shaped, 'parseDecimalRatio()').snippet_truncated).toBe(true)
       expect(shaped.snippet_budget_tokens_used).toBe(0)
+
+      const restored = withRetrieveSnippetBudget(shaped, {
+        snippetBudget: exactCost,
+        topNWithSnippet: 12,
+      })
+      expect(ownerSnippet(restored)).toBe(fullSnippet)
+      expect(restored.matched_nodes.map((node) => node.node_id)).toEqual(
+        shaped.matched_nodes.map((node) => node.node_id),
+      )
+
+      const compactNull = compactRetrieveResultForStdio(shaped, {
+        snippetBudget: exactCost,
+        topNWithSnippet: 12,
+      })
+      expect(ownerSnippet(compactNull)).toBeNull()
     }
   }, 120_000)
 
