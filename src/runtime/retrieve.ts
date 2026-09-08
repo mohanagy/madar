@@ -562,7 +562,7 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
 
     if (originalSnippet === null && !completeOwner) {
       return attachCompleteOwnerState({
-        ...node,
+        ...withoutCompleteOwnerRepresentationClaim(node),
         snippet: null,
         snippet_truncated: priorTruncation,
       }, completeOwner)
@@ -573,7 +573,7 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
       : eligibleNodeIndexes.has(index)
     if (!snippetEligible) {
       return attachCompleteOwnerState({
-        ...(completeOwner ? withoutCompleteOwnerRepresentationClaim(node) : node),
+        ...withoutCompleteOwnerRepresentationClaim(node),
         snippet: null,
         snippet_truncated: completeOwner ? true : priorTruncation,
       }, completeOwner)
@@ -619,7 +619,9 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
       : truncateSnippetToTokenBudget(shapedSnippet.snippet ?? '', remainingSnippetBudget)
     usedTokens += snippetTokenCount(boundedSnippet.snippet)
     return attachCompleteOwnerState({
-      ...node,
+      ...(shapedSnippet.truncated || boundedSnippet.truncated
+        ? withoutCompleteOwnerRepresentationClaim(node)
+        : node),
       snippet: boundedSnippet.snippet,
       snippet_truncated: priorTruncation || shapedSnippet.truncated || boundedSnippet.truncated,
     }, completeOwner)

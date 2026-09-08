@@ -132,6 +132,8 @@ function matchedByLabel(
     label: string
     snippet: string | null
     snippet_truncated?: boolean
+    representation_reason?: string
+    representation_type?: string
   }> },
   label: string,
 ) {
@@ -547,6 +549,89 @@ describe('complete small-owner source representation', () => {
     })
     expect(ownerSnippet(reshapedRoundTrip)).toBe(fullSnippet)
     expect(matchedByLabel(reshapedRoundTrip, 'parseDecimalRatio()').snippet_truncated).toBe(true)
+  }, 120_000)
+
+  it('clears complete-owner metadata after serialized generic shaping clips or omits public source', () => {
+    const fixture = fixtures.get('post')!
+    const retrieved = retrieveContext(fixture.graph, {
+      question: PUBLIC_CALLS[4].question,
+      budget: PUBLIC_CALLS[4].budget,
+      retrievalLevel: 5,
+    })
+    const fullSnippet = fixture.fullSnippet
+    const exactCost = estimateQueryTokens(fullSnippet)
+    const serialized = JSON.parse(JSON.stringify(retrieved)) as RetrieveResult
+    const serializedOwner = matchedByLabel(serialized, 'parseDecimalRatio()')
+
+    expect(exactCost).toBe(130)
+    expect(serializedOwner.snippet).toBe(fullSnippet)
+    expect(serializedOwner.representation_reason).toBe('complete small owner source')
+    expect(Object.keys(serializedOwner).some((key) => /complete|fallback|owner/i.test(key))).toBe(false)
+
+    const exact = withRetrieveSnippetBudget(serialized, {
+      snippetBudget: exactCost,
+      topNWithSnippet: 12,
+    })
+    const exactOwner = matchedByLabel(exact, 'parseDecimalRatio()')
+    expect(exactOwner.snippet).toBe(fullSnippet)
+    expect(exactOwner.snippet_truncated).toBe(false)
+    expect(exactOwner.representation_reason).toBe('complete small owner source')
+    expect(exact.snippet_budget_tokens_used).toBe(exactCost)
+
+    const clipped = withRetrieveSnippetBudget(serialized, {
+      snippetBudget: exactCost - 1,
+      topNWithSnippet: 12,
+    })
+    const clippedOwner = matchedByLabel(clipped, 'parseDecimalRatio()')
+    expect(clippedOwner.snippet).toBe(fullSnippet.split('\n').slice(1).join('\n'))
+    expect(clippedOwner.snippet_truncated).toBe(true)
+    expect(clippedOwner.representation_reason).toBeUndefined()
+    expect(clippedOwner.representation_type).toBe('detail')
+    expect(clipped.snippet_budget_tokens_used).toBe(
+      clipped.matched_nodes.reduce((total, node) => (
+        total + (typeof node.snippet === 'string' && node.snippet.trim().length > 0
+          ? estimateQueryTokens(node.snippet)
+          : 0)
+      ), 0),
+    )
+    expect(clipped.snippet_budget_tokens_used).toBe(exactCost - 1)
+
+    const clippedAgain = withRetrieveSnippetBudget(clipped, {
+      snippetBudget: exactCost - 1,
+      topNWithSnippet: 12,
+    })
+    const clippedAgainOwner = matchedByLabel(clippedAgain, 'parseDecimalRatio()')
+    expect(clippedAgainOwner.snippet).toBe(clippedOwner.snippet)
+    expect(clippedAgainOwner.snippet_truncated).toBe(true)
+    expect(clippedAgainOwner.representation_reason).toBeUndefined()
+
+    for (const { options, expectedTruncation } of [
+      { options: { snippetBudget: 0, topNWithSnippet: 12 }, expectedTruncation: true },
+      { options: { snippetBudget: exactCost, topNWithSnippet: 0 }, expectedTruncation: false },
+    ]) {
+      const omitted = withRetrieveSnippetBudget(serialized, options)
+      const omittedOwner = matchedByLabel(omitted, 'parseDecimalRatio()')
+      expect(omittedOwner.snippet).toBeNull()
+      expect(omittedOwner.snippet_truncated).toBe(expectedTruncation)
+      expect(omittedOwner.representation_reason).toBeUndefined()
+      expect(omitted.snippet_budget_tokens_used).toBe(0)
+
+      const omittedAgain = withRetrieveSnippetBudget(omitted, options)
+      const omittedAgainOwner = matchedByLabel(omittedAgain, 'parseDecimalRatio()')
+      expect(omittedAgainOwner.snippet).toBeNull()
+      expect(omittedAgainOwner.snippet_truncated).toBe(expectedTruncation)
+      expect(omittedAgainOwner.representation_reason).toBeUndefined()
+      expect(omittedAgain.snippet_budget_tokens_used).toBe(0)
+    }
+
+    const ordinary = JSON.parse(JSON.stringify(serialized)) as RetrieveResult
+    matchedByLabel(ordinary, 'parseDecimalRatio()').representation_reason = 'signature compression'
+    const ordinaryClipped = withRetrieveSnippetBudget(ordinary, {
+      snippetBudget: exactCost - 1,
+      topNWithSnippet: 12,
+    })
+    expect(matchedByLabel(ordinaryClipped, 'parseDecimalRatio()').representation_reason)
+      .toBe('signature compression')
   }, 120_000)
 
   it('omits atomic owners safely for zero snippet budget and top-N', () => {
