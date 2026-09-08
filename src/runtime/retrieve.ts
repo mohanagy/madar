@@ -87,6 +87,7 @@ import {
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 import {
+  completeOwnerSourceEvidence,
   completeSmallOwnerSourceEvidence,
   completeQueryEvidenceLiteralStatement,
   ownerLocalDeclarationEvidence,
@@ -540,10 +541,16 @@ function truncateSnippetToTokenBudget(
   }
 }
 
-function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | null }>(
+function applyRetrieveSnippetBudgetToNodes<TNode extends {
+  label: string
+  source_file: string
+  line_number: number
+  snippet?: string | null
+}>(
   nodes: readonly TNode[],
   options: RetrieveSnippetOptions = {},
   eligibleNodeIndexes?: ReadonlySet<number>,
+  maximumMatchedNodeTokens = Number.POSITIVE_INFINITY,
 ): {
   nodes: Array<TNode & { snippet: string | null; snippet_truncated: boolean }>
   usedTokens: number
@@ -580,7 +587,7 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
     }
 
     const remainingSnippetBudget = Math.max(0, snippetBudget - usedTokens)
-    if (completeOwner) {
+    if (completeOwner && !completeOwner.allocationOnly) {
       const fullTokens = snippetTokenCount(completeOwner.fullSnippet)
       if (fullTokens <= remainingSnippetBudget) {
         usedTokens += fullTokens
@@ -590,7 +597,8 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
           snippet_line_number: completeOwner.fullLineNumber,
           snippet_scope: 'symbol' as const,
           snippet_truncated: priorTruncation,
-          representation_reason: COMPLETE_OWNER_REPRESENTATION_REASON,
+          representation_type: 'detail' as const,
+          representation_reason: completeOwner.representationReason,
         }, completeOwner)
       }
 
@@ -623,17 +631,70 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
         ? withoutCompleteOwnerRepresentationClaim(node)
         : node),
       snippet: boundedSnippet.snippet,
-      snippet_truncated: priorTruncation || shapedSnippet.truncated || boundedSnippet.truncated,
+      snippet_truncated: priorTruncation
+        || shapedSnippet.truncated
+        || boundedSnippet.truncated
+        || completeOwner?.allocationOnly === true,
     }, completeOwner)
   })
 
-  const serializedSnippetTokensUsed = shapedNodes.reduce(
+  let serializedSnippetTokensUsed = shapedNodes.reduce(
     (total, node) => total + snippetTokenCount(node.snippet),
     0,
   )
+  let serializedMatchedNodeTokensUsed = tokenCountForMatchedNodes(shapedNodes)
+  const promotedNodes = shapedNodes.map((node, index) => {
+    const completeOwner = completeOwnerMatchedNodes.get(node)
+    if (!completeOwner?.allocationOnly) {
+      return node
+    }
+    const snippetEligible = eligibleNodeIndexes === undefined
+      ? index < topNWithSnippet
+      : eligibleNodeIndexes.has(index)
+    if (!snippetEligible) {
+      return node
+    }
+
+    const currentSnippetTokens = snippetTokenCount(node.snippet)
+    const fullSnippetTokens = snippetTokenCount(completeOwner.fullSnippet)
+    const nextSnippetTokens = serializedSnippetTokensUsed - currentSnippetTokens + fullSnippetTokens
+    const currentEntryTokens = estimateRetrieveEntryTokens(
+      node.label,
+      node.source_file,
+      node.line_number,
+      node.snippet ?? null,
+    )
+    const fullEntryTokens = estimateRetrieveEntryTokens(
+      node.label,
+      node.source_file,
+      node.line_number,
+      completeOwner.fullSnippet,
+    )
+    const nextMatchedNodeTokens = serializedMatchedNodeTokensUsed - currentEntryTokens + fullEntryTokens
+    if (
+      nextSnippetTokens > snippetBudget
+      || nextMatchedNodeTokens > maximumMatchedNodeTokens
+    ) {
+      return node
+    }
+
+    serializedSnippetTokensUsed = nextSnippetTokens
+    serializedMatchedNodeTokensUsed = nextMatchedNodeTokens
+    const priorTruncation = 'snippet_truncated' in nodes[index]!
+      && (nodes[index] as { snippet_truncated?: boolean }).snippet_truncated === true
+    return attachCompleteOwnerState({
+      ...node,
+      snippet: completeOwner.fullSnippet,
+      snippet_line_number: completeOwner.fullLineNumber,
+      snippet_scope: 'symbol' as const,
+      snippet_truncated: priorTruncation,
+      representation_type: 'detail' as const,
+      representation_reason: completeOwner.representationReason,
+    }, completeOwner)
+  })
 
   return {
-    nodes: shapedNodes,
+    nodes: promotedNodes,
     usedTokens: serializedSnippetTokensUsed,
     remainingTokens: Math.max(0, snippetBudget - serializedSnippetTokensUsed),
   }
@@ -715,8 +776,16 @@ export function withRetrieveSnippetBudget(
   result: RetrieveResult,
   options: RetrieveSnippetOptions = {},
 ): RetrieveResult {
-  const shapedNodes = applyRetrieveSnippetBudgetToNodes(result.matched_nodes, options)
   const baseNodeTokenCount = tokenCountForMatchedNodes(result.matched_nodes)
+  const maximumMatchedNodeTokens = result.task_contract
+    ? baseNodeTokenCount + Math.max(0, result.task_contract.budget - result.token_count)
+    : Number.POSITIVE_INFINITY
+  const shapedNodes = applyRetrieveSnippetBudgetToNodes(
+    result.matched_nodes,
+    options,
+    undefined,
+    maximumMatchedNodeTokens,
+  )
   const shapedNodeTokenCount = tokenCountForMatchedNodes(shapedNodes.nodes)
   const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
     result.retrieval_plan,
@@ -792,6 +861,7 @@ interface QueryEvidenceSnippetOptions {
   nodeKind?: string
   externalCall?: boolean
   authenticatedOwner?: boolean
+  maximumCompleteOwnerTokens?: number
   sourceLocation?: string | null
   fileNodeLike?: boolean
   derived?: boolean
@@ -804,11 +874,14 @@ interface CompleteOwnerSnippetState {
   fallbackSnippet: string
   fallbackLineNumber: number
   fallbackScope: QueryEvidenceSnippet['scope']
+  representationReason: string
+  allocationOnly: boolean
 }
 
 const completeOwnerQuerySnippets = new WeakMap<QueryEvidenceSnippet, CompleteOwnerSnippetState>()
 const completeOwnerMatchedNodes = new WeakMap<object, CompleteOwnerSnippetState>()
 const COMPLETE_OWNER_REPRESENTATION_REASON = 'complete small owner source'
+const ALLOCATED_COMPLETE_OWNER_REPRESENTATION_REASON = 'complete owner source within snippet allocation'
 
 function attachCompleteOwnerState<T extends object>(
   target: T,
@@ -826,7 +899,10 @@ function copyCompleteOwnerState<T extends object>(source: object, target: T): T 
 
 function withoutCompleteOwnerRepresentationClaim<T extends object>(source: T): T {
   const output = { ...source } as T & { representation_reason?: string }
-  if (output.representation_reason === COMPLETE_OWNER_REPRESENTATION_REASON) {
+  if (
+    output.representation_reason === COMPLETE_OWNER_REPRESENTATION_REASON
+    || output.representation_reason === ALLOCATED_COMPLETE_OWNER_REPRESENTATION_REASON
+  ) {
     delete output.representation_reason
   }
   return output
@@ -1894,7 +1970,7 @@ export function readQueryEvidenceSnippet(
       lineNumber: completed?.lineNumber ?? baseline[0]!.source.index,
       scope,
     }
-    const completeOwner = ownerRange && options.authenticatedOwner === true
+    const completeSmallOwner = ownerRange && options.authenticatedOwner === true
       ? completeSmallOwnerSourceEvidence({
           sourceFilePath: sourceFile,
           sourceLines: lines,
@@ -1904,11 +1980,29 @@ export function readQueryEvidenceSnippet(
           ...(options.externalCall !== undefined ? { externalCall: options.externalCall } : {}),
         })
       : null
+    const completeOwner = completeSmallOwner ?? (ownerRange && options.authenticatedOwner === true
+      ? completeOwnerSourceEvidence({
+          sourceFilePath: sourceFile,
+          sourceLines: lines,
+          ownerRange,
+          label: options.label,
+          ...(options.nodeKind ? { nodeKind: options.nodeKind } : {}),
+          ...(options.externalCall !== undefined ? { externalCall: options.externalCall } : {}),
+        })
+      : null)
     if (!completeOwner) {
       return fallback
     }
 
-    const result: QueryEvidenceSnippet = {
+    const allocationOnly = completeSmallOwner === null
+    if (
+      allocationOnly
+      && options.maximumCompleteOwnerTokens !== undefined
+      && snippetTokenCount(completeOwner.snippet) > options.maximumCompleteOwnerTokens
+    ) {
+      return fallback
+    }
+    const result: QueryEvidenceSnippet = allocationOnly ? fallback : {
       snippet: completeOwner.snippet,
       lineNumber: completeOwner.lineNumber,
       scope: 'symbol',
@@ -1919,6 +2013,10 @@ export function readQueryEvidenceSnippet(
       fallbackSnippet: fallback.snippet,
       fallbackLineNumber: fallback.lineNumber,
       fallbackScope: fallback.scope,
+      representationReason: allocationOnly
+        ? ALLOCATED_COMPLETE_OWNER_REPRESENTATION_REASON
+        : COMPLETE_OWNER_REPRESENTATION_REASON,
+      allocationOnly,
     })
     return result
   } catch {
@@ -5379,6 +5477,7 @@ function buildRetrieveResultFromOrderedCandidates(
         nodeKind: node.nodeKind,
         externalCall: node.externalCall,
         authenticatedOwner: true,
+        maximumCompleteOwnerTokens: taskContract.budget,
         sourceLocation: node.sourceLocation,
         fileNodeLike: node.fileNodeLike,
         derived: node.lineNumberDerived && lineRangeFromSourceLocation(node.sourceLocation) === null,
@@ -5489,13 +5588,16 @@ function buildRetrieveResultFromOrderedCandidates(
     if (!state) {
       return node
     }
+    if (state.allocationOnly) {
+      return attachCompleteOwnerState(node, state)
+    }
     return attachCompleteOwnerState({
       ...node,
       snippet: state.fullSnippet,
       snippet_line_number: state.fullLineNumber,
       snippet_scope: 'symbol' as const,
       representation_type: 'detail' as const,
-      representation_reason: COMPLETE_OWNER_REPRESENTATION_REASON,
+      representation_reason: state.representationReason,
     }, state)
   })
   const packedNodeTokens = tokenCountForMatchedNodes(packedNodes)
@@ -6716,14 +6818,17 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
         compactPack.relationships,
       )
     : undefined
+  const compactPackNodeTokenCount = compactPack.nodes.reduce(
+    (total, node) => total + estimateRetrieveEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
+    0,
+  )
+  const maximumMatchedNodeTokens = compactPackNodeTokenCount
+    + Math.max(0, compactPack.task_contract.budget - compactPack.token_count)
   const shapedNodes = applyRetrieveSnippetBudgetToNodes(
     compactPack.nodes,
     options,
     preferredSnippetNodeIndexes,
-  )
-  const compactPackNodeTokenCount = compactPack.nodes.reduce(
-    (total, node) => total + estimateRetrieveEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
-    0,
+    maximumMatchedNodeTokens,
   )
   const shapedNodeTokenCount = shapedNodes.nodes.reduce(
     (total, node) => total + estimateRetrieveEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),

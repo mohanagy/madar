@@ -449,11 +449,12 @@ function numberPhysicalSourceRows(sourceText: string, startLine: number): {
 }
 
 /**
- * Authenticates and serializes a complete, exact, small JS/TS function or
- * method owner from the source snapshot already retained by retrieval.
+ * Authenticates and serializes a complete, exact JS/TS function or method
+ * owner from the source snapshot already retained by retrieval.
  */
-export function completeSmallOwnerSourceEvidence(
+function authenticatedCompleteOwnerSourceEvidence(
   input: CompleteSmallOwnerSourceInput,
+  limits?: { maxLines: number; maxCharacters: number },
 ): CompleteSmallOwnerSourceEvidence | null {
   try {
     if (
@@ -462,7 +463,7 @@ export function completeSmallOwnerSourceEvidence(
       || !Number.isInteger(input.ownerRange.end)
       || input.ownerRange.start < 1
       || input.ownerRange.end < input.ownerRange.start
-      || input.ownerRange.end - input.ownerRange.start + 1 > COMPLETE_SMALL_OWNER_MAX_LINES
+      || (limits && input.ownerRange.end - input.ownerRange.start + 1 > limits.maxLines)
     ) {
       return null
     }
@@ -505,7 +506,7 @@ export function completeSmallOwnerSourceEvidence(
       !source
       || source.startLine !== input.ownerRange.start
       || source.endLine !== input.ownerRange.end
-      || source.text.length > COMPLETE_SMALL_OWNER_MAX_CHARACTERS
+      || (limits && source.text.length > limits.maxCharacters)
     ) {
       return null
     }
@@ -520,6 +521,23 @@ export function completeSmallOwnerSourceEvidence(
   } catch {
     return null
   }
+}
+
+/** Authenticates and serializes an exact owner for budget-aware allocation. */
+export function completeOwnerSourceEvidence(
+  input: CompleteSmallOwnerSourceInput,
+): CompleteSmallOwnerSourceEvidence | null {
+  return authenticatedCompleteOwnerSourceEvidence(input)
+}
+
+/** Preserves the established bounded small-owner representation contract. */
+export function completeSmallOwnerSourceEvidence(
+  input: CompleteSmallOwnerSourceInput,
+): CompleteSmallOwnerSourceEvidence | null {
+  return authenticatedCompleteOwnerSourceEvidence(input, {
+    maxLines: COMPLETE_SMALL_OWNER_MAX_LINES,
+    maxCharacters: COMPLETE_SMALL_OWNER_MAX_CHARACTERS,
+  })
 }
 
 function normalizedSource(value: string): string {
