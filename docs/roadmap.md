@@ -1,48 +1,65 @@
 # Public roadmap
 
-Updated 5 September 2026. The active roadmap is [#740](https://github.com/mohanagy/madar/issues/740). Historical version buckets are retained below for reference; they are not the current work queue or release promises.
+Updated 10 September 2026. This page records the focused work queue and the limits of the available evidence. The former bundled recovery program [#740](https://github.com/mohanagy/madar/issues/740) is closed as **not planned**, with its unresolved work assigned below. That closure does not mean Madar's product goal was achieved.
 
-## Current product decision
+## Supported workflow and goal
 
-Madar should help coding agents understand relevant TypeScript/Node behavior and complete correct changes with less total work. We have not established a repeatable advantage over Native exploration or relevant existing tools. Local graph correctness, compact context and fewer ordinary shell calls are useful measurements, but cannot substitute for final-answer correctness and complete-task cost.
+The initial scope is source-backed context for agents tracing cross-file behavior in TypeScript/Node repositories while making a bounded code change. Madar should help the agent find relevant code, understand relationships and identify what still needs verification. Normal follow-up source reading is allowed and counts toward the work.
 
-The accepted [#736 result](https://github.com/mohanagy/madar/issues/736#issuecomment-5516711380) remains a failed prototype qualification: two of six read-only investigations met its combined evidence, planning and benefit conditions. It was not a 33% coding-success rate. The six exposed tasks remain diagnostic history, not fresh holdouts. Existing package behavior remains available; this roadmap does not authorize a new architecture, package release, or promotion of unreleased changes.
+The goal is a correct completed task with less total work. This scope is not a claim that every TypeScript/Node task is qualified. Other capabilities remain available, but broad language expansion and competitor-superiority claims are outside this decision.
 
-## Work queue
+## What the evidence establishes
 
-| Work | Status | Purpose |
+Keep three questions separate:
+
+- **Source correctness:** do the returned snippets and relationships match the actual source?
+- **Context usefulness:** does the context cover the task's important behavior and make missing or uncertain evidence clear?
+- **Completed-task benefit:** does using Madar help the agent finish correctly with less total time or work, including follow-up reading and verification?
+
+Passing an internal check answers only the behavior that check covers. It does not supply a universal trust percentage or prove task-level advantage.
+
+The accepted [#736 result](https://github.com/mohanagy/madar/issues/736#issuecomment-5516711380) remains a failed prototype qualification: two of six read-only investigations met its combined evidence, planning and benefit conditions. This was not a coding-success rate or a measure of overall trust. Those exposed tasks remain diagnostic history.
+
+Later [full-workflow](https://github.com/mohanagy/madar/issues/740#issuecomment-5592971164) and [exploratory Native comparison](https://github.com/mohanagy/madar/issues/740#issuecomment-5593201636) results did not establish a repeatable complete-task advantage. Their failures, missing measurements and original criteria remain unchanged. Madar's overall benefit is still unproved.
+
+## Focused work queue
+
+Each story has one outcome and its own boundary. The current work is documenting this decision through [PR #742](https://github.com/mohanagy/madar/pull/742); source implementation and evaluation runs remain paused.
+
+| Owner | User outcome | Disposition |
 |---|---|---|
-| [#740 roadmap and workspace reconciliation](https://github.com/mohanagy/madar/issues/740) | Coordination | Keep documentation, GitHub and retained work consistent with the actual decisions. |
-| [#741 prospective evidence-use contract](https://github.com/mohanagy/madar/issues/741) | Next product-decision work | Define one fixed-evidence handoff experiment, comparison arms, independent scoring, numeric limits and a finite budget before implementation or execution. |
-| [#710 test timing and worker lifecycle](https://github.com/mohanagy/madar/issues/710) | Independent maintenance | Make required execution trustworthy; distinguish deterministic timing from worker-start failures. |
-| [#697 workspace Git process policy](https://github.com/mohanagy/madar/issues/697) | Independent maintenance | Bound discovery while preserving distinct timeout, command failure and non-repository outcomes. |
-| [#739 namespace bracket calls](https://github.com/mohanagy/madar/issues/739) | Blocked; mechanism stopped | Preserve the defect and rejected candidates. A new mechanism decision and corrected control specification are required before another author run. |
+| [#754 — Task usefulness](https://github.com/mohanagy/madar/issues/754) | Know whether Madar reduces complete task work without material correctness loss. | Deferred; no experiment starts from publication of the story. |
+| [#697 — Workspace discovery](https://github.com/mohanagy/madar/issues/697) | Finish discovery within an explicit bound and distinguish a failed Git command from a non-repository directory. | Open; implementation paused. |
+| [#739 — Namespace bracket calls](https://github.com/mohanagy/madar/issues/739) | Retain the source-grounded call relationship for a static bracket call equivalent to a dot call. | Blocked; the rejected mechanism remains stopped. |
+| [#755 — Recovery-budget assertions](https://github.com/mohanagy/madar/issues/755) | Verify recovery decisions without depending on runner speed. | Backlog only; no implementation or rerun started. |
+| [#756 — Test-module startup](https://github.com/mohanagy/madar/issues/756) | Attribute a blocked module startup before changing the runner. | Deferred until a concrete failure prevents necessary validation. |
+| [#710 — Remaining session failures](https://github.com/mohanagy/madar/issues/710) | Retain ownership of the unresolved discovery-responsiveness and active-session refresh timeout reports. | Open; neither #755 nor #756 resolves these two cases. |
 
-These are not a mandatory sequential chain. #710 and #697 do not block preparation of #741. #739 is not required for testing evidence use with an unchanged provider. Dependency PRs remain separate maintenance, requiring their own review and CI evidence.
+Maintenance is not a mandatory sequence before usefulness work. A defect blocks a later comparison only if it actually prevents trustworthy execution within that comparison's scope. A same-code retry passing does not prove an infrastructure-only cause. For #739, preserve the heritage traversal regression, invalid positive control and red or incomplete validation; no third repair is automatically authorized.
 
-## What the code review changes
+## Simplification and branch choice
 
-- Retain exact source references, explicit uncertainty, bounded selection, local indexing and existing TypeScript compiler-backed components.
-- Default-auto currently retains legacy relations with supplemental SPI metadata. A switch to SPI-owned topology is a separate compatibility decision, not a consequence of a local fixture passing.
-- The #736 Language Service navigator remains a frozen prototype. Its session-freshness boundary needs attention before editable-workspace production use.
-- Existing context-pack recovery measures retrieval state; it does not inspect the consuming agent's final plan. Evidence can be returned successfully and still be omitted or misused.
-- Keep #739's heritage traversal regression, invalid decorator positive and incomplete validation distinct. Neither candidate is accepted for integration.
+The completed [#753 responsibility inventory](https://github.com/mohanagy/madar/issues/753#issuecomment-5622360023) found duplicated task routing, several owners of final evidence status, repeated release-log checks and an uncalled command parser. These are specific simplification candidates, not a blanket deletion plan.
 
-The pinned source references and complete dispositions are recorded in [#740](https://github.com/mohanagy/madar/issues/740). The revisited code supports investigating the handoff between evidence and decisions; it does not establish that the proposed handoff will succeed.
+Existing source-preservation tests, graph-integrity responsibilities and legacy readers still have consumers. Test/script growth is a maintenance concern; those repository trees are outside the configured production package, while evaluation code under source still ships. The review does not establish how much code can safely be removed or a runtime performance benefit from removing it.
 
-## How future evidence will be judged
+For later work, the inventory selects pinned [main](https://github.com/mohanagy/madar/commit/3371ada8425efa7f8cabdac781fa227feaea7a6a) as the control and pinned [next](https://github.com/mohanagy/madar/commit/2b144504ddf924d64cce51db601bb599be0b6c44) as the candidate. Main precedes the reviewed change set; next retains the artifact and source-preservation work being assessed. This choice is not a quality ranking or authorization to promote next.
 
-Report tool/source correctness, final-answer/plan correctness, and whole-task benefit separately. Patch/test success applies only to experiments that actually implement and verify patches. Count all ordinary and MCP operations, startup/index/refresh work, elapsed time, tokens/cache and monetary cost. Report per-task outliers as well as aggregates; call reduction cannot conceal a severe time or cost regression.
+## How a later usefulness comparison ends
 
-Before accessing fresh held-out tasks, freeze expected behaviors, semantic equivalents, evaluator controls, compared tools and model settings, execution-validity rules, numeric quality/cost/latency limits, and a finite run budget. The completed #736 verdict is not rescored. [#741](https://github.com/mohanagy/madar/issues/741) owns the prospective contract, without authorizing an experiment or product implementation.
+[#754](https://github.com/mohanagy/madar/issues/754) owns this question. Before execution, record the supported task category, representative tasks, exact versions, shared model/settings, order/cache policy, measurable acceptance thresholds and a finite run budget. Start with Native exploration and reuse existing execution facilities. Historical exposed tasks cannot become fresh validation by relabelling them.
 
-Relevant mechanisms come from [CodePlan](https://www.microsoft.com/en-us/research/publication/codeplan-repository-level-coding-using-llms-and-planning-2/), [RepoGraph](https://arxiv.org/html/2410.14684v2), [SWE-agent](https://arxiv.org/html/2405.15793v3), [Agentless](https://arxiv.org/html/2407.01489v2), and [Lost in the Middle](https://aclanthology.org/2024.tacl-1.9/). These papers support testable hypotheses, not guaranteed recovery.
+Apply common behavioral correctness criteria. Count setup, indexing, retrieval, fallback, errors, verification, complete elapsed time and reported agent work. Record token/cache usage and monetary cost when available, and identify missing measurements. Report all scheduled outcomes and per-task regressions; fewer shell calls or green retrieval checks do not by themselves establish an advantage.
 
-## Boundaries and history
+End with **scoped benefit**, **no demonstrated benefit**, or **inconclusive**. A failure or missing measurement does not authorize additional runs, a new evaluator platform or an automatic repair chain. Comparisons with other tools are a later decision if a useful candidate is demonstrated.
 
-The lead coordinates planning, documentation, issue state and cleanup. Codex CLI owns separately scoped production implementation and tests. No author, benchmark, merge or release starts automatically from this roadmap.
+## Boundaries and completed work
 
-[#734](https://github.com/mohanagy/madar/issues/734), [#735](https://github.com/mohanagy/madar/issues/735), [#736](https://github.com/mohanagy/madar/issues/736), and [#738](https://github.com/mohanagy/madar/issues/738) retain their closed dispositions. Closure may record rejection or a completed investigation, rather than a shipped fix. Broad ranker rewrites, language expansion, hosted services, new general-memory work and release promises remain deferred.
+The lead coordinates planning, documentation and issue state. Codex CLI owns separately scoped source implementation and tests. No code cleanup, test campaign, worktree deletion, merge or release starts automatically from this roadmap.
+
+[#753](https://github.com/mohanagy/madar/issues/753) completed the read-only inventory. [#741](https://github.com/mohanagy/madar/issues/741) and [#743](https://github.com/mohanagy/madar/issues/743) completed bounded specification and offline prototype work; neither establishes product benefit or remains the next execution program. [#734](https://github.com/mohanagy/madar/issues/734), [#735](https://github.com/mohanagy/madar/issues/735), [#736](https://github.com/mohanagy/madar/issues/736), and [#738](https://github.com/mohanagy/madar/issues/738) retain their closed dispositions.
+
+The [5 September roadmap](https://github.com/mohanagy/madar/blob/5af65b1fe236d4d548e21b975bc6c6364bee8213/docs/roadmap.md) and #740 retain the preceding decisions as history. Dependency PRs remain separate maintenance. Broad ranker rewrites, language expansion, hosted services, general-memory work and release promises remain deferred.
 
 ## Historical roadmap archive
 
