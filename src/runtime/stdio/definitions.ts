@@ -230,7 +230,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         rerank: { type: 'boolean', description: 'Enable cross-encoder reranking' },
         rerank_model: { type: 'string', description: 'Override reranker model or local path' },
         snippet_budget: { type: 'number', description: 'Snippet-token budget (default 3000)' },
-        top_n_with_snippet: { type: 'number', description: 'Top matched nodes with snippets (default 8)' },
+        top_n_with_snippet: { type: 'number', description: 'Ordinary compact: 8, call-ends first; set N positional' },
         verbose: { type: 'boolean', description: 'Return verbose payload (default: compact)' },
         retrieval_level: { type: 'number', description: 'Override retrieval-gate level 0-5 (#75)' },
         retrieval_strategy: { type: 'string', enum: ['default', 'slice-v1'], description: 'Experimental retrieval strategy.' },

@@ -92,7 +92,25 @@ const RETRIEVE_ANCHOR = `      let orderedCandidates = inclusionOrder
  * the pack's own budgeted selection, so an injection there can be discarded and
  * prove nothing -- which is exactly what the membership premise caught.
  */
-const MEMBERSHIP_ANCHOR = `  const matchedNodes = pack.nodes as RetrieveMatchedNode[]
+const MEMBERSHIP_ANCHOR = `  const matchedNodes = packedNodes.map((node) => {
+    const state = typeof node.node_id === 'string'
+      ? completeOwnerStatesByNodeId.get(node.node_id)
+      : undefined
+    if (!state) {
+      return node
+    }
+    if (state.allocationOnly) {
+      return attachCompleteOwnerState(node, state)
+    }
+    return attachCompleteOwnerState({
+      ...node,
+      snippet: state.fullSnippet,
+      snippet_line_number: state.fullLineNumber,
+      snippet_scope: 'symbol' as const,
+      representation_type: 'detail' as const,
+      representation_reason: state.representationReason,
+    }, state)
+  })
 `
 
 function runOwningTest(root, testNameFilter, extraEnv = {}) {

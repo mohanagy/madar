@@ -102,6 +102,8 @@ describe('generateGraph capability-aware auto extraction', () => {
       framework_role: 'express_route',
       route_path: '/users',
       extraction_strategy: 'spi',
+      source_location: 'L3',
+      snippet: 'export function listUsers(): void {}',
     })
     expect(goMain).toMatchObject({ extraction_strategy: 'legacy_fallback' })
     expect(graph.nodes).toEqual(expect.arrayContaining([
@@ -144,6 +146,9 @@ describe('generateGraph capability-aware auto extraction', () => {
     writeMixedWorkspace()
 
     const first = generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
+    const firstGraph = readGeneratedGraphJson(first.graphPath) as {
+      nodes: Array<Record<string, unknown>>
+    }
     const second = generateGraph(sandbox, { extractionMode: 'auto', noHtml: true })
     const secondGraph = readGeneratedGraphJson(second.graphPath) as {
       nodes: Array<Record<string, unknown>>
@@ -156,6 +161,13 @@ describe('generateGraph capability-aware auto extraction', () => {
     expect(secondGraph.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'main()', source_file: expect.stringMatching(/cmd\/main\.go$/) }),
     ]))
+    const sourceFields = (nodes: Array<Record<string, unknown>>) => nodes.map((node) => ({
+      id: node.id,
+      source_file: node.source_file,
+      source_location: node.source_location,
+      snippet: node.snippet,
+    }))
+    expect(sourceFields(secondGraph.nodes)).toEqual(sourceFields(firstGraph.nodes))
   })
 
   it('does not use the fallback in explicit SPI mode', () => {

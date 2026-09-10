@@ -59,6 +59,7 @@ import {
   relationIsPrimaryForPolicy,
 } from './retrieve/expansion.js'
 import { sliceCandidatesForRetrieve } from './retrieve/slicing.js'
+import { reconcileStoredSourceTerms } from './retrieve-source-terms.js'
 import {
   CONCEPTUAL_WORKFLOW_RESERVATION_BOOST,
   finalizeConceptualFallbackPlan,
@@ -85,6 +86,15 @@ import {
   type RetrievalStageObserver,
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
+import {
+  completeOwnerSourceEvidence,
+  completeSmallOwnerSourceEvidence,
+  completeQueryEvidenceLiteralStatement,
+  ownerLocalDeclarationEvidence,
+  queryEvidenceSourceProjection,
+  retainQueryEvidenceSourceSnapshot,
+  type RepresentedQueryEvidenceSource,
+} from './query-evidence-dependencies.js'
 
 export { tokenizeLabel, tokenizeQuestion } from './retrieve/pipeline.js'
 
@@ -531,9 +541,16 @@ function truncateSnippetToTokenBudget(
   }
 }
 
-function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | null }>(
+function applyRetrieveSnippetBudgetToNodes<TNode extends {
+  label: string
+  source_file: string
+  line_number: number
+  snippet?: string | null
+}>(
   nodes: readonly TNode[],
   options: RetrieveSnippetOptions = {},
+  eligibleNodeIndexes?: ReadonlySet<number>,
+  maximumMatchedNodeTokens = Number.POSITIVE_INFINITY,
 ): {
   nodes: Array<TNode & { snippet: string | null; snippet_truncated: boolean }>
   usedTokens: number
@@ -543,58 +560,232 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
   let usedTokens = 0
 
   const shapedNodes = nodes.map((node, index) => {
+    const completeOwner = completeOwnerMatchedNodes.get(node)
+    const priorTruncation = 'snippet_truncated' in node
+      && (node as { snippet_truncated?: boolean }).snippet_truncated === true
     const originalSnippet = typeof node.snippet === 'string' && node.snippet.trim().length > 0
       ? node.snippet
       : null
 
-    if (originalSnippet === null) {
-      return {
-        ...node,
+    if (originalSnippet === null && (!completeOwner || completeOwner.allocationOnly)) {
+      return attachCompleteOwnerState({
+        ...withoutCompleteOwnerRepresentationClaim(node),
         snippet: null,
-        snippet_truncated: false,
-      }
+        snippet_truncated: priorTruncation,
+      }, completeOwner)
     }
 
-    if (index >= topNWithSnippet) {
-      return {
-        ...node,
+    const snippetEligible = eligibleNodeIndexes === undefined
+      ? index < topNWithSnippet
+      : eligibleNodeIndexes.has(index)
+    if (!snippetEligible) {
+      return attachCompleteOwnerState({
+        ...withoutCompleteOwnerRepresentationClaim(node),
         snippet: null,
-        snippet_truncated: false,
-      }
+        snippet_truncated: completeOwner ? true : priorTruncation,
+      }, completeOwner)
     }
 
     const remainingSnippetBudget = Math.max(0, snippetBudget - usedTokens)
-    const shapedSnippet = truncateSnippetToTokenBudget(originalSnippet, remainingSnippetBudget)
+    if (completeOwner && !completeOwner.allocationOnly) {
+      const fullTokens = snippetTokenCount(completeOwner.fullSnippet)
+      if (fullTokens <= remainingSnippetBudget) {
+        usedTokens += fullTokens
+        return attachCompleteOwnerState({
+          ...node,
+          snippet: completeOwner.fullSnippet,
+          snippet_line_number: completeOwner.fullLineNumber,
+          snippet_scope: 'symbol' as const,
+          snippet_truncated: priorTruncation,
+          representation_type: 'detail' as const,
+          representation_reason: completeOwner.representationReason,
+        }, completeOwner)
+      }
+
+      const fallbackTokens = snippetTokenCount(completeOwner.fallbackSnippet)
+      if (fallbackTokens <= remainingSnippetBudget) {
+        usedTokens += fallbackTokens
+        return attachCompleteOwnerState({
+          ...withoutCompleteOwnerRepresentationClaim(node),
+          snippet: completeOwner.fallbackSnippet,
+          snippet_line_number: completeOwner.fallbackLineNumber,
+          snippet_scope: completeOwner.fallbackScope,
+          snippet_truncated: true,
+        }, completeOwner)
+      }
+      return attachCompleteOwnerState({
+        ...withoutCompleteOwnerRepresentationClaim(node),
+        snippet: null,
+        snippet_truncated: true,
+      }, completeOwner)
+    }
+
+    const shapedSnippet = truncateSnippetToTokenBudget(originalSnippet!, remainingSnippetBudget)
     const serializedSnippetTokens = snippetTokenCount(shapedSnippet.snippet)
     const boundedSnippet = serializedSnippetTokens <= remainingSnippetBudget
       ? shapedSnippet
       : truncateSnippetToTokenBudget(shapedSnippet.snippet ?? '', remainingSnippetBudget)
     usedTokens += snippetTokenCount(boundedSnippet.snippet)
-    return {
-      ...node,
+    return attachCompleteOwnerState({
+      ...(shapedSnippet.truncated || boundedSnippet.truncated
+        ? withoutCompleteOwnerRepresentationClaim(node)
+        : node),
       snippet: boundedSnippet.snippet,
-      snippet_truncated: shapedSnippet.truncated || boundedSnippet.truncated,
-    }
+      snippet_truncated: priorTruncation
+        || shapedSnippet.truncated
+        || boundedSnippet.truncated
+        || completeOwner?.allocationOnly === true,
+    }, completeOwner)
   })
 
-  const serializedSnippetTokensUsed = shapedNodes.reduce(
+  let serializedSnippetTokensUsed = shapedNodes.reduce(
     (total, node) => total + snippetTokenCount(node.snippet),
     0,
   )
+  let serializedMatchedNodeTokensUsed = tokenCountForMatchedNodes(shapedNodes)
+  const promotedNodes = shapedNodes.map((node, index) => {
+    const completeOwner = completeOwnerMatchedNodes.get(node)
+    if (!completeOwner?.allocationOnly) {
+      return node
+    }
+    const snippetEligible = eligibleNodeIndexes === undefined
+      ? index < topNWithSnippet
+      : eligibleNodeIndexes.has(index)
+    if (!snippetEligible) {
+      return node
+    }
+
+    const currentSnippetTokens = snippetTokenCount(node.snippet)
+    const fullSnippetTokens = snippetTokenCount(completeOwner.fullSnippet)
+    const nextSnippetTokens = serializedSnippetTokensUsed - currentSnippetTokens + fullSnippetTokens
+    const currentEntryTokens = estimateRetrieveEntryTokens(
+      node.label,
+      node.source_file,
+      node.line_number,
+      node.snippet ?? null,
+    )
+    const fullEntryTokens = estimateRetrieveEntryTokens(
+      node.label,
+      node.source_file,
+      node.line_number,
+      completeOwner.fullSnippet,
+    )
+    const nextMatchedNodeTokens = serializedMatchedNodeTokensUsed - currentEntryTokens + fullEntryTokens
+    if (
+      nextSnippetTokens > snippetBudget
+      || nextMatchedNodeTokens > maximumMatchedNodeTokens
+    ) {
+      return node
+    }
+
+    serializedSnippetTokensUsed = nextSnippetTokens
+    serializedMatchedNodeTokensUsed = nextMatchedNodeTokens
+    const priorTruncation = 'snippet_truncated' in nodes[index]!
+      && (nodes[index] as { snippet_truncated?: boolean }).snippet_truncated === true
+    return attachCompleteOwnerState({
+      ...node,
+      snippet: completeOwner.fullSnippet,
+      snippet_line_number: completeOwner.fullLineNumber,
+      snippet_scope: 'symbol' as const,
+      snippet_truncated: priorTruncation,
+      representation_type: 'detail' as const,
+      representation_reason: completeOwner.representationReason,
+    }, completeOwner)
+  })
 
   return {
-    nodes: shapedNodes,
+    nodes: promotedNodes,
     usedTokens: serializedSnippetTokensUsed,
     remainingTokens: Math.max(0, snippetBudget - serializedSnippetTokensUsed),
   }
+}
+
+function preferredCallEndpointSnippetNodeIndexes<
+  TNode extends { node_id?: string | undefined; snippet?: string | null | undefined },
+  TRelationship extends { from_id?: string | undefined; to_id?: string | undefined; relation: string },
+>(
+  nodes: readonly TNode[],
+  relationships: readonly TRelationship[],
+): ReadonlySet<number> | undefined {
+  const nodeIndexesById = new Map<string, number[]>()
+  nodes.forEach((node, index) => {
+    if (typeof node.node_id !== 'string') {
+      return
+    }
+    const existingIndexes = nodeIndexesById.get(node.node_id)
+    if (existingIndexes) {
+      existingIndexes.push(index)
+    } else {
+      nodeIndexesById.set(node.node_id, [index])
+    }
+  })
+
+  const preferredNodeIndexes = new Set<number>()
+  for (const relationship of relationships) {
+    const fromId = relationship.from_id
+    const toId = relationship.to_id
+    if (
+      relationship.relation !== 'calls'
+      || typeof fromId !== 'string'
+      || fromId.trim().length === 0
+      || typeof toId !== 'string'
+      || toId.trim().length === 0
+    ) {
+      continue
+    }
+
+    const fromNodeIndexes = nodeIndexesById.get(fromId)
+    const toNodeIndexes = nodeIndexesById.get(toId)
+    if (fromNodeIndexes?.length !== 1 || toNodeIndexes?.length !== 1) {
+      continue
+    }
+    const fromIndex = fromNodeIndexes[0]!
+    const toIndex = toNodeIndexes[0]!
+    const fromNode = nodes[fromIndex]!
+    const toNode = nodes[toIndex]!
+    if (
+      typeof fromNode.snippet !== 'string'
+      || fromNode.snippet.trim().length === 0
+      || typeof toNode.snippet !== 'string'
+      || toNode.snippet.trim().length === 0
+    ) {
+      continue
+    }
+
+    preferredNodeIndexes.add(fromIndex)
+    preferredNodeIndexes.add(toIndex)
+  }
+
+  if (preferredNodeIndexes.size === 0) {
+    return undefined
+  }
+
+  const eligibleNodeIndexes = new Set<number>()
+  for (let index = 0; index < nodes.length && eligibleNodeIndexes.size < DEFAULT_RETRIEVE_TOP_N_WITH_SNIPPET; index += 1) {
+    if (preferredNodeIndexes.has(index)) {
+      eligibleNodeIndexes.add(index)
+    }
+  }
+  for (let index = 0; index < nodes.length && eligibleNodeIndexes.size < DEFAULT_RETRIEVE_TOP_N_WITH_SNIPPET; index += 1) {
+    eligibleNodeIndexes.add(index)
+  }
+  return eligibleNodeIndexes
 }
 
 export function withRetrieveSnippetBudget(
   result: RetrieveResult,
   options: RetrieveSnippetOptions = {},
 ): RetrieveResult {
-  const shapedNodes = applyRetrieveSnippetBudgetToNodes(result.matched_nodes, options)
   const baseNodeTokenCount = tokenCountForMatchedNodes(result.matched_nodes)
+  const maximumMatchedNodeTokens = result.task_contract
+    ? baseNodeTokenCount + Math.max(0, result.task_contract.budget - result.token_count)
+    : Number.POSITIVE_INFINITY
+  const shapedNodes = applyRetrieveSnippetBudgetToNodes(
+    result.matched_nodes,
+    options,
+    undefined,
+    maximumMatchedNodeTokens,
+  )
   const shapedNodeTokenCount = tokenCountForMatchedNodes(shapedNodes.nodes)
   const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
     result.retrieval_plan,
@@ -622,7 +813,9 @@ function fileLinesForSnippet(sourceFile: string, fileCache?: Map<string, string[
     return null
   }
 
-  const lines = readFileSync(sourceFile, 'utf8').split(/\r?\n/)
+  const sourceText = readFileSync(sourceFile, 'utf8')
+  const lines = sourceText.split(/\r?\n/)
+  retainQueryEvidenceSourceSnapshot({ sourceFilePath: sourceFile, sourceLines: lines, sourceText })
   fileCache?.set(sourceFile, lines)
   return lines
 }
@@ -665,16 +858,61 @@ export interface QueryEvidenceSnippet {
 interface QueryEvidenceSnippetOptions {
   question: string
   label: string
+  nodeKind?: string
+  externalCall?: boolean
+  authenticatedOwner?: boolean
+  maximumCompleteOwnerTokens?: number
   sourceLocation?: string | null
   fileNodeLike?: boolean
   derived?: boolean
   fileCache?: Map<string, string[] | null>
 }
 
+interface CompleteOwnerSnippetState {
+  fullSnippet: string
+  fullLineNumber: number
+  fallbackSnippet: string
+  fallbackLineNumber: number
+  fallbackScope: QueryEvidenceSnippet['scope']
+  representationReason: string
+  allocationOnly: boolean
+}
+
+const completeOwnerQuerySnippets = new WeakMap<QueryEvidenceSnippet, CompleteOwnerSnippetState>()
+const completeOwnerMatchedNodes = new WeakMap<object, CompleteOwnerSnippetState>()
+const COMPLETE_OWNER_REPRESENTATION_REASON = 'complete small owner source'
+const ALLOCATED_COMPLETE_OWNER_REPRESENTATION_REASON = 'complete owner source within snippet allocation'
+
+function attachCompleteOwnerState<T extends object>(
+  target: T,
+  state: CompleteOwnerSnippetState | undefined,
+): T {
+  if (state) {
+    completeOwnerMatchedNodes.set(target, state)
+  }
+  return target
+}
+
+function copyCompleteOwnerState<T extends object>(source: object, target: T): T {
+  return attachCompleteOwnerState(target, completeOwnerMatchedNodes.get(source))
+}
+
+function withoutCompleteOwnerRepresentationClaim<T extends object>(source: T): T {
+  const output = { ...source } as T & { representation_reason?: string }
+  if (
+    output.representation_reason === COMPLETE_OWNER_REPRESENTATION_REASON
+    || output.representation_reason === ALLOCATED_COMPLETE_OWNER_REPRESENTATION_REASON
+  ) {
+    delete output.representation_reason
+  }
+  return output
+}
+
 interface QueryEvidenceLine {
   index: number
   endIndex: number
   text: string
+  representedSource: RepresentedQueryEvidenceSource[]
   score: number
   matchedTerms: Set<string>
   matchedObligations: Set<number>
@@ -713,6 +951,7 @@ interface QueryEvidenceFragment {
   index: number
   endIndex: number
   text: string
+  representedSource: RepresentedQueryEvidenceSource[]
 }
 
 const QUERY_EVIDENCE_CONTINUATION_START_PATTERN = /^\s*(?:[.?:]|&&|\|\|)/
@@ -730,7 +969,7 @@ function structuredCallFragment(
   lines: readonly string[],
   lineNumber: number,
   rangeEnd: number,
-): { end: number; text: string } | null {
+): { end: number; text: string; representedSource: RepresentedQueryEvidenceSource[] } | null {
   const first = lines[lineNumber - 1] ?? ''
   if (
     QUERY_EVIDENCE_DECLARATION_PATTERN.test(first)
@@ -780,6 +1019,22 @@ function structuredCallFragment(
   return {
     end,
     text: [first, ...nestedHandoffs.slice(0, 1).map((handoff) => handoff.text), ...discriminants].join(' '),
+    representedSource: [
+      { startLine: lineNumber, endLine: lineNumber, text: first },
+      ...nestedHandoffs.slice(0, 1).map((handoff) => ({
+        startLine: handoff.index,
+        endLine: handoff.index,
+        text: lines[handoff.index - 1] ?? '',
+      })),
+      ...properties
+        .sort((left, right) => priority(left.key) - priority(right.key) || left.index - right.index)
+        .slice(0, 3)
+        .map((property) => ({
+          startLine: property.index,
+          endLine: property.index,
+          text: lines[property.index - 1] ?? '',
+        })),
+    ],
   }
 }
 
@@ -787,7 +1042,12 @@ function providerHandoffFragment(
   lines: readonly string[],
   lineNumber: number,
   rangeStart: number,
-): { start: number; end: number; text: string } | null {
+): {
+  start: number
+  end: number
+  text: string
+  representedSource: RepresentedQueryEvidenceSource[]
+} | null {
   const handoff = lines[lineNumber - 1] ?? ''
   const match = handoff.match(QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN)
   const receiver = match?.[1]
@@ -807,6 +1067,10 @@ function providerHandoffFragment(
       start: candidateNumber,
       end: lineNumber,
       text: `${candidate.trim()} L${lineNumber}: ${handoff.trim()}`,
+      representedSource: [
+        { startLine: candidateNumber, endLine: candidateNumber, text: candidate },
+        { startLine: lineNumber, endLine: lineNumber, text: handoff },
+      ],
     }
   }
   return null
@@ -872,6 +1136,13 @@ function queryEvidenceFragments(
       index: start,
       endIndex: end,
       text: text ?? lines.slice(start - 1, end).join(' '),
+      representedSource: providerHandoff?.representedSource
+        ?? structured?.representedSource
+        ?? [{
+          startLine: start,
+          endLine: end,
+          text: lines.slice(start - 1, end).join('\n'),
+        }],
     })
   }
   return fragments
@@ -999,6 +1270,7 @@ function queryEvidenceRange(
       index: candidate.index,
       endIndex: candidate.endIndex,
       text,
+      representedSource: candidate.representedSource,
       score,
       matchedTerms,
       matchedObligations,
@@ -1154,25 +1426,413 @@ function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[
   return selected.sort((left, right) => left.index - right.index)
 }
 
-function renderQueryEvidenceLines(lines: readonly QueryEvidenceLine[]): string | null {
-  const rendered: string[] = []
+interface RenderedQueryEvidenceLine {
+  source: QueryEvidenceLine
+  text: string
+  representedSource: readonly RepresentedQueryEvidenceSource[]
+}
+
+interface QueryEvidenceLineRenderCandidate {
+  source: QueryEvidenceLine
+  projection: ReturnType<typeof queryEvidenceSourceProjection>
+  content: string
+  lineCapExceeded: boolean
+  faithful: string
+}
+
+function completedQueryEvidenceSourceProjection(
+  sourceFilePath: string,
+  sourceLines: readonly string[],
+  representedSource: readonly RepresentedQueryEvidenceSource[],
+): ReturnType<typeof queryEvidenceSourceProjection> {
+  let text = ''
+  let hasProtectedTokens = false
+  const literalLineBreaks: Array<{ offset: number; lineNumber: number }> = []
+  for (const [index, represented] of representedSource.entries()) {
+    const projection = queryEvidenceSourceProjection({
+      sourceFilePath,
+      sourceLines,
+      representedSource: [represented],
+      shapedText: represented.text,
+    })
+    if (!projection) {
+      return null
+    }
+    if (index > 0) {
+      text += `\nL${represented.startLine}: `
+    }
+    const projectionStart = text.length
+    text += projection.text
+    hasProtectedTokens ||= projection.hasProtectedTokens
+    for (const lineBreak of projection.literalLineBreaks) {
+      literalLineBreaks.push({
+        offset: projectionStart + lineBreak.offset,
+        lineNumber: lineBreak.lineNumber,
+      })
+    }
+  }
+  return { text, literalLineBreaks, hasProtectedTokens }
+}
+
+function queryEvidenceLineRenderCandidate(
+  candidate: QueryEvidenceLine,
+  sourceFile: string,
+  sourceLines: readonly string[],
+  completed: boolean,
+): QueryEvidenceLineRenderCandidate {
+  const normalized = candidate.text.replace(/\s+/g, ' ').trim()
+  const projection = completed
+    ? completedQueryEvidenceSourceProjection(sourceFile, sourceLines, candidate.representedSource)
+    : queryEvidenceSourceProjection({
+        sourceFilePath: sourceFile,
+        sourceLines,
+        representedSource: candidate.representedSource,
+        shapedText: candidate.text,
+      })
+  let projectedContent = projection?.text ?? normalized
+  if (projection) {
+    for (let index = projection.literalLineBreaks.length - 1; index >= 0; index -= 1) {
+      const lineBreak = projection.literalLineBreaks[index]!
+      projectedContent = [
+        projectedContent.slice(0, lineBreak.offset + 1),
+        `L${lineBreak.lineNumber}: `,
+        projectedContent.slice(lineBreak.offset + 1),
+      ].join('')
+    }
+  }
+  const projectedRows = projectedContent.split('\n')
+  const lineCapExceeded = projectedRows.some((row, index) => {
+    const content = index === 0 ? row : row.replace(/^L\d+: /, '')
+    return content.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+  })
+  const content = lineCapExceeded
+    ? projectedRows.map((row, index) => {
+        const match = index > 0 ? /^(L\d+: )(.*)$/.exec(row) : null
+        const rowPrefix = match?.[1] ?? ''
+        const rowContent = match?.[2] ?? row
+        return rowContent.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+          ? `${rowPrefix}${rowContent.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3)}...`
+          : row
+      }).join('\n')
+    : projectedContent
+  return {
+    source: candidate,
+    projection,
+    content,
+    lineCapExceeded,
+    faithful: `L${candidate.index}: ${content}`,
+  }
+}
+
+function renderUnexpandedQueryEvidenceLineEntries(
+  lines: readonly QueryEvidenceLine[],
+  sourceFile: string,
+  sourceLines: readonly string[],
+): RenderedQueryEvidenceLine[] {
+  const rendered: RenderedQueryEvidenceLine[] = []
   let usedChars = 0
   for (const line of lines) {
-    const normalized = line.text.replace(/\s+/g, ' ').trim()
-    const content = normalized.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
-      ? `${normalized.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3).trimEnd()}...`
-      : normalized
-    const prefix = `L${line.index}: `
     const separatorChars = rendered.length > 0 ? 1 : 0
     const remaining = QUERY_EVIDENCE_SNIPPET_CHAR_CAP - usedChars - separatorChars
+    const selected = queryEvidenceLineRenderCandidate(line, sourceFile, sourceLines, false)
+    const prefix = `L${line.index}: `
     if (remaining <= prefix.length + 8) {
-      break
+      continue
     }
-    const bounded = `${prefix}${content}`.slice(0, remaining).trimEnd()
-    rendered.push(bounded)
+    const bounded = selected.faithful.slice(0, remaining).trimEnd()
+    rendered.push({
+      source: selected.source,
+      text: bounded,
+      representedSource: selected.projection && !selected.lineCapExceeded && bounded === selected.faithful
+        ? selected.source.representedSource
+        : [],
+    })
     usedChars += bounded.length + separatorChars
   }
-  return rendered.length > 0 ? rendered.join('\n') : null
+  return rendered
+}
+
+function sameRepresentedQueryEvidenceSource(
+  left: RepresentedQueryEvidenceSource,
+  right: RepresentedQueryEvidenceSource,
+): boolean {
+  return left.startLine === right.startLine
+    && left.endLine === right.endLine
+    && left.text === right.text
+}
+
+function insertedLiteralStatementCompletion(input: {
+  sourceFile: string
+  sourceLines: readonly string[]
+  ownerRange: { start: number; end: number }
+  representedSource: readonly RepresentedQueryEvidenceSource[]
+}): RepresentedQueryEvidenceSource | null {
+  const completedSource = completeQueryEvidenceLiteralStatement({
+    sourceFilePath: input.sourceFile,
+    sourceLines: input.sourceLines,
+    ownerRange: input.ownerRange,
+    representedSource: input.representedSource,
+  })
+  if (!completedSource) {
+    return null
+  }
+  const inserted = completedSource.filter((completed) => (
+    !input.representedSource.some((represented) => (
+      sameRepresentedQueryEvidenceSource(completed, represented)
+    ))
+  ))
+  if (
+    inserted.length !== 1
+    || !input.representedSource.some((represented) => (
+      inserted[0]!.startLine <= represented.startLine
+      && represented.endLine <= inserted[0]!.endLine
+    ))
+  ) {
+    return null
+  }
+  return inserted[0]!
+}
+
+function renderQueryEvidenceLineEntries(
+  lines: readonly QueryEvidenceLine[],
+  sourceFile: string,
+  sourceLines: readonly string[],
+  ownerRange?: { start: number; end: number } | null,
+): RenderedQueryEvidenceLine[] {
+  const baseline = renderUnexpandedQueryEvidenceLineEntries(lines, sourceFile, sourceLines)
+  if (!ownerRange || baseline.some((line) => line.representedSource.length === 0)) {
+    return baseline
+  }
+
+  const authenticatedStatements: RepresentedQueryEvidenceSource[] = []
+  for (const baselineLine of baseline) {
+    const statement = insertedLiteralStatementCompletion({
+      sourceFile,
+      sourceLines,
+      ownerRange,
+      representedSource: baselineLine.representedSource,
+    })
+    if (
+      statement
+      && !authenticatedStatements.some((candidate) => (
+        sameRepresentedQueryEvidenceSource(candidate, statement)
+      ))
+    ) {
+      authenticatedStatements.push(statement)
+    }
+  }
+
+  const plans = authenticatedStatements.map((statement) => ({
+    statement,
+    baselineIndices: baseline.flatMap((line, baselineIndex) => (
+      line.representedSource.some((represented) => (
+        statement.startLine <= represented.startLine
+        && represented.endLine <= statement.endLine
+      ))
+        ? [baselineIndex]
+        : []
+    )),
+  })).filter((plan, planIndex, allPlans) => (
+    plan.baselineIndices.length > 0
+    && !allPlans.some((other, otherIndex) => (
+      otherIndex !== planIndex
+      && other.baselineIndices.some((baselineIndex) => plan.baselineIndices.includes(baselineIndex))
+    ))
+  )).sort((left, right) => (
+    left.baselineIndices[0]! - right.baselineIndices[0]!
+  ))
+
+  let reserved = baseline.map((line, baselineIndex) => ({
+    line,
+    baselineIndices: [baselineIndex],
+  }))
+  for (const plan of plans) {
+    const representedSource = plan.baselineIndices.flatMap((baselineIndex) => (
+      baseline[baselineIndex]!.representedSource
+    ))
+    const completedSource = completeQueryEvidenceLiteralStatement({
+      sourceFilePath: sourceFile,
+      sourceLines,
+      ownerRange,
+      representedSource,
+    })
+    if (
+      !completedSource
+      || completedSource.filter((completed) => (
+        sameRepresentedQueryEvidenceSource(completed, plan.statement)
+      )).length !== 1
+    ) {
+      continue
+    }
+    const baselineLine = baseline[plan.baselineIndices[0]!]!
+    const completedLine: QueryEvidenceLine = {
+      ...baselineLine.source,
+      index: completedSource[0]!.startLine,
+      endIndex: completedSource.at(-1)!.endLine,
+      text: completedSource.map((source) => source.text).join(' '),
+      representedSource: completedSource,
+    }
+    const candidate = queryEvidenceLineRenderCandidate(completedLine, sourceFile, sourceLines, true)
+    if (
+      !candidate.projection
+      || !candidate.projection.hasProtectedTokens
+      || candidate.lineCapExceeded
+    ) {
+      continue
+    }
+    const plannedIndices = new Set(plan.baselineIndices)
+    const removed = reserved.filter((entry) => (
+      entry.baselineIndices.some((baselineIndex) => plannedIndices.has(baselineIndex))
+    ))
+    const removedIndices = new Set(removed.flatMap((entry) => entry.baselineIndices))
+    if (
+      removedIndices.size !== plannedIndices.size
+      || [...removedIndices].some((baselineIndex) => !plannedIndices.has(baselineIndex))
+    ) {
+      continue
+    }
+    const proposed = [
+      ...reserved.filter((entry) => (
+        !entry.baselineIndices.some((baselineIndex) => plannedIndices.has(baselineIndex))
+      )),
+      {
+        line: {
+          source: candidate.source,
+          text: candidate.faithful,
+          representedSource: candidate.source.representedSource,
+        },
+        baselineIndices: plan.baselineIndices,
+      },
+    ].sort((left, right) => (
+      left.line.source.index - right.line.source.index
+      || left.baselineIndices[0]! - right.baselineIndices[0]!
+    ))
+    const proposedSnippet = proposed.map((entry) => entry.line.text).join('\n')
+    if (
+      proposedSnippet.split('\n').length > QUERY_EVIDENCE_SNIPPET_MAX_LINES
+      || proposedSnippet.length > QUERY_EVIDENCE_SNIPPET_CHAR_CAP
+    ) {
+      continue
+    }
+    reserved = proposed
+  }
+  return reserved.map((entry) => entry.line)
+}
+
+function renderQueryEvidenceLines(
+  lines: readonly QueryEvidenceLine[],
+  sourceFile: string,
+  sourceLines: readonly string[],
+): string | null {
+  const rendered = renderQueryEvidenceLineEntries(lines, sourceFile, sourceLines)
+  return rendered.length > 0 ? rendered.map((line) => line.text).join('\n') : null
+}
+
+function explicitOwnerRange(
+  sourceLocation: string | null | undefined,
+  parsedRange: { start: number; end: number } | null,
+  lineNumber: number,
+  lineCount: number,
+  derived: boolean | undefined,
+  fileNodeLike: boolean | undefined,
+): { start: number; end: number } | null {
+  if (derived || fileNodeLike || !parsedRange || typeof sourceLocation !== 'string') {
+    return null
+  }
+  const match = /^L(\d+)(?:-L?(\d+))?$/.exec(sourceLocation)
+  if (!match?.[1]) {
+    return null
+  }
+  const start = Number.parseInt(match[1], 10)
+  const end = Number.parseInt(match[2] ?? match[1], 10)
+  if (
+    start <= 0
+    || end < start
+    || end > lineCount
+    || parsedRange.start !== start
+    || parsedRange.end !== end
+    || lineNumber < start
+    || lineNumber > end
+  ) {
+    return null
+  }
+  return { start, end }
+}
+
+function completeOwnerDeclarationEvidence(
+  sourceFile: string,
+  sourceLines: readonly string[],
+  ownerRange: { start: number; end: number },
+  baseline: readonly RenderedQueryEvidenceLine[],
+): { snippet: string; lineNumber: number } | null {
+  try {
+    const representedSource = baseline.flatMap((rendered) => rendered.representedSource)
+    if (representedSource.length === 0) {
+      return null
+    }
+    const declarations = ownerLocalDeclarationEvidence({
+      sourceFilePath: sourceFile,
+      sourceLines,
+      ownerRange,
+      representedSource,
+    })
+    if (declarations.length === 0) {
+      return null
+    }
+
+    const additions = declarations.flatMap((declaration) => declaration.lines.map((line) => {
+      const content = line.text
+      return {
+        lineNumber: line.lineNumber,
+        content,
+        text: `L${line.lineNumber}: ${content}`,
+      }
+    }))
+    if (
+      additions.some((line) => (
+        line.content.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
+      ))
+    ) {
+      return null
+    }
+
+    const merged = [
+      ...baseline.map((line, baselineIndex) => ({
+        lineNumber: line.source.index,
+        text: line.text,
+        baselineIndex,
+      })),
+      ...additions.map((line) => ({
+        lineNumber: line.lineNumber,
+        text: line.text,
+        baselineIndex: null,
+      })),
+    ].sort((left, right) => (
+      left.lineNumber - right.lineNumber
+      || (left.baselineIndex === null ? -1 : left.baselineIndex)
+      - (right.baselineIndex === null ? -1 : right.baselineIndex)
+    ))
+    const snippet = merged.map((line) => line.text).join('\n')
+    if (
+      snippet.split('\n').length > QUERY_EVIDENCE_SNIPPET_MAX_LINES
+      || snippet.length > QUERY_EVIDENCE_SNIPPET_CHAR_CAP
+    ) {
+      return null
+    }
+    const preservedBaseline = merged
+      .filter((line) => line.baselineIndex !== null)
+      .sort((left, right) => left.baselineIndex! - right.baselineIndex!)
+      .map((line) => line.text)
+    if (
+      preservedBaseline.length !== baseline.length
+      || preservedBaseline.some((line, index) => line !== baseline[index]?.text)
+    ) {
+      return null
+    }
+    return { snippet, lineNumber: merged[0]!.lineNumber }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -1200,6 +1860,14 @@ export function readQueryEvidenceSnippet(
         .map((obligation) => obligation.index),
     )
     const parsedRange = lineRangeFromSourceLocation(options.sourceLocation)
+    const ownerRange = explicitOwnerRange(
+      options.sourceLocation,
+      parsedRange,
+      lineNumber,
+      lines.length,
+      options.derived,
+      options.fileNodeLike,
+    )
     const fallbackHalfWindow = options.derived ? DERIVED_SNIPPET_HALF_WINDOW : SNIPPET_HALF_WINDOW
     const symbolRange = boundedSourceRange(lines.length, parsedRange ?? {
       start: lineNumber - fallbackHalfWindow,
@@ -1228,16 +1896,129 @@ export function readQueryEvidenceSnippet(
       }
     }
 
-    const selectedLines = selectQueryEvidenceLines(selectedRange)
-    const snippet = renderQueryEvidenceLines(selectedLines)
-    if (!snippet || selectedLines.length === 0) {
+    let selectedLines = selectQueryEvidenceLines(selectedRange)
+    if (scope === 'source_file' && !options.fileNodeLike) {
+      const scoredSymbolLines = [...selectQueryEvidenceLines(symbolEvidence)]
+        .sort((left, right) => right.score - left.score || left.index - right.index)
+      let symbolLine = scoredSymbolLines[0]
+
+      if (!symbolLine) {
+        const fragmentRank = (fragment: QueryEvidenceFragment): number => {
+          if (QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(fragment.text)) {
+            return 3
+          }
+          if (QUERY_EVIDENCE_OPERATION_PATTERN.test(fragment.text)) {
+            return 0
+          }
+          if (QUERY_EVIDENCE_DECLARATION_PATTERN.test(fragment.text)) {
+            return 2
+          }
+          return 1
+        }
+
+        const symbolFragment = queryEvidenceFragments(lines, symbolRange)
+          .sort((left, right) => (
+            fragmentRank(left) - fragmentRank(right)
+            || left.index - right.index
+          ))[0]
+        if (symbolFragment) {
+          symbolLine = {
+            index: symbolFragment.index,
+            endIndex: symbolFragment.endIndex,
+            text: symbolFragment.text,
+            representedSource: symbolFragment.representedSource,
+            score: 0,
+            matchedTerms: new Set<string>(),
+            matchedObligations: new Set<number>(),
+            identifierTerms: new Set<string>(),
+          }
+        }
+      }
+      const symbolSnippet = symbolLine
+        ? renderQueryEvidenceLines([symbolLine], sourceFile, lines)
+        : null
+      if (symbolLine && symbolSnippet) {
+        let mergedLines = [symbolLine]
+        for (const fileLine of selectedLines) {
+          if (mergedLines.length >= QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
+            break
+          }
+          if (mergedLines.some((line) => (
+            fileLine.index <= line.endIndex && line.index <= fileLine.endIndex
+          ))) {
+            continue
+          }
+          const candidateLines = [...mergedLines, fileLine]
+            .sort((left, right) => left.index - right.index)
+          if (renderQueryEvidenceLines(candidateLines, sourceFile, lines)?.split('\n').includes(symbolSnippet)) {
+            mergedLines = candidateLines
+          }
+        }
+        selectedLines = mergedLines
+      }
+    }
+    const baseline = renderQueryEvidenceLineEntries(selectedLines, sourceFile, lines, ownerRange)
+    if (baseline.length === 0) {
       return null
     }
-    return {
-      snippet,
-      lineNumber: selectedLines[0]!.index,
+    const baselineSnippet = baseline.map((line) => line.text).join('\n')
+    const completed = ownerRange
+      ? completeOwnerDeclarationEvidence(sourceFile, lines, ownerRange, baseline)
+      : null
+    const fallback: QueryEvidenceSnippet = {
+      snippet: completed?.snippet ?? baselineSnippet,
+      lineNumber: completed?.lineNumber ?? baseline[0]!.source.index,
       scope,
     }
+    const completeSmallOwner = ownerRange && options.authenticatedOwner === true
+      ? completeSmallOwnerSourceEvidence({
+          sourceFilePath: sourceFile,
+          sourceLines: lines,
+          ownerRange,
+          label: options.label,
+          ...(options.nodeKind ? { nodeKind: options.nodeKind } : {}),
+          ...(options.externalCall !== undefined ? { externalCall: options.externalCall } : {}),
+        })
+      : null
+    const completeOwner = completeSmallOwner ?? (ownerRange && options.authenticatedOwner === true
+      ? completeOwnerSourceEvidence({
+          sourceFilePath: sourceFile,
+          sourceLines: lines,
+          ownerRange,
+          label: options.label,
+          ...(options.nodeKind ? { nodeKind: options.nodeKind } : {}),
+          ...(options.externalCall !== undefined ? { externalCall: options.externalCall } : {}),
+        })
+      : null)
+    if (!completeOwner) {
+      return fallback
+    }
+
+    const allocationOnly = completeSmallOwner === null
+    if (
+      allocationOnly
+      && options.maximumCompleteOwnerTokens !== undefined
+      && snippetTokenCount(completeOwner.snippet) > options.maximumCompleteOwnerTokens
+    ) {
+      return fallback
+    }
+    const result: QueryEvidenceSnippet = allocationOnly ? fallback : {
+      snippet: completeOwner.snippet,
+      lineNumber: completeOwner.lineNumber,
+      scope: 'symbol',
+    }
+    completeOwnerQuerySnippets.set(result, {
+      fullSnippet: completeOwner.snippet,
+      fullLineNumber: completeOwner.lineNumber,
+      fallbackSnippet: fallback.snippet,
+      fallbackLineNumber: fallback.lineNumber,
+      fallbackScope: fallback.scope,
+      representationReason: allocationOnly
+        ? ALLOCATED_COMPLETE_OWNER_REPRESENTATION_REASON
+        : COMPLETE_OWNER_REPRESENTATION_REASON,
+      allocationOnly,
+    })
+    return result
   } catch {
     return null
   }
@@ -1383,6 +2164,7 @@ function scoredNodeFromGraphEntry(
     lineNumberDerived: resolvedLine.derived,
     storedSnippet: storedSnippetFromAttributes(attributes),
     nodeKind,
+    externalCall: attributes.external_call === true,
     framework: typeof attributes.framework === 'string' ? attributes.framework : undefined,
     frameworkRole: frameworkRole || undefined,
     sourceDomain: classifySourceDomain(String(attributes.source_file ?? ''), rootPath),
@@ -1448,6 +2230,7 @@ interface SeedScoreBreakdown {
   labelExactScore: number
   labelPhraseScore: number
   labelTokenScore: number
+  sourceTokenScore: number
   sourcePathScore: number
   promptIdentifierScore: number
   communityScore: number
@@ -1464,6 +2247,7 @@ interface SeedCandidate {
   lineNumberDerived: boolean
   storedSnippet: string | null
   nodeKind: string
+  externalCall: boolean
   framework?: string | undefined
   frameworkRole?: string | undefined
   sourceDomain: SourceDomain
@@ -1489,6 +2273,7 @@ interface ScoredNode {
   lineNumberDerived: boolean
   storedSnippet: string | null
   nodeKind: string
+  externalCall: boolean
   framework?: string | undefined
   frameworkRole?: string | undefined
   sourceDomain: SourceDomain
@@ -1519,6 +2304,7 @@ function scoredNodeFromGraph(graph: KnowledgeGraph, nodeId: string, score: numbe
     lineNumberDerived: resolvedLine.derived,
     storedSnippet: storedSnippetFromAttributes(attributes),
     nodeKind: String(attributes.node_kind ?? ''),
+    externalCall: attributes.external_call === true,
     framework: typeof attributes.framework === 'string' ? attributes.framework : undefined,
     frameworkRole: typeof attributes.framework_role === 'string' ? attributes.framework_role : undefined,
     sourceDomain: classifySourceDomain(String(attributes.source_file ?? ''), rootPath),
@@ -2178,6 +2964,7 @@ function scoreSeedCandidate(
     labelExactScore,
     labelPhraseScore,
     labelTokenScore,
+    sourceTokenScore: 0,
     sourcePathScore,
     promptIdentifierScore,
     communityScore,
@@ -4600,14 +5387,21 @@ export function contextPackFromRetrieveResult(
     budget: result.token_count,
     prompt: result.question,
   })
+  const sourceNodes = result.matched_nodes.map((node) => copyCompleteOwnerState(node, {
+    ...node,
+    evidence_class: node.evidence_class ?? retrieveEvidenceClassForBand(node.relevance_band),
+  }))
   const renderedNodes = renderCompiledContextPackNodes(
     taskContract,
-    result.matched_nodes.map((node) => ({
-      ...node,
-      evidence_class: node.evidence_class ?? retrieveEvidenceClassForBand(node.relevance_band),
-    })),
+    sourceNodes,
     result.relationships,
   )
+  renderedNodes.nodes.forEach((node, index) => {
+    const sourceNode = sourceNodes[index]
+    if (sourceNode) {
+      copyCompleteOwnerState(sourceNode, node)
+    }
+  })
 
   return {
     task_contract: taskContract,
@@ -4658,6 +5452,7 @@ function buildRetrieveResultFromOrderedCandidates(
     sliceMetadata,
     rootPath,
   )
+  const completeOwnerStatesByNodeId = new Map<string, CompleteOwnerSnippetState>()
   const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidates.map((node) => {
     let builtEntry: RetrieveMatchedNode | undefined
     let tokenCost: number | undefined
@@ -4679,17 +5474,24 @@ function buildRetrieveResultFromOrderedCandidates(
       const queryEvidenceSnippet = readQueryEvidenceSnippet(node.sourceFile, node.lineNumber, {
         question: options.question,
         label: node.label,
+        nodeKind: node.nodeKind,
+        externalCall: node.externalCall,
+        authenticatedOwner: true,
+        maximumCompleteOwnerTokens: taskContract.budget,
         sourceLocation: node.sourceLocation,
         fileNodeLike: node.fileNodeLike,
-        derived: node.lineNumberDerived,
+        derived: node.lineNumberDerived && lineRangeFromSourceLocation(node.sourceLocation) === null,
         fileCache: snippetFileCache,
       })
+      const completeOwnerState = queryEvidenceSnippet
+        ? completeOwnerQuerySnippets.get(queryEvidenceSnippet)
+        : undefined
       const snippet = queryEvidenceSnippet?.snippet ?? node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {
         derived: node.lineNumberDerived,
         fileCache: snippetFileCache,
       })
       const serializedSourceFile = relativizeSourceFile(node.sourceFile, rootPath)
-      builtEntry = {
+      builtEntry = attachCompleteOwnerState({
         node_id: node.id,
         label: node.label,
         source_file: serializedSourceFile,
@@ -4712,6 +5514,9 @@ function buildRetrieveResultFromOrderedCandidates(
         ...(node.framework ? { framework: node.framework } : {}),
         ...(node.frameworkRole ? { framework_role: node.frameworkRole } : {}),
         ...(node.nodeKind.trim().length > 0 ? { node_kind: node.nodeKind } : {}),
+      }, completeOwnerState)
+      if (completeOwnerState) {
+        completeOwnerStatesByNodeId.set(node.id, completeOwnerState)
       }
       tokenCost = estimateRetrieveEntryTokens(node.label, serializedSourceFile, node.lineNumber, snippet)
       return builtEntry
@@ -4775,7 +5580,28 @@ function buildRetrieveResultFromOrderedCandidates(
     selection_strategy: 'value-per-token',
     retrieval_gate: retrievalGate,
   }), options.onStageDiagnostic)
-  const matchedNodes = pack.nodes as RetrieveMatchedNode[]
+  const packedNodes = pack.nodes as RetrieveMatchedNode[]
+  const matchedNodes = packedNodes.map((node) => {
+    const state = typeof node.node_id === 'string'
+      ? completeOwnerStatesByNodeId.get(node.node_id)
+      : undefined
+    if (!state) {
+      return node
+    }
+    if (state.allocationOnly) {
+      return attachCompleteOwnerState(node, state)
+    }
+    return attachCompleteOwnerState({
+      ...node,
+      snippet: state.fullSnippet,
+      snippet_line_number: state.fullLineNumber,
+      snippet_scope: 'symbol' as const,
+      representation_type: 'detail' as const,
+      representation_reason: state.representationReason,
+    }, state)
+  })
+  const packedNodeTokens = tokenCountForMatchedNodes(packedNodes)
+  const matchedNodeTokens = tokenCountForMatchedNodes(matchedNodes)
   const answerContract = buildRuntimeGenerationAnswerContract(
     taskContract,
     retrievalGate,
@@ -4798,7 +5624,7 @@ function buildRetrieveResultFromOrderedCandidates(
 
   return {
     question: options.question,
-    token_count: pack.token_count,
+    token_count: Math.max(0, pack.token_count - packedNodeTokens + matchedNodeTokens),
     matched_nodes: matchedNodes,
     relationships: pack.relationships,
     community_context: pack.community_context,
@@ -4859,6 +5685,7 @@ function retrieveContextPass(
     ? graph.graph.root_path
     : undefined
   const classificationRootPath = inferredGraphRoot(graph)
+  const storedSourceTerms = reconcileStoredSourceTerms(graph, classificationRootPath)
   const retrievalGate = queryStage.retrieval_gate
   const effectiveRetrievalLevel = queryStage.effective_retrieval_level
   const underScopedDivergenceIds = underScopedDivergenceNodeIds(graph, question)
@@ -4939,6 +5766,10 @@ function retrieveContextPass(
   const excludedDomains = retrievalGate.signals.excluded_domains ?? []
   const excludedTerms = retrievalGate.signals.excluded_terms ?? []
   const excludedPathHints = retrievalGate.signals.excluded_path_hints ?? []
+  const excludedSourceTokens = new Set(
+    [...excludedTerms, ...excludedPathHints].flatMap((term) => tokenizeLabel(term)),
+  )
+  const sourceQuestionTokens = [...new Set(questionTokens)].filter((token) => !excludedSourceTokens.has(token))
 
   // Step 1+2: Score all nodes with explicit seed evidence weights.
   const tokenWeights = tokenWeightsForQuestion(graph, questionTokens)
@@ -5031,11 +5862,18 @@ function retrieveContextPass(
         allowRuntimeBoundaryBoost: effectiveScore.total + anchorScore > 0 || explicitlyAnchored,
       },
     )
+    const sourceTokens = storedSourceTerms.get(id)?.tokens ?? []
+    const sourceTokenScore = 0.5 * Math.min(2, scoreNode(
+      sourceQuestionTokens,
+      sourceTokens,
+      undefined,
+      Math.max(sourceTokens.length, 1),
+    ))
 
     const domainIntentPenalty = runtimeGenerationSourceDomainPenalty(retrievalGate, sourceDomain, explicitlyAnchored)
     const scriptMigrationPenalty = scriptMigrationPathPenalty(retrievalGate, sourceFile, label, question, explicitlyAnchored)
     const conceptualFallbackScore = conceptualNodeBoosts.get(id) ?? 0
-    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment + conceptualFallbackScore
+    const totalSeedScore = effectiveScore.total + anchorScore + metadataBoost + domainAdjustment + conceptualFallbackScore + sourceTokenScore
       - sourceDomainPenalty - domainIntentPenalty - scriptMigrationPenalty
     const hasPositiveSeedEvidence = totalSeedScore > 0 || exactAnchorMatch || mentionedPathMatch
     if (hasPositiveSeedEvidence) {
@@ -5051,6 +5889,7 @@ function retrieveContextPass(
         lineNumberDerived: resolvedLine.derived,
         storedSnippet: storedSnippetFromAttributes(attributes),
         nodeKind,
+        externalCall: attributes.external_call === true,
         framework,
         frameworkRole: frameworkRole || undefined,
         sourceDomain,
@@ -5061,6 +5900,7 @@ function retrieveContextPass(
         seedScore: {
           ...effectiveScore,
           labelExactScore: effectiveScore.labelExactScore + anchorScore,
+          sourceTokenScore,
           conceptualFallbackScore,
           total: totalSeedScore,
         },
@@ -5101,12 +5941,13 @@ function retrieveContextPass(
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelExactScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelPhraseScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.labelTokenScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.sourceTokenScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.promptIdentifierScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.sourcePathScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.communityScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.conceptualFallbackScore),
   ], {
-    weights: [2, 1.5, 1.5, 0.5, 0.25, 0.25, 1.75],
+    weights: [2, 1.5, 1.5, 0.75, 0.5, 0.25, 0.25, 1.75],
   })
   const scored: ScoredNode[] = filteredSeedCandidates.map((candidate) => ({
     id: candidate.id,
@@ -5117,6 +5958,7 @@ function retrieveContextPass(
     lineNumberDerived: candidate.lineNumberDerived,
     storedSnippet: candidate.storedSnippet,
     nodeKind: candidate.nodeKind,
+    externalCall: candidate.externalCall,
     framework: candidate.framework,
     frameworkRole: candidate.frameworkRole,
     fileType: candidate.fileType,
@@ -5398,6 +6240,7 @@ function retrieveContextPass(
       lineNumberDerived: resolvedLine.derived,
       storedSnippet: storedSnippetFromAttributes(attributes),
       nodeKind: String(attributes.node_kind ?? ''),
+      externalCall: attributes.external_call === true,
       framework: typeof attributes.framework === 'string' ? attributes.framework : undefined,
       frameworkRole: typeof attributes.framework_role === 'string' ? attributes.framework_role : undefined,
       sourceDomain,
@@ -5942,7 +6785,8 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
   const executionSlice = compactExecutionSlice(result.execution_slice)
   const promotedSliceNodeIds = promotedSliceCompactNodeIds(result)
   const promotedSliceLabels = promotedSliceCompactLabels(result)
-  const compactPack = promotedSliceNodeIds.length > 0 || promotedSliceLabels.length > 0
+  const promotedSlice = promotedSliceNodeIds.length > 0 || promotedSliceLabels.length > 0
+  const compactPack = promotedSlice
     ? compactContextPack(fullPack, {
         kind: 'review',
         seed_node_ids: promotedSliceNodeIds,
@@ -5953,16 +6797,53 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
         kind: 'retrieve',
         ...(Number.isFinite(compactFrameworkLimit) ? { max_nodes: compactFrameworkLimit } : {}),
       })
-  const shapedNodes = applyRetrieveSnippetBudgetToNodes(compactPack.nodes, options)
+  for (const compactNode of compactPack.nodes) {
+    const sourceNode = fullPack.nodes.find((node) => (
+      typeof compactNode.node_id === 'string'
+      && compactNode.node_id === node.node_id
+    ))
+    const sourceState = sourceNode
+      ? completeOwnerMatchedNodes.get(sourceNode)
+      : undefined
+    if (
+      sourceNode
+      && (
+        (typeof compactNode.snippet === 'string' && compactNode.snippet.length > 0)
+        || sourceState?.allocationOnly === true
+      )
+    ) {
+      copyCompleteOwnerState(sourceNode, compactNode)
+    }
+  }
+  const useCallEndpointSnippetAllocation =
+    !promotedSlice
+    && options.topNWithSnippet === undefined
+  const preferredSnippetNodeIndexes = useCallEndpointSnippetAllocation
+    ? preferredCallEndpointSnippetNodeIndexes(
+        compactPack.nodes,
+        compactPack.relationships,
+      )
+    : undefined
   const compactPackNodeTokenCount = compactPack.nodes.reduce(
     (total, node) => total + estimateRetrieveEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
     0,
+  )
+  const maximumMatchedNodeTokens = compactPackNodeTokenCount
+    + Math.max(0, compactPack.task_contract.budget - compactPack.token_count)
+  const shapedNodes = applyRetrieveSnippetBudgetToNodes(
+    compactPack.nodes,
+    options,
+    preferredSnippetNodeIndexes,
+    maximumMatchedNodeTokens,
   )
   const shapedNodeTokenCount = shapedNodes.nodes.reduce(
     (total, node) => total + estimateRetrieveEntryTokens(node.label, node.source_file, node.line_number, node.snippet ?? null),
     0,
   )
-  const matchedNodes = shapedNodes.nodes.map(({ evidence_class: _evidenceClass, ...node }) => node as CompactRetrieveMatchedNode)
+  const matchedNodes = shapedNodes.nodes.map((shapedNode) => {
+    const { evidence_class: _evidenceClass, ...node } = shapedNode
+    return copyCompleteOwnerState(shapedNode, node as CompactRetrieveMatchedNode)
+  })
   const retrievalPlan = reconcileRetrievalPlanQueryEvidence(
     result.retrieval_plan,
     result.question,
