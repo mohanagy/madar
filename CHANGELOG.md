@@ -4,6 +4,18 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-10-05
+
+### Changed
+
+- Update the tokenizer runtime to `gpt-tokenizer` 4.0.0 and the WebAssembly parser runtime to `web-tree-sitter` 0.27.0.
+- Refresh Vite, Vitest, coverage tooling, YAML, Node.js types, and the GitHub Pages deployment action.
+
+### Fixed
+
+- Clear development dependency security advisories with `fast-uri` 3.1.8 and Vitest 4.1.11.
+- Keep the retrieval file-read mock compatible with current Node.js types and include the stdio auto-refresh polling test fix from #682.
+
 ## [0.32.1] - 2026-08-11
 
 ### Fixed

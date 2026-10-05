@@ -191,9 +191,9 @@ Read the [benchmark suite and all dated receipts](https://github.com/mohanagy/ma
 
 ## Current Release
 
-Current version: `0.32.1`.
+Current version: `0.32.2`.
 
-`0.32.1` keeps automatic refresh recoverable when Git removes a file during a watched rebuild, and reports a healthy single-client setup without requiring optional agent integrations.
+`0.32.2` refreshes tokenizer and WebAssembly parser dependencies, updates development tooling, and clears development dependency security advisories.
 
 `0.31.4` keeps receipts tied to visible context and hardens Claude/Codex hook handling.
 
@@ -205,7 +205,7 @@ Current version: `0.32.1`.
 
 `0.31.0` made code graphs directed by default, separated evidence strength from answer readiness, added bounded context recovery, made indexing completeness explicit, preserved generation policy during automatic refresh, isolated linked-worktree artifacts, and removed benchmark expectations from production retrieval.
 
-Read the full notes in the [0.32.1 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0321---2026-08-11).
+Read the full notes in the [0.32.2 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0322---2026-10-05).
 
 ## Documentation
 
