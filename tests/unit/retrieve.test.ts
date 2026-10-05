@@ -3422,7 +3422,7 @@ describe('retrieve', () => {
         })
 
         const readFileSync = vi.fn((path: nodeFs.PathOrFileDescriptor, encoding?: BufferEncoding | null) =>
-          nodeFs.readFileSync(path, encoding),
+          nodeFs.readFileSync(path, { encoding }),
         )
         vi.doMock('node:fs', async () => {
           const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
