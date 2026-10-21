@@ -4,6 +4,17 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.32.3] - 2026-10-21
+
+### Changed
+
+- Update `gpt-tokenizer` to 4.0.3 and `web-tree-sitter` to 0.27.1.
+- Update Vite to 8.3.4 and Node.js types to 26.6.5; upgrade Vitest and its coverage tooling to 5.0.3.
+
+### Fixed
+
+- Resolve the high-severity `source-map-js` development dependency advisory by updating to 1.2.2.
+
 ## [0.32.2] - 2026-10-05
 
 ### Changed
