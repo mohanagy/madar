@@ -191,9 +191,9 @@ Read the [benchmark suite and all dated receipts](https://github.com/mohanagy/ma
 
 ## Current Release
 
-Current version: `0.32.2`.
+Current version: `0.32.3`.
 
-`0.32.2` refreshes tokenizer and WebAssembly parser dependencies, updates development tooling, and clears development dependency security advisories.
+`0.32.3` updates the tokenizer and WebAssembly parser, refreshes development tooling, and fixes a development dependency security advisory.
 
 `0.31.4` keeps receipts tied to visible context and hardens Claude/Codex hook handling.
 
@@ -205,7 +205,7 @@ Current version: `0.32.2`.
 
 `0.31.0` made code graphs directed by default, separated evidence strength from answer readiness, added bounded context recovery, made indexing completeness explicit, preserved generation policy during automatic refresh, isolated linked-worktree artifacts, and removed benchmark expectations from production retrieval.
 
-Read the full notes in the [0.32.2 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0322---2026-10-05).
+Read the full notes in the [0.32.3 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG.md#0323---2026-10-21).
 
 ## Documentation
 
