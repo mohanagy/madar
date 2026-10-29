@@ -446,3 +446,98 @@ describe('bounded cumulative context-pack recovery', () => {
     })
   })
 })
+
+describe('indexed recovery candidates', () => {
+  function focusedTarget(files: string[], handle = 'focused'): ContextPackExpandableRef {
+    const entry = target(handle, handle)
+    entry.preview = []
+    entry.follow_up.focus_files = files
+    return entry
+  }
+
+  it('preserves graph order, preview priority and original boosts at the cumulative quota', () => {
+    const graph = new KnowledgeGraph()
+    graph.addNode('primary', { source_file: 'src/primary.ts' })
+    for (let index = 0; index < 100; index++) graph.addNode(`noise-${index}`, { source_file: `noise/${index}.ts` })
+    graph.addNode('early-b', { source_file: 'src/b.ts' })
+    graph.addNode('early-a', { source_file: 'src/a.ts' })
+    graph.addNode('late-b', { source_file: 'src/b.ts' })
+    const expansion = focusedTarget(['src/a.ts', 'src/b.ts', 'src/primary.ts'])
+    expansion.preview = [{ node_id: 'late-b', label: 'late-b', source_file: 'src/b.ts' }]
+    const initial = result({ supportingCovered: false, expandable: [expansion] })
+    const fullScan = vi.spyOn(graph, 'nodeEntries')
+    const attributes = vi.spyOn(graph, 'nodeAttributes')
+    const runPass = vi.fn((boosts: ReadonlyMap<string, number>) => {
+      expect([...boosts]).toEqual([['primary', 6], ['late-b', 3.5], ['early-b', 4.5], ['early-a', 4.5]])
+      return initial
+    })
+    const output = recoverContextPackResult(graph, initial, { question: initial.question, budget: 500 }, runPass,
+      { maxAttempts: 1, maxCandidateNodes: 3 })
+    expect(runPass).toHaveBeenCalledTimes(1)
+    expect(fullScan).not.toHaveBeenCalled()
+    expect(attributes.mock.calls.map(([id]) => id)).toEqual(['primary', 'early-b', 'early-a', 'late-b'])
+    expect(output.recovery?.attempts[0]?.candidate_nodes).toBe(3)
+    expect(output.matched_nodes).toEqual(initial.matched_nodes)
+  })
+
+  it('keeps full path matching in both suffix directions with portable and case-sensitive paths', () => {
+    const graph = new KnowledgeGraph()
+    const paths: Array<[string, string]> = [
+      ['primary', 'src/primary.ts'], ['absolute', '/workspace/src/alpha.ts'],
+      ['relative', 'src/beta.ts'], ['windows', 'C:\\repo\\src\\gamma.ts'],
+      ['dot', './src/delta.ts'], ['trimmed', '  src/epsilon.ts  '],
+      ['wrong-directory', 'other/alpha.ts'], ['wrong-case', 'src/Alpha.ts'],
+      ['focus-whitespace', 'src/zeta.ts'],
+    ]
+    for (const [id, source_file] of paths) graph.addNode(id, { source_file })
+    const files = ['src/alpha.ts', '/workspace/src/beta.ts', 'src\\gamma.ts', './src/delta.ts', 'src/epsilon.ts', 'src/zeta.ts ']
+    const initial = result({ supportingCovered: false, expandable: [focusedTarget(files)] })
+    expect(graph.sourceFileCandidateIds(files)).toContain('wrong-directory')
+    const runPass = vi.fn((boosts: ReadonlyMap<string, number>) => {
+      expect([...boosts.keys()]).toEqual(['primary', 'absolute', 'relative', 'windows', 'dot', 'trimmed'])
+      return initial
+    })
+    recoverContextPackResult(graph, initial, { question: initial.question, budget: 500 }, runPass, { maxAttempts: 1 })
+    expect(runPass).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes indexed membership between attempts without reordering replacements or freezing mutable sources', () => {
+    const graph = new KnowledgeGraph()
+    const dynamicSource = {
+      path: 'src/old.ts',
+      toString() {
+        if (this.path === 'src/next.ts') graph.addNode('added', { source_file: 'src/other.ts' })
+        return this.path
+      },
+    }
+    graph.addNode('primary', { source_file: 'src/primary.ts' })
+    graph.addEdge('implicit', 'tail', {})
+    graph.addNode('moved', { source_file: 'src/old.ts' })
+    graph.addNode('removed-source', { source_file: 'src/next.ts' })
+    graph.addNode('dynamic', { source_file: dynamicSource })
+    graph.addNode('number', { source_file: 7 })
+    graph.addNode('null', { source_file: null })
+    graph.addNode('first', { source_file: 'src/first.ts' })
+    const initial = result({ supportingCovered: false, expandable: [
+      focusedTarget(['src/first.ts'], 'first'), focusedTarget(['src/next.ts'], 'next'),
+    ] })
+    const runPass = vi.fn((boosts: ReadonlyMap<string, number>) => {
+      if (runPass.mock.calls.length === 1) {
+        expect([...boosts.keys()]).toEqual(['primary', 'first'])
+        graph.addNode('moved', { source_file: './src/next.ts' })
+        graph.addNode('implicit', { source_file: '/workspace/src/next.ts' })
+        graph.addNode('removed-source', {})
+        graph.addNode('added', { source_file: 'src/next.ts' })
+        dynamicSource.path = 'src/next.ts'
+      } else {
+        expect([...boosts.keys()]).toEqual(['primary', 'first', 'implicit', 'moved', 'dynamic', 'added'])
+      }
+      return initial
+    })
+    recoverContextPackResult(graph, initial, { question: initial.question, budget: 500 }, runPass)
+    expect(runPass).toHaveBeenCalledTimes(2)
+    expect(graph.sourceFileCandidateIds(['src/next.ts'])).toEqual(['implicit', 'moved', 'dynamic', 'number'])
+    expect(graph.sourceFileCandidateIds(['src/old.ts'])).toEqual(['dynamic', 'number'])
+    expect(graph.sourceFileCandidateIds([])).toEqual([])
+  })
+})

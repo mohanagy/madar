@@ -242,6 +242,18 @@ export interface ImplementationPackRuntimeContext {
   answer_contract?: ContextPackRuntimeGenerationAnswerContract
 }
 
+/** Observation of root package scripts, not test coverage or executed validation.
+ * The timestamp belongs to this inspection; graph freshness cannot refresh it.
+ */
+export type ImplementationPackValidationDiscovery = {
+  source_file: 'package.json'
+  scope: 'root_package_validation_scripts'
+  observed_at: string
+} & (
+  | { status: 'inspected'; result: 'commands_available' | 'no_scripts' | 'no_supported_validation_scripts' }
+  | { status: 'unknown_root' | 'missing' | 'unreadable' | 'invalid_json' | 'invalid_package' | 'invalid_scripts' | 'blocked' | 'bounded' }
+)
+
 export interface ImplementationPackGuidance {
   summary: string
   retrieval_pipeline: ImplementationPackRetrievalPipeline
@@ -252,6 +264,7 @@ export interface ImplementationPackGuidance {
   existing_patterns: ImplementationPackSurfaceHint[]
   risk_boundaries: ImplementationPackRiskBoundary[]
   validation_commands: string[]
+  validation_discovery?: ImplementationPackValidationDiscovery
   acceptance_criteria_summary: string[]
   cautions: string[]
   runtime_context_if_relevant?: ImplementationPackRuntimeContext
@@ -312,10 +325,20 @@ export interface ContextPackNode {
   source_file: string
   line_number: number
   snippet: string | null
+  /** Derived representations are not exact source excerpts. */
+  snippet_source?: 'derived'
   /** First source line rendered in `snippet` when it differs from the graph node declaration. */
   snippet_line_number?: number | undefined
   /** Whether the snippet is bounded to the symbol or is query evidence selected from its source file. */
   snippet_scope?: 'symbol' | 'source_file' | undefined
+  snippet_line_range?: { start_line: number; end_line: number }
+  snippet_omitted_ranges?: Array<{ start_line: number; end_line: number }>
+  snippet_truncated?: boolean
+  snippet_unverified?: boolean
+  /** Excerpt owner node ID. Select this node's snippet_line_range from the owner's source; equal ranges share exact text. */
+  snippet_ref?: string
+  /** Session-owned continuation for verified omitted source lines of this node. */
+  source_expand_handle?: string
   file_type?: string | undefined
   match_score?: number | undefined
   relevance_band?: 'direct' | 'related' | 'peripheral' | undefined
@@ -332,6 +355,9 @@ export interface ContextPackNode {
 }
 
 export interface ContextPackRelationship {
+  source_file?: string | undefined
+  source_location?: string | undefined
+  confidence?: string | undefined
   from_id?: string
   from: string
   to_id?: string
@@ -378,6 +404,8 @@ export interface ContextPackExpandableFollowUp {
   evidence_class: ContextPackEvidenceClass
   focus_files: string[]
   focus_ranges: ContextPackExpandableSourceRange[]
+  /** Ordered omitted owners. Absent on legacy or file-discovery handles. */
+  node_ids?: string[]
 }
 
 export interface ContextPackExpandableRef {
@@ -385,6 +413,8 @@ export interface ContextPackExpandableRef {
   handle_id: string
   evidence_class: ContextPackEvidenceClass
   count: number
+  /** Exact current-source names accepted by context_expand(symbol) in this scope. */
+  symbols?: string[]
   preview: ContextPackExpandablePreview[]
   follow_up: ContextPackExpandableFollowUp
 }
@@ -420,6 +450,29 @@ export interface ContextPackCoverage {
   selected_relationships: number
 }
 
+export type SourceSelectionScope = 'symbol_lookup' | 'file_lookup' | 'task_context'
+
+/** Bounded source resolution is evidence of inspected calls, not workflow completeness. */
+export interface ContextPackSourceDependencies {
+  scanned_files: number
+  resolved_calls: number
+  /** Statically bound function values passed as arguments; not proof of invocation. */
+  resolved_references?: number
+  unresolved_references?: number
+  unresolved_calls: number
+  /** Call sites in admitted source with no unique named graph caller; not selected-closure calls or proof of invocation. */
+  unattributed_calls?: number
+  /** Legacy call edges withheld because current bounded source inspection did not confirm them. */
+  withheld_graph_calls?: number
+  bounded: boolean
+  unresolved?: Array<{
+    source_file: string
+    line_number: number
+    callee: string
+    reason: 'unresolved' | 'external' | 'no_implementation' | 'outside_index' | 'limit'
+  }>
+}
+
 export interface CompiledContextPack<
   TNode extends ContextPackNode = ContextPackNode,
   TRelationship extends ContextPackRelationship = ContextPackRelationship,
@@ -444,6 +497,9 @@ export interface CompiledContextPack<
   answer_contract?: ContextPackRuntimeGenerationAnswerContract
   answer_ready?: ContextPackExplainAnswerReadySummary
   retrieval_gate?: RetrievalGateDecision
+  selection_scope?: SourceSelectionScope
+  selection_omitted?: number
+  source_dependencies?: ContextPackSourceDependencies
 }
 
 export type ContextPackGovernanceSurface = 'cli_pack' | 'mcp_context_pack'

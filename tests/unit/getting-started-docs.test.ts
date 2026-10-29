@@ -44,17 +44,17 @@ describe('getting started tutorial', () => {
     expect(readme).toContain('madar try')
     expect(readme.indexOf('madar try')).toBeLessThan(readme.indexOf('madar generate .'))
     for (const command of [
-      'madar claude install',
+      'madar claude install --profile strict',
       'madar codex install',
-      'madar cursor install',
-      'madar copilot install',
-      'madar gemini install',
+      'madar cursor install --profile strict',
+      'madar copilot install --profile strict',
+      'madar gemini install --profile strict',
       'madar aider install',
       'madar opencode install',
     ]) {
       expect(readme).toContain(command)
     }
-    expect(readme).toContain('After installing a profile, run `madar doctor` and `madar status`.')
+    expect(readme).toContain('After installing, run `madar doctor` and `madar status`.')
     expect(readme).toContain('Installer details are in the [CLI and MCP reference]')
     expect(readme).toContain('madar pack "how does auth work?" --task explain --format text')
     expect(readme).toContain('madar prompt "how does auth work?" --provider claude')

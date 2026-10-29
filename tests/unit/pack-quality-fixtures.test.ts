@@ -1,6 +1,60 @@
 import { describe, expect, it } from 'vitest'
 
-import { listPackQualityFixtures, runPackQualityFixture } from './helpers/pack-quality.js'
+import { estimateQueryTokens } from '../../src/runtime/serve.js'
+import { listPackQualityFixtures, readPackQualityFixtureSource, runPackQualityFixture, type PackQualityFixtureRunResult, type SourceEvidenceNode } from './helpers/pack-quality.js'
+
+function assertDeliveredSource(name: string, result: PackQualityFixtureRunResult): SourceEvidenceNode[] {
+  const { payload, output } = result
+  expect(payload.response_format).toBe('source_evidence_v2')
+  expect(payload.evidence.answerability.advisory).toBe(true)
+  expect(payload.evidence.answerability.answer_scope).not.toBe('complete')
+  expect(payload.serialized_budget).toEqual({
+    max_tokens: result.fixture.budget ?? 1800,
+    token_count: estimateQueryTokens(output),
+    enforced: true,
+  })
+  expect(payload.serialized_budget.token_count).toBeLessThanOrEqual(payload.serialized_budget.max_tokens)
+  const nodes = payload.pack.matched_nodes
+  expect(nodes.length).toBeGreaterThan(0)
+  const resolveSnippet = (node: SourceEvidenceNode, visiting = new Set<string>()): string => {
+    expect(visiting.has(node.node_id)).toBe(false)
+    if (typeof node.snippet === 'string') return node.snippet
+    expect(node.snippet_ref).toEqual(expect.any(String))
+    const owner = nodes.find((entry) => entry.node_id === node.snippet_ref)
+    expect(owner, `unresolved snippet_ref for ${node.label}`).toBeDefined()
+    expect(owner!.source_file).toBe(node.source_file)
+    const range = node.snippet_line_range!, ownerRange = owner!.snippet_line_range!
+    expect(range.start_line).toBeGreaterThanOrEqual(ownerRange.start_line)
+    expect(range.end_line).toBeLessThanOrEqual(ownerRange.end_line)
+    return resolveSnippet(owner!, new Set([...visiting, node.node_id])).split('\n')
+      .slice(range.start_line - ownerRange.start_line, range.end_line - ownerRange.start_line + 1).join('\n')
+  }
+  for (const node of nodes) {
+    const lines = readPackQualityFixtureSource(name, node.source_file).replace(/\r\n/g, '\n').split('\n')
+    const range = node.snippet_line_range
+    expect(range, `missing source range for ${node.label}`).toBeDefined()
+    expect(Number.isInteger(range!.start_line)).toBe(true)
+    expect(Number.isInteger(range!.end_line)).toBe(true)
+    expect(range!.start_line).toBeGreaterThan(0)
+    expect(range!.end_line).toBeGreaterThanOrEqual(range!.start_line)
+    expect(range!.end_line).toBeLessThanOrEqual(lines.length)
+    expect(node.snippet_unverified).not.toBe(true)
+    expect(node.snippet_omitted_ranges ?? []).toEqual([])
+    expect(resolveSnippet(node), `source excerpt for ${node.label}`).toBe(lines.slice(range!.start_line - 1, range!.end_line).join('\n'))
+  }
+  for (const continuation of payload.expandable ?? []) {
+    expect(continuation.handle_id.length).toBeGreaterThan(0)
+    const files = [...(continuation.focus_files ?? []), ...(continuation.focus_ranges ?? []).map((range) => range.source_file)]
+    expect(files.length, `continuation ${continuation.handle_id} needs a usable source location`).toBeGreaterThan(0)
+    for (const file of files) expect(readPackQualityFixtureSource(name, file).length).toBeGreaterThan(0)
+    for (const range of continuation.focus_ranges ?? []) {
+      expect(range.start_line).toBeGreaterThan(0)
+      expect(range.end_line).toBeGreaterThanOrEqual(range.start_line)
+      expect(range.end_line).toBeLessThanOrEqual(readPackQualityFixtureSource(name, range.source_file).split('\n').length)
+    }
+  }
+  return nodes
+}
 
 const EXPECTED_IMPLEMENT_FIXTURES = [
   'controller-service-test-flow',
@@ -67,10 +121,34 @@ describe('pack-quality fixtures (#298)', () => {
       const result = await runPackQualityFixture(fixtureName)
 
       expect(result.graph.nodeCount).toBeGreaterThan(0)
-      expect(result.payload.workflow_centers?.map((entry) => entry.path)).toEqual(
+      const delivered = assertDeliveredSource(fixtureName, result)
+      expect(delivered.map((node) => node.source_file)).toEqual(expect.arrayContaining([
+        ...result.fixture.expected_workflow_centers,
+        ...result.fixture.expected_likely_edit_files,
+      ]))
+      // Optional planning guidance may yield to source under the wire budget.
+      // Its original algorithm assertions below still run for every fixture.
+      if (result.payload.implementation) {
+        expect(result.payload.implementation.likely_edit_files?.map((entry) => entry.path)).toEqual(
+          expect.arrayContaining(result.fixture.expected_likely_edit_files),
+        )
+        if (result.fixture.expected_likely_test_files.length > 0) {
+          expect(result.payload.implementation.likely_test_files?.map((entry) => entry.path)).toEqual(
+            expect.arrayContaining(result.fixture.expected_likely_test_files),
+          )
+        }
+        if (result.fixture.expected_validation_commands.length > 0) {
+          expect(result.payload.implementation.validation_commands).toEqual(
+            expect.arrayContaining(result.fixture.expected_validation_commands),
+          )
+        }
+      } else {
+        expect(result.payload.evidence.answerability.missing_obligations?.length).toBeGreaterThan(0)
+      }
+      expect(result.diagnostics.workflow_centers?.map((entry) => entry.path)).toEqual(
         expect.arrayContaining(result.fixture.expected_workflow_centers),
       )
-      expect(result.payload.likely_edit_files?.map((entry) => entry.path)).toEqual(
+      expect(result.diagnostics.likely_edit_files?.map((entry) => entry.path)).toEqual(
         expect.arrayContaining(result.fixture.expected_likely_edit_files),
       )
 
@@ -78,21 +156,21 @@ describe('pack-quality fixtures (#298)', () => {
         fixtureName as keyof typeof EXPECTED_TOP_WORKFLOW_CENTER
       ]
       if (expectedTopWorkflowCenter) {
-        expect(result.payload.workflow_centers?.[0]?.path).toBe(expectedTopWorkflowCenter)
+        expect(result.diagnostics.workflow_centers?.[0]?.path).toBe(expectedTopWorkflowCenter)
       }
 
       const expectedTopLikelyEditFile = EXPECTED_TOP_LIKELY_EDIT_FILE[
         fixtureName as keyof typeof EXPECTED_TOP_LIKELY_EDIT_FILE
       ]
       if (expectedTopLikelyEditFile) {
-        expect(result.payload.likely_edit_files?.[0]?.path).toBe(expectedTopLikelyEditFile)
+        expect(result.diagnostics.likely_edit_files?.[0]?.path).toBe(expectedTopLikelyEditFile)
       }
 
       const expectedWorkflowOrder = EXPECTED_WORKFLOW_ORDER[
         fixtureName as keyof typeof EXPECTED_WORKFLOW_ORDER
       ]
       if (expectedWorkflowOrder) {
-        const workflowCenters = result.payload.workflow_centers?.map((entry) => entry.path) ?? []
+        const workflowCenters = result.diagnostics.workflow_centers?.map((entry) => entry.path) ?? []
         expect(workflowCenters.indexOf(expectedWorkflowOrder[0])).toBeGreaterThanOrEqual(0)
         expect(workflowCenters.indexOf(expectedWorkflowOrder[0])).toBeLessThan(
           workflowCenters.indexOf(expectedWorkflowOrder[1]),
@@ -103,7 +181,7 @@ describe('pack-quality fixtures (#298)', () => {
         fixtureName as keyof typeof EXPECTED_LIKELY_EDIT_ORDER
       ]
       if (expectedLikelyEditOrder) {
-        const likelyEditFiles = result.payload.likely_edit_files?.map((entry) => entry.path) ?? []
+        const likelyEditFiles = result.diagnostics.likely_edit_files?.map((entry) => entry.path) ?? []
         expect(likelyEditFiles.indexOf(expectedLikelyEditOrder[0])).toBeGreaterThanOrEqual(0)
         expect(likelyEditFiles.indexOf(expectedLikelyEditOrder[0])).toBeLessThan(
           likelyEditFiles.indexOf(expectedLikelyEditOrder[1]),
@@ -114,31 +192,31 @@ describe('pack-quality fixtures (#298)', () => {
         fixtureName as keyof typeof FORBIDDEN_LIKELY_EDIT_FILES
       ]
       if (forbiddenLikelyEditFiles) {
-        expect(result.payload.likely_edit_files?.map((entry) => entry.path)).not.toEqual(
+        expect(result.diagnostics.likely_edit_files?.map((entry) => entry.path)).not.toEqual(
           expect.arrayContaining([...forbiddenLikelyEditFiles]),
         )
       }
 
       if (result.fixture.expected_likely_test_files.length > 0) {
-        expect(result.payload.likely_test_files?.map((entry) => entry.path)).toEqual(
+        expect(result.diagnostics.likely_test_files?.map((entry) => entry.path)).toEqual(
           expect.arrayContaining(result.fixture.expected_likely_test_files),
         )
       }
 
       if (result.fixture.expected_validation_commands.length > 0) {
-        expect(result.payload.validation_commands).toEqual(
+        expect(result.diagnostics.validation_commands).toEqual(
           expect.arrayContaining(result.fixture.expected_validation_commands),
         )
       }
 
       if ((result.fixture.expected_retrieval_pipeline_phases?.length ?? 0) > 0) {
-        expect(result.payload.retrieval_pipeline?.phases?.map((entry) => entry.phase)).toEqual(
+        expect(result.diagnostics.retrieval_pipeline?.phases?.map((entry) => entry.phase)).toEqual(
           expect.arrayContaining(result.fixture.expected_retrieval_pipeline_phases ?? []),
         )
       }
 
       for (const snippet of result.fixture.expected_negative_guidance) {
-        expect(result.payload.negative_guidance?.some((entry) => entry.includes(snippet))).toBe(true)
+        expect(result.diagnostics.negative_guidance?.some((entry) => entry.includes(snippet))).toBe(true)
       }
 
       const expectedNegativeGuidanceSnippets = EXPECTED_NEGATIVE_GUIDANCE_SNIPPETS[
@@ -146,7 +224,7 @@ describe('pack-quality fixtures (#298)', () => {
       ]
       if (expectedNegativeGuidanceSnippets) {
         for (const snippet of expectedNegativeGuidanceSnippets) {
-          expect(result.payload.negative_guidance?.some((entry) => entry.includes(snippet))).toBe(true)
+          expect(result.diagnostics.negative_guidance?.some((entry) => entry.includes(snippet))).toBe(true)
         }
       }
     })
@@ -154,7 +232,7 @@ describe('pack-quality fixtures (#298)', () => {
 
   it('generates a deterministic explain pack for runtime-generation-explain-report-flow', async () => {
     const result = await runPackQualityFixture('runtime-generation-explain-report-flow')
-    const payload = result.payload as typeof result.payload & {
+    const payload = result.diagnostics as typeof result.diagnostics & {
       confidence_score?: number
       workflow_centers?: Array<{ path?: string }>
       recommended_first_read?: Array<{ path?: string }>
@@ -187,9 +265,10 @@ describe('pack-quality fixtures (#298)', () => {
     expect(payload.confidence_score).toEqual(expect.any(Number))
     expect(payload.confidence_score).toBeGreaterThanOrEqual(0)
     expect(payload.confidence_score).toBeLessThanOrEqual(1)
-    expect(payload.pack?.confidence_score).toBeUndefined()
-    expect(payload.pack?.workflow_centers).toBeUndefined()
-    expect(payload.pack?.recommended_first_read).toBeUndefined()
+    // Rankings stay diagnostic; compact v2 spends the budget on source evidence.
+    expect(result.payload).not.toHaveProperty('confidence_score')
+    expect(result.payload.pack).not.toHaveProperty('workflow_centers')
+    expect(result.payload.pack).not.toHaveProperty('recommended_first_read')
     expect(payload.recommended_first_read?.map((entry) => entry.path)).not.toEqual(
       expect.arrayContaining([
         'src/modules/ideas/application/helpers/idea-report-status-message.helper.ts',
@@ -232,14 +311,10 @@ describe('pack-quality fixtures (#298)', () => {
       ]),
       missing: [],
     }))
-    expect(payload.pack?.matched_nodes?.length).toBeLessThanOrEqual(8)
-    const surfacedLabels = new Set([
-      ...(payload.pack?.matched_nodes?.map((entry) => entry.label).filter((label): label is string => typeof label === 'string') ?? []),
-      ...(payload.expandable?.flatMap((entry) =>
-        entry.preview?.map((node) => node.label).filter((label): label is string => typeof label === 'string') ?? [],
-      ) ?? []),
-      ...(payload.claims?.flatMap((entry) => entry.node_labels ?? []) ?? []),
-    ])
+    const delivered = assertDeliveredSource('runtime-generation-explain-report-flow', result)
+    expect(delivered.map((node) => node.source_file)).toEqual(expect.arrayContaining(result.fixture.expected_workflow_centers))
+    expect(result.payload.pack.answer_contract?.do_not_claim).toEqual(expect.arrayContaining(result.fixture.expected_negative_guidance))
+    const surfacedLabels = new Set(delivered.map((node) => node.label))
     expect([...surfacedLabels]).toEqual(
       expect.arrayContaining([
         '.generateFromProblem()',
@@ -254,7 +329,7 @@ describe('pack-quality fixtures (#298)', () => {
       task: 'explain',
       budget: 1800,
     })
-    const payload = result.payload as typeof result.payload & {
+    const payload = result.diagnostics as typeof result.diagnostics & {
       pack?: {
         execution_slice?: {
           primary_path?: {
@@ -269,11 +344,15 @@ describe('pack-quality fixtures (#298)', () => {
       'handleQualityGateFailure()',
     ]))
     expect(primaryLabels).not.toContain('saveStructuredReport()')
+    const delivered = assertDeliveredSource('runtime-generation-explain-report-flow', result)
+    expect(delivered.map((node) => node.label)).toContain('handleQualityGateFailure()')
+    expect(result.payload.pack.execution_slice?.steps?.map((step) => step.label)).toContain('handleQualityGateFailure()')
+    expect(result.payload.pack.execution_slice?.steps?.map((step) => step.label)).not.toContain('saveStructuredReport()')
   })
 
-  it('surfaces runtime primary-path steps in matched nodes or expandable previews', async () => {
+  it('delivers source for runtime primary-path steps in the compact response', async () => {
     const result = await runPackQualityFixture('runtime-generation-explain-report-flow')
-    const payload = result.payload as typeof result.payload & {
+    const payload = result.diagnostics as typeof result.diagnostics & {
       expandable?: Array<{
         preview?: Array<{ label?: string }>
       }>
@@ -289,11 +368,8 @@ describe('pack-quality fixtures (#298)', () => {
 
     const primaryLabels = (payload.pack?.execution_slice?.primary_path?.steps ?? [])
       .flatMap((entry) => (typeof entry.label === 'string' && entry.label.length > 0 ? [entry.label] : []))
-    const surfacedLabels = new Set([
-      ...(payload.pack?.matched_nodes ?? []).flatMap((entry) => (typeof entry.label === 'string' && entry.label.length > 0 ? [entry.label] : [])),
-      ...(payload.expandable ?? []).flatMap((entry) => (entry.preview ?? []).flatMap((preview) =>
-        typeof preview.label === 'string' && preview.label.length > 0 ? [preview.label] : [])),
-    ])
+    const delivered = assertDeliveredSource('runtime-generation-explain-report-flow', result)
+    const surfacedLabels = new Set(delivered.map((node) => node.label))
 
     expect(primaryLabels.length).toBeGreaterThan(0)
     expect([...surfacedLabels]).toEqual(expect.arrayContaining(primaryLabels))
@@ -301,7 +377,7 @@ describe('pack-quality fixtures (#298)', () => {
 
   it('does not report recommended first reads as omitted slice-path warnings on the explain fixture', async () => {
     const result = await runPackQualityFixture('runtime-generation-explain-report-flow')
-    const payload = result.payload as typeof result.payload & {
+    const payload = result.diagnostics as typeof result.diagnostics & {
       pack?: {
         routing?: {
           warnings?: Array<{

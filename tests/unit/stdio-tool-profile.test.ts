@@ -1,3 +1,4 @@
+import { SOURCE_RETRIEVAL_ADMISSION } from '../../src/shared/source-retrieval-guidance.js'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -156,28 +157,27 @@ describe('MCP tool profile', () => {
       }))
     })
 
-    it('keeps strict context packs answer-ready and removes expansion tuning fields', () => {
-      const strictContextPack = activeMcpTools('strict').find((tool) => tool.name === 'context_pack')
-      const strictContextExpand = activeMcpTools('strict').find((tool) => tool.name === 'context_expand')
-      const fullContextPack = activeMcpTools('full').find((tool) => tool.name === 'context_pack')
-      const fullContextExpand = activeMcpTools('full').find((tool) => tool.name === 'context_expand')
-
-      expect(strictContextPack?.description).toContain('exactly once per user task')
-      expect(strictContextPack?.description).toContain('verbatim')
-      expect(strictContextPack?.description).toContain('including read-only, no-change, scope, and formatting constraints')
-      expect(strictContextPack?.inputSchema.properties).toEqual(expect.objectContaining({
-        prompt: expect.objectContaining({ description: expect.stringContaining('verbatim') }),
-        task: expect.any(Object),
-      }))
-      expect(Object.keys(strictContextPack?.inputSchema.properties ?? {})).toEqual(['prompt', 'task'])
-      expect(strictContextExpand?.description).toContain('verify_targets')
-      expect(strictContextExpand?.description).toContain('result as terminal')
-      expect(strictContextExpand?.description).toContain('Never call for ready')
-      expect(Object.keys(strictContextExpand?.inputSchema.properties ?? {})).toEqual(['handle_id'])
-      expect(fullContextExpand?.description).not.toContain('one strict verification attempt')
-      expect(fullContextPack?.inputSchema.properties.verbose).toEqual(expect.objectContaining({
-        description: expect.stringContaining('developer diagnostics'),
-      }))
+    it('exposes compact budgets and permits focused follow-up investigation', async () => {
+      const pack = activeMcpTools('strict').find((tool) => tool.name === 'context_pack')
+      const expand = activeMcpTools('strict').find((tool) => tool.name === 'context_expand')
+      expect(Object.keys(pack?.inputSchema.properties ?? {})).toEqual(['prompt', 'task', 'budget', 'targets'])
+      expect(Object.keys(expand?.inputSchema.properties ?? {})).toEqual(['handle_id', 'budget', 'symbol'])
+      expect(pack?.inputSchema.properties.budget).toMatchObject({ minimum: 128 })
+      expect(pack?.description).toContain('focused follow-up')
+      expect(expand?.description).toContain('related evidence')
+      for (const tool of [pack, expand]) {
+        expect(tool?.description).not.toMatch(/exactly once|terminal|Never call for ready|byte-for-byte/)
+      }
+      await withProfile('strict', async () => {
+        const response = await handleStdioRequest('out/graph.json', { id: 1, method: 'initialize' })
+        const instructions = (response?.result as { instructions: string }).instructions
+        expect(instructions).toContain(SOURCE_RETRIEVAL_ADMISSION)
+        expect(instructions).not.toContain('context-pack-first')
+        expect(activeMcpTools('strict').map((tool) => tool.name)).toEqual(['context_pack', 'context_expand'])
+        expect(instructions).toContain('focused source questions')
+        expect(instructions).toContain('Continue investigating when evidence is incomplete')
+        expect(instructions).not.toMatch(/once|verbatim|verify_targets/)
+      })
     })
   })
 
@@ -441,7 +441,7 @@ describe('MCP tool profile', () => {
       }
     })
 
-    it('keeps strict packs minimal, clears stale handles, and consumes one bounded expansion (#405, #550)', async () => {
+    it('keeps strict packs minimal and permits repeated session-owned expansions', async () => {
       const root = createMinimalGraphRoot()
       try {
         await withProfile('strict', async () => {
@@ -495,9 +495,7 @@ describe('MCP tool profile', () => {
               arguments: { handle_id: 'strict-profile-handle' },
             },
           }, sessionState))
-          expect(repeated).toMatchObject({
-            error: { message: expect.stringContaining('Unknown or unauthorized') },
-          })
+          expect(repeated).not.toHaveProperty('error')
 
           const secondTarget = await Promise.resolve(handleStdioRequest(join(root, 'graph.json'), {
             id: 1041,
@@ -507,9 +505,7 @@ describe('MCP tool profile', () => {
               arguments: { handle_id: 'second-strict-profile-handle' },
             },
           }, sessionState))
-          expect(secondTarget).toMatchObject({
-            error: { message: expect.stringContaining('Unknown or unauthorized') },
-          })
+          expect(secondTarget).not.toHaveProperty('error')
 
           sessionState.contextPackHandles.set('preserved-after-invalid-request', {
             prompt: 'Implement the flow from A to B',
@@ -574,9 +570,7 @@ describe('MCP tool profile', () => {
               arguments: { handle_id: 'stale-handle' },
             },
           }, sessionState))
-          expect(stale).toMatchObject({
-            error: { message: expect.stringContaining('Unknown or unauthorized') },
-          })
+          expect(stale).not.toHaveProperty('error')
         })
       } finally {
         rmSync(root, { recursive: true, force: true })
@@ -615,16 +609,14 @@ describe('MCP tool profile', () => {
           focus_files?: string[]
         }
         expect(authorization).toMatchObject({
-          handle_id: 'strict-verify-target',
+          handle_id: expect.stringMatching(/^verify-/),
           evidence_class: 'supporting',
           focus_files: ['a.ts'],
         })
         expect(payload.expandable).toEqual([
-          expect.objectContaining({ handle_id: 'strict-verify-target' }),
+          expect.objectContaining({ handle_id: expect.stringMatching(/^verify-/) }),
         ])
-        expect(payload.pack.expandable).toEqual([
-          expect.objectContaining({ handle_id: 'strict-verify-target' }),
-        ])
+        expect(payload.expandable?.length).toBeGreaterThan(0)
 
         await withProfile('strict', async () => {
           const sessionState = {
@@ -661,16 +653,14 @@ describe('MCP tool profile', () => {
             method: 'tools/call',
             params: { name: 'context_expand', arguments: { handle_id: 'strict-verify-target' } },
           }, sessionState))
-          expect(repeated).toMatchObject({
-            error: { message: expect.stringContaining('Unknown or unauthorized') },
-          })
+          expect(repeated).not.toHaveProperty('error')
         })
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
     })
 
-    it('makes the one strict verification expansion terminal instead of advertising uncallable follow-on handles', async () => {
+    it('keeps follow-on expansion handles callable in the strict profile', async () => {
       const root = createOverflowExpansionGraphRoot()
       const graphPath = join(root, 'graph.json')
       const storedHandle = {
@@ -736,22 +726,13 @@ describe('MCP tool profile', () => {
               }
             }
           }
-          expect(payload.handle_id).toBeUndefined()
-          expect(payload.expandable).toBeUndefined()
-          expect(payload.pack?.expandable).toBeUndefined()
+          expect(payload.handle_id).toBe('overflow-handle')
+          expect(payload.expandable?.length).toBeGreaterThan(0)
           expect(payload.evidence).toMatchObject({
-            pack_confidence: 'low',
-            agent_directive: 'answer_from_pack',
-            answerability: {
-              state: 'insufficient',
-              verification_targets: [],
-              broad_search_fallback: 'blocked',
-            },
+            agent_directive: 'explore_with_caution',
+            answerability: { advisory: true, broad_search_fallback: 'allowed' },
           })
-          expect(payload.evidence.answerability.caveats).toContain(
-            'strict verification expansion limit reached; remaining targets were not authorized',
-          )
-          expect(sessionState.contextPackHandles.size).toBe(0)
+          expect(sessionState.contextPackHandles.size).toBeGreaterThan(0)
           const followOnHandle = fullPayload?.expandable?.[0]?.handle_id
           expect(followOnHandle).toEqual(expect.any(String))
 
@@ -763,9 +744,7 @@ describe('MCP tool profile', () => {
               arguments: { handle_id: followOnHandle },
             },
           }, sessionState))
-          expect(retried).toMatchObject({
-            error: { message: expect.stringContaining('Unknown or unauthorized') },
-          })
+          expect(retried).not.toHaveProperty('error')
         })
       } finally {
         rmSync(root, { recursive: true, force: true })
@@ -791,7 +770,7 @@ describe('MCP tool profile', () => {
 
           expect(response).toMatchObject({
             error: {
-              message: expect.stringContaining('strict context_pack accepts only prompt and optional task'),
+              message: expect.stringContaining('strict context_pack accepts prompt and optional task/budget'),
             },
           })
         })

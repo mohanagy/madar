@@ -1,5 +1,6 @@
 import type { ContextPackEvidenceClass, ContextPackSemanticCategory, ContextPackTaskKind } from '../contracts/context-pack.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
+import { classifyRetrievalLevel, extractPromptExclusions, retrievalSubjectPrompt } from './retrieval-gate.js'
 
 export interface TaskEvidenceRecipe {
   id: TaskIntentKind
@@ -18,6 +19,7 @@ export interface TaskEvidenceRecipe {
 interface ResolveTaskEvidenceRecipeOptions {
   task_intent?: TaskIntentKind
   has_change_evidence?: boolean
+  prompt?: string
 }
 
 const TASK_EVIDENCE_RECIPES: Record<TaskIntentKind, TaskEvidenceRecipe> = {
@@ -59,6 +61,15 @@ const TASK_EVIDENCE_RECIPES: Record<TaskIntentKind, TaskEvidenceRecipe> = {
       ['supporting', 'impact', 'structural'],
       ['change', 'supporting', 'impact'],
     ],
+  },
+  'source-review': {
+    id: 'source-review',
+    task_kind: 'review',
+    required_evidence: ['primary'],
+    preferred_evidence: ['primary', 'supporting', 'impact', 'structural'],
+    semantic_required: ['implementation'],
+    semantic_optional: ['tests', 'configuration', 'contracts', 'impact'],
+    step_evidence: [['primary'], ['primary'], ['primary']],
   },
   impact: {
     id: 'impact',
@@ -263,12 +274,42 @@ function cloneStepEvidence(stepEvidence: TaskEvidenceRecipe['step_evidence']): T
   ]
 }
 
+/** Source review has no implicit diff or blast-radius obligation. Explicit scope still matters. */
+function sourceReviewRecipe(recipe: TaskEvidenceRecipe, prompt: string): TaskEvidenceRecipe {
+  let subject = retrievalSubjectPrompt(extractPromptExclusions(prompt).positivePrompt)
+  const signals = classifyRetrievalLevel({ prompt: subject }).signals
+  // Names such as `impact.ts` locate code; they do not request impact analysis.
+  subject = subject.replace(/`[^`\n]*`/g, ' ')
+  for (const reference of [...signals.mentioned_paths, ...signals.mentioned_symbols].sort((a, b) => b.length - a.length)) {
+    subject = subject.split(reference).join(' ')
+  }
+  const required = [...recipe.required_evidence]
+  const semantic = [...recipe.semantic_required]
+  if (/\b(?:tests?|testing|specs?|coverage)\b/i.test(subject)) semantic.push('tests')
+  if (/\b(?:config(?:uration)?|settings|environment)\b/i.test(subject)) semantic.push('configuration')
+  if (/\b(?:contracts?|interfaces?|schemas?)\b/i.test(subject)) semantic.push('contracts')
+  if (/\b(?:dependenc(?:y|ies)|callees?|calls?|invok(?:e|es|ed)|collaborators?)\b/i.test(subject)) required.push('supporting')
+  if (/\b(?:impact|callers?|consumers?|downstream|dependents?|blast\s+radius|affected)\b/i.test(subject)) {
+    required.push('impact')
+    semantic.push('impact')
+  }
+  return {
+    ...cloneRecipe(recipe),
+    required_evidence: uniqueEvidence(required),
+    semantic_required: uniqueSemanticCategories(semantic),
+    semantic_optional: recipe.semantic_optional.filter(category => !semantic.includes(category)),
+    step_evidence: [['primary'], uniqueEvidence(required), uniqueEvidence(required)],
+  }
+}
+
 export function resolveTaskEvidenceRecipe(
   taskKind: ContextPackTaskKind,
   options: ResolveTaskEvidenceRecipeOptions = {},
 ): TaskEvidenceRecipe {
   const requestedRecipe = options.task_intent ? TASK_EVIDENCE_RECIPES[options.task_intent] : undefined
   const compatibleRecipe = requestedRecipe?.task_kind === taskKind ? requestedRecipe : TASK_EVIDENCE_RECIPES[taskKind]
+
+  if (compatibleRecipe.id === 'source-review') return sourceReviewRecipe(compatibleRecipe, options.prompt ?? '')
 
   if (taskKind === 'review' && options.has_change_evidence === false) {
     return reviewFallbackRecipe(compatibleRecipe)

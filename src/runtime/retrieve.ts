@@ -1,5 +1,7 @@
+import { compileSourceExclusions } from './source-exclusions.js'
 import { existsSync, readFileSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path'
+import ts from 'typescript'
 
 import { decode as decodeTokens, encode as encodeTokens } from 'gpt-tokenizer/encoding/cl100k_base'
 
@@ -24,6 +26,8 @@ import type {
   ContextPackSliceMetadata,
   ContextPackTaskContract,
   ContextPackTaskKind,
+  ContextPackSourceDependencies,
+  SourceSelectionScope,
 } from '../contracts/context-pack.js'
 import type { ContextPackRetrievalPlanDetail, RetrievalQualitySnapshot } from '../contracts/retrieval-plan.js'
 import type { ContextPackRecoveryPlan } from '../contracts/context-recovery.js'
@@ -40,6 +44,9 @@ import {
   type SourceDomain,
 } from '../shared/source-discovery.js'
 import { relativizeSourceFile } from '../shared/source-path.js'
+import { JS_TS_SOURCE_EXTENSIONS } from '../shared/source-extensions.js'
+import { sourceFunctionOccurrence } from '../shared/source-function-occurrences.js'
+import { maskPromptRegions } from '../shared/prompt-regions.js'
 import {
   classifyTaskContract,
   compactContextPack,
@@ -49,7 +56,7 @@ import {
   type ContextPackNodeCandidate,
 } from './context-pack.js'
 import type { RetrievalGateDecision, RetrievalLevel } from '../contracts/retrieval-gate.js'
-import { classifyRetrievalLevel } from './retrieval-gate.js'
+import { classifyRetrievalLevel, extractPromptExclusions, retrievalDirectivePrompt, retrievalEvidencePrompt, retrievalSearchPrompt, retrievalSubjectPrompt } from './retrieval-gate.js'
 import { requireDirectedGraph } from './direction.js'
 import {
   expansionPolicyForLevel,
@@ -59,6 +66,7 @@ import {
   relationIsPrimaryForPolicy,
 } from './retrieve/expansion.js'
 import { sliceCandidatesForRetrieve } from './retrieve/slicing.js'
+import { renderSourceFragment, selectSourceFragments, type SourceFragment } from './retrieve/source-fragments.js'
 import {
   CONCEPTUAL_WORKFLOW_RESERVATION_BOOST,
   finalizeConceptualFallbackPlan,
@@ -66,7 +74,6 @@ import {
   flowQueryEvidenceCandidateAllowed,
   planConceptualFallback,
   queryEvidenceObligations,
-  queryEvidenceTermsMatch,
   reconcileRetrievalPlanQueryEvidence,
   underScopedDivergenceNodeIds,
 } from './retrieve/conceptual-fallback.js'
@@ -85,15 +92,23 @@ import {
   type RetrievalStageObserver,
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
+import { coherentSourceSnippet, readEvidenceLines, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
+import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
+import { recoverySourceGuard } from './retrieve/recovery-source-preservation.js'
+import { sourceQuerySymbols, type SourceSymbolOccurrence } from './retrieve/source-query-symbols.js'
+import { sourceQualifiedBindingScope } from './retrieve/source-qualified-bindings.js'
+import { sourceVisibleWarnings } from './retrieve/source-visible-warnings.js'
+import { prioritizeNextRouteReferences } from './retrieve/source-route-references.js'
+import { sourceCoherenceGroup } from './retrieve/source-coherence.js'
+import { buildSourceCoherentContinuationCatalog, sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from './retrieve/source-coherent-continuation.js'
+import { selectRequestedHelperOwners } from './retrieve/source-requested-helpers.js'
+import { sourceRequestedOperations, sourceSimplePrototypeRequests, selectRequestedPrototypeOwners, selectVerifiedExplicitPrototypeOwners } from './retrieve/source-requested-operations.js'
 
 export { tokenizeLabel, tokenizeQuestion } from './retrieve/pipeline.js'
 
 const SNIPPET_HALF_WINDOW = 7
 const DERIVED_SNIPPET_HALF_WINDOW = 1
 const MAX_SNIPPET_LINE_LENGTH = 200
-const QUERY_EVIDENCE_SNIPPET_LINE_CAP = 220
-const QUERY_EVIDENCE_SNIPPET_CHAR_CAP = 300
-const QUERY_EVIDENCE_SNIPPET_MAX_LINES = 4
 export const DEFAULT_RETRIEVE_SNIPPET_BUDGET = 3000
 export const DEFAULT_RETRIEVE_TOP_N_WITH_SNIPPET = 8
 export const DEFAULT_RETRIEVE_STDIO_OUTPUT_TOKENS = 4000
@@ -115,6 +130,17 @@ const CONCEPTUAL_FALLBACK_SEED_MIN_BOOST = 0.75
 const tokenWeightCache = new WeakMap<KnowledgeGraph, Map<string, Map<string, number>>>()
 const graphSignalCache = new WeakMap<KnowledgeGraph, RetrieveGraphSignals>()
 const averageLabelLengthCache = new WeakMap<KnowledgeGraph, number>()
+const sourceEvidenceCaches = new WeakMap<RetrieveOptions, Map<string, string[] | null>>()
+const sourceFileExpansionStates = new WeakMap<RetrieveOptions, {
+  ranges: Map<string, ContextPackExpandableLineRange | undefined>; owners?: Map<string, string[]>;
+  probes: number; bytes: number;
+}>()
+
+function requestSourceCache(options: RetrieveOptions): Map<string, string[] | null> {
+  let cache = sourceEvidenceCaches.get(options)
+  if (!cache) { cache = new Map(); sourceEvidenceCaches.set(options, cache) }
+  return cache
+}
 
 export interface RetrieveOptions {
   question: string
@@ -176,6 +202,9 @@ export interface RetrieveMatchedNode {
   snippet_line_number?: number
   snippet_scope?: 'symbol' | 'source_file'
   snippet_truncated?: boolean
+  snippet_unverified?: boolean
+  snippet_line_range?: EvidenceLineRange
+  snippet_omitted_ranges?: EvidenceLineRange[]
   match_score: number
   relevance_band: 'direct' | 'related' | 'peripheral'
   community: number | null
@@ -223,7 +252,23 @@ export interface RetrieveResult {
   slice?: ContextPackSliceMetadata
   execution_slice?: ContextPackExecutionSlice
   answer_contract?: ContextPackRuntimeGenerationAnswerContract
+  source_search?: { scanned_files: number; scanned_bytes: number; bounded: boolean }
+  [independentSourceBodiesKey]?: true
+  selection_scope?: SourceSelectionScope
+  selection_omitted?: number
+  source_dependencies?: ContextPackSourceDependencies
+  /** Internal current-source provenance, excluded from compact and MCP payloads. */
+  [sourceSelectionProvenanceKey]?: SourceSelectionProvenance
+  [sourceCallsiteBundlesKey]?: SourceCallsiteBundle[]
+  [sourceFunctionValueReferencesKey]?: SourceFunctionValueReference[]
+  [sourceFlowCatalogKey]?: SourceFlowCatalog
+  [sourceCoherentContinuationCatalogKey]?: SourceCoherentContinuationCatalog
+  [sourceDiscoveryCoreKey]?: { question: string; node_ids: string[]; selected_node_ids: string[] }
 }
+
+/** Request-local source provenance; never serialized as a retrieval claim. */
+export const sourceDiscoveryCoreKey = Symbol('sourceDiscoveryCore')
+const independentSourceBodiesKey = Symbol('independentSourceBodies')
 
 export interface CompactRetrieveMatchedNode extends Omit<RetrieveMatchedNode, 'community_label' | 'file_type' | 'framework_boost' | 'snippet_truncated'> {
   file_type?: string
@@ -531,7 +576,7 @@ function truncateSnippetToTokenBudget(
   }
 }
 
-function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | null }>(
+function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | null; snippet_truncated?: boolean; snippet_line_range?: EvidenceLineRange; snippet_omitted_ranges?: EvidenceLineRange[] }>(
   nodes: readonly TNode[],
   options: RetrieveSnippetOptions = {},
 ): {
@@ -551,7 +596,7 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
       return {
         ...node,
         snippet: null,
-        snippet_truncated: false,
+        snippet_truncated: node.snippet_truncated === true,
       }
     }
 
@@ -559,11 +604,20 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
       return {
         ...node,
         snippet: null,
-        snippet_truncated: false,
+        snippet_truncated: true,
+        ...(node.snippet_line_range ? { snippet_omitted_ranges: [node.snippet_line_range] } : {}),
       }
     }
 
     const remainingSnippetBudget = Math.max(0, snippetBudget - usedTokens)
+    if (node.snippet_line_range) {
+      const tokens = snippetTokenCount(originalSnippet)
+      if (tokens > remainingSnippetBudget) {
+        return { ...node, snippet: null, snippet_truncated: true, snippet_omitted_ranges: [node.snippet_line_range] }
+      }
+      usedTokens += tokens
+      return { ...node, snippet: originalSnippet, snippet_truncated: node.snippet_truncated === true }
+    }
     const shapedSnippet = truncateSnippetToTokenBudget(originalSnippet, remainingSnippetBudget)
     const serializedSnippetTokens = snippetTokenCount(shapedSnippet.snippet)
     const boundedSnippet = serializedSnippetTokens <= remainingSnippetBudget
@@ -573,7 +627,7 @@ function applyRetrieveSnippetBudgetToNodes<TNode extends { snippet?: string | nu
     return {
       ...node,
       snippet: boundedSnippet.snippet,
-      snippet_truncated: shapedSnippet.truncated || boundedSnippet.truncated,
+      snippet_truncated: node.snippet_truncated === true || shapedSnippet.truncated || boundedSnippet.truncated,
     }
   })
 
@@ -660,725 +714,42 @@ export interface QueryEvidenceSnippet {
   snippet: string
   lineNumber: number
   scope: 'symbol' | 'source_file'
+  snippet_line_range?: EvidenceLineRange
+  snippet_omitted_ranges?: EvidenceLineRange[]
+  snippet_truncated?: boolean
 }
 
 interface QueryEvidenceSnippetOptions {
+  fragment?: SourceFragment
   question: string
   label: string
   sourceLocation?: string | null
   fileNodeLike?: boolean
   derived?: boolean
   fileCache?: Map<string, string[] | null>
+  rootPath?: string
 }
 
-interface QueryEvidenceLine {
-  index: number
-  endIndex: number
-  text: string
-  score: number
-  matchedTerms: Set<string>
-  matchedObligations: Set<number>
-  identifierTerms: Set<string>
-}
-
-interface QueryEvidenceRange {
-  lines: QueryEvidenceLine[]
-  coveredObligations: Set<number>
-  bestScore: number
-}
-
-const QUERY_EVIDENCE_OPERATION_PATTERN = /(?:\b(?:await|case|catch|delete|dispatch|emit|enqueue|if|insert|post|publish|return|select|send|switch|throw|update|upsert|write)\b|\b(?:const|let)\s+\w+\s*=|=>|\.\w+\s*\()/i
-const QUERY_EVIDENCE_STATE_MUTATION_PATTERN = /(?:\b(?:create|insert|transition|upsert)\w*\s*\(|\.(?:create|insert|upsert)\s*\(|\bnew\s+\w+)/i
-const QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN = /^\s*(?:(?:import|package)\b|(?:export\s+)?type\b|interface\b|\/\/|\/\*|\*|[{}()[\],;]+\s*$)/i
-const QUERY_EVIDENCE_LOG_LINE_PATTERN = /\b(?:logger|log)\.\w+\s*\(/i
-const QUERY_EVIDENCE_HANDOFF_PATTERN = /(?:\b(?:createTask|dispatch|emit|enqueue|insert|publish|send|update|upsert)\w*\s*\(|\.(?:createTask|dispatch|emit|enqueue|insert|publish|send\w*|update|upsert)\s*\()/i
-const QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN = /(?:\b(?:createTask|dispatch|emit|enqueue|publish|send|trigger)\w*\s*\(|\.(?:createTask|dispatch|emit|enqueue|publish|send\w*)\s*\()/i
-const QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN = /(?:\b(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\(|\.(?:deliver|dispatch|emit|enqueue|publish|send)\w*\s*\()/i
-const QUERY_EVIDENCE_RETRY_PATTERN = /\b(?:backoff|exponential|retr(?:y|ied|ies))\b/i
-const QUERY_EVIDENCE_OVERALL_RESULT_PATTERN = /\boverall\w*(?:result|state|status)\w*\s*=/i
-const QUERY_EVIDENCE_DECISION_PATTERN = /(?:\b\w*(?:result|state|status)\w*\s*=.*(?:\?|\.some\s*\()|\?\s*[\w.]+\s*:)/i
-const QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN = /\b\w*(?:result|state|status)\w*\s*=/i
-const QUERY_EVIDENCE_PAGE_RESULT_PATTERN = /(?:\bpage\w*(?:indicator|status)\w*\s*\(|\bstatus\s*:\s*page\w*\s*\()/i
-const QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN = /\breturn\s+page\.\w+/i
-const QUERY_EVIDENCE_COMPUTATION_PATTERN = /(?:\b(?:compute|derive|resolve)\w*\s*\(|\b\w*(?:indicator|result|state|status)\w*\s*=|\b\w*(?:indicator|status)\w*\s*\()/i
-const QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN = /(?:\b\w+\.type\s*===?\s*["']incident["'][^\n]*!\w+\.to|!\w+\.to[^\n]*\b\w+\.type\s*===?\s*["']incident["'])/i
-const QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN = /\bstatus\s*=\s*monitors\.some\s*\(/i
-const QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN = /\bRouterOutputs\b.*\[\s*["']statusPage["']\s*\].*\[\s*["']get["']\s*\]/i
-const QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN = /\btrpc\s*\.\s*statusPage\s*\.\s*get\s*\.\s*queryOptions\b/i
-const QUERY_EVIDENCE_DECLARATION_PATTERN = /^\s*(?:(?:export\s+)?(?:async\s+)?(?:function\b|const\s+\w+\s*=\s*async\b)|func\b)/i
-
-function boundedSourceRange(
-  lineCount: number,
-  range: { start: number; end: number },
-): { start: number; end: number } {
-  const start = Math.min(lineCount, Math.max(1, range.start))
-  const end = Math.min(lineCount, Math.max(start, range.end))
-  return { start, end }
-}
-
-interface QueryEvidenceFragment {
-  index: number
-  endIndex: number
-  text: string
-}
-
-const QUERY_EVIDENCE_CONTINUATION_START_PATTERN = /^\s*(?:[.?:]|&&|\|\|)/
-const QUERY_EVIDENCE_CONTINUATION_END_PATTERN = /(?:=>|&&|\|\||[=?:])\s*$/
-const QUERY_EVIDENCE_STRUCTURED_CALL_PATTERN = /(?:\b\w+\s*\(|:=\s*&?[\w.]+)[^;]*\{\s*$/
-const QUERY_EVIDENCE_DISCRIMINANT_PROPERTY_PATTERN = /^\s*([\w]*(?:action|event|incident|method|mode|monitor|notification|queue|route|status|type|url)[\w]*)\s*:/i
-const QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN = /\b([A-Za-z_]\w*)\.(?:createTask|deliver\w*|dispatch\w*|emit\w*|enqueue\w*|publish\w*|send\w*|trigger\w*)\s*\(/i
-const QUERY_EVIDENCE_PROVIDER_SETUP_PATTERN = /(?:\bnew\s+\w*(?:client|provider|queue|transport)\w*\s*\(|\b\w*newClient\s*\(|\b\w*(?:client|provider|queue|transport)\w*\.)/i
-const QUERY_EVIDENCE_CONTAINER_DECLARATION_PATTERN = /^\s*(?:export\s+const\s+\w*(?:route|router)\w*\s*=|\w+\s*:\s*\w*Procedure\.query\s*\()/i
-
-function braceDelta(value: string): number {
-  return (value.match(/\{/g)?.length ?? 0) - (value.match(/\}/g)?.length ?? 0)
-}
-
-function structuredCallFragment(
-  lines: readonly string[],
-  lineNumber: number,
-  rangeEnd: number,
-): { end: number; text: string } | null {
-  const first = lines[lineNumber - 1] ?? ''
-  if (
-    QUERY_EVIDENCE_DECLARATION_PATTERN.test(first)
-    || !QUERY_EVIDENCE_STRUCTURED_CALL_PATTERN.test(first)
-  ) {
-    return null
-  }
-  let depth = braceDelta(first)
-  if (depth <= 0) {
-    return null
-  }
-  const properties: Array<{ index: number; key: string; text: string }> = []
-  const nestedHandoffs: Array<{ index: number; text: string }> = []
-  let end = lineNumber
-  const scanEnd = Math.min(rangeEnd, lineNumber + 16)
-  for (let candidateNumber = lineNumber + 1; candidateNumber <= scanEnd; candidateNumber += 1) {
-    const candidate = lines[candidateNumber - 1] ?? ''
-    const property = candidate.match(QUERY_EVIDENCE_DISCRIMINANT_PROPERTY_PATTERN)
-    if (property?.[1]) {
-      properties.push({
-        index: candidateNumber,
-        key: property[1].toLowerCase(),
-        text: candidate.trim(),
-      })
-    }
-    if (QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN.test(candidate)) {
-      nestedHandoffs.push({ index: candidateNumber, text: candidate.trim() })
-    }
-    depth += braceDelta(candidate)
-    end = candidateNumber
-    if (depth <= 0) {
-      break
-    }
-  }
-  if (properties.length === 0 && nestedHandoffs.length === 0) {
-    return null
-  }
-  const priority = (key: string): number => {
-    if (/(?:action|event|mode|status|type)/.test(key)) return 0
-    if (/(?:incident|method|monitor|notification|queue|route|url)/.test(key)) return 1
-    return 2
-  }
-  const discriminants = properties
-    .sort((left, right) => priority(left.key) - priority(right.key) || left.index - right.index)
-    .slice(0, 3)
-    .map((property) => property.text)
-  return {
-    end,
-    text: [first, ...nestedHandoffs.slice(0, 1).map((handoff) => handoff.text), ...discriminants].join(' '),
-  }
-}
-
-function providerHandoffFragment(
-  lines: readonly string[],
-  lineNumber: number,
-  rangeStart: number,
-): { start: number; end: number; text: string } | null {
-  const handoff = lines[lineNumber - 1] ?? ''
-  const match = handoff.match(QUERY_EVIDENCE_PROVIDER_HANDOFF_PATTERN)
-  const receiver = match?.[1]
-  if (!receiver) {
-    return null
-  }
-  const receiverAssignment = new RegExp(
-    `(?:\\b(?:const|let|var)\\s+)?\\b${receiver}(?:\\s*,\\s*\\w+)?\\s*(?::=|=)`,
-  )
-  const scanStart = Math.max(rangeStart, lineNumber - 48)
-  for (let candidateNumber = lineNumber - 1; candidateNumber >= scanStart; candidateNumber -= 1) {
-    const candidate = lines[candidateNumber - 1] ?? ''
-    if (!receiverAssignment.test(candidate) || !QUERY_EVIDENCE_PROVIDER_SETUP_PATTERN.test(candidate)) {
-      continue
-    }
-    return {
-      start: candidateNumber,
-      end: lineNumber,
-      text: `${candidate.trim()} L${lineNumber}: ${handoff.trim()}`,
-    }
-  }
-  return null
-}
-
-function publicRouterFetchFragment(
-  lines: readonly string[],
-  lineNumber: number,
-  rangeStart: number,
-): { start: number; end: number; text: string } | null {
-  const queryOptions = lines[lineNumber - 1] ?? ''
-  if (!QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN.test(queryOptions)) {
-    return null
-  }
-
-  for (let candidate = lineNumber - 1; candidate >= Math.max(rangeStart, lineNumber - 3); candidate -= 1) {
-    const fetch = lines[candidate - 1] ?? ''
-    if (!/\b(?:const|let)\s+\w+\s*=\s*await\s+\w+\.fetchQuery\s*\(/.test(fetch)) {
-      continue
-    }
-    return {
-      start: candidate,
-      end: lineNumber,
-      text: `${fetch.trim()} ${queryOptions.trim()}`,
-    }
-  }
-
-  return null
-}
-
-function incidentStatusOwnerFragment(
-  lines: readonly string[],
-  lineNumber: number,
-  rangeStart: number,
-  rangeEnd: number,
-): { start: number; end: number; text: string } | null {
-  const first = lines[lineNumber - 1] ?? ''
-  if (!/^\s*const\s+status\s*=/.test(first)) {
-    return null
-  }
-  let decisionEnd = lineNumber
-  while (decisionEnd < rangeEnd && decisionEnd - lineNumber < 5) {
-    const current = lines[decisionEnd - 1] ?? ''
-    if (/;\s*$/.test(current)) {
-      break
-    }
-    decisionEnd += 1
-  }
-  const decision = lines.slice(lineNumber - 1, decisionEnd).join(' ')
-  if (!QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(decision)) {
-    return null
-  }
-
-  let ownerNumber: number | null = null
-  for (let candidate = lineNumber - 1; candidate >= Math.max(rangeStart, lineNumber - 16); candidate -= 1) {
-    if (/^\s*const\s+\w+\s*=.*\.map\s*\(/.test(lines[candidate - 1] ?? '')) {
-      ownerNumber = candidate
-      break
-    }
-  }
-  if (ownerNumber === null) {
-    return null
-  }
-
-  const returnEvidence: string[] = []
-  let returnEnd = decisionEnd
-  for (let candidate = decisionEnd + 1; candidate <= Math.min(rangeEnd, decisionEnd + 20); candidate += 1) {
-    const value = lines[candidate - 1] ?? ''
-    if (returnEvidence.length === 0 && /^\s*return\s*\{/.test(value)) {
-      returnEvidence.push(value.trim())
-      returnEnd = candidate
-      continue
-    }
-    if (returnEvidence.length > 0 && /^\s*(?:\.\.\.\w+(?:\.\w+)?,|status,|events,)/.test(value)) {
-      returnEvidence.push(value.trim())
-      returnEnd = candidate
-      if (returnEvidence.some((entry) => /^status,$/.test(entry))) {
-        break
-      }
-    }
-  }
-
-  return {
-    start: ownerNumber,
-    end: Math.max(decisionEnd, returnEnd),
-    text: [
-      (lines[ownerNumber - 1] ?? '').trim(),
-      ...returnEvidence,
-      `L${lineNumber}: ${decision.trim()}`,
-    ].join(' '),
-  }
-}
-
-function queryEvidenceScoringText(value: string): string {
-  return value
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/(^|\s)\/\/.*$/g, '$1')
-}
-
-function queryEvidenceFragments(
-  lines: readonly string[],
-  range: { start: number; end: number },
-): QueryEvidenceFragment[] {
-  const fragments: QueryEvidenceFragment[] = []
-  const seen = new Set<string>()
-  for (let lineNumber = range.start; lineNumber <= range.end; lineNumber += 1) {
-    if ((lines[lineNumber - 1] ?? '').trim().length === 0) {
-      continue
-    }
-    let start = lineNumber
-    let end = lineNumber
-    if (
-      start > range.start
-      && (
-        QUERY_EVIDENCE_CONTINUATION_START_PATTERN.test(lines[start - 1] ?? '')
-        || QUERY_EVIDENCE_CONTINUATION_END_PATTERN.test(lines[start - 2] ?? '')
-      )
-    ) {
-      start -= 1
-    }
-    const incidentStatusOwner = incidentStatusOwnerFragment(lines, lineNumber, range.start, range.end)
-    const publicRouterFetch = incidentStatusOwner ? null : publicRouterFetchFragment(lines, lineNumber, range.start)
-    const providerHandoff = incidentStatusOwner || publicRouterFetch ? null : providerHandoffFragment(lines, lineNumber, range.start)
-    const structured = incidentStatusOwner || publicRouterFetch || providerHandoff ? null : structuredCallFragment(lines, lineNumber, range.end)
-    let text: string | null = null
-    if (incidentStatusOwner) {
-      start = incidentStatusOwner.start
-      end = incidentStatusOwner.end
-      text = incidentStatusOwner.text
-    } else if (publicRouterFetch) {
-      start = publicRouterFetch.start
-      end = publicRouterFetch.end
-      text = publicRouterFetch.text
-    } else if (providerHandoff) {
-      start = providerHandoff.start
-      end = providerHandoff.end
-      text = providerHandoff.text
-    } else if (structured) {
-      end = structured.end
-      text = structured.text
-    } else {
-      while (end < range.end && end - start < 3) {
-        const current = lines[end - 1] ?? ''
-        const next = lines[end] ?? ''
-        if (
-          next.trim().length === 0
-          || (!QUERY_EVIDENCE_CONTINUATION_END_PATTERN.test(current)
-            && !QUERY_EVIDENCE_CONTINUATION_START_PATTERN.test(next))
-        ) {
-          break
-        }
-        end += 1
-      }
-    }
-    const key = `${start}:${end}`
-    if (seen.has(key)) {
-      continue
-    }
-    seen.add(key)
-    fragments.push({
-      index: start,
-      endIndex: end,
-      text: text ?? lines.slice(start - 1, end).join(' '),
-    })
-  }
-  return fragments
-}
-
-function queryEvidenceRange(
-  lines: readonly string[],
-  range: { start: number; end: number },
-  question: string,
-  preferredObligations?: ReadonlySet<number>,
-): QueryEvidenceRange {
-  const obligations = queryEvidenceObligations(question)
-  const candidates = queryEvidenceFragments(lines, range)
-  const scoringTextByLine = candidates.map((candidate) => queryEvidenceScoringText(candidate.text))
-  const tokensByLine = scoringTextByLine.map((text) => tokenizeLabel(text))
-  const identifierTokensByLine = candidates.map((candidate) => tokenizeLabel(
-    queryEvidenceScoringText(candidate.text).replace(/(['"`])(?:\\.|(?!\1).)*\1/g, ' '),
-  ))
-  const tokenFrequencies = new Map<string, number>()
-  for (const tokens of identifierTokensByLine) {
-    for (const token of new Set(tokens.filter((candidate) => candidate.length >= 4))) {
-      tokenFrequencies.set(token, (tokenFrequencies.get(token) ?? 0) + 1)
-    }
-  }
-  const frequencies = new Map<string, number>()
-  for (const obligation of obligations) {
-    for (const term of obligation.terms) {
-      const count = tokensByLine.filter((tokens) => tokens.some((token) => queryEvidenceTermsMatch(term, token))).length
-      frequencies.set(`${obligation.index}:${term}`, count)
-    }
-  }
-
-  const coveredObligations = new Set<number>()
-  const scoredLines = candidates.flatMap((candidate, offset): QueryEvidenceLine[] => {
-    const { text } = candidate
-    const scoringText = scoringTextByLine[offset] ?? text
-    if (scoringText.trim().length === 0) {
-      return []
-    }
-    const tokens = tokensByLine[offset] ?? []
-    const matchedTerms = new Set<string>()
-    const matchedObligations = new Set<number>()
-    const identifierTerms = new Set(
-      (identifierTokensByLine[offset] ?? []).filter((token) => (
-        token.length >= 4 && (tokenFrequencies.get(token) ?? candidates.length) <= 2
-      )),
-    )
-    let score = 0
-    for (const obligation of obligations) {
-      if (preferredObligations && preferredObligations.size > 0 && !preferredObligations.has(obligation.index)) {
-        continue
-      }
-      let obligationMatchedTerms = 0
-      for (const term of obligation.terms) {
-        if (!tokens.some((token) => queryEvidenceTermsMatch(term, token))) {
-          continue
-        }
-        const key = `${obligation.index}:${term}`
-        matchedTerms.add(key)
-        obligationMatchedTerms += 1
-        const frequency = frequencies.get(key) ?? candidates.length
-        const preference = !preferredObligations || preferredObligations.size === 0 || preferredObligations.has(obligation.index)
-          ? 1.6
-          : 0.55
-        score += preference * (1 + Math.log((candidates.length + 1) / (frequency + 1)))
-      }
-      const lifecycleConcepts = obligation.terms.filter((term) => (
-        term === '@delivery' || term === '@failure' || term === '@transition'
-      ))
-      const lifecycleGrounded = lifecycleConcepts.every((term) => (
-        tokens.some((token) => queryEvidenceTermsMatch(term, token))
-      ))
-      const deliveryGrounded = !obligation.terms.includes('@delivery')
-        || QUERY_EVIDENCE_DELIVERY_OPERATION_PATTERN.test(scoringText)
-      const transitionGrounded = !obligation.terms.includes('@transition')
-        || QUERY_EVIDENCE_STATE_MUTATION_PATTERN.test(scoringText)
-      if (
-        obligationMatchedTerms >= Math.min(2, obligation.terms.length)
-        && lifecycleGrounded
-        && deliveryGrounded
-        && transitionGrounded
-      ) {
-        matchedObligations.add(obligation.index)
-      }
-    }
-    if (matchedTerms.size === 0) {
-      if (!preferredObligations || preferredObligations.size === 0 || !QUERY_EVIDENCE_OPERATION_PATTERN.test(scoringText)) {
-        return []
-      }
-      score = 0.5 + Math.min(2, identifierTerms.size * 0.2)
-    }
-    for (const obligation of matchedObligations) {
-      coveredObligations.add(obligation)
-    }
-    score += Math.max(0, matchedObligations.size - 1) * 1.5
-    if (QUERY_EVIDENCE_OPERATION_PATTERN.test(scoringText)) {
-      score += 1.1
-    }
-    if (QUERY_EVIDENCE_HANDOFF_PATTERN.test(scoringText)) {
-      score += 1.6
-    }
-    if (QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN.test(scoringText)) {
-      score += 1.5
-    }
-    if (QUERY_EVIDENCE_RETRY_PATTERN.test(scoringText)) {
-      score += 1.8
-    }
-    if (QUERY_EVIDENCE_DECISION_PATTERN.test(scoringText)) {
-      score += 1.4
-    }
-    if (QUERY_EVIDENCE_COMPUTATION_PATTERN.test(scoringText)) {
-      score += 1.2
-    }
-    if (QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(scoringText)) {
-      score += 2.4
-    }
-    if (QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN.test(scoringText)) {
-      score += 2
-    }
-    if (QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN.test(scoringText)) {
-      score += 2.5
-    }
-    if (QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN.test(scoringText)) {
-      score += 4
-    }
-    if (QUERY_EVIDENCE_DECLARATION_PATTERN.test(scoringText)) {
-      score -= 1.25
-    }
-    if (QUERY_EVIDENCE_LOG_LINE_PATTERN.test(scoringText)) {
-      score -= 1.75
-    }
-    score += Math.min(1.2, identifierTerms.size * 0.12)
-    if (QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(scoringText)) {
-      score -= 1.5
-    }
-    return [{
-      index: candidate.index,
-      endIndex: candidate.endIndex,
-      text,
-      score,
-      matchedTerms,
-      matchedObligations,
-      identifierTerms,
-    }]
-  })
-
-  return {
-    lines: scoredLines,
-    coveredObligations,
-    bestScore: scoredLines.reduce((maximum, line) => Math.max(maximum, line.score), 0),
-  }
-}
-
-function selectQueryEvidenceLines(range: QueryEvidenceRange): QueryEvidenceLine[] {
-  const valuableLines = range.lines.filter((line) => (
-    !QUERY_EVIDENCE_LOW_VALUE_LINE_PATTERN.test(line.text)
-    || QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN.test(line.text)
-  ))
-  const remaining = [...(valuableLines.length > 0 ? valuableLines : range.lines)]
-  const selected: QueryEvidenceLine[] = []
-  const coveredTerms = new Set<string>()
-  const coveredObligations = new Set<number>()
-  const coveredIdentifiers = new Set<string>()
-  const transitionAnchor = remaining
-    .filter((line) => [...line.matchedTerms].some((term) => {
-      if (!term.endsWith(':@transition')) {
-        return false
-      }
-      const obligation = Number(term.slice(0, term.indexOf(':')))
-      return line.matchedObligations.has(obligation)
-        && QUERY_EVIDENCE_STATE_MUTATION_PATTERN.test(queryEvidenceScoringText(line.text))
-    }))
-    .sort((left, right) => right.score - left.score || left.index - right.index)[0]
-  const coherenceBoost = (line: QueryEvidenceLine): number => {
-    if (!transitionAnchor) {
-      return 0
-    }
-    return Math.max(0, 2.5 - (Math.abs(line.index - transitionAnchor.index) * 0.04))
-  }
-
-  const addSelected = (line: QueryEvidenceLine): void => {
-    selected.push(line)
-    for (const term of line.matchedTerms) coveredTerms.add(term)
-    for (const obligation of line.matchedObligations) coveredObligations.add(obligation)
-    for (const identifier of line.identifierTerms) coveredIdentifiers.add(identifier)
-    for (let index = remaining.length - 1; index >= 0; index -= 1) {
-      const candidate = remaining[index]!
-      const overlaps = candidate.index <= line.endIndex && line.index <= candidate.endIndex
-      if (overlaps) remaining.splice(index, 1)
-    }
-  }
-
-  const obligationFrequency = new Map<number, number>()
-  for (const line of remaining) {
-    for (const obligation of line.matchedObligations) {
-      obligationFrequency.set(obligation, (obligationFrequency.get(obligation) ?? 0) + 1)
-    }
-  }
-  for (const obligation of [...obligationFrequency.keys()].sort((left, right) => (
-    (obligationFrequency.get(left) ?? 0) - (obligationFrequency.get(right) ?? 0)
-    || left - right
-  ))) {
-    if (selected.length >= QUERY_EVIDENCE_SNIPPET_MAX_LINES || coveredObligations.has(obligation)) {
-      continue
-    }
-    const best = remaining
-      .filter((line) => line.matchedObligations.has(obligation))
-      .sort((left, right) => {
-        const termCount = (line: QueryEvidenceLine): number => (
-          [...line.matchedTerms].filter((term) => term.startsWith(`${obligation}:`)).length
-        )
-        const transitionMutation = (line: QueryEvidenceLine): number => (
-          line.matchedTerms.has(`${obligation}:@transition`)
-            && QUERY_EVIDENCE_STATE_MUTATION_PATTERN.test(line.text)
-            ? 1
-            : 0
-        )
-        return transitionMutation(right) - transitionMutation(left)
-          || termCount(right) - termCount(left)
-          || (right.score + coherenceBoost(right)) - (left.score + coherenceBoost(left))
-          || left.index - right.index
-      })[0]
-    if (best) addSelected(best)
-  }
-
-  for (const semanticPattern of [
-    QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN,
-    QUERY_EVIDENCE_RETRY_PATTERN,
-    QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN,
-    QUERY_EVIDENCE_OVERALL_RESULT_PATTERN,
-    QUERY_EVIDENCE_DECISION_PATTERN,
-    QUERY_EVIDENCE_PAGE_RESULT_PATTERN,
-    QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN,
-    QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN,
-    QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN,
-    QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN,
-    QUERY_EVIDENCE_COMPUTATION_PATTERN,
-  ]) {
-    if (selected.length >= QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
-      break
-    }
-    if (selected.some((line) => semanticPattern.test(queryEvidenceScoringText(line.text)))) {
-      continue
-    }
-    const best = remaining
-      .filter((line) => semanticPattern.test(queryEvidenceScoringText(line.text)))
-      .sort((left, right) => (
-        (semanticPattern === QUERY_EVIDENCE_DECISION_PATTERN
-          ? Number(QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN.test(right.text))
-            - Number(QUERY_EVIDENCE_DECISION_ASSIGNMENT_PATTERN.test(left.text))
-          : 0)
-        || ((right.score + coherenceBoost(right)) / Math.max(1, right.text.length / 80))
-          - ((left.score + coherenceBoost(left)) / Math.max(1, left.text.length / 80))
-        || left.index - right.index
-      ))[0]
-    if (best) addSelected(best)
-  }
-
-  while (remaining.length > 0 && selected.length < QUERY_EVIDENCE_SNIPPET_MAX_LINES) {
-    const distinctCandidates = selected.length < 2
-      ? remaining
-      : remaining.filter((line) => {
-          const addsQueryEvidence = [...line.matchedTerms].some((term) => !coveredTerms.has(term))
-            || [...line.matchedObligations].some((obligation) => !coveredObligations.has(obligation))
-          const addsSemanticEvidence = [
-            QUERY_EVIDENCE_DELIVERY_HANDOFF_PATTERN,
-            QUERY_EVIDENCE_RETRY_PATTERN,
-            QUERY_EVIDENCE_PUBLIC_ROUTER_FETCH_PATTERN,
-            QUERY_EVIDENCE_OVERALL_RESULT_PATTERN,
-            QUERY_EVIDENCE_DECISION_PATTERN,
-            QUERY_EVIDENCE_PAGE_RESULT_PATTERN,
-            QUERY_EVIDENCE_PAGE_COLLECTION_PATTERN,
-            QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN,
-            QUERY_EVIDENCE_MONITOR_ROLLUP_PATTERN,
-            QUERY_EVIDENCE_INPUT_PROVENANCE_PATTERN,
-            QUERY_EVIDENCE_COMPUTATION_PATTERN,
-          ].some((pattern) => (
-            pattern.test(queryEvidenceScoringText(line.text))
-            && !selected.some((selectedLine) => pattern.test(queryEvidenceScoringText(selectedLine.text)))
-          ))
-          return addsQueryEvidence || addsSemanticEvidence
-        })
-    if (distinctCandidates.length === 0) {
-      break
-    }
-    distinctCandidates.sort((left, right) => {
-      const novelty = (line: QueryEvidenceLine): number => (
-        [...line.matchedTerms].filter((term) => !coveredTerms.has(term)).length
-        + ([...line.matchedObligations].filter((obligation) => !coveredObligations.has(obligation)).length * 1.75)
-        + ([...line.identifierTerms].filter((identifier) => !coveredIdentifiers.has(identifier)).length * 0.2)
-      )
-      const redundancy = (line: QueryEvidenceLine): number => (
-        [...line.matchedTerms].filter((term) => coveredTerms.has(term)).length * 1.25
-      )
-      return (right.score + novelty(right) - redundancy(right) + coherenceBoost(right))
-        - (left.score + novelty(left) - redundancy(left) + coherenceBoost(left))
-        || left.index - right.index
-    })
-    const next = distinctCandidates[0]
-    if (!next) {
-      break
-    }
-    addSelected(next)
-  }
-
-  return selected.sort((left, right) => left.index - right.index)
-}
-
-function renderQueryEvidenceLines(lines: readonly QueryEvidenceLine[]): string | null {
-  const rendered: string[] = []
-  let usedChars = 0
-  for (const line of lines) {
-    const normalized = line.text.replace(/\s+/g, ' ').trim()
-    const content = normalized.length > QUERY_EVIDENCE_SNIPPET_LINE_CAP
-      ? `${normalized.slice(0, QUERY_EVIDENCE_SNIPPET_LINE_CAP - 3).trimEnd()}...`
-      : normalized
-    const prefix = `L${line.index}: `
-    const separatorChars = rendered.length > 0 ? 1 : 0
-    const remaining = QUERY_EVIDENCE_SNIPPET_CHAR_CAP - usedChars - separatorChars
-    if (remaining <= prefix.length + 8) {
-      break
-    }
-    const bounded = `${prefix}${content}`.slice(0, remaining).trimEnd()
-    rendered.push(bounded)
-    usedChars += bounded.length + separatorChars
-  }
-  return rendered.length > 0 ? rendered.join('\n') : null
-}
-
-/**
- * Selects compact, query-bearing evidence from a symbol range. When a small
- * helper is the only graph anchor for an anonymous workflow, it may select a
- * better excerpt from the same source file and marks that scope explicitly.
- */
+/** Source evidence always belongs to the requested symbol; adjacent functions are separate candidates. */
 export function readQueryEvidenceSnippet(
   sourceFile: string,
   lineNumber: number,
   options: QueryEvidenceSnippetOptions,
 ): QueryEvidenceSnippet | null {
-  try {
-    const lines = fileLinesForSnippet(sourceFile, options.fileCache)
-    if (!lines || lines.length === 0) {
-      return null
-    }
-    const fullRange = { start: 1, end: lines.length }
-    const identityTokens = tokenizeLabel(options.label)
-    const preferredObligations = new Set(
-      queryEvidenceObligations(options.question)
-        .filter((obligation) => obligation.terms.some((term) => (
-          identityTokens.some((token) => queryEvidenceTermsMatch(term, token))
-        )))
-        .map((obligation) => obligation.index),
-    )
-    const parsedRange = lineRangeFromSourceLocation(options.sourceLocation)
-    const fallbackHalfWindow = options.derived ? DERIVED_SNIPPET_HALF_WINDOW : SNIPPET_HALF_WINDOW
-    const symbolRange = boundedSourceRange(lines.length, parsedRange ?? {
-      start: lineNumber - fallbackHalfWindow,
-      end: lineNumber + fallbackHalfWindow,
-    })
-    const symbolEvidence = queryEvidenceRange(lines, symbolRange, options.question, preferredObligations)
-    let scope: QueryEvidenceSnippet['scope'] = options.fileNodeLike ? 'source_file' : 'symbol'
-    let selectedRange = options.fileNodeLike
-      ? queryEvidenceRange(lines, fullRange, options.question)
-      : symbolEvidence
-
-    const symbolLineCount = symbolRange.end - symbolRange.start + 1
-    if (!options.fileNodeLike && symbolLineCount <= 40) {
-      const fileEvidence = queryEvidenceRange(lines, fullRange, options.question)
-      const singleLineGraphRange = parsedRange !== null && parsedRange.start === parsedRange.end
-      if (
-        (
-          singleLineGraphRange
-            ? fileEvidence.bestScore > symbolEvidence.bestScore
-            : fileEvidence.coveredObligations.size >= symbolEvidence.coveredObligations.size + 1
-        )
-        && fileEvidence.bestScore >= symbolEvidence.bestScore
-      ) {
-        scope = 'source_file'
-        selectedRange = fileEvidence
-      }
-    }
-
-    let selectedLines = selectQueryEvidenceLines(selectedRange)
-    if (
-      options.fileNodeLike
-      && selectedLines.some((line) => QUERY_EVIDENCE_INCIDENT_STATUS_PATTERN.test(queryEvidenceScoringText(line.text)))
-    ) {
-      selectedLines = selectedLines.filter((line) => !QUERY_EVIDENCE_CONTAINER_DECLARATION_PATTERN.test(line.text))
-    }
-    const snippet = renderQueryEvidenceLines(selectedLines)
-    if (!snippet || selectedLines.length === 0) {
-      return null
-    }
-    return {
-      snippet,
-      lineNumber: selectedLines[0]!.index,
-      scope,
-    }
-  } catch {
-    return null
-  }
+  const lines = readEvidenceLines(sourceFile, options.rootPath, options.fileCache)
+  if (!lines || lines.length === 0) return null
+  const range = options.fileNodeLike
+    ? { start: 1, end: lines.length }
+    : lineRangeFromSourceLocation(options.sourceLocation) ?? { start: lineNumber, end: lineNumber }
+  const sourceRange = options.fileNodeLike ? range : resolveSourceSymbolRange(lines, range, options.label, sourceFile)
+  if (!sourceRange) return null
+  const evidence = (options.fragment ? renderSourceFragment(lines, sourceRange, options.fragment, options.fileNodeLike ? 'source_file' : 'symbol') : undefined)
+    ?? coherentSourceSnippet(lines, sourceRange, options.question, options.fileNodeLike ? 'source_file' : 'symbol')
+  return evidence ? {
+    snippet: evidence.snippet, lineNumber: evidence.lineNumber, scope: evidence.scope,
+    snippet_line_range: evidence.lineRange,
+    ...(evidence.omittedRanges.length ? { snippet_omitted_ranges: evidence.omittedRanges, snippet_truncated: true } : {}),
+  } : null
 }
 
 function graphSignalsForRetrieve(
@@ -1556,13 +927,13 @@ function expandableLineRange(node: Pick<ScoredNode, 'lineNumber' | 'sourceLocati
   return undefined
 }
 
-function semanticTextForNode(node: Pick<ScoredNode, 'label' | 'nodeKind' | 'frameworkRole' | 'sourceFile' | 'storedSnippet'>): string {
+function semanticTextForNode(node: Pick<ScoredNode, 'label' | 'nodeKind' | 'frameworkRole' | 'sourceFile' | 'storedSnippet'>, sourceSnippet?: string | null): string {
   return [
     node.label,
     node.nodeKind,
     node.frameworkRole,
     node.sourceFile,
-    node.storedSnippet ?? '',
+    sourceSnippet ?? node.storedSnippet ?? '',
   ]
     .filter((value) => typeof value === 'string' && value.trim().length > 0)
     .join('\n')
@@ -1589,6 +960,7 @@ interface SeedScoreBreakdown {
   promptIdentifierScore: number
   communityScore: number
   conceptualFallbackScore: number
+  sourceBodyScore: number
   total: number
 }
 
@@ -1609,6 +981,8 @@ interface SeedCandidate {
   community: number | null
   frameworkBoost: number
   seedScore: SeedScoreBreakdown
+  sourceBodyCoverage?: number
+  sourceBodyRelevance?: number
   exactLabelMatch: boolean
   symbolMatchScore: number
   literalPathMatch: boolean
@@ -1618,6 +992,8 @@ interface SeedCandidate {
 }
 
 interface ScoredNode {
+  sourceFragment?: SourceFragment
+  sourceFragmentWitness?: boolean
   id: string
   label: string
   sourceFile: string
@@ -1638,6 +1014,9 @@ interface ScoredNode {
   literalPathMatch: boolean
   sourcePathMatch: boolean
   evidenceTier: 0 | 1 | 2
+  sourceBodyScore?: number
+  sourceBodyCoverage?: number
+  sourceBodyRelevance?: number
   score: number
   relevanceBand: 'direct' | 'related' | 'peripheral'
 }
@@ -1675,6 +1054,7 @@ function scoredNodeFromGraph(graph: KnowledgeGraph, nodeId: string, score: numbe
 
 interface FrameworkQuestionProfile {
   frameworkShaped: boolean
+  explicitlyNamed: boolean
   express: boolean
   routingControllers: boolean
   redux: boolean
@@ -1983,7 +1363,7 @@ function symbolReferenceMatchScore(
   return best
 }
 
-function sourceFileMatchesMentionedPath(sourceFile: string, mentionedPaths: readonly string[]): boolean {
+function sourceFileMatchesMentionedPath(sourceFile: string, mentionedPaths: readonly string[], rootPath?: string): boolean {
   if (sourceFile.length === 0) {
     return false
   }
@@ -1991,23 +1371,149 @@ function sourceFileMatchesMentionedPath(sourceFile: string, mentionedPaths: read
   const normalizedSourceFile = sourceFile.replace(/\\/g, '/')
   return mentionedPaths.some((path) => {
     const normalizedPath = path.replace(/\\/g, '/')
+    if (normalizedPath.split('/').some(segment => segment === '.' || segment === '..')) {
+      // Dot segments designate a workspace-relative identity, not a suffix.
+      // Only the graph's explicit absolute root supplies that authority.
+      if (!rootPath || !isAbsolute(rootPath)) return false
+      const root = resolve(rootPath)
+      const target = resolve(root, normalizedPath)
+      const source = resolve(root, normalizedSourceFile)
+      const inside = (candidate: string): boolean => {
+        const fromRoot = relative(root, candidate)
+        return fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot)
+      }
+      return inside(target) && inside(source) && source === target
+    }
     return normalizedSourceFile === normalizedPath || normalizedSourceFile.endsWith(`/${normalizedPath}`)
   })
 }
 
-function exclusionTokens(value: string): Set<string> {
-  return new Set(tokenizeLabel(value))
+interface SourceBehaviorLocation {
+  files: readonly string[]
+  directories: readonly string[]
+  globs: readonly string[]
+  clauseLocations: boolean
+  question: string
 }
 
-function excludedTermMatches(value: string, excludedTerms: readonly string[], excludedPathHints: readonly string[]): boolean {
-  const valueTokens = exclusionTokens(value)
-  if (valueTokens.size === 0) {
-    return false
+/** Only direct-child JS/TS globs are location hints; unsupported unions retain legacy retrieval. */
+function sourceBehaviorGlobs(question: string): string[] | undefined {
+  const globs = new Set<string>()
+  for (const match of question.matchAll(/[^\s`"'(),;]+/g)) {
+    const token = match[0].replace(/[.:!?]+$/, '').replaceAll('\\', '/')
+    const wildcardLocation = (token.includes('*') && (token.includes('/') || token.includes('*.')))
+      || (token.includes('?') && (token.includes('/') || JS_TS_SOURCE_EXTENSIONS.includes(extname(token).toLowerCase())))
+      || (/[\[\]{}]/.test(token) && (token.includes('/') || JS_TS_SOURCE_EXTENSIONS.includes(extname(token).toLowerCase())))
+    if (!wildcardLocation) continue
+    const normalized = token.replace(/^\.\//, '')
+    if (!/^(?:[\w@.-]+\/)*\*\.[A-Za-z]+$/.test(normalized)
+      || normalized.split('/').some(segment => segment === '.' || segment === '..')
+      || !JS_TS_SOURCE_EXTENSIONS.includes(extname(normalized).toLowerCase())) return undefined
+    globs.add(normalized)
+    if (globs.size > 32) return undefined
   }
+  return [...globs]
+}
 
-  return [...excludedTerms, ...excludedPathHints]
-    .flatMap((term) => tokenizeLabel(term))
-    .some((termToken) => valueTokens.has(termToken))
+/** An unresolved member spelling must not lose the legacy file-owner fallback. */
+function qualifiedSourceCallsVerified(graph: KnowledgeGraph, question: string, rootPath: string | undefined, cache: Map<string, string[] | null>): boolean {
+  const calls = [...new Set(sourceQuerySymbols(question).filter(occurrence => occurrence.explicit
+    && occurrence.name.includes('.') && /^\s*\(/.test(question.slice(occurrence.end))).map(occurrence => occurrence.name))]
+  if (!calls.length) return true
+  const nodes = graph.nodeEntries().filter(([, node]) => node.file_type === 'code' && node.external_call !== true
+    && !isFileNodeLike(String(node.label ?? ''), String(node.source_file ?? '')))
+  const sourceIdentities = new Map<readonly string[], number>()
+  const verified = new Map<string, { qualified: string; owner: string }>()
+  let inspected = 0
+  for (const call of calls) {
+    const leaf = call.split('.').at(-1)!
+    const owners = new Set<string>()
+    const possible = nodes.filter(([, node]) => String(node.label ?? '').replace(/\(\)$/, '').split(/[.:]/).at(-1) === leaf)
+    if (!possible.length) return false
+    for (const [id, node] of possible) {
+      let identity = verified.get(id)
+      if (!identity) {
+        if (inspected >= 32) return false
+        inspected += 1
+        const sourceFile = String(node.source_file ?? '')
+        const label = String(node.label ?? '')
+        const indexed = lineRangeFromSourceLocation(node.source_location)
+        const lines = indexed ? readEvidenceLines(sourceFile, rootPath, cache) : null
+        if (!indexed || !lines || sourceDeclarationKind(lines, indexed, label, sourceFile) !== 'function') return false
+        const qualified = sourceDeclarationQualifiedName(lines, indexed, label, sourceFile)
+        const range = resolveSourceSymbolRange(lines, indexed, label, sourceFile)
+        if (!qualified || !range || range.start < 1 || range.end > lines.length) return false
+        // The policy reader's cache shares the same lines for canonical aliases.
+        // Duplicate graph rows for one exact source owner are not two owners.
+        if (!sourceIdentities.has(lines)) sourceIdentities.set(lines, sourceIdentities.size)
+        identity = { qualified, owner: `${sourceIdentities.get(lines)}:${range.start}:${range.end}` }
+        verified.set(id, identity)
+      }
+      if (identity.qualified === call) owners.add(identity.owner)
+      if (owners.size > 1) return false
+    }
+    if (owners.size !== 1) return false
+  }
+  return true
+}
+
+/** Location hints constrain behavior search; they do not request every owner. */
+function sourceBehaviorLocation(graph: KnowledgeGraph, options: RetrieveOptions, gate: RetrievalGateDecision, rootPath?: string): SourceBehaviorLocation | undefined {
+  const files = gate.signals.mentioned_paths
+  const directories = gate.signals.mentioned_directories ?? []
+  if (options.retrievalStrategy === 'slice-v1' || classifyRetrieveTaskContract(options).task_kind !== 'explain'
+    || sourceQueryIsLiteralLookup(options.question)) return undefined
+  const positive = retrievalEvidencePrompt(options.question)
+  const clauseLocations = (!options.taskIntent || options.taskIntent === 'explain') && sourceQueryRequestsClauseLocations(positive)
+  const globs = clauseLocations ? sourceBehaviorGlobs(positive) : []
+  if (!globs || (!files.length && !directories.length && !globs.length)) return undefined
+  if (queryEvidenceObligations(positive).length < 2 && !/\b(?:how|when|why|whether)\b/i.test(positive)) return undefined
+  // A dotted call can also look like a filename to the permissive path parser.
+  // Verify its source identity before location masking can erase the request.
+  if (!qualifiedSourceCallsVerified(graph, positive, rootPath, requestSourceCache(options))) return undefined
+  const qualifiedCalls = new Set(sourceQuerySymbols(positive).filter(occurrence => occurrence.explicit
+    && occurrence.name.includes('.') && /^\s*\(/.test(positive.slice(occurrence.end))).map(occurrence => occurrence.name))
+  // Mask only complete location tokens, including normalized ./directory/ forms.
+  // Their words must not masquerade as evidence inside a declaration body.
+  const locations = new Set([...files, ...directories, ...globs].map(path => path.replaceAll('\\', '/').replace(/^\.\//, ''))
+    .filter(path => !qualifiedCalls.has(path)))
+  const question = positive.replace(/(?:\.\/?|[A-Za-z0-9_$@#*-])[A-Za-z0-9_$@#.*\/\\-]*/g, token => (
+    locations.has(token.replaceAll('\\', '/').replace(/^\.\//, '').replace(/[.,;!?]+$/, '')) ? ' ' : token
+  ))
+  const location = { files, directories, globs, clauseLocations, question }
+  const scopedNodes = graph.nodeEntries().filter(([, node]) => node.file_type === 'code'
+    && sourceFileInBehaviorLocation(String(node.source_file ?? ''), location, rootPath))
+  const scopedSources = new Set(scopedNodes.map(([, node]) => String(node.source_file)))
+  // Current declaration identity below is supported only by the JS/TS parser.
+  // Fall back before changing seed priority when a location cannot use it.
+  if (!scopedSources.size || [...scopedSources].some(file => !JS_TS_SOURCE_EXTENSIONS.includes(extname(file).toLowerCase()))) return undefined
+  const callable = scopedNodes.filter(([, node]) => node.external_call !== true
+    && !isFileNodeLike(String(node.label ?? ''), String(node.source_file ?? ''))).slice(0, 32).some(([, node]) => {
+    const sourceFile = String(node.source_file ?? '')
+    const range = lineRangeFromSourceLocation(node.source_location)
+    const lines = range ? readEvidenceLines(sourceFile, rootPath, requestSourceCache(options)) : null
+    return !!range && !!lines && sourceDeclarationKind(lines, range, String(node.label ?? ''), sourceFile) === 'function'
+  })
+  if (!callable) return undefined
+  return location
+}
+
+function sourceFileInBehaviorLocation(sourceFile: string, location: SourceBehaviorLocation, rootPath?: string): boolean {
+  const localPath = (path: string): string | undefined => {
+    const normalized = path.replaceAll('\\', '/')
+    const local = rootPath && isAbsolute(rootPath)
+      ? relative(resolve(rootPath), resolve(rootPath, normalized)).split(sep).join('/')
+      : isAbsolute(normalized) ? undefined : normalized.replace(/^\.\//, '')
+    return local && !local.split('/').some(segment => segment === '.' || segment === '..') ? local : undefined
+  }
+  const local = localPath(sourceFile)
+  return local !== undefined && (sourceFileMatchesMentionedPath(sourceFile, location.files, rootPath)
+    || location.directories.some(directory => local.startsWith(directory))
+    || location.globs.some(glob => {
+      const slash = glob.lastIndexOf('/')
+      return local.slice(0, local.lastIndexOf('/') + 1) === glob.slice(0, slash + 1)
+        && extname(local) === glob.slice(slash + 2)
+    }))
 }
 
 function promptAllowsSourceDomain(domain: SourceDomain, intent: string, prompt: string, questionTokens: readonly string[]): boolean {
@@ -2098,7 +1604,7 @@ function containsTokenSequence(tokens: readonly string[], sequence: readonly str
 }
 
 function evidenceTierForSeedScore(score: SeedScoreBreakdown): 0 | 1 | 2 {
-  if (score.labelExactScore > 0 || score.labelPhraseScore > 0 || score.labelTokenScore > 0 || score.conceptualFallbackScore >= 0.75) {
+  if (score.sourceBodyScore > 0 || score.labelExactScore > 0 || score.labelPhraseScore > 0 || score.labelTokenScore > 0 || score.conceptualFallbackScore >= 0.75) {
     return 2
   }
   if (score.sourcePathScore > 0 || score.promptIdentifierScore > 0 || score.communityScore > 0 || score.conceptualFallbackScore > 0) {
@@ -2107,10 +1613,22 @@ function evidenceTierForSeedScore(score: SeedScoreBreakdown): 0 | 1 | 2 {
   return 0
 }
 
-function compareScoredNodes(graph: KnowledgeGraph, left: ScoredNode, right: ScoredNode): number {
+function compareScoredNodes(graph: KnowledgeGraph, left: ScoredNode, right: ScoredNode, prioritizeBodyCoverage: boolean, literalLookup: boolean): number {
+  const exactBodyOrder = Number((right.sourceBodyScore ?? 0) >= 8) - Number((left.sourceBodyScore ?? 0) >= 8)
   return (
+    (literalLookup ? exactBodyOrder : 0) ||
+    // For multi-part questions, length-normalized source relevance precedes
+    // incidental framework/graph bonuses. Whole-owner word coverage alone
+    // rewards large unrelated handlers. Explicit symbols/paths stay first.
+    (prioritizeBodyCoverage
+      ? Number(right.symbolMatchScore >= 3 || right.literalPathMatch) - Number(left.symbolMatchScore >= 3 || left.literalPathMatch)
+        || (right.sourceBodyRelevance ?? 0) - (left.sourceBodyRelevance ?? 0)
+      : 0) ||
     right.evidenceTier - left.evidenceTier ||
     right.frameworkBoost - left.frameworkBoost ||
+    // A mentioned identifier is an occurrence, not necessarily the requested
+    // role. Only literal lookups can bypass behavior and framework evidence.
+    (!literalLookup ? exactBodyOrder : 0) ||
     right.score - left.score ||
     Number(left.fileNodeLike) - Number(right.fileNodeLike) ||
     graph.degree(right.id) - graph.degree(left.id) ||
@@ -2324,6 +1842,7 @@ function scoreSeedCandidate(
     promptIdentifierScore,
     communityScore,
     conceptualFallbackScore: 0,
+    sourceBodyScore: 0,
     total: labelExactScore + labelPhraseScore + labelTokenScore + sourcePathScore + promptIdentifierScore + communityScore,
   }
 }
@@ -4368,11 +3887,21 @@ function buildExecutionSlice(
   ]
   const phaseCoverage = phaseCoverageForPath(steps, boundaries, question, scopeSteps, tracedSteps)
   const missingPhase = phaseCoverage.missing[0]
+  const reachable = new Set<string>([startId])
+  const pending = [startId]
+  for (let index = 0; index < pending.length; index++) {
+    for (const edge of adjacency.get(pending[index]!) ?? []) {
+      if (reachable.has(edge.toId)) continue
+      reachable.add(edge.toId)
+      pending.push(edge.toId)
+    }
+  }
+  const disconnectedAnchors = anchorIds.some(id => !reachable.has(id))
   const boundaryReason = missingPhase
     ? missingExecutionPhaseBoundaryReason(missingPhase)
-    : undefined
+    : disconnectedAnchors ? 'slice contains disconnected source anchors' : undefined
   const executionSlice: ContextPackExecutionSlice = {
-    status: missingPhase ? 'partial' : 'complete',
+    status: boundaryReason ? 'partial' : 'complete',
     ...(boundaryReason ? { boundary_reason: boundaryReason } : {}),
     steps,
     primary_path: {
@@ -4571,6 +4100,11 @@ function buildFrameworkQuestionProfile(question: string, questionTokens: readonl
 
   return {
     frameworkShaped: express || routingControllers || redux || reactRouter || nest || next || repository || hono || fastify || trpc || prisma || goRouteIntent,
+    // Behavioral words such as POST, persistence, state, or next are rank
+    // hints, not authority to exclude implementations from other frameworks.
+    explicitlyNamed: explicitExpress || explicitNest || explicitRoutingControllers || explicitReactRouter
+      || explicitHono || explicitFastify || explicitPrisma || explicitGin
+      || includesAnyToken(questionTokens, ['redux', 'nextjs', 'trpc']) || /\bnext\.js\b/i.test(question),
     express,
     routingControllers,
     redux,
@@ -5002,6 +4536,10 @@ export function contextPackFromRetrieveResult(
     ...(result.retrieval_strategy ? { retrieval_strategy: result.retrieval_strategy } : {}),
     ...(result.retrieval_plan ? { retrieval_plan: result.retrieval_plan } : {}),
     ...(result.recovery ? { recovery: result.recovery } : {}),
+    ...(result.source_search ? { source_search: result.source_search } : {}),
+    ...(result.selection_scope ? { selection_scope: result.selection_scope } : {}),
+    ...(result.selection_omitted !== undefined ? { selection_omitted: result.selection_omitted } : {}),
+    ...(result.source_dependencies ? { source_dependencies: result.source_dependencies } : {}),
     ...(result.slice ? { slice: result.slice } : {}),
     ...(result.execution_slice ? { execution_slice: result.execution_slice } : {}),
     ...(result.answer_contract ? { answer_contract: result.answer_contract } : {}),
@@ -5009,19 +4547,506 @@ export function contextPackFromRetrieveResult(
   }
 }
 
+/** Type declarations may support an answer, but cannot execute its behavior. */
+function independentSourceBodyCandidate(graph: KnowledgeGraph, node: ScoredNode, options: RetrieveOptions, rootPath?: string): boolean {
+  if (node.fileNodeLike || node.relevanceBand !== 'direct' || (node.sourceBodyScore ?? 0) <= 0
+    || graph.nodeAttributes(node.id).external_call === true || /^(?:interface|type|enum)$/.test(node.nodeKind)) return false
+  const range = lineRangeFromSourceLocation(node.sourceLocation)
+  const lines = range ? readEvidenceLines(node.sourceFile, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options)) : null
+  return !!range && !!lines && sourceDeclarationKind(lines, range, node.label, node.sourceFile) !== 'type'
+}
+
+/** Independent body evidence need not be connected to the first graph seeds. */
+function allowsIndependentBodyDiscovery(options: RetrieveOptions, gate: RetrievalGateDecision, profile?: FrameworkQuestionProfile): boolean {
+  return options.retrievalStrategy !== 'slice-v1'
+    && (options.retrievalLevel === undefined || options.retrievalLevel <= 1)
+    && (!options.taskIntent || options.taskIntent === 'explain')
+    && classifyRetrieveTaskContract(options).task_kind === 'explain'
+    && !sourceQueryIsLiteralLookup(options.question)
+    && queryEvidenceObligations(options.question).length >= 2
+    && !gate.signals.mentioned_paths.length && !gate.signals.mentioned_directories?.length
+    && !(profile ?? buildFrameworkQuestionProfile(options.question, tokenizeQuestion(retrievalSearchPrompt(options.question)))).explicitlyNamed
+}
+
+function sourceSelectionForTask(
+  graph: KnowledgeGraph,
+  options: RetrieveOptions,
+  candidates: readonly ScoredNode[],
+  retrievalGate: RetrievalGateDecision,
+  rootPath?: string,
+  lookupCandidates: readonly ScoredNode[] = candidates,
+  independentBodyPriority = false,
+): { candidates: readonly ScoredNode[]; scope: SourceSelectionScope; omitted?: number; dependencies?: SourceDependencySelection; provenance?: SourceSelectionProvenance; discoveryCore?: string[]; sourcePriority?: string[]; continuationCatalog?: SourceCoherentContinuationCatalog } {
+  const question = options.question
+  if (options.retrievalStrategy === 'slice-v1') return { candidates, scope: 'task_context' }
+  const relationIntent = /\b(?:call(?:s|ers|ed)?|dependenc(?:y|ies)|dependents?|invok(?:e|es|ed)|reach(?:es)?|implement(?:ation)?|flow|workflow|trace|through|across|impact|changes?|breaks?|modify|fix|debug|end.to.end)\b/i.test(question)
+  const broadTask = options.taskKind !== undefined && options.taskKind !== 'explain'
+  const explicitLevel = options.retrievalLevel !== undefined && options.retrievalLevel > 1
+  const multiPart = queryEvidenceObligations(question).length >= 2
+  let behaviorLocation = sourceBehaviorLocation(graph, options, retrievalGate, rootPath ?? inferredGraphRoot(graph))
+  const name = (node: ScoredNode): string => node.label.replace(/\(\)$/, '').split(/[.:]/).at(-1) ?? ''
+  const symbolOccurrences = sourceQuerySymbols(question, { includeImplicit: true })
+  const occurrenceCache = new Map<string, SourceSymbolOccurrence[]>()
+  const occurrencesFor = (node: ScoredNode, includeImplicit = false): SourceSymbolOccurrence[] => {
+    const key = `${node.id}:${includeImplicit}`
+    if (occurrenceCache.has(key)) return occurrenceCache.get(key)!
+    const leaf = name(node)
+    const possible = symbolOccurrences.filter(occurrence => (includeImplicit || occurrence.explicit) && occurrence.name.split('.').at(-1) === leaf)
+    let qualified: string | undefined
+    if (possible.some(occurrence => occurrence.name.includes('.'))) {
+      const range = lineRangeFromSourceLocation(node.sourceLocation)
+      const lines = range ? readEvidenceLines(node.sourceFile, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options)) : null
+      if (range && lines) qualified = sourceDeclarationQualifiedName(lines, range, node.label, node.sourceFile)
+    }
+    const matches = possible.filter(occurrence => occurrence.name === leaf || occurrence.name === qualified)
+    occurrenceCache.set(key, matches)
+    return matches
+  }
+  const named = lookupCandidates.filter(node => !node.fileNodeLike && (node.exactLabelMatch || (node.sourceBodyScore ?? 0) >= 8))
+  // A path or symbol locates evidence; it does not settle other requested
+  // decisions. Keep multi-part questions in task selection under one budget.
+  if (!relationIntent && !broadTask && !explicitLevel && !multiPart && !behaviorLocation) {
+    const path = lookupCandidates.filter(node => node.fileNodeLike && node.literalPathMatch)
+    if (path.length) return { candidates: path.slice(0, 2), scope: 'file_lookup', ...(path.length > 2 ? { omitted: path.length - 2 } : {}) }
+    if (named.length && (/\b(?:where|what|show|find|explain|definition|defined)\b/i.test(question) || question.trim().split(/\s+/).length <= 2)) {
+      const declarations = named.filter(node => {
+        if (!occurrencesFor(node, true).length) return false
+        const range = lineRangeFromSourceLocation(node.sourceLocation)
+        const lines = range ? readEvidenceLines(node.sourceFile, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options)) : null
+        return !range || !lines || sourceDeclarationKind(lines, range, node.label, node.sourceFile) !== undefined
+      })
+      const qualifiedDeclarations = declarations.filter(node => occurrencesFor(node, true).some(occurrence => occurrence.name.includes('.')))
+      // Multiple owners of the same requested literal remain visible; only
+      // containment/neighbor expansion is removed from a focused lookup.
+      const exactBodies = named.filter(node => (node.sourceBodyScore ?? 0) >= 8)
+      const matches = qualifiedDeclarations.length ? qualifiedDeclarations : declarations.length ? declarations : sourceQueryIsLiteralLookup(question) ? exactBodies : []
+      if (matches.length) return { candidates: matches.slice(0, 4), scope: 'symbol_lookup', ...(matches.length > 4 ? { omitted: matches.length - 4 } : {}) }
+    }
+  }
+  if (!relationIntent && !broadTask && !explicitLevel && !multiPart && !behaviorLocation) {
+    const requests = classifyRetrieveTaskContract(options).task_kind === 'explain' && options.taskIntent !== 'impact'
+      ? sourceSimplePrototypeRequests(question) : []
+    const root = rootPath ?? inferredGraphRoot(graph)
+    if (requests.length && root) {
+      const eligible = lookupCandidates.filter(node => !node.fileNodeLike && node.fileType === 'code'
+        && graph.nodeAttributes(node.id).external_call !== true && !/^(?:interface|type|enum)$/.test(node.nodeKind))
+      const owners = selectVerifiedExplicitPrototypeOwners(graph, question, root, requestSourceCache(options),
+        new Set(eligible.map(node => node.id)), new Set(lookupCandidates.map(node => resolve(root, node.sourceFile))), requests)
+      if (owners.length === requests.length) {
+        const byId = new Map(eligible.map(node => [node.id, node]))
+        return { candidates: owners.map(id => byId.get(id)!), scope: 'symbol_lookup' }
+      }
+    }
+    return { candidates, scope: 'task_context' }
+  }
+  const symbols = lookupCandidates.filter(node => !node.fileNodeLike && node.fileType === 'code'
+    && graph.nodeAttributes(node.id).external_call !== true && !/^(?:interface|type|enum)$/.test(node.nodeKind))
+  const concreteFunctions = symbols.slice(0, 32).filter(node => {
+    const range = lineRangeFromSourceLocation(node.sourceLocation)
+    const lines = range ? readEvidenceLines(node.sourceFile, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options)) : null
+    return range && lines && sourceDeclarationKind(lines, range, node.label, node.sourceFile) === 'function'
+  })
+  const currentDeclaration = (node: ScoredNode): ReturnType<typeof sourceDeclarationKind> => {
+    const range = lineRangeFromSourceLocation(node.sourceLocation)
+    const lines = range ? readEvidenceLines(node.sourceFile, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options)) : null
+    return range && lines ? sourceDeclarationKind(lines, range, node.label, node.sourceFile) : undefined
+  }
+  const explicitNameCandidates = symbols.map(node => ({ node, position: occurrencesFor(node)[0]?.start ?? -1 }))
+    .filter(entry => entry.position >= 0 && (!behaviorLocation || currentDeclaration(entry.node) !== undefined))
+    .sort((left, right) => left.position - right.position)
+  const scopeSubject = retrievalSubjectPrompt(extractPromptExclusions(question).positivePrompt)
+  const scopeToken = /^\s*(?:in|within|under)\s+([`"']?)([^\s`"',;]+)\1/i.exec(scopeSubject)?.[2]
+  const normalizeLocation = (value: string): string => value.replaceAll('\\', '/').replace(/^\.\//, '').replace(/[.,;:!?]+$/, '')
+  const explicitLocation = !!scopeToken && !/\b(?:compare|contrast|versus)\b/i.test(scopeSubject)
+    && [...retrievalGate.signals.mentioned_paths, ...(retrievalGate.signals.mentioned_directories ?? [])]
+      .some(path => normalizeLocation(path) === normalizeLocation(scopeToken))
+  const inRequestedLocation = (node: ScoredNode): boolean => explicitLocation && (behaviorLocation
+    ? sourceFileInBehaviorLocation(node.sourceFile, behaviorLocation, rootPath ?? inferredGraphRoot(graph))
+    : sourceFileMatchesMentionedPath(node.sourceFile, retrievalGate.signals.mentioned_paths, rootPath ?? inferredGraphRoot(graph)))
+  const executableRanges = new Map<readonly string[], Map<string, { declarations: number; bodies: number }> | null>()
+  const concreteOwners = new Map<string, boolean>()
+  let inspectedSourceNodes = 0
+  const concreteScopedOwner = (node: ScoredNode): boolean => {
+    if (concreteOwners.has(node.id)) return concreteOwners.get(node.id)!
+    const result = (value: boolean): boolean => { concreteOwners.set(node.id, value); return value }
+    if (inspectedSourceNodes >= 100_000) return result(false)
+    const root = rootPath ?? inferredGraphRoot(graph)
+    if (!JS_TS_SOURCE_EXTENSIONS.includes(extname(node.sourceFile).toLowerCase())
+      || /\.d\.[cm]?tsx?$/i.test(node.sourceFile)) return result(false)
+    const indexed = lineRangeFromSourceLocation(node.sourceLocation)
+    const lines = indexed ? readEvidenceLines(node.sourceFile, root, requestSourceCache(options)) : null
+    if (!indexed || !lines || currentDeclaration(node) !== 'function') return result(false)
+    const range = resolveSourceSymbolRange(lines, indexed, node.label, node.sourceFile)
+    if (!range) return result(false)
+    if (!executableRanges.has(lines)) {
+      const source = sourceSyntaxTree(lines, node.sourceFile)
+      const ranges = new Map<string, { declarations: number; bodies: number }>()
+      let complete = !(source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics?.length
+      const add = (start: number, end: number, body: boolean): void => {
+        const key = `${start}:${end}`
+        const prior = ranges.get(key) ?? { declarations: 0, bodies: 0 }
+        ranges.set(key, { declarations: prior.declarations + 1, bodies: prior.bodies + Number(body) })
+      }
+      const visit = (declaration: ts.Node): void => {
+        if (!complete) return
+        if (++inspectedSourceNodes > 100_000) { complete = false; return }
+        const occurrence = sourceFunctionOccurrence(declaration, source)
+        if (occurrence) add(occurrence.start, occurrence.end, true)
+        const callable = ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration)
+          || ts.isGetAccessorDeclaration(declaration) || ts.isSetAccessorDeclaration(declaration)
+        const value = ts.isVariableDeclaration(declaration) && declaration.initializer
+          && (ts.isArrowFunction(declaration.initializer) || ts.isFunctionExpression(declaration.initializer))
+          ? declaration.initializer : undefined
+        if (callable || value) add(source.getLineAndCharacterOfPosition(declaration.getStart(source)).line + 1,
+          source.getLineAndCharacterOfPosition(declaration.getEnd()).line + 1, !!(callable ? declaration.body : value?.body))
+        ts.forEachChild(declaration, visit)
+      }
+      visit(source)
+      executableRanges.set(lines, complete ? ranges : null)
+    }
+    const identity = executableRanges.get(lines)?.get(`${range.start}:${range.end}`)
+    return result(identity?.declarations === 1 && identity.bodies === 1)
+  }
+  const namesByPosition = new Map<number, typeof explicitNameCandidates>()
+  for (const entry of explicitNameCandidates) namesByPosition.set(entry.position, [...(namesByPosition.get(entry.position) ?? []), entry])
+  // Prefer current owners in the requested location only for that occurrence.
+  // Missing owners and same-location collisions retain the existing ambiguity;
+  // separately requested symbols and source-resolved dependencies remain eligible.
+  const explicitNames = [...namesByPosition.values()].flatMap(entries => {
+    const scoped = entries.filter(entry => inRequestedLocation(entry.node))
+    return scoped.length && scoped.every(entry => concreteScopedOwner(entry.node)) ? scoped : entries
+  })
+  const namesAtPosition = new Map<number, number>()
+  for (const entry of explicitNames) namesAtPosition.set(entry.position, (namesAtPosition.get(entry.position) ?? 0) + 1)
+  const unambiguousIds = new Set(explicitNames.filter(entry => namesAtPosition.get(entry.position) === 1).map(entry => entry.node.id))
+  // A shared name identifies possible owners, not an entry point. Only a
+  // resolved occurrence can anchor a closure that narrows the task candidates.
+  const firstPosition = explicitNames.find(entry => unambiguousIds.has(entry.node.id))?.position
+  const exclusiveSymbolAnchor = firstPosition !== undefined
+    && explicitNames.every(entry => unambiguousIds.has(entry.node.id))
+  // A declaration-only or unresolved callable scope cannot settle a shared
+  // function name. Keep its possible implementations available as evidence.
+  // This callable proof must not clear a class's otherwise valid file scope.
+  if (behaviorLocation && explicitNames.some(entry => !unambiguousIds.has(entry.node.id)
+    && currentDeclaration(entry.node) === 'function'
+    && (!inRequestedLocation(entry.node) || !concreteScopedOwner(entry.node)))) behaviorLocation = undefined
+  // A call closure augments the request. It must not erase a second requested
+  // symbol or the implementations in an explicitly named source file. Bare
+  // same-name collisions remain unresolved until source bindings select one.
+  // Bare lowercase helper lists need explicit request syntax and one current
+  // declaration in the exact named file; location membership alone is not proof.
+  const requestedHelperIds = new Set<string>()
+  const helperRoot = rootPath ?? inferredGraphRoot(graph)
+  if (explicitLocation && scopeToken && helperRoot && !sourceQueryIsLiteralLookup(scopeSubject)
+    && JS_TS_SOURCE_EXTENSIONS.includes(extname(scopeToken).toLowerCase()) && !/\.d\.[cm]?tsx?$/i.test(scopeToken)) {
+    const helperFile = resolve(helperRoot, normalizeLocation(scopeToken))
+    const helperOwners = symbols.filter(node => resolve(helperRoot, node.sourceFile) === helperFile)
+      .flatMap(node => {
+        const range = lineRangeFromSourceLocation(node.sourceLocation)
+        return range ? [{ id: node.id, label: node.label, range }] : []
+      })
+    const helperLines = helperOwners.length ? readEvidenceLines(helperFile, helperRoot, requestSourceCache(options)) : null
+    if (helperLines) for (const id of selectRequestedHelperOwners(scopeSubject, helperOwners, helperLines, helperFile)) requestedHelperIds.add(id)
+  }
+  // Explicit action clauses choose the entry to inspect before background
+  // constructor mentions. This is source selection, never receiver authority.
+  const directivePrompt = retrievalDirectivePrompt(question)
+  const operationNames = new Set(sourceRequestedOperations(question).map(operation => operation.name))
+  const operationCallerIntent = /\b(?:callers?|called\s+by|dependents?|impact|affected|breaks?|consumers)\b|\bconsumer\s+(?:of|for)\b|\b(?:find|show|list|include|trace|explain|inspect|analyze|follow)\s+(?:the\s+)?(?:(?:upstream|downstream|direct|indirect|all|its|their)\s+)?consumer\b|\b(?:and|also|with)\s+(?:its|their|the)\s+(?:(?:upstream|downstream|direct|indirect)\s+)?consumer\b/i.test(directivePrompt)
+  const operationTaskEligible = !broadTask && !explicitLevel && !behaviorLocation
+    && classifyRetrieveTaskContract(options).task_kind === 'explain' && options.taskIntent !== 'impact'
+    && !sourceQueryIsLiteralLookup(scopeSubject) && operationNames.size > 0 && operationNames.size <= 8
+  const operationEligible = operationTaskEligible && !operationCallerIntent
+  const admittedIds = new Set(candidates.map(node => node.id))
+  const explicitOperationIds = new Set(operationTaskEligible && helperRoot ? selectVerifiedExplicitPrototypeOwners(
+    graph, question, helperRoot, requestSourceCache(options), new Set(symbols.map(node => node.id)),
+    new Set(lookupCandidates.map(node => resolve(helperRoot, node.sourceFile))),
+  ) : [])
+  const operationIds = new Set([...explicitOperationIds, ...(operationEligible ? [
+    ...explicitNames.filter(entry => occurrencesFor(entry.node).some(occurrence => operationNames.has(occurrence.name)) && unambiguousIds.has(entry.node.id)
+      && admittedIds.has(entry.node.id) && concreteScopedOwner(entry.node)).map(entry => entry.node.id),
+    ...(helperRoot ? selectRequestedPrototypeOwners(graph, question, helperRoot, requestSourceCache(options),
+      new Set(lookupCandidates.map(node => resolve(helperRoot, node.sourceFile)))).filter(id => admittedIds.has(id)) : []),
+  ] : [])])
+  const requested = symbols.filter(node => {
+    if (unambiguousIds.has(node.id) || requestedHelperIds.has(node.id) || operationIds.has(node.id)) return true
+    if (behaviorLocation || !node.literalPathMatch) return false
+    const range = lineRangeFromSourceLocation(node.sourceLocation)
+    const lines = range ? readEvidenceLines(node.sourceFile, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options)) : null
+    return !!range && !!lines && sourceDeclarationKind(lines, range, node.label, node.sourceFile) !== undefined
+  })
+  const fragmentSelection = behaviorLocation?.clauseLocations ? selectSourceFragments(lookupCandidates.filter(node => node.fileType === 'code' &&
+    sourceFileInBehaviorLocation(node.sourceFile, behaviorLocation, rootPath ?? inferredGraphRoot(graph)))
+    .flatMap(node => {
+      const range = lineRangeFromSourceLocation(node.sourceLocation)
+      return range ? [{ id: node.id, label: node.label, sourceFile: node.sourceFile, range, fileNodeLike: node.fileNodeLike }] : []
+    }), behaviorLocation.question, retrievalSubjectPrompt(extractPromptExclusions(question).positivePrompt), new Set(requested.map(node => node.id)),
+    rootPath ?? inferredGraphRoot(graph), requestSourceCache(options)) : undefined
+  const fragmentBindings = fragmentSelection ? lookupCandidates.filter(node => fragmentSelection.bindingIds.includes(node.id)) : []
+  const fragmentWitnessIds = new Set(fragmentSelection ? [...fragmentSelection.ownerIds, ...fragmentSelection.bindingIds, ...requested.map(node => node.id)] : [])
+  const scopedCandidates = (nodes: readonly ScoredNode[]): ScoredNode[] => [...new Map([
+    ...(fragmentSelection ? [...requested, ...fragmentBindings] : []), ...nodes,
+  ].map(node => [node.id, node])).values()].map(node => fragmentWitnessIds.has(node.id) ? {
+    ...node, sourceFragmentWitness: true,
+    ...(fragmentSelection?.fragments.has(node.id) ? { sourceFragment: fragmentSelection.fragments.get(node.id)! } : {}),
+  } : node)
+  const fileTargets = requested.filter(node => node.literalPathMatch)
+  // The bounded body matcher has already admitted these owners on current
+  // source content. Location membership alone never admits a declaration.
+  const locationBodies = fragmentSelection ? fragmentSelection.ownerIds.flatMap(id => {
+    const node = symbols.find(candidate => candidate.id === id)
+    return node ? [node] : []
+  }) : behaviorLocation ? symbols.filter(node => (node.sourceBodyScore ?? 0) > 0
+    && sourceFileInBehaviorLocation(node.sourceFile, behaviorLocation, rootPath ?? inferredGraphRoot(graph))
+    && currentDeclaration(node) === 'function') : []
+  const operationAnchors = symbols.filter(node => operationIds.has(node.id))
+  const contextAnchors = firstPosition === undefined
+    ? behaviorLocation ? locationBodies.slice(0, 3)
+      : fileTargets.length ? fileTargets : (concreteFunctions.length ? concreteFunctions : symbols).filter(node => node.relevanceBand === 'direct').slice(0, 3)
+    : explicitNames.filter(entry => entry.position === firstPosition && unambiguousIds.has(entry.node.id)).map(entry => entry.node)
+  const anchors = [...operationAnchors, ...contextAnchors.filter(node => !operationIds.has(node.id))]
+  const seeds = [...new Map([...anchors, ...requested].map(node => [node.id, node])).values()]
+  if (!seeds.length) return { candidates: behaviorLocation ? [] : candidates, scope: 'task_context' }
+  // A named anchor does not settle a separately requested behavior clause.
+  // Reuse source-body lexical admission for retention, not completeness: these
+  // owners remain query evidence without asserting a call from the anchor.
+  const multipartBody: ScoredNode[] = locationBodies.filter(node => !seeds.some(seed => seed.id === node.id))
+  const candidateIds = new Set(candidates.map(node => node.id))
+  // Unresolved explicitly requested owners remain alternatives, without
+  // promoting them to verified anchors or arbitrarily choosing two of them.
+  const alternatives = explicitNames.filter(entry => !unambiguousIds.has(entry.node.id)).map(entry => entry.node)
+  const withRequested = behaviorLocation ? [...seeds, ...multipartBody] : [...candidates,
+    ...new Map([...requested, ...alternatives].filter(node => !candidateIds.has(node.id)).map(node => [node.id, node])).values()]
+  const hasRequestedFiles = fileTargets.length > 0 || behaviorLocation !== undefined
+  const exclusiveRequestedFiles = behaviorLocation !== undefined
+    || (fileTargets.length > 0 && fileTargets.every(concreteScopedOwner))
+  const callerIntent = options.taskKind === 'impact'
+    || (operationAnchors.length ? operationCallerIntent : /\b(?:callers?|called\s+by|consumers?|dependents?|impact|affected|breaks?)\b/i.test(directivePrompt))
+  const positive = retrievalSubjectPrompt(extractPromptExclusions(question).positivePrompt)
+  const exactBodies = symbols.filter(node => (node.sourceBodyScore ?? 0) >= 8)
+  let discoveryCore: string[] | undefined
+  if (!behaviorLocation && !broadTask && !explicitLevel && classifyRetrieveTaskContract(options).task_kind === 'explain'
+    && !callerIntent && options.taskIntent !== 'impact' && multiPart && firstPosition === undefined && !requested.length
+    && !retrievalGate.signals.mentioned_paths.length && !retrievalGate.signals.mentioned_directories?.length
+    && sourceQueryLiterals(positive).length && !sourceQueryIsLiteralLookup(positive) && exactBodies.length <= 32
+    && qualifiedSourceCallsVerified(graph, positive, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options))) {
+    let visited = 0
+    const core = exactBodies.filter(node => {
+      if (!JS_TS_SOURCE_EXTENSIONS.includes(extname(node.sourceFile).toLowerCase()) || /\.d\.[cm]?ts$/i.test(node.sourceFile)) return false
+      const indexed = lineRangeFromSourceLocation(node.sourceLocation)
+      const lines = indexed ? readEvidenceLines(node.sourceFile, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options)) : null
+      if (!indexed || !lines || sourceDeclarationKind(lines, indexed, node.label, node.sourceFile) !== 'function'
+        || !sourceDeclarationQualifiedName(lines, indexed, node.label, node.sourceFile)) return false
+      const range = resolveSourceSymbolRange(lines, indexed, node.label, node.sourceFile)
+      if (!range) return false
+      const source = sourceSyntaxTree(lines, node.sourceFile)
+      let executable = false
+      const visit = (child: ts.Node): void => {
+        if (++visited > 100_000 || executable) return
+        const start = source.getLineAndCharacterOfPosition(child.getStart(source)).line + 1
+        const end = source.getLineAndCharacterOfPosition(Math.max(child.getStart(source), child.getEnd() - 1)).line + 1
+        if (end < range.start || start > range.end) return
+        if (ts.isFunctionLike(child) && 'body' in child && child.body && start >= range.start && end <= range.end) executable = true
+        else ts.forEachChild(child, visit)
+      }
+      visit(source)
+      return executable
+    }).map(node => node.id)
+    if (core.length && visited <= 100_000) discoveryCore = core
+  }
+  // Scoped value provenance is independent of discovery/closure membership.
+  // It may authorize a later visible-read addition, never another call edge.
+  let scopedValueCallers: string[] | undefined
+  const scopedPaths = new Set(retrievalGate.signals.mentioned_paths.map(path => resolve(rootPath ?? inferredGraphRoot(graph) ?? '.', path)))
+  if (!broadTask && !explicitLevel && !callerIntent && classifyRetrieveTaskContract(options).task_kind === 'explain'
+    && scopedPaths.size >= 2 && scopedPaths.size <= 8 && !sourceQueryIsLiteralLookup(positive)) {
+    const names = new Set(sourceQuerySymbols(positive).map(occurrence => occurrence.name))
+    const possible = seeds.filter(node => !node.fileNodeLike && node.fileType === 'code'
+      && scopedPaths.has(resolve(rootPath ?? inferredGraphRoot(graph) ?? '.', node.sourceFile)) && occurrencesFor(node).length)
+    if (possible.length && possible.length <= 32) {
+      const callers = possible.flatMap(node => {
+        const indexed = lineRangeFromSourceLocation(node.sourceLocation)
+        const lines = indexed ? readEvidenceLines(node.sourceFile, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options)) : null
+        if (!indexed || !lines || sourceDeclarationKind(lines, indexed, node.label, node.sourceFile) !== 'function') return []
+        const name = sourceDeclarationQualifiedName(lines, indexed, node.label, node.sourceFile)
+        return name && names.has(name) ? [node.id] : []
+      })
+      if (callers.length) scopedValueCallers = callers
+    }
+  }
+  const dependencies = selectSourceDependencies(graph, seeds.map(node => node.id), rootPath ?? inferredGraphRoot(graph), requestSourceCache(options), {
+    // A question scoped to named files needs their implementations and local
+    // dependencies. Reverse callers enter only when the request asks for them.
+    includeCallers: (!hasRequestedFiles && !operationAnchors.length) || callerIntent,
+    callerPriority: callerIntent,
+    seedOrigins: {
+      requested_member_ids: requested.map(node => node.id),
+      explicit_symbol_candidate_ids: explicitNames.map(entry => entry.node.id),
+      helper_request_ids: [...requestedHelperIds], named_file_member_ids: fileTargets.map(node => node.id),
+      anchor_ids: anchors.map(node => node.id), heuristic_anchor_ids: firstPosition === undefined && (behaviorLocation || !fileTargets.length) ? anchors.map(node => node.id) : [],
+    },
+    ...(discoveryCore || scopedValueCallers ? { functionValueCallerIds: discoveryCore ?? scopedValueCallers! } : {}),
+  })
+  const qualifiedBindingScope = !exclusiveSymbolAnchor && !broadTask && !explicitLevel && !hasRequestedFiles
+    && !callerIntent && options.taskIntent !== 'impact' && firstPosition !== undefined
+    && sourceQualifiedBindingScope({ question, dependencies, rootPath: rootPath ?? inferredGraphRoot(graph),
+      callerIds: requested.filter(node => unambiguousIds.has(node.id)).map(node => node.id),
+      occurrences: explicitNames.flatMap(entry => occurrencesFor(entry.node).map(occurrence => ({ nodeId: entry.node.id, occurrence }))),
+    })
+  const sourceBoundSymbolAnchor = exclusiveSymbolAnchor || !!qualifiedBindingScope
+  if (!behaviorLocation && firstPosition !== undefined && multiPart && !sourceQueryIsLiteralLookup(question)) {
+    const requestedTerms = new Set(seeds.flatMap(node => tokenizeLabel(node.label)))
+    const clauseMatches = new Set<string>()
+    // A proved caller-qualified lookup is supplied by its existing source
+    // closure. Keep independent behavior clauses, rather than re-admitting
+    // same-name neighbors from the already-bound lookup's vocabulary.
+    const bodyQuestion = qualifiedBindingScope ? maskPromptRegions(question, qualifiedBindingScope.qualified_ranges) : question
+    const clauses = queryEvidenceObligations(bodyQuestion).map(obligation => obligation.terms
+      .filter(term => !term.startsWith('@') && !requestedTerms.has(term)).join(' ')).filter(Boolean)
+    for (const clause of searchSourceBodyQuestions(graph, clauses, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options))) {
+      for (const id of clause.matches.keys()) clauseMatches.add(id)
+    }
+    for (const node of candidates) {
+      if (node.fileNodeLike || (node.sourceBodyScore ?? 0) <= 0 || seeds.some(seed => seed.id === node.id) || !clauseMatches.has(node.id)) continue
+      const indexed = lineRangeFromSourceLocation(node.sourceLocation)
+      const lines = indexed ? readEvidenceLines(node.sourceFile, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options)) : null
+      if (!indexed || !lines || sourceDeclarationKind(lines, indexed, node.label, node.sourceFile) !== 'function') continue
+      const range = resolveSourceSymbolRange(lines, indexed, node.label, node.sourceFile)
+      if (!range || range.start < 1 || range.end > lines.length) continue
+      multipartBody.push(node)
+      if (multipartBody.length >= 4) break
+    }
+  }
+  // Deferral is a presentation decision after dependency resolution. It must
+  // not authorize function-value callers or discard independently requested owners.
+  if (operationAnchors.length && !callerIntent) {
+    discoveryCore = [...new Set([...(discoveryCore ?? []), ...seeds.map(node => node.id), ...dependencies.node_ids])]
+  }
+  // A class anchor with no resolved dependency additions is not a closed
+  // function body. Decorator uncertainty must not discard related candidates.
+  // Keep the receipt so unsupported calls stay withheld; when dependencies
+  // were resolved, retain the existing materialization below.
+  if (relationIntent && !broadTask && !explicitLevel && sourceBoundSymbolAnchor && !hasRequestedFiles && !behaviorLocation
+    && !retrievalGate.signals.mentioned_paths.length && !retrievalGate.signals.mentioned_directories?.length
+    && dependencies.node_ids.length === 0 && seeds.every(node => currentDeclaration(node) === 'class')) {
+    return { candidates: scopedCandidates(withRequested), scope: 'task_context', dependencies, ...(discoveryCore ? { discoveryCore } : {}) }
+  }
+  if (!dependencies.receipt.scanned_files) return { candidates: scopedCandidates(withRequested), scope: 'task_context', ...(dependencies[sourceSelectionProvenanceKey] ? { provenance: dependencies[sourceSelectionProvenanceKey]! } : {}), ...(discoveryCore ? { discoveryCore } : {}) }
+  if (!dependencies.receipt.resolved_calls && !dependencies.receipt.unresolved_calls && !dependencies.receipt.resolved_references) {
+    return { candidates: scopedCandidates(sourceBoundSymbolAnchor || exclusiveRequestedFiles ? [...seeds, ...multipartBody] : withRequested), scope: 'task_context', dependencies, ...(discoveryCore ? { discoveryCore } : {}) }
+  }
+  const byId = new Map(lookupCandidates.map(node => [node.id, node]))
+  // Fragment selection does not authorize unrelated calls from omitted parts
+  // of a large parent. Optional implementations need already visible sites;
+  // all sites of a pair must be present so later callsite completion cannot
+  // refill this excerpt with other occurrences of the same pair.
+  const fragmentDependencies = new Set<string>()
+  if (fragmentSelection) {
+    for (const bundle of dependencies.source_callsite_bundles ?? []) {
+      if (!fragmentWitnessIds.has(bundle.from_id)) continue
+      const caller = byId.get(bundle.from_id)
+      if (!caller) continue
+      const lines = readEvidenceLines(caller.sourceFile, rootPath ?? inferredGraphRoot(graph), requestSourceCache(options))
+      const snippet = readQueryEvidenceSnippet(caller.sourceFile, caller.lineNumber, {
+        question, label: caller.label, sourceLocation: caller.sourceLocation,
+        ...(fragmentSelection.fragments.has(caller.id) ? { fragment: fragmentSelection.fragments.get(caller.id)! } : {}),
+        ...((rootPath ?? inferredGraphRoot(graph)) ? { rootPath: (rootPath ?? inferredGraphRoot(graph))! } : {}), fileCache: requestSourceCache(options),
+      })
+      if (!lines || !snippet?.snippet_line_range || !bundle.sites.length) continue
+      const source = sourceSyntaxTree(lines, caller.sourceFile)
+      if (bundle.sites.every(site => {
+        if (site.start_offset < 0 || site.end_offset <= site.start_offset || site.end_offset > source.text.length) return false
+        const start = source.getLineAndCharacterOfPosition(site.start_offset).line + 1
+        const end = source.getLineAndCharacterOfPosition(site.end_offset - 1).line + 1
+        return start >= snippet.snippet_line_range!.start_line && end <= snippet.snippet_line_range!.end_line
+          && !(snippet.snippet_omitted_ranges ?? []).some(gap => gap.start_line <= end && gap.end_line >= start)
+      })) fragmentDependencies.add(bundle.to_id)
+    }
+  }
+  const resolved = dependencies.node_ids.filter(id => !fragmentSelection || fragmentWitnessIds.has(id) || fragmentDependencies.has(id)).map((id, index) => ({
+    ...(byId.get(id) ?? scoredNodeFromGraph(graph, id, 1, rootPath)),
+    // Actual resolved implementations are evidence for this task even when
+    // their names contain none of the prompt's vocabulary.
+    relevanceBand: 'direct' as const,
+    evidenceTier: 2 as const,
+    score: Math.max(1, (seeds[0]?.score ?? 1) * 0.8 - index * 0.01),
+  }))
+  const selected = new Set([...seeds, ...resolved].map(node => node.id))
+  if (behaviorLocation) {
+    // Independent behavior owners precede optional closure evidence, without
+    // fabricating a call relationship between the query's separate decisions.
+    const bodyIds = new Set(multipartBody.map(node => node.id))
+    return { candidates: scopedCandidates([...seeds, ...multipartBody, ...resolved.filter(node => !bodyIds.has(node.id))]), scope: 'task_context', dependencies }
+  }
+  // With an explicit anchor, source identity replaces name-based neighbors.
+  // Every unambiguous requested symbol/path remains in seeds above.
+  const remainder = (sourceBoundSymbolAnchor || exclusiveRequestedFiles) && (dependencies.receipt.resolved_calls > 0 || dependencies.receipt.unresolved_calls > 0 || (dependencies.receipt.resolved_references ?? 0) > 0)
+    ? multipartBody.filter(node => !selected.has(node.id)) : withRequested.filter(node => !selected.has(node.id))
+  let ordered = [...seeds, ...resolved, ...remainder]
+  let sourcePriority: string[] | undefined
+  let continuationCatalog: SourceCoherentContinuationCatalog | undefined
+  if (independentBodyPriority && !discoveryCore && !operationAnchors.length && firstPosition === undefined && !requested.length
+    && !hasRequestedFiles && allowsIndependentBodyDiscovery(options, retrievalGate)) {
+    // Source matches retain their query rank and original evidence class,
+    // even when the same owner also appears in a heuristic call closure.
+    const eligibleIds = new Set(withRequested.map(node => node.id))
+    const independent = lookupCandidates.filter(node => eligibleIds.has(node.id)
+      && independentSourceBodyCandidate(graph, node, options, rootPath))
+    const independentIds = new Set(independent.map(node => node.id))
+    const routeRoot = rootPath ?? inferredGraphRoot(graph)
+    const exclusions = compileSourceExclusions(retrievalGate.signals.excluded_terms ?? [],
+      retrievalGate.signals.excluded_path_hints ?? [], routeRoot)
+    const routeConfigAllowed = !retrievalGate.signals.excluded_domains?.includes('config')
+      && !exclusions.matchesSource('package.json', 'package.json', routeRoot)
+    // An inspected local HTTP reference may order already-admitted source
+    // owners. It grants neither a call edge nor new evidence membership.
+    const referenced = routeConfigAllowed
+      ? prioritizeNextRouteReferences(independent, question, routeRoot, requestSourceCache(options)) : independent
+    ordered = [...referenced, ...ordered.filter(node => !independentIds.has(node.id))]
+    const coherence = sourceCoherenceGroup(independent, ordered, dependencies[sourceSelectionProvenanceKey],
+      routeRoot, requestSourceCache(options))
+    sourcePriority = coherence?.priority
+    if (coherence) {
+      const allowedPath = (file: string, canonical?: string): boolean => exclusions.valid
+        && [file, ...(canonical ? [canonical] : [])].every(path =>
+          !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, routeRoot) as never)
+          && !exclusions.matchesSource(path, path, routeRoot))
+      continuationCatalog = buildSourceCoherentContinuationCatalog(coherence.methods, ordered, question,
+        dependencies[sourceSelectionProvenanceKey], id => byId.get(id)
+          ?? (graph.hasNode(id) ? scoredNodeFromGraph(graph, id, 1, routeRoot) : undefined),
+        allowedPath, (file, label, text) => !exclusions.matchesSource(file, label, routeRoot)
+          && !exclusions.matchesText(text), routeRoot)
+    }
+  }
+  return { candidates: ordered, scope: 'task_context', dependencies, ...(discoveryCore ? { discoveryCore } : {}),
+    ...(sourcePriority?.length ? { sourcePriority } : {}), ...(continuationCatalog ? { continuationCatalog } : {}) }
+}
+
 function buildRetrieveResultFromOrderedCandidates(
   graph: KnowledgeGraph,
   options: RetrieveOptions,
-  orderedCandidates: readonly ScoredNode[],
+  inputCandidates: readonly ScoredNode[],
   communities: Communities,
   communityLabels: Record<number, string>,
   retrieveGraphSignals: RetrieveGraphSignals,
   retrievalGate: RetrievalGateDecision,
   rootPath?: string,
   sliceMetadata?: ContextPackSliceMetadata,
+  lookupCandidates?: readonly ScoredNode[],
+  independentBodyPriority = false,
 ): RetrieveResult {
-  const snippetFileCache = new Map<string, string[] | null>()
-  const taskContract = classifyRetrieveTaskContract(options)
+  const snippetFileCache = requestSourceCache(options)
+  const selection = sourceSelectionForTask(graph, options, inputCandidates, retrievalGate, rootPath, lookupCandidates, independentBodyPriority)
+  const baseTaskContract = classifyRetrieveTaskContract(options)
+  const taskContract: ContextPackTaskContract = selection.scope === 'task_context' ? baseTaskContract : {
+    ...baseTaskContract,
+    required_evidence: ['primary'],
+    preferred_evidence: ['primary'],
+    semantic_required: [],
+    semantic_optional: [],
+  }
+  const sourceProvenance = selection.provenance ?? selection.dependencies?.[sourceSelectionProvenanceKey]
+  const orderedCandidates = selection.candidates
   const orderedCandidateIds = new Set(orderedCandidates.map((node) => node.id))
   const orderedCommunities = new Set<number>(orderedCandidates.flatMap((node) => (node.community === null ? [] : [node.community])))
   const graphSignalLabels = {
@@ -5037,11 +5062,60 @@ function buildRetrieveResultFromOrderedCandidates(
     sliceMetadata,
     rootPath,
   )
+  const expansionRoot = rootPath ?? inferredGraphRoot(graph)
+  const flowPaths = new Set(retrievalGate.signals.mentioned_paths.map(path => resolve(rootPath ?? '.', path)))
+  // Flow allocation reconstructs generic handle identities from indexed ranges.
+  // Keep those identities intact whenever this pass could produce a flow catalog.
+  const preserveFlowReferenceScope = selection.scope === 'task_context' && flowPaths.size >= 2 && flowPaths.size <= 8
+    && (selection.dependencies?.source_flow_callees?.length ?? 0) > 0
+  const indexedRanges = new Map(orderedCandidates.map(node => [node.id, expandableLineRange(node)]))
+  const fileOwnerPath = (attributes: Record<string, unknown>): string | undefined => {
+    if (!expansionRoot || !isAbsolute(expansionRoot) || attributes.file_type !== 'code' || attributes.external_call === true
+      || typeof attributes.source_file !== 'string' || !attributes.source_file
+      || attributes.label !== basename(attributes.source_file)
+      || attributes.node_kind !== undefined && attributes.node_kind !== 'file' && attributes.node_kind !== 'module'
+      || lineRangeFromSourceLocation(attributes.source_location)?.start !== 1) return undefined
+    return resolve(expansionRoot, attributes.source_file)
+  }
+  const fileExpansionRange = (node: ScoredNode): ContextPackExpandableLineRange | undefined => {
+    if (!node.fileNodeLike || preserveFlowReferenceScope) return undefined
+    const attributes = graph.nodeAttributes(node.id), path = fileOwnerPath(attributes)
+    if (!path || attributes.label !== node.label || attributes.source_file !== node.sourceFile
+      || attributes.source_location !== node.sourceLocation) return undefined
+    let state = sourceFileExpansionStates.get(options)
+    if (!state) { state = { ranges: new Map(), probes: 0, bytes: 0 }; sourceFileExpansionStates.set(options, state) }
+    if (!state.owners) {
+      state.owners = new Map()
+      for (const [id, current] of graph.nodeEntries()) {
+        const ownerPath = fileOwnerPath(current)
+        if (ownerPath) state.owners.set(ownerPath, [...(state.owners.get(ownerPath) ?? []), id])
+      }
+    }
+    const owners = state.owners.get(path)
+    if (owners?.length !== 1 || owners[0] !== node.id) return undefined
+    if (state.ranges.has(path)) return state.ranges.get(path)
+    if (state.probes >= 32 || state.bytes >= 1024 * 1024) return undefined
+    state.probes++
+    state.ranges.set(path, undefined)
+    // This is request-cache source evidence, not a graph freshness certificate.
+    // Expansion still rechecks current source, root, exclusions and ignore policy.
+    const lines = readEvidenceLines(node.sourceFile, expansionRoot, snippetFileCache)
+    const indexed = indexedRanges.get(node.id)
+    if (!lines?.length || !indexed || indexed.end_line > lines.length) return undefined
+    const bytes = Buffer.byteLength(lines.join('\n'))
+    // The existing reader caps each file at256KiB; at most32 probes are made.
+    if (state.bytes + bytes > 1024 * 1024) return undefined
+    state.bytes += bytes
+    const range = { start_line: 1, end_line: lines.length }
+    state.ranges.set(path, range)
+    return range
+  }
   const nodeCandidates: Array<ContextPackNodeCandidate<ContextPackNode>> = orderedCandidates.map((node) => {
     let builtEntry: RetrieveMatchedNode | undefined
     let tokenCost: number | undefined
+    let expansionRef: ContextPackNodeCandidate<ContextPackNode>['expandable_ref']
     const baseEvidenceClass = retrieveEvidenceClassForBand(node.relevanceBand)
-    const evidenceClass = structuralIds.has(node.id) && !(promptExpectsPersistenceStep(options.question) && node.relevanceBand === 'direct')
+    const evidenceClass = node.sourceFragmentWitness || selection.scope !== 'task_context' ? 'primary' : structuralIds.has(node.id) && !(promptExpectsPersistenceStep(options.question) && node.relevanceBand === 'direct')
       ? 'structural'
       : baseEvidenceClass
     const graphSignal = retrieveGraphSignals.bridgeNodeIds.has(node.id)
@@ -5056,17 +5130,17 @@ function buildRetrieveResultFromOrderedCandidates(
       }
 
       const queryEvidenceSnippet = readQueryEvidenceSnippet(node.sourceFile, node.lineNumber, {
+        ...(node.sourceFragment ? { fragment: node.sourceFragment } : {}),
         question: options.question,
         label: node.label,
         sourceLocation: node.sourceLocation,
         fileNodeLike: node.fileNodeLike,
         derived: node.lineNumberDerived,
         fileCache: snippetFileCache,
+        ...((rootPath ?? inferredGraphRoot(graph)) ? { rootPath: rootPath ?? inferredGraphRoot(graph)! } : {}),
       })
-      const snippet = queryEvidenceSnippet?.snippet ?? node.storedSnippet ?? readSnippet(node.sourceFile, node.lineNumber, {
-        derived: node.lineNumberDerived,
-        fileCache: snippetFileCache,
-      })
+      // Never bypass the source-path policy with a second filesystem read.
+      const snippet = queryEvidenceSnippet?.snippet ?? node.storedSnippet
       const serializedSourceFile = relativizeSourceFile(node.sourceFile, rootPath)
       builtEntry = {
         node_id: node.id,
@@ -5077,10 +5151,24 @@ function buildRetrieveResultFromOrderedCandidates(
         source_domain: node.sourceDomain,
         file_type: node.fileType,
         snippet,
+        ...(!queryEvidenceSnippet && snippet ? {
+          snippet_unverified: true, snippet_truncated: true,
+          ...(() => {
+            const range = lineRangeFromSourceLocation(node.sourceLocation)
+            if (!range) return {}
+            const omittedStart = range.start + snippet.split(/\r?\n/).length
+            return {
+              snippet_line_range: { start_line: range.start, end_line: range.end },
+              ...(omittedStart <= range.end ? { snippet_omitted_ranges: [{ start_line: omittedStart, end_line: range.end }] } : {}),
+            }
+          })(),
+        } : {}),
         ...(queryEvidenceSnippet
           ? {
               snippet_line_number: queryEvidenceSnippet.lineNumber,
               snippet_scope: queryEvidenceSnippet.scope,
+              ...(queryEvidenceSnippet.snippet_line_range ? { snippet_line_range: queryEvidenceSnippet.snippet_line_range } : {}),
+              ...(queryEvidenceSnippet.snippet_omitted_ranges?.length ? { snippet_omitted_ranges: queryEvidenceSnippet.snippet_omitted_ranges, snippet_truncated: true } : {}),
             }
           : {}),
         match_score: node.score,
@@ -5116,14 +5204,13 @@ function buildRetrieveResultFromOrderedCandidates(
       graph_degree: graph.degree(node.id),
       ...(node.storedSnippet !== null ? { snippet: node.storedSnippet } : {}),
       evidence_class: evidenceClass,
-      expandable_ref: {
-        node_id: node.id,
-        label: node.label,
-        source_file: relativizeSourceFile(node.sourceFile, rootPath),
-        ...(() => {
-          const lineRange = expandableLineRange(node)
-          return lineRange ? { line_range: lineRange } : {}
-        })(),
+      get expandable_ref() {
+        if (!expansionRef) {
+          const lineRange = fileExpansionRange(node) ?? indexedRanges.get(node.id)
+          expansionRef = { node_id: node.id, label: node.label, source_file: relativizeSourceFile(node.sourceFile, rootPath),
+            ...(lineRange ? { line_range: lineRange } : {}) }
+        }
+        return expansionRef
       },
       estimate_tokens: () => {
         if (tokenCost !== undefined) {
@@ -5142,7 +5229,15 @@ function buildRetrieveResultFromOrderedCandidates(
   }, () => compileContextPack<ContextPackNode, RetrieveRelationship, RetrieveCommunityContext>({
     task_contract: taskContract,
     nodes: nodeCandidates,
-    relationships: collectRelationships(graph, orderedCandidateIds),
+    ...(selection.sourcePriority ? { source_priority_ids: selection.sourcePriority } : {}),
+    relationships: [
+      ...reconcileSourceCalls(collectRelationships(graph, orderedCandidateIds), selection.dependencies),
+      ...(selection.dependencies?.relationships ?? []).map(edge => ({
+        ...edge,
+        from: String(graph.nodeAttributes(edge.from_id).label ?? ''),
+        to: String(graph.nodeAttributes(edge.to_id).label ?? ''),
+      })),
+    ].filter((edge, index, edges) => edges.findIndex(other => other.from_id === edge.from_id && other.to_id === edge.to_id && other.relation === edge.relation) === index),
     community_context: [...orderedCommunities]
       .map((communityId) => ({
         id: communityId,
@@ -5154,7 +5249,29 @@ function buildRetrieveResultFromOrderedCandidates(
     selection_strategy: 'value-per-token',
     retrieval_gate: retrievalGate,
   }), options.onStageDiagnostic)
+  // The compiler ranks admitted evidence by the task contract. Restoring the
+  // discovery order here would undo its symbol and evidence-class priorities.
   const matchedNodes = pack.nodes as RetrieveMatchedNode[]
+  const sourceDependencies = selection.dependencies
+    ? sourceVisibleWarnings(selection.dependencies.receipt, sourceProvenance, matchedNodes, rootPath, options.question)
+    : undefined
+  // Preserve metadata before final wire culling. Do not materialize another
+  // snippet or change the compiler's candidate order or selection.
+  const selectedIds = new Set(matchedNodes.map(node => node.node_id))
+  const overflow = nodeCandidates.filter(node => !selectedIds.has(node.node_id)).flatMap(node => {
+    // Flow admission uses original indexed owner ranges, never file navigation scope.
+    if (typeof node.node_id !== 'string' || typeof node.source_file !== 'string') return []
+    const range = indexedRanges.get(node.node_id)
+    return range ? [{ node_id: node.node_id, label: node.label, source_file: node.source_file,
+      range, evidence_class: node.evidence_class }] : []
+  })
+  const callees = (selection.dependencies?.source_flow_callees ?? []).filter(owner =>
+    flowPaths.has(resolve(rootPath ?? '.', owner.source_file)) && owner.range.end_line - owner.range.start_line < 64)
+    .map(owner => ({ ...owner, source_file: relativizeSourceFile(owner.source_file, rootPath) }))
+  const flowCatalog: SourceFlowCatalog | undefined = selection.scope === 'task_context' && flowPaths.size >= 2 && flowPaths.size <= 8
+    && overflow.length > 0 && overflow.length <= 128 && callees.length > 0 && callees.length <= 128
+    && overflow.length === nodeCandidates.filter(node => !selectedIds.has(node.node_id)).length
+    ? { version: 1, task_contract: taskContract, callees, overflow } : undefined
   const answerContract = buildRuntimeGenerationAnswerContract(
     taskContract,
     retrievalGate,
@@ -5189,6 +5306,19 @@ function buildRetrieveResultFromOrderedCandidates(
     ...(pack.selection_diagnostics ? { selection_diagnostics: pack.selection_diagnostics } : {}),
     ...(pack.retrieval_gate ? { retrieval_gate: pack.retrieval_gate } : {}),
     retrieval_strategy: options.retrievalStrategy ?? 'default',
+    selection_scope: selection.scope,
+    ...(selection.omitted ? { selection_omitted: selection.omitted } : {}),
+    ...(selection.discoveryCore ? { [sourceDiscoveryCoreKey]: { question: options.question, node_ids: selection.discoveryCore,
+      selected_node_ids: matchedNodes.flatMap(node => node.node_id ? [node.node_id] : []) } } : {}),
+    ...(sourceProvenance ? { [sourceSelectionProvenanceKey]: sourceProvenance } : {}),
+    ...(selection.dependencies?.source_callsite_bundles?.length ? { [sourceCallsiteBundlesKey]: selection.dependencies.source_callsite_bundles } : {}),
+    ...(selection.dependencies?.source_function_value_references?.length ? { [sourceFunctionValueReferencesKey]: selection.dependencies.source_function_value_references } : {}),
+    ...(flowCatalog ? { [sourceFlowCatalogKey]: flowCatalog } : {}),
+    ...(selection.continuationCatalog ? { [sourceCoherentContinuationCatalogKey]: selection.continuationCatalog } : {}),
+    ...(sourceDependencies ? { source_dependencies: {
+      ...sourceDependencies,
+      ...(sourceDependencies.unresolved ? { unresolved: sourceDependencies.unresolved.map(call => ({ ...call, source_file: relativizeSourceFile(call.source_file, rootPath) })) } : {}),
+    } } : {}),
     ...(sliceMetadata ? { slice: sliceMetadata } : {}),
     ...(executionSlice ? { execution_slice: executionSlice } : {}),
     ...(answerContract ? { answer_contract: answerContract } : {}),
@@ -5227,6 +5357,7 @@ function retrieveContextPass(
   }
 
   const { question, budget } = options
+  const literalLookup = sourceQueryIsLiteralLookup(question)
   const queryStage = runRetrievalQueryStage({
     question,
     budget,
@@ -5240,6 +5371,7 @@ function retrieveContextPass(
     : undefined
   const classificationRootPath = inferredGraphRoot(graph)
   const retrievalGate = queryStage.retrieval_gate
+  const behaviorLocation = sourceBehaviorLocation(graph, options, retrievalGate, classificationRootPath)
   const effectiveRetrievalLevel = queryStage.effective_retrieval_level
   const underScopedDivergenceIds = underScopedDivergenceNodeIds(graph, question)
 
@@ -5319,10 +5451,13 @@ function retrieveContextPass(
   const excludedDomains = retrievalGate.signals.excluded_domains ?? []
   const excludedTerms = retrievalGate.signals.excluded_terms ?? []
   const excludedPathHints = retrievalGate.signals.excluded_path_hints ?? []
+  const sourceExclusions = compileSourceExclusions(excludedTerms, excludedPathHints, classificationRootPath)
 
   // Step 1+2: Score all nodes with explicit seed evidence weights.
   const tokenWeights = tokenWeightsForQuestion(graph, questionTokens)
   const averageLabelLength = averageLabelLengthForGraph(graph)
+  const bodySearch = searchSourceBodies(graph, behaviorLocation?.question ?? question, classificationRootPath, requestSourceCache(options))
+  const prioritizeBodyCoverage = queryEvidenceObligations(question).length > 1 && !sourceQueryIsLiteralLookup(question)
   const seedCandidates: SeedCandidate[] = []
   for (const [id, attributes] of graph.nodeEntries()) {
     const community = parseCommunityId(attributes.community)
@@ -5342,7 +5477,7 @@ function retrieveContextPass(
     const fileNodeLike = isFileNodeLike(label, sourceFile)
     const symbolMatch = symbolReferenceMatchScore(label, sourceFile, mentionedSymbolRefs)
     const exactAnchorMatch = symbolMatch >= 3
-    const mentionedPathMatch = sourceFileMatchesMentionedPath(sourceFile, mentionedPaths)
+    const mentionedPathMatch = !behaviorLocation && sourceFileMatchesMentionedPath(sourceFile, mentionedPaths, graphRootPath)
     if (underScopedDivergenceIds.has(id) && !exactAnchorMatch && !mentionedPathMatch) {
       continue
     }
@@ -5366,11 +5501,21 @@ function retrieveContextPass(
       averageLabelLength,
       { fileNodeLike, fileOrientedQuestion },
     )
+    const sourceBodyMatch = bodySearch.matches.get(id)
+    // Framework vocabulary is a ranking hint, not a reason to discard source.
+    // Ordinary questions use words such as module, state and handler too.
+    const sourceBodyScore = sourceBodyMatch?.navigation_only ? 0 : sourceBodyMatch?.score ?? 0
+    // An import/export occurrence can locate a related file without proving
+    // that file implements the requested behavior.
+    const sourceNavigationScore = sourceBodyMatch?.navigation_only ? sourceBodyMatch.score : 0
+    score.sourcePathScore += sourceNavigationScore
+    score.sourceBodyScore = sourceBodyScore
+    score.total += sourceBodyScore + sourceNavigationScore
     const anchorScore = symbolMatch
     const exclusionMatches = excludedDomains.includes(sourceDomain as never)
-      || excludedTermMatches(label, excludedTerms, excludedPathHints)
-      || excludedTermMatches(sourceFile, excludedTerms, excludedPathHints)
-    if ((isPollutedSourcePath(sourceFile, classificationRootPath) || exclusionMatches) && !exactAnchorMatch && !mentionedPathMatch) {
+      || sourceExclusions.matchesSource(sourceFile, label)
+    if (!sourceExclusions.valid
+      || ((isPollutedSourcePath(sourceFile, classificationRootPath) || exclusionMatches) && !exactAnchorMatch && !mentionedPathMatch)) {
       continue
     }
     const sourceDomainPenalty = defaultSourceDomainPenalty(sourceDomain, retrievalGate.intent, question, questionTokens)
@@ -5444,7 +5589,9 @@ function retrieveContextPass(
           conceptualFallbackScore,
           total: totalSeedScore,
         },
-        exactLabelMatch: effectiveScore.labelExactScore > 0 || exactAnchorMatch,
+        ...(sourceBodyMatch && !sourceBodyMatch.navigation_only ? { sourceBodyCoverage: sourceBodyMatch.coverage } : {}),
+        ...(sourceBodyMatch?.relevance !== undefined && !sourceBodyMatch.navigation_only ? { sourceBodyRelevance: sourceBodyMatch.relevance } : {}),
+        exactLabelMatch: effectiveScore.labelExactScore > 0 || exactAnchorMatch || sourceBodyMatch?.exact_literal === true && !sourceBodyMatch.navigation_only,
         symbolMatchScore: symbolMatch,
         literalPathMatch: mentionedPathMatch,
         sourcePathMatch: effectiveScore.sourcePathScore > 0 || mentionedPathMatch,
@@ -5456,6 +5603,7 @@ function retrieveContextPass(
           conceptualFallbackScore >= 0.75 ? 2 : conceptualFallbackScore > 0 ? 1 : 0,
         ) as 0 | 1 | 2,
         relevanceBand: conceptualFallbackScore >= CONCEPTUAL_WORKFLOW_RESERVATION_BOOST
+          || sourceBodyScore > 0
           || effectiveScore.labelExactScore > 0
           || effectiveScore.labelPhraseScore > 0
           || exactAnchorMatch
@@ -5485,8 +5633,9 @@ function retrieveContextPass(
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.sourcePathScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.communityScore),
     rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.seedScore.conceptualFallbackScore),
+    rankedSeedCandidateIds(graph, filteredSeedCandidates, (candidate) => candidate.sourceBodyRelevance ?? candidate.seedScore.sourceBodyScore),
   ], {
-    weights: [2, 1.5, 1.5, 0.5, 0.25, 0.25, 1.75],
+    weights: [2, 1.5, 1.5, 0.5, 0.25, 0.25, 1.75, 2],
   })
   const scored: ScoredNode[] = filteredSeedCandidates.map((candidate) => ({
     id: candidate.id,
@@ -5508,10 +5657,14 @@ function retrieveContextPass(
     literalPathMatch: candidate.literalPathMatch,
     sourcePathMatch: candidate.sourcePathMatch,
     evidenceTier: candidate.evidenceTier,
+    sourceBodyScore: candidate.seedScore.sourceBodyScore,
+    ...(candidate.sourceBodyCoverage !== undefined ? { sourceBodyCoverage: candidate.sourceBodyCoverage } : {}),
+    ...(candidate.sourceBodyRelevance !== undefined ? { sourceBodyRelevance: candidate.sourceBodyRelevance } : {}),
     score: Math.max(
       0.05,
       ((fusedSeedScores.get(candidate.id) ?? 0) * SEED_FUSION_SCORE_SCALE)
         + candidate.seedScore.conceptualFallbackScore
+        + candidate.seedScore.sourceBodyScore
         + candidate.frameworkBoost
         + retrievalDomainAdjustment(retrievalGate, candidate)
         - defaultSourceDomainPenalty(candidate.sourceDomain, retrievalGate.intent, question, questionTokens)
@@ -5522,17 +5675,20 @@ function retrieveContextPass(
     sourceDomain: candidate.sourceDomain,
   }))
 
-  scored.sort((a, b) => compareScoredNodes(graph, a, b))
+  scored.sort((a, b) => compareScoredNodes(graph, a, b, prioritizeBodyCoverage, literalLookup))
   const expansionPolicy = expansionPolicyForLevel(effectiveRetrievalLevel, budget)
-  const anchoredSeedPool = (mentionedSymbolRefs.length > 0 || mentionedPaths.length > 0)
-    ? scored.filter((node) => symbolReferenceMatchScore(node.label, node.sourceFile, mentionedSymbolRefs) > 0 || sourceFileMatchesMentionedPath(node.sourceFile, mentionedPaths))
+  const anchoredSeedPool = behaviorLocation
+    ? scored.filter(node => symbolReferenceMatchScore(node.label, node.sourceFile, mentionedSymbolRefs) > 0
+      || ((node.sourceBodyScore ?? 0) > 0 && sourceFileInBehaviorLocation(node.sourceFile, behaviorLocation, classificationRootPath)))
+    : (mentionedSymbolRefs.length > 0 || mentionedPaths.length > 0)
+    ? scored.filter((node) => (node.sourceBodyScore ?? 0) >= 8 || symbolReferenceMatchScore(node.label, node.sourceFile, mentionedSymbolRefs) > 0 || sourceFileMatchesMentionedPath(node.sourceFile, mentionedPaths, graphRootPath))
     : []
   const conceptualSeedPool = conceptualNodeBoosts.size > 0
     ? scored
         .filter((node) => (conceptualNodeBoosts.get(node.id) ?? 0) >= CONCEPTUAL_FALLBACK_SEED_MIN_BOOST)
         .sort((left, right) => (
           (conceptualNodeBoosts.get(right.id) ?? 0) - (conceptualNodeBoosts.get(left.id) ?? 0)
-          || compareScoredNodes(graph, left, right)
+          || compareScoredNodes(graph, left, right, prioritizeBodyCoverage, literalLookup)
         ))
     : []
   const seedPool = conceptualSeedPool.length > 0
@@ -5540,6 +5696,14 @@ function retrieveContextPass(
     : effectiveRetrievalLevel <= 2 && anchoredSeedPool.length > 0 ? anchoredSeedPool : scored
       return {
         candidate_count: seedPool.length,
+        sourceSearch: { scanned_files: bodySearch.scanned_files, scanned_bytes: bodySearch.scanned_bytes, bounded: bodySearch.bounded },
+        sourceBodyCandidateIds: !sourceQueryIsLiteralLookup(question)
+          ? scored.filter((node) => (node.sourceBodyScore ?? 0) > 0 && !node.fileNodeLike).slice(0, 4).map((node) => node.id)
+          : [],
+        independentlyAdmittedBodyIds: conceptualNodeBoosts.size === 0 && allowsIndependentBodyDiscovery(options, retrievalGate, frameworkProfile) && !behaviorLocation
+          ? new Set(scored.filter(node => independentSourceBodyCandidate(graph, node, options, classificationRootPath))
+            .map(node => node.id)) : new Set<string>(),
+        sourceNavigationCandidateIds: new Set([...bodySearch.matches].filter(([, match]) => match.navigation_only).map(([id]) => id)),
         communities,
         frameworkProfile,
         activeFrameworks,
@@ -5549,7 +5713,9 @@ function retrieveContextPass(
         excludedDomains,
         excludedTerms,
         excludedPathHints,
+        sourceExclusions,
         scored,
+        prioritizeBodyCoverage,
         expansionPolicy,
         seedPool,
       }
@@ -5557,6 +5723,10 @@ function retrieveContextPass(
     options.onStageDiagnostic,
   )
   const {
+    sourceSearch,
+    sourceBodyCandidateIds,
+    independentlyAdmittedBodyIds,
+    sourceNavigationCandidateIds,
     communities,
     frameworkProfile,
     activeFrameworks,
@@ -5566,7 +5736,9 @@ function retrieveContextPass(
     excludedDomains,
     excludedTerms,
     excludedPathHints,
+    sourceExclusions,
     scored,
+    prioritizeBodyCoverage,
     expansionPolicy,
     seedPool,
   } = seedOutput
@@ -5585,18 +5757,23 @@ function retrieveContextPass(
           ? Math.max(expansionPolicy.seed_limit, CONCEPTUAL_FALLBACK_SEED_LIMIT)
           : expansionPolicy.seed_limit,
       )
-  const seedIds = new Set(seedPool.slice(0, seedCount).map((node) => node.id))
+  const seedIds = new Set([...seedPool.slice(0, seedCount).map((node) => node.id), ...sourceBodyCandidateIds])
   const directSeeds = seedPool
     .filter((node) => node.relevanceBand === 'direct')
     .slice(0, seedCount)
-  const expansionSeedIds = new Set((directSeeds.length > 0 ? directSeeds : seedPool.slice(0, seedCount)).map((node) => node.id))
+  const expansionSeeds = directSeeds.length > 0 ? directSeeds : seedPool.slice(0, seedCount)
+  const implementationFiles = new Set(expansionSeeds.filter(node => !node.fileNodeLike).map(node => node.sourceFile))
+  // Relevant imports still lead to collaborators of a selected implementation.
+  // The file is a navigation root here, not a primary behavior answer.
+  const navigationSeeds = scored.filter(node => sourceNavigationCandidateIds.has(node.id) && implementationFiles.has(node.sourceFile))
+  const expansionSeedIds = new Set(expansionSeeds.map((node) => node.id))
   const hopScores = new Map<string, number>()
   const hopDistances = new Map<string, 1 | 2>()
   const hopEvidenceTiers = new Map<string, 0 | 1>()
   const hop1Ids = new Set<string>()
   const seedCommunity = seedPool[0]?.community ?? null
 
-  const recordHop = (neighborId: string, relation: string, sourceScore: number, hopDistance: 1 | 2): void => {
+  const recordHop = (neighborId: string, relation: string, sourceScore: number, hopDistance: 1 | 2, expandFurther = true): void => {
     const hopScore = sourceScore * 0.5 * relationWeight(relation)
     const hopEvidenceTier = relationIsPrimaryForPolicy(effectiveRetrievalLevel, relation) ? 1 : 0
     const existingHopScore = hopScores.get(neighborId) ?? 0
@@ -5606,14 +5783,14 @@ function retrieveContextPass(
       hopDistances.set(neighborId, hopDistance)
       hopEvidenceTiers.set(neighborId, hopEvidenceTier)
     }
-    if (hopDistance === 1) {
+    if (hopDistance === 1 && expandFurther) {
       hop1Ids.add(neighborId)
     }
   }
 
   // Hop 1: direct neighbors inherit a relation-weighted slice of each strong seed's score.
   if (expansionPolicy.hop1_relations) {
-    for (const seed of directSeeds.length > 0 ? directSeeds : seedPool.slice(0, seedCount)) {
+    for (const seed of expansionSeeds) {
       for (const neighborId of graph.successors(seed.id)) {
         if (expansionSeedIds.has(neighborId)) {
           continue
@@ -5647,6 +5824,17 @@ function retrieveContextPass(
           }
           recordHop(predecessorId, relation, seed.score, 1)
         }
+      }
+    }
+    // Only collaborators that independently match current source can enter
+    // through navigation. Do not widen this into an extra graph traversal.
+    const matchingImplementations = new Set(scored.filter(node => !node.fileNodeLike && (node.sourceBodyScore ?? 0) > 0).map(node => node.id))
+    for (const seed of navigationSeeds) {
+      for (const neighborId of graph.successors(seed.id)) {
+        if (expansionSeedIds.has(neighborId) || !matchingImplementations.has(neighborId)) continue
+        const relation = String(graph.edgeAttributes(seed.id, neighborId).relation ?? 'related_to')
+        if (relation !== 'imports' && relation !== 'imports_from') continue
+        if (relationAllowedForPolicy(expansionPolicy.hop1_relations, relation)) recordHop(neighborId, relation, seed.score, 1, false)
       }
     }
   }
@@ -5746,11 +5934,11 @@ function retrieveContextPass(
     const sourceFile = String(attributes.source_file ?? '')
     const sourceDomain = classifySourceDomain(sourceFile, classificationRootPath)
     const symbolMatch = symbolReferenceMatchScore(label, sourceFile, mentionedSymbolRefs)
-    const pathMatch = sourceFileMatchesMentionedPath(sourceFile, mentionedPaths)
+    const pathMatch = !behaviorLocation && sourceFileMatchesMentionedPath(sourceFile, mentionedPaths, graphRootPath)
     const exclusionMatches = excludedDomains.includes(sourceDomain as never)
-      || excludedTermMatches(label, excludedTerms, excludedPathHints)
-      || excludedTermMatches(sourceFile, excludedTerms, excludedPathHints)
-    if ((isPollutedSourcePath(sourceFile, classificationRootPath) || exclusionMatches) && symbolMatch <= 0 && !pathMatch) {
+      || sourceExclusions.matchesSource(sourceFile, label)
+    if (!sourceExclusions.valid
+      || ((isPollutedSourcePath(sourceFile, classificationRootPath) || exclusionMatches) && symbolMatch <= 0 && !pathMatch)) {
       continue
     }
     const sourceDomainPenalty = defaultSourceDomainPenalty(sourceDomain, retrievalGate.intent, question, questionTokens)
@@ -5830,21 +6018,21 @@ function retrieveContextPass(
     conceptualNodeBoosts.size > 0 && seedIds.has(a.id) && seedIds.has(b.id)
       ? (conceptualNodeBoosts.get(b.id) ?? 0) - (conceptualNodeBoosts.get(a.id) ?? 0)
       : 0
-  ) || compareScoredNodes(graph, a, b))
+  ) || compareScoredNodes(graph, a, b, prioritizeBodyCoverage, literalLookup))
 
   const conceptuallyReserved = (node: ScoredNode): boolean => (
     (conceptualNodeBoosts.get(node.id) ?? 0) >= CONCEPTUAL_WORKFLOW_RESERVATION_BOOST
   )
   const frameworkCompatibleCandidates = frameworkProfile.frameworkShaped
-    ? scored.filter((node) => isFrameworkCompatible(activeFrameworks, node.framework) || conceptuallyReserved(node))
+    ? scored.filter((node) => isFrameworkCompatible(activeFrameworks, node.framework) || conceptuallyReserved(node) || independentlyAdmittedBodyIds.has(node.id))
     : scored
   const frameworkIncompatibleCandidates = frameworkProfile.frameworkShaped
-    ? scored.filter((node) => !isFrameworkCompatible(activeFrameworks, node.framework) && !conceptuallyReserved(node))
+    ? scored.filter((node) => !isFrameworkCompatible(activeFrameworks, node.framework) && !conceptuallyReserved(node) && !independentlyAdmittedBodyIds.has(node.id))
     : []
-  const primaryCandidates = frameworkCompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id)) && node.relevanceBand !== 'peripheral')
-  const peripheralCandidates = frameworkCompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id)) && node.relevanceBand === 'peripheral')
-  const fallbackPrimaryCandidates = frameworkIncompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id)) && node.relevanceBand !== 'peripheral')
-  const fallbackPeripheralCandidates = frameworkIncompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id)) && node.relevanceBand === 'peripheral')
+  const primaryCandidates = frameworkCompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id) || independentlyAdmittedBodyIds.has(node.id)) && node.relevanceBand !== 'peripheral')
+  const peripheralCandidates = frameworkCompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id) || independentlyAdmittedBodyIds.has(node.id)) && node.relevanceBand === 'peripheral')
+  const fallbackPrimaryCandidates = frameworkIncompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id) || independentlyAdmittedBodyIds.has(node.id)) && node.relevanceBand !== 'peripheral')
+  const fallbackPeripheralCandidates = frameworkIncompatibleCandidates.filter((node) => (seedIds.has(node.id) || hopScores.has(node.id) || independentlyAdmittedBodyIds.has(node.id)) && node.relevanceBand === 'peripheral')
   const prioritizedFrameworkCandidates = frameworkProfile.frameworkShaped
     ? primaryCandidates.filter((node) => node.frameworkBoost > 0)
     : []
@@ -5873,9 +6061,13 @@ function retrieveContextPass(
         ...fallbackInclusionOrder,
       ]
     : [...secondaryCandidates, ...peripheralCandidates]
+  const evidenceOrderedCandidates = independentlyAdmittedBodyIds.size
+    ? [...scored.filter(node => independentlyAdmittedBodyIds.has(node.id)),
+        ...frameworkOrderedCandidates.filter(node => !independentlyAdmittedBodyIds.has(node.id))]
+    : frameworkOrderedCandidates
   const inclusionOrder = expansionPolicy.include_peripheral
-    ? frameworkOrderedCandidates
-    : frameworkOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
+    ? evidenceOrderedCandidates
+    : evidenceOrderedCandidates.filter((node) => node.relevanceBand !== 'peripheral')
       // Cross-domain conceptual recovery can intentionally keep disconnected
       // evidence outside one slice. For a report-generation workflow, exclude
       // known side actions from that preserved set so controller siblings such
@@ -5900,6 +6092,8 @@ function retrieveContextPass(
             symbolMatchScore: node.symbolMatchScore,
             sourcePathMatch: node.sourcePathMatch,
             literalPathMatch: node.literalPathMatch,
+            ...(!node.fileNodeLike && node.sourceBodyCoverage !== undefined ? { sourceBodyCoverage: node.sourceBodyCoverage } : {}),
+            ...(!node.fileNodeLike && node.sourceBodyRelevance !== undefined ? { sourceBodyRelevance: node.sourceBodyRelevance } : {}),
             score: node.score,
             nodeKind: node.nodeKind,
             frameworkRole: node.frameworkRole,
@@ -5946,15 +6140,16 @@ function retrieveContextPass(
       return {
         candidate_count: orderedCandidates.length,
         orderedCandidates,
+        lookupCandidates: scored,
         retrieveGraphSignals,
         sliceMetadata,
       }
     },
     options.onStageDiagnostic,
   )
-  const { orderedCandidates, retrieveGraphSignals, sliceMetadata } = rankingOutput
+  const { orderedCandidates, lookupCandidates, retrieveGraphSignals, sliceMetadata } = rankingOutput
 
-  return buildRetrieveResultFromOrderedCandidates(
+  const result = buildRetrieveResultFromOrderedCandidates(
     graph,
     options,
     orderedCandidates,
@@ -5964,7 +6159,11 @@ function retrieveContextPass(
     retrievalGate,
     graphRootPath,
     sliceMetadata,
+    lookupCandidates,
+    independentlyAdmittedBodyIds.size > 0,
   )
+  return { ...result, source_search: sourceSearch,
+    ...(independentlyAdmittedBodyIds.size ? { [independentSourceBodiesKey]: true as const } : {}) }
 }
 
 function selectedNodeIds(result: RetrieveResult): string[] {
@@ -6065,6 +6264,9 @@ function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: R
     // this result. Re-ranking their seed set here makes that planner less
     // stable without improving conceptual answerability.
     || options.taskKind === 'implement'
+    // A located literal settles a lookup. One matching field does not settle a
+    // behavior question with other evidence still missing.
+    || (initial.selection_scope !== 'task_context' && sourceQueryLiterals(options.question).some((literal) => initial.matched_nodes.some((node) => node.snippet?.includes(literal))))
   ) {
     return { ...initial, retrieval_plan: notNeededRetrievalPlan(initialQuality) }
   }
@@ -6101,6 +6303,7 @@ function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: R
 
   const preserveConceptualObligationOrder = initialQuality.explicit_anchors === 0
     && (proposal.plan.query_obligations?.total ?? 0) >= 4
+  const preserveSource = recoverySourceGuard(graph, initial, options.question, options.projectRoot)
   const recovered = retrieveContextPass(
     graph,
     options,
@@ -6114,6 +6317,7 @@ function retrieveContextWithConceptualFallback(graph: KnowledgeGraph, options: R
     selectedSourceFiles(recovered),
     new Set(selectedNodeIds(recovered)),
     evaluateQueryEvidenceCoverage(options.question, recovered.matched_nodes),
+    preserveSource(recovered),
   )
   return {
     ...(finalized.useRecovered ? recovered : initial),
@@ -6144,16 +6348,26 @@ const recoverContextPackWithStage = (
 }
 
 export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
+  const originalQuestion = options.question
+  options = { ...options, question: retrievalSubjectPrompt(originalQuestion) }
   const initial = retrieveContextWithConceptualFallback(graph, options)
-  return recoverContextPackWithStage(
+  const result = recoverContextPackWithStage(
     graph,
     initial,
     options,
     (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
   )
+  return { ...result, question: originalQuestion }
 }
 
 export async function retrieveContextAsync(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {
+  const originalQuestion = options.question
+  const result = await retrieveContextAsyncForSubject(graph, { ...options, question: retrievalSubjectPrompt(originalQuestion) })
+  return { ...result, question: originalQuestion }
+}
+
+async function retrieveContextAsyncForSubject(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {
+  options = { ...options }
   const lexicalResult = retrieveContextWithConceptualFallback(graph, options)
   if (options.semantic !== true && options.rerank !== true) {
     return recoverContextPackWithStage(
@@ -6164,7 +6378,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     )
   }
 
-  const questionTokens = tokenizeQuestion(options.question)
+  const questionTokens = tokenizeQuestion(retrievalSearchPrompt(options.question))
   if (questionTokens.length === 0) {
     return recoverContextPackWithStage(
       graph,
@@ -6180,6 +6394,14 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     ? graph.graph.root_path
     : undefined
   const classificationRootPath = inferredGraphRoot(graph)
+  const retrievalGate = lexicalResult.retrieval_gate ?? classifyRetrievalLevel({
+    prompt: options.question,
+    ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
+  })
+  const excludedDomains = retrievalGate.signals.excluded_domains ?? []
+  const sourceExclusions = compileSourceExclusions(
+    retrievalGate.signals.excluded_terms ?? [], retrievalGate.signals.excluded_path_hints ?? [], classificationRootPath,
+  )
   const communities = communitiesFromGraph(graph)
   const communityLabels: Record<number, string> = {
     ...buildCommunityLabels(graph, communities),
@@ -6210,6 +6432,16 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
   const questionLower = options.question.toLowerCase()
   const candidatesById = new Map(
     eligibleNodeEntries(graph, options)
+      .filter(([id, attributes]) => {
+        if (!sourceExclusions.valid) return false
+        // Carry forward lexical admission, including its positive-anchor
+        // precedence. Semantic discovery cannot create a new scope exception.
+        if (lexicalScoresById.has(id)) return true
+        const sourceFile = String(attributes.source_file ?? ''), label = String(attributes.label ?? '')
+        return !excludedDomains.includes(classifySourceDomain(sourceFile, classificationRootPath) as never)
+          && !isPollutedSourcePath(sourceFile, classificationRootPath)
+          && !sourceExclusions.matchesSource(sourceFile, label)
+      })
       .map(([id, attributes]) => [id, scoredNodeFromGraphEntry(id, attributes, frameworkProfile, questionLower, classificationRootPath)] as const),
   )
   if (candidatesById.size === 0) {
@@ -6221,13 +6453,26 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     )
   }
 
+  const sourceSearch = searchSourceBodies(graph, options.question, classificationRootPath, requestSourceCache(options))
+  const sourceFileCache = requestSourceCache(options)
+  const candidateText = (node: ScoredNode): string => semanticTextForNode(node, readQueryEvidenceSnippet(node.sourceFile, node.lineNumber, {
+    question: options.question, label: node.label, sourceLocation: node.sourceLocation, fileNodeLike: node.fileNodeLike,
+    fileCache: sourceFileCache, ...(classificationRootPath ? { rootPath: classificationRootPath } : {}),
+  })?.snippet)
+  // The reranker sees source/lexical candidates before the final pack budget discards them.
+  const preBudgetCandidates = [...candidatesById.values()].map((node) => {
+    const match = sourceSearch.matches.get(node.id)
+    const bodyRank = match?.navigation_only ? 0 : (match?.relevance ?? 0) + (match?.score ?? 0)
+    return { node, score: bodyRank + scoreNode(questionTokens, tokenizeLabel(`${node.label} ${node.sourceFile}`)) }
+  }).filter(({ score }) => score > 0).sort((left, right) => right.score - left.score || left.node.id.localeCompare(right.node.id)).slice(0, 64)
+
   let semanticScores = new Map<string, number>()
   let rerankScores = new Map<string, number>()
   if (options.semantic === true) {
     const { rankCandidatesBySemanticSimilarity } = await import('./semantic.js')
     semanticScores = await rankCandidatesBySemanticSimilarity(
       options.question,
-      [...candidatesById.values()].map((node) => ({ id: node.id, text: semanticTextForNode(node) })),
+      [...candidatesById.values()].map((node) => ({ id: node.id, text: candidateText(node) })),
       {
         ...(options.semanticModel ? { model: options.semanticModel } : {}),
         ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
@@ -6236,6 +6481,9 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
   }
 
   const candidateIds = new Set<string>(lexicalScoresById.keys())
+  for (const { node } of preBudgetCandidates) {
+    if (lexicalSliceIds === null || lexicalSliceIds.has(node.id)) candidateIds.add(node.id)
+  }
   if (semanticScores.size > 0) {
     for (const [candidateId] of [...semanticScores.entries()]
       .sort((left, right) => right[1] - left[1])
@@ -6264,7 +6512,7 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     const { rerankCandidatesWithCrossEncoder } = await import('./semantic.js')
     rerankScores = await rerankCandidatesWithCrossEncoder(
       options.question,
-      candidatePool.map((node) => ({ id: node.id, text: semanticTextForNode(node) })),
+      candidatePool.map((node) => ({ id: node.id, text: candidateText(node) })),
       {
         ...(options.rerankerModel ? { model: options.rerankerModel } : {}),
         ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
@@ -6282,15 +6530,24 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     // double-count. Only add it for semantic-only candidates where the
     // lexical pass missed but the metadata signal is real.
     const additionalFrameworkBoost = lexicalScore > 0 ? 0 : candidate.frameworkBoost
-    candidate.score = lexicalScore + additionalFrameworkBoost + (semanticScore * 3) + (rerankScore * 4)
-    candidate.evidenceTier = lexicalScore > 0 ? 2 : semanticScore > 0 || rerankScore > 0 ? 1 : 0
+    const sourceBodyMatch = sourceSearch.matches.get(candidate.id)
+    candidate.sourceBodyScore = sourceBodyMatch?.navigation_only ? 0 : sourceBodyMatch?.score ?? 0
+    candidate.sourceBodyCoverage = sourceBodyMatch?.navigation_only ? 0 : sourceBodyMatch?.coverage ?? 0
+    candidate.sourceBodyRelevance = sourceBodyMatch?.navigation_only ? 0 : sourceBodyMatch?.relevance ?? 0
+    candidate.score = (lexicalScore / (1 + lexicalScore)) + additionalFrameworkBoost + (semanticScore * 3) + (rerankScore * 4)
+    candidate.evidenceTier = lexicalScore > 0 || semanticScore > 0 || rerankScore > 0 || candidate.sourceBodyScore > 0 ? 2 : 0
+    if (sourceBodyMatch?.navigation_only && semanticScore <= 0 && rerankScore <= 0) candidate.evidenceTier = Math.min(1, candidate.evidenceTier) as 0 | 1
     candidate.relevanceBand = lexicalBandsById.get(candidate.id) ?? (semanticScore >= 0.75 || rerankScore >= 0.75 ? 'direct' : 'related')
-    candidate.exactLabelMatch = lexicalScore > 0
+    candidate.exactLabelMatch = normalizeSeedText(candidate.label) === normalizeSeedText(options.question)
   }
 
-  candidatePool.sort((left, right) => compareScoredNodes(graph, left, right))
+  const literalLookup = sourceQueryIsLiteralLookup(options.question)
+  const prioritizeBodyCoverage = queryEvidenceObligations(options.question).length > 1 && !literalLookup
+  candidatePool.sort((left, right) => compareScoredNodes(graph, left, right, prioritizeBodyCoverage, literalLookup))
 
-  const orderedCandidates = frameworkProfile.frameworkShaped
+  const independentBodyPriority = lexicalResult.retrieval_plan?.status !== 'recovered'
+    && allowsIndependentBodyDiscovery(options, retrievalGate, frameworkProfile)
+  const orderedCandidates = frameworkProfile.frameworkShaped && !independentBodyPriority
     ? [
         ...candidatePool.filter((node) => isFrameworkCompatible(activeFrameworks, node.framework)),
         ...candidatePool.filter((node) => !isFrameworkCompatible(activeFrameworks, node.framework)),
@@ -6304,15 +6561,16 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
     communities,
     communityLabels,
     retrieveGraphSignals,
-    lexicalResult.retrieval_gate ?? classifyRetrievalLevel({
-      prompt: options.question,
-      ...(options.retrievalLevel !== undefined ? { manualOverride: options.retrievalLevel } : {}),
-    }),
+    retrievalGate,
     graphRootPath,
     lexicalResult.slice,
+    undefined,
+    independentBodyPriority,
   )
   const semanticWithPlan = {
     ...semanticResult,
+    ...(independentBodyPriority ? { [independentSourceBodiesKey]: true as const } : {}),
+    source_search: { scanned_files: sourceSearch.scanned_files, scanned_bytes: sourceSearch.scanned_bytes, bounded: sourceSearch.bounded },
     ...(lexicalResult.retrieval_plan ? { retrieval_plan: lexicalResult.retrieval_plan } : {}),
   }
   return recoverContextPackWithStage(
@@ -6325,8 +6583,10 @@ export async function retrieveContextAsync(graph: KnowledgeGraph, options: Retri
 
 export function compactRetrieveResult(result: RetrieveResult, options: RetrieveSnippetOptions = {}): CompactRetrieveResult {
   const frameworkProfile = buildFrameworkQuestionProfile(result.question, tokenizeQuestion(result.question))
+  const inferredBehaviorDiscovery = result[independentSourceBodiesKey] === true && result.selection_scope === 'task_context'
   const compactFrameworkLimit =
-    frameworkProfile.frameworkShaped && result.matched_nodes.some((node) => (node.framework_boost ?? 0) > 0) ? 5 : Number.POSITIVE_INFINITY
+    frameworkProfile.frameworkShaped && !inferredBehaviorDiscovery
+      && result.matched_nodes.some((node) => (node.framework_boost ?? 0) > 0) ? 5 : Number.POSITIVE_INFINITY
   const fullPack = contextPackFromRetrieveResult(result)
   const executionSlice = compactExecutionSlice(result.execution_slice)
   const promotedSliceNodeIds = promotedSliceCompactNodeIds(result)
@@ -6369,6 +6629,10 @@ export function compactRetrieveResult(result: RetrieveResult, options: RetrieveS
     retrieval_strategy: result.retrieval_strategy ?? 'default',
     ...(retrievalPlan ? { retrieval_plan: retrievalPlan } : {}),
     ...(result.recovery ? { recovery: result.recovery } : {}),
+    ...(result.source_search ? { source_search: result.source_search } : {}),
+    ...(result.selection_scope ? { selection_scope: result.selection_scope } : {}),
+    ...(result.selection_omitted !== undefined ? { selection_omitted: result.selection_omitted } : {}),
+    ...(result.source_dependencies ? { source_dependencies: result.source_dependencies } : {}),
     snippet_budget_tokens_used: shapedNodes.usedTokens,
     snippet_budget_tokens_remaining: shapedNodes.remainingTokens,
     ...(result.slice ? { slice: result.slice } : {}),
@@ -6578,6 +6842,10 @@ export function compactRetrieveResultForStdio(result: RetrieveResult, options: R
     retrieval_strategy: result.retrieval_strategy ?? 'default',
     ...(compactResult.retrieval_plan ? { retrieval_plan: compactResult.retrieval_plan } : {}),
     ...(result.recovery ? { recovery: result.recovery } : {}),
+    ...(result.source_search ? { source_search: result.source_search } : {}),
+    ...(result.selection_scope ? { selection_scope: result.selection_scope } : {}),
+    ...(result.selection_omitted !== undefined ? { selection_omitted: result.selection_omitted } : {}),
+    ...(result.source_dependencies ? { source_dependencies: result.source_dependencies } : {}),
     snippet_budget_tokens_used: compactResult.snippet_budget_tokens_used,
     snippet_budget_tokens_remaining: compactResult.snippet_budget_tokens_remaining,
     ...(result.slice ? { slice: result.slice } : {}),

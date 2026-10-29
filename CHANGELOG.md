@@ -4,6 +4,31 @@ All notable changes to the TypeScript package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-10-29
+
+### Source retrieval and recovery
+
+- Add exact JavaScript/TypeScript function lookup by workspace-relative file and symbol, with optional resolution of a statically bound local callee.
+- Return bounded source evidence with explicit ranges, omissions, freshness, and advisory coverage. Consumers of MCP JSON responses should use the `source_evidence_v2` shape and resolve `snippet_ref` using the referring node's range.
+- Deliver a first source page for one oversized exact function request and provide session-scoped continuation handles for the remaining lines. Preserve evidence constraints, source-access policy, and stale-source refusal.
+- Recheck current source-access policy for completed source, cached reads, and final source-evidence responses from the CLI/MCP tools.
+- Share identical or contained source excerpts while retaining their owner metadata and recovery routes.
+- Refuse stale method bindings when inspected source overwrites the class prototype member.
+- Improve current-source binding, supported JavaScript declaration forms, and indexing of source under `lib/` and bounded root/workspace package manifests.
+
+### Agent integration
+
+- Refresh managed guidance to treat coverage as advisory, allow direct source inspection, and identify broad discovery as experimental.
+- Recommend the strict source-tool profile in supported first-install hints. Existing installer defaults remain unchanged.
+- Report the actual package version during MCP initialization and recognize previously released managed Claude hooks during upgrades.
+
+### Maintenance and limits
+
+- Preserve node and snapshot identity in time-travel impact analysis when symbols share the same label.
+- Reuse the cache location within each extraction batch, avoiding repeated Git workspace lookups while preserving isolation and file-hash invalidation.
+- Update the development-only transitive `fast-uri` dependency to 3.1.9.
+- Broad workflow accuracy and total agent-token savings are not established by this release. Improvements measured on fixed source-delivery cases are not general performance guarantees.
+
 ## [0.32.3] - 2026-10-21
 
 ### Changed

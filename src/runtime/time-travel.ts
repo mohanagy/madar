@@ -1,7 +1,7 @@
 import type { KnowledgeGraph } from '../contracts/graph.js'
 import { graphDiff, type GraphDiffResult } from '../pipeline/analyze.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
-import { analyzeImpact } from './impact.js'
+import { analyzeImpact, type ImpactTraversal } from './impact.js'
 import { communitiesFromGraph } from './serve.js'
 
 const DEFAULT_TIME_TRAVEL_LIMIT = 10
@@ -21,7 +21,7 @@ export interface TimeTravelResult {
     edgesRemoved: number
     communities: Array<{ community: number; changeCount: number }>
   }
-  risk: { topImpacts: Array<{ label: string; transitiveDependents: number }> }
+  risk: { topImpacts: Array<{ label: string; node_id?: string; source_file?: string; graph_side?: 'before' | 'after'; transitiveDependents: number; traversal?: ImpactTraversal }> }
   drift: { movedNodes: Array<{ label: string; fromCommunity: number | null; toCommunity: number | null }> }
   timeline: { events: Array<{ kind: string; label: string; reason: string }> }
 }
@@ -88,8 +88,10 @@ function communityName(labels: Record<number, string>, community: number | null)
   return labels[community] ?? `Community ${community}`
 }
 
-function movedNodes(beforeGraph: KnowledgeGraph, afterGraph: KnowledgeGraph): Array<{ label: string; fromCommunity: number | null; toCommunity: number | null }> {
-  const moved: Array<{ label: string; fromCommunity: number | null; toCommunity: number | null }> = []
+type MovedNode = TimeTravelResult['drift']['movedNodes'][number] & { nodeId: string }
+
+function movedNodes(beforeGraph: KnowledgeGraph, afterGraph: KnowledgeGraph): MovedNode[] {
+  const moved: MovedNode[] = []
 
   for (const nodeId of beforeGraph.nodeIds()) {
     if (!afterGraph.hasNode(nodeId)) {
@@ -103,6 +105,7 @@ function movedNodes(beforeGraph: KnowledgeGraph, afterGraph: KnowledgeGraph): Ar
     }
 
     moved.push({
+      nodeId,
       label: nodeLabel(afterGraph, nodeId),
       fromCommunity,
       toCommunity,
@@ -153,33 +156,39 @@ function summarizeChangedCommunities(
     .slice(0, limit)
 }
 
-function changedLabels(
+interface ChangedImpactTarget {
+  nodeId: string
+  side: 'before' | 'after'
+}
+
+function changedImpactTargets(
   diff: GraphDiffResult,
-  beforeGraph: KnowledgeGraph,
-  afterGraph: KnowledgeGraph,
-  moved: Array<{ label: string; fromCommunity: number | null; toCommunity: number | null }>,
-): string[] {
-  const labels = new Set<string>()
+  moved: readonly MovedNode[],
+): ChangedImpactTarget[] {
+  const targets = new Map<string, ChangedImpactTarget>()
+  const add = (nodeId: string, side: ChangedImpactTarget['side']): void => {
+    targets.set(`${side}\0${nodeId}`, { nodeId, side })
+  }
 
   for (const node of diff.new_nodes) {
-    labels.add(node.label)
+    add(node.id, 'after')
   }
   for (const node of diff.removed_nodes) {
-    labels.add(node.label)
+    add(node.id, 'before')
   }
   for (const node of moved) {
-    labels.add(node.label)
+    add(node.nodeId, 'after')
   }
   for (const edge of diff.new_edges) {
-    labels.add(nodeLabel(afterGraph, edge.source))
-    labels.add(nodeLabel(afterGraph, edge.target))
+    add(edge.source, 'after')
+    add(edge.target, 'after')
   }
   for (const edge of diff.removed_edges) {
-    labels.add(nodeLabel(beforeGraph, edge.source))
-    labels.add(nodeLabel(beforeGraph, edge.target))
+    add(edge.source, 'before')
+    add(edge.target, 'before')
   }
 
-  return [...labels].sort((left, right) => left.localeCompare(right))
+  return [...targets.values()]
 }
 
 function riskView(
@@ -187,26 +196,32 @@ function riskView(
   afterGraph: KnowledgeGraph,
   beforeCommunityLabels: Record<number, string>,
   afterCommunityLabels: Record<number, string>,
-  afterGraphLabels: ReadonlySet<string>,
-  labels: string[],
+  targets: readonly ChangedImpactTarget[],
   options: CompareTimeTravelGraphsOptions,
   limit: number,
-): Array<{ label: string; transitiveDependents: number }> {
-  return labels
-    .map((label) => {
-      const useAfterGraph = afterGraphLabels.has(label)
+): TimeTravelResult['risk']['topImpacts'] {
+  return targets
+    .map(({ nodeId, side }) => {
+      // A removed edge belongs to the old snapshot even when its owner survives.
+      // Labels can be repeated in either snapshot and never choose an identity.
+      const useAfterGraph = side === 'after'
       const impact = analyzeImpact(useAfterGraph ? afterGraph : beforeGraph, useAfterGraph ? afterCommunityLabels : beforeCommunityLabels, {
-        label,
+        nodeId,
         ...(options.depth !== undefined ? { depth: options.depth } : {}),
         ...(options.edgeTypes !== undefined ? { edgeTypes: options.edgeTypes } : {}),
       })
 
       return {
-        label,
+        label: impact.target,
+        node_id: nodeId,
+        source_file: impact.target_file,
+        graph_side: side,
         transitiveDependents: impact.transitive_dependents.length,
+        ...(impact.traversal && impact.traversal.status !== 'complete' ? { traversal: impact.traversal } : {}),
       }
     })
-    .sort((left, right) => right.transitiveDependents - left.transitiveDependents || left.label.localeCompare(right.label))
+    .sort((left, right) => right.transitiveDependents - left.transitiveDependents || left.label.localeCompare(right.label)
+      || left.node_id.localeCompare(right.node_id) || left.graph_side.localeCompare(right.graph_side))
     .slice(0, limit)
 }
 
@@ -270,7 +285,6 @@ export function compareTimeTravelGraphs(
   const view = options.view ?? 'summary'
   const diff = graphDiff(beforeGraph, afterGraph)
   const drift = movedNodes(beforeGraph, afterGraph)
-  const afterGraphLabels = new Set(afterGraph.nodeEntries().map(([nodeId, attributes]) => String(attributes.label ?? nodeId)))
   const beforeCommunityLabels = resolveCommunityLabels(beforeGraph)
   const afterCommunityLabels = resolveCommunityLabels(afterGraph)
   const communityLabels = {
@@ -278,8 +292,8 @@ export function compareTimeTravelGraphs(
     ...afterCommunityLabels,
   }
   const changedCommunities = summarizeChangedCommunities(diff, beforeGraph, afterGraph, limit, drift)
-  const labels = changedLabels(diff, beforeGraph, afterGraph, drift)
-  const topImpacts = riskView(beforeGraph, afterGraph, beforeCommunityLabels, afterCommunityLabels, afterGraphLabels, labels, options, limit)
+  const targets = changedImpactTargets(diff, drift)
+  const topImpacts = riskView(beforeGraph, afterGraph, beforeCommunityLabels, afterCommunityLabels, targets, options, limit)
 
   const result: TimeTravelResult = {
     fromRef,
@@ -293,7 +307,7 @@ export function compareTimeTravelGraphs(
           ? `Changed communities: ${changedCommunities.map((community) => communityName(communityLabels, community.community)).join(', ')}.`
           : 'No community-level drift detected.',
         topImpacts.length > 0
-          ? `Top risk: ${topImpacts[0]!.label} reaches ${topImpacts[0]!.transitiveDependents} transitive dependents.`
+          ? `Top risk: ${topImpacts[0]!.label} reaches ${topImpacts[0]!.traversal ? 'at least ' : ''}${topImpacts[0]!.transitiveDependents} transitive dependents.`
           : 'No risky changed labels detected.',
       ],
     },
@@ -308,7 +322,7 @@ export function compareTimeTravelGraphs(
       topImpacts,
     },
     drift: {
-      movedNodes: drift.slice(0, limit),
+      movedNodes: drift.slice(0, limit).map(({ nodeId: _nodeId, ...node }) => node),
     },
     timeline: {
       events: timelineView(diff, beforeGraph, afterGraph, drift, communityLabels, limit),
@@ -340,7 +354,7 @@ export function formatTimeTravelResult(result: TimeTravelResult): string {
         header,
         'Top impact risks:',
         ...(result.risk.topImpacts.length > 0
-          ? result.risk.topImpacts.map((impact) => `  - ${impact.label}: ${impact.transitiveDependents} transitive dependents`)
+          ? result.risk.topImpacts.map((impact) => `  - ${impact.label}: ${impact.traversal && impact.traversal.status !== 'complete' ? 'at least ' : ''}${impact.transitiveDependents} transitive dependents${impact.traversal && impact.traversal.status !== 'complete' ? ` (${impact.traversal.status})` : ''}`)
           : ['  - none']),
       ].join('\n')
     case 'drift':

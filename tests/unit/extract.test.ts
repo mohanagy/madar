@@ -8,6 +8,7 @@ import { cacheDir, fileHash } from '../../src/infrastructure/cache.js'
 import { detect } from '../../src/pipeline/detect.js'
 import { _makeId, collectFiles, extract, extractJs, extractPython } from '../../src/pipeline/extract.js'
 import { MAX_TEXT_BYTES } from '../../src/shared/security.js'
+import * as workspace from '../../src/shared/workspace.js'
 import { normalizeAssertionPath, normalizeAssertionPaths } from './helpers/platform.js'
 
 const FIXTURES_DIR = join(process.cwd(), 'tests', 'fixtures')
@@ -1159,6 +1160,39 @@ describe('extract', () => {
       })
     }
   }
+
+  it('resolves the cache location once per extraction batch without sharing nested or later batches', () => {
+    const root = createTempRoot()
+    const first = join(root, 'first.ts')
+    const second = join(root, 'second.ts')
+    writeFileSync(first, 'export function firstVersion() { return 1; }')
+    writeFileSync(second, 'export function secondVersion() { return 2; }')
+    const resolveDirectory = vi.spyOn(workspace, 'resolveMadarOutputDirectory')
+    try {
+      extract([])
+      expect(resolveDirectory).not.toHaveBeenCalled()
+      let nested = false
+      const outer = extract([first, second], {
+        onFileOutcome: () => {
+          if (nested) return
+          nested = true
+          expect(resolveDirectory).toHaveBeenCalledTimes(1)
+          extract([first])
+          expect(resolveDirectory).toHaveBeenCalledTimes(2)
+        },
+      })
+      expect(outer.nodes.map(node => node.label)).toContain('secondVersion()')
+      expect(resolveDirectory).toHaveBeenCalledTimes(2)
+      writeFileSync(first, 'export function changedVersion() { return 3; }')
+      const next = extract([first, second])
+      expect(resolveDirectory).toHaveBeenCalledTimes(3)
+      expect(next.nodes.map(node => node.label)).toContain('changedVersion()')
+      expect(next.nodes.map(node => node.label)).not.toContain('firstVersion()')
+    } finally {
+      resolveDirectory.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 
   it('builds stable ids without leading punctuation', () => {
     expect(_makeId('_auth')).toBe('auth')
@@ -10871,7 +10905,7 @@ describe('extract', () => {
     }
   })
 
-  it('collects supported code files and skips hidden paths', () => {
+  it('collects supported code files and package manifests and skips hidden paths', () => {
     const files = collectFiles(FIXTURES_DIR)
 
     expect(files.length).toBeGreaterThan(0)
@@ -10880,6 +10914,7 @@ describe('extract', () => {
         [
           '.py',
           '.js',
+          '.mjs',
           '.ts',
           '.tsx',
           '.go',
@@ -10907,7 +10942,7 @@ describe('extract', () => {
           '.m',
           '.mm',
           '.jl',
-        ].includes(filePath.slice(filePath.lastIndexOf('.'))),
+        ].includes(filePath.slice(filePath.lastIndexOf('.'))) || basename(filePath) === 'package.json',
       ).toBe(true)
       const fixtureRelativePath = relative(FIXTURES_DIR, filePath)
       expect(fixtureRelativePath.split(/[\\/]/).some((part) => part.startsWith('.'))).toBe(false)

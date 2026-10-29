@@ -67,6 +67,37 @@ describe('time travel runtime', () => {
     const result = compareTimeTravelGraphs(buildBeforeGraph(), buildAfterGraph(), { view: 'risk', limit: 3 })
 
     expect(result.risk.topImpacts[0]?.label).toBe('AuthService')
+
+    const limited = compareTimeTravelGraphs(buildBeforeGraph(), buildAfterGraph(), { view: 'risk', limit: 3, depth: 1 })
+    expect(limited.risk.topImpacts.find(impact => impact.label === 'AuthService')?.traversal)
+      .toEqual({ status: 'depth_limited', depth: 1, node_limit: 500 })
+    expect(formatTimeTravelResult(limited)).toContain('AuthService: at least 0 transitive dependents (depth_limited)')
+    expect(limited.summary.whyItMatters).toContain('Top risk: AuthService reaches at least 0 transitive dependents.')
+  })
+
+  it('keeps duplicate-label impact owners and their before/after graph origins distinct', () => {
+    const graph = (side: 'before' | 'after'): KnowledgeGraph => {
+      const result = new KnowledgeGraph({ directed: true })
+      for (const id of ['retained', 'middle', 'outer']) {
+        result.addNode(id, { label: id === 'retained' ? '.run()' : id, source_file: `/src/${id}.ts`,
+          community: id === 'retained' && side === 'after' ? 1 : 0 })
+      }
+      const owner = side === 'before' ? 'removed' : 'added'
+      result.addNode(owner, { label: '.run()', source_file: `/src/${owner}.ts`, community: 0 })
+      result.addEdge('outer', 'middle', { relation: 'calls' })
+      result.addEdge('middle', owner, { relation: 'calls' })
+      if (side === 'after') {
+        result.addNode('entry', { label: 'entry', source_file: '/src/entry.ts', community: 0 })
+        result.addEdge('entry', 'outer', { relation: 'calls' })
+      }
+      return result
+    }
+    const result = compareTimeTravelGraphs(graph('before'), graph('after'), { view: 'summary', limit: 20 })
+    expect(result.risk.topImpacts.filter(impact => impact.label === '.run()')).toEqual([
+      expect.objectContaining({ node_id: 'added', graph_side: 'after', source_file: '/src/added.ts', transitiveDependents: 2 }),
+      expect.objectContaining({ node_id: 'removed', graph_side: 'before', source_file: '/src/removed.ts', transitiveDependents: 1 }),
+      expect.objectContaining({ node_id: 'retained', graph_side: 'after', source_file: '/src/retained.ts', transitiveDependents: 0 }),
+    ])
   })
 
   it('formats the selected view for terminal output', () => {

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { build } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
-import { analyzeImpact, callChains, compactImpactResult } from '../../src/runtime/impact.js'
+import { analyzeImpact, callChains, compactImpactResult, ImpactTargetResolutionError } from '../../src/runtime/impact.js'
 
 function buildTestGraph(): KnowledgeGraph {
   const graph = new KnowledgeGraph({ directed: true })
@@ -75,6 +75,72 @@ function buildExpressRouteGraph(): KnowledgeGraph {
 
 describe('impact', () => {
   describe('analyzeImpact', () => {
+    it('keeps duplicate target and dependent identities and refuses ambiguous or stale selectors', () => {
+      for (const ids of [['a', 'b'], ['b', 'a']]) {
+        const graph = new KnowledgeGraph({ directed: true })
+        graph.graph.root_path = '/workspace'
+        for (const id of ids) {
+          graph.addNode(id, { label: 'run', source_file: `/workspace/${id}.ts` })
+          graph.addNode(`${id}-caller`, { label: 'caller', source_file: `/workspace/${id}-caller.ts` })
+          graph.addEdge(`${id}-caller`, id, { relation: 'calls' })
+        }
+        try {
+          analyzeImpact(graph, {}, { label: 'RUN' })
+          expect.fail('Duplicate labels must require an exact identity')
+        } catch (error) {
+          expect(error).toBeInstanceOf(ImpactTargetResolutionError)
+          expect(error).toMatchObject({
+            status: 'ambiguous_target',
+            candidates: [
+              { node_id: 'a', label: 'run', source_file: 'a.ts' },
+              { node_id: 'b', label: 'run', source_file: 'b.ts' },
+            ],
+          })
+        }
+        expect(() => analyzeImpact(graph, {}, { label: 'ru' })).toThrow(ImpactTargetResolutionError)
+        expect(() => analyzeImpact(graph, {}, { nodeId: 'missing', label: 'run' })).toThrow('was not found')
+        const selected = compactImpactResult(analyzeImpact(graph, {}, { nodeId: 'b', label: 'ignored' }))
+        expect(selected.target_node_id).toBe('b')
+        expect(selected.target_file).toBe('b.ts')
+        expect(selected.direct_dependents.map((node) => node.node_id)).toEqual(['b-caller'])
+      }
+    })
+
+    it('prefers a unique exact label over prefixes and rejects multiple prefix matches', () => {
+      const graph = new KnowledgeGraph({ directed: true })
+      graph.addNode('fast', { label: 'runFast', source_file: 'fast.ts' })
+      graph.addNode('slow', { label: 'runSlow', source_file: 'slow.ts' })
+      expect(() => analyzeImpact(graph, {}, { label: 'run' })).toThrow('ambiguous')
+      graph.addNode('exact', { label: 'run', source_file: 'exact.ts' })
+      expect(analyzeImpact(graph, {}, { label: ' RUN ' }).target_node_id).toBe('exact')
+      expect(() => analyzeImpact(graph, {}, { label: '  ' })).toThrow(ImpactTargetResolutionError)
+    })
+
+    it('bounds ambiguous target previews while retaining total matches and exact selectable identities', () => {
+      const graph = new KnowledgeGraph({ directed: true })
+      for (let index = 999; index >= 0; index--) {
+        const suffix = String(index).padStart(4, '0')
+        graph.addNode(`candidate-${suffix}`, { label: `run${suffix}`, source_file: `src/module-${suffix}.ts` })
+      }
+      try {
+        analyzeImpact(graph, {}, { label: 'r' })
+        expect.fail('A prefix must not select one of many owners')
+      } catch (error) {
+        expect(error).toBeInstanceOf(ImpactTargetResolutionError)
+        const failure = error as ImpactTargetResolutionError
+        expect(failure.total_candidates).toBe(1000)
+        expect(failure.candidates).toEqual(Array.from({ length: 20 }, (_, index) => {
+          const suffix = String(index).padStart(4, '0')
+          return { node_id: `candidate-${suffix}`, label: `run${suffix}`, source_file: `src/module-${suffix}.ts` }
+        }))
+        expect(failure.message).toContain('1000 matches, showing 20')
+        expect(failure.message).not.toContain('candidate-0020')
+        expect(failure.message).not.toContain('candidate-0999')
+        expect(analyzeImpact(graph, {}, { nodeId: failure.candidates[0]!.node_id }).target_node_id).toBe('candidate-0000')
+        expect(analyzeImpact(graph, {}, { nodeId: 'candidate-0999' }).target_node_id).toBe('candidate-0999')
+      }
+    })
+
     it('rejects undirected graphs instead of reporting reverse-edge false positives', () => {
       const graph = new KnowledgeGraph()
       graph.addNode('caller', { label: 'caller', source_file: '/src/caller.ts' })
@@ -153,12 +219,57 @@ describe('impact', () => {
       expect(result.affected_communities.length).toBeGreaterThan(0)
     })
 
-    it('returns empty result for unknown label', () => {
+    it('distinguishes an unknown target from a resolved target with no dependents', () => {
       const graph = buildTestGraph()
-      const result = analyzeImpact(graph, {}, { label: 'nonexistent' })
+      expect(() => analyzeImpact(graph, {}, { label: 'nonexistent' })).toThrow(ImpactTargetResolutionError)
+      const result = analyzeImpact(graph, {}, { nodeId: 'api' })
 
       expect(result.total_affected).toBe(0)
       expect(result.direct_dependents).toEqual([])
+      expect(result.target_node_id).toBe('api')
+      expect(result.traversal).toEqual({ status: 'complete', depth: 3, node_limit: 500 })
+    })
+
+    it('enforces the node cap and distinguishes an exhausted graph from omitted impact', () => {
+      const graph = new KnowledgeGraph({ directed: true })
+      graph.addNode('target', { label: 'target' })
+      for (let i = 0; i < 499; i++) {
+        graph.addNode(`caller-${i}`, { label: `caller-${i}` })
+        graph.addEdge(`caller-${i}`, 'target', { relation: 'calls' })
+      }
+      const exactCapacity = analyzeImpact(graph, {}, { nodeId: 'target' })
+      expect(exactCapacity.total_affected).toBe(499)
+      expect(exactCapacity.traversal?.status).toBe('complete')
+
+      graph.addNode('grandcaller', { label: 'grandcaller' })
+      graph.addEdge('grandcaller', 'caller-0', { relation: 'calls' })
+      const secondHop = analyzeImpact(graph, {}, { nodeId: 'target' })
+      expect(secondHop.total_affected).toBe(499)
+      expect(secondHop.traversal?.status).toBe('node_limited')
+      expect(analyzeImpact(graph, {}, { nodeId: 'target', depth: 1 }).traversal?.status).toBe('depth_limited')
+
+      for (let i = 499; i < 600; i++) {
+        graph.addNode(`caller-${i}`, { label: `caller-${i}` })
+        graph.addEdge(`caller-${i}`, 'target', { relation: 'calls' })
+      }
+      const highFanout = compactImpactResult(analyzeImpact(graph, {}, { nodeId: 'target' }))
+      expect(highFanout.total_affected).toBe(499)
+      expect(highFanout.direct_dependents).toHaveLength(499)
+      expect(highFanout.traversal).toEqual({ status: 'node_limited', depth: 3, node_limit: 500 })
+    })
+
+    it('reports a depth limit only for an unseen relevant frontier, not a cycle', () => {
+      const graph = new KnowledgeGraph({ directed: true })
+      graph.addNode('target', { label: 'target' })
+      graph.addNode('caller', { label: 'caller' })
+      graph.addNode('grandcaller', { label: 'grandcaller' })
+      graph.addEdge('caller', 'target', { relation: 'calls' })
+      graph.addEdge('target', 'caller', { relation: 'calls' })
+      expect(analyzeImpact(graph, {}, { nodeId: 'target', depth: 1 }).traversal?.status).toBe('complete')
+      graph.addEdge('grandcaller', 'caller', { relation: 'uses' })
+      expect(analyzeImpact(graph, {}, { nodeId: 'target', depth: 1 }).traversal?.status).toBe('depth_limited')
+      expect(analyzeImpact(graph, {}, { nodeId: 'target', depth: 1, edgeTypes: ['calls'] }).traversal?.status).toBe('complete')
+      expect(analyzeImpact(graph, {}, { nodeId: 'target', depth: 2 }).traversal?.status).toBe('complete')
     })
 
     it('respects depth limit', () => {

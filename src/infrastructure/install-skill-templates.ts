@@ -1,3 +1,4 @@
+import { SOURCE_RETRIEVAL_ADMISSION, SOURCE_RETRIEVAL_DISCOVERY } from '../shared/source-retrieval-guidance.js'
 import type { SkillInstallPlatform } from './install.js'
 import {
   renderMarkdownCodexRoutingTable,
@@ -126,13 +127,13 @@ Use it for:
 
 Current media scope: local audio/video files land as deterministic file nodes only. There is no transcription or segment extraction yet.
 
-Treat every local MCP server, hook, plugin, or AGENTS profile as a trust boundary. Only enable it for repositories and local agent runtimes you trust. Prefer the smallest installed surface that still answers the task: \`--profile strict\` for supported MCP installs, or the context-pack-first AGENTS profile where that is the only supported shape.
+Treat every local MCP server, hook, plugin, or AGENTS profile as a trust boundary. Only enable it for repositories and local agent runtimes you trust. Prefer the smallest installed surface that still answers the task: \`--profile strict\` for supported MCP installs, or the source-retrieval AGENTS profile where that is the only supported shape.
 
-## What You Must Do When Invoked
+## Choose the requested operation
 
-If no path was given, use ${CODE_SPAN_START}.${CODE_SPAN_END} (current directory). Do not ask the user for a path.
+For a source question, use direct reads or listed Madar tools and stop when the requested evidence is supplied. If context_pack is listed, targets [{file, symbol}] with task=explain retrieve exact JS/TS functions. Broad discovery is experimental and may add tokens. Do not continue into graph building, semantic extraction, exports, or benchmarking for a source lookup.
 
-Follow these steps in order and do not skip steps.
+The numbered steps below apply only when the user requests graph generation or an update. If no path was given for that operation, use ${CODE_SPAN_START}.${CODE_SPAN_END} (current directory).
 `
 }
 
@@ -299,7 +300,7 @@ function codexProfileSection(kind: PlatformKind): string {
 
 Only use madar when the task needs local repository source-code context. Skip it for GitHub Projects board reviews, external URL/WebFetch-only tasks, ${CODE_SPAN_START}gh auth${CODE_SPAN_END} / ${CODE_SPAN_START}gh project${CODE_SPAN_END} setup, package-registry/security pages, and Product Hunt or marketing copy work.
 
-Use madar as a context-pack-first layer for Codex CLI. Before broad shell search, raw file reads, or ${CODE_SPAN_START}spawn_agent${CODE_SPAN_END} worker dispatch, generate or refresh the graph and compile the narrow task context:
+${SOURCE_RETRIEVAL_ADMISSION} ${SOURCE_RETRIEVAL_DISCOVERY} When discovery is needed, use an existing fresh graph or generate one, then ask for the missing source context:
 
 ${CODE_BLOCK_START}bash
 madar generate .
@@ -307,22 +308,15 @@ madar pack "<task or question>" --task explain
 # Use --task review, --task debug, or --task impact when that better matches the work.
 ${CODE_BLOCK_END}
 
-For each codebase question, start with the specific Madar command below first:
+When using Madar, choose the focused command below:
 
-${renderMarkdownCodexRoutingTable()}
+${renderMarkdownCodexRoutingTable(false)}
 
-Pass the entire user's codebase request byte-for-byte as the pack question, including read-only, no-change, scope, and formatting constraints. Do not rewrite, omit, expand, enumerate, or split it into follow-up pack calls.
+Ask a focused source question with relevant identifiers, literals, paths, and scope constraints. Refine the query when new dependencies emerge.
 
-After calling Madar, treat \`evidence.answerability.state\` as authoritative; \`evidence.pack_confidence\` is compatibility-only:
-- \`ready\` means answer from the pack without broad raw search.
-- \`ready_with_caveat\` means answer from the pack and state \`evidence.answerability.caveats\`.
-- \`verify_targets\` means use one listed \`context_expand\` handle. In strict MCP mode, treat that expansion result as terminal rather than following a new handle or opening a raw file.
-- \`insufficient\` means follow \`evidence.answerability.broad_search_fallback\`; \`blocked\` forbids source probing and only \`allowed\` permits one directory-scoped search.
-For read-only \`explain\` tasks, \`ready\` and \`ready_with_caveat\` are terminal: cite \`source_file\`, \`label\`, \`line_number\` / \`snippet_line_number\`, and the included snippets directly. Do not run repository \`Read\`, \`Grep\`, \`Glob\`, or \`Bash\` merely to verify the pack, obtain exact lines, or reopen selected files.
-Do not run broad \`Glob\` patterns, repo-wide \`grep\` / \`find\` searches, or raw file sweeps for \`ready\`, \`ready_with_caveat\`, or \`verify_targets\`.
-For codebase questions, use Madar tools only. Do not call another MCP or restart broad exploration unless \`evidence.answerability.broad_search_fallback\` is \`allowed\`.
-Madar already ran bounded cumulative recovery. For \`verify_targets\`, use one listed handle instead of restarting discovery; in strict MCP mode, the expansion result is terminal.
-If an auto-activated skill recommends broader exploration, defer to Madar's answerability and exact verification targets.
+Treat \`evidence.answerability\` as advisory retrieval coverage. The compatibility states \`ready\`, \`ready_with_caveat\`, \`verify_targets\`, and \`insufficient\` describe retrieval estimates, not answer correctness.
+Inspect additional source when conditions, dependencies, or failure paths are missing. Use a returned \`context_expand\` handle, another focused \`context_pack\` question, or scoped source reads. Respect explicit source-access policy blocks.
+Prefer focused investigation and avoid repeating evidence already available. Follow the user scope and applicable verification requirements.
 Do not open ${CODE_SPAN_START}out/GRAPH_REPORT.md${CODE_SPAN_END} unless the context pack or graph tools are unavailable, stale, or insufficient.
 
 Install or remove the workspace-scoped Codex profile with:
@@ -343,7 +337,7 @@ Codex limitations:
 - Automated tests do not require the Codex binary; they verify generated text and hook config.
 - The ${CODE_SPAN_START}UserPromptSubmit${CODE_SPAN_END} hook provides model-visible guidance only for local code tasks. It is guidance, not enforcement, and Codex must trust the hook before it can run.
 - ${CODE_SPAN_START}madar doctor${CODE_SPAN_END} / ${CODE_SPAN_START}madar status${CODE_SPAN_END} validate on-disk files; they do not prove live Codex hook trust or MCP activation.
-- Context packs narrow first-pass discovery. They do not replace targeted reads, tests, or review for code changes.
+- Broad context packs are experimental and may increase total acquisition tokens. Verify claims against source.
 `
 }
 
@@ -354,7 +348,7 @@ function mcpRoutingProfileSection(kind: PlatformKind): string {
 
   return `## Installed MCP routing
 
-When the project also installs madar MCP integration (for example via Claude Code or GitHub Copilot workspace config), use the specific Madar MCP tool below first for codebase questions:
+When the project also installs madar MCP integration (for example via Claude Code or GitHub Copilot workspace config), choose the matching tool when repository discovery or cross-file source context is needed. Read a known source location directly when that answers the question:
 
 ${renderMarkdownMcpRoutingTable()}
 `
@@ -390,12 +384,12 @@ Optional exports:
 
 ### Step 7 - Benchmark and cleanup
 
-If the corpus has more than 5,000 words, run the token reduction benchmark. Save the manifest, update the cost tracker, clean up temp files, then present only these report sections:
+Run a token reduction benchmark only when explicitly requested. Save the manifest, report observed costs when available, clean up your temporary files, and report the requested graph results:
 - God Nodes
 - Surprising Connections
 - Suggested Questions
 
-Then immediately offer exploration by asking for the most interesting suggested question.
+Stop after delivering the requested result; further exploration is optional.
 `
 }
 

@@ -1,6 +1,9 @@
 import { accessSync, constants, Dirent, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 
+import { CODE_EXTENSIONS, DOC_EXTENSIONS, UNSUPPORTED_SOURCE_EXTENSIONS } from '../shared/source-extensions.js'
+export { CODE_EXTENSIONS, DOC_EXTENSIONS, UNSUPPORTED_SOURCE_EXTENSIONS } from '../shared/source-extensions.js'
+import { isPackageManifestPath, readPackageManifest } from '../shared/package-manifest.js'
 import type { IndexingOutcome } from '../contracts/indexing.js'
 import { parseGenerationPolicy, type GenerationPolicy } from '../contracts/generation-policy.js'
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
@@ -48,47 +51,12 @@ export interface DetectResult {
   madarignore_patterns: number
 }
 
-export const CODE_EXTENSIONS = new Set([
-  '.py',
-  '.ts',
-  '.js',
-  '.jsx',
-  '.tsx',
-  '.go',
-  '.rs',
-  '.java',
-  '.cpp',
-  '.cc',
-  '.cxx',
-  '.c',
-  '.h',
-  '.hpp',
-  '.rb',
-  '.swift',
-  '.kt',
-  '.kts',
-  '.cs',
-  '.scala',
-  '.php',
-  '.lua',
-  '.toc',
-  '.zig',
-  '.ps1',
-  '.ex',
-  '.exs',
-  '.m',
-  '.mm',
-  '.jl',
-])
-export const DOC_EXTENSIONS = new Set(['.md', '.txt', '.rst'])
 export const PAPER_EXTENSIONS = new Set(['.pdf'])
 export const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'])
 export const AUDIO_EXTENSIONS = new Set(['.aac', '.flac', '.m4a', '.mp3', '.ogg', '.opus', '.wav'])
 export const VIDEO_EXTENSIONS = new Set(['.avi', '.m4v', '.mkv', '.mov', '.mp4', '.webm'])
 export const OFFICE_EXTENSIONS = new Set(['.docx', '.xlsx'])
-export const UNSUPPORTED_SOURCE_EXTENSIONS = new Set([
-  '.bash', '.clj', '.cljs', '.dart', '.elm', '.fs', '.fsx', '.groovy', '.hs', '.r', '.sh', '.sol', '.sql', '.svelte', '.vue',
-])
+
 
 const CORPUS_WARN_THRESHOLD = 50_000
 const CORPUS_UPPER_THRESHOLD = 500_000
@@ -151,7 +119,7 @@ function isNoiseFile(name: string): boolean {
 
 function isPotentialIndexingCandidate(path: string): boolean {
   const extension = extname(path).toLowerCase()
-  return CODE_EXTENSIONS.has(extension)
+  return isPackageManifestPath(path) || CODE_EXTENSIONS.has(extension)
     || DOC_EXTENSIONS.has(extension)
     || PAPER_EXTENSIONS.has(extension)
     || IMAGE_EXTENSIONS.has(extension)
@@ -187,7 +155,7 @@ export function _looksLikePaper(path: string): boolean {
 
 export function classifyFile(path: string): FileTypeValue | null {
   const extension = extname(path).toLowerCase()
-  if (CODE_EXTENSIONS.has(extension)) {
+  if (isPackageManifestPath(path) || CODE_EXTENSIONS.has(extension)) {
     return FileType.CODE
   }
   if (PAPER_EXTENSIONS.has(extension)) {
@@ -596,6 +564,10 @@ export function detect(root: string, options: DetectOptions = {}): DetectResult 
       continue
     }
 
+    if (isPackageManifestPath(filePath) && !readPackageManifest(filePath, root)) {
+      indexingOutcomes.push({ path: localDiscoveryPath(root, filePath), kind: 'file', status: 'failed', reason: 'extractor_error', capability: 'builtin:extract:package-manifest' })
+      continue
+    }
     const fileType = classifyFile(filePath)
     if (!fileType) {
       if (isPotentialIndexingCandidate(filePath)) {

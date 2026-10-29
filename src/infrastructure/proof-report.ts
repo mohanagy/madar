@@ -13,6 +13,8 @@ import type { TaskIntentKind } from '../contracts/task-intent.js'
 
 interface ProofReportCompareSummary {
   question: string
+  baselineMode: 'full' | 'bounded' | 'pack_only' | 'native_agent' | null
+  reductionBasis: 'provider_reported' | 'mixed' | 'estimated' | null
   reductionRatio: number | null
   effectiveReductionRatio: number | null
   totalReductionRatio: number | null
@@ -216,6 +218,10 @@ function readCompareSummaries(compareDir: string, graphBase: string): ProofRepor
       : {}
     return {
       question: typeof parsed.question === 'string' ? parsed.question : '(unknown question)',
+      baselineMode: parsed.baseline_mode === 'full' || parsed.baseline_mode === 'bounded'
+        || parsed.baseline_mode === 'pack_only' || parsed.baseline_mode === 'native_agent' ? parsed.baseline_mode : null,
+      reductionBasis: providerProof.reduction_basis === 'provider_reported' || providerProof.reduction_basis === 'mixed'
+        || providerProof.reduction_basis === 'estimated' ? providerProof.reduction_basis : null,
       reductionRatio: typeof parsed.reduction_ratio === 'number' ? parsed.reduction_ratio : null,
       effectiveReductionRatio: typeof parsed.effective_reduction_ratio === 'number' ? parsed.effective_reduction_ratio : null,
       totalReductionRatio: typeof parsed.total_reduction_ratio === 'number' ? parsed.total_reduction_ratio : null,
@@ -344,18 +350,33 @@ function formatCompareSection(
     return lines
   }
 
+  limitations.push('Compare measurements are summarized from their receipts; this report does not assess answer correctness or independently validate savings claims.')
   for (const summary of compareSummaries) {
     lines.push(`### ${summary.question}`)
+    const constructed = summary.baselineMode !== null && summary.baselineMode !== 'native_agent'
+    lines.push(`- Baseline mode: ${summary.baselineMode ?? 'unavailable'}${constructed ? ' (constructed prompt)' : ''}`)
+    const basis = summary.reductionBasis === 'provider_reported' ? 'provider-reported usage'
+      : summary.reductionBasis === 'mixed' ? 'mixed provider-reported usage and local estimates'
+        : summary.reductionBasis === 'estimated' ? 'local estimates' : 'unavailable'
+    lines.push(`- Token accounting basis: ${basis}`)
     lines.push(`- Baseline status: ${summary.baselineStatus}`)
     lines.push(`- Madar status: ${summary.madarStatus}`)
     lines.push(`- ${formatRatio('Reduction ratio', summary.reductionRatio)}`)
     lines.push(`- ${formatRatio('Effective reduction ratio', summary.effectiveReductionRatio)}`)
     lines.push(`- ${formatRatio('Total reduction ratio', summary.totalReductionRatio)}`)
     if (summary.winner) {
-      lines.push(`- Winner: ${summary.winner}`)
+      lines.push(`- Recorded winner: ${summary.winner} (not independently verified by this report)`)
     }
     lines.push('')
-    if (summary.baselineStatus !== 'completed' || summary.madarStatus !== 'completed') {
+    if (constructed) {
+      limitations.push(`Compare run for "${summary.question}" uses a constructed ${summary.baselineMode} prompt baseline, not a native-agent workflow comparison.`)
+    }
+    if (summary.baselineMode === null || summary.reductionBasis === null) {
+      limitations.push(`Compare run for "${summary.question}" has an unavailable baseline mode or token accounting basis; its ratios do not establish provider or native-agent savings.`)
+    }
+    if (summary.baselineStatus === 'unknown' || summary.madarStatus === 'unknown') {
+      limitations.push(`Compare run completion status for "${summary.question}" is unavailable in this report schema.`)
+    } else if (summary.baselineStatus !== 'succeeded' || summary.madarStatus !== 'succeeded') {
       limitations.push(`Compare run for "${summary.question}" is incomplete.`)
     }
   }

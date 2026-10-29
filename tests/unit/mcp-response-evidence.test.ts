@@ -67,14 +67,14 @@ describe('mcp-response-evidence', () => {
     expect(evidence.answerability).toMatchObject({
       state: 'verify_targets',
       answer_scope: 'partial',
-      broad_search_fallback: 'targeted_only',
+      broad_search_fallback: 'allowed',
       verification_targets: [expect.objectContaining({
         handle_id: 'expand:explain:supporting:auth',
         focus_files: ['src/auth/store.ts'],
       })],
     })
     expect(evidence.pack_confidence).toBe('medium')
-    expect(evidence.agent_directive).toBe('verify_one_targeted_file')
+    expect(evidence.agent_directive).toBe('explore_with_caution')
   })
 
   it('returns ready_with_caveat for complete but weakly connected evidence', () => {
@@ -95,11 +95,12 @@ describe('mcp-response-evidence', () => {
     })
 
     expect(evidence.evidence_strength.level).toBe('moderate')
+    expect(evidence.answerability.advisory).toBe(true)
     expect(evidence.answerability.state).toBe('ready_with_caveat')
     expect(evidence.answerability.caveats).toContain('selected_evidence_without_complete_relationship_support')
-    expect(evidence.answerability.broad_search_fallback).toBe('not_needed')
+    expect(evidence.answerability.broad_search_fallback).toBe('allowed')
     expect(evidence.pack_confidence).toBe('medium')
-    expect(evidence.agent_directive).toBe('answer_from_pack')
+    expect(evidence.agent_directive).toBe('explore_with_caution')
   })
 
   it('returns insufficient only when there is no usable evidence or verification target', () => {
@@ -115,6 +116,66 @@ describe('mcp-response-evidence', () => {
     })
     expect(evidence.pack_confidence).toBe('low')
     expect(evidence.agent_directive).toBe('explore_with_caution')
+  })
+
+  it('keeps impact traversal limits separate from covered evidence classes', () => {
+    const coverage: ContextPackCoverage = {
+      required_evidence: ['primary'], semantic_required: [], semantic_optional: [],
+      entries: [{ evidence_class: 'primary', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' }],
+      semantic_entries: [], missing_required: [], missing_semantic: [],
+      available_relationships: 1, selected_relationships: 1,
+    }
+    const input = { coverage, coveredWorkflowOwners: ['src/target.ts'] }
+    const baseline = buildMadarResponseEvidence(input)
+    expect(baseline.answerability.answer_scope).toBe('complete')
+    expect(buildMadarResponseEvidence({
+      ...input, impactTraversal: { status: 'complete', depth: 3, node_limit: 500 },
+    })).toEqual(baseline)
+
+    for (const status of ['depth_limited', 'node_limited'] as const) {
+      const impactTraversal = { status, depth: 3, node_limit: 500 }
+      const evidence = buildMadarResponseEvidence({ ...input, impactTraversal })
+      expect(evidence.coverage).toBe('partial')
+      expect(evidence.coverage_detail.covered_obligations).toContain('evidence:primary')
+      expect(evidence.coverage_detail.missing_obligations).toEqual([`impact:${status}`])
+      expect(evidence.answerability).toMatchObject({ answer_scope: 'partial', missing_obligations: [`impact:${status}`] })
+      expect(evidence.evidence_strength.level).toBe('moderate')
+      expect(evidence.pack_confidence).toBe('medium')
+      expect(buildMadarResponseEvidence({ impactTraversal }).coverage).toBe('partial')
+    }
+    expect(coverage.missing_required).toEqual([])
+    expect(coverage.entries[0]?.status).toBe('covered')
+  })
+
+  it('preserves PR traversal limits when a partial target row is omitted from the pack', () => {
+    const coverage: ContextPackCoverage = {
+      required_evidence: ['primary'], semantic_required: [], semantic_optional: [],
+      entries: [{ evidence_class: 'primary', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' }],
+      semantic_entries: [], missing_required: [], missing_semantic: [],
+      available_relationships: 1, selected_relationships: 1,
+    }
+    const input = { coverage, coveredWorkflowOwners: ['src/target.ts'] }
+    const baseline = buildMadarResponseEvidence(input)
+    for (const [depthLimited, nodeLimited] of [[1, 0], [0, 1], [1, 1]] as const) {
+      const impactTraversalSummary = {
+        analyzed_targets: 13, partial_targets: depthLimited + nodeLimited,
+        depth_limited_targets: depthLimited, node_limited_targets: nodeLimited,
+      }
+      const expectedMissing = [
+        ...(depthLimited ? ['impact:depth_limited'] : []),
+        ...(nodeLimited ? ['impact:node_limited'] : []),
+      ]
+      const evidence = buildMadarResponseEvidence({ ...input, impactTraversalSummary })
+      expect(evidence.coverage).toBe('partial')
+      expect(evidence.answerability).toMatchObject({ answer_scope: 'partial', missing_obligations: expectedMissing })
+      expect(evidence.coverage_detail.covered_obligations).toContain('evidence:primary')
+      expect(evidence.evidence_strength.level).toBe('moderate')
+      expect(evidence.pack_confidence).toBe('medium')
+    }
+    expect(buildMadarResponseEvidence({ ...input, impactTraversalSummary: {
+      analyzed_targets: 0, partial_targets: 0, depth_limited_targets: 0, node_limited_targets: 0,
+    } })).toEqual(baseline)
+    expect(buildMadarResponseEvidence({ ...input, impactTraversalSummary: undefined })).toEqual(baseline)
   })
 
   it('keeps an exact file target actionable even when the initial pack selected no evidence', () => {
@@ -140,14 +201,14 @@ describe('mcp-response-evidence', () => {
       state: 'verify_targets',
       answer_scope: 'none',
       caveats: ['no selected evidence; verify the exact target'],
-      broad_search_fallback: 'targeted_only',
+      broad_search_fallback: 'allowed',
       verification_targets: [expect.objectContaining({
         focus_files: ['src/auth/controller.ts'],
         reason: 'verify evidence:primary',
       })],
     })
     expect(evidence.pack_confidence).toBe('medium')
-    expect(evidence.agent_directive).toBe('verify_one_targeted_file')
+    expect(evidence.agent_directive).toBe('explore_with_caution')
   })
 
   it('downgrades only relevant indexing uncertainty and exposes share-safe reason aggregates', () => {
@@ -381,7 +442,7 @@ describe('mcp-response-evidence', () => {
 
       expect(variantEvidence.pack_confidence).toBe('medium')
       expect(variantEvidence.coverage).toBe('partial')
-      expect(variantEvidence.agent_directive).toBe('verify_one_targeted_file')
+      expect(variantEvidence.agent_directive).toBe('explore_with_caution')
       expect(variantEvidence.discovery_exclusions).toMatchObject({
         total: 2,
         relevant: 1,
@@ -652,7 +713,7 @@ describe('mcp-response-evidence', () => {
       },
     })
 
-    expect(evidence.agent_directive).toBe('verify_one_targeted_file')
+    expect(evidence.agent_directive).toBe('explore_with_caution')
     expect(evidence.confidence_reasons).toContain(
       'answer containedness: the pack does not contain a complete runtime answer without raw reads',
     )

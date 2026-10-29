@@ -20,6 +20,9 @@
 // (e.g. CompiledContextPack) can carry the decision without depending on
 // the runtime classifier itself.
 
+import { EXCLUDED_DOMAIN_HINTS, sourceExclusionPathOperand, sourceExclusionSymbolOperand, unquoteSourceExclusionOperand } from './source-exclusion-paths.js'
+import { isPromptDataOffset, maskPromptRegions, scanPromptRegions, type PromptRegion } from '../shared/prompt-regions.js'
+
 import type {
   RetrievalGateDecision,
   RetrievalExcludedDomain,
@@ -78,26 +81,171 @@ const PATTERNS: ReadonlyArray<{ intent: RetrievalIntent; re: RegExp }> = [
 ]
 
 const PATH_RE = /(?:^|\s|`)((?:[\w@./-]+\/)*[\w./@-]+\.[A-Za-z]{1,8})(?=\b|`|$)/g
+// Only slash-qualified quoted paths extend the legacy delimiter grammar.
+const QUOTED_PATH_RE = /(["'])((?:[\w@./-]+\/)+[\w./@-]+\.[A-Za-z]{1,8})\1/g
+// Standalone parenthetical source references are common in follow-up requests.
+// Keep this extension narrower than the legacy path grammar: a dotted member
+// or a function argument must not become a new file-scope instruction.
+const PARENTHETICAL_SOURCE_PATH_RE = /(?:^|\s)\(([\w@./-]+\.(?:[cm]?[jt]sx?|json))\)(?=$|\s|[.,;:!?](?=\s|$))/gi
+const DIRECTORY_RE = /(?:^|[\s`"'(])((?:[\w@.-]+[\\/])+)(?=$|[\s`"'),;:!?]|\.(?=\s|$))/g
 const SYMBOL_BACKTICK_RE = /`([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\(?\)?)`/g
 const SYMBOL_EXPLICIT_RE = /\b((?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*(?:\.|#|::)[A-Za-z_$][\w$]*\(?\)?|[A-Za-z_$][\w$]{2,}\(\))\b/g
 const STACK_TRACE_RE = /(?:^|\n)\s*at\s+\S+\s*\([^)]*:\d+(?::\d+)?\)|Error[:\s]\s+\S/
-const EXCLUSION_SPAN_RE = /\b(?:exclude|excluding|ignore|ignoring|omit|omitting|skip|skipping|without|do not include|don't include|not|no)\b\s+(.+?)(?=(?:\s+\b(?:but|while|however|when)\b|[.;\n]|$))/gi
+// A filename/member dot is part of the operand; only sentence periods end it.
+const EXCLUSION_SPAN_RE = /\b(?:exclude|excluding|ignore|ignoring|omit|omitting|skip|skipping|without|except|do not include|don't include|not|no)\b\s+(.+?)(?=(?:\s+\b(?:but|while|however|when)\b|[;\n]|[.!?](?=\s|$)|$))/gi
+const EVIDENCE_SCOPE_ITEM = String.raw`(?:the\s+)?(?:source(?:\s+code)?|tests?|config(?:uration)?(?:\s+files)?|(?:root\s+)?README(?:\.md)?)`
+const EVIDENCE_SCOPE_LIST = `${EVIDENCE_SCOPE_ITEM}(?:\\s*(?:,\\s*(?:and\\s+)?|\\band\\s+|\\bor\\s+)${EVIDENCE_SCOPE_ITEM})*`
+const EVIDENCE_SCOPE_LOCATION = String.raw`(?:\s+(?:in|from|within)\s+(?:(?:this|the|current)\s+)?(?:workspace|repository|repo|working\s+directory))?`
+const EVIDENCE_SCOPE_DIRECTIVE_RE = new RegExp(
+  `\\b(?:use|consult|consider|inspect|read|search)\\s+(?:only\\s+${EVIDENCE_SCOPE_LIST}|${EVIDENCE_SCOPE_LIST}\\s+only)${EVIDENCE_SCOPE_LOCATION}\\s*(?=[.;\\n]|$)[.;]?`,
+  'gi',
+)
 
-const EXCLUDED_DOMAIN_HINTS: ReadonlyArray<{ domain: RetrievalExcludedDomain; pattern: RegExp; pathHints: string[] }> = [
-  { domain: 'test', pattern: /\b(?:tests?|specs?|coverage|__tests__|e2e|cypress|playwright)\b/i, pathHints: ['test', 'tests', '__tests__', 'spec', 'specs', 'coverage'] },
-  { domain: 'benchmark', pattern: /\b(?:bench(?:mark|marks)?|performance|perf)\b/i, pathHints: ['bench', 'benchmark', 'benchmarks', 'perf', 'performance'] },
-  { domain: 'fixture', pattern: /\b(?:fixtures?|mocks?|__fixtures__|__mocks__)\b/i, pathHints: ['fixture', 'fixtures', 'mock', 'mocks', '__fixtures__', '__mocks__'] },
-  { domain: 'generated', pattern: /\b(?:generated|codegen|__generated__)\b/i, pathHints: ['generated', '__generated__'] },
-  { domain: 'docs', pattern: /\b(?:docs?|readme|changelog|markdown|mdx?)\b/i, pathHints: ['docs', 'readme', 'changelog'] },
-  { domain: 'config', pattern: /\b(?:config|configs?|settings|env|docker|compose|k8s|helm|package\.json|tsconfig)\b/i, pathHints: ['config', 'configs', 'settings', 'env', 'docker', 'compose', 'k8s', 'helm', 'package.json', 'tsconfig'] },
-  { domain: 'build_artifact', pattern: /\b(?:build artifacts?|dist|coverage|out|node_modules)\b/i, pathHints: ['build', 'dist', 'coverage', 'out', 'node_modules'] },
-]
+const EVIDENCE_INVENTORY_RE = new RegExp(`^${EVIDENCE_SCOPE_LIST}\\s+(?:is|are)\\s+(?:the\\s+)?(?:only\\s+)?(?:allowed\\s+)?evidence$`, 'i')
+const SOURCE_POSTURE_RE = /^(?:use|consult)\s+(?:(?:the|this)\s+)?(?:(?:committed|local)\s+)?(?:(?:repository|repo)\s+)?source(?:\s+code)?\s+for\s+(?:(?:this|the)\s+)?read[- ]only\s+(?:analysis|review|investigation)$/i
+const ANSWER_FORMAT_RE = /^(?:give|provide|return|write)\s+(?:(?:a|the)\s+)?(?:(?:concise|brief|short|detailed)\s+)?(?:answer|response|summary)\s+with\s+(?:(?:repository[- ]relative|relative)\s+)?(?:file(?:\s+and\s+line)?|source|code)\s+(?:citations|references)$/i
+
+/** Only complete, unquoted clauses can be procedural. A sentence about the
+ * same words (authentication, tests, configuration, etc.) remains evidence. */
+function removeProceduralClauses(prompt: string, rankingOnly: boolean): string {
+  const regions = scanPromptRegions(prompt)
+  const spans: Array<{ start: number; end: number }> = []
+  let start = 0, regionIndex = 0
+  for (const boundary of prompt.matchAll(/[;\r\n]|[.!?](?=\s|$)|$/g)) {
+    if (isPromptDataOffset(regions, boundary.index)) continue
+    const end = boundary.index + boundary[0].length
+    const clause = prompt.slice(start, boundary.index).trim()
+    while (regions[regionIndex] && regions[regionIndex]!.end <= start) regionIndex++
+    const data = regions[regionIndex] !== undefined && regions[regionIndex]!.start < end
+    if (!data && (SOURCE_POSTURE_RE.test(clause) || ANSWER_FORMAT_RE.test(clause)
+      || (EVIDENCE_INVENTORY_RE.test(clause) && /\bsource\b/i.test(clause))
+      || (rankingOnly && isProceduralProhibition(clause)))) spans.push({ start, end })
+    start = end
+  }
+  return maskPromptRegions(prompt, spans).trim()
+}
+
+/** General agent actions only; conditional requirements and named code targets
+ * are deliberately retained. This view must never enforce source-access policy. */
+function isProceduralProhibition(clause: string): boolean {
+  const prohibition = /^(?:please\s+)?(?:do not|don't|never)\s+(.+)$/i.exec(clause)
+  if (!prohibition) return false
+  let action = ''
+  return prohibition[1]!.split(/\s*(?:,\s*(?:(?:and|or)\s+)?|\b(?:and|or)\b)\s*/i).every(operand => {
+    const explicit = /^(change|modify|edit|write|delete|create|remove|run|execute|make|perform|read|access|expose)\s+(.+)$/i.exec(operand)
+    if (explicit) action = explicit[1]!.toLowerCase()
+    const object = (explicit?.[2] ?? operand).replace(/^(?:any|the|these)\s+/i, '')
+    if (/^(?:change|modify|edit|write|delete|create|remove)$/.test(action)) return /^(?:files?|code|source(?:\s+files?)?|repository|repo)$/i.test(object)
+    if (/^(?:run|execute)$/.test(action)) return /^(?:tests?|commands?|scripts?|server|application|app)$/i.test(object)
+    if (/^(?:make|perform)$/.test(action)) return /^network\s+(?:calls?|requests?)$/i.test(object)
+    if (/^(?:read|access|expose)$/.test(action)) return /^(?:secrets?(?:\/environment\s+files?)?|environment\s+files?|runtime\s+user\s+data)$/i.test(object)
+    return false
+  })
+}
+
+/** Remove generic task framing without removing concrete source restrictions. */
+export function retrievalSubjectPrompt(prompt: string): string {
+  const regions = scanPromptRegions(prompt)
+  const subject = prompt.replace(EVIDENCE_SCOPE_DIRECTIVE_RE, (clause, offset: number) => (
+    !isPromptDataOffset(regions, offset) && /\bsource\b/i.test(clause)
+      && /\b(?:tests?|config(?:uration)?|readme)\b/i.test(clause) ? ' ' : clause
+  ))
+  return removeProceduralClauses(subject, false)
+}
+
+/** Ranking-only view. The original prompt must still supply exclusions and
+ * policy; removing a prohibition here does not grant permission to ignore it. */
+export function retrievalSearchPrompt(prompt: string): string {
+  return removeProceduralClauses(retrievalSubjectPrompt(prompt), true)
+}
+
+const COMPLETE_ARTIFACT_OPERANDS = EXCLUDED_DOMAIN_HINTS.map(mapping => ({
+  domain: mapping.domain,
+  pattern: new RegExp(`^(?:${mapping.pattern.source})$`, mapping.pattern.flags),
+}))
+
+/** The existing action prohibitions are separate from source exclusions. */
+function isOperationalExclusionOperand(term: string): boolean {
+  return /^(?:change|modify|edit|write|create|delete|remove|mutate|overwrite|run|execute|invoke|call)\b/i.test(term)
+    || /^(?:read|search|access)\s+(?:outside|beyond)\b/i.test(term)
+    || /^browse\s+(?:the\s+)?(?:web|internet)\b/i.test(term)
+}
+
+/** Ambiguous modifiers need a whole evidence operand, not a domain word inside a condition. */
+function hasCompleteEvidenceOperands(phrase: string, allowOperations: boolean): boolean {
+  const operands = phrase.split(/\s*(?:,| and | or )\s*/i)
+    .map(value => value.trim().replace(/^[`"']|[`"']$/g, '').replace(/^(?:the|any)\s+/i, '').trim())
+  return operands.length > 0 && operands.every(operand => {
+    if (!operand) return false
+    if (allowOperations && isOperationalExclusionOperand(operand)) return true
+    if (sourceExclusionPathOperand(operand)) return true
+    if (sourceExclusionSymbolOperand(operand)) return true
+    // Slash-qualified paths retain their syntax here. The output normalizer
+    // below still supplies the existing path hints and domain classifications.
+    if (/^(?:(?:[A-Za-z]:)?[/\\]|\.{1,2}[/\\])?(?:[\w@.-]+[/\\])+[\w@.*-]*$/.test(operand)) return true
+    if (/^[\w@.-]+\.(?:[cm]?[jt]sx?|json|ya?ml|toml|mdx?)$/i.test(operand)) return true
+    if (COMPLETE_ARTIFACT_OPERANDS.some(mapping => mapping.domain !== 'config' && mapping.pattern.test(operand))) return true
+    const qualified = /^(.*?)\s+(?:source(?:\s+files?)?|files?|directories|folders?|code|artifacts?)$/i.exec(operand)
+    return !!qualified && COMPLETE_ARTIFACT_OPERANDS.some(mapping => mapping.pattern.test(qualified[1]!))
+  })
+}
+
+/** A do-not action can constrain evidence only through a complete source scope. */
+function sourceAccessExclusionOperands(phrase: string): string[] {
+  const operands: string[] = []
+  let sourceAccess = false
+  for (const part of phrase.split(/\s*(?:,| and | or )\s*/i)) {
+    const operand = part.trim().replace(/^(?:and|or)\s+/i, '')
+    const access = /^(?:read|use|access|search|inspect|consult|consider)\s+(.+)$/i.exec(operand)
+    const scope = access?.[1] ?? operand
+    // A noun continuation inherits its preceding source-access action, never
+    // an unrelated action such as "infer", "compare", or "run".
+    const quotedSymbol = /^`[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\(\))?`$/.test(scope.trim())
+    sourceAccess = (access !== null || sourceAccess)
+      && (hasCompleteEvidenceOperands(scope, false) || sourceExclusionPathOperand(scope) || quotedSymbol)
+    if (sourceAccess) operands.push(...splitExclusionPhrase(scope))
+  }
+  return operands
+}
+
+function exclusionInstructionPrefix(prompt: string, index: number): string {
+  const before = prompt.slice(0, index)
+  const sentenceStart = [...before.matchAll(/[;!?\n]|\.(?=\s|$)/g)].at(-1)
+  return before.slice(sentenceStart ? sentenceStart.index + sentenceStart[0].length : 0).trim()
+}
+
+/** Do not let a described condition consume a later explicit exclusion. */
+function exclusionSpans(prompt: string, regions: readonly PromptRegion[]): Array<{ start: number; operatorStart: number; end: number; phrase: string }> {
+  const spans: Array<{ start: number; operatorStart: number; end: number; phrase: string }> = []
+  for (const match of prompt.matchAll(EXCLUSION_SPAN_RE)) {
+    let start = match.index, operatorStart = start
+    const end = start + match[0].length
+    const add = (last: number): void => {
+      const text = prompt.slice(operatorStart, last)
+      const operator = /^(?:do not include|don't include|\w+)\b\s+/i.exec(text)
+      if (operator) spans.push({ start, operatorStart, end: last, phrase: text.slice(operator[0].length).trim() })
+    }
+    for (const boundary of match[0].matchAll(/(?:,\s*(?:(?:and|but|however)\s+)?|\band\s+)(?:please\s+)?(?=(?:exclude|ignore|omit|skip|do not include|don't include)\b)/gi)) {
+      const next = match.index + boundary.index + boundary[0].length
+      if (isPromptDataOffset(regions, next)) continue
+      const boundaryStart = match.index + boundary.index
+      add(boundaryStart)
+      start = boundaryStart; operatorStart = next
+    }
+    add(end)
+  }
+  return spans
+}
 
 export function classifyRetrievalLevel(input: RetrievalGateInput): RetrievalGateDecision {
   const prompt = input.prompt ?? ''
   const exclusions = extractPromptExclusions(prompt)
-  const positivePrompt = exclusions.positivePrompt
+  // An evidence allowlist is not the task being requested. Keep its original
+  // scope in the caller's prompt, but do not infer "write tests" or a README
+  // lookup from "Use only source, tests, configuration, and root README.md".
+  const positivePrompt = retrievalSubjectPrompt(exclusions.positivePrompt)
   const detectedPaths = input.mentionedPaths ?? detectPaths(positivePrompt)
+  const detectedDirectories = detectDirectories(positivePrompt)
   const detectedSymbols = input.mentionedSymbols ?? detectSymbols(positivePrompt)
   const hasStackTrace = input.hasStackTrace ?? STACK_TRACE_RE.test(prompt)
   const hasPrDiff = input.hasPrDiff === true
@@ -110,6 +258,7 @@ export function classifyRetrievalLevel(input: RetrievalGateInput): RetrievalGate
     has_pr_diff: hasPrDiff,
     has_stack_trace: hasStackTrace,
     mentioned_paths: detectedPaths,
+    ...(detectedDirectories.length ? { mentioned_directories: detectedDirectories } : {}),
     mentioned_symbols: detectedSymbols,
     generation_intent: generationIntent,
     target_domain_hint: targetDomainHint,
@@ -295,7 +444,32 @@ function targetDomainHintForGenerationIntent(intent: RetrievalGenerationIntent):
 function detectPaths(prompt: string): string[] {
   const out = new Set<string>()
   for (const match of prompt.matchAll(PATH_RE)) {
+    if (/^[\\/]/.test(prompt.slice(match.index + match[0].length))) continue
     if (match[1]) out.add(match[1])
+  }
+  for (const match of prompt.matchAll(QUOTED_PATH_RE)) {
+    if (match[2]) out.add(match[2])
+  }
+  // Unconsumed exclusion syntax is ambiguous here (an operand can contain a
+  // filename dot). Preserve legacy detection instead of adding a positive scope.
+  if (exclusionSpans(prompt, scanPromptRegions(prompt)).length) return [...out]
+  const quoted = [...prompt.matchAll(/`[^`\n]*`|"(?:\\.|[^"\\])*"|(?<!\w)'(?:\\.|[^'\\])*'(?!\w)/g)]
+  for (const match of prompt.matchAll(PARENTHETICAL_SOURCE_PATH_RE)) {
+    const start = match.index + match[0].indexOf('(')
+    if (!quoted.some(quote => quote.index <= start && start < quote.index + quote[0].length)) out.add(match[1]!)
+  }
+  return [...out]
+}
+
+/** A directory narrows where to look; it does not request every declaration there. */
+function detectDirectories(prompt: string): string[] {
+  const out = new Set<string>()
+  for (const match of prompt.matchAll(DIRECTORY_RE)) {
+    const normalized = match[1]!.replaceAll('\\', '/')
+    const segments = normalized.split('/').filter(Boolean)
+    if (segments[0] === '.') segments.shift()
+    if (!segments.length || segments.some(segment => segment === '.' || segment === '..')) continue
+    out.add(`${segments.join('/')}/`)
   }
   return [...out]
 }
@@ -318,26 +492,81 @@ function detectSymbols(prompt: string): string[] {
   return [...out]
 }
 
-export function extractPromptExclusions(prompt: string): {
+/** A verb describing the code is not an instruction to remove that evidence. */
+function isInstructionalExclusion(prompt: string, regions: readonly PromptRegion[], index: number, phrase: string, coordinatedImperative = false): boolean {
+  // Quoted source/error text is the subject, including phrases such as
+  // `ignore invalid records`. Quotes around the excluded operand still work.
+  if (isPromptDataOffset(regions, index)) return false
+  const prefix = exclusionInstructionPrefix(prompt, index)
+  const operator = prompt.slice(index, index + 24).match(/^(?:do not include|don't include|\w+)/i)?.[0]?.toLowerCase()
+  if ((operator === 'not' || operator === 'no') && /^(?:exclude|ignore|omit|skip)\b/i.test(phrase)) return false
+  const polite = /^(?:(?:please|kindly)\s*)?(?:(?:you\s+(?:must|should|can)|(?:can|could|would|will)\s+you)\s*)?(?:please\s*)?$/i
+  // Preserve do-not action prohibitions for the caller to strip from intent;
+  // only complete source-access operands may become evidence exclusions.
+  if (operator === 'not' && /^(?:please\s+)?do$/i.test(prefix)) return true
+  const imperative = /^(?:exclude|ignore|omit|skip|do not include|don't include)$/.test(operator ?? '')
+  if (imperative && coordinatedImperative) return true
+  if (!imperative && !hasCompleteEvidenceOperands(phrase, /^(?:not|no|without)$/.test(operator ?? ''))) return false
+  if (polite.test(prefix)) {
+    if ((operator === 'no' || operator === 'not') && /\b(?:is|are|was|were|has|have|had|can|could|may|might|will|would|should|must|remains?|exists?|matches?|happens?)\b/i.test(phrase)) return false
+    return true
+  }
+  // A request can coordinate a second instruction: "Explain X but ignore Y".
+  // Questions and subordinate clauses instead describe runtime behavior.
+  const directRequest = /^(?:(?:please|kindly)\s+)?(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?)?(?:only\s+)?(?:explain|describe|show|find|locate|read|search|inspect|review|summari[sz]e|trace|list|use|consider|analy[sz]e)\b/i.test(prefix)
+  if (!directRequest) return false
+  // The comma ends the described behavior before a separate instruction:
+  // "Explain how X works, but ignore Y". Without that boundary, preserve
+  // subordinate verbs in "Explain why X includes A but ignores B".
+  if (imperative && /,\s*(?:but|however)(?:\s+please)?$/i.test(prefix)) return true
+  if (/\b(?:how|why|what|which|when|where|whether|if|unless|that|whose|until)\b/i.test(prefix)) return false
+  if (imperative) {
+    return /(?:,|\b(?:and|but|while|however))\s*(?:please\s*)?$/i.test(prefix)
+  }
+  if (operator === 'not' || operator === 'no') return /(?:,|\bbut)\s*$/i.test(prefix)
+  // "Show X excluding tests" and "Explain X without docs" scope a direct
+  // request; the same modifiers inside "how/when/if ..." remain evidence.
+  return true
+}
+
+function parsePromptExclusions(prompt: string, regions: readonly PromptRegion[]): {
   excludedTerms: string[]
   excludedPathHints: string[]
   excludedDomains: RetrievalExcludedDomain[]
   positivePrompt: string
+  spans: Array<{ start: number; end: number }>
 } {
   const excludedTerms = new Set<string>()
   const excludedPathHints = new Set<string>()
   const excludedDomains = new Set<RetrievalExcludedDomain>()
   const spans: Array<{ start: number; end: number }> = []
+  let previousInstructionEnd: number | undefined
 
-  for (const match of prompt.matchAll(EXCLUSION_SPAN_RE)) {
-    const phrase = match[1]?.trim()
-    const index = match.index
-    if (!phrase || index === undefined) {
+  for (const match of exclusionSpans(prompt, regions)) {
+    const phrase = match.phrase
+    // Only an already accepted directive supplies this context, including an
+    // operational prohibition or a standalone scope such as "No tests".
+    // Rejected descriptions and quoted source never supply it.
+    const coordinated = previousInstructionEnd !== undefined
+      && /^\s*(?:,\s*(?:(?:and|but|however)\s+)?|(?:and|but|while|however)\s+)(?:please\s+)?$/i.test(prompt.slice(previousInstructionEnd, match.operatorStart))
+    if (!phrase || !isInstructionalExclusion(prompt, regions, match.operatorStart, phrase, coordinated)) {
       continue
     }
-    spans.push({ start: index, end: index + match[0].length })
-    for (const term of splitExclusionPhrase(phrase)) {
+    spans.push({ start: match.start, end: match.end })
+    previousInstructionEnd = match.end
+    const actionProhibition = /^not\b/i.test(prompt.slice(match.operatorStart, match.end))
+      && /^(?:please\s+)?do$/i.test(exclusionInstructionPrefix(prompt, match.operatorStart))
+    const terms = actionProhibition ? sourceAccessExclusionOperands(phrase) : splitExclusionPhrase(phrase)
+    for (const term of terms) {
+      // A prohibition on agent actions is not an exclusion of source evidence.
+      // For example, "do not change files or run tests" still permits reading
+      // those files, and "do not read outside this workspace" does not exclude
+      // source whose absolute path contains the word "workspace".
+      if (!actionProhibition && /^(?:not|no|without)\b/i.test(prompt.slice(match.operatorStart, match.end)) && isOperationalExclusionOperand(term)) continue
       excludedTerms.add(term)
+      // A specific source scope does not exclude its extension or every file
+      // in a domain whose word happens to appear in its basename.
+      if (sourceExclusionPathOperand(term) || sourceExclusionSymbolOperand(term)) continue
       const hint = normalizeExclusionPathHint(term)
       if (hint) {
         excludedPathHints.add(hint)
@@ -364,14 +593,58 @@ export function extractPromptExclusions(prompt: string): {
     excludedPathHints: [...excludedPathHints],
     excludedDomains: [...excludedDomains],
     positivePrompt,
+    spans,
   }
+}
+
+/** Preserve the public evidence result, including its original positive prompt. */
+export function extractPromptExclusions(prompt: string): {
+  excludedTerms: string[]
+  excludedPathHints: string[]
+  excludedDomains: RetrievalExcludedDomain[]
+  positivePrompt: string
+} {
+  const { spans: _spans, ...result } = parsePromptExclusions(prompt, scanPromptRegions(prompt))
+  return result
+}
+
+/** Evidence view: remove accepted instructions without rewriting quoted data.
+ * The public positivePrompt remains normalized for its existing consumers.
+ */
+export function retrievalEvidencePrompt(prompt: string): string {
+  const { spans } = parsePromptExclusions(prompt, scanPromptRegions(prompt))
+  return retrievalSubjectPrompt(maskPromptRegions(prompt, spans))
+}
+
+/** Preserve legacy noun-pass normalization while denying request nouns inside data. */
+export function retrievalSymbolKeywordPrompt(prompt: string): string {
+  const regions = scanPromptRegions(prompt)
+  const { spans } = parsePromptExclusions(prompt, regions)
+  const nouns = [...prompt.matchAll(/\b(?:functions?|methods?|symbols?)(?=\s+[`'"]?[A-Za-z_$])/g)]
+    .filter(match => isPromptDataOffset(regions, match.index))
+    .map(match => ({ start: match.index, end: match.index + match[0].length }))
+  const masked = maskPromptRegions(prompt, nouns)
+  return retrievalSubjectPrompt(spans.length === 0 ? masked : compressPrompt(excludePromptSpans(masked, spans)))
+}
+
+/** Instruction-only view. Discover regions and exclusions on the original text
+ * before whitespace compression can erase fence boundaries. Quoted operands
+ * remain source scopes, while their entire accepted exclusion is masked here. */
+export function retrievalDirectivePrompt(prompt: string): string {
+  const regions = scanPromptRegions(prompt)
+  const { spans } = parsePromptExclusions(prompt, regions)
+  return retrievalSubjectPrompt(maskPromptRegions(maskPromptRegions(prompt, regions), spans))
 }
 
 function splitExclusionPhrase(phrase: string): string[] {
   return phrase
     .split(/\s*(?:,| and | or )\s*/i)
-    .map((part) => part.trim().replace(/^[^A-Za-z0-9_]+|[^A-Za-z0-9_]+$/g, ''))
-    .map((part) => part.replace(/^(?:the|any|and)\s+/i, ''))
+    .map((part) => part.trim().replace(/^(?:the|any|and|or)\s+/i, ''))
+    .map((part) => sourceExclusionPathOperand(part)
+      ? (/\s/.test(part) ? part : part.replace(/^([`"'])(.*)\1$/, '$2'))
+      : sourceExclusionSymbolOperand(part)
+        ? unquoteSourceExclusionOperand(part)
+        : part.replace(/^[^A-Za-z0-9_]+|[^A-Za-z0-9_]+$/g, ''))
     .filter((part) => part.length > 0)
 }
 
@@ -395,5 +668,5 @@ function excludePromptSpans(prompt: string, spans: ReadonlyArray<{ start: number
 }
 
 function compressPrompt(prompt: string): string {
-  return prompt.replace(/\s+/g, ' ').replace(/\s+([,.;])/g, '$1').trim()
+  return prompt.replace(/\s+/g, ' ').replace(/\s+([,;]|\.(?!\.?[\\/]))/g, '$1').trim()
 }

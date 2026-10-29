@@ -114,6 +114,7 @@ describe('riskMap', () => {
       affectedCommunities: ['One'],
       hotspotKinds: ['bridge', 'god node'],
       dependentCount: 1,
+      traversal: { status: 'depth_limited', depth: 1, node_limit: 500 },
     })
     const higherScoreFewerHotspots = buildRankedRisk({
       label: 'HigherScoreFewerHotspots',
@@ -128,5 +129,8 @@ describe('riskMap', () => {
       'HigherScoreFewerHotspots',
       'LowerScoreMoreHotspots',
     ])
+    expect(lowerScoreMoreHotspots.score).toBe(17)
+    expect(lowerScoreMoreHotspots.reason).toContain('lower bounds (depth_limited)')
+    expect(lowerScoreMoreHotspots.traversal).toEqual({ status: 'depth_limited', depth: 1, node_limit: 500 })
   })
 })

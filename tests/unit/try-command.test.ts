@@ -103,31 +103,35 @@ function createDependencies(overrides: Partial<TryCommandDependencies> = {}): Tr
 }
 
 describe('runTryCommand', () => {
-  it('reuses a fresh graph and forces a text explain pack', async () => {
-    const workspace = resolve('/tmp/workspace')
-    const graphPath = resolve(workspace, 'out', 'graph.json')
-    const { io } = createIo()
-    const dependencies = createDependencies({
-      pathExists: vi.fn().mockImplementation((path: string) => path === graphPath),
-      analyzeFreshness: vi.fn().mockImplementation((path: string) => createFreshness('fresh', path)),
-    })
+  it.each(['claude', 'cursor', 'copilot', 'gemini', 'codex', 'opencode', 'aider'] as const)(
+    'reuses a fresh graph and recommends the supported %s source integration', async (platform) => {
+      const workspace = resolve('/tmp/workspace')
+      const graphPath = resolve(workspace, 'out', 'graph.json')
+      const { io } = createIo()
+      const dependencies = createDependencies({
+        defaultInstallPlatform: vi.fn().mockReturnValue(platform),
+        pathExists: vi.fn().mockImplementation((path: string) => path === graphPath),
+        analyzeFreshness: vi.fn().mockImplementation((path: string) => createFreshness('fresh', path)),
+      })
 
-    const output = await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
+      const output = await runTryCommand({ prompt: 'how does auth work?', path: workspace }, io, dependencies)
 
-    expect(dependencies.generateGraph).not.toHaveBeenCalled()
-    expect(dependencies.runContextPack).toHaveBeenCalledWith({
-      options: {
-        prompt: 'how does auth work?',
-        budget: 3000,
-        task: 'explain',
-        graphPath,
-        format: 'text',
-      },
-      io,
-    })
-    expect(output).toContain('text pack')
-    expect(output).toContain('madar claude install')
-  })
+      expect(dependencies.generateGraph).not.toHaveBeenCalled()
+      expect(dependencies.runContextPack).toHaveBeenCalledWith({
+        options: {
+          prompt: 'how does auth work?',
+          budget: 3000,
+          task: 'explain',
+          graphPath,
+          format: 'text',
+        },
+        io,
+      })
+      expect(output).toContain('text pack')
+      const profile = ['claude', 'cursor', 'copilot', 'gemini'].includes(platform) ? ' --profile strict' : ''
+      expect(output.trimEnd().split('\n').at(-1)).toBe(`  madar ${platform} install${profile}`)
+    },
+  )
 
   it.each(['partially_stale', 'possibly_stale', 'stale'] as const)(
     'rebuilds a %s graph before running the pack',

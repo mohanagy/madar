@@ -36,26 +36,25 @@ describe('source discovery', () => {
     expect(classifySourceDomain(file, sandbox)).toBe('production')
   })
 
-  it('still hard-ignores top-level lib build output', () => {
-    const file = join(sandbox, 'lib/index.js')
-    mkdirSync(join(file, '..'), { recursive: true })
-    writeFileSync(file, 'export function helper() { return 1 }\n', 'utf8')
-
-    const patterns = loadMadarignorePatterns(sandbox)
-
-    expect(isDiscoveryPathIgnored(file, sandbox, patterns)).toBe(true)
-    expect(classifySourceDomain(file, sandbox)).toBe('build_artifact')
+  it('admits JavaScript runtime source under top-level lib', () => {
+    for (const extension of ['js', 'cjs', 'mjs']) {
+      const file = join(sandbox, `lib/index.${extension}`)
+      mkdirSync(join(file, '..'), { recursive: true })
+      writeFileSync(file, 'export function helper() { return 1 }\n', 'utf8')
+      expect(isDiscoveryPathIgnored(file, sandbox, loadMadarignorePatterns(sandbox))).toBe(false)
+      expect(classifySourceDomain(file, sandbox)).toBe('production')
+    }
   })
 
-  it('still hard-ignores top-level lib declaration output', () => {
+  it('admits lib declarations and preserves deliberate generated-output exclusion', () => {
     const file = join(sandbox, 'lib/helper.d.ts')
     mkdirSync(join(file, '..'), { recursive: true })
     writeFileSync(file, 'export declare function helper(): number\n', 'utf8')
 
-    const patterns = loadMadarignorePatterns(sandbox)
-
-    expect(isDiscoveryPathIgnored(file, sandbox, patterns)).toBe(true)
-    expect(classifySourceDomain(file, sandbox)).toBe('build_artifact')
+    expect(isDiscoveryPathIgnored(file, sandbox, loadMadarignorePatterns(sandbox))).toBe(false)
+    expect(classifySourceDomain(file, sandbox)).toBe('production')
+    writeFileSync(join(sandbox, '.madarignore'), 'lib/**\n')
+    expect(isDiscoveryPathIgnored(file, sandbox, loadMadarignorePatterns(sandbox))).toBe(true)
   })
 
   it('does not hard-ignore hand-written TypeScript source under top-level lib', () => {

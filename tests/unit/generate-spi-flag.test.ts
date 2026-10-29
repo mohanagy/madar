@@ -9,6 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, test } from 'vitest'
 
 import { parseGenerateArgs } from '../../src/cli/parser.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
+import { buildGenerationPolicy } from '../../src/infrastructure/generation-policy.js'
+import { EXTRACTOR_CACHE_VERSION } from '../../src/pipeline/extract.js'
+import { buildSpiCached } from '../../src/pipeline/spi/cache.js'
 
 function mkSandbox(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -52,6 +55,100 @@ describe('generateGraph capability-aware auto extraction', () => {
   let sandbox: string
   beforeEach(() => { sandbox = mkSandbox('generate-auto-') })
   afterEach(() => { rmSync(sandbox, { recursive: true, force: true }) })
+
+  it('enables case-distinct allocation only for explicit SPI generation', () => {
+    writeFile(sandbox, 'case.ts', [
+      'export function Beacon() { return 1 }',
+      'export function beacon() { return 2 }',
+      'export function Singleton() { return 3 }',
+    ].join('\n') + '\n')
+    for (const extractionMode of ['auto', 'spi', 'legacy'] as const) {
+      const result = generateGraph(sandbox, { noHtml: true, extractionMode })
+      const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+        extractor_version: number
+        nodes: Array<{ id: string; label: string }>
+      }
+      expect(graph.extractor_version).toBe(EXTRACTOR_CACHE_VERSION)
+      expect(graph.nodes.find(node => node.label === 'Singleton()')?.id).toBe('case_singleton')
+      const owners = graph.nodes.filter(node => node.label === 'Beacon()' || node.label === 'beacon()')
+      expect(owners).toHaveLength(extractionMode === 'spi' ? 2 : 1)
+      if (extractionMode === 'spi') {
+        expect(owners.every(node => node.id.startsWith('case_beacon__case_'))).toBe(true)
+        expect(graph.nodes.some(node => node.id === 'case_beacon')).toBe(false)
+      } else {
+        expect(owners[0]?.id).toBe('case_beacon')
+        expect(graph.nodes.some(node => node.id.includes('__case_'))).toBe(false)
+      }
+    }
+  })
+
+  it.each([false, true])('preserves the full function range and body in the default auto graph (Express metadata: %s)', (withFramework) => {
+    const source = [
+      'export function processRequest(input: string) {',
+      '  if (!input) {',
+      '    throw new Error("missing input")',
+      '  }',
+      '  return input.trim()',
+      '}',
+    ].join('\n')
+    writeFile(sandbox, 'src/request.ts', withFramework
+      ? `import express from "express"\nconst app = express()\n${source}\napp.post("/requests", processRequest)\n`
+      : `${source}\n`)
+
+    const result = generateGraph(sandbox, { noHtml: true })
+    const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as { nodes: Array<Record<string, unknown>> }
+
+    expect(graph.nodes.find((node) => node.label === 'processRequest()')).toMatchObject({
+      source_location: withFramework ? 'L3-L8' : 'L1-L6',
+      snippet: source,
+      extraction_strategy: 'spi',
+      provenance: [expect.objectContaining({ capability_id: 'builtin:extract:typescript', stage: 'extract' })],
+      ...(withFramework ? { framework: 'express', framework_role: 'express_route', route_path: '/requests' } : {}),
+    })
+  })
+
+  it('rebuilds old cached auto evidence on update even when source files are unchanged', () => {
+    const source = 'export function processRequest(input: string) {\n  return input.trim()\n}'
+    const sourcePath = join(sandbox, 'src/request.ts')
+    writeFile(sandbox, 'src/request.ts', `${source}\n`)
+    const first = generateGraph(sandbox, { noHtml: true })
+    const previousVersion = EXTRACTOR_CACHE_VERSION - 1
+    const previousPolicy = buildGenerationPolicy(sandbox, {}, previousVersion, null)
+    const graph = JSON.parse(readFileSync(first.graphPath, 'utf8')) as {
+      extractor_version: number
+      generation_policy: unknown
+      nodes: Array<Record<string, unknown>>
+    }
+    graph.extractor_version = previousVersion
+    graph.generation_policy = previousPolicy
+    const oldNode = graph.nodes.find((node) => node.label === 'processRequest()')!
+    oldNode.source_location = 'L1'
+    delete oldNode.snippet
+    writeFileSync(first.graphPath, JSON.stringify(graph), 'utf8')
+    const manifestPath = join(first.outputDir, 'manifest.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+    manifest.generation_policy = previousPolicy
+    writeFileSync(manifestPath, JSON.stringify(manifest), 'utf8')
+    buildSpiCached({
+      root: sandbox,
+      madarVersion: `spi-extractor-${previousVersion}`,
+      extractorVersion: `spi-v1.0.0-enqueues-job-${previousVersion}`,
+      includedFiles: new Set([sourcePath]),
+    })
+
+    const updated = generateGraph(sandbox, { update: true, noHtml: true })
+    const updatedGraph = JSON.parse(readFileSync(updated.graphPath, 'utf8')) as {
+      extractor_version: number
+      nodes: Array<Record<string, unknown>>
+    }
+
+    expect(updated.notes.join('\n')).toContain('Generation policy changed')
+    expect(updated.cache).toMatchObject({ strategy: 'spi', hit: false })
+    expect(updatedGraph.extractor_version).toBe(EXTRACTOR_CACHE_VERSION)
+    expect(updatedGraph.nodes.find((node) => node.label === 'processRequest()')).toMatchObject({
+      source_location: 'L1-L3', snippet: source,
+    })
+  })
 
   function writeMixedWorkspace(): void {
     writeFile(sandbox, 'src/main.ts', [

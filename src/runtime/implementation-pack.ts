@@ -1,5 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname } from 'node:path'
 
 import type {
   ContextPackExecutionSlice,
@@ -11,6 +10,7 @@ import type {
   ImplementationPackRetrievalPipeline,
   ImplementationPackRiskBoundary,
   ImplementationPackSurfaceHint,
+  ImplementationPackValidationDiscovery,
 } from '../contracts/context-pack.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
@@ -20,6 +20,7 @@ import { lineNumberFromSourceLocation } from '../shared/source-location.js'
 import { relativizeSourceFile } from '../shared/source-path.js'
 import { riskMap } from './risk-map.js'
 import type { RetrieveMatchedNode, RetrieveResult } from './retrieve.js'
+import { inspectRootPackageValidation } from './validation-discovery.js'
 
 const CONTRACT_PATH_PATTERN = /(?:^|\/)(?:contracts?|schemas?|dto|types?|interfaces?|openapi|graphql)(?:\/|$)|(?:^|\/)[^/]*\.d\.ts$/i
 const CONTRACT_NODE_KINDS = new Set(['interface', 'type', 'type_alias', 'typealias', 'enum', 'schema', 'contract'])
@@ -1323,32 +1324,6 @@ function retrievalPipeline(
   }
 }
 
-function readWorkspacePackageScripts(rootPath?: string): { scripts: PackageScripts; warnings: string[] } {
-  if (!rootPath) {
-    return { scripts: {}, warnings: ['No workspace root was recorded, so validation commands could not inspect package.json.'] }
-  }
-
-  const packageJsonPath = join(rootPath, 'package.json')
-  if (!existsSync(packageJsonPath)) {
-    return { scripts: {}, warnings: ['No package.json was found in the analyzed workspace root.'] }
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { scripts?: unknown }
-    if (!parsed.scripts || typeof parsed.scripts !== 'object' || Array.isArray(parsed.scripts)) {
-      return { scripts: {}, warnings: ['The analyzed workspace package.json does not define scripts for validation commands.'] }
-    }
-
-    const scripts = Object.fromEntries(
-      Object.entries(parsed.scripts)
-        .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].trim().length > 0),
-    )
-    return { scripts, warnings: [] }
-  } catch {
-    return { scripts: {}, warnings: ['Could not parse the analyzed workspace package.json to derive validation commands.'] }
-  }
-}
-
 function testCommandForScripts(scripts: PackageScripts, testFiles: readonly string[]): string[] {
   const commands: string[] = []
   if (testFiles.length > 0 && Object.hasOwn(scripts, 'test:run')) {
@@ -1369,8 +1344,9 @@ function prefixTestPathFlagLikeArg(path: string): string {
 function validationCommands(rootPath: string | undefined, testFiles: readonly ImplementationPackFileHint[]): {
   commands: string[]
   warnings: string[]
+  discovery: ImplementationPackValidationDiscovery
 } {
-  const { scripts, warnings } = readWorkspacePackageScripts(rootPath)
+  const { scripts, warnings, discovery } = inspectRootPackageValidation(rootPath)
   const commands = [
     ...(Object.hasOwn(scripts, 'typecheck') ? ['npm run typecheck'] : []),
     ...(Object.hasOwn(scripts, 'build') ? ['npm run build'] : []),
@@ -1380,6 +1356,7 @@ function validationCommands(rootPath: string | undefined, testFiles: readonly Im
   return {
     commands: [...new Set(commands)],
     warnings,
+    discovery,
   }
 }
 
@@ -1532,6 +1509,7 @@ export function buildImplementationPackGuidance(
     existing_patterns,
     risk_boundaries,
     validation_commands: validation.commands,
+    validation_discovery: validation.discovery,
     acceptance_criteria_summary: acceptanceCriteriaSummary(
       retrieval.question,
       likely_edit_files,

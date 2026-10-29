@@ -5,14 +5,17 @@ import { communitiesFromGraph } from './serve.js'
 
 const MAX_IMPACT_DEPTH = 5
 const MAX_IMPACT_NODES = 500
+const MAX_IMPACT_TARGET_CANDIDATES = 20
 
 export interface ImpactOptions {
-  label: string
+  label?: string
+  nodeId?: string
   depth?: number
   edgeTypes?: string[]
 }
 
 export interface ImpactNode {
+  node_id: string
   label: string
   source_file: string
   node_kind?: string
@@ -24,8 +27,19 @@ export interface ImpactNode {
   relation: string
 }
 
+export type ImpactTraversalStatus = 'complete' | 'depth_limited' | 'node_limited'
+
+export interface ImpactTraversal {
+  /** Completeness of traversal in the supplied static graph, not runtime behavior. */
+  status: ImpactTraversalStatus
+  depth: number
+  /** Includes the target node. */
+  node_limit: number
+}
+
 export interface ImpactResult {
   target: string
+  target_node_id?: string
   target_file: string
   target_file_type?: string
   depth: number
@@ -35,6 +49,8 @@ export interface ImpactResult {
   affected_communities: Array<{ id: number; label: string; node_count: number }>
   top_paths_per_community: Array<{ id: number; label: string; distance: number; path: string[] }>
   total_affected: number
+  /** Absent on legacy stored results; current analyses always report traversal scope. */
+  traversal?: ImpactTraversal
 }
 
 export interface CompactImpactNode extends Omit<ImpactNode, 'community_label' | 'file_type' | 'framework_role'> {
@@ -156,6 +172,66 @@ function findNodeByLabel(graph: KnowledgeGraph, label: string): string | null {
   return null
 }
 
+export interface ImpactTargetCandidate {
+  node_id: string
+  label: string
+  source_file: string
+}
+
+export class ImpactTargetResolutionError extends Error {
+  readonly candidates: ImpactTargetCandidate[]
+  readonly total_candidates: number
+
+  constructor(
+    readonly status: 'ambiguous_target' | 'target_not_found',
+    readonly selector: string,
+    candidates: ImpactTargetCandidate[] = [],
+  ) {
+    const shown = candidates.slice(0, MAX_IMPACT_TARGET_CANDIDATES)
+    super(status === 'ambiguous_target'
+      ? `Impact target ${JSON.stringify(selector)} is ambiguous (${candidates.length} matches, showing ${shown.length}); use node_id or a narrower label: ${shown.map((node) => `${node.node_id} (${node.source_file})`).join(', ')}`
+      : `Impact target ${JSON.stringify(selector)} was not found; refresh the graph or select an existing node_id or label.`)
+    this.name = 'ImpactTargetResolutionError'
+    this.candidates = shown
+    this.total_candidates = candidates.length
+  }
+}
+
+function resolveImpactTarget(graph: KnowledgeGraph, options: ImpactOptions): string | null {
+  // An explicit identity is authoritative, including when it is stale or invalid.
+  if (options.nodeId !== undefined) {
+    if (!graph.hasNode(options.nodeId)) {
+      throw new ImpactTargetResolutionError('target_not_found', options.nodeId)
+    }
+    return options.nodeId
+  }
+
+  const label = options.label?.trim() ?? ''
+  if (!label) return null
+  const normalizedLabel = label.toLowerCase()
+  const exact: ImpactTargetCandidate[] = []
+  const prefixes: ImpactTargetCandidate[] = []
+  const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : undefined
+  for (const [nodeId, attributes] of graph.nodeEntries()) {
+    const nodeLabel = String(attributes.label ?? '').trim()
+    if (!nodeLabel) continue
+    const normalizedNodeLabel = nodeLabel.toLowerCase()
+    const candidate = {
+      node_id: nodeId,
+      label: nodeLabel,
+      source_file: relativizeSourceFile(String(attributes.source_file ?? ''), rootPath),
+    }
+    if (normalizedNodeLabel === normalizedLabel) exact.push(candidate)
+    else if (normalizedNodeLabel.startsWith(normalizedLabel) || normalizedLabel.startsWith(normalizedNodeLabel)) prefixes.push(candidate)
+  }
+  const candidates = exact.length > 0 ? exact : prefixes
+  if (candidates.length > 1) {
+    candidates.sort((a, b) => a.source_file.localeCompare(b.source_file) || a.node_id.localeCompare(b.node_id))
+    throw new ImpactTargetResolutionError('ambiguous_target', label, candidates)
+  }
+  return candidates[0]?.node_id ?? null
+}
+
 function parseCommunityId(raw: unknown): number | null {
   if (typeof raw === 'number' && Number.isFinite(raw)) {
     return raw
@@ -193,21 +269,11 @@ export function analyzeImpact(
   requireDirectedGraph(graph, 'Impact analysis')
 
   const maxDepth = Math.min(options.depth ?? 3, MAX_IMPACT_DEPTH)
-  const targetNodeId = findNodeByLabel(graph, options.label)
+  const targetNodeId = resolveImpactTarget(graph, options)
   const rootPath = typeof graph.graph.root_path === 'string' ? graph.graph.root_path : undefined
 
   if (!targetNodeId) {
-    return {
-      target: options.label,
-      target_file: '',
-      depth: maxDepth,
-      direct_dependents: [],
-      transitive_dependents: [],
-      affected_files: [],
-      affected_communities: [],
-      top_paths_per_community: [],
-      total_affected: 0,
-    }
+    throw new ImpactTargetResolutionError('target_not_found', options.label?.trim() ?? '')
   }
 
   const targetAttributes = graph.nodeAttributes(targetNodeId)
@@ -221,8 +287,9 @@ export function analyzeImpact(
   const directDependents: ImpactNode[] = []
   const transitiveDependents: ImpactNode[] = []
   const discoveredDependents: Array<{ nodeId: string; path: string[]; node: ImpactNode }> = []
+  let traversalStatus: ImpactTraversalStatus = 'complete'
 
-  while (queue.length > 0 && visited.size < MAX_IMPACT_NODES) {
+  traversal: while (queue.length > 0) {
     const current = queue.shift()
     if (!current || current.distance >= maxDepth) {
       continue
@@ -231,6 +298,13 @@ export function analyzeImpact(
     for (const { neighborId, relation } of impactNeighbors(graph, current.nodeId, options.edgeTypes)) {
       if (visited.has(neighborId)) {
         continue
+      }
+      // Reaching capacity alone is not truncation: a graph with exactly this
+      // many reachable nodes may be exhausted. Only an unseen eligible node
+      // proves that further impact was omitted.
+      if (visited.size >= MAX_IMPACT_NODES) {
+        traversalStatus = 'node_limited'
+        break traversal
       }
 
       const distance = current.distance + 1
@@ -241,6 +315,7 @@ export function analyzeImpact(
       const community = parseCommunityId(attributes.community)
       const nodeKind = String(attributes.node_kind ?? '')
       const node: ImpactNode = {
+        node_id: neighborId,
         label: String(attributes.label ?? neighborId),
         source_file: relativizeSourceFile(String(attributes.source_file ?? ''), rootPath),
         framework_role: String(attributes.framework_role ?? '') || null,
@@ -260,6 +335,17 @@ export function analyzeImpact(
 
       discoveredDependents.push({ nodeId: neighborId, path, node })
       queue.push({ nodeId: neighborId, distance, path })
+    }
+  }
+
+  // Inspect the final frontier so a boundary edge to an already visited node
+  // (including a cycle) does not incorrectly imply omitted impact.
+  if (traversalStatus !== 'node_limited') {
+    for (const [nodeId, distance] of visited) {
+      if (distance >= maxDepth && impactNeighbors(graph, nodeId, options.edgeTypes).some(({ neighborId }) => !visited.has(neighborId))) {
+        traversalStatus = 'depth_limited'
+        break
+      }
     }
   }
 
@@ -314,24 +400,26 @@ export function analyzeImpact(
 
   return {
     target: String(targetAttributes.label ?? targetNodeId),
+    target_node_id: targetNodeId,
     target_file: relativizeSourceFile(String(targetAttributes.source_file ?? ''), rootPath),
     ...(String(targetAttributes.file_type ?? '').trim().length > 0 ? { target_file_type: String(targetAttributes.file_type) } : {}),
     depth: maxDepth,
     direct_dependents: directDependents.sort(
       (a, b) =>
         frameworkSummaryRank(b) - frameworkSummaryRank(a) ||
-        a.label.localeCompare(b.label),
+        a.label.localeCompare(b.label) || a.node_id.localeCompare(b.node_id),
     ),
     transitive_dependents: transitiveDependents.sort(
       (a, b) =>
         frameworkSummaryRank(b) - frameworkSummaryRank(a) ||
         a.distance - b.distance ||
-        a.label.localeCompare(b.label),
+        a.label.localeCompare(b.label) || a.node_id.localeCompare(b.node_id),
     ),
     affected_files: [...fileSet].sort(),
     affected_communities: affectedCommunities,
     top_paths_per_community: topPathsPerCommunity,
     total_affected: directDependents.length + transitiveDependents.length,
+    traversal: { status: traversalStatus, depth: maxDepth, node_limit: MAX_IMPACT_NODES },
   }
 }
 
@@ -348,6 +436,7 @@ export function compactImpactResult(result: ImpactResult): CompactImpactResult {
 
   return {
     target: result.target,
+    ...(result.target_node_id !== undefined ? { target_node_id: result.target_node_id } : {}),
     target_file: result.target_file,
     ...(result.target_file_type ? { target_file_type: result.target_file_type } : {}),
     depth: result.depth,
@@ -357,6 +446,7 @@ export function compactImpactResult(result: ImpactResult): CompactImpactResult {
     affected_communities: result.affected_communities,
     top_paths_per_community: result.top_paths_per_community,
     total_affected: result.total_affected,
+    ...(result.traversal ? { traversal: result.traversal } : {}),
     ...(sharedFileType ? { shared_file_type: sharedFileType } : {}),
   }
 }

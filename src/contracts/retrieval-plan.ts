@@ -36,6 +36,8 @@ export interface RetrievalFallbackAttempt {
   changed_result: boolean
   added_selected_files: number
   removed_selected_files: number
+  /** Recovery was rejected because it discarded verified delivered source. */
+  source_evidence_loss?: { protected_spans: number; lost_spans: number }
 }
 
 export interface RetrievalQueryObligationCoverage {

@@ -503,7 +503,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    --mcp                alias for --stdio for installer/runtime parity',
     '    --auto-refresh       reconcile and watch the active workspace while serving over stdio',
     '  summary [graph.json]  print a compact deterministic graph summary as JSON',
-    '  try "<question>" [path] one-command local first proof before agent install',
+    '  try "<question>" [path] experimental source preview before agent install',
     '  query "<question>"     traverse graph.json for a question',
     '    --dfs                 use depth-first instead of breadth-first',
     '    --budget N            cap output at N tokens (default 2000)',
@@ -612,6 +612,7 @@ export function formatHelp(binaryName = 'madar'): string {
     '    status               show whether madar hooks are installed',
     '  telemetry <enable|disable|status|clear|report [spool.json ...]> manage opt-in source-safe local telemetry',
     '  aider <install|uninstall>   manage local AGENTS.md rules',
+    '    Source tools: use --profile strict with Claude/Cursor/Gemini/Copilot for context_pack and context_expand.',
     '  claude <install|uninstall> [--profile core|full|strict]  manage local CLAUDE.md madar rules',
     '  cursor <install|uninstall> [--profile core|full|strict]  manage local Cursor madar rules',
     '  gemini <install|uninstall> [--profile core|full|strict]  manage local GEMINI.md rules and Gemini CLI hook config',
@@ -760,11 +761,11 @@ function formatGenerateSummary(result: GenerateGraphResult): string {
 
   lines.push('')
   lines.push('Next: connect your AI assistant:')
-  lines.push('  madar claude install    # Claude Code')
+  lines.push('  madar claude install --profile strict    # Claude Code')
   lines.push('  madar codex install     # Codex CLI')
-  lines.push('  madar cursor install    # Cursor')
-  lines.push('  madar copilot install   # GitHub Copilot')
-  lines.push('  madar gemini install    # Gemini CLI')
+  lines.push('  madar cursor install --profile strict    # Cursor')
+  lines.push('  madar copilot install --profile strict   # GitHub Copilot')
+  lines.push('  madar gemini install --profile strict    # Gemini CLI')
 
   return lines.join('\n')
 }

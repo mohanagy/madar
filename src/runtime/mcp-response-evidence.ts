@@ -19,6 +19,9 @@ import {
   relevantIndexingUncertainty,
 } from '../infrastructure/indexing-manifest.js'
 import { readGraphSourceRoot } from '../shared/graph-source-root.js'
+import { retrievalSubjectPrompt } from './retrieval-gate.js'
+import type { ImpactTraversal } from './impact.js'
+import type { PrImpactResult } from './pr-impact.js'
 import {
   readDiscoverySafetyMetadata,
   relevantDiscoveryExclusions,
@@ -299,7 +302,7 @@ function answerabilityAssessment(input: {
       caveats: [],
       missing_obligations: [],
       verification_targets: [],
-      broad_search_fallback: 'not_needed',
+      broad_search_fallback: input.sourceVerificationBlocked ? 'blocked' : 'allowed',
     }
   }
   if (complete && input.strength.level === 'moderate') {
@@ -309,7 +312,7 @@ function answerabilityAssessment(input: {
       caveats: [...input.strength.reasons],
       missing_obligations: [],
       verification_targets: [],
-      broad_search_fallback: 'not_needed',
+      broad_search_fallback: input.sourceVerificationBlocked ? 'blocked' : 'allowed',
     }
   }
   if (input.verificationTargets.length > 0) {
@@ -319,7 +322,7 @@ function answerabilityAssessment(input: {
       caveats: selectedEvidence > 0 ? [] : ['no selected evidence; verify the exact target'],
       missing_obligations: input.coverage.missing_obligations,
       verification_targets: input.verificationTargets,
-      broad_search_fallback: 'targeted_only',
+      broad_search_fallback: input.sourceVerificationBlocked ? 'blocked' : 'allowed',
     }
   }
   return {
@@ -347,26 +350,13 @@ function compatibilityConfidence(
 }
 
 export function agentDirectiveForEvidence(
-  packConfidence: MadarResponsePackConfidence,
-  coverage: MadarResponseCoverage,
-  answerContained: boolean | undefined = undefined,
-  answerability?: MadarAnswerabilityAssessment,
+  _packConfidence: MadarResponsePackConfidence,
+  _coverage: MadarResponseCoverage,
+  _answerContained: boolean | undefined = undefined,
+  _answerability?: MadarAnswerabilityAssessment,
 ): MadarResponseAgentDirective {
-  if (answerability) {
-    if (answerability.state === 'ready' || answerability.state === 'ready_with_caveat') {
-      return 'answer_from_pack'
-    }
-    if (answerability.state === 'verify_targets') {
-      return 'verify_one_targeted_file'
-    }
-    return 'explore_with_caution'
-  }
-  if ((answerContained ?? true) && coverage === 'complete' && packConfidence === 'high') {
-    return 'answer_from_pack'
-  }
-  if (coverage !== 'unknown' && packConfidence !== 'low') {
-    return 'verify_one_targeted_file'
-  }
+  // Keep the compatibility field, but never turn ranking/coverage heuristics
+  // into authority over the agent's source investigation.
   return 'explore_with_caution'
 }
 
@@ -562,6 +552,8 @@ export function assessMadarResponseEvidence(input: {
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
   indexingManifest?: IndexingManifestV1 | null | undefined
+  impactTraversal?: ImpactTraversal | undefined
+  impactTraversalSummary?: PrImpactResult['impact_traversal'] | undefined
   missingPhases?: readonly ContextPackExecutionPhase[] | undefined
   question?: string | undefined
   recovery?: ContextPackRecoveryPlan | undefined
@@ -685,6 +677,34 @@ export function assessMadarResponseEvidence(input: {
     coverageDetail = addMissingObligations(coverageDetail, ['runtime:answer_containedness'])
   }
 
+  if (input.impactTraversal && input.impactTraversal.status !== 'complete') {
+    const { status, depth, node_limit: nodeLimit } = input.impactTraversal
+    coverage = 'partial'
+    coverageDetail = addMissingObligations(coverageDetail, [`impact:${status}`])
+    confidenceCap = moreRestrictiveConfidence(confidenceCap, 'medium')
+    evidenceStrength = capEvidenceStrength(evidenceStrength, 'moderate', `impact_${status}`)
+    confidenceReasons.push(
+      `impact traversal: ${status} (depth=${depth}, node_limit=${nodeLimit}); affected counts are lower bounds`,
+    )
+  }
+
+  if (input.impactTraversalSummary && input.impactTraversalSummary.partial_targets > 0) {
+    const summary = input.impactTraversalSummary
+    const statuses = [
+      ...(summary.depth_limited_targets > 0 ? ['depth_limited'] : []),
+      ...(summary.node_limited_targets > 0 ? ['node_limited'] : []),
+    ]
+    coverage = 'partial'
+    coverageDetail = addMissingObligations(coverageDetail, statuses.map(status => `impact:${status}`))
+    confidenceCap = moreRestrictiveConfidence(confidenceCap, 'medium')
+    for (const status of statuses) {
+      evidenceStrength = capEvidenceStrength(evidenceStrength, 'moderate', `impact_${status}`)
+    }
+    confidenceReasons.push(
+      `impact traversal: ${summary.partial_targets}/${summary.analyzed_targets} targets limited (depth_limited=${summary.depth_limited_targets}, node_limited=${summary.node_limited_targets}); affected counts are lower bounds`,
+    )
+  }
+
   const discoverySafety = input.discoverySafety !== undefined
     ? input.discoverySafety
     : input.graphPath
@@ -729,7 +749,7 @@ export function assessMadarResponseEvidence(input: {
       : null
   const indexingUncertainty = indexingManifest
     ? relevantIndexingUncertainty(indexingManifest, {
-        ...(input.question ? { question: input.question } : {}),
+        ...(input.question ? { question: retrievalSubjectPrompt(input.question) } : {}),
         coveredWorkflowOwners,
       })
     : null
@@ -783,7 +803,7 @@ export function assessMadarResponseEvidence(input: {
     evidence_strength: evidenceStrength,
     coverage,
     coverage_detail: coverageDetail,
-    answerability,
+    answerability: { ...answerability, advisory: true },
     ...(input.recovery ? { recovery: input.recovery } : {}),
     missing_phases: missingPhases,
     covered_workflow_owners: coveredWorkflowOwners,
@@ -825,6 +845,8 @@ export function buildMadarResponseEvidence(input: {
   executionSlice?: ContextPackExecutionSlice | undefined
   graphPath?: string | undefined
   indexingManifest?: IndexingManifestV1 | null | undefined
+  impactTraversal?: ImpactTraversal | undefined
+  impactTraversalSummary?: PrImpactResult['impact_traversal'] | undefined
   question?: string | undefined
   recovery?: ContextPackRecoveryPlan | undefined
   score?: number | undefined

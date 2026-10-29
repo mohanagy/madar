@@ -6,9 +6,11 @@ import { existsSync } from 'node:fs'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { evaluateRetrievalQuality, formatQualityReport, GOLD_QUESTIONS, type GoldQuestion } from '../../src/infrastructure/benchmark/quality.js'
+import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
 import { type BenchmarkQuestionSpec } from '../../src/infrastructure/benchmark/questions.js'
 import { build } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
+import { toJson } from '../../src/pipeline/export.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 
@@ -92,8 +94,12 @@ function buildFrameworkSupportGraph(): KnowledgeGraph {
   )
 }
 
-const RUNNER_GRAPH_PATH = join(process.cwd(), 'out', 'graph.json')
-const RUNNER_OUTPUT_DIR = join(process.cwd(), 'out', 'benchmark-quality-test-output')
+const RUNNER_OUTPUT_DIR = (() => {
+  const outputRoot = join(process.cwd(), 'out')
+  mkdirSync(outputRoot, { recursive: true })
+  return mkdtempSync(join(outputRoot, 'benchmark-quality-runner-'))
+})()
+const RUNNER_GRAPH_PATH = join(RUNNER_OUTPUT_DIR, 'graph.json')
 const SHARED_PACK_QUALITY_GATES_PATH = join(process.cwd(), 'docs', 'benchmarks', 'govalidate-suite', 'quality-gates.json')
 
 interface SharedPackQualityGate {
@@ -113,6 +119,7 @@ interface SharedPackQualityGate {
 function resetRunnerOutputDir(): void {
   rmSync(RUNNER_OUTPUT_DIR, { recursive: true, force: true })
   mkdirSync(RUNNER_OUTPUT_DIR, { recursive: true })
+  toJson(buildTestGraph(), {}, RUNNER_GRAPH_PATH)
 }
 
 // @ts-expect-error GoldQuestion must require expected_labels for built-in eval sets.
@@ -305,7 +312,9 @@ describe('retrieval quality benchmark', () => {
   it('reports grounded match rate and query buckets alongside label metrics', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'madar-benchmark-quality-'))
     const routeFile = join(tempDir, 'auth-route.ts')
+    const routeCopyFile = join(tempDir, 'auth-route-copy.ts')
     writeFileSync(routeFile, ['export function AuthRoute() {', '  return true', '}'].join('\n'), 'utf8')
+    writeFileSync(routeCopyFile, ['export function AuthRoute() {', '  return false', '}'].join('\n'), 'utf8')
 
     try {
       const graph = new KnowledgeGraph()
@@ -313,6 +322,12 @@ describe('retrieval quality benchmark', () => {
         label: 'AuthRoute',
         file_type: 'code',
         source_file: routeFile,
+        source_location: 'L1',
+      })
+      graph.addNode('auth_route_copy', {
+        label: 'AuthRoute',
+        file_type: 'code',
+        source_file: routeCopyFile,
         source_location: 'L1',
       })
       graph.addNode('auth_slice', {
@@ -336,7 +351,7 @@ describe('retrieval quality benchmark', () => {
       expect(report.questions[1]?.grounded_match_rate).toBe(0)
       expect(report.avg_grounded_match_rate).toBe(0.5)
       expect(report.bucket_summaries.map((summary) => summary.bucket)).toEqual(['routing', 'state'])
-      expect(output).toContain('Grounded match rate:')
+      expect(output).toContain('Expected labels with snippets:')
       expect(output).toContain('Query buckets:')
       expect(output).toContain('routing')
       expect(output).toContain('state')
@@ -464,6 +479,26 @@ describe('retrieval quality benchmark', () => {
     expect(output).toContain('Avg input tokens (Claude reported): ~250')
     expect(output).toContain('Avg total tokens (Claude reported): ~285')
     expect(output).not.toContain('estimate fallback')
+  })
+
+  it('keeps source-complete behavior and generation phases in the public pack without inventing their connection', async () => {
+    resetRunnerOutputDir()
+    const demoRoot = join(process.cwd(), 'examples', 'demo-repo')
+    const graph = build(['auth/auth-service.ts', 'auth/password-policy.ts', 'auth/session-store.ts', 'shared/tenant-context.ts']
+      .map(path => extractJs(join(demoRoot, 'src', path))), { directed: true })
+    graph.graph.root_path = demoRoot
+    toJson(graph, {}, RUNNER_GRAPH_PATH)
+    const output = JSON.parse(await runContextPackCommand({
+      prompt: 'how does password policy login create a tenant session', budget: 3000,
+      task: 'explain', graphPath: RUNNER_GRAPH_PATH, format: 'json',
+    }))
+    expect(output.pack.matched_nodes.map((node: { label: string }) => node.label))
+      .toEqual(expect.arrayContaining(['.loginWithPassword()', '.createSession()']))
+    expect(output.pack.execution_slice).toMatchObject({ status: 'partial', boundary_reason: 'slice contains disconnected source anchors' })
+    const login = output.pack.matched_nodes.find((node: { label: string }) => node.label === '.loginWithPassword()')
+    const session = output.pack.matched_nodes.find((node: { label: string }) => node.label === '.createSession()')
+    expect(output.pack.relationships).not.toContainEqual(expect.objectContaining({ from_id: login.node_id, to_id: session.node_id, relation: 'calls' }))
+    expect(output.serialized_budget.token_count).toBeLessThanOrEqual(3000)
   })
 
   it('labels fallback estimates only when structured runner usage is unavailable', async () => {

@@ -41,6 +41,7 @@
 // substrate.
 
 import { createHash } from 'node:crypto'
+import { EXTENSIONLESS_JS_TS_EXTENSIONS, JS_TS_EXTENSION_SUBSTITUTIONS, JS_TS_SOURCE_LANGUAGES } from '../../shared/source-extensions.js'
 import {
   existsSync,
   realpathSync,
@@ -93,12 +94,7 @@ export type BuildSpiOptions = {
 // BuildSpiOptions / buildSpi directly.
 export type BuildSpiFileLayerOptions = BuildSpiOptions
 
-const EXT_TO_LANG: Record<string, SpiLanguage> = {
-  '.ts': 'typescript',
-  '.tsx': 'tsx',
-  '.js': 'javascript',
-  '.jsx': 'jsx',
-}
+const EXT_TO_LANG: Readonly<Record<string, SpiLanguage>> = JS_TS_SOURCE_LANGUAGES
 
 /** The source extensions the SPI builder can parse and project. */
 export const SPI_SOURCE_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(EXT_TO_LANG))
@@ -155,20 +151,15 @@ export function collectExplicitSpiFiles(rootPath: string, includedFiles: Readonl
   return [...files].sort()
 }
 
-const RESOLUTION_CANDIDATE_EXTS = ['', '.ts', '.tsx', '.js', '.jsx'] as const
-const INDEX_RESOLUTION_CANDIDATES = [
-  '/index.ts',
-  '/index.tsx',
-  '/index.js',
-  '/index.jsx',
-] as const
+const RESOLUTION_CANDIDATE_EXTS = ['', ...EXTENSIONLESS_JS_TS_EXTENSIONS]
+const INDEX_RESOLUTION_CANDIDATES = EXTENSIONLESS_JS_TS_EXTENSIONS.map(extension => `/index${extension}`)
 
 export function buildSpi(opts: BuildSpiOptions): SemanticProgramIndex {
   const root = resolve(opts.root)
   if (!existsSync(root) || !statSync(root).isDirectory()) {
     throw new Error(`SPI build: workspace root not found or not a directory: ${root}`)
   }
-  const extractorVersion = opts.extractorVersion ?? 'spi-v1.0.0-slice-3b-iii'
+  const extractorVersion = opts.extractorVersion ?? 'spi-v1.0.0-private-symbols'
   const now = opts.now ?? (() => new Date())
 
   const files: SpiFile[] = []
@@ -405,14 +396,14 @@ function emitClassMethods(
   const className = classNode.name.text
   for (const member of classNode.members) {
     let methodName: string | null = null
-    if (ts.isMethodDeclaration(member) && member.name && ts.isIdentifier(member.name)) {
+    if (ts.isMethodDeclaration(member) && member.name && (ts.isIdentifier(member.name) || ts.isPrivateIdentifier(member.name))) {
       methodName = member.name.text
     } else if (ts.isConstructorDeclaration(member)) {
       methodName = 'constructor'
     } else if (
       (ts.isGetAccessorDeclaration(member) || ts.isSetAccessorDeclaration(member)) &&
       member.name &&
-      ts.isIdentifier(member.name)
+      (ts.isIdentifier(member.name) || ts.isPrivateIdentifier(member.name))
     ) {
       methodName = member.name.text
     }
@@ -433,7 +424,7 @@ function emitClassMethods(
       range: rangeOf(member, sourceFile),
       // Methods inherit their containing class's export status for v1; SPI's
       // selector layer can refine this when public-API surface scoring lands.
-      exported: hasExportModifier(classNode) || hasDefaultModifier(classNode),
+      exported: !methodName.startsWith('#') && (hasExportModifier(classNode) || hasDefaultModifier(classNode)),
     }
     symbols.push(symbol)
     edges.push({
@@ -544,9 +535,18 @@ function resolveRelativeImportAbsolute(
   pathToFileId: Map<string, string>,
 ): string | null {
   const fromDir = dirname(fromAbs)
-  const variants = expandJsToTsVariants(spec)
+  const extension = extname(spec)
+  const substitutions = JS_TS_EXTENSION_SUBSTITUTIONS[extension]
+  if (substitutions) {
+    const stem = spec.slice(0, -extension.length)
+    for (const suffix of substitutions) {
+      const candidate = toPosix(resolve(fromDir, stem + suffix))
+      if (pathToFileId.has(candidate)) return candidate
+    }
+    return null
+  }
 
-  for (const variant of variants) {
+  for (const variant of [spec]) {
     for (const ext of RESOLUTION_CANDIDATE_EXTS) {
       const candidate = toPosix(resolve(fromDir, variant + ext))
       if (pathToFileId.has(candidate)) return candidate
@@ -644,23 +644,13 @@ function extensionForResolvedFile(filePath: string): ts.Extension {
   if (filePath.endsWith('.tsx')) return ts.Extension.Tsx
   if (filePath.endsWith('.jsx')) return ts.Extension.Jsx
   if (filePath.endsWith('.js')) return ts.Extension.Js
+  if (filePath.endsWith('.mjs')) return ts.Extension.Mjs
+  if (filePath.endsWith('.cjs')) return ts.Extension.Cjs
+  if (filePath.endsWith('.mts')) return ts.Extension.Mts
+  if (filePath.endsWith('.cts')) return ts.Extension.Cts
   return ts.Extension.Ts
 }
 
-// Node ESM with TypeScript convention: relative imports keep the `.js` suffix
-// at write time but resolve to the matching `.ts`/`.tsx` source. Translate so
-// the file-layer resolver matches what the type checker would.
-function expandJsToTsVariants(spec: string): string[] {
-  if (spec.endsWith('.js')) {
-    const base = spec.slice(0, -3)
-    return [spec, base, base + '.ts', base + '.tsx']
-  }
-  if (spec.endsWith('.jsx')) {
-    const base = spec.slice(0, -4)
-    return [spec, base, base + '.tsx', base + '.ts']
-  }
-  return [spec]
-}
 
 function rangeOf(node: ts.Node, sourceFile: ts.SourceFile): SpiRange {
   const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
@@ -1096,7 +1086,7 @@ function findEnclosingSpiSymbolId(callExpr: ts.CallExpression, fileId: string): 
     if (ts.isFunctionDeclaration(current) && current.name) {
       return makeSymbolId(fileId, 'function', current.name.text)
     }
-    if (ts.isMethodDeclaration(current) && current.name && ts.isIdentifier(current.name)) {
+    if (ts.isMethodDeclaration(current) && current.name && (ts.isIdentifier(current.name) || ts.isPrivateIdentifier(current.name))) {
       const cls = current.parent
       if (ts.isClassDeclaration(cls) && cls.name) {
         return makeSymbolId(fileId, 'method', `${cls.name.text}.${current.name.text}`)
@@ -1111,7 +1101,7 @@ function findEnclosingSpiSymbolId(callExpr: ts.CallExpression, fileId: string): 
     if (
       (ts.isGetAccessorDeclaration(current) || ts.isSetAccessorDeclaration(current)) &&
       current.name &&
-      ts.isIdentifier(current.name)
+      (ts.isIdentifier(current.name) || ts.isPrivateIdentifier(current.name))
     ) {
       const cls = current.parent
       if (ts.isClassDeclaration(cls) && cls.name) {
@@ -1351,7 +1341,7 @@ function lookupUniqueMethodOnClass(
       || ts.isGetAccessorDeclaration(member)
       || ts.isSetAccessorDeclaration(member))
     && !!member.name
-    && ts.isIdentifier(member.name)
+    && (ts.isIdentifier(member.name) || ts.isPrivateIdentifier(member.name))
     && member.name.text === methodName)
 
   if (matches.length !== 1) {
@@ -1370,7 +1360,7 @@ function lookupSpiSymbolForDeclaration(decl: ts.Declaration, fileId: string): st
   if (ts.isFunctionDeclaration(decl) && decl.name) {
     return makeSymbolId(fileId, 'function', decl.name.text)
   }
-  if (ts.isMethodDeclaration(decl) && decl.name && ts.isIdentifier(decl.name)) {
+  if (ts.isMethodDeclaration(decl) && decl.name && (ts.isIdentifier(decl.name) || ts.isPrivateIdentifier(decl.name))) {
     const cls = decl.parent
     if (ts.isClassDeclaration(cls) && cls.name) {
       return makeSymbolId(fileId, 'method', `${cls.name.text}.${decl.name.text}`)
@@ -1385,7 +1375,7 @@ function lookupSpiSymbolForDeclaration(decl: ts.Declaration, fileId: string): st
   if (
     (ts.isGetAccessorDeclaration(decl) || ts.isSetAccessorDeclaration(decl)) &&
     decl.name &&
-    ts.isIdentifier(decl.name)
+    (ts.isIdentifier(decl.name) || ts.isPrivateIdentifier(decl.name))
   ) {
     const cls = decl.parent
     if (ts.isClassDeclaration(cls) && cls.name) {

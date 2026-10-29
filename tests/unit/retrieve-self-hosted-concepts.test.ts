@@ -49,7 +49,10 @@ const CASES: RegressionCase[] = [
   },
 ]
 
-function selectedFiles(question: string): { files: Set<string>; answerable: boolean; tokens: number; elapsedMs: number; debug: unknown } {
+function selectedFiles(question: string): {
+  files: Set<string>; answerable: boolean; tokens: number; elapsedMs: number; debug: unknown
+  queryObligations: { total: number; finally_covered: number } | undefined
+} {
   const started = performance.now()
   const result = retrieveContext(buildMadarSelfRetrievalFixture(), {
     question,
@@ -61,6 +64,7 @@ function selectedFiles(question: string): { files: Set<string>; answerable: bool
     answerable: result.matched_nodes.length > 0 && result.relationships.length > 0,
     tokens: result.token_count,
     elapsedMs,
+    queryObligations: result.retrieval_plan?.query_obligations,
     debug: {
       labels: result.matched_nodes.map((node) => node.label),
       relationships: result.relationships,
@@ -93,6 +97,8 @@ describe('Madar self-hosted conceptual retrieval regressions', () => {
 
     expect(noisyRecall).toBeGreaterThanOrEqual(cleanRecall)
     expect(noisyPrecision, JSON.stringify(noisy.debug)).toBeGreaterThanOrEqual(0.5)
+    expect(noisy.queryObligations).toBeDefined()
+    expect(noisy.queryObligations!.finally_covered).toBeLessThan(noisy.queryObligations!.total)
     expect(noisy.tokens).toBeLessThanOrEqual(1200)
     expect(noisy.elapsedMs).toBeLessThan(500)
   })

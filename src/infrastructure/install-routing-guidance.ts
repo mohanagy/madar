@@ -1,3 +1,5 @@
+import { SOURCE_RETRIEVAL_DISCOVERY } from '../shared/source-retrieval-guidance.js'
+
 interface RoutingRow {
   promptType: string
   markdownTarget: string
@@ -79,17 +81,17 @@ const CODEX_ROUTING_ROWS: RoutingRow[] = [
   },
 ]
 
-function renderMarkdownTable(lead: string, rows: RoutingRow[], toolSearchSentence: string): string {
+function renderMarkdownTable(lead: string, rows: RoutingRow[], discoveryGuidance: string): string {
   const lines = [
     lead,
     '',
-    '| Prompt type | First tool |',
+    '| Prompt type | Optional tool or command |',
     '| --- | --- |',
     ...rows.map((row) => `| ${row.promptType} | ${row.markdownTarget} |`),
     '',
-    'Treat `evidence.answerability.state` as authoritative; `evidence.pack_confidence` is compatibility-only.',
-    'For `verify_targets`, inspect only the listed verification targets. Restart broad search only for `insufficient` with `broad_search_fallback: allowed`.',
-    toolSearchSentence,
+    'Broad discovery is experimental and may add tokens. Treat `evidence.answerability` as advisory retrieval coverage; verify claims against source.',
+    'Use listed targets as starting points. Refine the query or inspect other source when evidence is missing; respect explicit source-access policy blocks.',
+    ...(discoveryGuidance ? [discoveryGuidance] : []),
   ]
   return lines.join('\n')
 }
@@ -97,40 +99,40 @@ function renderMarkdownTable(lead: string, rows: RoutingRow[], toolSearchSentenc
 function renderPlainGuide(
   lead: string,
   rows: RoutingRow[],
-  toolSearchSentence: string,
+  discoveryGuidance: string,
 ): string {
   const rules = rows.map((row) => `${row.plainTarget} for ${row.plainPromptType ?? row.promptType}`).join('; ')
-  return `${lead}: ${rules}. Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only. For verify_targets, inspect only the listed verification targets. Restart broad search only for insufficient with broad_search_fallback allowed. ${toolSearchSentence}`
+  return `${lead}: ${rules}. Broad discovery is experimental and may add tokens. Treat evidence.answerability as advisory retrieval coverage; verify claims against source. Use listed targets as starting points. Refine the query or inspect other source when evidence is missing; respect explicit source-access policy blocks. ${discoveryGuidance}`
 }
 
 export function renderMarkdownMcpRoutingTable(): string {
   return renderMarkdownTable(
-    'For each codebase question, use the specific Madar MCP tool below first:',
+    'When using Madar, choose the focused MCP tool below:',
     MCP_ROUTING_ROWS,
-    'Do not run ToolSearch before calling a Madar tool — the tool names above are stable. Pick the one that matches and call it directly.',
+    SOURCE_RETRIEVAL_DISCOVERY,
   )
 }
 
 export function renderPlainMcpRoutingGuide(): string {
   return renderPlainGuide(
-    'For each codebase question, call the matching Madar MCP tool directly first',
+    'When using Madar, choose the matching MCP tool',
     MCP_ROUTING_ROWS,
-    'Do not run ToolSearch before calling a Madar tool — the tool names above are stable. Pick the one that matches and call it directly.',
+    SOURCE_RETRIEVAL_DISCOVERY,
   )
 }
 
-export function renderMarkdownCodexRoutingTable(): string {
+export function renderMarkdownCodexRoutingTable(includeDiscovery = true): string {
   return renderMarkdownTable(
-    'For each codebase question, start with the specific Madar command below first:',
+    'When using Madar, choose the focused command below:',
     CODEX_ROUTING_ROWS,
-    'Do not run ToolSearch before calling a Madar command or graph tool — pick the matching command first, then refine with MCP graph tools only when they are available and still needed.',
+    includeDiscovery ? SOURCE_RETRIEVAL_DISCOVERY : '',
   )
 }
 
 export function renderPlainCodexRoutingGuide(): string {
   return renderPlainGuide(
-    'For each codebase question, start with the specific Madar command below first',
+    'When using Madar, choose the focused command below',
     CODEX_ROUTING_ROWS,
-    'Do not run ToolSearch before calling a Madar command or graph tool — pick the matching command first, then refine with MCP graph tools only when they are available and still needed.',
+    SOURCE_RETRIEVAL_DISCOVERY,
   )
 }

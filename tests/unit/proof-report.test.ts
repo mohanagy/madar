@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { toJson } from '../../src/pipeline/export.js'
+import type { CompareRunStatus } from '../../src/infrastructure/compare.js'
 
 const tempRoots: string[] = []
 
@@ -89,7 +90,9 @@ function writeGraphFixture(root: string, outDir = 'out'): string {
   return graphPath
 }
 
-function writeCompareFixture(root: string): string {
+function writeCompareFixture(root: string, status: { baseline: CompareRunStatus; madar: CompareRunStatus } = {
+  baseline: 'succeeded', madar: 'succeeded',
+}): string {
   const compareDir = join(root, 'out', 'compare', 'login-flow')
   mkdirSync(compareDir, { recursive: true })
   writeFileSync(
@@ -100,15 +103,13 @@ function writeCompareFixture(root: string): string {
       reduction_ratio: 3.7,
       effective_reduction_ratio: 4.2,
       total_reduction_ratio: 2.9,
-      status: {
-        baseline: 'completed',
-        madar: 'completed',
-      },
+      status,
       failure_reason: {
         baseline: null,
         madar: null,
       },
       provider_proof: {
+        reduction_basis: 'estimated',
         winner: 'madar',
       },
     }, null, 2),
@@ -256,10 +257,29 @@ describe('proof report', () => {
     expect(result.report).toContain('SessionWorker.persist')
     expect(result.report).toContain('How does login reach persistence?')
     expect(result.report).toContain('Reduction ratio: 3.70x')
+    expect(result.report).toContain('Baseline mode: bounded (constructed prompt)')
+    expect(result.report).toContain('Token accounting basis: local estimates')
+    expect(result.report).toContain('not a native-agent workflow comparison')
+    expect(result.report).toContain('Recorded winner: madar (not independently verified by this report)')
+    expect(result.report).toContain('Baseline status: succeeded')
+    expect(result.report).toContain('Madar status: succeeded')
+    expect(result.report).not.toContain('is incomplete.')
     expect(result.report).toContain('Quality score:')
     expect(result.report).toContain('Claims: 1')
     expect(result.report).toContain('Snippet coverage: 33%')
     expect(result.report).toContain('67% of nodes lack a source snippet')
+  })
+
+  it('still marks non-successful compare runs incomplete without upgrading correctness claims', async () => {
+    const { runProofReportCommand } = await import('../../src/infrastructure/proof-report.js')
+    const root = withTempRoot(), graphPath = writeGraphFixture(root)
+    for (const status of ['failed', 'context_overflow', 'not_run'] as const) {
+      const compareDir = writeCompareFixture(root, { baseline: 'succeeded', madar: status })
+      const result = runProofReportCommand({ graphPath, compareDir, outputDir: join(root, 'out', 'proof-report') })
+      expect(result.report).toContain(`Madar status: ${status}`)
+      expect(result.report).toContain('is incomplete.')
+      expect(result.report).toContain('does not assess answer correctness or independently validate savings claims')
+    }
   })
 
   it('spells out missing local evidence with limitations and next commands', async () => {

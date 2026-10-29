@@ -1,10 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { describe, expect, test } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
+import { analyzeGraphContextFreshness } from '../../src/runtime/freshness.js'
+import { fileContentFingerprint } from '../../src/shared/graph-build-freshness.js'
 import { bfs, communitiesFromGraph, dfs, getNode, loadGraph, queryGraph, scoreNodes, semanticAnomaliesSummary, subgraphToText } from '../../src/runtime/serve.js'
 
 function withTempDir(callback: (tempDir: string) => void): void {
@@ -242,6 +244,42 @@ describe('subgraphToText', () => {
 })
 
 describe('loadGraph', () => {
+  test('preserves fingerprints to detect same-size source edits with restored timestamps', () => {
+    withTempDir((root) => {
+      mkdirSync(join(root, 'out'))
+      const sourcePath = join(root, 'total.ts')
+      const graphPath = join(root, 'out', 'graph.json')
+      const sourceTime = new Date('2024-01-01T00:00:00.000Z')
+      writeFileSync(sourcePath, 'export const total = 1;\n')
+      utimesSync(sourcePath, sourceTime, sourceTime)
+      const originalStat = statSync(sourcePath)
+      const freshness = {
+        strategy: 'filesystem', generated_at: sourceTime.toISOString(), generated_ms: sourceTime.getTime(),
+        filesystem: { file_fingerprints: { 'total.ts': fileContentFingerprint(sourcePath) } },
+      }
+      writeFileSync(graphPath, JSON.stringify({
+        root_path: root, graph_build_freshness: freshness,
+        nodes: [{ id: 'total', label: 'total', source_file: 'total.ts', source_location: 'L1', file_type: 'code' }],
+        edges: [], hyperedges: [],
+      }))
+      const graph = loadGraph(graphPath)
+      expect(graph.graph.graph_build_freshness).toEqual(freshness)
+      const selected = { selected_source_files: ['total.ts'] }
+      expect(analyzeGraphContextFreshness(graphPath, graph, selected)).toMatchObject({
+        status: 'fresh', selected_context_status: 'fresh', changed_source_count: 0,
+      })
+
+      writeFileSync(sourcePath, 'export const total = 2;\n')
+      utimesSync(sourcePath, sourceTime, sourceTime)
+      expect(statSync(sourcePath).size).toBe(originalStat.size)
+      expect(statSync(sourcePath).mtimeMs).toBe(originalStat.mtimeMs)
+      expect(analyzeGraphContextFreshness(graphPath, graph, selected)).toMatchObject({
+        status: 'possibly_stale', selected_context_status: 'possibly_stale',
+        changed_source_count: 1, changed_selected_context_count: 1,
+      })
+    })
+  })
+
   test('loads graph json written by the TS exporter format', () => {
     withTempDir((tempDir) => {
       const outDir = join(tempDir, 'out')

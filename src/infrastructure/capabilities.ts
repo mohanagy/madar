@@ -1,5 +1,6 @@
-import { extname } from 'node:path'
+import { basename, extname } from 'node:path'
 
+import { JAVASCRIPT_SOURCE_EXTENSIONS, TYPESCRIPT_SOURCE_EXTENSIONS } from '../shared/source-extensions.js'
 import type { FileTypeValue } from '../pipeline/detect.js'
 
 export interface ExtractCapabilityDefinition {
@@ -7,6 +8,7 @@ export interface ExtractCapabilityDefinition {
   kind: 'extract'
   fileType: FileTypeValue
   extensions: string[]
+  filenames?: string[]
 }
 
 export type CapabilityDefinition = ExtractCapabilityDefinition
@@ -22,7 +24,7 @@ function normalizeExtension(extension: string): string {
 
 function normalizeExtractCapability(capability: ExtractCapabilityDefinition): ExtractCapabilityDefinition {
   const normalizedExtensions = [...new Set(capability.extensions.map(normalizeExtension).filter(Boolean))].sort()
-  if (normalizedExtensions.length === 0) {
+  if (normalizedExtensions.length === 0 && !capability.filenames?.length) {
     throw new Error(`Capability '${capability.id}' must declare at least one extension`)
   }
 
@@ -37,7 +39,7 @@ function normalizeCapability(capability: CapabilityDefinition): CapabilityDefini
 }
 
 function cloneCapability(capability: CapabilityDefinition): CapabilityDefinition {
-  return { ...capability, extensions: [...capability.extensions] }
+  return { ...capability, extensions: [...capability.extensions], ...(capability.filenames ? { filenames: [...capability.filenames] } : {}) }
 }
 
 export class CapabilityRegistry {
@@ -76,6 +78,9 @@ export class CapabilityRegistry {
   }
 
   resolveExtractorForPath(filePath: string, fileType?: FileTypeValue | null): ExtractCapabilityDefinition | null {
+    const named = [...this.capabilitiesById.values()].filter(capability => capability.filenames?.includes(basename(filePath)) && (!fileType || capability.fileType === fileType))
+    if (named.length === 1) return named[0]!
+    if (named.length > 1) return null
     const extension = normalizeExtension(extname(filePath) || filePath)
     if (!extension) {
       return null
@@ -98,9 +103,10 @@ export class CapabilityRegistry {
 }
 
 const BUILTIN_EXTRACT_CAPABILITIES = [
+  { id: 'builtin:extract:package-manifest', kind: 'extract', fileType: 'code', extensions: [], filenames: ['package.json'] },
   { id: 'builtin:extract:python', kind: 'extract', fileType: 'code', extensions: ['.py'] },
-  { id: 'builtin:extract:typescript', kind: 'extract', fileType: 'code', extensions: ['.ts', '.tsx'] },
-  { id: 'builtin:extract:javascript', kind: 'extract', fileType: 'code', extensions: ['.js', '.jsx'] },
+  { id: 'builtin:extract:typescript', kind: 'extract', fileType: 'code', extensions: TYPESCRIPT_SOURCE_EXTENSIONS },
+  { id: 'builtin:extract:javascript', kind: 'extract', fileType: 'code', extensions: JAVASCRIPT_SOURCE_EXTENSIONS },
   { id: 'builtin:extract:go', kind: 'extract', fileType: 'code', extensions: ['.go'] },
   { id: 'builtin:extract:rust', kind: 'extract', fileType: 'code', extensions: ['.rs'] },
   { id: 'builtin:extract:java', kind: 'extract', fileType: 'code', extensions: ['.java'] },

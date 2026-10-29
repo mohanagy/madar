@@ -160,16 +160,15 @@ describe('package metadata', () => {
     expect(loadChangelog()).toContain(`## [${manifest.version}]`)
   })
 
-  it('positions package metadata around outcome-first task-aware local packs instead of generic graph marketing', () => {
+  it('describes source lookup and static context without promising investigation outcomes', () => {
     const manifest = loadPackageManifest()
     const readme = loadReadme().toLowerCase()
-    const contextPacks = loadContextPacksDoc().toLowerCase()
     const keywords = manifest.keywords ?? []
 
-    expect(manifest.description?.toLowerCase()).toContain('stop')
-    expect(manifest.description?.toLowerCase()).toContain('typescript/node')
-    expect(manifest.description?.toLowerCase()).toContain('task-aware')
-    expect(manifest.description?.toLowerCase()).toContain('what runs for this task')
+    expect(manifest.description?.toLowerCase()).toContain('source lookup')
+    expect(manifest.description?.toLowerCase()).toContain('typescript')
+    expect(manifest.description?.toLowerCase()).toContain('static graph')
+    expect(manifest.description?.toLowerCase()).not.toContain('what runs for this task')
     expect(manifest.description?.toLowerCase()).toContain('local')
     expect(manifest.description?.toLowerCase()).not.toContain('context plane')
     expect(manifest.description?.toLowerCase()).not.toContain('context compiler')
@@ -180,10 +179,8 @@ describe('package metadata', () => {
     expect(readme).toContain('cursor')
     expect(readme).toContain('codex')
     expect(readme).toContain('copilot')
-    expect(readme).toContain('repo context it needs before it starts searching')
     expect(readme).toContain('local graph')
-    expect(readme).toContain('task-aware context pack')
-    expect(contextPacks).toContain('deterministic local context compilation')
+    expect(readme).toContain('consistent whole-task accuracy and token savings have not been established')
     expect(readme).not.toContain('context plane')
     expect(readme).not.toContain('context compiler')
   })

@@ -21,6 +21,7 @@ import {
   resolveCompareQuestions,
 } from '../../src/infrastructure/compare.js'
 import { runContextPackCommand } from '../../src/infrastructure/context-pack-command.js'
+import { generateGraph } from '../../src/infrastructure/generate.js'
 import { claudeInstall } from '../../src/infrastructure/install.js'
 import { parsePromptRunnerOutput } from '../../src/infrastructure/prompt-runner.js'
 import { saveManifest } from '../../src/pipeline/manifest.js'
@@ -250,6 +251,23 @@ function writeGraphFixture(graph: KnowledgeGraph, graphFixtureRoot: string = GRA
   const graphPath = join(graphFixtureRoot, 'graph.json')
   toJson(graph, { 0: ['auth_user', 'session_manager'], 1: ['session_store'] }, graphPath)
   return graphPath
+}
+
+function writeSourceGraphFixture(): string {
+  writeProjectFiles()
+  for (const [sourceFile, importLine] of [
+    ['src/auth.ts', "import { SessionManager } from './session.js'"],
+    ['src/session.ts', "import { SessionStore } from './session-store.js'"],
+  ] as const) {
+    const sourcePath = join(PROJECT_FIXTURE_ROOT, sourceFile)
+    writeFileSync(sourcePath, `${importLine}\n${readFileSync(sourcePath, 'utf8')}`, 'utf8')
+  }
+  return generateGraph(PROJECT_FIXTURE_ROOT, { includeDocs: false, noHtml: true }).graphPath
+}
+
+function madarPromptPayload(prompt: string): Record<string, unknown> {
+  const body = prompt.split('Retrieved graph context:\n')[1]!.split('\n\nQuestion:\n')[0]!
+  return JSON.parse(body) as Record<string, unknown>
 }
 
 function writeManifestFixture(
@@ -788,42 +806,31 @@ describe('compare runtime', () => {
     ).toThrow(/too small/i)
   })
 
-  it('builds a madar prompt pack from the same explain-pack payload core as madar pack', async () => {
-    const graph = makeGraph()
-    writeProjectFiles()
-    const graphPath = writeGraphFixture(graph)
-    const retrieval = retrieveContext(graph, {
+  it('builds a madar prompt pack from the same source-evidence response as madar pack', async () => {
+    const graphPath = writeSourceGraphFixture()
+    const result = generateCompareArtifacts({
+      graphPath,
       question: 'how does login create a session',
-      budget: 3000,
-      retrievalStrategy: 'slice-v1',
+      outputDir: COMPARE_OUTPUT_ROOT,
+      baselineMode: 'pack_only',
+      retrievalBudget: 3000,
+      execTemplate: 'runner --prompt {prompt_file}',
     })
+    const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
 
     const explainPayload = JSON.parse(
       await runContextPackCommand({
-        prompt: retrieval.question,
+        prompt: 'how does login create a session',
         budget: 3000,
         task: 'explain',
         graphPath,
       }),
     ) as Record<string, unknown>
-    const pack = buildMadarPromptPack({ question: retrieval.question, retrieval })
-    const expectedPromptCore = JSON.stringify({
-      pack: explainPayload.pack,
-      claims: explainPayload.claims,
-      expandable: explainPayload.expandable,
-      coverage: explainPayload.coverage,
-      missing_context: explainPayload.missing_context,
-      missing_semantic: explainPayload.missing_semantic,
-      retrieval_gate: explainPayload.retrieval_gate,
-      recommended_first_read: explainPayload.recommended_first_read,
-      workflow_centers: explainPayload.workflow_centers,
-      confidence_score: explainPayload.confidence_score,
-    }, null, 2)
-
-    expect(pack.prompt).toContain(expectedPromptCore)
-    expect(pack.prompt).toContain('"pack"')
-    expect(pack.prompt).toContain('"coverage"')
-    expect(pack.prompt).toContain('"missing_context"')
+    expect(madarPromptPayload(madarPrompt)).toEqual(explainPayload)
+    expect(explainPayload).toMatchObject({ response_format: 'source_evidence_v2', evidence: { answerability: { advisory: true } } })
+    expect(madarPrompt).toContain('createSession(userId) {')
+    expect(madarPrompt).toContain('return new SessionStore().write(userId)')
+    expect(estimateQueryTokens(JSON.stringify(explainPayload))).toBeLessThanOrEqual(3000)
   })
 
   it('includes runtime-generation execution_slice data in pack_only madar prompts when present', () => {
@@ -869,10 +876,18 @@ describe('compare runtime', () => {
       const report = result.reports[0]!
       const madarPrompt = readFileSync(report.paths.madar_prompt, 'utf8')
 
-      expect(madarPrompt).toContain('"execution_slice"')
-      expect(madarPrompt).toContain('"status": "partial"')
-      expect(madarPrompt).toContain('"boundary_reason": "slice stops before expected persistence step"')
-      expect(madarPrompt).toContain('"retrieval_strategy": "slice-v1"')
+      expect(madarPromptPayload(madarPrompt)).toMatchObject({
+        pack: {
+          execution_slice: {
+            status: 'partial',
+            boundary_reason: 'slice stops before expected persistence step',
+            steps: [
+              { label: 'authenticateUser', source_file: 'auth.ts', line_number: 10 },
+              { label: 'SessionManager', source_file: 'session.ts', line_number: 3 },
+            ],
+          },
+        },
+      })
     } finally {
       retrieveSpy.mockRestore()
     }
@@ -1197,11 +1212,17 @@ describe('compare runtime', () => {
       retrieval,
     })
 
-    expect(pack.prompt).toContain('"answer_contract"')
-    expect(pack.prompt).toContain('"entrypoint_scope": "setup_context"')
-    expect(pack.prompt).toContain('"missing_phases": [')
-    expect(pack.prompt).toContain('"worker"')
-    expect(pack.prompt).toContain('"persistence"')
+    expect(madarPromptPayload(pack.prompt)).toMatchObject({
+      pack: {
+        answer_contract: {
+          missing_phases: ['worker', 'persistence'],
+          do_not_claim: [
+            'direct_producer_to_worker_calls_without_enqueues_boundary',
+            'full_runtime_certainty_when_slice_is_partial',
+          ],
+        },
+      },
+    })
     expect(pack.prompt).toContain('Mention missing or uncertain phases when the execution slice is partial.')
   })
 
@@ -1346,7 +1367,10 @@ describe('compare runtime', () => {
     expect(baselinePrompt).toContain('export class SessionManager')
     expect(madarPrompt).toContain('Retrieved graph context:')
     expect(madarPrompt).toContain('"pack"')
-    expect(madarPrompt).toContain('"coverage"')
+    expect(madarPromptPayload(madarPrompt)).toMatchObject({
+      response_format: 'source_evidence_v2',
+      evidence: { answerability: { advisory: true } },
+    })
     expect(savedReport).toEqual(
       expect.objectContaining({
         question: 'how does login create a session',
@@ -4310,9 +4334,7 @@ describe('compare runtime', () => {
   })
 
   it('loads madar snippets when compare runs from outside the inferred project root', () => {
-    const graph = makeGraph()
-    writeProjectFiles()
-    const graphPath = writeGraphFixture(graph)
+    const graphPath = writeSourceGraphFixture()
     const originalCwd = process.cwd()
     const alternateCwd = join(TEST_OUTPUT_ROOT, 'test-runtime', 'outside-compare-runner')
     mkdirSync(alternateCwd, { recursive: true })
@@ -4341,9 +4363,7 @@ describe('compare runtime', () => {
   })
 
   it('restores compare-local snippets under enforced retrieval budgets', () => {
-    const graph = makeGraph()
-    writeProjectFiles()
-    const graphPath = writeGraphFixture(graph)
+    const graphPath = writeSourceGraphFixture()
 
     const result = generateCompareArtifacts({
       graphPath,
@@ -4359,6 +4379,7 @@ describe('compare runtime', () => {
     expect(madarPrompt).toContain('SessionManager')
     expect(madarPrompt).toContain('createSession(userId)')
     expect(madarPrompt).toContain('return new SessionStore().write(userId)')
+    expect(estimateQueryTokens(JSON.stringify(madarPromptPayload(madarPrompt)))).toBeLessThanOrEqual(2000)
   })
 
   it('does not load madar snippets from paths outside the inferred project root', () => {
@@ -4470,10 +4491,12 @@ describe('compare runtime', () => {
       })
 
       const madarPrompt = readFileSync(result.reports[0]!.paths.madar_prompt, 'utf8')
-      expect(madarPrompt).toContain('"label": "ArchiveDash"')
-      expect(madarPrompt).toContain('"source_file": "../../../vault/private-notes.txt"')
-      expect(madarPrompt).toContain('"label": "ArchiveNested"')
-      expect(madarPrompt).toContain('"source_file": "../../../vault/private/notes.txt"')
+      expect(madarPromptPayload(madarPrompt)).toMatchObject({
+        pack: { matched_nodes: expect.arrayContaining([
+          expect.objectContaining({ label: 'ArchiveDash', source_file: '../../../vault/private-notes.txt' }),
+          expect.objectContaining({ label: 'ArchiveNested', source_file: '../../../vault/private/notes.txt' }),
+        ]) },
+      })
       expect(madarPrompt).not.toContain('outside dash snippet')
       expect(madarPrompt).not.toContain('outside nested snippet')
     } finally {

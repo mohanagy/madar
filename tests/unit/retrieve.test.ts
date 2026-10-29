@@ -2893,7 +2893,7 @@ describe('retrieve', () => {
       ).toBe(true)
       expect(compactResult.matched_nodes[2]).toEqual(expect.objectContaining({
         snippet: null,
-        snippet_truncated: false,
+        snippet_truncated: true,
       }))
       expect(compactResult.matched_nodes.some((node) => node.snippet_truncated === true)).toBe(true)
       expect(compactResult.token_count).toBe(compactPack.token_count - compactPackNodeTokenCount + compactTokenCount)
@@ -3421,14 +3421,12 @@ describe('retrieve', () => {
           source_location: 'L5',
         })
 
-        const readFileSync = vi.fn((path: nodeFs.PathOrFileDescriptor, encoding?: BufferEncoding | null) =>
-          nodeFs.readFileSync(path, { encoding }),
-        )
+        const openSync = vi.fn((...args: Parameters<typeof nodeFs.openSync>) => nodeFs.openSync(...args))
         vi.doMock('node:fs', async () => {
           const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
           return {
             ...actual,
-            readFileSync,
+            openSync,
           }
         })
         const { retrieveContext: retrieveContextWithMock } = await import('../../src/runtime/retrieve.js')
@@ -3436,7 +3434,7 @@ describe('retrieve', () => {
 
         expect(result.matched_nodes).toHaveLength(2)
         expect(result.matched_nodes.every((node) => node.snippet !== null)).toBe(true)
-        expect(readFileSync.mock.calls.filter(([path]) => path === filePath)).toHaveLength(1)
+        expect(openSync.mock.calls.filter(([path]) => path === nodeFs.realpathSync(filePath))).toHaveLength(1)
       } finally {
         rmSync(tempDir, { recursive: true, force: true })
       }

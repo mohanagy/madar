@@ -1,3 +1,6 @@
+import { sourceQuerySymbols } from './source-query-symbols.js'
+import { retrievalSearchPrompt } from '../retrieval-gate.js'
+import { isPromptDataOffset, scanPromptRegions } from '../../shared/prompt-regions.js'
 import type { KnowledgeGraph } from '../../contracts/graph.js'
 import type {
   ContextPackRetrievalPlanDetail,
@@ -8,9 +11,9 @@ import type {
 } from '../../contracts/retrieval-plan.js'
 import { classifySourceDomain, type SourceDomain } from '../../shared/source-discovery.js'
 
-const MAX_QUERY_TERMS = 24
-const MAX_QUERY_OBLIGATIONS = 6
+const MAX_QUERY_OBLIGATIONS = 8
 const MAX_TERMS_PER_OBLIGATION = 6
+const MAX_QUERY_TERMS = MAX_QUERY_OBLIGATIONS * MAX_TERMS_PER_OBLIGATION
 const MAX_ANCHORS = 24
 const MAX_PRIMARY_SOURCE_ANCHORS = 16
 const MAX_ANCHORS_PER_SOURCE_FILE = 2
@@ -30,7 +33,7 @@ const DELIVERY_CONCEPT = '@delivery'
 const FAILURE_CONCEPT = '@failure'
 const TRANSITION_CONCEPT = '@transition'
 
-const FLOW_BOUNDARY_PATTERN = /\b(becomes?|became|triggers?|triggered|affects?|affected|causes?|caused|leads?\s+to|result(?:s|ed)?\s+in|flows?\s+to|then)\b|\s+to\s+|[.;,]/gi
+const FLOW_BOUNDARY_PATTERN = /\b(becomes?|became|triggers?|triggered|affects?|affected|causes?|caused|reach(?:es|ed)?|leads?\s+to|result(?:s|ed)?\s+in|flows?\s+to|then)\b|\s+to\s+|[.;,]|[?!](?=\s|$)|\band\s+(?:how|why|where|when|what|which|whether)\b/gi
 const READ_ONLY_CONSTRAINT_PATTERN = /\b(?:this\s+is\s+read[-\s]?only|read[-\s]?only(?=\s*:))[^.;]*(?:[.;]|$)/gi
 const NO_WRITE_CONSTRAINT_PATTERN = /\b(?:do\s+not|don't|without)\s+(?:change|edit|modify|touch|write)(?:ing)?\b[^.;]*(?:[.;]|$)/gi
 const CITATION_LIST_DIRECTIVE_PATTERN = /\bcite\b[^.;]*:\s*[^.;]*(?:[.;]|$)/gi
@@ -197,6 +200,11 @@ export interface QueryEvidenceObligation {
   terms: string[]
 }
 
+type LocalPredicateSubject = { terms: string[]; symbol?: string; path?: string }
+interface AssessedQueryEvidenceObligation extends QueryEvidenceObligation {
+  localSubject?: LocalPredicateSubject
+}
+
 export interface ConceptualFallbackSelectedNode {
   nodeId: string
   sourceFile: string
@@ -224,6 +232,8 @@ export interface ConceptualFallbackProposal {
   obligationCount?: number
   initialObligationCoverage?: number
   preferredObligationAnchors?: ReadonlyMap<number, string>
+  /** A partial proposal cannot replace existing owners of its supported clause. */
+  protectedPartialAnchorIds?: readonly string[]
 }
 
 const vocabularyIndexCache = new WeakMap<KnowledgeGraph, RepositoryVocabularyIndex>()
@@ -268,30 +278,123 @@ function stripRepeatedFlowChecklists(value: string): string {
   })
 }
 
-export function queryEvidenceObligations(question: string): QueryEvidenceObligation[] {
-  const evidenceQuestion = collapseOxfordEvidenceLists(stripRepeatedFlowChecklists(question
+/** Code punctuation separates identifiers and arguments, not prose obligations. */
+function queryCodeRanges(question: string): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = sourceQuerySymbols(question)
+    .filter(occurrence => occurrence.name.includes('.'))
+    .map(({ start, end }) => ({ start, end }))
+  for (const match of question.matchAll(/`[^`\n]+`|[\w$@-]+(?:[./\\][\w$@-]+)+/g)) {
+    ranges.push({ start: match.index, end: match.index + match[0].length })
+  }
+  // A dot path segment is not a sentence boundary. Do not protect periods
+  // attached to prose words or ellipses, and leave the trailing sentence dot free.
+  for (const match of question.matchAll(/(?:^|[/\\\s`"'([{,:])(\.{1,2})(?=[/\\])/g)) {
+    const start = match.index + match[0].length - match[1]!.length
+    ranges.push({ start, end: start + match[1]!.length })
+  }
+  for (const match of question.matchAll(/\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\(/g)) {
+    const start = match.index
+    let depth = 0
+    let quote: string | undefined
+    for (let index = start + match[0].length - 1; index < question.length; index += 1) {
+      const character = question[index]
+      if (quote) {
+        if (character === '\\') index += 1
+        else if (character === quote) quote = undefined
+        continue
+      }
+      if (character === '"' || character === "'" || character === '`') quote = character
+      else if (character === '(') depth += 1
+      else if (character === ')' && --depth === 0) {
+        ranges.push({ start, end: index + 1 })
+        break
+      }
+    }
+  }
+  return ranges
+}
+
+/** These complete predicate forms expose an optional local subject. Empty or
+ * placeholder subjects stay unresolved; no preceding topic is inferred. */
+function localPredicateSubject(clause: string): LocalPredicateSubject | undefined {
+  const prose = clause.trim()
+  const outcome = /^(?:(?:explain|describe)\s+)?what\s+(?:does\s+)?(?:(?:a|an|the|its|this|that)\s+)?successful\s+(.*?)\b(?:response|result)\s+(?:actually\s+)?(?:proves?|guarantees?|means?)$/i.exec(prose)
+  const failure = /^(?:(?:explain|describe)\s+)?how\s+(?:are|is)\s+(.*?)\b(?:failures?|errors?)\s+handled$/i.exec(prose)
+  if (!outcome && !failure) return undefined
+  const subject = (outcome?.[1] ?? failure![1]!).trim().replace(/^(?:a|an|the)\s+/i, '')
+    .replace(/(?:^|\s)[`"']?(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE)[`"']?$/i, '').trim()
+  if (!subject || /^(?:(?:this|that|these|those|its|their|it|operation|request|response|result|call)\s*)+$/i.test(subject)) return { terms: [] }
+  const unquoted = subject.replace(/^([`"'])(.*)\1$/, '$2')
+  if (/\.[cm]?[jt]sx?$/i.test(unquoted) && !/[\s`"'():]/.test(unquoted)) return { terms: [], path: unquoted }
+  const symbols = sourceQuerySymbols(subject)
+  if (symbols.length === 1 && unquoted.replace(/\(\)$/, '').replace(/[ \t]*\.[ \t]*/g, '.') === symbols[0]!.name) return { terms: [], symbol: symbols[0]!.name }
+  // This is a necessary lexical condition, not a semantic subject model.
+  // Do not collapse a named subject to a broad concept such as @delivery.
+  const terms = [...new Set(tokenize(subject))]
+  return { terms: terms.length <= MAX_TERMS_PER_OBLIGATION ? terms : [] }
+}
+
+function localPredicateSubjectMatches(
+  obligation: AssessedQueryEvidenceObligation, label: string, sourceFile: string, sourceTerms?: readonly string[],
+): boolean {
+  const subject = obligation.localSubject
+  if (!subject) return true
+  // Vocabulary ranks candidates but has no inspected source-body evidence.
+  if (!sourceTerms) return false
+  if (subject.symbol) return label.replace(/\(\)$/, '') === subject.symbol
+  if (subject.path) {
+    const path = subject.path.replaceAll('\\', '/').replace(/^\.\//, '')
+    const file = sourceFile.replaceAll('\\', '/').replace(/^\.\//, '')
+    return file === path || (!path.startsWith('/') && !path.split('/').includes('..') && file.endsWith(`/${path}`))
+  }
+  return subject.terms.length > 0 && subject.terms.every(term => sourceTerms.includes(term))
+}
+
+function assessedQueryEvidenceObligations(question: string): AssessedQueryEvidenceObligation[] {
+  const evidenceQuestion = collapseOxfordEvidenceLists(stripRepeatedFlowChecklists(retrievalSearchPrompt(question)
     .replace(READ_ONLY_CONSTRAINT_PATTERN, ' ')
     .replace(NO_WRITE_CONSTRAINT_PATTERN, ' ')
     .replace(CITATION_LIST_DIRECTIVE_PATTERN, ' ')))
+  const codeRanges = queryCodeRanges(evidenceQuestion)
+  const promptRegions = scanPromptRegions(evidenceQuestion)
+  // New interrogative conjunctions are prose boundaries only; preserve the
+  // existing punctuation behavior while protecting quoted literal contents.
+  const quotedRanges = [...evidenceQuestion.matchAll(/(?<![\w$])(["'])(?:\\.|(?!\1)[^\\\n])*\1/g)]
+    .map(match => ({ start: match.index, end: match.index + match[0].length }))
   const groups: string[][] = []
+  const subjects: Array<LocalPredicateSubject | undefined> = []
   const seen = new Set<string>()
   let start = 0
   let boundaryTerms: string[] = []
+  let predicatePrefix = ''
   const append = (segment: string): void => {
     const terms = [...new Set([...boundaryTerms, ...normalizedQueryTerms(segment)])]
     const key = terms.join('\u0000')
     if (terms.length > 0 && !seen.has(key) && groups.length < MAX_QUERY_OBLIGATIONS) {
       seen.add(key)
       groups.push(terms.slice(0, MAX_TERMS_PER_OBLIGATION))
+      const contentStart = segment.search(/\S/)
+      subjects.push(contentStart >= 0 && !isPromptDataOffset(promptRegions, start + contentStart)
+        ? localPredicateSubject(`${predicatePrefix}${segment.trim()}`) : undefined)
     }
     boundaryTerms = []
+    predicatePrefix = ''
   }
   for (const match of evidenceQuestion.matchAll(FLOW_BOUNDARY_PATTERN)) {
+    if (codeRanges.some((range) => match.index >= range.start && match.index < range.end)
+      || (/^[?!]$/.test(match[0]) && isPromptDataOffset(promptRegions, match.index))
+      || (/^and\s/i.test(match[0]) && quotedRanges.some(range => match.index >= range.start && match.index < range.end))) {
+      continue
+    }
+    // "Happens to" names one behavior and its subject, not two flow steps.
+    if (/^\s+to\s+$/i.test(match[0]) && /\bhappen(?:s|ed|ing)?$/i.test(evidenceQuestion.slice(0, match.index))) continue
     append(evidenceQuestion.slice(start, match.index))
     if (groups.length >= MAX_QUERY_OBLIGATIONS) {
       break
     }
     boundaryTerms = typeof match[1] === 'string' ? normalizedQueryTerms(match[1]) : []
+    const interrogative = /^and\s+(how|what)$/i.exec(match[0])?.[1]
+    predicatePrefix = interrogative ? `${interrogative} ` : ''
     start = (match.index ?? start) + match[0].length
   }
   if (groups.length < MAX_QUERY_OBLIGATIONS) {
@@ -304,10 +407,15 @@ export function queryEvidenceObligations(question: string): QueryEvidenceObligat
       groups.push(terms)
     }
   }
-  return groups.map((terms, index) => ({ index, terms }))
+  return groups.map((terms, index) => ({ index, terms, ...(subjects[index] ? { localSubject: subjects[index]! } : {}) }))
+}
+
+export function queryEvidenceObligations(question: string): QueryEvidenceObligation[] {
+  return assessedQueryEvidenceObligations(question).map(({ index, terms }) => ({ index, terms }))
 }
 
 function queryTerms(obligations: readonly QueryEvidenceObligation[]): string[] {
+  // Every retained obligation must be searchable by the anchor scorer.
   return [...new Set(obligations.flatMap((obligation) => obligation.terms))].slice(0, MAX_QUERY_TERMS)
 }
 
@@ -442,12 +550,13 @@ export function flowQueryEvidenceCandidateAllowed(
     return true
   }
   const normalizedKind = node.nodeKind?.trim().toLowerCase() ?? ''
-  if (!EXPLICIT_TEST_EVIDENCE_PATTERN.test(question) && FLOW_TEST_SOURCE_PATTERN.test(node.sourceFile)) {
+  const sourceFile = node.sourceFile.replaceAll('\\', '/')
+  if (!EXPLICIT_TEST_EVIDENCE_PATTERN.test(question) && FLOW_TEST_SOURCE_PATTERN.test(sourceFile)) {
     return false
   }
   if (
     !EXPLICIT_TYPE_EVIDENCE_PATTERN.test(question)
-    && (FLOW_TYPE_SOURCE_PATTERN.test(node.sourceFile) || /^(?:enum|interface|property|type)$/.test(normalizedKind))
+    && (FLOW_TYPE_SOURCE_PATTERN.test(sourceFile) || /^(?:enum|interface|property|type)$/.test(normalizedKind))
   ) {
     return false
   }
@@ -455,14 +564,14 @@ export function flowQueryEvidenceCandidateAllowed(
   const explicitlyNamed = normalizedLabel.length >= 4 && question.toLowerCase().includes(normalizedLabel)
   if (
     !/\bexternal\b/i.test(question)
-    && (EXTERNAL_SCOPE_PATTERN.test(node.sourceFile) || EXTERNAL_SCOPE_PATTERN.test(node.label))
+    && (EXTERNAL_SCOPE_PATTERN.test(sourceFile) || EXTERNAL_SCOPE_PATTERN.test(node.label))
   ) {
     return false
   }
   if (
     !explicitlyNamed
     && !EXPLICIT_ERROR_DECLARATION_PATTERN.test(question)
-    && (LOW_VALUE_OWNER_PATH_PATTERN.test(node.sourceFile) || LOW_VALUE_OWNER_LABEL_PATTERN.test(node.label))
+    && (LOW_VALUE_OWNER_PATH_PATTERN.test(sourceFile) || LOW_VALUE_OWNER_LABEL_PATTERN.test(node.label))
   ) {
     return false
   }
@@ -518,7 +627,7 @@ export function evaluateQueryEvidenceCoverage(
   question: string,
   nodes: readonly QueryEvidenceNode[],
 ): QueryEvidenceCoverage {
-  const obligations = queryEvidenceObligations(question)
+  const obligations = assessedQueryEvidenceObligations(question)
   const coveredObligations: string[] = []
   const missingObligations: string[] = []
 
@@ -537,6 +646,7 @@ export function evaluateQueryEvidenceCoverage(
     let coveredByOneEvidenceOwner = false
     for (const node of nodes) {
       const tokens = queryEvidenceNodeTokens(node)
+      if (!localPredicateSubjectMatches(obligation, node.label, node.source_file, tokens.snippet)) continue
       const snippet = node.snippet ?? ''
       const matchedTerms = new Set<string>()
       const snippetMatchedTerms = new Set<string>()
@@ -864,7 +974,7 @@ function anchorForNode(
   node: VocabularyNode,
   terms: readonly string[],
   inverseFrequencyByTerm: ReadonlyMap<string, number>,
-  obligations: readonly QueryEvidenceObligation[],
+  obligations: readonly AssessedQueryEvidenceObligation[],
   question: string,
 ): AnchorCandidate | null {
   const matchedQueryTerms = new Set<string>()
@@ -902,6 +1012,7 @@ function anchorForNode(
   }
   const obligationMatches = new Map<number, number>()
   for (const obligation of obligations) {
+    if (!localPredicateSubjectMatches(obligation, node.label, node.sourceFile)) continue
     const matchedTerms = obligation.terms.filter((term) => matchedQueryTerms.has(term)).length
     const previous = obligations.find((candidate) => candidate.index === obligation.index - 1)
     const previousTerms = divergenceScopeTerms(previous)
@@ -962,7 +1073,7 @@ export function underScopedDivergenceNodeIds(
   graph: KnowledgeGraph,
   question: string,
 ): ReadonlySet<string> {
-  const obligations = queryEvidenceObligations(question)
+  const obligations = assessedQueryEvidenceObligations(question)
   const divergenceObligations = obligations.filter((obligation) => obligation.terms.includes(DIVERGENCE_CONCEPT))
   if (divergenceObligations.length === 0) {
     return new Set()
@@ -1519,16 +1630,29 @@ function shortestIncidentPath(
   return null
 }
 
-function proposalIsGrounded(
+function proposalGrounding(
   anchors: readonly AnchorCandidate[],
   obligations: readonly QueryEvidenceObligation[],
-): boolean {
+): false | { partialObligation?: number } {
   const coveredTerms = new Set(anchors.flatMap((anchor) => [...anchor.matchedQueryTerms]))
   const coveredObligations = new Set(anchors.flatMap((anchor) => [...anchor.obligationMatches.keys()]))
   const strongest = anchors[0]
-  return coveredTerms.size >= 2
+  const grounded = coveredTerms.size >= 2
     && coveredObligations.size >= Math.min(2, obligations.length)
     && (anchors.length >= 2 || (strongest?.matchedQueryTerms.size ?? 0) >= 2)
+  if (grounded) return {}
+  // An unsupported clause does not invalidate a strongly grounded clause.
+  // This permits a recovery proposal, never coverage for the missing clause.
+  if (obligations.length < 2 || coveredObligations.size !== 1) return false
+  const supported = obligations.find((obligation) => coveredObligations.has(obligation.index))
+  if (!supported) return false
+  const supportedAnchors = anchors.filter((anchor) => anchor.obligationMatches.has(supported.index))
+  const supportedTerms = new Set(supportedAnchors.flatMap((anchor) =>
+    supported.terms.filter((term) => anchor.matchedQueryTerms.has(term))))
+  return supportedTerms.size >= 2
+    && (supportedAnchors.length >= 2
+      || supportedAnchors.some((anchor) => (anchor.obligationMatches.get(supported.index) ?? 0) >= 2))
+    ? { partialObligation: supported.index } : false
 }
 
 function expansionTerms(
@@ -1583,7 +1707,7 @@ export function planConceptualFallback(
   graph: KnowledgeGraph,
   input: ConceptualFallbackInput,
 ): ConceptualFallbackProposal {
-  const obligations = queryEvidenceObligations(input.question)
+  const obligations = assessedQueryEvidenceObligations(input.question)
   const terms = queryTerms(obligations)
   const initialReasons = fallbackReasons(input.initialQuality)
   if (terms.length === 0) {
@@ -1667,12 +1791,20 @@ export function planConceptualFallback(
     }
   }
 
-  if (!proposalIsGrounded(anchors, obligations)) {
+  const grounding = proposalGrounding(anchors, obligations)
+  if (!grounding) {
     return {
       plan: { ...basePlan, status: 'no_candidates', attempts: [emptyAttempt(reasons)] },
       nodeBoosts: new Map(),
     }
   }
+  // Snapshot all initially selected strong owners before proposal capping.
+  // This is a conservative selection veto, not proof of current source or of
+  // a complete answer; weak/unrelated original owners may still be replaced.
+  const protectedPartialAnchorIds = grounding.partialObligation === undefined ? undefined
+    : Object.freeze([...selectedIds].filter((nodeId) => (
+      (rankedAnchorsById.get(nodeId)?.obligationMatches.get(grounding.partialObligation!) ?? 0) >= 2
+    )))
 
   const boosts = new Map<string, number>()
   const bridgeParticipation = new Map<string, number>()
@@ -1859,6 +1991,7 @@ export function planConceptualFallback(
     obligationCount: obligations.length,
     preferredObligationAnchors: diversified.preferredByObligation,
     initialObligationCoverage: initialAnchorObligationCoverage,
+    ...(protectedPartialAnchorIds ? { protectedPartialAnchorIds } : {}),
   }
 }
 
@@ -1879,6 +2012,7 @@ export function finalizeConceptualFallbackPlan(
   recoveredFiles: ReadonlySet<string>,
   recoveredNodeIds: ReadonlySet<string> = new Set(),
   recoveredQueryEvidence?: QueryEvidenceCoverage,
+  sourceEvidenceLoss?: { protected_spans: number; lost_spans: number },
 ): { plan: ContextPackRetrievalPlanDetail; useRecovered: boolean } {
   const attempt = proposal.plan.attempts[0]
   if (!attempt || proposal.nodeBoosts.size === 0) {
@@ -1931,6 +2065,8 @@ export function finalizeConceptualFallbackPlan(
     && recoveryGoalMet
     && (nonRegressingQuality || obligationAwareNonRegression)
     && snippetEvidenceNonRegressing
+    && (sourceEvidenceLoss?.lost_spans ?? 0) === 0
+    && (proposal.protectedPartialAnchorIds?.every((nodeId) => recoveredNodeIds.has(nodeId)) ?? true)
 
   const finalAttempt: RetrievalFallbackAttempt = {
     ...attempt,
@@ -1938,6 +2074,7 @@ export function finalizeConceptualFallbackPlan(
     changed_result: useRecovered,
     added_selected_files: useRecovered ? added : 0,
     removed_selected_files: useRecovered ? removed : 0,
+    ...(sourceEvidenceLoss && sourceEvidenceLoss.lost_spans > 0 ? { source_evidence_loss: sourceEvidenceLoss } : {}),
   }
   return {
     useRecovered,

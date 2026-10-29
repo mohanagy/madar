@@ -537,7 +537,7 @@ describe('freshness surfaces', () => {
 
     const packJson = JSON.parse(await runContextPackCommand({
       prompt: 'How does AuthService reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: fixture.graphPath,
       format: 'json',
@@ -549,7 +549,7 @@ describe('freshness surfaces', () => {
     }
     const packText = await runContextPackCommand({
       prompt: 'How does AuthService reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: fixture.graphPath,
       format: 'text',
@@ -564,7 +564,7 @@ describe('freshness surfaces', () => {
     }
     const handoffJson = JSON.parse(await runHandoffCommand({
       prompt: 'How does AuthService reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: fixture.graphPath,
       consumer: 'generic',
@@ -580,7 +580,7 @@ describe('freshness surfaces', () => {
         name: 'context_pack',
         arguments: {
           prompt: 'How does AuthService reach issueSession?',
-          budget: 500,
+          budget: 20_000,
           task: 'explain',
           verbose: true,
         },
@@ -604,12 +604,12 @@ describe('freshness surfaces', () => {
       missing_source_count: 0,
       recommendation: expect.stringContaining('madar generate .'),
     }))
-    expect(packText).toContain('Graph freshness: possibly stale')
-    expect(packText).toContain('Selected context: possibly stale')
+    expect(packText).toContain('"status":"possibly_stale"')
+    expect(packText).toContain('"selected_context_status":"possibly_stale"')
     expect(packText).not.toContain('Graph source:')
-    expect(packText).toContain('Changed since graph: 1 source file')
-    expect(packText).toContain('Changed relevant to selected context: 1 source file')
-    expect(packText).toContain('Recommended: Run `madar generate .`')
+    expect(packText).toContain('"changed_source_count":1')
+    expect(packText).toContain('"changed_selected_context_count":1')
+    expect(packText).toContain('madar generate .')
 
     expect(promptJson.graph_freshness).toEqual(expect.objectContaining({
       status: 'possibly_stale',
@@ -643,7 +643,7 @@ describe('freshness surfaces', () => {
 
     const packJson = JSON.parse(await runContextPackCommand({
       prompt: 'How does AuthService reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: fixture.graphPath,
       format: 'json',
@@ -655,7 +655,7 @@ describe('freshness surfaces', () => {
     }
     const packText = await runContextPackCommand({
       prompt: 'How does AuthService reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: fixture.graphPath,
       format: 'text',
@@ -669,9 +669,9 @@ describe('freshness surfaces', () => {
       changed_selected_context_count: 0,
       changed_outside_selected_context_count: 1,
     }))
-    expect(packText).toContain('Graph freshness: partially stale')
-    expect(packText).toContain('Selected context: fresh')
-    expect(packText).toContain('Changed outside selected context: 1 source file')
+    expect(packText).toContain('"status":"partially_stale"')
+    expect(packText).toContain('"selected_context_status":"fresh"')
+    expect(packText).toContain('"changed_outside_selected_context_count":1')
   })
 
   it('treats modified shared files on the selected route as selected-context drift', async () => {
@@ -679,7 +679,7 @@ describe('freshness surfaces', () => {
 
     const packJson = JSON.parse(await runContextPackCommand({
       prompt: 'How does registerAuthRoute reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: fixture.graphPath,
       format: 'json',
@@ -745,7 +745,7 @@ describe('freshness surfaces', () => {
     const unrelated = createFreshnessFixture('unrelated_modified')
     const unrelatedPack = JSON.parse(await runContextPackCommand({
       prompt: 'How does AuthService reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: unrelated.graphPath,
       format: 'json',
@@ -763,7 +763,7 @@ describe('freshness surfaces', () => {
     const modified = createFreshnessFixture('modified')
     await expect(runContextPackCommand({
       prompt: 'How does AuthService reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: modified.graphPath,
       format: 'json',
@@ -779,7 +779,7 @@ describe('freshness surfaces', () => {
 
     await expect(runHandoffCommand({
       prompt: 'How does AuthService reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: modified.graphPath,
       consumer: 'generic',
@@ -793,7 +793,7 @@ describe('freshness surfaces', () => {
         name: 'context_pack',
         arguments: {
           prompt: 'How does AuthService reach issueSession?',
-          budget: 500,
+          budget: 20_000,
           task: 'explain',
           require_fresh_context: true,
         },
@@ -821,7 +821,7 @@ describe('freshness surfaces', () => {
 
     await expect(runContextPackCommand({
       prompt: 'How does AuthService reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: fixture.graphPath,
       format: 'json',
@@ -838,7 +838,7 @@ describe('freshness surfaces', () => {
 
     await expect(runHandoffCommand({
       prompt: 'How does AuthService reach issueSession?',
-      budget: 500,
+      budget: 20_000,
       task: 'explain',
       graphPath: fixture.graphPath,
       consumer: 'generic',
@@ -852,7 +852,7 @@ describe('freshness surfaces', () => {
         name: 'context_pack',
         arguments: {
           prompt: 'How does AuthService reach issueSession?',
-          budget: 500,
+          budget: 20_000,
           task: 'explain',
           require_fresh_graph: true,
         },

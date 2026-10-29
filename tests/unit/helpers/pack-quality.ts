@@ -1,7 +1,10 @@
 import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative, resolve, sep } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 
+import { vi } from 'vitest'
+
+import * as sourceEvidenceResponse from '../../../src/runtime/source-evidence-response.js'
 import { runContextPackCommand } from '../../../src/infrastructure/context-pack-command.js'
 import { generateGraph, type GenerateGraphResult } from '../../../src/infrastructure/generate.js'
 
@@ -36,7 +39,7 @@ interface PackQualityFixtureManifest {
   expected_retrieval_pipeline_phases?: string[]
 }
 
-interface PackSchemaPayload {
+interface PackDiagnostics {
   workflow_centers?: Array<{ path?: string }>
   recommended_first_read?: Array<{ path?: string }>
   likely_edit_files?: Array<{ path?: string }>
@@ -52,10 +55,40 @@ interface PackSchemaPayload {
   }
 }
 
+export interface SourceEvidenceNode {
+  node_id: string
+  label: string
+  source_file: string
+  snippet?: string
+  snippet_ref?: string
+  snippet_line_range?: { start_line: number; end_line: number }
+  snippet_omitted_ranges?: Array<{ start_line: number; end_line: number }>
+  snippet_unverified?: boolean
+}
+
+interface SourceEvidencePayload {
+  response_format: string
+  pack: {
+    matched_nodes: SourceEvidenceNode[]
+    execution_slice?: { steps?: Array<{ label: string; source_file: string; line_number: number }> }
+    answer_contract?: { do_not_claim?: string[] }
+  }
+  implementation?: Pick<PackDiagnostics, 'likely_edit_files' | 'likely_test_files' | 'validation_commands'>
+  evidence: { answerability: { advisory: boolean; answer_scope?: string; missing_obligations?: string[] } }
+  expandable?: Array<{
+    handle_id: string
+    focus_files?: string[]
+    focus_ranges?: Array<{ source_file: string; start_line: number; end_line: number }>
+  }>
+  serialized_budget: { max_tokens: number; token_count: number; enforced: boolean }
+}
+
 export interface PackQualityFixtureRunResult {
   fixture: PackQualityFixtureManifest
   graph: GenerateGraphResult
-  payload: PackSchemaPayload
+  payload: SourceEvidencePayload
+  output: string
+  diagnostics: PackDiagnostics
 }
 
 function withTempDir<T>(callback: (tempDir: string) => T | Promise<T>): T | Promise<T> {
@@ -164,7 +197,7 @@ function loadPackQualityFixture(name: string): PackQualityFixtureManifest {
   }
 }
 
-function normalizePayload(payload: PackSchemaPayload): PackSchemaPayload {
+function normalizeDiagnostics(payload: PackDiagnostics): PackDiagnostics {
   return {
     ...payload,
     ...(payload.workflow_centers
@@ -235,19 +268,48 @@ export async function runPackQualityFixture(
       extractionMode: runFixture.use_spi ? 'spi' : 'legacy',
     })
     const graphPath = join(workspaceRoot, 'out', 'graph.json')
-    const packOutput = await runContextPackCommand({
+    const options = {
       prompt: runFixture.prompt,
       budget: runFixture.budget ?? 1800,
       task: runFixture.task ?? 'implement',
       taskExplicit: true,
       graphPath,
-      format: 'json',
-    } as never)
+      format: 'json' as const,
+    }
+    // Observe this exact CLI run's internal planning input without changing its
+    // serializer, retrieval budget, or compact response. Verbose diagnostics can
+    // themselves be omitted at the fixture budget and are not source-delivery proof.
+    let diagnostics: PackDiagnostics | undefined
+    const finalize = sourceEvidenceResponse.finalizeSourceEvidenceResponse
+    const capture = vi.spyOn(sourceEvidenceResponse, 'finalizeSourceEvidenceResponse').mockImplementation((...args) => {
+      diagnostics = args[0] as PackDiagnostics
+      return finalize(...args)
+    })
+    let packOutput: string
+    try {
+      packOutput = await runContextPackCommand(options)
+    } finally {
+      capture.mockRestore()
+    }
+    if (!diagnostics) throw new Error('CLI did not invoke the source-evidence finalizer')
 
     return {
       fixture: runFixture,
       graph,
-      payload: normalizePayload(JSON.parse(packOutput) as PackSchemaPayload),
+      payload: JSON.parse(packOutput) as SourceEvidencePayload,
+      output: packOutput,
+      diagnostics: normalizeDiagnostics(diagnostics),
     }
   })
+}
+
+/** Read the unchanged fixture source independently of graph snippets or diagnostics. */
+export function readPackQualityFixtureSource(name: string, sourceFile: string): string {
+  const root = fixtureWorkspaceRoot(name)
+  const path = resolve(root, sourceFile)
+  const withinRoot = relative(root, path)
+  if (isAbsolute(sourceFile) || withinRoot === '..' || withinRoot.startsWith(`..${sep}`)) {
+    throw new Error(`Fixture source path escapes workspace: ${sourceFile}`)
+  }
+  return readFileSync(path, 'utf8')
 }

@@ -48,6 +48,7 @@
 // trigger the v0.14.0 release (the design doc says the projector landing is
 // the trigger, but only when it covers demo-repo byte-equivalence).
 
+import { createHash } from 'node:crypto'
 import { basename, extname, resolve } from 'node:path'
 
 import type {
@@ -61,6 +62,7 @@ import {
   addUniqueEdge,
   createEdge,
   createNode,
+  makeTsMemberId,
 } from '../extract/core.js'
 
 import type {
@@ -82,6 +84,8 @@ export type ProjectSpiToExtractionOptions = {
    * not collide with legacy-only files that share a basename.
    */
   fileStemByAbsolutePath?: ReadonlyMap<string, string>
+  /** Internal opt-in for strict SPI; auto requires a coordinated legacy identity migration. */
+  resolveCaseCollisions?: boolean
 }
 
 const PROJECTABLE_SYMBOL_KINDS: ReadonlySet<SpiSymbolKind> = new Set([
@@ -146,6 +150,27 @@ export function projectSpiToExtraction(
     addNode(nodes, seenNodeIds, createNode(nodeId, basename(file.path), absPath, 1, 'code'))
   }
 
+  const allocatedSymbolIds = opts.resolveCaseCollisions
+    ? allocateCaseDistinctSymbolIds(spi, projectedFileStemById)
+    : new Map<string, string>()
+  const classNodeIdsByName = opts.resolveCaseCollisions ? new Map<string, string>() : undefined
+  const classSymbolsByName = new Map<string, SpiSymbol[]>()
+  const projectedIdCounts = new Map<string, number>()
+  if (classNodeIdsByName) {
+    for (const id of fileIdToNodeId.values()) {
+      projectedIdCounts.set(id, (projectedIdCounts.get(id) ?? 0) + 1)
+    }
+  }
+  if (classNodeIdsByName) {
+    for (const symbol of spi.symbols) {
+      if (symbol.kind !== 'class') continue
+      const key = `${symbol.file_id}\0${symbol.name}`
+      const entries = classSymbolsByName.get(key) ?? []
+      entries.push(symbol)
+      classSymbolsByName.set(key, entries)
+    }
+  }
+
   // 2) Symbol nodes.
   for (const symbol of spi.symbols) {
     if (!PROJECTABLE_SYMBOL_KINDS.has(symbol.kind)) continue
@@ -156,12 +181,16 @@ export function projectSpiToExtraction(
     const fileBaseStem = projectedFileStemById.get(file.id) ?? basename(file.path, extname(file.path))
     const projection = projectSymbol(symbol, fileBaseStem)
     if (!projection) continue
+    projection.id = allocatedSymbolIds.get(symbol.id) ?? projection.id
+    if (classNodeIdsByName) projectedIdCounts.set(projection.id, (projectedIdCounts.get(projection.id) ?? 0) + 1)
 
     symbolIdToNodeId.set(symbol.id, projection.id)
     symbolIdToSourceFile.set(symbol.id, absPath)
     symbolIdToLine.set(symbol.id, symbol.range.start.line)
 
-    const node = createNode(projection.id, projection.label, absPath, symbol.range.start.line, 'code')
+    const node = createNode(projection.id, projection.label, absPath, symbol.range.start.line, 'code', {
+      endLine: symbol.range.end.line,
+    })
 
     // Slice 1c-ii (projector framework propagation): if SPI tagged this
     // symbol with a framework_role (e.g. NestJS slice 3b set
@@ -205,6 +234,16 @@ export function projectSpiToExtraction(
     addNode(nodes, seenNodeIds, node)
   }
 
+  if (classNodeIdsByName) {
+    for (const [key, symbols] of classSymbolsByName) {
+      if (symbols.length !== 1) continue
+      const id = symbolIdToNodeId.get(symbols[0]!.id)
+      // An unsupported class/namespace merge may still share its old ID with
+      // another class. A new child must not inherit that ambiguous parent.
+      if (id && projectedIdCounts.get(id) === 1) classNodeIdsByName.set(key, id)
+    }
+  }
+
   // 3) Structural edges derived from SPI's `declares` layer:
   //    - file → top-level symbol (kind ≠ method) becomes `contains`.
   //    - class → method becomes `method`. SPI emits a file→method `declares`,
@@ -220,6 +259,7 @@ export function projectSpiToExtraction(
     edges,
     seenEdgeKeys,
     root,
+    classNodeIdsByName,
   )
 
   // 4) Cross-symbol edges projected from SPI edge kinds: imports, calls,
@@ -393,6 +433,50 @@ function uniqueProjectedFileStem(filePath: string): string {
   return withoutExtension.split('/').filter(Boolean).join('_')
 }
 
+/** Allocate only case-distinct same-file groups; unsupported identity merges keep legacy projection. */
+function allocateCaseDistinctSymbolIds(
+  spi: SemanticProgramIndex,
+  fileStems: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const groups = new Map<string, SpiSymbol[]>()
+  const reservedIds = new Set<string>([...fileStems.values()].map(stem => _makeId(stem)))
+  for (const symbol of spi.symbols) {
+    if (!PROJECTABLE_SYMBOL_KINDS.has(symbol.kind)) continue
+    const stem = fileStems.get(symbol.file_id)
+    if (stem === undefined) continue
+    const projection = projectSymbol(symbol, stem)
+    if (!projection) continue
+    reservedIds.add(projection.id)
+    const group = groups.get(projection.id) ?? []
+    group.push(symbol)
+    groups.set(projection.id, group)
+  }
+  const allocated = new Map<string, string>()
+  for (const [baseId, group] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+    if (group.length < 2) continue
+    const first = group[0]!
+    // Repeated exact names/IDs can represent overloads or declaration merging.
+    // Case-only allocation must not manufacture a new identity for those rows.
+    if (new Set(group.map(symbol => symbol.name)).size !== group.length
+      || new Set(group.map(symbol => symbol.id)).size !== group.length
+      || group.some(symbol => symbol.file_id !== first.file_id
+        || symbol.name.toLowerCase() !== first.name.toLowerCase()
+        || symbol.framework_metadata?.external_call === true
+        || symbol.framework_metadata?.storage_operation !== undefined)) continue
+    const candidates = group.map(symbol => ({
+      symbol,
+      id: `${baseId}__case_${createHash('sha256').update(symbol.id).digest('hex').slice(0, 16)}`,
+    }))
+    if (new Set(candidates.map(candidate => candidate.id)).size !== candidates.length
+      || candidates.some(candidate => reservedIds.has(candidate.id))) continue
+    for (const candidate of candidates) {
+      allocated.set(candidate.symbol.id, candidate.id)
+      reservedIds.add(candidate.id)
+    }
+  }
+  return allocated
+}
+
 function projectSymbol(symbol: SpiSymbol, fileBaseStem: string): SymbolProjection | null {
   const storageOperation = typeof symbol.framework_metadata?.storage_operation === 'string'
     ? symbol.framework_metadata.storage_operation
@@ -424,7 +508,7 @@ function projectSymbol(symbol: SpiSymbol, fileBaseStem: string): SymbolProjectio
     const className = symbol.name.slice(0, dotAt)
     const methodName = symbol.name.slice(dotAt + 1)
     return {
-      id: _makeId(fileBaseStem, className, methodName),
+      id: makeTsMemberId(_makeId(fileBaseStem, className), methodName, methodName.startsWith('#')),
       label: `.${methodName}()`,
     }
   }
@@ -452,6 +536,7 @@ function emitContainsAndMethodEdges(
   edges: ExtractionEdge[],
   seenEdgeKeys: Set<string>,
   root: string,
+  classNodeIdsByName?: ReadonlyMap<string, string>,
 ): void {
   for (const symbol of spi.symbols) {
     if (!PROJECTABLE_SYMBOL_KINDS.has(symbol.kind)) continue
@@ -468,7 +553,10 @@ function emitContainsAndMethodEdges(
       if (dotAt <= 0) continue
       const className = symbol.name.slice(0, dotAt)
       const fileBaseStem = projectedFileStemById.get(file.id) ?? basename(file.path, extname(file.path))
-      const classNodeId = _makeId(fileBaseStem, className)
+      const classNodeId = classNodeIdsByName
+        ? classNodeIdsByName.get(`${symbol.file_id}\0${className}`)
+        : _makeId(fileBaseStem, className)
+      if (!classNodeId) continue
       addUniqueEdge(
         edges,
         seenEdgeKeys,

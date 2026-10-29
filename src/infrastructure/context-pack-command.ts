@@ -1,3 +1,5 @@
+import { resolveGraphSourceRoot } from '../shared/graph-source-root.js'
+import { finalizeSourceEvidenceResponse, renderSourceEvidenceText, MIN_SOURCE_EVIDENCE_BUDGET } from '../runtime/source-evidence-response.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import type {
   ContextPackClaim,
@@ -21,7 +23,7 @@ import type { PackCliOptions } from '../cli/parser.js'
 import { classifyTaskContract, compileContextPack, estimateContextPackEntryTokens, type ContextPackNodeCandidate } from '../runtime/context-pack.js'
 import type { RetrievalGateDecision } from '../contracts/retrieval-gate.js'
 import { classifyRetrievalLevel } from '../runtime/retrieval-gate.js'
-import { pickImpactTarget } from '../runtime/context-pack-target.js'
+import { pickImpactTargetIdentity } from '../runtime/context-pack-target.js'
 import { analyzeImpact, compactImpactResult, type ImpactResult } from '../runtime/impact.js'
 import { analyzePrImpact, compactPrImpactResult, type PrImpactResult } from '../runtime/pr-impact.js'
 import { buildTaskContextPlan } from '../runtime/task-context-planner.js'
@@ -68,7 +70,7 @@ export interface ContextPackCommandDependencies {
   compactRetrieveResult: typeof compactRetrieveResult
   analyzePrImpact: (graph: KnowledgeGraph, projectDir?: string, options?: { baseBranch?: string; depth?: number; budget?: number; taskIntent?: TaskContextPlan['evidence']['recipe_id'] }) => PrImpactResult
   compactPrImpactResult: typeof compactPrImpactResult
-  analyzeImpact: (graph: KnowledgeGraph, communityLabels: Record<number, string>, options: { label: string; depth?: number }) => ImpactResult
+  analyzeImpact: typeof analyzeImpact
   compactImpactResult: typeof compactImpactResult
 }
 
@@ -2139,6 +2141,7 @@ export function buildExplainPackPayloadCore(
 
 function createImpactCandidate(
   node: {
+    node_id?: string
     label: string
     source_file: string
     file_type?: string
@@ -2158,6 +2161,7 @@ function createImpactCandidate(
     }
 
     builtEntry = {
+      ...(node.node_id ? { node_id: node.node_id } : {}),
       label: node.label,
       source_file: node.source_file,
       line_number: 0,
@@ -2174,6 +2178,7 @@ function createImpactCandidate(
   }
 
   return {
+    ...(node.node_id ? { node_id: node.node_id } : {}),
     label: node.label,
     evidence_class: evidenceClass,
     ...(node.community !== undefined ? { community: node.community } : {}),
@@ -2200,6 +2205,7 @@ function impactMetadata(
 
   if (result.target_file.trim().length > 0) {
     candidates.push(createImpactCandidate({
+      ...(result.target_node_id ? { node_id: result.target_node_id } : {}),
       label: result.target,
       source_file: result.target_file,
       ...(result.target_file_type ? { file_type: result.target_file_type } : {}),
@@ -2225,7 +2231,7 @@ function impactMetadata(
 }
 
 function baseResponse(
-  options: PackCliOptions,
+  options: Pick<PackCliOptions, 'prompt' | 'graphPath'>,
   plan: TaskContextPlan,
   budget: number,
   task: TaskContextPlan['task_kind'],
@@ -2698,6 +2704,36 @@ function whyExplanation(
   return explanations
 }
 
+export function buildExplainContextPackSchema(
+  options: Pick<PackCliOptions, 'prompt' | 'budget' | 'graphPath' | 'why'>,
+  retrieval: RetrieveResult,
+  context: {
+    graphFreshness: GraphContextFreshness
+    discoverySafety?: DiscoverySafetyMetadata | null
+    plan?: TaskContextPlan
+    pack?: RetrievePackPayload
+  },
+): PackSchemaEnvelope {
+  const plan = context.plan ?? buildTaskContextPlan({
+    task_kind: 'explain',
+    prompt: options.prompt,
+    budget: options.budget,
+    ...(retrieval.task_contract?.task_intent ? { task_intent: retrieval.task_contract.task_intent } : {}),
+  })
+  const pack = context.pack ?? compactRetrieveResult(retrieval, {
+    snippetBudget: options.budget,
+    topNWithSnippet: retrieval.matched_nodes.length,
+  })
+  return buildPackSchemaV1({
+    ...baseResponse(options, plan, options.budget, 'explain'),
+    graphFreshness: context.graphFreshness,
+    ...(context.discoverySafety !== undefined ? { discoverySafety: context.discoverySafety } : {}),
+    ...buildExplainPackPayloadCore(pack, retrieval, undefined, options.graphPath, context.discoverySafety),
+    retrieval,
+    ...(options.why ? { routing: buildRoutingDebug(retrieval) } : {}),
+  })
+}
+
 function buildPackSchemaV1<TPack extends PackPayload>(
   response: PackResponseBase & ContextPlaneMetadata & {
     pack: TPack
@@ -2744,6 +2780,8 @@ function buildPackSchemaV1<TPack extends PackPayload>(
     ...(serializedEvidencePlan ? { evidencePlan: serializedEvidencePlan } : {}),
     answerContract: retrieval?.answer_contract ?? ('answer_contract' in response.pack ? response.pack.answer_contract : undefined),
     coverage: response.coverage,
+    impactTraversal: 'traversal' in response.pack ? response.pack.traversal : undefined,
+    impactTraversalSummary: 'impact_traversal' in response.pack ? response.pack.impact_traversal : undefined,
     discoverySafety,
     executionSlice: retrieval?.execution_slice ?? ('execution_slice' in response.pack ? response.pack.execution_slice : undefined),
     expandable: response.expandable,
@@ -3106,27 +3144,20 @@ function renderCopilotPack(schema: PackSchemaEnvelope): string {
 function renderContextPackOutput(
   format: ContextPackFormat | undefined,
   schema: PackSchemaEnvelope,
-  options: { verbose?: boolean } = {},
+  options: { verbose?: boolean; sourcePolicyRoot?: string } = {},
 ): string {
-  switch (format) {
-    case 'text':
-      return renderPackSchemaText(schema)
-    case 'markdown':
-      return renderPackSchemaMarkdown(schema)
-    case 'claude':
-      return renderClaudePack(schema)
-    case 'copilot':
-      return renderCopilotPack(schema)
-    case 'json':
-    case undefined:
-      return JSON.stringify(options.verbose === true || schema.task !== 'explain' ? schema : buildAnswerReadyPackSchema(schema, schema.budget))
-  }
+  const textFormat = format === 'text' || format === 'markdown' || format === 'claude' || format === 'copilot'
+  const payload = finalizeSourceEvidenceResponse(schema, schema.budget, {
+    ...options, format: textFormat ? 'text' : 'json',
+  })
+  return textFormat ? renderSourceEvidenceText(payload) : JSON.stringify(payload)
 }
 
 export async function runContextPackCommand(
   options: PackCliOptions,
   dependencies: ContextPackCommandDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<string> {
+  if (options.budget < MIN_SOURCE_EVIDENCE_BUDGET) throw new Error(`Source evidence budget must be at least ${MIN_SOURCE_EVIDENCE_BUDGET} tokens`)
   const graph = dependencies.loadGraph(options.graphPath)
   const discoverySafety = parseDiscoverySafetyMetadata(graph.graph.discovery_safety)
   const initialGraphFreshness = analyzeGraphContextFreshness(options.graphPath, graph)
@@ -3145,7 +3176,8 @@ export async function runContextPackCommand(
     budget: plannerBudget,
     task_intent: resolvedTask.task_intent,
   })
-  const renderOptions = options.verbose === undefined ? {} : { verbose: options.verbose }
+  const renderOptions = { sourcePolicyRoot: resolveGraphSourceRoot(options.graphPath, graph),
+    ...(options.verbose === undefined ? {} : { verbose: options.verbose }) }
 
   if (resolvedTask.task_kind === 'review') {
     if (options.requireFreshContext === true) {
@@ -3189,17 +3221,17 @@ export async function runContextPackCommand(
       ...(options.retrievalLevel !== undefined ? { retrievalLevel: options.retrievalLevel } : {}),
       ...(options.retrievalStrategy !== undefined ? { retrievalStrategy: options.retrievalStrategy } : {}),
     })
-    const impactTarget = pickImpactTarget(retrieval)
+    const impactTarget = pickImpactTargetIdentity(retrieval)
     const communityLabels = buildCommunityLabels(graph, communitiesFromGraph(graph))
     const impactResult = dependencies.analyzeImpact(graph, communityLabels, {
-      label: impactTarget,
+      ...impactTarget,
       depth: DEFAULT_IMPACT_DEPTH,
     })
     const impactPack = dependencies.compactImpactResult(impactResult)
 
     return renderContextPackOutput(options.format, buildPackSchemaV1({
       ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
-      target: impactTarget,
+      target: impactTarget.label,
       pack: impactPack,
       graphFreshness: initialGraphFreshness,
       discoverySafety,
@@ -3233,15 +3265,23 @@ export async function runContextPackCommand(
   if (options.requireFreshContext === true) {
     requireFreshSelectedContext(graphFreshness)
   }
+  const pack = dependencies.compactRetrieveResult(retrieval, {
+    snippetBudget: options.budget,
+    topNWithSnippet: retrieval.matched_nodes.length,
+  })
+  if (resolvedTask.task_kind === 'explain') {
+    return renderContextPackOutput(options.format, buildExplainContextPackSchema(options, retrieval, {
+      graphFreshness,
+      discoverySafety,
+      plan: initialPlan,
+      pack,
+    }), renderOptions)
+  }
   return renderContextPackOutput(options.format, buildPackSchemaV1({
     ...baseResponse(options, initialPlan, plannerBudget, resolvedTask.task_kind),
     graphFreshness,
     discoverySafety,
-    ...(
-      resolvedTask.task_kind === 'explain'
-        ? buildExplainPackPayloadCore(dependencies.compactRetrieveResult(retrieval), retrieval, implementation, options.graphPath, discoverySafety)
-        : buildExplainPackPayload(dependencies.compactRetrieveResult(retrieval), retrieval, implementation)
-    ),
+    ...buildExplainPackPayload(pack, retrieval, implementation),
     retrieval,
     ...(options.why ? { routing: buildRoutingDebug(retrieval) } : {}),
   }), renderOptions)

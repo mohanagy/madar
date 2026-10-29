@@ -35,6 +35,8 @@ export interface MadarVerificationTarget {
 }
 
 export interface MadarAnswerabilityAssessment {
+  /** Retrieval coverage is a heuristic, never permission to stop verifying source. */
+  advisory?: true
   state: MadarAnswerabilityState
   answer_scope: 'complete' | 'partial' | 'none'
   caveats: string[]
@@ -63,6 +65,8 @@ export interface ContextPackRecoveryAttempt {
   missing_obligations_after: number
   elapsed_ms: number
   changed_result: boolean
+  /** Recovery was rejected because it discarded verified delivered source. */
+  source_evidence_loss?: { protected_spans: number; lost_spans: number }
 }
 
 export interface ContextPackRecoveryPlan {

@@ -134,7 +134,7 @@ function formatTrialOutput(
   primaryWorkspace: string,
   fallbackReason?: string,
 ): string {
-  const lines = [`[madar try] ${result.workspace === primaryWorkspace ? 'Local proof ready.' : 'Local proof ready from the bundled sample workspace.'}`]
+  const lines = [`[madar try] ${result.workspace === primaryWorkspace ? 'Experimental source preview ready.' : 'Experimental source preview from the bundled sample workspace.'}`]
 
   if (fallbackReason) {
     lines.push(`[madar try] ${fallbackReason}`)
@@ -147,8 +147,9 @@ function formatTrialOutput(
     lines.push(result.packOutput.trim())
     lines.push('')
   }
-  lines.push('[madar try] Next recommended install:')
-  lines.push(`  madar ${installPlatform} install`)
+  lines.push('[madar try] Optional agent integration:')
+  const profile = ['claude', 'cursor', 'copilot', 'gemini'].includes(installPlatform) ? ' --profile strict' : ''
+  lines.push(`  madar ${installPlatform} install${profile}`)
   return lines.join('\n')
 }
 
@@ -212,7 +213,7 @@ async function prepareWorkspace(
       }
     }
 
-    notes.push(`[madar try] Built ${result.graphPath} with ${result.nodeCount} nodes for a local first proof.`)
+    notes.push(`[madar try] Built ${result.graphPath} with ${result.nodeCount} nodes for a source preview.`)
     return await runPackForWorkspace(workspace, prompt, result.graphPath, notes, io, dependencies)
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)

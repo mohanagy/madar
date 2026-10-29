@@ -424,6 +424,128 @@ function buildSecondHopCapGraph(root: string): KnowledgeGraph {
 }
 
 describe('pr impact', () => {
+  it.each(['depth_limited', 'node_limited'] as const)('retains %s lower bounds through PR compaction', (status) => {
+    const root = createRepo()
+    repoRoots.push(root)
+    const graph = buildGraph(root)
+    const depth = status === 'depth_limited' ? 1 : 3
+    const callers = status === 'depth_limited' ? 1 : 499
+    for (let index = 0; index < callers; index += 1) {
+      const id = `extra_caller_${index}`
+      graph.addNode(id, {
+        label: `caller${index}`, source_file: join(root, 'src', 'api.ts'), source_location: 'L5-L7',
+        node_kind: 'function', file_type: 'code', community: 1,
+      })
+      graph.addEdge(id, status === 'depth_limited' ? 'api_handler' : 'auth_user', { relation: 'calls', confidence: 'EXTRACTED' })
+    }
+    updateFile(root, 'src/auth.ts', content => content.replace('const status = "ok"', 'const status = "changed"'))
+
+    const result = analyzePrImpact(graph, root, { depth, budget: 240 })
+    const traversal = { status, depth, node_limit: 500 }
+    expect(result.per_node_impact).toHaveLength(1)
+    expect(result.per_node_impact[0]?.traversal).toEqual(traversal)
+    expect(result.total_blast_radius).toBe(status === 'depth_limited' ? 1 : 499)
+    expect(result.impact_traversal).toEqual({
+      analyzed_targets: 1,
+      partial_targets: 1,
+      depth_limited_targets: status === 'depth_limited' ? 1 : 0,
+      node_limited_targets: status === 'node_limited' ? 1 : 0,
+    })
+    expect(result.risk_summary.top_risks[0]?.traversal).toEqual(traversal)
+    expect(result.risk_summary.top_risks[0]?.reason).toContain('lower bounds')
+    const compact = compactPrImpactResult(result)
+    expect(compact.per_node_impact[0]?.traversal).toEqual(traversal)
+    expect(compact.impact_traversal).toEqual(result.impact_traversal)
+
+    // Aggregate incompleteness must survive when the affected row falls outside the compact slice.
+    const outsideSlice = compactPrImpactResult({
+      ...result,
+      per_node_impact: [
+        ...Array.from({ length: 12 }, (_, index) => ({
+          node: `complete${index}`, direct_dependents: 0, transitive_dependents: 0, affected_communities: 0,
+        })),
+        ...result.per_node_impact,
+      ],
+      impact_traversal: { ...result.impact_traversal!, analyzed_targets: 13 },
+    })
+    expect(outsideSlice.per_node_impact.every(row => row.traversal === undefined)).toBe(true)
+    expect(outsideSlice.impact_traversal?.partial_targets).toBe(1)
+    expect(outsideSlice.impact_traversal?.analyzed_targets).toBe(13)
+  })
+
+  it('distinguishes an unperformed PR impact analysis from complete impact coverage', () => {
+    const root = createRepo()
+    repoRoots.push(root)
+    const result = analyzePrImpact(buildGraph(root), root)
+    expect(result.impact_traversal).toEqual({
+      analyzed_targets: 0, partial_targets: 0, depth_limited_targets: 0, node_limited_targets: 0,
+    })
+    expect(compactPrImpactResult(result).impact_traversal).toEqual(result.impact_traversal)
+  })
+
+  it('preserves duplicate owner and dependent identities through impact and compact coverage', () => {
+    const root = createRepo()
+    repoRoots.push(root)
+    const graph = new KnowledgeGraph({ directed: true })
+    graph.graph.root_path = root
+    for (const owner of ['first', 'second']) {
+      const sourceFile = `src/${owner}.ts`
+      writeFileSync(join(root, sourceFile), 'export function save() {\n  return 1\n}\n', 'utf8')
+      graph.addNode(owner, {
+        label: 'save', source_file: join(root, sourceFile), source_location: 'L1-L3',
+        node_kind: 'function', file_type: 'code', community: 0,
+      })
+      for (let index = 0; index < 11; index += 1) {
+        const callerId = `${owner}_caller_${index}`
+        const callerFile = join(root, 'src', `${callerId}.ts`)
+        writeFileSync(callerFile, 'export function caller() { return save() }\n', 'utf8')
+        graph.addNode(callerId, {
+          label: 'caller', source_file: callerFile, source_location: 'L1',
+          node_kind: 'function', file_type: 'code', community: 0,
+        })
+        graph.addEdge(callerId, owner, { relation: 'calls', confidence: 'EXTRACTED' })
+      }
+    }
+    execFileSync('git', ['add', '.'], { cwd: root, stdio: 'pipe' })
+    execFileSync('git', ['commit', '-m', 'Add duplicate identity fixture'], { cwd: root, stdio: 'pipe' })
+
+    updateFile(root, 'src/second.ts', content => content.replace('return 1', 'return 2'))
+    const secondOnly = analyzePrImpact(graph, root, { budget: 500 })
+    expect(secondOnly.per_node_impact).toEqual([
+      expect.objectContaining({ node: 'save', node_id: 'second', source_file: 'src/second.ts', direct_dependents: 11 }),
+    ])
+    expect(secondOnly.total_blast_radius).toBe(11)
+    expect(secondOnly.risk_summary.top_risks[0]).toEqual(expect.objectContaining({ node_id: 'second', source_file: 'src/second.ts' }))
+    expect(secondOnly.affected_files.every(file => file.includes('second_caller_'))).toBe(true)
+    expect(compactPrImpactResult(secondOnly).per_node_impact).toEqual([
+      expect.objectContaining({ node: 'save', node_id: 'second', source_file: 'src/second.ts', total_dependents: 11 }),
+    ])
+
+    updateFile(root, 'src/first.ts', content => content.replace('return 1', 'return 2'))
+    const both = analyzePrImpact(graph, root, { budget: 1 })
+    expect(both.per_node_impact.map(node => node.node_id).sort()).toEqual(['first', 'second'])
+    expect(both.per_node_impact.every(node => node.direct_dependents === 11)).toBe(true)
+    expect(both.total_blast_radius).toBe(22)
+    expect(both.risk_summary.top_risks.map(node => node.node_id).sort()).toEqual(['first', 'second'])
+    expect(both.coverage_identity?.high_impact_node_ids.slice().sort()).toEqual(['first', 'second'])
+    const visibleIds = new Set(both.review_bundle.nodes.map(node => node.node_id))
+    const missingIds = ['first', 'second'].filter(id => !visibleIds.has(id))
+    expect(missingIds).toHaveLength(1)
+    expect(both.coverage_score).toBe(0.5)
+    expect(both.coverage_score_weighted).toBe(0.5)
+    expect(both.uncovered_hotspots.map(node => node.node_id)).toEqual(missingIds)
+
+    const compact = compactPrImpactResult(both)
+    expect(compact.per_node_impact.map(node => node.node_id).sort()).toEqual(['first', 'second'])
+    expect(compact.total_blast_radius).toBe(22)
+    expect(compact.risk_summary.top_risks).toEqual(both.risk_summary.top_risks)
+    expect(compact.coverage_score).toBe(0.5)
+    expect(compact.coverage_score_weighted).toBe(0.5)
+    expect(compact.uncovered_hotspots.map(node => node.node_id)).toEqual(missingIds)
+    expect(compact.uncovered_hotspot_severities.map(node => node.node_id)).toEqual(missingIds)
+    expect(compact.coverage_identity).toEqual(both.coverage_identity)
+  })
+
   const repoRoots: string[] = []
 
   afterEach(() => {
@@ -654,6 +776,8 @@ describe('pr impact', () => {
     expect(compact.per_node_impact).toEqual(
       full.per_node_impact.slice(0, 5).map((impact) => ({
         node: impact.node,
+        node_id: impact.node_id,
+        source_file: impact.source_file,
         total_dependents: impact.direct_dependents + impact.transitive_dependents,
         affected_communities: impact.affected_communities,
       })),
@@ -708,6 +832,11 @@ describe('pr impact', () => {
       file_type: expect.any(String),
     }))
     expect(compact.review_bundle.nodes.find((node) => node.label === 'ApiHandler')).toEqual(expect.objectContaining({ snippet: null }))
+    expect(compact.review_bundle.nodes.every((node) => !Object.hasOwn(node, 'representation_reason'))).toBe(true)
+    expect(compact.review_bundle.nodes[0]?.snippet).toBe(full.review_bundle.nodes[0]?.snippet)
+    expect(compact.review_bundle.nodes.find((node) => node.label === 'ApiHandler')).toMatchObject({
+      representation_type: 'signature', snippet_source: 'derived',
+    })
     expect(compact.review_bundle.relationships).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

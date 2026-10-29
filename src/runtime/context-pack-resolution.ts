@@ -94,12 +94,7 @@ function signatureResolution<T extends ContextPackNode>(
     if (typeof node.snippet !== 'string' || node.snippet.length === 0) return node
     const sig = extractSignature(node.snippet)
     bytesSaved += Math.max(0, node.snippet.length - sig.length)
-    return {
-      ...node,
-      snippet: sig,
-      representation_type: 'signature',
-      representation_reason: 'signature compression',
-    } as T
+    return representedNode(node, sig, 'signature', 'signature compression')
   })
   return {
     nodes: transformed,
@@ -172,15 +167,22 @@ function mixedResolution<T extends ContextPackNode>(
 }
 
 function summarizeNode<T extends ContextPackNode>(node: T): T {
-  // Drop the snippet body. Preserve all other metadata so the agent can
-  // still rank/filter/expand. Casts back to T because the shape is the
-  // same — only the snippet content changed.
-  return {
-    ...node,
-    snippet: null,
-    representation_type: 'summary',
-    representation_reason: 'summary compression',
-  } as T
+  return representedNode(node, null, 'summary', 'summary compression')
+}
+
+function representedNode<T extends ContextPackNode>(
+  node: T, snippet: string | null, type: ContextRepresentationType, reason: string,
+): T {
+  const result = { ...node, snippet, representation_type: type, representation_reason: reason }
+  // Implementation excerpts retain the original text. Other renderings only
+  // preserve the declaration location for navigation, not exact source spans.
+  if (type !== 'implementation_excerpt') {
+    result.snippet_source = 'derived'
+    const fields = result as unknown as Record<string, unknown>
+    for (const key of ['snippet_line_number', 'snippet_line_range', 'snippet_omitted_ranges',
+      'snippet_scope', 'snippet_truncated', 'snippet_ref', 'snippet_file_complete']) delete fields[key]
+  }
+  return result
 }
 
 function dropSnippetBytes(node: ContextPackNode): number {
@@ -206,12 +208,7 @@ function sketchResolution<T extends ContextPackNode>(
 
     bytesSaved += Math.max(0, dropSnippetBytes(node) - rendered.snippet.length)
     resolutionMap.push({ node_id: node.node_id, resolution: rendered.type })
-    return {
-      ...node,
-      snippet: rendered.snippet,
-      representation_type: rendered.type,
-      representation_reason: rendered.reason,
-    } as T
+    return representedNode(node, rendered.snippet, rendered.type, rendered.reason)
   })
 
   return {
@@ -222,20 +219,9 @@ function sketchResolution<T extends ContextPackNode>(
 }
 
 function signatureNode<T extends ContextPackNode>(node: T): T {
-  if (typeof node.snippet !== 'string' || node.snippet.length === 0) {
-    return {
-      ...node,
-      representation_type: 'signature',
-      representation_reason: 'fallback signature',
-    } as T
-  }
-
-  return {
-    ...node,
-    snippet: extractSignature(node.snippet),
-    representation_type: 'signature',
-    representation_reason: 'fallback signature',
-  } as T
+  return representedNode(node,
+    typeof node.snippet === 'string' ? extractSignature(node.snippet) : null,
+    'signature', 'fallback signature')
 }
 
 type RelationIndex = {

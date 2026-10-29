@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
@@ -310,6 +310,7 @@ describe('stdio pr impact', () => {
   const repoRoots: string[] = []
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     for (const root of repoRoots.splice(0)) {
       rmSync(root, { recursive: true, force: true })
     }
@@ -362,6 +363,41 @@ describe('stdio pr impact', () => {
       }),
     )
     expect(payload.review_bundle.token_count).toBeLessThanOrEqual(240)
+  })
+
+  it('keeps partial PR impact visible in direct and review context-pack evidence', async () => {
+    vi.stubEnv('MADAR_TOOL_PROFILE', 'full')
+    const root = createRepo()
+    repoRoots.push(root)
+    const graphPath = join(root, 'out', 'graph.json')
+    const graph = JSON.parse(readFileSync(graphPath, 'utf8'))
+    for (let i = 0; i < 3; i++) {
+      graph.nodes.push({ id: `upstream${i}`, label: `upstream${i}`, source_file: join(root, 'src', `upstream${i}.ts`),
+        file_type: 'code', node_kind: 'function', community: 1 })
+      graph.edges.push({ source: `upstream${i}`, target: i === 0 ? 'api_handler' : `upstream${i - 1}`, relation: 'calls' })
+    }
+    writeFileSync(graphPath, JSON.stringify(graph))
+    writeFileSync(join(root, 'src', 'auth.ts'), readFileSync(join(root, 'src', 'auth.ts'), 'utf8').replace('"ok"', '"changed"'))
+    for (const verbose of [false, true]) {
+      for (const name of ['pr_impact', 'context_pack']) {
+        const response = await handleStdioRequest(graphPath, { id: 1, method: 'tools/call', params: {
+          name, arguments: name === 'pr_impact' ? { budget: 6000, verbose }
+            : { prompt: 'Review current diff', task: 'review', budget: 6000, verbose },
+        } })
+        expect(response?.error, `${name} verbose=${verbose}`).toBeUndefined()
+        const result = response?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(result.isError).not.toBe(true)
+        const payload = JSON.parse(result.content[0]!.text)
+        const pack = name === 'pr_impact' ? payload : payload.pack
+        expect(pack.impact_traversal).toMatchObject({ partial_targets: 1, depth_limited_targets: 1 })
+        expect(payload.evidence.answerability.missing_obligations).toContain('impact:depth_limited')
+        if (verbose || name === 'pr_impact') {
+          expect(payload.evidence.coverage).toBe('partial')
+          expect(payload.evidence.answerability.answer_scope).not.toBe('complete')
+        }
+        if (!verbose && name === 'pr_impact') expect(payload.missing_context).toContain('impact:depth_limited')
+      }
+    }
   })
 
   it('uses graph root_path for pr impact when the graph artifact lives outside the repository', async () => {
@@ -471,6 +507,11 @@ describe('stdio pr impact', () => {
     expect(compactPayload.review_bundle.nodes.find((node: { label: string }) => node.label === 'ApiHandler')).not.toHaveProperty('community_label')
     expect(compactPayload.review_bundle.nodes.find((node: { label: string }) => node.label === 'ApiHandler')).not.toHaveProperty('framework_boost')
     expect(compactPayload.review_bundle.nodes.find((node: { label: string }) => node.label === 'ApiHandler')).not.toHaveProperty('file_type')
+    expect(compactPayload.review_bundle.nodes.every((node: Record<string, unknown>) => !Object.hasOwn(node, 'representation_reason'))).toBe(true)
+    expect(compactPayload.review_bundle.nodes[0].snippet).toBe(verbosePayload.review_bundle.nodes[0].snippet)
+    expect(compactPayload.review_bundle.nodes.find((node: { label: string }) => node.label === 'ApiHandler')).toMatchObject({
+      representation_type: 'signature', snippet_source: 'derived',
+    })
     expect(compactPayload.review_bundle.relationships).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
