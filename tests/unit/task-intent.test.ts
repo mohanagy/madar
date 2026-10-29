@@ -157,6 +157,20 @@ describe('task-intent', () => {
       expect(classification.scores[0]).toEqual({ kind: 'explain', score: 0 })
     })
 
+    it('routes rationale, quoted data, counterfactuals and leading change instructions by their directive', () => {
+      expect(classifyTaskIntent('Why is the lock retained until cleanup finishes?').kind).toBe('explain')
+      expect(classifyTaskIntent('Why does the lock protect the shared state?').kind).toBe('explain')
+      expect(classifyTaskIntent('Why does acquiring the lock fail?').kind).toBe('debug-flow')
+      expect(classifyTaskIntent('Explain the note titled "debug locking".').kind).toBe('explain')
+      expect(classifyTaskIntent('Explain `what breaks` in this message.').kind).toBe('explain')
+      expect(classifyTaskIntent('Explain what "debug locking" breaks means in this sentence.').kind).toBe('explain')
+      expect(classifyTaskIntent('What would break if lock ownership changed? Do not change code.').kind).toBe('impact')
+      expect(classifyTaskIntent('What could break if lock ownership changed?').kind).toBe('impact')
+      expect(classifyTaskIntent('Please change lock ownership to the caller.').kind).toBe('implement')
+      expect(classifyTaskIntent('Do not change lock ownership; explain it.').kind).toBe('explain')
+      expect(classifyTaskIntent('Explain what happens if callers change lock ownership.').kind).toBe('explain')
+    })
+
     it('does not revalidate static definitions on each classification call', () => {
       expect(classifyTaskIntent('What breaks if we remove ContextPackTaskKind from the runtime?').kind)
         .toBe('impact')
@@ -220,7 +234,7 @@ describe('task-intent', () => {
         ]
       }, () => {
         expect(() => validateTaskIntentDefinitions())
-          .toThrow(/explain\.explain-ambiguous-matchers.*exactly one of any_phrases, any_keywords, or keyword_groups/i)
+          .toThrow(/explain\.explain-ambiguous-matchers.*exactly one of any_phrases, any_prefixes, any_keywords, or keyword_groups/i)
       })
     })
 
@@ -234,7 +248,7 @@ describe('task-intent', () => {
         ]
       }, () => {
         expect(() => validateTaskIntentDefinitions())
-          .toThrow(/explain\.explain-invalid-empty-rule.*exactly one of any_phrases, any_keywords, or keyword_groups/i)
+          .toThrow(/explain\.explain-invalid-empty-rule.*exactly one of any_phrases, any_prefixes, any_keywords, or keyword_groups/i)
       })
     })
   })

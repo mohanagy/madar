@@ -9,6 +9,7 @@ import {
   type TaskIntentSignalRule,
 } from '../contracts/task-intent.js'
 import type { ContextPackTaskKind } from '../contracts/context-pack.js'
+import { scanPromptRegions } from '../shared/prompt-regions.js'
 
 interface RuleMatch {
   kind: TaskIntentKind
@@ -41,6 +42,11 @@ function matchAnyPhrases(normalizedPrompt: string, phrases: readonly string[]): 
   return phrases
     .map(normalizeTerm)
     .filter((phrase) => containsTerm(normalizedPrompt, phrase))
+}
+
+function matchAnyPrefixes(normalizedPrompt: string, prefixes: readonly string[]): string[] {
+  return prefixes.map(normalizeTerm).filter(prefix => prefix.length > 0
+    && (normalizedPrompt === prefix || normalizedPrompt.startsWith(`${prefix} `)))
 }
 
 function matchAnyKeywords(tokens: ReadonlySet<string>, keywords: readonly string[]): string[] {
@@ -89,13 +95,14 @@ function validateSingleKeyword(
 
 function validateRuleDefinition(definition: TaskIntentDefinition, rule: TaskIntentSignalRule): void {
   const hasAnyPhrases = (rule.any_phrases?.length ?? 0) > 0
+  const hasAnyPrefixes = (rule.any_prefixes?.length ?? 0) > 0
   const hasAnyKeywords = (rule.any_keywords?.length ?? 0) > 0
   const hasKeywordGroups = (rule.keyword_groups?.length ?? 0) > 0
-  const matcherFieldCount = [hasAnyPhrases, hasAnyKeywords, hasKeywordGroups].filter(Boolean).length
+  const matcherFieldCount = [hasAnyPhrases, hasAnyPrefixes, hasAnyKeywords, hasKeywordGroups].filter(Boolean).length
 
   if (matcherFieldCount !== 1) {
     throw new Error(
-      `Invalid task intent rule ${taskIntentRuleLabel(definition, rule)}: must define exactly one of any_phrases, any_keywords, or keyword_groups`,
+      `Invalid task intent rule ${taskIntentRuleLabel(definition, rule)}: must define exactly one of any_phrases, any_prefixes, any_keywords, or keyword_groups`,
     )
   }
 
@@ -147,6 +154,13 @@ function evaluateRule(
     for (const phrase of phraseMatches) {
       matchedTerms.add(phrase)
     }
+  }
+
+  if (rule.any_prefixes) {
+    const prefixMatches = matchAnyPrefixes(normalizedPrompt, rule.any_prefixes)
+    if (prefixMatches.length === 0) return null
+    matched = true
+    for (const phrase of prefixMatches) matchedTerms.add(phrase)
   }
 
   if (rule.any_keywords) {
@@ -226,6 +240,18 @@ export function normalizeTaskIntentPrompt(prompt: string): string {
   return normalizeTerm(prompt)
 }
 
+function normalizedTaskDirectivePrompt(prompt: string): string {
+  const parts: string[] = []
+  let cursor = 0
+  for (const region of scanPromptRegions(prompt)) {
+    parts.push(normalizeTerm(prompt.slice(cursor, region.start)), '[data]')
+    cursor = region.end
+  }
+  parts.push(normalizeTerm(prompt.slice(cursor)))
+  // A data boundary must not join separate prose into a new directive phrase.
+  return parts.filter(Boolean).join(' ')
+}
+
 export function defaultContextKindForTaskIntent(kind: TaskIntentKind): TaskIntentContextKind {
   return taskIntentDefinition(kind).default_context_kind
 }
@@ -272,7 +298,9 @@ export function resolveTaskSelection(
 }
 
 export function classifyTaskIntent(prompt: string): TaskIntentClassification {
-  const normalizedPrompt = normalizeTaskIntentPrompt(prompt)
+  // Code, examples and quoted source text are evidence to retrieve, not task
+  // directives. Keep the original prompt intact for retrieval and diagnostics.
+  const normalizedPrompt = normalizedTaskDirectivePrompt(prompt)
   const tokens = promptTokens(normalizedPrompt)
   const ruleMatches = VALIDATED_TASK_INTENT_DEFINITIONS
     .flatMap((definition) => definition.rules.map((rule) => evaluateRule(definition, normalizedPrompt, tokens, rule)))
