@@ -5,6 +5,7 @@ import { communitiesFromGraph } from './serve.js'
 
 const MAX_IMPACT_DEPTH = 5
 const MAX_IMPACT_NODES = 500
+const MAX_IMPACT_TARGET_CANDIDATES = 20
 
 export interface ImpactOptions {
   label?: string
@@ -178,15 +179,21 @@ export interface ImpactTargetCandidate {
 }
 
 export class ImpactTargetResolutionError extends Error {
+  readonly candidates: ImpactTargetCandidate[]
+  readonly total_candidates: number
+
   constructor(
     readonly status: 'ambiguous_target' | 'target_not_found',
     readonly selector: string,
-    readonly candidates: ImpactTargetCandidate[] = [],
+    candidates: ImpactTargetCandidate[] = [],
   ) {
+    const shown = candidates.slice(0, MAX_IMPACT_TARGET_CANDIDATES)
     super(status === 'ambiguous_target'
-      ? `Impact target ${JSON.stringify(selector)} is ambiguous; use node_id: ${candidates.map((node) => `${node.node_id} (${node.source_file})`).join(', ')}`
+      ? `Impact target ${JSON.stringify(selector)} is ambiguous (${candidates.length} matches, showing ${shown.length}); use node_id or a narrower label: ${shown.map((node) => `${node.node_id} (${node.source_file})`).join(', ')}`
       : `Impact target ${JSON.stringify(selector)} was not found; refresh the graph or select an existing node_id or label.`)
     this.name = 'ImpactTargetResolutionError'
+    this.candidates = shown
+    this.total_candidates = candidates.length
   }
 }
 

@@ -2609,6 +2609,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             selector: error.selector,
             message: error.message,
             candidates: error.candidates,
+            total_candidates: error.total_candidates,
           })),
           isError: true,
         })

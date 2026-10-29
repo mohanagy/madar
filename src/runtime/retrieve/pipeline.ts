@@ -97,7 +97,7 @@ export const interpretRetrievalQuery = (input: RetrievalQueryStageInput): Retrie
     prompt: input.question,
     ...(input.retrievalLevel !== undefined ? { manualOverride: input.retrievalLevel } : {}),
   })
-  const hasCodeAnchor = /[`"'][^`"'\n]+[`"']|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b[A-Za-z_$][\w$]*[a-z][A-Z][\w$]*\b/.test(input.question)
+  const hasCodeAnchor = /(?<![\w$])([`"'])[^`"'\n]+\1(?![\w$])|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b[A-Za-z_$][\w$]*[a-z][A-Z][\w$]*\b/.test(input.question)
   const asksForRelations = /\b(flow|workflow|end.to.end|calls?|callers?|dependencies|impact|across|through|route|middleware|pipeline|integration)\b/i.test(input.question)
   const localLookup = hasCodeAnchor && !asksForRelations && /\b(where\s+is|what\s+does|show|find|definition|defined)\b/i.test(input.question)
   const effectiveRetrievalLevel: RetrievalLevel = input.retrievalLevel !== undefined || localLookup || retrievalGate.level === 0

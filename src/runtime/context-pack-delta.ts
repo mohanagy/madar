@@ -105,7 +105,14 @@ function receipt(kind: string, value: unknown): string {
 }
 
 export function nodeContentReceipt(node: ContextPackNode): string {
-  return receipt('source', [node.node_id, node.label, node.source_file, node.line_number,
+  const range = node.snippet_line_range
+  // Final wire output may omit this position only when the exact range supplies it.
+  const lineNumber = node.line_number === undefined && range
+    && Object.keys(range).every(key => key === 'start_line' || key === 'end_line')
+    && Number.isSafeInteger(range.start_line) && range.start_line > 0
+    && Number.isSafeInteger(range.end_line) && range.end_line >= range.start_line
+    ? range.start_line : node.line_number
+  return receipt('source', [node.node_id, node.label, node.source_file, lineNumber,
     node.snippet ?? null, node.snippet_line_number ?? node.snippet_line_range?.start_line ?? null, node.snippet_line_range ?? null,
     node.snippet_omitted_ranges ?? [], node.snippet_scope ?? null, node.snippet_unverified ?? false,
     node.snippet_source ?? null, node.representation_type ?? null])

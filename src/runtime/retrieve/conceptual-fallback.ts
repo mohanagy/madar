@@ -550,12 +550,13 @@ export function flowQueryEvidenceCandidateAllowed(
     return true
   }
   const normalizedKind = node.nodeKind?.trim().toLowerCase() ?? ''
-  if (!EXPLICIT_TEST_EVIDENCE_PATTERN.test(question) && FLOW_TEST_SOURCE_PATTERN.test(node.sourceFile)) {
+  const sourceFile = node.sourceFile.replaceAll('\\', '/')
+  if (!EXPLICIT_TEST_EVIDENCE_PATTERN.test(question) && FLOW_TEST_SOURCE_PATTERN.test(sourceFile)) {
     return false
   }
   if (
     !EXPLICIT_TYPE_EVIDENCE_PATTERN.test(question)
-    && (FLOW_TYPE_SOURCE_PATTERN.test(node.sourceFile) || /^(?:enum|interface|property|type)$/.test(normalizedKind))
+    && (FLOW_TYPE_SOURCE_PATTERN.test(sourceFile) || /^(?:enum|interface|property|type)$/.test(normalizedKind))
   ) {
     return false
   }
@@ -563,14 +564,14 @@ export function flowQueryEvidenceCandidateAllowed(
   const explicitlyNamed = normalizedLabel.length >= 4 && question.toLowerCase().includes(normalizedLabel)
   if (
     !/\bexternal\b/i.test(question)
-    && (EXTERNAL_SCOPE_PATTERN.test(node.sourceFile) || EXTERNAL_SCOPE_PATTERN.test(node.label))
+    && (EXTERNAL_SCOPE_PATTERN.test(sourceFile) || EXTERNAL_SCOPE_PATTERN.test(node.label))
   ) {
     return false
   }
   if (
     !explicitlyNamed
     && !EXPLICIT_ERROR_DECLARATION_PATTERN.test(question)
-    && (LOW_VALUE_OWNER_PATH_PATTERN.test(node.sourceFile) || LOW_VALUE_OWNER_LABEL_PATTERN.test(node.label))
+    && (LOW_VALUE_OWNER_PATH_PATTERN.test(sourceFile) || LOW_VALUE_OWNER_LABEL_PATTERN.test(node.label))
   ) {
     return false
   }

@@ -90,6 +90,19 @@ describe('retrieval pipeline stages', () => {
     })
   })
 
+  it('keeps prose apostrophes from narrowing retrieval while honoring quoted source anchors', () => {
+    for (const question of ["Where is the user's token stored and what's its expiry?",
+      "Where is the user's token stored and what is its expiry?"]) {
+      const result = interpretRetrievalQuery({ question, budget: 3000 })
+      expect(result.retrieval_gate.level).toBe(1)
+      expect(result.effective_retrieval_level).toBe(3)
+    }
+    for (const anchor of ["'token'", '"token"', '`token`', 'ACCESS_DENIED', 'refreshToken']) {
+      expect(interpretRetrievalQuery({ question: `Where is ${anchor} defined?`, budget: 3000 })
+        .effective_retrieval_level).toBe(1)
+    }
+  })
+
   it('builds an explicit, normalized evidence plan without ranking signals', () => {
     const plan = buildRetrievalEvidencePlan({
       coverage: coverage(false),

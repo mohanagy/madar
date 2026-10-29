@@ -735,6 +735,7 @@ describe('stdio runtime', () => {
         expect(ambiguous.isError).toBe(true)
         const failure = JSON.parse(ambiguous.content[0]!.text)
         expect(failure.status).toBe('ambiguous_target')
+        expect(failure.total_candidates).toBe(2)
         expect(failure.candidates).toEqual([
           { node_id: 'a', label: 'run', source_file: 'a.ts' },
           { node_id: 'b', label: 'run', source_file: 'b.ts' },
@@ -758,9 +759,40 @@ describe('stdio runtime', () => {
         id: 2, method: 'tools/call', params: { name: 'impact', arguments: { node_id: 42, label: 'run' } },
       })
       expect(invalid?.error?.code).toBe(-32602)
+      for (const args of [{}, { label: '' }, { node_id: ' ' }]) {
+        const invalidSelector = await handleStdioRequest(graphPath, {
+          id: 2, method: 'tools/call', params: { name: 'impact', arguments: args },
+        })
+        expect(invalidSelector?.error?.code).toBe(-32602)
+      }
       const listed = await handleStdioRequest(graphPath, { id: 3, method: 'tools/list' })
-      const definition = (listed?.result as { tools: Array<{ name: string; inputSchema: unknown }> }).tools.find((tool) => tool.name === 'impact')
-      expect(definition?.inputSchema).toMatchObject({ anyOf: [{ required: ['node_id'] }, { required: ['label'] }] })
+      const definition = (listed?.result as { tools: Array<{ name: string; description: string; inputSchema: unknown }> }).tools.find((tool) => tool.name === 'impact')
+      expect(definition?.inputSchema).toMatchObject({ type: 'object', properties: {
+        node_id: { type: 'string', minLength: 1 }, label: { type: 'string', minLength: 1 },
+      } })
+      for (const keyword of ['anyOf', 'oneOf', 'allOf']) expect(definition?.inputSchema).not.toHaveProperty(keyword)
+      expect(definition?.description).toContain('Requires node_id or label')
+
+      const manyPath = join(root, 'many-ambiguous-labels.json')
+      writeFileSync(manyPath, JSON.stringify({ directed: true, edges: [],
+        nodes: Array.from({ length: 1000 }, (_, index) => ({ id: `candidate-${index}`,
+          label: `run${index}`, source_file: `src/module-${index}.ts` })),
+      }))
+      for (const verbose of [false, true]) {
+        const response = await handleStdioRequest(manyPath, { id: 4, method: 'tools/call',
+          params: { name: 'impact', arguments: { label: 'r', verbose } } })
+        const result = response?.result as { isError?: boolean; content: Array<{ text: string }> }
+        const failure = JSON.parse(result.content[0]!.text)
+        expect(result.isError).toBe(true)
+        expect(failure).toMatchObject({ status: 'ambiguous_target', total_candidates: 1000 })
+        expect(failure.candidates).toHaveLength(20)
+        expect(failure.candidates.every((candidate: { node_id: string; label: string; source_file: string }) => {
+          const index = candidate.node_id.replace('candidate-', '')
+          return candidate.label === `run${index}` && candidate.source_file === `src/module-${index}.ts`
+        })).toBe(true)
+        expect(failure.message).toContain('1000 matches, showing 20')
+        expect(failure).not.toHaveProperty('total_affected')
+      }
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

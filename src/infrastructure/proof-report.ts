@@ -376,7 +376,7 @@ function formatCompareSection(
     }
     if (summary.baselineStatus === 'unknown' || summary.madarStatus === 'unknown') {
       limitations.push(`Compare run completion status for "${summary.question}" is unavailable in this report schema.`)
-    } else if (summary.baselineStatus !== 'completed' || summary.madarStatus !== 'completed') {
+    } else if (summary.baselineStatus !== 'succeeded' || summary.madarStatus !== 'succeeded') {
       limitations.push(`Compare run for "${summary.question}" is incomplete.`)
     }
   }

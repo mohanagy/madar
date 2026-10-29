@@ -7,10 +7,13 @@ import type {
 } from '../../src/contracts/context-pack.js'
 import {
   collectPackNodeIds,
+  collectDeliveredContextReceipts,
   computeDeltaContextPack,
   nodeContentReceipt,
   relationshipContentReceipt,
 } from '../../src/runtime/context-pack-delta.js'
+import { estimateQueryTokens } from '../../src/runtime/serve.js'
+import { compactDuplicateSourcePositions } from '../../src/runtime/source-evidence-wire.js'
 
 function node(id: string, label: string): ContextPackNode {
   return {
@@ -158,6 +161,30 @@ describe('delta source content identity', () => {
 })
 
 describe('delta receipts for contained source references', () => {
+  it('recognizes unchanged source after the wire omits its redundant declaration position', () => {
+    const source = { ...node('method', 'method'), line_number: 4, snippet: 'return true',
+      snippet_line_range: { start_line: 4, end_line: 4 }, snippet_scope: 'symbol' as const }
+    const payload = { response_format: 'source_evidence_v2', pack: { matched_nodes: [source], relationships: [] },
+      serialized_budget: { max_tokens: 1000, token_count: 0, enforced: true } }
+    for (let pass = 0; pass < 12; pass++) {
+      const count = estimateQueryTokens(JSON.stringify(payload))
+      if (payload.serialized_budget.token_count === count) break
+      payload.serialized_budget.token_count = count
+    }
+    const response = compactDuplicateSourcePositions({ result: { content: [{ type: 'text', text: JSON.stringify(payload) }] } }, 'context_pack', {})
+    const wire = JSON.parse(response.result.content[0]!.text)
+    expect(wire.pack.matched_nodes[0]).not.toHaveProperty('line_number')
+    const delivered = collectDeliveredContextReceipts(wire)
+    const result = computeDeltaContextPack(pack([source]), delivered)
+    expect(result.delta_pack.nodes).toEqual([])
+    expect(result.referenced_ids).toEqual(['method'])
+    for (const changed of [{ ...source, line_number: 3 }, { ...source, snippet: 'return false' },
+      { ...source, snippet_line_range: { start_line: 5, end_line: 5 } },
+      { ...source, snippet_omitted_ranges: [{ start_line: 4, end_line: 4 }] }]) {
+      expect(computeDeltaContextPack(pack([changed]), delivered).delta_pack.nodes).toEqual([changed])
+    }
+  })
+
   it('normalizes the excerpt start supplied by its source range', async () => {
     const { collectDeliveredContextReceipts } = await import('../../src/runtime/context-pack-delta.js')
     const source = { ...node('method', 'method'), snippet: 'return true', snippet_line_number: 4,

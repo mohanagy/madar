@@ -116,6 +116,31 @@ describe('impact', () => {
       expect(() => analyzeImpact(graph, {}, { label: '  ' })).toThrow(ImpactTargetResolutionError)
     })
 
+    it('bounds ambiguous target previews while retaining total matches and exact selectable identities', () => {
+      const graph = new KnowledgeGraph({ directed: true })
+      for (let index = 999; index >= 0; index--) {
+        const suffix = String(index).padStart(4, '0')
+        graph.addNode(`candidate-${suffix}`, { label: `run${suffix}`, source_file: `src/module-${suffix}.ts` })
+      }
+      try {
+        analyzeImpact(graph, {}, { label: 'r' })
+        expect.fail('A prefix must not select one of many owners')
+      } catch (error) {
+        expect(error).toBeInstanceOf(ImpactTargetResolutionError)
+        const failure = error as ImpactTargetResolutionError
+        expect(failure.total_candidates).toBe(1000)
+        expect(failure.candidates).toEqual(Array.from({ length: 20 }, (_, index) => {
+          const suffix = String(index).padStart(4, '0')
+          return { node_id: `candidate-${suffix}`, label: `run${suffix}`, source_file: `src/module-${suffix}.ts` }
+        }))
+        expect(failure.message).toContain('1000 matches, showing 20')
+        expect(failure.message).not.toContain('candidate-0020')
+        expect(failure.message).not.toContain('candidate-0999')
+        expect(analyzeImpact(graph, {}, { nodeId: failure.candidates[0]!.node_id }).target_node_id).toBe('candidate-0000')
+        expect(analyzeImpact(graph, {}, { nodeId: 'candidate-0999' }).target_node_id).toBe('candidate-0999')
+      }
+    })
+
     it('rejects undirected graphs instead of reporting reverse-edge false positives', () => {
       const graph = new KnowledgeGraph()
       graph.addNode('caller', { label: 'caller', source_file: '/src/caller.ts' })

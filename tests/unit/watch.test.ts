@@ -471,9 +471,12 @@ describe('watch', () => {
         logger: { log() {}, error() {} },
       })
 
-      await delay(190)
-      controller.abort()
-      await watcher
+      try {
+        await waitFor(() => reconciliations.some((metrics) => metrics.nextIntervalMs === 80))
+      } finally {
+        controller.abort()
+        await watcher
+      }
 
       expect(reconciliations[0]).toMatchObject({ trigger: 'initial', fileCount: 1, nextIntervalMs: 20 })
       expect(reconciliations.some((metrics) => metrics.nextIntervalMs === 40)).toBe(true)

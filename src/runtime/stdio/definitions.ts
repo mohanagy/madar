@@ -5,7 +5,6 @@ export interface McpToolDefinition {
     type: 'object'
     properties: Record<string, unknown>
     required?: string[]
-    anyOf?: Array<{ required: string[] }>
   }
 }
 
@@ -168,10 +167,9 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   },
   {
     name: 'impact',
-    description: 'Direct/transitive dependents, affected files and communities. Ambiguous labels return candidates; prefer node_id.',
+    description: 'Direct/transitive dependents, affected files and communities. Requires node_id or label. Ambiguous labels return candidates; prefer node_id.',
     inputSchema: {
       type: 'object',
-      anyOf: [{ required: ['node_id'] }, { required: ['label'] }],
       properties: {
         node_id: { type: 'string', minLength: 1, description: 'Exact node ID; overrides label' },
         label: { type: 'string', minLength: 1, description: 'Unique label if node_id omitted' },

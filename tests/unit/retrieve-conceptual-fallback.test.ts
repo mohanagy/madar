@@ -14,6 +14,7 @@ import {
 import {
   evaluateQueryEvidenceCoverage,
   finalizeConceptualFallbackPlan,
+  flowQueryEvidenceCandidateAllowed,
   planConceptualFallback,
   queryEvidenceObligations,
   underScopedDivergenceNodeIds,
@@ -63,6 +64,22 @@ function conceptualWorkflowGraph(): KnowledgeGraph {
 }
 
 describe('conceptual-query fallback planner', () => {
+  it('applies flow path exclusions equally to Windows paths while preserving explicit scope', () => {
+    const question = 'Trace how a failed monitor check becomes an incident, triggers notifications, and affects the public status-page status. Identify any inconsistent status-computation paths.'
+    for (const [path, optIn] of [
+      ['packages/api/src/router/external-service/effective-status.ts', 'Include external service behavior.'],
+      ['tests/status-flow.ts', 'Include tests.'],
+      ['src/types/status.ts', 'Include types.'],
+      ['src/lib/http/etag.ts', 'Include error handling.'],
+    ]) {
+      for (const sourceFile of [`D:/repo/${path}`, `D:/repo/${path}`.replaceAll('/', '\\')]) {
+        const node = { label: 'computeOverallStatus', sourceFile, nodeKind: 'function' }
+        expect(flowQueryEvidenceCandidateAllowed(question, node), sourceFile).toBe(false)
+        expect(flowQueryEvidenceCandidateAllowed(`${question} ${optIn}`, node), sourceFile).toBe(true)
+      }
+    }
+  })
+
   it('does not reserve an unrelated response handler for an unresolved follow-up', () => {
     const graph = new KnowledgeGraph({ directed: true })
     addNode(graph, 'refund', 'refund.issuance', 'src/refunds/issue.ts')
