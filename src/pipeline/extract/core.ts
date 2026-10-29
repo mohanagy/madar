@@ -191,6 +191,13 @@ export function _makeId(...parts: string[]): string {
     .toLowerCase()
 }
 
+/** Private identifiers occupy a separate lexical namespace from public names. */
+export function makeTsMemberId(ownerId: string, name: string, privateIdentifier: boolean): string {
+  // Keep public IDs stable. A literal # cannot be produced by _makeId, so this
+  // cannot collide with a public method (including names like private_deliver).
+  return privateIdentifier ? `${_makeId(ownerId)}_${name}` : _makeId(ownerId, name)
+}
+
 export function toLocation(line: number, endLine?: number): string {
   return typeof endLine === 'number' && endLine > line ? `L${line}-L${endLine}` : `L${line}`
 }

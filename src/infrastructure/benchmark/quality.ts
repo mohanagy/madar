@@ -38,6 +38,7 @@ export interface QualityResult {
   recall: number
   reciprocal_rank: number
   snippet_coverage: number
+  /** Legacy field: expected normalized labels with a nonempty snippet, not answer grounding. */
   grounded_match_rate: number
   tokens_used: number
   total_tokens: number | null
@@ -151,7 +152,15 @@ function isExactMatch(returned: string, expected: string): boolean {
 
 function normalizeGoldQuestion(question: QualityQuestionInput): GoldQuestion | null {
   const normalized = normalizeBenchmarkQuestion(question)
-  const expectedLabels = normalized.expected_labels ?? []
+  // Repeated spellings of the same normalized expectation must not inflate
+  // precision or weight one expected label more heavily than another.
+  const seen = new Set<string>()
+  const expectedLabels = (normalized.expected_labels ?? []).filter(label => {
+    const key = normalizeExpectedLabel(label)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
   if (expectedLabels.length === 0) {
     return null
   }
@@ -223,11 +232,10 @@ function buildQualityResult(gold: GoldQuestion, result: RetrieveResult, metadata
     result.matched_nodes.length > 0
       ? result.matched_nodes.filter((node) => typeof node.snippet === 'string' && node.snippet.trim().length > 0).length / result.matched_nodes.length
       : 0
-  const groundedMatches = result.matched_nodes.filter((node) => (
-    normalizedExpectedLabels.includes(normalizeExpectedLabel(node.label)) &&
-    typeof node.snippet === 'string' &&
-    node.snippet.trim().length > 0
-  )).length
+  const groundedMatches = normalizedExpectedLabels.filter(expected =>
+    result.matched_nodes.some(node => isExactMatch(normalizeExpectedLabel(node.label), expected)
+      && typeof node.snippet === 'string' && node.snippet.trim().length > 0),
+  ).length
   const groundedMatchRate = expectedLabels.length > 0 ? groundedMatches / expectedLabels.length : 0
 
   return {
@@ -390,7 +398,7 @@ export function formatQualityReport(report: QualityReport): string {
     `  Recall:       ${(report.avg_recall * 100).toFixed(1)}%`,
     `  MRR:          ${report.mrr.toFixed(3)}`,
     `  Snippet coverage: ${(report.avg_snippet_coverage * 100).toFixed(1)}%`,
-    `  Grounded match rate: ${(report.avg_grounded_match_rate * 100).toFixed(1)}%`,
+    `  Expected labels with snippets: ${(report.avg_grounded_match_rate * 100).toFixed(1)}%`,
   ]
 
   if (report.avg_tokens_used > 0) {
@@ -413,7 +421,7 @@ export function formatQualityReport(report: QualityReport): string {
     lines.push('  Query buckets:')
     for (const bucket of report.bucket_summaries) {
       lines.push(
-        `    - ${bucket.bucket}: recall ${(bucket.avg_recall * 100).toFixed(0)}%, MRR ${bucket.mrr.toFixed(3)}, snippets ${(bucket.avg_snippet_coverage * 100).toFixed(0)}%, grounded ${(bucket.avg_grounded_match_rate * 100).toFixed(0)}%`,
+        `    - ${bucket.bucket}: recall ${(bucket.avg_recall * 100).toFixed(0)}%, MRR ${bucket.mrr.toFixed(3)}, snippets ${(bucket.avg_snippet_coverage * 100).toFixed(0)}%, expected labels with snippets ${(bucket.avg_grounded_match_rate * 100).toFixed(0)}%`,
       )
     }
   }

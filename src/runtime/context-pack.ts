@@ -92,6 +92,8 @@ export interface CompileContextPackInput<
    *     the same budget.
    */
   selection_strategy?: ContextPackSelectionStrategy
+  /** Private presentation priority; never changes evidence classes or coverage. */
+  source_priority_ids?: readonly string[]
 }
 
 export type ContextPackSelectionStrategy = 'evidence-order' | 'value-per-token'
@@ -385,139 +387,9 @@ function claimLabel(className: ContextPackEvidenceClass): string {
   return className.replace(/_/g, ' ')
 }
 
-const ROUTER_OUTPUT_PROVENANCE_PATTERN = /\bRouterOutputs\s*\[\s*['"]([^'"]+)['"]\s*\]\s*\[\s*['"]([^'"]+)['"]\s*\]/gi
-
-function buildInputProvenanceClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
-  const seen = new Set<string>()
-  const claims: ContextPackClaim[] = []
-
-  for (const node of nodes) {
-    if (!node.snippet) {
-      continue
-    }
-
-    for (const match of node.snippet.matchAll(ROUTER_OUTPUT_PROVENANCE_PATTERN)) {
-      const router = match[1]
-      const procedure = match[2]
-      if (!router || !procedure) {
-        continue
-      }
-
-      const reference = `RouterOutputs["${router}"]["${procedure}"]`
-      const dedupeKey = `${node.source_file}\u0000${reference}`
-      if (seen.has(dedupeKey)) {
-        continue
-      }
-
-      seen.add(dedupeKey)
-      claims.push({
-        evidence_class: node.evidence_class ?? 'supporting',
-        text: node.snippet_scope === 'source_file'
-          ? `input provenance: ${node.source_file} contains ${reference} router-output evidence`
-          : `input provenance: ${node.label} consumes data typed as the ${reference} router output`,
-        node_labels: [node.label],
-      })
-    }
-  }
-
-  return claims
-}
-
-function buildStatusProjectionSplitClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
-  const projection = nodes.find((node) => (
-    node.snippet?.includes('pageIndicator(page.status)') === true
-    && node.snippet.includes('page.statusReports')
-  ))
-  const incidentRollup = nodes.find((node) => (
-    /e\.type\s*===\s*["']incident["']/.test(node.snippet ?? '')
-    && /barType\s*!==\s*["']manual["']/.test(node.snippet ?? '')
-  ))
-  if (!projection || !incidentRollup) {
-    return []
-  }
-
-  return [{
-    evidence_class: projection.evidence_class ?? 'supporting',
-    text: `public payload divergence: when barType is not manual, an open incident event can make page.status "error" in ${incidentRollup.source_file}; ${projection.source_file} builds unresolved incident entries only from page.statusReports, so an auto-created incident without a status report can yield an error indicator with an empty incidents list`,
-    node_labels: [projection.label, incidentRollup.label],
-  }]
-}
-
-function buildPublicStatusRuntimeProvenanceClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
-  const boundary = nodes.find((node) => (
-    /\btrpc\s*\.\s*statusPage\s*\.\s*get\s*\.\s*queryOptions\b/i.test(node.snippet ?? '')
-    && /\bto(?:Status|Summary|UnresolvedIncidents)\s*\(\s*data\b/.test(node.snippet ?? '')
-  ))
-  const publicRouter = nodes.find((node) => (
-    /(?:^|\/)packages\/api\/src\/router\/statusPage\.ts$/i.test(node.source_file.replaceAll('\\', '/'))
-    && /e\.type\s*===\s*["']incident["']/.test(node.snippet ?? '')
-  ))
-  const incidentAwarePublicRouter = publicRouter && (
-    /e\.type\s*===\s*["']incident["']/.test(publicRouter.snippet ?? '')
-    && /barType\s*!==\s*["']manual["']/.test(publicRouter.snippet ?? '')
-  )
-  // Prefer a source-range excerpt that proves a distinct status decision over
-  // a symbol-name-only fallback. This intentionally relies on the selected
-  // evidence, not a repository-specific path or an absence-of-query claim.
-  const semanticAlternate = nodes.find((node) => (
-    node !== publicRouter
-    && /overall\s*status/i.test(node.snippet ?? '')
-    && /status\s*report/i.test(node.snippet ?? '')
-    && /maintenance/i.test(node.snippet ?? '')
-  ))
-  const alternate = semanticAlternate ?? nodes.find((node) => (
-    node !== publicRouter && /(?:compute|derive|resolve).*status/i.test(node.label)
-  ))
-  if (!boundary || !publicRouter) {
-    return []
-  }
-
-  const alternateClaim = semanticAlternate && incidentAwarePublicRouter
-    ? `; ${publicRouter.source_file} treats an open incident event as "error" outside manual mode, while ${semanticAlternate.source_file} ${semanticAlternate.label} derives overall status from active status reports and maintenance`
-    : alternate
-      ? `; ${alternate.source_file} ${alternate.label} is a separate computation path`
-      : ''
-
-  return [{
-    evidence_class: boundary.evidence_class ?? 'supporting',
-    text: `public runtime provenance: ${boundary.source_file} ${boundary.label} fetches trpc.statusPage.get and passes that data to the public status-json serializers backed by ${publicRouter.source_file}${alternateClaim}`,
-    node_labels: [boundary.label, publicRouter.label, ...(alternate ? [alternate.label] : [])],
-  }]
-}
-
-function buildFailureHandoffClaims(nodes: readonly ContextPackNode[]): ContextPackClaim[] {
-  const detector = nodes.find((node) => (
-    /HTTPCheckerHandler/.test(node.label)
-    && /\bUpdateStatus\s*\(/.test(node.snippet ?? '')
-    && /\bStatus\s*:\s*["']error["']/.test(node.snippet ?? '')
-  ))
-  const handoff = nodes.find((node) => (
-    node.label === 'UpdateStatus()'
-    && /\bcloudtasks\.NewClient\s*\(/.test(node.snippet ?? '')
-    && /\.CreateTask\s*\(/.test(node.snippet ?? '')
-  ))
-  if (!detector || !handoff) {
-    return []
-  }
-
-  return [
-    {
-      evidence_class: detector.evidence_class ?? 'supporting',
-      text: `failure detection: ${detector.source_file} ${detector.label} sends Status "error" to UpdateStatus`,
-      node_labels: [detector.label],
-    },
-    {
-      evidence_class: handoff.evidence_class ?? 'supporting',
-      text: `cross-runtime handoff: ${handoff.source_file} ${handoff.label} enqueues the checker status update with Cloud Tasks`,
-      node_labels: [handoff.label],
-    },
-  ]
-}
-
 function buildClaims(
   taskContract: ContextPackTaskContract,
   labelsByEvidence: ReadonlyMap<ContextPackEvidenceClass, string[]>,
-  nodes: readonly ContextPackNode[],
 ): ContextPackClaim[] {
   const evidenceOrder = orderedEvidence(taskContract, labelsByEvidence.keys())
 
@@ -534,16 +406,12 @@ function buildClaims(
     }]
   })
 
-  return [
-    ...buildPublicStatusRuntimeProvenanceClaims(nodes),
-    ...buildStatusProjectionSplitClaims(nodes),
-    ...buildFailureHandoffClaims(nodes),
-    ...buildInputProvenanceClaims(nodes),
-    ...evidenceClaims,
-  ]
+  // A matched snippet identifies evidence; text patterns do not establish
+  // runtime behavior, data provenance, or a relationship between two owners.
+  return evidenceClaims
 }
 
-function buildExpandableRefs(
+export function buildExpandableRefs(
   taskContract: ContextPackTaskContract,
   omittedNodes: readonly ContextPackNodeCandidate[],
 ): ContextPackExpandableRef[] {
@@ -698,6 +566,8 @@ function expandableFollowUp(
     evidence_class: evidenceClass,
     focus_files,
     focus_ranges,
+    ...(previews.every(preview => typeof preview.node_id === 'string' && preview.node_id.length > 0)
+      ? { node_ids: [...new Set(previews.map(preview => preview.node_id!))] } : {}),
   }
 }
 
@@ -706,6 +576,7 @@ export function classifyTaskContract(
   options: ClassifyTaskContractOptions,
 ): ContextPackTaskContract {
   const recipe = resolveTaskEvidenceRecipe(taskKind, {
+    ...(options.prompt !== undefined ? { prompt: options.prompt } : {}),
     ...(options.task_intent ? { task_intent: options.task_intent } : {}),
     ...(options.has_change_evidence !== undefined ? { has_change_evidence: options.has_change_evidence } : {}),
   })
@@ -1217,6 +1088,9 @@ export function renderCompiledContextPackNodes<
         task_kind: taskContract.task_kind,
       }).nodes.map((node, index) => {
         const originalNode = nodes[index]!
+        // Source spans are evidence, not a sketch to rewrite. Their explicit omitted
+        // ranges already describe any bounded extraction performed by retrieval.
+        if (originalNode.snippet_line_range) return originalNode
         const originalCost = estimateContextPackEntryTokens(
           originalNode.label,
           originalNode.source_file,
@@ -1257,6 +1131,9 @@ export function compileContextPack<
   input: CompileContextPackInput<TNode, TRelationship, TCommunity>,
 ): CompiledContextPack<TNode, TRelationship, TCommunity> {
   const orderedNodes = sortCandidatesByEvidence(input.task_contract, input.nodes)
+  const sourcePriorities = new Map((input.source_priority_ids ?? []).map((id, index) => [id, index]))
+  if (sourcePriorities.size) orderedNodes.sort((left, right) =>
+    (sourcePriorities.get(left.node_id ?? '') ?? Infinity) - (sourcePriorities.get(right.node_id ?? '') ?? Infinity))
   const coverageNodes = orderedNodes.map((candidate) => coverageEntryForCandidate(candidate))
   const selectedNodes: TNode[] = []
   const selectedCoverage: CoverageNodeCandidate[] = []
@@ -1314,7 +1191,7 @@ export function compileContextPack<
     const optionalCandidates: ContextPackNodeCandidate<TNode>[] = []
     let requiredOverflow = false
     for (const candidate of orderedNodes) {
-      if (requiredClasses.has(candidate.evidence_class)) {
+      if (sourcePriorities.has(candidate.node_id ?? '') || requiredClasses.has(candidate.evidence_class)) {
         requiredCandidates.push(candidate)
       } else {
         optionalCandidates.push(candidate)
@@ -1402,7 +1279,7 @@ export function compileContextPack<
     nodes: renderedNodes.nodes,
     relationships,
     community_context: (input.community_context ?? []).filter((community) => selectedCommunities.has(community.id)),
-    claims: buildClaims(input.task_contract, selectedLabelsByEvidence, renderedNodes.nodes),
+    claims: buildClaims(input.task_contract, selectedLabelsByEvidence),
     expandable: buildExpandableRefs(input.task_contract, omittedNodes),
     coverage: coverageEntriesForCandidates(
       input.task_contract,

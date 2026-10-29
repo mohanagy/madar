@@ -10,6 +10,8 @@ import {
   applyContextPackResolution,
   type ContextPackResolution,
 } from '../../src/runtime/context-pack-resolution.js'
+import { finalizeSourceEvidenceResponse, renderSourceEvidenceText } from '../../src/runtime/source-evidence-response.js'
+import { nodeContentReceipt } from '../../src/runtime/context-pack-delta.js'
 
 type TaskAwareResolutionOptions = Parameters<typeof applyContextPackResolution>[1]
 
@@ -30,6 +32,44 @@ function makeRelationship(from: string, to: string, relation: string): ContextPa
 }
 
 describe('applyContextPackResolution (#76)', () => {
+  it('keeps derived representations distinct from exact source at the wire boundary', () => {
+    const source = { ...makeNode({ snippet: 'export function fn() {\n  return save()\n}',
+      snippet_line_number: 1, snippet_line_range: { start_line: 1, end_line: 3 },
+      snippet_scope: 'symbol', evidence_class: 'change' }), snippet_file_complete: true }
+    const wire = (node: ContextPackNode) => {
+      const output = finalizeSourceEvidenceResponse({ task: 'explain', pack: { matched_nodes: [node] } }, 3000)
+      return (output.pack as { matched_nodes: Array<Record<string, unknown>> }).matched_nodes[0]!
+    }
+    const cases: Array<[TaskAwareResolutionOptions, string]> = [
+      [{ resolution: 'signature' }, 'signature'],
+      [{ resolution: 'summary' }, 'summary'],
+      [{ resolution: 'mixed', detail_top_n: 0 }, 'summary'],
+      [{ resolution: 'sketch', task_kind: 'review' }, 'signature'],
+      [{ resolution: 'sketch', relationships: [makeRelationship('a', 'save', 'calls')] }, 'dependency_record'],
+    ]
+    for (const [options, expectedType] of cases) {
+      const node = applyContextPackResolution([{ ...source, evidence_class: 'supporting' as const }], options).nodes[0]!
+      const delivered = wire(node)
+      expect(delivered).toMatchObject({ representation_type: expectedType, snippet_source: 'derived',
+        source_file: source.source_file, line_number: source.line_number })
+      expect(renderSourceEvidenceText({ pack: { matched_nodes: [delivered] } })).toContain(`Derived representation: ${expectedType}`)
+      for (const field of ['snippet_line_number', 'snippet_line_range', 'snippet_scope', 'snippet_file_complete', 'snippet_ref']) {
+        expect(delivered).not.toHaveProperty(field)
+      }
+    }
+    for (const options of [{ resolution: 'detail' }, { resolution: 'sketch', task_kind: 'review' }] as const) {
+      const delivered = wire(applyContextPackResolution([source], options).nodes[0]!)
+      expect(delivered).toMatchObject({ snippet: source.snippet, snippet_line_range: source.snippet_line_range,
+        snippet_scope: 'symbol', snippet_file_complete: true })
+      expect(delivered).not.toHaveProperty('snippet_source')
+    }
+    const singleLine = makeNode()
+    const signature = applyContextPackResolution([singleLine], { resolution: 'signature' }).nodes[0]!
+    expect(signature.snippet).toBe(singleLine.snippet)
+    expect(nodeContentReceipt(signature)).not.toBe(nodeContentReceipt(singleLine))
+    expect(source.snippet_line_range).toEqual({ start_line: 1, end_line: 3 })
+  })
+
   it('detail resolution is a no-op (clones the list)', () => {
     const nodes = [makeNode({ node_id: 'a' }), makeNode({ node_id: 'b' })]
     const result = applyContextPackResolution(nodes, { resolution: 'detail' })

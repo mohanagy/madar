@@ -1,7 +1,62 @@
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 
 describe('retrieve semantic path', () => {
+  it('filters excluded source before semantic ranking and reranking while preserving lexical anchors', async () => {
+    vi.resetModules()
+    const rank = vi.fn(async (_question: string, candidates: Array<{ id: string; text: string }>) => new Map(candidates.map(candidate => [candidate.id, 0.9])))
+    const rerank = vi.fn(async (_question: string, candidates: Array<{ id: string; text: string }>) => new Map(candidates.map(candidate => [candidate.id, 0.9])))
+    vi.doMock('../../src/runtime/semantic.js', () => ({
+      rankCandidatesBySemanticSimilarity: rank, rerankCandidatesWithCrossEncoder: rerank,
+      DEFAULT_SEMANTIC_MODEL: 'mock-semantic-model', DEFAULT_RERANK_MODEL: 'mock-rerank-model',
+    }))
+    const { retrieveContext, retrieveContextAsync } = await import('../../src/runtime/retrieve.js')
+    const root = mkdtempSync(join(tmpdir(), 'madar-semantic-exclusions-'))
+    try {
+      const graph = new KnowledgeGraph()
+      graph.graph.root_path = root
+      for (const [id, label, relative] of [
+        ['allowed', 'InvoiceAllowed', 'src/allowed.ts'],
+        ['blocked', 'InvoiceBlocked', 'src/blocked.ts'],
+        ['legacy', 'LegacyInvoice', 'src/old.ts'],
+        ['spec', 'InvoiceSpec', 'src/invoice.spec.ts'],
+      ]) {
+        const file = join(root, relative!)
+        mkdirSync(dirname(file), { recursive: true })
+        const snippet = `export function ${label}() { return "invoice storage" }`
+        writeFileSync(file, snippet)
+        graph.addNode(id!, { label: `${label}()`, file_type: 'code', source_file: file, source_location: 'L1', snippet })
+      }
+      const options = { budget: 3000, semantic: true, rerank: true }
+      const scoped = await retrieveContextAsync(graph, { ...options,
+        question: 'Where is invoice storage implemented? Exclude src/blocked.ts, legacy, tests.',
+      })
+      for (const mock of [rank, rerank]) {
+        expect(mock).toHaveBeenCalled()
+        expect(mock.mock.calls.at(-1)![1].map(candidate => candidate.id)).toEqual(['allowed'])
+      }
+      expect(scoped.matched_nodes.map(node => node.node_id)).toEqual(['allowed'])
+
+      const anchored = 'Explain `InvoiceBlocked`. Exclude src/blocked.ts.'
+      expect(retrieveContext(graph, { question: anchored, budget: 3000 }).matched_nodes.map(node => node.node_id)).toContain('blocked')
+      rank.mockClear(); rerank.mockClear()
+      await retrieveContextAsync(graph, { ...options, question: anchored })
+      for (const mock of [rank, rerank]) expect(mock.mock.calls.at(-1)![1].map(candidate => candidate.id)).toContain('blocked')
+
+      rank.mockClear(); rerank.mockClear()
+      const invalid = await retrieveContextAsync(graph, { ...options, question: 'Explain `InvoiceBlocked`. Exclude ../src/blocked.ts.' })
+      expect(invalid.matched_nodes).toEqual([])
+      expect(rank).not.toHaveBeenCalled()
+      expect(rerank).not.toHaveBeenCalled()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+      vi.doUnmock('../../src/runtime/semantic.js')
+    }
+  })
+
   it('adds semantic-only matches when lexical retrieval misses', async () => {
     vi.resetModules()
     vi.doMock('../../src/runtime/semantic.js', () => ({

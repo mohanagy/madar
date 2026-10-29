@@ -55,6 +55,8 @@ export interface RetrievalGateSignals {
   has_pr_diff: boolean
   has_stack_trace: boolean
   mentioned_paths: ReadonlyArray<string>
+  /** Relative trailing-slash scope hints, never concrete file/symbol anchors. */
+  mentioned_directories?: ReadonlyArray<string>
   mentioned_symbols: ReadonlyArray<string>
   generation_intent?: RetrievalGenerationIntent
   target_domain_hint?: RetrievalTargetDomainHint

@@ -90,11 +90,15 @@ describe('generate performance benchmark harness', () => {
         changed_files: 0,
         extracted_files: 0,
       }))
-      expect(summary.variants['update-changed']).toEqual(expect.objectContaining({
+      const changedUpdate = summary.variants['update-changed']
+      expect(changedUpdate).toEqual(expect.objectContaining({
         mode: 'update',
         changed_files: 1,
-        extracted_files: 1,
+        extracted_files: changedUpdate.extractable_files,
       }))
+      expect(changedUpdate.notes).toContain(
+        `Legacy update rebuilt ${changedUpdate.extractable_files} current file(s) to refresh cross-file relationships.`,
+      )
       expect(summary.variants['cluster-only']).toEqual(expect.objectContaining({
         mode: 'cluster-only',
         extracted_files: 0,

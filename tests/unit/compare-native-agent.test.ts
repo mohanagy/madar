@@ -1767,6 +1767,71 @@ describe('parseAnthropicResultEvent', () => {
   })
 })
 
+describe('terminal receipt accounting', () => {
+  const failedReceipt = { ...MADAR_USAGE_PAYLOAD, subtype: 'error_max_turns', is_error: true, result: undefined }
+
+  it('accepts a successful terminal result followed by system events', () => {
+    const stream = [BASELINE_USAGE_PAYLOAD, { type: 'system', subtype: 'status', status: 'idle' }]
+    expect(parseAnthropicResultEvent(stream.map(value => JSON.stringify(value)).join('\n'))).toMatchObject({
+      subtype: 'success', is_error: false, usage: BASELINE_USAGE_PAYLOAD.usage,
+    })
+  })
+
+  it('retains failed terminal counters only with explicit failure metadata', () => {
+    expect(parseAnthropicResultEvent(JSON.stringify(failedReceipt))).toMatchObject({
+      subtype: 'error_max_turns', is_error: true, usage: failedReceipt.usage,
+    })
+  })
+
+  it.each([
+    ['nonterminal usage', JSON.stringify({ type: 'assistant', usage: BASELINE_USAGE_PAYLOAD.usage })],
+    ['later error without usage', [BASELINE_USAGE_PAYLOAD, { type: 'result', subtype: 'error_during_execution', is_error: true }].map(value => JSON.stringify(value)).join('\n')],
+    ['later partial usage', JSON.stringify([BASELINE_USAGE_PAYLOAD, { ...failedReceipt, usage: { input_tokens: 1 } }])],
+    ['truncated terminal', JSON.stringify(BASELINE_USAGE_PAYLOAD) + '\n{"type":"result"'],
+    ['partial next turn', JSON.stringify([BASELINE_USAGE_PAYLOAD, { type: 'assistant', message: { content: [] } }])],
+    ['negative tokens', JSON.stringify({ ...BASELINE_USAGE_PAYLOAD, usage: { ...BASELINE_USAGE_PAYLOAD.usage, input_tokens: -1 } })],
+    ['fractional tokens', JSON.stringify({ ...BASELINE_USAGE_PAYLOAD, usage: { ...BASELINE_USAGE_PAYLOAD.usage, input_tokens: 0.5 } })],
+    ['unsafe sum', JSON.stringify({ ...BASELINE_USAGE_PAYLOAD, usage: { ...BASELINE_USAGE_PAYLOAD.usage, input_tokens: Number.MAX_SAFE_INTEGER } })],
+  ])('rejects %s as a complete session receipt', (_name, stdout) => {
+    expect(parseAnthropicResultEvent(stdout)).toBeNull()
+  })
+
+  it('does not label invalid provider cost as a reported cost', () => {
+    expect(parseAnthropicResultEvent(JSON.stringify({ ...BASELINE_USAGE_PAYLOAD, total_cost_usd: -1 }))?.total_cost_usd).toBeNull()
+  })
+
+  for (const arm of ['baseline', 'madar'] as const) {
+    it.each([
+      ['explicit error at zero exit', JSON.stringify(failedReceipt), 0, 'runner_error', true],
+      ['success-shaped nonzero exit', JSON.stringify(MADAR_USAGE_PAYLOAD), 1, 'runner_error', true],
+      ['earlier success then failure', JSON.stringify([BASELINE_USAGE_PAYLOAD, failedReceipt]), 0, 'runner_error', true],
+      ['terminal missing usage', JSON.stringify([BASELINE_USAGE_PAYLOAD, { type: 'result', subtype: 'error_during_execution', is_error: true }]), 0, 'runner_error', false],
+      ['terminal missing subtype', JSON.stringify({ ...MADAR_USAGE_PAYLOAD, subtype: undefined }), 0, 'runner_error', true],
+      ['plain answer', 'unstructured answer', 0, 'answer_only', false],
+    ] as const)(`${arm}: excludes %s from successful exact reductions`, async (_name, stdout, exitCode, kind, diagnostics) => {
+      const { projectDir, graphPath, outputDir } = makeFixtureProject()
+      try {
+        const result = await executeNativeAgentCompare({ graphPath, outputDir, question: 'What is Alpha?',
+          execTemplate: 'mock-runner', baselineMode: 'native_agent' }, {
+          runner: async execution => ({ stdout: execution.mode === arm ? stdout : JSON.stringify(execution.mode === 'baseline' ? VERBOSE_BASELINE_PAYLOAD : VERBOSE_MADAR_MCP_RETRIEVE_PAYLOAD),
+            exitCode: execution.mode === arm ? exitCode : 0, stderr: '', elapsedMs: 1 }),
+          now: () => new Date('2026-05-01T00:00:00Z'),
+        })
+        const report = result.reports[0]!
+        expect(report[arm].kind).toBe(kind)
+        expect(report.reductions).toBeNull()
+        expect(report.prompt_token_source[arm]).toBe('unknown')
+        expect(report.provider_proof?.reduction_basis).not.toBe('provider_reported')
+        const run = report[arm]
+        if (run.kind === 'runner_error') {
+          expect(run.usage_diagnostic !== undefined).toBe(diagnostics)
+          if (diagnostics) expect(run.usage_diagnostic).toMatchObject({ usage: MADAR_USAGE_PAYLOAD.usage, total_cost_usd: MADAR_USAGE_PAYLOAD.total_cost_usd })
+        }
+      } finally { rmSync(projectDir, { recursive: true, force: true }) }
+    })
+  }
+})
+
 describe('executeNativeAgentCompare', () => {
   it('writes separate native-agent prompts for the baseline and Madar arms', async () => {
     const { projectDir, graphPath, outputDir } = makeFixtureProject()

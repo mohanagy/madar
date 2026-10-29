@@ -1,10 +1,11 @@
 import { createInterface } from 'node:readline'
 import { realpathSync, statSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import type { ContextSessionState } from '../contracts/context-session.js'
+import { SOURCE_RETRIEVAL_ADMISSION } from '../shared/source-retrieval-guidance.js'
 import { compareRefs } from '../infrastructure/time-travel.js'
 import { startGraphAutoRefreshInBackground } from '../infrastructure/background-auto-refresh.js'
 import type { GraphAutoRefreshController } from '../infrastructure/watch.js'
@@ -25,6 +26,7 @@ import {
   type ResourceSessionState,
 } from './stdio/resources.js'
 import { handleToolCall as handleToolCallRequest } from './stdio/tools.js'
+import { compactDuplicateSourcePositions } from './source-evidence-wire.js'
 import { isSemanticRuntimeAvailable } from './semantic.js'
 import {
   communitiesFromGraph,
@@ -60,7 +62,7 @@ const JSONRPC_SERVER_ERROR = -32000
 const MCP_PROTOCOL_VERSION = '2025-11-25'
 const MCP_SERVER_NAME = 'madar'
 const MCP_SERVER_TITLE = 'Madar TS'
-const MCP_SERVER_VERSION = '0.1.0'
+const MCP_SERVER_VERSION = readPackageVersion()
 const MAX_STDIO_LINE_BYTES = 1_000_000
 const MAX_STDIO_TEXT_LENGTH = 512
 const MAX_STDIO_TOKEN_BUDGET = 100_000
@@ -792,7 +794,7 @@ export function handleStdioRequest(
             version: MCP_SERVER_VERSION,
           },
           instructions: strictContextPackProfile
-            ? 'Strict profile: use context_pack once with the user request verbatim. Use context_expand only for a listed verify_targets handle; graph prompts, resources, and completions are disabled.'
+            ? `Strict profile: ${SOURCE_RETRIEVAL_ADMISSION} For exact JS/TS functions, use context_pack targets [{file, symbol}] with task=explain. For experimental discovery, ask focused source questions with relevant symbols, literals, and paths; exclude hypothetical values from search terms unless they are actual source literals. Use context_expand for listed handles when more source is needed, or read named files directly. Continue investigating when evidence is incomplete. Graph prompts, resources, and completions are disabled.`
             : 'Use tools/list to discover graph tools, then tools/call to query the generated graph.',
         })
       case 'notifications/initialized':
@@ -914,25 +916,27 @@ export function handleStdioRequest(
         }
         const toolArguments = recordParam(params, 'arguments')
         if (strictContextPackProfile && toolName === 'context_pack') {
-          const unsupported = Object.keys(toolArguments ?? {}).filter((key) => key !== 'prompt' && key !== 'task')
+          const unsupported = Object.keys(toolArguments ?? {}).filter((key) => key !== 'prompt' && key !== 'task' && key !== 'budget' && key !== 'targets')
           if (unsupported.length > 0) {
             return failure(
               id,
               JSONRPC_INVALID_PARAMS,
-              `strict context_pack accepts only prompt and optional task; unsupported argument${unsupported.length === 1 ? '' : 's'}: ${unsupported.join(', ')}. Use MADAR_TOOL_PROFILE=full for diagnostics or retrieval tuning.`,
+              `strict context_pack accepts prompt and optional task/budget/targets; unsupported argument${unsupported.length === 1 ? '' : 's'}: ${unsupported.join(', ')}. Use MADAR_TOOL_PROFILE=full for diagnostics or retrieval tuning.`,
             )
           }
         }
         if (strictContextPackProfile && toolName === 'context_expand') {
-          const unsupported = Object.keys(toolArguments ?? {}).filter((key) => key !== 'handle_id')
+          const unsupported = Object.keys(toolArguments ?? {}).filter((key) => key !== 'handle_id' && key !== 'budget' && key !== 'symbol')
           if (unsupported.length > 0) {
             return failure(
               id,
               JSONRPC_INVALID_PARAMS,
-              `strict context_expand accepts only handle_id; unsupported argument${unsupported.length === 1 ? '' : 's'}: ${unsupported.join(', ')}. Use MADAR_TOOL_PROFILE=full for expansion tuning.`,
+              `strict context_expand accepts handle_id and optional budget/symbol; unsupported argument${unsupported.length === 1 ? '' : 's'}: ${unsupported.join(', ')}. Use MADAR_TOOL_PROFILE=full for expansion tuning.`,
             )
           }
         }
+        let responseSourceRoot: string | undefined
+        let responseRootUnavailable = false
         const response = handleToolCallRequest(id, graphPath, params, {
           ok,
           failure,
@@ -942,7 +946,18 @@ export function handleStdioRequest(
           stringParamAlias,
           numberParamAlias,
           recordParam,
-          loadGraphCached,
+          loadGraphCached: (path) => {
+            const graph = loadGraphCached(path)
+            if (toolName === 'context_expand' && !responseRootUnavailable) {
+              const storedRoot = graph.graph.root_path
+              if (typeof storedRoot !== 'string' || storedRoot.includes('\0') || !isAbsolute(storedRoot)
+                || resolve(storedRoot) !== storedRoot || responseSourceRoot !== undefined && responseSourceRoot !== storedRoot) {
+                responseSourceRoot = undefined
+                responseRootUnavailable = true
+              } else responseSourceRoot = storedRoot
+            }
+            return graph
+          },
           queryOptionsFromParams,
           handleGraphDiff,
           compareRefs: async (input) => {
@@ -992,7 +1007,9 @@ export function handleStdioRequest(
            },
             setContextPackHandle: (handleId, expansion) => {
               const handles = ensureContextPackHandles(sessionState)
-              if (!handles.has(handleId) && handles.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
+              // A handle returned again by this response must survive later inserts.
+              handles.delete(handleId)
+              if (handles.size >= MAX_CONTEXT_PROMPT_SESSIONS) {
                 const oldestHandleId = handles.keys().next().value as string | undefined
                 if (oldestHandleId !== undefined) {
                  handles.delete(oldestHandleId)
@@ -1041,7 +1058,9 @@ export function handleStdioRequest(
           }
           return toolResponse
         }
-        return response instanceof Promise ? response.then(recordContextPackTelemetry) : recordContextPackTelemetry(response)
+        const finishToolResponse = (toolResponse: StdioResponse): StdioResponse =>
+          recordContextPackTelemetry(compactDuplicateSourcePositions(toolResponse, toolName, toolArguments, responseSourceRoot))
+        return response instanceof Promise ? response.then(finishToolResponse) : finishToolResponse(response)
       }
       case 'ping':
         return ok(id, { ok: true })

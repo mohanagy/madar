@@ -20,7 +20,8 @@ describe('GitHub repo metadata contract', () => {
   it('tracks the intended GitHub description and discovery topics for Madar', () => {
     const metadata = loadRepoMetadata()
 
-    expect(metadata.description).toBe('Stop AI coding agents from rediscovering large TypeScript/Node repos with task-aware local context packs.')
+    const manifest = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as { description: string }
+    expect(metadata.description).toBe(manifest.description)
     expect(metadata.topics).toEqual(expect.arrayContaining([
       'ai-coding-agents',
       'claude-code',

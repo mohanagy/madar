@@ -4,9 +4,12 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { strFromU8, unzipSync, type UnzipFileInfo } from 'fflate'
 import * as ts from 'typescript'
 
+import { sourceFunctionOccurrence } from '../shared/source-function-occurrences.js'
+import { JS_TS_SOURCE_LANGUAGES } from '../shared/source-extensions.js'
+import { isPackageManifestPath, readPackageManifest } from '../shared/package-manifest.js'
 import type { ExtractionData, ExtractionEdge, ExtractionNode } from '../contracts/types.js'
 import { runPipelineStage } from '../core/pipeline/stage.js'
-import { loadCached, saveCached } from '../infrastructure/cache.js'
+import { createCacheAccess, loadCached, saveCached } from '../infrastructure/cache.js'
 import { builtinCapabilityRegistry } from '../infrastructure/capabilities.js'
 import { CODE_EXTENSIONS, FileType, classifyFile, detect } from './detect.js'
 import { mergeExtractionFragments } from './extract/combine.js'
@@ -39,6 +42,7 @@ import {
   fileNodeIdForPath,
   fileStemForPath,
   indentationLevel,
+  makeTsMemberId,
   normalizeLabel,
   stripHashComment,
   withExtractionFileStemContext,
@@ -67,7 +71,8 @@ export type {
   ExtractionStageObserver,
 } from './extract/pipeline.js'
 
-export const EXTRACTOR_CACHE_VERSION = 68
+// Invalidate legacy graphs that may have lost unchanged callers during updates.
+export const EXTRACTOR_CACHE_VERSION = 79
 const PYTHON_KEYWORDS = new Set(['if', 'elif', 'else', 'for', 'while', 'return', 'class', 'def', 'lambda', 'with', 'print', 'sum'])
 const GENERIC_CODE_EXTENSIONS = new Set(['.go', '.rs', '.java', '.kt', '.kts', '.scala', '.cs', '.c', '.cc', '.cpp', '.cxx', '.h', '.hpp', '.swift', '.php', '.zig'])
 const RUBY_KEYWORDS = new Set(['if', 'elsif', 'else', 'unless', 'while', 'until', 'return', 'super', 'yield', 'class', 'def'])
@@ -753,8 +758,9 @@ function addTsImportEdge(edges: ExtractionEdge[], seenImportEdges: Set<string>, 
   addUniqueEdge(edges, seenImportEdges, createEdge(sourceId, _makeId(resolveModuleName(trimmedSpecifier)), 'imports_from', filePath, line))
 }
 
-export function readCachedExtraction(filePath: string): ExtractionFragment | null {
-  const cached = loadCached(filePath)
+export function readCachedExtraction(filePath: string, readCache = loadCached): ExtractionFragment | null {
+  if (isPackageManifestPath(filePath)) return null
+  const cached = readCache(filePath)
   if (!isCachedExtraction(cached)) {
     return null
   }
@@ -768,8 +774,9 @@ export function readCachedExtraction(filePath: string): ExtractionFragment | nul
   }
 }
 
-export function writeCachedExtraction(filePath: string, extraction: ExtractionFragment): void {
-  saveCached(filePath, {
+export function writeCachedExtraction(filePath: string, extraction: ExtractionFragment, writeCache = saveCached): void {
+  if (isPackageManifestPath(filePath)) return
+  writeCache(filePath, {
     __madarTsExtractorVersion: EXTRACTOR_CACHE_VERSION,
     __madarFileStem: fileStemForPath(filePath),
     nodes: extraction.nodes,
@@ -1905,13 +1912,12 @@ export function extractObjectiveC(filePath: string): ExtractionFragment {
 }
 
 function scriptKindForPath(filePath: string): ts.ScriptKind {
-  const extension = extname(filePath).toLowerCase()
-  switch (extension) {
-    case '.ts':
+  switch (JS_TS_SOURCE_LANGUAGES[extname(filePath).toLowerCase()]) {
+    case 'typescript':
       return ts.ScriptKind.TS
-    case '.tsx':
+    case 'tsx':
       return ts.ScriptKind.TSX
-    case '.jsx':
+    case 'jsx':
       return ts.ScriptKind.JSX
     default:
       return ts.ScriptKind.JS
@@ -3261,7 +3267,41 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
     }
   }
 
+  // An overload signature and its implementation share a graph identity. Keep
+  // the concrete declaration only when its own lexical group proves uniqueness.
+  const overloadBodiesByScope = new WeakMap<ts.Node, Map<string, number>>()
+  const overloadGroupKey = (node: ts.Node): string | undefined => {
+    if (ts.isFunctionDeclaration(node) && node.name) return `function:${node.name.text}`
+    if (ts.isConstructorDeclaration(node)) return 'constructor'
+    if (!ts.isMethodDeclaration(node)) return undefined
+    const name = node.name
+    if (!ts.isIdentifier(name) && !ts.isPrivateIdentifier(name)
+      && !ts.isStringLiteral(name) && !ts.isNumericLiteral(name)) return undefined
+    const isStatic = ts.getModifiers(node)?.some(modifier => modifier.kind === ts.SyntaxKind.StaticKeyword) ?? false
+    return `method:${isStatic}:${ts.isPrivateIdentifier(name) ? 'private' : 'public'}:${name.text}`
+  }
+  const skipOverloadSignature = (node: ts.Node): boolean => {
+    if (!(ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node))
+      || node.body) return false
+    const key = overloadGroupKey(node)
+    if (key === undefined) return false
+    let implementations = overloadBodiesByScope.get(node.parent)
+    if (!implementations) {
+      implementations = new Map<string, number>()
+      ts.forEachChild(node.parent, sibling => {
+        const siblingKey = overloadGroupKey(sibling)
+        if (siblingKey !== undefined && (ts.isFunctionDeclaration(sibling) || ts.isMethodDeclaration(sibling)
+          || ts.isConstructorDeclaration(sibling)) && sibling.body) {
+          implementations!.set(siblingKey, (implementations!.get(siblingKey) ?? 0) + 1)
+        }
+      })
+      overloadBodiesByScope.set(node.parent, implementations)
+    }
+    return implementations.get(key) === 1
+  }
+
   const addTsFunctionNode = (functionId: string, label: string, declarationNode: ts.Node, body?: ts.ConciseBody): void => {
+    if (skipOverloadSignature(declarationNode)) return
     const line = sourceFile.getLineAndCharacterOfPosition(declarationNode.getStart(sourceFile)).line + 1
     addNode(nodes, seenIds, createNode(functionId, label, filePath, line, 'code', nodeOptionsForTsNode(declarationNode)))
     addEdge(edges, createEdge(fileNodeId, functionId, 'contains', filePath, line))
@@ -3308,7 +3348,7 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
         }
 
         const methodLine = sourceFile.getLineAndCharacterOfPosition(member.name.getStart(sourceFile)).line + 1
-        const methodId = _makeId(classId, methodName)
+        const methodId = makeTsMemberId(classId, methodName, ts.isPrivateIdentifier(member.name))
         addNode(nodes, seenIds, createNode(methodId, `.${methodName}()`, filePath, methodLine, 'code', nodeOptionsForTsNode(member)))
         addEdge(edges, createEdge(classId, methodId, 'method', filePath, methodLine))
         methodIdsByClass.set(`${classId}:${methodName.toLowerCase()}`, methodId)
@@ -3316,6 +3356,8 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
         addNestedTsFunctions(member.initializer.body, methodId, classId)
         continue
       }
+
+      if (skipOverloadSignature(member)) continue
 
       const methodName = ts.isConstructorDeclaration(member)
         ? 'constructor'
@@ -3329,7 +3371,7 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
       }
 
       const methodLine = sourceFile.getLineAndCharacterOfPosition(member.getStart(sourceFile)).line + 1
-      const methodId = _makeId(classId, methodName)
+      const methodId = makeTsMemberId(classId, methodName, !!member.name && ts.isPrivateIdentifier(member.name))
       addNode(nodes, seenIds, createNode(methodId, `.${methodName}()`, filePath, methodLine, 'code', nodeOptionsForTsNode(member)))
       addEdge(edges, createEdge(classId, methodId, 'method', filePath, methodLine))
       methodIdsByClass.set(`${classId}:${methodName.toLowerCase()}`, methodId)
@@ -3370,6 +3412,8 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
           calleeName: expression.name.text,
           line,
           preferredClassId: expression.expression.kind === ts.SyntaxKind.ThisKeyword ? currentClassId : undefined,
+          ...(ts.isPrivateIdentifier(expression.name) && currentClassId
+            ? { preferredTargetId: makeTsMemberId(currentClassId, expression.name.text, true) } : {}),
         })
       }
     }
@@ -3383,6 +3427,7 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
 
     const visitNested = (candidate: ts.Node): void => {
       if (ts.isFunctionDeclaration(candidate) && candidate.name) {
+        if (skipOverloadSignature(candidate)) return
         const functionName = candidate.name.text
         const functionLine = sourceFile.getLineAndCharacterOfPosition(candidate.name.getStart(sourceFile)).line + 1
         const functionId = _makeId(ownerId, functionName)
@@ -3587,6 +3632,104 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
 
   visitTopLevel(sourceFile)
   addResolvedCalls(edges, pendingCalls, nodes, filePath, methodIdsByClass)
+  // Expressions omitted by declaration extraction still provide exact source
+  // evidence. Occurrence identities deliberately do not imply callable binding.
+  const iifeCandidates: Array<{ node: ts.FunctionDeclaration; name: string; start: number; end: number; offset: number }> = []
+  const declarationHeaders = new Map<string, Map<number, { start: number; nameLine: number }>>()
+  const lineIdentity = (name: string, start: number, end: number): string => `${name}\0${start}\0${end}`
+  const existingOwnerIdentities = new Set<string>()
+  for (const existing of nodes) {
+    if (existing.source_file !== filePath) continue
+    const range = /^L(\d+)(?:-L(\d+))?$/.exec(existing.source_location ?? '')
+    if (range) existingOwnerIdentities.add(lineIdentity(existing.label.replace(/\(\)$/, ''), Number(range[1]), Number(range[2] ?? range[1])))
+  }
+  const recordDeclaration = (name: string, node: ts.Node, nameNode: ts.Node = node): void => {
+    const offset = node.getStart(sourceFile)
+    const start = sourceFile.getLineAndCharacterOfPosition(offset).line + 1
+    const nameLine = sourceFile.getLineAndCharacterOfPosition(nameNode.getStart(sourceFile)).line + 1
+    const headers = declarationHeaders.get(name) ?? new Map<number, { start: number; nameLine: number }>()
+    headers.set(offset, { start, nameLine })
+    declarationHeaders.set(name, headers)
+  }
+  const visitFunctionOccurrences = (node: ts.Node): void => {
+    const occurrence = sourceFunctionOccurrence(node, sourceFile)
+    if (occurrence) {
+      recordDeclaration(occurrence.name, node)
+      const id = `${fileNodeId}__source_function_${node.getStart(sourceFile)}`
+      addNode(nodes, seenIds, createNode(id, `${occurrence.qualifiedName}()`, filePath, occurrence.start, 'code', nodeOptionsForTsNode(node)))
+      addEdge(edges, createEdge(fileNodeId, id, 'contains', filePath, occurrence.start))
+    }
+    const namedDeclaration = (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isMethodDeclaration(node)
+      || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node) || ts.isVariableDeclaration(node)
+      || ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) || ts.isEnumDeclaration(node)
+      || ts.isPropertyDeclaration(node)) && node.name && (ts.isIdentifier(node.name) || ts.isPrivateIdentifier(node.name))
+      ? node.name : undefined
+    const name = namedDeclaration?.text ?? (ts.isConstructorDeclaration(node) ? 'constructor' : undefined)
+    if (name) recordDeclaration(name, node, namedDeclaration ?? node)
+    // Candidates remain source occurrences only. Count all line identities
+    // before emission so no first match can erase a same-line ambiguity.
+    if (ts.isFunctionDeclaration(node) && node.name && node.body
+      && ts.isBlock(node.parent) && ts.isFunctionExpression(node.parent.parent)) {
+      const enclosing = node.parent.parent
+      let callee: ts.Node = enclosing
+      while (ts.isParenthesizedExpression(callee.parent)) callee = callee.parent
+      const ordinary = !enclosing.asteriskToken
+        && !(enclosing.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword))
+      if (ordinary && ts.isCallExpression(callee.parent) && callee.parent.expression === callee
+        && !callee.parent.questionDotToken) {
+        const offset = node.getStart(sourceFile)
+        const start = sourceFile.getLineAndCharacterOfPosition(offset).line + 1
+        const end = sourceFile.getLineAndCharacterOfPosition(Math.max(offset, node.getEnd() - 1)).line + 1
+        iifeCandidates.push({ node, name: node.name.text, start, end, offset })
+      }
+    }
+    ts.forEachChild(node, visitFunctionOccurrences)
+  }
+  visitFunctionOccurrences(sourceFile)
+  // A point-only public range can resolve to a longer declaration beginning
+  // before its name. Abstain on every competing header span, even when a
+  // complete-range comparison alone would consider the candidate unique.
+  const candidateStarts = new Map<string, Set<number>>()
+  for (const candidate of iifeCandidates) {
+    const starts = candidateStarts.get(candidate.name) ?? new Set<number>()
+    starts.add(candidate.start)
+    candidateStarts.set(candidate.name, starts)
+  }
+  const competingDeclarationCounts = new Map<string, number>()
+  for (const [name, candidateLines] of candidateStarts) {
+    const headers = [...(declarationHeaders.get(name)?.values() ?? [])]
+    const starts = headers.map(header => header.start).sort((a, b) => a - b)
+    const nameLines = headers.map(header => header.nameLine).sort((a, b) => a - b)
+    let started = 0, ended = 0
+    for (const line of [...candidateLines].sort((a, b) => a - b)) {
+      while (started < starts.length && starts[started]! <= line) started += 1
+      while (ended < nameLines.length && nameLines[ended]! < line) ended += 1
+      competingDeclarationCounts.set(lineIdentity(name, line, line), started - ended)
+    }
+  }
+  const hasParseErrors = ((sourceFile as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics?.length ?? 0) > 0
+  for (const candidate of hasParseErrors ? [] : iifeCandidates) {
+    const key = lineIdentity(candidate.name, candidate.start, candidate.end)
+    if (competingDeclarationCounts.get(lineIdentity(candidate.name, candidate.start, candidate.start)) !== 1
+      || !declarationHeaders.get(candidate.name)?.has(candidate.offset) || existingOwnerIdentities.has(key)) continue
+    // Legacy nested declarations can begin their indexed range at the name,
+    // after the function keyword. Preserve that existing source owner.
+    const nameLine = sourceFile.getLineAndCharacterOfPosition(candidate.node.name!.getStart(sourceFile)).line + 1
+    let representedHeader = false
+    for (let line = candidate.start; line <= nameLine; line += 1) {
+      if (existingOwnerIdentities.has(lineIdentity(candidate.name, line, candidate.end))
+        || existingOwnerIdentities.has(lineIdentity(candidate.name, line, line))) {
+        representedHeader = true
+        break
+      }
+    }
+    if (representedHeader) continue
+    const id = `${fileNodeId}__source_function_${candidate.offset}`
+    addNode(nodes, seenIds, createNode(id, `${candidate.name}()`, filePath, candidate.start, 'code', nodeOptionsForTsNode(candidate.node)))
+    addEdge(edges, createEdge(fileNodeId, id, 'contains', filePath, candidate.start))
+    existingOwnerIdentities.add(key)
+  }
+
 
   const validNodeIds = new Set(nodes.map((node) => node.id))
   const baseExtraction: ExtractionFragment = {
@@ -3619,7 +3762,15 @@ export function extractJs(filePath: string): ExtractionFragment {
   return extractJsStages(filePath).augmentFramework()
 }
 
+function extractPackageManifest(filePath: string, workspaceRoot?: string): ExtractionData {
+  const source = readPackageManifest(filePath, workspaceRoot)
+  if (!source) throw new Error('Package manifest source is invalid, bounded, or excluded by policy')
+  return { nodes: [{ id: fileNodeIdForPath(filePath), label: basename(filePath), file_type: 'code', node_kind: 'configuration',
+    source_file: filePath, source_location: `L1-L${source.text.split(/\r?\n/).length}` }], edges: [] }
+}
+
 const SINGLE_FILE_EXTRACTOR_HANDLERS: PipelineExtractorHandlerMap = {
+  'builtin:extract:package-manifest': (filePath) => extractPackageManifest(filePath),
   'builtin:extract:python': (filePath) => extractPython(filePath),
   'builtin:extract:ruby': (filePath) => extractRuby(filePath),
   'builtin:extract:lua': (filePath) => extractLua(filePath),
@@ -3680,13 +3831,18 @@ function extractSingleFile(
   filePath: string,
   allowedTargets: ReadonlySet<string>,
   recoverFailures: boolean,
+  cache: ReturnType<typeof createCacheAccess>,
   onFileOutcome?: (outcome: ExtractionFileOutcome) => void,
   onStageDiagnostic?: ExtractionStageObserver,
+  workspaceRoot?: string,
 ): ExtractionDispatchResult {
-  return dispatchSingleFileExtractionWithOutcome(filePath, allowedTargets, SINGLE_FILE_EXTRACTOR_HANDLERS, {
+  const handlers = workspaceRoot && isPackageManifestPath(filePath)
+    ? { ...SINGLE_FILE_EXTRACTOR_HANDLERS, 'builtin:extract:package-manifest': (path: string) => extractPackageManifest(path, workspaceRoot) }
+    : SINGLE_FILE_EXTRACTOR_HANDLERS
+  return dispatchSingleFileExtractionWithOutcome(filePath, allowedTargets, handlers, {
     registry: builtinCapabilityRegistry,
-    readCached: readCachedExtraction,
-    writeCached: writeCachedExtraction,
+    readCached: (path) => readCachedExtraction(path, cache.load),
+    writeCached: (path, fragment) => writeCachedExtraction(path, fragment, cache.save),
     classifySourceFile: classifyFile,
     ...(onFileOutcome ? { onOutcome: onFileOutcome } : {}),
     ...(onStageDiagnostic ? { onStageDiagnostic } : {}),
@@ -3695,6 +3851,8 @@ function extractSingleFile(
 }
 
 export interface ExtractOptions {
+  /** Explicit generation policy root; omitted single-file calls use the file parent. */
+  workspaceRoot?: string
   allowedTargets?: Iterable<string>
   contextNodes?: ExtractionNode[]
   /** Reuse corpus-wide file stems when this pass is merged with another one. */
@@ -3731,12 +3889,15 @@ function runExtractionPipeline(
     : withExtractionFileStemContext(discovery.stemContextFiles, callback)
 
   return runWithStemContext(() => {
+    const cache = createCacheAccess()
     const dispatchResults = discovery.files.map((filePath) => extractSingleFile(
       filePath,
       discovery.allowedTargets,
       recoverFailures,
+      cache,
       options.onFileOutcome,
       options.onStageDiagnostic,
+      options.workspaceRoot,
     ))
     const fileOutcomes = dispatchResults.map((result) => result.outcome)
     const merged = runPipelineStage({

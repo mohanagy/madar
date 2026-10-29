@@ -53,6 +53,7 @@ import {
 import { dirname, join, relative, resolve } from 'node:path'
 
 import { resolveMadarOutputDirectory } from '../../shared/workspace.js'
+import { DEFAULT_HARD_IGNORE_GLOBS, loadMadarignorePatterns } from '../../shared/source-discovery.js'
 import {
   buildSpi,
   collectExplicitSpiFiles,
@@ -231,6 +232,8 @@ function computeWorkspaceFingerprint(root: string, opts: BuildSpiCachedOptions):
   hasher.update(`workspace:${root}\n`)
   hasher.update(`extractor:${opts.extractorVersion ?? 'spi-v1.0.0'}\n`)
   hasher.update(`madar:${opts.madarVersion}\n`)
+  hasher.update(`source-discovery:${JSON.stringify(DEFAULT_HARD_IGNORE_GLOBS)}\n`)
+  hasher.update(`madarignore:${JSON.stringify(loadMadarignorePatterns(root))}\n`)
 
   const projectConfigPaths = collectProjectConfigPaths(root, entries)
   if (projectConfigPaths.length === 0) {

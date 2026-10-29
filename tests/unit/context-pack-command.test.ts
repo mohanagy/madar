@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -70,6 +70,33 @@ afterEach(() => {
     }
   }
 })
+
+/** Mocked retrieval still needs real in-root source at the public policy boundary. */
+function materializeMockedSource(graph: KnowledgeGraph, nodes: Array<{ source_file: string; snippet?: string | null; line_number?: number }>): void {
+  const root = mkdtempSync(join(tmpdir(), 'madar-cli-source-'))
+  tempFixtureRoots.push(root)
+  graph.graph.root_path = root
+  const files = new Map<string, string[]>()
+  for (const node of nodes) {
+    const sourceFile = node.source_file.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '').replace(/^\/+/, '')
+    const path = resolve(root, sourceFile), local = relative(root, path)
+    if (isAbsolute(local) || local === '..' || local.startsWith(`..${sep}`)) throw new Error('Mock source escapes its fixture')
+    node.source_file = sourceFile
+    if (typeof node.snippet !== 'string') continue
+    const lines = files.get(path) ?? []
+    const start = (node.line_number ?? 1) - 1
+    if (!Number.isSafeInteger(start) || start < 0) throw new Error('Invalid mock source line')
+    for (const [index, line] of node.snippet.split('\n').entries()) {
+      if (lines[start + index] !== undefined && lines[start + index] !== line) throw new Error('Conflicting mock source')
+      lines[start + index] = line
+    }
+    files.set(path, lines)
+  }
+  for (const [path, lines] of files) {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, lines.join('\n'))
+  }
+}
 
 function buildRuntimeGenerationGraph() {
   return build(
@@ -207,7 +234,7 @@ function buildOversizedAnswerReadySchema() {
       missing_phases: [],
       covered_workflow_owners: ['src/runtime/controller.ts', 'src/runtime/service.ts'],
       confidence_reasons: ['all required evidence covered'],
-      agent_directive: 'answer_from_pack' as const,
+      agent_directive: 'explore_with_caution' as const,
     },
     governance: {
       version: 1 as const,
@@ -233,7 +260,7 @@ function buildOversizedAnswerReadySchema() {
       directive: {
         pack_confidence: 'high' as const,
         coverage: 'complete' as const,
-        agent_directive: 'answer_from_pack' as const,
+        agent_directive: 'explore_with_caution' as const,
         missing_phases: [],
       },
       follow_up: {
@@ -412,7 +439,7 @@ describe('context-pack-command', () => {
 
     const output = await runContextPackCommand({
       prompt: 'How does the auth token loader work?',
-      budget: 3000,
+      budget: 20_000,
       task: 'explain',
       graphPath,
       format: 'json',
@@ -456,8 +483,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'out/graph.json',
       retrievalStrategy: 'slice-v1',
@@ -492,7 +520,7 @@ describe('context-pack-command', () => {
     expect(dependencies.loadGraph).toHaveBeenCalledWith('out/graph.json')
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
-      budget: 1800,
+      budget: 20_000,
       taskKind: 'explain',
       taskIntent: 'explain',
       retrievalStrategy: 'slice-v1',
@@ -722,6 +750,7 @@ describe('context-pack-command', () => {
         missing_phases: [],
       },
     } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
+    materializeMockedSource(graph, retrieval.matched_nodes)
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
       retrieveContext: vi.fn().mockReturnValue(retrieval),
@@ -733,8 +762,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'How idea report is being generated',
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'out/graph.json',
       retrievalStrategy: 'slice-v1',
@@ -770,20 +800,20 @@ describe('context-pack-command', () => {
     expect(payload.evidence).toEqual(expect.objectContaining({
       pack_confidence: 'high',
       coverage: 'complete',
-      agent_directive: 'answer_from_pack',
+      agent_directive: 'explore_with_caution',
     }))
     expect(payload.governance).toEqual(expect.objectContaining({
       version: 1,
       surface: 'cli_pack',
-      privacy_boundary: {
+      privacy_boundary: expect.objectContaining({
         source_safe: true,
-      },
+      }),
       directive: expect.objectContaining({
-        agent_directive: 'answer_from_pack',
+        agent_directive: 'explore_with_caution',
       }),
     }))
-    expect(payload.governance?.follow_up).toBeUndefined()
-    expect(payload.expandable).toEqual([])
+    expect(payload.governance?.follow_up).toMatchObject({ expandable_handle_count: 1, preview_item_count: 1 })
+    expect(payload.expandable).toEqual(retrieval.expandable)
     expect(JSON.stringify(payload.governance)).not.toContain('How idea report is being generated')
     expect(JSON.stringify(payload.governance)).not.toContain('src/ideas/')
     expect(payload.workflow_centers?.slice(0, 4)).toEqual([
@@ -824,7 +854,7 @@ describe('context-pack-command', () => {
     ]))
   })
 
-  it('defaults runtime-generation explain JSON to an answer-ready payload with serialized budget enforcement', async () => {
+  it('defaults runtime-generation explain JSON to source evidence with an exact serialized budget', async () => {
     const graph = buildRuntimeGenerationGraph()
     const noisySelectedPaths = Array.from({ length: 80 }, (_, index) => ({
       from_id: `helper_${index}`,
@@ -989,6 +1019,7 @@ describe('context-pack-command', () => {
         selected_fallback: 'repository_vocabulary_v1',
       },
     } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
+    materializeMockedSource(graph, retrieval.matched_nodes)
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
       retrieveContext: vi.fn().mockReturnValue(retrieval),
@@ -1008,8 +1039,10 @@ describe('context-pack-command', () => {
       format: 'json',
     }, dependencies)
     const payload = JSON.parse(output) as {
+      response_format?: string
       serialized_budget?: { token_count?: number; max_tokens?: number; enforced?: boolean }
       pack?: {
+        matched_nodes?: Array<{ node_id?: string; snippet?: string }>
         slice?: { selected_paths?: unknown[]; selected_path_count?: number }
         execution_slice?: { side_effects?: unknown[] }
         retrieval_plan?: {
@@ -1035,29 +1068,21 @@ describe('context-pack-command', () => {
       enforced: true,
     }))
     expect(payload.serialized_budget?.token_count).toBeLessThanOrEqual(800)
+    expect(payload.serialized_budget?.token_count).toBe(estimateQueryTokens(output))
+    expect(payload.response_format).toBe('source_evidence_v2')
     expect(payload.pack?.slice?.selected_paths).toBeUndefined()
-    expect(payload.pack?.slice?.selected_path_count).toBe(noisySelectedPaths.length)
+    expect(payload.pack?.slice).toBeUndefined()
     expect(payload.pack?.execution_slice?.side_effects).toBeUndefined()
-    expect(payload.pack?.retrieval_plan).toEqual({
-      version: 1,
-      status: 'recovered',
-      reasons: ['low_workflow_coherence'],
-      selected_fallback: 'repository_vocabulary_v1',
-      attempts: [{
-        fallback: 'repository_vocabulary_v1',
-        status: 'applied',
-        changed_result: true,
-      }],
-    })
-    expect(payload.evidence?.agent_directive).toBe('answer_from_pack')
-    expect(payload.governance?.request).toEqual(expect.objectContaining({
-      task_intent: 'explain',
-      retrieval_strategy: 'slice-v1',
-    }))
-    expect(payload.recommended_first_read?.map((entry) => entry.path)).toEqual([
-      'src/ideas/controller.ts',
-      'src/ideas/report-service.ts',
+    expect(payload.pack?.retrieval_plan).toBeUndefined()
+    expect(payload.pack?.matched_nodes?.map((node) => node.snippet)).toEqual([
+      'return this.reportService.generateReport(id)', 'await queue.enqueue(reportJob)',
     ])
+    expect(payload.evidence?.agent_directive).toBe('explore_with_caution')
+    expect(payload.evidence).not.toHaveProperty('pack_confidence')
+    expect(payload.evidence).not.toHaveProperty('answerability.state')
+    expect(payload.evidence).not.toHaveProperty('answerability.answer_scope')
+    expect(payload.governance?.request).toBeUndefined()
+    expect(payload.recommended_first_read).toBeUndefined()
   })
 
   it('does not preserve a ready verdict when the serialized pack omits prompt obligations', async () => {
@@ -1069,6 +1094,7 @@ describe('context-pack-command', () => {
       taskKind: 'explain',
       retrievalStrategy: 'slice-v1',
     })
+    materializeMockedSource(graph, retrieval.matched_nodes)
     const compact = compactRetrieveResult(retrieval)
     const omittedNodeIds = new Set(
       compact.matched_nodes
@@ -1115,7 +1141,8 @@ describe('context-pack-command', () => {
       evidence?: {
         coverage?: string
         coverage_detail?: { missing_obligations?: string[] }
-        answerability?: { state?: string; broad_search_fallback?: string }
+        missing_obligations?: string[]
+        answerability?: { state?: string; broad_search_fallback?: string; missing_obligations?: string[] }
         agent_directive?: string
       }
       pack?: {
@@ -1126,14 +1153,15 @@ describe('context-pack-command', () => {
 
     expect(optimisticRetrieval.recovery?.final_state).toBe('ready')
     expect(payload.evidence).toMatchObject({
-      coverage: 'partial',
       answerability: {
-        state: 'verify_targets',
-        broad_search_fallback: 'targeted_only',
+        advisory: true,
+        broad_search_fallback: 'allowed',
       },
-      agent_directive: 'verify_one_targeted_file',
+      agent_directive: 'explore_with_caution',
     })
-    expect(payload.evidence?.coverage_detail?.missing_obligations).toEqual(expect.arrayContaining([
+    expect(payload.evidence).not.toHaveProperty('answerability.state')
+    expect(payload.evidence).not.toHaveProperty('answerability.answer_scope')
+    expect(payload.evidence?.answerability?.missing_obligations).toEqual(expect.arrayContaining([
       'query:obligation:2',
       'query:obligation:3',
     ]))
@@ -1240,7 +1268,7 @@ describe('context-pack-command', () => {
     expect(selectedNodes.map((node) => node.snippet ?? '').join('\n')).toMatch(/insert\(incidentTable\)/)
     expect(serializedEvidence).toMatchObject({
       answerability: { state: expect.stringMatching(/^ready(?:_with_caveat)?$/) },
-      agent_directive: 'answer_from_pack',
+      agent_directive: 'explore_with_caution',
     })
     const serializedCoverage = evaluateQueryEvidenceCoverage(prompt, selectedNodes)
     expect(retrievalPlan?.query_obligations).toMatchObject({
@@ -1261,7 +1289,7 @@ describe('context-pack-command', () => {
     const payload = buildAnswerReadyPackSchema({
       prompt: 'Describe this pack.',
       evidence: {
-        agent_directive: 'answer_from_pack',
+        agent_directive: 'explore_with_caution',
       },
       claims: [{
         evidence_class: 'primary',
@@ -1533,7 +1561,7 @@ describe('context-pack-command', () => {
     const graph = buildRuntimeGenerationGraph()
     const retrieval = retrieveContext(graph, {
       question: 'Trace how `POST /login` reaches persistence in the backend runtime pipeline',
-      budget: 1800,
+      budget: 20_000,
       taskKind: 'explain',
       taskIntent: 'explain',
       retrievalStrategy: 'slice-v1',
@@ -1579,13 +1607,13 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: retrieval.question,
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'out/graph.json',
       retrievalStrategy: 'slice-v1',
       format: 'json',
-      verbose: true,
     } as never, dependencies)
     const payload = JSON.parse(output) as {
       pack?: {
@@ -1694,6 +1722,7 @@ describe('context-pack-command', () => {
       },
       retrieval_strategy: 'slice-v1' as const,
     } satisfies import('../../src/runtime/retrieve.js').RetrieveResult
+    materializeMockedSource(graph, retrieval.matched_nodes)
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
       retrieveContext: vi.fn().mockReturnValue(retrieval),
@@ -1705,8 +1734,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'How idea report is being generated',
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'out/graph.json',
       retrievalStrategy: 'slice-v1',
@@ -1742,8 +1772,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'How `POST /login` reaches persistence in the backend runtime pipeline',
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'out/graph.json',
     }, dependencies)
@@ -1759,7 +1790,7 @@ describe('context-pack-command', () => {
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: 'How `POST /login` reaches persistence in the backend runtime pipeline',
-      budget: 1800,
+      budget: 20_000,
       taskKind: 'explain',
       taskIntent: 'explain',
       retrievalStrategy: 'slice-v1',
@@ -1875,6 +1906,7 @@ describe('context-pack-command', () => {
         confidence: 'low' as const,
       },
     } satisfies RetrieveResult
+    materializeMockedSource(graph, retrieval.matched_nodes)
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
       retrieveContext: vi.fn().mockReturnValue(retrieval),
@@ -1886,8 +1918,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'How idea report is being generated',
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'out/graph.json',
       retrievalStrategy: 'slice-v1',
@@ -2003,6 +2036,7 @@ describe('context-pack-command', () => {
         confidence: 'medium' as const,
       },
     } satisfies RetrieveResult
+    materializeMockedSource(graph, retrieval.matched_nodes)
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
       retrieveContext: vi.fn().mockReturnValue(retrieval),
@@ -2014,8 +2048,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'How idea report is being generated',
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'out/graph.json',
       retrievalStrategy: 'slice-v1',
@@ -2042,7 +2077,7 @@ describe('context-pack-command', () => {
     }))
   })
 
-  it('keeps backend SPI report-generation packs high confidence and answer_from_pack when the answer is contained', async () => {
+  it('retains backend SPI confidence diagnostics without directing the agent to stop verification', async () => {
     const graph = buildRuntimeGenerationGraph()
     const retrieval = {
       question: 'How idea report is being generated',
@@ -2153,6 +2188,7 @@ describe('context-pack-command', () => {
         confidence: 'high' as const,
       },
     } satisfies RetrieveResult
+    materializeMockedSource(graph, retrieval.matched_nodes)
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
       retrieveContext: vi.fn().mockReturnValue(retrieval),
@@ -2164,8 +2200,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'How idea report is being generated',
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'backend/out/graph.json',
       retrievalStrategy: 'slice-v1',
@@ -2182,7 +2219,7 @@ describe('context-pack-command', () => {
 
     expect(payload.evidence).toEqual(expect.objectContaining({
       pack_confidence: 'high',
-      agent_directive: 'answer_from_pack',
+      agent_directive: 'explore_with_caution',
       confidence_reasons: expect.arrayContaining([
         expect.stringContaining('scope'),
         expect.stringContaining('answer'),
@@ -2280,6 +2317,7 @@ describe('context-pack-command', () => {
         selected_paths: [],
       },
     }
+    materializeMockedSource(graph, retrieval.matched_nodes)
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
       retrieveContext: vi.fn().mockReturnValue(retrieval),
@@ -2291,15 +2329,17 @@ describe('context-pack-command', () => {
     }
 
     const withoutWhy = JSON.parse(await runContextPackCommand({
+      verbose: true,
       prompt: retrieval.question,
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'out/graph.json',
     }, dependencies)) as Record<string, unknown>
 
     const withWhy = JSON.parse(await runContextPackCommand({
+      verbose: true,
       prompt: retrieval.question,
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'out/graph.json',
       why: true,
@@ -2347,7 +2387,7 @@ describe('context-pack-command', () => {
     }))
   })
 
-  it('normalizes sub-minimum explain budgets before retrieving', async () => {
+  it('rejects sub-minimum explain budgets before repository work', async () => {
     const graph = new KnowledgeGraph()
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
@@ -2373,22 +2413,16 @@ describe('context-pack-command', () => {
       compactImpactResult: vi.fn(),
     }
 
-    const output = await runContextPackCommand({
+    await expect(runContextPackCommand({
       prompt: 'auth',
       budget: 1,
       task: 'explain',
       graphPath: 'out/graph.json',
-    }, dependencies)
-
-    expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
-      question: 'auth',
-      budget: 3,
-      taskKind: 'explain',
-      taskIntent: 'explain',
-    })
-    expect(JSON.parse(output)).toEqual(expect.objectContaining({
-      budget: 3,
-    }))
+    }, dependencies)).rejects.toThrow('at least 128 tokens')
+    expect(dependencies.loadGraph).not.toHaveBeenCalled()
+    expect(dependencies.retrieveContext).not.toHaveBeenCalled()
+    expect(dependencies.analyzePrImpact).not.toHaveBeenCalled()
+    expect(dependencies.analyzeImpact).not.toHaveBeenCalled()
   })
 
   it('infers implement packs from imperative prompts when --task is omitted', async () => {
@@ -2412,15 +2446,16 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: retrieval.question,
-      budget: 1800,
+      budget: 20_000,
       task: 'explain',
       graphPath: 'out/graph.json',
     }, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: retrieval.question,
-      budget: 1800,
+      budget: 20_000,
       taskIntent: 'implement',
       taskKind: 'implement',
     })
@@ -2457,8 +2492,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: retrieval.question,
-      budget: 1800,
+      budget: 20_000,
       task: 'implement',
       taskExplicit: true,
       graphPath: 'out/graph.json',
@@ -2466,7 +2502,7 @@ describe('context-pack-command', () => {
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: retrieval.question,
-      budget: 1800,
+      budget: 20_000,
       taskIntent: 'implement',
       taskKind: 'implement',
     })
@@ -2492,8 +2528,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
-      budget: 2400,
+      budget: 20_000,
       task: 'implement',
       taskExplicit: true,
       graphPath: 'out/graph.json',
@@ -2556,16 +2593,27 @@ describe('context-pack-command', () => {
     }
 
     const runPack = () => runContextPackCommand({
+      verbose: true,
       prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
-      budget: 2400,
+      budget: 20_000,
       task: 'implement',
       taskExplicit: true,
       graphPath: 'out/graph.json',
       format: 'json',
     } as never, dependencies)
 
-    const firstOutput = await runPack()
-    const secondOutput = await runPack()
+    let firstOutput: string
+    let secondOutput: string
+    // The validation receipt intentionally records observation time. Hold the
+    // clock constant when checking deterministic output for identical inputs.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-23T00:00:00.000Z'))
+      firstOutput = await runPack()
+      secondOutput = await runPack()
+    } finally {
+      vi.useRealTimers()
+    }
     const payload = JSON.parse(firstOutput) as {
       schema_version?: number
       task?: string
@@ -2662,8 +2710,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'Implement context pack command compression guidance',
-      budget: 1800,
+      budget: 20_000,
       task: 'implement',
       taskExplicit: true,
       graphPath: 'out/graph.json',
@@ -2684,147 +2733,41 @@ describe('context-pack-command', () => {
     ]))
   })
 
-  it('renders pack schema v1 as a generic markdown brief', async () => {
+  it.each(['text', 'markdown', 'claude', 'copilot'] as const)('renders %s as bounded source text with locations and advisory limits', async (format) => {
     const graph = buildImplementationPackGraph()
+    const sourcePath = String(graph.nodeAttributes('pack_command').source_file)
+    const source = 'export function runContextPackCommand() { return "source-evidence-fixture" }'
+    mkdirSync(dirname(sourcePath), { recursive: true })
+    writeFileSync(sourcePath, `${'\n'.repeat(223)}${source}\n`)
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
       retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
       compactRetrieveResult,
-      analyzePrImpact: vi.fn(),
-      compactPrImpactResult: vi.fn(),
-      analyzeImpact: vi.fn(),
-      compactImpactResult: vi.fn(),
+      analyzePrImpact: vi.fn(), compactPrImpactResult: vi.fn(),
+      analyzeImpact: vi.fn(), compactImpactResult: vi.fn(),
     }
-
     const output = await runContextPackCommand({
-      prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
+      prompt: 'Implement runContextPackCommand source evidence output',
       budget: 2400,
-      task: 'implement',
-      taskExplicit: true,
-      graphPath: 'out/graph.json',
-      format: 'markdown',
-    } as never, dependencies)
+      task: 'implement', taskExplicit: true,
+      graphPath: 'out/graph.json', format,
+    }, dependencies)
 
-    expect(output).toContain('# Pack Schema v1')
-    expect(output).toContain('Task: implement')
-    expect(output).toContain('## Workflow centers')
-    expect(output).toContain('## Recommended first read')
-    expect(output).toContain('## Likely edit files')
-    expect(output).toContain('## Likely test files')
-    expect(output).toContain('## Public contracts')
-    expect(output).toContain('## Risk boundaries')
-    expect(output).toContain('## Validation commands')
-    expect(output).toContain('## Negative guidance')
-    expect(output).toContain('## Why this pack')
-    expect(output).toContain('Confidence score:')
+    expect(output).toContain('implement source evidence')
+    expect(output).toContain('src/infrastructure/context-pack-command.ts:224')
+    expect(output).toContain(source)
+    expect(output).toContain('Context and limits:')
+    expect(output).toContain('"advisory":true')
+    expect(output).not.toContain('answer_from_pack')
+    expect(output).not.toContain('Confidence score:')
+    expect(output).not.toContain('"answer_scope":"complete"')
     expect(output).not.toContain(': undefined')
+    expect(estimateQueryTokens(output)).toBeLessThanOrEqual(2400)
+    const remainder = JSON.parse(output.split('Context and limits: ')[1]!) as { serialized_budget: { token_count: number } }
+    expect(remainder.serialized_budget.token_count).toBe(estimateQueryTokens(output))
   })
 
-  it('keeps the legacy text adapter output stable', async () => {
-    const graph = buildImplementationPackGraph()
-    const dependencies: ContextPackCommandDependencies = {
-      loadGraph: vi.fn().mockReturnValue(graph),
-      retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
-      compactRetrieveResult,
-      analyzePrImpact: vi.fn(),
-      compactPrImpactResult: vi.fn(),
-      analyzeImpact: vi.fn(),
-      compactImpactResult: vi.fn(),
-    }
-
-    const output = await runContextPackCommand({
-      prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
-      budget: 2400,
-      task: 'implement',
-      taskExplicit: true,
-      graphPath: 'out/graph.json',
-      format: 'text',
-    } as never, dependencies)
-
-    expect(output).toContain('Pack Schema v1')
-    expect(output).toContain('Task: implement')
-    expect(output).toContain('Workflow centers')
-    expect(output).toContain('Recommended first read')
-    expect(output).toContain('Likely edit files')
-    expect(output).toContain('Retrieval pipeline')
-    expect(output).toContain('Validation commands')
-    expect(output).not.toContain('# Pack Schema v1')
-    expect(output).not.toContain('## Workflow centers')
-    expect(output).not.toContain(': undefined')
-    expect(output.match(/^Workflow centers$/gm)).toHaveLength(1)
-  })
-
-  it('renders a claude adapter brief with confidence-aware execution guidance', async () => {
-    const graph = buildImplementationPackGraph()
-    const dependencies: ContextPackCommandDependencies = {
-      loadGraph: vi.fn().mockReturnValue(graph),
-      retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
-      compactRetrieveResult,
-      analyzePrImpact: vi.fn(),
-      compactPrImpactResult: vi.fn(),
-      analyzeImpact: vi.fn(),
-      compactImpactResult: vi.fn(),
-    }
-
-    const output = await runContextPackCommand({
-      prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
-      budget: 2400,
-      task: 'implement',
-      taskExplicit: true,
-      graphPath: 'out/graph.json',
-      format: 'claude',
-    } as never, dependencies)
-
-    expect(output).toContain('# Claude Code execution brief')
-    expect(output).toContain('## Start here')
-    expect(output).toContain('Use targeted verification to confirm the listed starting points before widening the search.')
-    expect(output).toContain('## Workflow centers')
-    expect(output).toContain('## Likely edit files')
-    expect(output).toContain('## Likely test files')
-    expect(output).toContain('## Public contracts')
-    expect(output).toContain('## Risk boundaries')
-    expect(output).toContain('## Validation commands')
-    expect(output).toContain('## Negative guidance')
-    expect(output).toContain('## Why this pack')
-    expect(output).not.toContain(': undefined')
-  })
-
-  it('renders a copilot adapter brief with a confidence-aware implementation plan', async () => {
-    const graph = buildImplementationPackGraph()
-    const dependencies: ContextPackCommandDependencies = {
-      loadGraph: vi.fn().mockReturnValue(graph),
-      retrieveContext: vi.fn((currentGraph, options) => retrieveContext(currentGraph, options as never)),
-      compactRetrieveResult,
-      analyzePrImpact: vi.fn(),
-      compactPrImpactResult: vi.fn(),
-      analyzeImpact: vi.fn(),
-      compactImpactResult: vi.fn(),
-    }
-
-    const output = await runContextPackCommand({
-      prompt: 'Implement issue #275: add implementation-task context packs with validation commands for context_pack',
-      budget: 2400,
-      task: 'implement',
-      taskExplicit: true,
-      graphPath: 'out/graph.json',
-      format: 'copilot',
-    } as never, dependencies)
-
-    expect(output).toContain('# GitHub Copilot implementation brief')
-    expect(output).toContain('## Suggested plan')
-    expect(output).toContain('Verify the suggested starting file against the prompt and workflow centers before editing.')
-    expect(output).toContain('## Workflow centers')
-    expect(output).toContain('## Likely edit files')
-    expect(output).toContain('## Likely test files')
-    expect(output).toContain('## Public contracts')
-    expect(output).toContain('## Risk boundaries')
-    expect(output).toContain('## Validation commands')
-    expect(output).toContain('## Negative guidance')
-    expect(output).toContain('## Why this pack')
-    expect(output).not.toContain(': undefined')
-  })
-
-  it('emits a compact deterministic review pack', async () => {
+  it('preserves deterministic review diagnostics in verbose mode', async () => {
     const graph = new KnowledgeGraph()
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
@@ -2847,7 +2790,7 @@ describe('context-pack-command', () => {
           hotspots: [],
         },
         review_bundle: {
-          budget: 1800,
+          budget: 20_000,
           token_count: 12,
           nodes: [],
           relationships: [],
@@ -2864,18 +2807,19 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'review current diff',
-      budget: 1800,
+      budget: 20_000,
       task: 'review',
       graphPath: 'out/graph.json',
     }, dependencies)
 
-    expect(dependencies.analyzePrImpact).toHaveBeenCalledWith(graph, '.', { budget: 1800, taskIntent: 'pr-review-risk' })
+    expect(dependencies.analyzePrImpact).toHaveBeenCalledWith(graph, '.', { budget: 20_000, taskIntent: 'pr-review-risk' })
     expect(JSON.parse(output)).toEqual(expect.objectContaining({
       task: 'review',
       task_intent: 'pr-review-risk',
       prompt: 'review current diff',
-      budget: 1800,
+      budget: 20_000,
       graph_path: 'out/graph.json',
       plan: expect.objectContaining({
         task_kind: 'review',
@@ -2897,7 +2841,7 @@ describe('context-pack-command', () => {
           hotspots: [],
         },
         review_bundle: {
-          budget: 1800,
+          budget: 20_000,
           token_count: 12,
           nodes: [],
           relationships: [],
@@ -2914,9 +2858,22 @@ describe('context-pack-command', () => {
       missing_context: [],
       missing_semantic: [],
     }))
+    const impact_traversal = { analyzed_targets: 1, partial_targets: 1, depth_limited_targets: 0, node_limited_targets: 1 }
+    vi.mocked(dependencies.compactPrImpactResult).mockReturnValue({
+      ...vi.mocked(dependencies.compactPrImpactResult).mock.results[0]!.value,
+      impact_traversal,
+    })
+    for (const verbose of [false, true]) {
+      const partial = JSON.parse(await runContextPackCommand({
+        verbose, prompt: 'review current diff', budget: 20_000, task: 'review', graphPath: 'out/graph.json',
+      }, dependencies))
+      expect(partial.pack.impact_traversal).toEqual(impact_traversal)
+      expect(partial.evidence.answerability.missing_obligations).toContain('impact:node_limited')
+      if (verbose) expect(partial.evidence.coverage).toBe('partial')
+    }
   })
 
-  it('normalizes sub-minimum review budgets before analyzing PR impact', async () => {
+  it('rejects sub-minimum review budgets before repository work', async () => {
     const graph = new KnowledgeGraph()
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
@@ -2980,20 +2937,16 @@ describe('context-pack-command', () => {
       compactImpactResult: vi.fn(),
     }
 
-    const output = await runContextPackCommand({
-      prompt: 'review auth diff',
+    await expect(runContextPackCommand({
+      prompt: 'auth',
       budget: 1,
       task: 'review',
       graphPath: 'out/graph.json',
-    }, dependencies)
-
-    expect(dependencies.analyzePrImpact).toHaveBeenCalledWith(graph, '.', {
-      budget: 3,
-      taskIntent: 'pr-review-risk',
-    })
-    expect(JSON.parse(output)).toEqual(expect.objectContaining({
-      budget: 3,
-    }))
+    }, dependencies)).rejects.toThrow('at least 128 tokens')
+    expect(dependencies.loadGraph).not.toHaveBeenCalled()
+    expect(dependencies.retrieveContext).not.toHaveBeenCalled()
+    expect(dependencies.analyzePrImpact).not.toHaveBeenCalled()
+    expect(dependencies.analyzeImpact).not.toHaveBeenCalled()
   })
 
   it('classifies review prompts through the task planner and returns the resulting plan', async () => {
@@ -3018,7 +2971,7 @@ describe('context-pack-command', () => {
           hotspots: [],
         },
         review_bundle: {
-          budget: 1800,
+          budget: 20_000,
           token_count: 12,
           nodes: [],
           relationships: [],
@@ -3044,7 +2997,7 @@ describe('context-pack-command', () => {
           hotspots: [],
         },
         review_bundle: {
-          budget: 1800,
+          budget: 20_000,
           token_count: 12,
           nodes: [],
           relationships: [],
@@ -3061,8 +3014,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'Generate regression tests for token refresh and session expiry.',
-      budget: 1800,
+      budget: 20_000,
       task: 'review',
       graphPath: 'out/graph.json',
     }, dependencies)
@@ -3157,8 +3111,9 @@ describe('context-pack-command', () => {
     }
 
     const output = await runContextPackCommand({
+      verbose: true,
       prompt: 'what breaks if auth changes',
-      budget: 900,
+      budget: 20_000,
       task: 'impact',
       graphPath: 'out/graph.json',
     }, dependencies)
@@ -3172,7 +3127,7 @@ describe('context-pack-command', () => {
       task: 'impact',
       task_intent: 'impact',
       prompt: 'what breaks if auth changes',
-      budget: 900,
+      budget: 20_000,
       graph_path: 'out/graph.json',
       target: 'AuthService',
       plan: expect.objectContaining({
@@ -3203,9 +3158,28 @@ describe('context-pack-command', () => {
       },
     }))
     expect(payload.missing_semantic).not.toContain('implementation')
+
+    const bounded = {
+      ...vi.mocked(dependencies.analyzeImpact).mock.results[0]!.value,
+      target_node_id: 'auth-id',
+      traversal: { status: 'depth_limited' as const, depth: 3, node_limit: 500 },
+    }
+    vi.mocked(dependencies.analyzeImpact).mockReturnValue(bounded)
+    vi.mocked(dependencies.compactImpactResult).mockReturnValue(bounded)
+    for (const verbose of [false, true]) {
+      const boundedOutput = JSON.parse(await runContextPackCommand({
+        verbose, prompt: 'what breaks if auth changes', budget: 20_000, task: 'impact', graphPath: 'out/graph.json',
+      }, dependencies))
+      expect(boundedOutput.pack).toMatchObject({ target_node_id: 'auth-id', traversal: bounded.traversal })
+      expect(boundedOutput.evidence.answerability.missing_obligations).toContain('impact:depth_limited')
+      if (verbose) {
+        expect(boundedOutput.evidence.coverage).toBe('partial')
+        expect(boundedOutput.evidence.answerability.answer_scope).not.toBe('complete')
+      }
+    }
   })
 
-  it('normalizes sub-minimum impact budgets before retrieval and metadata assembly', async () => {
+  it('rejects sub-minimum impact budgets before repository work', async () => {
     const graph = new KnowledgeGraph()
     const dependencies: ContextPackCommandDependencies = {
       loadGraph: vi.fn().mockReturnValue(graph),
@@ -3257,21 +3231,16 @@ describe('context-pack-command', () => {
       }),
     }
 
-    const output = await runContextPackCommand({
+    await expect(runContextPackCommand({
       prompt: 'auth',
       budget: 1,
       task: 'impact',
       graphPath: 'out/graph.json',
-    }, dependencies)
-
-    expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
-      question: 'auth',
-      budget: 3,
-      taskKind: 'impact',
-      taskIntent: 'impact',
-    })
-    expect(JSON.parse(output)).toEqual(expect.objectContaining({
-      budget: 3,
-    }))
+    }, dependencies)).rejects.toThrow('at least 128 tokens')
+    expect(dependencies.loadGraph).not.toHaveBeenCalled()
+    expect(dependencies.retrieveContext).not.toHaveBeenCalled()
+    expect(dependencies.analyzePrImpact).not.toHaveBeenCalled()
+    expect(dependencies.analyzeImpact).not.toHaveBeenCalled()
   })
+
 })

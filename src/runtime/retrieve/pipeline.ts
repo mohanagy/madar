@@ -16,7 +16,7 @@ import {
   type PipelineStageObserver,
 } from '../../core/pipeline/stage.js'
 import { classifyTaskContract } from '../context-pack.js'
-import { classifyRetrievalLevel } from '../retrieval-gate.js'
+import { classifyRetrievalLevel, retrievalSearchPrompt } from '../retrieval-gate.js'
 import { defaultContextKindForTaskIntent } from '../task-intent.js'
 import {
   evaluateQueryEvidenceCoverage,
@@ -97,11 +97,12 @@ export const interpretRetrievalQuery = (input: RetrievalQueryStageInput): Retrie
     prompt: input.question,
     ...(input.retrievalLevel !== undefined ? { manualOverride: input.retrievalLevel } : {}),
   })
-  const effectiveRetrievalLevel: RetrievalLevel = input.retrievalLevel !== undefined
+  const hasCodeAnchor = /[`"'][^`"'\n]+[`"']|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b[A-Za-z_$][\w$]*[a-z][A-Z][\w$]*\b/.test(input.question)
+  const asksForRelations = /\b(flow|workflow|end.to.end|calls?|callers?|dependencies|impact|across|through|route|middleware|pipeline|integration)\b/i.test(input.question)
+  const localLookup = hasCodeAnchor && !asksForRelations && /\b(where\s+is|what\s+does|show|find|definition|defined)\b/i.test(input.question)
+  const effectiveRetrievalLevel: RetrievalLevel = input.retrievalLevel !== undefined || localLookup || retrievalGate.level === 0
     ? retrievalGate.level
-    : retrievalGate.level === 0
-      ? 0
-      : (Math.max(retrievalGate.level, 3) as RetrievalLevel)
+    : Math.max(3, retrievalGate.level) as RetrievalLevel
   const taskContract = classifyTaskContract(effectiveTaskKind(input), {
     budget: input.budget,
     prompt: input.question,
@@ -109,7 +110,7 @@ export const interpretRetrievalQuery = (input: RetrievalQueryStageInput): Retrie
   })
 
   return {
-    question_tokens: tokenizeQuestion(input.question),
+    question_tokens: tokenizeQuestion(retrievalSearchPrompt(input.question)),
     retrieval_gate: retrievalGate,
     effective_retrieval_level: effectiveRetrievalLevel,
     task_contract: taskContract,

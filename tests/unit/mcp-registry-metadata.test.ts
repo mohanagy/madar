@@ -127,8 +127,8 @@ describe('MCP Registry metadata', () => {
     expect(registryManifest.$schema).toContain('static.modelcontextprotocol.io/schemas/')
     expect(registryManifest.name).toBe('io.github.mohanagy/madar')
     expect(packageManifest.mcpName).toBe(registryManifest.name)
-    expect(registryManifest.description?.toLowerCase()).toContain('task-aware')
-    expect(registryManifest.description?.toLowerCase()).toContain('typescript/node')
+    expect(registryManifest.description?.toLowerCase()).toContain('source lookup')
+    expect(registryManifest.description?.toLowerCase()).toContain('javascript and typescript')
     expect(registryManifest.description?.toLowerCase()).toContain('local')
     expect(registryManifest.repository).toEqual({
       id: '1207912024',

@@ -8,6 +8,7 @@ import { parseDiscoverySafetyMetadata } from '../shared/discovery-safety.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
 import type { Communities } from '../pipeline/cluster.js'
 import { isRecord } from '../shared/guards.js'
+import { isGraphBuildFreshnessMetadata } from '../shared/graph-build-freshness.js'
 import { sanitizeLabel, validateGraphPath } from '../shared/security.js'
 import { KnowledgeGraph } from '../contracts/graph.js'
 import { parseGenerationPolicy } from '../contracts/generation-policy.js'
@@ -237,6 +238,9 @@ export function loadGraph(graphPath: string): KnowledgeGraph {
   const graph = buildFromJson(extraction, { directed: extraction.directed, validateExtraction: false })
   if (typeof parsed.root_path === 'string' && parsed.root_path.trim().length > 0) {
     graph.graph.root_path = parsed.root_path
+  }
+  if (isGraphBuildFreshnessMetadata(parsed.graph_build_freshness)) {
+    graph.graph.graph_build_freshness = parsed.graph_build_freshness
   }
   if (parsed.spi_mode === true) {
     graph.graph.spi_mode = true

@@ -1,12 +1,13 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import { describe, expect, test, vi } from 'vitest'
 
 import { generateGraph, GenerateUnsupportedCorpusError } from '../../src/infrastructure/generate.js'
+import { EXTRACTOR_CACHE_VERSION } from '../../src/pipeline/extract.js'
 import { analyzeImpact, callChains } from '../../src/runtime/impact.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 import { binaryIngestSidecarPath } from '../../src/shared/binary-ingest-sidecar.js'
@@ -4503,6 +4504,56 @@ describe('generateGraph', () => {
     })
   })
 
+  test('keeps legacy caller relationships equal to cold source after edits, migration and deletion', () => {
+    withTempDir((tempDir) => {
+      const incremental = join(tempDir, 'incremental'), cold = join(tempDir, 'cold')
+      mkdirSync(incremental); mkdirSync(cold)
+      const caller = "import { computeValue } from './callee.mjs';\nexport function runTask(value) {\n  return computeValue(value);\n}\n"
+      const callee = 'export function computeValue(value) {\n  return value + 1;\n}\n'
+      for (const root of [incremental, cold]) {
+        writeFileSync(join(root, 'caller.mjs'), caller)
+        writeFileSync(join(root, 'callee.mjs'), callee)
+      }
+      const options = { extractionMode: 'legacy' as const, noHtml: true, includeDocs: false }
+      const shape = (graphPath: string, root: string) => {
+        const graph = JSON.parse(readFileSync(graphPath, 'utf8'))
+        const clean = (value: unknown): unknown => Array.isArray(value) ? value.map(clean)
+          : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, clean(item)]))
+            : typeof value === 'string' && value.startsWith(root + '/') ? relative(root, value) : value
+        const fields = ['id', 'label', 'source_file', 'source_location', 'file_type', 'node_kind', 'snippet', 'extraction_strategy']
+        return { nodes: graph.nodes.map((node: Record<string, unknown>) => clean(Object.fromEntries(fields.filter(key => node[key] !== undefined).map(key => [key, node[key]])))).map((value: unknown) => JSON.stringify(value)).sort(),
+          edges: graph.links.map(clean).map((value: unknown) => JSON.stringify(value)).sort() }
+      }
+      const initial = generateGraph(incremental, options)
+      expect(initial.edgeCount).toBe(5)
+      for (const root of [incremental, cold]) writeFileSync(join(root, 'callee.mjs'), callee.replace('value + 1', 'value + 2'))
+      const updated = generateGraph(incremental, { ...options, update: true })
+      const expected = generateGraph(cold, options)
+      expect(updated.changedFiles).toBe(1)
+      expect(updated.extractedFiles).toBe(2)
+      expect(shape(updated.graphPath, incremental)).toEqual(shape(expected.graphPath, cold))
+      expect(readFileSync(join(incremental, 'caller.mjs'), 'utf8')).toBe(caller)
+      const unchanged = generateGraph(incremental, { ...options, update: true })
+      expect(unchanged.extractedFiles).toBe(0)
+      // An older damaged graph must rebuild before the unchanged-source fast path.
+      const damaged = JSON.parse(readFileSync(unchanged.graphPath, 'utf8'))
+      damaged.extractor_version = EXTRACTOR_CACHE_VERSION - 1
+      damaged.links = damaged.links.filter((edge: { relation: string }) => edge.relation === 'contains')
+      writeFileSync(unchanged.graphPath, JSON.stringify(damaged))
+      const migrated = generateGraph(incremental, { ...options, update: true })
+      expect(migrated.changedFiles).toBe(0)
+      expect(migrated.extractedFiles).toBe(2)
+      expect(shape(migrated.graphPath, incremental)).toEqual(shape(expected.graphPath, cold))
+      expect(generateGraph(incremental, { ...options, update: true }).extractedFiles).toBe(0)
+      for (const root of [incremental, cold]) rmSync(join(root, 'callee.mjs'))
+      const deleted = generateGraph(incremental, { ...options, update: true })
+      const coldDeleted = generateGraph(cold, options)
+      expect(deleted.deletedFiles).toBe(1)
+      expect(deleted.extractedFiles).toBe(1)
+      expect(shape(deleted.graphPath, incremental)).toEqual(shape(coldDeleted.graphPath, cold))
+    })
+  })
+
   test('tracks incremental update changes after a manifest exists', async () => {
     await withTempDirAsync(async (tempDir) => {
       const sourcePath = join(tempDir, 'main.py')
@@ -4768,11 +4819,11 @@ describe('generateGraph', () => {
 
       graphData.schema_version = 2
       graphData.nodes = graphData.nodes.map((node) =>
-        node.label === 'helper()'
+        node.label === 'helper()' || node.label === 'greet()'
           ? {
               ...node,
               layer: 'semantic',
-              provenance: [{ capability_id: 'test:seed-helper', stage: 'seed' }],
+              provenance: [{ capability_id: node.label === 'helper()' ? 'test:seed-helper' : 'test:seed-greet', stage: 'seed' }],
             }
           : node,
       )
@@ -4793,14 +4844,36 @@ describe('generateGraph', () => {
           expect.objectContaining({
             label: 'helper()',
             layer: 'semantic',
-            provenance: [expect.objectContaining({ capability_id: 'test:seed-helper' })],
+            provenance: expect.arrayContaining([
+              expect.objectContaining({ capability_id: 'test:seed-helper' }),
+              expect.objectContaining({ capability_id: 'builtin:extract:python', source_file: helperPath }),
+            ]),
           }),
         ]),
       )
+      expect(updatedGraphData.nodes.find((node) => node.label === 'greet()')).toEqual(expect.objectContaining({
+        layer: 'base',
+        provenance: expect.not.arrayContaining([expect.objectContaining({ capability_id: 'test:seed-greet' })]),
+      }))
+
+      // An unchanged file is insufficient if the stored owner identity/range
+      // disagrees with current extraction. Never attach annotations by ID alone.
+      const helper = updatedGraphData.nodes.find((node) => node.label === 'helper()')!
+      helper.source_location = 'L99'
+      writeFileSync(updated.graphPath, `${JSON.stringify(updatedGraphData, null, 2)}\n`, 'utf8')
+      await delay(10)
+      writeFileSync(sourcePath, 'def greet():\n    return helper()\n\ndef third():\n    return greet()\n', 'utf8')
+      const reidentified = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
+      const reidentifiedData = JSON.parse(readFileSync(reidentified.graphPath, 'utf8')) as typeof updatedGraphData
+      expect(reidentifiedData.schema_version).toBe(2)
+      expect(reidentifiedData.nodes.find((node) => node.label === 'helper()')).toEqual(expect.objectContaining({
+        layer: 'base',
+        provenance: expect.not.arrayContaining([expect.objectContaining({ capability_id: 'test:seed-helper' })]),
+      }))
     })
   })
 
-  test('re-extracts only changed files during update while retaining unchanged graph context', async () => {
+  test('re-extracts current files during update to relink unchanged graph context', async () => {
     await withTempDirAsync(async (tempDir) => {
       const sourcePath = join(tempDir, 'main.py')
       const helperPath = join(tempDir, 'helper.py')
@@ -4825,7 +4898,7 @@ describe('generateGraph', () => {
         const graph = loadGraph(result.graphPath)
 
         expect(extractSpy).toHaveBeenCalledTimes(1)
-        expect(normalizeAssertionPaths(extractSpy.mock.calls[0]?.[0] ?? [])).toEqual([normalizeAssertionPath(sourcePath)])
+        expect(normalizeAssertionPaths(extractSpy.mock.calls[0]?.[0] ?? []).sort()).toEqual(normalizeAssertionPaths([sourcePath, helperPath]).sort())
         expect(graph.nodeEntries().some(([, attributes]) => attributes.label === 'helper()')).toBe(true)
         expect(graph.nodeEntries().some(([, attributes]) => attributes.label === 'other()')).toBe(true)
       } finally {
@@ -5124,7 +5197,7 @@ describe('generateGraph', () => {
       const updateChanged = generateGraph(tempDir, { update: true, noHtml: true, extractionMode: 'legacy' })
       expect(updateChanged.extractableFiles).toBe(3)
       expect(updateChanged.changedFiles).toBe(1)
-      expect(updateChanged.extractedFiles).toBe(1)
+      expect(updateChanged.extractedFiles).toBe(3)
       expect(updateChanged.cache).toBeNull()
 
       const clusterOnly = generateGraph(tempDir, { clusterOnly: true, noHtml: true })

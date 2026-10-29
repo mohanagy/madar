@@ -5,6 +5,7 @@ export interface McpToolDefinition {
     type: 'object'
     properties: Record<string, unknown>
     required?: string[]
+    anyOf?: Array<{ required: string[] }>
   }
 }
 
@@ -147,19 +148,19 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'community_details',
     description:
-      'Get structured details about a community at different zoom levels. Micro: name + top 3 nodes. Mid: key nodes, entry/exit points, bridges. Macro: all nodes, edges, file distribution. Use with retrieve for token-efficient codebase exploration.',
+      'Optional community navigation. Micro: name, top 3 nodes. Mid: key nodes, entry/exit, bridges. Macro: all nodes, edges, file distribution.',
     inputSchema: {
       type: 'object',
       required: ['community_id'],
       properties: {
-        community_id: { type: 'number', description: 'Community ID to get details for' },
+        community_id: { type: 'number', description: 'Community ID' },
         zoom: { type: 'string', enum: ['micro', 'mid', 'macro'], description: 'Detail level (default: mid)' },
       },
     },
   },
   {
     name: 'community_overview',
-    description: 'Overview of all communities: names, sizes, top nodes. Call first to map the codebase before zooming in.',
+    description: 'Optional repo navigation: community names, sizes, top nodes.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -167,19 +168,20 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   },
   {
     name: 'impact',
-    description: 'Blast-radius for a node: direct + transitive dependents, affected files and communities.',
+    description: 'Direct/transitive dependents, affected files and communities. Ambiguous labels return candidates; prefer node_id.',
     inputSchema: {
       type: 'object',
-      required: ['label'],
+      anyOf: [{ required: ['node_id'] }, { required: ['label'] }],
       properties: {
-        label: { type: 'string', description: 'Node label' },
+        node_id: { type: 'string', minLength: 1, description: 'Exact node ID; overrides label' },
+        label: { type: 'string', minLength: 1, description: 'Unique label if node_id omitted' },
         depth: { type: 'number', description: 'Max traversal depth (default 3, max 5)' },
         edge_types: {
           type: 'array',
           items: { type: 'string' },
           description: 'Limit to edge types (e.g. ["calls","imports_from"])',
         },
-        verbose: { type: 'boolean', description: 'Return verbose payload (default: compact)' },
+        verbose: { type: 'boolean', description: 'Verbose output (default: compact)' },
       },
     },
   },
@@ -203,36 +205,36 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   },
   {
     name: 'pr_impact',
-    description: 'Blast-radius of current git changes: parses diff, finds affected nodes, computes review bundle.',
+    description: 'Review bundle for current git changes: affected nodes and dependents.',
     inputSchema: {
       type: 'object',
       properties: {
         base_branch: { type: 'string', description: 'Base branch (default: auto-detect main/master)' },
         depth: { type: 'number', description: 'Blast-radius depth (default 3)' },
         budget: { type: 'number', description: 'Review bundle token budget (default 2000)' },
-        verbose: { type: 'boolean', description: 'Return verbose payload (default: compact)' },
+        verbose: { type: 'boolean', description: 'Verbose output (default: compact)' },
       },
     },
   },
   {
     name: 'retrieve',
-    description: 'Retrieve matched nodes, snippets, relationships, and community context for a question.',
+    description: 'Retrieve nodes, snippets, relationships and community context.',
     inputSchema: {
       type: 'object',
       required: ['question', 'budget'],
       properties: {
         question: { type: 'string', description: 'Natural-language question' },
-        budget: { type: 'number', description: 'Max tokens in the context bundle' },
-        community: { type: 'number', description: 'Filter to one community id' },
-        file_type: { type: 'string', description: 'Filter to one file type (e.g. code, document)' },
-        semantic: { type: 'boolean', description: 'Enable embedding-based semantic fallback' },
-        semantic_model: { type: 'string', description: 'Override semantic model or local path' },
-        rerank: { type: 'boolean', description: 'Enable cross-encoder reranking' },
-        rerank_model: { type: 'string', description: 'Override reranker model or local path' },
+        budget: { type: 'number', description: 'Context token budget' },
+        community: { type: 'number', description: 'Community filter' },
+        file_type: { type: 'string', description: 'File type filter (code, document)' },
+        semantic: { type: 'boolean', description: 'Embedding fallback' },
+        semantic_model: { type: 'string', description: 'Semantic model or local path' },
+        rerank: { type: 'boolean', description: 'Cross-encoder reranking' },
+        rerank_model: { type: 'string', description: 'Reranker model or local path' },
         snippet_budget: { type: 'number', description: 'Snippet-token budget (default 3000)' },
-        top_n_with_snippet: { type: 'number', description: 'Top matched nodes with snippets (default 8)' },
-        verbose: { type: 'boolean', description: 'Return verbose payload (default: compact)' },
-        retrieval_level: { type: 'number', description: 'Override retrieval-gate level 0-5 (#75)' },
+        top_n_with_snippet: { type: 'number', description: 'Nodes with snippets (default 8)' },
+        verbose: { type: 'boolean', description: 'Verbose output (default: compact)' },
+        retrieval_level: { type: 'number', description: 'Retrieval-gate level 0-5' },
         retrieval_strategy: { type: 'string', enum: ['default', 'slice-v1'], description: 'Experimental retrieval strategy.' },
       },
     },
@@ -240,14 +242,24 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'context_pack',
     description:
-      'Build an answer-ready compact context pack. Copy the entire user codebase request verbatim, byte-for-byte into prompt, including read-only, no-change, scope, and formatting constraints. Supports freshness, delta, resolution, retrieval, and verbose diagnostic options.',
+      'Read exact JS/TS functions via targets (file, symbol; explain mode), or try focused experimental discovery. Discovery may miss code and increase total tokens; coverage is advisory. snippet_ref reuses source at this node\'s snippet_line_range.',
     inputSchema: {
       type: 'object',
       required: ['prompt'],
       properties: {
-        prompt: { type: 'string', description: 'The entire user codebase request copied verbatim, byte-for-byte, including read-only, no-change, scope, and formatting constraints; do not paraphrase, omit, or expand it.' },
+        prompt: { type: 'string', description: 'Question with identifiers, literals, paths and scope.' },
         task: { type: 'string', enum: ['explain', 'implement', 'review', 'impact'], description: 'Mode override.' },
-        budget: { type: 'number', description: 'Pack token budget.' },
+        budget: { type: 'number', minimum: 128, description: 'Serialized response token limit, including metadata (min 128).' },
+        targets: {
+          type: 'array', minItems: 1, maxItems: 8,
+          description: 'Exact JS/TS owners; task=explain. Only these owners, with recovery. Completeness stays partial.',
+          items: { type: 'object', required: ['file', 'symbol'], additionalProperties: false,
+            properties: {
+              file: { type: 'string', minLength: 1, maxLength: 512, description: 'Exact workspace-relative source path.' },
+              symbol: { type: 'string', minLength: 1, maxLength: 512, description: 'Case-sensitive function name; qualify ambiguous names.' },
+              callee: { type: 'string', minLength: 1, maxLength: 512, description: 'Return the uniquely bound local callee of this caller: an identifier or static dotted call. Uses full current caller; excludes nested closures and dynamic expressions.' },
+            } },
+        },
         require_fresh_graph: { type: 'boolean', description: 'Refuse repo drift.' },
         require_fresh_context: { type: 'boolean', description: 'Refuse selected-context drift.' },
         delta_session_id: { type: 'string', description: 'Delta-pack session key.' },
@@ -275,13 +287,14 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'context_expand',
     description:
-      'Expand one listed verification handle only when the preceding context_pack returned answerability.state verify_targets. Never call for ready or ready_with_caveat, and never replace a second context_pack call with a rewritten prompt.',
+      'Read omitted lines via source_expand_handle, or related evidence via an expandable handle. Follow the next source_expand_handle for remaining lines.',
     inputSchema: {
       type: 'object',
       required: ['handle_id'],
       properties: {
-        handle_id: { type: 'string', description: 'Stable handle_id from a prior context_pack response in the same MCP session' },
-        budget: { type: 'number', description: 'Optional: maximum token budget for the focused expansion (default 1500)' },
+        handle_id: { type: 'string', description: 'source_expand_handle or expandable handle_id returned in this MCP session.' },
+        budget: { type: 'number', minimum: 128, description: 'Serialized response token limit (default 1500, min 128).' },
+        symbol: { type: 'string', minLength: 1, maxLength: 512, description: 'Exact function in generic expandable scope; qualify ambiguous names. Unsupported with source_expand_handle.' },
       },
     },
   },
@@ -307,28 +320,28 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: 'context_session_reset',
     description:
-      'Reset a stored context_prompt session when switching topics or when you want the next Claude prompt to resend the full stable context.',
+      'Reset context_prompt session to resend full stable context on the next Claude prompt.',
     inputSchema: {
       type: 'object',
       required: ['session_id'],
       properties: {
-        session_id: { type: 'string', description: 'Server-managed context_prompt session key to clear' },
+        session_id: { type: 'string', description: 'context_prompt session key' },
       },
     },
   },
   {
     name: 'relevant_files',
     description:
-      'Return the most relevant files for a feature or change question, ranked with short explanations of why each file matters.',
+      'Rank relevant files for a feature/change question with explanations.',
     inputSchema: {
       type: 'object',
       required: ['question'],
       properties: {
-        question: { type: 'string', description: 'Natural language feature or change question' },
-        budget: { type: 'number', description: 'Optional: retrieval budget used to gather evidence (default 4000)' },
-        limit: { type: 'number', description: 'Optional: maximum number of files to return (default 8)' },
-        community: { type: 'number', description: 'Optional: limit file ranking to one community id' },
-        file_type: { type: 'string', description: 'Optional: limit ranking to one file type (e.g. code, document)' },
+        question: { type: 'string', description: 'Feature or change question' },
+        budget: { type: 'number', description: 'Retrieval token budget (default 4000)' },
+        limit: { type: 'number', description: 'Max files (default 8)' },
+        community: { type: 'number', description: 'Community filter' },
+        file_type: { type: 'string', description: 'File type filter (code, document)' },
       },
     },
   },
@@ -340,11 +353,11 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       type: 'object',
       required: ['question'],
       properties: {
-        question: { type: 'string', description: 'Natural language feature or change question' },
-        budget: { type: 'number', description: 'Optional: retrieval budget used to gather evidence (default 4000)' },
-        limit: { type: 'number', description: 'Optional: maximum number of communities, entry points, and files to return (default 5)' },
-        community: { type: 'number', description: 'Optional: limit the feature map to one community id' },
-        file_type: { type: 'string', description: 'Optional: limit the feature map to one file type (e.g. code, document)' },
+        question: { type: 'string', description: 'Feature or change question' },
+        budget: { type: 'number', description: 'Retrieval token budget (default 4000)' },
+        limit: { type: 'number', description: 'Max communities, entry points and files (default 5)' },
+        community: { type: 'number', description: 'Community filter' },
+        file_type: { type: 'string', description: 'File type filter (code, document)' },
       },
     },
   },
@@ -356,11 +369,11 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       type: 'object',
       required: ['question'],
       properties: {
-        question: { type: 'string', description: 'Natural language feature or change question' },
-        budget: { type: 'number', description: 'Optional: retrieval budget used to gather evidence (default 4000)' },
-        limit: { type: 'number', description: 'Optional: maximum number of risks and hotspots to return (default 5)' },
-        community: { type: 'number', description: 'Optional: limit the risk map to one community id' },
-        file_type: { type: 'string', description: 'Optional: limit the risk map to one file type (e.g. code, document)' },
+        question: { type: 'string', description: 'Feature or change question' },
+        budget: { type: 'number', description: 'Retrieval token budget (default 4000)' },
+        limit: { type: 'number', description: 'Max risks and hotspots (default 5)' },
+        community: { type: 'number', description: 'Community filter' },
+        file_type: { type: 'string', description: 'File type filter (code, document)' },
       },
     },
   },
@@ -372,11 +385,11 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       type: 'object',
       required: ['question'],
       properties: {
-        question: { type: 'string', description: 'Natural language feature or change question' },
-        budget: { type: 'number', description: 'Optional: retrieval budget used to gather evidence (default 4000)' },
-        limit: { type: 'number', description: 'Optional: maximum number of edit steps and validations to return (default 5)' },
-        community: { type: 'number', description: 'Optional: limit the checklist to one community id' },
-        file_type: { type: 'string', description: 'Optional: limit the checklist to one file type (e.g. code, document)' },
+        question: { type: 'string', description: 'Feature or change question' },
+        budget: { type: 'number', description: 'Retrieval token budget (default 4000)' },
+        limit: { type: 'number', description: 'Max edit steps and validations (default 5)' },
+        community: { type: 'number', description: 'Community filter' },
+        file_type: { type: 'string', description: 'File type filter (code, document)' },
       },
     },
   },
@@ -409,10 +422,10 @@ export const CORE_TOOL_NAMES = ['retrieve', 'impact', 'call_chain', 'community_o
 export type McpCoreToolName = (typeof CORE_TOOL_NAMES)[number]
 
 /**
- * The compact context-pack-first surface installed by `--profile strict`.
- * A strict task starts with one answer-ready pack and can make one
- * authorization-bound verification expansion. General graph navigation stays
- * in core/full so a ready pack cannot invite an agent to keep exploring.
+ * The compact source-retrieval surface installed by `--profile strict`.
+ * Each pack and expansion has its own response budget. Agents can ask focused
+ * follow-up questions or read named source directly when evidence is incomplete.
+ * General graph navigation stays in core/full.
  */
 export const STRICT_TOOL_NAMES = ['context_pack', 'context_expand'] as const
 
@@ -447,9 +460,9 @@ function withoutSemanticFields(tool: McpToolDefinition): McpToolDefinition {
 
 function strictToolSchema(tool: McpToolDefinition): McpToolDefinition {
   const allowedProperties = tool.name === 'context_pack'
-    ? ['prompt', 'task']
+    ? ['prompt', 'task', 'budget', 'targets']
     : tool.name === 'context_expand'
-      ? ['handle_id']
+      ? ['handle_id', 'budget', 'symbol']
       : null
   if (allowedProperties === null) {
     return tool
@@ -464,11 +477,11 @@ function strictToolSchema(tool: McpToolDefinition): McpToolDefinition {
     ...tool,
     ...(tool.name === 'context_pack'
       ? {
-          description: `${tool.description} Strict mode: call exactly once per user task; pass prompt and task only, do not rewrite or split the prompt, and treat ready or ready_with_caveat as terminal for read-only tasks.`,
+          description: `${tool.description} Choose a budget; ask focused follow-ups as needed.`,
         }
       : tool.name === 'context_expand'
       ? {
-          description: `${tool.description} This is the one strict verification attempt: treat its result as terminal and never follow a new handle from it.`,
+          description: `${tool.description} Each expansion has its own budget.`,
         }
       : {}),
     inputSchema: {

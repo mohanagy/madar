@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { readQueryEvidenceSnippet, retrieveContext } from '../../src/runtime/retrieve.js'
+import * as sourceAccess from '../../src/shared/source-access.js'
 import { assessMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
 import { buildRetrievalEvidencePlanFromResult } from '../../src/runtime/retrieve/pipeline.js'
 import { evaluateQueryEvidenceCoverage } from '../../src/runtime/retrieve/conceptual-fallback.js'
@@ -21,13 +22,25 @@ const AGENT_SHORTENED_QUESTION = 'Explain the exact end-to-end path from a faile
 function writeCrossLayerGraphFixture(root: string): string {
   const graph = buildCrossLayerMonitorFlowFixture()
   const graphPath = join(root, 'graph.json')
+  // These are deliberately unverified graph excerpts, but their source paths
+  // must exist inside this isolated workspace before MCP may publish them.
+  const nodes = graph.nodeEntries().map(([id, attributes]) => {
+    const sourceFile = join(root, String(attributes.source_file).replace(/^\/+/, ''))
+    mkdirSync(dirname(sourceFile), { recursive: true })
+    writeFileSync(sourceFile, String(attributes.snippet ?? ''), 'utf8')
+    return { id, ...attributes, source_file: sourceFile }
+  })
   writeFileSync(graphPath, JSON.stringify({
     ...graph.graph,
+    root_path: root,
     directed: graph.isDirected(),
-    nodes: graph.nodeEntries().map(([id, attributes]) => ({ id, ...attributes })),
+    nodes,
     edges: graph.edgeEntries().map(([source, target, attributes]) => ({ source, target, ...attributes })),
     hyperedges: [],
   }), 'utf8')
+  // Stored, unverified excerpts model an older graph, not fresh source proof.
+  const graphTime = new Date(Date.now() - 10_000)
+  utimesSync(graphPath, graphTime, graphTime)
   return graphPath
 }
 
@@ -84,14 +97,14 @@ describe('cross-layer flow retrieval', () => {
       total: snippetCoverage.total,
       finally_covered: snippetCoverage.covered,
     })
-    expect(evidence.answerability.state).toMatch(/^ready(?:_with_caveat)?$/)
-    expect(evidence.answerability.broad_search_fallback).toBe('not_needed')
-    expect(evidence.agent_directive).toBe('answer_from_pack')
+    expect(evidence.answerability.advisory).toBe(true)
+    expect(evidence.answerability.broad_search_fallback).toBe('allowed')
+    expect(evidence.agent_directive).toBe('explore_with_caution')
     expect(result.token_count).toBeLessThanOrEqual(1_800)
     expect(elapsedMs).toBeLessThan(750)
   })
 
-  it('returns an answer-ready workflow through one context_pack MCP call', async () => {
+  it('returns the workflow evidence and verification limits through one context_pack MCP call', async () => {
     const fixtureParent = resolve('out', 'test-runtime')
     mkdirSync(fixtureParent, { recursive: true })
     const root = mkdtempSync(join(fixtureParent, 'madar-cross-layer-mcp-'))
@@ -115,15 +128,17 @@ describe('cross-layer flow retrieval', () => {
         (response?.result as { content: Array<{ text: string }> }).content[0]!.text,
       ) as {
         pack?: {
-          matched_nodes?: Array<{ label: string; source_file: string }>
+          matched_nodes?: Array<{ label: string; source_file: string; snippet?: string; snippet_unverified?: boolean }>
           relationships?: unknown[]
         }
-        claims?: Array<{ text: string }>
+        response_format?: string
+        governance?: { graph_freshness?: { status?: string; selected_context_status?: string } }
         evidence?: {
-          answerability?: { state?: string; broad_search_fallback?: string }
+          answerability?: { state?: string; advisory?: boolean; broad_search_fallback?: string; caveats?: string[] }
           agent_directive?: string
         }
       }
+      expect(payload.governance?.graph_freshness).toMatchObject({ status: 'possibly_stale', selected_context_status: 'possibly_stale' })
       const selectedFiles = new Set(payload.pack?.matched_nodes?.map((node) => node.source_file) ?? [])
       const relevantSelected = [...selectedFiles].filter((file) => (
         CROSS_LAYER_MONITOR_FLOW_FILES.includes(file as typeof CROSS_LAYER_MONITOR_FLOW_FILES[number])
@@ -140,20 +155,22 @@ describe('cross-layer flow retrieval', () => {
         'packages/api/src/router/external-service/effective-status.ts',
       )
       expect(payload.pack?.matched_nodes?.map((node) => node.label)).toContain('computeOverallStatus')
-      expect(payload.claims?.some((claim) => (
-        claim.text.includes('treats an open incident event as "error" outside manual mode')
-        && claim.text.includes('derives overall status from active status reports and maintenance')
-      ))).toBe(true)
+      const snippets = payload.pack?.matched_nodes?.map((node) => node.snippet ?? '').join('\n') ?? ''
+      expect(snippets).toContain("e.type === 'incident' && !e.to")
+      expect(snippets).toContain("barType !== 'manual'")
+      expect(snippets).toContain('hasActiveStatusReport ? DEGRADED : hasActiveMaintenance')
+      expect(payload.response_format).toBe('source_evidence_v2')
+      expect(payload.pack?.matched_nodes?.some((node) => node.snippet_unverified)).toBe(true)
       expect(
         payload.pack?.relationships?.length ?? 0,
         JSON.stringify(payload, null, 2),
       ).toBeGreaterThanOrEqual(5)
       expect(payload.evidence, JSON.stringify(payload, null, 2)).toMatchObject({
         answerability: {
-          state: expect.stringMatching(/^ready(?:_with_caveat)?$/),
-          broad_search_fallback: 'not_needed',
+          advisory: true,
+          broad_search_fallback: 'allowed',
         },
-        agent_directive: 'answer_from_pack',
+        agent_directive: 'explore_with_caution',
       })
     } finally {
       if (previousToolProfile === undefined) {
@@ -165,11 +182,18 @@ describe('cross-layer flow retrieval', () => {
     }
   })
 
-  it('keeps natural and agent-shortened incident-delivery prompts answer-ready', async () => {
+  it('preserves decisive evidence from graph-only fallback for natural and shortened prompts with advisory limits', async () => {
     const fixtureParent = resolve('out', 'test-runtime')
     mkdirSync(fixtureParent, { recursive: true })
     const root = mkdtempSync(join(fixtureParent, 'madar-cross-layer-natural-'))
     const previousToolProfile = process.env.MADAR_TOOL_PROFILE
+    // Preserve this test's original unavailable-reader contract. Policy and
+    // final publication still inspect the actual isolated files above.
+    const readSource = sourceAccess.readBoundedSource
+    const reader = vi.spyOn(sourceAccess, 'readBoundedSource').mockImplementation((...args) => {
+      if (args[4] && args[1] === root) throw new Error('Fixture source content unavailable')
+      return readSource(...args)
+    })
     try {
       process.env.MADAR_TOOL_PROFILE = 'strict'
       const graphPath = writeCrossLayerGraphFixture(root)
@@ -190,12 +214,15 @@ describe('cross-layer flow retrieval', () => {
         const payload = JSON.parse(
           (response?.result as { content: Array<{ text: string }> }).content[0]!.text,
         ) as {
-          pack?: { matched_nodes?: Array<{ source_file: string; snippet?: string }> }
+          pack?: { matched_nodes?: Array<{ source_file: string; snippet?: string; snippet_unverified?: boolean }> }
+          governance?: { graph_freshness?: { status?: string; selected_context_status?: string } }
           evidence?: {
-            answerability?: { state?: string; broad_search_fallback?: string }
+            answerability?: { state?: string; advisory?: boolean; broad_search_fallback?: string; caveats?: string[] }
             agent_directive?: string
           }
         }
+        expect(payload.governance?.graph_freshness).toMatchObject({ status: 'possibly_stale', selected_context_status: 'possibly_stale' })
+        expect(payload.pack?.matched_nodes?.some(node => node.snippet_unverified)).toBe(true)
         const selectedFiles = new Set(payload.pack?.matched_nodes?.map((node) => node.source_file) ?? [])
         const snippets = payload.pack?.matched_nodes?.map((node) => node.snippet ?? '').join('\n') ?? ''
 
@@ -207,13 +234,14 @@ describe('cross-layer flow retrieval', () => {
         expect(snippets).toMatch(/sendAlert\(notification\)/)
         expect(payload.evidence, JSON.stringify(payload, null, 2)).toMatchObject({
           answerability: {
-            state: expect.stringMatching(/^ready(?:_with_caveat)?$/),
-            broad_search_fallback: 'not_needed',
+            advisory: true,
+            broad_search_fallback: 'allowed',
           },
-          agent_directive: 'answer_from_pack',
+          agent_directive: 'explore_with_caution',
         })
       }
     } finally {
+      reader.mockRestore()
       if (previousToolProfile === undefined) {
         delete process.env.MADAR_TOOL_PROFILE
       } else {
@@ -223,7 +251,7 @@ describe('cross-layer flow retrieval', () => {
     }
   })
 
-  it('selects decisive file evidence when an anonymous workflow is hidden behind a small helper anchor', () => {
+  it('keeps helper evidence separate from an anonymous workflow elsewhere in its file', () => {
     const fixtureParent = resolve('out', 'test-runtime')
     mkdirSync(fixtureParent, { recursive: true })
     const root = mkdtempSync(join(fixtureParent, 'madar-query-snippet-'))
@@ -251,9 +279,9 @@ describe('cross-layer flow retrieval', () => {
         sourceLocation: 'L4-L6',
       })
 
-      expect(evidence).toMatchObject({ scope: 'source_file' })
+      expect(evidence).toMatchObject({ scope: 'symbol', snippet_line_range: { start_line: 4, end_line: 6 } })
       expect(evidence?.snippet).toContain('incidentTable')
-      expect(evidence?.snippet).toContain('triggerNotifications')
+      expect(evidence?.snippet).not.toContain('triggerNotifications')
       expect(evidence?.snippet).not.toContain('import')
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -403,7 +431,7 @@ describe('cross-layer flow retrieval', () => {
         sourceLocation: 'L3',
       })
 
-      expect(evidence).toMatchObject({ scope: 'source_file' })
+      expect(evidence).toMatchObject({ scope: 'symbol', snippet_line_range: { start_line: 3, end_line: 17 } })
       expect(evidence?.snippet).toContain('UpdateStatus')
       expect(evidence?.snippet).toContain('Status: "error"')
     } finally {

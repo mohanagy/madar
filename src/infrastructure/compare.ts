@@ -7,7 +7,7 @@ import type { ContextPackExecutionPhase, ContextPackRoutingDebug, ContextPackTas
 import { KnowledgeGraph } from '../contracts/graph.js'
 import type { ContextSessionDiagnostics, ContextSessionState } from '../contracts/context-session.js'
 import { buildContextPrompt, type ContextPromptStableSection } from './context-prompt.js'
-import { buildAnswerReadyPackSchema, buildExplainPackPayloadCore } from './context-pack-command.js'
+import { buildExplainContextPackSchema, buildExplainPackPayloadCore } from './context-pack-command.js'
 import { CLAUDE_PROMPT_HOOK_SCRIPT_RELATIVE_PATH, isMadarProjectHook } from './install.js'
 import { CODE_EXTENSIONS, DOC_EXTENSIONS, MANIFEST_METADATA_KEY, OFFICE_EXTENSIONS, PAPER_EXTENSIONS } from '../pipeline/detect.js'
 import { extractCompareBaselineNonCodeText } from '../pipeline/extract/non-code.js'
@@ -23,6 +23,8 @@ import {
 import { parsePromptRunnerJsonRecord, parsePromptRunnerOutput, type PromptRunnerUsage } from './prompt-runner.js'
 import { buildImplementationPackGuidance } from '../runtime/implementation-pack.js'
 import { classifyRetrievalLevel } from '../runtime/retrieval-gate.js'
+import { analyzeGraphContextFreshness, selectedContextSourceFilesFromRetrieveResult } from '../runtime/freshness.js'
+import { finalizeSourceEvidenceResponse } from '../runtime/source-evidence-response.js'
 import { compactRetrieveResult, retrieveContext, tokenizeLabel, type CompactRetrieveResult, type RetrieveResult } from '../runtime/retrieve.js'
 import { buildRoutingDebug } from '../runtime/routing-debug.js'
 import { QUERY_TOKEN_ESTIMATOR, estimateQueryTokens, loadGraph } from '../runtime/serve.js'
@@ -30,6 +32,7 @@ import { resolveToolProfileFromEnv, type McpToolProfile } from '../runtime/stdio
 import { sidecarAwareFileFingerprint } from '../shared/binary-ingest-sidecar.js'
 import { sanitizeShareSafeText, toShareSafeArtifactPath, type ShareSafePathRoots } from '../shared/share-safe-artifacts.js'
 import { readGraphSourceRoot } from '../shared/graph-source-root.js'
+import { parseDiscoverySafetyMetadata } from '../shared/discovery-safety.js'
 import { resolveShellCommand, shellEscape } from '../shared/shell.js'
 import { MAX_TEXT_BYTES, validateGraphOutputPath, validateGraphPath } from '../shared/security.js'
 import { copyWorkspaceForBenchmark } from '../shared/workspace-copy.js'
@@ -2220,75 +2223,6 @@ function resolveCompareSnippetPath(sourceFile: string, projectRoot: string): str
   return null
 }
 
-function compareMatchedNodeId(node: Pick<RetrieveResult['matched_nodes'][number], 'node_id'>): string | null {
-  return typeof node.node_id === 'string' && node.node_id.length > 0 ? node.node_id : null
-}
-
-function compareEntryTokens(node: Pick<RetrieveResult['matched_nodes'][number], 'label' | 'source_file' | 'line_number' | 'snippet'>): number {
-  return estimateQueryTokens(`${node.label} ${node.source_file}:${node.line_number} ${node.snippet ?? ''}`)
-}
-
-function relevanceBandPriority(band: RetrieveResult['matched_nodes'][number]['relevance_band']): number {
-  switch (band) {
-    case 'direct':
-      return 2
-    case 'related':
-      return 1
-    default:
-      return 0
-  }
-}
-
-function trimCompareRetrieval(graph: KnowledgeGraph, retrieval: RetrieveResult, budget: number): RetrieveResult {
-  const orderedNodes = [...retrieval.matched_nodes].sort((left, right) => {
-    const leftId = compareMatchedNodeId(left)
-    const rightId = compareMatchedNodeId(right)
-    return (
-      relevanceBandPriority(right.relevance_band) - relevanceBandPriority(left.relevance_band) ||
-      (rightId ? graph.degree(rightId) : 0) - (leftId ? graph.degree(leftId) : 0) ||
-      right.match_score - left.match_score
-    )
-  })
-
-  const matchedNodes: RetrieveResult['matched_nodes'] = []
-  const includedIds = new Set<string>()
-  let tokenCount = 0
-
-  for (const node of orderedNodes) {
-    const nodeTokens = compareEntryTokens(node)
-    if (tokenCount + nodeTokens > budget && matchedNodes.length > 0) {
-      continue
-    }
-
-    matchedNodes.push(node)
-    const nodeId = compareMatchedNodeId(node)
-    if (nodeId) {
-      includedIds.add(nodeId)
-    }
-    tokenCount += nodeTokens
-  }
-
-  const includedLabels = new Set(matchedNodes.map((node) => node.label))
-  const includedCommunities = new Set(matchedNodes.flatMap((node) => (node.community === null ? [] : [node.community])))
-
-  return {
-    ...retrieval,
-    token_count: tokenCount,
-    matched_nodes: matchedNodes,
-    relationships: retrieval.relationships.filter((relationship) => {
-      if (includedIds.size > 0 && relationship.from_id && relationship.to_id) {
-        return includedIds.has(relationship.from_id) && includedIds.has(relationship.to_id)
-      }
-      return includedLabels.has(relationship.from) && includedLabels.has(relationship.to)
-    }),
-    community_context: retrieval.community_context.filter((community) => includedCommunities.has(community.id)),
-    graph_signals: {
-      god_nodes: retrieval.graph_signals.god_nodes.filter((label) => includedLabels.has(label)),
-      bridge_nodes: retrieval.graph_signals.bridge_nodes.filter((label) => includedLabels.has(label)),
-    },
-  }
-}
-
 function createCompareRetrievalGraph(
   graph: KnowledgeGraph,
   projectRoot: string,
@@ -2355,7 +2289,7 @@ function retrieveCompareContext(
     for (const matchedNode of retrieval.matched_nodes) {
       matchedNode.source_file = originalSourceFiles.get(matchedNode.source_file) ?? matchedNode.source_file
     }
-    return trimCompareRetrieval(retrievalGraph, retrieval, budget)
+    return retrieval
   } finally {
     process.chdir(originalCwd)
   }
@@ -2732,12 +2666,20 @@ export function buildBaselinePromptPack(input: BuildBaselinePromptPackInput): Co
 }
 
 export function buildMadarPromptPack(input: BuildMadarPromptPackInput): ComparePromptPack {
-  const explainPayloadCore = buildAnswerReadyPackSchema(
-    buildExplainPackPayloadCore(compactRetrieveResult(input.retrieval), input.retrieval),
-    input.retrieval.task_contract?.budget ?? 3000,
-  )
-  delete explainPayloadCore.serialized_budget
-  const explainPayload = JSON.stringify(explainPayloadCore, null, 2)
+  const budget = input.retrieval.task_contract?.budget ?? 3000
+  const graph = input.graphPath ? loadGraph(input.graphPath) : undefined
+  const schema = graph && input.graphPath
+    ? buildExplainContextPackSchema({ prompt: input.question, budget, graphPath: input.graphPath }, input.retrieval, {
+        graphFreshness: analyzeGraphContextFreshness(input.graphPath, graph, {
+          selected_source_files: selectedContextSourceFilesFromRetrieveResult(input.retrieval),
+        }),
+        discoverySafety: parseDiscoverySafetyMetadata(graph.graph.discovery_safety),
+      })
+    : buildExplainPackPayloadCore(compactRetrieveResult(input.retrieval, {
+        snippetBudget: budget,
+        topNWithSnippet: input.retrieval.matched_nodes.length,
+      }), input.retrieval)
+  const explainPayload = JSON.stringify(finalizeSourceEvidenceResponse(schema, budget))
   const builtPrompt = buildContextPrompt({
     instructions: [
       'Answer the question using only the provided graph-guided retrieval output.',
@@ -3447,6 +3389,8 @@ export interface AnthropicUsageBlock {
 }
 
 export interface AnthropicResultEvent {
+  subtype: string | null
+  is_error: boolean | null
   model: string | null
   num_turns: number
   duration_ms: number
@@ -3469,7 +3413,9 @@ export type NativeAgentRunStatus =
       result_path: string
     }
   | { kind: 'answer_only'; evidence: string | null; exit_code: number; stderr: string | null; result_path: string }
-  | { kind: 'runner_error'; evidence: string | null; exit_code: number | null; stderr: string | null; failure_reason?: 'timed_out' }
+  | { kind: 'runner_error'; evidence: string | null; exit_code: number | null; stderr: string | null; failure_reason?: 'timed_out'
+      /** Observed failed-run billing only; never treated as a completed-task reduction. */
+      usage_diagnostic?: Pick<AnthropicResultEvent, 'subtype' | 'is_error' | 'usage' | 'total_cost_usd'> }
 
 export type NativeAgentTokenRegressionMetric =
   | 'uncached_input_tokens'
@@ -4462,44 +4408,52 @@ function summarizeNativeAgentAnswerQuality(
 }
 
 function isAnthropicUsageBlock(value: unknown): value is AnthropicUsageBlock {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-  const usage = value as Record<string, unknown>
-  return (
-    typeof usage.input_tokens === 'number' &&
-    typeof usage.cache_creation_input_tokens === 'number' &&
-    typeof usage.cache_read_input_tokens === 'number' &&
-    typeof usage.output_tokens === 'number'
-  )
+  if (!isRecord(value)) return false
+  const keys = ['input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens', 'output_tokens'] as const
+  return keys.every(key => Number.isSafeInteger(value[key]) && (value[key] as number) >= 0)
+    && Number.isSafeInteger(keys.reduce((sum, key) => sum + (value[key] as number), 0))
 }
 
-/**
- * Parse the trailing JSON event from `claude --output-format json` (or stream-json)
- * stdout. Returns null when no parseable trailing object with a usage block
- * exists, so the caller can classify the run as runner_error.
- */
+/** Only a complete terminal result can establish session usage. System events may follow it. */
+function parseAnthropicTerminalResult(stdout: string): Record<string, unknown> | null {
+  const trimmed = stdout.trim()
+  if (!trimmed) return null
+  let records: unknown[]
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    records = Array.isArray(parsed) ? parsed : [parsed]
+  } catch {
+    try {
+      records = trimmed.split(/\r?\n/).filter(line => line.trim()).map(line => JSON.parse(line) as unknown)
+    } catch {
+      // Never recover an earlier receipt across truncated or malformed stream output.
+      return null
+    }
+  }
+  if (!records.every(isRecord)) return null
+  let terminalIndex = -1
+  for (let index = records.length - 1; index >= 0; index--) {
+    if (records[index]?.type === 'result') { terminalIndex = index; break }
+  }
+  if (terminalIndex < 0 || records.slice(terminalIndex + 1).some(record => record.type !== 'system')) return null
+  return records[terminalIndex] ?? null
+}
+
+/** Parse only the latest terminal result; failed receipts remain diagnostic evidence. */
 export function parseAnthropicResultEvent(stdout: string): AnthropicResultEvent | null {
-  const records = parseAnthropicTraceRecords(stdout)
-  if (records.length === 0) {
-    return null
+  const obj = parseAnthropicTerminalResult(stdout)
+  if (!obj || !isAnthropicUsageBlock(obj.usage)) return null
+  return {
+    subtype: typeof obj.subtype === 'string' ? obj.subtype : null,
+    is_error: typeof obj.is_error === 'boolean' ? obj.is_error : null,
+    model: typeof obj.model === 'string' ? obj.model : null,
+    num_turns: typeof obj.num_turns === 'number' ? obj.num_turns : 0,
+    duration_ms: typeof obj.duration_ms === 'number' ? obj.duration_ms : 0,
+    total_cost_usd: typeof obj.total_cost_usd === 'number' && Number.isFinite(obj.total_cost_usd) && obj.total_cost_usd >= 0
+      ? obj.total_cost_usd : null,
+    result: typeof obj.result === 'string' ? obj.result : null,
+    usage: obj.usage,
   }
-
-  for (const obj of [...records].reverse()) {
-    if (!isAnthropicUsageBlock(obj.usage)) {
-      continue
-    }
-    return {
-      model: typeof obj.model === 'string' ? obj.model : null,
-      num_turns: typeof obj.num_turns === 'number' ? obj.num_turns : 0,
-      duration_ms: typeof obj.duration_ms === 'number' ? obj.duration_ms : 0,
-      total_cost_usd: typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : null,
-      result: typeof obj.result === 'string' ? obj.result : null,
-      usage: obj.usage,
-    }
-  }
-
-  return null
 }
 
 interface SnapshotRecord {
@@ -5598,7 +5552,7 @@ export async function executeNativeAgentCompare(
       } else if (baselineRun !== null) {
         baselineToolCallCounts = extractNativeAgentToolCallCounts(baselineRun.stdout)
         const event = parseAnthropicResultEvent(baselineRun.stdout)
-        if (event !== null) {
+        if (event !== null && event.subtype === 'success' && event.is_error === false && baselineRun.exitCode === 0) {
           reportShell.baseline = {
             kind: 'succeeded',
             model: event.model,
@@ -5623,7 +5577,7 @@ export async function executeNativeAgentCompare(
           ensureCompareAnswerFile(baselineAnswerPath, event.result ?? baselineRun.stdout)
         } else {
           reportShell.baseline =
-            baselineRun.exitCode === 0
+            baselineRun.exitCode === 0 && parseAnthropicTerminalResult(baselineRun.stdout) === null
               ? {
                   kind: 'answer_only',
                   evidence: baselineRun.stdout.slice(0, 2000),
@@ -5636,6 +5590,8 @@ export async function executeNativeAgentCompare(
                   evidence: baselineRun.stdout.slice(0, 2000),
                   exit_code: baselineRun.exitCode,
                   stderr: sanitizeCompareStderr(baselineRun.stderr),
+                  ...(event ? { usage_diagnostic: { subtype: event.subtype, is_error: event.is_error,
+                    usage: event.usage, total_cost_usd: event.total_cost_usd } } : {}),
                 }
           ensureCompareAnswerFile(baselineAnswerPath, baselineRun.stdout)
         }
@@ -5758,7 +5714,7 @@ export async function executeNativeAgentCompare(
         reportShell.trace_status = 'missing_verbose_trace'
       }
       const event = parseAnthropicResultEvent(madarRun.stdout)
-      if (event !== null) {
+      if (event !== null && event.subtype === 'success' && event.is_error === false && madarRun.exitCode === 0) {
         reportShell.madar = {
           kind: 'succeeded',
           model: event.model,
@@ -5783,7 +5739,7 @@ export async function executeNativeAgentCompare(
         ensureCompareAnswerFile(madarAnswerPath, event.result ?? madarRun.stdout)
       } else {
         reportShell.madar =
-          madarRun.exitCode === 0
+          madarRun.exitCode === 0 && parseAnthropicTerminalResult(madarRun.stdout) === null
             ? {
                 kind: 'answer_only',
                 evidence: madarRun.stdout.slice(0, 2000),
@@ -5796,6 +5752,8 @@ export async function executeNativeAgentCompare(
                 evidence: madarRun.stdout.slice(0, 2000),
                 exit_code: madarRun.exitCode,
                 stderr: sanitizeCompareStderr(madarRun.stderr),
+                ...(event ? { usage_diagnostic: { subtype: event.subtype, is_error: event.is_error,
+                  usage: event.usage, total_cost_usd: event.total_cost_usd } } : {}),
               }
         ensureCompareAnswerFile(madarAnswerPath, madarRun.stdout)
       }

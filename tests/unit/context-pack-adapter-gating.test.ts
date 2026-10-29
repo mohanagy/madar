@@ -267,7 +267,7 @@ describe('context-pack adapter gating', () => {
     } as never, buildDependencies(buildRetrieval(coverage), buildCompactPack(coverage)))
 
     expect(output).not.toContain('Do not start with a broad repo search.')
-    expect(output).toContain('Use targeted verification to confirm the listed starting points before widening the search.')
+    expect(output).toContain('return gatingDirectiveAdapterWording(packQuality)')
   })
 
   it('switches the copilot plan to cautious verification when first-read guidance is fallback-only', async () => {
@@ -284,10 +284,10 @@ describe('context-pack adapter gating', () => {
     } as never, buildDependencies(buildRetrieval(coverage), buildCompactPack(coverage)))
 
     expect(output).not.toContain('Read `src/infrastructure/context-pack-command.ts` first to anchor the change:')
-    expect(output).toContain('Verify the suggested starting file against the prompt and workflow centers before editing.')
+    expect(output).toContain('return gatingDirectiveAdapterWording(packQuality)')
   })
 
-  it('keeps claude anti-search guidance for high-confidence implementation packs', async () => {
+  it('keeps source investigation available even for high retrieval coverage', async () => {
     const coverage = highConfidenceCoverage()
     buildImplementationPackGuidanceMock.mockReturnValue(highConfidenceImplementation())
 
@@ -300,10 +300,11 @@ describe('context-pack adapter gating', () => {
       format: 'claude',
     } as never, buildDependencies(buildRetrieval(coverage), buildCompactPack(coverage)))
 
-    expect(output).toContain('Do not start with a broad repo search.')
+    expect(output).not.toContain('Do not start with a broad repo search.')
+    expect(output).toContain('return gatingDirectiveAdapterWording(packQuality)')
   })
 
-  it('aligns claude anti-search guidance with answer_from_pack evidence', async () => {
+  it('treats high retrieval coverage as advisory across JSON and Claude output', async () => {
     const coverage = highConfidenceCoverage()
     buildImplementationPackGuidanceMock.mockReturnValue(lowConfidenceImplementation())
     const dependencies = buildDependencies(buildRetrieval(coverage), buildCompactPack(coverage))
@@ -321,7 +322,7 @@ describe('context-pack adapter gating', () => {
       }
     }
 
-    expect(json.evidence?.agent_directive).toBe('answer_from_pack')
+    expect(json.evidence?.agent_directive).toBe('explore_with_caution')
 
     const output = await runContextPackCommand({
       prompt: 'Implement issue #312 by gating directive adapter wording on pack quality',
@@ -332,7 +333,8 @@ describe('context-pack adapter gating', () => {
       format: 'claude',
     } as never, dependencies)
 
-    expect(output).toContain('Do not start with a broad repo search.')
+    expect(output).not.toContain('Do not start with a broad repo search.')
+    expect(output).toContain('return gatingDirectiveAdapterWording(packQuality)')
   })
 
   it('suppresses claude anti-search guidance when required semantic coverage is still missing', async () => {
@@ -349,6 +351,6 @@ describe('context-pack adapter gating', () => {
     } as never, buildDependencies(buildRetrieval(coverage), buildCompactPack(coverage)))
 
     expect(output).not.toContain('Do not start with a broad repo search.')
-    expect(output).toContain('Use targeted verification to confirm the listed starting points before widening the search.')
+    expect(output).toContain('return gatingDirectiveAdapterWording(packQuality)')
   })
 })

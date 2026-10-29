@@ -192,19 +192,12 @@ export function selectedContextSourceFilesFromRetrieveResult(
     }
   }
 
-  if (sourceFiles.size === 0) {
-    const directNodes = result.matched_nodes.filter((node) => node.relevance_band === 'direct')
-    const scoredNodes = result.matched_nodes.filter((node) => node.match_score > 0 && node.relevance_band !== 'peripheral')
-    const fallbackNodes = directNodes.length > 0
-      ? directNodes
-      : scoredNodes.length > 0
-        ? scoredNodes
-        : result.matched_nodes.filter((node) => node.relevance_band !== 'peripheral')
-    for (const node of (fallbackNodes.length > 0 ? fallbackNodes : result.matched_nodes)) {
-      const sourceFile = node?.source_file?.trim() ?? ''
-      if (sourceFile.length > 0) {
-        sourceFiles.add(sourceFile)
-      }
+  // Every delivered source location participates in freshness, including a
+  // supporting callee outside the primary path or continuation's focus files.
+  for (const node of result.matched_nodes) {
+    const sourceFile = node?.source_file?.trim() ?? ''
+    if (sourceFile.length > 0) {
+      sourceFiles.add(sourceFile)
     }
   }
 

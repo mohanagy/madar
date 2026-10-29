@@ -1360,6 +1360,7 @@ describe('cli main', () => {
     expect(help).toContain('If you update madar, re-run your platform install command to refresh local agent rules:')
     expect(help).toContain('madar install <platform>')
     expect(help).toContain('aider <install|uninstall>')
+    expect(help).toContain('Source tools: use --profile strict with Claude/Cursor/Gemini/Copilot for context_pack and context_expand.')
     expect(help).toContain('claude <install|uninstall> [--profile core|full|strict]')
     expect(help).toContain('cursor <install|uninstall> [--profile core|full|strict]')
     expect(help).toContain('gemini <install|uninstall> [--profile core|full|strict]')
@@ -1368,7 +1369,7 @@ describe('cli main', () => {
     expect(help).toContain('opencode <install|uninstall>')
     expect(help).toContain('summary [graph.json]')
     expect(help).toContain('try "<question>" [path]')
-    expect(help).toContain('one-command local first proof before agent install')
+    expect(help).toContain('experimental source preview before agent install')
   })
 
   it('routes compare through the injected dependency after parsing args', async () => {
@@ -2732,6 +2733,9 @@ describe('cli main', () => {
     expect(logs[0]).toContain('Semantic anomalies: 2 high-signal item(s)')
     expect(logs[0]).toContain('Safety exclusions: 1 (1 sensitive, 0 unreadable)')
     expect(logs[0]).toContain('"config/credentials.json" (secret_config)')
+    for (const platform of ['claude', 'cursor', 'copilot', 'gemini']) {
+      expect(logs[0]).toContain(`madar ${platform} install --profile strict`)
+    }
     expect(logs[0]).toContain('madar codex install     # Codex CLI')
   })
 

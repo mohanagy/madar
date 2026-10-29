@@ -12,6 +12,7 @@ export const TASK_INTENT_KINDS = [
   'dead-code',
   'security-review',
   'performance-review',
+  'source-review',
 ] as const
 
 export type TaskIntentKind = (typeof TASK_INTENT_KINDS)[number]
@@ -339,5 +340,14 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
         ],
       },
     ],
+  },
+  {
+    kind: 'source-review',
+    label: 'Source review',
+    description: 'Review explicitly selected existing source without assuming a Git change set.',
+    default_context_kind: 'review',
+    priority: 13,
+    // Selected by source-review routing, never by a competing lexical classifier.
+    rules: [],
   },
 ]

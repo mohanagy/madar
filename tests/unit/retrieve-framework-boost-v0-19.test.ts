@@ -186,17 +186,15 @@ describe('Framework-aware retrieval boost for v0.17 substrates (#83 → v0.19)',
 
     const repoSaveIndex = retrieved.matched_nodes.findIndex((node) =>
       node.label === '.save()' && normalizePathForAssertion(node.source_file).endsWith('src/persistence/report.repository.ts'))
-    const repoClassIndex = retrieved.matched_nodes.findIndex((node) =>
-      node.label === 'ReportRepository' && normalizePathForAssertion(node.source_file).endsWith('src/persistence/report.repository.ts'))
     const helperSaveIndex = retrieved.matched_nodes.findIndex((node) =>
       node.label === '.save()' && normalizePathForAssertion(node.source_file).endsWith('src/ui/report-footer.ts'))
     const repoSave = repoSaveIndex >= 0 ? retrieved.matched_nodes[repoSaveIndex] : undefined
 
     expect(repoSaveIndex).toBeGreaterThanOrEqual(0)
     expect(repoSave?.framework_boost ?? 0).toBeGreaterThan(0)
-    if (repoClassIndex >= 0) {
-      expect(repoSaveIndex).toBeLessThan(repoClassIndex)
-    }
+    // Empty methods establish a framework preference among methods, not a
+    // source-behavior reason to outrank their containing class.
+    expect(repoSave?.snippet).toContain('async save(): Promise<void> {}')
     if (helperSaveIndex >= 0) {
       expect(repoSaveIndex).toBeLessThan(helperSaveIndex)
     }

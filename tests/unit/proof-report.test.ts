@@ -109,6 +109,7 @@ function writeCompareFixture(root: string): string {
         madar: null,
       },
       provider_proof: {
+        reduction_basis: 'estimated',
         winner: 'madar',
       },
     }, null, 2),
@@ -256,6 +257,10 @@ describe('proof report', () => {
     expect(result.report).toContain('SessionWorker.persist')
     expect(result.report).toContain('How does login reach persistence?')
     expect(result.report).toContain('Reduction ratio: 3.70x')
+    expect(result.report).toContain('Baseline mode: bounded (constructed prompt)')
+    expect(result.report).toContain('Token accounting basis: local estimates')
+    expect(result.report).toContain('not a native-agent workflow comparison')
+    expect(result.report).toContain('Recorded winner: madar (not independently verified by this report)')
     expect(result.report).toContain('Quality score:')
     expect(result.report).toContain('Claims: 1')
     expect(result.report).toContain('Snippet coverage: 33%')

@@ -12,6 +12,7 @@ import type {
 import { classifySourceDomain, isPollutedSourcePath } from '../../shared/source-discovery.js'
 import { relativizeSourceFile } from '../../shared/source-path.js'
 import { requireDirectedGraph } from '../direction.js'
+import { compileSourceExclusions, type CompiledSourceExclusions } from '../source-exclusions.js'
 
 export interface SliceScoredNode {
   id: string
@@ -24,10 +25,13 @@ export interface SliceScoredNode {
   symbolMatchScore?: number
   literalPathMatch?: boolean
   sourcePathMatch: boolean
+  /** Current non-file source evidence supplied by retrieval, never inferred here. */
+  sourceBodyCoverage?: number
   score: number
 }
 
 interface SliceOptions {
+  sourceExclusions?: CompiledSourceExclusions | undefined
   prompt?: string | undefined
   generationIntent?: RetrievalGenerationIntent | undefined
   targetDomainHint?: RetrievalTargetDomainHint | undefined
@@ -394,9 +398,7 @@ function shouldSuppressNode(
   if (isPollutedSourcePath(node.sourceFile, options.rootPath)) {
     return true
   }
-  const comparableSourceFile = relativizeSourceFile(node.sourceFile, options.rootPath).toLowerCase()
-  const excludedTerms = [...(options.excludedTerms ?? []), ...(options.excludedPathHints ?? [])].map((term) => term.toLowerCase())
-  if (excludedTerms.some((term) => node.label.toLowerCase().includes(term) || comparableSourceFile.includes(term))) {
+  if (options.sourceExclusions?.matchesSource(node.sourceFile, node.label)) {
     return true
   }
 
@@ -428,6 +430,9 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
   const broadRuntimeGeneration = broadRuntimeGenerationPrompt(options)
   const reportGenerationPrompt = promptWantsReportGenerationCore(options.prompt)
   const explicitPathAnchor = matchedAnchors.find((node) => node.literalPathMatch)
+  const observedSourceTermAnchors = broadRuntimeGeneration && !options.mentionedSymbols?.length
+    ? scored.filter(node => methodLikeNode(node) && !frontendDisplayLikeNode(node)
+      && node.sourceBodyCoverage === 1 && node.score > 0) : []
   const routePromptAnchors = broadRuntimeGeneration && promptMentionsHttpRoute(options.prompt)
     ? scored
       .filter((node) => routeOrControllerLikeNode(node) && !isBarrelLike(node.label, node.sourceFile) && !frontendDisplayLikeNode(node))
@@ -500,6 +505,12 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
     }
   } else if (routePromptAnchors.length > 0) {
     anchorPool = routePromptAnchors.slice(0, 1)
+  } else if (observedSourceTermAnchors.length > 0) {
+    // Coverage of all observed source terms can outrank a generation-name
+    // heuristic after report-core and route selection. Unseen query terms
+    // carry no weight, so this is not proof of answering the whole question.
+    const sourceAnchor = observedSourceTermAnchors[0]!
+    anchorPool = [sourceAnchor, ...intentAnchors.filter(node => node.id !== sourceAnchor.id)].slice(0, 2)
   } else if (intentAnchors.length > 0) {
     anchorPool = intentAnchors.slice(0, broadRuntimeGeneration ? 1 : 2)
   } else if (matchedAnchors.length > 0) {
@@ -515,6 +526,8 @@ function buildAnchors(graph: KnowledgeGraph, scored: readonly SliceScoredNode[],
       ? 'symbol mention'
       : node.literalPathMatch
         ? 'path mention'
+        : observedSourceTermAnchors.includes(node)
+          ? 'source body coverage'
         : node.sourcePathMatch
           ? 'source path token match'
         : 'top lexical match'
@@ -810,6 +823,10 @@ export function sliceCandidatesForRetrieve(
   if (scoredCandidates.length === 0) {
     return null
   }
+
+  const sourceExclusions = compileSourceExclusions(options.excludedTerms ?? [], options.excludedPathHints ?? [], options.rootPath)
+  if (!sourceExclusions.valid) return null
+  options = { ...options, sourceExclusions }
 
   const anchors = buildAnchors(graph, scoredCandidates, options)
   if (anchors.length === 0) {

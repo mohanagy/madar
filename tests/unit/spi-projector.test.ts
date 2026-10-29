@@ -51,6 +51,66 @@ describe('projectSpiToExtraction (slice 1c-i of #72)', () => {
     rmSync(sandbox, { recursive: true, force: true })
   })
 
+  it('allocates case-distinct SPI owners with exact endpoints and stable singleton IDs', () => {
+    writeFile(sandbox, 'case.ts', [
+      'export function Beacon(): number { return beacon() }',
+      'export function beacon(): number { return Beacon() }',
+      'export class Panel { OnlyUpper() { return Beacon() } Pair() { return 1 } }',
+      'export class panel { onlyLower() { return beacon() } pair() { return 2 } }',
+      'export const Standalone = 1',
+    ].join('\n') + '\n')
+    writeFile(sandbox, 'file-parent.ts', 'export class _ { Run() {} run() {} }\n')
+    const spi = buildSpi({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })
+    const baseline = projectSpiToExtraction(spi, { root: sandbox })
+    expect(projectSpiToExtraction(spi, { root: sandbox, resolveCaseCollisions: false })).toEqual(baseline)
+    const projected = projectSpiToExtraction(spi, { root: sandbox, resolveCaseCollisions: true })
+    const owner = (label: string) => {
+      const matches = projected.nodes.filter(node => node.label === label)
+      expect(matches).toHaveLength(1)
+      return matches[0]!
+    }
+    expect(owner('.Run()').id).not.toBe(owner('.run()').id)
+    expect(projected.edges.some(edge => edge.relation === 'method' && edge.source === 'file_parent')).toBe(false)
+    const upper = owner('Beacon()'), lower = owner('beacon()')
+    const upperClass = owner('Panel'), lowerClass = owner('panel')
+    expect(new Set(projected.nodes.map(node => node.id)).size).toBe(projected.nodes.length)
+    for (const oldId of ['case_beacon', 'case_panel', 'case_panel_pair']) {
+      expect(projected.nodes.some(node => node.id === oldId)).toBe(false)
+      expect(projected.edges.some(edge => edge.source === oldId || edge.target === oldId)).toBe(false)
+    }
+    expect(findEdges(projected, { source: upper.id, target: lower.id, relation: 'calls' })).toHaveLength(1)
+    expect(findEdges(projected, { source: lower.id, target: upper.id, relation: 'calls' })).toHaveLength(1)
+    expect(findEdges(projected, { source: upperClass.id, target: owner('.Pair()').id, relation: 'method' })).toHaveLength(1)
+    expect(findEdges(projected, { source: lowerClass.id, target: owner('.pair()').id, relation: 'method' })).toHaveLength(1)
+    expect(owner('.OnlyUpper()').id).toBe('case_panel_onlyupper')
+    expect(owner('.onlyLower()').id).toBe('case_panel_onlylower')
+    expect(owner('Standalone').id).toBe('case_standalone')
+    expect(findEdges(projected, { source: upperClass.id, target: 'case_panel_onlyupper', relation: 'method' })).toHaveLength(1)
+    expect(findEdges(projected, { source: lowerClass.id, target: 'case_panel_onlylower', relation: 'method' })).toHaveLength(1)
+    const reversed = projectSpiToExtraction({ ...spi, symbols: [...spi.symbols].reverse(), edges: [...spi.edges].reverse() }, { root: sandbox, resolveCaseCollisions: true })
+    expect(reversed.nodes.map(node => [node.label, node.id]).sort()).toEqual(projected.nodes.map(node => [node.label, node.id]).sort())
+    expect(reversed.edges.map(edge => [edge.source, edge.target, edge.relation]).sort()).toEqual(projected.edges.map(edge => [edge.source, edge.target, edge.relation]).sort())
+    const originalClass = spi.symbols.find(symbol => symbol.name === 'Panel' && symbol.kind === 'class')!
+    const mergedClass = projectSpiToExtraction({
+      ...spi,
+      symbols: [...spi.symbols, { ...originalClass, id: `${originalClass.id}-namespace`, kind: 'namespace' as const }],
+    }, { root: sandbox, resolveCaseCollisions: true })
+    expect(mergedClass.nodes.filter(node => node.id === 'case_panel')).toHaveLength(1)
+    const restoredMethods = mergedClass.nodes.filter(node => node.label === '.Pair()' || node.label === '.pair()')
+    expect(restoredMethods).toHaveLength(2)
+    expect(restoredMethods.every(node => node.id.startsWith('case_panel_pair__case_'))).toBe(true)
+    expect(mergedClass.edges.some(edge => edge.relation === 'method' && edge.source === 'case_panel')).toBe(false)
+    const original = spi.symbols.find(symbol => symbol.name === 'Beacon')!
+    for (const extra of [
+      { ...original, range: { ...original.range, end: { line: 9, column: 1 } } },
+      { ...original, id: `${original.id}-namespace`, kind: 'namespace' as const },
+    ]) {
+      const unsupported = projectSpiToExtraction({ ...spi, symbols: [...spi.symbols, extra] }, { root: sandbox, resolveCaseCollisions: true })
+      expect(unsupported.nodes.filter(node => node.id === 'case_beacon')).toHaveLength(1)
+      expect(unsupported.nodes.some(node => node.id.startsWith('case_beacon__case_'))).toBe(false)
+    }
+  })
+
   describe('file nodes', () => {
     it('emits one file node per SpiFile with snake_case id and basename label', () => {
       writeFile(sandbox, 'src/audit-log.ts', 'export class AuditLog {}\n')
@@ -76,6 +136,28 @@ describe('projectSpiToExtraction (slice 1c-i of #72)', () => {
   })
 
   describe('symbol nodes', () => {
+    it('projects the full source range of multiline functions and methods', () => {
+      writeFile(sandbox, 'src/request.ts', [
+        'export function processRequest(input: string) {',
+        '  if (!input) {',
+        '    throw new Error("missing input")',
+        '  }',
+        '  return input.trim()',
+        '}',
+        'export class RequestHandler {',
+        '  handle(input: string) {',
+        '    return processRequest(input)',
+        '  }',
+        '}',
+      ].join('\n') + '\n')
+
+      const extraction = project(sandbox)
+
+      expect(findNode(extraction, 'request_processrequest')?.source_location).toBe('L1-L6')
+      expect(findNode(extraction, 'request_requesthandler')?.source_location).toBe('L7-L11')
+      expect(findNode(extraction, 'request_requesthandler_handle')?.source_location).toBe('L8-L10')
+    })
+
     it('emits a class node with file-prefixed snake_case id', () => {
       writeFile(sandbox, 'src/audit-log.ts', 'export class AuditLog {}\n')
       const extraction = project(sandbox)

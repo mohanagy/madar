@@ -44,10 +44,10 @@ export function cacheDir(root: string = '.', ...segments: string[]): string {
   return directory
 }
 
-export function loadCached(filePath: string, root: string = '.'): Record<string, unknown> | null {
+function loadCachedFromDirectory(filePath: string, getDirectory: () => string): Record<string, unknown> | null {
   try {
     const hash = fileHash(filePath)
-    const entryPath = join(cacheDir(root), `${hash}.json`)
+    const entryPath = join(getDirectory(), `${hash}.json`)
     const text = readFileSync(entryPath, 'utf8')
     return JSON.parse(text) as Record<string, unknown>
   } catch {
@@ -55,14 +55,14 @@ export function loadCached(filePath: string, root: string = '.'): Record<string,
   }
 }
 
-export function saveCached(filePath: string, result: Record<string, unknown>, root: string = '.'): void {
+function saveCachedToDirectory(filePath: string, result: Record<string, unknown>, getDirectory: () => string): void {
   let hash: string
   try {
     hash = fileHash(filePath)
   } catch {
     return
   }
-  const directory = cacheDir(root)
+  const directory = getDirectory()
   const entryPath = join(directory, `${hash}.json`)
   const tempPath = join(directory, `${hash}.${process.pid}.${randomUUID()}.json.tmp`)
 
@@ -72,6 +72,37 @@ export function saveCached(filePath: string, result: Record<string, unknown>, ro
   } catch (error) {
     rmSync(tempPath, { force: true })
     throw error
+  }
+}
+
+export function loadCached(filePath: string, root: string = '.'): Record<string, unknown> | null {
+  return loadCachedFromDirectory(filePath, () => cacheDir(root))
+}
+
+export function saveCached(filePath: string, result: Record<string, unknown>, root: string = '.'): void {
+  saveCachedToDirectory(filePath, result, () => cacheDir(root))
+}
+
+/** Resolve cache locations lazily for one synchronous extraction batch only. */
+export function createCacheAccess(root: string = '.'): {
+  load: (filePath: string) => Record<string, unknown> | null
+  save: (filePath: string, result: Record<string, unknown>) => void
+} {
+  const directories = new Map<string, string>()
+  const getDirectory = (): string => {
+    const absoluteRoot = resolve(root)
+    let directory = directories.get(absoluteRoot)
+    if (directory === undefined) {
+      directory = cacheDir(absoluteRoot)
+      directories.set(absoluteRoot, directory)
+    } else {
+      mkdirSync(directory, { recursive: true })
+    }
+    return directory
+  }
+  return {
+    load: (filePath) => loadCachedFromDirectory(filePath, getDirectory),
+    save: (filePath, result) => saveCachedToDirectory(filePath, result, getDirectory),
   }
 }
 

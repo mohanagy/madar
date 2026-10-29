@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { CompiledContextPack, ContextPackNode } from '../../src/contracts/context-pack.js'
 import {
   classifyTaskContract,
+  buildExpandableRefs,
   compactContextPack,
   compileContextPack,
   estimateContextPackEntryTokens,
@@ -218,6 +219,7 @@ describe('context-pack', () => {
             task_kind: 'explain',
             evidence_class: 'structural',
             focus_files: ['src/logger.ts'],
+            node_ids: ['logger'],
             focus_ranges: [
               {
                 source_file: 'src/logger.ts',
@@ -294,6 +296,7 @@ describe('context-pack', () => {
             task_kind: 'review',
             evidence_class: 'supporting',
             focus_files: ['src/api.ts'],
+            node_ids: ['api_handler'],
             focus_ranges: [
               {
                 source_file: 'src/api.ts',
@@ -306,7 +309,7 @@ describe('context-pack', () => {
       ])
     })
 
-    it('places router-output input provenance before generic evidence claims', () => {
+    it('keeps router-output syntax in source without inferring data provenance', () => {
       const pack = compileContextPack({
         task_contract: classifyTaskContract('explain', {
           budget: 80,
@@ -334,19 +337,16 @@ describe('context-pack', () => {
       })
 
       expect(pack.claims).toEqual([
-        {
-          evidence_class: 'primary',
-          text: 'input provenance: unresolvedIncidents() consumes data typed as the RouterOutputs["statusPage"]["get"] router output',
-          node_labels: ['unresolvedIncidents()'],
-        },
         expect.objectContaining({
           evidence_class: 'primary',
           text: 'primary evidence: unresolvedIncidents()',
         }),
       ])
+      expect(pack.nodes[0]?.snippet).toContain('RouterOutputs["statusPage"]["get"]')
+      expect(pack.nodes[0]?.snippet).toContain('return page.statusReports.filter')
     })
 
-    it('makes a split public-status projection explicit and deduplicates file-level provenance', () => {
+    it('retains both status computation sources without a canned divergence conclusion', () => {
       const pack = compileContextPack({
         task_contract: classifyTaskContract('explain', {
           budget: 160,
@@ -393,18 +393,16 @@ describe('context-pack', () => {
         ],
       })
 
-      expect(pack.claims.filter((claim) => claim.text.startsWith('input provenance:'))).toHaveLength(1)
-      expect(pack.claims[0]).toEqual({
+      expect(pack.claims).toEqual([{
         evidence_class: 'primary',
-        text: 'public payload divergence: when barType is not manual, an open incident event can make page.status "error" in packages/api/src/router/statusPage.ts; apps/status-page/src/content/status-json.ts builds unresolved incident entries only from page.statusReports, so an auto-created incident without a status report can yield an error indicator with an empty incidents list',
-        node_labels: ['unresolvedIncidents()', 'statusPage.ts'],
-      })
-      expect(pack.claims[1]?.text).toBe(
-        'input provenance: unresolvedIncidents() consumes data typed as the RouterOutputs["statusPage"]["get"] router output',
-      )
+        text: 'primary evidence: unresolvedIncidents(), status-json.ts, statusPage.ts',
+        node_labels: ['unresolvedIncidents()', 'status-json.ts', 'statusPage.ts'],
+      }])
+      expect(pack.nodes.find(node => node.node_id === 'unresolved_incidents')?.snippet).toContain('page.statusReports.filter')
+      expect(pack.nodes.find(node => node.node_id === 'status_page_router')?.snippet).toContain('activeReportStatus(events)')
     })
 
-    it('states the public runtime router provenance separately from an alternate computation', () => {
+    it('retains routing and alternate computation sources without inferring their runtime connection', () => {
       const pack = compileContextPack({
         task_contract: classifyTaskContract('explain', {
           budget: 180,
@@ -447,14 +445,16 @@ describe('context-pack', () => {
         ],
       })
 
-      expect(pack.claims[0]).toEqual({
+      expect(pack.claims).toEqual([{
         evidence_class: 'primary',
-        text: 'public runtime provenance: apps/status-page/src/app/api/status/[[...path]]/route.ts GET() fetches trpc.statusPage.get and passes that data to the public status-json serializers backed by packages/api/src/router/statusPage.ts; packages/api/src/router/statusPage.ts treats an open incident event as "error" outside manual mode, while apps/server/src/routes/rpc/handlers/status-page/index.ts computeOverallStatus() derives overall status from active status reports and maintenance',
+        text: 'primary evidence: GET(), statusPage.ts, computeOverallStatus()',
         node_labels: ['GET()', 'statusPage.ts', 'computeOverallStatus()'],
-      })
+      }])
+      expect(pack.nodes.find(node => node.node_id === 'public_status_route')?.snippet).toContain('toStatus(data, baseUrl)')
+      expect(pack.nodes.find(node => node.node_id === 'alternate_status')?.snippet).toContain('hasActiveMaintenance')
     })
 
-    it('states the failed-check transport handoff across Go owners', () => {
+    it('preserves Go call sites without inventing a cross-runtime handoff claim', () => {
       const pack = compileContextPack({
         task_contract: classifyTaskContract('explain', {
           budget: 120,
@@ -486,16 +486,50 @@ describe('context-pack', () => {
         ],
       })
 
-      expect(pack.claims[0]).toEqual({
+      expect(pack.claims).toEqual([{
         evidence_class: 'primary',
-        text: 'failure detection: apps/checker/handlers/checker.go .HTTPCheckerHandler() sends Status "error" to UpdateStatus',
-        node_labels: ['.HTTPCheckerHandler()'],
+        text: 'primary evidence: .HTTPCheckerHandler(), UpdateStatus()',
+        node_labels: ['.HTTPCheckerHandler()', 'UpdateStatus()'],
+      }])
+      expect(pack.nodes[0]?.snippet).toContain('checker.UpdateStatus')
+      expect(pack.nodes[1]?.snippet).toContain('client.CreateTask')
+    })
+
+    it('does not turn comment text and an unrelated predicate into an error-behavior claim', () => {
+      const projection = [
+        'export function toStatus(page: unknown) {',
+        '  // pageIndicator(page.status) and page.statusReports are old field names.',
+        '  return { indicator: aggregate([], "auto"), incidents: [] };',
+        '}',
+      ].join('\n')
+      const aggregate = [
+        'export function aggregate(events: Array<{ type: string }>, barType: string) {',
+        '  if (events.some(e => e.type === "incident") && barType !== "manual") {',
+        '    return "ok";',
+        '  }',
+        '  return "ok";',
+        '}',
+      ].join('\n')
+      const pack = compileContextPack({
+        task_contract: classifyTaskContract('explain', {
+          budget: 3500,
+          prompt: 'Explain how toStatus calls aggregate and builds the returned indicator.',
+        }),
+        nodes: [
+          nodeCandidate({ node_id: 'projection', label: 'toStatus()', source_file: 'src/projection.ts',
+            line_number: 1, file_type: 'code', snippet: projection, match_score: 10,
+            relevance_band: 'direct', community: 0 }, 'primary', 100),
+          nodeCandidate({ node_id: 'rollup', label: 'aggregate()', source_file: 'src/rollup.ts',
+            line_number: 1, file_type: 'code', snippet: aggregate, match_score: 9,
+            relevance_band: 'direct', community: 0 }, 'primary', 100),
+        ],
       })
-      expect(pack.claims[1]).toEqual({
+      expect(pack.nodes.map(node => node.snippet)).toEqual([projection, aggregate])
+      expect(pack.claims).toEqual([{
         evidence_class: 'primary',
-        text: 'cross-runtime handoff: apps/checker/checker/update.go UpdateStatus() enqueues the checker status update with Cloud Tasks',
-        node_labels: ['UpdateStatus()'],
-      })
+        text: 'primary evidence: toStatus(), aggregate()',
+        node_labels: ['toStatus()', 'aggregate()'],
+      }])
     })
 
     it('keeps the same selected labels while task-aware rendering changes representation cost after selection', () => {
@@ -888,6 +922,19 @@ describe('context-pack', () => {
       }))
     })
 
+    it('preserves full omitted-owner order beyond the compact preview and abstains on incomplete identities', () => {
+      const task = classifyTaskContract('explain', { budget: 100, prompt: 'Explain queued records.' })
+      const ids = ['fifth', 'second', 'fourth', 'first', 'third']
+      const candidates = ids.map(node_id => nodeCandidate({ node_id, label: node_id,
+        source_file: 'src/records.ts', line_number: 1, snippet: 'return record;' }, 'primary', 20))
+      const [entry] = buildExpandableRefs(task, candidates)
+      expect(entry?.count).toBe(5)
+      expect(entry?.preview.map(preview => preview.node_id)).toEqual(ids.slice(0, 3))
+      expect(entry?.follow_up.node_ids).toEqual(ids)
+      const missing = nodeCandidate({ label: 'unknown', source_file: 'src/records.ts', line_number: 1, snippet: null }, 'primary', 20)
+      expect(buildExpandableRefs(task, [...candidates, missing])[0]?.follow_up.node_ids).toBeUndefined()
+    })
+
     it('builds stable expandable handle ids for the same omitted evidence set', () => {
       const first = compileContextPack({
         task_contract: classifyTaskContract('explain', { budget: 10, prompt: 'Explain auth flow' }),
@@ -978,6 +1025,7 @@ describe('context-pack', () => {
         task_kind: 'explain',
         evidence_class: 'supporting',
         focus_files: ['src/session-policy.ts', 'src/session.ts'],
+        node_ids: ['session_manager', 'session_policy'],
         focus_ranges: [
           {
             source_file: 'src/session-policy.ts',
@@ -991,6 +1039,7 @@ describe('context-pack', () => {
           },
         ],
       })
+      expect(second.expandable[0]?.follow_up.node_ids).toEqual(['session_policy', 'session_manager'])
     })
 
     it('ignores non-finite expandable ranges and falls back to entry line numbers', () => {

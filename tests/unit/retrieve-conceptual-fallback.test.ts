@@ -63,6 +63,25 @@ function conceptualWorkflowGraph(): KnowledgeGraph {
 }
 
 describe('conceptual-query fallback planner', () => {
+  it('does not reserve an unrelated response handler for an unresolved follow-up', () => {
+    const graph = new KnowledgeGraph({ directed: true })
+    addNode(graph, 'refund', 'refund.issuance', 'src/refunds/issue.ts')
+    addNode(graph, 'receipt', 'receipt.persistence', 'src/receipt.ts')
+    addNode(graph, 'session', 'Session.postResponse', 'src/refunds/status.ts')
+    for (const subject of ['', 'refund ']) {
+      const proposal = planConceptualFallback(graph, {
+        question: `Trace refund issuance. Inspect receipt persistence. Explain what a successful ${subject}POST response proves.`,
+        initialQuality: lowQuality(),
+        selectedNodes: [],
+      })
+
+      expect(proposal.preferredObligationAnchors?.get(0)).toBe('refund')
+      expect(proposal.preferredObligationAnchors?.get(1)).toBe('receipt')
+      expect(proposal.preferredObligationAnchors?.has(2)).toBe(false)
+      expect(proposal.obligationMatches?.get('session')?.has(2) ?? false).toBe(false)
+    }
+  })
+
   it('does not turn answer-format directives into repository evidence obligations', () => {
     const obligations = queryEvidenceObligations(
       'Explain the failed monitor flow and note what the available evidence cannot prove.',
@@ -182,6 +201,29 @@ describe('conceptual-query fallback planner', () => {
       initially_covered: 5,
       finally_covered: 5,
     })
+  })
+
+  it('can recover a retained credential obligation after earlier billing facets consume twenty-four terms', () => {
+    const question = [
+      'Explain invoice numbering and tenant settings.',
+      'Explain payment currencies and rounding precision.',
+      'Explain account balances and credit limits.',
+      'Explain receipt formatting and customer addresses.',
+      'Explain ledger entries and audit retention.',
+      'Explain refund amounts and reconciliation records.',
+      'Explain credential expiry and token validation.',
+    ].join(' ')
+    const graph = new KnowledgeGraph({ directed: true })
+    addNode(graph, 'invoices', 'Invoice.numbering', '/src/invoice-numbering.ts')
+    addNode(graph, 'credentials', 'Credential.expiryValidation', '/src/credential-expiry.ts')
+    const proposal = planConceptualFallback(graph, {
+      question,
+      initialQuality: lowQuality(),
+      selectedNodes: [{ nodeId: 'invoices', sourceFile: '/src/invoice-numbering.ts', relevanceBand: 'direct', matchScore: 1 }],
+    })
+    expect(queryEvidenceObligations(question)).toHaveLength(7)
+    expect(proposal.nodeBoosts.get('credentials')).toBeGreaterThan(0)
+    expect(proposal.preferredObligationAnchors?.get(6)).toBe('credentials')
   })
 
   it('does not replace one covered obligation with another at the same count', () => {

@@ -62,6 +62,23 @@ describe('buildSpiCached (#77)', () => {
     expect(reBuild.cache.reason).toBe('key-mismatch')
   })
 
+  it('invalidates standalone cache when ordered source exclusion policy changes', () => {
+    writeFile(sandbox, 'lib/worker.js', 'export function worker() { return 1 }\n')
+    const options = { root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW }
+    const first = buildSpiCached(options)
+    expect(first.spi.symbols.some(symbol => symbol.name === 'worker')).toBe(true)
+    expect(buildSpiCached(options).cache.hit).toBe(true)
+    writeFile(sandbox, '.madarignore', 'lib/**\n')
+    const excluded = buildSpiCached(options)
+    expect(excluded.cache.reason).toBe('key-mismatch')
+    expect(excluded.spi.symbols.some(symbol => symbol.name === 'worker')).toBe(false)
+    expect(buildSpiCached(options).cache.hit).toBe(true)
+    writeFile(sandbox, '.madarignore', 'lib/**\n!lib/worker.js\n')
+    const restored = buildSpiCached(options)
+    expect(restored.cache.reason).toBe('key-mismatch')
+    expect(restored.spi.symbols.some(symbol => symbol.name === 'worker')).toBe(true)
+  })
+
   it('invalidates when a new file appears', () => {
     writeFile(sandbox, 'src/foo.ts', 'export function foo(): number { return 1 }\n')
     buildSpiCached({ root: sandbox, madarVersion: 'test-0.0.0', now: FROZEN_NOW })

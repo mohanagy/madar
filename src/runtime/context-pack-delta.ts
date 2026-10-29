@@ -1,20 +1,11 @@
-// Context-pack delta helper (#81): given a freshly compiled pack and a set
-// of node ids the agent already received in earlier session turns, return a
-// "delta" pack that contains only NEW nodes and relationships, plus an
-// explicit reference list of the ids that were dropped.
-//
-// This is the standalone, side-effect-free building block of #81. The
-// stdio context_pack tool wires it in on a follow-up by:
-//   1. Reading the per-session handle store to get already-seen ids.
-//   2. Calling computeDeltaContextPack(pack, seenIds) to filter the pack.
-//   3. Returning { mode: 'delta', delta_pack, referenced_ids } to the agent.
-//   4. Updating the session store with the new ids the agent has now
-//      received so the next call's delta is correct.
-//
-// Splitting the pure helper from the session-state plumbing keeps the
-// computation testable in isolation and lets future delta consumers
-// (e.g., the prompt compiler or a future federation surface) reuse the
-// same logic without re-implementing the filtering rules.
+// Delta delivery uses content receipts for source spans and individual edges.
+// A bare node ID cannot establish which query-dependent excerpt the receiver has.
+// The MCP caller records receipts only after final serialization and budget culling,
+// resets them on graph generation changes, and exposes explicit session reset.
+
+import { createHash } from 'node:crypto'
+import { estimateQueryTokens } from './serve.js'
+import { resolveSourceSnippet } from './source-evidence-response.js'
 
 import type {
   CompiledContextPack,
@@ -28,8 +19,7 @@ export interface DeltaContextPackResult<
   TRelationship extends ContextPackRelationship = ContextPackRelationship,
   TCommunity extends ContextPackCommunityContext = ContextPackCommunityContext,
 > {
-  /** True iff the input pack overlapped with previously-sent ids. When
-   *  false, the delta is identical to the input pack. */
+  /** True when at least one exact source or edge receipt was already delivered. */
   delta_applied: boolean
   /** Pack with overlapping nodes + their relationships removed. */
   delta_pack: CompiledContextPack<TNode, TRelationship, TCommunity>
@@ -62,48 +52,31 @@ export function computeDeltaContextPack<
   const originalBytes = JSON.stringify(pack).length
   const referencedIds: string[] = []
 
-  // Filter nodes: drop those whose node_id is in `seen`. Nodes without a
-  // node_id can't be deduplicated by handle, so they always pass through.
+  // Receipts identify exactly delivered content, not merely a symbol that appeared before.
+  // Legacy bare node IDs deliberately do not suppress content: they cannot prove which
+  // query-dependent excerpt or source revision the receiver has.
   const keptNodes = pack.nodes.filter((node) => {
-    const nodeId = typeof node.node_id === 'string' ? node.node_id : null
-    if (nodeId !== null && seen.has(nodeId)) {
-      referencedIds.push(nodeId)
+    if (typeof node.node_id === 'string' && seen.has(nodeContentReceipt(node))) {
+      referencedIds.push(node.node_id)
       return false
     }
     return true
   })
-
-  // Filter relationships: drop edges only when BOTH endpoints are already
-  // in the receiver's session. Mixed edges (one new endpoint, one
-  // referenced) carry novel information about how the new node connects
-  // to the known one, so they're kept. Edges between two new nodes are
-  // also kept. Only edges where the receiver already has both ends and
-  // the relation between them are redundant.
-  const referencedSet = new Set(referencedIds)
-  const keptRelationships = pack.relationships.filter((rel) => {
-    const fromId = typeof rel.from_id === 'string' ? rel.from_id : null
-    const toId = typeof rel.to_id === 'string' ? rel.to_id : null
-    if (
-      fromId !== null && toId !== null &&
-      referencedSet.has(fromId) && referencedSet.has(toId)
-    ) {
-      return false
-    }
-    return true
-  })
+  const keptRelationships = pack.relationships.filter((relationship) => !seen.has(relationshipContentReceipt(relationship)))
+  if (keptNodes.length === pack.nodes.length && keptRelationships.length === pack.relationships.length) {
+    return { delta_applied: false, delta_pack: pack, referenced_ids: [], bytes_saved: 0 }
+  }
 
   const deltaPack: CompiledContextPack<TNode, TRelationship, TCommunity> = {
     ...pack,
     nodes: keptNodes,
     relationships: keptRelationships,
-    // token_count is a snapshot from the original pack; dropping nodes
-    // does not retroactively update upstream token estimates. Consumers
-    // that care about post-delta token cost should re-estimate.
+    token_count: keptNodes.reduce((total, node) => total + estimateQueryTokens(node.snippet ?? ''), 0),
   }
 
   const deltaBytes = JSON.stringify(deltaPack).length
   return {
-    delta_applied: referencedIds.length > 0,
+    delta_applied: referencedIds.length > 0 || keptRelationships.length < pack.relationships.length,
     delta_pack: deltaPack,
     referenced_ids: referencedIds,
     bytes_saved: Math.max(0, originalBytes - deltaBytes),
@@ -125,4 +98,32 @@ export function collectPackNodeIds<TNode extends ContextPackNode>(
     }
   }
   return out
+}
+
+function receipt(kind: string, value: unknown): string {
+  return `${kind}:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`
+}
+
+export function nodeContentReceipt(node: ContextPackNode): string {
+  return receipt('source', [node.node_id, node.label, node.source_file, node.line_number,
+    node.snippet ?? null, node.snippet_line_number ?? node.snippet_line_range?.start_line ?? null, node.snippet_line_range ?? null,
+    node.snippet_omitted_ranges ?? [], node.snippet_scope ?? null, node.snippet_unverified ?? false,
+    node.snippet_source ?? null, node.representation_type ?? null])
+}
+
+export function relationshipContentReceipt(edge: ContextPackRelationship): string {
+  return receipt('edge', [edge.from_id ?? edge.from, edge.to_id ?? edge.to, edge.relation,
+    edge.source_file ?? null, edge.source_location ?? null, edge.confidence ?? null])
+}
+
+/** Record only evidence actually delivered after final serialization and budget selection. */
+export function collectDeliveredContextReceipts(payload: Record<string, unknown>): string[] {
+  const pack = payload.pack as { matched_nodes?: Array<ContextPackNode & { snippet_ref?: string }>; relationships?: ContextPackRelationship[] } | undefined
+  const nodes = pack?.matched_nodes ?? []
+  return [
+    ...nodes.filter(node => typeof node.node_id === 'string').map(node => nodeContentReceipt({
+      ...node, snippet: resolveSourceSnippet(node as unknown as Record<string, unknown>, nodes as unknown as Record<string, unknown>[]),
+    })),
+    ...(pack?.relationships ?? []).map(relationshipContentReceipt),
+  ]
 }

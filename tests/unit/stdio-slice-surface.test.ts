@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -124,7 +124,7 @@ describe('stdio slice-v1 surface', () => {
         name: 'context_pack',
         arguments: {
           prompt: 'Explain `AuthService.login`',
-          budget: 1000,
+          budget: 10000,
           task: 'explain',
           verbose: true,
         },
@@ -157,10 +157,8 @@ describe('stdio slice-v1 surface', () => {
     expect(retrievePayload.snippet_budget_tokens_remaining).toBeGreaterThanOrEqual(0)
     expect(retrievePayload.matched_nodes[0]).toHaveProperty('snippet_truncated')
     expect(retrievePayload.matched_nodes[0]?.snippet).toEqual(expect.any(String))
-    expect(retrievePayload.matched_nodes[1]).toEqual(expect.objectContaining({
-      snippet: null,
-      snippet_truncated: false,
-    }))
+    expect(retrievePayload.matched_nodes).toHaveLength(1)
+    expect(retrievePayload.matched_nodes[0]?.label).toContain('login')
 
     const retrieveNode = retrievePayload.matched_nodes.find((node) => typeof node.snippet === 'string')
     const contextPackNode = contextPackPayload.pack.matched_nodes.find((node) => node.label === retrieveNode?.label)
@@ -273,6 +271,12 @@ describe('stdio slice-v1 surface', () => {
         },
       },
     }
+    // The mocked selection still needs real, permitted source paths at publication.
+    for (const node of retrieval.matched_nodes) {
+      const file = join(dirname(dirname(graphPath)), node.source_file)
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, '\n'.repeat(node.line_number - 1) + node.snippet, 'utf8')
+    }
     const retrieveSpy = vi.spyOn(retrieveRuntime, 'retrieveContext').mockImplementation(() => retrieval as never)
     const sessionState = {
       logLevel: 'info' as const,
@@ -310,7 +314,7 @@ describe('stdio slice-v1 surface', () => {
         method: 'tools/call',
         params: {
           name: 'retrieve',
-          arguments: { question, budget: 1000, verbose: true, top_n_with_snippet: 1, snippet_budget: 8 },
+          arguments: { question, budget: 10000, verbose: true, top_n_with_snippet: 1, snippet_budget: 8 },
         },
       }))
       const verboseContextPackResponse = await Promise.resolve(handleStdioRequest(graphPath, {
@@ -318,7 +322,7 @@ describe('stdio slice-v1 surface', () => {
         method: 'tools/call',
         params: {
           name: 'context_pack',
-          arguments: { prompt: question, budget: 1000, task: 'explain', verbose: true },
+          arguments: { prompt: question, budget: 10000, task: 'explain', verbose: true },
         },
       }, sessionState))
       const firstDeltaResponse = await Promise.resolve(handleStdioRequest(graphPath, {
@@ -326,7 +330,7 @@ describe('stdio slice-v1 surface', () => {
         method: 'tools/call',
         params: {
           name: 'context_pack',
-          arguments: { prompt: question, budget: 1000, task: 'explain', delta_session_id: 'receipt-delta' },
+          arguments: { prompt: question, budget: 10000, task: 'explain', verbose: true, delta_session_id: 'receipt-delta' },
         },
       }, sessionState))
       const secondDeltaResponse = await Promise.resolve(handleStdioRequest(graphPath, {
@@ -334,7 +338,7 @@ describe('stdio slice-v1 surface', () => {
         method: 'tools/call',
         params: {
           name: 'context_pack',
-          arguments: { prompt: question, budget: 1000, task: 'explain', delta_session_id: 'receipt-delta' },
+          arguments: { prompt: question, budget: 10000, task: 'explain', verbose: true, delta_session_id: 'receipt-delta' },
         },
       }, sessionState))
 
@@ -395,15 +399,7 @@ describe('stdio slice-v1 surface', () => {
       },
     }))
 
-    const tinyBudgetPayload = JSON.parse(((tinyBudgetResponse as { result?: { content?: Array<{ text: string }> } }).result?.content ?? [])[0]?.text ?? '') as {
-      serialized_budget?: {
-        max_tokens?: number
-      }
-    }
-
-    expect(tinyBudgetPayload.serialized_budget).toEqual(expect.objectContaining({
-      max_tokens: 1,
-    }))
+    expect(tinyBudgetResponse?.error?.message).toContain('128')
   })
 
   it('accepts retrieval_strategy=slice-v1 for retrieve and context_pack', async () => {
@@ -416,7 +412,7 @@ describe('stdio slice-v1 surface', () => {
         name: 'retrieve',
         arguments: {
           question: 'Explain `AuthService.login`',
-          budget: 1000,
+          budget: 10000,
           retrieval_strategy: 'slice-v1',
           verbose: true,
         },
@@ -430,7 +426,7 @@ describe('stdio slice-v1 surface', () => {
         name: 'context_pack',
         arguments: {
           prompt: 'Explain `AuthService.login`',
-          budget: 1000,
+          budget: 10000,
           task: 'explain',
           retrieval_strategy: 'slice-v1',
           verbose: true,
@@ -466,7 +462,7 @@ describe('stdio slice-v1 surface', () => {
           name: 'retrieve',
           arguments: {
             question,
-            budget: 1000,
+            budget: 10000,
             verbose: true,
           },
         },
@@ -479,7 +475,7 @@ describe('stdio slice-v1 surface', () => {
           name: 'context_pack',
           arguments: {
             prompt: question,
-            budget: 1000,
+            budget: 10000,
             task: 'explain',
             verbose: true,
           },
@@ -493,7 +489,7 @@ describe('stdio slice-v1 surface', () => {
           name: 'retrieve',
           arguments: {
             question: holdoutQuestion,
-            budget: 1000,
+            budget: 10000,
             verbose: true,
           },
         },
@@ -506,7 +502,7 @@ describe('stdio slice-v1 surface', () => {
           name: 'context_pack',
           arguments: {
             prompt: holdoutQuestion,
-            budget: 1000,
+            budget: 10000,
             task: 'explain',
             verbose: true,
           },
@@ -791,7 +787,7 @@ describe('stdio slice-v1 surface', () => {
         name: 'context_pack',
         arguments: {
           prompt: 'Trace how `AuthController.login` reaches persistence in the backend runtime pipeline',
-          budget: 1000,
+          budget: 10000,
           task: 'explain',
           retrieval_level: 4,
           retrieval_strategy: 'slice-v1',
@@ -817,7 +813,7 @@ describe('stdio slice-v1 surface', () => {
         name: 'context_pack',
         arguments: {
           prompt: 'Trace how `AuthController.login` reaches persistence in the backend runtime pipeline',
-          budget: 1000,
+          budget: 10000,
           task: 'explain',
           retrieval_level: 4,
           retrieval_strategy: 'slice-v1',
@@ -855,7 +851,7 @@ describe('stdio slice-v1 surface', () => {
         name: 'context_pack',
         arguments: {
           prompt: 'Trace how `AuthController.login` reaches persistence in the backend runtime pipeline',
-          budget: 3000,
+          budget: 10000,
           task: 'explain',
           retrieval_level: 4,
           retrieval_strategy: 'slice-v1',
@@ -885,9 +881,9 @@ describe('stdio slice-v1 surface', () => {
     }))
     expect(compactPayload.diagnostics).toBeUndefined()
     expect(compactPayload.pack?.slice?.selected_paths).toBeUndefined()
-    expect(compactPayload.pack?.slice?.selected_path_count).toBeGreaterThan(0)
-    expect(compactPayload.recommended_first_read?.length).toBeGreaterThan(0)
-    expect(verbosePayload.serialized_budget).toBeUndefined()
+    expect(compactPayload.pack?.slice?.selected_path_count).toBeUndefined()
+    expect(compactPayload.recommended_first_read).toBeUndefined()
+    expect(verbosePayload.serialized_budget).toMatchObject({ enforced: true })
     expect(verbosePayload.diagnostics).toBeDefined()
     expect(verbosePayload.pack?.slice?.selected_paths?.length).toBeGreaterThan(0)
     expect(verbosePayload.pack?.slice?.selected_path_count).toBeUndefined()
@@ -907,8 +903,9 @@ describe('stdio slice-v1 surface', () => {
     }
     const request = {
       prompt: 'Trace how `AuthController.login` reaches persistence in the backend runtime pipeline',
-      budget: 3000,
+      budget: 10000,
       task: 'explain',
+      verbose: true,
       retrieval_level: 4,
       retrieval_strategy: 'slice-v1',
     }
@@ -957,7 +954,10 @@ describe('stdio slice-v1 surface', () => {
     }
     const deltaPayload = JSON.parse((((deltaResponse as { result?: { content?: Array<{ text: string }> } }).result?.content) ?? [])[0]?.text ?? '') as {
       governance?: { mcp_call?: { cache_status?: string; delta_session_hash?: string } }
-      pack?: { retrieval_plan?: { version?: number; status?: string } }
+      pack?: { retrieval_plan?: {
+        version?: number; status?: string; initial?: unknown; final?: unknown
+        query_obligations?: { total: number; initially_covered: number; finally_covered: number }
+      } }
     }
 
     expect(firstPayload.cache?.status).toBe('miss')
@@ -983,12 +983,18 @@ describe('stdio slice-v1 surface', () => {
     expect(deltaPayload.governance?.mcp_call?.delta_session_hash).toMatch(/^[a-f0-9]{12}$/)
     expect(deltaPayload.pack?.retrieval_plan).toEqual(expect.objectContaining({
       version: 1,
-      status: 'no_candidates',
-      reasons: expect.arrayContaining(['missing_query_obligations']),
+      status: 'kept_initial',
+      reasons: expect.arrayContaining(['missing_required_evidence', 'missing_query_obligations']),
       initial: expect.any(Object),
       final: expect.any(Object),
-      attempts: expect.arrayContaining([expect.objectContaining({ status: 'no_candidates' })]),
+      attempts: [expect.objectContaining({ status: 'kept_initial', changed_result: false,
+        added_selected_files: 0, removed_selected_files: 0 })],
     }))
+    const deltaPlan = deltaPayload.pack!.retrieval_plan!
+    expect(deltaPlan.final).toEqual(deltaPlan.initial)
+    expect(deltaPlan.query_obligations).toBeDefined()
+    expect(deltaPlan.query_obligations!.finally_covered).toBe(deltaPlan.query_obligations!.initially_covered)
+    expect(deltaPlan.query_obligations!.finally_covered).toBeLessThan(deltaPlan.query_obligations!.total)
     expect(JSON.stringify(firstPayload.governance)).not.toContain('AuthController.login')
     expect(JSON.stringify(firstPayload.governance)).not.toContain(graphPath)
     expect(JSON.stringify(deltaPayload.governance)).not.toContain(deltaSessionId)
@@ -1008,8 +1014,9 @@ describe('stdio slice-v1 surface', () => {
     }
     const request = {
       prompt: 'Trace how `AuthController.login` reaches persistence in the backend runtime pipeline',
-      budget: 3000,
+      budget: 10000,
       task: 'explain',
+      verbose: true,
       retrieval_level: 4,
       retrieval_strategy: 'slice-v1',
     }
@@ -1026,9 +1033,9 @@ describe('stdio slice-v1 surface', () => {
     const cachedEntry = [...sessionState.contextPackCache.entries()][0]
     expect(cachedEntry).toBeDefined()
     const [cacheKey, cachedPayloadText] = cachedEntry!
-    const stalePayload = JSON.parse(cachedPayloadText) as Record<string, unknown>
-    delete stalePayload.governance
-    sessionState.contextPackCache.set(cacheKey, JSON.stringify(stalePayload))
+    const staleRecord = JSON.parse(cachedPayloadText) as { payload: Record<string, unknown> }
+    delete staleRecord.payload.governance
+    sessionState.contextPackCache.set(cacheKey, JSON.stringify(staleRecord))
 
     const response = await Promise.resolve(handleStdioRequest(graphPath, {
       id: 52,
@@ -1045,7 +1052,7 @@ describe('stdio slice-v1 surface', () => {
     }
 
     expect(payload.cache?.status).toBe('miss')
-    expect(payload.governance?.mcp_call?.cache_status).toBe('miss')
+    expect(payload.governance).toHaveProperty('graph_freshness')
   })
 
   it('rejects retrieval_strategy for review context packs instead of ignoring it', async () => {
@@ -1078,7 +1085,7 @@ describe('stdio slice-v1 surface', () => {
         name: 'context_pack',
         arguments: {
           prompt: 'Implement support for login session audit trails',
-          budget: 1000,
+          budget: 10000,
           verbose: true,
         },
       },

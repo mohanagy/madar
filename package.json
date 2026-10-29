@@ -1,8 +1,8 @@
 {
     "name": "@lubab/madar",
-    "version": "0.32.3",
+    "version": "0.33.0",
     "mcpName": "io.github.mohanagy/madar",
-    "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos. Madar compiles task-aware local context packs from what runs for this task.",
+    "description": "Local source lookup and static graph context for JavaScript, TypeScript, and Node.js coding agents.",
     "license": "MIT",
     "author": "mohanagy",
     "bin": {

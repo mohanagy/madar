@@ -58,15 +58,16 @@ describe('slice-v1 context-pack command surface', () => {
 
     const output = await runContextPackCommand({
       prompt: 'Explain auth',
-      budget: 1000,
+      budget: 6000,
       task: 'explain',
       graphPath: 'out/graph.json',
       retrievalStrategy: 'slice-v1',
+      verbose: true,
     } as never, dependencies)
 
     expect(dependencies.retrieveContext).toHaveBeenCalledWith(graph, {
       question: 'Explain auth',
-      budget: 1000,
+      budget: 6000,
       taskKind: 'explain',
       taskIntent: 'explain',
       retrievalStrategy: 'slice-v1',

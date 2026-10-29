@@ -367,6 +367,7 @@ describe('watch', () => {
         await refresh.startupSettled
         expect(refresh.startupComplete?.()).toBe(true)
         expect(refresh.initialRebuilt).toBe(true)
+        await waitFor(() => readWatcherStateForGraph(generated.graphPath)?.status === 'idle')
         expect(readWatcherStateForGraph(generated.graphPath)?.status).toBe('idle')
       } finally {
         releaseOwner?.()
@@ -441,12 +442,13 @@ describe('watch', () => {
         pollIntervalMs: 20,
         maxPollIntervalMs: 100,
         rebuildCode: rebuild,
-        onReconciliation: (metrics) => reconciliations.push(metrics),
+        onReconciliation: afterInitialSnapshot(() => {
+          writeFileSync(join(tempDir, 'source-10049.ts'), 'export const beyondFormerCap = true\n', 'utf8')
+        }, (metrics) => reconciliations.push(metrics)),
         logger: { log() {}, error() {} },
       })
       const timeout = setTimeout(() => controller.abort(), 15_000)
 
-      writeFileSync(join(tempDir, 'source-10049.ts'), 'export const beyondFormerCap = true\n', 'utf8')
       await watcher
       clearTimeout(timeout)
 
@@ -490,10 +492,12 @@ describe('watch', () => {
       const watcher = watch(tempDir, 1, {
         signal: controller.signal,
         pollIntervalMs: 20,
+        onReconciliation: afterInitialSnapshot(() => {
+          writeFileSync(join(tempDir, 'main.ts'), 'export const changed = true\n', 'utf8')
+        }),
         logger: { log() {}, error() {} },
       })
 
-      writeFileSync(join(tempDir, 'main.ts'), 'export const changed = true\n', 'utf8')
       await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'pending')
       const pending = readWatcherStateForGraph(graphPath)
       expect(pending).toMatchObject({ coverage: 'complete', policy_match: true })
@@ -519,14 +523,15 @@ describe('watch', () => {
         pollIntervalMs: 20,
         maxPollIntervalMs: 40,
         noHtml: true,
+        onReconciliation: afterInitialSnapshot(() => {
+          const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { __madar_meta__?: { generation_policy?: unknown } }
+          if (manifest.__madar_meta__) {
+            delete manifest.__madar_meta__.generation_policy
+          }
+          writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+        }),
         logger: { log() {}, error() {} },
       })
-
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { __madar_meta__?: { generation_policy?: unknown } }
-      if (manifest.__madar_meta__) {
-        delete manifest.__madar_meta__.generation_policy
-      }
-      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
       await waitFor(() => {
         const repaired = JSON.parse(readFileSync(manifestPath, 'utf8')) as { __madar_meta__?: { generation_policy?: unknown } }
@@ -560,11 +565,13 @@ describe('watch', () => {
         signal: controller.signal,
         pollIntervalMs: 20,
         rebuildCode: rebuild,
+        onReconciliation: afterInitialSnapshot(() => {
+          writeFileSync(sourcePath, 'export const value = 2\n', 'utf8')
+        }),
         logger: { log() {}, error() {} },
       })
       const timeout = setTimeout(() => controller.abort(), 5_000)
 
-      writeFileSync(sourcePath, 'export const value = 2\n', 'utf8')
       await watcher
       clearTimeout(timeout)
 
@@ -644,17 +651,23 @@ describe('watch', () => {
         respectGitignore: true,
         rebuildCode: rebuild,
         logger: { log() {}, error() {} },
+        onReconciliation: ({ trigger }) => {
+          // Mutate after the authoritative baseline, without racing a startup
+          // delay against the abort deadline when synchronous Git work is slow.
+          if (trigger === 'initial') writeFileSync(join(tempDir, '.gitignore'), 'main.ts\n', 'utf8')
+        },
       })
       const timeout = setTimeout(() => controller.abort(), 5_000)
 
-      await delay(100)
-      writeFileSync(join(tempDir, '.gitignore'), 'main.ts\n', 'utf8')
-
-      await watcher
-      clearTimeout(timeout)
-
-      expect(rebuild).toHaveBeenCalledTimes(1)
-      expect(rebuild.mock.calls[0]?.[1]).toMatchObject({ respectGitignore: true })
+      try {
+        await watcher
+        expect(rebuild).toHaveBeenCalledTimes(1)
+        expect(rebuild.mock.calls[0]?.[1]).toMatchObject({ respectGitignore: true })
+      } finally {
+        clearTimeout(timeout)
+        controller.abort()
+        await watcher
+      }
     })
   }, 10_000)
 
@@ -703,17 +716,21 @@ describe('watch', () => {
         respectGitignore: true,
         rebuildCode: rebuild,
         logger: { log() {}, error() {} },
+        onReconciliation: ({ trigger }) => {
+          if (trigger === 'initial') writeFileSync(join(tempDir, '.git', 'info', 'exclude'), 'alias.ts\n', 'utf8')
+        },
       })
       const timeout = setTimeout(() => controller.abort(), 5_000)
 
-      await delay(100)
-      writeFileSync(join(tempDir, '.git', 'info', 'exclude'), 'alias.ts\n', 'utf8')
-
-      await watcher
-      clearTimeout(timeout)
-
-      expect(rebuild).toHaveBeenCalledTimes(1)
-      expect(rebuild.mock.calls[0]?.[1]).toMatchObject({ followSymlinks: true, respectGitignore: true })
+      try {
+        await watcher
+        expect(rebuild).toHaveBeenCalledTimes(1)
+        expect(rebuild.mock.calls[0]?.[1]).toMatchObject({ followSymlinks: true, respectGitignore: true })
+      } finally {
+        clearTimeout(timeout)
+        controller.abort()
+        await watcher
+      }
     })
   }, 10_000)
 
@@ -833,11 +850,11 @@ describe('watch', () => {
         pollIntervalMs: 10,
         rebuildCode: rebuild,
         notifyOnly: notify,
+        onReconciliation: afterInitialSnapshot(() => {
+          writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 2\n', 'utf8')
+        }),
         logger: { log() {}, error() {} },
       })
-
-      await delay(30)
-      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 2\n', 'utf8')
 
       await watcher
 
@@ -864,14 +881,14 @@ describe('watch', () => {
         maxPollIntervalMs: 10,
         rebuildCode: rebuild,
         notifyOnly: notify,
+        onReconciliation: afterInitialSnapshot(() => {
+          writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 2\n', 'utf8')
+        }),
         logger: { log() {}, error() {} },
       })
       const timeout = setTimeout(() => controller.abort(), 5_000)
 
       try {
-        await waitFor(() => readWatcherStateForGraph(graphPath)?.status === 'idle')
-        writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 2\n', 'utf8')
-
         await waitFor(() => {
           const watcherState = readWatcherStateForGraph(graphPath)
           return watcherState?.status === 'failed'
@@ -932,11 +949,11 @@ describe('watch', () => {
         pollIntervalMs: 10,
         rebuildCode: rebuild,
         notifyOnly: notify,
+        onReconciliation: afterInitialSnapshot(() => {
+          writeFileSync(join(tempDir, 'README.md'), '# docs\n', 'utf8')
+        }),
         logger: { log() {}, error() {} },
       })
-
-      await delay(30)
-      writeFileSync(join(tempDir, 'README.md'), '# docs\n', 'utf8')
 
       await watcher
 
@@ -955,7 +972,6 @@ describe('watch', () => {
       const notify = vi.fn(() => {
         controller.abort()
       })
-      const reconciliations: WatchReconciliationMetrics[] = []
       const audioPath = join(tempDir, 'episode.mp3')
       const sidecarPath = binaryIngestSidecarPath(audioPath)
       const sidecarTimestamp = new Date('2026-04-14T03:00:00Z')
@@ -980,32 +996,36 @@ describe('watch', () => {
         pollIntervalMs: 10,
         rebuildCode: rebuild,
         notifyOnly: notify,
-        onReconciliation: (metrics) => reconciliations.push(metrics),
+        onReconciliation: afterInitialSnapshot(() => {
+          writeFileSync(
+            sidecarPath,
+            JSON.stringify(
+              {
+                source_url: 'https://example.com/podcast/episodes/2',
+                captured_at: '2026-04-14T03:05:00Z',
+                contributor: 'madar',
+              },
+              null,
+              2,
+            ),
+            'utf8',
+          )
+          utimesSync(sidecarPath, sidecarTimestamp, sidecarTimestamp)
+        }),
         logger: { log() {}, error() {} },
       })
 
-      await waitFor(() => reconciliations.some((metrics) => metrics.trigger === 'initial'))
       const timeout = setTimeout(() => controller.abort(), 5_000)
-      writeFileSync(
-        sidecarPath,
-        JSON.stringify(
-          {
-            source_url: 'https://example.com/podcast/episodes/2',
-            captured_at: '2026-04-14T03:05:00Z',
-            contributor: 'madar',
-          },
-          null,
-          2,
-        ),
-        'utf8',
-      )
-      utimesSync(sidecarPath, sidecarTimestamp, sidecarTimestamp)
 
-      await watcher
-      clearTimeout(timeout)
-
-      expect(rebuild).toHaveBeenCalledTimes(1)
-      expect(notify).not.toHaveBeenCalled()
+      try {
+        await watcher
+        expect(rebuild).toHaveBeenCalledTimes(1)
+        expect(notify).not.toHaveBeenCalled()
+      } finally {
+        clearTimeout(timeout)
+        controller.abort()
+        await watcher
+      }
     })
   }, 15_000)
 
@@ -1046,30 +1066,34 @@ describe('watch', () => {
         followSymlinks: true,
         rebuildCode: rebuild,
         notifyOnly: notify,
+        onReconciliation: afterInitialSnapshot(() => {
+          writeFileSync(
+            sidecarPath,
+            JSON.stringify(
+              {
+                source_url: 'https://example.com/podcast/episodes/2',
+                captured_at: '2026-04-14T03:15:00Z',
+                contributor: 'madar',
+              },
+              null,
+              2,
+            ),
+            'utf8',
+          )
+        }),
         logger: { log() {}, error() {} },
       })
       const timeout = setTimeout(() => controller.abort(), 200)
 
-      await delay(30)
-      writeFileSync(
-        sidecarPath,
-        JSON.stringify(
-          {
-            source_url: 'https://example.com/podcast/episodes/2',
-            captured_at: '2026-04-14T03:15:00Z',
-            contributor: 'madar',
-          },
-          null,
-          2,
-        ),
-        'utf8',
-      )
-
-      await watcher
-      clearTimeout(timeout)
-
-      expect(rebuild).toHaveBeenCalledTimes(1)
-      expect(notify).not.toHaveBeenCalled()
+      try {
+        await watcher
+        expect(rebuild).toHaveBeenCalledTimes(1)
+        expect(notify).not.toHaveBeenCalled()
+      } finally {
+        clearTimeout(timeout)
+        controller.abort()
+        await watcher
+      }
     })
   })
 
@@ -1090,12 +1114,12 @@ describe('watch', () => {
         pollIntervalMs: 10,
         rebuildCode: rebuild,
         notifyOnly: notify,
+        onReconciliation: afterInitialSnapshot(() => {
+          writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 2\n', 'utf8')
+          writeFileSync(join(tempDir, 'README.md'), '# docs\n', 'utf8')
+        }),
         logger: { log() {}, error() {} },
       })
-
-      await delay(30)
-      writeFileSync(join(tempDir, 'main.py'), 'def hello():\n    return 2\n', 'utf8')
-      writeFileSync(join(tempDir, 'README.md'), '# docs\n', 'utf8')
 
       await watcher
 
@@ -1155,11 +1179,11 @@ describe('watch', () => {
         followSymlinks: true,
         rebuildCode: rebuild,
         notifyOnly: notify,
+        onReconciliation: afterInitialSnapshot(() => {
+          writeFileSync(join(tempDir, 'src', 'main.py'), 'def hello():\n    return 2\n', 'utf8')
+        }),
         logger: { log() {}, error() {} },
       })
-
-      await delay(30)
-      writeFileSync(join(tempDir, 'src', 'main.py'), 'def hello():\n    return 2\n', 'utf8')
 
       await watcher
 
@@ -1168,6 +1192,13 @@ describe('watch', () => {
     })
   })
 })
+
+function afterInitialSnapshot(mutate: () => void, observe?: (metrics: WatchReconciliationMetrics) => void): (metrics: WatchReconciliationMetrics) => void {
+  return (metrics) => {
+    observe?.(metrics)
+    if (metrics.trigger === 'initial') mutate()
+  }
+}
 
 async function withTempDirAsync(callback: (tempDir: string) => Promise<void>): Promise<void> {
   const tempDir = mkdtempSync(join(tmpdir(), 'madar-watch-'))
@@ -1180,10 +1211,13 @@ async function withTempDirAsync(callback: (tempDir: string) => Promise<void>): P
 
 async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
+  while (true) {
     if (condition()) {
       return
     }
+    // Synchronous graph generation can finish after the deadline while making
+    // the predicate true. Observe that final state before declaring a timeout.
+    if (Date.now() >= deadline) break
     await delay(25)
   }
   throw new Error('Timed out waiting for graph refresh')

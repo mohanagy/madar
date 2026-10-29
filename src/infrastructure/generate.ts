@@ -12,7 +12,7 @@ import type {
   IndexingStrictThresholds,
   IndexingSummary,
 } from '../contracts/indexing.js'
-import type { ExtractionData, ExtractionEdge, ExtractionNode, ExtractionSchemaVersion, Hyperedge } from '../contracts/types.js'
+import type { ExtractionData, ExtractionNode, ExtractionSchemaVersion } from '../contracts/types.js'
 import { godNodes, semanticAnomalies, suggestQuestions, surprisingConnections } from '../pipeline/analyze.js'
 import { buildFromJson } from '../pipeline/build.js'
 import { cluster, scoreAll } from '../pipeline/cluster.js'
@@ -254,6 +254,38 @@ function mergeSchemaVersion(current: ExtractionData['schema_version'], next: Ext
   return 1
 }
 
+/** Keep annotations for the same unchanged owner, never old topology or source. */
+function preserveUnchangedNodeMetadata(
+  extraction: ExtractionData,
+  previous: KnowledgeGraph,
+  unchangedFiles: readonly string[],
+  rootPath: string,
+): ExtractionData {
+  const unchanged = new Set(unchangedFiles.map((file) => resolve(rootPath, file)))
+  const previousNodes = new Map(previous.nodeEntries())
+  return {
+    ...extraction,
+    schema_version: mergeSchemaVersion(extraction.schema_version, previous.graph.schema_version === 2 ? 2 : 1),
+    nodes: extraction.nodes.map((node) => {
+      const prior = previousNodes.get(node.id)
+      const sourceFile = resolve(rootPath, node.source_file)
+      if (!prior || !unchanged.has(sourceFile)
+        || typeof prior.source_file !== 'string' || resolve(rootPath, prior.source_file) !== sourceFile
+        || ['label', 'file_type', 'node_kind', 'source_location', 'snippet'].some((key) => prior[key] !== node[key])) {
+        return node
+      }
+      // Fresh extraction remains authoritative for declaration and framework
+      // fields. These typed annotations belong to the verified source owner.
+      const layer = prior.layer === 'base' || prior.layer === 'semantic' || prior.layer === 'media' ? prior.layer : node.layer
+      const priorProvenance = Array.isArray(prior.provenance) ? prior.provenance as NonNullable<ExtractionNode['provenance']> : []
+      const provenance = [...new Map(
+        [...priorProvenance, ...(node.provenance ?? [])].map((entry) => [JSON.stringify(entry), entry]),
+      ).values()]
+      return { ...node, ...(layer ? { layer } : {}), ...(provenance.length ? { provenance } : {}) }
+    }),
+  }
+}
+
 function mergeExtractions(extractions: ExtractionData[]): ExtractionData {
   return extractions.reduce<ExtractionData>((combined, extraction) => {
     combined.schema_version = mergeSchemaVersion(combined.schema_version, extraction.schema_version)
@@ -268,8 +300,60 @@ function mergeExtractions(extractions: ExtractionData[]): ExtractionData {
   }, emptyExtraction())
 }
 
-function sourceFileKey(sourceFile: unknown): string | null {
-  return typeof sourceFile === 'string' && sourceFile.length > 0 ? resolve(sourceFile) : null
+function supplementalSourceLocation(primary?: string, supplemental?: string): string | undefined {
+  if (!primary) return supplemental
+  const primaryRange = /^L(\d+)(?:-L(\d+))?$/.exec(primary)
+  const supplementalRange = supplemental ? /^L(\d+)(?:-L(\d+))?$/.exec(supplemental) : null
+  if (primaryRange && supplementalRange
+    && primaryRange[1] === supplementalRange[1]
+    && Number(supplementalRange[2] ?? supplementalRange[1]) > Number(primaryRange[2] ?? primaryRange[1])) {
+    return supplemental
+  }
+  return primary
+}
+
+/** Merge SPI node metadata without replacing legacy source evidence or topology. */
+export function mergeSupplementalCodeExtraction(primary: ExtractionData, supplemental: ExtractionData): ExtractionData {
+  const nodes = new Map(primary.nodes.map((node) => [node.id, node]))
+  for (const incoming of supplemental.nodes) {
+    const existing = nodes.get(incoming.id)
+    if (!existing) {
+      nodes.set(incoming.id, incoming)
+      continue
+    }
+
+    const provenance = [...new Map(
+      [...(existing.provenance ?? []), ...(incoming.provenance ?? [])]
+        .map((entry) => [JSON.stringify(entry), entry]),
+    ).values()]
+    const existingMetadata = existing.framework_metadata
+    const incomingMetadata = incoming.framework_metadata
+    const frameworkMetadata = {
+      ...(typeof existingMetadata === 'object' && existingMetadata !== null ? existingMetadata : {}),
+      ...(typeof incomingMetadata === 'object' && incomingMetadata !== null ? incomingMetadata : {}),
+    }
+    const sourceLocation = supplementalSourceLocation(existing.source_location, incoming.source_location)
+    const snippet = existing.snippet?.trim() ? existing.snippet : incoming.snippet
+    const layer = existing.layer ?? incoming.layer
+    nodes.set(incoming.id, {
+      ...existing,
+      ...Object.fromEntries(Object.entries(incoming).filter(([, value]) => value !== undefined)),
+      id: existing.id,
+      label: existing.label,
+      file_type: existing.file_type,
+      source_file: existing.source_file,
+      ...(sourceLocation ? { source_location: sourceLocation } : {}),
+      ...(snippet ? { snippet } : {}),
+      ...(layer ? { layer } : {}),
+      ...(provenance.length > 0 ? { provenance } : {}),
+      ...(Object.keys(frameworkMetadata).length > 0 ? { framework_metadata: frameworkMetadata } : {}),
+    })
+  }
+
+  return {
+    ...mergeExtractions([primary, { ...supplemental, nodes: [], edges: [], hyperedges: [] }]),
+    nodes: [...nodes.values()],
+  }
 }
 
 function indexedSourceFilesFromGraph(graph: KnowledgeGraph | null, rootPath: string): ReadonlySet<string> | undefined {
@@ -282,60 +366,6 @@ function indexedSourceFilesFromGraph(graph: KnowledgeGraph | null, rootPath: str
       return sourceFile.length > 0 ? [resolve(rootPath, sourceFile)] : []
     }),
   )
-}
-
-function retainedExtractionFromGraph(graph: KnowledgeGraph, removedSourceFiles: ReadonlySet<string>): ExtractionData {
-  const nodes: ExtractionNode[] = graph
-    .nodeEntries()
-    .filter(([, attributes]) => {
-      const sourceFile = sourceFileKey(attributes.source_file)
-      return !sourceFile || !removedSourceFiles.has(sourceFile)
-    })
-    .map(([id, attributes]) => ({
-      id,
-      ...attributes,
-      label: String(attributes.label ?? id),
-      file_type: String(attributes.file_type ?? 'code') as ExtractionNode['file_type'],
-      source_file: String(attributes.source_file ?? ''),
-    }))
-
-  const nodeIds = new Set(nodes.map((node) => node.id))
-  const edges: ExtractionEdge[] = graph
-    .edgeEntries()
-    .filter(([source, target, attributes]) => {
-      const sourceFile = sourceFileKey(attributes.source_file)
-      return nodeIds.has(source) && nodeIds.has(target) && (!sourceFile || !removedSourceFiles.has(sourceFile))
-    })
-    .map(([source, target, attributes]) => ({
-      source,
-      target,
-      ...attributes,
-      relation: String(attributes.relation ?? 'related_to'),
-      confidence: String(attributes.confidence ?? 'EXTRACTED') as ExtractionEdge['confidence'],
-      source_file: String(attributes.source_file ?? ''),
-    }))
-
-  const hyperedges = (Array.isArray(graph.graph.hyperedges) ? graph.graph.hyperedges : []).filter((hyperedge): hyperedge is Hyperedge => {
-    if (!hyperedge || typeof hyperedge !== 'object' || Array.isArray(hyperedge)) {
-      return false
-    }
-
-    const sourceFile = sourceFileKey((hyperedge as Hyperedge).source_file)
-    if (sourceFile && removedSourceFiles.has(sourceFile)) {
-      return false
-    }
-
-    return Array.isArray((hyperedge as Hyperedge).nodes) && (hyperedge as Hyperedge).nodes.every((nodeId) => nodeIds.has(nodeId))
-  })
-
-  return {
-    schema_version: graph.graph.schema_version === 2 ? 2 : 1,
-    nodes,
-    edges,
-    hyperedges,
-    input_tokens: 0,
-    output_tokens: 0,
-  }
 }
 
 function isIncrementalDetectResult(detection: DetectResult | IncrementalDetectResult): detection is IncrementalDetectResult {
@@ -648,6 +678,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     const spiExtraction = built
       ? withExtractionStrategy(projectSpiToExtraction(built.spi, {
           root: resolvedRootPath,
+          ...(extractionMode === 'spi' ? { resolveCaseCollisions: true } : {}),
           ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
         }), 'spi')
       : emptyExtraction()
@@ -655,14 +686,10 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     // Legacy owns the shared JS/TS nodes and their established relationship
     // semantics. Retain SPI-only nodes as supplemental evidence, but avoid
     // mixing competing relationship projections into the primary topology.
-    const spiSupplementalExtraction: ExtractionData = {
-      ...spiExtraction,
-      edges: [],
-      hyperedges: [],
-    }
     const legacyAugmentationExtraction =
       legacyAugmentationCodeFiles.length > 0
         ? withExtractionStrategy(extract(legacyAugmentationCodeFiles, {
+            workspaceRoot: resolvedRootPath,
             allowedTargets: extractableFiles,
             contextNodes: spiExtraction.nodes,
             ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
@@ -671,6 +698,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     const legacyFallbackExtraction =
       legacyFallbackCodeFiles.length > 0
         ? withExtractionStrategy(extract(legacyFallbackCodeFiles, {
+            workspaceRoot: resolvedRootPath,
             allowedTargets: extractableFiles,
             contextNodes: spiExtraction.nodes,
             ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
@@ -679,14 +707,14 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
         : emptyExtraction()
     const codeExtraction = extractionMode === 'auto'
       ? mergeExtractions([
-          legacyAugmentationExtraction,
-          spiSupplementalExtraction,
+          mergeSupplementalCodeExtraction(legacyAugmentationExtraction, spiExtraction),
           legacyFallbackExtraction,
         ])
       : spiExtraction
     const nonCodeExtraction =
       nonCodeExtractableFiles.length > 0
         ? withExtractionStrategy(extract(nonCodeExtractableFiles, {
+            workspaceRoot: resolvedRootPath,
             allowedTargets: extractableFiles,
             contextNodes: codeExtraction.nodes,
             ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
@@ -744,6 +772,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
           extractedFiles = extractableFiles.length
           return extractableFiles.length > 0
             ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
+                workspaceRoot: resolvedRootPath,
                 onFileOutcome: recordExtractionOutcome('legacy'),
               }), 'legacy'), { directed })
             : null
@@ -759,13 +788,13 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
               extractedFiles = extractableFiles.length
               return extractableFiles.length > 0
                 ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
+                    workspaceRoot: resolvedRootPath,
                     onFileOutcome: recordExtractionOutcome('legacy'),
                   }), 'legacy'), { directed })
                 : null
             }
 
             const changedExtractableFiles = collectExtractableFiles(detected.new_files)
-            const removedSourceFiles = new Set([...changedExtractableFiles, ...detected.deleted_files].map((filePath) => resolve(filePath)))
 
             if (changedExtractableFiles.length === 0 && detected.deleted_files.length === 0) {
               notes.push('No changed files detected - reused the existing graph.')
@@ -780,32 +809,21 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
               return existingGraph
             }
 
-            const retainedExtraction = retainedExtractionFromGraph(existingGraph, removedSourceFiles)
-            const changedExtraction =
-              changedExtractableFiles.length > 0
-                ? withExtractionStrategy(extract(changedExtractableFiles, {
-                    allowedTargets: extractableFiles,
-                    contextNodes: retainedExtraction.nodes,
-                    onFileOutcome: recordExtractionOutcome('legacy'),
-                  }), 'legacy')
-                : emptyExtraction()
-            const retainedSourceFiles = indexedSourceFilesFromGraph(existingGraph, resolvedRootPath)
-            indexingOutcomes.push(...retainedIndexingOutcomes({
-              rootPath: resolvedRootPath,
-              files: collectExtractableFiles(detected.unchanged_files),
-              previousManifest: previousIndexingManifest,
-              ...(retainedSourceFiles ? { retainedSourceFiles } : {}),
-            }))
-            extractedFiles = changedExtractableFiles.length
-
-            notes.push(
-              `Incremental update re-extracted ${changedExtractableFiles.length} changed file(s) and retained ${new Set(retainedExtraction.nodes.map((node) => node.source_file)).size} unchanged file(s) from the existing graph.`,
-            )
-
-          return buildFromJson(mergeExtractions([retainedExtraction, changedExtraction]), { directed })
+            // Changed targets invalidate incoming relationships owned by unchanged
+            // callers. Re-run the current corpus through extraction/cross-file
+            // linking; per-file parser caches remain available inside extract().
+            extractedFiles = extractableFiles.length
+            notes.push(`Legacy update rebuilt ${extractableFiles.length} current file(s) to refresh cross-file relationships.`)
+            return extractableFiles.length > 0
+              ? buildFromJson(preserveUnchangedNodeMetadata(withExtractionStrategy(extract(extractableFiles, {
+                  workspaceRoot: resolvedRootPath,
+                  onFileOutcome: recordExtractionOutcome('legacy'),
+                }), 'legacy'), existingGraph, collectExtractableFiles(detected.unchanged_files), resolvedRootPath), { directed })
+              : null
         })()
       : extractableFiles.length > 0
         ? buildFromJson(withExtractionStrategy(extract(extractableFiles, {
+            workspaceRoot: resolvedRootPath,
             onFileOutcome: recordExtractionOutcome('legacy'),
           }), 'legacy'), { directed })
       : options.update && existingGraph

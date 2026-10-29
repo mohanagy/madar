@@ -4,6 +4,7 @@ import { assessMadarResponseEvidence } from './mcp-response-evidence.js'
 import { reconcileRetrievalPlanQueryEvidence } from './retrieve/conceptual-fallback.js'
 import { buildRetrievalEvidencePlanFromResult } from './retrieve/pipeline.js'
 import type { RetrieveOptions, RetrieveResult } from './retrieve.js'
+import { recoverySourceGuard } from './retrieve/recovery-source-preservation.js'
 
 const DEFAULT_MAX_ATTEMPTS = 2 as const
 const DEFAULT_MAX_CANDIDATE_NODES = 64
@@ -149,7 +150,11 @@ function addTargetCandidates(
 
   const focusFiles = target.focus_files
   if (focusFiles.length > 0 && recoveryCandidateIds.size < maxCandidateNodes) {
-    for (const [nodeId, attributes] of graph.nodeEntries()) {
+    // Snapshot candidate attributes before coercing exceptional source values:
+    // their toString can mutate a later node, while the old full scan used a snapshot.
+    const candidates = graph.sourceFileCandidateIds(focusFiles)
+      .map((nodeId) => [nodeId, graph.nodeAttributes(nodeId)] as const)
+    for (const [nodeId, attributes] of candidates) {
       if (recoveryCandidateIds.size >= maxCandidateNodes) break
       const sourceFile = String(attributes.source_file ?? '').trim()
       if (sourceFile.length === 0 || !focusFiles.some((focusFile) => sourceMatchesFocus(sourceFile, focusFile))) {
@@ -274,10 +279,12 @@ export function recoverContextPackResult(
     }
 
     const attemptStarted = performance.now()
+    const preserveSource = recoverySourceGuard(graph, current, options.question, options.projectRoot)
     const candidate = runPass(boosts)
+    const sourceEvidenceLoss = preserveSource(candidate)
     const candidateAssessment = assess(candidate, options.question)
     const outputBudgetExceeded = candidate.token_count > budget.output_token_budget
-    const accepted = !outputBudgetExceeded && assessmentImproved(currentAssessment, candidateAssessment)
+    const accepted = !outputBudgetExceeded && sourceEvidenceLoss.lost_spans === 0 && assessmentImproved(currentAssessment, candidateAssessment)
     const elapsedMs = Math.round(performance.now() - attemptStarted)
     const changedResult = resultNodeSignature(current) !== resultNodeSignature(candidate)
     attempts.push({
@@ -291,6 +298,7 @@ export function recoverContextPackResult(
       missing_obligations_after: accepted ? candidateAssessment.missingObligations.length : missingBefore,
       elapsed_ms: elapsedMs,
       changed_result: accepted && changedResult,
+      ...(sourceEvidenceLoss.lost_spans > 0 ? { source_evidence_loss: sourceEvidenceLoss } : {}),
     })
     if (outputBudgetExceeded) {
       budgetExhausted = true

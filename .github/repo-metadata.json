@@ -1,5 +1,5 @@
 {
-  "description": "Stop AI coding agents from rediscovering large TypeScript/Node repos with task-aware local context packs.",
+  "description": "Local source lookup and static graph context for JavaScript, TypeScript, and Node.js coding agents.",
   "topics": [
     "ai-coding-agents",
     "claude-code",

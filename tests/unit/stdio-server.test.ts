@@ -313,7 +313,10 @@ describe('stdio runtime', () => {
             resources: { subscribe: true, listChanged: true },
             tools: { listChanged: false },
           },
-          serverInfo: { name: 'madar' },
+          serverInfo: {
+            name: 'madar',
+            version: JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version,
+          },
         },
       })
       expect((prompts?.result as { prompts: Array<{ name: string }> }).prompts.map((prompt) => prompt.name)).toEqual(
@@ -708,6 +711,99 @@ describe('stdio runtime', () => {
     }
   })
 
+  it('exposes exact impact IDs and structured ambiguous-target errors through MCP', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'duplicate-labels.json')
+      writeFileSync(graphPath, JSON.stringify({
+        directed: true,
+        nodes: [
+          { id: 'a', label: 'run', source_file: 'a.ts' },
+          { id: 'b', label: 'run', source_file: 'b.ts' },
+          { id: 'b-caller', label: 'caller', source_file: 'caller.ts' },
+        ],
+        edges: [{ source: 'b-caller', target: 'b', relation: 'calls' }],
+      }))
+      const call = async (args: Record<string, unknown>) => {
+        const response = await handleStdioRequest(graphPath, {
+          id: 1, method: 'tools/call', params: { name: 'impact', arguments: args },
+        })
+        return response?.result as { isError?: boolean; content: Array<{ text: string }> }
+      }
+      for (const verbose of [false, true]) {
+        const ambiguous = await call({ label: 'run', verbose })
+        expect(ambiguous.isError).toBe(true)
+        const failure = JSON.parse(ambiguous.content[0]!.text)
+        expect(failure.status).toBe('ambiguous_target')
+        expect(failure.candidates).toEqual([
+          { node_id: 'a', label: 'run', source_file: 'a.ts' },
+          { node_id: 'b', label: 'run', source_file: 'b.ts' },
+        ])
+        expect(failure).not.toHaveProperty('total_affected')
+        const exact = await call({ node_id: 'b', verbose })
+        expect(exact.isError).not.toBe(true)
+        const payload = JSON.parse(exact.content[0]!.text)
+        expect(payload.target_node_id).toBe('b')
+        expect(payload.direct_dependents[0].node_id).toBe('b-caller')
+      }
+      const stale = await call({ node_id: 'missing', label: 'run' })
+      expect(stale.isError).toBe(true)
+      expect(JSON.parse(stale.content[0]!.text).status).toBe('target_not_found')
+      const missingLabel = await call({ label: 'nonexistent' })
+      expect(missingLabel.isError).toBe(true)
+      expect(JSON.parse(missingLabel.content[0]!.text).status).toBe('target_not_found')
+      const isolated = JSON.parse((await call({ node_id: 'a' })).content[0]!.text)
+      expect(isolated).toMatchObject({ target_node_id: 'a', total_affected: 0, traversal: { status: 'complete' } })
+      const invalid = await handleStdioRequest(graphPath, {
+        id: 2, method: 'tools/call', params: { name: 'impact', arguments: { node_id: 42, label: 'run' } },
+      })
+      expect(invalid?.error?.code).toBe(-32602)
+      const listed = await handleStdioRequest(graphPath, { id: 3, method: 'tools/list' })
+      const definition = (listed?.result as { tools: Array<{ name: string; inputSchema: unknown }> }).tools.find((tool) => tool.name === 'impact')
+      expect(definition?.inputSchema).toMatchObject({ anyOf: [{ required: ['node_id'] }, { required: ['label'] }] })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('retains partial impact scope through direct and context-pack MCP responses', async () => {
+    const root = createGraphFixtureRoot()
+    try {
+      const graphPath = join(root, 'bounded-impact.json')
+      writeFileSync(graphPath, JSON.stringify({
+        directed: true,
+        nodes: Array.from({ length: 5 }, (_, i) => ({
+          id: `n${i}`, label: i === 0 ? 'impactBoundaryTarget' : `caller${i}`,
+          source_file: `src/node${i}.ts`, file_type: 'code', node_kind: 'function', community: 0,
+        })),
+        edges: Array.from({ length: 4 }, (_, i) => ({ source: `n${i + 1}`, target: `n${i}`, relation: 'calls' })),
+      }))
+      for (const verbose of [false, true]) {
+        for (const name of ['impact', 'context_pack']) {
+          const response = await handleStdioRequest(graphPath, {
+            id: 1, method: 'tools/call', params: { name, arguments: name === 'impact'
+              ? { node_id: 'n0', verbose }
+              : { prompt: 'What breaks if impactBoundaryTarget changes?', task: 'impact', budget: 6000, verbose } },
+          })
+          const result = response?.result as { isError?: boolean; content: Array<{ text: string }> }
+          expect(result.isError).not.toBe(true)
+          const payload = JSON.parse(result.content[0]!.text)
+          const impact = name === 'impact' ? payload : payload.pack
+          expect(impact).toMatchObject({ target_node_id: 'n0', total_affected: 3,
+            traversal: { status: 'depth_limited', depth: 3, node_limit: 500 } })
+          expect(payload.evidence.answerability.missing_obligations).toContain('impact:depth_limited')
+          if (verbose || name === 'impact') {
+            expect(payload.evidence.coverage).toBe('partial')
+            expect(payload.evidence.answerability.answer_scope).not.toBe('complete')
+          }
+          if (name === 'impact' && !verbose) expect(payload.missing_context).not.toEqual([])
+        }
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('returns actionable MCP errors for directional tools on an undirected legacy graph', async () => {
     const root = createGraphFixtureRoot()
     try {
@@ -1026,6 +1122,16 @@ describe('stdio runtime', () => {
       for (const response of Object.values(calls)) {
         const payload = JSON.parse((response?.result as { content: Array<{ text: string }> }).content[0]!.text) as {
           evidence?: Record<string, unknown>
+          response_format?: string
+        }
+        if (payload.response_format === 'source_evidence_v2') {
+          expect(payload.evidence).toMatchObject({
+            answerability: { advisory: true, broad_search_fallback: 'allowed' },
+            agent_directive: 'explore_with_caution',
+          })
+          expect(payload.evidence).not.toHaveProperty('pack_confidence')
+          expect(payload.evidence).not.toHaveProperty('answerability.answer_scope')
+          continue
         }
         expect(payload.evidence).toEqual(expect.objectContaining({
           pack_confidence: expect.stringMatching(/^(high|medium|low)$/),
@@ -1109,7 +1215,6 @@ describe('stdio runtime', () => {
           matched_nodes: Array<{ label: string }>
         }
       }
-      expect(expandedPayload.matched_focus).toBeGreaterThan(0)
       expect(expandedPayload.pack.matched_nodes.length).toBeGreaterThan(0)
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -1227,7 +1332,7 @@ describe('stdio runtime', () => {
       }))
 
       expect(success?.error).toBeUndefined()
-      expect(failure?.error?.message).toContain('context_pack requires a string prompt parameter')
+      expect(failure?.error?.message).toContain('context_pack requires a non-empty string prompt parameter <= 32768 characters')
 
       const spool = JSON.parse(readFileSync(join(cacheRoot, 'madar', 'telemetry-events.json'), 'utf8')) as {
         schema_version: number
@@ -1241,10 +1346,8 @@ describe('stdio runtime', () => {
             stage: 'succeeded',
             repo_size_bucket: '1-24',
             graph_size_bucket: '1-99',
-            initial_answerability_bucket: expect.stringMatching(/^(ready|ready_with_caveat|verify_targets|insufficient)$/),
             recovery_attempts_bucket: expect.stringMatching(/^[0-2]$/),
             recovery_improvement_bucket: expect.stringMatching(/^(not_attempted|improved|unchanged)$/),
-            final_answerability_bucket: expect.stringMatching(/^(ready|ready_with_caveat|verify_targets|insufficient)$/),
             broad_search_fallback_bucket: expect.stringMatching(/^(not_needed|targeted_only|allowed|blocked)$/),
           }),
           expect.objectContaining({
@@ -1312,7 +1415,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 1,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1324,7 +1427,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'What breaks if HttpClient changes?',
             task: 'impact',
-            budget: 200,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1408,52 +1511,24 @@ describe('stdio runtime', () => {
 
       expect(toolNames).toEqual(expect.arrayContaining(['context_pack', 'context_expand', 'context_prompt', 'context_session_reset']))
 
-      expect(explainPackPayload).toEqual(expect.objectContaining({
-        task: 'explain',
-        task_intent: 'explain',
-        prompt: 'How does AuthService reach Transport?',
-        budget: 1,
-        pack: expect.objectContaining({
-          matched_nodes: expect.any(Array),
-          community_context: expect.any(Array),
-        }),
-      }))
-      expect(explainPackPayload.serialized_budget).toEqual(expect.objectContaining({
-        max_tokens: 1,
-      }))
-      expect(explainPackPayload.missing_semantic).toEqual(expect.arrayContaining(['structure']))
+      expect(explainPackPayload).toMatchObject({
+        task: 'explain', response_format: 'source_evidence_v2',
+        pack: { matched_nodes: expect.any(Array) },
+        evidence: { answerability: { advisory: true } },
+        serialized_budget: { max_tokens: 3000, enforced: true },
+      })
       expect(explainPackPayload.expandable).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: 'nodes' }),
+        expect.objectContaining({ handle_id: expect.any(String) }),
       ]))
-      expect(explainPackPayload.missing_context).toEqual(expect.arrayContaining(['supporting', 'structural']))
-      expect(impactPackPayload).toEqual(expect.objectContaining({
-        task: 'impact',
-        task_intent: 'impact',
-        prompt: 'What breaks if HttpClient changes?',
-        target: 'HttpClient',
-      }))
-      expect(impactPackPayload.coverage).toEqual(expect.objectContaining({
-        required_evidence: ['primary', 'impact', 'structural'],
-        semantic_entries: expect.arrayContaining([
-          expect.objectContaining({
-            category: 'implementation',
-            status: 'covered',
-          }),
-        ]),
-      }))
-      expect(impactPackPayload.coverage.required_evidence).not.toContain('supporting')
-      expect(impactPackPayload.missing_context).toEqual(impactPackPayload.coverage.missing_required)
-      expect(impactPackPayload.missing_context).not.toContain('supporting')
-      expect(impactPackPayload.missing_semantic).not.toContain('implementation')
+      expect(impactPackPayload).toMatchObject({ task: 'impact', target: 'HttpClient' })
+      expect(impactPackPayload.serialized_budget.token_count).toBeLessThanOrEqual(3000)
       expect(expandedPackPayload).toEqual(expect.objectContaining({
         handle_id: explainPackPayload.expandable[0].handle_id,
         task: 'explain',
-        task_intent: 'explain',
         pack: expect.objectContaining({
           matched_nodes: expect.any(Array),
         }),
       }))
-      expect(expandedPackPayload.matched_focus).toBeGreaterThan(0)
       expect(expandedPackPayload.pack.matched_nodes.length).toBeGreaterThan(0)
       expect(expandedPackPayload.pack.matched_nodes.some((node: { snippet: string | null }) => typeof node.snippet === 'string' && node.snippet.length > 0)).toBe(true)
 
@@ -1538,7 +1613,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 150,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1551,7 +1626,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 150,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1560,10 +1635,9 @@ describe('stdio runtime', () => {
       const secondPayload = JSON.parse((second?.result as { content: Array<{ text: string }> }).content[0]!.text)
 
       expect(firstPayload.cache).toEqual(expect.objectContaining({ status: 'miss' }))
-      expect(secondPayload.cache).toEqual(expect.objectContaining({
-        status: 'hit',
-        graph_version: firstPayload.cache.graph_version,
-      }))
+      expect(secondPayload.cache).toEqual(expect.objectContaining({ status: 'hit' }))
+      expect(firstPayload.governance.graph_freshness.graph_version).toEqual(expect.any(String))
+      expect(secondPayload.governance.graph_freshness.graph_version).toBe(firstPayload.governance.graph_freshness.graph_version)
       expect(secondPayload.pack).toEqual(firstPayload.pack)
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -1590,7 +1664,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 1,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1609,7 +1683,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 1,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1650,6 +1724,7 @@ describe('stdio runtime', () => {
         subscribedResourceUris: new Set<string>(),
         resourceVersions: new Map<string, string>(),
         resourceListSignature: null,
+        contextPackCache: new Map<string, string>(),
       }
 
       const first = await Promise.resolve(handleStdioRequest(graphPath, {
@@ -1660,13 +1735,24 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 1,
+            budget: 3000,
           },
         },
       }, sessionState))
 
       const firstPayload = JSON.parse((first?.result as { content: Array<{ text: string }> }).content[0]!.text)
       expect(firstPayload.cache).toEqual(expect.objectContaining({ status: 'miss' }))
+
+      // A continuation can focus on the caller while the delivered evidence also
+      // contains a dependency. Its source must remain part of the freshness check.
+      for (const [key, text] of sessionState.contextPackCache) {
+        const record = JSON.parse(text)
+        const cached = record.payload
+        expect(cached.pack.matched_nodes.some((node: { source_file: string }) => node.source_file === 'client.ts')).toBe(true)
+        expect(cached.expandable.length).toBeGreaterThan(0)
+        for (const entry of cached.expandable) entry.follow_up.focus_files = ['auth.ts']
+        sessionState.contextPackCache.set(key, JSON.stringify(record))
+      }
 
       writeFileSync(join(root, 'client.ts'), 'export class HttpClient {\n  request() {\n    return new Transport()\n  }\n  refresh() {\n    return true\n  }\n}\n', 'utf8')
 
@@ -1678,7 +1764,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 1,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1699,7 +1785,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 1,
+            budget: 3000,
             require_fresh_context: true,
           },
         },
@@ -1753,7 +1839,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'implement',
-            budget: 1,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1764,8 +1850,10 @@ describe('stdio runtime', () => {
       ]))
       expect(packPayload.implementation).toEqual(expect.objectContaining({
         likely_edit_files: expect.any(Array),
-        validation_commands: expect.any(Array),
       }))
+      // This fixture has no configured validation commands; compact output omits
+      // that empty diagnostic instead of spending tokens on an empty array.
+      expect(packPayload.implementation).not.toHaveProperty('validation_commands')
 
       const expanded = await Promise.resolve(handleStdioRequest(graphPath, {
         id: 2,
@@ -1810,7 +1898,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 150,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1837,7 +1925,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 150,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1847,7 +1935,9 @@ describe('stdio runtime', () => {
 
       expect(firstPayload.cache).toEqual(expect.objectContaining({ status: 'miss' }))
       expect(secondPayload.cache).toEqual(expect.objectContaining({ status: 'miss' }))
-      expect(secondPayload.cache.graph_version).not.toBe(firstPayload.cache.graph_version)
+      expect(firstPayload.governance.graph_freshness.graph_version).toEqual(expect.any(String))
+      expect(secondPayload.governance.graph_freshness.graph_version).toEqual(expect.any(String))
+      expect(secondPayload.governance.graph_freshness.graph_version).not.toBe(firstPayload.governance.graph_freshness.graph_version)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1872,7 +1962,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'Review the current changes',
             task: 'review',
-            budget: 150,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1885,7 +1975,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'Review the current changes',
             task: 'review',
-            budget: 150,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1916,7 +2006,7 @@ describe('stdio runtime', () => {
             tool: 'context_pack',
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 150,
+            budget: 3000,
             retrieval_level: null,
             retrieval_strategy: null,
             resolution: 'detail',
@@ -1933,7 +2023,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 150,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -1965,7 +2055,7 @@ describe('stdio runtime', () => {
             tool: 'context_pack',
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 150,
+            budget: 3000,
             retrieval_level: null,
             retrieval_strategy: null,
             resolution: 'detail',
@@ -1982,7 +2072,7 @@ describe('stdio runtime', () => {
           arguments: {
             prompt: 'How does AuthService reach Transport?',
             task: 'explain',
-            budget: 150,
+            budget: 3000,
           },
         },
       }, sessionState))
@@ -2099,7 +2189,7 @@ describe('stdio runtime', () => {
       }
       graph.nodes.push({
         id: 'line-node',
-        label: 'LineNode',
+        label: 'second',
         source_file: sourcePath,
         line_number: 2,
         file_type: 'code',
@@ -2147,8 +2237,8 @@ describe('stdio runtime', () => {
       }
       expect(payload.pack?.matched_nodes).toEqual(expect.arrayContaining([
         expect.objectContaining({
-          label: 'LineNode',
-          line_number: 2,
+          label: 'second',
+          snippet_line_range: expect.objectContaining({ start_line: 2 }),
           snippet: expect.stringContaining('const second = process.env.SECRET'),
         }),
       ]))

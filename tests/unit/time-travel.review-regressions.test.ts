@@ -107,13 +107,13 @@ describe('time travel runtime regression coverage', () => {
     expect(graphDiffSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('builds the after-graph label lookup once before ranking risk', async () => {
-    const analyzeImpact = vi.fn((graph: KnowledgeGraph, _labels: Record<number, string>, options: { label: string }) => ({
-      target: options.label,
+  it('ranks risk by node identity without building an after-graph label lookup', async () => {
+    const analyzeImpact = vi.fn((graph: KnowledgeGraph, _labels: Record<number, string>, options: { nodeId: string }) => ({
+      target: String(graph.nodeAttributes(options.nodeId).label ?? options.nodeId),
       target_file: '',
       depth: 3,
       direct_dependents: [],
-      transitive_dependents: graph.hasNode('web') && options.label === 'AuthService' ? [{
+      transitive_dependents: graph.hasNode('web') && options.nodeId === 'auth' ? [{
         label: 'WebApp',
         source_file: '/src/web.ts',
         node_kind: 'module',
@@ -146,13 +146,14 @@ describe('time travel runtime regression coverage', () => {
     const result = compareTimeTravelGraphs(buildBeforeGraph(), afterGraph, { view: 'risk', limit: 3 })
 
     expect(result.risk.topImpacts[0]?.label).toBe('AuthService')
-    expect(analyzeImpact).toHaveBeenCalled()
-    expect(nodeEntriesSpy).toHaveBeenCalledTimes(1)
+    expect(result.risk.topImpacts[0]).toMatchObject({ node_id: 'auth', graph_side: 'after' })
+    expect(analyzeImpact).toHaveBeenCalledWith(afterGraph, expect.any(Object), { nodeId: 'auth' })
+    expect(nodeEntriesSpy).not.toHaveBeenCalled()
   })
 
   it('resolves community labels once per graph before ranking risk', async () => {
-    const analyzeImpact = vi.fn((_graph: KnowledgeGraph, _labels: Record<number, string>, options: { label: string }) => ({
-      target: options.label,
+    const analyzeImpact = vi.fn((graph: KnowledgeGraph, _labels: Record<number, string>, options: { nodeId: string }) => ({
+      target: String(graph.nodeAttributes(options.nodeId).label ?? options.nodeId),
       target_file: '',
       depth: 3,
       direct_dependents: [],
@@ -185,12 +186,12 @@ describe('time travel runtime regression coverage', () => {
   })
 
   it('uses node id fallback when selecting risk impact graphs for unlabeled changed nodes', async () => {
-    const analyzeImpact = vi.fn((graph: KnowledgeGraph, _labels: Record<number, string>, options: { label: string }) => ({
-      target: options.label,
+    const analyzeImpact = vi.fn((graph: KnowledgeGraph, _labels: Record<number, string>, options: { nodeId: string }) => ({
+      target: String(graph.nodeAttributes(options.nodeId).label ?? options.nodeId),
       target_file: '',
       depth: 3,
       direct_dependents: [],
-      transitive_dependents: options.label === 'gateway' && graph.hasNode('mobile') ? [{
+      transitive_dependents: options.nodeId === 'gateway' && graph.hasNode('mobile') ? [{
         label: 'MobileClient',
         source_file: '/src/mobile.ts',
         node_kind: 'module',
@@ -218,8 +219,12 @@ describe('time travel runtime regression coverage', () => {
 
     const { compareTimeTravelGraphs } = await import('../../src/runtime/time-travel.js')
 
-    const result = compareTimeTravelGraphs(buildUnlabeledBeforeGraph(), buildUnlabeledAfterGraph(), { view: 'risk', limit: 5 })
+    const afterGraph = buildUnlabeledAfterGraph()
+    const result = compareTimeTravelGraphs(buildUnlabeledBeforeGraph(), afterGraph, { view: 'risk', limit: 5 })
 
-    expect(result.risk.topImpacts).toContainEqual(expect.objectContaining({ label: 'gateway', transitiveDependents: 1 }))
+    expect(result.risk.topImpacts).toContainEqual(expect.objectContaining({
+      label: 'gateway', node_id: 'gateway', graph_side: 'after', transitiveDependents: 1,
+    }))
+    expect(analyzeImpact).toHaveBeenCalledWith(afterGraph, expect.any(Object), { nodeId: 'gateway' })
   })
 })

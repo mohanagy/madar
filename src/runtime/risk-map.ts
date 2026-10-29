@@ -9,7 +9,7 @@ import type { ContextPackTaskKind } from '../contracts/context-pack.js'
 import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { communitiesFromGraph } from './serve.js'
-import { analyzeImpact } from './impact.js'
+import { analyzeImpact, type ImpactTraversal } from './impact.js'
 import { featureMap, type FeatureMapOptions } from './feature-map.js'
 import { retrieveContext } from './retrieve.js'
 import { relativizeSourceFile } from '../shared/source-path.js'
@@ -27,6 +27,8 @@ export interface RiskMapRisk {
   reason: string
   affected_files: string[]
   affected_communities: string[]
+  /** Present when reported impact counts are lower bounds. */
+  traversal?: ImpactTraversal
 }
 
 export interface RiskMapHotspot {
@@ -61,6 +63,7 @@ export interface RiskSummaryCandidate {
   affectedCommunities: readonly string[]
   hotspotKinds: readonly string[]
   dependentCount: number
+  traversal?: ImpactTraversal
 }
 
 interface RankedRiskDetails extends RiskMapRisk {
@@ -121,16 +124,19 @@ export function buildRankedRisk(candidate: RiskSummaryCandidate): RankedRiskDeta
     hotspotCount,
     candidate.dependentCount,
   )
+  const partialTraversal = candidate.traversal?.status !== 'complete' ? candidate.traversal : undefined
+  const reason = summarizeRisk(candidate.label, candidate.affectedFiles, candidate.affectedCommunities, candidate.hotspotKinds)
 
   return {
     label: candidate.label,
     severity: severityForRisk(score, candidate.affectedCommunities.length),
-    reason: summarizeRisk(candidate.label, candidate.affectedFiles, candidate.affectedCommunities, candidate.hotspotKinds),
+    reason: partialTraversal ? `${reason} Reported impact counts are lower bounds (${partialTraversal.status}).` : reason,
     affected_files: [...candidate.affectedFiles],
     affected_communities: [...candidate.affectedCommunities],
     score,
     hotspot_count: hotspotCount,
     dependent_count: candidate.dependentCount,
+    ...(partialTraversal ? { traversal: partialTraversal } : {}),
   }
 }
 
@@ -175,7 +181,11 @@ export function riskMap(graph: KnowledgeGraph, options: RiskMapOptions): RiskMap
 
   const top_risks = candidateEntries
     .map((candidate) => {
-      const impact = analyzeImpact(graph, communityLabels, { label: candidate.label, depth: 3 })
+      const impact = analyzeImpact(graph, communityLabels, {
+        label: candidate.label,
+        ...(candidate.nodeId ? { nodeId: candidate.nodeId } : {}),
+        depth: 3,
+      })
       const affectedFiles = impact.affected_files.map((file) => relativizeSourceFile(file, rootPath))
       const affectedCommunities = impact.affected_communities.map((community) => community.label)
       const hotspotKinds = [
@@ -190,6 +200,7 @@ export function riskMap(graph: KnowledgeGraph, options: RiskMapOptions): RiskMap
         affectedCommunities,
         hotspotKinds,
         dependentCount,
+        ...(impact.traversal ? { traversal: impact.traversal } : {}),
       })
     })
     .filter((risk) => risk.score > 0)
@@ -220,8 +231,9 @@ export function riskMap(graph: KnowledgeGraph, options: RiskMapOptions): RiskMap
     .slice(0, options.limit ?? 5)
 
   const topRisk = top_risks[0]
+  const lowerBound = topRisk?.traversal ? 'at least ' : ''
   const summary = topRisk
-    ? `Highest risk: ${topRisk.label} with ${topRisk.affected_files.length} affected files across ${topRisk.affected_communities.length} communities.`
+    ? `Highest risk: ${topRisk.label} with ${lowerBound}${topRisk.affected_files.length} affected files across ${lowerBound}${topRisk.affected_communities.length} communities.`
     : 'No high-signal change risks found for this feature area.'
 
   return {

@@ -172,6 +172,7 @@ export function buildTaskContextPlan(input: TaskContextPlanInput): TaskContextPl
     has_change_evidence: changedPaths.length > 0,
   })
   const recipe = resolveTaskEvidenceRecipe(input.task_kind, {
+    prompt,
     task_intent: taskIntent,
     has_change_evidence: changedPaths.length > 0,
   })

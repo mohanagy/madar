@@ -1,3 +1,4 @@
+import { SOURCE_RETRIEVAL_ADMISSION, SOURCE_RETRIEVAL_DISCOVERY } from '../../src/shared/source-retrieval-guidance.js'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -75,7 +76,7 @@ function decodeHookPayload(projectDir: string, settingsJson: string): string {
 
 function expectMarkdownRoutingTable(content: string): void {
   const normalized = content.replaceAll('\\"', '"')
-  expect(normalized).toContain('For each codebase question, use the specific Madar MCP tool below first:')
+  expect(normalized).toContain('When using Madar, choose the focused MCP tool below:')
   expect(normalized).toContain('| Prompt type')
   expect(normalized).toContain('| "how does X work" / explain runtime / flow')
   expect(normalized).toContain('| "what breaks if I change X" / impact analysis')
@@ -84,26 +85,26 @@ function expectMarkdownRoutingTable(content: string): void {
   expect(normalized).toContain('`retrieve`')
   expect(normalized).toContain('`impact`')
   expect(normalized).toContain('`graph_summary`')
-  expect(normalized).toContain('Do not run ToolSearch before calling a Madar tool')
-  expect(normalized).toContain('Treat `evidence.answerability.state` as authoritative; `evidence.pack_confidence` is compatibility-only.')
-  expect(normalized).toContain('For `verify_targets`, inspect only the listed verification targets. Restart broad search only for `insufficient` with `broad_search_fallback: allowed`.')
+  expect(normalized).toContain(SOURCE_RETRIEVAL_DISCOVERY)
+  expect(normalized).toContain('Treat `evidence.answerability` as advisory retrieval coverage; verify claims against source.')
+  expect(normalized).toContain('Use listed targets as starting points. Refine the query or inspect other source when evidence is missing; respect explicit source-access policy blocks.')
 }
 
 function expectPlainRoutingGuide(content: string): void {
   const normalized = content.replaceAll('\\"', '"')
-  expect(normalized).toContain('For each codebase question, call the matching Madar MCP tool directly first')
+  expect(normalized).toContain('When using Madar, choose the matching MCP tool')
   expect(normalized).toContain('retrieve for "how does X work?" / explain runtime / flow')
   expect(normalized).toContain('impact for "what breaks if I change X?" / impact analysis')
   expect(normalized).toContain('retrieve for "which files should I open first?"')
   expect(normalized).toContain('graph_summary for "give me a repo overview?"')
-  expect(normalized).toContain('Do not run ToolSearch before calling a Madar tool')
-  expect(normalized).toContain('Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.')
-  expect(normalized).toContain('For verify_targets, inspect only the listed verification targets. Restart broad search only for insufficient with broad_search_fallback allowed.')
+  expect(normalized).toContain(SOURCE_RETRIEVAL_DISCOVERY)
+  expect(normalized).toContain('Treat evidence.answerability as advisory retrieval coverage; verify claims against source.')
+  expect(normalized).toContain('Use listed targets as starting points. Refine the query or inspect other source when evidence is missing; respect explicit source-access policy blocks.')
 }
 
 function expectMarkdownPackRoutingTable(content: string): void {
   const normalized = content.replaceAll('\\"', '"')
-  expect(normalized).toContain('For each codebase question, start with the specific Madar command below first:')
+  expect(normalized).toContain('When using Madar, choose the focused command below:')
   expect(normalized).toContain('| Prompt type')
   expect(normalized).toContain('| "how does X work" / explain runtime / flow')
   expect(normalized).toContain('| "what breaks if I change X" / impact analysis')
@@ -115,31 +116,31 @@ function expectMarkdownPackRoutingTable(content: string): void {
   expect(normalized).toContain('`graph_summary` when MCP graph tools are available')
   expect(normalized).not.toContain('`retrieve` for direct codebase questions')
   expect(normalized).not.toContain('`impact` for blast radius')
-  expect(normalized).toContain('Do not run ToolSearch before calling a Madar command or graph tool')
-  expect(normalized).toContain('Treat `evidence.answerability.state` as authoritative; `evidence.pack_confidence` is compatibility-only.')
-  expect(normalized).toContain('For `verify_targets`, inspect only the listed verification targets. Restart broad search only for `insufficient` with `broad_search_fallback: allowed`.')
+  expect(normalized).toContain(SOURCE_RETRIEVAL_DISCOVERY)
+  expect(normalized).toContain('Treat `evidence.answerability` as advisory retrieval coverage; verify claims against source.')
+  expect(normalized).toContain('Use listed targets as starting points. Refine the query or inspect other source when evidence is missing; respect explicit source-access policy blocks.')
 }
 
 function expectPlainPackRoutingGuide(content: string): void {
   const normalized = content.replaceAll('\\"', '"')
-  expect(normalized).toContain('For each codebase question, start with the specific Madar command below first')
+  expect(normalized).toContain('When using Madar, choose the focused command below')
   expect(normalized).toContain('madar pack "<task or question>" --task explain for "how does X work?" / explain runtime / flow')
   expect(normalized).toContain('madar pack "<task or question>" --task impact for "what breaks if I change X?" / impact analysis')
   expect(normalized).toContain('retrieve when MCP graph tools are available; otherwise madar pack "<task or question>" --task explain for "which files should I open first?"')
   expect(normalized).toContain('graph_summary when MCP graph tools are available; otherwise madar pack "<task or question>" --task explain for "give me a repo overview?"')
-  expect(normalized).toContain('Do not run ToolSearch before calling a Madar command or graph tool')
-  expect(normalized).toContain('Treat evidence.answerability.state as authoritative; evidence.pack_confidence is compatibility-only.')
-  expect(normalized).toContain('For verify_targets, inspect only the listed verification targets. Restart broad search only for insufficient with broad_search_fallback allowed.')
+  expect(normalized).toContain(SOURCE_RETRIEVAL_DISCOVERY)
+  expect(normalized).toContain('Treat evidence.answerability as advisory retrieval coverage; verify claims against source.')
+  expect(normalized).toContain('Use listed targets as starting points. Refine the query or inspect other source when evidence is missing; respect explicit source-access policy blocks.')
 }
 
 function expectPlainStrictPackGuidance(content: string): void {
   const normalized = content.replaceAll('\\"', '"')
-  expect(normalized).toContain('call context_pack exactly once per user task')
-  expect(normalized).toContain('copy the entire user codebase request byte-for-byte into prompt, including read-only, no-change, scope, and formatting constraints')
+  expect(normalized).toContain('targets: [{file, symbol}]')
+  expect(normalized).toContain('For experimental discovery, ask a focused source question.')
   expect(normalized).toContain('Strict MCP exposes only context_pack and context_expand')
   expect(normalized).toContain('use task=impact or task=review on the first pack instead of graph-navigation tools')
-  expect(normalized).toContain('For verify_targets, use context_expand once only with a listed verification handle and treat the result as terminal')
-  expect(normalized).toContain('do not expand ready or ready_with_caveat packs')
+  expect(normalized).toContain('Use context_expand with a returned handle whenever source evidence is missing')
+  expect(normalized).toContain('focused follow-up queries remain available')
 }
 
 describe('install hook payload', () => {
@@ -148,7 +149,7 @@ describe('install hook payload', () => {
       claudeInstall(projectDir)
       const settings = readFileSync(join(projectDir, '.claude', 'settings.json'), 'utf8')
       const decoded = decodeHookPayload(projectDir, settings)
-      expect(decoded).toContain('Use the graph result as the first bounded pass')
+      expect(decoded).not.toContain('Use the graph result as the first bounded pass')
       expect(decoded.toLowerCase()).not.toContain('3x fewer turns')
     })
   })
@@ -186,37 +187,57 @@ describe('install hook payload', () => {
     })
   })
 
-  it('decoded Codex hook payload includes context-pack-first guidance', () => {
+  it('decoded Codex hook payload includes optional source-retrieval guidance', () => {
     withTempDir((projectDir) => {
       agentsInstall(projectDir, 'codex')
       const settings = readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8')
       const decoded = decodeHookPayload(projectDir, settings)
-      expect(decoded).toContain('context-pack-first')
+      expect(decoded).toContain(SOURCE_RETRIEVAL_ADMISSION)
+      expect(decoded).not.toContain('context-pack-first')
       expect(decoded).toContain('madar pack')
-      expect(decoded).toContain('use Madar tools only')
       expectPlainStrictPackGuidance(decoded)
     })
   })
 })
 
 describe('built-in install templates', () => {
+  it('keeps source investigation available after advisory retrieval in generated profiles', () => {
+    withTempDir((projectDir) => {
+      agentsInstall(projectDir, 'codex')
+      const profile = readFileSync(join(projectDir, 'AGENTS.md'), 'utf8')
+      const hook = decodeHookPayload(projectDir, readFileSync(join(projectDir, '.codex', 'hooks.json'), 'utf8'))
+      const skill = getBuiltInSkillContent('codex')
+      for (const content of [profile, hook, skill]) {
+        expect(content).not.toMatch(/as authoritative|exactly once per user task|byte-for-byte|are terminal|result as terminal|use Madar tools only|Before broad shell search, raw file reads/)
+        expect(content).toMatch(/focused.*(?:question|query)/i)
+        expect(content).toMatch(/source.*(?:reads|code)|inspect additional/i)
+        expect(content).toContain('source-access policy blocks')
+        expect(content).toContain(SOURCE_RETRIEVAL_ADMISSION)
+        expect(content.split(SOURCE_RETRIEVAL_DISCOVERY)).toHaveLength(2)
+        expect(content).not.toContain('Do not run ToolSearch')
+        expect(content).not.toContain('context-pack-first')
+      }
+      expect(skill).toContain(SOURCE_RETRIEVAL_ADMISSION)
+    })
+  })
+
   it('documents the Codex profile, limitations, manual verification, and uninstall path', () => {
     const content = getBuiltInSkillContent('codex')
 
     expect(content).toContain('Codex CLI profile')
-    expect(content).toContain('context-pack-first')
+    expect(content).toContain(SOURCE_RETRIEVAL_ADMISSION)
     expect(content).toContain('madar pack')
-    expect(content).toContain('Pass the entire user\'s codebase request byte-for-byte as the pack question, including read-only, no-change, scope, and formatting constraints.')
-    expect(content).toContain('`evidence.answerability.state` as authoritative')
-    expect(content).toContain('Do not run broad `Glob` patterns, repo-wide `grep` / `find` searches, or raw file sweeps for `ready`, `ready_with_caveat`, or `verify_targets`.')
-    expect(content).toContain('For read-only `explain` tasks, `ready` and `ready_with_caveat` are terminal')
-    expect(content).toContain('Do not call another MCP or restart broad exploration unless `evidence.answerability.broad_search_fallback` is `allowed`')
-    expect(content).toContain('defer to Madar\'s answerability and exact verification targets')
+    expect(content).toContain('Ask a focused source question with relevant identifiers, literals, paths, and scope constraints.')
+    expect(content).toContain('`evidence.answerability` as advisory retrieval coverage')
+    expect(content).toContain('Prefer focused investigation and avoid repeating evidence already available.')
+    expect(content).toContain('Inspect additional source when conditions, dependencies, or failure paths are missing.')
+    expect(content).toContain('another focused `context_pack` question, or scoped source reads')
+    expect(content).toContain('Follow the user scope and applicable verification requirements.')
     expect(content).toContain('`ready`')
     expect(content).toContain('`ready_with_caveat`')
     expect(content).toContain('`verify_targets`')
     expect(content).toContain('`insufficient`')
-    expect(content).toContain('bounded cumulative recovery')
+    expect(content).toContain('Respect explicit source-access policy blocks.')
     expect(content).toContain('Do not open `out/GRAPH_REPORT.md` unless the context pack or graph tools are unavailable, stale, or insufficient.')
     expect(content).not.toContain('If manual expansion is still required, read `out/GRAPH_REPORT.md` first.')
     expect(content).toContain('madar codex install')

@@ -13,6 +13,7 @@ import {
   hasManagedClaudePromptHookScript,
   hasManagedCodexPromptHookScript,
   isCurrentMadarClaudePromptHook,
+  isCurrentMadarAgentInstructions,
   isMadarProjectHook,
   isMadarCodexMcpConfig,
   isMadarCodexLegacyHook,
@@ -110,26 +111,6 @@ const OUT_PATH_SEGMENT_PATTERN = /(^|[^a-z0-9_])out(?:[\\/]|[^a-z0-9_]|$)/i
 const AIDER_SKILL_PATH = '.aider/madar/SKILL.md'
 const CODEX_SKILL_PATH = '.agents/skills/madar/SKILL.md'
 const OPENCODE_SKILL_PATH = '.config/opencode/skills/madar/SKILL.md'
-const AIDER_INSTRUCTION_SNIPPETS = [
-  '### Aider profile',
-  'Use a strict context-pack-first workflow',
-  'Before broad code search or manual file expansion',
-  'madar pack "<task or question>" --task explain',
-]
-const CODEX_INSTRUCTION_SNIPPETS = [
-  '### Codex CLI profile',
-  'Use a strict context-pack-first workflow',
-  'First decide whether the task needs local repository source-code context',
-  'madar pack "<task or question>" --task explain',
-  'Do not dispatch `spawn_agent` workers first',
-]
-const OPENCODE_INSTRUCTION_SNIPPETS = [
-  '### OpenCode profile',
-  'Use a strict context-pack-first workflow',
-  'Before broad code search, bash-heavy exploration, or worker dispatch',
-  'madar pack "<task or question>" --task explain',
-  'Install artifacts:',
-]
 
 export interface DoctorCommandOptions {
   graphPath?: string
@@ -186,11 +167,6 @@ function readText(filePath: string): string | null {
     return null
   }
   return readFileSync(filePath, 'utf8')
-}
-
-function fileContainsSnippets(filePath: string, snippets: readonly string[]): boolean {
-  const content = readText(filePath)
-  return content !== null && snippets.every((snippet) => content.includes(snippet))
 }
 
 function findHookEntry(settingsPath: string, hookName: 'PreToolUse' | 'BeforeTool'): boolean {
@@ -612,15 +588,16 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   const copilotMcpConfigured = copilotMcp.status === 'ok'
 
   const agentsPath = resolve(projectDir, 'AGENTS.md')
+  const agentInstructions = readText(agentsPath) ?? ''
   const aiderSkillConfigured = existsSync(resolve(projectDir, AIDER_SKILL_PATH))
-  const aiderInstructionsConfigured = fileContainsSnippets(agentsPath, AIDER_INSTRUCTION_SNIPPETS)
+  const aiderInstructionsConfigured = isCurrentMadarAgentInstructions(agentInstructions, 'aider')
   const aiderStatus = optionalAgentStatus(
     [aiderSkillConfigured, aiderInstructionsConfigured],
     [aiderInstructionsConfigured],
   )
 
   const codexSkillConfigured = existsSync(resolve(projectDir, CODEX_SKILL_PATH))
-  const codexInstructionsConfigured = fileContainsSnippets(agentsPath, CODEX_INSTRUCTION_SNIPPETS)
+  const codexInstructionsConfigured = isCurrentMadarAgentInstructions(agentInstructions, 'codex')
   const codexPromptHookScriptPath = resolve(projectDir, CODEX_PROMPT_HOOK_SCRIPT_RELATIVE_PATH)
   const codexHookConfigured =
     hasManagedCodexPromptHookScript(codexPromptHookScriptPath)
@@ -632,7 +609,7 @@ export function buildDoctorReport(options: DoctorCommandOptions = {}): DoctorRep
   )
 
   const opencodeSkillConfigured = existsSync(resolve(projectDir, OPENCODE_SKILL_PATH))
-  const opencodeInstructionsConfigured = fileContainsSnippets(agentsPath, OPENCODE_INSTRUCTION_SNIPPETS)
+  const opencodeInstructionsConfigured = isCurrentMadarAgentInstructions(agentInstructions, 'opencode')
   const opencodePluginFileConfigured = existsSync(resolve(projectDir, OPENCODE_PLUGIN_RELATIVE_PATH))
   const opencodeConfigPath = resolveOpencodeConfigPath(projectDir)
   const opencodeConfig = existsSync(opencodeConfigPath)

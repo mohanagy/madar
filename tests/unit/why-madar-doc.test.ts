@@ -53,14 +53,16 @@ describe('public marketing copy honesty', () => {
       })
     }
 
-    it('leads with an agent-first landing page while keeping local-graph claims honest', () => {
+    it('leads with precise source lookup while keeping whole-task claims honest', () => {
       expect(lower).toContain('claude code')
       expect(lower).toContain('cursor')
       expect(lower).toContain('codex')
       expect(lower).toContain('copilot')
-      expect(lower).toContain('repo context it needs before it starts searching')
+      expect(lower).toContain('retrieve specific source code')
+      expect(lower).toContain('consistent whole-task accuracy and token savings have not been established')
+      expect(lower).toContain('use direct source reads when they are sufficient')
       expect(lower).toContain('local graph')
-      expect(lower).toContain('task-aware context pack')
+      expect(lower).toContain('broad context discovery and workflow packs are experimental')
       expect(lower).not.toContain('context plane')
       expect(lower).not.toContain('context compiler')
       expect(lower).not.toMatch(/5\.28x|5\.28×|2\.21x|2\.21×|1\.58x|1\.58×|69\.9%/i)
@@ -196,9 +198,9 @@ describe('public marketing copy honesty', () => {
 
     it('frames fit and limitations directly in the shorter README', () => {
       expect(lower).toContain('## where madar fits')
-      expect(lower).toContain('most useful when')
-      expect(lower).toContain('your repository is medium or large')
-      expect(lower).toContain('token usage, latency, or local repo privacy matter')
+      expect(lower).toContain('consider precise source lookup when')
+      expect(lower).toContain('you know the javascript or typescript file and function')
+      expect(lower).toContain('architecture, review, and impact discovery remain experimental')
       expect(lower).toContain('it helps less when')
       expect(lower).toContain('the repository is small')
     })

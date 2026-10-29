@@ -16,7 +16,7 @@ import type { TaskIntentKind } from '../contracts/task-intent.js'
 import { godNodes, workspaceBridges } from '../pipeline/analyze.js'
 import { communitiesFromGraph } from './serve.js'
 import { buildCommunityLabels } from '../pipeline/community-naming.js'
-import { analyzeImpact, type ImpactResult } from './impact.js'
+import { analyzeImpact, type ImpactResult, type ImpactTraversal } from './impact.js'
 import { estimateQueryTokens } from './serve.js'
 import {
   classifyTaskContract,
@@ -99,10 +99,20 @@ export interface PrImpactResult {
   seed_nodes: PrImpactSeedNode[]
   per_node_impact: Array<{
     node: string
+    node_id?: string
+    source_file?: string
     direct_dependents: number
     transitive_dependents: number
     affected_communities: number
+    traversal?: ImpactTraversal
   }>
+  /** Present for partial or unperformed analyses; partial counts make blast radius a lower bound. */
+  impact_traversal?: {
+    analyzed_targets: number
+    partial_targets: number
+    depth_limited_targets: number
+    node_limited_targets: number
+  }
   total_blast_radius: number
   affected_files: string[]
   affected_communities: Array<{ id: number; label: string; node_count: number }>
@@ -117,8 +127,11 @@ export interface PrImpactResult {
     cross_community_changes: number
     top_risks: Array<{
       label: string
+      node_id?: string
+      source_file?: string
       severity: RiskSeverity
       reason: string
+      traversal?: ImpactTraversal
     }>
   }
   /**
@@ -149,20 +162,27 @@ export interface PrImpactResult {
    * or god node), 'high' (regular high-impact), or 'medium' (any other
    * uncovered changed node).
    */
-  uncovered_hotspot_severities: Array<{ label: string; severity: 'critical' | 'high' | 'medium' }>
+  uncovered_hotspot_severities: Array<{ label: string; node_id?: string; source_file?: string; severity: 'critical' | 'high' | 'medium' }>
   /**
-   * #79 (v0.16 refinement) — labels among the high-impact set that are
-   * bridge / god nodes. Used by `compactPrImpactResult` so it can
-   * recompute the weighted coverage score against the compacted review
-   * bundle without re-deriving graph centrality.
+   * Legacy labels among the high-impact set that are bridge / god nodes.
+   * Compaction uses these for older results without coverage_identity.
    */
   critical_labels: string[]
+  /** Identity-based coverage; hotspot weights retain the existing label-derived graph heuristic. */
+  coverage_identity?: {
+    high_impact_node_ids: string[]
+    critical_node_ids: string[]
+    weighting: 'label-derived-hotspots'
+  }
 }
 
 export interface CompactPrImpactNodeImpact {
   node: string
+  node_id?: string
+  source_file?: string
   total_dependents: number
   affected_communities: number
+  traversal?: ImpactTraversal
 }
 
 export interface CompactPrReviewNode extends Omit<CompactRetrieveMatchedNode, 'node_id' | 'match_score'> {
@@ -193,6 +213,8 @@ export interface CompactPrImpactResult extends Pick<
   | 'uncovered_hotspots'
   | 'coverage_score_weighted'
   | 'uncovered_hotspot_severities'
+  | 'coverage_identity'
+  | 'impact_traversal'
 > {
   per_node_impact: CompactPrImpactNodeImpact[]
   review_bundle: CompactPrReviewBundle
@@ -201,6 +223,42 @@ export interface CompactPrImpactResult extends Pick<
 function stripReviewRelationshipIdentity(relationship: RetrieveRelationship): CompactPrReviewRelationship {
   const { from_id: _fromId, to_id: _toId, ...rest } = relationship
   return rest
+}
+
+function highImpactCoverage(
+  changedNodes: readonly ChangedNode[],
+  reviewNodes: readonly { node_id?: string; label: string }[],
+  highImpactLabels: readonly string[],
+  criticalLabels: readonly string[],
+  identity?: PrImpactResult['coverage_identity'],
+): Pick<PrImpactResult, 'coverage_score' | 'uncovered_hotspots' | 'coverage_score_weighted' | 'uncovered_hotspot_severities'> {
+  // Older stored results lack identity metadata and retain their label-based contract.
+  const highImpact = new Set(identity?.high_impact_node_ids ?? highImpactLabels)
+  const critical = new Set(identity?.critical_node_ids ?? criticalLabels)
+  const covered = new Set(reviewNodes.flatMap(node => identity ? (node.node_id ? [node.node_id] : []) : [node.label]))
+  const key = (node: ChangedNode): string => identity ? node.node_id : node.label
+  let coveredCount = 0
+  let totalWeight = 0
+  let coveredWeight = 0
+  for (const id of highImpact) {
+    const weight = critical.has(id) ? 3 : 1
+    totalWeight += weight
+    if (covered.has(id)) {
+      coveredCount += 1
+      coveredWeight += weight
+    }
+  }
+  const uncovered = changedNodes.filter(node => highImpact.has(key(node)) && !covered.has(key(node)))
+  return {
+    coverage_score: highImpact.size === 0 ? 1 : coveredCount / highImpact.size,
+    uncovered_hotspots: uncovered,
+    coverage_score_weighted: totalWeight === 0 ? 1 : coveredWeight / totalWeight,
+    uncovered_hotspot_severities: uncovered.map(node => ({
+      label: node.label,
+      ...(identity ? { node_id: node.node_id, source_file: node.source_file } : {}),
+      severity: critical.has(key(node)) ? 'critical' : 'high',
+    })),
+  }
 }
 
 function reviewEvidenceClassForCandidateKind(candidateKind: 'seed' | 'first_hop' | 'second_hop' | undefined): ContextPackEvidenceClass {
@@ -263,7 +321,13 @@ function compactReviewBundle(
     seed_labels: seedNodes.map((node) => node.label),
     max_supporting_nodes: MAX_COMPACT_REVIEW_SUPPORT_NODES,
   })
-  const compactNodes = compactPack.nodes.map(({ evidence_class: _evidenceClass, ...node }) => node as CompactPrReviewNode)
+  // Selection rationale is a verbose diagnostic. Keep the typed representation,
+  // derived-source marker and source evidence in compact review responses.
+  const compactNodes = compactPack.nodes.map(({
+    evidence_class: _evidenceClass,
+    representation_reason: _representationReason,
+    ...node
+  }) => node as CompactPrReviewNode)
   const compactNodePayload = typeof compactPack.shared_file_type === 'string'
     ? { shared_file_type: compactPack.shared_file_type, nodes: compactNodes }
     : compactNodes
@@ -1029,6 +1093,7 @@ export function analyzePrImpact(
       changed_nodes: [],
       seed_nodes: [],
       per_node_impact: [],
+      impact_traversal: { analyzed_targets: 0, partial_targets: 0, depth_limited_targets: 0, node_limited_targets: 0 },
       total_blast_radius: 0,
       affected_files: [],
       affected_communities: [],
@@ -1054,6 +1119,7 @@ export function analyzePrImpact(
       coverage_score_weighted: 1,
       uncovered_hotspot_severities: [],
       critical_labels: [],
+      coverage_identity: { high_impact_node_ids: [], critical_node_ids: [], weighting: 'label-derived-hotspots' },
     }
   }
 
@@ -1078,12 +1144,12 @@ export function analyzePrImpact(
   const bridgeSet = new Set(workspaceBridges(graph, communities, communityLabels, 20).map((bridge) => bridge.label))
   const godSet = new Set(godNodes(graph, 20).map((node) => node.label))
 
-  // Deduplicate by label for impact analysis — skip file-level nodes (e.g. "main.ts")
+  // Preserve distinct source owners with the same label; skip file-level nodes.
   const isFileNode = (label: string) => /\.\w{1,5}$/.test(label)
   const impactTargets = seedNodes.length > 0 ? seedNodes : changedNodes.map((node) => node.serialized)
   const uniqueImpactTargets = [...impactTargets.reduce((targets, node) => {
-    if (!isFileNode(node.label) && !targets.has(node.label)) {
-      targets.set(node.label, node)
+    if (!isFileNode(node.label) && !targets.has(node.node_id)) {
+      targets.set(node.node_id, node)
     }
     return targets
   }, new Map<string, (typeof impactTargets)[number]>()).values()]
@@ -1093,20 +1159,33 @@ export function analyzePrImpact(
   const allAffectedCommunities = new Map<number, string>()
   const allAffectedNodeIds = new Set<string>()
   const highImpactNodes: string[] = []
+  const highImpactNodeIds: string[] = []
   const rankedRisks = []
+  const impactTraversal = { analyzed_targets: 0, partial_targets: 0, depth_limited_targets: 0, node_limited_targets: 0 }
 
   for (const target of uniqueImpactTargets) {
     const label = target.label
     const impact: ImpactResult = analyzeImpact(graph, communityLabels, {
+      nodeId: target.node_id,
       label,
       depth: options.depth ?? 3,
     })
+    const partialTraversal = impact.traversal?.status !== 'complete' ? impact.traversal : undefined
+    impactTraversal.analyzed_targets += 1
+    if (partialTraversal) {
+      impactTraversal.partial_targets += 1
+      if (partialTraversal.status === 'depth_limited') impactTraversal.depth_limited_targets += 1
+      if (partialTraversal.status === 'node_limited') impactTraversal.node_limited_targets += 1
+    }
 
     perNodeImpact.push({
       node: label,
+      node_id: target.node_id,
+      source_file: target.source_file,
       direct_dependents: impact.direct_dependents.length,
       transitive_dependents: impact.transitive_dependents.length,
       affected_communities: impact.affected_communities.length,
+      ...(partialTraversal ? { traversal: partialTraversal } : {}),
     })
 
     for (const file of impact.affected_files) {
@@ -1118,11 +1197,12 @@ export function analyzePrImpact(
     }
 
     for (const dep of [...impact.direct_dependents, ...impact.transitive_dependents]) {
-      allAffectedNodeIds.add(dep.label)
+      allAffectedNodeIds.add(dep.node_id)
     }
 
     if (impact.total_affected > 10) {
       highImpactNodes.push(label)
+      highImpactNodeIds.push(target.node_id)
     }
 
     const hotspotKinds = [
@@ -1130,68 +1210,35 @@ export function analyzePrImpact(
       ...(godSet.has(label) ? ['god node'] : []),
     ]
     const dependentCount = graph.hasNode(target.node_id) ? graph.predecessors(target.node_id).length : 0
-    rankedRisks.push(buildRankedRisk({
-      label,
-      totalAffected: impact.total_affected,
-      affectedFiles: impact.affected_files.map((file) => relativizeSourceFile(file, resolvedDir)),
-      affectedCommunities: impact.affected_communities.map((community) => community.label),
-      hotspotKinds,
-      dependentCount,
-    }))
+    rankedRisks.push({
+      ...buildRankedRisk({
+        label,
+        totalAffected: impact.total_affected,
+        affectedFiles: impact.affected_files.map((file) => relativizeSourceFile(file, resolvedDir)),
+        affectedCommunities: impact.affected_communities.map((community) => community.label),
+        hotspotKinds,
+        dependentCount,
+        ...(partialTraversal ? { traversal: partialTraversal } : {}),
+      }),
+      node_id: target.node_id,
+      source_file: target.source_file,
+    })
   }
 
   const changedCommunityIds = new Set(impactTargets.map((node) => node.community).filter((id): id is number => id !== null))
 
-  // #79 — coverage scoring. A high-impact changed node is "covered" when at
-  // least one node with the same label survives into review_bundle.nodes.
-  // Score is the ratio of covered high-impact nodes to total high-impact
-  // nodes, defaulting to 1.0 when there are no high-impact nodes (i.e., no
-  // coverage gap to score). Uncovered hotspots are the ChangedNode entries
-  // whose labels appear in high_impact_nodes but not in the review_bundle.
-  const reviewBundleLabels = new Set(reviewBundle.nodes.map((node) => node.label))
-  const highImpactLabelSet = new Set(highImpactNodes)
-  const totalHighImpact = highImpactLabelSet.size
-  let coveredHighImpact = 0
-  for (const label of highImpactLabelSet) {
-    if (reviewBundleLabels.has(label)) coveredHighImpact += 1
+  const criticalLabels = [...new Set(highImpactNodes)].filter(label => bridgeSet.has(label) || godSet.has(label))
+  const highImpactIds = new Set(highImpactNodeIds)
+  const coverageIdentity: NonNullable<PrImpactResult['coverage_identity']> = {
+    high_impact_node_ids: highImpactNodeIds,
+    critical_node_ids: uniqueImpactTargets
+      .filter(node => highImpactIds.has(node.node_id) && (bridgeSet.has(node.label) || godSet.has(node.label)))
+      .map(node => node.node_id),
+    weighting: 'label-derived-hotspots',
   }
-  const coverageScore = totalHighImpact === 0 ? 1 : coveredHighImpact / totalHighImpact
-  const uncoveredHotspots = changedNodes
-    .map((node) => node.serialized)
-    .filter((node) => highImpactLabelSet.has(node.label) && !reviewBundleLabels.has(node.label))
-
-  // #79 (v0.16) — weighted coverage score: bridge / god nodes count 3x.
-  // Total weight = Σ weight(hotspot); covered weight = same sum but only
-  // over labels that survive into the review_bundle. Default 1.0 when
-  // there are no high-impact hotspots (vacuously full coverage).
-  const CRITICAL_HOTSPOT_WEIGHT = 3
-  const REGULAR_HOTSPOT_WEIGHT = 1
-  const labelWeight = (label: string): number =>
-    (bridgeSet.has(label) || godSet.has(label)) ? CRITICAL_HOTSPOT_WEIGHT : REGULAR_HOTSPOT_WEIGHT
-  let totalWeight = 0
-  let coveredWeight = 0
-  for (const label of highImpactLabelSet) {
-    const weight = labelWeight(label)
-    totalWeight += weight
-    if (reviewBundleLabels.has(label)) coveredWeight += weight
-  }
-  const coverageScoreWeighted = totalWeight === 0 ? 1 : coveredWeight / totalWeight
-
-  // #79 (v0.16) — severity tiers on uncovered hotspots so reviewers can
-  // see at a glance which gaps need attention first.
-  // CodeRabbit nitpick fix: `uncoveredHotspots` is already pre-filtered
-  // to labels in `highImpactLabelSet`, so the 'medium' branch is
-  // unreachable. The full PrImpactResult.uncovered_hotspot_severities
-  // type still permits 'medium' for future expansion (e.g. non-high-
-  // impact changed nodes), but the construction here only produces
-  // 'critical' or 'high'.
-  const uncoveredHotspotSeverities: Array<{ label: string; severity: 'critical' | 'high' | 'medium' }> =
-    uncoveredHotspots.map((node) => {
-      const label = node.label
-      const severity: 'critical' | 'high' =
-        (bridgeSet.has(label) || godSet.has(label)) ? 'critical' : 'high'
-      return { label, severity }
-    })
+  const coverage = highImpactCoverage(
+    changedNodes.map(node => node.serialized), reviewBundle.nodes, highImpactNodes, criticalLabels, coverageIdentity,
+  )
 
   return {
     base_branch: baseBranch,
@@ -1203,6 +1250,7 @@ export function analyzePrImpact(
     changed_nodes: changedNodes.map((node) => node.serialized),
     seed_nodes: seedNodes,
     per_node_impact: perNodeImpact.sort((a, b) => (b.direct_dependents + b.transitive_dependents) - (a.direct_dependents + a.transitive_dependents)),
+    ...(impactTraversal.partial_targets > 0 || impactTraversal.analyzed_targets === 0 ? { impact_traversal: impactTraversal } : {}),
     total_blast_radius: allAffectedNodeIds.size,
     affected_files: [...allAffectedFiles].sort(),
     affected_communities: [...allAffectedCommunities.entries()]
@@ -1217,13 +1265,11 @@ export function analyzePrImpact(
         .filter((risk) => risk.score > 0)
         .sort(compareRankedRisks)
         .slice(0, MAX_TOP_REVIEW_RISKS)
-        .map(({ label, severity, reason }) => ({ label, severity, reason })),
+        .map(({ label, node_id, source_file, severity, reason, traversal }) => ({ label, node_id, source_file, severity, reason, ...(traversal ? { traversal } : {}) })),
     },
-    coverage_score: coverageScore,
-    uncovered_hotspots: uncoveredHotspots,
-    coverage_score_weighted: coverageScoreWeighted,
-    uncovered_hotspot_severities: uncoveredHotspotSeverities,
-    critical_labels: [...highImpactLabelSet].filter((label) => bridgeSet.has(label) || godSet.has(label)),
+    ...coverage,
+    critical_labels: criticalLabels,
+    coverage_identity: coverageIdentity,
   }
 }
 
@@ -1249,42 +1295,10 @@ export function compactPrImpactResult(result: PrImpactResult): CompactPrImpactRe
   // covered. This is the fix for the CodeRabbit follow-up to #79: claims
   // about coverage have to match what the consumer actually sees.
   const compactedReviewBundle = compactReviewBundle(result.review_bundle, result.seed_nodes)
-  const compactedReviewLabels = new Set(compactedReviewBundle.nodes.map((node) => node.label))
-  const compactHighImpactSet = new Set(result.risk_summary.high_impact_nodes)
-  const compactTotalHighImpact = compactHighImpactSet.size
-  let compactCoveredHighImpact = 0
-  for (const label of compactHighImpactSet) {
-    if (compactedReviewLabels.has(label)) compactCoveredHighImpact += 1
-  }
-  const compactCoverageScore = compactTotalHighImpact === 0
-    ? 1
-    : compactCoveredHighImpact / compactTotalHighImpact
-  const compactUncoveredHotspots = result.changed_nodes
-    .filter((node) => compactHighImpactSet.has(node.label) && !compactedReviewLabels.has(node.label))
-
-  // #79 (v0.16) — recompute weighted score + severities against the
-  // post-compaction review bundle, reusing critical_labels from the
-  // full result (centrality is graph-derived and doesn't change under
-  // compaction).
-  const criticalSet = new Set(result.critical_labels)
-  let compactTotalWeight = 0
-  let compactCoveredWeight = 0
-  for (const label of compactHighImpactSet) {
-    const weight = criticalSet.has(label) ? 3 : 1
-    compactTotalWeight += weight
-    if (compactedReviewLabels.has(label)) compactCoveredWeight += weight
-  }
-  const compactCoverageScoreWeighted = compactTotalWeight === 0
-    ? 1
-    : compactCoveredWeight / compactTotalWeight
-  const compactUncoveredHotspotSeverities: Array<{ label: string; severity: 'critical' | 'high' | 'medium' }> =
-    compactUncoveredHotspots.map((node) => {
-      const label = node.label
-      let severity: 'critical' | 'high' | 'medium' = 'medium'
-      if (criticalSet.has(label)) severity = 'critical'
-      else if (compactHighImpactSet.has(label)) severity = 'high'
-      return { label, severity }
-    })
+  const coverage = highImpactCoverage(
+    result.changed_nodes, compactedReviewBundle.nodes, result.risk_summary.high_impact_nodes,
+    result.critical_labels, result.coverage_identity,
+  )
 
   return {
     base_branch: result.base_branch,
@@ -1295,9 +1309,13 @@ export function compactPrImpactResult(result: PrImpactResult): CompactPrImpactRe
       .slice(0, MAX_COMPACT_PER_NODE_IMPACT)
       .map((impact) => ({
         node: impact.node,
+        ...(impact.node_id ? { node_id: impact.node_id } : {}),
+        ...(impact.source_file !== undefined ? { source_file: impact.source_file } : {}),
         total_dependents: impact.direct_dependents + impact.transitive_dependents,
         affected_communities: impact.affected_communities,
+        ...(impact.traversal ? { traversal: impact.traversal } : {}),
       })),
+    ...(result.impact_traversal ? { impact_traversal: result.impact_traversal } : {}),
     total_blast_radius: result.total_blast_radius,
     affected_communities: result.affected_communities.slice(0, MAX_COMPACT_AFFECTED_COMMUNITIES),
     review_context: result.review_context,
@@ -1311,9 +1329,9 @@ export function compactPrImpactResult(result: PrImpactResult): CompactPrImpactRe
     // coverage that compactReviewBundle has dropped. A high-impact node
     // is "covered" only if it survived into compactedReviewBundle.nodes;
     // otherwise it shows up in compactUncoveredHotspots.
-    coverage_score: compactCoverageScore,
-    uncovered_hotspots: compactUncoveredHotspots,
-    coverage_score_weighted: compactCoverageScoreWeighted,
-    uncovered_hotspot_severities: compactUncoveredHotspotSeverities,
+    ...coverage,
+    ...(result.coverage_identity && result.coverage_identity.high_impact_node_ids.length > 0
+      ? { coverage_identity: result.coverage_identity }
+      : {}),
   }
 }

@@ -57,6 +57,7 @@ describe('task-intent', () => {
         'dead-code',
         'security-review',
         'performance-review',
+        'source-review',
       ])
 
       expect(TASK_INTENT_DEFINITIONS).toEqual(expect.arrayContaining([
