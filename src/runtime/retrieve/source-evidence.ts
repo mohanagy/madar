@@ -10,7 +10,7 @@ import { sensitiveArtifactReason } from '../../shared/discovery-safety.js'
 import { readBoundedSource, sourcePathsAllowedByCurrentPolicy } from '../../shared/source-access.js'
 import { lineRangeFromSourceLocation, type SourceLineRange } from '../../shared/source-location.js'
 import { tokenizeQuestion } from './pipeline.js'
-import { retrievalSearchPrompt } from '../retrieval-gate.js'
+import { retrievalEvidencePrompt, retrievalSearchPrompt } from '../retrieval-gate.js'
 
 const SOURCE_EXTENSIONS = new Set([...JS_TS_SOURCE_EXTENSIONS, '.py', '.go', '.rs', '.java', '.kt', '.kts', '.rb', '.php', '.c', '.cc', '.cpp', '.h', '.cs', '.swift', '.scala', '.sh', '.sql', '.vue', '.svelte'])
 const MAX_FILE_BYTES = 256 * 1024
@@ -638,13 +638,40 @@ export function coherentSourceSnippet(lines: readonly string[], range: SourceLin
   } else {
     const literals = sourceQueryLiterals(question)
     const terms = bodyTerms(question)
-    const focus = lines.slice(start - 1, end).map((text, index) => {
+    const hits = lines.slice(start - 1, end).map((text, index) => {
       const hit = lineMatch(text, literals, terms)
-      return { line: start + index, score: (hit.exact ? 100 : 0) + hit.terms.length }
-    }).sort((left, right) => right.score - left.score || left.line - right.line)[0]?.line ?? start
+      return { line: start + index, hit, score: (hit.exact ? 100 : 0) + hit.terms.length }
+    })
+    const focus = [...hits].sort((left, right) => right.score - left.score || left.line - right.line)[0]?.line ?? start
     for (let line = start; line <= Math.min(start + 3, end); line += 1) selected.add(line)
     for (let line = Math.max(start, focus - 12); line <= Math.min(end, focus + 20); line += 1) selected.add(line)
     selected.add(end)
+    // A strong line can locate one part of a large owner while hiding a
+    // separately requested branch. Preserve that first witness and add only
+    // one bounded window for query evidence it does not already contain.
+    if (scope === 'symbol' && !sourceQueryIsLiteralLookup(question)) {
+      const positive = retrievalEvidencePrompt(question)
+      const positiveLiterals = sourceQueryLiterals(positive)
+      const positiveTerms = bodyTerms(positive)
+      const positiveHits = hits.map(({ line }) => ({ line, hit: lineMatch(lines[line - 1] ?? '', positiveLiterals, positiveTerms) }))
+      const covered = positiveHits.filter(entry => selected.has(entry.line))
+      const coveredLiterals = new Set(covered.flatMap(entry => entry.hit.literals))
+      const coveredTerms = new Set(covered.flatMap(entry => entry.hit.terms))
+      const additional = positiveHits.map(entry => ({
+        line: entry.line,
+        score: entry.hit.literals.filter(literal => !coveredLiterals.has(literal)).length * 100
+          + entry.hit.terms.filter(term => !coveredTerms.has(term)).length,
+      })).filter(entry => entry.score > 0)
+        .sort((left, right) => right.score - left.score || left.line - right.line)[0]
+      if (additional) {
+        const expanded = new Set(selected)
+        for (let line = Math.max(start, additional.line - 12); line <= Math.min(end, additional.line + 20); line += 1) expanded.add(line)
+        // Optional source must not push an existing witness past the character
+        // limit; omit the whole addition if both windows cannot fit.
+        const chars = [...expanded].reduce((total, line) => total + (lines[line - 1]?.length ?? 0) + 1, 0)
+        if (chars <= MAX_EXCERPT_CHARS) for (const line of expanded) selected.add(line)
+      }
+    }
   }
   const retained: number[] = []
   let chars = 0

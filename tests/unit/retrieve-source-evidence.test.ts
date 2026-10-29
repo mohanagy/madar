@@ -354,6 +354,23 @@ describe('source evidence retrieval', () => {
     }
   })
 
+  it('does not use an excluded marker to select another excerpt, while preserving quoted source data', () => {
+    const { handler } = workspace()
+    const lines = ['export function largeHandler() {', ...Array.from({ length: 160 }, (_, i) => `  const value${i} = ${i};`), '}']
+    lines[20] = '  const primary = "PRIMARY_SIGNAL";'
+    lines[140] = '  const legacy = "LEGACY_MARKER";'
+    writeFileSync(handler, lines.join('\n'))
+    const snippet = (question: string) => readQueryEvidenceSnippet(handler, 1, {
+      question, label: 'largeHandler()', sourceLocation: `L1-L${lines.length}`,
+    })
+    const excluded = snippet('Explain "PRIMARY_SIGNAL" behavior; exclude "LEGACY_MARKER".')
+    expect(excluded?.snippet).toContain('const primary = "PRIMARY_SIGNAL"')
+    expect(excluded?.snippet).not.toContain('const legacy = "LEGACY_MARKER"')
+    const requested = snippet('Explain "PRIMARY_SIGNAL" and "LEGACY_MARKER" behavior.')
+    expect(requested?.snippet).toContain('const primary = "PRIMARY_SIGNAL"')
+    expect(requested?.snippet).toContain('const legacy = "LEGACY_MARKER"')
+  })
+
   it('selects separate executable clauses and lexical wiring without comment or nested-owner substitution', () => {
     const { root } = workspace()
     mkdirSync(join(root, 'lib'))
