@@ -92,8 +92,8 @@ import {
   type RetrievalStageObserver,
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
-import { coherentSourceSnippet, readEvidenceLines, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
-import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
+import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
+import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, sourceLocalPriorityKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
 import { recoverySourceGuard } from './retrieve/recovery-source-preservation.js'
 import { sourceQuerySymbols, type SourceSymbolOccurrence } from './retrieve/source-query-symbols.js'
 import { sourceQualifiedBindingScope } from './retrieve/source-qualified-bindings.js'
@@ -4874,7 +4874,16 @@ function sourceSelectionForTask(
       if (callers.length) scopedValueCallers = callers
     }
   }
-  const dependencies = selectSourceDependencies(graph, seeds.map(node => node.id), rootPath ?? inferredGraphRoot(graph), requestSourceCache(options), {
+  const independentBodyScope = independentBodyPriority && !operationAnchors.length && firstPosition === undefined && !requested.length
+    && !hasRequestedFiles && allowsIndependentBodyDiscovery(options, retrievalGate)
+  const independentIds = new Set(withRequested.map(node => node.id))
+  const independent = independentBodyScope ? lookupCandidates.filter(node => independentIds.has(node.id)
+    && independentSourceBodyCandidate(graph, node, options, rootPath)) : []
+  const localRoot = rootPath ?? inferredGraphRoot(graph)
+  const localExclusions = compileSourceExclusions(retrievalGate.signals.excluded_terms ?? [],
+    retrievalGate.signals.excluded_path_hints ?? [], localRoot)
+  const localLeader = !callerIntent && !broadTask && !explicitLevel ? independent[0] : undefined
+  const dependencies = selectSourceDependencies(graph, seeds.map(node => node.id), localRoot, requestSourceCache(options), {
     // A question scoped to named files needs their implementations and local
     // dependencies. Reverse callers enter only when the request asks for them.
     includeCallers: (!hasRequestedFiles && !operationAnchors.length) || callerIntent,
@@ -4886,6 +4895,13 @@ function sourceSelectionForTask(
       anchor_ids: anchors.map(node => node.id), heuristic_anchor_ids: firstPosition === undefined && (behaviorLocation || !fileTargets.length) ? anchors.map(node => node.id) : [],
     },
     ...(discoveryCore || scopedValueCallers ? { functionValueCallerIds: discoveryCore ?? scopedValueCallers! } : {}),
+    ...(localLeader && localRoot ? { localPriority: { seedId: localLeader.id,
+      allowedOwner: (file: string, label: string, text: string): boolean => {
+        const canonical = sourcePathForEvidence(file, localRoot)
+        return !!canonical && localExclusions.valid && !localExclusions.matchesText(text)
+          && [file, canonical].every(path => !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, localRoot) as never)
+            && !localExclusions.matchesSource(path, label, localRoot))
+      } } } : {}),
   })
   const qualifiedBindingScope = !exclusiveSymbolAnchor && !broadTask && !explicitLevel && !hasRequestedFiles
     && !callerIntent && options.taskIntent !== 'impact' && firstPosition !== undefined
@@ -4987,13 +5003,9 @@ function sourceSelectionForTask(
   let continuationCatalog: SourceCoherentContinuationCatalog | undefined
   // Literal discovery records recoverable owners, not an explicit callable
   // scope. It must not let a heuristic closure displace independent body matches.
-  if (independentBodyPriority && !operationAnchors.length && firstPosition === undefined && !requested.length
-    && !hasRequestedFiles && allowsIndependentBodyDiscovery(options, retrievalGate)) {
+  if (independentBodyScope) {
     // Source matches retain their query rank and original evidence class,
     // even when the same owner also appears in a heuristic call closure.
-    const eligibleIds = new Set(withRequested.map(node => node.id))
-    const independent = lookupCandidates.filter(node => eligibleIds.has(node.id)
-      && independentSourceBodyCandidate(graph, node, options, rootPath))
     const independentIds = new Set(independent.map(node => node.id))
     const routeRoot = rootPath ?? inferredGraphRoot(graph)
     const exclusions = compileSourceExclusions(retrievalGate.signals.excluded_terms ?? [],
@@ -5015,6 +5027,7 @@ function sourceSelectionForTask(
       && !exclusions.matchesText(text)
     sourcePriority = coherence?.priority ?? sourceCompositionPriority(independent, ordered, dependencies[sourceSelectionProvenanceKey],
       allowedPath, allowedOwner, routeRoot)
+    if (!sourcePriority.length) sourcePriority = dependencies[sourceLocalPriorityKey]
     if (coherence) {
       continuationCatalog = buildSourceCoherentContinuationCatalog(coherence.methods, ordered, question,
         dependencies[sourceSelectionProvenanceKey], id => byId.get(id)
