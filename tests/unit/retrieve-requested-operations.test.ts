@@ -155,7 +155,7 @@ describe('requested operation priority', () => {
       'Analyze the calls to WidgetMaker.mergeItems below.']) expect(sourceRequestedOperations(question)).toEqual([])
   })
 
-  it('abstains for unknown, competing, excluded or unverified prototype owners without changing graph authority', () => {
+  it('abstains for unknown or excluded queries and unsafe prototype mutations without changing graph authority', () => {
     const f = fixture(), before = JSON.stringify([f.graph.nodeEntries(), f.graph.edgeEntries()])
     expect(f.select()).toHaveLength(1)
     for (const question of [
@@ -174,14 +174,6 @@ describe('requested operation priority', () => {
     ]) {
       writeFileSync(f.file, base + '\n' + extra)
       expect(f.select()).toEqual([])
-    }
-    for (const extra of ['class OtherMaker { mergeItems() { return 1; } }',
-      'class OtherMaker { ["mergeItems"]() { return 1; } }',
-      'class OtherMaker { [key]() { return 1; } }',
-      'class OtherMaker { mergeItems = () => 1; }',
-      'function OtherMaker() {} OtherMaker.mergeItems = () => 1;']) {
-      const competing = fixture(base + '\n' + extra)
-      expect(competing.select('An OtherMaker exists. ' + prompt)).toEqual([])
     }
     writeFileSync(f.file, base)
     const shorthand = 'Explain the exact behavior of WidgetMaker.mergeItems in this checkout.'
@@ -206,13 +198,29 @@ describe('requested operation priority', () => {
     writeFileSync(f.file, base + '\nObject.defineProperty(WidgetMaker.prototype, "unrelated", { get() { return 0; } });')
     expect(f.select(shorthand)).toHaveLength(1)
     writeFileSync(f.file, base)
-    const duplicate = fixture(), duplicateMethod = duplicate.graph.nodeEntries().find(([, node]) => node.label === 'WidgetMaker.prototype.mergeItems()')!
-    duplicate.graph.addNode('duplicate-owner', duplicateMethod[1])
-    expect(duplicate.select()).toEqual([])
-    const stale = fixture(), method = stale.graph.nodeEntries().find(([, node]) => node.label === 'WidgetMaker.prototype.mergeItems()')!
-    stale.graph.addNode(method[0], { ...method[1], source_location: 'L1' })
-    expect(stale.select()).toEqual([])
     expect(JSON.stringify([f.graph.nodeEntries(), f.graph.edgeEntries()])).toBe(before)
     expect(readFileSync(f.file, 'utf8')).toBe(base)
+  })
+
+  it.each([
+    ['class method', 'class OtherMaker { mergeItems() { return 1; } }'],
+    ['computed class method', 'class OtherMaker { ["mergeItems"]() { return 1; } }'],
+    ['dynamic class method', 'class OtherMaker { [key]() { return 1; } }'],
+    ['class function property', 'class OtherMaker { mergeItems = () => 1; }'],
+    ['static function property', 'function OtherMaker() {} OtherMaker.mergeItems = () => 1;'],
+  ])('abstains for a competing %s without changing graph authority', (_kind, extra) => {
+    const competing = fixture(base + '\n' + extra)
+    const before = JSON.stringify([competing.graph.nodeEntries(), competing.graph.edgeEntries()])
+    expect(competing.select('An OtherMaker exists. ' + prompt)).toEqual([])
+    expect(JSON.stringify([competing.graph.nodeEntries(), competing.graph.edgeEntries()])).toBe(before)
+  })
+
+  it.each(['duplicate', 'stale'] as const)('abstains for an unverified %s indexed owner without changing graph authority', kind => {
+    const f = fixture(), method = f.graph.nodeEntries().find(([, node]) => node.label === 'WidgetMaker.prototype.mergeItems()')!
+    if (kind === 'duplicate') f.graph.addNode('duplicate-owner', method[1])
+    else f.graph.addNode(method[0], { ...method[1], source_location: 'L1' })
+    const before = JSON.stringify([f.graph.nodeEntries(), f.graph.edgeEntries()])
+    expect(f.select()).toEqual([])
+    expect(JSON.stringify([f.graph.nodeEntries(), f.graph.edgeEntries()])).toBe(before)
   })
 })

@@ -164,6 +164,7 @@ function firstExplicitSourcePage(owner: ExplicitSourceTargetOwner, context: Reco
     return undefined
   }
   let pageBudget = options.budget
+  let wrapperReserve = 0
   for (let attempt = 0; attempt < 3 && pageBudget >= MIN_SOURCE_EVIDENCE_BUDGET; attempt++) {
     const page = beginSourceContinuation({ node_id: owner.nodeId, label: owner.label,
       source_file: owner.sourceFile, range: { start_line: owner.range.start, end_line: owner.range.end },
@@ -187,8 +188,10 @@ function firstExplicitSourcePage(owner: ExplicitSourceTargetOwner, context: Reco
       throw new Error('Explicit source page token receipt did not stabilize')
     }
     if (count <= options.budget) return { payload, ...(page.child ? { child: page.child } : {}) }
-    // Price the actual wrapper; never enlarge the caller's budget or publish a failed trial child.
-    pageBudget -= count - options.budget
+    // Reserve the whole wrapper cost: subtracting only the excess can select
+    // the same source prefix on every retry. Failed trial children stay private.
+    wrapperReserve = Math.max(wrapperReserve, count - estimateQueryTokens(JSON.stringify(page.payload)))
+    pageBudget = Math.min(pageBudget - 1, options.budget - wrapperReserve)
   }
   return undefined
 }

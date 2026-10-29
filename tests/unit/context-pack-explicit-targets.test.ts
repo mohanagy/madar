@@ -10,6 +10,7 @@ import { readEvidenceLines, sourcePathForEvidence } from '../../src/runtime/retr
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { finalizeSourceEvidenceResponse } from '../../src/runtime/stdio/tools.js'
 import { buildExplicitSourceTargetPayload } from '../../src/runtime/explicit-source-targets.js'
+import { beginSourceContinuation } from '../../src/runtime/source-continuation.js'
 
 type RecordValue = Record<string, unknown>
 type Target = { file: string; symbol: string }
@@ -401,6 +402,43 @@ describe('strict context_pack explicit file and symbol targets', () => {
       else expect(((result.payload.evidence as RecordValue).answerability as RecordValue).missing_obligations)
         .toEqual(['Verify external adapter behavior.'])
     }
+  })
+
+  it('reserves the full lookup wrapper when a dense source prefix has less slack than that wrapper', () => {
+    const root = temporaryRoot(), sourceFile = 'records.ts'
+    const lines = ['export function processRecords(value: number) {',
+      ...Array.from({ length: 322 }, (_, line) => `  value += ${line + 1}; // record processing operation ${line + 1}`),
+      '  return value;', '}']
+    const snippet = lines.join('\n')
+    writeFileSync(join(root, sourceFile), snippet)
+    const owner = { node_id: 'process_records', label: 'processRecords', source_file: sourceFile,
+      range: { start_line: 1, end_line: lines.length }, snippet }
+    const origin = { task: 'explain', task_intent: 'explain',
+      evidence: { answerability: { state: 'insufficient', answer_scope: 'partial', advisory: true,
+        caveats: ['Explicit target lookup verifies only the requested source owners; it does not establish whole-task completeness.'] } },
+      governance: { graph_freshness: { status: 'fresh', selected_context_status: 'fresh' } } }
+    const prefix = beginSourceContinuation(owner, origin, 1500, root)
+    // Seven spare tokens keep this prefix affordable throughout the old three
+    // two-token reductions, but do not cover the nine-token lookup wrapper.
+    const budget = estimateQueryTokens(JSON.stringify(prefix.payload)) + 7
+    const result = buildExplicitSourceTargetPayload({ prompt: 'Explain record processing.', task: 'explain', budget,
+      rootPath: root, governance: origin.governance,
+      owners: [{ nodeId: owner.node_id, label: owner.label, sourceFile, range: { start: 1, end: lines.length }, snippet,
+        validate: () => expect(readEvidenceLines(sourceFile, root)?.join('\n')).toBe(snippet) }],
+      finalize: finalizeSourceEvidenceResponse })
+    const payload = result.payload as Payload
+    expect(payload.pack.matched_nodes).toHaveLength(1)
+    expect(payload.pack.selection_scope).toBe('symbol_lookup')
+    const node = payload.pack.matched_nodes[0]!
+    expect(node.source_expand_handle).toMatch(/^source-expand:/)
+    expect([...result.handles.keys()]).toEqual([node.source_expand_handle])
+    expect(payload.serialized_budget).toEqual({ max_tokens: budget,
+      token_count: estimateQueryTokens(JSON.stringify(payload)), enforced: true })
+    expect(payload.serialized_budget.token_count).toBeLessThanOrEqual(budget)
+    const delivered = new Map<string, Set<number>>()
+    recordDelivered(root, payload, [{ file: sourceFile, symbol: owner.label, lines, range: owner.range }], delivered)
+    expect(delivered.get(sourceFile)!.size).toBeGreaterThan(0)
+    expect(delivered.get(sourceFile)!.size).toBeLessThan(lines.length)
   })
 
   it('keeps all eight selected owners recoverable under a tight budget, follows pinned handles, and refuses an impossible budget explicitly', async () => {

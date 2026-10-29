@@ -104,11 +104,18 @@ describe('cross-layer flow retrieval', () => {
     expect(elapsedMs).toBeLessThan(750)
   })
 
-  it('returns the workflow evidence and verification limits through one context_pack MCP call', async () => {
+  it('returns graph-only workflow evidence and verification limits through one context_pack MCP call', async () => {
     const fixtureParent = resolve('out', 'test-runtime')
     mkdirSync(fixtureParent, { recursive: true })
     const root = mkdtempSync(join(fixtureParent, 'madar-cross-layer-mcp-'))
     const previousToolProfile = process.env.MADAR_TOOL_PROFILE
+    // The original fixture supplied graph excerpts without readable source.
+    // Keep source unavailable while real path and current-policy checks remain.
+    const readSource = sourceAccess.readBoundedSource
+    const reader = vi.spyOn(sourceAccess, 'readBoundedSource').mockImplementation((...args) => {
+      if (args[4] && args[1] === root) throw new Error('Fixture source content unavailable')
+      return readSource(...args)
+    })
     try {
       process.env.MADAR_TOOL_PROFILE = 'strict'
       const response = await Promise.resolve(handleStdioRequest(writeCrossLayerGraphFixture(root), {
@@ -173,6 +180,7 @@ describe('cross-layer flow retrieval', () => {
         agent_directive: 'explore_with_caution',
       })
     } finally {
+      reader.mockRestore()
       if (previousToolProfile === undefined) {
         delete process.env.MADAR_TOOL_PROFILE
       } else {
