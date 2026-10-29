@@ -1,9 +1,12 @@
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { buildFromJson } from '../../src/pipeline/build.js'
+import { extractJs } from '../../src/pipeline/extract.js'
 import { classifyTaskContract, compileContextPack, type ContextPackNodeCandidate } from '../../src/runtime/context-pack.js'
-import { sourceCoherencePriority } from '../../src/runtime/retrieve/source-coherence.js'
+import { sourceCoherencePriority, sourceCompositionPriority } from '../../src/runtime/retrieve/source-coherence.js'
+import { selectSourceDependencies, sourceSelectionProvenanceKey } from '../../src/runtime/retrieve/source-dependencies.js'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -34,6 +37,66 @@ function fixture(bridge = 'dispatch() { const first = this.first(); return this.
 }
 
 describe('bounded current source coherence', () => {
+  it('prioritizes only an admitted current composition caller with visible unambiguous proof', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'madar-source-composition-')))
+    roots.push(root)
+    writeFileSync(join(root, 'package.json'), '{"type":"module"}')
+    const partsFile = join(root, 'parts.ts'), compositionFile = join(root, 'composition.ts')
+    writeFileSync(partsFile, [
+      'export class Ledger { constructor(readonly limit: number) {} }',
+      'export class Sender { constructor(readonly ledger: Ledger) {} }',
+    ].join('\n'))
+    const source = [
+      'import { Ledger, Sender } from "./parts.js";',
+      'export class Dispatch {',
+      '  constructor(limit: number) {',
+      '    const ledger = new Ledger(limit);',
+      '    new Sender(ledger);',
+      '  }',
+      '}',
+    ].join('\n')
+    writeFileSync(compositionFile, source)
+    const extracted = [partsFile, compositionFile].map(file => extractJs(file))
+    const graph = buildFromJson({ schema_version: 1, nodes: extracted.flatMap(value => value.nodes),
+      edges: extracted.flatMap(value => value.edges) }, { directed: true })
+    graph.graph.root_path = root
+    const entries = graph.nodeEntries()
+    const leaders = ['Ledger', 'Sender'].map(label => entries.find(([, node]) => node.label === label)![0])
+    const caller = entries.find(([, node]) => node.label === '.constructor()' && resolve(String(node.source_file)) === compositionFile)![0]
+    const cache = new Map<string, string[] | null>()
+    const selected = selectSourceDependencies(graph, leaders, root, cache, { includeCallers: true })
+    const provenance = selected[sourceSelectionProvenanceKey]!
+    expect(selected.node_ids).toContain(caller)
+    const candidates = [...new Set([...leaders, ...selected.node_ids])].map(id => {
+      const node = graph.nodeAttributes(id)
+      return { id, label: String(node.label), sourceFile: String(node.source_file),
+        sourceLocation: typeof node.source_location === 'string' ? node.source_location : null }
+    })
+    const independent = candidates.filter(node => leaders.includes(node.id))
+    const allow = () => true
+    const before = JSON.stringify({ independent, candidates, provenance, edges: graph.edgeEntries() })
+    expect(sourceCompositionPriority(independent, candidates, provenance, allow, allow, root)).toEqual([...leaders, caller])
+
+    const ambiguous = structuredClone(provenance)
+    ambiguous.owners.find(owner => owner.node_id === caller)!.status = 'ambiguous'
+    const hiddenSite = structuredClone(provenance)
+    const site = hiddenSite.observed_sites!.find(value => value.from_id === caller && value.to_id === leaders[0])!
+    site.start_offset += 1 // The recorded span no longer identifies an actual visible call expression.
+    expect([
+      sourceCompositionPriority(independent, candidates, ambiguous, allow, allow, root),
+      sourceCompositionPriority(independent, candidates.filter(node => node.id !== caller), provenance, allow, allow, root),
+      sourceCompositionPriority(independent, candidates, hiddenSite, allow, allow, root),
+      sourceCompositionPriority(independent, candidates, provenance, file => resolve(file) !== compositionFile, allow, root),
+    ]).toEqual([[], [], [], []])
+    expect(JSON.stringify({ independent, candidates, provenance, edges: graph.edgeEntries() })).toBe(before)
+
+    // A populated resolver cache must not authenticate subsequently changed bytes,
+    // even when the path, line ranges and file length are unchanged.
+    expect(cache.get(compositionFile)?.join('\n')).toBe(source)
+    writeFileSync(compositionFile, source.replace('new Ledger(limit)', 'new Ledger(99999)'))
+    expect(sourceCompositionPriority(independent, candidates, provenance, allow, allow, root)).toEqual([])
+  })
+
   it('prioritizes existing same-class source without changing evidence classes or inventing call relationships', () => {
     const f = fixture()
     const independent = Object.freeze([f.first, f.next, f.unrelated])

@@ -99,7 +99,7 @@ import { sourceQuerySymbols, type SourceSymbolOccurrence } from './retrieve/sour
 import { sourceQualifiedBindingScope } from './retrieve/source-qualified-bindings.js'
 import { sourceVisibleWarnings } from './retrieve/source-visible-warnings.js'
 import { prioritizeNextRouteReferences } from './retrieve/source-route-references.js'
-import { sourceCoherenceGroup } from './retrieve/source-coherence.js'
+import { sourceCoherenceGroup, sourceCompositionPriority } from './retrieve/source-coherence.js'
 import { buildSourceCoherentContinuationCatalog, sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from './retrieve/source-coherent-continuation.js'
 import { selectRequestedHelperOwners } from './retrieve/source-requested-helpers.js'
 import { sourceRequestedOperations, sourceSimplePrototypeRequests, selectRequestedPrototypeOwners, selectVerifiedExplicitPrototypeOwners } from './retrieve/source-requested-operations.js'
@@ -5007,17 +5007,19 @@ function sourceSelectionForTask(
     ordered = [...referenced, ...ordered.filter(node => !independentIds.has(node.id))]
     const coherence = sourceCoherenceGroup(independent, ordered, dependencies[sourceSelectionProvenanceKey],
       routeRoot, requestSourceCache(options))
-    sourcePriority = coherence?.priority
+    const allowedPath = (file: string, canonical?: string): boolean => exclusions.valid
+      && [file, ...(canonical ? [canonical] : [])].every(path =>
+        !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, routeRoot) as never)
+        && !exclusions.matchesSource(path, path, routeRoot))
+    const allowedOwner = (file: string, label: string, text: string): boolean => !exclusions.matchesSource(file, label, routeRoot)
+      && !exclusions.matchesText(text)
+    sourcePriority = coherence?.priority ?? sourceCompositionPriority(independent, ordered, dependencies[sourceSelectionProvenanceKey],
+      allowedPath, allowedOwner, routeRoot)
     if (coherence) {
-      const allowedPath = (file: string, canonical?: string): boolean => exclusions.valid
-        && [file, ...(canonical ? [canonical] : [])].every(path =>
-          !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, routeRoot) as never)
-          && !exclusions.matchesSource(path, path, routeRoot))
       continuationCatalog = buildSourceCoherentContinuationCatalog(coherence.methods, ordered, question,
         dependencies[sourceSelectionProvenanceKey], id => byId.get(id)
           ?? (graph.hasNode(id) ? scoredNodeFromGraph(graph, id, 1, routeRoot) : undefined),
-        allowedPath, (file, label, text) => !exclusions.matchesSource(file, label, routeRoot)
-          && !exclusions.matchesText(text), routeRoot)
+        allowedPath, allowedOwner, routeRoot)
     }
   }
   return { candidates: ordered, scope: 'task_context', dependencies, ...(discoveryCore ? { discoveryCore } : {}),
