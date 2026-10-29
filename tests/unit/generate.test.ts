@@ -4517,12 +4517,13 @@ describe('generateGraph', () => {
       const options = { extractionMode: 'legacy' as const, noHtml: true, includeDocs: false }
       const shape = (graphPath: string, root: string) => {
         const graph = JSON.parse(readFileSync(graphPath, 'utf8'))
-        const clean = (value: unknown): unknown => Array.isArray(value) ? value.map(clean)
-          : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, clean(item)]))
-            : typeof value === 'string' && value.startsWith(root + '/') ? relative(root, value) : value
+        const clean = (value: unknown, key?: string): unknown => Array.isArray(value) ? value.map(item => clean(item))
+          : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, clean(item, key)]))
+            : key === 'source_file' && typeof value === 'string' && normalizeAssertionPath(value).startsWith(normalizeAssertionPath(root) + '/')
+              ? normalizeAssertionPath(relative(root, value)) : value
         const fields = ['id', 'label', 'source_file', 'source_location', 'file_type', 'node_kind', 'snippet', 'extraction_strategy']
         return { nodes: graph.nodes.map((node: Record<string, unknown>) => clean(Object.fromEntries(fields.filter(key => node[key] !== undefined).map(key => [key, node[key]])))).map((value: unknown) => JSON.stringify(value)).sort(),
-          edges: graph.links.map(clean).map((value: unknown) => JSON.stringify(value)).sort() }
+          edges: graph.links.map((value: unknown) => clean(value)).map((value: unknown) => JSON.stringify(value)).sort() }
       }
       const initial = generateGraph(incremental, options)
       expect(initial.edgeCount).toBe(5)
@@ -4839,14 +4840,21 @@ describe('generateGraph', () => {
       }
 
       expect(updatedGraphData.schema_version).toBe(2)
-      expect(updatedGraphData.nodes).toEqual(
+      const normalizedNodes = updatedGraphData.nodes.map(node => ({
+        ...node,
+        provenance: Array.isArray(node.provenance) ? node.provenance.map(entry => ({
+          ...entry,
+          ...(typeof entry.source_file === 'string' ? { source_file: normalizeAssertionPath(entry.source_file) } : {}),
+        })) : node.provenance,
+      }))
+      expect(normalizedNodes).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             label: 'helper()',
             layer: 'semantic',
             provenance: expect.arrayContaining([
               expect.objectContaining({ capability_id: 'test:seed-helper' }),
-              expect.objectContaining({ capability_id: 'builtin:extract:python', source_file: helperPath }),
+              expect.objectContaining({ capability_id: 'builtin:extract:python', source_file: normalizeAssertionPath(helperPath) }),
             ]),
           }),
         ]),

@@ -254,6 +254,17 @@ function mergeSchemaVersion(current: ExtractionData['schema_version'], next: Ext
   return 1
 }
 
+function provenanceIdentity(entry: NonNullable<ExtractionNode['provenance']>[number]): string {
+  const sourceFile = entry.source_file
+  // Only compare Windows absolute path separators; retain the original record
+  // and do not reinterpret backslashes in a POSIX filename, case, or symlinks.
+  if (typeof sourceFile === 'string'
+    && (/^[A-Za-z]:[\\/]/.test(sourceFile) || sourceFile.startsWith('\\\\'))) {
+    return JSON.stringify({ ...entry, source_file: sourceFile.replaceAll('\\', '/') })
+  }
+  return JSON.stringify(entry)
+}
+
 /** Keep annotations for the same unchanged owner, never old topology or source. */
 function preserveUnchangedNodeMetadata(
   extraction: ExtractionData,
@@ -279,7 +290,7 @@ function preserveUnchangedNodeMetadata(
       const layer = prior.layer === 'base' || prior.layer === 'semantic' || prior.layer === 'media' ? prior.layer : node.layer
       const priorProvenance = Array.isArray(prior.provenance) ? prior.provenance as NonNullable<ExtractionNode['provenance']> : []
       const provenance = [...new Map(
-        [...priorProvenance, ...(node.provenance ?? [])].map((entry) => [JSON.stringify(entry), entry]),
+        [...priorProvenance, ...(node.provenance ?? [])].map((entry) => [provenanceIdentity(entry), entry]),
       ).values()]
       return { ...node, ...(layer ? { layer } : {}), ...(provenance.length ? { provenance } : {}) }
     }),
@@ -324,7 +335,7 @@ export function mergeSupplementalCodeExtraction(primary: ExtractionData, supplem
 
     const provenance = [...new Map(
       [...(existing.provenance ?? []), ...(incoming.provenance ?? [])]
-        .map((entry) => [JSON.stringify(entry), entry]),
+        .map((entry) => [provenanceIdentity(entry), entry]),
     ).values()]
     const existingMetadata = existing.framework_metadata
     const incomingMetadata = incoming.framework_metadata

@@ -1,8 +1,13 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { inspectRootPackageValidation } from '../../src/runtime/validation-discovery.js'
+
+vi.mock('node:fs', async () => ({
+  ...await vi.importActual<typeof import('node:fs')>('node:fs'),
+}))
 
 const roots: string[] = []
 function fixture() {
@@ -52,8 +57,15 @@ describe('root package validation discovery', () => {
     expect(inspectRootPackageValidation(join(root, 'absent')).discovery.status).toBe('unknown_root')
     expect(inspectRootPackageValidation(root).discovery.status).toBe('missing')
     writeFileSync(path, '{}')
-    chmodSync(path, 0)
-    try { expect(inspectRootPackageValidation(root).discovery.status).toBe('unreadable') } finally { chmodSync(path, 0o600) }
+    // chmod(0) does not revoke reads on Windows. Exercise the actual open
+    // failure while keeping the preceding path and current-policy checks real.
+    const canonicalPath = realpathSync(path)
+    const open = fs.openSync
+    const denied = vi.spyOn(fs, 'openSync').mockImplementation((...args) => {
+      if (args[0] === canonicalPath) throw Object.assign(new Error('Fixture access denied'), { code: 'EACCES' })
+      return open(...args)
+    })
+    try { expect(inspectRootPackageValidation(root).discovery.status).toBe('unreadable') } finally { denied.mockRestore() }
     writeFileSync(path, ' '.repeat(256 * 1024))
     expect(inspectRootPackageValidation(root).discovery.status).toBe('bounded')
     rmSync(path)

@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import { createHash } from 'node:crypto'
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
+import { sourceCompilerPath } from './source-compiler-host.js'
 
 import { sensitiveArtifactReason } from '../../shared/discovery-safety.js'
 import { isDiscoveryPathIgnored } from '../../shared/source-discovery.js'
@@ -168,7 +169,7 @@ export function createSourceModuleResolver(
       if (loaded.has(path)) return true
       const read = readConfig(path)
       if (read.status !== 'read') return false
-      const parsed = ts.parseConfigFileTextToJson(path, read.text)
+      const parsed = ts.parseConfigFileTextToJson(sourceCompilerPath(path), read.text)
       if (parsed.error || !parsed.config || typeof parsed.config !== 'object' || Array.isArray(parsed.config)) return false
       active.add(path)
       const extended: unknown = parsed.config.extends
@@ -185,7 +186,7 @@ export function createSourceModuleResolver(
       return true
     }
     if (!collect(configPath, 0)) return fail()
-    const raw = ts.parseConfigFileTextToJson(configPath, (configTexts.get(configPath) as { text: string }).text).config
+    const raw = ts.parseConfigFileTextToJson(sourceCompilerPath(configPath), (configTexts.get(configPath) as { text: string }).text).config
     const host: ts.ParseConfigHost = {
       useCaseSensitiveFileNames: true,
       fileExists: path => configTexts.get(resolve(path))?.status === 'read',
@@ -193,7 +194,7 @@ export function createSourceModuleResolver(
       // Configuration is not authority to discover or add source files.
       readDirectory: () => [],
     }
-    const parsed = ts.parseJsonConfigFileContent({ ...raw, files: [], include: [] }, host, dirname(configPath), undefined, configPath)
+    const parsed = ts.parseJsonConfigFileContent({ ...raw, files: [], include: [] }, host, sourceCompilerPath(dirname(configPath)), undefined, sourceCompilerPath(configPath))
     if (parsed.errors.some(error => error.code !== 18002 && error.code !== 18003)) return fail()
     const options = { ...parsed.options, noEmit: true }
     optionsByDirectory.set(start, options)
@@ -236,11 +237,11 @@ export function createSourceModuleResolver(
     } else if (!isAbsolute(specifier) && !specifier.startsWith('#')) {
       const options = compilerOptions(importer)
       if (options && (options.baseUrl || options.paths)) {
-        const resolved = ts.resolveModuleName(specifier, importer, options, {
+        const resolved = ts.resolveModuleName(specifier, sourceCompilerPath(importer), options, {
           fileExists: path => safeIndexed(resolve(path)),
           readFile: () => undefined,
           directoryExists: path => directories.has(resolve(path)),
-          getCurrentDirectory: () => logicalRoot ?? '/',
+          getCurrentDirectory: () => sourceCompilerPath(logicalRoot ?? '/'),
           getDirectories: () => [],
         }).resolvedModule
         if (resolved && !resolved.isExternalLibraryImport && safeIndexed(resolve(resolved.resolvedFileName))) target = resolve(resolved.resolvedFileName)

@@ -61,16 +61,27 @@ describe('supplemental SPI source evidence merge', () => {
     expect(mergeSupplementalCodeExtraction(extraction({}), supplemental).nodes[0]!.source_location).toBe('L1-L6')
   })
 
-  it('retains SPI-only symbols and deduplicates shared provenance', () => {
-    const shared = { capability_id: 'builtin:extract:typescript', stage: 'extract' }
+  it('retains SPI-only symbols and deduplicates equivalent Windows provenance without rewriting records', () => {
+    const shared = { capability_id: 'builtin:extract:typescript', stage: 'extract', source_file: 'C:/workspace/request.ts', source_location: 'L1' }
+    const native = { ...shared, source_file: String.raw`C:\workspace\request.ts` }
+    const distinct = [
+      { ...shared, source_file: 'C:/workspace/other.ts' },
+      { ...shared, source_location: 'L2' },
+      { ...shared, capability_id: 'another:extractor' },
+      { ...shared, stage: 'inspect' },
+      { ...shared, source_file: String.raw`/workspace/a\b.ts` },
+      { ...shared, source_file: '/workspace/a/b.ts' },
+    ]
     const primary = extraction({ provenance: [shared] })
-    const supplemental = extraction({ provenance: [{ ...shared }] })
+    const supplemental = extraction({ provenance: [native, ...distinct] })
     supplemental.nodes.push({ id: 'spi_only', label: 'Request', file_type: 'code', source_file: '/src/request.ts', source_location: 'L8-L10' })
 
     const merged = mergeSupplementalCodeExtraction(primary, supplemental)
 
     expect(merged.nodes).toHaveLength(2)
-    expect(merged.nodes[0]!.provenance).toEqual([shared])
+    expect(merged.nodes[0]!.provenance).toEqual([native, ...distinct])
+    expect(primary.nodes[0]!.provenance).toEqual([shared])
+    expect(supplemental.nodes[0]!.provenance).toEqual([native, ...distinct])
     expect(merged.nodes[1]).toEqual(supplemental.nodes[1])
   })
 })

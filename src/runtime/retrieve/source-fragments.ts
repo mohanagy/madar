@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { basename, dirname, resolve } from 'node:path'
 import ts from 'typescript'
+import { createSourceCompilerHost } from './source-compiler-host.js'
 
 import type { SourceLineRange } from '../../shared/source-location.js'
 import {
@@ -285,13 +286,9 @@ export function selectSourceFragments(
     }
     return current === owner.declaration ? owner : undefined
   }
-  const host: ts.CompilerHost = {
-    getSourceFile: name => files.get(name)?.source, getDefaultLibFileName: () => '', writeFile: () => {},
-    getCurrentDirectory: () => '', getDirectories: () => [], fileExists: name => files.has(name),
-    readFile: name => files.get(name)?.lines.join('\n'), getCanonicalFileName: name => name,
-    useCaseSensitiveFileNames: () => true, getNewLine: () => '\n',
-  }
-  const program = ts.createProgram([...files.keys()], { allowJs: true, checkJs: false, noLib: true, noResolve: true }, host)
+  const compiler = createSourceCompilerHost(new Map([...files].map(([path, file]) => [path, file.source])), '')
+  if (!compiler) return undefined
+  const program = ts.createProgram(compiler.rootNames, { allowJs: true, checkJs: false, noLib: true, noResolve: true }, compiler.host)
   const checker = program.getTypeChecker()
   const writes = new Set<ts.Symbol>()
   const statements: Statement[] = []
@@ -371,7 +368,7 @@ export function selectSourceFragments(
     else if (ts.isImportEqualsDeclaration(statement) && !statement.isTypeOnly
       && ts.isExternalModuleReference(statement.moduleReference) && statement.moduleReference.expression
       && ts.isStringLiteral(statement.moduleReference.expression)) specifier = statement.moduleReference.expression.text
-    if (specifier && moduleRequested(specifier, source.fileName)) return undefined
+    if (specifier && moduleRequested(specifier, compiler.nativePath(source))) return undefined
   }
   // Retain only existing, uniquely indexed module binding owners. A source read
   // proves a value connection; it does not claim plugin or callback invocation.
@@ -383,7 +380,7 @@ export function selectSourceFragments(
     if (!ts.isCallExpression(initializer) || !ts.isIdentifier(initializer.expression) || initializer.expression.text !== 'require'
       || initializer.arguments.length !== 1 || !ts.isStringLiteral(initializer.arguments[0]!)
       || checker.getSymbolAtLocation(initializer.expression)?.declarations?.length) continue
-    const target = moduleRequested(initializer.arguments[0]!.text, source.fileName)
+    const target = moduleRequested(initializer.arguments[0]!.text, compiler.nativePath(source))
     if (!target) continue
     const bindingRange = rangeOf(statement, source)
     const valueOwners = owners.filter(owner => owner.source === source && owner.kind === 'value'

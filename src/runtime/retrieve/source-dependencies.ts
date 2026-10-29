@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
-import { extname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import ts from 'typescript'
+import { createSourceCompilerHost } from './source-compiler-host.js'
 
 import type { KnowledgeGraph } from '../../contracts/graph.js'
 import type { ContextPackSourceDependencies, ContextPackTaskContract, ContextPackEvidenceClass } from '../../contracts/context-pack.js'
@@ -226,16 +227,13 @@ export function selectSourceDependencies(
   }
   if (!selectedFiles.size) { snapshotInputs(); note('no_selected_program'); return result }
   const compilerOptions: ts.CompilerOptions = { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext, noLib: true, noResolve: false, allowJs: true, checkJs: true, skipLibCheck: true }
-  const host: ts.CompilerHost = {
-    getSourceFile: path => selectedFiles.get(path), getDefaultLibFileName: () => '', writeFile: () => {},
-    getCurrentDirectory: () => rootPath ?? '/', getDirectories: () => [], fileExists: path => selectedFiles.has(path),
-    readFile: path => texts.get(path), getCanonicalFileName: path => path, useCaseSensitiveFileNames: () => true, getNewLine: () => '\n',
-    resolveModuleNames: (names, containingFile) => names.map(name => {
-      const path = modulePath(name, containingFile)
-      return path && selectedFiles.has(path) ? { resolvedFileName: path, extension: extname(path) as ts.Extension } : undefined
-    }),
+  const compiler = createSourceCompilerHost(selectedFiles, rootPath ?? '/', modulePath)
+  if (!compiler) {
+    receipt.bounded = true; provenance.scans.program = 'incomplete'; note('ambiguous_compiler_source_path')
+    snapshotInputs(); return result
   }
-  const program = ts.createProgram([...selectedFiles.keys()], compilerOptions, host)
+  const nativeSourcePath = compiler.nativePath
+  const program = ts.createProgram(compiler.rootNames, compilerOptions, compiler.host)
   const checker = program.getTypeChecker()
   // Line containment cannot distinguish adjacent declarations on one line.
   // Map graph evidence to actual declarations before assigning call ownership.
@@ -328,10 +326,10 @@ export function selectSourceDependencies(
     }
     collect(source)
     if (!identityScanComplete) break
-    const entries = owners.get(source.fileName) ?? []
+    const entries = owners.get(nativeSourcePath(source)) ?? []
     const files = entries.filter(owner => owner.file)
-    if (files.length === 1) { fileOwners.set(source.fileName, files[0]!); eligibleOwners.add(files[0]!.id) }
-    for (const owner of files) provenance.owners.push({ node_id: owner.id, source_file: source.fileName,
+    if (files.length === 1) { fileOwners.set(nativeSourcePath(source), files[0]!); eligibleOwners.add(files[0]!.id) }
+    for (const owner of files) provenance.owners.push({ node_id: owner.id, source_file: nativeSourcePath(source),
       indexed_range: { start: owner.start, end: owner.end }, status: files.length === 1 ? 'unique' : 'ambiguous' })
     if (files.length > 1) note('ambiguous_file_owner')
     const candidates = new Map<Owner, DeclarationIdentity[]>()
@@ -343,8 +341,8 @@ export function selectSourceDependencies(
         && (!owner.label.endsWith('()') || declaration.callable)
         && (!label.startsWith('.') || declaration.role === 'method')
         && (!label.includes('.') || label.startsWith('.') || declaration.qualified === label)
-        && (!declaration.assignment || sourceRangeMatchesSymbol(cache.get(source.fileName) ?? source.text.split('\n'),
-          { start: owner.start, end: owner.end }, owner.label, source.fileName)))
+        && (!declaration.assignment || sourceRangeMatchesSymbol(cache.get(nativeSourcePath(source)) ?? source.text.split('\n'),
+          { start: owner.start, end: owner.end }, owner.label, nativeSourcePath(source))))
       // Stored partial snippets never prove a column or declaration identity.
       if (matches.length > 1 && owner.snippet) {
         const exact = matches.filter(declaration => declaration.text === owner.snippet.replace(/\r\n?/g, '\n').trim())
@@ -362,7 +360,7 @@ export function selectSourceDependencies(
     }
     for (const [owner, matches] of candidates) {
       const unique = matches.length === 1 && declarationCandidates.get(matches[0]!.node)?.length === 1
-      provenance.owners.push({ node_id: owner.id, source_file: source.fileName,
+      provenance.owners.push({ node_id: owner.id, source_file: nativeSourcePath(source),
         indexed_range: { start: owner.start, end: owner.end }, status: unique ? 'unique' : matches.length ? 'ambiguous' : 'unmatched',
         ...(unique ? { declaration_offsets: { start: matches[0]!.node.getStart(source), end: matches[0]!.node.getEnd() } } : {}) })
       if (!unique) note(matches.length ? 'ambiguous_owner_identity' : 'unmatched_owner_identity')
@@ -388,7 +386,7 @@ export function selectSourceDependencies(
       // through the RHS function can establish ownership of that function body.
       if (ts.isBinaryExpression(parent) && sourceFunctionOccurrence(parent, parent.getSourceFile())) continue
       if (declarationOwners.has(canonical) || ownerBoundaries.has(canonical)) return declarationOwners.get(canonical)
-      if (ts.isSourceFile(parent)) return fileOwners.get(parent.fileName)
+      if (ts.isSourceFile(parent)) return fileOwners.get(nativeSourcePath(parent))
       // Unnamed callback functions retain lexical containment. This does not
       // claim the callback is invoked by the surrounding function.
     }
@@ -899,7 +897,7 @@ export function selectSourceDependencies(
     const source = call.getSourceFile()
     if (call.questionDotToken || !mutationScanComplete || !identityScanComplete
       || provenance.scans.program !== 'complete' || unsafeLocalBindingFiles.has(source)
-      || !(/\.[cm][jt]s$/i.test(source.fileName) || ts.isExternalModule(source))) return undefined
+      || !(/\.[cm][jt]s$/i.test(nativeSourcePath(source)) || ts.isExternalModule(source))) return undefined
     const callee = transparentLocalExpression(call.expression)
     if (!callee || !ts.isIdentifier(callee)) return undefined
     // CommonJS wrapper parameters can also be written through mapped arguments,
@@ -973,7 +971,7 @@ export function selectSourceDependencies(
       const caller = callerOwner(node)
       if (caller) {
         const source = node.getSourceFile()
-        const call: Call = { from: caller.id, line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, file: source.fileName, callee: node.expression.getText(source).slice(0, 120), relation: 'calls' }
+        const call: Call = { from: caller.id, line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, file: nativeSourcePath(source), callee: node.expression.getText(source).slice(0, 120), relation: 'calls' }
         const declaration = callableDeclaration(node.expression, new Set(), ts.isNewExpression(node))
           ?? (ts.isCallExpression(node) ? localDirectCallable(node) : undefined)
         if (declaration && executable(declaration)) {
@@ -997,7 +995,7 @@ export function selectSourceDependencies(
           if (!target || target.file) {
             if (checker.getTypeAtLocation(argument).getCallSignatures().length) {
               calls.push({ from: caller.id, line: source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1,
-                file: source.fileName, callee: argument.getText(source).slice(0, 120), relation: 'depends_on', reason: 'unresolved' })
+                file: nativeSourcePath(source), callee: argument.getText(source).slice(0, 120), relation: 'depends_on', reason: 'unresolved' })
             }
             continue
           }
@@ -1005,7 +1003,7 @@ export function selectSourceDependencies(
           // Passing a function proves a dependency on its value, not that this
           // particular callee invokes it. Keep that distinction on the wire.
           calls.push({ from: caller.id, to: target.id, line: source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1,
-            file: source.fileName, callee: argument.getText(source).slice(0, 120), relation: 'depends_on',
+            file: nativeSourcePath(source), callee: argument.getText(source).slice(0, 120), relation: 'depends_on',
             observed: { start_offset: argument.getStart(source), end_offset: argument.getEnd() } })
         }
       } else {
@@ -1022,15 +1020,15 @@ export function selectSourceDependencies(
         // deduplication. This optional sidecar never changes scan completeness.
         if (target && !target.file && observedDataReferences.length < MAX_CALLS) observedDataReferences.push({
           from: caller.id, to: target.id, line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
-          file: source.fileName, callee: node.getText(source).slice(0, 120), relation: 'depends_on', dataReference: true,
+          file: nativeSourcePath(source), callee: node.getText(source).slice(0, 120), relation: 'depends_on', dataReference: true,
           observed: { start_offset: node.getStart(source), end_offset: node.getEnd() },
         })
-        const identity = JSON.stringify([caller.id, declaration!.getSourceFile().fileName, declaration!.pos])
+        const identity = JSON.stringify([caller.id, nativeSourcePath(declaration!.getSourceFile()), declaration!.pos])
         if (!dataReferences.has(identity)) {
           if (dataReferences.size >= MAX_CALLS) { receipt.bounded = true; dataScanComplete = false; note('data_reference_limit') }
           else dataReferences.set(identity, { from: caller.id, ...(target && !target.file ? { to: target.id } : { reason: 'outside_index' as const }),
             line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
-            file: source.fileName, callee: node.getText(source).slice(0, 120), relation: 'depends_on', dataReference: true })
+            file: nativeSourcePath(source), callee: node.getText(source).slice(0, 120), relation: 'depends_on', dataReference: true })
         }
       }
     }
@@ -1042,7 +1040,7 @@ export function selectSourceDependencies(
     ? [{ from_id: call.from, to_id: call.to }] : [])
   if (callScanComplete && identityScanComplete) {
     const sourceDependencies = [...selectedFiles.values()].map(source => ({
-      source_file: source.fileName, source_sha256: createHash('sha256').update(source.text).digest('hex'),
+      source_file: nativeSourcePath(source), source_sha256: createHash('sha256').update(source.text).digest('hex'),
     }))
     const digests = new Map(sourceDependencies.map(source => [source.source_file, source.source_sha256]))
     const pairs = new Map<string, Call[]>()
@@ -1071,7 +1069,7 @@ export function selectSourceDependencies(
       if (!targetIds.has(id)) return []
       const owner = declarationOwner(declaration), source = declaration.getSourceFile()
       if (!owner || owner.file) return []
-      return [{ node_id: id, label: owner.label, source_file: source.fileName,
+      return [{ node_id: id, label: owner.label, source_file: nativeSourcePath(source),
         range: { start_line: source.getLineAndCharacterOfPosition(declaration.getStart(source)).line + 1,
           end_line: source.getLineAndCharacterOfPosition(declaration.getEnd() - 1).line + 1 } }]
     })
@@ -1160,7 +1158,7 @@ export function selectSourceDependencies(
   const pairs = new Map<string, SourceSelectionProvenance['resolved_pairs'][number]>()
   // Preserve individual positive observations without changing all-sites completion gates.
   if (identityScanComplete && mutationScanComplete && writeOriginsComplete) {
-    const hashes = new Map([...selectedFiles.values()].map(source => [source.fileName, createHash('sha256').update(source.text).digest('hex')]))
+    const hashes = new Map([...selectedFiles.values()].map(source => [nativeSourcePath(source), createHash('sha256').update(source.text).digest('hex')]))
     provenance.observed_sites = [...calls, ...observedDataReferences].flatMap(call => call.to && call.observed && hashes.has(call.file)
       ? [{ from_id: call.from, to_id: call.to, kind: call.dataReference ? 'data_reference' as const
         : call.relation === 'calls' ? 'call' as const : 'function_value_argument' as const,
@@ -1223,9 +1221,9 @@ export function selectSourceDependencies(
           if (declaration && target && !target.file && callerDeclaration && target.id !== caller.id) {
             if (references.length >= MAX_CALLS) { referencesComplete = false; return }
             const targetDeclaration = canonicalDeclaration(declaration)
-            references.push({ caller: { node_id: caller.id, label: caller.label, source_file: node.getSourceFile().fileName,
+            references.push({ caller: { node_id: caller.id, label: caller.label, source_file: nativeSourcePath(node.getSourceFile()),
               range: rangeOf(callerDeclaration) },
-            target: { node_id: target.id, label: target.label, source_file: targetDeclaration.getSourceFile().fileName,
+            target: { node_id: target.id, label: target.label, source_file: nativeSourcePath(targetDeclaration.getSourceFile()),
               range: rangeOf(targetDeclaration) }, read: { start_offset: node.getStart(), end_offset: node.getEnd() } })
           }
         }
@@ -1234,7 +1232,7 @@ export function selectSourceDependencies(
     }
     for (const source of selectedFiles.values()) inspectReference(source)
     if (referencesComplete && references.length && receipt.bounded === originalBounded && writeOriginsComplete === originalOriginsComplete) {
-      const sourceDependencies = [...selectedFiles.values()].map(source => ({ source_file: source.fileName,
+      const sourceDependencies = [...selectedFiles.values()].map(source => ({ source_file: nativeSourcePath(source),
         source_sha256: createHash('sha256').update(source.text).digest('hex') }))
       result.source_function_value_references = references.map(reference => ({ ...reference, source_dependencies: sourceDependencies }))
     }

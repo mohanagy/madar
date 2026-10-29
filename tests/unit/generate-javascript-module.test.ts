@@ -11,6 +11,7 @@ import { analyzeGraphContextFreshness } from '../../src/runtime/freshness.js'
 import { loadGraph } from '../../src/runtime/serve.js'
 import { snapshotWatchedFiles } from '../../src/infrastructure/watch.js'
 import { classifyFile } from '../../src/pipeline/detect.js'
+import { normalizeAssertionPath } from './helpers/platform.js'
 
 const roots: string[] = []
 afterEach(() => { roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })); vi.unstubAllEnvs() })
@@ -73,9 +74,9 @@ describe('JavaScript ES module discovery', () => {
       .toBe(`builtin:extract:${typed ? 'typescript' : 'javascript'}`)
     const generated = generateGraph(root, { noHtml: true })
     const graph = loadGraph(generated.graphPath)
-    const indexedFiles = new Set(graph.nodeEntries().map(([, node]) => node.source_file))
-    expect(indexedFiles.has(invoiceFile)).toBe(true)
-    expect(indexedFiles.has(rateFile)).toBe(true)
+    const indexedFiles = new Set(graph.nodeEntries().map(([, node]) => normalizeAssertionPath(String(node.source_file))))
+    expect(indexedFiles.has(normalizeAssertionPath(invoiceFile))).toBe(true)
+    expect(indexedFiles.has(normalizeAssertionPath(rateFile))).toBe(true)
     expect(analyzeGraphContextFreshness(generated.graphPath, graph).status).toBe('fresh')
     vi.stubEnv('MADAR_TOOL_PROFILE', 'strict')
     const response = await handleStdioRequest(generated.graphPath, { id: 1, method: 'tools/call', params: {

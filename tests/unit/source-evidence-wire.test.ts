@@ -1,3 +1,4 @@
+import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { compactDuplicateSourcePositions } from '../../src/runtime/source-evidence-wire.js'
@@ -81,8 +82,8 @@ it('omits duplicate source positions only at the final tool boundary', () => {
 })
 
 it('compacts recovery metadata without duplicate positions or changing source and recovery identity', () => {
-  const root = '/workspace/isolated/source-evidence/project'
-  const sourceFile = `${root}/src/dispatch.ts`
+  const root = resolve('/workspace/isolated/source-evidence/project')
+  const sourceFile = join(root, 'src', 'dispatch.ts')
   const payload: Value = { response_format: 'source_evidence_v2',
     pack: { matched_nodes: [{ node_id: `node:${sourceFile}:dispatch`, label: 'dispatch()', source_file: sourceFile,
       snippet: `function dispatch() {\n  return '${sourceFile}'\n[omitted lines 6-8]\n}`,
@@ -130,8 +131,8 @@ it('compacts recovery metadata without duplicate positions or changing source an
 })
 
 it('preserves unverifiable paths and unknown or malformed freshness meaning', () => {
-  const root = '/workspace/isolated/project'
-  const paths = [`${root}/src/owner.ts`, '/elsewhere/src/owner.ts', `${root}/src/../owner.ts`,
+  const root = resolve('/workspace/isolated/project')
+  const paths = [join(root, 'src', 'owner.ts'), '/elsewhere/src/owner.ts', `${root}/src/../owner.ts`,
     `${root}/./owner.ts`, root, 'src/relative.ts', `${root}/invalid\0.ts`]
   const freshness = { status: 'fresh', selected_context_status: 'fresh', graph_version: 'fixed',
     graph_path: `${root}/.madar/graph.json`, generated_ms: 123,

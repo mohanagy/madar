@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, utimesSync, writ
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import ts from 'typescript'
 
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { loadGraph } from '../../src/runtime/serve.js'
@@ -9,6 +10,8 @@ import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { selectSourceDependencies } from '../../src/runtime/retrieve/source-dependencies.js'
 import { createSourceModuleResolver, getSourceModuleConfigurationSnapshot, sourceModuleConfigurationSnapshotIsFresh } from '../../src/runtime/retrieve/source-modules.js'
 import { resolveSourceSnippet } from '../../src/runtime/source-evidence-response.js'
+import { createSourceCompilerHost, sourceCompilerPath } from '../../src/runtime/retrieve/source-compiler-host.js'
+import { normalizeAssertionPath } from './helpers/platform.js'
 
 const roots: string[] = []
 afterEach(() => { vi.unstubAllEnvs(); roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })) })
@@ -21,7 +24,8 @@ function fixture(files: Record<string, string>) {
   }
   const graphPath = generateGraph(root, { noHtml: true, includeDocs: false }).graphPath
   const graph = loadGraph(graphPath)
-  const idFor = (label: string, suffix: string) => graph.nodeEntries().find(([, node]) => node.label === label && String(node.source_file).endsWith(suffix))![0]
+  const idFor = (label: string, suffix: string) => graph.nodeEntries().find(([, node]) => node.label === label
+    && normalizeAssertionPath(String(node.source_file)).endsWith(normalizeAssertionPath(suffix)))![0]
   return { root, graph, graphPath, idFor }
 }
 
@@ -31,6 +35,33 @@ const bodies = {
 }
 
 describe('bounded TypeScript source module resolution', () => {
+  it.each([String.raw`C:\workspace`, String.raw`\\server\share\workspace`])('binds only registered Windows source paths while retaining native identity: %s', root => {
+    const callerPath = `${root}\\caller.ts`, targetPath = `${root}\\target.ts`
+    const caller = ts.createSourceFile(callerPath, "import { target as invoke } from './target.js'; export function caller() { return invoke(); }", ts.ScriptTarget.Latest, true)
+    const target = ts.createSourceFile(targetPath, 'export function target() { return 7; }', ts.ScriptTarget.Latest, true)
+    const files = new Map([[callerPath, caller], [targetPath, target]])
+    const resolver = vi.fn((specifier: string, importer: string) => specifier === './target.js' && importer === callerPath ? targetPath : undefined)
+    const compiler = createSourceCompilerHost(files, root, resolver)!
+    expect(compiler).toBeDefined()
+    const program = ts.createProgram(compiler.rootNames, { noLib: true, module: ts.ModuleKind.ESNext }, compiler.host)
+    expect(program.getSourceFiles()).toEqual(expect.arrayContaining([caller, target]))
+    const checker = program.getTypeChecker()
+    let invocation: ts.CallExpression | undefined
+    const visit = (node: ts.Node): void => { if (ts.isCallExpression(node)) invocation = node; ts.forEachChild(node, visit) }
+    visit(caller)
+    const alias = checker.getSymbolAtLocation(invocation!.expression)!
+    const declaration = checker.getAliasedSymbol(alias).valueDeclaration!
+    expect(declaration.getSourceFile()).toBe(target)
+    expect(compiler.nativePath(declaration.getSourceFile())).toBe(targetPath)
+    expect(resolver).toHaveBeenCalledWith('./target.js', callerPath)
+    expect(compiler.host.fileExists(`${root}\\absent.ts`)).toBe(false)
+    expect(compiler.host.getSourceFile(`${root}\\absent.ts`, ts.ScriptTarget.Latest)).toBeUndefined()
+    // Separator aliases cannot overwrite one of two distinct supplied owners.
+    expect(createSourceCompilerHost(new Map([...files, [sourceCompilerPath(targetPath), target]]), root)).toBeUndefined()
+    // Malformed JSON should produce a diagnostic, not a Windows filename assertion.
+    expect(ts.parseConfigFileTextToJson(sourceCompilerPath(`${root}\\tsconfig.json`), '{"compilerOptions":').error).toBeDefined()
+  })
+
   it.each([
     { name: 'paths', specifier: '@domain/receipt', configs: { 'tsconfig.json': config({ '@domain/*': ['src/domain/*'] }) } },
     { name: 'paths without baseUrl', specifier: '@domain/receipt', configs: { 'tsconfig.json': JSON.stringify({ compilerOptions: { paths: { '@domain/*': ['./src/domain/*'] } } }) } },
