@@ -440,12 +440,14 @@ export function sourceQueryIsLiteralLookup(question: string): boolean {
   })
 }
 
+function matchesSourceLiteral(text: string, literal: string): boolean {
+  if (!/^#?[A-Za-z_$][\w$]*$/.test(literal)) return text.includes(literal)
+  const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^A-Za-z0-9_$])${escaped}(?=$|[^A-Za-z0-9_$])`).test(text)
+}
+
 function lineMatch(text: string, literals: readonly string[], terms: readonly string[], words?: ReadonlySet<string>): { exact: boolean; literals: string[]; terms: string[] } {
-  const matchedLiterals = literals.filter((literal) => {
-    if (!/^#?[A-Za-z_$][\w$]*$/.test(literal)) return text.includes(literal)
-    const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    return new RegExp(`(^|[^A-Za-z0-9_$])${escaped}(?=$|[^A-Za-z0-9_$])`).test(text)
-  })
+  const matchedLiterals = literals.filter(literal => matchesSourceLiteral(text, literal))
   const lineWords = words ?? new Set(sourceBodyWords(text))
   return { exact: matchedLiterals.length > 0, literals: matchedLiterals, terms: terms.filter((term) => lineWords.has(term)) }
 }
@@ -496,6 +498,8 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
   const rankingTerms = new Set(activeQueries.flatMap(query => query.terms))
   const ownerStatistics = new Map<string, { length: number; frequencies: Map<string, number> }>()
   const files = new Map<string, Array<{ id: string; label: string; range: SourceLineRange; file: boolean }>>()
+  const hintLiterals = [...new Set(questions.flatMap(question => sourceQueryLiterals(retrievalEvidencePrompt(question))))]
+  const hintedFiles = new Set<string>()
   for (const [id, node] of graph.nodeEntries()) {
     if (node.file_type !== 'code' || node.external_call === true) continue
     const path = String(node.source_file ?? '')
@@ -504,9 +508,15 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
     const entries = files.get(path) ?? []
     entries.push({ id, label: String(node.label ?? ''), range, file: String(node.label ?? '') === basename(path) })
     files.set(path, entries)
+    // Index text only directs the bounded scan. Current source ownership and
+    // matching below remain the sole authority for admission and ranking.
+    if (!hintedFiles.has(path) && [node.label, node.snippet].some(text => typeof text === 'string'
+      && hintLiterals.some(literal => matchesSourceLiteral(text, literal)))) hintedFiles.add(path)
   }
   let assignments = 0
-  for (const [sourceFile, entries] of [...files].sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [sourceFile, entries] of [...files].sort(([left], [right]) => (
+    Number(hintedFiles.has(right)) - Number(hintedFiles.has(left)) || left.localeCompare(right)
+  ))) {
     const path = sourcePathForEvidence(sourceFile, rootPath)
     if (!path) { result.bounded = true; continue }
     let size: number

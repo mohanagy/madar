@@ -1,6 +1,6 @@
 import { sliceCandidatesForRetrieve } from '../../src/runtime/retrieve/slicing.js'
 import { extractPromptExclusions } from '../../src/runtime/retrieval-gate.js'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -129,6 +129,34 @@ describe('source evidence retrieval', () => {
     expect([...behavior!.matches.keys()]).toEqual(['metrics_describesessionexpiration'])
     expect(behavior!.matches.get('metrics_describesessionexpiration')?.exact_literal).toBe(false)
     expect(empty).toEqual({ matches: new Map(), scanned_files: 0, scanned_bytes: 0, bounded: false })
+  })
+
+  it('uses positive indexed literals to navigate the file cap without trusting stale hints', () => {
+    const { graph, root } = workspace()
+    const add = (name: string, body: string, snippet?: string) => {
+      const path = join(root, 'src', `${name}.ts`)
+      writeFileSync(path, body)
+      graph.addNode(name, { label: 'value()', file_type: 'code', source_file: path,
+        source_location: 'L1', ...(snippet ? { snippet } : {}) })
+      return realpathSync(path)
+    }
+    for (let index = 1023; index >= 0; index--) {
+      add(`a${String(index).padStart(4, '0')}`, 'export function value() { return 0; }')
+    }
+    const stale = add('z-stale', 'export function value() { return "removed"; }', 'return "READY_SIGNAL";')
+    const target = add('z-target', 'export function value() { return "READY_SIGNAL"; }', 'return "READY_SIGNAL";')
+    const prefix = add('z-prefix', 'export function value() { return "READY_SIGNAL"; }', 'return "READY_SIGNAL_EXTRA";')
+    const excluded = add('z-excluded', 'export function value() { return "AVOID_SIGNAL"; }', 'return "AVOID_SIGNAL";')
+    const oversized = add('z-oversized', ' '.repeat(300 * 1024), 'return "READY_SIGNAL";')
+    const cache = new Map<string, string[] | null>()
+    const result = searchSourceBodies(graph, 'Where is "READY_SIGNAL" thrown? Exclude "AVOID_SIGNAL".', root, cache)
+    expect(result.scanned_files).toBe(1024)
+    expect(result.scanned_bytes).toBeLessThan(16 * 1024 * 1024)
+    expect(result.bounded).toBe(true)
+    expect([...result.matches.keys()]).toEqual(['z-target'])
+    expect(result.matches.get('z-target')?.exact_literal).toBe(true)
+    expect([...cache.keys()].slice(0, 2)).toEqual([stale, target])
+    for (const path of [prefix, excluded, oversized]) expect(cache.has(path), path).toBe(false)
   })
 
   it('ranks concentrated source evidence above vocabulary scattered through a large owner', () => {
