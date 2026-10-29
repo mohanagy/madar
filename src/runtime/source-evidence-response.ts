@@ -43,15 +43,51 @@ function completeRange(node: RecordValue): { start_line: number; end_line: numbe
   return { start_line: Number(range.start_line), end_line: Number(range.end_line) }
 }
 
+function literalReferenceNode(node: RecordValue): boolean {
+  return typeof node.source_file === 'string' && node.source_file.length > 0
+    && (node.snippet_scope === 'symbol' || node.snippet_scope === 'source_file')
+    && node.snippet_source === undefined && node.representation_type === undefined
+    && (node.snippet_unverified === undefined || node.snippet_unverified === false)
+    && (node.snippet_truncated === undefined || typeof node.snippet_truncated === 'boolean')
+}
+
 function containedSourceText(node: RecordValue, owner: RecordValue, source: string): string | null {
-  const targetRange = completeRange(node), ownerRange = completeRange(owner)
-  if (node.source_file !== owner.source_file || !targetRange || !ownerRange
-    || targetRange.start_line < ownerRange.start_line || targetRange.end_line > ownerRange.end_line) return null
+  const targetRange = completeRange(node), ownerRange = record(owner.snippet_line_range)
+  if (node.source_file !== owner.source_file || !targetRange
+    || owner.snippet_source === 'derived' || owner.snippet_unverified === true
+    || !Number.isSafeInteger(ownerRange.start_line) || !Number.isSafeInteger(ownerRange.end_line)
+    || Number(ownerRange.start_line) < 1 || Number(ownerRange.end_line) < Number(ownerRange.start_line)
+    || targetRange.start_line < Number(ownerRange.start_line) || targetRange.end_line > Number(ownerRange.end_line)) return null
   const lines = source.split('\n')
-  const start = targetRange.start_line - ownerRange.start_line
-  const end = targetRange.end_line - ownerRange.start_line + 1
-  if (end > lines.length) return null
-  return lines.slice(start, end).join('\n')
+  if (completeRange(owner)) {
+    const start = targetRange.start_line - Number(ownerRange.start_line)
+    const end = targetRange.end_line - Number(ownerRange.start_line) + 1
+    return end <= lines.length ? lines.slice(start, end).join('\n') : null
+  }
+  // A partial supplier may contain a complete child. Interpret every explicit
+  // omission before projecting; unknown truncation or a child crossing a gap
+  // cannot supply source, even when the surrounding lines happen to match.
+  if (!literalReferenceNode(node) || !literalReferenceNode(owner)
+    || !Array.isArray(owner.snippet_omitted_ranges) || !owner.snippet_omitted_ranges.length
+    || owner.snippet_omitted_ranges.length > 4096 || owner.snippet_truncated === false) return null
+  let cursor = Number(ownerRange.start_line), offset = 0, projected: string | null = null
+  const retain = (end: number): void => {
+    if (targetRange.start_line >= cursor && targetRange.end_line <= end) {
+      projected = lines.slice(offset + targetRange.start_line - cursor, offset + targetRange.end_line - cursor + 1).join('\n')
+    }
+    offset += end - cursor + 1
+  }
+  for (const value of owner.snippet_omitted_ranges) {
+    const gap = record(value)
+    if (!Number.isSafeInteger(gap.start_line) || !Number.isSafeInteger(gap.end_line)
+      || Number(gap.start_line) < cursor || Number(gap.end_line) < Number(gap.start_line)
+      || Number(gap.end_line) > Number(ownerRange.end_line)) return null
+    retain(Number(gap.start_line) - 1)
+    if (lines[offset++] !== `[omitted lines ${gap.start_line}-${gap.end_line}]`) return null
+    cursor = Number(gap.end_line) + 1
+  }
+  retain(Number(ownerRange.end_line))
+  return offset === lines.length ? projected : null
 }
 
 /** Resolve exactly the referenced subrange; never attribute the owner's whole body to a child symbol. */
@@ -187,6 +223,47 @@ export function compactRepeatedSourceMetadata(input: RecordValue, maxTokens: num
   }
   const count = estimateQueryTokens(JSON.stringify(result))
   return count <= maxTokens && count <= estimateQueryTokens(JSON.stringify(input)) ? result : input
+}
+
+/** Final representation only: retain every owner's exact source and recovery
+ * identity while sharing complete bodies inside an unchanged partial supplier. */
+export function compactContainedSourceReferences(input: RecordValue, maxTokens: number): RecordValue {
+  const receipt = record(input.serialized_budget)
+  if (input.response_format !== SOURCE_EVIDENCE_RESPONSE_FORMAT || input.task !== 'explain'
+    || input.verbose === true || input.mode === 'delta' || input.delta_session_id
+    || !Number.isSafeInteger(maxTokens) || maxTokens < MIN_SOURCE_EVIDENCE_BUDGET
+    || Object.keys(receipt).some(key => !['max_tokens', 'token_count', 'enforced'].includes(key))
+    || receipt.max_tokens !== maxTokens || receipt.enforced !== true
+    || !Number.isSafeInteger(receipt.token_count) || Number(receipt.token_count) > maxTokens
+    || receipt.token_count !== estimateQueryTokens(JSON.stringify(input))) return input
+  const pack = record(input.pack), original = array(pack.matched_nodes).map(record)
+  if (!original.length || original.length > 128 || original.some(node => typeof node.node_id !== 'string' || !node.node_id)
+    || new Set(original.map(node => node.node_id)).size !== original.length
+    || original.reduce((sum, node) => sum + (typeof node.snippet === 'string' ? node.snippet.length : 0), 0) > 1024 * 1024) return input
+  const result = clone(input), resultPack = record(result.pack), nodes = array(resultPack.matched_nodes).map(record)
+  const before = original.map(node => resolveSourceSnippet(node, original))
+  let shared = false
+  for (const [index, node] of nodes.entries()) {
+    if (!literalReferenceNode(node) || typeof node.snippet !== 'string' || node.snippet_ref !== undefined || !completeRange(node)
+      || original.some(other => other.snippet_ref === node.node_id)) continue
+    const owner = original.find(other => literalReferenceNode(other) && other.node_id !== node.node_id && typeof other.snippet === 'string'
+      && other.snippet_ref === undefined && array(other.snippet_omitted_ranges).length > 0
+      && containedSourceText(node, other, other.snippet) === node.snippet)
+    if (!owner || before[index] === null) continue
+    delete node.snippet
+    node.snippet_ref = owner.node_id
+    shared = true
+  }
+  if (!shared || nodes.some((node, index) => resolveSourceSnippet(node, nodes) !== before[index])) return input
+  result.serialized_budget = { max_tokens: maxTokens, token_count: 0, enforced: true }
+  for (let index = 0; index < 12; index++) {
+    const count = estimateQueryTokens(JSON.stringify(result))
+    if (record(result.serialized_budget).token_count === count) {
+      return count <= maxTokens && count < estimateQueryTokens(JSON.stringify(input)) ? result : input
+    }
+    record(result.serialized_budget).token_count = count
+  }
+  return input
 }
 
 function compactPack(input: unknown): RecordValue {

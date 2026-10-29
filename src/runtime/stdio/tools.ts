@@ -65,7 +65,7 @@ import { reconcileRetrievalPlanQueryEvidence } from '../retrieve/conceptual-fall
 import { buildRetrievalEvidencePlan, tokenizeLabel } from '../retrieve/pipeline.js'
 import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { collectDeliveredContextReceipts, computeDeltaContextPack } from '../context-pack-delta.js'
-import { compactSourceEvidenceNode, compactRepeatedSourceMetadata, fitPreparedSourceEvidenceResponse, finalizeSourceEvidenceResponse as serializeSourceEvidenceResponse, MIN_SOURCE_EVIDENCE_BUDGET } from '../source-evidence-response.js'
+import { compactSourceEvidenceNode, compactRepeatedSourceMetadata, compactContainedSourceReferences, fitPreparedSourceEvidenceResponse, finalizeSourceEvidenceResponse as serializeSourceEvidenceResponse, MIN_SOURCE_EVIDENCE_BUDGET } from '../source-evidence-response.js'
 import {
   attachSourceContinuationHandles, createSourceContinuationPreparation, sourceValueConsumedCallees, sourceTypeRejectionCallees, sourceBracketedBranchCompletions,
   allocateSourceFlowBudget, type SourceFlowBudgetOptions,
@@ -1969,8 +1969,12 @@ function finalizeGeneratedContextPackResponse(
         (original, identity) => partitionRecoveryReferences(original,
           createSourceRecoveryPartition(identity, options.requestedSource!.rootPath), options.requestedSource!.rootPath,
           staged, context.helpers.getContextPackHandle)) : result.payload
-    publishRecoveryHandles(payload, staged, context.helpers)
-    return payload
+    // Allocation and recovery scopes are settled. Representation savings must
+    // not fund another selection pass or change an advertised cursor.
+    const compact = !options.verbose && options.format !== 'text'
+      ? compactContainedSourceReferences(payload, budget) : payload
+    publishRecoveryHandles(compact, staged, context.helpers)
+    return compact
   }
   for (let index = 0; index < 3; index++) {
     const result = attempt()
