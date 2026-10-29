@@ -3104,15 +3104,18 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const flowBudget = sourceFlowCatalog ? { catalog: sourceFlowCatalog,
         lookup: (handleId: string) => helpers.getContextPackHandle(handleId),
         store: (handleId: string, handle: unknown) => helpers.setContextPackHandle(handleId, handle) } : undefined
+      // Optional module-derived completion needs a fully inspected origin.
+      // An incomplete snapshot must not suppress independently verified source
+      // recovery; admitted snapshots still undergo the live freshness checks.
       const functionValues = task === 'explain' && resolution === 'detail' && !includeSelectionDiagnostics
         && !deltaSessionId && (!contextPackStrategy || contextPackStrategy === 'default')
-        && sourceFunctionValues?.length && sourceConfiguration
+        && sourceFunctionValues?.length && sourceConfiguration?.cacheable === true
         ? { references: sourceFunctionValues,
             configurationFresh: () => sourceModuleConfigurationSnapshotIsFresh(sourceConfiguration, packageRoot) }
         : undefined
       const callsites = task === 'explain' && resolution === 'detail' && !includeSelectionDiagnostics
         && !deltaSessionId && (!contextPackStrategy || contextPackStrategy === 'default')
-        && sourceCallsites?.length && sourceConfiguration
+        && sourceCallsites?.length && sourceConfiguration?.cacheable === true
         ? { bundles: sourceCallsites,
             configurationFresh: () => sourceModuleConfigurationSnapshotIsFresh(sourceConfiguration, packageRoot) }
         : undefined
