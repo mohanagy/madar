@@ -85,7 +85,7 @@ import { attachSourceGroupContinuation, expandSourceGroupContinuation, isSourceG
 import { createSourceRecoveryPartition, filterSourceRecoveryResponse, restrictSourceRecoveryContinuation,
   verifySourceRecoveryPartition, type SourceRecoveryPartition } from '../source-recovery-partition.js'
 import { sourceOutsideFileBudgetPreference } from '../source-container-budget.js'
-import { protectSourceQueryWitnesses, scopedSourceDeferralCore } from '../source-scoped-deferral.js'
+import { protectSourceDiscoveryWitnesses, scopedSourceDeferralCore } from '../source-scoped-deferral.js'
 import { parseExplicitSourceTargets, buildExplicitSourceTargetPayload, ExplicitSourceTargetError } from '../explicit-source-targets.js'
 import { resolveExplicitSourceCallees } from '../explicit-source-callees.js'
 import { buildContextPackGovernanceReceipt } from '../context-pack-governance.js'
@@ -2016,7 +2016,7 @@ function discoverySourceDeferral(
   const provenance = retrieval[sourceDiscoveryCoreKey] ?? scopedCore
   if (!provenance || provenance.question !== retrieval.question || !retrieval.task_contract) return undefined
   const protectedIds = retrieval[sourceDiscoveryCoreKey]
-    ? protectSourceQueryWitnesses(retrieval.question, nodes, new Set(provenance.node_ids), root)
+    ? protectSourceDiscoveryWitnesses(retrieval, nodes, new Set(provenance.node_ids), root)
     : new Set(provenance.node_ids)
   const knownIds = new Set(provenance.selected_node_ids)
   // A retained excerpt reference must keep its actual text supplier.
