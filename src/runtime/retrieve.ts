@@ -4985,7 +4985,9 @@ function sourceSelectionForTask(
   let ordered = [...seeds, ...resolved, ...remainder]
   let sourcePriority: string[] | undefined
   let continuationCatalog: SourceCoherentContinuationCatalog | undefined
-  if (independentBodyPriority && !discoveryCore && !operationAnchors.length && firstPosition === undefined && !requested.length
+  // Literal discovery records recoverable owners, not an explicit callable
+  // scope. It must not let a heuristic closure displace independent body matches.
+  if (independentBodyPriority && !operationAnchors.length && firstPosition === undefined && !requested.length
     && !hasRequestedFiles && allowsIndependentBodyDiscovery(options, retrievalGate)) {
     // Source matches retain their query rank and original evidence class,
     // even when the same owner also appears in a heuristic call closure.
