@@ -6,6 +6,7 @@ import * as ts from 'typescript'
 import { addNode, addUniqueEdge, createEdge, createNode, fileStemForPath, _makeId } from '../core.js'
 import type { ExtractionFragment } from '../dispatch.js'
 import { unparenthesizeExpression } from '../typescript-utils.js'
+import { affectedCallIsUnshadowed, declarationIdentityKey, topLevelCaseIdentityPlan, type TopLevelCasePlan } from '../top-level-case-identities.js'
 import type { JsFrameworkAdapter, JsFrameworkContext } from './types.js'
 
 const HTTP_ROUTE_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'all'])
@@ -26,6 +27,15 @@ interface ExpressEntity {
 interface FunctionInfo {
   line: number
   arity: number
+  caseId?: string
+  affectedCase?: boolean
+}
+
+function caseFunctionInfo(node: ts.Node, name: string, plan: TopLevelCasePlan): Pick<FunctionInfo, 'caseId' | 'affectedCase'> {
+  if (!plan.affectedNames.has(name.toLowerCase())) return {}
+  const caseId = ts.isFunctionDeclaration(node) && ts.isSourceFile(node.parent)
+    ? plan.ids.get(declarationIdentityKey('function', name)) : undefined
+  return { affectedCase: true, ...(caseId ? { caseId } : {}) }
 }
 
 interface ImportedBindingTarget {
@@ -35,6 +45,7 @@ interface ImportedBindingTarget {
   label?: string
   line?: number
   synthesizeNode?: boolean
+  allocatedCaseOwner?: boolean
 }
 
 interface RouteAttachment {
@@ -263,7 +274,8 @@ function resolveImportedBindingTarget(
 ): ImportedBindingTarget | null {
   const unwrapped = unparenthesizeExpression(expression)
   if (ts.isIdentifier(unwrapped)) {
-    return importedBindingsByLocalName.get(unwrapped.text) ?? null
+    const target = importedBindingsByLocalName.get(unwrapped.text)
+    return target?.allocatedCaseOwner && !affectedCallIsUnshadowed(unwrapped, unwrapped.text) ? null : target ?? null
   }
 
   if (ts.isPropertyAccessExpression(unwrapped) && ts.isIdentifier(unwrapped.expression)) {
@@ -271,7 +283,8 @@ function resolveImportedBindingTarget(
     if (!importedModulePath) {
       return null
     }
-    return analyzeExpressModule(importedModulePath).exportedBindings.get(unwrapped.name.text) ?? null
+    const target = analyzeExpressModule(importedModulePath).exportedBindings.get(unwrapped.name.text)
+    return target?.allocatedCaseOwner && !affectedCallIsUnshadowed(unwrapped, unwrapped.expression.text) ? null : target ?? null
   }
 
   return null
@@ -519,10 +532,13 @@ function resolveLocalRouteAttachment(
   }
 
   const label = identifierName(candidate)
-  if (label && functionInfoByName.has(label)) {
+  const functionInfo = label ? functionInfoByName.get(label) : undefined
+  if (label && functionInfo) {
+    if (functionInfo.affectedCase && (!functionInfo.caseId || !ts.isIdentifier(candidate)
+      || !affectedCallIsUnshadowed(candidate, label))) return null
     return {
       relation,
-      targetId: functionNodeId(filePath, label),
+      targetId: functionInfo.caseId ?? functionNodeId(filePath, label),
     }
   }
 
@@ -563,6 +579,7 @@ function analyzeExpressModule(filePath: string): ExpressModuleAnalysis {
   expressModuleAnalysisCache.set(filePath, analysis)
 
   const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(filePath))
+  const casePlan = topLevelCaseIdentityPlan(sourceFile, stem)
   const expressFactoryAliases = new Set<string>()
   const expressRouterAliases = new Set<string>()
   const importedBindingsByLocalName = new Map<string, ImportedBindingTarget>()
@@ -762,6 +779,7 @@ function analyzeExpressModule(filePath: string): ExpressModuleAnalysis {
       functionInfoByName.set(node.name.text, {
         line: lineOf(node, sourceFile),
         arity: node.parameters.length,
+        ...caseFunctionInfo(node, node.name.text, casePlan),
       })
     }
 
@@ -778,6 +796,7 @@ function analyzeExpressModule(filePath: string): ExpressModuleAnalysis {
       functionInfoByName.set(node.name.text, {
         line: lineOf(node, sourceFile),
         arity: node.initializer.parameters.length,
+        ...caseFunctionInfo(node, node.name.text, casePlan),
       })
     }
 
@@ -811,11 +830,14 @@ function analyzeExpressModule(filePath: string): ExpressModuleAnalysis {
       }
     }
 
-    if (functionInfoByName.has(localName)) {
+    const functionInfo = functionInfoByName.get(localName)
+    if (functionInfo) {
+      if (functionInfo.affectedCase && !functionInfo.caseId) return null
       return {
-        id: functionNodeId(filePath, localName),
+        id: functionInfo.caseId ?? functionNodeId(filePath, localName),
         kind: 'function',
         sourceFile: filePath,
+        ...(functionInfo.caseId ? { allocatedCaseOwner: true } : {}),
       }
     }
 
@@ -1116,6 +1138,7 @@ function resolveTargetNodeId(
   relation: 'middleware' | 'handles_route',
   context: JsFrameworkContext,
   baseNodeIdsByLabel: ReadonlyMap<string, string>,
+  affectedCaseNames: ReadonlySet<string>,
   baseNodesById: ReadonlyMap<string, ExtractionNodeRecord>,
   functionInfoByName: ReadonlyMap<string, FunctionInfo>,
   importedBindingsByLocalName: ReadonlyMap<string, ImportedBindingTarget>,
@@ -1130,7 +1153,11 @@ function resolveTargetNodeId(
 
   const label = identifierName(candidate)
   if (label) {
-    const nodeId = resolveNamedBaseNodeId(label, baseNodeIdsByLabel)
+    if (affectedCaseNames.has(label.toLowerCase())
+      && (!ts.isIdentifier(candidate) || !affectedCallIsUnshadowed(candidate, label))) return null
+    const nodeId = affectedCaseNames.has(label.toLowerCase())
+      ? functionInfoByName.get(label)?.caseId ?? null
+      : resolveNamedBaseNodeId(label, baseNodeIdsByLabel)
     if (nodeId) {
       const baseNode = baseNodesById.get(nodeId)
       const functionInfo = functionInfoByName.get(label)
@@ -1297,6 +1324,7 @@ export const expressAdapter: JsFrameworkAdapter = {
     return EXPRESS_MATCH_PATTERN.test(sourceText) || (IMPORTED_OWNER_ROUTE_PATTERN.test(sourceText) && MODULE_IMPORT_PATTERN.test(sourceText))
   },
   extract(context) {
+    const casePlan = topLevelCaseIdentityPlan(context.sourceFile, moduleStem(context.filePath))
     const nodes: NonNullable<ExtractionFragment['nodes']> = []
     const edges: NonNullable<ExtractionFragment['edges']> = []
     const seenNodeIds = new Set<string>()
@@ -1470,6 +1498,7 @@ export const expressAdapter: JsFrameworkAdapter = {
         functionInfoByName.set(node.name.text, {
           line: lineOf(node, context.sourceFile),
           arity: node.parameters.length,
+          ...caseFunctionInfo(node, node.name.text, casePlan),
         })
       }
 
@@ -1482,6 +1511,7 @@ export const expressAdapter: JsFrameworkAdapter = {
         functionInfoByName.set(node.name.text, {
           line: lineOf(node, context.sourceFile),
           arity: node.initializer.parameters.length,
+          ...caseFunctionInfo(node, node.name.text, casePlan),
         })
       }
 
@@ -1582,6 +1612,7 @@ export const expressAdapter: JsFrameworkAdapter = {
                 'middleware',
                 context,
                 baseNodeIdsByLabel,
+                casePlan.affectedNames,
                 baseNodesById,
                 functionInfoByName,
                 importedBindingsByLocalName,
@@ -1605,6 +1636,7 @@ export const expressAdapter: JsFrameworkAdapter = {
                 relation,
                 context,
                 baseNodeIdsByLabel,
+                casePlan.affectedNames,
                 baseNodesById,
                 functionInfoByName,
                 importedBindingsByLocalName,
