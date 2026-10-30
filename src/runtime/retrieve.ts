@@ -93,7 +93,7 @@ import {
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
-import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, sourceLocalPriorityKey, sourceClientPriorityKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
+import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, sourceLocalPriorityKey, sourceClientPriorityKey, sourceSubjectPriorityKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
 import { recoverySourceGuard } from './retrieve/recovery-source-preservation.js'
 import { sourceQuerySymbols, type SourceSymbolOccurrence } from './retrieve/source-query-symbols.js'
 import { sourceQualifiedBindingScope } from './retrieve/source-qualified-bindings.js'
@@ -4916,6 +4916,12 @@ function sourceSelectionForTask(
     && !sourceQuerySymbols(positive).some(occurrence => occurrence.explicit
       && (/[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(positive.slice(occurrence.end))))
     ? localLeader : undefined
+  // Configuration freshness also checks missing policy/configuration paths.
+  // Their scope predicate must not require a readable source declaration.
+  const allowedLocalPath = (file: string, canonical?: string): boolean => localExclusions.valid
+    && [file, ...(canonical ? [canonical] : [])].every(path =>
+      !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, localRoot) as never)
+      && !localExclusions.matchesSource(path, path, localRoot))
   const allowedLocalOwner = (file: string, label: string, text: string): boolean => {
     const canonical = sourcePathForEvidence(file, localRoot)
     return !!canonical && localExclusions.valid && !localExclusions.matchesText(text)
@@ -4936,6 +4942,7 @@ function sourceSelectionForTask(
     ...(discoveryCore || scopedValueCallers ? { functionValueCallerIds: discoveryCore ?? scopedValueCallers! } : {}),
     ...(localLeader && localRoot ? { localPriority: { seedId: localLeader.id, allowedOwner: allowedLocalOwner } } : {}),
     ...(clientLeader && localRoot ? { clientPriority: { seedId: clientLeader.id, question, allowedOwner: allowedLocalOwner } } : {}),
+    ...(localLeader && localRoot && independentBodyScope ? { subjectPriority: { seedId: localLeader.id, question, allowedPath: allowedLocalPath, allowedOwner: allowedLocalOwner } } : {}),
   })
   const qualifiedBindingScope = !exclusiveSymbolAnchor && !broadTask && !explicitLevel && !hasRequestedFiles
     && !callerIntent && options.taskIntent !== 'impact' && firstPosition !== undefined
@@ -5117,6 +5124,9 @@ function sourceSelectionForTask(
         dependencies[sourceSelectionProvenanceKey], id => byId.get(id)
           ?? (graph.hasNode(id) ? scoredNodeFromGraph(graph, id, 1, routeRoot) : undefined),
         allowedPath, allowedOwner, routeRoot)
+    }
+    if (dependencies[sourceSubjectPriorityKey]?.length) {
+      sourcePriority = [...new Set([...(sourcePriority ?? []), ...dependencies[sourceSubjectPriorityKey]!])]
     }
   }
   if (lexicalCompanions.length) {

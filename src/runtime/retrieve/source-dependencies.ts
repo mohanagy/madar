@@ -8,9 +8,10 @@ import type { KnowledgeGraph } from '../../contracts/graph.js'
 import type { ContextPackSourceDependencies, ContextPackTaskContract, ContextPackEvidenceClass } from '../../contracts/context-pack.js'
 import { lineRangeFromSourceLocation } from '../../shared/source-location.js'
 import { sourceFunctionOccurrence } from '../../shared/source-function-occurrences.js'
-import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, sourceRangeMatchesSymbol } from './source-evidence.js'
+import { coherentSourceSnippet, readEvidenceLines, sourceBodyQueryTerms, sourceBodyWords, sourcePathForEvidence, sourceRangeMatchesSymbol } from './source-evidence.js'
 import { createSourceModuleResolver, getSourceModuleConfigurationSnapshot, sourceModuleConfigurationSnapshotIsFresh, type SourceReadPolicy } from './source-modules.js'
 import { sourceClientImportGroup, sourceHasDirective } from './source-client-context.js'
+import { sourceSubjectQueries } from './source-subject-priority.js'
 import { sourceSelectionProvenanceKey, recordKnownForwardReachability, type SourceSelectionProvenance, type SourceSeedOrigins, type SourceAdmissionRole } from './source-selection-provenance.js'
 export { sourceSelectionProvenanceKey, type SourceSelectionProvenance, type SourceSeedOrigins } from './source-selection-provenance.js'
 
@@ -36,6 +37,7 @@ export const sourceFlowCatalogKey = Symbol('sourceFlowCatalog')
 /** Request-local presentation preference; never serialized dependency authority. */
 export const sourceLocalPriorityKey = Symbol('sourceLocalPriority')
 export const sourceClientPriorityKey = Symbol('sourceClientPriority')
+export const sourceSubjectPriorityKey = Symbol('sourceSubjectPriority')
 
 export interface SourceFlowOwner {
   node_id: string
@@ -79,6 +81,7 @@ export interface SourceDependencySelection {
   [sourceSelectionProvenanceKey]?: SourceSelectionProvenance
   [sourceLocalPriorityKey]?: string[]
   [sourceClientPriorityKey]?: string[]
+  [sourceSubjectPriorityKey]?: string[]
   node_ids: string[]
   relationships: Array<{ from_id: string; to_id: string; relation: 'calls' | 'depends_on' }>
   receipt: ContextPackSourceDependencies
@@ -113,7 +116,8 @@ export function selectSourceDependencies(
   cache: Map<string, string[] | null>,
   options: { includeCallers?: boolean; dependenciesOnly?: boolean; callerPriority?: boolean; inspectionOnly?: boolean; allowedSourceFiles?: ReadonlySet<string>; functionValueCallerIds?: readonly string[]; seedOrigins?: SourceSeedOrigins; readPolicy?: SourceReadPolicy;
     localPriority?: { seedId: string; allowedOwner: (file: string, label: string, text: string) => boolean };
-    clientPriority?: { seedId: string; question: string; allowedOwner: (file: string, label: string, text: string) => boolean } } = {},
+    clientPriority?: { seedId: string; question: string; allowedOwner: (file: string, label: string, text: string) => boolean };
+    subjectPriority?: { seedId: string; question: string; allowedPath: SourceReadPolicy; allowedOwner: (file: string, label: string, text: string) => boolean } } = {},
 ): SourceDependencySelection {
   const receipt: ContextPackSourceDependencies = { scanned_files: 0, resolved_calls: 0, unresolved_calls: 0, bounded: false }
   const provenance: SourceSelectionProvenance = {
@@ -1310,6 +1314,107 @@ export function selectSourceDependencies(
   const reserved = localGroup()
   for (const entry of reserved) { observe(entry.id, entry.role); add(entry.id, entry.role, 0) }
   if (reserved.length) result[sourceLocalPriorityKey] = [options.localPriority!.seedId, ...reserved.map(entry => entry.id)]
+  // A separately requested entry may share a callee and scalar binding with
+  // the subject. Reserve one observed incoming owner before ordinary fanout,
+  // without inventing a forward edge or expanding the inspected program.
+  const subjectGroup = (): { id: string; prefix: string[] } | undefined => {
+    const preference = options.subjectPriority
+    if (!preference || !rootPath || !includeCallers || options.callerPriority || options.inspectionOnly
+      || !seedIds.includes(preference.seedId) || !identityScanComplete || !callScanComplete
+      || !dataScanComplete || !mutationScanComplete || !writeOriginsComplete) return undefined
+    const queries = sourceSubjectQueries(preference.question).map(sourceBodyQueryTerms)
+    if (!queries.length) return undefined
+    const leader = ownerDeclarations.get(preference.seedId)
+    if (!leader || !ts.isFunctionDeclaration(leader) || !leader.body || !leader.name || !ts.isSourceFile(leader.parent)) return undefined
+    const configuration = getSourceModuleConfigurationSnapshot(receipt)
+    const allowedPath = (file: string, canonical?: string): boolean =>
+      preference.allowedPath(file, canonical)
+      && (!options.readPolicy || options.readPolicy(file, canonical))
+    const currentInputs = (): boolean => {
+      try {
+        return !!configuration?.cacheable && realpathSync(rootPath) === configuration.real_root
+          && sourceModuleConfigurationSnapshotIsFresh(configuration, rootPath, allowedPath)
+          && [...selectedFiles.values()].every(source => {
+            const file = nativeSourcePath(source), canonical = sourceCanonicalInputs.get(file)
+            return !!canonical && sourcePathForEvidence(file, rootPath) === canonical && allowedPath(file, canonical)
+              && readEvidenceLines(file, rootPath)?.join('\n') === source.text
+          })
+      } catch { return false }
+    }
+    const ownerText = (id: string, small = false): string | undefined => {
+      const declaration = ownerDeclarations.get(id), owner = declaration && declarationOwner(declaration)
+      if (!declaration || owner?.id !== id || owner.file) return undefined
+      const source = declaration.getSourceFile(), file = nativeSourcePath(source)
+      const canonical = sourceCanonicalInputs.get(file)
+      const start = source.getLineAndCharacterOfPosition(declaration.getStart(source)).line + 1
+      const end = source.getLineAndCharacterOfPosition(declaration.getEnd() - 1).line + 1
+      const lines = source.text.split('\n'), text = lines.slice(start - 1, end).join('\n')
+      if (!canonical || unsafeLocalBindingFiles.has(source) || !allowedPath(file, canonical)
+        || !preference.allowedOwner(file, owner.label, text) || !preference.allowedOwner(canonical, owner.label, text)
+        || small && (end - start + 1 > 80 || text.length > 12_000
+          || coherentSourceSnippet(lines, { start, end }, '', 'symbol')?.omittedRanges.length !== 0)) return undefined
+      return text
+    }
+    if (!currentInputs() || ownerText(preference.seedId) === undefined) return undefined
+    const positiveCalls = calls.filter(call => call.to && call.relation === 'calls' && call.observed)
+    const direct = new Set(positiveCalls.filter(call => call.from === preference.seedId).map(call => call.to!))
+    const forward = new Map<string, Set<string>>()
+    for (const pair of [...calls, ...dataReferences.values()]) if (pair.to) {
+      const targets = forward.get(pair.from) ?? new Set<string>()
+      targets.add(pair.to); forward.set(pair.from, targets)
+    }
+    const reachable = new Set(seedIds), queue = [...reachable]
+    for (let index = 0; index < queue.length; index++) for (const id of forward.get(queue[index]!) ?? []) {
+      if (!reachable.has(id)) { reachable.add(id); queue.push(id) }
+    }
+    const scalarIds = new Set<string>()
+    for (const reference of observedDataReferences) if (reference.to && !scalarIds.has(reference.to)) {
+      const declaration = ownerDeclarations.get(reference.to)
+      if (!declaration || !ts.isVariableDeclaration(declaration) || !ts.isIdentifier(declaration.name)
+        || !ts.isVariableDeclarationList(declaration.parent) || !(declaration.parent.flags & ts.NodeFlags.Const)
+        || !ts.isVariableStatement(declaration.parent.parent) || !ts.isSourceFile(declaration.parent.parent.parent)) continue
+      const initializer = declaration.initializer, symbol = checker.getSymbolAtLocation(declaration.name)
+      if (!initializer || !(ts.isStringLiteralLike(initializer) || ts.isNumericLiteral(initializer) || ts.isBigIntLiteral(initializer)
+        || [ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(initializer.kind))
+        || !symbol || symbol.valueDeclaration !== declaration || symbol.declarations?.length !== 1
+        || bindingWrites.has(symbol) || localBindingWrites.has(symbol)
+        || unresolvedLocalWriteNames.get(declaration.getSourceFile())?.has(declaration.name.text)
+        || ownerText(reference.to, true) === undefined) continue
+      scalarIds.add(reference.to)
+    }
+    const reads = new Map<string, Set<string>>()
+    for (const reference of observedDataReferences) if (reference.to && reference.observed && scalarIds.has(reference.to)) {
+      const values = reads.get(reference.from) ?? new Set<string>()
+      values.add(reference.to); reads.set(reference.from, values)
+    }
+    const originalTerms = new Set(sourceBodyQueryTerms(preference.question))
+    const matches: Array<{ id: string; score: number; ordinal: number }> = []
+    const considered = new Set<string>()
+    for (const call of positiveCalls) {
+      if (!direct.has(call.to!) || reachable.has(call.from) || selected.has(call.from) || considered.has(call.from)) continue
+      const declaration = ownerDeclarations.get(call.from)
+      if (!declaration || !ts.isFunctionDeclaration(declaration) || !declaration.body || !declaration.name
+        || !ts.isSourceFile(declaration.parent) || ownerText(call.to!) === undefined
+        || ![...(reads.get(call.from) ?? [])].some(id => reads.get(call.to!)?.has(id))) continue
+      const text = ownerText(call.from, true)
+      if (text === undefined) continue
+      considered.add(call.from)
+      const words = new Set(sourceBodyWords(text))
+      queries.forEach((terms, ordinal) => {
+        const matched = terms.filter(term => words.has(term))
+        if (matched.length >= 2 && matched.some(term => !originalTerms.has(term))) matches.push({ id: call.from, score: matched.length, ordinal })
+      })
+    }
+    const winner = matches.sort((left, right) => right.score - left.score || left.ordinal - right.ordinal || left.id.localeCompare(right.id))[0]
+    if (!winner) return undefined
+    // Preserve small current local callees, including nested named helpers,
+    // before the alternate entry. This prefix never admits extra owners.
+    const prefix = [...direct].filter(id => ownerDeclarations.get(id)?.getSourceFile() === leader.getSourceFile()
+      && ownerText(id, true) !== undefined).slice(0, 2)
+    return currentInputs() ? { id: winner.id, prefix: [preference.seedId, ...prefix] } : undefined
+  }
+  const subjectReserved = subjectGroup()
+  if (subjectReserved) { observe(subjectReserved.id, 'incoming'); add(subjectReserved.id, 'incoming', 1) }
   // Share the bounded closure between both call directions. An incoming
   // composition body still goes first; incidental caller fanout cannot consume
   // every slot before an actual callee. Explicit caller requests keep priority.
@@ -1356,6 +1461,9 @@ export function selectSourceDependencies(
     frontier = next
   }
   const relevantCalls = [...calls, ...dataReferences.values()].filter(call => selected.has(call.from))
+  if (subjectReserved && selected.has(subjectReserved.id)) result[sourceSubjectPriorityKey] = [
+    ...subjectReserved.prefix.filter(id => selected.has(id)), subjectReserved.id,
+  ]
   receipt.resolved_calls = relevantCalls.filter(call => call.to && call.relation === 'calls').length
   const references = relevantCalls.filter(call => call.to && call.relation === 'depends_on').length
   if (references) receipt.resolved_references = references
