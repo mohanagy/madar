@@ -322,6 +322,13 @@ function compactPayload(input: RecordValue): RecordValue {
   if (record(input.pack)._source_discovery_deferred === true || record(input.pack)._explicit_source_targets === true) {
     Object.assign(answerability, { state: 'insufficient', answer_scope: 'partial', advisory: true })
   }
+  const unverifiedOmitted = record(input.pack)._unverified_source_omitted
+  if (Number.isSafeInteger(unverifiedOmitted) && Number(unverifiedOmitted) > 0) {
+    Object.assign(answerability, { state: 'insufficient', answer_scope: 'partial', advisory: true })
+    answerability.missing_obligations = unique([...array(answerability.missing_obligations), 'evidence:unverified_source'])
+    answerability.caveats = unique([...array(answerability.caveats), 'Unverified cached source was omitted.'])
+    if (answerability.broad_search_fallback !== 'blocked') record(result.evidence).agent_directive = 'explore_with_caution'
+  }
   const missingObligations = unique([...array(answerability.missing_obligations),
     ...array(evidence.missing_obligations), ...array(detail.missing_obligations)])
   if (missingObligations.length) answerability.missing_obligations = missingObligations

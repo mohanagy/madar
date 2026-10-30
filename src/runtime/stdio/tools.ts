@@ -1037,10 +1037,86 @@ function scopedFunctionValuePrompt(prompt: string): boolean {
   return paths.size >= 2 && paths.size <= 8
 }
 
+/** A stored excerpt without a current source proof is not a recovery owner. */
+function isolateUnverifiedSourceOwners(
+  input: Record<string, unknown>, options: NonNullable<Parameters<typeof finalizeSourceEvidenceResponseLegacy>[2]>,
+): Record<string, unknown> {
+  const pack = isObjectRecord(input.pack) ? input.pack : {}, evidence = isObjectRecord(input.evidence) ? input.evidence : {}
+  const answer = isObjectRecord(evidence.answerability) ? evidence.answerability : {}
+  const governance = isObjectRecord(input.governance) ? input.governance : {}
+  const freshness = isObjectRecord(governance.graph_freshness) ? governance.graph_freshness : {}
+  if (!options.continuations || !options.requestedSource || options.verbose || options.format === 'text'
+    || input.mode === 'delta' || input.delta_session_id || input.task !== 'explain' && input.task !== 'implement'
+    || pack.selection_scope !== 'task_context' || pack.retrieval_strategy && pack.retrieval_strategy !== 'default'
+    || pack.nodes !== undefined || pack.review_bundle !== undefined
+    || freshness.status !== 'fresh' || freshness.selected_context_status !== 'fresh'
+    || answer.broad_search_fallback === 'blocked'
+    || !Array.isArray(pack.matched_nodes) || !pack.matched_nodes.length || pack.matched_nodes.length > 128
+    || !pack.matched_nodes.every(isObjectRecord)) return input
+  const nodes = pack.matched_nodes
+  if (nodes.some(node => typeof node.node_id !== 'string' || !node.node_id)
+    || new Set(nodes.map(node => node.node_id)).size !== nodes.length) return input
+  const unverified = nodes.filter(node => node.snippet_unverified === true)
+  if (!unverified.length) return input
+  // Existing compaction can discard raw cursor fields. Do not let isolation
+  // change a cursor-bearing packet's refusal before its normal proof path.
+  if (nodes.some(node => node.source_expand_handle !== undefined)) return input
+  // Only the explicit stored-snippet fallback shape is eligible. In particular,
+  // do not hide an old cursor or a dependent's possible current-text mismatch.
+  if (unverified.some(node => {
+    const range = isObjectRecord(node.snippet_line_range) ? node.snippet_line_range : {}
+    if (typeof node.snippet !== 'string' || !node.snippet.trim() || node.snippet_truncated !== true
+      || typeof node.source_file !== 'string' || !node.source_file || typeof node.label !== 'string' || !node.label
+      || node.snippet_scope !== undefined || node.snippet_source !== undefined || node.representation_type !== undefined
+      || node.snippet_ref !== undefined || !Number.isSafeInteger(range.start_line) || !Number.isSafeInteger(range.end_line)
+      || Number(range.start_line) < 1 || Number(range.end_line) < Number(range.start_line)
+      || Object.keys(range).some(key => key !== 'start_line' && key !== 'end_line')) return true
+    if (node.snippet_omitted_ranges === undefined) return false
+    if (!Array.isArray(node.snippet_omitted_ranges) || node.snippet_omitted_ranges.length > 4096) return true
+    let end = Number(range.start_line) - 1
+    return node.snippet_omitted_ranges.some(gap => {
+      if (!isObjectRecord(gap) || !Number.isSafeInteger(gap.start_line) || !Number.isSafeInteger(gap.end_line)
+        || Number(gap.start_line) <= end || Number(gap.end_line) < Number(gap.start_line)
+        || Number(gap.end_line) > Number(range.end_line)
+        || Object.keys(gap).some(key => key !== 'start_line' && key !== 'end_line')) return true
+      end = Number(gap.end_line)
+      return false
+    })
+  })) return input
+  const removed = new Set(unverified.map(node => node.node_id))
+  if (nodes.some(node => typeof node.snippet_ref === 'string' && removed.has(node.snippet_ref))) return input
+  const result = JSON.parse(JSON.stringify(input)) as Record<string, unknown>, nextPack = result.pack as Record<string, unknown>
+  const retained = (nextPack.matched_nodes as Record<string, unknown>[]).filter(node => !removed.has(node.node_id))
+  nextPack.matched_nodes = retained
+  const removedLabels = new Set(unverified.map(node => node.label))
+  if (Array.isArray(nextPack.relationships)) nextPack.relationships = nextPack.relationships.filter(value => {
+    if (!isObjectRecord(value)) return true
+    const incident = (id: unknown, label: unknown): boolean => typeof id === 'string'
+      ? removed.has(id) : removedLabels.has(label)
+    return !incident(value.from_id, value.from) && !incident(value.to_id, value.to)
+  })
+  for (const key of ['seed_nodes', 'changed_nodes', 'direct_dependents', 'transitive_dependents']) {
+    if (Array.isArray(nextPack[key])) nextPack[key] = (nextPack[key] as unknown[]).filter(node =>
+      !isObjectRecord(node) || !removed.has(node.node_id ?? node.id))
+  }
+  // A prior execution path is no longer supported as a whole. Keep its limits
+  // and warnings, and preserve the answer contract's missing/do-not-claim facts.
+  if (isObjectRecord(nextPack.execution_slice)) {
+    const execution = nextPack.execution_slice
+    nextPack.execution_slice = Object.fromEntries(['boundary_reason', 'missing_phases', 'gaps', 'omitted_branches']
+      .filter(key => execution[key] !== undefined).map(key => [key, execution[key]]))
+  }
+  nextPack._unverified_source_omitted = unverified.length
+  // Generic omission scopes remain owned navigation, not proof of these cached
+  // bytes. No source cursor or session store is changed by this transformation.
+  return result
+}
+
 /** Restore one selected scoped function value after the unchanged accepted stages. */
 export function finalizeSourceEvidenceResponse(
   input: object, budget: number, options: Parameters<typeof finalizeSourceEvidenceResponseLegacy>[2] = {},
 ): Record<string, unknown> {
+  if (isObjectRecord(input)) input = isolateUnverifiedSourceOwners(input, options)
   if (!options.continuations || !options.requestedSource || (!options.functionValues && !options.flowBudget)
     || !scopedFunctionValuePrompt(options.requestedSource.prompt)) return finalizeSourceEvidenceResponseBranches(input, budget, options)
   const handles = new Map<string, SourceContinuationHandle>()
@@ -1407,7 +1483,8 @@ function finalizeSourceEvidenceResponseLegacy(
   let latestInput: Record<string, unknown> | undefined
   const prepare = (payload: Record<string, unknown>) => {
     prepareSource ??= createSourceContinuationPreparation(options.continuations!.rootPath,
-      id => staged.get(id), () => callsitesFresh() && valuesFresh())
+      id => staged.get(id), () => callsitesFresh() && valuesFresh(),
+      { verifyAllSources: Number.isSafeInteger(originalPack._unverified_source_omitted) && Number(originalPack._unverified_source_omitted) > 0 })
     latestInput = payload
     latestProof = prepareSource(payload)
     return latestProof
@@ -1848,6 +1925,7 @@ function finalizeGeneratedContextPackResponse(
   options: NonNullable<Parameters<typeof finalizeSourceEvidenceResponse>[2]>,
   context: { prompt: string; task: ContextPackTaskKind; taskIntent: TaskContextPlan['evidence']['recipe_id']; helpers: ToolHelpers; sourceCatalog?: SourceCoherentContinuationCatalog },
 ): Record<string, unknown> {
+  input = isolateUnverifiedSourceOwners(input, options)
   const originalPack = isObjectRecord(input.pack) ? input.pack : {}
   const originalNodes = (Array.isArray(originalPack.matched_nodes) ? originalPack.matched_nodes : []).filter(isObjectRecord)
   const recoverable = originalNodes.filter(node => typeof node.node_id === 'string' && node.node_id.length > 0

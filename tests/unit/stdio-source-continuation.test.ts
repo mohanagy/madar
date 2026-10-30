@@ -21,7 +21,8 @@ type SourceNode = Record<string, unknown> & {
   snippet_line_range: Range; snippet_omitted_ranges?: Range[]; source_expand_handle?: string
 }
 type Payload = Record<string, unknown> & {
-  pack?: { matched_nodes?: SourceNode[]; relationships?: Array<Record<string, unknown>>; selection_scope?: string }
+  pack?: { matched_nodes?: SourceNode[]; relationships?: Array<Record<string, unknown>>; selection_scope?: string
+    execution_slice?: Record<string, unknown>; answer_contract?: Record<string, unknown> }
   evidence: Record<string, unknown>
   serialized_budget: { max_tokens: number; token_count: number; enforced: boolean }
   cache?: { status: string }
@@ -217,6 +218,110 @@ describe('bounded source continuation through strict MCP', () => {
     }
     return { input, files, budget, run }
   }
+
+  function unverifiedFixture() {
+    const f = navigationFixture(), input = structuredClone(f.input)
+    delete input.omitted_evidence
+    const cached: SourceNode = { node_id: 'cached', label: 'cachedLookup()', source_file: 'src/cached.ts',
+      snippet: 'UNVERIFIED_CACHED_BYTES', snippet_unverified: true, snippet_truncated: true,
+      snippet_line_range: { start_line: 1, end_line: 1 } }
+    writeFileSync(join(root, cached.source_file), 'export function cachedLookup() { return false }\n')
+    nodes(input).unshift(cached)
+    input.pack!.relationships = [{ from_id: 'cached', to_id: 'navigation', relation: 'related' },
+      { from_id: 'navigation', to_id: 'navigation', relation: 'related' }]
+    input.pack!.execution_slice = { status: 'complete', steps: [{ node_id: 'cached' }], gaps: ['Unresolved callback'] }
+    input.pack!.answer_contract = { do_not_claim: ['Deployment verified'], uncertainty_notes: ['Bounded source'] }
+    const run = (configurationFresh = () => true) => {
+      state.contextPackHandles = new Map()
+      return finalizeWithRecovery(input, 2800, {
+        requestedSource: { rootPath: root, prompt: 'Explain the source behavior.' },
+        callsites: { bundles: [], configurationFresh },
+        continuations: { rootPath: root, store: (id, handle) => state.contextPackHandles!.set(id, handle) },
+      }) as Payload
+    }
+    return { ...f, input, cached, run }
+  }
+
+  it('isolates unverified cached source before recovery while retaining real source and warnings', () => {
+    const f = unverifiedFixture()
+    f.cached.label = 'processNavigation()'
+    f.input.pack!.relationships!.push({ from: 'processNavigation()', to: 'processNavigation()', relation: 'calls' })
+    const before = JSON.stringify(f.input)
+    const result = f.run()
+    expect(nodes(result).map(node => node.node_id)).toEqual(['navigation'])
+    expect(result.pack?.relationships).toEqual([{ from_id: 'navigation', to_id: 'navigation', relation: 'related' }])
+    expect(JSON.stringify(result)).not.toContain('UNVERIFIED_CACHED_BYTES')
+    expect(result.pack).not.toHaveProperty('_unverified_source_omitted')
+    expect(result.pack).toMatchObject({ execution_slice: { gaps: ['Unresolved callback'] },
+      answer_contract: { do_not_claim: ['Deployment verified'], uncertainty_notes: ['Bounded source'] } })
+    expect((result.pack as Record<string, unknown>).execution_slice).not.toHaveProperty('steps')
+    expect(result.evidence).toMatchObject({ answerability: { state: 'insufficient', answer_scope: 'partial',
+      missing_obligations: expect.arrayContaining(['query:unverified', 'evidence:unverified_source']),
+      caveats: expect.arrayContaining(['Unverified cached source was omitted.']) } })
+    expect(pointers(result)).toHaveLength(1)
+    assertRecoveryCoverage(result, { [f.file]: f.source })
+    expect(result.serialized_budget).toEqual({ max_tokens: 2800, token_count: estimateQueryTokens(JSON.stringify(result)), enforced: true })
+    expect(result.serialized_budget.token_count).toBeLessThanOrEqual(2800)
+    expect(JSON.stringify(f.input)).toBe(before)
+  })
+
+  it.each(['reference', 'cursor'] as const)('does not isolate an unverified %s dependency into apparent valid source', kind => {
+    const f = unverifiedFixture()
+    if (kind === 'cursor') f.cached.source_expand_handle = 'source-expand:unknown'
+    else nodes(f.input).push({ node_id: 'dependent', label: 'cachedLookup()', source_file: f.cached.source_file,
+      snippet_ref: 'cached', snippet_scope: 'symbol', snippet_line_range: { start_line: 1, end_line: 1 } })
+    const before = JSON.stringify(f.input), result = f.run()
+    expect(nodes(result)).toEqual([]); expect(pointers(result)).toEqual([]); expect(sourceHandles().size).toBe(0)
+    expect(result.omitted_evidence).toBe('source recovery could not be verified')
+    expect(JSON.stringify(f.input)).toBe(before)
+  })
+
+  it('reports all unverified cached source as insufficient without source or recovery credit', () => {
+    const f = unverifiedFixture()
+    f.input.pack!.matched_nodes = [f.cached]
+    f.input.pack!.relationships = []
+    const before = JSON.stringify(f.input), result = f.run()
+    expect(nodes(result)).toEqual([]); expect(pointers(result)).toEqual([]); expect(sourceHandles().size).toBe(0)
+    expect(JSON.stringify(result)).not.toContain('UNVERIFIED_CACHED_BYTES')
+    expect(result.evidence).toMatchObject({ answerability: { state: 'insufficient', answer_scope: 'partial',
+      broad_search_fallback: 'allowed', caveats: expect.arrayContaining(['Unverified cached source was omitted.']) } })
+    expect(result.serialized_budget).toEqual({ max_tokens: 2800, token_count: estimateQueryTokens(JSON.stringify(result)), enforced: true })
+    expect(JSON.stringify(f.input)).toBe(before)
+  })
+
+  it.each([
+    { snippet_truncated: false },
+    { snippet_line_range: { start_line: 0, end_line: 1 } },
+    { snippet_omitted_ranges: [{ start_line: 2, end_line: 1 }] },
+  ])('keeps noncanonical cached evidence outside isolation: %j', fields => {
+    const f = unverifiedFixture()
+    Object.assign(f.cached, fields)
+    const before = JSON.stringify(f.input), result = f.run()
+    expect(JSON.stringify(result)).not.toContain('Unverified cached source was omitted.')
+    expect(JSON.stringify(f.input)).toBe(before)
+  })
+
+  it('keeps blocked discovery outside cached-source isolation', () => {
+    const f = unverifiedFixture()
+    ;(f.input.evidence.answerability as Record<string, unknown>).broad_search_fallback = 'blocked'
+    const before = JSON.stringify(f.input), result = f.run()
+    expect(result.evidence).toMatchObject({ answerability: { broad_search_fallback: 'blocked' } })
+    expect(result.evidence.agent_directive).not.toBe('explore_with_caution')
+    expect(JSON.stringify(result)).not.toContain('Unverified cached source was omitted.')
+    expect(JSON.stringify(f.input)).toBe(before)
+  })
+
+  it.each(['complete source', 'configuration', 'cursor'] as const)('keeps genuine %s failure fatal alongside isolated cached source', kind => {
+    const f = unverifiedFixture(), real = nodes(f.input)[1]!
+    if (kind === 'complete source') {
+      real.snippet = f.source.join('\n'); delete real.snippet_omitted_ranges
+      writeFileSync(join(root, f.file), f.source.join('\n').replace('let total = records.length;', 'let total = 0;'))
+    } else if (kind === 'cursor') real.source_expand_handle = 'source-expand:unknown'
+    const before = JSON.stringify(f.input), result = f.run(() => kind !== 'configuration')
+    expect(nodes(result)).toEqual([]); expect(pointers(result)).toEqual([]); expect(sourceHandles().size).toBe(0)
+    expect(result.omitted_evidence).toBe('source recovery could not be verified')
+    expect(JSON.stringify(f.input)).toBe(before)
+  })
 
   it('reserves measured recovery cost with bounded original-input repacking', () => {
     const f = reservationFixture(), before = JSON.stringify(f.input), fit = evidenceResponses.fitPreparedSourceEvidenceResponse
