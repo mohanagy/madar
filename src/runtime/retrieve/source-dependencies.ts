@@ -9,7 +9,8 @@ import type { ContextPackSourceDependencies, ContextPackTaskContract, ContextPac
 import { lineRangeFromSourceLocation } from '../../shared/source-location.js'
 import { sourceFunctionOccurrence } from '../../shared/source-function-occurrences.js'
 import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, sourceRangeMatchesSymbol } from './source-evidence.js'
-import { createSourceModuleResolver, getSourceModuleConfigurationSnapshot, type SourceReadPolicy } from './source-modules.js'
+import { createSourceModuleResolver, getSourceModuleConfigurationSnapshot, sourceModuleConfigurationSnapshotIsFresh, type SourceReadPolicy } from './source-modules.js'
+import { sourceClientImportGroup, sourceHasDirective } from './source-client-context.js'
 import { sourceSelectionProvenanceKey, recordKnownForwardReachability, type SourceSelectionProvenance, type SourceSeedOrigins, type SourceAdmissionRole } from './source-selection-provenance.js'
 export { sourceSelectionProvenanceKey, type SourceSelectionProvenance, type SourceSeedOrigins } from './source-selection-provenance.js'
 
@@ -33,6 +34,7 @@ export const sourceFunctionValueReferencesKey = Symbol('sourceFunctionValueRefer
 export const sourceFlowCatalogKey = Symbol('sourceFlowCatalog')
 /** Request-local presentation preference; never serialized dependency authority. */
 export const sourceLocalPriorityKey = Symbol('sourceLocalPriority')
+export const sourceClientPriorityKey = Symbol('sourceClientPriority')
 
 export interface SourceFlowOwner {
   node_id: string
@@ -73,6 +75,7 @@ export interface SourceCallsiteBundle {
 export interface SourceDependencySelection {
   [sourceSelectionProvenanceKey]?: SourceSelectionProvenance
   [sourceLocalPriorityKey]?: string[]
+  [sourceClientPriorityKey]?: string[]
   node_ids: string[]
   relationships: Array<{ from_id: string; to_id: string; relation: 'calls' | 'depends_on' }>
   receipt: ContextPackSourceDependencies
@@ -106,7 +109,8 @@ export function selectSourceDependencies(
   rootPath: string | undefined,
   cache: Map<string, string[] | null>,
   options: { includeCallers?: boolean; dependenciesOnly?: boolean; callerPriority?: boolean; inspectionOnly?: boolean; allowedSourceFiles?: ReadonlySet<string>; functionValueCallerIds?: readonly string[]; seedOrigins?: SourceSeedOrigins; readPolicy?: SourceReadPolicy;
-    localPriority?: { seedId: string; allowedOwner: (file: string, label: string, text: string) => boolean } } = {},
+    localPriority?: { seedId: string; allowedOwner: (file: string, label: string, text: string) => boolean };
+    clientPriority?: { seedId: string; question: string; allowedOwner: (file: string, label: string, text: string) => boolean } } = {},
 ): SourceDependencySelection {
   const receipt: ContextPackSourceDependencies = { scanned_files: 0, resolved_calls: 0, unresolved_calls: 0, bounded: false }
   const provenance: SourceSelectionProvenance = {
@@ -165,10 +169,25 @@ export function selectSourceDependencies(
     imports.set(path, moduleSpecifiers(text).flatMap(specifier => modulePath(specifier, path) ?? []))
     return text
   }
+  // A current client import group only navigates the bounded program. It does
+  // not admit an owner, and a later failed binding proof gives it no priority.
+  const clientSeed = options.clientPriority && !options.callerPriority && !options.inspectionOnly
+    && seedIds.includes(options.clientPriority.seedId) ? nodePaths.get(options.clientPriority.seedId) : undefined
+  const clientText = clientSeed ? loadText(clientSeed) : undefined
+  const clientGroup = clientSeed && clientText !== undefined
+    ? sourceClientImportGroup(ts.createSourceFile(clientSeed, clientText, ts.ScriptTarget.Latest, true), options.clientPriority!.question) : undefined
+  const clientModule = clientGroup && clientSeed ? modulePath(clientGroup.specifier, clientSeed) : undefined
+  const clientModuleText = clientModule ? loadText(clientModule) : undefined
+  const clientHint = clientModule && clientModuleText !== undefined
+    && !sourceHasDirective(ts.createSourceFile(clientModule, clientModuleText, ts.ScriptTarget.Latest, true), 'use server')
+    ? { file: clientModule, group: clientGroup! } : undefined
+  const preferredInputs = clientHint ? [...new Set([clientHint.file, ...(imports.get(clientHint.file) ?? [])])] : []
+  const includeCallers = options.includeCallers !== false && !clientHint
+  provenance.policy.include_callers = includeCallers
   // Resolve known dependencies before a reverse-import scan can spend the
   // bounded read allowance on unrelated files.
-  const importFrontier = [...seedFiles]
-  const importSeen = new Set(seedFiles)
+  const importFrontier = [...new Set([...seedFiles, ...preferredInputs])]
+  const importSeen = new Set(importFrontier)
   for (let index = 0; index < Math.min(importFrontier.length, MAX_FILES); index += 1) {
     const path = importFrontier[index]!
     loadText(path)
@@ -177,7 +196,7 @@ export function selectSourceDependencies(
   if (importFrontier.length > MAX_FILES) { receipt.bounded = true; note('import_frontier_limit'); provenance.scans.source_loading = 'incomplete' }
   // Source body search normally populated this request cache already. The scan is
   // still capped, and only imports determine which files enter the type program.
-  if (options.includeCallers !== false) {
+  if (includeCallers) {
     const paths = [...indexed].sort()
     if (paths.length > MAX_IMPORT_SCAN_FILES) { receipt.bounded = true; note('reverse_import_file_limit'); provenance.scans.source_loading = 'incomplete' }
     for (const path of paths.slice(0, MAX_IMPORT_SCAN_FILES)) loadText(path)
@@ -185,8 +204,9 @@ export function selectSourceDependencies(
   const selectedFiles = new Map<string, ts.SourceFile>()
   const owners = new Map<string, Owner[]>()
   let bytes = 0
-  const queue = seedFiles.map(path => ({ path, depth: 0 }))
-  const queued = new Set(seedFiles)
+  const queue = [...seedFiles.map(path => ({ path, depth: 0 })),
+    ...preferredInputs.filter(path => !seedFiles.includes(path)).map(path => ({ path, depth: path === clientHint!.file ? 1 : 2 }))]
+  const queued = new Set(queue.map(entry => entry.path))
   const enqueue = (path: string, depth: number): void => {
     if (!queued.has(path)) { queued.add(path); queue.push({ path, depth }) }
   }
@@ -217,7 +237,7 @@ export function selectSourceDependencies(
     owners.set(path, fileOwners.sort((left, right) => Number(left.file) - Number(right.file) || (left.end - left.start) - (right.end - right.start) || left.id.localeCompare(right.id)))
     if (depth < 3) for (const target of imports.get(path) ?? []) enqueue(target, depth + 1)
     else if ((imports.get(path)?.length ?? 0) > 0) { receipt.bounded = true; provenance.scans.program = 'incomplete'; note('program_import_depth_limit') }
-    if (options.includeCallers !== false && depth < 2) {
+    if (includeCallers && depth < 2) {
       for (const [importer, targets] of imports) if (targets.includes(path)) enqueue(importer, depth + 1)
     }
   }
@@ -1092,6 +1112,80 @@ export function selectSourceDependencies(
     selected.add(id); additions.push(id)
     provenance.admissions.push({ node_id: id, role, depth })
   }
+  const clientForwardGroup = (): Array<{ id: string; role: SourceAdmissionRole; depth: number }> => {
+    const preference = options.clientPriority
+    if (!preference || !clientHint || !rootPath || !identityScanComplete || !callScanComplete
+      || !dataScanComplete || !mutationScanComplete || !writeOriginsComplete) return []
+    const leader = ownerDeclarations.get(preference.seedId)
+    if (!leader || !ts.isFunctionDeclaration(leader) || !leader.body || !leader.name || !ts.isSourceFile(leader.parent)) return []
+    const source = leader.getSourceFile(), targetSource = selectedFiles.get(clientHint.file)
+    if (!targetSource || !sourceHasDirective(source, 'use client') || unsafeLocalBindingFiles.has(source)) return []
+    const configuration = getSourceModuleConfigurationSnapshot(receipt)
+    const currentInputs = (): boolean => {
+      try {
+        return !!configuration?.cacheable && sourceModuleConfigurationSnapshotIsFresh(configuration, rootPath, options.readPolicy)
+          && [...selectedFiles.values()].every(input => {
+            const file = nativeSourcePath(input), canonical = sourceCanonicalInputs.get(file)
+            return !!canonical && sourcePathForEvidence(file, rootPath) === canonical
+              && (!options.readPolicy || options.readPolicy(file) && options.readPolicy(file, canonical))
+              && readEvidenceLines(file, rootPath)?.join('\n') === input.text
+          })
+      } catch { return false }
+    }
+    if (!currentInputs() || !preference.allowedOwner(nativeSourcePath(source), declarationOwner(leader)!.label, leader.getText(source))) return []
+    const group: Array<{ id: string; role: SourceAdmissionRole; depth: number }> = []
+    const seen = new Set<string>([preference.seedId])
+    let retainedLines = 0, retainedChars = 0
+    const append = (id: string, role: SourceAdmissionRole, depth: number): boolean => {
+      if (seen.has(id)) return true
+      const declaration = ownerDeclarations.get(id), owner = declaration && declarationOwner(declaration)
+      if (!declaration || owner?.id !== id || owner.file || group.length >= 8) return false
+      const input = declaration.getSourceFile(), file = nativeSourcePath(input)
+      const start = input.getLineAndCharacterOfPosition(declaration.getStart(input)).line + 1
+      const end = input.getLineAndCharacterOfPosition(declaration.getEnd() - 1).line + 1
+      const text = input.text.split('\n').slice(start - 1, end).join('\n')
+      if (sourceHasDirective(input, 'use server') || unsafeLocalBindingFiles.has(input)
+        || retainedLines + end - start + 1 > 80 || retainedChars + text.length > 12_000
+        || !preference.allowedOwner(file, owner.label, text)) return false
+      retainedLines += end - start + 1; retainedChars += text.length
+      seen.add(id); group.push({ id, role, depth }); return true
+    }
+    const imports = source.statements.filter(ts.isImportDeclaration).filter(statement =>
+      ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === clientHint.group.specifier)
+    if (imports.length !== 1) return []
+    const bindings = imports[0]!.importClause?.namedBindings
+    if (!bindings || !ts.isNamedImports(bindings)) return []
+    for (const name of clientHint.group.names) {
+      const binding = bindings.elements.find(entry => entry.name.text === name)
+      if (!binding || binding.propertyName || binding.isTypeOnly) return []
+      const alias = checker.getSymbolAtLocation(binding.name)
+      const symbol = alias && (alias.flags & ts.SymbolFlags.Alias) ? checker.getAliasedSymbol(alias) : undefined
+      const declaration = symbol?.valueDeclaration, owner = declaration && declarationOwner(declaration)
+      if (!alias || alias.declarations?.length !== 1 || !symbol || symbol.declarations?.length !== 1
+        || !declaration || !ts.isFunctionDeclaration(declaration) || !declaration.body || declaration.parent !== targetSource
+        || !owner || bindingWrites.has(symbol) || localBindingWrites.has(alias) || bindingWrites.has(alias)
+        || !calls.some(call => call.from === preference.seedId && call.to === owner.id && call.relation === 'calls' && call.observed)
+        || !append(owner.id, 'outgoing', 0)) return []
+    }
+    if (group.length < 2) return []
+    const direct = new Set(group.map(entry => entry.id))
+    for (const call of calls) if (call.to && call.observed && call.relation === 'calls' && direct.has(call.from)) {
+      const declaration = ownerDeclarations.get(call.to)
+      if (declaration && executable(declaration)) append(call.to, 'outgoing', 1)
+    }
+    let frontier = new Set(group.map(entry => entry.id))
+    for (let depth = 0; depth < 2 && frontier.size; depth++) {
+      const next = new Set<string>()
+      for (const reference of dataReferences.values()) if (reference.to && frontier.has(reference.from) && !seen.has(reference.to)) {
+        if (append(reference.to, 'data_reference', depth)) next.add(reference.to)
+      }
+      frontier = next
+    }
+    return currentInputs() ? group : []
+  }
+  const clientReserved = clientForwardGroup()
+  for (const entry of clientReserved) { observe(entry.id, entry.role); add(entry.id, entry.role, entry.depth) }
+  if (clientReserved.length) result[sourceClientPriorityKey] = [options.clientPriority!.seedId, ...clientReserved.map(entry => entry.id)]
   // A small local calculation needs both its callable and scalar policy input.
   // Reserve their existing positive bindings before reverse fanout uses all
   // slots. Pure helper fanout keeps the independent-body ordering unchanged.
@@ -1168,12 +1262,13 @@ export function selectSourceDependencies(
   let frontier = new Set(seedIds)
   for (let depth = 0; !options.inspectionOnly && depth < 2 && frontier.size; depth += 1) {
     const targets = new Set([...frontier, ...[...frontier].flatMap(id => [...(classAnchors.get(id) ?? [])])])
-    const next = new Set<string>(depth === 0 ? reserved.filter(entry => entry.role === 'outgoing' && !seedIds.includes(entry.id)).map(entry => entry.id) : [])
+    const next = new Set<string>(depth === 0 ? [...reserved,
+      ...clientReserved.filter(entry => entry.depth === 0)].filter(entry => entry.role === 'outgoing' && !seedIds.includes(entry.id)).map(entry => entry.id) : [])
     for (const call of calls) if (call.to) {
-      if (options.includeCallers !== false && targets.has(call.to)) observe(call.from, 'incoming')
+      if (includeCallers && targets.has(call.to)) observe(call.from, 'incoming')
       if (frontier.has(call.from)) observe(call.to, 'outgoing')
     }
-    const incoming = options.includeCallers === false ? [] : [...new Set(calls.flatMap(call =>
+    const incoming = !includeCallers ? [] : [...new Set(calls.flatMap(call =>
       call.to && targets.has(call.to) && !selected.has(call.from) ? [call.from] : []))]
     const outgoing = [...new Set(calls.flatMap(call =>
       call.to && frontier.has(call.from) && !selected.has(call.to) ? [call.to] : []))]

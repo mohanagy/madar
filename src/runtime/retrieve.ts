@@ -93,7 +93,7 @@ import {
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
 import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
-import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, sourceLocalPriorityKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
+import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, sourceLocalPriorityKey, sourceClientPriorityKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
 import { recoverySourceGuard } from './retrieve/recovery-source-preservation.js'
 import { sourceQuerySymbols, type SourceSymbolOccurrence } from './retrieve/source-query-symbols.js'
 import { sourceQualifiedBindingScope } from './retrieve/source-qualified-bindings.js'
@@ -102,6 +102,7 @@ import { prioritizeNextRouteReferences } from './retrieve/source-route-reference
 import { sourceCoherenceGroup, sourceCompositionPriority } from './retrieve/source-coherence.js'
 import { sourceDiagnosticLexicalCompanions } from './retrieve/source-lexical-companions.js'
 import { sourceDiagnosticQueries, sourceDiagnosticSeeds, type SourceDiagnosticClauseMatches } from './retrieve/source-diagnostic-priority.js'
+import { sourceClientContextRequest } from './retrieve/source-client-context.js'
 import { sourceIncomingDecisionFragment } from './retrieve/source-decision-fragments.js'
 import { buildSourceCoherentContinuationCatalog, sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from './retrieve/source-coherent-continuation.js'
 import { selectRequestedHelperOwners } from './retrieve/source-requested-helpers.js'
@@ -4907,6 +4908,20 @@ function sourceSelectionForTask(
   const localExclusions = compileSourceExclusions(retrievalGate.signals.excluded_terms ?? [],
     retrievalGate.signals.excluded_path_hints ?? [], localRoot)
   const localLeader = !callerIntent && !broadTask && !explicitLevel ? independent[0] : undefined
+  const clientLeader = localLeader && localLeader.id === seeds[0]?.id && independentBodyScope
+    && classifyRetrieveTaskContract(options).task_intent === 'explain'
+    && !requested.length && firstPosition === undefined && !hasRequestedFiles && !operationAnchors.length
+    && !retrievalGate.signals.mentioned_paths.length && !retrievalGate.signals.mentioned_directories?.length
+    && !sourceQueryLiterals(positive).length && sourceClientContextRequest(question)
+    && !sourceQuerySymbols(positive).some(occurrence => occurrence.explicit
+      && (/[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(positive.slice(occurrence.end))))
+    ? localLeader : undefined
+  const allowedLocalOwner = (file: string, label: string, text: string): boolean => {
+    const canonical = sourcePathForEvidence(file, localRoot)
+    return !!canonical && localExclusions.valid && !localExclusions.matchesText(text)
+      && [file, canonical].every(path => !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, localRoot) as never)
+        && !localExclusions.matchesSource(path, label, localRoot))
+  }
   const dependencies = selectSourceDependencies(graph, seeds.map(node => node.id), localRoot, requestSourceCache(options), {
     // A question scoped to named files needs their implementations and local
     // dependencies. Reverse callers enter only when the request asks for them.
@@ -4919,13 +4934,8 @@ function sourceSelectionForTask(
       anchor_ids: anchors.map(node => node.id), heuristic_anchor_ids: firstPosition === undefined && (behaviorLocation || !fileTargets.length) ? anchors.map(node => node.id) : [],
     },
     ...(discoveryCore || scopedValueCallers ? { functionValueCallerIds: discoveryCore ?? scopedValueCallers! } : {}),
-    ...(localLeader && localRoot ? { localPriority: { seedId: localLeader.id,
-      allowedOwner: (file: string, label: string, text: string): boolean => {
-        const canonical = sourcePathForEvidence(file, localRoot)
-        return !!canonical && localExclusions.valid && !localExclusions.matchesText(text)
-          && [file, canonical].every(path => !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, localRoot) as never)
-            && !localExclusions.matchesSource(path, label, localRoot))
-      } } } : {}),
+    ...(localLeader && localRoot ? { localPriority: { seedId: localLeader.id, allowedOwner: allowedLocalOwner } } : {}),
+    ...(clientLeader && localRoot ? { clientPriority: { seedId: clientLeader.id, question, allowedOwner: allowedLocalOwner } } : {}),
   })
   const qualifiedBindingScope = !exclusiveSymbolAnchor && !broadTask && !explicitLevel && !hasRequestedFiles
     && !callerIntent && options.taskIntent !== 'impact' && firstPosition !== undefined
@@ -5065,6 +5075,9 @@ function sourceSelectionForTask(
     sourcePriority = coherence?.priority ?? sourceCompositionPriority(independent, ordered, dependencies[sourceSelectionProvenanceKey],
       allowedPath, allowedOwner, routeRoot)
     if (!sourcePriority.length) sourcePriority = dependencies[sourceLocalPriorityKey]
+    if (dependencies[sourceClientPriorityKey]?.length) {
+      sourcePriority = [...new Set([...dependencies[sourceClientPriorityKey]!, ...(sourcePriority ?? [])])]
+    }
     if (diagnosticIds.length) {
       // Keep selected decisions, lexical definition context, and then positively
       // resolved dependencies. Definition context never supplies call authority.

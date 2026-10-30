@@ -374,6 +374,9 @@ function bodyTerms(question: string): string[] {
   return [...new Set(tokenizeQuestion(sourceBodyWords(retrievalSearchPrompt(question)).join(' ')).filter((term) => term.length >= 3 && !BODY_QUERY_NOISE.has(term)))].slice(0, 32)
 }
 
+/** Shared lexical vocabulary for optional current-source navigation. */
+export { bodyTerms as sourceBodyQueryTerms }
+
 /** Preserve positions while hiding quoted text and balanced source calls from prose boundaries. */
 export function sourceRequestProse(question: string): string {
   const chars = question.split('')
