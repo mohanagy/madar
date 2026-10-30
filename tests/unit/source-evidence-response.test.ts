@@ -19,7 +19,72 @@ function response(task = 'explain') {
   }
 }
 
+function metadataRescueResponse() {
+  const input = response()
+  return { ...input, plan: undefined, task_intent: input.task,
+    pack: { ...input.pack, matched_nodes: input.pack.matched_nodes.map((node, index) => ({ ...node,
+      source_file: `src/reset-${index}.ts`, snippet: code.replace('consume(token)', `consume${index}(token)`) })) },
+    evidence: { ...input.evidence, missing_phases: [] } }
+}
+
 describe('source evidence wire contract', () => {
+  it('uses repeated metadata savings before sacrificing an independent source owner', () => {
+    const input = metadataRescueResponse(), before = JSON.stringify(input)
+    const full = finalizeSourceEvidenceResponse(input, 10000)
+    const budget = estimateQueryTokens(JSON.stringify(full)) - 10
+    const result = finalizeSourceEvidenceResponse(input, budget)
+    expect(result.pack).toEqual(full.pack)
+    const expectedEvidence = { ...(full.evidence as Record<string, unknown>) }
+    delete expectedEvidence.missing_phases
+    expect(result.evidence).toEqual(expectedEvidence)
+    expect(result.governance).toEqual(full.governance)
+    expect(result.cache).toEqual({ status: 'hit' })
+    expect(result).not.toHaveProperty('task_intent')
+    expect(result).not.toHaveProperty('omitted_evidence')
+    expect(result.serialized_budget).toEqual({ max_tokens: budget,
+      token_count: estimateQueryTokens(JSON.stringify(result)), enforced: true })
+    expect(estimateQueryTokens(JSON.stringify(result))).toBeLessThanOrEqual(budget)
+    expect(JSON.stringify(input)).toBe(before)
+    expect(finalizeSourceEvidenceResponse(input, 10000)).toEqual(full)
+  })
+
+  it('keeps ordinary source omission when metadata savings cannot fit the whole packet', () => {
+    const input = metadataRescueResponse()
+    const full = finalizeSourceEvidenceResponse(input, 10000)
+    const budget = estimateQueryTokens(JSON.stringify(full)) - 150
+    const result = finalizeSourceEvidenceResponse(input, budget)
+    expect((result.pack as { matched_nodes?: unknown[] })?.matched_nodes?.length ?? 0).toBeLessThan(2)
+    expect(result.omitted_evidence).toBeDefined()
+    expect(estimateQueryTokens(JSON.stringify(result))).toBeLessThanOrEqual(budget)
+  })
+
+  it.each([{ verbose: true }, { format: 'text' as const }])('keeps metadata rescue out of %j output', options => {
+    const input = metadataRescueResponse()
+    const full = finalizeSourceEvidenceResponse(input, 10000, options)
+    const measure = (value: Record<string, unknown>) => estimateQueryTokens('format' in options
+      ? renderSourceEvidenceText(value) : JSON.stringify(value))
+    const budget = measure(full) - 10
+    const result = finalizeSourceEvidenceResponse(input, budget, options)
+    expect(result.cache).toEqual(input.cache)
+    expect(result.task_intent).toBe(input.task_intent)
+    expect(measure(result)).toBeLessThanOrEqual(budget)
+  })
+
+  it('does not change source verification or policy flags while rescuing metadata', () => {
+    const input = metadataRescueResponse()
+    input.evidence.answerability.broad_search_fallback = 'blocked'
+    const node = input.pack.matched_nodes[0]! as Record<string, unknown>
+    Object.assign(node, { snippet_unverified: true, snippet_truncated: true,
+      snippet_line_range: { start_line: 1, end_line: 8 }, snippet_omitted_ranges: [{ start_line: 5, end_line: 8 }] })
+    const full = finalizeSourceEvidenceResponse(input, 10000)
+    const result = finalizeSourceEvidenceResponse(input, estimateQueryTokens(JSON.stringify(full)) - 10)
+    expect(result.pack).toEqual(full.pack)
+    expect(result.governance).toEqual(full.governance)
+    expect(result.evidence).toMatchObject({ answerability: {
+      broad_search_fallback: 'blocked', caveats: (full.evidence as typeof input.evidence).answerability.caveats } })
+    expect(result).not.toHaveProperty('omitted_evidence')
+  })
+
   it('preserves impact identities and limits in compact JSON and text', () => {
     const traversal = { status: 'node_limited', depth: 3, node_limit: 500 }
     const impact_traversal = { analyzed_targets: 13, partial_targets: 1, depth_limited_targets: 0, node_limited_targets: 1 }

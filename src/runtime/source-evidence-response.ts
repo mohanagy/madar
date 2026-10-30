@@ -730,7 +730,16 @@ export function finalizeSourceEvidenceResponse(
     && record(payload.pack).selection_scope === 'task_context'
     && freshness.status === 'fresh' && freshness.selected_context_status === 'fresh'
     ? sourceContainerBudgetPreference(options.requestedSource.prompt, options.requestedSource.rootPath) : undefined
-  while (attach() > maxTokens && removeOneEvidenceUnit(payload, preferred)) markOmitted(payload, ++omitted)
+  while (attach() > maxTokens) {
+    if (!options.verbose && options.format !== 'text') {
+      // Reversible metadata savings may fit the remaining owners after an earlier
+      // eviction. Preserve their source before removing another owner.
+      const compact = compactRepeatedSourceMetadata(payload, maxTokens)
+      if (compact !== payload) { payload = compact; break }
+    }
+    if (!removeOneEvidenceUnit(payload, preferred)) break
+    markOmitted(payload, ++omitted)
+  }
   if (attach() <= maxTokens) return finish()
   // Tiny budgets cannot carry source plus all continuations. Preserve the policy decision and freshness.
   return insufficientSourceEvidenceResponse(original, payload, maxTokens, options.format)
