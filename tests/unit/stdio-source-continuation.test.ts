@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -11,6 +11,7 @@ import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { fitPreparedSourceEvidenceResponse, resolveSourceSnippet, SOURCE_EVIDENCE_RESPONSE_FORMAT } from '../../src/runtime/source-evidence-response.js'
 import * as evidenceResponses from '../../src/runtime/source-evidence-response.js'
 import { finalizeSourceEvidenceResponse as finalizeWithRecovery } from '../../src/runtime/stdio/tools.js'
+import { prepareNestedSourceRefill } from '../../src/runtime/source-nested-refill.js'
 import {
   attachSourceContinuationHandles, createSourceContinuationPreparation, expandSourceContinuation, type SourceContinuationHandle,
 } from '../../src/runtime/source-continuation.js'
@@ -321,6 +322,194 @@ describe('bounded source continuation through strict MCP', () => {
     expect(nodes(result)).toEqual([]); expect(pointers(result)).toEqual([]); expect(sourceHandles().size).toBe(0)
     expect(result.omitted_evidence).toBe('source recovery could not be verified')
     expect(JSON.stringify(f.input)).toBe(before)
+  })
+
+  function nestedRefillFixture(childCount = 1, largeChild = false) {
+    const f = navigationFixture(), input = structuredClone(f.input), source = ['export function processNavigation() {', '  let total = 0;']
+    delete input.omitted_evidence
+    source.push(...Array.from({ length: 100 }, (_, i) => `  total += ${i};`))
+    const children: SourceNode[] = []
+    for (let index = 0; index < childCount; index++) {
+      const start = source.length + 1
+      source.push(`  function restoreRecord${index}() {`)
+      if (largeChild && index === 0) source.push(...Array.from({ length: 65 }, (_, i) => `    total += Math.max(${i}, total * 2, total - 3, total + 4);`))
+      source.push(`    return ${index + 7};`, '  }')
+      children.push({ node_id: `nested:${index}`, label: `restoreRecord${index}()`, source_file: f.file,
+        snippet_scope: 'symbol', snippet_line_range: { start_line: start, end_line: source.length },
+        snippet: source.slice(start - 1).join('\n'), snippet_truncated: false })
+    }
+    source.push(...Array.from({ length: 100 }, (_, i) => `  total += ${i + 100};`), '  return total;', '}')
+    writeFileSync(join(root, f.file), source.join('\n'))
+    const parent = nodes(input)[0]!
+    parent.snippet_line_range = { start_line: 1, end_line: source.length }
+    parent.snippet_omitted_ranges = [{ start_line: 3, end_line: source.length - 2 }]
+    parent.snippet = [...source.slice(0, 2), `[omitted lines 3-${source.length - 2}]`, ...source.slice(-2)].join('\n')
+    const bulky = ['export function bulkyRecords() {', '  let total = 0;',
+      ...Array.from({ length: 70 }, (_, i) => `  total += Math.max(${i}, total * 2, total - 3, total + 4, total / 5);`), '  return total;', '}']
+    writeFileSync(join(root, 'src/bulky.ts'), bulky.join('\n'))
+    input.pack!.matched_nodes = [parent, { node_id: 'bulky', label: 'bulkyRecords()', source_file: 'src/bulky.ts',
+      snippet_scope: 'symbol', snippet_line_range: { start_line: 1, end_line: bulky.length }, snippet: bulky.join('\n') }, ...children]
+    const request = { rootPath: root, prompt: 'Explain the record processing source.' }
+    const run = (budget = 900, options: Parameters<typeof finalizeWithRecovery>[2] = {}) => {
+      state.contextPackHandles = new Map()
+      return finalizeWithRecovery(input, budget, { requestedSource: request,
+        continuations: { rootPath: root, store: (id, handle) => state.contextPackHandles!.set(id, handle) }, ...options }) as Payload
+    }
+    return { input, source, file: f.file, children, request, run }
+  }
+
+  it('refills a selected nested owner using spare wire budget and the same proof cache', () => {
+    const f = nestedRefillFixture(), before = JSON.stringify(f.input), fit = evidenceResponses.fitPreparedSourceEvidenceResponse
+    const preparations: unknown[] = [], attempts: Array<{ input: Payload; output: Payload; status: string }> = []
+    vi.spyOn(evidenceResponses, 'fitPreparedSourceEvidenceResponse').mockImplementation((input, budget, prepare, options) => {
+      preparations.push(prepare)
+      const result = fit(input, budget, prepare, options)
+      attempts.push({ input: structuredClone(input) as Payload, output: structuredClone(result.payload) as Payload, status: result.status })
+      return result
+    })
+    const result = f.run()
+    expect(attempts.map(attempt => attempt.status)).toEqual(['fit', 'fit'])
+    expect(new Set(preparations).size).toBe(1)
+    expect(nodes(attempts[0]!.output).map(node => node.node_id)).toEqual(['navigation'])
+    expect(nodes(result).map(node => node.node_id)).toEqual(['navigation', 'nested:0'])
+    const { source_expand_handle: oldHandle, ...priorParent } = nodes(attempts[0]!.output)[0]!
+    const { source_expand_handle: newHandle, ...parent } = nodes(result)[0]!
+    expect(parent).toEqual(priorParent); expect(newHandle).not.toBe(oldHandle)
+    expect(nodes(result)[1]!.snippet).toBe(f.children[0]!.snippet)
+    expect(result.omitted_evidence).toMatchObject({ count: 1, reason: 'output_budget' })
+    expect(result.evidence.answerability).toMatchObject({ state: 'insufficient', answer_scope: 'partial',
+      caveats: expect.arrayContaining(['Source search was bounded; unmatched code may exist.']), missing_obligations: ['query:unverified'] })
+    expect(result.serialized_budget).toEqual({ max_tokens: 900, token_count: estimateQueryTokens(JSON.stringify(result)), enforced: true })
+    expect(result.serialized_budget.token_count).toBeLessThanOrEqual(900)
+    expect([...sourceHandles().keys()]).toEqual(pointers(result))
+    assertRecoveryCoverage(result, { [f.file]: f.source })
+    expect(JSON.stringify(f.input)).toBe(before)
+  })
+
+  it('keeps accepted source and handles unchanged when a nested refill does not fit', () => {
+    const f = nestedRefillFixture(1, true), fit = evidenceResponses.fitPreparedSourceEvidenceResponse
+    const attempts: Array<{ payload: Payload; status: string }> = []
+    vi.spyOn(evidenceResponses, 'fitPreparedSourceEvidenceResponse').mockImplementation((input, budget, prepare, options) => {
+      const result = fit(input, budget, prepare, options)
+      attempts.push({ payload: structuredClone(result.payload) as Payload, status: result.status }); return result
+    })
+    const result = f.run()
+    expect(attempts.map(attempt => attempt.status)).toEqual(['fit', 'over_budget'])
+    expect(result).toEqual(attempts[0]!.payload)
+    expect(nodes(result).map(node => node.node_id)).toEqual(['navigation'])
+    expect([...sourceHandles().keys()]).toEqual(pointers(result))
+    expect(result.omitted_evidence).toMatchObject({ count: 2, reason: 'output_budget' })
+    assertRecoveryCoverage(result, { [f.file]: f.source })
+  })
+
+  it('bounds nested refill to four trials in original selected order', () => {
+    const f = nestedRefillFixture(6), fit = evidenceResponses.fitPreparedSourceEvidenceResponse, attempts: unknown[] = []
+    vi.spyOn(evidenceResponses, 'fitPreparedSourceEvidenceResponse').mockImplementation((input, budget, prepare, options) => {
+      attempts.push(prepare); return fit(input, budget, prepare, options)
+    })
+    const result = f.run(1600)
+    expect(nodes(result).map(node => node.node_id)).toEqual(['navigation', 'nested:0', 'nested:1', 'nested:2', 'nested:3'])
+    expect(attempts).toHaveLength(5); expect(new Set(attempts).size).toBe(1)
+    expect(result.omitted_evidence).toMatchObject({ count: 3, reason: 'output_budget' })
+    assertRecoveryCoverage(result, { [f.file]: f.source })
+  })
+
+  it.each(['mismatched child', 'source drift', 'configuration drift'] as const)('refuses genuine %s during nested refill', kind => {
+    const f = nestedRefillFixture(), fit = evidenceResponses.fitPreparedSourceEvidenceResponse
+    let baselineFit = false
+    if (kind === 'mismatched child') f.children[0]!.snippet = String(f.children[0]!.snippet).replace('return 7;', 'return 9;')
+    vi.spyOn(evidenceResponses, 'fitPreparedSourceEvidenceResponse').mockImplementation((input, budget, prepare, options) => {
+      const result = fit(input, budget, prepare, options)
+      if (!baselineFit && result.status === 'fit') {
+        baselineFit = true
+        if (kind === 'source drift') writeFileSync(join(root, f.file), f.source.join('\n').replace('return 7;', 'return 9;'))
+      }
+      return result
+    })
+    const result = f.run(900, { callsites: { bundles: [], configurationFresh: () => kind !== 'configuration drift' || !baselineFit } })
+    expect(baselineFit).toBe(true); expect(nodes(result)).toEqual([]); expect(sourceHandles().size).toBe(0)
+    expect(result.omitted_evidence).toBe('source recovery could not be verified')
+  })
+
+  it.each(['source', 'configuration'] as const)('keeps %s failure sticky after an oversized nested trial', kind => {
+    const f = nestedRefillFixture(2, true), fit = evidenceResponses.fitPreparedSourceEvidenceResponse
+    const statuses: string[] = [], preparations: unknown[] = []
+    let changed = false
+    vi.spyOn(evidenceResponses, 'fitPreparedSourceEvidenceResponse').mockImplementation((input, budget, prepare, options) => {
+      preparations.push(prepare)
+      const result = fit(input, budget, prepare, options); statuses.push(result.status)
+      if (result.status === 'over_budget') {
+        changed = true
+        if (kind === 'source') writeFileSync(join(root, f.file), f.source.join('\n').replace('return 7;', 'return 9;'))
+      }
+      return result
+    })
+    const result = f.run(900, { callsites: { bundles: [], configurationFresh: () => kind !== 'configuration' || !changed } })
+    expect(statuses).toEqual(['fit', 'over_budget', 'unverifiable']); expect(new Set(preparations).size).toBe(1)
+    expect(nodes(result)).toEqual([]); expect(sourceHandles().size).toBe(0)
+    expect(result.omitted_evidence).toBe('source recovery could not be verified')
+  })
+
+  it.each(['derived', 'unverified', 'reference', 'cursor', 'partial', 'malformed', 'duplicate', 'other file', 'outside omission',
+    'alternate container', 'prior omission', 'blocked', 'stale', 'delta', 'implement', 'excluded'] as const)(
+    'declines an ineligible %s nested refill before preparation', kind => {
+      const f = nestedRefillFixture(), child = f.children[0]!, parent = nodes(f.input)[0]!
+      let prompt = f.request.prompt
+      if (kind === 'derived') child.snippet_source = 'derived'
+      if (kind === 'unverified') child.snippet_unverified = true
+      if (kind === 'reference') child.snippet_ref = 'navigation'
+      if (kind === 'cursor') child.source_expand_handle = 'source-expand:unknown'
+      if (kind === 'partial') child.snippet_truncated = true
+      if (kind === 'malformed') child.snippet_line_range.end_line = -1
+      if (kind === 'duplicate') nodes(f.input).push({ ...child })
+      if (kind === 'other file') child.source_file = 'src/other.ts'
+      if (kind === 'outside omission') parent.snippet_omitted_ranges = [{ start_line: 3, end_line: 10 }]
+      if (kind === 'alternate container') (f.input.pack as Record<string, unknown>).nodes = []
+      if (kind === 'prior omission') f.input.omitted_evidence = { count: 1, reason: 'output_budget' }
+      if (kind === 'blocked') (f.input.evidence.answerability as Record<string, unknown>).broad_search_fallback = 'blocked'
+      if (kind === 'stale') (f.input.governance as { graph_freshness: { status: string } }).graph_freshness.status = 'stale'
+      if (kind === 'delta') f.input.mode = 'delta'
+      if (kind === 'implement') f.input.task = 'implement'
+      if (kind === 'excluded') prompt += ' Ignore restoreRecord0.'
+      expect(prepareNestedSourceRefill(f.input, { ...f.request, prompt })).toBeUndefined()
+    },
+  )
+
+  it.each([{ verbose: true }, { format: 'text' as const }])('does not attempt nested refill in diagnostic or text output: %j', options => {
+    const f = nestedRefillFixture()
+    const result = f.run(900, options)
+    expect(nodes(result).some(node => node.node_id === 'nested:0')).toBe(false)
+  })
+
+  it('requires an attributable omission receipt and a retained direct partial parent for nested refill', () => {
+    const f = nestedRefillFixture(), plan = prepareNestedSourceRefill(f.input, f.request)!
+    const accepted = structuredClone(f.input)
+    accepted.pack!.matched_nodes = [nodes(accepted)[0]!]
+    accepted.omitted_evidence = { count: 2, reason: 'output_budget' }
+    const prepared = createSourceContinuationPreparation(root)(accepted), lookup = (id: string) => prepared.handles.get(id)
+    expect(plan.trial(prepared.payload, plan.candidates[0]!, lookup)?.omitted_evidence).toEqual({ count: 1, reason: 'output_budget' })
+    for (const invalid of ['count', 'reference', 'complete parent', 'new identity']) {
+      const variant = structuredClone(prepared.payload) as Payload, parent = nodes(variant)[0]!
+      if (invalid === 'count') variant.omitted_evidence = { count: 9, reason: 'output_budget' }
+      if (invalid === 'reference') parent.snippet_ref = 'missing'
+      if (invalid === 'complete parent') delete parent.snippet_omitted_ranges
+      if (invalid === 'new identity') parent.node_id = 'other-parent'
+      expect(plan.trial(variant, plan.candidates[0]!, lookup)).toBeUndefined()
+    }
+  })
+
+  it('applies canonical prompt exclusions from the accepted parent handle before nested refill', () => {
+    const f = nestedRefillFixture(), fit = evidenceResponses.fitPreparedSourceEvidenceResponse, attempts: string[] = []
+    writeFileSync(join(root, 'src/excluded.ts'), f.source.join('\n'))
+    rmSync(join(root, f.file)); symlinkSync('excluded.ts', join(root, f.file))
+    vi.spyOn(evidenceResponses, 'fitPreparedSourceEvidenceResponse').mockImplementation((input, budget, prepare, options) => {
+      const result = fit(input, budget, prepare, options); attempts.push(result.status); return result
+    })
+    const result = f.run(900, { requestedSource: { ...f.request, prompt: `${f.request.prompt} Ignore src/excluded.ts.` } })
+    expect(attempts).toEqual(['fit'])
+    expect(nodes(result).map(node => node.node_id)).toEqual(['navigation'])
+    expect([...sourceHandles().values()][0]!.canonical_file).toBe(realpathSync(join(root, 'src/excluded.ts')))
+    expect(result.omitted_evidence).toMatchObject({ count: 2, reason: 'output_budget' })
   })
 
   it('reserves measured recovery cost with bounded original-input repacking', () => {

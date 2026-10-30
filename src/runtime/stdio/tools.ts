@@ -68,6 +68,7 @@ import { buildRetrievalEvidencePlan, tokenizeLabel } from '../retrieve/pipeline.
 import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { collectDeliveredContextReceipts, computeDeltaContextPack } from '../context-pack-delta.js'
 import { compactSourceEvidenceNode, compactRepeatedSourceMetadata, compactContainedSourceReferences, fitPreparedSourceEvidenceResponse, finalizeSourceEvidenceResponse as serializeSourceEvidenceResponse, MIN_SOURCE_EVIDENCE_BUDGET } from '../source-evidence-response.js'
+import { prepareNestedSourceRefill } from '../source-nested-refill.js'
 import {
   attachSourceContinuationHandles, createSourceContinuationPreparation, sourceValueConsumedCallees, sourceTypeRejectionCallees, sourceBracketedBranchCompletions,
   allocateSourceFlowBudget, type SourceFlowBudgetOptions,
@@ -1469,6 +1470,9 @@ function finalizeSourceEvidenceResponseLegacy(
   } = {},
 ): Record<string, unknown> {
   const originalPack = isObjectRecord(input) && isObjectRecord(input.pack) ? input.pack : {}
+  const refill = options.continuations && options.requestedSource && !options.verbose && options.format !== 'text'
+    && resolve(options.continuations.rootPath) === resolve(options.requestedSource.rootPath)
+    ? prepareNestedSourceRefill(input, options.requestedSource) : undefined
   let staged = new Map<string, SourceContinuationHandle>()
   let verificationFailed = false
   const checkedFresh = (check: (() => boolean) | undefined): boolean => {
@@ -1485,7 +1489,7 @@ function finalizeSourceEvidenceResponseLegacy(
   const prepare = (payload: Record<string, unknown>) => {
     prepareSource ??= createSourceContinuationPreparation(options.continuations!.rootPath,
       id => staged.get(id), () => callsitesFresh() && valuesFresh(),
-      { verifyAllSources: Number.isSafeInteger(originalPack._unverified_source_omitted) && Number(originalPack._unverified_source_omitted) > 0 })
+      { verifyAllSources: !!refill || Number.isSafeInteger(originalPack._unverified_source_omitted) && Number(originalPack._unverified_source_omitted) > 0 })
     latestInput = payload
     latestProof = prepareSource(payload)
     return latestProof
@@ -1564,6 +1568,23 @@ function finalizeSourceEvidenceResponseLegacy(
       : payload)
   }
   const commit = (value: Attempt): Record<string, unknown> => {
+    if (refill && value.jointlyPriced && !value.overflow) {
+      let trials = 0
+      for (const node of refill.candidates) {
+        if (trials === 4) break
+        const trial = refill.trial(value.payload, node, id => value.handles.get(id))
+        if (!trial) continue
+        trials++
+        // Reissued pointers belong to the accepted plan. Reuse its handles and
+        // the original sticky proof cache; never publish a rejected trial.
+        staged = new Map(value.handles)
+        const fitted = fitPreparedSourceEvidenceResponse(trial, budget, prepare)
+        if (fitted.status === 'over_budget') continue
+        if (fitted.status !== 'fit') return fitted.payload
+        value = { payload: fitted.payload, handles: fitted.preparation!.handles, jointlyPriced: true }
+      }
+      if (trials && latestProof && !latestProof.validate()) return refuse()
+    }
     const pack = isObjectRecord(value.payload.pack) ? value.payload.pack : {}
     const referenced = new Set((Array.isArray(pack.matched_nodes) ? pack.matched_nodes : [])
       .flatMap(node => isObjectRecord(node) && typeof node.source_expand_handle === 'string' ? [node.source_expand_handle] : []))
