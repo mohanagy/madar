@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, expect, it } from 'vitest'
 import { buildFromJson } from '../../src/pipeline/build.js'
@@ -92,7 +92,7 @@ it('reserves source-connected alternate behavior within existing limits without 
   expect(pack.matched_nodes.find(node => node.node_id === value.alternate)?.snippet,
     JSON.stringify(pack.matched_nodes.map(node => node.label))).toContain('if (lease.expired)')
   expect(pack.token_count).toBeLessThanOrEqual(3000)
-  expect(choose(file => allowedOwner(file) && !file.endsWith('/state.ts'))[sourceSubjectPriorityKey]).toBeUndefined()
+  expect(choose(file => allowedOwner(file) && basename(file) !== 'state.ts')[sourceSubjectPriorityKey]).toBeUndefined()
   const object = fixture(true)
   const rejected = selectSourceDependencies(object.graph, [object.seed], object.root, new Map(), {
     includeCallers: true, subjectPriority: { seedId: object.seed, question,
