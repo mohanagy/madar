@@ -100,6 +100,7 @@ import { sourceQualifiedBindingScope } from './retrieve/source-qualified-binding
 import { sourceVisibleWarnings } from './retrieve/source-visible-warnings.js'
 import { prioritizeNextRouteReferences } from './retrieve/source-route-references.js'
 import { sourceCoherenceGroup, sourceCompositionPriority } from './retrieve/source-coherence.js'
+import { sourceDiagnosticQueries, sourceDiagnosticSeeds, type SourceDiagnosticClauseMatches } from './retrieve/source-diagnostic-priority.js'
 import { sourceIncomingDecisionFragment } from './retrieve/source-decision-fragments.js'
 import { buildSourceCoherentContinuationCatalog, sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from './retrieve/source-coherent-continuation.js'
 import { selectRequestedHelperOwners } from './retrieve/source-requested-helpers.js'
@@ -1465,7 +1466,8 @@ function sourceBehaviorLocation(graph: KnowledgeGraph, options: RetrieveOptions,
   if (options.retrievalStrategy === 'slice-v1' || classifyRetrieveTaskContract(options).task_kind !== 'explain'
     || sourceQueryIsLiteralLookup(options.question)) return undefined
   const positive = retrievalEvidencePrompt(options.question)
-  const clauseLocations = (!options.taskIntent || options.taskIntent === 'explain') && sourceQueryRequestsClauseLocations(positive)
+  const clauseLocations = (!options.taskIntent || options.taskIntent === 'explain' || options.taskIntent === 'debug-flow')
+    && sourceQueryRequestsClauseLocations(positive)
   const globs = clauseLocations ? sourceBehaviorGlobs(positive) : []
   if (!globs || (!files.length && !directories.length && !globs.length)) return undefined
   if (queryEvidenceObligations(positive).length < 2 && !/\b(?:how|when|why|whether)\b/i.test(positive)) return undefined
@@ -4561,7 +4563,7 @@ function independentSourceBodyCandidate(graph: KnowledgeGraph, node: ScoredNode,
 function allowsIndependentBodyDiscovery(options: RetrieveOptions, gate: RetrievalGateDecision, profile?: FrameworkQuestionProfile): boolean {
   return options.retrievalStrategy !== 'slice-v1'
     && (options.retrievalLevel === undefined || options.retrievalLevel <= 1)
-    && (!options.taskIntent || options.taskIntent === 'explain')
+    && (!options.taskIntent || options.taskIntent === 'explain' || options.taskIntent === 'debug-flow')
     && classifyRetrieveTaskContract(options).task_kind === 'explain'
     && !sourceQueryIsLiteralLookup(options.question)
     && queryEvidenceObligations(options.question).length >= 2
@@ -4577,6 +4579,7 @@ function sourceSelectionForTask(
   rootPath?: string,
   lookupCandidates: readonly ScoredNode[] = candidates,
   independentBodyPriority = false,
+  diagnosticClauseMatches: SourceDiagnosticClauseMatches = [],
 ): { candidates: readonly ScoredNode[]; scope: SourceSelectionScope; omitted?: number; dependencies?: SourceDependencySelection; provenance?: SourceSelectionProvenance; discoveryCore?: string[]; sourcePriority?: string[]; continuationCatalog?: SourceCoherentContinuationCatalog } {
   const question = options.question
   if (options.retrievalStrategy === 'slice-v1') return { candidates, scope: 'task_context' }
@@ -4801,9 +4804,28 @@ function sourceSelectionForTask(
     && sourceFileInBehaviorLocation(node.sourceFile, behaviorLocation, rootPath ?? inferredGraphRoot(graph))
     && currentDeclaration(node) === 'function') : []
   const operationAnchors = symbols.filter(node => operationIds.has(node.id))
+  const diagnosticRoot = rootPath ?? inferredGraphRoot(graph)
+  const diagnosticQuestion = retrievalEvidencePrompt(question)
+  const diagnosticExclusions = compileSourceExclusions(retrievalGate.signals.excluded_terms ?? [],
+    retrievalGate.signals.excluded_path_hints ?? [], diagnosticRoot)
+  const diagnosticIds = options.taskIntent === 'debug-flow' && independentBodyPriority && !broadTask && !explicitLevel
+    && !behaviorLocation && !operationAnchors.length && firstPosition === undefined && !requested.length
+    && !retrievalGate.signals.mentioned_paths.length && !retrievalGate.signals.mentioned_directories?.length
+    && !sourceQueryLiterals(diagnosticQuestion).length
+    && !sourceQuerySymbols(diagnosticQuestion).some(occurrence => occurrence.explicit
+      && (/[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(diagnosticQuestion.slice(occurrence.end))))
+    && diagnosticExclusions.valid
+    ? sourceDiagnosticSeeds(candidates.filter(node => independentSourceBodyCandidate(graph, node, options, diagnosticRoot)).slice(0, 32), diagnosticClauseMatches,
+      (file, label, text) => !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(file, diagnosticRoot) as never)
+        && !diagnosticExclusions.matchesSource(file, label, diagnosticRoot) && !diagnosticExclusions.matchesText(text),
+      diagnosticRoot, requestSourceCache(options)) : []
+  const diagnosticOwners = diagnosticIds.flatMap(id => {
+    const node = candidates.find(candidate => candidate.id === id); return node ? [node] : []
+  })
   const contextAnchors = firstPosition === undefined
     ? behaviorLocation ? locationBodies.slice(0, 3)
-      : fileTargets.length ? fileTargets : (concreteFunctions.length ? concreteFunctions : symbols).filter(node => node.relevanceBand === 'direct').slice(0, 3)
+      : fileTargets.length ? fileTargets : [...new Map([...diagnosticOwners, ...(concreteFunctions.length ? concreteFunctions : symbols)
+        .filter(node => node.relevanceBand === 'direct')].map(node => [node.id, node])).values()].slice(0, 3)
     : explicitNames.filter(entry => entry.position === firstPosition && unambiguousIds.has(entry.node.id)).map(entry => entry.node)
   const anchors = [...operationAnchors, ...contextAnchors.filter(node => !operationIds.has(node.id))]
   const seeds = [...new Map([...anchors, ...requested].map(node => [node.id, node])).values()]
@@ -5029,6 +5051,25 @@ function sourceSelectionForTask(
     sourcePriority = coherence?.priority ?? sourceCompositionPriority(independent, ordered, dependencies[sourceSelectionProvenanceKey],
       allowedPath, allowedOwner, routeRoot)
     if (!sourcePriority.length) sourcePriority = dependencies[sourceLocalPriorityKey]
+    if (diagnosticIds.length) {
+      // Current source dependency resolution may retain the selected decisions'
+      // cleanup alongside them; this orders existing members, never new edges.
+      const provenance = dependencies[sourceSelectionProvenanceKey]
+      const admitted = new Set(ordered.map(node => node.id))
+      const unique = new Set(provenance?.owners.filter(owner => owner.status === 'unique').map(owner => owner.node_id))
+      const preferred = new Set(diagnosticIds.filter(id => admitted.has(id)))
+      const queue = [...preferred]
+      for (let index = 0; index < queue.length && preferred.size < 12; index++) {
+        for (const pair of provenance?.resolved_pairs ?? []) {
+          if (preferred.size >= 12) break
+          if (pair.from_id === queue[index] && pair.relation === 'calls' && admitted.has(pair.to_id)
+            && unique.has(pair.to_id) && !preferred.has(pair.to_id)) {
+            preferred.add(pair.to_id); queue.push(pair.to_id)
+          }
+        }
+      }
+      sourcePriority = [...new Set([...preferred, ...(sourcePriority ?? [])])]
+    }
     const decision = sourceIncomingDecisionFragment(independent, ordered, question, dependencies, allowedPath, allowedOwner, routeRoot)
     if (decision) {
       const connector = independent[1]?.id === decision.calleeId && independent[0]
@@ -5066,9 +5107,10 @@ function buildRetrieveResultFromOrderedCandidates(
   sliceMetadata?: ContextPackSliceMetadata,
   lookupCandidates?: readonly ScoredNode[],
   independentBodyPriority = false,
+  diagnosticClauseMatches: SourceDiagnosticClauseMatches = [],
 ): RetrieveResult {
   const snippetFileCache = requestSourceCache(options)
-  const selection = sourceSelectionForTask(graph, options, inputCandidates, retrievalGate, rootPath, lookupCandidates, independentBodyPriority)
+  const selection = sourceSelectionForTask(graph, options, inputCandidates, retrievalGate, rootPath, lookupCandidates, independentBodyPriority, diagnosticClauseMatches)
   const baseTaskContract = classifyRetrieveTaskContract(options)
   const taskContract: ContextPackTaskContract = selection.scope === 'task_context' ? baseTaskContract : {
     ...baseTaskContract,
@@ -5488,7 +5530,16 @@ function retrieveContextPass(
   // Step 1+2: Score all nodes with explicit seed evidence weights.
   const tokenWeights = tokenWeightsForQuestion(graph, questionTokens)
   const averageLabelLength = averageLabelLengthForGraph(graph)
-  const bodySearch = searchSourceBodies(graph, behaviorLocation?.question ?? question, classificationRootPath, requestSourceCache(options))
+  const diagnosticQueries = options.taskIntent === 'debug-flow' && !options.semantic && !options.rerank
+    && conceptualNodeBoosts.size === 0 && !behaviorLocation
+    && allowsIndependentBodyDiscovery(options, retrievalGate, frameworkProfile)
+    ? sourceDiagnosticQueries(question) : []
+  // Full-query admission and clause ranking share one bounded file/owner scan.
+  // Optional clause queries cannot introduce literal scan-order hints.
+  const bodySearches = searchSourceBodyQuestions(graph, [behaviorLocation?.question ?? question, ...diagnosticQueries],
+    classificationRootPath, requestSourceCache(options))
+  const bodySearch = bodySearches[0]!
+  const diagnosticClauseMatches = bodySearches.slice(1).map(search => search.matches)
   const prioritizeBodyCoverage = queryEvidenceObligations(question).length > 1 && !sourceQueryIsLiteralLookup(question)
   const seedCandidates: SeedCandidate[] = []
   for (const [id, attributes] of graph.nodeEntries()) {
@@ -5729,6 +5780,7 @@ function retrieveContextPass(
       return {
         candidate_count: seedPool.length,
         sourceSearch: { scanned_files: bodySearch.scanned_files, scanned_bytes: bodySearch.scanned_bytes, bounded: bodySearch.bounded },
+        diagnosticClauseMatches,
         sourceBodyCandidateIds: !sourceQueryIsLiteralLookup(question)
           ? scored.filter((node) => (node.sourceBodyScore ?? 0) > 0 && !node.fileNodeLike).slice(0, 4).map((node) => node.id)
           : [],
@@ -5756,6 +5808,7 @@ function retrieveContextPass(
   )
   const {
     sourceSearch,
+    diagnosticClauseMatches,
     sourceBodyCandidateIds,
     independentlyAdmittedBodyIds,
     sourceNavigationCandidateIds,
@@ -6193,6 +6246,7 @@ function retrieveContextPass(
     sliceMetadata,
     lookupCandidates,
     independentlyAdmittedBodyIds.size > 0,
+    diagnosticClauseMatches,
   )
   return { ...result, source_search: sourceSearch,
     ...(independentlyAdmittedBodyIds.size ? { [independentSourceBodiesKey]: true as const } : {}) }

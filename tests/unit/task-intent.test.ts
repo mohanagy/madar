@@ -8,8 +8,10 @@ import {
 import {
   classifyTaskIntent,
   normalizeTaskIntentPrompt,
+  resolveTaskSelection,
   validateTaskIntentDefinitions,
 } from '../../src/runtime/task-intent.js'
+import { resolveTaskEvidenceRecipe } from '../../src/runtime/task-evidence-recipes.js'
 
 function defaultContextKindFor(kind: TaskIntentKind): 'explain' | 'implement' | 'review' | 'impact' {
   const definition = TASK_INTENT_DEFINITIONS.find((entry) => entry.kind === kind)
@@ -78,7 +80,7 @@ describe('task-intent', () => {
         }),
         expect.objectContaining({
           kind: 'debug-flow',
-          default_context_kind: 'impact',
+          default_context_kind: 'explain',
           label: 'Debug flow',
         }),
         expect.objectContaining({
@@ -104,6 +106,27 @@ describe('task-intent', () => {
   })
 
   describe('classifyTaskIntent', () => {
+    it('routes diagnosis to source evidence while preserving explicit tasks and pure change requests', () => {
+      const prompt = 'Trace the request error path and determine whether the waiting operation can retry.'
+      const diagnostic = resolveTaskSelection(prompt)
+      expect(diagnostic).toMatchObject({ explicit: false, task_kind: 'explain', task_intent: 'debug-flow' })
+      const recipe = resolveTaskEvidenceRecipe(diagnostic.task_kind, { task_intent: diagnostic.task_intent })
+      expect(recipe).toMatchObject({ id: 'debug-flow', task_kind: 'explain',
+        required_evidence: ['primary', 'supporting', 'structural'], semantic_required: ['implementation', 'structure'] })
+      expect(recipe.required_evidence).not.toContain('impact')
+      expect(recipe.semantic_required).not.toContain('configuration')
+      for (const task of ['explain', 'impact', 'implement', 'review'] as const) {
+        const selected = resolveTaskSelection(prompt, task, { explicit: true })
+        expect(selected).toMatchObject({ explicit: true, task_kind: task,
+          task_intent: task === 'explain' ? 'debug-flow' : task })
+        expect(resolveTaskEvidenceRecipe(task, { task_intent: selected.task_intent }).task_kind).toBe(task)
+      }
+      expect(resolveTaskSelection('What breaks if we remove the shared worker?')).toMatchObject({ task_kind: 'impact', task_intent: 'impact' })
+      expect(resolveTaskSelection('Please change ownership to the caller.')).toMatchObject({ task_kind: 'implement', task_intent: 'implement' })
+      // Mixed wording still uses the existing winner; no new precedence rules.
+      expect(resolveTaskSelection('Debug the error and identify the blast radius.')).toMatchObject({ task_kind: 'explain', task_intent: 'debug-flow' })
+    })
+
     it.each([
       ['Explain how the context pack is assembled for retrieve questions.', 'explain'],
       ['Implement issue #275 by collecting implementation context for changed files.', 'implement'],

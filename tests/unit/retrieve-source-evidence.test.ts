@@ -530,11 +530,17 @@ describe('source evidence retrieval', () => {
     const question = 'Find JavaScript source connecting ordinary registration to hook.js, including registerExtension and shouldSkipExtension. Also locate message construction using the route context Envelope constructor and any constructor selection that skips unmarked envelope constructors. Restrict to entry.js and lib/*.js.'
     const result = retrieveContext(graph, { question, taskKind: 'explain', budget: 4000 })
     const source = result.matched_nodes.map(node => node.snippet ?? '').join('\n')
+    const diagnostic = retrieveContext(graph, { question, taskKind: 'explain', taskIntent: 'debug-flow', budget: 4000 })
+    const diagnosticSource = diagnostic.matched_nodes.map(node => node.snippet ?? '').join('\n')
     for (const required of ["const hook = require('./lib/hook')", 'new Registry({ expose:', 'registry.override = hook',
       'const skip = registerExtension(fn)', 'return shouldSkipExtension(fn)', 'fn.skip === true',
       'app.once("ready", () => {', 'if (context.enabled)', 'while (!context.Envelope.marked',
-      'context.Envelope = context.Envelope.parent', 'new context.Envelope(input)']) expect(source).toContain(required)
+      'context.Envelope = context.Envelope.parent', 'new context.Envelope(input)']) {
+      expect(source).toContain(required)
+      expect(diagnosticSource).toContain(required)
+    }
     expect(result.matched_nodes.some(node => ['unrelatedOuter()', 'schemaReport()'].includes(node.label))).toBe(false)
+    expect(diagnostic.matched_nodes.some(node => ['unrelatedOuter()', 'schemaReport()'].includes(node.label))).toBe(false)
     const bindingOwner = result.matched_nodes.find(node => node.label === 'entry.js')
     expect(bindingOwner?.snippet_scope).toBe('source_file')
     expect(bindingOwner?.snippet).toBe(`const hook = require('./lib/hook')\n[omitted lines 2-${entry.split('\n').length}]`)

@@ -198,7 +198,7 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     kind: 'debug-flow',
     label: 'Debug flow',
     description: 'Trace failures, identify root causes, and follow error-producing paths.',
-    default_context_kind: 'impact',
+    default_context_kind: 'explain',
     priority: 6,
     rules: [
       {
