@@ -43,6 +43,44 @@ function workspace(prefix = 'madar-source-evidence-') {
 }
 
 describe('source evidence retrieval', () => {
+  it('keeps project framing lexical so incidental brand literals cannot exhaust behavior admission', () => {
+    const { graph, root } = workspace()
+    const path = join(root, 'src', 'reservations.ts')
+    writeFileSync(path, [
+      ...Array.from({ length: 130 }, (_, index) => `export function banner${index}() { return "LedgerGarden"; }`),
+      'export function settleReservation(attempt: { status: string; credit: number }) {',
+      '  // Refund a reservation credit and persist durable attempt state exactly once.',
+      '  if (attempt.status === "reserved") { attempt.status = "refunded"; attempt.credit += 1; }',
+      '  return attempt;',
+      '}',
+    ].join('\n'))
+    const extraction = extractJs(path)
+    for (const node of extraction.nodes) graph.addNode(node.id, node)
+    const owner = extraction.nodes.find(node => node.label === 'settleReservation()')!.id
+    const question = 'In the LedgerGarden source, trace reservation credit refund and durable attempt state.'
+    const [behavior, explicit] = searchSourceBodyQuestions(graph, [question, 'Where is `LedgerGarden` used?'], root)
+    expect(behavior!.matches.has(owner)).toBe(true)
+    expect(behavior!.matches.get(owner)?.exact_literal).toBe(false)
+    expect(behavior!.matches.size).toBe(128)
+    expect(behavior!.bounded).toBe(true)
+    expect(explicit!.matches.has(owner)).toBe(false)
+    expect(explicit!.matches.size).toBe(128)
+    expect([...explicit!.matches.values()].every(match => match.exact_literal)).toBe(true)
+    expect(sourceQueryLiterals(question)).toEqual([])
+    expect(sourceQueryWithoutLiteralSpans(question)).toBe(question)
+    expect(sourceQueryLiterals('In LedgerGarden repository, find the refund implementation.')).toEqual([])
+    for (const protectedQuestion of [
+      'In the `LedgerGarden` source, trace refunds.',
+      '"In the LedgerGarden source, trace refunds."',
+      '```text\nIn the LedgerGarden source, trace refunds.\n```',
+      'In the LedgerGarden() source, trace refunds.',
+      'In the src/LedgerGarden.ts source, trace refunds.',
+      'In the LedgerGarden source, trace LedgerGarden() and its callers.',
+      'Find the LedgerGarden implementation.',
+      'In the LedgerGarden source trace refunds.',
+    ]) expect(sourceQueryLiterals(protectedQuestion), protectedQuestion).toContain('LedgerGarden')
+  })
+
   it('consumes matching quote spans without manufacturing literals between short or malformed values', () => {
     expect(sourceQueryLiterals("'' 'i' \"\" \"g\" `` 'useful value' \"second value\""))
       .toEqual(['useful value', 'second value'])

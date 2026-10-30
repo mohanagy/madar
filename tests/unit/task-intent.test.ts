@@ -106,6 +106,57 @@ describe('task-intent', () => {
   })
 
   describe('classifyTaskIntent', () => {
+    it('distinguishes authored source investigation from review actions without overriding other task signals', () => {
+      const recordedPrompts = [
+        'In the CraftMyLetter source, trace AI review of an existing saved letter: credit deduction and durable attempt record before engine call; accepted revision save; no-revision immediate refund including refund transaction failure; engine exception refund; resulting HTTP responses, letter content/revision history, balance and attempt state. Also trace existing recovery job eligibility rules and idempotence for stranded and refunded attempts. Find relevant implementation and tests/config/root README only.',
+        'Find source implementation and tests for AI review of an existing letter (review route/service), including credit transaction, attempt status, immediate refund, engine thrown/error vs unchanged response; find scheduled recovery job query and refund/state transitions. Search terms likely review credits, refund, attempt, recovery. Return exact files/line ranges and relevant snippets.',
+      ]
+      for (const prompt of [...recordedPrompts,
+        'Trace the document review queue through its source handlers.',
+        'In the inventory repository, please trace the audit log storage path.',
+        'Could you please find the implementation of the peer review workflow?',
+      ]) {
+        const selected = resolveTaskSelection(prompt)
+        expect(selected).toMatchObject({ explicit: false, task_kind: 'explain', task_intent: 'explain' })
+        expect(selected.classification.scores[0]).toEqual({ kind: 'explain', score: 8 })
+        expect(selected.classification.matched_rules).toContain('explain-source-investigation')
+      }
+      for (const task of ['explain', 'review', 'impact', 'implement'] as const) {
+        expect(resolveTaskSelection(recordedPrompts[0]!, task, { explicit: true }))
+          .toMatchObject({ explicit: true, task_kind: task, task_intent: task })
+      }
+      for (const prompt of [
+        'Review the source and trace the existing workflow.',
+        'Find source for the review flow. Audit it for correctness.',
+        'Trace the review route; change its behavior.',
+        'Find source for the review workflow, review it for correctness.',
+        'Trace the review route: audit its guards.',
+        'Trace the review route and then please review the implementation.',
+        'In the source, audit the flow, trace review handling.',
+        'In review source, trace the workflow.',
+        '"Trace the source" review workflow.',
+        '`Find source implementation` review workflow.',
+        '```text\nTrace the source\n```\nReview workflow.',
+        'In `the source`, trace the review workflow.',
+        'Trace the review workflow and its latency.',
+      ]) {
+        const classification = classifyTaskIntent(prompt)
+        expect(classification.kind).toBe('review')
+        expect(classification.matched_rules).not.toContain('explain-source-investigation')
+      }
+      for (const prompt of [
+        'Trace the review workflow and explain its behavior.',
+        'Find source for the review workflow and implement the requested change.',
+        'Trace the review workflow and determine what breaks if it is removed.',
+        'Trace the review workflow during a security audit.',
+        'Trace the PR diff for review.',
+      ]) {
+        expect(classifyTaskIntent(prompt).matched_rules).not.toContain('explain-source-investigation')
+      }
+      expect(classifyTaskIntent('Trace the review workflow and explain its behavior.').scores[0])
+        .toEqual({ kind: 'explain', score: 8 })
+    })
+
     it('routes diagnosis to source evidence while preserving explicit tasks and pure change requests', () => {
       const prompt = 'Trace the request error path and determine whether the waiting operation can retry.'
       const diagnostic = resolveTaskSelection(prompt)

@@ -252,6 +252,31 @@ function normalizedTaskDirectivePrompt(prompt: string): string {
   return parts.filter(Boolean).join(' ')
 }
 
+function sourceInvestigationDirective(prompt: string): string | null {
+  // Preserve authored sentence boundaries while preventing examples from
+  // supplying either the leading directive or a source-location preface.
+  const parts: string[] = []
+  let cursor = 0
+  for (const region of scanPromptRegions(prompt)) {
+    parts.push(prompt.slice(cursor, region.start), '[data]')
+    cursor = region.end
+  }
+  parts.push(prompt.slice(cursor))
+  let prose = parts.join('').trim()
+  const action = '(?:review|audit|implement|change|fix|refactor|migrate|add|build|create|remove|rename|write|update|generate|delete|modify|optimize)'
+  const polite = '(?:(?:can|could|would)\\s+you\\s+)?(?:please\\s+)?'
+  const otherDirective = new RegExp(`(?:[.!?;,:\\n]\\s*|\\b(?:and|then|also)\\s+)${polite}${action}\\b`, 'i')
+  if (otherDirective.test(prose)) return null
+
+  const preface = /^in\s+((?:[a-z0-9_-]+\s+){0,6}(?:source|repository|repo|codebase|code))\s*,\s*/i.exec(prose)
+  if (preface) {
+    if (new RegExp(`\\b(?:trace|find|${action})\\b`, 'i').test(preface[1]!)) return null
+    prose = prose.slice(preface[0].length)
+  }
+  const directive = new RegExp(`^${polite}(trace\\b|find\\s+(?:the\\s+)?(?:source|implementation)\\b)`, 'i').exec(prose)
+  return directive ? normalizeTerm(directive[1]!) : null
+}
+
 export function defaultContextKindForTaskIntent(kind: TaskIntentKind): TaskIntentContextKind {
   return taskIntentDefinition(kind).default_context_kind
 }
@@ -314,6 +339,21 @@ export function classifyTaskIntent(prompt: string): TaskIntentClassification {
         .reduce((total, match) => total + match.score, 0),
     }))
     .sort(compareScores)
+
+  // A feature named "review" is not itself a request to review changes. Only
+  // disambiguate this weak generic winner; keep existing explanation signals,
+  // specialist signals and stronger task directives at their original scores.
+  const explainScore = scores.find((score) => score.kind === 'explain')
+  if (scores[0]?.kind === 'review' && scores[0].score === 7 && explainScore?.score === 0
+    && ruleMatches.every((match) => match.kind === 'review'
+      || (match.kind === 'debug-flow' && match.rule_id === 'debug-failure' && match.score === 7))) {
+    const directive = sourceInvestigationDirective(prompt)
+    if (directive) {
+      ruleMatches.push({ kind: 'explain', rule_id: 'explain-source-investigation', score: 8, matched_terms: [directive] })
+      explainScore.score = 8
+      scores.sort(compareScores)
+    }
+  }
 
   const winningKind = scores[0]?.kind ?? 'explain'
   const winningDefinition = taskIntentDefinition(winningKind)

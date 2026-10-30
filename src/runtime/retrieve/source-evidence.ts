@@ -9,6 +9,7 @@ import type { KnowledgeGraph } from '../../contracts/graph.js'
 import { sensitiveArtifactReason } from '../../shared/discovery-safety.js'
 import { readBoundedSource, sourcePathsAllowedByCurrentPolicy } from '../../shared/source-access.js'
 import { lineRangeFromSourceLocation, type SourceLineRange } from '../../shared/source-location.js'
+import { scanPromptRegions } from '../../shared/prompt-regions.js'
 import { tokenizeQuestion } from './pipeline.js'
 import { extractPromptExclusions, retrievalEvidencePrompt, retrievalSearchPrompt } from '../retrieval-gate.js'
 import { selectedCallbackExcerptLines } from './source-callback-excerpts.js'
@@ -286,6 +287,14 @@ export function resolveSourceSymbolRange(lines: readonly string[], range: Source
 
 interface SourceQueryLiteralSpan { value: string; start: number; end: number }
 
+function repositoryLocatorName(question: string): { start: number; end: number } | undefined {
+  // Only an unquoted leading project locator is framing. Names with call,
+  // member or path syntax, and separately requested occurrences, stay evidence.
+  const locator = /^([ \t]*in[ \t]+(?:the[ \t]+)?)([A-Za-z][A-Za-z0-9-]{0,79})[ \t]+(?:source(?:[ \t]+code)?|repository|repo|codebase)[ \t]*,[ \t]*(?:please[ \t]+)?(?:trace|find|explain|show|locate|describe|inspect)[ \t]+(?=\S)/i.exec(question)
+  if (!locator || scanPromptRegions(question).some(region => region.start < locator[0].length)) return undefined
+  return { start: locator[1]!.length, end: locator[1]!.length + locator[2]!.length }
+}
+
 function sourceQueryLiteralSpans(question: string): SourceQueryLiteralSpan[] {
   const quoted: SourceQueryLiteralSpan[] = []
   let fence: { marker: string; length: number } | undefined
@@ -340,9 +349,10 @@ function sourceQueryLiteralSpans(question: string): SourceQueryLiteralSpan[] {
     // closing quote as a later opener used to manufacture unrelated literals.
     start = end ?? Math.max(start + width, cursor)
   }
+  const locatorName = repositoryLocatorName(question)
   const identifiers = [...question.matchAll(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b[a-zA-Z_$][\w$]*(?:_[\w$]+|[a-z][A-Z][\w$]*)\b|\/[\w-]+(?:\/[\w:.-]+)+/g)].map((match) => ({
     value: match[0].trim(), start: match.index, end: match.index + match[0].length,
-  }))
+  })).filter(span => !locatorName || span.start < locatorName.start || span.end > locatorName.end)
   // A qualified private name is not written contiguously at its declaration.
   // This creates candidates only; the caller still verifies the class owner.
   const privateNames = [...question.matchAll(/(?<![\w$/])#[A-Za-z_$][\w$]*/g)].map((match) => ({
