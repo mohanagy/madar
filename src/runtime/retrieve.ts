@@ -78,6 +78,7 @@ import {
   underScopedDivergenceNodeIds,
 } from './retrieve/conceptual-fallback.js'
 import { recoverContextPackResult } from './context-pack-recovery.js'
+import { prepareRepositoryQuery, repositoryQueryKey, type RepositoryQueryBinding } from './retrieve/repository-query.js'
 import {
   interpretRetrievalQuery,
   runRetrievalCandidateStage,
@@ -268,6 +269,7 @@ export interface RetrieveResult {
   [sourceFlowCatalogKey]?: SourceFlowCatalog
   [sourceCoherentContinuationCatalogKey]?: SourceCoherentContinuationCatalog
   [sourceDiscoveryCoreKey]?: { question: string; node_ids: string[]; selected_node_ids: string[] }
+  [repositoryQueryKey]?: RepositoryQueryBinding
 }
 
 /** Request-local source provenance; never serialized as a retrieval claim. */
@@ -6477,7 +6479,8 @@ const recoverContextPackWithStage = (
 
 export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
   const originalQuestion = options.question
-  options = { ...options, question: retrievalSubjectPrompt(originalQuestion) }
+  const repositoryQuery = prepareRepositoryQuery(graph, originalQuestion, classifyRetrieveTaskContract(options).task_kind)
+  options = { ...options, question: repositoryQuery?.effectiveQuestion ?? retrievalSubjectPrompt(originalQuestion) }
   const initial = retrieveContextWithConceptualFallback(graph, options)
   const result = recoverContextPackWithStage(
     graph,
@@ -6485,13 +6488,14 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     options,
     (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
   )
-  return { ...result, question: originalQuestion }
+  return { ...result, question: originalQuestion, ...(repositoryQuery ? { [repositoryQueryKey]: repositoryQuery } : {}) }
 }
 
 export async function retrieveContextAsync(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {
   const originalQuestion = options.question
-  const result = await retrieveContextAsyncForSubject(graph, { ...options, question: retrievalSubjectPrompt(originalQuestion) })
-  return { ...result, question: originalQuestion }
+  const repositoryQuery = prepareRepositoryQuery(graph, originalQuestion, classifyRetrieveTaskContract(options).task_kind)
+  const result = await retrieveContextAsyncForSubject(graph, { ...options, question: repositoryQuery?.effectiveQuestion ?? retrievalSubjectPrompt(originalQuestion) })
+  return { ...result, question: originalQuestion, ...(repositoryQuery ? { [repositoryQueryKey]: repositoryQuery } : {}) }
 }
 
 async function retrieveContextAsyncForSubject(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {

@@ -63,6 +63,7 @@ import {
   type RetrieveSnippetOptions,
 } from '../retrieve.js'
 import { reconcileRetrievalPlanQueryEvidence } from '../retrieve/conceptual-fallback.js'
+import { repositoryEvidenceQuestion } from '../retrieve/repository-query.js'
 import { buildRetrievalEvidencePlan, tokenizeLabel } from '../retrieve/pipeline.js'
 import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { collectDeliveredContextReceipts, computeDeltaContextPack } from '../context-pack-delta.js'
@@ -2263,7 +2264,7 @@ function discoverySourceDeferral(
   const root = resolveGraphSourceRoot(graphPath, graph)
   const scopedCore = retrieval[sourceDiscoveryCoreKey] ? undefined : scopedSourceDeferralCore(retrieval, nodes, root)
   const provenance = retrieval[sourceDiscoveryCoreKey] ?? scopedCore
-  if (!provenance || provenance.question !== retrieval.question || !retrieval.task_contract) return undefined
+  if (!provenance || provenance.question !== repositoryEvidenceQuestion(retrieval, root) || !retrieval.task_contract) return undefined
   const protectedIds = retrieval[sourceDiscoveryCoreKey]
     ? protectSourceDiscoveryWitnesses(retrieval, nodes, new Set(provenance.node_ids), root)
     : new Set(provenance.node_ids)

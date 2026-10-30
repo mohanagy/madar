@@ -12,6 +12,7 @@ import { readEvidenceLines, sourceBodyWords, sourceDeclarationKind, sourceDeclar
 import { sourceModuleConfigurationSnapshotIsFresh } from './retrieve/source-modules.js'
 import { sourceQuerySymbols } from './retrieve/source-query-symbols.js'
 import { tokenizeQuestion } from './retrieve/pipeline.js'
+import { repositoryEvidenceQuestion } from './retrieve/repository-query.js'
 
 type LiteralSubjectPreference = { literal: string; relationships: ReadonlyArray<{ from_id: string; to_id: string }> }
 
@@ -47,15 +48,16 @@ function frontedLiteralSubject(question: string, nodes: readonly ContextPackNode
 export function protectSourceDiscoveryWitnesses(
   retrieval: RetrieveResult, nodes: readonly ContextPackNode[], retainedIds: ReadonlySet<string>, root: string,
 ): Set<string> {
+  const question = repositoryEvidenceQuestion(retrieval, root)
   const literal = retrieval.selection_scope === 'task_context' && retrieval.task_contract?.task_kind === 'explain'
-    ? frontedLiteralSubject(retrieval.question, nodes) : undefined
+    ? frontedLiteralSubject(question, nodes) : undefined
   const relationships = [...retrieval.relationships, ...(retrieval[sourceSelectionProvenanceKey]?.resolved_pairs ?? [])]
   const pairs = relationships.length <= 4096 ? relationships.flatMap(pair =>
     typeof pair.from_id === 'string' && typeof pair.to_id === 'string' ? [{ from_id: pair.from_id, to_id: pair.to_id }] : []) : []
   const ids = nodes.flatMap(node => node.node_id ? [node.node_id] : [])
   const preference = literal && ids.length === nodes.length && new Set(ids).size === ids.length && pairs.length === relationships.length
     ? { literal, relationships: pairs } : undefined
-  return protectedSourceQueryWitnesses(retrieval.question, nodes, retainedIds, root, new Map(), undefined, preference)
+  return protectedSourceQueryWitnesses(question, nodes, retainedIds, root, new Map(), undefined, preference)
 }
 
 /** Protect visible query witnesses; this can only reduce a proposed deferral. */
@@ -168,7 +170,7 @@ function protectedSourceQueryWitnesses(
 export function scopedSourceDeferralCore(
   retrieval: RetrieveResult, nodes: readonly ContextPackNode[], root: string,
 ): { question: string; node_ids: string[]; selected_node_ids: string[] } | undefined {
-  const question = retrieval.question, provenance = retrieval[sourceSelectionProvenanceKey]
+  const question = repositoryEvidenceQuestion(retrieval, root), provenance = retrieval[sourceSelectionProvenanceKey]
   if (retrieval.selection_scope !== 'task_context' || retrieval.task_contract?.task_kind !== 'explain'
     || !provenance || question.length > 16_384 || !nodes.length || nodes.length > 128
     || /['"`\u2018\u2019\u201c\u201d]/.test(question)
