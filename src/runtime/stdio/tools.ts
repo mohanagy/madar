@@ -20,6 +20,7 @@ import type {
   ContextPackRelationship,
   ContextPackTaskKind,
   ContextRepresentationType,
+  SourceLexicalDefinitionContext,
 } from '../../contracts/context-pack.js'
 import type { ContextSessionState } from '../../contracts/context-session.js'
 import { buildCommunityLabels } from '../../pipeline/community-naming.js'
@@ -87,6 +88,7 @@ import { createSourceRecoveryPartition, filterSourceRecoveryResponse, restrictSo
 import { sourceOutsideFileBudgetPreference } from '../source-container-budget.js'
 import { protectSourceDiscoveryWitnesses, scopedSourceDeferralCore } from '../source-scoped-deferral.js'
 import { parseExplicitSourceTargets, buildExplicitSourceTargetPayload, ExplicitSourceTargetError } from '../explicit-source-targets.js'
+import { applySourceLexicalCaution, sourceLexicalDefinitionContext } from '../source-lexical-context.js'
 import { resolveExplicitSourceCallees } from '../explicit-source-callees.js'
 import { buildContextPackGovernanceReceipt } from '../context-pack-governance.js'
 import { applyContextPackResolution, type ContextPackResolution } from '../context-pack-resolution.js'
@@ -193,6 +195,8 @@ interface StoredContextPackHandle {
   explicit_target?: { node_id: string; symbol: string }
   evidence_classes?: Record<string, ContextPackEvidenceClass>
   source_recovery_partition?: SourceRecoveryPartition
+  /** Inherited caution only; never changes this handle's admitted owner scope. */
+  lexical_definition_context?: SourceLexicalDefinitionContext
 }
 
 interface ContextPackCacheEnvelope {
@@ -307,6 +311,7 @@ function isStoredContextPackHandle(value: unknown): value is StoredContextPackHa
   }
   if (candidate.evidence_classes !== undefined
     && (!isObjectRecord(candidate.evidence_classes) || !Object.values(candidate.evidence_classes).every(isContextPackEvidenceClass))) return false
+  if (candidate.lexical_definition_context !== undefined && !sourceLexicalDefinitionContext(candidate.lexical_definition_context)) return false
 
   if (candidate.explicit_target !== undefined
     && (!isObjectRecord(candidate.explicit_target) || typeof candidate.explicit_target.node_id !== 'string'
@@ -991,13 +996,20 @@ function storeExpandableHandles(
   expandable: readonly ContextPackExpandableRef[],
   helpers: ToolHelpers,
   evidenceClasses?: Record<string, ContextPackEvidenceClass>,
+  lexicalContext?: SourceLexicalDefinitionContext,
 ): void {
   for (const entry of expandable) {
+    // Stable navigation IDs may be reissued by a later ordinary pack. Keep an
+    // existing caution without inheriting its owner scope or source authority.
+    const previous = helpers.getContextPackHandle(entry.handle_id)
+    const caution = lexicalContext ?? (isObjectRecord(previous)
+      ? sourceLexicalDefinitionContext(previous.lexical_definition_context) : undefined)
     helpers.setContextPackHandle(entry.handle_id, {
       prompt,
       task,
       task_intent: taskIntent,
       ...(evidenceClasses ? { evidence_classes: evidenceClasses } : {}),
+      ...(caution ? { lexical_definition_context: caution } : {}),
       follow_up: {
         ...entry.follow_up,
         focus_ranges: entry.follow_up.focus_ranges ?? [],
@@ -1724,7 +1736,10 @@ function storeFinalContextPackHandles(
         ? { ...entry, follow_up: original.follow_up } : entry)
     }
   }
-  storeExpandableHandles(prompt, task, taskIntent, [...entries.values()], helpers, payloadEvidenceClasses(responsePayload))
+  const lexicalContext = isObjectRecord(responsePayload) && isObjectRecord(responsePayload.pack)
+    && isObjectRecord(responsePayload.pack.source_dependencies)
+    ? sourceLexicalDefinitionContext(responsePayload.pack.source_dependencies.lexical_definition_context) : undefined
+  storeExpandableHandles(prompt, task, taskIntent, [...entries.values()], helpers, payloadEvidenceClasses(responsePayload), lexicalContext)
 }
 
 /** Reissue immutable recovery scopes. The original handles remain valid for
@@ -2584,7 +2599,8 @@ function prepareFocusedExpansionPayload(
     })
     const retrieval: RetrieveResult = {
       question: stored.prompt,
-      source_dependencies: sourceDependencies.receipt,
+      source_dependencies: { ...sourceDependencies.receipt,
+        ...(stored.lexical_definition_context ? { lexical_definition_context: stored.lexical_definition_context } : {}) },
       token_count: pack.token_count,
       matched_nodes: pack.nodes.map((node) => ({
         ...(node.node_id ? { node_id: node.node_id } : {}),
@@ -2619,10 +2635,10 @@ function prepareFocusedExpansionPayload(
     }
     const metadata = contextMetadata(pack)
     storeExpandableHandles(stored.prompt, stored.task, stored.task_intent, metadata.expandable, outputHelpers,
-      { ...stored.evidence_classes, ...payloadEvidenceClasses({ pack: retrieval }) })
+      { ...stored.evidence_classes, ...payloadEvidenceClasses({ pack: retrieval }) }, stored.lexical_definition_context)
 
     const compactRetrieval = compactRetrieveResult(retrieval, { snippetBudget: budget, topNWithSnippet: retrieval.matched_nodes.length })
-    return {
+    const payload = {
       ...contextPackBasePayload(stored.task, stored.prompt, budget, graphPath, plan),
       handle_id: handleId,
       pack: compactRetrieval,
@@ -2634,6 +2650,8 @@ function prepareFocusedExpansionPayload(
         relationships: compactRetrieval.relationships,
       }, graphPath),
     }
+    applySourceLexicalCaution(payload)
+    return payload
   }
   return { candidates: nodeCandidates, build }
 }
@@ -2926,7 +2944,8 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       return retrieval.then((result) => {
         const retrievePlan = resolveTaskSelection(question, 'explain', { explicit: false })
         if (result.expandable && result.expandable.length > 0) {
-          storeExpandableHandles(question, retrievePlan.task_kind, retrievePlan.task_intent, result.expandable, helpers)
+          storeExpandableHandles(question, retrievePlan.task_kind, retrievePlan.task_intent, result.expandable, helpers,
+            undefined, result.source_dependencies?.lexical_definition_context)
         }
         const compactPayload = compactRetrieveResultForStdio(result, retrieveSnippetOptions)
         const payload = useVerboseRetrieve
@@ -3566,6 +3585,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           cacheStatus: cacheEligible ? 'miss' : 'bypass',
         })
         if (deferred) { delete (basePayload as Record<string, unknown>).coverage; delete (basePayload as Record<string, unknown>).claims }
+        applySourceLexicalCaution(basePayload)
         return constrainStrictContextPackPayload(basePayload, helpers)
       }
       let responsePayload = buildResponse()

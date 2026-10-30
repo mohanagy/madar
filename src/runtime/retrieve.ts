@@ -100,6 +100,7 @@ import { sourceQualifiedBindingScope } from './retrieve/source-qualified-binding
 import { sourceVisibleWarnings } from './retrieve/source-visible-warnings.js'
 import { prioritizeNextRouteReferences } from './retrieve/source-route-references.js'
 import { sourceCoherenceGroup, sourceCompositionPriority } from './retrieve/source-coherence.js'
+import { sourceDiagnosticLexicalCompanions } from './retrieve/source-lexical-companions.js'
 import { sourceDiagnosticQueries, sourceDiagnosticSeeds, type SourceDiagnosticClauseMatches } from './retrieve/source-diagnostic-priority.js'
 import { sourceIncomingDecisionFragment } from './retrieve/source-decision-fragments.js'
 import { buildSourceCoherentContinuationCatalog, sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from './retrieve/source-coherent-continuation.js'
@@ -5022,6 +5023,19 @@ function sourceSelectionForTask(
   const remainder = (sourceBoundSymbolAnchor || exclusiveRequestedFiles) && (dependencies.receipt.resolved_calls > 0 || dependencies.receipt.unresolved_calls > 0 || (dependencies.receipt.resolved_references ?? 0) > 0)
     ? multipartBody.filter(node => !selected.has(node.id)) : withRequested.filter(node => !selected.has(node.id))
   let ordered = [...seeds, ...resolved, ...remainder]
+  const lexicalCompanions = diagnosticIds.length && independentBodyScope && localExclusions.valid
+    ? sourceDiagnosticLexicalCompanions(diagnosticIds, lookupCandidates, dependencies[sourceSelectionProvenanceKey],
+      dependencies.source_call_authority_owner_ids ?? [], (file, label, text) =>
+        !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(file, localRoot) as never)
+        && !localExclusions.matchesSource(file, label, localRoot) && !localExclusions.matchesText(text), localRoot) : []
+  if (lexicalCompanions.length) {
+    const byId = new Map(lexicalCompanions.map(value => [value.candidate.id, value]))
+    ordered = ordered.map(node => byId.has(node.id) ? { ...node, sourceFragment: byId.get(node.id)!.fragment } : node)
+    const existing = new Set(ordered.map(node => node.id))
+    ordered.push(...lexicalCompanions.filter(value => !existing.has(value.candidate.id))
+      .map(({ candidate, fragment }) => ({ ...candidate, sourceFragment: fragment })))
+    dependencies.receipt.lexical_definition_context = { admitted_node_ids: lexicalCompanions.map(value => value.candidate.id), runtime_dispatch: 'unresolved' }
+  }
   let sourcePriority: string[] | undefined
   let continuationCatalog: SourceCoherentContinuationCatalog | undefined
   // Literal discovery records recoverable owners, not an explicit callable
@@ -5052,13 +5066,14 @@ function sourceSelectionForTask(
       allowedPath, allowedOwner, routeRoot)
     if (!sourcePriority.length) sourcePriority = dependencies[sourceLocalPriorityKey]
     if (diagnosticIds.length) {
-      // Current source dependency resolution may retain the selected decisions'
-      // cleanup alongside them; this orders existing members, never new edges.
+      // Keep selected decisions, lexical definition context, and then positively
+      // resolved dependencies. Definition context never supplies call authority.
       const provenance = dependencies[sourceSelectionProvenanceKey]
       const admitted = new Set(ordered.map(node => node.id))
       const unique = new Set(provenance?.owners.filter(owner => owner.status === 'unique').map(owner => owner.node_id))
       const preferred = new Set(diagnosticIds.filter(id => admitted.has(id)))
-      const queue = [...preferred]
+      for (const { candidate } of lexicalCompanions) preferred.add(candidate.id)
+      const queue = diagnosticIds.filter(id => admitted.has(id))
       for (let index = 0; index < queue.length && preferred.size < 12; index++) {
         for (const pair of provenance?.resolved_pairs ?? []) {
           if (preferred.size >= 12) break
@@ -5090,6 +5105,10 @@ function sourceSelectionForTask(
           ?? (graph.hasNode(id) ? scoredNodeFromGraph(graph, id, 1, routeRoot) : undefined),
         allowedPath, allowedOwner, routeRoot)
     }
+  }
+  if (lexicalCompanions.length) {
+    const fragments = new Map(lexicalCompanions.map(value => [value.candidate.id, value.fragment]))
+    ordered = ordered.map(node => fragments.has(node.id) ? { ...node, sourceFragment: fragments.get(node.id)! } : node)
   }
   return { candidates: ordered, scope: 'task_context', dependencies, ...(discoveryCore ? { discoveryCore } : {}),
     ...(sourcePriority?.length ? { sourcePriority } : {}), ...(continuationCatalog ? { continuationCatalog } : {}) }

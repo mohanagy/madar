@@ -3,6 +3,7 @@ import { estimateQueryTokens } from './serve.js'
 import { completeSourceFileCandidates } from './source-read-context.js'
 import { completeRequestedSymbolCandidates } from './source-symbol-completion.js'
 import { sourceContainerBudgetPreference, sourceDisconnectedBudgetPreference } from './source-container-budget.js'
+import { applySourceLexicalCaution } from './source-lexical-context.js'
 
 type RecordValue = Record<string, unknown>
 export const MIN_SOURCE_EVIDENCE_BUDGET = 128
@@ -357,6 +358,7 @@ function compactPayload(input: RecordValue): RecordValue {
     caveats.push('Cached source excerpt could not be verified against the current file.')
   }
   record(record(result.evidence).answerability).caveats = [...new Set(caveats)]
+  applySourceLexicalCaution(result)
   if (input.governance) result.governance = { graph_freshness: compactFreshness(record(input.governance).graph_freshness) }
   const implementation = record(input.implementation)
   const guidance = pick(implementation, ['likely_edit_files', 'likely_test_files', 'validation_commands', 'validation_discovery', 'risk_boundaries'])
@@ -669,6 +671,7 @@ export function finalizeSourceEvidenceResponse(
 ): RecordValue {
   if (maxTokens < MIN_SOURCE_EVIDENCE_BUDGET) throw new Error(`Source evidence budget must be at least ${MIN_SOURCE_EVIDENCE_BUDGET} tokens`)
   const original = clone(input)
+  applySourceLexicalCaution(original)
   let payload = options.verbose ? clone(original) : compactPayload(original)
   const count = (): number => estimateQueryTokens(options.format === 'text' ? renderSourceEvidenceText(payload) : JSON.stringify(payload))
   const attach = (): number => {
