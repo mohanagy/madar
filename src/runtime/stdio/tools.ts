@@ -2007,6 +2007,157 @@ function finalizeGeneratedContextPackResponse(
   }, budget, { verbose: true })
 }
 
+/** Retry an empty owned expansion without changing its search or advancing unseen owners. */
+function retryEmptyOwnedExpansion(
+  baseline: Record<string, unknown>, original: Record<string, unknown>, handleId: string,
+  stored: StoredContextPackHandle, budget: number, rootPath: string,
+  candidates: readonly ContextPackNodeCandidate<ContextPackNode>[],
+  build: (candidate: ContextPackNodeCandidate<ContextPackNode>, helpers: ToolHelpers) => Record<string, unknown>,
+  helpers: ToolHelpers, options: NonNullable<Parameters<typeof finalizeSourceEvidenceResponse>[2]>,
+): { payload: Record<string, unknown>; handles: Map<string, unknown> } {
+  const record = (value: unknown): Record<string, unknown> => isObjectRecord(value) ? value : {}
+  const clone = (value: Record<string, unknown>): Record<string, unknown> => JSON.parse(JSON.stringify(value))
+  const nodeIds = [...new Set(stored.follow_up.node_ids!)]
+  const owned = new Set(nodeIds)
+  const originalEvidence = record(original.evidence), originalAnswer = record(originalEvidence.answerability)
+  const hasSource = (nodes: readonly Record<string, unknown>[]): boolean => nodes.some(node =>
+    typeof node.snippet === 'string' && node.snippet.replace(/\[omitted lines \d+-\d+\]/g, '').trim().length > 0)
+  let active = new Map<string, unknown>()
+  const lookup = (id: string): SourceContinuationHandle | undefined => {
+    const value = active.get(id) ?? helpers.getContextPackHandle(id)
+    return isSourceContinuationHandle(value) ? value : undefined
+  }
+  // One proof cache retains source identities from unsuccessful trials too.
+  const prepare = createSourceContinuationPreparation(rootPath, lookup, () => true, { verifyAllSources: true })
+  const price = (payload: Record<string, unknown>): number => {
+    payload.serialized_budget = { max_tokens: budget, token_count: 0, enforced: true }
+    for (let index = 0; index < 12; index++) {
+      const count = estimateQueryTokens(JSON.stringify(payload))
+      if (record(payload.serialized_budget).token_count === count) return count
+      record(payload.serialized_budget).token_count = count
+    }
+    throw new Error('Owned expansion token receipt did not stabilize')
+  }
+  const recovery = (payload: Record<string, unknown>, remaining: string[]): string | undefined => {
+    const nextId = remaining.length === nodeIds.length ? handleId
+      : `expand:${stored.task}:${stored.follow_up.evidence_class}:${createHash('sha256')
+        .update(JSON.stringify([handleId, remaining])).digest('hex').slice(0, 12)}`
+    if (remaining.length && nextId !== handleId) active.set(nextId, { ...stored,
+      follow_up: { ...stored.follow_up, node_ids: remaining } })
+    payload.expandable = remaining.length ? [{ kind: 'nodes', handle_id: nextId,
+      evidence_class: stored.follow_up.evidence_class, count: remaining.length,
+      follow_up: { ...stored.follow_up, node_ids: remaining } }] : []
+    delete record(payload.pack).expandable
+    const answer = record(record(payload.evidence).answerability)
+    if (Array.isArray(answer.verification_targets)) answer.verification_targets = answer.verification_targets.flatMap(target =>
+      isObjectRecord(target) && typeof target.handle_id === 'string'
+        ? remaining.length ? [{ handle_id: nextId }] : [] : [target])
+    return remaining.length ? nextId : undefined
+  }
+  const validate = (proof: ReturnType<ReturnType<typeof createSourceContinuationPreparation>>): boolean => {
+    if (proof.refused || !proof.validate()) throw new FocusedSymbolError(
+      'context_expand source or policy changed during allocation; request a fresh context_pack', false)
+    return proof.valid
+  }
+  if (originalAnswer.broad_search_fallback !== 'blocked') for (const candidate of candidates.slice(0, 4)) {
+    active = new Map()
+    const trialHelpers = { ...helpers, setContextPackHandle: (id: string, value: unknown) => { active.set(id, value) } }
+    const input = build(candidate, trialHelpers)
+    const evidence = record(input.evidence), answer = record(evidence.answerability)
+    input.evidence = { ...originalEvidence, ...evidence, answerability: { ...originalAnswer, ...answer,
+      caveats: [...new Set([...stringValues(originalAnswer.caveats), ...stringValues(answer.caveats)])],
+      missing_obligations: [...new Set([...stringValues(originalAnswer.missing_obligations), ...stringValues(answer.missing_obligations)])],
+    } }
+    recovery(input, nodeIds)
+    const freshness = record(record(input.governance).graph_freshness)
+    if (freshness.status !== 'fresh' || freshness.selected_context_status !== 'fresh') throw new FocusedSymbolError(
+      'context_expand source freshness could not be verified during allocation; request a fresh context_pack', false)
+    if (!validate(prepare(input))) continue
+    let payload: Record<string, unknown>
+    try {
+      payload = finalizeSourceEvidenceResponse(input, budget, { ...options,
+        continuations: { rootPath, store: (id, value) => { active.set(id, value) } } })
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Budget ')) continue
+      throw error
+    }
+    if (stored.source_recovery_partition) {
+      payload = partitionRecoveryReferences(payload, stored.source_recovery_partition, rootPath, active, helpers.getContextPackHandle)
+      const filtered = filterSourceRecoveryResponse(payload, stored.source_recovery_partition, budget,
+        { expectedRoot: rootPath, lookupSourceHandle: lookup })
+      filtered.validate(); payload = filtered.payload
+    }
+    const nodes = Array.isArray(record(payload.pack).matched_nodes)
+      ? (record(payload.pack).matched_nodes as unknown[]).filter(isObjectRecord) : []
+    if (!nodes.length) continue
+    const proof = prepare(payload)
+    if (!validate(proof) || nodes.some(node => typeof node.node_id !== 'string' || !owned.has(node.node_id))) continue
+    if (!hasSource(nodes)) continue
+    const recovered = new Set(nodes.flatMap(node => {
+      const partial = node.snippet_truncated === true || Array.isArray(node.snippet_omitted_ranges) && node.snippet_omitted_ranges.length > 0
+      // A partial body is not consumed unless its exact remaining source has a
+      // usable cursor advertised by this response, authenticated above.
+      const cursor = typeof node.source_expand_handle === 'string' && proof.handles.has(node.source_expand_handle)
+      return !partial || cursor ? [String(node.node_id)] : []
+    }))
+    const remaining = nodeIds.filter(id => !recovered.has(id)), nextId = recovery(payload, remaining)
+    // Recovery is priced before committing. Do not let another source-removal
+    // pass turn the selected trial back into an apparent progress page.
+    let compact: Record<string, unknown>
+    try { compact = serializeSourceEvidenceResponse(payload, budget, { verbose: true }) }
+    catch (error) {
+      if (error instanceof Error && error.message.startsWith('Budget ')) continue
+      throw error
+    }
+    const compactNodes = Array.isArray(record(compact.pack).matched_nodes)
+      ? (record(compact.pack).matched_nodes as unknown[]).filter(isObjectRecord) : []
+    if (compactNodes.length !== nodes.length || !hasSource(compactNodes) || price(compact) > budget || !validate(proof)) continue
+    const finalProof = prepare(compact)
+    if (!validate(finalProof)) continue
+    const finalRecovered = new Set(compactNodes.flatMap(node => {
+      const partial = node.snippet_truncated === true || Array.isArray(node.snippet_omitted_ranges) && node.snippet_omitted_ranges.length > 0
+      return !partial || typeof node.source_expand_handle === 'string' && finalProof.handles.has(node.source_expand_handle)
+        ? [String(node.node_id)] : []
+    }))
+    if ([...recovered].some(id => !finalRecovered.has(id))) continue
+    const recoveryHandle = nextId ? active.get(nextId) ?? helpers.getContextPackHandle(nextId) : undefined
+    if (nextId && (!Array.isArray(compact.expandable) || !compact.expandable.some(entry => record(entry).handle_id === nextId)
+      || !isStoredContextPackHandle(recoveryHandle)
+      || JSON.stringify(recoveryHandle.follow_up.node_ids) !== JSON.stringify(remaining))) continue
+    if (stored.source_recovery_partition) verifySourceRecoveryPartition(stored.source_recovery_partition, rootPath)
+    return { payload: compact, handles: active }
+  }
+  validate(prepare({ pack: { matched_nodes: [] } }))
+  const payload = clone(baseline)
+  const blocked = originalAnswer.broad_search_fallback === 'blocked'
+  const status = blocked ? 'blocked' : 'budget_insufficient'
+  payload.handle_id = handleId
+  payload.expansion_status = status
+  payload.delivered_source_nodes = 0
+  payload.pack = { ...record(payload.pack), matched_nodes: [], relationships: [] }
+  payload.evidence = { ...originalEvidence, answerability: { ...originalAnswer,
+    state: 'insufficient', answer_scope: 'partial', advisory: true,
+    caveats: [...new Set([...stringValues(originalAnswer.caveats), blocked
+      ? 'Source expansion remains blocked by the original evidence policy.'
+      : 'No source delivered within the bounded allocation attempts; retry the original handle with a larger budget.'])] } }
+  active = new Map(); recovery(payload, nodeIds)
+  // Keep the original immutable handle even when detailed evidence cannot fit.
+  try {
+    const compact = serializeSourceEvidenceResponse(payload, budget, { verbose: true })
+    compact.handle_id = handleId; compact.expansion_status = status; compact.delivered_source_nodes = 0
+    compact.expandable = [{ handle_id: handleId }]
+    if (price(compact) <= budget) return { payload: compact, handles: new Map() }
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith('Budget ')) throw error
+  }
+  const freshness = record(record(original.governance).graph_freshness)
+  const minimal = { handle_id: handleId, expansion_status: status, expandable: [{ handle_id: handleId }],
+    evidence: { answerability: { state: 'insufficient', broad_search_fallback: blocked ? 'blocked' : 'allowed' } },
+    limitations: { graph: freshness.status, source: freshness.selected_context_status, obligations: 'not resolved; retry original scope' } }
+  if (price(minimal) > budget) throw new Error('Budget cannot carry the original expansion retry scope and evidence status')
+  return { payload: minimal, handles: new Map() }
+}
+
 /** Defer only known secondary owners with a current, recoverable source scope. */
 function discoverySourceDeferral(
   graph: KnowledgeGraph, graphPath: string, retrieval: RetrieveResult, nodes: readonly ContextPackNode[],
@@ -2272,7 +2423,7 @@ function explicitTargetSuggestions(
   return suggestions
 }
 
-function buildFocusedExpansionPayload(
+function prepareFocusedExpansionPayload(
   graph: KnowledgeGraph,
   graphPath: string,
   handleId: string,
@@ -2280,7 +2431,10 @@ function buildFocusedExpansionPayload(
   budget: number,
   helpers: ToolHelpers,
   selectedSymbol?: FocusedSymbolOwner,
-): Record<string, unknown> {
+): {
+  candidates: readonly ContextPackNodeCandidate<ContextPackNode>[]
+  build: (nodes: readonly ContextPackNodeCandidate<ContextPackNode>[], outputHelpers: ToolHelpers) => Record<string, unknown>
+} {
   const plannerBudget = Math.max(budget, 3)
   const communities = communitiesFromGraph(graph)
   const communityLabels = {
@@ -2410,75 +2564,78 @@ function buildFocusedExpansionPayload(
       to: String(graph.nodeAttributes(edge.to_id).label ?? ''),
     })),
   ].filter((edge, index, edges) => edges.findIndex(other => other.from_id === edge.from_id && other.to_id === edge.to_id && other.relation === edge.relation) === index)
-  const pack = compileContextPack({
-    task_contract: classifyTaskContract(stored.task, {
-      budget,
-      prompt: stored.prompt,
-      task_intent: stored.task_intent,
-    }),
-    nodes: nodeCandidates,
-    relationships,
-    community_context: [...communityIds]
-      .map((communityId) => ({
-        id: communityId,
-        label: communityLabels[communityId] ?? `Community ${communityId}`,
-        node_count: (communities[communityId] ?? []).length,
-      }))
-      .sort((left, right) => right.node_count - left.node_count),
-    retrieval_gate: classifyRetrievalLevel({ prompt: stored.prompt }),
-  })
-  const retrieval: RetrieveResult = {
-    question: stored.prompt,
-    source_dependencies: sourceDependencies.receipt,
-    token_count: pack.token_count,
-    matched_nodes: pack.nodes.map((node) => ({
-      ...(node.node_id ? { node_id: node.node_id } : {}),
-      label: node.label,
-      source_file: node.source_file,
-      line_number: node.line_number,
-      ...(node.node_kind ? { node_kind: node.node_kind } : {}),
-      ...(node.framework ? { framework: node.framework } : {}),
-      ...(node.framework_role ? { framework_role: node.framework_role } : {}),
-      ...(node.framework_boost !== undefined ? { framework_boost: node.framework_boost } : {}),
-      file_type: node.file_type ?? '',
-      snippet: node.snippet,
-      ...(node.snippet_line_number !== undefined ? { snippet_line_number: node.snippet_line_number } : {}),
-      ...(node.snippet_scope ? { snippet_scope: node.snippet_scope } : {}),
-      ...(node.snippet_line_range ? { snippet_line_range: node.snippet_line_range } : {}),
-      ...(node.snippet_omitted_ranges ? { snippet_omitted_ranges: node.snippet_omitted_ranges } : {}),
-      ...(node.snippet_truncated !== undefined ? { snippet_truncated: node.snippet_truncated } : {}),
-      ...(node.snippet_unverified !== undefined ? { snippet_unverified: node.snippet_unverified } : {}),
-      match_score: node.match_score ?? 0,
-      relevance_band: node.relevance_band ?? relevanceBandForEvidenceClass(node.evidence_class ?? stored.follow_up.evidence_class),
-      community: node.community ?? null,
-      community_label: node.community_label ?? null,
-      ...(node.evidence_class ? { evidence_class: node.evidence_class } : {}),
-    })),
-    relationships: pack.relationships,
-    community_context: pack.community_context,
-    graph_signals: { god_nodes: [], bridge_nodes: [] },
-    task_contract: pack.task_contract,
-    claims: pack.claims,
-    expandable: pack.expandable,
-    coverage: pack.coverage,
-  }
-  const metadata = contextMetadata(pack)
-  storeExpandableHandles(stored.prompt, stored.task, stored.task_intent, metadata.expandable, helpers,
-    { ...stored.evidence_classes, ...payloadEvidenceClasses({ pack: retrieval }) })
+  const build = (nodes: readonly ContextPackNodeCandidate<ContextPackNode>[], outputHelpers: ToolHelpers): Record<string, unknown> => {
+    const pack = compileContextPack({
+      task_contract: classifyTaskContract(stored.task, {
+        budget,
+        prompt: stored.prompt,
+        task_intent: stored.task_intent,
+      }),
+      nodes,
+      relationships,
+      community_context: [...communityIds]
+        .map((communityId) => ({
+          id: communityId,
+          label: communityLabels[communityId] ?? `Community ${communityId}`,
+          node_count: (communities[communityId] ?? []).length,
+        }))
+        .sort((left, right) => right.node_count - left.node_count),
+      retrieval_gate: classifyRetrievalLevel({ prompt: stored.prompt }),
+    })
+    const retrieval: RetrieveResult = {
+      question: stored.prompt,
+      source_dependencies: sourceDependencies.receipt,
+      token_count: pack.token_count,
+      matched_nodes: pack.nodes.map((node) => ({
+        ...(node.node_id ? { node_id: node.node_id } : {}),
+        label: node.label,
+        source_file: node.source_file,
+        line_number: node.line_number,
+        ...(node.node_kind ? { node_kind: node.node_kind } : {}),
+        ...(node.framework ? { framework: node.framework } : {}),
+        ...(node.framework_role ? { framework_role: node.framework_role } : {}),
+        ...(node.framework_boost !== undefined ? { framework_boost: node.framework_boost } : {}),
+        file_type: node.file_type ?? '',
+        snippet: node.snippet,
+        ...(node.snippet_line_number !== undefined ? { snippet_line_number: node.snippet_line_number } : {}),
+        ...(node.snippet_scope ? { snippet_scope: node.snippet_scope } : {}),
+        ...(node.snippet_line_range ? { snippet_line_range: node.snippet_line_range } : {}),
+        ...(node.snippet_omitted_ranges ? { snippet_omitted_ranges: node.snippet_omitted_ranges } : {}),
+        ...(node.snippet_truncated !== undefined ? { snippet_truncated: node.snippet_truncated } : {}),
+        ...(node.snippet_unverified !== undefined ? { snippet_unverified: node.snippet_unverified } : {}),
+        match_score: node.match_score ?? 0,
+        relevance_band: node.relevance_band ?? relevanceBandForEvidenceClass(node.evidence_class ?? stored.follow_up.evidence_class),
+        community: node.community ?? null,
+        community_label: node.community_label ?? null,
+        ...(node.evidence_class ? { evidence_class: node.evidence_class } : {}),
+      })),
+      relationships: pack.relationships,
+      community_context: pack.community_context,
+      graph_signals: { god_nodes: [], bridge_nodes: [] },
+      task_contract: pack.task_contract,
+      claims: pack.claims,
+      expandable: pack.expandable,
+      coverage: pack.coverage,
+    }
+    const metadata = contextMetadata(pack)
+    storeExpandableHandles(stored.prompt, stored.task, stored.task_intent, metadata.expandable, outputHelpers,
+      { ...stored.evidence_classes, ...payloadEvidenceClasses({ pack: retrieval }) })
 
-  const compactRetrieval = compactRetrieveResult(retrieval, { snippetBudget: budget, topNWithSnippet: retrieval.matched_nodes.length })
-  return {
-    ...contextPackBasePayload(stored.task, stored.prompt, budget, graphPath, plan),
-    handle_id: handleId,
-    pack: compactRetrieval,
-    matched_focus: nodeCandidates.length,
-    ...metadata,
-    evidence: evidenceForRetrievePayload({
-      ...retrieval,
-      matched_nodes: compactRetrieval.matched_nodes,
-      relationships: compactRetrieval.relationships,
-    }, graphPath),
+    const compactRetrieval = compactRetrieveResult(retrieval, { snippetBudget: budget, topNWithSnippet: retrieval.matched_nodes.length })
+    return {
+      ...contextPackBasePayload(stored.task, stored.prompt, budget, graphPath, plan),
+      handle_id: handleId,
+      pack: compactRetrieval,
+      matched_focus: nodes.length,
+      ...metadata,
+      evidence: evidenceForRetrievePayload({
+        ...retrieval,
+        matched_nodes: compactRetrieval.matched_nodes,
+        relationships: compactRetrieval.relationships,
+      }, graphPath),
+    }
   }
+  return { candidates: nodeCandidates, build }
 }
 
 export function handleToolCall(id: string | number | null, graphPath: string, params: unknown, helpers: ToolHelpers): StdioResponse | Promise<StdioResponse> {
@@ -3606,15 +3763,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         const expansionHelpers = { ...helpers,
           setContextPackHandle: (nextId: string, handle: unknown) => { stagedHandles.set(nextId, handle) },
         }
-        const payload = constrainStrictContextExpansionPayload(buildFocusedExpansionPayload(
-          graph,
-          graphPath,
-          handleId,
-          stored,
-          budget ?? 1500,
-          expansionHelpers,
-          selectedSymbol,
-        ), helpers)
+        const preparedExpansion = prepareFocusedExpansionPayload(graph, graphPath, handleId, stored,
+          budget ?? 1500, expansionHelpers, selectedSymbol)
+        const payload = constrainStrictContextExpansionPayload(
+          preparedExpansion.build(preparedExpansion.candidates, expansionHelpers), helpers)
         if (selectedSymbol && isObjectRecord(payload.evidence)) {
           const prior = isObjectRecord(payload.evidence.answerability) ? payload.evidence.answerability : {}
           payload.evidence.answerability = { ...prior, state: 'insufficient', answer_scope: 'partial', advisory: true,
@@ -3630,9 +3782,16 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           continuations: { rootPath: resolveGraphSourceRoot(graphPath, graph),
             store: (nextId: string, handle: SourceContinuationHandle) => expansionHelpers.setContextPackHandle(nextId, handle) },
         }
-        let expanded = selectedSymbol ? finalizeSourceEvidenceResponse(payload, budget ?? 1500, expansionOptions)
-          : finalizeGeneratedContextPackResponse(payload, budget ?? 1500, expansionOptions,
-            { prompt: stored.prompt, task: stored.task, taskIntent: stored.task_intent, helpers: expansionHelpers })
+        let expanded: Record<string, unknown>
+        try {
+          expanded = selectedSymbol ? finalizeSourceEvidenceResponse(payload, budget ?? 1500, expansionOptions)
+            : finalizeGeneratedContextPackResponse(payload, budget ?? 1500, expansionOptions,
+              { prompt: stored.prompt, task: stored.task, taskIntent: stored.task_intent, helpers: expansionHelpers })
+        } catch (error) {
+          if (selectedSymbol || !stored.follow_up.node_ids?.length || toolArguments.verbose === true
+            || !(error instanceof Error) || !error.message.startsWith('Budget ')) throw error
+          expanded = { ...payload, pack: { matched_nodes: [], relationships: [] } }
+        }
         const finalPack = isObjectRecord(expanded.pack) ? expanded.pack : {}
         const finalNodes = Array.isArray(finalPack.matched_nodes) ? finalPack.matched_nodes : []
         const budgetOmission = isObjectRecord(expanded.omitted_evidence)
@@ -3674,6 +3833,22 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             } })
           expanded = filtered.payload
           filtered.validate()
+        }
+        const sourceNodes = isObjectRecord(expanded.pack) && Array.isArray(expanded.pack.matched_nodes)
+          ? expanded.pack.matched_nodes.filter(isObjectRecord) : []
+        if (!selectedSymbol && stored.follow_up.node_ids?.length && toolArguments.verbose !== true
+          && !sourceNodes.some(node => typeof node.snippet === 'string' && node.snippet_unverified !== true
+            && node.snippet_source !== 'derived' && node.snippet.replace(/\[omitted lines \d+-\d+\]/g, '').trim().length > 0)) {
+          const retried = retryEmptyOwnedExpansion(expanded, payload, handleId, stored, budget ?? 1500, rootPath,
+            preparedExpansion.candidates, (candidate, trialHelpers) => {
+              const trial = preparedExpansion.build([candidate], trialHelpers)
+              trial.governance = { graph_freshness: analyzeGraphContextFreshness(graphPath, graph,
+                { selected_source_files: typeof candidate.source_file === 'string' ? [candidate.source_file] : [] }) }
+              return trial
+            }, expansionHelpers, expansionOptions)
+          expanded = retried.payload
+          stagedHandles.clear()
+          for (const [nextId, handle] of retried.handles) stagedHandles.set(nextId, handle)
         }
         publishRecoveryHandles(expanded, stagedHandles, helpers)
         return helpers.ok(id, helpers.textToolResult(JSON.stringify(expanded)))
