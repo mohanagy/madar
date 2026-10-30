@@ -157,6 +157,87 @@ describe('task-intent', () => {
         .toEqual({ kind: 'explain', score: 8 })
     })
 
+    it('routes the recorded source requests without caller task overrides', () => {
+      const prompts = [
+      "Trace the implementation of AI review of an existing saved letter in CraftMyLetter, including credit deduction, attempt persistence before engine invocation, accepted revision saving, no-revision refund failure handling, thrown-engine immediate refund, HTTP responses and attempt states. Also trace the existing recovery job: eligibility timing, refund transaction/state updates, idempotency and exclusions. Find relevant source, tests, configuration, root README only.",
+      "Locate source implementation specifically for reviewing an existing saved letter using AI, review credit/credits, review attempt records, refund and recovery cron/job. Search source code for review endpoint and recovery. Need actual source paths and relevant snippets plus tests.",
+      "How does CraftMyLetter review of an existing saved letter charge one AI review credit, create an attempt record before engine call, handle accepted revision/save, unchanged original/refund failure, engine exception/refund success, and recover pending review attempts? Locate endpoint/service and recovery implementation, relevant statuses, timestamps, transaction behavior and tests/config.",
+      "Find implementation and tests for AI review of a saved existing letter, credit debit/refund and review attempt recovery job. Need endpoint path, exact status values, transactions, HTTP responses, recovery age eligibility, idempotence. Search specifically review attempt / review credits / recover abandoned review.",
+      "In this Miftah source snapshot, trace opt-in modern stateless profile-context handle issuance and lifetime calculation from a host-authenticated profile selection, including how assertion expiry bounds the handle. Trace validation of a supplied handle on upstream-tool calls, including checks against assertion fields and expiry boundaries, profile selection, error codes, and whether handle is removed/forwarded before ordinary upstream tool processing. Find authoritative source/config/tests/root README only. Include repository-relative paths and lines.",
+      "In this source snapshot, explain the opt-in modern stateless profile selection flow for a host-authenticated client: how profile-context handles are issued and their expiry derived from requested lifetime and host assertion exp; how an upstream tool call validates a supplied handle against a renewed assertion's issuer, subject, audience, chat, timing/exp boundaries; which profile gets selected; error codes and whether errors return to client or continue; and whether handle is forwarded upstream. Use source evidence only.",
+      "Locate source implementation for profile context handle mint/resolve and host authenticated claims matching. Need exact expiry calculation and whether handle resolve compares auth issuer/subject/audience/chat, assertion exp/iat, with boundaries. Also tool processing invocation args and error response flow: does prepareCall rejection return error and are extracted args passed upstream without handle? Cite exact source ranges.",
+      ]
+      for (const prompt of prompts) {
+        expect(resolveTaskSelection(prompt), prompt).toMatchObject({ explicit: false, task_kind: 'explain' })
+      }
+      expect(resolveTaskSelection(prompts[4]!).task_intent).toBe('debug-flow')
+    })
+
+    it.each([
+      'How does the worker create a task, build context and update state?',
+      'What does the review worker create before returning its result?',
+      'How is the review queue built from incoming tasks?',
+      'Where is the flow that creates review records?',
+      'How does the factory create a task? Locate the source and its tests.',
+      'Locate source for the review queue and audit log.',
+      'Find implementation for record creation and review queue processing.',
+      'Find implementation and tests for the audit log and review queue.',
+      'Locate source for stored events, review record/records, audit entries and state transitions.',
+      'In the source, locate the implementation of the review queue.',
+      'How does the review queue use `createTask()` and "build context"?',
+    ])('keeps described source behavior in explanation: %s', (prompt) => {
+      const selected = resolveTaskSelection(prompt)
+      expect(selected).toMatchObject({ explicit: false, task_kind: 'explain', task_intent: 'explain' })
+      expect(selected.classification.scores[0]).toEqual({ kind: 'explain', score: 8 })
+      expect(selected.classification.matched_rules).toContain('explain-source-investigation')
+      for (const task of ['explain', 'review', 'impact', 'implement'] as const) {
+        expect(resolveTaskSelection(prompt, task, { explicit: true }))
+          .toMatchObject({ explicit: true, task_kind: task, task_intent: task })
+      }
+    })
+
+    it.each([
+      ['How does the factory create a task? Add another feature.', 'implement'],
+      ['How does the factory create a task and then please add another feature?', 'implement'],
+      ['Where is the review queue, and create a new task.', 'implement'],
+      ['How is the review queue stored, and add a new task.', 'implement'],
+      ['How does the review queue work? Review the handler.', 'review'],
+      ['How is the review queue stored? Audit its permissions.', 'review'],
+      ['Locate source for the review queue. Review transaction handling.', 'review'],
+      ['Find implementation for the review queue and review it for correctness.', 'review'],
+      ['Find source for the review queue, review its guards.', 'review'],
+      ['Find source for the review queue and then review transaction handling.', 'review'],
+      ['Find source for the review queue and review error handling for correctness.', 'review'],
+      ['Find source for the queue. Inspect behavior and review error handling.', 'review'],
+      ['Locate source and review handlers.', 'review'],
+      ['Find source for the review queue and implement the requested change.', 'implement'],
+      ['Locate source for the review queue. Generate regression tests.', 'test-generation'],
+      ['How does the review queue work? Migrate the worker to a new API.', 'migrate'],
+      ['Find source for the review queue and determine what breaks if it is removed.', 'impact'],
+      ['Locate source for the review queue during a security audit.', 'security-review'],
+    ] as const)('preserves a separate authored action: %s', (prompt, kind) => {
+      const classification = classifyTaskIntent(prompt)
+      expect(classification.kind).toBe(kind)
+      expect(classification.matched_rules).not.toContain('explain-source-investigation')
+    })
+
+    it.each([
+      '"How does the worker create a task?" Review the source.',
+      '`Locate source` review queue.',
+      '```text\nFind implementation for the review queue\n```\nReview the handler.',
+      'src/how-does/review.ts',
+      'src/locate-source/review.ts',
+      'trace/review.ts',
+      'find source/review.ts',
+      'how does/review.ts',
+      'In `the source`, locate the review queue.',
+      'Find `source for` the review queue.',
+    ])('does not promote a directive supplied by data or paths: %s', (prompt) => {
+      const classification = classifyTaskIntent(prompt)
+      expect(classification.kind).toBe('review')
+      expect(classification.matched_rules).not.toContain('explain-source-investigation')
+    })
+
     it('routes diagnosis to source evidence while preserving explicit tasks and pure change requests', () => {
       const prompt = 'Trace the request error path and determine whether the waiting operation can retry.'
       const diagnostic = resolveTaskSelection(prompt)
