@@ -100,6 +100,7 @@ import { sourceQualifiedBindingScope } from './retrieve/source-qualified-binding
 import { sourceVisibleWarnings } from './retrieve/source-visible-warnings.js'
 import { prioritizeNextRouteReferences } from './retrieve/source-route-references.js'
 import { sourceCoherenceGroup, sourceCompositionPriority } from './retrieve/source-coherence.js'
+import { sourceIncomingDecisionFragment } from './retrieve/source-decision-fragments.js'
 import { buildSourceCoherentContinuationCatalog, sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from './retrieve/source-coherent-continuation.js'
 import { selectRequestedHelperOwners } from './retrieve/source-requested-helpers.js'
 import { sourceRequestedOperations, sourceSimplePrototypeRequests, selectRequestedPrototypeOwners, selectVerifiedExplicitPrototypeOwners } from './retrieve/source-requested-operations.js'
@@ -5028,6 +5029,20 @@ function sourceSelectionForTask(
     sourcePriority = coherence?.priority ?? sourceCompositionPriority(independent, ordered, dependencies[sourceSelectionProvenanceKey],
       allowedPath, allowedOwner, routeRoot)
     if (!sourcePriority.length) sourcePriority = dependencies[sourceLocalPriorityKey]
+    const decision = sourceIncomingDecisionFragment(independent, ordered, question, dependencies, allowedPath, allowedOwner, routeRoot)
+    if (decision) {
+      const connector = independent[1]?.id === decision.calleeId && independent[0]
+        ? sourceCompositionPriority(independent, ordered, dependencies[sourceSelectionProvenanceKey],
+          allowedPath, allowedOwner, routeRoot, { fromId: decision.calleeId, toId: independent[0].id }) : []
+      // Protect verified forward context before optional incoming source. Without
+      // a current connector, retain ordinary selection rather than crowding it out.
+      const prefix = sourcePriority?.length ? [...sourcePriority]
+        : independent.slice(0, independent.findIndex(node => node.id === decision.calleeId) + 1).map(node => node.id)
+      if (connector.length && !prefix.includes(decision.callerId)) {
+        ordered = ordered.map(node => node.id === decision.callerId ? { ...node, sourceFragment: decision.fragment } : node)
+        sourcePriority = [...new Set([...prefix, ...connector, decision.callerId])]
+      }
+    }
     if (coherence) {
       continuationCatalog = buildSourceCoherentContinuationCatalog(coherence.methods, ordered, question,
         dependencies[sourceSelectionProvenanceKey], id => byId.get(id)

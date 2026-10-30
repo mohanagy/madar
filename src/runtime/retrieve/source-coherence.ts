@@ -7,16 +7,18 @@ import { coherentSourceSnippet, readEvidenceLines, resolveSourceSymbolRange, sou
 import { sourceModuleConfigurationSnapshotIsFresh } from './source-modules.js'
 import type { SourceSelectionProvenance } from './source-selection-provenance.js'
 
-interface SourceCandidate { id: string; label: string; sourceFile: string; sourceLocation: string | null }
+interface SourceCandidate { id: string; label: string; sourceFile: string; sourceLocation: string | null; sourceFragment?: unknown }
 type MethodOwner = { candidate: SourceCandidate; method: ts.MethodDeclaration; file: string }
 
 /** Retain an admitted composition caller beside the two classes it connects.
+ * The optional decision mode protects a forward function connector first.
  * Positive current sites guide presentation only, never new call authority. */
 export function sourceCompositionPriority(
   independent: readonly SourceCandidate[], candidates: readonly SourceCandidate[],
   provenance: SourceSelectionProvenance | undefined,
   allowedPath: (file: string, canonical?: string) => boolean,
   allowedOwner: (file: string, label: string, text: string) => boolean, rootPath?: string,
+  connector?: { fromId: string; toId: string },
 ): string[] {
   if (!rootPath || !provenance?.configuration || provenance.root_path !== resolve(rootPath)
     || independent.length < 2 || candidates.length > 256 || provenance.owners.length > 100_000
@@ -24,6 +26,8 @@ export function sourceCompositionPriority(
     || provenance.resolved_pairs.length > 8192
     || !(['identity', 'mutation', 'write_origins'] as const).every(scan => provenance.scans[scan] === 'complete')) return []
   const leading = independent.slice(0, 2)
+  if (connector && (leading.length !== 2 || leading[0]!.id !== connector.toId || leading[1]!.id !== connector.fromId
+    || !leading.every(candidate => provenance.seed_ids.includes(candidate.id)) || provenance.scans.calls !== 'complete')) return []
   // Ordinary method coherence and function questions keep their existing path.
   if (!leading.every(candidate => {
     if (!allowedPath(candidate.sourceFile)) return false
@@ -31,7 +35,7 @@ export function sourceCompositionPriority(
     if (!canonical || !allowedPath(candidate.sourceFile, canonical)) return false
     const range = lineRangeFromSourceLocation(candidate.sourceLocation)
     const lines = range && readEvidenceLines(candidate.sourceFile, rootPath)
-    return range && lines && sourceDeclarationKind(lines, range, candidate.label, candidate.sourceFile) === 'class'
+    return range && lines && sourceDeclarationKind(lines, range, candidate.label, candidate.sourceFile) === (connector ? 'function' : 'class')
   })) return []
   try { if (realpathSync(rootPath) !== provenance.configuration.real_root) return [] } catch { return [] }
   if (!sourceModuleConfigurationSnapshotIsFresh(provenance.configuration, rootPath, allowedPath)) return []
@@ -73,31 +77,59 @@ export function sourceCompositionPriority(
   }
   const leaders = leading.map(ownerFor)
   if (new Set(leading.map(candidate => candidate.id)).size !== 2
-    || !leaders.every(owner => owner && (ts.isClassDeclaration(owner.declaration) || ts.isClassExpression(owner.declaration)))) return []
+    || !leaders.every(owner => owner && (connector
+      ? ts.isFunctionDeclaration(owner.declaration) && owner.declaration.parent === owner.source
+      : ts.isClassDeclaration(owner.declaration) || ts.isClassExpression(owner.declaration)))) return []
   const leadingIds = new Set(leading.map(candidate => candidate.id))
   const bridges: string[] = []
   for (const candidate of candidates) {
-    if (leadingIds.has(candidate.id) || !leading.every(target => provenance.resolved_pairs.some(pair =>
-      pair.from_id === candidate.id && pair.to_id === target.id && pair.relation === 'calls' && pair.kind === 'call'))) continue
+    const pairs = connector ? [{ from_id: connector.fromId, to_id: candidate.id }, { from_id: candidate.id, to_id: connector.toId }]
+      : leading.map(target => ({ from_id: candidate.id, to_id: target.id }))
+    if (leadingIds.has(candidate.id) || (connector && (!provenance.selected_ids.includes(candidate.id) || candidate.sourceFragment))
+      || !pairs.every(expected => provenance.resolved_pairs.some(pair => pair.from_id === expected.from_id
+        && pair.to_id === expected.to_id && pair.relation === 'calls' && pair.kind === 'call'))) continue
     const owner = ownerFor(candidate)
     if (!owner || sourceDeclarationKind(owner.lines, owner.range, candidate.label, candidate.sourceFile) !== 'function'
+      || (connector && (!ts.isFunctionDeclaration(owner.declaration) || owner.declaration.parent !== owner.source))
       || coherentSourceSnippet(owner.lines, owner.range, '', 'symbol')?.omittedRanges.length !== 0) continue
-    const sites = provenance.observed_sites.filter(site => site.from_id === candidate.id && site.kind === 'call'
-      && leadingIds.has(site.to_id) && site.source_sha256 === owner.hash
-      && resolve(rootPath, site.source_file) === resolve(rootPath, candidate.sourceFile)
-      && site.start_offset >= owner.declaration.getStart(owner.source) && site.end_offset <= owner.declaration.getEnd())
-    const visibleTargets = new Set<string>()
-    const visit = (node: ts.Node): void => {
-      if (++visited > 100_000) return
-      if (ts.isCallExpression(node) || ts.isNewExpression(node)) for (const site of sites) {
-        if (node.getStart(owner.source) === site.start_offset && node.getEnd() === site.end_offset) visibleTargets.add(site.to_id)
+    if (connector) {
+      let witnessed = true
+      for (const pair of pairs) {
+        const from = pair.from_id === candidate.id ? owner : leaders[1]!
+        const fromCandidate = pair.from_id === candidate.id ? candidate : leading[1]!
+        const sites = provenance.observed_sites.filter(site => site.from_id === pair.from_id && site.to_id === pair.to_id && site.kind === 'call'
+          && site.source_sha256 === from.hash && resolve(rootPath, site.source_file) === resolve(rootPath, fromCandidate.sourceFile)
+          && site.start_offset >= from.declaration.getStart(from.source) && site.end_offset <= from.declaration.getEnd())
+        let visible = false
+        const visit = (node: ts.Node): void => {
+          if (++visited > 100_000) return
+          if (ts.isCallExpression(node) && sites.some(site => node.getStart(from.source) === site.start_offset
+            && node.getEnd() === site.end_offset)) visible = true
+          ts.forEachChild(node, visit)
+        }
+        visit(from.declaration)
+        if (visited > 100_000) return []
+        if (!visible) { witnessed = false; break }
       }
-      ts.forEachChild(node, visit)
+      if (witnessed) bridges.push(candidate.id)
+    } else {
+      const sites = provenance.observed_sites.filter(site => site.from_id === candidate.id && site.kind === 'call'
+        && leadingIds.has(site.to_id) && site.source_sha256 === owner.hash
+        && resolve(rootPath, site.source_file) === resolve(rootPath, candidate.sourceFile)
+        && site.start_offset >= owner.declaration.getStart(owner.source) && site.end_offset <= owner.declaration.getEnd())
+      const visibleTargets = new Set<string>()
+      const visit = (node: ts.Node): void => {
+        if (++visited > 100_000) return
+        if (ts.isCallExpression(node) || ts.isNewExpression(node)) for (const site of sites) {
+          if (node.getStart(owner.source) === site.start_offset && node.getEnd() === site.end_offset) visibleTargets.add(site.to_id)
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(owner.declaration)
+      if (visited > 100_000) return []
+      if (leading.every(target => visibleTargets.has(target.id))) bridges.push(candidate.id)
     }
-    visit(owner.declaration)
-    if (visited > 100_000) return []
-    if (leading.every(target => visibleTargets.has(target.id))) bridges.push(candidate.id)
-    if (bridges.length >= 10) break
+    if (bridges.length >= (connector ? 1 : 10)) break
   }
   if (!bridges.length || !sourceModuleConfigurationSnapshotIsFresh(provenance.configuration, rootPath, allowedPath)) return []
   // Cached request text is not a freshness certificate for positive bindings.
