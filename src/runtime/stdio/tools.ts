@@ -2075,6 +2075,11 @@ function retryEmptyOwnedExpansion(
     return proof.valid
   }
   if (originalAnswer.broad_search_fallback !== 'blocked') for (const candidate of candidates.slice(0, 4)) {
+    const entry = candidate.build_entry()
+    // Metadata keeps its place in the original four-owner window and recovery
+    // scope, but cannot be a source-allocation trial.
+    if (typeof entry.snippet !== 'string' || entry.snippet_unverified === true || entry.snippet_source === 'derived'
+      || !entry.snippet.replace(/\[omitted lines \d+-\d+\]/g, '').trim()) continue
     active = new Map()
     const trialHelpers = { ...helpers, setContextPackHandle: (id: string, value: unknown) => { active.set(id, value) } }
     const input = build(candidate, trialHelpers)
@@ -3858,7 +3863,15 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ? expanded.pack.matched_nodes.filter(isObjectRecord) : []
         if (!selectedSymbol && stored.follow_up.node_ids?.length && toolArguments.verbose !== true
           && !sourceNodes.some(node => typeof node.snippet === 'string' && node.snippet_unverified !== true
-            && node.snippet_source !== 'derived' && node.snippet.replace(/\[omitted lines \d+-\d+\]/g, '').trim().length > 0)) {
+            && node.snippet_source !== 'derived' && node.snippet.replace(/\[omitted lines \d+-\d+\]/g, '').trim().length > 0)
+          // Graph-only navigation has no source allocation to retry. Inspect
+          // only the same four cached entries the bounded retry can attempt;
+          // actual source admission still requires all retry freshness proofs.
+          && preparedExpansion.candidates.slice(0, 4).some(candidate => {
+            const node = candidate.build_entry()
+            return typeof node.snippet === 'string' && node.snippet_unverified !== true
+              && node.snippet_source !== 'derived' && node.snippet.replace(/\[omitted lines \d+-\d+\]/g, '').trim().length > 0
+          })) {
           const retried = retryEmptyOwnedExpansion(expanded, payload, handleId, stored, budget ?? 1500, rootPath,
             preparedExpansion.candidates, (candidate, trialHelpers) => {
               const trial = preparedExpansion.build([candidate], trialHelpers)

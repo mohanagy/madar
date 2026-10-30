@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -41,6 +41,16 @@ function fixture(largeCount = 1, smallSource = 'export function small() {\n  ret
 }
 
 describe('owned generic expansion allocation', () => {
+  it('refuses source allocation after a real source mutation without publishing trial handles', async () => {
+    const f = fixture(), before = JSON.stringify([...f.handles])
+    const file = join(f.root, 'small.ts')
+    writeFileSync(file, readFileSync(file, 'utf8').replace('available witness', 'modified witness'))
+    const changed = new Date(Date.now() + 60_000)
+    utimesSync(file, changed, changed)
+    await expect(f.call(1500)).rejects.toThrow(/source freshness could not be verified/)
+    expect(JSON.stringify([...f.handles])).toBe(before)
+  })
+
   it('delivers a smaller admitted owner behind oversized source and preserves skipped scope', async () => {
     const f = fixture(), before = JSON.stringify(f.stored)
     const result = await f.call(1500)
@@ -54,6 +64,22 @@ describe('owned generic expansion allocation', () => {
     expect(f.handles.get(next.handle_id)).toMatchObject({ follow_up: { node_ids: ['large0'] } })
     expect(JSON.stringify(f.handles.get('owned'))).toBe(before)
     expect((await f.call(1500)).payload.pack.matched_nodes[0].node_id).toBe('small')
+  })
+
+  it('skips metadata within the original retry window while retaining its owned scope', async () => {
+    const f = fixture()
+    f.nodes.unshift({ id: 'metadata', label: 'Metadata', source_file: '/src/metadata.ts', source_location: 'L1', file_type: 'code', community: 0 })
+    f.stored.follow_up.node_ids.unshift('metadata')
+    f.stored.follow_up.focus_files.unshift('/src/metadata.ts')
+    writeFileSync(f.graphPath, JSON.stringify({ directed: true, root_path: f.root, nodes: f.nodes, edges: [], hyperedges: [] }))
+    const before = JSON.stringify(f.stored), result = await f.call(1500)
+    expect(result.payload.pack.matched_nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ node_id: 'small', snippet: expect.stringContaining('available witness') }),
+    ]))
+    const next = result.payload.expandable.find((entry: { handle_id: string }) => entry.handle_id !== 'owned')
+    expect(f.handles.get(next.handle_id)).toMatchObject({ follow_up: { node_ids: ['metadata', 'large0'] } })
+    expect(JSON.stringify(f.handles.get('owned'))).toBe(before)
+    expect(estimateQueryTokens(result.text)).toBeLessThanOrEqual(1500)
   })
 
   it('stops after four unfit entries and retains original retry navigation even at minimum budget', async () => {

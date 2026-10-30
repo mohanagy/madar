@@ -1244,10 +1244,14 @@ describe('stdio runtime', () => {
       const expandedPayload = JSON.parse((expanded?.result as { content: Array<{ text: string }> }).content[0]!.text) as {
         matched_focus: number
         pack: {
-          matched_nodes: Array<{ label: string }>
+          matched_nodes: Array<{ label: string; snippet?: string | null; source_expand_handle?: string }>
         }
+        governance: { graph_freshness: { selected_context_status: string } }
       }
       expect(expandedPayload.pack.matched_nodes.length).toBeGreaterThan(0)
+      expect(expandedPayload.pack.matched_nodes.every(node => node.snippet == null && node.source_expand_handle === undefined)).toBe(true)
+      expect(expandedPayload.governance.graph_freshness.selected_context_status).toBe('unknown')
+      expect(expandedPayload).not.toHaveProperty('expansion_status')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
