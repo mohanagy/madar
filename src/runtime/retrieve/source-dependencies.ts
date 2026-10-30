@@ -26,7 +26,8 @@ const MAX_ADDITIONS = 12
 const JS_SOURCE = /\.[cm]?[jt]sx?$/i
 
 interface Owner { id: string; start: number; end: number; file: boolean; label: string; snippet: string }
-interface Call { from: string; to?: string; line: number; file: string; callee: string; relation: 'calls' | 'depends_on'; dataReference?: boolean; observed?: { start_offset: number; end_offset: number }; reason?: 'unresolved' | 'external' | 'no_implementation' | 'outside_index'; site?: { start_offset: number; end_offset: number; ranges: Array<{ start_line: number; end_line: number }> } }
+type CallsiteRange = { start_line: number; end_line: number }
+interface Call { from: string; to?: string; line: number; file: string; callee: string; relation: 'calls' | 'depends_on'; dataReference?: boolean; observed?: { start_offset: number; end_offset: number }; reason?: 'unresolved' | 'external' | 'no_implementation' | 'outside_index'; site?: { start_offset: number; end_offset: number; ranges: CallsiteRange[]; alternatives?: [CallsiteRange[], CallsiteRange[]] } }
 
 /** Internal source provenance, never a new runtime call or completeness claim. */
 export const sourceCallsiteBundlesKey = Symbol('sourceCallsiteBundles')
@@ -65,6 +66,8 @@ export interface SourceCallsiteBundle {
   source_sha256: string
   /** Complete call statements or const-object properties, with ancestor syntax and explicit sibling omissions. */
   ranges: Array<{ start_line: number; end_line: number }>
+  /** Optional all-sites source context, never a completeness or execution claim. */
+  range_alternatives?: CallsiteRange[][]
   /** Exact call-expression offsets in that same normalized source. */
   sites: Array<{ start_offset: number; end_offset: number }>
   /** All program inputs must remain current; an imported alias can change a binding. */
@@ -433,17 +436,42 @@ export function selectSourceDependencies(
       cursor = cursor.parent
     }
     if (!cursor || cursor === body || !ts.isStatement(cursor)) return undefined
-    const ranges: Array<{ start_line: number; end_line: number }> = []
-    const keep = (start: number, end: number): void => {
+    const ranges: [CallsiteRange[], CallsiteRange[], CallsiteRange[]] = [[], [], []]
+    let optionalNodes = 0, optionalBounded = false
+    const simpleBlock = (block: ts.Block): boolean => {
+      const statement = block.statements.length === 1 ? block.statements[0] : undefined
+      if (!statement || !(ts.isExpressionStatement(statement) || ts.isVariableStatement(statement)
+        || ts.isReturnStatement(statement) || ts.isThrowStatement(statement))) return false
+      let simple = true
+      const inspect = (child: ts.Node): void => {
+        if (++optionalNodes > MAX_CALLSITE_ANCESTORS) { optionalBounded = true; return }
+        if (ts.isFunctionLike(child) || ts.isClassLike(child) || ts.isConditionalExpression(child)
+          || child !== statement && ts.isStatement(child)
+          || ts.isBinaryExpression(child) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken,
+            ts.SyntaxKind.QuestionQuestionToken].includes(child.operatorToken.kind)) { simple = false; return }
+        if (!optionalBounded && simple) ts.forEachChild(child, inspect)
+      }
+      inspect(statement)
+      return simple && !optionalBounded
+    }
+    const keep = (start: number, end: number, output?: number): void => {
       // Whole source lines are the wire unit. Ignore padding at interval edges
       // so a suffix beginning after a block does not accidentally retain its
       // final unrelated statement just because of a leading newline.
       while (start < end && /\s/.test(source.text[start]!)) start += 1
       while (end > start && /\s/.test(source.text[end - 1]!)) end -= 1
-      if (end > start) ranges.push({
+      if (end > start) for (const target of output === undefined ? ranges : [ranges[output]!]) target.push({
         start_line: source.getLineAndCharacterOfPosition(start).line + 1,
         end_line: source.getLineAndCharacterOfPosition(end - 1).line + 1,
       })
+    }
+    const keepOutside = (start: number, end: number, blocks: readonly ts.Block[], output: number): void => {
+      for (const block of blocks) {
+        const from = block.getStart(source) + 1, to = block.getEnd() - 1
+        if (to <= start || from >= end) continue
+        keep(start, Math.min(from, end), output); start = Math.max(start, to)
+      }
+      keep(start, end, output)
     }
     // A single const object can expose one complete property without adding
     // every sibling initializer. The property remains indivisible, including
@@ -490,20 +518,32 @@ export function selectSourceDependencies(
         // This includes callback registration/signatures/other arguments and
         // complete if/else, loop, switch, catch/finally syntax around the path.
         // Non-block siblings are preserved conservatively as exact source.
-        keep(parent.getStart(source), cursor.getStart(source))
-        keep(cursor.getEnd(), parent.getEnd())
+        keep(parent.getStart(source), cursor.getStart(source), 0)
+        keep(cursor.getEnd(), parent.getEnd(), 0)
+        const branches = ts.isIfStatement(parent) ? [parent.thenStatement, parent.elseStatement]
+          : ts.isTryStatement(parent) ? [parent.tryBlock, parent.catchClause?.block, parent.finallyBlock]
+            : ts.isCatchClause(parent) ? [parent.block] : []
+        const siblings = branches.filter((branch): branch is ts.Block => !!branch && ts.isBlock(branch)
+          && !(branch.getStart(source) <= cursor!.getStart(source) && branch.getEnd() >= cursor!.getEnd()))
+          .sort((left, right) => left.getStart(source) - right.getStart(source))
+        const larger = siblings.filter(block => !simpleBlock(block))
+        for (const [index, blocks] of [larger, siblings].entries()) {
+          keepOutside(parent.getStart(source), cursor.getStart(source), blocks, index + 1)
+          keepOutside(cursor.getEnd(), parent.getEnd(), blocks, index + 1)
+        }
       }
       cursor = parent
     }
     keep(declaration.getStart(source), body.getStart(source) + 1)
-    const ordered: Array<{ start_line: number; end_line: number }> = []
-    for (const range of ranges.sort((left, right) => left.start_line - right.start_line || left.end_line - right.end_line)) {
+    const ordered: [CallsiteRange[], CallsiteRange[], CallsiteRange[]] = [[], [], []]
+    for (const [index, parts] of ranges.entries()) for (const range of parts.sort((left, right) => left.start_line - right.start_line || left.end_line - right.end_line)) {
       if (range.start_line < caller.start || range.end_line > caller.end) return undefined
-      const last = ordered.at(-1)
+      const target = ordered[index]!, last = target.at(-1)
       if (last && range.start_line <= last.end_line + 1) last.end_line = Math.max(last.end_line, range.end_line)
-      else ordered.push({ ...range })
+      else target.push({ ...range })
     }
-    return { start_offset: node.getStart(source), end_offset: node.getEnd(), ranges: ordered }
+    return { start_offset: node.getStart(source), end_offset: node.getEnd(), ranges: ordered[0],
+      ...(!optionalBounded ? { alternatives: [ordered[1], ordered[2]] as [CallsiteRange[], CallsiteRange[]] } : {}) }
   }
 
   let unattributedCalls = 0
@@ -1083,8 +1123,22 @@ export function selectSourceDependencies(
         if (last && range.start_line <= last.end_line + 1) last.end_line = Math.max(last.end_line, range.end_line)
         else ranges.push({ ...range })
       }
+      const alternatives: CallsiteRange[][] = []
+      if (sites.every(call => call.site!.alternatives)) for (const index of [0, 1]) {
+        const compact: CallsiteRange[] = []
+        for (const range of sites.flatMap(call => call.site!.alternatives![index]!)
+          .sort((left, right) => left.start_line - right.start_line || left.end_line - right.end_line)) {
+          const last = compact.at(-1)
+          if (last && range.start_line <= last.end_line + 1) last.end_line = Math.max(last.end_line, range.end_line)
+          else compact.push({ ...range })
+        }
+        if (compact.length <= MAX_CALLS && JSON.stringify(compact) !== JSON.stringify(ranges)
+          && compact.every(part => ranges.some(range => range.start_line <= part.start_line && range.end_line >= part.end_line))
+          && !alternatives.some(prior => JSON.stringify(prior) === JSON.stringify(compact))) alternatives.push(compact)
+      }
       return [{ from_id: first.from, to_id: first.to!, source_file: first.file,
         source_sha256: digests.get(first.file)!, ranges,
+        ...(alternatives.length ? { range_alternatives: alternatives } : {}),
         sites: sites.map(call => ({ start_offset: call.site!.start_offset, end_offset: call.site!.end_offset })),
         source_dependencies: sourceDependencies }]
     })
