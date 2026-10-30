@@ -10,7 +10,8 @@ import { sensitiveArtifactReason } from '../../shared/discovery-safety.js'
 import { readBoundedSource, sourcePathsAllowedByCurrentPolicy } from '../../shared/source-access.js'
 import { lineRangeFromSourceLocation, type SourceLineRange } from '../../shared/source-location.js'
 import { tokenizeQuestion } from './pipeline.js'
-import { retrievalEvidencePrompt, retrievalSearchPrompt } from '../retrieval-gate.js'
+import { extractPromptExclusions, retrievalEvidencePrompt, retrievalSearchPrompt } from '../retrieval-gate.js'
+import { selectedCallbackExcerptLines } from './source-callback-excerpts.js'
 
 const SOURCE_EXTENSIONS = new Set([...JS_TS_SOURCE_EXTENSIONS, '.py', '.go', '.rs', '.java', '.kt', '.kts', '.rb', '.php', '.c', '.cc', '.cpp', '.h', '.cs', '.swift', '.scala', '.sh', '.sql', '.vue', '.svelte'])
 const MAX_FILE_BYTES = 256 * 1024
@@ -637,7 +638,7 @@ export interface CoherentSourceSnippet {
 }
 
 /** Complete small bodies; bounded contiguous windows with omissions for large bodies. */
-export function coherentSourceSnippet(lines: readonly string[], range: SourceLineRange, question: string, scope: 'symbol' | 'source_file'): CoherentSourceSnippet | null {
+export function coherentSourceSnippet(lines: readonly string[], range: SourceLineRange, question: string, scope: 'symbol' | 'source_file', sourceFile?: string): CoherentSourceSnippet | null {
   const start = Math.max(1, range.start)
   const end = Math.min(lines.length, range.end)
   if (start > end) return null
@@ -680,6 +681,14 @@ export function coherentSourceSnippet(lines: readonly string[], range: SourceLin
         // limit; omit the whole addition if both windows cannot fit.
         const chars = [...expanded].reduce((total, line) => total + (lines[line - 1]?.length ?? 0) + 1, 0)
         if (chars <= MAX_EXCERPT_CHARS) for (const line of expanded) selected.add(line)
+      }
+    }
+    if (scope === 'symbol' && sourceFile && JS_TS_SOURCE_EXTENSIONS.includes(extname(sourceFile).toLowerCase())
+      && question.trim() && question.length <= 8192 && !sourceQueryIsLiteralLookup(question)) {
+      const exclusions = extractPromptExclusions(question)
+      if (!exclusions.excludedTerms.length && !exclusions.excludedPathHints.length && !exclusions.excludedDomains.length) {
+        const completion = selectedCallbackExcerptLines(sourceSyntaxTree(lines, sourceFile), lines, { start, end }, selected, MAX_COMPLETE_LINES, MAX_EXCERPT_CHARS)
+        if (completion) for (const line of completion) selected.add(line)
       }
     }
   }

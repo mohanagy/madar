@@ -9,7 +9,7 @@ import { buildFromJson } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { retrieveContext, retrieveContextAsync, readQueryEvidenceSnippet, withRetrieveSnippetBudget } from '../../src/runtime/retrieve.js'
 import { interpretRetrievalQuery } from '../../src/runtime/retrieve/pipeline.js'
-import { searchSourceBodies, searchSourceBodyQuestions, sourceDeclarationQualifiedName, sourceDeclarationKind, sourceRangeMatchesSymbol, resolveSourceSymbolRange, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, sourceQueryLiterals, sourceQueryWithoutLiteralSpans } from '../../src/runtime/retrieve/source-evidence.js'
+import { coherentSourceSnippet, searchSourceBodies, searchSourceBodyQuestions, sourceDeclarationQualifiedName, sourceDeclarationKind, sourceRangeMatchesSymbol, resolveSourceSymbolRange, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, sourceQueryLiterals, sourceQueryWithoutLiteralSpans } from '../../src/runtime/retrieve/source-evidence.js'
 
 const roots: string[] = []
 afterEach(() => { roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })); vi.doUnmock('../../src/runtime/semantic.js') })
@@ -379,6 +379,79 @@ describe('source evidence retrieval', () => {
     for (const range of snippet?.snippet_omitted_ranges ?? []) {
       expect(range.start_line).toBeGreaterThan(1)
       expect(range.end_line).toBeLessThan(lines.length)
+    }
+  })
+
+  it('retains the error path and returned JSX binding of an already selected callback within the excerpt bounds', () => {
+    const { root } = workspace()
+    const path = join(root, 'src', 'action-panel.tsx')
+    const lines = Array.from({ length: 129 }, () => '  // padding')
+    const source: Record<number, string> = {
+      1: 'export function ActionPanel({ recordType, className }: Props) {',
+      3: '  const entries = [];', 4: '  let loading = false;',
+      30: '  load().catch((error) => {', 31: '    log(error);', 32: '  });',
+      36: '  const dispatch = wrap(', 37: '    async (event) => {',
+      40: '      if (!authenticated) {', 42: '        notify.error("Sign in to save entries");',
+      43: '        return;', 44: '      }', 46: '      if (loading) return;', 47: '      loading = true;',
+      49: '      const method = active ? "DELETE" : "POST";',
+      51: '      try {', 52: '        const token = await credentials();',
+      53: '        const response = await send(', 54: '          "/api/entries",',
+      55: '          { method, token, recordType }', 60: '        );',
+      62: '        if (!response.ok) {', 63: '          const data = await response.json();',
+      64: '          throw new Error(data.error ?? "Failed to update entries");', 65: '        }',
+      67: '        persist(await response.json());',
+      80: '      } catch (error) {', 81: '        const message = error instanceof Error ? error.message : "Failed";',
+      82: '        notify.error(message);', 83: '        log(error);', 84: '      } finally {',
+      85: '        if (mounted) {', 86: '          loading = false;', 87: '        }', 88: '      }',
+      89: '    },', 90: '    [authenticated, loading, recordType]', 91: '  );',
+      101: '  return (', 102: '    <Control', 103: '      kind="compact"',
+      106: '      onAction={dispatch}', 109: '    >', 110: '      Continue', 122: '    </Control>',
+      123: '  );', 129: '}',
+    }
+    for (const [line, text] of Object.entries(source)) lines[Number(line) - 1] = text
+    const question = 'If I already have 12 saved entries and try to save another record type, does the app reject the addition, and what message reaches me? Also what happens for an existing entry?'
+    const baseline = (current: string[], prompt = question) => coherentSourceSnippet(current, { start: 1, end: current.length }, prompt, 'symbol')!
+    const snippet = (current: string[], prompt = question) => {
+      writeFileSync(path, current.join('\n'))
+      return readQueryEvidenceSnippet(path, 1, { question: prompt, label: 'ActionPanel()', sourceLocation: `L1-L${current.length}`, rootPath: root })!
+    }
+    const before = baseline(lines), after = snippet(lines)
+    expect(before.snippet).not.toContain('notify.error(message)')
+    for (const text of ['const data = await response.json()', 'throw new Error(data.error', '} catch (error)',
+      'notify.error(message)', '} finally {', 'onAction={dispatch}', '</Control>']) expect(after.snippet).toContain(text)
+    const visible = (gaps: Array<{ start_line: number; end_line: number }>) => lines.map((_, index) => index + 1)
+      .filter(line => !gaps.some(gap => line >= gap.start_line && line <= gap.end_line))
+    const prior = visible(before.omittedRanges), retained = visible(after.snippet_omitted_ranges ?? [])
+    expect(retained).toEqual(expect.arrayContaining(prior))
+    expect(retained.length).toBeLessThanOrEqual(80)
+    expect(after.snippet.length).toBeLessThanOrEqual(12_000)
+    const variant = (...changes: Array<[number, string]>) => {
+      const current = [...lines]; for (const [line, text] of changes) current[line - 1] = text; return current
+    }
+    const splitHandler = variant([5, source[36]!], [6, source[37]!], [25, source[51]!],
+      [36, '  // padding'], [37, '  // padding'], [51, '  // padding'],
+      [84, '      }'], [85, '      finally'], [86, '      {'], [87, '        loading = false;'])
+    const shellQuestion = question.replace('try to save', 'save')
+    expect(baseline(splitHandler, shellQuestion).snippet).not.toContain('try {')
+    const shells = snippet(splitHandler, shellQuestion).snippet
+    expect(shells).toContain('try {')
+    expect(shells).toContain('      finally\n      {')
+    const nestedJsx = snippet(variant([102, '    <Panel>'], [103, '      {'], [104, '      ('],
+      [105, '        <Control'], [123, '      )}</Panel>'], [124, '  );']))
+    expect(nestedJsx.snippet).toContain('    <Panel>\n      {\n      (')
+    expect(nestedJsx.snippet).toContain('      )}</Panel>\n  );')
+    expect(visible(nestedJsx.snippet_omitted_ranges ?? []).length).toBeLessThanOrEqual(80)
+    for (const current of [
+      variant([96, '  dispatch = replacement;']),
+      variant([96, '  function nested(dispatch: unknown) { return dispatch; }']),
+      variant([106, '      onAction={alias}']),
+      variant([102, '    <section>{shown ? ('], [103, '      <Control'],
+        [123, '    ) : null}</section>'], [124, '  );']),
+      variant([81, `        const message = "${'x'.repeat(12_000)}";`]),
+      variant([65, '          log(response);'], [77, '        }']),
+    ]) expect(snippet(current).snippet).toBe(baseline(current).snippet)
+    for (const prompt of [`${question} Exclude "OTHER_MARKER".`, 'Where is "save entries"?']) {
+      expect(snippet(lines, prompt).snippet).toBe(baseline(lines, prompt).snippet)
     }
   })
 

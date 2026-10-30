@@ -744,7 +744,7 @@ export function readQueryEvidenceSnippet(
   const sourceRange = options.fileNodeLike ? range : resolveSourceSymbolRange(lines, range, options.label, sourceFile)
   if (!sourceRange) return null
   const evidence = (options.fragment ? renderSourceFragment(lines, sourceRange, options.fragment, options.fileNodeLike ? 'source_file' : 'symbol') : undefined)
-    ?? coherentSourceSnippet(lines, sourceRange, options.question, options.fileNodeLike ? 'source_file' : 'symbol')
+    ?? coherentSourceSnippet(lines, sourceRange, options.question, options.fileNodeLike ? 'source_file' : 'symbol', sourceFile)
   return evidence ? {
     snippet: evidence.snippet, lineNumber: evidence.lineNumber, scope: evidence.scope,
     snippet_line_range: evidence.lineRange,
