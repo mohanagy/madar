@@ -67,7 +67,7 @@ import { repositoryEvidenceQuestion } from '../retrieve/repository-query.js'
 import { buildRetrievalEvidencePlan, tokenizeLabel } from '../retrieve/pipeline.js'
 import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { collectDeliveredContextReceipts, computeDeltaContextPack } from '../context-pack-delta.js'
-import { compactSourceEvidenceNode, compactRepeatedSourceMetadata, compactContainedSourceReferences, fitPreparedSourceEvidenceResponse, finalizeSourceEvidenceResponse as serializeSourceEvidenceResponse, MIN_SOURCE_EVIDENCE_BUDGET } from '../source-evidence-response.js'
+import { compactSourceEvidenceNode, compactRepeatedSourceMetadata, compactContainedSourceReferences, omitSourceNavigationDetails, fitPreparedSourceEvidenceResponse, finalizeSourceEvidenceResponse as serializeSourceEvidenceResponse, MIN_SOURCE_EVIDENCE_BUDGET } from '../source-evidence-response.js'
 import { prepareNestedSourceRefill } from '../source-nested-refill.js'
 import {
   attachSourceContinuationHandles, createSourceContinuationPreparation, sourceValueConsumedCallees, sourceTypeRejectionCallees, sourceBracketedBranchCompletions,
@@ -1503,7 +1503,10 @@ function finalizeSourceEvidenceResponseLegacy(
     overflow?: { requiredTokens: number; sourceTokens: number }
   }
   const attempt = (sourceBudget: number): Attempt => {
-    const payload = finalizeSourceEvidenceResponseCore(input, sourceBudget, options)
+    // Preserve the baseline allocation while selected nested source is pending.
+    // Optional navigation savings can fund that source after its first full fit.
+    const payload = finalizeSourceEvidenceResponseCore(input, sourceBudget,
+      refill ? { ...options, deferNavigationDetails: true } : options)
     staged = new Map<string, SourceContinuationHandle>()
     const stage = (id: string, handle: SourceContinuationHandle): void => { staged.set(id, handle) }
     const finish = (completed: Record<string, unknown>): Attempt => {
@@ -1578,7 +1581,13 @@ function finalizeSourceEvidenceResponseLegacy(
         // Reissued pointers belong to the accepted plan. Reuse its handles and
         // the original sticky proof cache; never publish a rejected trial.
         staged = new Map(value.handles)
-        const fitted = fitPreparedSourceEvidenceResponse(trial, budget, prepare)
+        let fitted = fitPreparedSourceEvidenceResponse(trial, budget, prepare)
+        if (fitted.status === 'over_budget') {
+          // Retry this same candidate at most once, without changing accepted
+          // owners or handles. Successful original fits keep their exact bytes.
+          const compact = omitSourceNavigationDetails(trial)
+          if (compact !== trial) fitted = fitPreparedSourceEvidenceResponse(compact, budget, prepare)
+        }
         if (fitted.status === 'over_budget') continue
         // An unsupported optional declaration cannot invalidate accepted source.
         // Keep its inspected file in this cache for the final drift validation.

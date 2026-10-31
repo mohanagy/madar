@@ -177,6 +177,10 @@ export function sourceDiagnosticSeeds(
   const result: DiagnosticSeeds = selected.slice(0, 3)
   if (alternatives) {
     const decisions = new Set<string>()
+    const eligibleDecisions = new Set(decisionsByClause.flat())
+    for (const id of clauses[sourceDiagnosticAdmissionsKey]?.slice(0, 3) ?? []) {
+      if (byId.has(id) && eligibleDecisions.has(id)) decisions.add(id)
+    }
     for (let round = 0; round < 3; round++) for (const ids of decisionsByClause) {
       const id = ids[round]
       if (id && decisions.size < 8) decisions.add(id)

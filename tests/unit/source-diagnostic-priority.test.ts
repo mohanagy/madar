@@ -154,7 +154,7 @@ describe('diagnostic current-source priority', () => {
     expect(alternatives[0]).toContain(id('.decide()'))
     expect(alternatives[0]).not.toContain(id('.validateClient()')) // asserts occurs only in the return type.
     expect(alternatives[1]).not.toContain(id('.forward()')) // ToolResult is not runtime tool evidence.
-    expect(alternatives[2]![0]).toBe(id('.decide()')) // More primary families beat more heading words.
+    expect(alternatives[2]).toEqual([id('.expiry()'), id('.decide()')]) // Specific heading and lexical alternatives coexist; family count is eligibility only.
     expect(alternatives[3]).toContain(id('.inspect()'))
     expect(inspections).toBeLessThanOrEqual(32)
     const evidence = sourceDiagnosticClauseEvidence(run[1]!.matches)!
@@ -297,6 +297,15 @@ describe('diagnostic current-source priority', () => {
     expect(excluded[sourceDiagnosticDecisionsKey]).not.toContain(value.reject.id)
     const missing = sourceDiagnosticSeeds(candidates.filter(node => node.id !== configure.id), clauses, () => true, value.root)
     expect(missing[sourceDiagnosticDecisionsKey]).not.toContain(configure.id)
+    const rescued = Object.assign(clauses.slice(), {
+      [sourceDiagnosticAlternativesKey]: alternatives,
+      [sourceDiagnosticAdmissionsKey]: [configure.id, value.simulate.id, value.begin.id],
+    })
+    const prioritized = sourceDiagnosticSeeds(candidates, rescued, () => true, value.root)
+    expect(prioritized[sourceDiagnosticDecisionsKey]).toEqual([configure.id, value.begin.id, value.consume.id, value.reject.id, value.startup.id])
+    const refusedRescue = sourceDiagnosticSeeds(candidates, rescued, (_, label) => label !== 'configure()', value.root)
+    expect(refusedRescue[sourceDiagnosticDecisionsKey]).not.toContain(configure.id)
+    expect(refusedRescue[sourceDiagnosticDecisionsKey]).not.toContain(value.simulate.id) // No clause decision can be manufactured by the rescue list.
   })
 
   it('admits at most three current executable clause owners inside the raw128 and diagnostic32 caps', () => {

@@ -738,14 +738,13 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
     }
     const ranked = [...current.matches].sort((left, right) => Number(right[1].exact_literal) - Number(left[1].exact_literal)
       || contextSupport(right[0]) - contextSupport(left[0])
-      || (contextual && index > 0 ? (query.bodyHits.get(right[0])?.terms.size ?? 0) - (query.bodyHits.get(left[0])?.terms.size ?? 0) : 0)
       || (right[1].relevance ?? 0) - (left[1].relevance ?? 0) || right[1].coverage - left[1].coverage || right[1].score - left[1].score || left[0].localeCompare(right[0]))
     if (morphology && index === 0) fullRanking = ranked
     current.matches = new Map(ranked.slice(0, MAX_SOURCE_MATCHES))
     return current
   })
   if (morphology && diagnostic && fullRanking.length) {
-    const raw = new Map(fullRanking), inspected = new Map<string, boolean>(), wins = new Map<string, { count: number; first: number }>()
+    const raw = new Map(fullRanking), inspected = new Map<string, boolean>(), wins = new Map<string, { count: number; first: number; maxRelevance: number }>()
     const alternatives: string[][] = []
     const executable = new Map<string, SourceDiagnosticExecutableEvidence>()
     const executableFamilies = new Map<string, Set<string>>()
@@ -786,11 +785,28 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
       const query = queries[index + 1]!
       const primaryCounts = new Map([...executableFamilies].map(([id, present]) => [id, query.terms.filter(term => present.has(term)).length]))
       const primaryCount = (id: string): number => primaryCounts.get(id) ?? 0
-      const context = (id: string): number => Number([...query.contextTerms].some(term => nominationOwners.get(id)?.nameTerms.has(term)))
-      const ranked = contextual ? [...search.matches].filter(([id]) => executable.has(id)).sort((left, right) =>
-        context(right[0]) - context(left[0]) || primaryCount(right[0]) - primaryCount(left[0])
-        || (right[1].relevance ?? 0) - (left[1].relevance ?? 0) || right[1].coverage - left[1].coverage
-        || right[1].score - left[1].score || left[0].localeCompare(right[0])) : search.matches
+      const context = (id: string): number => [...query.contextTerms].filter(term => nominationOwners.get(id)?.nameTerms.has(term)).length
+      let ranked: Iterable<[string, SourceBodyMatch]> = search.matches
+      if (contextual) {
+        const eligible = [...search.matches].filter(([id, match]) => {
+          const owner = nominationOwners.get(id)
+          return owner && raw.has(id) && inspected.get(id) && executable.has(id) && primaryCount(id) >= 2
+            && !match.navigation_only && match.score >= 1 && nominationIdentities.get(owner.identity) === 1
+        })
+        const relevance = (left: [string, SourceBodyMatch], right: [string, SourceBodyMatch]): number =>
+          (right[1].relevance ?? 0) - (left[1].relevance ?? 0) || right[1].coverage - left[1].coverage
+          || right[1].score - left[1].score || left[0].localeCompare(right[0])
+        const specific = [...eligible].sort((left, right) => context(right[0]) - context(left[0]) || relevance(left, right))
+        const lexical = [...eligible].sort((left, right) => Number(context(right[0]) > 0) - Number(context(left[0]) > 0) || relevance(left, right))
+        const interleaved = new Map<string, SourceBodyMatch>()
+        for (let rank = 0; rank < eligible.length && interleaved.size < 3; rank++) {
+          for (const channel of [specific, lexical]) {
+            const entry = channel[rank]
+            if (entry && interleaved.size < 3) interleaved.set(entry[0], entry[1])
+          }
+        }
+        ranked = interleaved
+      }
       for (const [id, match] of ranked) {
         const owner = nominationOwners.get(id)
         if (!owner || !raw.has(id) || match.navigation_only || match.score < 1 || nominationIdentities.get(owner.identity) !== 1) continue
@@ -802,7 +818,8 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
         }
         if (!inspected.get(id)) continue
         const prior = wins.get(id)
-        wins.set(id, { count: (prior?.count ?? 0) + 1, first: prior?.first ?? index })
+        wins.set(id, { count: (prior?.count ?? 0) + 1, first: prior?.first ?? index,
+          maxRelevance: Math.max(prior?.maxRelevance ?? 0, typeof match.relevance === 'number' && Number.isFinite(match.relevance) ? match.relevance : 0) })
         selected.push(id)
         if (selected.length >= (contextual ? 3 : 1)) break
       }
@@ -811,7 +828,8 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
       })
     })
     const protectedIds = new Set(fullRanking.slice(0, MAX_SOURCE_MATCHES - 3).map(([id]) => id))
-    const nominated = [...wins].sort((a, b) => b[1].count - a[1].count || a[1].first - b[1].first)
+    const nominated = [...wins].sort((a, b) => b[1].count - a[1].count
+      || (contextual ? b[1].maxRelevance - a[1].maxRelevance : 0) || a[1].first - b[1].first)
       .filter(([id]) => !contextual || !protectedIds.has(id)).slice(0, 3).map(([id]) => id)
     if (nominated.length) {
       const admitted = new Set([...fullRanking.slice(0, MAX_SOURCE_MATCHES - 3).map(([id]) => id), ...nominated])

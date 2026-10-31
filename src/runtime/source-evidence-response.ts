@@ -228,7 +228,7 @@ export function compactRepeatedSourceMetadata(input: RecordValue, maxTokens: num
 
 /** Spend a constrained response on source before optional navigation examples.
  * Counts, uncertainty, source identities and usable recovery handles remain. */
-function omitSourceNavigationDetails(input: RecordValue): RecordValue {
+export function omitSourceNavigationDetails(input: RecordValue): RecordValue {
   if (input.task !== 'explain' || input.mode === 'delta' || input.delta_session_id
     || record(input.pack).selection_scope !== 'task_context'
     || input.diagnostics_omitted !== undefined && input.diagnostics_omitted !== 'output_budget') return input
@@ -755,7 +755,7 @@ export function fitPreparedSourceEvidenceResponse<T extends {
 export function finalizeSourceEvidenceResponse(
   input: object,
   maxTokens: number,
-  options: { verbose?: boolean; format?: 'json' | 'text'; sourceRoot?: string; sourcePolicyRoot?: string; requestedSource?: { rootPath: string; prompt: string } } = {},
+  options: { verbose?: boolean; format?: 'json' | 'text'; sourceRoot?: string; sourcePolicyRoot?: string; requestedSource?: { rootPath: string; prompt: string }; deferNavigationDetails?: boolean } = {},
 ): RecordValue {
   if (maxTokens < MIN_SOURCE_EVIDENCE_BUDGET) throw new Error(`Source evidence budget must be at least ${MIN_SOURCE_EVIDENCE_BUDGET} tokens`)
   const original = clone(input)
@@ -818,7 +818,7 @@ export function finalizeSourceEvidenceResponse(
       // eviction. Preserve their source before removing another owner.
       const compact = compactRepeatedSourceMetadata(payload, maxTokens)
       if (compact !== payload) { payload = compact; break }
-      if (!navigationDetailsConsidered) {
+      if (!navigationDetailsConsidered && !options.deferNavigationDetails) {
         navigationDetailsConsidered = true
         const reduced = omitSourceNavigationDetails(payload)
         if (reduced !== payload) { payload = reduced; continue }
