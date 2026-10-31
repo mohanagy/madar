@@ -1580,6 +1580,10 @@ function finalizeSourceEvidenceResponseLegacy(
         staged = new Map(value.handles)
         const fitted = fitPreparedSourceEvidenceResponse(trial, budget, prepare)
         if (fitted.status === 'over_budget') continue
+        // An unsupported optional declaration cannot invalidate accepted source.
+        // Keep its inspected file in this cache for the final drift validation.
+        if (fitted.status === 'unsupported' && latestProof?.refused === false
+          && latestProof.rejectedNodeIds.length > 0 && latestProof.rejectedNodeIds.every(id => id === node.node_id)) continue
         if (fitted.status !== 'fit') return fitted.payload
         value = { payload: fitted.payload, handles: fitted.preparation!.handles, jointlyPriced: true }
       }

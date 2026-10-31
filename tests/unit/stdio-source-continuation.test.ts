@@ -414,6 +414,55 @@ describe('bounded source continuation through strict MCP', () => {
     assertRecoveryCoverage(result, { [f.file]: f.source })
   })
 
+  function unsupportedNestedRefillFixture() {
+    const f = nestedRefillFixture(), child = f.children[0]!
+    f.source[2] = '  total += Math.max(total, 0);'
+    child.label = 'Math.max'; child.snippet_line_range = { start_line: 3, end_line: 3 }; child.snippet = f.source[2]
+    writeFileSync(join(root, f.file), f.source.join('\n'))
+    return f
+  }
+
+  it('preserves accepted source when an optional nested call expression is not a declaration', () => {
+    const f = unsupportedNestedRefillFixture(), before = JSON.stringify(f.input), fit = evidenceResponses.fitPreparedSourceEvidenceResponse
+    const attempts: Array<{ payload: Payload; status: string }> = [], preparations: unknown[] = []
+    vi.spyOn(evidenceResponses, 'fitPreparedSourceEvidenceResponse').mockImplementation((input, budget, prepare, options) => {
+      preparations.push(prepare)
+      const result = fit(input, budget, prepare, options)
+      attempts.push({ payload: structuredClone(result.payload) as Payload, status: result.status }); return result
+    })
+    const result = f.run()
+    expect(attempts.map(attempt => attempt.status)).toEqual(['fit', 'unsupported'])
+    expect(new Set(preparations).size).toBe(1)
+    expect(result).toEqual(attempts[0]!.payload)
+    expect(nodes(result).map(node => node.node_id)).toEqual(['navigation'])
+    expect(result.omitted_evidence).toMatchObject({ count: 2, reason: 'output_budget' })
+    expect([...sourceHandles().keys()]).toEqual(pointers(result))
+    assertRecoveryCoverage(result, { [f.file]: f.source })
+    expect(JSON.stringify(f.input)).toBe(before)
+  })
+
+  it.each(['source', 'configuration'] as const)('keeps %s failure fatal after an unsupported nested proposal', kind => {
+    const f = unsupportedNestedRefillFixture(), fit = evidenceResponses.fitPreparedSourceEvidenceResponse
+    const statuses: string[] = [], preparations: unknown[] = []
+    let changed = false
+    vi.spyOn(evidenceResponses, 'fitPreparedSourceEvidenceResponse').mockImplementation((input, budget, prepare, options) => {
+      preparations.push(prepare)
+      const result = fit(input, budget, prepare, options); statuses.push(result.status)
+      if (result.status === 'unsupported') {
+        changed = true
+        if (kind === 'source') writeFileSync(join(root, f.file), f.source.join('\n').replace('Math.max(total, 0)', 'Math.min(total, 0)'))
+      }
+      return result
+    })
+    const result = f.run(900, { callsites: { bundles: [], configurationFresh: () => kind !== 'configuration' || !changed } })
+    expect(statuses).toEqual(['fit', 'unsupported', 'unverifiable'])
+    expect(preparations[1]).toBe(preparations[0])
+    // The final callback only serializes the already latched proof's refusal.
+    expect(preparations[2]).not.toBe(preparations[0])
+    expect(nodes(result)).toEqual([]); expect(sourceHandles().size).toBe(0)
+    expect(result.omitted_evidence).toBe('source recovery could not be verified')
+  })
+
   it.each(['mismatched child', 'source drift', 'configuration drift'] as const)('refuses genuine %s during nested refill', kind => {
     const f = nestedRefillFixture(), fit = evidenceResponses.fitPreparedSourceEvidenceResponse
     let baselineFit = false
