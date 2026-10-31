@@ -1333,6 +1333,15 @@ function filterRelationshipsToRemainingNodes(pack: JsonRecord, trimmedFields: st
   }
 }
 
+function hasUsableSerializedSource(payload: JsonRecord, answerability: JsonRecord): boolean {
+  return answerability.answer_scope !== 'none'
+    && asUnknownArray(asJsonRecord(payload.pack)?.matched_nodes).some((value) => {
+      const node = asJsonRecord(value)
+      return typeof node?.snippet === 'string' && node.snippet.trim().length > 0
+        && node.snippet_unverified !== true && node.snippet_source !== 'derived'
+    })
+}
+
 function downgradeWorkflowSpineConfidence(payload: JsonRecord, trimmedFields: string[]): void {
   const evidence = asJsonRecord(payload.evidence)
   if (!evidence) {
@@ -1389,19 +1398,19 @@ function downgradeWorkflowSpineConfidence(payload: JsonRecord, trimmedFields: st
     }
     const priorFallback = answerability.broad_search_fallback
     answerability.state = canVerifyTarget ? 'verify_targets' : 'insufficient'
-    answerability.answer_scope = canVerifyTarget ? 'partial' : 'none'
+    answerability.answer_scope = hasUsableSerializedSource(payload, answerability) ? 'partial' : 'none'
     answerability.caveats = caveats
     answerability.missing_obligations = missingObligations
     answerability.broad_search_fallback = priorFallback === 'blocked'
       ? 'blocked'
-      : canVerifyTarget ? 'targeted_only' : 'allowed'
+      : 'allowed'
   }
-  evidence.pack_confidence = canVerifyTarget ? 'medium' : 'low'
+  evidence.pack_confidence = 'low'
   evidence.confidence_reasons = confidenceReasons
   evidence.coverage = coverageDetail
     ? coverage === 'unknown' ? 'unknown' : 'partial'
     : coverage
-  evidence.agent_directive = canVerifyTarget ? 'verify_one_targeted_file' : 'explore_with_caution'
+  evidence.agent_directive = 'explore_with_caution'
   trimmedFields.push('evidence.pack_confidence downgraded')
 }
 
@@ -1651,6 +1660,8 @@ function buildAnswerReadyPackSchemaUnreconciled(
         .filter((target): target is JsonRecord => target !== null)
         .slice(0, 2)
         .map((target) => ({
+          ...(target.basis === 'evidence_class'
+            ? { basis: target.basis, obligation_id: target.obligation_id } : {}),
           ...(target.handle_id ? { handle_id: target.handle_id } : {}),
           ...(target.evidence_class ? { evidence_class: target.evidence_class } : {}),
           focus_files: asUnknownArray(target.focus_files).slice(0, 2),
@@ -1808,33 +1819,18 @@ function serializedVerificationTargets(
   const existingTargets = asUnknownArray(answerability?.verification_targets)
     .map((target) => asJsonRecord(target))
     .filter((target): target is JsonRecord => target !== null)
-  const relevantExistingTargets = existingTargets.filter((target) => {
-    const reason = typeof target.reason === 'string' ? target.reason.toLowerCase() : ''
-    return missingObligations.some((obligation) => reason.includes(obligation.toLowerCase()))
-  })
-  if (relevantExistingTargets.length > 0) {
-    return relevantExistingTargets.slice(0, 2)
-  }
-
   const pack = asJsonRecord(payload.pack)
-  for (const entry of [...asUnknownArray(payload.expandable), ...asUnknownArray(pack?.expandable)]) {
-    const expandable = asJsonRecord(entry)
-    const followUp = asJsonRecord(expandable?.follow_up)
-    const focusFiles = asUnknownArray(followUp?.focus_files)
-      .filter((value): value is string => typeof value === 'string' && value.length > 0)
-      .slice(0, 2)
-    if (focusFiles.length === 0) {
-      continue
-    }
-    return [{
-      ...(typeof expandable?.handle_id === 'string' ? { handle_id: expandable.handle_id } : {}),
-      ...(typeof expandable?.evidence_class === 'string' ? { evidence_class: expandable.evidence_class } : {}),
-      focus_files: focusFiles,
-      focus_ranges: asUnknownArray(followUp?.focus_ranges).slice(0, 1),
-      reason: `verify ${missingObligations[0] ?? 'missing serialized query evidence'}`,
-    }]
-  }
-  return []
+  const entries = [...asUnknownArray(payload.expandable), ...asUnknownArray(pack?.expandable)]
+    .map(asJsonRecord).filter((entry): entry is JsonRecord => entry !== null)
+  // Serialization can expose a query gap, but it cannot infer which owner fills
+  // it. Retain only previously justified class recovery, never invent a link.
+  return existingTargets.filter((target) => target.basis === 'evidence_class'
+    && typeof target.handle_id === 'string'
+    && typeof target.evidence_class === 'string'
+    && target.obligation_id === `evidence:${target.evidence_class}`
+    && missingObligations.includes(target.obligation_id)
+    && entries.some((entry) => entry.handle_id === target.handle_id
+      && entry.evidence_class === target.evidence_class)).slice(0, 2)
 }
 
 function queryEvidenceCoverageFromPayload(payload: JsonRecord) {
@@ -1901,7 +1897,12 @@ function reconcileSerializedQueryEvidence(
     return retrievalPlanReconciled
   }
 
-  const missingObligations = [...new Set(queryCoverage.missing_obligations)]
+  const answerability = asJsonRecord(evidence.answerability) ?? {}
+  const missingObligations = [...new Set([
+    ...asUnknownArray(asJsonRecord(evidence.coverage_detail)?.missing_obligations),
+    ...asUnknownArray(answerability.missing_obligations),
+    ...queryCoverage.missing_obligations,
+  ].filter((value): value is string => typeof value === 'string'))]
   evidence.coverage = 'partial'
   const coverageDetail = asJsonRecord(evidence.coverage_detail) ?? {}
   coverageDetail.status = 'partial'
@@ -1928,15 +1929,14 @@ function reconcileSerializedQueryEvidence(
   ])]
   evidence.evidence_strength = evidenceStrength
 
-  const answerability = asJsonRecord(evidence.answerability) ?? {}
   const priorRestricted = answerability.state === 'insufficient'
     || answerability.broad_search_fallback === 'blocked'
     || evidence.pack_confidence === 'low'
-    || evidence.agent_directive === 'explore_with_caution'
   const targets = priorRestricted ? [] : serializedVerificationTargets(payload, missingObligations)
   const canVerify = targets.length > 0
+  const hasSelectedSource = hasUsableSerializedSource(payload, answerability)
   answerability.state = canVerify ? 'verify_targets' : 'insufficient'
-  answerability.answer_scope = canVerify ? 'partial' : 'none'
+  answerability.answer_scope = hasSelectedSource ? 'partial' : 'none'
   answerability.caveats = [...new Set([
     ...asUnknownArray(answerability.caveats).filter((value): value is string => typeof value === 'string'),
     'serialized snippets do not cover every prompt obligation',
@@ -1945,10 +1945,11 @@ function reconcileSerializedQueryEvidence(
   answerability.verification_targets = targets
   answerability.broad_search_fallback = answerability.broad_search_fallback === 'blocked'
     ? 'blocked'
-    : canVerify ? 'targeted_only' : 'allowed'
+    : 'allowed'
   evidence.answerability = answerability
-  evidence.pack_confidence = canVerify ? 'medium' : 'low'
-  evidence.agent_directive = canVerify ? 'verify_one_targeted_file' : 'explore_with_caution'
+  evidence.pack_confidence = evidence.pack_confidence === 'low' ? 'low'
+    : hasSelectedSource || canVerify ? 'medium' : 'low'
+  evidence.agent_directive = 'explore_with_caution'
   const confidenceReason = `serialized query evidence: ${queryCoverage.covered}/${queryCoverage.total} prompt obligations covered`
   const existingConfidenceReasons = asUnknownArray(evidence.confidence_reasons)
     .filter((value): value is string => typeof value === 'string')
