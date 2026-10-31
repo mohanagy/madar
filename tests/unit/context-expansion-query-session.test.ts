@@ -6,6 +6,7 @@ import {
   contextExpansionQueryFingerprint, contextExpansionQuerySelection,
   publishContextExpansionQuerySelections,
 } from '../../src/runtime/context-expansion-query-session.js'
+import { sourceContinuationHandleId, type SourceContinuationHandle } from '../../src/runtime/source-continuation.js'
 
 const id = 'expand:explain:primary:0123456789ab'
 const question = 'Explain amber invoices; violet journals; cobalt receipts.'
@@ -46,6 +47,57 @@ function fixture() {
 }
 
 describe('query selection at final generic-handle publication', () => {
+  it('binds only the first published partial primary and its exact issued pending ranges', () => {
+    const owner = (name: string) => {
+      const cursor: SourceContinuationHandle = { kind: 'source_continuation', version: 1,
+        source_file: `/workspace/${name}.ts`, logical_root: '/workspace', real_root: '/workspace',
+        canonical_file: `/workspace/${name}.ts`, file_sha256: '0'.repeat(64), node_id: name, label: `${name}()`,
+        scope: 'symbol', owner_range: { start_line: 1, end_line: 6 },
+        pending_ranges: [{ start_line: 2, end_line: 3 }, { start_line: 5, end_line: 5 }], evidence: {} }
+      return { cursor, node: { node_id: name, label: cursor.label, source_file: `${name}.ts`,
+        snippet: `export function ${name}() {\n[omitted lines 2-5]\n}`, snippet_scope: 'symbol', snippet_truncated: true,
+        snippet_line_range: cursor.owner_range, snippet_omitted_ranges: [{ start_line: 2, end_line: 5 }],
+        source_expand_handle: sourceContinuationHandleId(cursor) } }
+    }
+    const first = owner('initial'), second = owner('second'), supporting = owner('supporting')
+    const value = { ...stored(), query_selection: { ...stored().query_selection,
+      primary_node_ids: ['initial', 'second'], source_fingerprints: [first, second, supporting].map(({ cursor }) => ({
+        source_file: cursor.source_file, canonical_file: cursor.canonical_file, fingerprint: '1'.repeat(64),
+      })) } }
+    const nodes = [supporting.node, second.node, first.node]
+    const seed = () => {
+      const f = fixture()
+      for (const item of [first, second, supporting]) f.handles.set(item.node.source_expand_handle, structuredClone(item.cursor))
+      return f
+    }
+    const f = seed(), wire = response({ expandable: [{ handle_id: id }], pack: { matched_nodes: nodes } })
+    const before = JSON.stringify(wire)
+    f.handles.set(id, value)
+    publishContextExpansionQuerySelections(wire, new Map([[id, value]]), f.handles, f.observed)
+    const published = f.handles.get(id), handoff = contextExpansionQuerySelection(published)?.source_handoff
+    expect(handoff).toEqual({ source_expand_handle: second.node.source_expand_handle, node_id: 'second',
+      source_file: 'second.ts', owner_range: second.cursor.owner_range, pending_ranges: second.cursor.pending_ranges,
+      cursor_fingerprint: contextExpansionQueryFingerprint(second.cursor) })
+    // Line4 was supplied by a sibling; the navigation must not re-add it.
+    expect(handoff?.pending_ranges).not.toEqual(second.node.snippet_omitted_ranges)
+    expect(JSON.stringify(wire)).toBe(before)
+    expect(f.resolve(published)).toBeDefined()
+    const changed = structuredClone(published) as { query_selection: { source_handoff: { source_file: string } } }
+    changed.query_selection.source_handoff.source_file = 'unpublished.ts'
+    expect(f.resolve(changed)).toBeUndefined()
+    for (const mode of ['missing-cursor', 'replaced-cursor', 'duplicate-owner', 'retargeted-path', 'no-primary'] as const) {
+      const other = seed()
+      if (mode === 'missing-cursor') other.handles.delete(second.node.source_expand_handle)
+      if (mode === 'replaced-cursor') other.handles.set(second.node.source_expand_handle, { ...second.cursor, label: 'different()' })
+      const candidate = mode === 'no-primary' ? { ...value, query_selection: { ...value.query_selection, primary_node_ids: [] } } : value
+      const page = mode === 'duplicate-owner' ? [...nodes, second.node]
+        : mode === 'retargeted-path' ? [supporting.node, { ...second.node, source_file: 'unpublished.ts' }, first.node] : nodes
+      expect(contextExpansionQuerySelection(other.publish(candidate, page))?.source_handoff, mode).toBeUndefined()
+    }
+    // A new child publication cannot inherit a cursor absent from its own page.
+    expect(contextExpansionQuerySelection(f.publish(published, []))?.source_handoff).toBeUndefined()
+  })
+
   it('never observes provisional, culled or errored handle writes', () => {
     const f = fixture(), value = stored(), written = new Map([[id, value]])
     f.handles.set(id, value)

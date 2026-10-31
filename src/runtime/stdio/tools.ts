@@ -81,6 +81,7 @@ import {
   expandSourceContinuation,
   isSourceContinuationHandle,
   sourceContinuationHandleId,
+  validateSourceContinuationHandle,
   type SourceContinuationHandle,
 } from '../source-continuation.js'
 import { sourceTypeRejectionQueryIdentifiers } from '../retrieve/source-excerpt-guards.js'
@@ -1995,6 +1996,7 @@ function publishRecoveryHandles(payload: Record<string, unknown>, staged: Map<st
 /** Bind advisory scheduling privately; public navigation and source cursors stay byte-identical. */
 function bindExpansionQueryGoals(
   payload: Record<string, unknown>, staged: Map<string, unknown>, prompt: string, binding: string, rootPath: string,
+  classes: Record<string, ContextPackEvidenceClass>,
 ): void {
   const pack = isObjectRecord(payload.pack) ? payload.pack : {}
   const nodes = Array.isArray(pack.matched_nodes) ? pack.matched_nodes.filter(isObjectRecord) : []
@@ -2029,6 +2031,7 @@ function bindExpansionQueryGoals(
       || !['primary', 'supporting'].includes(handle.follow_up.evidence_class)) continue
     staged.set(entry.handle_id, { ...handle, query_selection: {
       goal, binding, page_fingerprint: contextExpansionQueryFingerprint(nodes), source_fingerprints,
+      primary_node_ids: Object.keys(classes).filter(id => classes[id] === 'primary').slice(0, 32),
     } })
   }
 }
@@ -2205,7 +2208,7 @@ function finalizeGeneratedContextPackResponse(
     const compact = !options.verbose && options.format !== 'text'
       ? compactContainedSourceReferences(payload, budget) : payload
     if (permitted && context.querySelectionBinding && context.task === 'explain' && options.requestedSource) {
-      bindExpansionQueryGoals(compact, staged, context.prompt, context.querySelectionBinding, options.requestedSource.rootPath)
+      bindExpansionQueryGoals(compact, staged, context.prompt, context.querySelectionBinding, options.requestedSource.rootPath, classes)
     }
     publishRecoveryHandles(compact, staged, context.helpers)
     return compact
@@ -2272,6 +2275,22 @@ function retryEmptyOwnedExpansion(
       record(payload.serialized_budget).token_count = count
     }
     throw new Error('Owned expansion token receipt did not stabilize')
+  }
+  const withSourceHandoff = (payload: Record<string, unknown>): Record<string, unknown> => {
+    const selection = contextExpansionQuerySelection(stored), handoff = selection?.source_handoff
+    if (!queryGoal || payload.expansion_status !== 'no_query_progress' || !selection || !handoff
+      || helpers.getContextPackHandle(handleId) !== stored
+      || helpers.getContextExpansionQueryGoal?.(handleId, stored, selection.binding) !== queryGoal) return payload
+    const cursor = helpers.getContextPackHandle(handoff.source_expand_handle)
+    if (!isSourceContinuationHandle(cursor) || sourceContinuationHandleId(cursor) !== handoff.source_expand_handle
+      || contextExpansionQueryFingerprint(cursor) !== handoff.cursor_fingerprint) return payload
+    try { validateSourceContinuationHandle(cursor, rootPath, original.governance) } catch { return payload }
+    const baseCount = price(payload)
+    const offered = { ...payload, source_handoff: { source_expand_handle: handoff.source_expand_handle,
+      node_id: handoff.node_id, source_file: handoff.source_file, owner_range: { ...handoff.owner_range },
+      pending_ranges: handoff.pending_ranges.map(range => ({ ...range })), advisory: true } }
+    const offeredCount = price(offered)
+    return offeredCount <= budget && offeredCount - baseCount <= 256 ? offered : payload
   }
   const recovery = (payload: Record<string, unknown>, remaining: string[]): string | undefined => {
     const nextId = remaining.length === nodeIds.length ? handleId
@@ -2408,7 +2427,7 @@ function retryEmptyOwnedExpansion(
       compact.evidence.answerability.answer_scope = 'partial'
       compact.evidence.answerability.advisory = true
     }
-    if (price(compact) <= budget) return { payload: compact, handles: new Map() }
+    if (price(compact) <= budget) return { payload: withSourceHandoff(compact), handles: new Map() }
   } catch (error) {
     if (!(error instanceof Error) || !error.message.startsWith('Budget ')) throw error
   }

@@ -1431,10 +1431,7 @@ export function beginSourceContinuation(
   return expandSourceContinuation(handle, budget, rootPath, context.governance)
 }
 
-export function expandSourceContinuation(
-  handle: SourceContinuationHandle, budget: number, rootPath: string, governance: unknown,
-): { payload: RecordValue; child?: { id: string; handle: SourceContinuationHandle } } {
-  requireBudget(budget)
+function currentSourceContinuation(handle: SourceContinuationHandle, rootPath: string, governance: unknown): SourceRead {
   if (!isSourceContinuationHandle(handle)) throw new Error('Malformed source continuation handle')
   if (!fresh(governance)) throw new Error('Source continuation refused stale or unknown source freshness; request a new context pack')
   if (record(handle.evidence.answerability).broad_search_fallback === 'blocked') throw new Error('Source continuation is blocked by its evidence policy')
@@ -1442,6 +1439,19 @@ export function expandSourceContinuation(
   const source = readSource(handle.source_file, rootPath)
   if (source.realRoot !== handle.real_root || source.canonical !== handle.canonical_file || source.hash !== handle.file_sha256
     || !validOwner(source, handle.owner_range, handle.label, handle.scope)) throw new Error('Source continuation source changed, moved, or was retargeted; request a new context pack')
+  return source
+}
+
+/** Verify an already-issued cursor without delivering lines, minting a child or advancing it. */
+export function validateSourceContinuationHandle(handle: SourceContinuationHandle, rootPath: string, governance: unknown): void {
+  currentSourceContinuation(handle, rootPath, governance)
+}
+
+export function expandSourceContinuation(
+  handle: SourceContinuationHandle, budget: number, rootPath: string, governance: unknown,
+): { payload: RecordValue; child?: { id: string; handle: SourceContinuationHandle } } {
+  requireBudget(budget)
+  const source = currentSourceContinuation(handle, rootPath, governance)
   const available: number[] = []
   for (const range of handle.pending_ranges) {
     for (let line = range.start_line; line <= range.end_line && available.length < MAX_LINES_PER_CALL; line++) available.push(line)

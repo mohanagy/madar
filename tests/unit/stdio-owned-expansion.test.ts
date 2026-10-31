@@ -8,7 +8,7 @@ import * as continuations from '../../src/runtime/source-continuation.js'
 import * as sourceResponses from '../../src/runtime/source-evidence-response.js'
 import { createContextExpansionQueryGoal, contextExpansionQueryProgress, createContextExpansionQueryRegistry } from '../../src/runtime/context-expansion-query.js'
 
-import { contextExpansionQueryFingerprint } from '../../src/runtime/context-expansion-query-session.js'
+import { contextExpansionQueryFingerprint, publishContextExpansionQuerySelections } from '../../src/runtime/context-expansion-query-session.js'
 import { createHash } from 'node:crypto'
 import { readEvidenceLines } from '../../src/runtime/retrieve/source-evidence.js'
 
@@ -46,8 +46,7 @@ function fixture(largeCount = 1, smallSource = 'export function small() {\n  ret
   return { root, graphPath, nodes, stored, handles, state, call }
 }
 
-function queryFixture(lateQualified = false) {
-  const initial = 'export function small() {\n  return "amber invoices";\n}\n'
+function queryFixture(lateQualified = false, initial = 'export function small() {\n  return "amber invoices";\n}\n') {
   const f = fixture(0, initial)
   const question = 'Explain amber invoices; violet journals; cobalt receipts.'
   const goal = createContextExpansionQueryGoal(question, [{
@@ -75,7 +74,76 @@ function queryFixture(lateQualified = false) {
   return { ...f, stored, goal }
 }
 
+function handoffFixture() {
+  const source = ['export function small() {', '  const prior = "amber invoices";', '  function visible() {',
+    '    return prior;', '  }', '  const pending = "remaining source";', '  return visible() + pending;', '}']
+  const f = queryFixture(true, source.join('\n') + '\n')
+  const parent = { response_format: 'source_evidence_v2', task: 'explain', task_intent: 'explain',
+    governance: { graph_freshness: { status: 'fresh', selected_context_status: 'fresh' } },
+    evidence: { answerability: { state: 'insufficient', answer_scope: 'partial', broad_search_fallback: 'allowed' } },
+    expandable: [{ handle_id: 'owned' }], pack: { matched_nodes: [
+      { node_id: 'small', label: 'small()', source_file: 'small.ts', evidence_class: 'primary',
+        snippet_scope: 'symbol', snippet_line_range: { start_line: 1, end_line: 8 },
+        snippet: [...source.slice(0, 2), '[omitted lines 3-7]', source[7]].join('\n'),
+        snippet_omitted_ranges: [{ start_line: 3, end_line: 7 }], snippet_truncated: true },
+      { node_id: 'visible', label: 'visible()', source_file: 'small.ts', evidence_class: 'supporting',
+        snippet_scope: 'symbol', snippet_line_range: { start_line: 3, end_line: 5 }, snippet: source.slice(2, 5).join('\n') },
+    ] } }
+  const proof = continuations.createSourceContinuationPreparation(f.root, undefined, undefined, { verifyAllSources: true })(parent)
+  expect(proof.valid && !proof.refused && proof.validate()).toBe(true)
+  const [cursorId, cursor] = [...proof.handles][0]!
+  expect(cursor.pending_ranges).toEqual([{ start_line: 6, end_line: 7 }])
+  for (const [id, handle] of proof.handles) f.handles.set(id, handle)
+  const stored = { ...f.stored,
+    follow_up: { ...f.stored.follow_up, node_ids: ['gray1', 'gray2', 'gray3'], focus_files: ['gray1.ts', 'gray2.ts', 'gray3.ts'] },
+    query_selection: { ...f.stored.query_selection, primary_node_ids: ['small'] } }
+  f.handles.set('owned', stored)
+  const registry = createContextExpansionQueryRegistry()
+  Object.assign(f.state, { contextExpansionQueries: registry })
+  publishContextExpansionQuerySelections({ result: { content: [{ type: 'text', text: JSON.stringify(proof.payload) }] } },
+    new Map([['owned', stored]]), f.handles, registry)
+  return { ...f, cursorId, cursor, parent: proof.payload }
+}
+
 describe('owned generic expansion allocation', () => {
+  it('offers a published parent cursor without delivering, advancing or changing explicit source expansion', async () => {
+    const f = handoffFixture(), before = JSON.stringify([...f.handles])
+    const explicitBefore = await f.call(1450, f.cursorId)
+    const expand = vi.spyOn(continuations, 'expandSourceContinuation')
+    const result = await f.call(1450)
+    expect(expand).not.toHaveBeenCalled()
+    expect(result.payload).toMatchObject({ handle_id: 'owned', expansion_status: 'no_query_progress', delivered_source_nodes: 0,
+      evidence: { answerability: { state: 'insufficient', answer_scope: 'partial', advisory: true } },
+      source_handoff: { source_expand_handle: f.cursorId, node_id: 'small', source_file: 'small.ts',
+        owner_range: { start_line: 1, end_line: 8 }, pending_ranges: [{ start_line: 6, end_line: 7 }], advisory: true } })
+    expect(result.payload.pack.matched_nodes).toEqual([])
+    expect(result.payload.expandable).toEqual([{ handle_id: 'owned' }])
+    expect(JSON.stringify([...f.handles])).toBe(before)
+    expect((await f.call(1450, f.cursorId)).text).toBe(explicitBefore.text)
+    expect((await f.call(128)).payload).not.toHaveProperty('source_handoff')
+    f.handles.delete(f.cursorId)
+    const absent = await f.call(1450)
+    expect(absent.payload).not.toHaveProperty('source_handoff')
+    expect(absent.payload.expansion_status).toBe('no_query_progress')
+    expect(estimateQueryTokens(result.text) - estimateQueryTokens(absent.text)).toBeLessThanOrEqual(256)
+    expect(result.payload.serialized_budget.token_count).toBe(estimateQueryTokens(result.text))
+    expect(estimateQueryTokens(result.text)).toBeLessThanOrEqual(1450)
+    f.handles.set(f.cursorId, { ...f.cursor, evidence: { answerability: { broad_search_fallback: 'blocked' } } })
+    expect((await f.call(1450)).payload).not.toHaveProperty('source_handoff')
+  })
+
+  it('withholds the parent handoff after source or policy drift', async () => {
+    const f = handoffFixture(), file = join(f.root, 'small.ts'), stamp = statSync(file)
+    writeFileSync(file, readFileSync(file, 'utf8').replace('amber invoices', 'umbra invoices'))
+    utimesSync(file, stamp.atime, stamp.mtime)
+    expect(() => continuations.validateSourceContinuationHandle(f.cursor, f.root, f.parent.governance)).toThrow(/source changed/)
+    expect((await f.call(1450)).payload).not.toHaveProperty('source_handoff')
+    const excluded = handoffFixture()
+    writeFileSync(join(excluded.root, '.madarignore'), 'small.ts\n')
+    expect(() => continuations.validateSourceContinuationHandle(excluded.cursor, excluded.root, excluded.parent.governance)).toThrow(/excluded/)
+    expect((await excluded.call(1450)).payload).not.toHaveProperty('source_handoff')
+  })
+
   it('selects residual query progress without changing private scope, legacy order or explicit symbol access', async () => {
     const f = queryFixture(), before = JSON.stringify(f.stored)
     const result = await f.call(1500)
