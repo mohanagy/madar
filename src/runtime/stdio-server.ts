@@ -27,6 +27,8 @@ import {
 } from './stdio/resources.js'
 import { handleToolCall as handleToolCallRequest } from './stdio/tools.js'
 import { compactDuplicateSourcePositions } from './source-evidence-wire.js'
+import { createContextExpansionQueryRegistry, type ContextExpansionQueryRegistry } from './context-expansion-query.js'
+import { contextExpansionQueryFingerprint, publishContextExpansionQuerySelections } from './context-expansion-query-session.js'
 import { isSemanticRuntimeAvailable } from './semantic.js'
 import {
   communitiesFromGraph,
@@ -118,6 +120,8 @@ interface StdioSessionState extends ResourceSessionState {
   contextPromptSessions?: Map<string, ContextSessionState>
   contextPackHandles?: Map<string, unknown>
   contextPackCache?: ContextPackCacheStore
+  /** Transport-lifetime history; ordinary handle/cache clears must not reset it. */
+  contextExpansionQueries?: ContextExpansionQueryRegistry
   /** Slice #81 — per-delta-session node ids already shipped. */
   contextPackNodeIds?: ContextPackNodeIdStore
 }
@@ -378,6 +382,10 @@ function ensureContextPackCache(state: StdioSessionState): ContextPackCacheStore
   }
 
   return state.contextPackCache
+}
+
+function ensureContextExpansionQueries(state: StdioSessionState): ContextExpansionQueryRegistry {
+  return state.contextExpansionQueries ??= createContextExpansionQueryRegistry()
 }
 
 function ensureContextPackNodeIds(state: StdioSessionState): ContextPackNodeIdStore {
@@ -937,6 +945,7 @@ export function handleStdioRequest(
         }
         let responseSourceRoot: string | undefined
         let responseRootUnavailable = false
+        const writtenHandles = new Map<string, unknown>()
         const response = handleToolCallRequest(id, graphPath, params, {
           ok,
           failure,
@@ -1006,6 +1015,7 @@ export function handleStdioRequest(
              return stored
            },
             setContextPackHandle: (handleId, expansion) => {
+              writtenHandles.set(handleId, expansion)
               const handles = ensureContextPackHandles(sessionState)
               // A handle returned again by this response must survive later inserts.
               handles.delete(handleId)
@@ -1018,6 +1028,8 @@ export function handleStdioRequest(
               handles.set(handleId, expansion)
             },
             clearContextPackHandles: () => ensureContextPackHandles(sessionState).clear(),
+            getContextExpansionQueryGoal: (handleId, handle, binding) =>
+              ensureContextExpansionQueries(sessionState).resolve(handleId, contextExpansionQueryFingerprint(handle), binding),
             getContextPackCache: (cacheKey) => ensureContextPackCache(sessionState).get(cacheKey),
             setContextPackCache: (cacheKey, payloadText) => {
               const cache = ensureContextPackCache(sessionState)
@@ -1058,8 +1070,12 @@ export function handleStdioRequest(
           }
           return toolResponse
         }
-        const finishToolResponse = (toolResponse: StdioResponse): StdioResponse =>
-          recordContextPackTelemetry(compactDuplicateSourcePositions(toolResponse, toolName, toolArguments, responseSourceRoot))
+        const finishToolResponse = (toolResponse: StdioResponse): StdioResponse => {
+          const compact = compactDuplicateSourcePositions(toolResponse, toolName, toolArguments, responseSourceRoot)
+          publishContextExpansionQuerySelections(compact, writtenHandles, ensureContextPackHandles(sessionState),
+            ensureContextExpansionQueries(sessionState))
+          return recordContextPackTelemetry(compact)
+        }
         return response instanceof Promise ? response.then(finishToolResponse) : finishToolResponse(response)
       }
       case 'ping':

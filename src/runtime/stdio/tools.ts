@@ -86,6 +86,9 @@ import {
 import { sourceTypeRejectionQueryIdentifiers } from '../retrieve/source-excerpt-guards.js'
 import { sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from '../retrieve/source-coherent-continuation.js'
 import { attachSourceGroupContinuation, expandSourceGroupContinuation, isSourceGroupContinuation } from '../source-group-continuation.js'
+import { createContextExpansionQueryGoal, contextExpansionQueryProgress,
+  type ContextExpansionQueryGoal } from '../context-expansion-query.js'
+import { contextExpansionQueryFingerprint, contextExpansionQuerySelection, type ContextExpansionQuerySelection } from '../context-expansion-query-session.js'
 import { createSourceRecoveryPartition, filterSourceRecoveryResponse, restrictSourceRecoveryContinuation,
   verifySourceRecoveryPartition, type SourceRecoveryPartition } from '../source-recovery-partition.js'
 import { sourceOutsideFileBudgetPreference } from '../source-container-budget.js'
@@ -164,6 +167,7 @@ interface ToolHelpers {
   takeContextPackHandle(handleId: string): unknown
   setContextPackHandle(handleId: string, expansion: unknown): void
   clearContextPackHandles(): void
+  getContextExpansionQueryGoal?(handleId: string, handle: unknown, binding: string): ContextExpansionQueryGoal | undefined
   getContextPackCache(cacheKey: string): string | undefined
   setContextPackCache(cacheKey: string, payloadText: string): void
   clearContextPackCache(cacheKey: string): boolean
@@ -202,6 +206,8 @@ interface StoredContextPackHandle {
   source_recovery_partition?: SourceRecoveryPartition
   /** Inherited caution only; never changes this handle's admitted owner scope. */
   lexical_definition_context?: SourceLexicalDefinitionContext
+  /** Private heuristic goal for a generated page, never navigation authority. */
+  query_selection?: ContextExpansionQuerySelection
 }
 
 interface ContextPackCacheEnvelope {
@@ -1986,11 +1992,76 @@ function publishRecoveryHandles(payload: Record<string, unknown>, staged: Map<st
   for (const [id, handle] of staged) if (advertised.has(id)) helpers.setContextPackHandle(id, handle)
 }
 
+/** Bind advisory scheduling privately; public navigation and source cursors stay byte-identical. */
+function bindExpansionQueryGoals(
+  payload: Record<string, unknown>, staged: Map<string, unknown>, prompt: string, binding: string, rootPath: string,
+): void {
+  const pack = isObjectRecord(payload.pack) ? payload.pack : {}
+  const nodes = Array.isArray(pack.matched_nodes) ? pack.matched_nodes.filter(isObjectRecord) : []
+  const goal = createContextExpansionQueryGoal(prompt, nodes)
+  if (!goal) return
+  const files = [...new Set(nodes.flatMap(node => typeof node.source_file === 'string' ? [node.source_file] : []))]
+  if (!files.length || files.length > 16) return
+  // Snapshot the parent evidence using the normal bounded, policy-aware reader.
+  // Revalidate its source proof after capture, so a concurrent edit cannot bind
+  // new file bytes to an already outdated page assessment.
+  const source_fingerprints: ContextExpansionQuerySelection['source_fingerprints'] = []
+  try {
+    const prepare = createSourceContinuationPreparation(rootPath, id => {
+      const handle = staged.get(id)
+      return isSourceContinuationHandle(handle) ? handle : undefined
+    }, () => true, { verifyAllSources: true })
+    const proof = prepare(payload)
+    if (!proof.valid || proof.refused) return
+    for (const source_file of files) {
+      const canonical_file = sourcePathForEvidence(source_file, rootPath)
+      const lines = readEvidenceLines(source_file, rootPath)
+      if (!canonical_file || !lines) return
+      source_fingerprints.push({ source_file, canonical_file, fingerprint: contextExpansionQueryFingerprint(lines) })
+    }
+    if (!proof.validate() || source_fingerprints.some(row => sourcePathForEvidence(row.source_file, rootPath) !== row.canonical_file)) return
+  } catch { return }
+  for (const entry of Array.isArray(payload.expandable) ? payload.expandable : []) {
+    if (!isObjectRecord(entry) || typeof entry.handle_id !== 'string') continue
+    const handle = staged.get(entry.handle_id)
+    if (!isStoredContextPackHandle(handle) || handle.task !== 'explain' || handle.explicit_target
+      || handle.source_recovery_partition || handle.lexical_definition_context || !handle.follow_up.node_ids?.length
+      || !['primary', 'supporting'].includes(handle.follow_up.evidence_class)) continue
+    staged.set(entry.handle_id, { ...handle, query_selection: {
+      goal, binding, page_fingerprint: contextExpansionQueryFingerprint(nodes), source_fingerprints,
+    } })
+  }
+}
+
+/** Fresh generation and both root identities must still match the assessed page. */
+function expansionQueryBinding(graphPath: string, graph: KnowledgeGraph,
+  knownFreshness?: GraphContextFreshness): string | undefined {
+  try {
+    const freshness = knownFreshness ?? analyzeGraphContextFreshness(graphPath, graph)
+    if (freshness.status !== 'fresh' || !freshness.graph_version) return undefined
+    const root = resolveGraphSourceRoot(graphPath, graph)
+    const graphHash = createHash('sha256').update(readFileSync(graphPath)).digest('hex')
+    return JSON.stringify([resolve(graphPath), realpathSync(graphPath), resolve(root), realpathSync(root), graphHash])
+  } catch { return undefined }
+}
+
+function expansionQuerySourcesMatch(handle: StoredContextPackHandle, rootPath: string): boolean {
+  const selection = contextExpansionQuerySelection(handle)
+  try {
+    return selection !== undefined && selection.source_fingerprints.every(row => {
+      if (sourcePathForEvidence(row.source_file, rootPath) !== row.canonical_file) return false
+      const lines = readEvidenceLines(row.source_file, rootPath)
+      return lines !== null && contextExpansionQueryFingerprint(lines) === row.fingerprint
+        && sourcePathForEvidence(row.source_file, rootPath) === row.canonical_file
+    })
+  } catch { return false }
+}
+
 /** Keep serialization omissions inside the same owned continuation scope. */
 function finalizeGeneratedContextPackResponse(
   input: Record<string, unknown>, budget: number,
   options: NonNullable<Parameters<typeof finalizeSourceEvidenceResponse>[2]>,
-  context: { prompt: string; task: ContextPackTaskKind; taskIntent: TaskContextPlan['evidence']['recipe_id']; helpers: ToolHelpers; sourceCatalog?: SourceCoherentContinuationCatalog },
+  context: { prompt: string; task: ContextPackTaskKind; taskIntent: TaskContextPlan['evidence']['recipe_id']; helpers: ToolHelpers; sourceCatalog?: SourceCoherentContinuationCatalog; querySelectionBinding?: string | undefined },
 ): Record<string, unknown> {
   input = isolateUnverifiedSourceOwners(input, options)
   const originalPack = isObjectRecord(input.pack) ? input.pack : {}
@@ -2133,6 +2204,9 @@ function finalizeGeneratedContextPackResponse(
     // not fund another selection pass or change an advertised cursor.
     const compact = !options.verbose && options.format !== 'text'
       ? compactContainedSourceReferences(payload, budget) : payload
+    if (permitted && context.querySelectionBinding && context.task === 'explain' && options.requestedSource) {
+      bindExpansionQueryGoals(compact, staged, context.prompt, context.querySelectionBinding, options.requestedSource.rootPath)
+    }
     publishRecoveryHandles(compact, staged, context.helpers)
     return compact
   }
@@ -2174,6 +2248,7 @@ function retryEmptyOwnedExpansion(
   candidates: readonly ContextPackNodeCandidate<ContextPackNode>[],
   build: (candidate: ContextPackNodeCandidate<ContextPackNode>, helpers: ToolHelpers) => Record<string, unknown>,
   helpers: ToolHelpers, options: NonNullable<Parameters<typeof finalizeSourceEvidenceResponse>[2]>,
+  queryGoal?: ContextExpansionQueryGoal,
 ): { payload: Record<string, unknown>; handles: Map<string, unknown> } {
   const record = (value: unknown): Record<string, unknown> => isObjectRecord(value) ? value : {}
   const clone = (value: Record<string, unknown>): Record<string, unknown> => JSON.parse(JSON.stringify(value))
@@ -2219,7 +2294,18 @@ function retryEmptyOwnedExpansion(
       'context_expand source or policy changed during allocation; request a fresh context_pack', false)
     return proof.valid
   }
-  if (originalAnswer.broad_search_fallback !== 'blocked') for (const candidate of candidates.slice(0, 4)) {
+  const window = candidates.slice(0, 4)
+  const trials = queryGoal ? window.map((candidate, index) => ({ candidate, index,
+    progress: contextExpansionQueryProgress(queryGoal, [candidate.build_entry() as unknown as Record<string, unknown>]).length,
+  })).filter(entry => entry.progress > 0).sort((left, right) => right.progress - left.progress || left.index - right.index)
+    .map(entry => entry.candidate) : window
+  if (queryGoal) {
+    const freshness = record(record(original.governance).graph_freshness)
+    if (freshness.status !== 'fresh' || freshness.selected_context_status !== 'fresh') throw new FocusedSymbolError(
+      'context_expand source freshness could not be verified during query selection; request a fresh context_pack', false)
+    validate(prepare(original))
+  }
+  if (originalAnswer.broad_search_fallback !== 'blocked') for (const candidate of trials) {
     const entry = candidate.build_entry()
     // Metadata keeps its place in the original four-owner window and recovery
     // scope, but cannot be a source-allocation trial.
@@ -2232,6 +2318,7 @@ function retryEmptyOwnedExpansion(
     input.evidence = { ...originalEvidence, ...evidence, answerability: { ...originalAnswer, ...answer,
       caveats: [...new Set([...stringValues(originalAnswer.caveats), ...stringValues(answer.caveats)])],
       missing_obligations: [...new Set([...stringValues(originalAnswer.missing_obligations), ...stringValues(answer.missing_obligations)])],
+      ...(queryGoal ? { state: 'insufficient', answer_scope: 'partial', advisory: true } : {}),
     } }
     recovery(input, nodeIds)
     const freshness = record(record(input.governance).graph_freshness)
@@ -2279,6 +2366,7 @@ function retryEmptyOwnedExpansion(
     if (compactNodes.length !== nodes.length || !hasSource(compactNodes) || price(compact) > budget || !validate(proof)) continue
     const finalProof = prepare(compact)
     if (!validate(finalProof)) continue
+    if (queryGoal && !contextExpansionQueryProgress(queryGoal, compactNodes).length) continue
     const finalRecovered = new Set(compactNodes.flatMap(node => {
       const partial = node.snippet_truncated === true || Array.isArray(node.snippet_omitted_ranges) && node.snippet_omitted_ranges.length > 0
       return !partial || typeof node.source_expand_handle === 'string' && finalProof.handles.has(node.source_expand_handle)
@@ -2293,17 +2381,21 @@ function retryEmptyOwnedExpansion(
     return { payload: compact, handles: active }
   }
   validate(prepare({ pack: { matched_nodes: [] } }))
-  const payload = clone(baseline)
+  // A no-progress page carries the scope and limitations, not the internal
+  // assembly plan for an empty pack. Ordinary allocation keeps its old shape.
+  const payload: Record<string, unknown> = queryGoal
+    ? { task: stored.task, governance: original.governance } : clone(baseline)
   const blocked = originalAnswer.broad_search_fallback === 'blocked'
-  const status = blocked ? 'blocked' : 'budget_insufficient'
+  const status = blocked ? 'blocked' : queryGoal ? 'no_query_progress' : 'budget_insufficient'
   payload.handle_id = handleId
   payload.expansion_status = status
   payload.delivered_source_nodes = 0
   payload.pack = { ...record(payload.pack), matched_nodes: [], relationships: [] }
-  payload.evidence = { ...originalEvidence, answerability: { ...originalAnswer,
+  payload.evidence = { ...(queryGoal ? {} : originalEvidence), answerability: { ...originalAnswer,
     state: 'insufficient', answer_scope: 'partial', advisory: true,
     caveats: [...new Set([...stringValues(originalAnswer.caveats), blocked
       ? 'Source expansion remains blocked by the original evidence policy.'
+      : queryGoal ? 'No query progress was delivered from the first four owned candidates; the original scope remains available through explicit symbol selection.'
       : 'No source delivered within the bounded allocation attempts; retry the original handle with a larger budget.'])] } }
   active = new Map(); recovery(payload, nodeIds)
   // Keep the original immutable handle even when detailed evidence cannot fit.
@@ -2311,6 +2403,11 @@ function retryEmptyOwnedExpansion(
     const compact = serializeSourceEvidenceResponse(payload, budget, { verbose: true })
     compact.handle_id = handleId; compact.expansion_status = status; compact.delivered_source_nodes = 0
     compact.expandable = [{ handle_id: handleId }]
+    if (queryGoal && isObjectRecord(compact.evidence) && isObjectRecord(compact.evidence.answerability)) {
+      compact.evidence.answerability.state = 'insufficient'
+      compact.evidence.answerability.answer_scope = 'partial'
+      compact.evidence.answerability.advisory = true
+    }
     if (price(compact) <= budget) return { payload: compact, handles: new Map() }
   } catch (error) {
     if (!(error instanceof Error) || !error.message.startsWith('Budget ')) throw error
@@ -2318,7 +2415,8 @@ function retryEmptyOwnedExpansion(
   const freshness = record(record(original.governance).graph_freshness)
   const minimal = { handle_id: handleId, expansion_status: status, expandable: [{ handle_id: handleId }],
     evidence: { answerability: { state: 'insufficient', broad_search_fallback: blocked ? 'blocked' : 'allowed' } },
-    limitations: { graph: freshness.status, source: freshness.selected_context_status, obligations: 'not resolved; retry original scope' } }
+    limitations: { graph: freshness.status, source: freshness.selected_context_status,
+      obligations: queryGoal ? 'no progress in first four owners; use explicit symbol selection' : 'not resolved; retry original scope' } }
   if (price(minimal) > budget) throw new Error('Budget cannot carry the original expansion retry scope and evidence status')
   return { payload: minimal, handles: new Map() }
 }
@@ -3350,6 +3448,9 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
               ...(cachedCallsites && cachedFlowBudget ? { flowBudget: cachedFlowBudget } : {}),
               ...(sourceContinuationOptions ? { continuations: sourceContinuationOptions } : {}) },
               { prompt: cachedPayload.prompt, task: 'explain', taskIntent: cachedPayload.task_intent, helpers,
+                ...(resolution === 'detail' && !deltaSessionId && !includeSelectionDiagnostics
+                  && (!contextPackStrategy || contextPackStrategy === 'default')
+                  ? { querySelectionBinding: expansionQueryBinding(graphPath, graph, cachedGraphFreshness) } : {}),
                 ...(isObjectRecord(cachedRecord.source_coherent_continuation)
                   ? { sourceCatalog: cachedRecord.source_coherent_continuation as unknown as SourceCoherentContinuationCatalog } : {}) }))
             if (!packageSourceSnapshotsMatch(packageConfiguration, packageSnapshot())) throw new Error('Indexed package source changed during cache hydration')
@@ -3784,7 +3885,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const responseContext = { prompt, task, taskIntent: initialPlan.evidence.recipe_id, helpers,
         ...(task === 'explain' && resolution === 'detail' && !deltaSessionId && !includeSelectionDiagnostics
           && (!contextPackStrategy || contextPackStrategy === 'default')
-          ? { sourceCatalog: retrieval[sourceCoherentContinuationCatalogKey] } : {}) }
+          ? { sourceCatalog: retrieval[sourceCoherentContinuationCatalogKey], querySelectionBinding: expansionQueryBinding(graphPath, graph, graphContextFreshness) } : {}) }
       if (!cacheEligible || !cacheKey || !cacheGraphVersion) {
         return helpers.ok(id, helpers.textToolResult(JSON.stringify(finalizeGeneratedContextPackResponse(responsePayload, resolvedBudget, {
           verbose: includeSelectionDiagnostics, sourcePolicyRoot: packageRoot,
@@ -3948,6 +4049,31 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         }
         const preparedExpansion = prepareFocusedExpansionPayload(graph, graphPath, handleId, stored,
           budget ?? 1500, expansionHelpers, selectedSymbol)
+        const queryBinding = !selectedSymbol && !partition && toolArguments.verbose !== true && stored.query_selection
+          ? expansionQueryBinding(graphPath, graph) : undefined
+        const queryGoal = queryBinding && expansionQuerySourcesMatch(stored, rootPath)
+          ? helpers.getContextExpansionQueryGoal?.(handleId, stored, queryBinding) : undefined
+        if (queryGoal) {
+          const original = preparedExpansion.build([], expansionHelpers)
+          const inspectedFiles = preparedExpansion.candidates.slice(0, 4).flatMap(candidate =>
+            typeof candidate.source_file === 'string' ? [candidate.source_file] : [])
+          original.governance = { graph_freshness: analyzeGraphContextFreshness(graphPath, graph,
+            { selected_source_files: inspectedFiles }) }
+          const queryOptions = { requestedSource: { rootPath, prompt: stored.prompt },
+            continuations: { rootPath,
+              store: (nextId: string, handle: SourceContinuationHandle) => expansionHelpers.setContextPackHandle(nextId, handle) } }
+          const selected = retryEmptyOwnedExpansion(original, original, handleId, stored, budget ?? 1500, rootPath,
+            preparedExpansion.candidates, (candidate, trialHelpers) => {
+              const trial = preparedExpansion.build([candidate], trialHelpers)
+              trial.governance = { graph_freshness: analyzeGraphContextFreshness(graphPath, graph,
+                { selected_source_files: typeof candidate.source_file === 'string' ? [candidate.source_file] : [] }) }
+              return trial
+            }, expansionHelpers, queryOptions, queryGoal)
+          if (expansionQuerySourcesMatch(stored, rootPath) && expansionQueryBinding(graphPath, graph) === queryBinding) {
+            publishRecoveryHandles(selected.payload, selected.handles, helpers)
+            return helpers.ok(id, helpers.textToolResult(JSON.stringify(selected.payload)))
+          }
+        }
         const payload = constrainStrictContextExpansionPayload(
           preparedExpansion.build(preparedExpansion.candidates, expansionHelpers), helpers)
         if (selectedSymbol && isObjectRecord(payload.evidence)) {

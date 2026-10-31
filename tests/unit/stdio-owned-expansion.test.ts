@@ -1,10 +1,16 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import * as continuations from '../../src/runtime/source-continuation.js'
+import * as sourceResponses from '../../src/runtime/source-evidence-response.js'
+import { createContextExpansionQueryGoal, contextExpansionQueryProgress, createContextExpansionQueryRegistry } from '../../src/runtime/context-expansion-query.js'
+
+import { contextExpansionQueryFingerprint } from '../../src/runtime/context-expansion-query-session.js'
+import { createHash } from 'node:crypto'
+import { readEvidenceLines } from '../../src/runtime/retrieve/source-evidence.js'
 
 const roots: string[] = []
 beforeEach(() => { vi.stubEnv('MADAR_TOOL_PROFILE', 'strict') })
@@ -30,17 +36,120 @@ function fixture(largeCount = 1, smallSource = 'export function small() {\n  ret
   const handles = new Map<string, unknown>([['owned', stored]])
   const state = { logLevel: 'info' as const, subscribedResourceUris: new Set<string>(), resourceVersions: new Map<string, string>(),
     resourceListSignature: null, contextPackHandles: handles }
-  const call = async (budget: number, handle = 'owned') => {
+  const call = async (budget: number, handle = 'owned', symbol?: string) => {
     const response = await handleStdioRequest(graphPath, { id: 1, method: 'tools/call',
-      params: { name: 'context_expand', arguments: { handle_id: handle, budget } } }, state)
+      params: { name: 'context_expand', arguments: { handle_id: handle, budget, ...(symbol ? { symbol } : {}) } } }, state)
     const text = (response?.result as { content: { text: string }[] } | undefined)?.content[0]?.text
     if (!text) throw new Error(JSON.stringify(response))
     return { payload: JSON.parse(text), text }
   }
-  return { root, graphPath, nodes, stored, handles, call }
+  return { root, graphPath, nodes, stored, handles, state, call }
+}
+
+function queryFixture(lateQualified = false) {
+  const initial = 'export function small() {\n  return "amber invoices";\n}\n'
+  const f = fixture(0, initial)
+  const question = 'Explain amber invoices; violet journals; cobalt receipts.'
+  const goal = createContextExpansionQueryGoal(question, [{
+    node_id: 'small', label: 'small()', source_file: 'small.ts', snippet: initial,
+  }])
+  if (!goal) throw new Error('Fixture requires a nonempty query goal')
+  expect(goal.missing_obligations).toHaveLength(2)
+  const additions = lateQualified
+    ? [['gray1', 'amber invoices'], ['gray2', 'amber invoices'], ['gray3', 'amber invoices'], ['rich', 'violet journals cobalt receipts']]
+    : [['journal', 'violet journals'], ['rich', 'violet journals cobalt receipts']]
+  for (const [id, words] of additions) {
+    writeFileSync(join(f.root, `${id}.ts`), `export function ${id}() {\n  return "${words}";\n}\n`)
+    f.nodes.push({ id, label: `${id}()`, source_file: `${id}.ts`, source_location: 'L1-L3', file_type: 'code', node_kind: 'function', community: 0 })
+  }
+  writeFileSync(f.graphPath, JSON.stringify({ directed: true, root_path: f.root, nodes: f.nodes, edges: [], hyperedges: [] }))
+  const binding = JSON.stringify([f.graphPath, realpathSync(f.graphPath), f.root, realpathSync(f.root), createHash('sha256').update(readFileSync(f.graphPath)).digest('hex')])
+  const stored = { ...f.stored, prompt: question, query_selection: { goal, binding, page_fingerprint: contextExpansionQueryFingerprint(initial),
+    source_fingerprints: [{ source_file: 'small.ts', canonical_file: realpathSync(join(f.root, 'small.ts')),
+      fingerprint: contextExpansionQueryFingerprint(readEvidenceLines('small.ts', f.root)) }] },
+    follow_up: { ...f.stored.follow_up, node_ids: f.nodes.map(node => node.id), focus_files: f.nodes.map(node => node.source_file) } }
+  f.handles.set('owned', stored)
+  const registry = createContextExpansionQueryRegistry()
+  registry.observe('owned', contextExpansionQueryFingerprint(stored), goal, binding)
+  Object.assign(f.state, { contextExpansionQueries: registry })
+  return { ...f, stored, goal }
 }
 
 describe('owned generic expansion allocation', () => {
+  it('selects residual query progress without changing private scope, legacy order or explicit symbol access', async () => {
+    const f = queryFixture(), before = JSON.stringify(f.stored)
+    const result = await f.call(1500)
+    expect(result.payload.pack.matched_nodes[0].node_id).toBe('rich')
+    expect(result.payload.pack.matched_nodes.some((node: { node_id: string }) => node.node_id === 'small')).toBe(false)
+    expect(contextExpansionQueryProgress(f.goal, result.payload.pack.matched_nodes)).toHaveLength(2)
+    expect(result.payload.pack.matched_nodes.every((node: { node_id: string }) => f.stored.follow_up.node_ids.includes(node.node_id))).toBe(true)
+    expect(JSON.stringify(f.handles.get('owned'))).toBe(before)
+    expect(result.payload.serialized_budget.token_count).toBe(estimateQueryTokens(result.text))
+    expect(estimateQueryTokens(result.text)).toBeLessThanOrEqual(1500)
+    expect(result.text).not.toContain('"query_selection"')
+
+    const explicit = await f.call(1500, 'owned', 'small')
+    expect(explicit.payload.pack.matched_nodes).toEqual([expect.objectContaining({
+      node_id: 'small', snippet: readFileSync(join(f.root, 'small.ts'), 'utf8').trimEnd(),
+    })])
+    expect(JSON.stringify(f.handles.get('owned'))).toBe(before)
+    const { query_selection: _goal, ...legacy } = f.stored
+    f.handles.set('legacy', legacy)
+    expect((await f.call(1500, 'legacy')).payload.pack.matched_nodes[0].node_id).toBe('small')
+
+    // Legacy freshness is timestamp based. Equal-size, restored-mtime parent
+    // edits must still discard the old coverage goal and use ordinary browsing.
+    const stale = queryFixture(), file = join(stale.root, 'small.ts'), stamp = statSync(file)
+    writeFileSync(file, readFileSync(file, 'utf8').replace('amber invoices', 'umbra invoices'))
+    utimesSync(file, stamp.atime, stamp.mtime)
+    const fallback = await stale.call(1500)
+    expect(fallback.payload.pack.matched_nodes[0].node_id).toBe('small')
+    expect(fallback.payload.pack.matched_nodes[0].snippet).toContain('umbra invoices')
+
+    const changedGraph = queryFixture(), graphStamp = statSync(changedGraph.graphPath)
+    writeFileSync(changedGraph.graphPath, readFileSync(changedGraph.graphPath, 'utf8').replace('"community":0', '"community":1'))
+    utimesSync(changedGraph.graphPath, graphStamp.atime, graphStamp.mtime)
+    expect((await changedGraph.call(1500)).payload.pack.matched_nodes[0].node_id).toBe('small')
+  })
+
+  it('keeps no-progress and finally omitted query owners recoverable within the original four-entry window', async () => {
+    const f = queryFixture(true), before = JSON.stringify([...f.handles])
+    for (const budget of [1500, 128]) {
+      const result = await f.call(budget)
+      expect(result.payload.expansion_status).toBe('no_query_progress')
+      expect(result.payload.handle_id).toBe('owned')
+      expect(result.payload.pack?.matched_nodes ?? []).toEqual([])
+      expect(result.payload.expandable).toEqual([{ handle_id: 'owned' }])
+      expect(result.payload.evidence.answerability.state).toBe('insufficient')
+      expect(result.payload.serialized_budget.token_count).toBe(estimateQueryTokens(result.text))
+      expect(estimateQueryTokens(result.text)).toBeLessThanOrEqual(budget)
+      expect(JSON.stringify([...f.handles])).toBe(before)
+    }
+    // The qualified fifth owner was not searched around the four-entry bound,
+    // but remains explicitly reachable through the original private scope.
+    expect((await f.call(1500, 'owned', 'rich')).payload.pack.matched_nodes[0].node_id).toBe('rich')
+
+    const dropped = queryFixture(), storedBefore = JSON.stringify([...dropped.handles])
+    const finalize = sourceResponses.finalizeSourceEvidenceResponse
+    const cull = vi.spyOn(sourceResponses, 'finalizeSourceEvidenceResponse').mockImplementation((input, budget, options) => {
+      const output = finalize(input, budget, options)
+      // Model a later wire cull after the genuine source/proof path. A qualifying
+      // candidate before fitting is not evidence if no source survives the fit.
+      return finalize({ ...output,
+        pack: { matched_nodes: [], relationships: [] },
+      }, budget, { verbose: true }) as typeof output
+    })
+    try {
+      const result = await dropped.call(1500)
+      expect(result.payload.expansion_status).toBe('no_query_progress')
+      expect(result.payload.pack?.matched_nodes ?? []).toEqual([])
+      expect(result.payload.expandable).toEqual([{ handle_id: 'owned' }])
+      expect(JSON.stringify([...dropped.handles])).toBe(storedBefore)
+      expect(result.payload.serialized_budget.token_count).toBe(estimateQueryTokens(result.text))
+      expect(estimateQueryTokens(result.text)).toBeLessThanOrEqual(1500)
+    } finally { cull.mockRestore() }
+  })
+
   it('refuses source allocation after a real source mutation without publishing trial handles', async () => {
     const f = fixture(), before = JSON.stringify([...f.handles])
     const file = join(f.root, 'small.ts')
