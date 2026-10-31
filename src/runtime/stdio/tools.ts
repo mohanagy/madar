@@ -98,6 +98,8 @@ import { applyContextPackResolution, type ContextPackResolution } from '../conte
 import { buildImplementationPackGuidance } from '../implementation-pack.js'
 import {
   buildMadarResponseEvidence,
+  buildMadarResponseEvidenceWithPlanning,
+  type ContextPackNavigationPlan,
   collectWorkflowOwners,
   missingPhasesFromPayload,
 } from '../mcp-response-evidence.js'
@@ -217,6 +219,8 @@ interface CachedExplainContextPackPayload extends Record<string, unknown> {
 interface CachedExplainContextPackRecord {
   version: 1
   payload: CachedExplainContextPackPayload
+  /** Private navigation input; never projected into the wire payload. */
+  navigation_plan: ContextPackNavigationPlan | null
   source_configuration: SourceModuleConfigurationSnapshot | null
   package_configuration: PackageSourceSnapshot | null
   source_flow_catalog?: SourceFlowCatalog
@@ -229,6 +233,18 @@ interface CachedExplainContextPackRecord {
     source_dependencies: SourceFunctionValueReference['source_dependencies']
     references: Array<Omit<SourceFunctionValueReference, 'source_dependencies'>>
   }
+}
+
+function isContextPackNavigationPlan(value: unknown): value is ContextPackNavigationPlan | null {
+  if (value === null) return true
+  if (!isObjectRecord(value) || !['ready', 'ready_with_caveat', 'verify_targets', 'insufficient'].includes(String(value.state))) return false
+  const candidate = value.candidate
+  if (candidate === null) return true
+  return isObjectRecord(candidate) && typeof candidate.reason === 'string'
+    && (candidate.handle_id === undefined || typeof candidate.handle_id === 'string')
+    && (candidate.evidence_class === undefined || isContextPackEvidenceClass(candidate.evidence_class))
+    && Array.isArray(candidate.focus_files) && candidate.focus_files.every(file => typeof file === 'string')
+    && Array.isArray(candidate.focus_ranges) && candidate.focus_ranges.every(isExpandableSourceRange)
 }
 
 function cachedSourceFunctionValues(value: unknown): SourceFunctionValueReference[] {
@@ -659,7 +675,7 @@ function contextMetadata(
   }
 }
 
-function evidenceForRetrievePayload(
+function evidenceInputForRetrievePayload(
   payload: Partial<Pick<
     RetrieveResult,
     | 'coverage'
@@ -695,12 +711,20 @@ function evidenceForRetrievePayload(
         }
       : {}),
   })
-  return buildMadarResponseEvidence({
+  return {
     evidencePlan,
     graphPath,
     question: payload.question,
     recovery: payload.recovery,
-  })
+  }
+}
+
+function evidenceForRetrievePayload(...args: Parameters<typeof evidenceInputForRetrievePayload>) {
+  return buildMadarResponseEvidence(evidenceInputForRetrievePayload(...args))
+}
+
+function evidenceForRetrievePayloadWithPlanning(...args: Parameters<typeof evidenceInputForRetrievePayload>) {
+  return buildMadarResponseEvidenceWithPlanning(evidenceInputForRetrievePayload(...args))
 }
 
 function evidenceForPathPayload(
@@ -1723,17 +1747,21 @@ interface StrictVerificationAuthorization {
   target: Record<string, unknown>
 }
 
-function strictVerificationAuthorization(payload: Record<string, unknown>): StrictVerificationAuthorization | null {
+function legacyNavigationPlan(payload: Record<string, unknown>): ContextPackNavigationPlan | null {
   const evidence = isObjectRecord(payload.evidence) ? payload.evidence : null
   const answerability = evidence && isObjectRecord(evidence.answerability) ? evidence.answerability : null
-  if (!answerability || answerability.state !== 'verify_targets') {
-    return null
-  }
-
-  const entries = strictPayloadExpandableEntries(payload)
+  if (!answerability || answerability.state !== 'verify_targets') return null
   const candidate = Array.isArray(answerability.verification_targets)
-    ? answerability.verification_targets.find(isObjectRecord) ?? null
-    : null
+    ? answerability.verification_targets.find(isObjectRecord) ?? null : null
+  return { state: 'verify_targets', candidate: candidate as ContextPackNavigationPlan['candidate'] }
+}
+
+function strictVerificationAuthorization(
+  payload: Record<string, unknown>, navigation: ContextPackNavigationPlan | null,
+): StrictVerificationAuthorization | null {
+  if (navigation?.state !== 'verify_targets') return null
+  const entries = strictPayloadExpandableEntries(payload)
+  const candidate = navigation.candidate
   const requestedHandleId = typeof candidate?.handle_id === 'string' && candidate.handle_id.length > 0
     ? candidate.handle_id
     : null
@@ -1801,29 +1829,30 @@ function strictVerificationAuthorization(payload: Record<string, unknown>): Stri
   }
 }
 
-function strictVerificationHandleIds(payload: unknown): Set<string> {
-  if (!isObjectRecord(payload)) {
-    return new Set<string>()
-  }
-  const authorization = strictVerificationAuthorization(payload)
-  return authorization ? new Set([authorization.entry.handle_id]) : new Set<string>()
-}
-
 export function constrainStrictContextPackPayload<T extends Record<string, unknown>>(
   payload: T,
   helpers: Pick<ToolHelpers, 'strictContextPackMode'>,
+  navigation?: ContextPackNavigationPlan | null,
 ): T {
   // Profiles control tools, not authority to verify. Make server-owned file targets
   // callable while retaining all existing handles and allowing further focused reads.
-  const authorization = strictVerificationAuthorization(payload)
+  // Undefined is the legacy adapter for callers supplying their own payload.
+  // Every generated server path passes its independent plan, including null.
+  const authorization = strictVerificationAuthorization(payload,
+    navigation === undefined ? legacyNavigationPlan(payload) : navigation)
   if (authorization) {
     const mutable = payload as Record<string, unknown>
     const entries = strictPayloadExpandableEntries(payload)
     if (!entries.some(entry => entry.handle_id === authorization.entry.handle_id)) entries.push(authorization.entry)
     mutable.expandable = entries
-    const answerability = (mutable.evidence as { answerability: Record<string, unknown> }).answerability
-    const targets = Array.isArray(answerability.verification_targets) ? answerability.verification_targets : []
-    answerability.verification_targets = [authorization.target, ...targets.slice(1)]
+    const evidence = isObjectRecord(mutable.evidence) ? mutable.evidence : null
+    const answerability = evidence && isObjectRecord(evidence.answerability) ? evidence.answerability : null
+    const targets = Array.isArray(answerability?.verification_targets) ? answerability.verification_targets : []
+    // Project the existing public recommendation separately. Private browsing
+    // must remain callable even when that recommendation is later withheld.
+    if (answerability && (navigation === undefined || (answerability.state === 'verify_targets' && targets.length > 0))) {
+      answerability.verification_targets = [authorization.target, ...targets.slice(1)]
+    }
   }
   return payload
 }
@@ -3261,6 +3290,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             if (!isObjectRecord(cachedRecord) || cachedRecord.version !== 1
               || !Object.hasOwn(cachedRecord, 'source_configuration')
               || !Object.hasOwn(cachedRecord, 'package_configuration')
+              || !isContextPackNavigationPlan(cachedRecord.navigation_plan)
               || !isCachedExplainContextPackPayload(cachedRecord.payload)) {
               throw new Error('Malformed cached explain context_pack payload')
             }
@@ -3292,7 +3322,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             const cachedWithFreshness = constrainStrictContextPackPayload(withUpdatedContextPackGovernanceFreshness(
               withUpdatedContextPackGovernanceCacheStatus(cachedPayload, 'hit'),
               cachedGraphFreshness,
-            ), helpers)
+            ), helpers, cachedRecord.navigation_plan)
             const cachedBundles = cachedSourceCallsites(cachedRecord.source_callsites)
             const cachedReferences = cachedSourceFunctionValues(cachedRecord.source_function_values)
             const cachedCatalog = cachedSourceFlowCatalog(cachedRecord.source_flow_catalog)
@@ -3349,7 +3379,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           changed_paths: prResult.changed_files,
           focus_paths: [...prResult.review_context.supporting_paths, ...prResult.review_context.test_paths],
         })
-        const evidence = buildMadarResponseEvidence({
+        const { evidence, navigation } = buildMadarResponseEvidenceWithPlanning({
           coverage: reviewMetadata.coverage,
           impactTraversalSummary: prResult.impact_traversal,
           graphPath,
@@ -3374,7 +3404,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           expandable: reviewMetadata.expandable,
           cacheEligible: false,
           cacheStatus: 'bypass',
-        }), helpers)
+        }), helpers, navigation)
         storeFinalContextPackHandles(
           prompt,
           task,
@@ -3446,7 +3476,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         })
         const impactPack = compactImpactResult(impactResult)
         const metadata = impactMetadata(impactResult, resolvedBudget, prompt, initialPlan.evidence.recipe_id, contextPackLevelTyped ?? undefined)
-        const evidence = buildMadarResponseEvidence({
+        const { evidence, navigation } = buildMadarResponseEvidenceWithPlanning({
           coverage: metadata.coverage,
           graphPath,
           question: prompt,
@@ -3473,7 +3503,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           resolution,
           cacheEligible: false,
           cacheStatus: 'bypass',
-        }), helpers)
+        }), helpers, navigation)
         storeFinalContextPackHandles(
           prompt,
           task,
@@ -3566,7 +3596,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           prompt,
           resolvedDeltaNodes.nodes,
         )
-        const deltaEvidence = buildMadarResponseEvidence({
+        const { evidence: deltaEvidence, navigation: deltaNavigation } = buildMadarResponseEvidenceWithPlanning({
           answerContract: deltaResult.delta_pack.answer_contract,
           coverage: deltaResult.delta_pack.coverage,
           executionSlice: deltaResult.delta_pack.execution_slice,
@@ -3619,7 +3649,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           cacheEligible: false,
           cacheStatus: 'bypass',
           deltaSessionId,
-        }), helpers)
+        }), helpers, deltaNavigation)
         storeFinalContextPackHandles(
           prompt,
           task,
@@ -3636,7 +3666,9 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const discovery = task === 'explain' && resolution === 'detail' && !includeSelectionDiagnostics
         && (!contextPackStrategy || contextPackStrategy === 'default')
         ? discoverySourceDeferral(graph, graphPath, retrieval, resolvedNodes.nodes) : undefined
-      const buildResponse = (deferred?: NonNullable<typeof discovery>): Record<string, unknown> => {
+      const buildResponse = (deferred?: NonNullable<typeof discovery>): {
+        payload: Record<string, unknown>, navigation: ContextPackNavigationPlan | null,
+      } => {
         const selectedNodes = deferred ? resolvedNodes.nodes.filter(node => !node.node_id || !deferred.ids.has(node.node_id)) : resolvedNodes.nodes
         const selectedIds = new Set(selectedNodes.flatMap(node => node.node_id ? [node.node_id] : []))
         const originalRelationships = (explainPayload?.pack ?? compactPack).relationships
@@ -3658,7 +3690,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           delete serializedPack.execution_slice; delete serializedPack.answer_contract
           Object.assign(serializedPack, { _source_discovery_deferred: true })
         }
-        const evidence = evidenceForRetrievePayload({
+        const { evidence, navigation } = evidenceForRetrievePayloadWithPlanning({
           question: prompt,
           ...(fullPack.task_contract ? { task_contract: fullPack.task_contract } : {}),
           ...(!deferred && fullPack.coverage ? { coverage: fullPack.coverage } : {}),
@@ -3707,15 +3739,21 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         })
         if (deferred) { delete (basePayload as Record<string, unknown>).coverage; delete (basePayload as Record<string, unknown>).claims }
         applySourceLexicalCaution(basePayload)
-        return constrainStrictContextPackPayload(basePayload, helpers)
+        const dependencies = isObjectRecord(basePayload.pack.source_dependencies) ? basePayload.pack.source_dependencies : null
+        const lexicalContext = sourceLexicalDefinitionContext(dependencies?.lexical_definition_context)
+        const navigationPlan = deferred || lexicalContext ? null : navigation
+        return { payload: constrainStrictContextPackPayload(basePayload, helpers, navigationPlan), navigation: navigationPlan }
       }
-      let responsePayload = buildResponse()
+      const initialResponse = buildResponse()
+      let responsePayload = initialResponse.payload
+      let responseNavigation = initialResponse.navigation
       const freshness = isObjectRecord(responsePayload.governance) && isObjectRecord(responsePayload.governance.graph_freshness)
         ? responsePayload.governance.graph_freshness : {}
       const blocked = isObjectRecord(responsePayload.evidence) && isObjectRecord(responsePayload.evidence.answerability)
         && responsePayload.evidence.answerability.broad_search_fallback === 'blocked'
       if (discovery && !blocked && freshness.status === 'fresh' && freshness.selected_context_status === 'fresh') {
-        const compact = buildResponse(discovery)
+        const compactResponse = buildResponse(discovery)
+        const compact = compactResponse.payload
         const originalEvidence = responsePayload.evidence as ReturnType<typeof evidenceForRetrievePayload>
         const compactEvidence = compact.evidence as ReturnType<typeof evidenceForRetrievePayload>
         compactEvidence.answerability.missing_obligations = [...new Set([...originalEvidence.answerability.missing_obligations,
@@ -3738,7 +3776,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
             && preview.expandable.some(value => isObjectRecord(value) && value.handle_id === entry.handle_id
               && JSON.stringify(value.symbols) === JSON.stringify(entry.symbols))))
           && expected.every(node => retained.has(node.node_id!))
-          && estimateQueryTokens(JSON.stringify(preview)) < estimateQueryTokens(JSON.stringify(originalPreview))) responsePayload = compact
+          && estimateQueryTokens(JSON.stringify(preview)) < estimateQueryTokens(JSON.stringify(originalPreview))) {
+          responsePayload = compact
+          responseNavigation = compactResponse.navigation
+        }
       }
       const responseContext = { prompt, task, taskIntent: initialPlan.evidence.recipe_id, helpers,
         ...(task === 'explain' && resolution === 'detail' && !deltaSessionId && !includeSelectionDiagnostics
@@ -3770,6 +3811,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
       const cacheRecord: CachedExplainContextPackRecord = {
         version: 1,
         payload: responsePayload as CachedExplainContextPackPayload,
+        navigation_plan: responseNavigation,
         source_configuration: sourceConfiguration ?? null,
         package_configuration: packageConfiguration,
         ...(sourceFlowCatalog ? { source_flow_catalog: sourceFlowCatalog } : {}),
