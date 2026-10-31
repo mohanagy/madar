@@ -1355,6 +1355,24 @@ export function selectSourceDependencies(
           || coherentSourceSnippet(lines, { start, end }, '', 'symbol')?.omittedRanges.length !== 0)) return undefined
       return text
     }
+    // Attached documentation is navigation context only. The authenticated
+    // owner and its emitted source remain the complete declaration body.
+    const subjectDocumentation = (declaration: ts.FunctionDeclaration, text: string): string => {
+      const comment = ts.getJSDocCommentsAndTags(declaration).find((node): node is ts.JSDoc =>
+        ts.isJSDoc(node) && node.parent === declaration)
+      if (!comment) return ''
+      const source = declaration.getSourceFile(), owner = declarationOwner(declaration)
+      const file = nativeSourcePath(source), canonical = sourceCanonicalInputs.get(file)
+      if (!owner || !canonical || comment.pos < 0 || comment.end <= comment.pos
+        || comment.end > declaration.getStart(source)) return ''
+      const start = source.getLineAndCharacterOfPosition(comment.pos).line
+      const end = source.getLineAndCharacterOfPosition(declaration.getEnd() - 1).line
+      if (end - start + 1 > 80 || comment.end - comment.pos + 1 + text.length > 12_000) return ''
+      const documentation = source.text.slice(comment.pos, comment.end)
+      const lexicalText = `${documentation}\n${text}`
+      return preference.allowedOwner(file, owner.label, lexicalText)
+        && preference.allowedOwner(canonical, owner.label, lexicalText) ? documentation : ''
+    }
     if (!currentInputs() || ownerText(preference.seedId) === undefined) return undefined
     const positiveCalls = calls.filter(call => call.to && call.relation === 'calls' && call.observed)
     const direct = new Set(positiveCalls.filter(call => call.from === preference.seedId).map(call => call.to!))
@@ -1399,10 +1417,13 @@ export function selectSourceDependencies(
       const text = ownerText(call.from, true)
       if (text === undefined) continue
       considered.add(call.from)
-      const words = new Set(sourceBodyWords(text))
+      const bodyWords = new Set(sourceBodyWords(text))
+      const documentation = subjectDocumentation(declaration, text)
+      const words = documentation ? new Set([...bodyWords, ...sourceBodyWords(documentation)]) : bodyWords
       queries.forEach((terms, ordinal) => {
         const matched = terms.filter(term => words.has(term))
-        if (matched.length >= 2 && matched.some(term => !originalTerms.has(term))) matches.push({ id: call.from, score: matched.length, ordinal })
+        if (matched.length >= 2 && matched.some(term => bodyWords.has(term))
+          && matched.some(term => !originalTerms.has(term))) matches.push({ id: call.from, score: matched.length, ordinal })
       })
     }
     const winner = matches.sort((left, right) => right.score - left.score || left.ordinal - right.ordinal || left.id.localeCompare(right.id))[0]

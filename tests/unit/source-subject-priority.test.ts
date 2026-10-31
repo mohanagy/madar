@@ -10,6 +10,7 @@ import { selectSourceDependencies, sourceSelectionProvenanceKey, sourceSubjectPr
 import { sourceSubjectQueries } from '../../src/runtime/retrieve/source-subject-priority.js'
 import { sourcePathForEvidence } from '../../src/runtime/retrieve/source-evidence.js'
 import type { SourceReadPolicy } from '../../src/runtime/retrieve/source-modules.js'
+import { compileSourceExclusions } from '../../src/runtime/source-exclusions.js'
 
 const roots: string[] = []
 afterEach(() => roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })))
@@ -18,7 +19,7 @@ const head = `Trace ${fields.join(' ')}.`
 const tail = 'Also trace expired lease reconciliation and orphan release.'
 const question = `${head} ${tail}`
 
-function fixture(mutable = false) {
+function fixture(mutable = false, beforeAlternate = '') {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'madar-source-subject-'))); roots.push(root)
   const files = {
     'src/flow.ts': `import { settle, ${Array.from({ length: 14 }, (_, i) => `touch${i}`).join(', ')} } from './state';
@@ -33,7 +34,7 @@ export function runOperation(input: any) {
 }`,
     'src/state.ts': `export const RECORDS = ${mutable ? '{ bucket: "records" }' : '"records"'};
 export function settle(id: string) { const collection = RECORDS; return { id, collection, refunded: true }; }
-export function resumeExpired(lease: any) {
+${beforeAlternate}export function resumeExpired(lease: any) {
   const reconciliation = RECORDS;
   if (lease.expired) return { reconciliation, release: settle(lease.orphan) };
   return null;
@@ -99,4 +100,54 @@ it('reserves source-connected alternate behavior within existing limits without 
       allowedOwner: file => !!sourcePathForEvidence(file, object.root), allowedPath: () => true },
   })
   expect(rejected[sourceSubjectPriorityKey]).toBeUndefined()
+})
+
+it('uses bounded attached owner documentation as lexical context without changing source authority', () => {
+  const request = `${head} Also trace reconciliation repeatability.`
+  const value = fixture(false, '/** Repeatability and durability of reconciliation. */\n')
+  const allowedOwner = (file: string, _label: string, text: string) => {
+    if (text.includes('/** Repeatability')) lexicalChecks.push(file)
+    return !!sourcePathForEvidence(file, value.root)
+  }
+  const lexicalChecks: string[] = []
+  const choose = (question = request, owner = allowedOwner) => selectSourceDependencies(value.graph, [value.seed], value.root, new Map(), {
+    includeCallers: true, subjectPriority: { seedId: value.seed, question, allowedOwner: owner, allowedPath: () => true },
+  })
+  const selected = choose()
+  expect(selected[sourceSubjectPriorityKey]).toContain(value.alternate)
+  expect(selected.node_ids.length).toBeLessThanOrEqual(12)
+  expect(lexicalChecks).toEqual([join(value.root, 'src/state.ts'), join(value.root, 'src/state.ts')])
+  expect(selected[sourceSelectionProvenanceKey]!.forward.known_reachable_ids).not.toContain(value.alternate)
+  expect(selected.relationships.some(edge => edge.from_id === value.seed && edge.to_id === value.alternate)).toBe(false)
+  expect(choose(`${head} Also trace repeatability durability.`)[sourceSubjectPriorityKey]).toBeUndefined()
+  expect(choose(`${head} Also trace reconciliation.`)[sourceSubjectPriorityKey]).toBeUndefined()
+  const excluded = compileSourceExclusions(['repeatability'], [], value.root)
+  const ownerPolicy = (file: string, label: string, text: string) => allowedOwner(file, label, text) && !excluded.matchesText(text)
+  expect(choose(request, ownerPolicy)[sourceSubjectPriorityKey]).toBeUndefined()
+  // Denied documentation does not change the established body-only route.
+  expect(choose(question, ownerPolicy)[sourceSubjectPriorityKey]).toContain(value.alternate)
+  const pack = retrieveContext(value.graph, { question: request, taskKind: 'explain', budget: 3000 })
+  const alternate = pack.matched_nodes.find(node => node.node_id === value.alternate)
+  expect(alternate?.snippet).toContain('if (lease.expired)')
+  expect(alternate?.snippet).not.toContain('Repeatability')
+  expect(pack.token_count).toBeLessThanOrEqual(3000)
+})
+
+it('ignores absent, unattached, ordinary and over-envelope documentation for alternate subject matching', () => {
+  const request = `${head} Also trace reconciliation repeatability.`
+  for (const beforeAlternate of [
+    '',
+    '// Repeatability of reconciliation.\n',
+    '/* Repeatability of reconciliation. */\n',
+    '/** Repeatability of reconciliation. */\nexport function neighboringOwner() { return null; }\n',
+    `/** Repeatability of reconciliation.\n${' * documentation\n'.repeat(80)} */\n`,
+    `/** Repeatability of reconciliation. ${'x'.repeat(12_000)} */\n`,
+  ]) {
+    const value = fixture(false, beforeAlternate)
+    const selected = selectSourceDependencies(value.graph, [value.seed], value.root, new Map(), {
+      includeCallers: true, subjectPriority: { seedId: value.seed, question: request,
+        allowedOwner: file => !!sourcePathForEvidence(file, value.root), allowedPath: () => true },
+    })
+    expect(selected[sourceSubjectPriorityKey], beforeAlternate.slice(0, 100)).toBeUndefined()
+  }
 })
