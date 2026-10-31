@@ -292,7 +292,7 @@ function omitSourceNavigationDetails(input: RecordValue): RecordValue {
     ...array(answerability.caveats).filter(value => typeof value === 'string'),
   ])
   if (Array.isArray(answerability.verification_targets)) {
-    answerability.verification_targets = answerability.verification_targets.filter(value => {
+    const targets = answerability.verification_targets.filter(value => {
       const target = record(value)
       return typeof target.handle_id === 'string' && !!target.handle_id
         || Object.keys(target).some(key => !['focus_files', 'focus_ranges', 'reason'].includes(key))
@@ -300,7 +300,8 @@ function omitSourceNavigationDetails(input: RecordValue): RecordValue {
         || ['focus_files', 'focus_ranges'].some(key => target[key] !== undefined && !knownHint(key, target[key]))
         || target.focus_files === undefined && target.focus_ranges === undefined
     })
-    if (!answerability.verification_targets.length) delete answerability.verification_targets
+    if (targets.length) answerability.verification_targets = targets
+    else delete answerability.verification_targets
   }
   result.diagnostics_omitted = 'output_budget'
   return estimateQueryTokens(JSON.stringify(result)) < estimateQueryTokens(JSON.stringify(input)) ? result : input
