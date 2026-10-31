@@ -124,6 +124,37 @@ describe('source evidence retrieval', () => {
       .toEqual(Array.from({ length: 8 }, (_, index) => `literal ${index}`))
   })
 
+  it('preserves complete path lexemes without manufacturing slash-list suffix literals', () => {
+    for (const question of [
+      'Explain matching issuer/subject/audience/chat and time boundaries.',
+      'Compare read/write/execute permissions and success/failure/retry outcomes.',
+    ]) {
+      expect(sourceQueryLiterals(question), question).toEqual([])
+      expect(sourceQueryWithoutLiteralSpans(question), question).toBe(question)
+    }
+    const paths = [
+      ['Explain /api/user/path behavior.', '/api/user/path'],
+      ['Explain src/auth/service.ts behavior.', 'src/auth/service.ts'],
+      [String.raw`Explain C:\src\auth\service.ts behavior.`, String.raw`C:\src\auth\service.ts`],
+      ['Explain ./src/auth behavior.', './src/auth'],
+      ['Explain ../src/auth behavior.', '../src/auth'],
+      ['Explain https://example.test/api/user/path behavior.', 'https://example.test/api/user/path'],
+      ['src/auth', 'src/auth'],
+      ['Find src/auth', 'src/auth'],
+      ['Locate directory src/auth', 'src/auth'],
+      ['Find "issuer/subject/audience/chat".', 'issuer/subject/audience/chat'],
+    ] as const
+    for (const [question, path] of paths) {
+      expect(sourceQueryLiterals(question), question).toEqual([path])
+      expect(sourceQueryLiterals(question), question).not.toContain('/subject/audience/chat')
+      const quoted = question.includes(`"${path}"`) ? `"${path}"` : path
+      expect(sourceQueryWithoutLiteralSpans(question), question)
+        .toBe(question.replace(quoted, ' '.repeat(quoted.length)))
+    }
+    expect(interpretRetrievalQuery({ question: 'Explain src/auth/service.ts behavior.', budget: 1000 })
+      .retrieval_gate.signals.mentioned_paths).toContain('src/auth/service.ts')
+  })
+
   it('verifies concrete constructor source and retains range and ownership ambiguity checks', () => {
     const lines = ['class Repository {', '  constructor(value: string);', '  constructor(public value: string) {', '    this.value = value;', '  }', '}']
     const range = { start: 3, end: 5 }

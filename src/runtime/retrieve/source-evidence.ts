@@ -295,6 +295,23 @@ function repositoryLocatorName(question: string): { start: number; end: number }
   return { start: locator[1]!.length, end: locator[1]!.length + locator[2]!.length }
 }
 
+/** Paths own a complete lexeme; an interior slash never starts a new literal. */
+function sourceQueryPathSpans(question: string): SourceQueryLiteralSpan[] {
+  const spans: SourceQueryLiteralSpan[] = []
+  const paths = /(?<![\p{L}\p{N}_$@.:/\\-])(?:\b(?:https?|file):\/\/[^\s<>"'`()\[\]{},;]+|(?:(?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|[\\/]{1,2})[\w@#:.-]+(?:[\\/][\w@#:.-]+)*|[\w@#.-]+(?:[\\/][\w@#:.-]+)+)[\\/]?)(?![\p{L}\p{N}_$@./\\-])/gu
+  for (const match of question.matchAll(paths)) {
+    const value = match[0].replace(/[.,;!?]+$/, ''), start = match.index, end = start + value.length
+    const before = question.slice(0, start), after = question.slice(end)
+    const rooted = /^(?:(?:https?|file):\/\/|[A-Za-z]:[\\/]|\.{1,2}[\\/]|[\\/])/i.test(value)
+    const file = /[\\/][^\\/]+\.[A-Za-z][A-Za-z0-9]{0,7}$/.test(value)
+    const standalone = !before.trim() && /^[.!?]?\s*$/.test(after)
+    const lookup = /^(?:please\s+)?(?:where\s+(?:is|are|can\s+I\s+find)|(?:find|locate|show)(?:\s+me)?)(?:\s+(?:the|a|an|file|path|directory|folder|route|endpoint|source|definition|of|for))*\s+$/i.test(before)
+    const pathRole = /\b(?:file|path|directory|folder|route|endpoint)(?:\s+(?:named|called|at|in|for|to))*\s+$/i.test(before)
+    if (value && (rooted || file || standalone || lookup || pathRole)) spans.push({ value, start, end })
+  }
+  return spans
+}
+
 function sourceQueryLiteralSpans(question: string): SourceQueryLiteralSpan[] {
   const quoted: SourceQueryLiteralSpan[] = []
   let fence: { marker: string; length: number } | undefined
@@ -350,7 +367,8 @@ function sourceQueryLiteralSpans(question: string): SourceQueryLiteralSpan[] {
     start = end ?? Math.max(start + width, cursor)
   }
   const locatorName = repositoryLocatorName(question)
-  const identifiers = [...question.matchAll(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b[a-zA-Z_$][\w$]*(?:_[\w$]+|[a-z][A-Z][\w$]*)\b|\/[\w-]+(?:\/[\w:.-]+)+/g)].map((match) => ({
+  const paths = sourceQueryPathSpans(question)
+  const identifiers = [...question.matchAll(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b[a-zA-Z_$][\w$]*(?:_[\w$]+|[a-z][A-Z][\w$]*)\b/g)].map((match) => ({
     value: match[0].trim(), start: match.index, end: match.index + match[0].length,
   })).filter(span => !locatorName || span.start < locatorName.start || span.end > locatorName.end)
   // A qualified private name is not written contiguously at its declaration.
@@ -358,7 +376,7 @@ function sourceQueryLiteralSpans(question: string): SourceQueryLiteralSpan[] {
   const privateNames = [...question.matchAll(/(?<![\w$/])#[A-Za-z_$][\w$]*/g)].map((match) => ({
     value: match[0].trim(), start: match.index, end: match.index + match[0].length,
   }))
-  return [...quoted, ...identifiers, ...privateNames].filter((span) => span.value.length > 0)
+  return [...quoted, ...[...identifiers, ...paths].sort((left, right) => left.start - right.start), ...privateNames].filter((span) => span.value.length > 0)
 }
 
 export function sourceQueryLiterals(question: string): string[] {

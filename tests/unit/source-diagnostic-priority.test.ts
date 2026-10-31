@@ -6,8 +6,9 @@ import { buildFromJson } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { queryEvidenceObligations, querySourceEvidenceClauses } from '../../src/runtime/retrieve/conceptual-fallback.js'
-import { searchSourceBodies, searchSourceBodyQuestions, type SourceBodyMatch } from '../../src/runtime/retrieve/source-evidence.js'
+import { searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryWithoutLiteralSpans, type SourceBodyMatch } from '../../src/runtime/retrieve/source-evidence.js'
 import { sourceDiagnosticQueries, sourceDiagnosticSeeds } from '../../src/runtime/retrieve/source-diagnostic-priority.js'
+import { sourceQuerySymbols } from '../../src/runtime/retrieve/source-query-symbols.js'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -60,6 +61,66 @@ function fixture(arrow = true) {
 
 const match: SourceBodyMatch = { score: 2, exact_literal: false, coverage: 1, relevance: 1, matched_literals: [], lines: [9] }
 describe('diagnostic current-source priority', () => {
+  it('keeps title-case prose lexical while preserving explicit requested symbol occurrences', () => {
+    for (const [text, name] of [
+      ['In the source, trace state validation.', 'In'],
+      ['For the current request, trace state validation.', 'For'],
+      ['With the supplied state, trace validation.', 'With'],
+      ['Find the refund owner; In the source, trace state validation.', 'In'],
+    ] as const) {
+      expect(sourceQuerySymbols(text).some(symbol => symbol.name === name), text).toBe(false)
+      expect(sourceQuerySymbols(text, { includeImplicit: true }).find(symbol => symbol.name === name), text)
+        .toEqual({ name, start: text.indexOf(name), end: text.indexOf(name) + name.length, explicit: false })
+    }
+    for (const [text, names] of [
+      ['Explain In() and its result.', ['In']],
+      ['Explain `In` and its result.', ['In']],
+      ['Explain "In" and its result.', ['In']],
+      ['Explain obj.In and its result.', ['obj.In']],
+      ['Explain function In and its result.', ['In']],
+      ['Explain class In and its members.', ['In']],
+      ['Explain In', ['In']],
+      ['Find In and Out', ['In', 'Out']],
+      ['Where is In?', ['In']],
+      ['Where are In and Out?', ['In', 'Out']],
+      ['Find classes In and Out', ['In', 'Out']],
+      ['Explain functions In and Out', ['In', 'Out']],
+      ['Explain IN behavior and Parser and Client behavior.', ['IN', 'Parser', 'Client']],
+    ] as const) {
+      const explicit = sourceQuerySymbols(text).map(symbol => symbol.name)
+      for (const name of names) expect(explicit, text).toContain(name)
+    }
+  })
+
+  it('keeps the recorded profile-context query free of fabricated source anchors', () => {
+    const text = 'In the Miftah source, trace opt-in modern stateless profile-context handle selection and upstream tool calls: how handle expiry is calculated from requested lifetime and host assertion expiration; validation against renewed assertion issuer/subject/audience/chat and time boundaries; errors for rejected handles; selected profile and ordinary tool processing; whether the dedicated handle is forwarded upstream with tool arguments. Find relevant configuration limits and tests if available.'
+    expect(sourceQueryLiterals(text)).toEqual([])
+    expect(sourceQueryWithoutLiteralSpans(text)).toBe(text)
+    expect(sourceQuerySymbols(text).some(symbol => symbol.name === 'In')).toBe(false)
+    expect(sourceQuerySymbols(text, { includeImplicit: true }).find(symbol => symbol.name === 'In'))
+      .toEqual({ name: 'In', start: 0, end: 2, explicit: false })
+  })
+
+  it('retains requested decisions when natural leading In has a real unrelated declaration', () => {
+    const value = fixture()
+    const file = join(value.root, 'upstream.ts')
+    writeFileSync(file, 'export function In() { return "unrelated upstream decorator"; }')
+    const extracted = extractJs(file)
+    for (const node of extracted.nodes) value.graph.addNode(node.id, node)
+    const decoy = extracted.nodes.find(node => node.label === 'In()')!.id
+    const text = 'In the LedgerGarden source, trace wrong state with expected tenant and supplied code; a response error with expected state and tenant. Use tests if helpful.'
+    const result = retrieveContext(value.graph, { question: text, budget: 1600, taskKind: 'explain', taskIntent: 'debug-flow' })
+    const ids = result.matched_nodes.map(node => node.node_id)
+    for (const id of [value.consume.id, value.begin.id, value.reject.id]) expect(ids).toContain(id)
+    if (ids.includes(decoy)) expect(ids.indexOf(value.consume.id)).toBeLessThan(ids.indexOf(decoy))
+    expect(result.matched_nodes.find(node => node.node_id === value.consume.id)?.snippet)
+      .toContain('response.state !== this.pending.expectedState')
+    expect(result.token_count).toBeLessThanOrEqual(1600)
+    // The existing seed gate needs body vocabulary for an unquoted two-letter name.
+    const explicit = retrieveContext(value.graph, { question: 'Explain In() and its unrelated upstream decorator result.', budget: 1000, taskKind: 'explain', taskIntent: 'explain' })
+    expect(explicit.matched_nodes[0]?.node_id).toBe(decoy)
+  })
+
   it('preserves raw decision nouns and unchanged public obligations/full-query source matches', () => {
     const text = 'Explain state and code; a response error.'
     expect(querySourceEvidenceClauses(text)).toEqual(['Explain state and code', 'a response error'])

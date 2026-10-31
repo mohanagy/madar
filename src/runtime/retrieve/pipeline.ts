@@ -46,6 +46,9 @@ const STOP_WORDS = new Set([
   'on', 'at', 'by', 'into', 'all', 'my', 'its', 'no', 'i',
 ])
 
+/** Shared prose vocabulary; explicit source syntax still takes precedence. */
+export const isQueryStopWord = (value: string): boolean => STOP_WORDS.has(value.toLowerCase())
+
 const tokenize = (value: string): string[] => value
   .replace(/([a-z])([A-Z])/g, '$1 $2')
   .toLowerCase()
