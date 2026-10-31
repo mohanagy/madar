@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { finalizeSourceEvidenceResponse, renderSourceEvidenceText } from '../../src/runtime/source-evidence-response.js'
+import { finalizeSourceEvidenceResponse, omitSourceNavigationDetails, renderSourceEvidenceText } from '../../src/runtime/source-evidence-response.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
 const code = 'export function reset(token: string) {\n  if (expired(token)) throw new Error("expired");\n  return consume(token);\n}'
@@ -28,6 +28,25 @@ function metadataRescueResponse() {
 }
 
 describe('source evidence wire contract', () => {
+  it('deduplicates a verification pointer only while its handle and unresolved obligation remain', () => {
+    const handle = 'expand:explain:supporting:0123456789ab'
+    const input = { task: 'explain', pack: { selection_scope: 'task_context' },
+      expandable: [{ handle_id: handle, evidence_class: 'supporting', count: 2 }],
+      evidence: { answerability: { missing_obligations: ['evidence:supporting'],
+        verification_targets: [{ handle_id: handle }] } } }
+    const result = omitSourceNavigationDetails(input)
+    expect(result.expandable).toEqual(input.expandable)
+    expect(result.evidence).toEqual({ answerability: { missing_obligations: ['evidence:supporting'] } })
+    expect(input.evidence.answerability.verification_targets).toEqual([{ handle_id: handle }])
+    for (const changed of [
+      { ...input, expandable: [...input.expandable, ...input.expandable] },
+      { ...input, expandable: [{ ...input.expandable[0], evidence_class: 'primary' }] },
+      { ...input, evidence: { answerability: { ...input.evidence.answerability, missing_obligations: [] } } },
+      { ...input, evidence: { answerability: { ...input.evidence.answerability,
+        verification_targets: [{ handle_id: handle, reason: 'Verify runtime activation.' }] } } },
+    ]) expect(omitSourceNavigationDetails(changed)).toBe(changed)
+  })
+
   it('keeps source and recovery before optional navigation details under wire pressure', () => {
     const input = metadataRescueResponse() as Record<string, unknown>
     const pack = input.pack as Record<string, unknown>, evidence = input.evidence as Record<string, unknown>

@@ -69,6 +69,7 @@ import { computeContextPackDiagnostics } from '../context-pack-diagnostics.js'
 import { collectDeliveredContextReceipts, computeDeltaContextPack } from '../context-pack-delta.js'
 import { compactSourceEvidenceNode, compactRepeatedSourceMetadata, compactContainedSourceReferences, omitSourceNavigationDetails, fitPreparedSourceEvidenceResponse, finalizeSourceEvidenceResponse as serializeSourceEvidenceResponse, MIN_SOURCE_EVIDENCE_BUDGET } from '../source-evidence-response.js'
 import { prepareNestedSourceRefill } from '../source-nested-refill.js'
+import { sourceDiagnosticQueries, sourceDiagnosticContextsKey } from '../retrieve/source-diagnostic-priority.js'
 import {
   attachSourceContinuationHandles, createSourceContinuationPreparation, sourceValueConsumedCallees, sourceTypeRejectionCallees, sourceBracketedBranchCompletions,
   allocateSourceFlowBudget, type SourceFlowBudgetOptions,
@@ -1473,6 +1474,8 @@ function finalizeSourceEvidenceResponseLegacy(
   const refill = options.continuations && options.requestedSource && !options.verbose && options.format !== 'text'
     && resolve(options.continuations.rootPath) === resolve(options.requestedSource.rootPath)
     ? prepareNestedSourceRefill(input, options.requestedSource) : undefined
+  const scopedDiagnostics = options.requestedSource
+    ? sourceDiagnosticQueries(options.requestedSource.prompt)[sourceDiagnosticContextsKey]?.some(Boolean) === true : false
   let staged = new Map<string, SourceContinuationHandle>()
   let verificationFailed = false
   const checkedFresh = (check: (() => boolean) | undefined): boolean => {
@@ -1506,7 +1509,7 @@ function finalizeSourceEvidenceResponseLegacy(
     // Preserve the baseline allocation while selected nested source is pending.
     // Optional navigation savings can fund that source after its first full fit.
     const payload = finalizeSourceEvidenceResponseCore(input, sourceBudget,
-      refill ? { ...options, deferNavigationDetails: true } : options)
+      refill || !scopedDiagnostics ? { ...options, deferNavigationDetails: true } : options)
     staged = new Map<string, SourceContinuationHandle>()
     const stage = (id: string, handle: SourceContinuationHandle): void => { staged.set(id, handle) }
     const finish = (completed: Record<string, unknown>): Attempt => {

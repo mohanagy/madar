@@ -287,6 +287,15 @@ export function omitSourceNavigationDetails(input: RecordValue): RecordValue {
     for (const key of ['focus_files', 'focus_ranges', 'symbols']) if (knownHint(key, entry[key])) delete entry[key]
   }
   const answerability = record(record(result.evidence).answerability)
+  const redundantHandles = new Set<string>()
+  const handles = array(result.expandable).map(record)
+  for (const entry of handles) {
+    const parsed = typeof entry.handle_id === 'string'
+      ? /^expand:explain:(primary|supporting|structural|change|impact):[a-f0-9]{12}$/.exec(entry.handle_id) : null
+    if (parsed && parsed[1] === entry.evidence_class && Number.isSafeInteger(entry.count) && Number(entry.count) > 0
+      && handles.filter(other => other.handle_id === entry.handle_id).length === 1
+      && array(answerability.missing_obligations).includes(`evidence:${parsed[1]}`)) redundantHandles.add(String(entry.handle_id))
+  }
   const repeatedReasons = new Set([
     ...array(answerability.missing_obligations).filter(value => typeof value === 'string').map(value => `verify ${value}`),
     ...array(answerability.caveats).filter(value => typeof value === 'string'),
@@ -294,6 +303,7 @@ export function omitSourceNavigationDetails(input: RecordValue): RecordValue {
   if (Array.isArray(answerability.verification_targets)) {
     const targets = answerability.verification_targets.filter(value => {
       const target = record(value)
+      if (Object.keys(target).length === 1 && typeof target.handle_id === 'string' && redundantHandles.has(target.handle_id)) return false
       return typeof target.handle_id === 'string' && !!target.handle_id
         || Object.keys(target).some(key => !['focus_files', 'focus_ranges', 'reason'].includes(key))
         || target.reason !== undefined && !repeatedReasons.has(target.reason as string)
