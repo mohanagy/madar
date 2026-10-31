@@ -1,6 +1,8 @@
 import { realpathSync, statSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
+import { stemmer } from 'stemmer'
+import { classifySourceDomain } from '../../shared/source-discovery.js'
 
 import { sourceFunctionOccurrence } from '../../shared/source-function-occurrences.js'
 import { JS_TS_SOURCE_EXTENSIONS } from '../../shared/source-extensions.js'
@@ -58,7 +60,13 @@ export interface SourceBodyMatch {
   lines: number[]
 }
 
+/** Presentation nominations only; never source or call authority. */
+export const sourceDiagnosticAdmissionsKey = Symbol('sourceDiagnosticAdmissions')
+export interface SourceBodyDiagnosticOptions {
+  allowedOwner: (file: string, canonical: string, label: string, text: string) => boolean
+}
 export interface SourceBodySearch {
+  [sourceDiagnosticAdmissionsKey]?: readonly string[]
   matches: Map<string, SourceBodyMatch>
   scanned_files: number
   scanned_bytes: number
@@ -512,16 +520,32 @@ function sourceNavigationLines(lines: readonly string[], sourceFile: string): Se
 }
 
 /** Reuse source ownership and line tokens across already bounded query clauses. */
-export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: readonly string[], rootPath?: string, cache?: Map<string, string[] | null>): SourceBodySearch[] {
-  const queries = questions.map(question => {
+export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: readonly string[], rootPath?: string, cache?: Map<string, string[] | null>, diagnostic?: SourceBodyDiagnosticOptions): SourceBodySearch[] {
+  // Optional clauses share a bounded lexical channel. Raw question statistics,
+  // exported tokenization and exact source literals retain their old meanings.
+  const morphology = !!diagnostic && !!rootPath && questions.length >= 3 && questions.length <= 9
+    && questions.every(question => sourceQueryLiterals(question).length === 0)
+  const stems = new Map<string, string>()
+  const stem = (word: string): string => {
+    if (!/^[a-z]{3,64}$/.test(word)) return word
+    const cached = stems.get(word)
+    if (cached !== undefined) return cached
+    const value = stemmer(word)
+    if (stems.size < 4096) stems.set(word, value)
+    return value
+  }
+  const queries = questions.map((question, index) => {
     const literals = sourceQueryLiterals(question)
-    const terms = bodyTerms(question)
+    const normalized = morphology && index > 0
+    const terms = normalized ? [...new Set(tokenizeQuestion(sourceBodyWords(retrievalSearchPrompt(question)).join(' '))
+      .filter(term => term.length >= 3 && (!BODY_QUERY_NOISE.has(term) || term === 'handle' || term === 'handled'))
+      .map(term => `@stem:${stem(term)}`))].slice(0, 32) : bodyTerms(question)
     const literalLookup = sourceQueryIsLiteralLookup(question)
     const navigationLookup = literalLookup || /\b(?:imports?|imported|importing|exports?|exported|exporting|files?|filepath|paths?|directories|directory|folders?)\b/i.test(sourceRequestProse(question))
       || /\.[cm]?[jt]sx?\b/i.test(question)
     const behaviorTerms = literals.length > 0 && !literalLookup
       ? new Set(bodyTerms(sourceQueryWithoutLiteralSpans(question))) : undefined
-    return { literals, terms, literalLookup, navigationLookup, behaviorTerms,
+    return { literals, terms, literalLookup, navigationLookup, behaviorTerms, normalized,
       bodyHits: new Map<string, { literals: Set<string>; terms: Set<string>; lines: number[]; navigationOnly: boolean }>() }
   })
   const activeQueries = queries.filter(query => query.literals.length > 0 || query.terms.length > 0)
@@ -529,6 +553,8 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
   if (!activeQueries.length) return queries.map(() => ({ ...result, matches: new Map() }))
   const rankingTerms = new Set(activeQueries.flatMap(query => query.terms))
   const ownerStatistics = new Map<string, { length: number; frequencies: Map<string, number> }>()
+  const nominationOwners = new Map<string, { file: string; canonical: string; label: string; range: SourceLineRange; lines: string[]; identity: string }>()
+  const nominationIdentities = new Map<string, number>()
   const files = new Map<string, Array<{ id: string; label: string; range: SourceLineRange; file: boolean }>>()
   const hintLiterals = [...new Set(questions.flatMap(question => sourceQueryLiterals(retrievalEvidencePrompt(question))))]
   const hintedFiles = new Set<string>()
@@ -574,7 +600,21 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
       if (!range) { result.bounded = true; continue }
       // Synthetic graph labels can retain navigation excerpts, but only a
       // current declaration can own JS/TS body matches at that source range.
-      if (/\.[cm]?[jt]sx?$/i.test(sourceFile) && sourceDeclarationKind(lines, entry.range, entry.label, sourceFile) === undefined) continue
+      const kind = /\.[cm]?[jt]sx?$/i.test(sourceFile) ? sourceDeclarationKind(lines, entry.range, entry.label, sourceFile) : undefined
+      if (/\.[cm]?[jt]sx?$/i.test(sourceFile) && kind === undefined) continue
+      if (morphology && kind === 'function' && !declarationParseErrors.has(lines)
+        && classifySourceDomain(sourceFile, rootPath) === 'production' && classifySourceDomain(path, rootPath) === 'production') {
+        // Reuse the declarations already parsed for ownership; signatures,
+        // occurrence wrappers and ambiguous same-range declarations cannot vote.
+        const declarations = declarationCache.get(lines)?.filter(declaration => !declaration.occurrence
+          && declaration.name === sourceSymbolName(entry.label) && declaration.start === range.start && declaration.end === range.end
+          && (ts.isFunctionDeclaration(declaration.node) || ts.isMethodDeclaration(declaration.node)) && declaration.node.body) ?? []
+        if (declarations.length === 1) {
+          const identity = `${path}:${range.start}:${range.end}`
+          nominationIdentities.set(identity, (nominationIdentities.get(identity) ?? 0) + 1)
+          nominationOwners.set(entry.id, { file: sourceFile, canonical: path, label: entry.label, range, lines, identity })
+        }
+      }
       const start = Math.max(0, range.start - 1)
       const end = Math.min(lines.length, range.end)
       if (assignments + end - start > MAX_OWNER_ASSIGNMENTS) { result.bounded = true; break }
@@ -586,6 +626,8 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
       if (!owner) return
       const tokens = sourceBodyWords(line).filter(Boolean)
       const words = new Set(tokens)
+      const normalizedTokens = morphology ? tokens.map(term => `@stem:${stem(term)}`) : []
+      const normalizedWords = new Set(normalizedTokens)
       // Count every nonempty owner, including owners with no query matches.
       // Inner declarations already own their lines; their words must not also
       // inflate an enclosing function's relevance or length.
@@ -595,10 +637,13 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
         for (const term of tokens) {
           if (rankingTerms.has(term)) statistics.frequencies.set(term, (statistics.frequencies.get(term) ?? 0) + 1)
         }
+        for (const term of normalizedTokens) {
+          if (rankingTerms.has(term)) statistics.frequencies.set(term, (statistics.frequencies.get(term) ?? 0) + 1)
+        }
         ownerStatistics.set(owner, statistics)
       }
       for (const query of activeQueries) {
-        const hit = lineMatch(line, query.literals, query.terms, words)
+        const hit = lineMatch(line, query.literals, query.terms, query.normalized ? normalizedWords : words)
         if (!hit.exact && hit.terms.length === 0) continue
         const entry = query.bodyHits.get(owner) ?? { literals: new Set<string>(), terms: new Set<string>(), lines: [], navigationOnly: true }
         entry.navigationOnly &&= owner === fileOwner && navigationLines.has(index) && !query.navigationLookup
@@ -620,7 +665,8 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
   const inverseFrequency = (count: number): number => documentCount > 0
     ? Math.log(1 + (documentCount - Math.min(count, documentCount) + 0.5) / (Math.min(count, documentCount) + 0.5)) : 0
   const termWeights = new Map([...rankingTerms].map(term => [term, inverseFrequency(termDocuments.get(term) ?? 0)]))
-  return queries.map(query => {
+  let fullRanking: Array<[string, SourceBodyMatch]> = []
+  const searches = queries.map((query, index) => {
     const { literals, terms, literalLookup, behaviorTerms, bodyHits } = query
     if (!literals.length && !terms.length) return { matches: new Map(), scanned_files: 0, scanned_bytes: 0, bounded: false }
     const current: SourceBodySearch = { ...result, matches: new Map() }
@@ -655,9 +701,37 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
       current.matches.set(id, { score: (exact ? 8 : 0) + Math.min(3, hit.terms.size * 0.5), exact_literal: exact, coverage, relevance, matched_literals: [...hit.literals], lines: hit.lines, ...(hit.navigationOnly ? { navigation_only: true } : {}) })
     }
     if (current.matches.size > MAX_SOURCE_MATCHES) current.bounded = true
-    current.matches = new Map([...current.matches].sort((left, right) => Number(right[1].exact_literal) - Number(left[1].exact_literal) || (right[1].relevance ?? 0) - (left[1].relevance ?? 0) || right[1].coverage - left[1].coverage || right[1].score - left[1].score || left[0].localeCompare(right[0])).slice(0, MAX_SOURCE_MATCHES))
+    const ranked = [...current.matches].sort((left, right) => Number(right[1].exact_literal) - Number(left[1].exact_literal) || (right[1].relevance ?? 0) - (left[1].relevance ?? 0) || right[1].coverage - left[1].coverage || right[1].score - left[1].score || left[0].localeCompare(right[0]))
+    if (morphology && index === 0) fullRanking = ranked
+    current.matches = new Map(ranked.slice(0, MAX_SOURCE_MATCHES))
     return current
   })
+  if (morphology && diagnostic && fullRanking.length) {
+    const raw = new Map(fullRanking), inspected = new Map<string, boolean>(), wins = new Map<string, { count: number; first: number }>()
+    searches.slice(1).forEach((search, index) => {
+      for (const [id, match] of search.matches) {
+        const owner = nominationOwners.get(id)
+        if (!owner || !raw.has(id) || match.navigation_only || match.score < 1 || nominationIdentities.get(owner.identity) !== 1) continue
+        if (!inspected.has(id)) {
+          if (inspected.size >= 32) break
+          inspected.set(id, diagnostic.allowedOwner(owner.file, owner.canonical, owner.label,
+            owner.lines.slice(owner.range.start - 1, owner.range.end).join('\n')))
+        }
+        if (!inspected.get(id)) continue
+        const prior = wins.get(id)
+        wins.set(id, { count: (prior?.count ?? 0) + 1, first: prior?.first ?? index })
+        break
+      }
+    })
+    const nominated = [...wins].sort((a, b) => b[1].count - a[1].count || a[1].first - b[1].first).slice(0, 3).map(([id]) => id)
+    if (nominated.length) {
+      const admitted = new Set([...fullRanking.slice(0, MAX_SOURCE_MATCHES - 3).map(([id]) => id), ...nominated])
+      for (const [id] of fullRanking) { if (admitted.size >= MAX_SOURCE_MATCHES) break; admitted.add(id) }
+      searches[0]!.matches = new Map(fullRanking.filter(([id]) => admitted.has(id)))
+      searches[0]![sourceDiagnosticAdmissionsKey] = nominated
+    }
+  }
+  return searches
 }
 
 export interface CoherentSourceSnippet {

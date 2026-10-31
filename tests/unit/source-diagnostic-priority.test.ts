@@ -6,8 +6,8 @@ import { buildFromJson } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { queryEvidenceObligations, querySourceEvidenceClauses } from '../../src/runtime/retrieve/conceptual-fallback.js'
-import { searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryWithoutLiteralSpans, type SourceBodyMatch } from '../../src/runtime/retrieve/source-evidence.js'
-import { sourceDiagnosticQueries, sourceDiagnosticSeeds } from '../../src/runtime/retrieve/source-diagnostic-priority.js'
+import { searchSourceBodies, searchSourceBodyQuestions, sourceDiagnosticAdmissionsKey, sourceBodyWords, sourceQueryLiterals, sourceQueryWithoutLiteralSpans, type SourceBodyMatch } from '../../src/runtime/retrieve/source-evidence.js'
+import { sourceDiagnosticQueries, sourceDiagnosticSeeds, sourceDiagnosticCandidatePool } from '../../src/runtime/retrieve/source-diagnostic-priority.js'
 import { sourceQuerySymbols } from '../../src/runtime/retrieve/source-query-symbols.js'
 
 const roots: string[] = []
@@ -59,8 +59,114 @@ function fixture(arrow = true) {
   return { root, file, fake, graph, begin, consume, reject, startup, simulate, candidates: [simulate, startup, configure, begin, consume] }
 }
 
+
+function languageFixture(distractors = 0) {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'madar-source-language-')))
+  roots.push(root)
+  const targetFile = join(root, 'lease.ts'), fakeFile = join(root, 'lease.test.ts'), noiseFile = join(root, 'noise.ts')
+  const source = [
+    'export function finish(nowMs: number, lifetime: number, handle: string) {',
+    '  const expiresAtMs = nowMs + lifetime;',
+    '  if (!validate(handle)) throw new Error("denied");',
+    '  return expiresAtMs;',
+    '}',
+  ].join('\n')
+  writeFileSync(targetFile, source)
+  writeFileSync(fakeFile, 'export function simulate(lifetime: number, handle: string) { const expiresAtMs = lifetime; if (!validate(handle)) throw Error("bucket operation selection current state"); return expiresAtMs; }')
+  writeFileSync(noiseFile, Array.from({ length: distractors }, (_, index) =>
+    `export function topic${index}() { return "bucket operation selection current state lifetime"; }`).join('\n'))
+  const extracted = [targetFile, fakeFile, noiseFile].map(file => extractJs(file))
+  const graph = buildFromJson({ schema_version: 1, nodes: extracted.flatMap(value => value.nodes), edges: extracted.flatMap(value => value.edges) }, { directed: true })
+  graph.graph.root_path = root
+  const target = graph.nodeEntries().find(([, node]) => node.label === 'finish()')![0]
+  const fake = graph.nodeEntries().find(([, node]) => node.label === 'simulate()')![0]
+  return { root, graph, target, fake, targetFile, source }
+}
+
 const match: SourceBodyMatch = { score: 2, exact_literal: false, coverage: 1, relevance: 1, matched_literals: [], lines: [9] }
 describe('diagnostic current-source priority', () => {
+  it('normalizes only optional diagnostic words, retaining literal identity and raw matches', () => {
+    const value = languageFixture(), full = 'Explain lifetime', clauses = ['expiration', 'validation errors for handles', 'expiry']
+    const ordinary = searchSourceBodies(value.graph, full, value.root)
+    const raw = searchSourceBodyQuestions(value.graph, [full, ...clauses], value.root)
+    const normalized = searchSourceBodyQuestions(value.graph, [full, ...clauses], value.root, undefined, { allowedOwner: () => true })
+    expect([...normalized[0]!.matches]).toEqual([...ordinary.matches])
+    expect(raw[1]!.matches.has(value.target)).toBe(false)
+    expect(raw[2]!.matches.has(value.target)).toBe(false)
+    expect(normalized[1]!.matches.get(value.target)?.score).toBe(0.5)
+    expect(normalized[2]!.matches.get(value.target)?.score).toBe(1.5)
+    expect(normalized[2]!.matches.get(value.target)?.exact_literal).toBe(false)
+    expect(normalized[3]!.matches.has(value.target)).toBe(false) // Standard Porter does not equate expiry and expires.
+    expect(sourceBodyWords('validateErrors expiresAtMs')).toEqual(['validate', 'errors', 'expires', 'at', 'ms'])
+    const literalQueries = [full, '"validation"', 'errors for handles']
+    const literalRaw = searchSourceBodyQuestions(value.graph, literalQueries, value.root)
+    const literalOptional = searchSourceBodyQuestions(value.graph, literalQueries, value.root, undefined, { allowedOwner: () => true })
+    expect(literalOptional).toEqual(literalRaw)
+    expect(literalOptional[1]!.matches.has(value.target)).toBe(false)
+    const repeated = `${'errors '.repeat(40)}validation handles`
+    const repeatedResult = searchSourceBodyQuestions(value.graph, [full, repeated, 'expiration'], value.root, undefined, { allowedOwner: () => true })
+    expect(repeatedResult[1]!.matches.get(value.target)?.score).toBe(1.5)
+  })
+
+  it('removes only diagnostic framing votes and preserves authored clauses and code colons', () => {
+    const text = 'In the Sample source, trace lease operations: how expiration is bounded by lifetime; validation errors for handles. Find relevant configuration limits and tests if available.'
+    expect(sourceDiagnosticQueries(text)).toEqual(['how expiration is bounded by lifetime', 'validation errors for handles'])
+    expect(querySourceEvidenceClauses(text)[0]).toBe('In the Sample source')
+    expect(sourceDiagnosticQueries('In the Sample source, explain expiration checks; validation errors for handles. Use tests if helpful.'))
+      .toEqual(['explain expiration checks', 'validation errors for handles'])
+    expect(sourceDiagnosticQueries('Trace the stream: pending messages; rejected updates.'))
+      .toEqual(['Trace the stream: pending messages', 'rejected updates'])
+    expect(sourceDiagnosticQueries('Trace pending work; configuration limits reject bad values.'))
+      .toContain('configuration limits reject bad values')
+    expect(sourceDiagnosticQueries('Trace "topic: how validation works"; expiration errors.')).toEqual([])
+    expect(sourceDiagnosticQueries('Trace inspect({ topic: how }); expiration errors.')).toEqual([])
+    expect(sourceDiagnosticQueries('Trace expiration errors; include failing tests.')).toEqual([])
+    expect(sourceDiagnosticQueries('Explain class Parser: how requests arrive; why requests fail.')).toEqual([])
+    expect(sourceDiagnosticQueries('Find functions In and Out; explain validation errors.')).toEqual([])
+    expect(sourceDiagnosticQueries('Find Parser and Client; explain validation errors.')).toEqual([])
+    expect(sourceDiagnosticQueries('Find In and Out; explain validation errors.')).toEqual([])
+    expect(sourceDiagnosticQueries('  Where can I find Parser and Client; explain validation errors.')).toEqual([])
+    expect(sourceDiagnosticQueries('Explain Parser: how requests arrive; why requests fail.')).toEqual([])
+  })
+
+  it('admits at most three current executable clause owners inside the raw128 and diagnostic32 caps', () => {
+    const value = languageFixture(140)
+    const full = 'Trace bucket operation selection current state; how expiration is checked against lifetime; validation errors for handles.'
+    const clauses = sourceDiagnosticQueries(full), ordinary = searchSourceBodies(value.graph, full, value.root)
+    expect(ordinary.matches.size).toBe(128)
+    expect(ordinary.matches.has(value.target)).toBe(false)
+    const searches = searchSourceBodyQuestions(value.graph, [full, ...clauses], value.root, undefined, { allowedOwner: () => true })
+    const admitted = searches[0]!, nominations = admitted[sourceDiagnosticAdmissionsKey] ?? []
+    expect(nominations).toContain(value.target)
+    expect(nominations).not.toContain(value.fake)
+    expect(nominations.length).toBeLessThanOrEqual(3)
+    expect(admitted.matches.size).toBe(128)
+    expect([...admitted.matches.keys()].slice(0, 125)).toEqual([...ordinary.matches.keys()].slice(0, 125))
+    for (const [id, match] of ordinary.matches) if (admitted.matches.has(id)) expect(admitted.matches.get(id)).toEqual(match)
+    expect(admitted.matches.get(value.target)?.score).toBe(0.5) // Only raw lifetime matched; stem coverage is not copied.
+    const pool = sourceDiagnosticCandidatePool([...ordinary.matches.keys(), value.target].map(id => ({ id })), nominations)
+    expect(pool).toHaveLength(32)
+    expect(pool.map(node => node.id)).toContain(value.target)
+    expect(Object.keys(admitted)).not.toContain(String(sourceDiagnosticAdmissionsKey))
+    expect(JSON.stringify(admitted)).not.toContain('sourceDiagnosticAdmissions')
+  })
+
+  it('declines excluded, stale, malformed and duplicate declaration nominations', () => {
+    const value = languageFixture(140), full = 'Trace bucket operation selection current state; expiration lifetime; validation errors handles.'
+    const queries = [full, ...sourceDiagnosticQueries(full)]
+    const run = (allowedOwner: (file: string, canonical: string, label: string, text: string) => boolean = () => true) =>
+      searchSourceBodyQuestions(value.graph, queries, value.root, undefined, { allowedOwner })[0]![sourceDiagnosticAdmissionsKey] ?? []
+    expect(run((file, canonical, label, text) => file !== value.targetFile && canonical !== value.targetFile && !text.includes('expiresAtMs'))).not.toContain(value.target)
+    writeFileSync(value.targetFile, value.source.replace('function finish', 'function changed'))
+    expect(run()).not.toContain(value.target)
+    writeFileSync(value.targetFile, value.source.replace('return expiresAtMs;', 'return (expiresAtMs;'))
+    expect(run()).not.toContain(value.target)
+    writeFileSync(value.targetFile, value.source)
+    value.graph.addNode('duplicate_finish', { ...value.graph.nodeAttributes(value.target) })
+    expect(run()).not.toContain(value.target)
+    expect(run()).not.toContain('duplicate_finish')
+  })
+
   it('keeps title-case prose lexical while preserving explicit requested symbol occurrences', () => {
     for (const [text, name] of [
       ['In the source, trace state validation.', 'In'],

@@ -3,7 +3,7 @@ import { lineRangeFromSourceLocation } from '../../shared/source-location.js'
 import { retrievalEvidencePrompt } from '../retrieval-gate.js'
 import { querySourceEvidenceClauses } from './conceptual-fallback.js'
 import { sourceQuerySymbols } from './source-query-symbols.js'
-import { readEvidenceLines, resolveSourceSymbolRange, sourceDeclarationQualifiedName, sourcePathForEvidence, sourceQueryLiterals, sourceRequestProse, sourceSyntaxTree, type SourceBodyMatch } from './source-evidence.js'
+import { readEvidenceLines, resolveSourceSymbolRange, sourceDeclarationQualifiedName, sourcePathForEvidence, sourceQueryLiterals, sourceRequestProse, sourceSyntaxTree, sourceDiagnosticAdmissionsKey, type SourceBodyMatch } from './source-evidence.js'
 
 interface Candidate {
   id: string; label: string; sourceFile: string; sourceLocation: string | null
@@ -11,17 +11,40 @@ interface Candidate {
 }
 type Executable = ts.MethodDeclaration | ts.FunctionDeclaration
 interface Owner { candidate: Candidate; declaration: Executable; reads: Set<string>; writes: Set<string> }
-export type SourceDiagnosticClauseMatches = readonly ReadonlyMap<string, SourceBodyMatch>[]
+export type SourceDiagnosticClauseMatches = readonly ReadonlyMap<string, SourceBodyMatch>[] & {
+  [sourceDiagnosticAdmissionsKey]?: readonly string[]
+}
+
+/** Keep at most three private nominations inside the existing owner budget. */
+export function sourceDiagnosticCandidatePool<T extends { id: string }>(candidates: readonly T[], nominated: readonly string[] = []): T[] {
+  const wanted = new Set(nominated.slice(0, 3))
+  return [...candidates.filter(candidate => wanted.has(candidate.id)), ...candidates.filter(candidate => !wanted.has(candidate.id))].slice(0, 32)
+}
 
 /** Only optional corroboration leaves the diagnostic implementation subject unambiguous. */
 export function sourceDiagnosticQueries(question: string): string[] {
   if (question.length > 12_000) return []
   const positive = retrievalEvidencePrompt(question)
   if (sourceQueryLiterals(positive).length || sourceQuerySymbols(positive).some(occurrence => occurrence.explicit
-    && (/[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(positive.slice(occurrence.end))))) return []
+    && (/[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(positive.slice(occurrence.end))
+      || /\b(?:functions?|methods?|symbols?|class(?:es)?|types?|interfaces?|enums?|variables?|constants?|propert(?:y|ies)|namespaces?|identifiers?)\s+$/i.test(positive.slice(0, occurrence.start))
+      || /^(?:please\s+)?(?:how\s+(?:does|do)|explain|find|locate|show|describe|change|update|fix|where\s+(?:is|are|can\s+I\s+find))\s+(?:the\s+)?(?:(?:implementation|source|definition)\s+of\s+)?$/i.test(positive.slice(0, occurrence.start).trimStart())
+        && /^(?:\s*(?:,\s*(?:(?:and|or)\s+)?|(?:and|or)\s+)#?[A-Za-z_$][\w$]*(?:\.#?[A-Za-z_$][\w$]*)*(?:\(\))?)*\s*[:;.!?]/i.test(positive.slice(occurrence.end))))) return []
   const prose = sourceRequestProse(positive).replace(/\b(?:tests?|specs?)\s+(?:if|when)\s+(?:useful|helpful|relevant|needed|available)\b/gi, '')
   if (/\b(?:tests?|testing|specs?|mocks?|fixtures?)\b/i.test(prose)) return []
-  const clauses = querySourceEvidenceClauses(positive).slice(0, 8)
+  // These complete framing clauses are not independent implementation requests.
+  // Keep the original question and public obligations intact for all other uses.
+  const locator = /^\s*(?:in|within)\s+(?:(?:the|this|our)\s+)?(?:[\w@.-]+\s+)?(?:source|repository|repo|codebase)\s*$/i
+  const optionalEvidence = /^\s*(?:find|use|consult|include|inspect|read)\s+(?:(?:relevant|exact|supporting|related)\s+)?(?:(?:tests?|specs?|config(?:uration)?(?:\s+(?:files?|limits))?)(?:\s*(?:[\/,&]|and|or)\s*)?)+\s+(?:if|when)\s+(?:useful|helpful|relevant|needed|available)\s*$/i
+  let subject = positive
+  const authored = sourceRequestProse(positive)
+  // A topic followed by an authored question supplies scope, not an extra vote.
+  const heading = /^\s*(?:(?:in|within)\s+(?:(?:the|this|our)\s+)?(?:[\w@.-]+\s+)?(?:source|repository|repo|codebase)\s*,\s*)?(?:trace|explain|describe)\s+[^:;.!?\n#]+:\s*(?=(?:how|what|why|when|where|whether)\b)/i.exec(authored)
+  if (heading) subject = positive.slice(heading[0].length)
+  const clauses = querySourceEvidenceClauses(subject).filter(clause => {
+    const text = sourceRequestProse(clause)
+    return !locator.test(text) && !optionalEvidence.test(text)
+  }).slice(0, 8)
   const hints = new Set(sourceQueryLiterals(positive))
   // Adding clause queries must not change the original bounded file scan order.
   return clauses.length >= 2 && clauses.every(clause => sourceQueryLiterals(retrievalEvidencePrompt(clause))

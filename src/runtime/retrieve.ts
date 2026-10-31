@@ -93,7 +93,7 @@ import {
   type RetrievalStageObserver,
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
-import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
+import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, sourceDiagnosticAdmissionsKey, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
 import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, sourceLocalPriorityKey, sourceClientPriorityKey, sourceSubjectPriorityKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
 import { recoverySourceGuard } from './retrieve/recovery-source-preservation.js'
 import { sourceQuerySymbols, type SourceSymbolOccurrence } from './retrieve/source-query-symbols.js'
@@ -102,7 +102,7 @@ import { sourceVisibleWarnings } from './retrieve/source-visible-warnings.js'
 import { prioritizeNextRouteReferences } from './retrieve/source-route-references.js'
 import { sourceCoherenceGroup, sourceCompositionPriority } from './retrieve/source-coherence.js'
 import { sourceDiagnosticLexicalCompanions } from './retrieve/source-lexical-companions.js'
-import { sourceDiagnosticQueries, sourceDiagnosticSeeds, type SourceDiagnosticClauseMatches } from './retrieve/source-diagnostic-priority.js'
+import { sourceDiagnosticQueries, sourceDiagnosticSeeds, sourceDiagnosticCandidatePool, type SourceDiagnosticClauseMatches } from './retrieve/source-diagnostic-priority.js'
 import { sourceClientContextRequest } from './retrieve/source-client-context.js'
 import { sourceIncomingDecisionFragment } from './retrieve/source-decision-fragments.js'
 import { buildSourceCoherentContinuationCatalog, sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from './retrieve/source-coherent-continuation.js'
@@ -4819,7 +4819,7 @@ function sourceSelectionForTask(
     && !sourceQuerySymbols(diagnosticQuestion).some(occurrence => occurrence.explicit
       && (/[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(diagnosticQuestion.slice(occurrence.end))))
     && diagnosticExclusions.valid
-    ? sourceDiagnosticSeeds(candidates.filter(node => independentSourceBodyCandidate(graph, node, options, diagnosticRoot)).slice(0, 32), diagnosticClauseMatches,
+    ? sourceDiagnosticSeeds(sourceDiagnosticCandidatePool(candidates.filter(node => independentSourceBodyCandidate(graph, node, options, diagnosticRoot)), diagnosticClauseMatches[sourceDiagnosticAdmissionsKey]), diagnosticClauseMatches,
       (file, label, text) => !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(file, diagnosticRoot) as never)
         && !diagnosticExclusions.matchesSource(file, label, diagnosticRoot) && !diagnosticExclusions.matchesText(text),
       diagnosticRoot, requestSourceCache(options)) : []
@@ -5581,9 +5581,15 @@ function retrieveContextPass(
   // Full-query admission and clause ranking share one bounded file/owner scan.
   // Optional clause queries cannot introduce literal scan-order hints.
   const bodySearches = searchSourceBodyQuestions(graph, [behaviorLocation?.question ?? question, ...diagnosticQueries],
-    classificationRootPath, requestSourceCache(options))
+    classificationRootPath, requestSourceCache(options), diagnosticQueries.length >= 2 && sourceExclusions.valid ? {
+      allowedOwner: (file, canonical, label, text) => [file, canonical].every(path =>
+        !excludedDomains.includes(classifySourceDomain(path, classificationRootPath) as never)
+        && !sourceExclusions.matchesSource(path, label, classificationRootPath)) && !sourceExclusions.matchesText(text),
+    } : undefined)
   const bodySearch = bodySearches[0]!
-  const diagnosticClauseMatches = bodySearches.slice(1).map(search => search.matches)
+  const diagnosticClauseMatches: SourceDiagnosticClauseMatches = Object.assign(bodySearches.slice(1).map(search => search.matches), {
+    [sourceDiagnosticAdmissionsKey]: bodySearch[sourceDiagnosticAdmissionsKey] ?? [],
+  })
   const prioritizeBodyCoverage = queryEvidenceObligations(question).length > 1 && !sourceQueryIsLiteralLookup(question)
   const seedCandidates: SeedCandidate[] = []
   for (const [id, attributes] of graph.nodeEntries()) {
