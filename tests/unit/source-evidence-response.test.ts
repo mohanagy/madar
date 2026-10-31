@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { finalizeSourceEvidenceResponse, omitSourceNavigationDetails, renderSourceEvidenceText } from '../../src/runtime/source-evidence-response.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
@@ -28,6 +31,47 @@ function metadataRescueResponse() {
 }
 
 describe('source evidence wire contract', () => {
+  it('checks original verification scope when only its target survives pruning, including verbose fallback', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-verification-policy-'))
+    try {
+      mkdirSync(join(root, 'src'))
+      writeFileSync(join(root, 'src/reset.ts'), code)
+      writeFileSync(join(root, 'src/blocked.ts'), 'export const verification = true\n')
+      const handle = 'verify-0123456789abcdef', budget = 1000
+      const input = { ...response('explain'),
+        implementation: { validation_commands: ['optional implementation guidance '.repeat(1000)] },
+        expandable: [
+          { handle_id: 'expand:first', evidence_class: 'primary', count: 1 },
+          { handle_id: 'expand:second', evidence_class: 'supporting', count: 1 },
+          { handle_id: handle, evidence_class: 'supporting', count: 1,
+            follow_up: { focus_files: ['src/blocked.ts'] } },
+        ],
+        evidence: { answerability: { advisory: true, broad_search_fallback: 'allowed',
+          verification_targets: [{ handle_id: handle, focus_files: ['src/blocked.ts'] }] } },
+      }
+      const options = { sourcePolicyRoot: root }
+      const allowed = finalizeSourceEvidenceResponse(input, budget, options)
+      expect(allowed.expandable).toEqual(input.expandable.slice(0, 2))
+      expect(allowed.omitted_continuations).toBe(1)
+      expect(allowed.evidence).toMatchObject({ answerability: { verification_targets: [{ handle_id: handle }] } })
+      expect(allowed).not.toHaveProperty('omitted_evidence')
+      const verboseInput = { ...input, implementation: undefined, plan: { diagnostics: 'optional plan '.repeat(2000) } }
+      const verboseAllowed = finalizeSourceEvidenceResponse(verboseInput, budget, { ...options, verbose: true })
+      expect(verboseAllowed.diagnostics_omitted).toBe('output_budget')
+      expect(verboseAllowed).not.toHaveProperty('omitted_evidence')
+
+      writeFileSync(join(root, '.madarignore'), 'src/blocked.ts\n')
+      for (const refused of [finalizeSourceEvidenceResponse(input, budget, options),
+        finalizeSourceEvidenceResponse(verboseInput, budget, { ...options, verbose: true })]) {
+        expect(refused.omitted_evidence).toMatch(/current policy/)
+        expect(refused.expandable ?? []).toEqual([])
+        expect((refused.evidence as { answerability: { verification_targets?: unknown[] } }).answerability.verification_targets ?? []).toEqual([])
+        expect(refused.pack).toBeUndefined()
+        expect(estimateQueryTokens(JSON.stringify(refused))).toBeLessThanOrEqual(budget)
+      }
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
   it('deduplicates a verification pointer only while its handle and unresolved obligation remain', () => {
     const handle = 'expand:explain:supporting:0123456789ab'
     const input = { task: 'explain', pack: { selection_scope: 'task_context' },

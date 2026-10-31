@@ -790,6 +790,24 @@ export function finalizeSourceEvidenceResponse(
     const sourceFiles = nodeContainers(record(result.pack)).flatMap(({ owner, key }) => array(owner[key]).map(record)
       .filter(node => typeof node.snippet === 'string' && node.snippet.length > 0 || typeof node.snippet_ref === 'string')
       .map(node => typeof node.source_file === 'string' ? node.source_file : ''))
+    if (policyRoot) {
+      // A current-policy refusal also covers the source promised by a synthetic
+      // verification handle. Wire hints may be truncated or handle-only; use
+      // the original server-owned scope, never the compacted file list.
+      const advertised = new Set([...array(result.expandable), ...array(record(result.pack).expandable),
+        ...array(record(record(result.evidence).answerability).verification_targets)]
+        .map(record).map(entry => entry.handle_id)
+        .filter((id): id is string => typeof id === 'string' && /^verify-[a-f0-9]{16}$/.test(id)))
+      const originals = [...array(original.expandable), ...array(record(original.pack).expandable)].map(record)
+      for (const id of advertised) {
+        const bindings = originals.filter(entry => entry.handle_id === id)
+        if (bindings.length !== 1) { sourceFiles.push(''); continue }
+        const entry = bindings[0]!, followUp = record(entry.follow_up)
+        const paths = [...array(followUp.focus_files ?? entry.focus_files),
+          ...array(followUp.focus_ranges ?? entry.focus_ranges).map(value => record(value).source_file)]
+        sourceFiles.push(...(paths.length ? paths.map(path => typeof path === 'string' ? path : '') : ['']))
+      }
+    }
     return policyRoot && !sourcePathsAllowedByCurrentPolicy(sourceFiles, policyRoot)
       ? insufficientSourceEvidenceResponse(original, result, maxTokens, options.format, 'source access could not be verified against current policy')
       : result
@@ -798,7 +816,7 @@ export function finalizeSourceEvidenceResponse(
   if (options.verbose) {
     payload = compactPayload(original)
     payload.diagnostics_omitted = 'output_budget'
-    if (attach() <= maxTokens) return payload
+    if (attach() <= maxTokens) return finish()
   }
   // Remove advisory implementation summaries before sacrificing the underlying source.
   delete payload.implementation
