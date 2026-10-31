@@ -3,7 +3,7 @@ import { lineRangeFromSourceLocation } from '../../shared/source-location.js'
 import { retrievalEvidencePrompt } from '../retrieval-gate.js'
 import { querySourceEvidenceClauses } from './conceptual-fallback.js'
 import { sourceQuerySymbols } from './source-query-symbols.js'
-import { readEvidenceLines, resolveSourceSymbolRange, sourceDeclarationQualifiedName, sourcePathForEvidence, sourceQueryLiterals, sourceRequestProse, sourceSyntaxTree, sourceDiagnosticAdmissionsKey, type SourceBodyMatch } from './source-evidence.js'
+import { readEvidenceLines, resolveSourceSymbolRange, sourceDeclarationQualifiedName, sourcePathForEvidence, sourceQueryLiterals, sourceRequestProse, sourceSyntaxTree, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, type SourceBodyMatch } from './source-evidence.js'
 
 interface Candidate {
   id: string; label: string; sourceFile: string; sourceLocation: string | null
@@ -13,16 +13,21 @@ type Executable = ts.MethodDeclaration | ts.FunctionDeclaration
 interface Owner { candidate: Candidate; declaration: Executable; reads: Set<string>; writes: Set<string> }
 export type SourceDiagnosticClauseMatches = readonly ReadonlyMap<string, SourceBodyMatch>[] & {
   [sourceDiagnosticAdmissionsKey]?: readonly string[]
+  [sourceDiagnosticAlternativesKey]?: readonly (readonly string[])[]
 }
+export const sourceDiagnosticContextsKey = Symbol('sourceDiagnosticContexts')
+export const sourceDiagnosticDecisionsKey = Symbol('sourceDiagnosticDecisions')
+type DiagnosticQueries = string[] & { [sourceDiagnosticContextsKey]?: readonly string[] }
+type DiagnosticSeeds = string[] & { [sourceDiagnosticDecisionsKey]?: readonly string[] }
 
-/** Keep at most three private nominations inside the existing owner budget. */
-export function sourceDiagnosticCandidatePool<T extends { id: string }>(candidates: readonly T[], nominated: readonly string[] = []): T[] {
-  const wanted = new Set(nominated.slice(0, 3))
+/** Keep bounded nominees and clause alternatives inside the 32-owner budget. */
+export function sourceDiagnosticCandidatePool<T extends { id: string }>(candidates: readonly T[], nominated: readonly string[] = [], alternatives: readonly (readonly string[])[] = []): T[] {
+  const wanted = new Set([...nominated.slice(0, 3), ...alternatives.slice(0, 8).flatMap(ids => ids.slice(0, 3))])
   return [...candidates.filter(candidate => wanted.has(candidate.id)), ...candidates.filter(candidate => !wanted.has(candidate.id))].slice(0, 32)
 }
 
 /** Only optional corroboration leaves the diagnostic implementation subject unambiguous. */
-export function sourceDiagnosticQueries(question: string): string[] {
+export function sourceDiagnosticQueries(question: string): DiagnosticQueries {
   if (question.length > 12_000) return []
   const positive = retrievalEvidencePrompt(question)
   if (sourceQueryLiterals(positive).length || sourceQuerySymbols(positive).some(occurrence => occurrence.explicit
@@ -39,7 +44,7 @@ export function sourceDiagnosticQueries(question: string): string[] {
   let subject = positive
   const authored = sourceRequestProse(positive)
   // A topic followed by an authored question supplies scope, not an extra vote.
-  const heading = /^\s*(?:(?:in|within)\s+(?:(?:the|this|our)\s+)?(?:[\w@.-]+\s+)?(?:source|repository|repo|codebase)\s*,\s*)?(?:trace|explain|describe)\s+[^:;.!?\n#]+:\s*(?=(?:how|what|why|when|where|whether)\b)/i.exec(authored)
+  const heading = /^\s*(?:(?:in|within)\s+(?:(?:the|this|our)\s+)?(?:[\w@.-]+\s+)?(?:source|repository|repo|codebase)\s*,\s*)?(?:trace|explain|describe)\s+([^:;.!?\n#]+):\s*(?=(?:how|what|why|when|where|whether)\b)/i.exec(authored)
   if (heading) subject = positive.slice(heading[0].length)
   const clauses = querySourceEvidenceClauses(subject).filter(clause => {
     const text = sourceRequestProse(clause)
@@ -47,8 +52,24 @@ export function sourceDiagnosticQueries(question: string): string[] {
   }).slice(0, 8)
   const hints = new Set(sourceQueryLiterals(positive))
   // Adding clause queries must not change the original bounded file scan order.
-  return clauses.length >= 2 && clauses.every(clause => sourceQueryLiterals(retrievalEvidencePrompt(clause))
-    .every(literal => hints.has(literal))) ? clauses : []
+  if (clauses.length < 2 || !clauses.every(clause => sourceQueryLiterals(retrievalEvidencePrompt(clause))
+    .every(literal => hints.has(literal)))) return []
+  if (heading && !/[“”‘’]/.test(heading[1]!)) {
+    const prose = sourceRequestProse(subject)
+    // A later authored request ends this heading's relevance context. Source
+    // data is masked, and transformed/nonlocatable clauses fail closed below.
+    const reset = /(?:^|[.;!?\n]\s*|\b(?:and|also|then|next|separately)\s+)(?:(?:also|then|next|separately)\s+)*(?:trace|explain|describe|find|locate|show|inspect|analy[sz]e|change|update|fix|add|remove|implement)\b|(?:^|[.;!?\n]\s*)[^:;.!?\n#]+:\s*(?=(?:how|what|why|when|where|whether)\b)/i.exec(prose)
+    const end = reset?.index ?? subject.length
+    let cursor = 0, locatable = true
+    const contexts = clauses.map(clause => {
+      const position = locatable ? subject.indexOf(clause, cursor) : -1
+      if (position < 0) { locatable = false; return '' }
+      cursor = position + clause.length
+      return cursor <= end ? heading[1]!.trim() : ''
+    })
+    if (contexts.some(Boolean)) Object.defineProperty(clauses, sourceDiagnosticContextsKey, { value: contexts })
+  }
+  return clauses
 }
 
 /** Each clause competes independently within already admitted current owners.
@@ -57,7 +78,7 @@ export function sourceDiagnosticSeeds(
   candidates: readonly Candidate[], clauses: SourceDiagnosticClauseMatches,
   allowedOwner: (file: string, label: string, text: string) => boolean,
   rootPath?: string, cache?: Map<string, string[] | null>,
-): string[] {
+): DiagnosticSeeds {
   if (!rootPath || !candidates.length || candidates.length > 32 || clauses.length < 2 || clauses.length > 8) return []
   const files = new Map<string, { lines: string[]; source: ts.SourceFile; declarations: Executable[] }>()
   let bytes = 0, visited = 0, bounded = false
@@ -116,13 +137,19 @@ export function sourceDiagnosticSeeds(
   if (new Set(owners.map(owner => owner.declaration)).size !== owners.length) return []
   const byId = new Map(owners.map(owner => [owner.candidate.id, owner]))
   const wins = new Map<string, { count: number; first: number }>()
+  const alternatives = clauses[sourceDiagnosticAlternativesKey]
+  const decisionsByClause: string[][] = []
   clauses.forEach((matches, index) => {
     // SourceBodySearch preserves its existing relevance/coverage ordering. The
     // match cannot introduce a new owner or change the full-question ranking.
-    const id = [...matches.keys()].find(id => byId.has(id))
-    if (!id) return
-    const prior = wins.get(id)
-    wins.set(id, { count: (prior?.count ?? 0) + 1, first: prior?.first ?? index })
+    const ids = alternatives ? [...new Set(alternatives[index]?.slice(0, 3) ?? [])]
+      .filter(id => byId.has(id) && (matches.get(id)?.score ?? 0) >= 1)
+      : [...matches.keys()].filter(id => byId.has(id)).slice(0, 1)
+    decisionsByClause.push(ids)
+    for (const id of ids) {
+      const prior = wins.get(id)
+      wins.set(id, { count: (prior?.count ?? 0) + 1, first: prior?.first ?? index })
+    }
   })
   const leaders = [...wins].sort((left, right) => right[1].count - left[1].count || left[1].first - right[1].first)
     .slice(0, 3).map(([id]) => byId.get(id)!)
@@ -140,5 +167,14 @@ export function sourceDiagnosticSeeds(
     // unique initialization companion. Preserve ordinary order in that case.
     if (writers.length === 1 && container.members.filter(member => member.name?.getText() === writers[0]!.declaration.name!.getText()).length === 1) selected.splice(1, 0, writers[0]!.candidate.id)
   }
-  return selected.slice(0, 3)
+  const result: DiagnosticSeeds = selected.slice(0, 3)
+  if (alternatives) {
+    const decisions = new Set<string>()
+    for (let round = 0; round < 3; round++) for (const ids of decisionsByClause) {
+      const id = ids[round]
+      if (id && decisions.size < 8) decisions.add(id)
+    }
+    Object.defineProperty(result, sourceDiagnosticDecisionsKey, { value: [...decisions] })
+  }
+  return result
 }

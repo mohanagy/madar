@@ -93,7 +93,7 @@ import {
   type RetrievalStageObserver,
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
-import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, sourceDiagnosticAdmissionsKey, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
+import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
 import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, sourceLocalPriorityKey, sourceClientPriorityKey, sourceSubjectPriorityKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
 import { recoverySourceGuard } from './retrieve/recovery-source-preservation.js'
 import { sourceQuerySymbols, type SourceSymbolOccurrence } from './retrieve/source-query-symbols.js'
@@ -102,7 +102,7 @@ import { sourceVisibleWarnings } from './retrieve/source-visible-warnings.js'
 import { prioritizeNextRouteReferences } from './retrieve/source-route-references.js'
 import { sourceCoherenceGroup, sourceCompositionPriority } from './retrieve/source-coherence.js'
 import { sourceDiagnosticLexicalCompanions } from './retrieve/source-lexical-companions.js'
-import { sourceDiagnosticQueries, sourceDiagnosticSeeds, sourceDiagnosticCandidatePool, type SourceDiagnosticClauseMatches } from './retrieve/source-diagnostic-priority.js'
+import { sourceDiagnosticQueries, sourceDiagnosticSeeds, sourceDiagnosticCandidatePool, sourceDiagnosticContextsKey, sourceDiagnosticDecisionsKey, type SourceDiagnosticClauseMatches } from './retrieve/source-diagnostic-priority.js'
 import { sourceClientContextRequest } from './retrieve/source-client-context.js'
 import { sourceIncomingDecisionFragment } from './retrieve/source-decision-fragments.js'
 import { buildSourceCoherentContinuationCatalog, sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from './retrieve/source-coherent-continuation.js'
@@ -4812,14 +4812,14 @@ function sourceSelectionForTask(
   const diagnosticQuestion = retrievalEvidencePrompt(question)
   const diagnosticExclusions = compileSourceExclusions(retrievalGate.signals.excluded_terms ?? [],
     retrievalGate.signals.excluded_path_hints ?? [], diagnosticRoot)
-  const diagnosticIds = options.taskIntent === 'debug-flow' && independentBodyPriority && !broadTask && !explicitLevel
+  const diagnosticIds: ReturnType<typeof sourceDiagnosticSeeds> = options.taskIntent === 'debug-flow' && independentBodyPriority && !broadTask && !explicitLevel
     && !behaviorLocation && !operationAnchors.length && firstPosition === undefined && !requested.length
     && !retrievalGate.signals.mentioned_paths.length && !retrievalGate.signals.mentioned_directories?.length
     && !sourceQueryLiterals(diagnosticQuestion).length
     && !sourceQuerySymbols(diagnosticQuestion).some(occurrence => occurrence.explicit
       && (/[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(diagnosticQuestion.slice(occurrence.end))))
     && diagnosticExclusions.valid
-    ? sourceDiagnosticSeeds(sourceDiagnosticCandidatePool(candidates.filter(node => independentSourceBodyCandidate(graph, node, options, diagnosticRoot)), diagnosticClauseMatches[sourceDiagnosticAdmissionsKey]), diagnosticClauseMatches,
+    ? sourceDiagnosticSeeds(sourceDiagnosticCandidatePool(candidates.filter(node => independentSourceBodyCandidate(graph, node, options, diagnosticRoot)), diagnosticClauseMatches[sourceDiagnosticAdmissionsKey], diagnosticClauseMatches[sourceDiagnosticAlternativesKey]), diagnosticClauseMatches,
       (file, label, text) => !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(file, diagnosticRoot) as never)
         && !diagnosticExclusions.matchesSource(file, label, diagnosticRoot) && !diagnosticExclusions.matchesText(text),
       diagnosticRoot, requestSourceCache(options)) : []
@@ -5088,13 +5088,14 @@ function sourceSelectionForTask(
       sourcePriority = [...new Set([...dependencies[sourceClientPriorityKey]!, ...(sourcePriority ?? [])])]
     }
     if (diagnosticIds.length) {
-      // Keep selected decisions, lexical definition context, and then positively
-      // resolved dependencies. Definition context never supplies call authority.
+      // Authored decisions precede discovery roots and optional context. The
+      // root limit controls dependency discovery, not presentation authority.
       const provenance = dependencies[sourceSelectionProvenanceKey]
       const admitted = new Set(ordered.map(node => node.id))
       const unique = new Set(provenance?.owners.filter(owner => owner.status === 'unique').map(owner => owner.node_id))
-      const preferred = new Set(diagnosticIds.filter(id => admitted.has(id)))
-      for (const { candidate } of lexicalCompanions) preferred.add(candidate.id)
+      const preferred = new Set((diagnosticIds[sourceDiagnosticDecisionsKey] ?? diagnosticIds).filter(id => admitted.has(id)).slice(0, 8))
+      for (const id of diagnosticIds) if (admitted.has(id) && preferred.size < 12) preferred.add(id)
+      for (const { candidate } of lexicalCompanions) if (preferred.size < 12) preferred.add(candidate.id)
       const queue = diagnosticIds.filter(id => admitted.has(id))
       for (let index = 0; index < queue.length && preferred.size < 12; index++) {
         for (const pair of provenance?.resolved_pairs ?? []) {
@@ -5574,7 +5575,7 @@ function retrieveContextPass(
   // Step 1+2: Score all nodes with explicit seed evidence weights.
   const tokenWeights = tokenWeightsForQuestion(graph, questionTokens)
   const averageLabelLength = averageLabelLengthForGraph(graph)
-  const diagnosticQueries = options.taskIntent === 'debug-flow' && !options.semantic && !options.rerank
+  const diagnosticQueries: ReturnType<typeof sourceDiagnosticQueries> = options.taskIntent === 'debug-flow' && !options.semantic && !options.rerank
     && conceptualNodeBoosts.size === 0 && !behaviorLocation
     && allowsIndependentBodyDiscovery(options, retrievalGate, frameworkProfile)
     ? sourceDiagnosticQueries(question) : []
@@ -5582,6 +5583,7 @@ function retrieveContextPass(
   // Optional clause queries cannot introduce literal scan-order hints.
   const bodySearches = searchSourceBodyQuestions(graph, [behaviorLocation?.question ?? question, ...diagnosticQueries],
     classificationRootPath, requestSourceCache(options), diagnosticQueries.length >= 2 && sourceExclusions.valid ? {
+      ...(diagnosticQueries[sourceDiagnosticContextsKey] ? { contexts: diagnosticQueries[sourceDiagnosticContextsKey] } : {}),
       allowedOwner: (file, canonical, label, text) => [file, canonical].every(path =>
         !excludedDomains.includes(classifySourceDomain(path, classificationRootPath) as never)
         && !sourceExclusions.matchesSource(path, label, classificationRootPath)) && !sourceExclusions.matchesText(text),
@@ -5589,6 +5591,7 @@ function retrieveContextPass(
   const bodySearch = bodySearches[0]!
   const diagnosticClauseMatches: SourceDiagnosticClauseMatches = Object.assign(bodySearches.slice(1).map(search => search.matches), {
     [sourceDiagnosticAdmissionsKey]: bodySearch[sourceDiagnosticAdmissionsKey] ?? [],
+    ...(bodySearch[sourceDiagnosticAlternativesKey] ? { [sourceDiagnosticAlternativesKey]: bodySearch[sourceDiagnosticAlternativesKey] } : {}),
   })
   const prioritizeBodyCoverage = queryEvidenceObligations(question).length > 1 && !sourceQueryIsLiteralLookup(question)
   const seedCandidates: SeedCandidate[] = []

@@ -62,11 +62,15 @@ export interface SourceBodyMatch {
 
 /** Presentation nominations only; never source or call authority. */
 export const sourceDiagnosticAdmissionsKey = Symbol('sourceDiagnosticAdmissions')
+export const sourceDiagnosticAlternativesKey = Symbol('sourceDiagnosticAlternatives')
 export interface SourceBodyDiagnosticOptions {
   allowedOwner: (file: string, canonical: string, label: string, text: string) => boolean
+  /** Authored heading context, separate from each clause's matching terms. */
+  contexts?: readonly string[]
 }
 export interface SourceBodySearch {
   [sourceDiagnosticAdmissionsKey]?: readonly string[]
+  [sourceDiagnosticAlternativesKey]?: readonly (readonly string[])[]
   matches: Map<string, SourceBodyMatch>
   scanned_files: number
   scanned_bytes: number
@@ -525,6 +529,9 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
   // exported tokenization and exact source literals retain their old meanings.
   const morphology = !!diagnostic && !!rootPath && questions.length >= 3 && questions.length <= 9
     && questions.every(question => sourceQueryLiterals(question).length === 0)
+  const contextual = morphology && diagnostic.contexts?.length === questions.length - 1
+    && diagnostic.contexts.every(context => context.length <= 12_000 && !sourceQueryLiterals(context).length)
+    && diagnostic.contexts.some(context => context.length > 0)
   const stems = new Map<string, string>()
   const stem = (word: string): string => {
     if (!/^[a-z]{3,64}$/.test(word)) return word
@@ -545,7 +552,11 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
       || /\.[cm]?[jt]sx?\b/i.test(question)
     const behaviorTerms = literals.length > 0 && !literalLookup
       ? new Set(bodyTerms(sourceQueryWithoutLiteralSpans(question))) : undefined
+    const contextTerms = contextual && index > 0 ? new Set([...new Set(tokenizeQuestion(sourceBodyWords(diagnostic!.contexts![index - 1]!).join(' '))
+      .filter(term => term.length >= 3 && (!BODY_QUERY_NOISE.has(term) || term === 'handle' || term === 'handled'))
+      .map(stem))].slice(0, 32)) : new Set<string>()
     return { literals, terms, literalLookup, navigationLookup, behaviorTerms, normalized,
+      contextTerms,
       bodyHits: new Map<string, { literals: Set<string>; terms: Set<string>; lines: number[]; navigationOnly: boolean }>() }
   })
   const activeQueries = queries.filter(query => query.literals.length > 0 || query.terms.length > 0)
@@ -553,7 +564,7 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
   if (!activeQueries.length) return queries.map(() => ({ ...result, matches: new Map() }))
   const rankingTerms = new Set(activeQueries.flatMap(query => query.terms))
   const ownerStatistics = new Map<string, { length: number; frequencies: Map<string, number> }>()
-  const nominationOwners = new Map<string, { file: string; canonical: string; label: string; range: SourceLineRange; lines: string[]; identity: string }>()
+  const nominationOwners = new Map<string, { file: string; canonical: string; label: string; range: SourceLineRange; lines: string[]; identity: string; nameTerms: Set<string> }>()
   const nominationIdentities = new Map<string, number>()
   const files = new Map<string, Array<{ id: string; label: string; range: SourceLineRange; file: boolean }>>()
   const hintLiterals = [...new Set(questions.flatMap(question => sourceQueryLiterals(retrievalEvidencePrompt(question))))]
@@ -612,7 +623,8 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
         if (declarations.length === 1) {
           const identity = `${path}:${range.start}:${range.end}`
           nominationIdentities.set(identity, (nominationIdentities.get(identity) ?? 0) + 1)
-          nominationOwners.set(entry.id, { file: sourceFile, canonical: path, label: entry.label, range, lines, identity })
+          nominationOwners.set(entry.id, { file: sourceFile, canonical: path, label: entry.label, range, lines, identity,
+            nameTerms: new Set(contextual ? sourceBodyWords(declarations[0]!.qualifiedName).filter(Boolean).map(stem) : []) })
         }
       }
       const start = Math.max(0, range.start - 1)
@@ -701,14 +713,24 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
       current.matches.set(id, { score: (exact ? 8 : 0) + Math.min(3, hit.terms.size * 0.5), exact_literal: exact, coverage, relevance, matched_literals: [...hit.literals], lines: hit.lines, ...(hit.navigationOnly ? { navigation_only: true } : {}) })
     }
     if (current.matches.size > MAX_SOURCE_MATCHES) current.bounded = true
-    const ranked = [...current.matches].sort((left, right) => Number(right[1].exact_literal) - Number(left[1].exact_literal) || (right[1].relevance ?? 0) - (left[1].relevance ?? 0) || right[1].coverage - left[1].coverage || right[1].score - left[1].score || left[0].localeCompare(right[0]))
+    const contextSupport = (id: string): number => {
+      if (!query.contextTerms.size) return 0
+      const owner = nominationOwners.get(id)
+      return owner && nominationIdentities.get(owner.identity) === 1
+        ? [...query.contextTerms].filter(term => owner.nameTerms.has(term)).length : 0
+    }
+    const ranked = [...current.matches].sort((left, right) => Number(right[1].exact_literal) - Number(left[1].exact_literal)
+      || contextSupport(right[0]) - contextSupport(left[0])
+      || (right[1].relevance ?? 0) - (left[1].relevance ?? 0) || right[1].coverage - left[1].coverage || right[1].score - left[1].score || left[0].localeCompare(right[0]))
     if (morphology && index === 0) fullRanking = ranked
     current.matches = new Map(ranked.slice(0, MAX_SOURCE_MATCHES))
     return current
   })
   if (morphology && diagnostic && fullRanking.length) {
     const raw = new Map(fullRanking), inspected = new Map<string, boolean>(), wins = new Map<string, { count: number; first: number }>()
+    const alternatives: string[][] = []
     searches.slice(1).forEach((search, index) => {
+      const selected: string[] = []; alternatives.push(selected)
       for (const [id, match] of search.matches) {
         const owner = nominationOwners.get(id)
         if (!owner || !raw.has(id) || match.navigation_only || match.score < 1 || nominationIdentities.get(owner.identity) !== 1) continue
@@ -720,16 +742,21 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
         if (!inspected.get(id)) continue
         const prior = wins.get(id)
         wins.set(id, { count: (prior?.count ?? 0) + 1, first: prior?.first ?? index })
-        break
+        selected.push(id)
+        if (selected.length >= (contextual ? 3 : 1)) break
       }
     })
-    const nominated = [...wins].sort((a, b) => b[1].count - a[1].count || a[1].first - b[1].first).slice(0, 3).map(([id]) => id)
+    const protectedIds = new Set(fullRanking.slice(0, MAX_SOURCE_MATCHES - 3).map(([id]) => id))
+    const nominated = [...wins].sort((a, b) => b[1].count - a[1].count || a[1].first - b[1].first)
+      .filter(([id]) => !contextual || !protectedIds.has(id)).slice(0, 3).map(([id]) => id)
     if (nominated.length) {
       const admitted = new Set([...fullRanking.slice(0, MAX_SOURCE_MATCHES - 3).map(([id]) => id), ...nominated])
       for (const [id] of fullRanking) { if (admitted.size >= MAX_SOURCE_MATCHES) break; admitted.add(id) }
       searches[0]!.matches = new Map(fullRanking.filter(([id]) => admitted.has(id)))
       searches[0]![sourceDiagnosticAdmissionsKey] = nominated
     }
+    if (contextual) searches[0]![sourceDiagnosticAlternativesKey] = alternatives.map(ids =>
+      ids.filter(id => searches[0]!.matches.has(id)))
   }
   return searches
 }
