@@ -1,14 +1,11 @@
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import ts from 'typescript'
 import { buildFromJson } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
-import { resolveTaskSelection } from '../../src/runtime/task-intent.js'
-import { buildTaskContextPlan } from '../../src/runtime/task-context-planner.js'
-import * as diagnosticPriority from '../../src/runtime/retrieve/source-diagnostic-priority.js'
 import { queryEvidenceObligations, querySourceEvidenceClauses } from '../../src/runtime/retrieve/conceptual-fallback.js'
 import { searchSourceBodies, searchSourceBodyQuestions, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, sourceDiagnosticClauseEvidence, sourceBodyWords, sourceQueryLiterals, sourceSupplementalQueryView, sourceQueryWithoutLiteralSpans, type SourceBodyMatch } from '../../src/runtime/retrieve/source-evidence.js'
 import { sourceExecutableWitnesses } from '../../src/runtime/retrieve/source-executable-witnesses.js'
@@ -474,28 +471,6 @@ describe('diagnostic current-source priority', () => {
     // The existing seed gate needs body vocabulary for an unquoted two-letter name.
     const explicit = retrieveContext(value.graph, { question: 'Explain In() and its unrelated upstream decorator result.', budget: 1000, taskKind: 'explain', taskIntent: 'explain' })
     expect(explicit.matched_nodes[0]?.node_id).toBe(decoy)
-  })
-
-  it('uses supplementary decision evidence through the ordinary explain task recipe', () => {
-    const value = fixture()
-    const text = 'Trace ParcelDesk review of queue startup and channel responses; wrong state with expected tenant and supplied code; a response error with expected state and tenant; whether pending work can settle again. Cite implementation source/tests/config/root README. Ignore model internals.'
-    const resolved = resolveTaskSelection(text, 'explain', { explicit: false })
-    const plan = buildTaskContextPlan({ task_kind: resolved.task_kind, prompt: text, budget: 1600, task_intent: resolved.task_intent })
-    expect(resolved.task_intent).toBe('explain')
-    expect(plan.evidence.recipe_id).toBe('explain')
-    const queries = vi.spyOn(diagnosticPriority, 'sourceDiagnosticQueries')
-    const seeds = vi.spyOn(diagnosticPriority, 'sourceDiagnosticSeeds')
-    try {
-      const result = retrieveContext(value.graph, { question: text, budget: 1600, taskKind: resolved.task_kind, taskIntent: plan.evidence.recipe_id })
-      expect(queries.mock.results.some(call => call.type === 'return' && call.value.length >= 2)).toBe(true)
-      expect(seeds.mock.results.some(call => call.type === 'return' && call.value.includes(value.consume.id))).toBe(true)
-      for (const id of [value.consume.id, value.begin.id, value.reject.id]) expect(result.matched_nodes.map(node => node.node_id)).toContain(id)
-      expect(result.matched_nodes.find(node => node.node_id === value.consume.id)?.snippet).toContain('response.state !== this.pending.expectedState')
-      expect(result.token_count).toBeLessThanOrEqual(1600)
-    } finally {
-      queries.mockRestore()
-      seeds.mockRestore()
-    }
   })
 
   it('preserves raw decision nouns and unchanged public obligations/full-query source matches', () => {

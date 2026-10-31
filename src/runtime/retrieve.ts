@@ -4563,11 +4563,6 @@ function independentSourceBodyCandidate(graph: KnowledgeGraph, node: ScoredNode,
   return !!range && !!lines && sourceDeclarationKind(lines, range, node.label, node.sourceFile) !== 'type'
 }
 
-/** Both source explanation recipes can request independent behavior clauses. */
-function allowsSupplementalSourceIntent(options: RetrieveOptions): boolean {
-  return options.taskIntent === 'explain' || options.taskIntent === 'debug-flow'
-}
-
 /** Independent body evidence need not be connected to the first graph seeds. */
 function allowsIndependentBodyDiscovery(options: RetrieveOptions, gate: RetrievalGateDecision, profile?: FrameworkQuestionProfile): boolean {
   return options.retrievalStrategy !== 'slice-v1'
@@ -4817,7 +4812,7 @@ function sourceSelectionForTask(
   const diagnosticQuestion = retrievalEvidencePrompt(question)
   const diagnosticExclusions = compileSourceExclusions(retrievalGate.signals.excluded_terms ?? [],
     retrievalGate.signals.excluded_path_hints ?? [], diagnosticRoot)
-  const diagnosticIds: ReturnType<typeof sourceDiagnosticSeeds> = allowsSupplementalSourceIntent(options) && independentBodyPriority && !broadTask && !explicitLevel
+  const diagnosticIds: ReturnType<typeof sourceDiagnosticSeeds> = options.taskIntent === 'debug-flow' && independentBodyPriority && !broadTask && !explicitLevel
     && !behaviorLocation && !operationAnchors.length && firstPosition === undefined && !requested.length
     && !retrievalGate.signals.mentioned_paths.length && !retrievalGate.signals.mentioned_directories?.length
     && sourceSupplementalQueryView(diagnosticQuestion) !== undefined
@@ -5585,7 +5580,7 @@ function retrieveContextPass(
   // Step 1+2: Score all nodes with explicit seed evidence weights.
   const tokenWeights = tokenWeightsForQuestion(graph, questionTokens)
   const averageLabelLength = averageLabelLengthForGraph(graph)
-  const diagnosticQueries: ReturnType<typeof sourceDiagnosticQueries> = allowsSupplementalSourceIntent(options) && !options.semantic && !options.rerank
+  const diagnosticQueries: ReturnType<typeof sourceDiagnosticQueries> = options.taskIntent === 'debug-flow' && !options.semantic && !options.rerank
     && conceptualNodeBoosts.size === 0 && !behaviorLocation
     && allowsIndependentBodyDiscovery(options, retrievalGate, frameworkProfile)
     ? sourceDiagnosticQueries(question) : []
