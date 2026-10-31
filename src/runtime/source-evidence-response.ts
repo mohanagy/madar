@@ -790,10 +790,10 @@ export function finalizeSourceEvidenceResponse(
     const sourceFiles = nodeContainers(record(result.pack)).flatMap(({ owner, key }) => array(owner[key]).map(record)
       .filter(node => typeof node.snippet === 'string' && node.snippet.length > 0 || typeof node.snippet_ref === 'string')
       .map(node => typeof node.source_file === 'string' ? node.source_file : ''))
+    const withheld = new Set<string>()
     if (policyRoot) {
-      // A current-policy refusal also covers the source promised by a synthetic
-      // verification handle. Wire hints may be truncated or handle-only; use
-      // the original server-owned scope, never the compacted file list.
+      // Verification navigation is not delivered source. Withhold an unavailable
+      // whole handle using its original scope, never its truncated wire hints.
       const advertised = new Set([...array(result.expandable), ...array(record(result.pack).expandable),
         ...array(record(record(result.evidence).answerability).verification_targets)]
         .map(record).map(entry => entry.handle_id)
@@ -801,16 +801,40 @@ export function finalizeSourceEvidenceResponse(
       const originals = [...array(original.expandable), ...array(record(original.pack).expandable)].map(record)
       for (const id of advertised) {
         const bindings = originals.filter(entry => entry.handle_id === id)
-        if (bindings.length !== 1) { sourceFiles.push(''); continue }
+        if (bindings.length !== 1) { withheld.add(id); continue }
         const entry = bindings[0]!, followUp = record(entry.follow_up)
         const paths = [...array(followUp.focus_files ?? entry.focus_files),
           ...array(followUp.focus_ranges ?? entry.focus_ranges).map(value => record(value).source_file)]
-        sourceFiles.push(...(paths.length ? paths.map(path => typeof path === 'string' ? path : '') : ['']))
+        if (!paths.length || paths.some(path => typeof path !== 'string')
+          || !sourcePathsAllowedByCurrentPolicy(paths as string[], policyRoot)) withheld.add(id)
       }
     }
-    return policyRoot && !sourcePathsAllowedByCurrentPolicy(sourceFiles, policyRoot)
-      ? insufficientSourceEvidenceResponse(original, result, maxTokens, options.format, 'source access could not be verified against current policy')
-      : result
+    if (policyRoot && !sourcePathsAllowedByCurrentPolicy(sourceFiles, policyRoot)) {
+      return insufficientSourceEvidenceResponse(original, result, maxTokens, options.format, 'source access could not be verified against current policy')
+    }
+    if (withheld.size) {
+      const removeWithheld = (entries: unknown[]): unknown[] => entries.filter(entry => !withheld.has(String(record(entry).handle_id)))
+      if (Array.isArray(result.expandable)) result.expandable = removeWithheld(result.expandable)
+      const pack = record(result.pack), evidence = record(result.evidence), answerability = record(evidence.answerability)
+      if (Array.isArray(pack.expandable)) pack.expandable = removeWithheld(pack.expandable)
+      if (Array.isArray(answerability.verification_targets)) answerability.verification_targets = removeWithheld(answerability.verification_targets)
+      const cause = 'Verification source access could not be verified against current policy.'
+      evidence.answerability = { ...answerability, state: 'insufficient', answer_scope: 'partial', advisory: true,
+        caveats: unique([...array(answerability.caveats), cause]) }
+      if (answerability.broad_search_fallback === 'blocked') delete evidence.agent_directive
+      else evidence.agent_directive = 'explore_with_caution'
+      result.evidence = evidence
+      result.omitted_evidence ??= original.omitted_evidence ?? cause
+      result.serialized_budget = { max_tokens: maxTokens, token_count: 0, enforced: true }
+      const recount = (): number => estimateQueryTokens(options.format === 'text' ? renderSourceEvidenceText(result) : JSON.stringify(result))
+      for (let index = 0; index < 8; index++) {
+        const count = recount()
+        if (record(result.serialized_budget).token_count === count) break
+        record(result.serialized_budget).token_count = count
+      }
+      if (recount() > maxTokens) return insufficientSourceEvidenceResponse(original, result, maxTokens, options.format, cause)
+    }
+    return result
   }
   if (attach() <= maxTokens) return finish()
   if (options.verbose) {

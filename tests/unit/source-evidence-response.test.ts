@@ -64,10 +64,48 @@ describe('source evidence wire contract', () => {
       for (const refused of [finalizeSourceEvidenceResponse(input, budget, options),
         finalizeSourceEvidenceResponse(verboseInput, budget, { ...options, verbose: true })]) {
         expect(refused.omitted_evidence).toMatch(/current policy/)
-        expect(refused.expandable ?? []).toEqual([])
+        expect(refused.expandable).toEqual(input.expandable.slice(0, 2))
         expect((refused.evidence as { answerability: { verification_targets?: unknown[] } }).answerability.verification_targets ?? []).toEqual([])
-        expect(refused.pack).toBeUndefined()
+        expect(refused.pack).toEqual(allowed.pack)
+        expect(refused.evidence).toMatchObject({ answerability: { state: 'insufficient', answer_scope: 'partial' } })
+        expect(refused.serialized_budget).toEqual({ max_tokens: budget, token_count: estimateQueryTokens(JSON.stringify(refused)), enforced: true })
         expect(estimateQueryTokens(JSON.stringify(refused))).toBeLessThanOrEqual(budget)
+      }
+      // Unavailable navigation does not erase valid source; emitted excluded source still refuses.
+      writeFileSync(join(root, '.madarignore'), 'src/reset.ts\n')
+      expect(finalizeSourceEvidenceResponse(input, budget, options).pack).toBeUndefined()
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('preserves partial metadata and obligations while withholding unavailable or unbound verification handles', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-verification-metadata-'))
+    try {
+      const handle = 'verify-0123456789abcdef'
+      const entry = { handle_id: handle, evidence_class: 'supporting', count: 1,
+        follow_up: { focus_files: ['src/missing.ts'] } }
+      const pack = { target_node_id: 'n0', total_affected: 3,
+        traversal: { status: 'depth_limited', depth: 3, node_limit: 500 } }
+      const omission = { count: 2, reason: 'output_budget' }
+      for (const expandable of [[entry], [], [entry, entry]]) {
+        for (const verbose of [false, true]) {
+          const input = { task: 'impact', pack, expandable, omitted_evidence: omission,
+            evidence: { agent_directive: 'verify_one_targeted_file', answerability: {
+              state: 'verify_targets', answer_scope: 'partial', broad_search_fallback: 'blocked',
+              missing_obligations: ['impact:depth_limited'], caveats: ['Traversal stopped at the depth limit.'],
+              verification_targets: [{ handle_id: handle }],
+            } } }
+          const before = JSON.stringify(input)
+          const result = finalizeSourceEvidenceResponse(input, 1000, { sourcePolicyRoot: root, verbose })
+          expect(result.pack).toEqual(pack)
+          expect(result.expandable ?? []).toEqual([])
+          expect(result.evidence).toMatchObject({ answerability: { state: 'insufficient', answer_scope: 'partial',
+            broad_search_fallback: 'blocked', missing_obligations: ['impact:depth_limited'], verification_targets: [],
+            caveats: ['Traversal stopped at the depth limit.', 'Verification source access could not be verified against current policy.'] } })
+          expect(result.evidence).not.toHaveProperty('agent_directive')
+          expect(result.omitted_evidence).toEqual(omission)
+          expect(result.serialized_budget).toEqual({ max_tokens: 1000, token_count: estimateQueryTokens(JSON.stringify(result)), enforced: true })
+          expect(JSON.stringify(input)).toBe(before)
+        }
       }
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
