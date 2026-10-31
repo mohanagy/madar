@@ -666,7 +666,7 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
     ? Math.log(1 + (documentCount - Math.min(count, documentCount) + 0.5) / (Math.min(count, documentCount) + 0.5)) : 0
   const termWeights = new Map([...rankingTerms].map(term => [term, inverseFrequency(termDocuments.get(term) ?? 0)]))
   let fullRanking: Array<[string, SourceBodyMatch]> = []
-  const searches = queries.map((query, index) => {
+  const searches = queries.map<SourceBodySearch>((query, index) => {
     const { literals, terms, literalLookup, behaviorTerms, bodyHits } = query
     if (!literals.length && !terms.length) return { matches: new Map(), scanned_files: 0, scanned_bytes: 0, bounded: false }
     const current: SourceBodySearch = { ...result, matches: new Map() }
