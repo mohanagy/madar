@@ -249,8 +249,33 @@ describe('append-only final callsite source completion', () => {
     const handle = result.store.get(String(nodes(result.payload)[0]!.source_expand_handle))!
     expect(handle).toBeDefined()
     for (const line of delivered) expect(handle.pending_ranges.some(range => range.start_line <= line && range.end_line >= line)).toBe(false)
-    // Reserve a later full callsite before the earlier pair's optional ranges.
-    const tight = Number(record(finish(f, 10000, [compact]).payload.serialized_budget).token_count) + 1
+    // Measure both complete cursor-bearing alternatives: a price without the
+    // late callsite cannot bound its union because cursor token sizes can differ.
+    const shell = { ...base, ranges: range_alternatives![1]! }
+    const lower = compactRepeatedSourceMetadata(finish(f, 10000, [shell, late]).payload, 10000)
+    const upper = compactRepeatedSourceMetadata(estimate.payload, 10000)
+    for (const [payload, ranges] of [[lower, shell.ranges], [upper, compact.ranges]] as const) {
+      const lines = verifiedLines(payload, f.file, f.lines)
+      for (const range of [...ranges, ...late.ranges]) for (let line = range.start_line; line <= range.end_line; line++) expect(lines.has(line)).toBe(true)
+      expect(nodes(payload)[0]!.source_expand_handle).toEqual(expect.any(String))
+    }
+    const priceAt = (payload: RecordValue, cap: number): number => {
+      const priced = structuredClone(payload)
+      priced.serialized_budget = { max_tokens: cap, token_count: 0, enforced: true }
+      for (let i = 0; i < 12; i++) {
+        const count = estimateQueryTokens(JSON.stringify(priced))
+        if (record(priced.serialized_budget).token_count === count) break
+        record(priced.serialized_budget).token_count = count
+      }
+      const count = estimateQueryTokens(JSON.stringify(priced))
+      expect(record(priced.serialized_budget).token_count).toBe(count)
+      return count
+    }
+    const tight = Math.floor((priceAt(lower, 10000) + priceAt(upper, 10000)) / 2)
+    // Reserve every late legacy range while excluding the preferred optional
+    // context at the actual cap, including its exact cursor and budget receipt.
+    expect(priceAt(lower, tight)).toBeLessThanOrEqual(tight)
+    expect(priceAt(upper, tight)).toBeGreaterThan(tight)
     const tightResult = finish(f, tight), tightLines = verifiedLines(tightResult.payload, f.file, f.lines)
     for (const range of late.ranges) for (let line = range.start_line; line <= range.end_line; line++) expect(tightLines.has(line)).toBe(true)
     for (const site of first.sites) expect(tightLines.has(f.lines.join('\n').slice(0, site.start_offset).split('\n').length)).toBe(true)
