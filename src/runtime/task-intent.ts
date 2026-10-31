@@ -9,6 +9,7 @@ import {
   type TaskIntentSignalRule,
 } from '../contracts/task-intent.js'
 import type { ContextPackTaskKind } from '../contracts/context-pack.js'
+import { scanPromptRegions } from '../shared/prompt-regions.js'
 
 interface RuleMatch {
   kind: TaskIntentKind
@@ -41,6 +42,11 @@ function matchAnyPhrases(normalizedPrompt: string, phrases: readonly string[]): 
   return phrases
     .map(normalizeTerm)
     .filter((phrase) => containsTerm(normalizedPrompt, phrase))
+}
+
+function matchAnyPrefixes(normalizedPrompt: string, prefixes: readonly string[]): string[] {
+  return prefixes.map(normalizeTerm).filter(prefix => prefix.length > 0
+    && (normalizedPrompt === prefix || normalizedPrompt.startsWith(`${prefix} `)))
 }
 
 function matchAnyKeywords(tokens: ReadonlySet<string>, keywords: readonly string[]): string[] {
@@ -89,13 +95,14 @@ function validateSingleKeyword(
 
 function validateRuleDefinition(definition: TaskIntentDefinition, rule: TaskIntentSignalRule): void {
   const hasAnyPhrases = (rule.any_phrases?.length ?? 0) > 0
+  const hasAnyPrefixes = (rule.any_prefixes?.length ?? 0) > 0
   const hasAnyKeywords = (rule.any_keywords?.length ?? 0) > 0
   const hasKeywordGroups = (rule.keyword_groups?.length ?? 0) > 0
-  const matcherFieldCount = [hasAnyPhrases, hasAnyKeywords, hasKeywordGroups].filter(Boolean).length
+  const matcherFieldCount = [hasAnyPhrases, hasAnyPrefixes, hasAnyKeywords, hasKeywordGroups].filter(Boolean).length
 
   if (matcherFieldCount !== 1) {
     throw new Error(
-      `Invalid task intent rule ${taskIntentRuleLabel(definition, rule)}: must define exactly one of any_phrases, any_keywords, or keyword_groups`,
+      `Invalid task intent rule ${taskIntentRuleLabel(definition, rule)}: must define exactly one of any_phrases, any_prefixes, any_keywords, or keyword_groups`,
     )
   }
 
@@ -147,6 +154,13 @@ function evaluateRule(
     for (const phrase of phraseMatches) {
       matchedTerms.add(phrase)
     }
+  }
+
+  if (rule.any_prefixes) {
+    const prefixMatches = matchAnyPrefixes(normalizedPrompt, rule.any_prefixes)
+    if (prefixMatches.length === 0) return null
+    matched = true
+    for (const phrase of prefixMatches) matchedTerms.add(phrase)
   }
 
   if (rule.any_keywords) {
@@ -226,6 +240,67 @@ export function normalizeTaskIntentPrompt(prompt: string): string {
   return normalizeTerm(prompt)
 }
 
+function normalizedTaskDirectivePrompt(prompt: string): string {
+  const parts: string[] = []
+  let cursor = 0
+  for (const region of scanPromptRegions(prompt)) {
+    parts.push(normalizeTerm(prompt.slice(cursor, region.start)), '[data]')
+    cursor = region.end
+  }
+  parts.push(normalizeTerm(prompt.slice(cursor)))
+  // A data boundary must not join separate prose into a new directive phrase.
+  return parts.filter(Boolean).join(' ')
+}
+
+function sourceInvestigationDirective(prompt: string): string | null {
+  // Preserve authored sentence boundaries while preventing examples from
+  // supplying either the leading directive or a source-location preface.
+  const parts: string[] = []
+  let cursor = 0
+  for (const region of scanPromptRegions(prompt)) {
+    parts.push(prompt.slice(cursor, region.start), '[data]')
+    cursor = region.end
+  }
+  parts.push(prompt.slice(cursor))
+  let prose = parts.join('').trim()
+  const action = '(?:review|audit|implement|change|fix|refactor|migrate|add|build|create|remove|rename|write|update|generate|delete|modify|optimize)'
+  const polite = '(?:(?:can|could|would)\\s+you\\s+)?(?:please\\s+)?'
+  const preface = /^in\s+((?:[a-z0-9_-]+\s+){0,6}(?:source|repository|repo|codebase|code))\s*,\s*/i.exec(prose)
+  if (preface) {
+    if (new RegExp(`\\b(?:trace|find|${action})\\b`, 'i').test(preface[1]!)) return null
+    prose = prose.slice(preface[0].length)
+  }
+  const directive = new RegExp(`^${polite}(trace|(?:find|locate)\\s+(?:the\\s+)?(?:source|implementation)|(?:how\\s+(?:does|is)|what\\s+does|where\\s+is))(?=\\s|[,:?!;]|$)`, 'i').exec(prose)
+  if (!directive) return null
+
+  const question = /^(?:how|what|where)\b/i.test(directive[1]!)
+  const coordinatedVerbs = /\bdoes$/i.test(directive[1]!)
+  const questionEnd = question ? prose.search(/[.!?;](?=\s|$)|[\r\n]/) : -1
+  const actions = new RegExp(`([.!?;,:\\n]\\s*|\\b(?:and|then|also)\\s+)(${polite})(${action})\\b`, 'gi')
+  for (const match of prose.matchAll(actions)) {
+    const boundary = match[1]!, verb = match[3]!
+    const marked = match[2]!.trim().length > 0 || /\b(?:then|also)\b/i.test(boundary)
+    // The auxiliary in a question governs its coordinated behavior verbs:
+    // "How does the worker create a task, build context and update state?"
+    if (coordinatedVerbs && (questionEnd < 0 || match.index < questionEnd) && !marked) continue
+
+    const tail = prose.slice(match.index + match[0].length)
+    const before = prose.slice(directive[0].length, match.index)
+    // A source lookup can coordinate compound subjects ("audit log and
+    // review queue"). Articles/pronouns, purpose clauses and fresh sentences
+    // instead make the second review an authored action.
+    const subject = !question && /^(?:find|locate)\b/i.test(directive[1]!)
+      && !marked && /^(?:\s*and\s+|,\s*)$/i.test(boundary) && /\b(?:for|of|including)\b/i.test(before)
+      && !/[.!?;](?=\s|$)|[\r\n]/.test(before)
+      && /^(?:review|audit)$/i.test(verb)
+      && /^\s+[a-z][\w/-]*(?:\s|[.,;!?]|$)/i.test(tail)
+      && !/^\s+(?:a|an|the|this|that|these|those|it|them|its|their|our|my|your)\b/i.test(tail)
+      && !/^[^.!?;\n]*\bfor\s+(?:correctness|bugs?|issues?|risks?|regressions?|security|performance)\b/i.test(tail)
+    if (!subject) return null
+  }
+  return normalizeTerm(directive[1]!)
+}
+
 export function defaultContextKindForTaskIntent(kind: TaskIntentKind): TaskIntentContextKind {
   return taskIntentDefinition(kind).default_context_kind
 }
@@ -272,7 +347,9 @@ export function resolveTaskSelection(
 }
 
 export function classifyTaskIntent(prompt: string): TaskIntentClassification {
-  const normalizedPrompt = normalizeTaskIntentPrompt(prompt)
+  // Code, examples and quoted source text are evidence to retrieve, not task
+  // directives. Keep the original prompt intact for retrieval and diagnostics.
+  const normalizedPrompt = normalizedTaskDirectivePrompt(prompt)
   const tokens = promptTokens(normalizedPrompt)
   const ruleMatches = VALIDATED_TASK_INTENT_DEFINITIONS
     .flatMap((definition) => definition.rules.map((rule) => evaluateRule(definition, normalizedPrompt, tokens, rule)))
@@ -286,6 +363,21 @@ export function classifyTaskIntent(prompt: string): TaskIntentClassification {
         .reduce((total, match) => total + match.score, 0),
     }))
     .sort(compareScores)
+
+  // Described creation behavior and a feature named "review" are not change
+  // requests. Prefer an authored source question only over weak generic
+  // collisions; specialist signals and stronger directives keep their scores.
+  const explainScore = scores.find((score) => score.kind === 'explain')
+  if ((scores[0]?.kind === 'review' || scores[0]?.kind === 'implement') && scores[0].score === 7
+    && explainScore && explainScore.score <= 5
+    && ruleMatches.every((match) => ['review-explicit', 'implement-keywords', 'explain-question', 'debug-failure'].includes(match.rule_id))) {
+    const directive = sourceInvestigationDirective(prompt)
+    if (directive) {
+      ruleMatches.push({ kind: 'explain', rule_id: 'explain-source-investigation', score: 8 - explainScore.score, matched_terms: [directive] })
+      explainScore.score = 8
+      scores.sort(compareScores)
+    }
+  }
 
   const winningKind = scores[0]?.kind ?? 'explain'
   const winningDefinition = taskIntentDefinition(winningKind)

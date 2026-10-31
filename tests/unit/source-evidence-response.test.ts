@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { finalizeSourceEvidenceResponse, renderSourceEvidenceText } from '../../src/runtime/source-evidence-response.js'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { finalizeSourceEvidenceResponse, omitSourceNavigationDetails, renderSourceEvidenceText } from '../../src/runtime/source-evidence-response.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 
 const code = 'export function reset(token: string) {\n  if (expired(token)) throw new Error("expired");\n  return consume(token);\n}'
@@ -19,7 +22,216 @@ function response(task = 'explain') {
   }
 }
 
+function metadataRescueResponse() {
+  const input = response()
+  return { ...input, plan: undefined, task_intent: input.task,
+    pack: { ...input.pack, matched_nodes: input.pack.matched_nodes.map((node, index) => ({ ...node,
+      source_file: `src/reset-${index}.ts`, snippet: code.replace('consume(token)', `consume${index}(token)`) })) },
+    evidence: { ...input.evidence, missing_phases: [] } }
+}
+
 describe('source evidence wire contract', () => {
+  it('checks original verification scope when only its target survives pruning, including verbose fallback', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-verification-policy-'))
+    try {
+      mkdirSync(join(root, 'src'))
+      writeFileSync(join(root, 'src/reset.ts'), code)
+      writeFileSync(join(root, 'src/blocked.ts'), 'export const verification = true\n')
+      const handle = 'verify-0123456789abcdef', budget = 1000
+      const input = { ...response('explain'),
+        implementation: { validation_commands: ['optional implementation guidance '.repeat(1000)] },
+        expandable: [
+          { handle_id: 'expand:first', evidence_class: 'primary', count: 1 },
+          { handle_id: 'expand:second', evidence_class: 'supporting', count: 1 },
+          { handle_id: handle, evidence_class: 'supporting', count: 1,
+            follow_up: { focus_files: ['src/blocked.ts'] } },
+        ],
+        evidence: { answerability: { advisory: true, broad_search_fallback: 'allowed',
+          verification_targets: [{ handle_id: handle, focus_files: ['src/blocked.ts'] }] } },
+      }
+      const options = { sourcePolicyRoot: root }
+      const allowed = finalizeSourceEvidenceResponse(input, budget, options)
+      expect(allowed.expandable).toEqual(input.expandable.slice(0, 2))
+      expect(allowed.omitted_continuations).toBe(1)
+      expect(allowed.evidence).toMatchObject({ answerability: { verification_targets: [{ handle_id: handle }] } })
+      expect(allowed).not.toHaveProperty('omitted_evidence')
+      const verboseInput = { ...input, implementation: undefined, plan: { diagnostics: 'optional plan '.repeat(2000) } }
+      const verboseAllowed = finalizeSourceEvidenceResponse(verboseInput, budget, { ...options, verbose: true })
+      expect(verboseAllowed.diagnostics_omitted).toBe('output_budget')
+      expect(verboseAllowed).not.toHaveProperty('omitted_evidence')
+
+      writeFileSync(join(root, '.madarignore'), 'src/blocked.ts\n')
+      for (const refused of [finalizeSourceEvidenceResponse(input, budget, options),
+        finalizeSourceEvidenceResponse(verboseInput, budget, { ...options, verbose: true })]) {
+        expect(refused.omitted_evidence).toMatch(/current policy/)
+        expect(refused.expandable).toEqual(input.expandable.slice(0, 2))
+        expect((refused.evidence as { answerability: { verification_targets?: unknown[] } }).answerability.verification_targets ?? []).toEqual([])
+        expect(refused.pack).toEqual(allowed.pack)
+        expect(refused.evidence).toMatchObject({ answerability: { state: 'insufficient', answer_scope: 'partial' } })
+        expect(refused.serialized_budget).toEqual({ max_tokens: budget, token_count: estimateQueryTokens(JSON.stringify(refused)), enforced: true })
+        expect(estimateQueryTokens(JSON.stringify(refused))).toBeLessThanOrEqual(budget)
+      }
+      // Unavailable navigation does not erase valid source; emitted excluded source still refuses.
+      writeFileSync(join(root, '.madarignore'), 'src/reset.ts\n')
+      expect(finalizeSourceEvidenceResponse(input, budget, options).pack).toBeUndefined()
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('preserves partial metadata and obligations while withholding unavailable or unbound verification handles', () => {
+    const root = mkdtempSync(join(tmpdir(), 'madar-verification-metadata-'))
+    try {
+      const handle = 'verify-0123456789abcdef'
+      const entry = { handle_id: handle, evidence_class: 'supporting', count: 1,
+        follow_up: { focus_files: ['src/missing.ts'] } }
+      const pack = { target_node_id: 'n0', total_affected: 3,
+        traversal: { status: 'depth_limited', depth: 3, node_limit: 500 } }
+      const omission = { count: 2, reason: 'output_budget' }
+      for (const expandable of [[entry], [], [entry, entry]]) {
+        for (const verbose of [false, true]) {
+          const input = { task: 'impact', pack, expandable, omitted_evidence: omission,
+            evidence: { agent_directive: 'verify_one_targeted_file', answerability: {
+              state: 'verify_targets', answer_scope: 'partial', broad_search_fallback: 'blocked',
+              missing_obligations: ['impact:depth_limited'], caveats: ['Traversal stopped at the depth limit.'],
+              verification_targets: [{ handle_id: handle }],
+            } } }
+          const before = JSON.stringify(input)
+          const result = finalizeSourceEvidenceResponse(input, 1000, { sourcePolicyRoot: root, verbose })
+          expect(result.pack).toEqual(pack)
+          expect(result.expandable ?? []).toEqual([])
+          expect(result.evidence).toMatchObject({ answerability: { state: 'insufficient', answer_scope: 'partial',
+            broad_search_fallback: 'blocked', missing_obligations: ['impact:depth_limited'], verification_targets: [],
+            caveats: ['Traversal stopped at the depth limit.', 'Verification source access could not be verified against current policy.'] } })
+          expect(result.evidence).not.toHaveProperty('agent_directive')
+          expect(result.omitted_evidence).toEqual(omission)
+          expect(result.serialized_budget).toEqual({ max_tokens: 1000, token_count: estimateQueryTokens(JSON.stringify(result)), enforced: true })
+          expect(JSON.stringify(input)).toBe(before)
+        }
+      }
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('deduplicates a verification pointer only while its handle and unresolved obligation remain', () => {
+    const handle = 'expand:explain:supporting:0123456789ab'
+    const input = { task: 'explain', pack: { selection_scope: 'task_context' },
+      expandable: [{ handle_id: handle, evidence_class: 'supporting', count: 2 }],
+      evidence: { answerability: { missing_obligations: ['evidence:supporting'],
+        verification_targets: [{ handle_id: handle }] } } }
+    const result = omitSourceNavigationDetails(input)
+    expect(result.expandable).toEqual(input.expandable)
+    expect(result.evidence).toEqual({ answerability: { missing_obligations: ['evidence:supporting'] } })
+    expect(input.evidence.answerability.verification_targets).toEqual([{ handle_id: handle }])
+    for (const changed of [
+      { ...input, expandable: [...input.expandable, ...input.expandable] },
+      { ...input, expandable: [{ ...input.expandable[0], evidence_class: 'primary' }] },
+      { ...input, evidence: { answerability: { ...input.evidence.answerability, missing_obligations: [] } } },
+      { ...input, evidence: { answerability: { ...input.evidence.answerability,
+        verification_targets: [{ handle_id: handle, reason: 'Verify runtime activation.' }] } } },
+    ]) expect(omitSourceNavigationDetails(changed)).toBe(changed)
+  })
+
+  it('keeps source and recovery before optional navigation details under wire pressure', () => {
+    const input = metadataRescueResponse() as Record<string, unknown>
+    const pack = input.pack as Record<string, unknown>, evidence = input.evidence as Record<string, unknown>
+    pack.selection_scope = 'task_context'
+    pack.source_dependencies = { unresolved_calls: 24, unresolved_references: 3, withheld_graph_calls: 5, bounded: true,
+      future_count: 7, unresolved: Array.from({ length: 24 }, (_, index) => ({
+        source_file: `src/external/component-${index}.ts`, reason: 'external', line_number: index + 1,
+        callee: `externalLibrary.operation${index}`,
+      })) }
+    evidence.answerability = { advisory: true, broad_search_fallback: 'blocked',
+      missing_obligations: ['evidence:structural'], caveats: ['Receiver dispatch remains unresolved.'],
+      verification_targets: [
+        { focus_files: ['src/redundant.ts'], reason: 'verify evidence:structural' },
+        { focus_files: ['src/activation.ts'], reason: 'Check the deployment hook before inferring runtime activation.' },
+      ] }
+    input.expandable = [{ handle_id: 'expand:explain:primary:0123456789ab', evidence_class: 'primary', count: 2,
+      follow_up: { focus_files: ['src/reset-0.ts', 'src/reset-1.ts'],
+        focus_ranges: [{ source_file: 'src/reset-0.ts', start_line: 1, end_line: 4 }] } },
+    { handle_id: 'future:handle', evidence_class: 'supporting', count: 1, follow_up: { focus_files: ['src/future.ts'] } }]
+    const before = JSON.stringify(input), full = finalizeSourceEvidenceResponse(input, 10000), budget = 700
+    expect(estimateQueryTokens(JSON.stringify(full))).toBeGreaterThan(budget)
+    const output = finalizeSourceEvidenceResponse(input, budget), resultPack = output.pack as Record<string, unknown>
+    expect(resultPack.matched_nodes).toEqual((full.pack as Record<string, unknown>).matched_nodes)
+    expect(resultPack.relationships).toEqual((full.pack as Record<string, unknown>).relationships)
+    expect(resultPack.source_dependencies).toEqual({ unresolved_calls: 24, unresolved_references: 3,
+      withheld_graph_calls: 5, bounded: true, future_count: 7 })
+    expect(output.expandable).toEqual([
+      { handle_id: 'expand:explain:primary:0123456789ab', evidence_class: 'primary', count: 2 },
+      { handle_id: 'future:handle', evidence_class: 'supporting', count: 1, focus_files: ['src/future.ts'] },
+    ])
+    expect(output.evidence).toMatchObject({ discovery_exclusions: evidence.discovery_exclusions,
+      answerability: { broad_search_fallback: 'blocked', missing_obligations: ['evidence:structural'],
+        caveats: ['Receiver dispatch remains unresolved.'], verification_targets: [
+          { focus_files: ['src/activation.ts'], reason: 'Check the deployment hook before inferring runtime activation.' },
+        ] } })
+    expect(output.governance).toEqual(full.governance)
+    expect(output.diagnostics_omitted).toBe('output_budget')
+    expect(output).not.toHaveProperty('omitted_evidence')
+    expect(output.serialized_budget).toEqual({ max_tokens: budget, token_count: estimateQueryTokens(JSON.stringify(output)), enforced: true })
+    expect(estimateQueryTokens(JSON.stringify(output))).toBeLessThanOrEqual(budget)
+    expect(full).not.toHaveProperty('diagnostics_omitted')
+    expect((finalizeSourceEvidenceResponse(input, 10000, { verbose: true }).pack as Record<string, unknown>).source_dependencies)
+      .toEqual(pack.source_dependencies)
+    expect(JSON.stringify(input)).toBe(before)
+  })
+
+  it('uses repeated metadata savings before sacrificing an independent source owner', () => {
+    const input = metadataRescueResponse(), before = JSON.stringify(input)
+    const full = finalizeSourceEvidenceResponse(input, 10000)
+    const budget = estimateQueryTokens(JSON.stringify(full)) - 10
+    const result = finalizeSourceEvidenceResponse(input, budget)
+    expect(result.pack).toEqual(full.pack)
+    const expectedEvidence = { ...(full.evidence as Record<string, unknown>) }
+    delete expectedEvidence.missing_phases
+    expect(result.evidence).toEqual(expectedEvidence)
+    expect(result.governance).toEqual(full.governance)
+    expect(result.cache).toEqual({ status: 'hit' })
+    expect(result).not.toHaveProperty('task_intent')
+    expect(result).not.toHaveProperty('omitted_evidence')
+    expect(result.serialized_budget).toEqual({ max_tokens: budget,
+      token_count: estimateQueryTokens(JSON.stringify(result)), enforced: true })
+    expect(estimateQueryTokens(JSON.stringify(result))).toBeLessThanOrEqual(budget)
+    expect(JSON.stringify(input)).toBe(before)
+    expect(finalizeSourceEvidenceResponse(input, 10000)).toEqual(full)
+  })
+
+  it('keeps ordinary source omission when metadata savings cannot fit the whole packet', () => {
+    const input = metadataRescueResponse()
+    const full = finalizeSourceEvidenceResponse(input, 10000)
+    const budget = estimateQueryTokens(JSON.stringify(full)) - 150
+    const result = finalizeSourceEvidenceResponse(input, budget)
+    expect((result.pack as { matched_nodes?: unknown[] })?.matched_nodes?.length ?? 0).toBeLessThan(2)
+    expect(result.omitted_evidence).toBeDefined()
+    expect(estimateQueryTokens(JSON.stringify(result))).toBeLessThanOrEqual(budget)
+  })
+
+  it.each([{ verbose: true }, { format: 'text' as const }])('keeps metadata rescue out of %j output', options => {
+    const input = metadataRescueResponse()
+    const full = finalizeSourceEvidenceResponse(input, 10000, options)
+    const measure = (value: Record<string, unknown>) => estimateQueryTokens('format' in options
+      ? renderSourceEvidenceText(value) : JSON.stringify(value))
+    const budget = measure(full) - 10
+    const result = finalizeSourceEvidenceResponse(input, budget, options)
+    expect(result.cache).toEqual(input.cache)
+    expect(result.task_intent).toBe(input.task_intent)
+    expect(measure(result)).toBeLessThanOrEqual(budget)
+  })
+
+  it('does not change source verification or policy flags while rescuing metadata', () => {
+    const input = metadataRescueResponse()
+    input.evidence.answerability.broad_search_fallback = 'blocked'
+    const node = input.pack.matched_nodes[0]! as Record<string, unknown>
+    Object.assign(node, { snippet_unverified: true, snippet_truncated: true,
+      snippet_line_range: { start_line: 1, end_line: 8 }, snippet_omitted_ranges: [{ start_line: 5, end_line: 8 }] })
+    const full = finalizeSourceEvidenceResponse(input, 10000)
+    const result = finalizeSourceEvidenceResponse(input, estimateQueryTokens(JSON.stringify(full)) - 10)
+    expect(result.pack).toEqual(full.pack)
+    expect(result.governance).toEqual(full.governance)
+    expect(result.evidence).toMatchObject({ answerability: {
+      broad_search_fallback: 'blocked', caveats: (full.evidence as typeof input.evidence).answerability.caveats } })
+    expect(result).not.toHaveProperty('omitted_evidence')
+  })
+
   it('preserves impact identities and limits in compact JSON and text', () => {
     const traversal = { status: 'node_limited', depth: 3, node_limit: 500 }
     const impact_traversal = { analyzed_targets: 13, partial_targets: 1, depth_limited_targets: 0, node_limited_targets: 1 }

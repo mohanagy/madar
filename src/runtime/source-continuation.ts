@@ -14,7 +14,7 @@ import type { SourceCallsiteBundle, SourceFunctionValueReference, SourceFlowCata
 import { flowRange, sourceFlowDonorRanges, sourceFlowExpandable, sourceFlowQueryNames, sourceFlowReadNames } from './source-flow-budget.js'
 import { classifyRetrievalLevel, extractPromptExclusions } from './retrieval-gate.js'
 import { compileSourceExclusions } from './source-exclusions.js'
-import { fitPreparedSourceEvidenceResponse, omitDisconnectedSourceForCallsite, resolveSourceSnippet, SOURCE_EVIDENCE_RESPONSE_FORMAT, MIN_SOURCE_EVIDENCE_BUDGET } from './source-evidence-response.js'
+import { compactRepeatedSourceMetadata, fitPreparedSourceEvidenceResponse, omitDisconnectedSourceForCallsite, resolveSourceSnippet, SOURCE_EVIDENCE_RESPONSE_FORMAT, MIN_SOURCE_EVIDENCE_BUDGET } from './source-evidence-response.js'
 import { estimateQueryTokens } from './serve.js'
 
 type RecordValue = Record<string, unknown>
@@ -1303,7 +1303,10 @@ export function finalizeSourceCallsiteCompletion(
   let current = payload, selected = baseline, trials = 0, exchanged = false
   try {
     if (!configurationFresh()) return commit(baseline)
-    for (const bundle of bundles) {
+    const budgetRefused: SourceCallsiteBundle[] = []
+    // Finish every legacy opportunity first. An earlier optional shell must
+    // never consume space needed by a later complete callsite or its cursor.
+    for (const optional of [false, true]) for (const bundle of optional ? budgetRefused : bundles) {
       const nodes = nodesOf(current)
       const caller = nodes.find(node => node.node_id === bundle.from_id)
       const callee = nodes.find(node => node.node_id === bundle.to_id)
@@ -1315,7 +1318,7 @@ export function finalizeSourceCallsiteCompletion(
           const edge = record(value)
           return edge.relation === 'calls' && edge.from_id === bundle.from_id && edge.to_id === bundle.to_id
         })) continue
-      if (++trials > 32) break
+      if (!optional && ++trials > 32) break
       if (!bundle.source_dependencies.length || bundle.source_dependencies.length > MAX_SOURCE_PROBES
         || !bundle.source_dependencies.some(input => resolve(rootPath, input.source_file) === resolve(rootPath, caller.source_file as string))
         || !bundle.source_dependencies.some(input => resolve(rootPath, input.source_file) === resolve(rootPath, callee.source_file as string))) continue
@@ -1334,29 +1337,58 @@ export function finalizeSourceCallsiteCompletion(
         const end = text.slice(0, site.end_offset - 1).split('\n').length
         return bundle.ranges.some(range => range.start_line <= start && range.end_line >= end)
       })) continue
-      const delivered = union([...proof.delivered, ...bundle.ranges])
-      if (JSON.stringify(delivered) === JSON.stringify(proof.delivered)) continue
-      let trial = clone(current)
-      const target = nodesOf(trial)[nodes.indexOf(caller)]!
-      const rendered = render(source.lines, proof.range, delivered)
-      target.snippet = rendered.snippet
-      if (rendered.omitted.length) target.snippet_omitted_ranges = rendered.omitted
-      else { delete target.snippet_omitted_ranges; delete target.snippet_truncated }
-      let exchange = false
-      if (recount(trial, maxTokens) > maxTokens) {
-        if (!allocation || exchanged) continue
-        const replacement = omitDisconnectedSourceForCallsite(trial, { rootPath, prompt: allocation.prompt })
-        if (!replacement || recount(replacement, maxTokens) > maxTokens) continue
-        trial = replacement; exchange = true
+      let proposals = [bundle.ranges]
+      if (optional) {
+        const alternatives = bundle.range_alternatives
+        if (!Array.isArray(alternatives) || !alternatives.length || alternatives.length > 2
+          || !alternatives.every(ranges => validRanges(ranges, proof.range)
+            && !subtract(ranges, bundle.ranges).length && subtract(bundle.ranges, ranges).length > 0
+            && bundle.sites.every(site => {
+              const start = text.slice(0, site.start_offset).split('\n').length
+              const end = text.slice(0, site.end_offset - 1).split('\n').length
+              return ranges.some(range => range.start_line <= start && range.end_line >= end)
+            }))) continue
+        proposals = alternatives
       }
-      const staged = stage(trial)
-      // An addition cannot spend the budget previously allocated to a recovery
-      // handle unless that owner's missing source is now completely delivered.
-      if (protectedHandles.some(id => {
-        const node = nodesOf(staged.payload).find(value => value.node_id === id)
-        return !node || (!node.source_expand_handle && Array.isArray(node.snippet_omitted_ranges) && node.snippet_omitted_ranges.length > 0)
-      })) continue
-      current = trial; selected = staged; exchanged ||= exchange
+      for (const ranges of proposals) {
+        const delivered = union([...proof.delivered, ...ranges])
+        if (JSON.stringify(delivered) === JSON.stringify(proof.delivered)) continue
+        let trial = clone(current)
+        const target = nodesOf(trial)[nodes.indexOf(caller)]!
+        const rendered = render(source.lines, proof.range, delivered)
+        target.snippet = rendered.snippet
+        if (rendered.omitted.length) target.snippet_omitted_ranges = rendered.omitted
+        else { delete target.snippet_omitted_ranges; delete target.snippet_truncated }
+        // Price optional context using the same reversible metadata projection
+        // applied later by the stdio finalizer, before reserving its source cursor.
+        // A failed private proposal never changes the accepted legacy payload.
+        if (optional) trial = compactRepeatedSourceMetadata(trial, maxTokens)
+        let exchange = false
+        if (recount(trial, maxTokens) > maxTokens) {
+          // Optional context cannot remove any source to fund itself. Preserve
+          // the existing legacy exchange policy and only retry budget refusals.
+          const replacement = !optional && allocation && !exchanged
+            ? omitDisconnectedSourceForCallsite(trial, { rootPath, prompt: allocation.prompt }) : undefined
+          if (!replacement || recount(replacement, maxTokens) > maxTokens) {
+            if (!optional) budgetRefused.push(bundle)
+            continue
+          }
+          trial = replacement; exchange = true
+        }
+        const staged = stage(trial)
+        // Protect recovery established by the entire legacy pass and earlier
+        // optional additions, as well as the original baseline allocation.
+        const requiredHandles = optional ? nodesOf(selected.payload).filter(node => node.source_expand_handle).map(node => node.node_id) : protectedHandles
+        if (requiredHandles.some(id => {
+          const node = nodesOf(staged.payload).find(value => value.node_id === id)
+          return !node || (!node.source_expand_handle && Array.isArray(node.snippet_omitted_ranges) && node.snippet_omitted_ranges.length > 0)
+        })) {
+          if (!optional) budgetRefused.push(bundle)
+          continue
+        }
+        current = trial; selected = staged; exchanged ||= exchange
+        break
+      }
     }
     if (selected !== baseline) {
       if (!configurationFresh()) return commit(baseline)
@@ -1399,10 +1431,7 @@ export function beginSourceContinuation(
   return expandSourceContinuation(handle, budget, rootPath, context.governance)
 }
 
-export function expandSourceContinuation(
-  handle: SourceContinuationHandle, budget: number, rootPath: string, governance: unknown,
-): { payload: RecordValue; child?: { id: string; handle: SourceContinuationHandle } } {
-  requireBudget(budget)
+function currentSourceContinuation(handle: SourceContinuationHandle, rootPath: string, governance: unknown): SourceRead {
   if (!isSourceContinuationHandle(handle)) throw new Error('Malformed source continuation handle')
   if (!fresh(governance)) throw new Error('Source continuation refused stale or unknown source freshness; request a new context pack')
   if (record(handle.evidence.answerability).broad_search_fallback === 'blocked') throw new Error('Source continuation is blocked by its evidence policy')
@@ -1410,6 +1439,19 @@ export function expandSourceContinuation(
   const source = readSource(handle.source_file, rootPath)
   if (source.realRoot !== handle.real_root || source.canonical !== handle.canonical_file || source.hash !== handle.file_sha256
     || !validOwner(source, handle.owner_range, handle.label, handle.scope)) throw new Error('Source continuation source changed, moved, or was retargeted; request a new context pack')
+  return source
+}
+
+/** Verify an already-issued cursor without delivering lines, minting a child or advancing it. */
+export function validateSourceContinuationHandle(handle: SourceContinuationHandle, rootPath: string, governance: unknown): void {
+  currentSourceContinuation(handle, rootPath, governance)
+}
+
+export function expandSourceContinuation(
+  handle: SourceContinuationHandle, budget: number, rootPath: string, governance: unknown,
+): { payload: RecordValue; child?: { id: string; handle: SourceContinuationHandle } } {
+  requireBudget(budget)
+  const source = currentSourceContinuation(handle, rootPath, governance)
   const available: number[] = []
   for (const range of handle.pending_ranges) {
     for (let line = range.start_line; line <= range.end_line && available.length < MAX_LINES_PER_CALL; line++) available.push(line)

@@ -523,7 +523,7 @@ describe('classifyRetrievalLevel — exclusions and negation', () => {
 
   it.each([
     ['Do not read docs or fixtures.', ['docs', 'fixtures']],
-    ['Do not use tests and access generated files.', ['tests', 'generated files', 'files']],
+    ['Do not use tests and access generated files.', ['tests', 'generated files']],
     ['Do not inspect `src/generated/` or consult "docs".', ['src/generated/', 'docs']],
     ['Do not read docs, run tests, or infer generated output.', ['docs']],
     ['Do not read outside this workspace or use supplied state objects.', []],
@@ -594,7 +594,7 @@ describe('classifyRetrievalLevel — exclusions and negation', () => {
 
     expect(decision.intent).toBe('explain')
     expect(signals.excluded_domains).toContain('fixture')
-    expect(signals.excluded_terms).toEqual(expect.arrayContaining(['html reporters', 'reporters']))
+    expect(signals.excluded_terms).toEqual(['fixtures', 'html reporters'])
   })
 })
 
@@ -668,6 +668,42 @@ describe('parenthetical source references', () => {
 
 
 describe('compiled source exclusions', () => {
+  it.each(['model internals', 'transport diagnostics', 'tenant caching'])('keeps the complete generic operand %s', phrase => {
+    const [first, second] = phrase.split(' ') as [string, string]
+    const parsed = extractPromptExclusions(`Ignore ${phrase}. Explain the caller.`)
+    expect(parsed.excludedTerms).toEqual([phrase])
+    expect(parsed.excludedPathHints).toEqual([`${first}-${second}`])
+    expect(parsed.excludedDomains).toEqual([])
+    const matcher = compileSourceExclusions(parsed.excludedTerms, parsed.excludedPathHints, '/workspace')
+    expect(matcher.valid).toBe(true)
+    expect(matcher.matchesText(`// pay for the ${first} call before completion`)).toBe(false)
+    expect(matcher.matchesText(`// unrelated parser ${second}`)).toBe(false)
+    expect(matcher.matchesText(`${second} ${first}`)).toBe(false)
+    expect(matcher.matchesText(`${first} unrelated ${second}`)).toBe(false)
+    expect(matcher.matchesText(`// inspect ${phrase}`)).toBe(true)
+    expect(matcher.matchesLabel(`${first}${second[0]!.toUpperCase()}${second.slice(1)}()`)).toBe(true)
+    expect(matcher.matchesPath(`/workspace/src/${first}-${second}.ts`)).toBe(true)
+    expect(matcher.matchesPath(`/workspace/src/${first}/caller.ts`)).toBe(false)
+    const explicit = extractPromptExclusions(`Ignore ${phrase} and ${first}. Explain the caller.`)
+    expect(explicit.excludedTerms).toEqual([phrase, first])
+    expect(compileSourceExclusions(explicit.excludedTerms, explicit.excludedPathHints)
+      .matchesText(`// pay for the ${first} call`)).toBe(true)
+  })
+
+  it('retains explicit domain aliases and refuses invalid generic operands', () => {
+    for (const phrase of ['generated files', 'model config']) {
+      const parsed = extractPromptExclusions(`Ignore ${phrase}. Explain the caller.`)
+      expect(parsed.excludedTerms).toEqual([phrase])
+      expect(parsed.excludedDomains).toContain(phrase === 'generated files' ? 'generated' : 'config')
+      // Domain aliases intentionally remain broader than generic phrase matching.
+      expect(compileSourceExclusions(parsed.excludedTerms, parsed.excludedPathHints)
+        .matchesPath(phrase === 'generated files' ? 'src/generated/worker.ts' : 'src/config/worker.ts')).toBe(true)
+    }
+    const invalid = compileSourceExclusions(['a'], [], '/workspace')
+    expect(invalid.valid).toBe(false)
+    expect(invalid.matchesSource('/workspace/src/allowed.ts', 'allowed()')).toBe(true)
+  })
+
   it.each(['auth.ts', 'config.ts', 'package.json', 'run.ts', 'auth.py', 'auth.go'])('matches a whole filename without extension or label collisions: %s', file => {
     const matcher = compileSourceExclusions([file], [file.replaceAll('.', '-')], '/workspace')
     expect(matcher.valid).toBe(true)
@@ -715,7 +751,7 @@ describe('compiled source exclusions', () => {
     expect(globMatcher.matchesPath('src/file12.ts')).toBe(false)
     expect(matcher.matchesPath('src/a/public.ts')).toBe(false)
     expect(matcher.matchesPath('src/any.json')).toBe(true)
-    expect(matcher.matchesLabel('reporterFactory')).toBe(true)
+    expect(matcher.matchesLabel('reporterFactory')).toBe(false)
     expect(matcher.matchesText('reporter utilities')).toBe(true)
     expect(compileSourceExclusions(['workspace'], [], '/workspace').matchesPath('/workspace/src/allowed.ts')).toBe(false)
   })

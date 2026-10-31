@@ -116,7 +116,12 @@ export function compileSourceExclusions(
       derivedHints.add(pathHint(symbol))
       continue
     }
-    if (!sourceExclusionPathOperand(raw)) { generic.push(raw); continue }
+    if (!sourceExclusionPathOperand(raw)) {
+      generic.push(raw)
+      // This spelling is an alias of the whole operand, not another exclusion.
+      derivedHints.add(pathHint(raw))
+      continue
+    }
     const term = normalize(unquote(raw))
     derivedHints.add(pathHint(term))
     // Match only the existing simple glob grammar; never reduce unsupported
@@ -133,9 +138,15 @@ export function compileSourceExclusions(
   for (const hint of excludedPathHints) {
     if (!derivedHints.has(pathHint(unquote(hint)))) generic.push(hint)
   }
-  if (generic.some(value => !tokenizeLabel(value).length)) valid = false
-  const words = new Set(generic.flatMap(tokenizeLabel))
-  const matchesWords = (value: string): boolean => tokenizeLabel(value).some(word => words.has(word))
+  const operands = generic.map(tokenizeLabel)
+  if (operands.some(words => !words.length)) valid = false
+  // OR applies between operands. A compound excludes its complete ordered
+  // token sequence, not unrelated source mentioning either constituent word.
+  const phrases = [...new Set(operands.map(words => ` ${words.join(' ')} `))]
+  const matchesWords = (value: string): boolean => {
+    const text = ` ${tokenizeLabel(value).join(' ')} `
+    return phrases.some(phrase => text.includes(phrase))
+  }
   const matchesLabel = (label: string): boolean => !valid || matchesWords(label) || symbols.some(pattern => pattern.test(label))
   const matchesPath = (sourceFile: string, sourceRoot = rootPath): boolean => {
     if (!valid) return true

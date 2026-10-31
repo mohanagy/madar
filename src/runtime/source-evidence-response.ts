@@ -3,6 +3,7 @@ import { estimateQueryTokens } from './serve.js'
 import { completeSourceFileCandidates } from './source-read-context.js'
 import { completeRequestedSymbolCandidates } from './source-symbol-completion.js'
 import { sourceContainerBudgetPreference, sourceDisconnectedBudgetPreference } from './source-container-budget.js'
+import { applySourceLexicalCaution } from './source-lexical-context.js'
 
 type RecordValue = Record<string, unknown>
 export const MIN_SOURCE_EVIDENCE_BUDGET = 128
@@ -43,15 +44,51 @@ function completeRange(node: RecordValue): { start_line: number; end_line: numbe
   return { start_line: Number(range.start_line), end_line: Number(range.end_line) }
 }
 
+function literalReferenceNode(node: RecordValue): boolean {
+  return typeof node.source_file === 'string' && node.source_file.length > 0
+    && (node.snippet_scope === 'symbol' || node.snippet_scope === 'source_file')
+    && node.snippet_source === undefined && node.representation_type === undefined
+    && (node.snippet_unverified === undefined || node.snippet_unverified === false)
+    && (node.snippet_truncated === undefined || typeof node.snippet_truncated === 'boolean')
+}
+
 function containedSourceText(node: RecordValue, owner: RecordValue, source: string): string | null {
-  const targetRange = completeRange(node), ownerRange = completeRange(owner)
-  if (node.source_file !== owner.source_file || !targetRange || !ownerRange
-    || targetRange.start_line < ownerRange.start_line || targetRange.end_line > ownerRange.end_line) return null
+  const targetRange = completeRange(node), ownerRange = record(owner.snippet_line_range)
+  if (node.source_file !== owner.source_file || !targetRange
+    || owner.snippet_source === 'derived' || owner.snippet_unverified === true
+    || !Number.isSafeInteger(ownerRange.start_line) || !Number.isSafeInteger(ownerRange.end_line)
+    || Number(ownerRange.start_line) < 1 || Number(ownerRange.end_line) < Number(ownerRange.start_line)
+    || targetRange.start_line < Number(ownerRange.start_line) || targetRange.end_line > Number(ownerRange.end_line)) return null
   const lines = source.split('\n')
-  const start = targetRange.start_line - ownerRange.start_line
-  const end = targetRange.end_line - ownerRange.start_line + 1
-  if (end > lines.length) return null
-  return lines.slice(start, end).join('\n')
+  if (completeRange(owner)) {
+    const start = targetRange.start_line - Number(ownerRange.start_line)
+    const end = targetRange.end_line - Number(ownerRange.start_line) + 1
+    return end <= lines.length ? lines.slice(start, end).join('\n') : null
+  }
+  // A partial supplier may contain a complete child. Interpret every explicit
+  // omission before projecting; unknown truncation or a child crossing a gap
+  // cannot supply source, even when the surrounding lines happen to match.
+  if (!literalReferenceNode(node) || !literalReferenceNode(owner)
+    || !Array.isArray(owner.snippet_omitted_ranges) || !owner.snippet_omitted_ranges.length
+    || owner.snippet_omitted_ranges.length > 4096 || owner.snippet_truncated === false) return null
+  let cursor = Number(ownerRange.start_line), offset = 0, projected: string | null = null
+  const retain = (end: number): void => {
+    if (targetRange.start_line >= cursor && targetRange.end_line <= end) {
+      projected = lines.slice(offset + targetRange.start_line - cursor, offset + targetRange.end_line - cursor + 1).join('\n')
+    }
+    offset += end - cursor + 1
+  }
+  for (const value of owner.snippet_omitted_ranges) {
+    const gap = record(value)
+    if (!Number.isSafeInteger(gap.start_line) || !Number.isSafeInteger(gap.end_line)
+      || Number(gap.start_line) < cursor || Number(gap.end_line) < Number(gap.start_line)
+      || Number(gap.end_line) > Number(ownerRange.end_line)) return null
+    retain(Number(gap.start_line) - 1)
+    if (lines[offset++] !== `[omitted lines ${gap.start_line}-${gap.end_line}]`) return null
+    cursor = Number(gap.end_line) + 1
+  }
+  retain(Number(ownerRange.end_line))
+  return offset === lines.length ? projected : null
 }
 
 /** Resolve exactly the referenced subrange; never attribute the owner's whole body to a child symbol. */
@@ -189,6 +226,138 @@ export function compactRepeatedSourceMetadata(input: RecordValue, maxTokens: num
   return count <= maxTokens && count <= estimateQueryTokens(JSON.stringify(input)) ? result : input
 }
 
+/** Spend a constrained response on source before optional navigation examples.
+ * Counts, uncertainty, source identities and usable recovery handles remain. */
+export function omitSourceNavigationDetails(input: RecordValue): RecordValue {
+  if (input.task !== 'explain' || input.mode === 'delta' || input.delta_session_id
+    || record(input.pack).selection_scope !== 'task_context'
+    || input.diagnostics_omitted !== undefined && input.diagnostics_omitted !== 'output_budget') return input
+  const result = clone(input), dependencies = record(record(result.pack).source_dependencies)
+  const callCount = (value: unknown): number | undefined => {
+    const call = record(value), keys = Object.keys(call)
+    if (typeof call.callee !== 'string' || !call.callee) return undefined
+    if (keys.every(key => ['callee', 'line_number'].includes(key))
+      && Number.isSafeInteger(call.line_number) && Number(call.line_number) > 0) return 1
+    if (keys.every(key => ['callee', 'line_numbers'].includes(key)) && Array.isArray(call.line_numbers)
+      && call.line_numbers.length > 0 && call.line_numbers.length <= 4096
+      && call.line_numbers.every(line => Number.isSafeInteger(line) && line > 0)) return call.line_numbers.length
+    return undefined
+  }
+  const examples = dependencies.unresolved_groups ?? dependencies.unresolved
+  if (!(dependencies.unresolved_groups !== undefined && dependencies.unresolved !== undefined)
+    && Array.isArray(examples) && examples.length <= 4096
+    && Number.isSafeInteger(dependencies.unresolved_calls) && Number(dependencies.unresolved_calls) >= 0) {
+    let count = 0, known = true
+    for (const value of examples) {
+      const entry = record(value)
+      if (typeof entry.source_file !== 'string' || !entry.source_file || typeof entry.reason !== 'string'
+        || !['unresolved', 'external', 'no_implementation', 'outside_index', 'limit'].includes(entry.reason)) { known = false; break }
+      if (dependencies.unresolved_groups !== undefined) {
+        if (Object.keys(entry).some(key => !['source_file', 'reason', 'calls'].includes(key))
+          || !Array.isArray(entry.calls) || entry.calls.length > 4096) { known = false; break }
+        for (const call of entry.calls) {
+          const size = callCount(call)
+          if (size === undefined || (count += size) > 4096) { known = false; break }
+        }
+      } else {
+        const { source_file: _file, reason: _reason, ...call } = entry
+        const size = callCount(call)
+        if (size === undefined || (count += size) > 4096) known = false
+      }
+      if (!known) break
+    }
+    if (known && count <= Number(dependencies.unresolved_calls)) {
+      delete dependencies.unresolved_groups
+      delete dependencies.unresolved
+    }
+  }
+  const knownHint = (key: string, value: unknown): boolean => Array.isArray(value) && value.length <= 4096
+    && (key === 'focus_ranges' ? value.every(item => {
+      const range = record(item)
+      return Object.keys(range).every(field => ['source_file', 'start_line', 'end_line'].includes(field))
+        && typeof range.source_file === 'string' && Number.isSafeInteger(range.start_line)
+        && Number(range.start_line) > 0 && Number.isSafeInteger(range.end_line)
+        && Number(range.end_line) >= Number(range.start_line)
+    }) : value.every(item => typeof item === 'string'))
+  for (const value of array(result.expandable)) {
+    const entry = record(value)
+    const handle = typeof entry.handle_id === 'string'
+      ? /^expand:explain:(primary|supporting|structural|change|impact):[a-f0-9]{12}$/.exec(entry.handle_id) : null
+    if (!handle || handle[1] !== entry.evidence_class || !Number.isSafeInteger(entry.count) || Number(entry.count) <= 0) continue
+    for (const key of ['focus_files', 'focus_ranges', 'symbols']) if (knownHint(key, entry[key])) delete entry[key]
+  }
+  const answerability = record(record(result.evidence).answerability)
+  const redundantHandles = new Set<string>()
+  const handles = array(result.expandable).map(record)
+  for (const entry of handles) {
+    const parsed = typeof entry.handle_id === 'string'
+      ? /^expand:explain:(primary|supporting|structural|change|impact):[a-f0-9]{12}$/.exec(entry.handle_id) : null
+    if (parsed && parsed[1] === entry.evidence_class && Number.isSafeInteger(entry.count) && Number(entry.count) > 0
+      && handles.filter(other => other.handle_id === entry.handle_id).length === 1
+      && array(answerability.missing_obligations).includes(`evidence:${parsed[1]}`)) redundantHandles.add(String(entry.handle_id))
+  }
+  const repeatedReasons = new Set([
+    ...array(answerability.missing_obligations).filter(value => typeof value === 'string').map(value => `verify ${value}`),
+    ...array(answerability.caveats).filter(value => typeof value === 'string'),
+  ])
+  if (Array.isArray(answerability.verification_targets)) {
+    const targets = answerability.verification_targets.filter(value => {
+      const target = record(value)
+      if (Object.keys(target).length === 1 && typeof target.handle_id === 'string' && redundantHandles.has(target.handle_id)) return false
+      return typeof target.handle_id === 'string' && !!target.handle_id
+        || Object.keys(target).some(key => !['focus_files', 'focus_ranges', 'reason'].includes(key))
+        || target.reason !== undefined && !repeatedReasons.has(target.reason as string)
+        || ['focus_files', 'focus_ranges'].some(key => target[key] !== undefined && !knownHint(key, target[key]))
+        || target.focus_files === undefined && target.focus_ranges === undefined
+    })
+    if (targets.length) answerability.verification_targets = targets
+    else delete answerability.verification_targets
+  }
+  result.diagnostics_omitted = 'output_budget'
+  return estimateQueryTokens(JSON.stringify(result)) < estimateQueryTokens(JSON.stringify(input)) ? result : input
+}
+
+/** Final representation only: retain every owner's exact source and recovery
+ * identity while sharing complete bodies inside an unchanged partial supplier. */
+export function compactContainedSourceReferences(input: RecordValue, maxTokens: number): RecordValue {
+  const receipt = record(input.serialized_budget)
+  if (input.response_format !== SOURCE_EVIDENCE_RESPONSE_FORMAT || input.task !== 'explain'
+    || input.verbose === true || input.mode === 'delta' || input.delta_session_id
+    || !Number.isSafeInteger(maxTokens) || maxTokens < MIN_SOURCE_EVIDENCE_BUDGET
+    || Object.keys(receipt).some(key => !['max_tokens', 'token_count', 'enforced'].includes(key))
+    || receipt.max_tokens !== maxTokens || receipt.enforced !== true
+    || !Number.isSafeInteger(receipt.token_count) || Number(receipt.token_count) > maxTokens
+    || receipt.token_count !== estimateQueryTokens(JSON.stringify(input))) return input
+  const pack = record(input.pack), original = array(pack.matched_nodes).map(record)
+  if (!original.length || original.length > 128 || original.some(node => typeof node.node_id !== 'string' || !node.node_id)
+    || new Set(original.map(node => node.node_id)).size !== original.length
+    || original.reduce((sum, node) => sum + (typeof node.snippet === 'string' ? node.snippet.length : 0), 0) > 1024 * 1024) return input
+  const result = clone(input), resultPack = record(result.pack), nodes = array(resultPack.matched_nodes).map(record)
+  const before = original.map(node => resolveSourceSnippet(node, original))
+  let shared = false
+  for (const [index, node] of nodes.entries()) {
+    if (!literalReferenceNode(node) || typeof node.snippet !== 'string' || node.snippet_ref !== undefined || !completeRange(node)
+      || original.some(other => other.snippet_ref === node.node_id)) continue
+    const owner = original.find(other => literalReferenceNode(other) && other.node_id !== node.node_id && typeof other.snippet === 'string'
+      && other.snippet_ref === undefined && array(other.snippet_omitted_ranges).length > 0
+      && containedSourceText(node, other, other.snippet) === node.snippet)
+    if (!owner || before[index] === null) continue
+    delete node.snippet
+    node.snippet_ref = owner.node_id
+    shared = true
+  }
+  if (!shared || nodes.some((node, index) => resolveSourceSnippet(node, nodes) !== before[index])) return input
+  result.serialized_budget = { max_tokens: maxTokens, token_count: 0, enforced: true }
+  for (let index = 0; index < 12; index++) {
+    const count = estimateQueryTokens(JSON.stringify(result))
+    if (record(result.serialized_budget).token_count === count) {
+      return count <= maxTokens && count < estimateQueryTokens(JSON.stringify(input)) ? result : input
+    }
+    record(result.serialized_budget).token_count = count
+  }
+  return input
+}
+
 function compactPack(input: unknown): RecordValue {
   const pack = record(input)
   const result = pick(pack, ['target', 'target_node_id', 'target_file', 'depth', 'traversal', 'impact_traversal', 'affected_files', 'total_affected',
@@ -244,6 +413,13 @@ function compactPayload(input: RecordValue): RecordValue {
   if (record(input.pack)._source_discovery_deferred === true || record(input.pack)._explicit_source_targets === true) {
     Object.assign(answerability, { state: 'insufficient', answer_scope: 'partial', advisory: true })
   }
+  const unverifiedOmitted = record(input.pack)._unverified_source_omitted
+  if (Number.isSafeInteger(unverifiedOmitted) && Number(unverifiedOmitted) > 0) {
+    Object.assign(answerability, { state: 'insufficient', answer_scope: 'partial', advisory: true })
+    answerability.missing_obligations = unique([...array(answerability.missing_obligations), 'evidence:unverified_source'])
+    answerability.caveats = unique([...array(answerability.caveats), 'Unverified cached source was omitted.'])
+    if (answerability.broad_search_fallback !== 'blocked') record(result.evidence).agent_directive = 'explore_with_caution'
+  }
   const missingObligations = unique([...array(answerability.missing_obligations),
     ...array(evidence.missing_obligations), ...array(detail.missing_obligations)])
   if (missingObligations.length) answerability.missing_obligations = missingObligations
@@ -280,6 +456,7 @@ function compactPayload(input: RecordValue): RecordValue {
     caveats.push('Cached source excerpt could not be verified against the current file.')
   }
   record(record(result.evidence).answerability).caveats = [...new Set(caveats)]
+  applySourceLexicalCaution(result)
   if (input.governance) result.governance = { graph_freshness: compactFreshness(record(input.governance).graph_freshness) }
   const implementation = record(input.implementation)
   const guidance = pick(implementation, ['likely_edit_files', 'likely_test_files', 'validation_commands', 'validation_discovery', 'risk_boundaries'])
@@ -588,10 +765,11 @@ export function fitPreparedSourceEvidenceResponse<T extends {
 export function finalizeSourceEvidenceResponse(
   input: object,
   maxTokens: number,
-  options: { verbose?: boolean; format?: 'json' | 'text'; sourceRoot?: string; sourcePolicyRoot?: string; requestedSource?: { rootPath: string; prompt: string } } = {},
+  options: { verbose?: boolean; format?: 'json' | 'text'; sourceRoot?: string; sourcePolicyRoot?: string; requestedSource?: { rootPath: string; prompt: string }; deferNavigationDetails?: boolean } = {},
 ): RecordValue {
   if (maxTokens < MIN_SOURCE_EVIDENCE_BUDGET) throw new Error(`Source evidence budget must be at least ${MIN_SOURCE_EVIDENCE_BUDGET} tokens`)
   const original = clone(input)
+  applySourceLexicalCaution(original)
   let payload = options.verbose ? clone(original) : compactPayload(original)
   const count = (): number => estimateQueryTokens(options.format === 'text' ? renderSourceEvidenceText(payload) : JSON.stringify(payload))
   const attach = (): number => {
@@ -612,15 +790,57 @@ export function finalizeSourceEvidenceResponse(
     const sourceFiles = nodeContainers(record(result.pack)).flatMap(({ owner, key }) => array(owner[key]).map(record)
       .filter(node => typeof node.snippet === 'string' && node.snippet.length > 0 || typeof node.snippet_ref === 'string')
       .map(node => typeof node.source_file === 'string' ? node.source_file : ''))
-    return policyRoot && !sourcePathsAllowedByCurrentPolicy(sourceFiles, policyRoot)
-      ? insufficientSourceEvidenceResponse(original, result, maxTokens, options.format, 'source access could not be verified against current policy')
-      : result
+    const withheld = new Set<string>()
+    if (policyRoot) {
+      // Verification navigation is not delivered source. Withhold an unavailable
+      // whole handle using its original scope, never its truncated wire hints.
+      const advertised = new Set([...array(result.expandable), ...array(record(result.pack).expandable),
+        ...array(record(record(result.evidence).answerability).verification_targets)]
+        .map(record).map(entry => entry.handle_id)
+        .filter((id): id is string => typeof id === 'string' && /^verify-[a-f0-9]{16}$/.test(id)))
+      const originals = [...array(original.expandable), ...array(record(original.pack).expandable)].map(record)
+      for (const id of advertised) {
+        const bindings = originals.filter(entry => entry.handle_id === id)
+        if (bindings.length !== 1) { withheld.add(id); continue }
+        const entry = bindings[0]!, followUp = record(entry.follow_up)
+        const paths = [...array(followUp.focus_files ?? entry.focus_files),
+          ...array(followUp.focus_ranges ?? entry.focus_ranges).map(value => record(value).source_file)]
+        if (!paths.length || paths.some(path => typeof path !== 'string')
+          || !sourcePathsAllowedByCurrentPolicy(paths as string[], policyRoot)) withheld.add(id)
+      }
+    }
+    if (policyRoot && !sourcePathsAllowedByCurrentPolicy(sourceFiles, policyRoot)) {
+      return insufficientSourceEvidenceResponse(original, result, maxTokens, options.format, 'source access could not be verified against current policy')
+    }
+    if (withheld.size) {
+      const removeWithheld = (entries: unknown[]): unknown[] => entries.filter(entry => !withheld.has(String(record(entry).handle_id)))
+      if (Array.isArray(result.expandable)) result.expandable = removeWithheld(result.expandable)
+      const pack = record(result.pack), evidence = record(result.evidence), answerability = record(evidence.answerability)
+      if (Array.isArray(pack.expandable)) pack.expandable = removeWithheld(pack.expandable)
+      if (Array.isArray(answerability.verification_targets)) answerability.verification_targets = removeWithheld(answerability.verification_targets)
+      const cause = 'Verification source access could not be verified against current policy.'
+      evidence.answerability = { ...answerability, state: 'insufficient', answer_scope: 'partial', advisory: true,
+        caveats: unique([...array(answerability.caveats), cause]) }
+      if (answerability.broad_search_fallback === 'blocked') delete evidence.agent_directive
+      else evidence.agent_directive = 'explore_with_caution'
+      result.evidence = evidence
+      result.omitted_evidence ??= original.omitted_evidence ?? cause
+      result.serialized_budget = { max_tokens: maxTokens, token_count: 0, enforced: true }
+      const recount = (): number => estimateQueryTokens(options.format === 'text' ? renderSourceEvidenceText(result) : JSON.stringify(result))
+      for (let index = 0; index < 8; index++) {
+        const count = recount()
+        if (record(result.serialized_budget).token_count === count) break
+        record(result.serialized_budget).token_count = count
+      }
+      if (recount() > maxTokens) return insufficientSourceEvidenceResponse(original, result, maxTokens, options.format, cause)
+    }
+    return result
   }
   if (attach() <= maxTokens) return finish()
   if (options.verbose) {
     payload = compactPayload(original)
     payload.diagnostics_omitted = 'output_budget'
-    if (attach() <= maxTokens) return payload
+    if (attach() <= maxTokens) return finish()
   }
   // Remove advisory implementation summaries before sacrificing the underlying source.
   delete payload.implementation
@@ -643,7 +863,22 @@ export function finalizeSourceEvidenceResponse(
     && record(payload.pack).selection_scope === 'task_context'
     && freshness.status === 'fresh' && freshness.selected_context_status === 'fresh'
     ? sourceContainerBudgetPreference(options.requestedSource.prompt, options.requestedSource.rootPath) : undefined
-  while (attach() > maxTokens && removeOneEvidenceUnit(payload, preferred)) markOmitted(payload, ++omitted)
+  let navigationDetailsConsidered = false
+  while (attach() > maxTokens) {
+    if (!options.verbose && options.format !== 'text') {
+      // Reversible metadata savings may fit the remaining owners after an earlier
+      // eviction. Preserve their source before removing another owner.
+      const compact = compactRepeatedSourceMetadata(payload, maxTokens)
+      if (compact !== payload) { payload = compact; break }
+      if (!navigationDetailsConsidered && !options.deferNavigationDetails) {
+        navigationDetailsConsidered = true
+        const reduced = omitSourceNavigationDetails(payload)
+        if (reduced !== payload) { payload = reduced; continue }
+      }
+    }
+    if (!removeOneEvidenceUnit(payload, preferred)) break
+    markOmitted(payload, ++omitted)
+  }
   if (attach() <= maxTokens) return finish()
   // Tiny budgets cannot carry source plus all continuations. Preserve the policy decision and freshness.
   return insufficientSourceEvidenceResponse(original, payload, maxTokens, options.format)

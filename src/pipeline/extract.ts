@@ -49,6 +49,7 @@ import {
   withExtractionFileStemMapContext,
 } from './extract/core.js'
 import { unparenthesizeExpression } from './extract/typescript-utils.js'
+import { affectedCallIsUnshadowed, declarationIdentityKey, topLevelCaseIdentityPlan } from './extract/top-level-case-identities.js'
 import {
   extractAudioFile as extractAudioFragment,
   createCodeFileOnlyExtraction as createTextFallbackExtraction,
@@ -71,8 +72,8 @@ export type {
   ExtractionStageObserver,
 } from './extract/pipeline.js'
 
-// Invalidate legacy graphs that may have lost unchanged callers during updates.
-export const EXTRACTOR_CACHE_VERSION = 79
+// Invalidate cached graphs whose case-only declarations collapsed into one owner.
+export const EXTRACTOR_CACHE_VERSION = 80
 const PYTHON_KEYWORDS = new Set(['if', 'elif', 'else', 'for', 'while', 'return', 'class', 'def', 'lambda', 'with', 'print', 'sum'])
 const GENERIC_CODE_EXTENSIONS = new Set(['.go', '.rs', '.java', '.kt', '.kts', '.scala', '.cs', '.c', '.cc', '.cpp', '.cxx', '.h', '.hpp', '.swift', '.php', '.zig'])
 const RUBY_KEYWORDS = new Set(['if', 'elsif', 'else', 'unless', 'while', 'until', 'return', 'super', 'yield', 'class', 'def'])
@@ -3234,6 +3235,7 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
   const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(filePath))
   const stem = fileStemForPath(filePath)
   const fileNodeId = fileNodeIdForPath(filePath)
+  const casePlan = topLevelCaseIdentityPlan(sourceFile, stem)
   const nodes: ExtractionNode[] = []
   const edges: ExtractionEdge[] = []
   const seenIds = new Set<string>()
@@ -3307,7 +3309,7 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
     addEdge(edges, createEdge(fileNodeId, functionId, 'contains', filePath, line))
     if (body) {
       addTsCalls(body, functionId)
-      addNestedTsFunctions(body, functionId)
+      addNestedTsFunctions(body, functionId, undefined, 0, casePlan.logicalOwners.get(functionId) ?? functionId)
     }
   }
 
@@ -3322,8 +3324,10 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
           continue
         }
 
-        const baseId = _makeId(stem, baseName)
-        addNode(nodes, seenIds, createNode(baseId, baseName, filePath, line))
+        const allocatedBase = casePlan.ids.get(declarationIdentityKey('interface', baseName))
+        if (casePlan.affectedNames.has(baseName.toLowerCase()) && !allocatedBase) continue
+        const baseId = allocatedBase ?? _makeId(stem, baseName)
+        if (!allocatedBase) addNode(nodes, seenIds, createNode(baseId, baseName, filePath, line))
         addEdge(edges, createEdge(classId, baseId, 'inherits', filePath, line))
       }
     }
@@ -3401,13 +3405,19 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
       } else if (moduleSpecifierFromRequireCall(node)) {
         addTsImportEdge(edges, seenImportEdges, callerId, moduleSpecifierFromRequireCall(node) ?? '', filePath, line)
       } else if (ts.isIdentifier(expression)) {
-        addPendingCall(pendingCalls, {
+        const affected = casePlan.affectedNames.has(expression.text.toLowerCase())
+        const exactTarget = affected ? casePlan.ids.get(declarationIdentityKey('function', expression.text)) : undefined
+        if (!affected || (exactTarget && affectedCallIsUnshadowed(node, expression.text))) addPendingCall(pendingCalls, {
           callerId,
           calleeName: expression.text,
           line,
+          ...(exactTarget ? { preferredTargetId: exactTarget } : {}),
         })
       } else if (ts.isPropertyAccessExpression(expression)) {
-        addPendingCall(pendingCalls, {
+        const allowed = !casePlan.affectedNames.has(expression.name.text.toLowerCase())
+          || (expression.expression.kind === ts.SyntaxKind.ThisKeyword && currentClassId
+            && methodIdsByClass.has(`${currentClassId}:${expression.name.text.toLowerCase()}`))
+        if (allowed) addPendingCall(pendingCalls, {
           callerId,
           calleeName: expression.name.text,
           line,
@@ -3420,7 +3430,7 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
     ts.forEachChild(node, (child) => addTsCalls(child, callerId, currentClassId, false))
   }
 
-  const addNestedTsFunctions = (node: ts.Node, ownerId: string, currentClassId?: string, depth = 0): void => {
+  const addNestedTsFunctions = (node: ts.Node, ownerId: string, currentClassId?: string, depth = 0, logicalOwnerId = ownerId): void => {
     if (depth >= MAX_TS_NESTED_FUNCTION_DEPTH) {
       return
     }
@@ -3430,7 +3440,7 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
         if (skipOverloadSignature(candidate)) return
         const functionName = candidate.name.text
         const functionLine = sourceFile.getLineAndCharacterOfPosition(candidate.name.getStart(sourceFile)).line + 1
-        const functionId = _makeId(ownerId, functionName)
+        const functionId = _makeId(logicalOwnerId, functionName)
         addNode(nodes, seenIds, createNode(functionId, `${functionName}()`, filePath, functionLine, 'code', nodeOptionsForTsNode(candidate)))
         addEdge(edges, createEdge(ownerId, functionId, 'contains', filePath, functionLine))
         if (candidate.body) {
@@ -3452,7 +3462,7 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
 
           const functionName = declaration.name.text
           const functionLine = sourceFile.getLineAndCharacterOfPosition(declaration.name.getStart(sourceFile)).line + 1
-          const functionId = _makeId(ownerId, functionName)
+          const functionId = _makeId(logicalOwnerId, functionName)
           addNode(nodes, seenIds, createNode(functionId, `${functionName}()`, filePath, functionLine, 'code', nodeOptionsForTsNode(declaration)))
           addEdge(edges, createEdge(ownerId, functionId, 'contains', filePath, functionLine))
           addTsCalls(declaration.initializer.body, functionId, currentClassId)
@@ -3519,7 +3529,9 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
 
     if (ts.isInterfaceDeclaration(node)) {
       const interfaceName = node.name.text
-      const interfaceId = _makeId(stem, interfaceName)
+      const interfaceId = ts.isSourceFile(node.parent)
+        ? casePlan.ids.get(declarationIdentityKey('interface', interfaceName)) ?? _makeId(stem, interfaceName)
+        : _makeId(stem, interfaceName)
       const interfaceLine = sourceFile.getLineAndCharacterOfPosition(node.name.getStart(sourceFile)).line + 1
       addNode(nodes, seenIds, createNode(interfaceId, interfaceName, filePath, interfaceLine, 'code', nodeOptionsForTsNode(node)))
       addEdge(edges, createEdge(fileNodeId, interfaceId, 'contains', filePath, interfaceLine))
@@ -3531,8 +3543,10 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
             continue
           }
 
-          const baseId = _makeId(stem, baseName)
-          addNode(nodes, seenIds, createNode(baseId, baseName, filePath, interfaceLine))
+          const allocatedBase = casePlan.ids.get(declarationIdentityKey('interface', baseName))
+          if (casePlan.affectedNames.has(baseName.toLowerCase()) && !allocatedBase) continue
+          const baseId = allocatedBase ?? _makeId(stem, baseName)
+          if (!allocatedBase) addNode(nodes, seenIds, createNode(baseId, baseName, filePath, interfaceLine))
           addEdge(edges, createEdge(interfaceId, baseId, 'inherits', filePath, interfaceLine))
         }
       }
@@ -3561,7 +3575,9 @@ function extractJsStages(filePath: string): StagedExtractionFragment {
 
     if (ts.isFunctionDeclaration(node) && node.name) {
       const functionName = node.name.text
-      const functionId = _makeId(stem, functionName)
+      const functionId = ts.isSourceFile(node.parent)
+        ? casePlan.ids.get(declarationIdentityKey('function', functionName)) ?? _makeId(stem, functionName)
+        : _makeId(stem, functionName)
       const functionLine = sourceFile.getLineAndCharacterOfPosition(node.name.getStart(sourceFile)).line + 1
       addTsFunctionNode(functionId, `${functionName}()`, node, node.body)
       maybeMarkComponent(functionId, functionName, node.body, functionLine)

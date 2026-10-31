@@ -1,6 +1,6 @@
-import type { ContextPackRecoveryPlan, MadarAnswerabilityState, MadarVerificationTarget } from '../contracts/context-recovery.js'
+import type { ContextPackRecoveryPlan, MadarAnswerabilityState } from '../contracts/context-recovery.js'
 import type { KnowledgeGraph } from '../contracts/graph.js'
-import { assessMadarResponseEvidence } from './mcp-response-evidence.js'
+import { assessMadarRecoveryEvidence, type MadarRecoveryAssessment, type MadarRecoveryCandidate } from './mcp-response-evidence.js'
 import { reconcileRetrievalPlanQueryEvidence } from './retrieve/conceptual-fallback.js'
 import { buildRetrievalEvidencePlanFromResult } from './retrieve/pipeline.js'
 import type { RetrieveOptions, RetrieveResult } from './retrieve.js'
@@ -12,14 +12,6 @@ const DEFAULT_MAX_ELAPSED_MS = 750
 const ORIGINAL_NODE_BOOST = 6
 const FOCUS_NODE_BOOST = 4.5
 const PREVIEW_NODE_BOOST = 3.5
-
-interface RecoveryAssessment {
-  state: MadarAnswerabilityState
-  missingObligations: string[]
-  verificationTargets: MadarVerificationTarget[]
-  strength: 'strong' | 'moderate' | 'weak'
-  selectedRelationships: number
-}
 
 export interface ContextPackRecoveryOptions {
   enabled?: boolean
@@ -35,48 +27,24 @@ function boundedPositiveInteger(value: number | undefined, fallback: number, max
   return Math.min(maximum, Math.max(1, finiteValue))
 }
 
-function assess(result: RetrieveResult, question: string): RecoveryAssessment {
-  const assessment = assessMadarResponseEvidence({
+function assess(result: RetrieveResult, question: string): MadarRecoveryAssessment {
+  return assessMadarRecoveryEvidence({
     evidencePlan: buildRetrievalEvidencePlanFromResult(result),
     question,
   })
-  return {
-    state: assessment.answerability.state,
-    missingObligations: assessment.answerability.missing_obligations,
-    verificationTargets: assessment.answerability.verification_targets,
-    strength: assessment.evidence_strength.level,
-    selectedRelationships: assessment.evidence_strength.selected_relationships,
-  }
 }
 
-function readinessRank(state: MadarAnswerabilityState): number {
-  switch (state) {
-    case 'ready': return 4
-    case 'ready_with_caveat': return 3
-    case 'verify_targets': return 2
-    case 'insufficient': return 1
-  }
-}
-
-function strengthRank(strength: RecoveryAssessment['strength']): number {
-  switch (strength) {
-    case 'strong': return 3
-    case 'moderate': return 2
-    case 'weak': return 1
-  }
-}
-
-function assessmentImproved(before: RecoveryAssessment, after: RecoveryAssessment): boolean {
-  const beforeReadiness = readinessRank(before.state)
-  const afterReadiness = readinessRank(after.state)
+function assessmentImproved(before: MadarRecoveryAssessment, after: MadarRecoveryAssessment): boolean {
+  const beforeReadiness = before.readinessRank
+  const afterReadiness = after.readinessRank
   if (afterReadiness !== beforeReadiness) {
     return afterReadiness > beforeReadiness
   }
   if (after.missingObligations.length !== before.missingObligations.length) {
     return after.missingObligations.length < before.missingObligations.length
   }
-  const beforeStrength = strengthRank(before.strength)
-  const afterStrength = strengthRank(after.strength)
+  const beforeStrength = before.strengthRank
+  const afterStrength = after.strengthRank
   if (afterStrength !== beforeStrength) {
     return afterStrength > beforeStrength
   }
@@ -93,7 +61,7 @@ function sourceMatchesFocus(sourceFile: string, focusFile: string): boolean {
   return source === focus || source.endsWith(`/${focus}`) || focus.endsWith(`/${source}`)
 }
 
-function targetKey(target: MadarVerificationTarget): string {
+function targetKey(target: MadarRecoveryCandidate): string {
   return target.handle_id
     ?? `${target.evidence_class ?? ''}\u0000${target.reason}\u0000${target.focus_files.map(portablePath).sort().join('\u0000')}`
 }
@@ -120,7 +88,7 @@ function reconcileRetrievalPlan(result: RetrieveResult, question: string): Retri
 function addTargetCandidates(
   graph: KnowledgeGraph,
   result: RetrieveResult,
-  target: MadarVerificationTarget,
+  target: MadarRecoveryCandidate,
   boosts: Map<string, number>,
   recoveryCandidateIds: Set<string>,
   maxCandidateNodes: number,
@@ -246,7 +214,7 @@ export function recoverContextPackResult(
       budgetExhausted = true
       break
     }
-    const target = currentAssessment.verificationTargets.find((candidate) => !attemptedTargets.has(targetKey(candidate)))
+    const target = currentAssessment.candidates.find((candidate) => !attemptedTargets.has(targetKey(candidate)))
     if (!target) {
       noTargets = attempts.length === 0
       break

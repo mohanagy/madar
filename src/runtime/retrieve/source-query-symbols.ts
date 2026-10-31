@@ -1,4 +1,17 @@
+import { isQueryStopWord } from './pipeline.js'
+
 export interface SourceSymbolOccurrence { name: string; start: number; end: number; explicit: boolean }
+
+const SOURCE_SYMBOL_ROLES = 'functions?|methods?|symbols?|class(?:es)?|types?|interfaces?|enums?|variables?|constants?|propert(?:y|ies)|namespaces?|identifiers?'
+const CODE_ROLE_SUFFIX = new RegExp(`\\b(?:${SOURCE_SYMBOL_ROLES})\\s+[\`"']?$`, 'i')
+
+/** A list lookup names this occurrence, not every word after a lookup verb. */
+function listedLookupTarget(before: string, after: string): boolean {
+  const target = String.raw`#?[A-Za-z_$][\w$]*(?:\.#?[A-Za-z_$][\w$]*)*(?:\(\))?`
+  const separator = String.raw`(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)`
+  const prefix = new RegExp(String.raw`^(?:please\s+)?(?:where\s+(?:is|are|can\s+I\s+find)|how\s+(?:does|do)|explain|show|find|locate|describe|change|update|fix)\s+(?:the\s+)?(?:(?:implementation|source|definition)\s+of\s+)?(?:(?:${SOURCE_SYMBOL_ROLES})\s+)?(?:${target}${separator})*$`, 'i')
+  return prefix.test(before.trimStart()) && /^(?:\s*[.!?]?\s*$|\s*,|\s+(?:and|or)\s+)/i.test(after)
+}
 
 /** Complete lexemes preserve member identity; explicit syntax belongs to its occurrence. */
 export function sourceQuerySymbols(question: string, options: { includeImplicit?: boolean } = {}): SourceSymbolOccurrence[] {
@@ -15,7 +28,7 @@ export function sourceQuerySymbols(question: string, options: { includeImplicit?
     const markedAt = (after: string): boolean => {
       const quote = before.at(-1)
       return ((quote === '`' || quote === '"' || quote === "'") && new RegExp(`^(?:\\(\\))?${quote}`).test(after))
-        || /^[ \t]*\(/.test(after) || /\b(?:function|method|symbol)\s+[`"']?$/i.test(before)
+        || /^[ \t]*\(/.test(after) || CODE_ROLE_SUFFIX.test(before)
     }
     // Without code syntax, a spaced period can be sentence punctuation. Keep
     // its contiguous prefix and resume there; do not swallow the next sentence.
@@ -31,10 +44,14 @@ export function sourceQuerySymbols(question: string, options: { includeImplicit?
     // Call syntax, quoting, qualification or a standalone lookup can still
     // explicitly request a declaration named POST (or another method).
     const httpMethod = /^(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE)$/.test(name)
-    const codeShaped = !httpMethod && /[_$#.]|[a-z][A-Z]|^[A-Z]/.test(name)
+    // Sentence capitalization alone does not turn a prose stopword into code.
+    // Keep uppercase constants and genuine PascalCase names as before.
+    const proseCapital = /^[A-Z][a-z]*$/.test(name) && isQueryStopWord(name)
+    const codeShaped = !httpMethod && (/[_$#.]|[a-z][A-Z]/.test(name) || /^[A-Z]/.test(name) && !proseCapital)
     const standalone = /^(?:please\s+)?(?:how\s+(?:does|do)|explain|show|find|locate|describe|change|update|fix)\s+(?:the\s+)?(?:(?:implementation|source|definition)\s+of\s+)?$/i.test(before)
       && /^[.!?]?\s*$/.test(after)
     const explicit = codeShaped || markedAt(after) || standalone
+      || proseCapital && ((!before.trim() && /^[.!?]?\s*$/.test(after)) || listedLookupTarget(before, after))
     if (explicit || options.includeImplicit) result.push({ name, start, end, explicit })
   }
   return result

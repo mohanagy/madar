@@ -9,7 +9,7 @@ import { retrieveContext, type RetrieveMatchedNode, type RetrieveResult } from '
 import { selectSourceDependencies, sourceSelectionProvenanceKey } from '../../src/runtime/retrieve/source-dependencies.js'
 import { readEvidenceLines, resolveSourceSymbolRange } from '../../src/runtime/retrieve/source-evidence.js'
 import { loadGraph } from '../../src/runtime/serve.js'
-import { protectSourceQueryWitnesses, scopedSourceDeferralCore } from '../../src/runtime/source-scoped-deferral.js'
+import { protectSourceDiscoveryWitnesses, protectSourceQueryWitnesses, scopedSourceDeferralCore } from '../../src/runtime/source-scoped-deferral.js'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { lineRangeFromSourceLocation } from '../../src/shared/source-location.js'
 
@@ -17,6 +17,68 @@ const roots: string[] = []
 afterEach(() => { vi.unstubAllEnvs(); roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })) })
 
 describe('scoped source deferral', () => {
+  it('prefers an authenticated literal subject while protecting connected source and unsupported requests', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'madar-literal-subject-'))); roots.push(root)
+    const node = (id: string, text: string, file = `${id}.ts`, line = 1): ContextPackNode => ({
+      node_id: id, label: `${id}()`, source_file: file, line_number: line, snippet: text, snippet_scope: 'symbol',
+      snippet_line_range: { start_line: line, end_line: line },
+    })
+    const core = node('notice', 'export function notice() { return "request accepted"; }')
+    const constant = node('limit', 'const limit = 8;', 'notice.ts', 2)
+    const helper = node('helper', 'export function helper() { return 8; }')
+    const helperConstant = node('helperLimit', 'const helperLimit = 8;', 'helper.ts', 2)
+    const caller = node('caller', 'export function caller() { return 8; }')
+    const upstream = node('upstream', 'export function upstream() { return 8; }')
+    const privateHelper = node('privateHelper', 'export function privateHelper() { return 8; }')
+    const distractor = node('distractor', 'export function distractor() { return "optional fractional counts formatted"; }')
+    const secondLiteral = node('second', 'export function second() { return "request accepted"; }')
+    const partial = node('partial', 'export function partial() { return 0; }')
+    const forged = node('forged', 'export function forged() { return 0; }')
+    const supplier = node('supplier', 'export function supplier() { return 0; }')
+    const nodes = [core, constant, helper, helperConstant, caller, upstream, privateHelper, distractor, secondLiteral, partial, forged, supplier]
+    for (const current of nodes.filter(current => current !== constant && current !== helperConstant)) writeFileSync(join(root, current.source_file), current.snippet!)
+    writeFileSync(join(root, core.source_file), `${core.snippet}\n${constant.snippet}`)
+    writeFileSync(join(root, helper.source_file), `${helper.snippet}\n${helperConstant.snippet}`)
+    partial.snippet_truncated = true
+    forged.snippet = 'export function forged() { return 1; }'
+    nodes.push({ ...supplier, node_id: 'reference', snippet: null, snippet_ref: supplier.node_id! })
+    const question = 'In the optional "request accepted" notice, when is it suppressed, and how are fractional counts formatted? For example, what does a count of 8.5 produce?'
+    const retrieval = { question, selection_scope: 'task_context', task_contract: { task_kind: 'explain' },
+      relationships: [
+        { from_id: 'notice', to_id: 'helper', relation: 'depends_on' },
+        { from_id: 'caller', to_id: 'notice', relation: 'calls' },
+        { from_id: 'upstream', to_id: 'caller', relation: 'contains' },
+      ],
+      [sourceSelectionProvenanceKey]: { resolved_pairs: [{ from_id: 'notice', to_id: 'privateHelper', relation: 'calls', kind: 'call' }] },
+    } as RetrieveResult
+    const retained = new Set(['notice'])
+    expect(protectSourceQueryWitnesses(question, nodes, retained, root)).toContain('distractor')
+    const protectedIds = protectSourceDiscoveryWitnesses(retrieval, nodes, retained, root)
+    expect(protectedIds).not.toContain('distractor')
+    for (const current of nodes.filter(current => current !== distractor)) expect(protectedIds, current.node_id).toContain(current.node_id)
+    for (const unsupported of [
+      question.replace('In the optional', 'Explain the optional'),
+      question.replace('In the optional', 'In all optional'),
+      question.replace('In the optional', 'In accounts and'),
+      question.replace('fractional counts', '"another marker" counts'),
+      question.replace('and how are fractional counts formatted', 'and also how are fractional counts formatted'),
+      question.replace('and how are fractional counts formatted', 'and how does helper() format fractional counts'),
+      question.replace('and how are fractional counts formatted', 'and how does unknown(input) format fractional counts'),
+      question.replace('and how are fractional counts formatted', 'and how are fractional counts in distractor.ts formatted'),
+      question.replace('For example, what does a count of 8.5 produce?', 'How are fractional counts formatted?'),
+      question.replace('and how are fractional counts formatted', 'and compare fractional counts'),
+    ]) expect(protectSourceDiscoveryWitnesses({ ...retrieval, question: unsupported }, nodes, retained, root), unsupported).toContain('distractor')
+    expect(protectSourceDiscoveryWitnesses({ ...retrieval, question: question.replace('fractional counts', 'fractional counts versus other counts') }, nodes, retained, root)).not.toContain('distractor')
+    for (const replacement of [
+      { ...core, snippet: 'export function notice() { return "forged request accepted"; }' },
+      { ...core, snippet_truncated: true },
+      { ...core, snippet: null },
+    ]) expect(protectSourceDiscoveryWitnesses(retrieval, [replacement, ...nodes.slice(1)], retained, root)).toContain('distractor')
+    expect(protectSourceDiscoveryWitnesses(retrieval, nodes, new Set(['helper']), root)).toContain('distractor')
+    const { to_id: _toId, ...unknownRelationship } = retrieval.relationships[0]!
+    expect(protectSourceDiscoveryWitnesses({ ...retrieval, relationships: [unknownRelationship] }, nodes, retained, root)).toContain('distractor')
+  })
+
   it('retains an independent unnamed behavior witness beside a requested operation', async () => {
     vi.stubEnv('MADAR_TOOL_PROFILE', 'strict')
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'madar-independent-witness-'))); roots.push(root)
