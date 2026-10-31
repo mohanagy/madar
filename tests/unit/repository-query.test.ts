@@ -13,10 +13,10 @@ import * as manifests from '../../src/shared/package-manifest.js'
 const roots: string[] = []
 afterEach(() => { vi.restoreAllMocks(); roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })) })
 
-function fixture(indexed = true) {
+function fixture(indexed = true, name = 'ledgergarden') {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'madar-repository-query-'))); roots.push(root)
   const packagePath = join(root, 'package.json')
-  writeFileSync(packagePath, JSON.stringify({ name: 'ledgergarden' }))
+  writeFileSync(packagePath, JSON.stringify({ name }))
   const graph = new KnowledgeGraph({ directed: true }); graph.graph.root_path = root
   if (indexed) graph.addNode('package', { label: 'package.json', source_file: packagePath, file_type: 'config' })
   return { root, packagePath, graph }
@@ -26,16 +26,37 @@ const question = 'Trace credit refund and durable attempt state in LedgerGarden,
 describe('repository-framed source evidence', () => {
   it('uses only indexed current repository identity and preserves the lexical vocabulary', () => {
     const { graph } = fixture()
-    for (const prompt of [question, 'How does LedgerGarden refund credit and recover pending attempts?']) {
+    for (const prompt of [
+      question, 'How does LedgerGarden refund credit and recover pending attempts?',
+      'For LedgerGarden payment recovery, explain credit refunds and pending attempts.',
+      'Trace LedgerGarden credit refunds and durable attempt recovery.',
+      'Explain how LedgerGarden handles credit refunds and pending attempts.',
+      'Compare durable attempt outcomes across LedgerGarden after refunds.',
+      'Describe refunds in the LedgerGarden codebase.',
+      'Explain "refund_failed" behavior in LedgerGarden across retries.',
+      'Find "refund_failed" in LedgerGarden and explain the retry behavior.',
+    ]) {
       const binding = prepareRepositoryQuery(graph, prompt, 'explain')!
       expect(binding).toBeDefined()
       expect(binding.rawQuestion).toBe(prompt)
       expect(binding.effectiveQuestion).toBe(prompt.replace('LedgerGarden', 'Ledger Garden'))
       expect(sourceQueryLiterals(binding.effectiveQuestion)).not.toContain('LedgerGarden')
       expect(sourceBodyQueryTerms(binding.effectiveQuestion)).toEqual(sourceBodyQueryTerms(prompt))
+      expect(sourceQueryLiterals(binding.effectiveQuestion)).toEqual(sourceQueryLiterals(prompt).filter(value => value !== 'LedgerGarden'))
     }
     expect(prepareRepositoryQuery(fixture(false).graph, question, 'explain')).toBeUndefined()
     expect(prepareRepositoryQuery(graph, 'In the LedgerGarden source, trace refunds.', 'explain')).toBeUndefined()
+  })
+
+  it('recognizes the saved behavioral question by repository identity rather than its prefix', () => {
+    const { graph } = fixture(true, 'craftmyletter')
+    const prompt = 'For CraftMyLetter AI review of an existing saved letter, explain the route flow: when one review credit is deducted, what durable attempt record is created before calling the engine; outcomes for accepted revision with successful save, no revision where immediate refund transaction fails before committing, and engine throws where refund transaction commits; HTTP status/body behavior, saved letter main text/history effects, credit balance and attempt state. Then trace the existing recovery job: eligibility timing/criteria, recovery balance/state changes, idempotence preventing repeated refund for failed refund and engine exception, and exclusion of accepted review. Find exact source and tests/config if useful. Do not analyze model internals.'
+    const binding = prepareRepositoryQuery(graph, prompt, 'explain')!
+    expect(binding).toBeDefined()
+    expect(binding.rawQuestion).toBe(prompt)
+    expect(binding.effectiveQuestion).toBe(prompt.replace('CraftMyLetter', 'Craft My Letter'))
+    expect(sourceBodyQueryTerms(binding.effectiveQuestion)).toEqual(sourceBodyQueryTerms(prompt))
+    expect(sourceQueryLiterals(binding.effectiveQuestion)).toEqual(sourceQueryLiterals(prompt).filter(value => value !== 'CraftMyLetter'))
   })
 
   it('preserves explicit occurrences, ambiguous symbols and unsupported framing', () => {
@@ -44,7 +65,18 @@ describe('repository-framed source evidence', () => {
       'Find the LedgerGarden implementation.', 'How does LedgerGarden() refund credit?',
       'How does LedgerGarden.refund work?', 'Trace credit in src/LedgerGarden.ts, including retries.',
       'Trace credit in `LedgerGarden`, including retries.', `"${question}"`, `\`\`\`text\n${question}\n\`\`\``,
+      'For "LedgerGarden" credit recovery, explain refunds.', 'For ‘LedgerGarden’ credit recovery, explain refunds.',
+      '“For LedgerGarden payment recovery, explain refunds.”',
+      'Explain function LedgerGarden and its refund behavior.', 'Explain the LedgerGarden class and its refund behavior.',
+      'Explain functions named LedgerGarden and refund behavior.',
+      'Explain implementation of LedgerGarden and its refund behavior.', 'Show the definition of LedgerGarden.',
+      'Explain LedgerGarden.', 'Find LedgerGarden and explain credit refunds.',
+      'Trace refunds; find LedgerGarden and explain its callers.',
+      'Explain #LedgerGarden and refund behavior.', 'Explain LedgerGarden[entry] and refund behavior.',
+      'Explain namespace.LedgerGarden and refund behavior.', 'Explain LedgerGarden :: refund behavior.',
+      'Explain @LedgerGarden and refund behavior.', 'Explain C:\\LedgerGarden\\refund.ts.',
       question + ' Also find LedgerGarden().', question + ' Also find the LedgerGarden symbol.',
+      question + ' LedgerGarden also has another recovery path.',
       question.replace('LedgerGarden,', 'OtherGarden,'),
     ]) expect(prepareRepositoryQuery(graph, prompt, 'explain'), prompt).toBeUndefined()
     graph.addNode('same_name', { label: 'LedgerGarden()', source_file: join(String(graph.graph.root_path), 'worker.ts'), file_type: 'code' })
