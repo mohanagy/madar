@@ -1,24 +1,31 @@
 import ts from 'typescript'
+import { createHash } from 'node:crypto'
 import { lineRangeFromSourceLocation } from '../../shared/source-location.js'
 import { retrievalEvidencePrompt } from '../retrieval-gate.js'
 import { querySourceEvidenceClauses } from './conceptual-fallback.js'
 import { sourceQuerySymbols } from './source-query-symbols.js'
-import { readEvidenceLines, resolveSourceSymbolRange, sourceDeclarationQualifiedName, sourcePathForEvidence, sourceQueryLiterals, sourceRequestProse, sourceSyntaxTree, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, type SourceBodyMatch } from './source-evidence.js'
+import { readEvidenceLines, resolveSourceSymbolRange, sourceDeclarationQualifiedName, sourcePathForEvidence, sourceQueryLiterals, sourceRequestProse, sourceSyntaxTree, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, sourceDiagnosticClauseEvidence, type SourceBodyMatch } from './source-evidence.js'
+import { sourceDiagnosticMethodFragment, type DiagnosticFragmentClause } from './source-diagnostic-fragments.js'
+import type { SourceFragment } from './source-fragments.js'
 
 interface Candidate {
   id: string; label: string; sourceFile: string; sourceLocation: string | null
   sourceDomain: string
 }
 type Executable = ts.MethodDeclaration | ts.FunctionDeclaration
-interface Owner { candidate: Candidate; declaration: Executable; reads: Set<string>; writes: Set<string> }
+interface Owner { candidate: Candidate; declaration: Executable; lines: string[]; reads: Set<string>; writes: Set<string> }
 export type SourceDiagnosticClauseMatches = readonly ReadonlyMap<string, SourceBodyMatch>[] & {
   [sourceDiagnosticAdmissionsKey]?: readonly string[]
   [sourceDiagnosticAlternativesKey]?: readonly (readonly string[])[]
 }
 export const sourceDiagnosticContextsKey = Symbol('sourceDiagnosticContexts')
 export const sourceDiagnosticDecisionsKey = Symbol('sourceDiagnosticDecisions')
+export const sourceDiagnosticFragmentsKey = Symbol('sourceDiagnosticFragments')
 type DiagnosticQueries = string[] & { [sourceDiagnosticContextsKey]?: readonly string[] }
-type DiagnosticSeeds = string[] & { [sourceDiagnosticDecisionsKey]?: readonly string[] }
+type DiagnosticSeeds = string[] & {
+  [sourceDiagnosticDecisionsKey]?: readonly string[]
+  [sourceDiagnosticFragmentsKey]?: ReadonlyMap<string, SourceFragment>
+}
 
 /** Keep bounded nominees and clause alternatives inside the 32-owner budget. */
 export function sourceDiagnosticCandidatePool<T extends { id: string }>(candidates: readonly T[], nominated: readonly string[] = [], alternatives: readonly (readonly string[])[] = []): T[] {
@@ -132,7 +139,7 @@ export function sourceDiagnosticSeeds(
     }
     inspect(declaration.body!)
     if (bounded) return []
-    owners.push({ candidate, declaration, reads, writes })
+    owners.push({ candidate, declaration, lines: loaded.lines, reads, writes })
   }
   if (new Set(owners.map(owner => owner.declaration)).size !== owners.length) return []
   const byId = new Map(owners.map(owner => [owner.candidate.id, owner]))
@@ -175,6 +182,43 @@ export function sourceDiagnosticSeeds(
       if (id && decisions.size < 8) decisions.add(id)
     }
     Object.defineProperty(result, sourceDiagnosticDecisionsKey, { value: [...decisions] })
+    // The sidecars describe complete executable primary-clause witnesses from
+    // the existing bounded scan. Names and heading context alone cannot justify
+    // hiding setup or another method. This changes representation, not identity.
+    const fragments = new Map<string, SourceFragment>()
+    const hashes = new Map<readonly string[], string>()
+    const fragmentBudget = { visited, limit: 100_000 }
+    for (const id of decisions) {
+      const owner = byId.get(id)
+      if (!owner || !ts.isFunctionDeclaration(owner.declaration)) continue
+      const assigned = decisionsByClause.flatMap((ids, index) => ids.includes(id) ? [index] : [])
+      const fragmentClauses: DiagnosticFragmentClause[] = []
+      for (const index of assigned) {
+        const evidence = sourceDiagnosticClauseEvidence(clauses[index]!)
+        const current = evidence?.owners.get(id)
+        const source = owner.declaration.getSourceFile()
+        if (!evidence?.contextual || !current?.completeOwner || current.lines !== owner.lines
+          || current.declarationStart !== owner.declaration.getStart(source)
+          || current.declarationEnd !== owner.declaration.getEnd()) break
+        const terms = new Set(evidence.terms), families = new Set<string>()
+        const spans = current.witnesses.flatMap(witness => {
+          const matched = witness.families.filter(family => terms.has(family))
+          if (!matched.length) return []
+          for (const family of matched) families.add(family)
+          return [{ start: witness.start, end: witness.end,
+            startLine: source.getLineAndCharacterOfPosition(witness.start).line + 1,
+            endLine: source.getLineAndCharacterOfPosition(witness.end - 1).line + 1 }]
+        })
+        fragmentClauses.push({ families: [...families], spans })
+      }
+      if (!assigned.length || fragmentClauses.length !== assigned.length) continue
+      let hash = hashes.get(owner.lines)
+      if (!hash) { hash = createHash('sha256').update(owner.lines.join('\n')).digest('hex'); hashes.set(owner.lines, hash) }
+      const fragment = sourceDiagnosticMethodFragment(owner.declaration, owner.lines, hash, fragmentClauses, fragmentBudget)
+      if (fragment) fragments.set(id, fragment)
+      if (fragmentBudget.visited > fragmentBudget.limit) break
+    }
+    if (fragments.size) Object.defineProperty(result, sourceDiagnosticFragmentsKey, { value: fragments })
   }
   return result
 }

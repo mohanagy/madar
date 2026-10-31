@@ -2,11 +2,13 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import ts from 'typescript'
 import { buildFromJson } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { queryEvidenceObligations, querySourceEvidenceClauses } from '../../src/runtime/retrieve/conceptual-fallback.js'
-import { searchSourceBodies, searchSourceBodyQuestions, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, sourceBodyWords, sourceQueryLiterals, sourceQueryWithoutLiteralSpans, type SourceBodyMatch } from '../../src/runtime/retrieve/source-evidence.js'
+import { searchSourceBodies, searchSourceBodyQuestions, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, sourceDiagnosticClauseEvidence, sourceBodyWords, sourceQueryLiterals, sourceQueryWithoutLiteralSpans, type SourceBodyMatch } from '../../src/runtime/retrieve/source-evidence.js'
+import { sourceExecutableWitnesses } from '../../src/runtime/retrieve/source-executable-witnesses.js'
 import { sourceDiagnosticQueries, sourceDiagnosticSeeds, sourceDiagnosticCandidatePool, sourceDiagnosticContextsKey, sourceDiagnosticDecisionsKey, type SourceDiagnosticClauseMatches } from '../../src/runtime/retrieve/source-diagnostic-priority.js'
 import { sourceQuerySymbols } from '../../src/runtime/retrieve/source-query-symbols.js'
 
@@ -116,6 +118,84 @@ function headingFixture() {
 
 const match: SourceBodyMatch = { score: 2, exact_literal: false, coverage: 1, relevance: 1, matched_literals: [], lines: [9] }
 describe('diagnostic current-source priority', () => {
+  it('requires runtime or own-name primary families before contextual nomination', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'madar-runtime-clause-')))
+    roots.push(root)
+    const file = join(root, 'lease.ts')
+    writeFileSync(file, [
+      'export class LeaseOperations {',
+      '  validateClient(input: unknown): asserts input is ToolHandle { use(input); }',
+      '  forward(input: unknown): ToolResult { return handle(input); }',
+      '  inspect(handle: string) { if (!validate(handle)) throw Error("denied"); return handle; }',
+      '  expiry(lifetime: number) { const expiresAtMs = lifetime; return expiresAtMs; }',
+      '}',
+      'export class Lease {',
+      '  decide(lifetime: number, handle: string, assertion: any) {',
+      '    const expiresAtMs = Math.min(lifetime, assertion.expiration);',
+      '    if (!validate(handle)) throw Error("denied");',
+      '    return expiresAtMs;',
+      '  }',
+      '}',
+    ].join('\n'))
+    const extracted = extractJs(file)
+    const graph = buildFromJson({ schema_version: 1, nodes: extracted.nodes, edges: extracted.edges }, { directed: true })
+    graph.graph.root_path = root
+    const id = (label: string) => graph.nodeEntries().find(([, node]) => node.label === label)![0]
+    const full = 'Trace lease operations client validation assertions tool handle expiration lifetime error'
+    const clauses = ['validation assertions', 'tools handles', 'expiration lifetime handles', 'errors handles']
+    let inspections = 0
+    const run = searchSourceBodyQuestions(graph, [full, ...clauses], root, undefined, {
+      contexts: clauses.map(() => 'lease operations'), allowedOwner: () => { inspections++; return true },
+    })
+    const ordinary = searchSourceBodies(graph, full, root)
+    expect(ordinary.matches.has(id('.inspect()'))).toBe(true) // The unchanged raw-positive guard is a fixture premise.
+    expect([...run[0]!.matches]).toEqual([...ordinary.matches])
+    const alternatives = run[0]![sourceDiagnosticAlternativesKey]!
+    expect(alternatives[0]).toContain(id('.decide()'))
+    expect(alternatives[0]).not.toContain(id('.validateClient()')) // asserts occurs only in the return type.
+    expect(alternatives[1]).not.toContain(id('.forward()')) // ToolResult is not runtime tool evidence.
+    expect(alternatives[2]![0]).toBe(id('.decide()')) // More primary families beat more heading words.
+    expect(alternatives[3]).toContain(id('.inspect()'))
+    expect(inspections).toBeLessThanOrEqual(32)
+    const evidence = sourceDiagnosticClauseEvidence(run[1]!.matches)!
+    const declaration = evidence.owners.get(id('.validateClient()'))!
+    expect(declaration.nameFamilies).toContain('@stem:valid')
+    expect(declaration.witnesses.flatMap(witness => witness.families)).not.toContain('@stem:assert')
+    expect(sourceDiagnosticClauseEvidence(new Map(run[1]!.matches))).toBeUndefined()
+    expect(sourceDiagnosticClauseEvidence(searchSourceBodyQuestions(graph, [full, ...clauses], root, undefined, { allowedOwner: () => true })[1]!.matches)).toBeUndefined()
+  })
+
+  it('preserves exhaustive runtime defaults and destructuring with one shared traversal budget', () => {
+    const text = [
+      'function inspect(input: ToolResult = openHandle(), { issuer: renamed, subject } = context) {',
+      '  // validation assertions are not executable evidence',
+      '  const [binding] = values;',
+      '  return { [key()](value = defaultHandle()) { return validate(value); } };',
+      '  const pattern = /tenant|audience/;',
+      '  class Derived extends validateTenantAudience() implements TypeOnly {}',
+      '  const specialized = resolve<SignatureOnly>;',
+      '}',
+    ].join('\n')
+    const source = ts.createSourceFile('runtime.ts', text, ts.ScriptTarget.Latest, true)
+    const declaration = source.statements[0] as ts.FunctionDeclaration
+    const words = (value: string) => [...new Set(sourceBodyWords(value).filter(Boolean))]
+    const budget = { visited: 0, maxNodes: 100_000, exhausted: false }
+    const evidence = sourceExecutableWitnesses(declaration, source, budget, words, () => true)!
+    const runtime = new Set(evidence.witnesses.flatMap(witness => witness.families))
+    for (const term of ['open', 'handle', 'issuer', 'subject', 'key', 'default', 'validate', 'tenant', 'audience']) expect(runtime).toContain(term)
+    for (const term of ['tool', 'result', 'renamed', 'binding', 'validation', 'assertions', 'type', 'signature', 'only']) expect(runtime).not.toContain(term)
+    expect(evidence.completeOwner).toBe(true)
+    expect(evidence.witnesses.some(witness => text.slice(witness.start, witness.end) === 'openHandle')).toBe(true)
+    for (const expression of ['validateTenantAudience', 'resolve']) {
+      expect(evidence.witnesses.some(witness => text.slice(witness.start, witness.end) === expression)).toBe(true)
+    }
+    expect(sourceExecutableWitnesses(declaration, source, { visited: 0, maxNodes: 100_000, exhausted: false }, words, line => line !== 4)?.completeOwner).toBe(false)
+    const limited = { visited: 0, maxNodes: 2, exhausted: false }
+    expect(sourceExecutableWitnesses(declaration, source, limited, words, () => true)).toBeUndefined()
+    expect(limited.exhausted).toBe(true)
+    expect(sourceExecutableWitnesses(declaration, source, limited, words, () => true)).toBeUndefined()
+  })
+
   it('normalizes only optional diagnostic words, retaining literal identity and raw matches', () => {
     const value = languageFixture(), full = 'Explain lifetime', clauses = ['expiration', 'validation errors for handles', 'expiry']
     const ordinary = searchSourceBodies(value.graph, full, value.root)

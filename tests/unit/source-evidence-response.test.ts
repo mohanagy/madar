@@ -28,6 +28,52 @@ function metadataRescueResponse() {
 }
 
 describe('source evidence wire contract', () => {
+  it('keeps source and recovery before optional navigation details under wire pressure', () => {
+    const input = metadataRescueResponse() as Record<string, unknown>
+    const pack = input.pack as Record<string, unknown>, evidence = input.evidence as Record<string, unknown>
+    pack.selection_scope = 'task_context'
+    pack.source_dependencies = { unresolved_calls: 24, unresolved_references: 3, withheld_graph_calls: 5, bounded: true,
+      future_count: 7, unresolved: Array.from({ length: 24 }, (_, index) => ({
+        source_file: `src/external/component-${index}.ts`, reason: 'external', line_number: index + 1,
+        callee: `externalLibrary.operation${index}`,
+      })) }
+    evidence.answerability = { advisory: true, broad_search_fallback: 'blocked',
+      missing_obligations: ['evidence:structural'], caveats: ['Receiver dispatch remains unresolved.'],
+      verification_targets: [
+        { focus_files: ['src/redundant.ts'], reason: 'verify evidence:structural' },
+        { focus_files: ['src/activation.ts'], reason: 'Check the deployment hook before inferring runtime activation.' },
+      ] }
+    input.expandable = [{ handle_id: 'expand:explain:primary:0123456789ab', evidence_class: 'primary', count: 2,
+      follow_up: { focus_files: ['src/reset-0.ts', 'src/reset-1.ts'],
+        focus_ranges: [{ source_file: 'src/reset-0.ts', start_line: 1, end_line: 4 }] } },
+    { handle_id: 'future:handle', evidence_class: 'supporting', count: 1, follow_up: { focus_files: ['src/future.ts'] } }]
+    const before = JSON.stringify(input), full = finalizeSourceEvidenceResponse(input, 10000), budget = 700
+    expect(estimateQueryTokens(JSON.stringify(full))).toBeGreaterThan(budget)
+    const output = finalizeSourceEvidenceResponse(input, budget), resultPack = output.pack as Record<string, unknown>
+    expect(resultPack.matched_nodes).toEqual((full.pack as Record<string, unknown>).matched_nodes)
+    expect(resultPack.relationships).toEqual((full.pack as Record<string, unknown>).relationships)
+    expect(resultPack.source_dependencies).toEqual({ unresolved_calls: 24, unresolved_references: 3,
+      withheld_graph_calls: 5, bounded: true, future_count: 7 })
+    expect(output.expandable).toEqual([
+      { handle_id: 'expand:explain:primary:0123456789ab', evidence_class: 'primary', count: 2 },
+      { handle_id: 'future:handle', evidence_class: 'supporting', count: 1, focus_files: ['src/future.ts'] },
+    ])
+    expect(output.evidence).toMatchObject({ discovery_exclusions: evidence.discovery_exclusions,
+      answerability: { broad_search_fallback: 'blocked', missing_obligations: ['evidence:structural'],
+        caveats: ['Receiver dispatch remains unresolved.'], verification_targets: [
+          { focus_files: ['src/activation.ts'], reason: 'Check the deployment hook before inferring runtime activation.' },
+        ] } })
+    expect(output.governance).toEqual(full.governance)
+    expect(output.diagnostics_omitted).toBe('output_budget')
+    expect(output).not.toHaveProperty('omitted_evidence')
+    expect(output.serialized_budget).toEqual({ max_tokens: budget, token_count: estimateQueryTokens(JSON.stringify(output)), enforced: true })
+    expect(estimateQueryTokens(JSON.stringify(output))).toBeLessThanOrEqual(budget)
+    expect(full).not.toHaveProperty('diagnostics_omitted')
+    expect((finalizeSourceEvidenceResponse(input, 10000, { verbose: true }).pack as Record<string, unknown>).source_dependencies)
+      .toEqual(pack.source_dependencies)
+    expect(JSON.stringify(input)).toBe(before)
+  })
+
   it('uses repeated metadata savings before sacrificing an independent source owner', () => {
     const input = metadataRescueResponse(), before = JSON.stringify(input)
     const full = finalizeSourceEvidenceResponse(input, 10000)

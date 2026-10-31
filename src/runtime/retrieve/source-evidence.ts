@@ -15,6 +15,7 @@ import { scanPromptRegions } from '../../shared/prompt-regions.js'
 import { tokenizeQuestion } from './pipeline.js'
 import { extractPromptExclusions, retrievalEvidencePrompt, retrievalSearchPrompt } from '../retrieval-gate.js'
 import { selectedCallbackExcerptLines } from './source-callback-excerpts.js'
+import { sourceExecutableWitnesses, type SourceExecutableEvidence, type SourceExecutableVisitBudget } from './source-executable-witnesses.js'
 
 const SOURCE_EXTENSIONS = new Set([...JS_TS_SOURCE_EXTENSIONS, '.py', '.go', '.rs', '.java', '.kt', '.kts', '.rb', '.php', '.c', '.cc', '.cpp', '.h', '.cs', '.swift', '.scala', '.sh', '.sql', '.vue', '.svelte'])
 const MAX_FILE_BYTES = 256 * 1024
@@ -63,6 +64,21 @@ export interface SourceBodyMatch {
 /** Presentation nominations only; never source or call authority. */
 export const sourceDiagnosticAdmissionsKey = Symbol('sourceDiagnosticAdmissions')
 export const sourceDiagnosticAlternativesKey = Symbol('sourceDiagnosticAlternatives')
+export interface SourceDiagnosticExecutableEvidence extends SourceExecutableEvidence {
+  lines: readonly string[]
+  declarationStart: number
+  declarationEnd: number
+}
+export interface SourceDiagnosticClauseEvidence {
+  contextual: boolean
+  terms: readonly string[]
+  owners: ReadonlyMap<string, SourceDiagnosticExecutableEvidence>
+}
+const diagnosticClauseEvidence = new WeakMap<ReadonlyMap<string, SourceBodyMatch>, SourceDiagnosticClauseEvidence>()
+/** Private, request-local lexical provenance; not a source or relationship claim. */
+export function sourceDiagnosticClauseEvidence(matches: ReadonlyMap<string, SourceBodyMatch>): SourceDiagnosticClauseEvidence | undefined {
+  return diagnosticClauseEvidence.get(matches)
+}
 export interface SourceBodyDiagnosticOptions {
   allowedOwner: (file: string, canonical: string, label: string, text: string) => boolean
   /** Authored heading context, separate from each clause's matching terms. */
@@ -564,7 +580,7 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
   if (!activeQueries.length) return queries.map(() => ({ ...result, matches: new Map() }))
   const rankingTerms = new Set(activeQueries.flatMap(query => query.terms))
   const ownerStatistics = new Map<string, { length: number; frequencies: Map<string, number> }>()
-  const nominationOwners = new Map<string, { file: string; canonical: string; label: string; range: SourceLineRange; lines: string[]; identity: string; nameTerms: Set<string> }>()
+  const nominationOwners = new Map<string, { file: string; canonical: string; label: string; range: SourceLineRange; lines: string[]; identity: string; nameTerms: Set<string>; declaration: ts.FunctionDeclaration | ts.MethodDeclaration; owners: readonly (string | undefined)[] }>()
   const nominationIdentities = new Map<string, number>()
   const files = new Map<string, Array<{ id: string; label: string; range: SourceLineRange; file: boolean }>>()
   const hintLiterals = [...new Set(questions.flatMap(question => sourceQueryLiterals(retrievalEvidencePrompt(question))))]
@@ -624,6 +640,7 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
           const identity = `${path}:${range.start}:${range.end}`
           nominationIdentities.set(identity, (nominationIdentities.get(identity) ?? 0) + 1)
           nominationOwners.set(entry.id, { file: sourceFile, canonical: path, label: entry.label, range, lines, identity,
+            declaration: declarations[0]!.node as ts.FunctionDeclaration | ts.MethodDeclaration, owners,
             nameTerms: new Set(contextual ? sourceBodyWords(declarations[0]!.qualifiedName).filter(Boolean).map(stem) : []) })
         }
       }
@@ -717,10 +734,11 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
       if (!query.contextTerms.size) return 0
       const owner = nominationOwners.get(id)
       return owner && nominationIdentities.get(owner.identity) === 1
-        ? [...query.contextTerms].filter(term => owner.nameTerms.has(term)).length : 0
+        ? Number([...query.contextTerms].some(term => owner.nameTerms.has(term))) : 0
     }
     const ranked = [...current.matches].sort((left, right) => Number(right[1].exact_literal) - Number(left[1].exact_literal)
       || contextSupport(right[0]) - contextSupport(left[0])
+      || (contextual && index > 0 ? (query.bodyHits.get(right[0])?.terms.size ?? 0) - (query.bodyHits.get(left[0])?.terms.size ?? 0) : 0)
       || (right[1].relevance ?? 0) - (left[1].relevance ?? 0) || right[1].coverage - left[1].coverage || right[1].score - left[1].score || left[0].localeCompare(right[0]))
     if (morphology && index === 0) fullRanking = ranked
     current.matches = new Map(ranked.slice(0, MAX_SOURCE_MATCHES))
@@ -729,11 +747,54 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
   if (morphology && diagnostic && fullRanking.length) {
     const raw = new Map(fullRanking), inspected = new Map<string, boolean>(), wins = new Map<string, { count: number; first: number }>()
     const alternatives: string[][] = []
+    const executable = new Map<string, SourceDiagnosticExecutableEvidence>()
+    const executableFamilies = new Map<string, Set<string>>()
+    const visitBudget: SourceExecutableVisitBudget = { visited: 0, maxNodes: 100_000, exhausted: false }
+    if (contextual) {
+      // One round-robin inspection universe, not a fresh AST/policy budget per
+      // clause. Only existing returned matches with positive raw evidence enter.
+      const rows = searches.slice(1).map(search => [...search.matches])
+      const primaryTerms = new Set(queries.slice(1).flatMap(query => query.terms))
+      const families = (text: string): string[] => [...new Set(sourceBodyWords(text)
+        .filter(Boolean).map(word => `@stem:${stem(word)}`).filter(word => primaryTerms.has(word)))]
+      for (let rank = 0; rank < MAX_SOURCE_MATCHES && inspected.size < 32 && !visitBudget.exhausted; rank++) {
+        for (const row of rows) {
+          const entry = row[rank]
+          if (!entry || inspected.size >= 32 || visitBudget.exhausted) continue
+          const [id, match] = entry, owner = nominationOwners.get(id)
+          if (inspected.has(id) || !owner || !raw.has(id) || match.navigation_only || match.score < 1
+            || nominationIdentities.get(owner.identity) !== 1) continue
+          const allowed = diagnostic.allowedOwner(owner.file, owner.canonical, owner.label,
+            owner.lines.slice(owner.range.start - 1, owner.range.end).join('\n'))
+          inspected.set(id, allowed)
+          if (!allowed) continue
+          const source = sourceSyntaxTree(owner.lines, owner.file)
+          const evidence = sourceExecutableWitnesses(owner.declaration, source, visitBudget, families,
+            line => owner.owners[line - 1] === id)
+          if (evidence) {
+            executable.set(id, { ...evidence, lines: owner.lines,
+              declarationStart: owner.declaration.getStart(source), declarationEnd: owner.declaration.getEnd() })
+            executableFamilies.set(id, new Set([...evidence.nameFamilies, ...evidence.witnesses.flatMap(witness => witness.families)]))
+          }
+        }
+      }
+      // Partial traversal cannot establish exhaustive runtime witnesses.
+      if (visitBudget.exhausted) { executable.clear(); executableFamilies.clear(); searches.forEach(search => { search.bounded = true }) }
+    }
     searches.slice(1).forEach((search, index) => {
       const selected: string[] = []; alternatives.push(selected)
-      for (const [id, match] of search.matches) {
+      const query = queries[index + 1]!
+      const primaryCounts = new Map([...executableFamilies].map(([id, present]) => [id, query.terms.filter(term => present.has(term)).length]))
+      const primaryCount = (id: string): number => primaryCounts.get(id) ?? 0
+      const context = (id: string): number => Number([...query.contextTerms].some(term => nominationOwners.get(id)?.nameTerms.has(term)))
+      const ranked = contextual ? [...search.matches].filter(([id]) => executable.has(id)).sort((left, right) =>
+        context(right[0]) - context(left[0]) || primaryCount(right[0]) - primaryCount(left[0])
+        || (right[1].relevance ?? 0) - (left[1].relevance ?? 0) || right[1].coverage - left[1].coverage
+        || right[1].score - left[1].score || left[0].localeCompare(right[0])) : search.matches
+      for (const [id, match] of ranked) {
         const owner = nominationOwners.get(id)
         if (!owner || !raw.has(id) || match.navigation_only || match.score < 1 || nominationIdentities.get(owner.identity) !== 1) continue
+        if (contextual && primaryCount(id) < 2) continue
         if (!inspected.has(id)) {
           if (inspected.size >= 32) break
           inspected.set(id, diagnostic.allowedOwner(owner.file, owner.canonical, owner.label,
@@ -745,6 +806,9 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
         selected.push(id)
         if (selected.length >= (contextual ? 3 : 1)) break
       }
+      if (contextual && !visitBudget.exhausted) diagnosticClauseEvidence.set(search.matches, {
+        contextual: query.contextTerms.size > 0, terms: query.terms, owners: executable,
+      })
     })
     const protectedIds = new Set(fullRanking.slice(0, MAX_SOURCE_MATCHES - 3).map(([id]) => id))
     const nominated = [...wins].sort((a, b) => b[1].count - a[1].count || a[1].first - b[1].first)
@@ -755,6 +819,8 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
       searches[0]!.matches = new Map(fullRanking.filter(([id]) => admitted.has(id)))
       searches[0]![sourceDiagnosticAdmissionsKey] = nominated
     }
+    // Empty contextual alternatives deliberately disable the legacy winner
+    // path after exhaustion; an absent marker would re-enable raw lexical votes.
     if (contextual) searches[0]![sourceDiagnosticAlternativesKey] = alternatives.map(ids =>
       ids.filter(id => searches[0]!.matches.has(id)))
   }

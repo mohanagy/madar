@@ -102,7 +102,7 @@ import { sourceVisibleWarnings } from './retrieve/source-visible-warnings.js'
 import { prioritizeNextRouteReferences } from './retrieve/source-route-references.js'
 import { sourceCoherenceGroup, sourceCompositionPriority } from './retrieve/source-coherence.js'
 import { sourceDiagnosticLexicalCompanions } from './retrieve/source-lexical-companions.js'
-import { sourceDiagnosticQueries, sourceDiagnosticSeeds, sourceDiagnosticCandidatePool, sourceDiagnosticContextsKey, sourceDiagnosticDecisionsKey, type SourceDiagnosticClauseMatches } from './retrieve/source-diagnostic-priority.js'
+import { sourceDiagnosticQueries, sourceDiagnosticSeeds, sourceDiagnosticCandidatePool, sourceDiagnosticContextsKey, sourceDiagnosticDecisionsKey, sourceDiagnosticFragmentsKey, type SourceDiagnosticClauseMatches } from './retrieve/source-diagnostic-priority.js'
 import { sourceClientContextRequest } from './retrieve/source-client-context.js'
 import { sourceIncomingDecisionFragment } from './retrieve/source-decision-fragments.js'
 import { buildSourceCoherentContinuationCatalog, sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from './retrieve/source-coherent-continuation.js'
@@ -5135,6 +5135,13 @@ function sourceSelectionForTask(
   if (lexicalCompanions.length) {
     const fragments = new Map(lexicalCompanions.map(value => [value.candidate.id, value.fragment]))
     ordered = ordered.map(node => fragments.has(node.id) ? { ...node, sourceFragment: fragments.get(node.id)! } : node)
+  }
+  const diagnosticFragments = diagnosticIds[sourceDiagnosticFragmentsKey]
+  if (diagnosticFragments?.size) {
+    // Keep existing explicit/coherent fragments and the original factory owner.
+    // Continuation preparation verifies the full owner range and every gap.
+    ordered = ordered.map(node => !node.sourceFragment && diagnosticFragments.has(node.id)
+      ? { ...node, sourceFragment: diagnosticFragments.get(node.id)! } : node)
   }
   return { candidates: ordered, scope: 'task_context', dependencies, ...(discoveryCore ? { discoveryCore } : {}),
     ...(sourcePriority?.length ? { sourcePriority } : {}), ...(continuationCatalog ? { continuationCatalog } : {}) }

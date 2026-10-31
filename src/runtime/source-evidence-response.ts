@@ -226,6 +226,86 @@ export function compactRepeatedSourceMetadata(input: RecordValue, maxTokens: num
   return count <= maxTokens && count <= estimateQueryTokens(JSON.stringify(input)) ? result : input
 }
 
+/** Spend a constrained response on source before optional navigation examples.
+ * Counts, uncertainty, source identities and usable recovery handles remain. */
+function omitSourceNavigationDetails(input: RecordValue): RecordValue {
+  if (input.task !== 'explain' || input.mode === 'delta' || input.delta_session_id
+    || record(input.pack).selection_scope !== 'task_context'
+    || input.diagnostics_omitted !== undefined && input.diagnostics_omitted !== 'output_budget') return input
+  const result = clone(input), dependencies = record(record(result.pack).source_dependencies)
+  const callCount = (value: unknown): number | undefined => {
+    const call = record(value), keys = Object.keys(call)
+    if (typeof call.callee !== 'string' || !call.callee) return undefined
+    if (keys.every(key => ['callee', 'line_number'].includes(key))
+      && Number.isSafeInteger(call.line_number) && Number(call.line_number) > 0) return 1
+    if (keys.every(key => ['callee', 'line_numbers'].includes(key)) && Array.isArray(call.line_numbers)
+      && call.line_numbers.length > 0 && call.line_numbers.length <= 4096
+      && call.line_numbers.every(line => Number.isSafeInteger(line) && line > 0)) return call.line_numbers.length
+    return undefined
+  }
+  const examples = dependencies.unresolved_groups ?? dependencies.unresolved
+  if (!(dependencies.unresolved_groups !== undefined && dependencies.unresolved !== undefined)
+    && Array.isArray(examples) && examples.length <= 4096
+    && Number.isSafeInteger(dependencies.unresolved_calls) && Number(dependencies.unresolved_calls) >= 0) {
+    let count = 0, known = true
+    for (const value of examples) {
+      const entry = record(value)
+      if (typeof entry.source_file !== 'string' || !entry.source_file || typeof entry.reason !== 'string'
+        || !['unresolved', 'external', 'no_implementation', 'outside_index', 'limit'].includes(entry.reason)) { known = false; break }
+      if (dependencies.unresolved_groups !== undefined) {
+        if (Object.keys(entry).some(key => !['source_file', 'reason', 'calls'].includes(key))
+          || !Array.isArray(entry.calls) || entry.calls.length > 4096) { known = false; break }
+        for (const call of entry.calls) {
+          const size = callCount(call)
+          if (size === undefined || (count += size) > 4096) { known = false; break }
+        }
+      } else {
+        const { source_file: _file, reason: _reason, ...call } = entry
+        const size = callCount(call)
+        if (size === undefined || (count += size) > 4096) known = false
+      }
+      if (!known) break
+    }
+    if (known && count <= Number(dependencies.unresolved_calls)) {
+      delete dependencies.unresolved_groups
+      delete dependencies.unresolved
+    }
+  }
+  const knownHint = (key: string, value: unknown): boolean => Array.isArray(value) && value.length <= 4096
+    && (key === 'focus_ranges' ? value.every(item => {
+      const range = record(item)
+      return Object.keys(range).every(field => ['source_file', 'start_line', 'end_line'].includes(field))
+        && typeof range.source_file === 'string' && Number.isSafeInteger(range.start_line)
+        && Number(range.start_line) > 0 && Number.isSafeInteger(range.end_line)
+        && Number(range.end_line) >= Number(range.start_line)
+    }) : value.every(item => typeof item === 'string'))
+  for (const value of array(result.expandable)) {
+    const entry = record(value)
+    const handle = typeof entry.handle_id === 'string'
+      ? /^expand:explain:(primary|supporting|structural|change|impact):[a-f0-9]{12}$/.exec(entry.handle_id) : null
+    if (!handle || handle[1] !== entry.evidence_class || !Number.isSafeInteger(entry.count) || Number(entry.count) <= 0) continue
+    for (const key of ['focus_files', 'focus_ranges', 'symbols']) if (knownHint(key, entry[key])) delete entry[key]
+  }
+  const answerability = record(record(result.evidence).answerability)
+  const repeatedReasons = new Set([
+    ...array(answerability.missing_obligations).filter(value => typeof value === 'string').map(value => `verify ${value}`),
+    ...array(answerability.caveats).filter(value => typeof value === 'string'),
+  ])
+  if (Array.isArray(answerability.verification_targets)) {
+    answerability.verification_targets = answerability.verification_targets.filter(value => {
+      const target = record(value)
+      return typeof target.handle_id === 'string' && !!target.handle_id
+        || Object.keys(target).some(key => !['focus_files', 'focus_ranges', 'reason'].includes(key))
+        || target.reason !== undefined && !repeatedReasons.has(target.reason as string)
+        || ['focus_files', 'focus_ranges'].some(key => target[key] !== undefined && !knownHint(key, target[key]))
+        || target.focus_files === undefined && target.focus_ranges === undefined
+    })
+    if (!answerability.verification_targets.length) delete answerability.verification_targets
+  }
+  result.diagnostics_omitted = 'output_budget'
+  return estimateQueryTokens(JSON.stringify(result)) < estimateQueryTokens(JSON.stringify(input)) ? result : input
+}
+
 /** Final representation only: retain every owner's exact source and recovery
  * identity while sharing complete bodies inside an unchanged partial supplier. */
 export function compactContainedSourceReferences(input: RecordValue, maxTokens: number): RecordValue {
@@ -730,12 +810,18 @@ export function finalizeSourceEvidenceResponse(
     && record(payload.pack).selection_scope === 'task_context'
     && freshness.status === 'fresh' && freshness.selected_context_status === 'fresh'
     ? sourceContainerBudgetPreference(options.requestedSource.prompt, options.requestedSource.rootPath) : undefined
+  let navigationDetailsConsidered = false
   while (attach() > maxTokens) {
     if (!options.verbose && options.format !== 'text') {
       // Reversible metadata savings may fit the remaining owners after an earlier
       // eviction. Preserve their source before removing another owner.
       const compact = compactRepeatedSourceMetadata(payload, maxTokens)
       if (compact !== payload) { payload = compact; break }
+      if (!navigationDetailsConsidered) {
+        navigationDetailsConsidered = true
+        const reduced = omitSourceNavigationDetails(payload)
+        if (reduced !== payload) { payload = reduced; continue }
+      }
     }
     if (!removeOneEvidenceUnit(payload, preferred)) break
     markOmitted(payload, ++omitted)
