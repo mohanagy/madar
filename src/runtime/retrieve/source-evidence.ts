@@ -13,6 +13,7 @@ import { readBoundedSource, sourcePathsAllowedByCurrentPolicy } from '../../shar
 import { lineRangeFromSourceLocation, type SourceLineRange } from '../../shared/source-location.js'
 import { scanPromptRegions } from '../../shared/prompt-regions.js'
 import { tokenizeQuestion } from './pipeline.js'
+import { sourceQuerySymbols } from './source-query-symbols.js'
 import { extractPromptExclusions, retrievalEvidencePrompt, retrievalSearchPrompt } from '../retrieval-gate.js'
 import { selectedCallbackExcerptLines } from './source-callback-excerpts.js'
 import { sourceExecutableWitnesses, type SourceExecutableEvidence, type SourceExecutableVisitBudget } from './source-executable-witnesses.js'
@@ -465,6 +466,48 @@ export function sourceRequestProse(question: string): string {
   return chars.join('')
 }
 
+/** Authored requests get a slot before their internal comma/flow clauses compete. */
+export function sourceDiagnosticQueryGroups(question: string): string[] {
+  const prose = sourceRequestProse(question), boundaries = new Set([0, question.length])
+  for (const match of prose.matchAll(/[.!?](?=\s|$)|[\r\n]+/g)) boundaries.add(match.index + match[0].length)
+  for (const match of prose.matchAll(/(^|[;,]\s*|\band\s+)((?:(?:also|then|next|separately)\s+)+(?:trace|explain|describe|find|locate|show|inspect|analy[sz]e)\b)/gi)) {
+    boundaries.add(match.index + match[1]!.length)
+  }
+  const positions = [...boundaries].sort((a, b) => a - b)
+  return positions.slice(0, -1).map((start, index) => question.slice(start, positions[index + 1]).trim()).filter(Boolean)
+}
+
+/** Supplemental lexical view only. Raw literals, public obligations and policy stay intact. */
+export function sourceSupplementalQueryView(question: string): string | undefined {
+  if (question.length > 12_000) return undefined
+  const evidenceItem = '(?:implementation\\s+)?(?:source(?:\\s+code)?|tests?|specs?|config(?:uration)?(?:\\s+(?:files?|limits))?|root\\s+README(?:\\.md)?)'
+  const evidenceList = `${evidenceItem}(?:\\s*(?:[/,&]|and|or)\\s*(?:and\\s+)?${evidenceItem})*`
+  const policy = new RegExp(`^\\s*(?:cite|use|consult|reference)\\s+(?:only\\s+)?${evidenceList}\\s*[.!?]?\\s*$`, 'i')
+  const optional = new RegExp(`^\\s*(?:find|use|consult|include|inspect|read)\\s+(?:(?:relevant|exact|supporting|related)\\s+)?${evidenceList}\\s+(?:if|when)\\s+(?:useful|helpful|relevant|needed|available)\\s*[.!?]?\\s*$`, 'i')
+  const positive = sourceDiagnosticQueryGroups(retrievalEvidencePrompt(question))
+    .filter(group => !policy.test(group) && !optional.test(group)).join('\n')
+  const testSubject = positive.replace(/\b(?:tests?|specs?)\s+(?:if|when)\s+(?:useful|helpful|relevant|needed|available)\b/gi, '')
+  if (!positive || scanPromptRegions(positive).length || /[“”‘’]/.test(positive)
+    || sourceRequestProse(positive).includes('#') || sourceQueryPathSpans(positive).length
+    || /\b(?:tests?|testing|specs?|mocks?|fixtures?)\b/i.test(testSubject)) return undefined
+  // A bare PascalCase word can be topic vocabulary. Do not erase its raw exact
+  // identity or treat a quoted/qualified/lower-camel occurrence the same way.
+  if (sourceQueryLiteralSpans(positive).some(span => positive.slice(span.start, span.end) !== span.value
+    || !/^[A-Z][A-Za-z0-9]*$/.test(span.value) || !/[a-z][A-Z]/.test(span.value)
+    || /(?:^|[;.!?\n])\s*$/.test(positive.slice(0, span.start))
+      && /^\s*(?:[;.!?\n]|$)/.test(positive.slice(span.end)))) return undefined
+  const roles = 'functions?|methods?|symbols?|class(?:es)?|types?|interfaces?|enums?|variables?|constants?|propert(?:y|ies)|namespaces?|identifiers?'
+  const role = new RegExp(`\\b(?:${roles})\\s+$`, 'i')
+  const lookup = /(?:^|[.;:!?\n]\s*|\b(?:also|then|next|separately)\s+)(?:please\s+)?(?:trace|how\s+(?:does|do)|explain|find|locate|show|describe|change|update|fix|where\s+(?:is|are|can\s+I\s+find))\s+(?:the\s+)?(?:(?:implementation|source|definition)\s+of\s+)?$/i
+  for (const occurrence of sourceQuerySymbols(positive)) {
+    const before = positive.slice(0, occurrence.start), after = positive.slice(occurrence.end)
+    if (/[_$#.]/.test(occurrence.name) || /^\s*\(/.test(after) || role.test(before)) return undefined
+    if (lookup.test(before) && /^(?:\s*(?:,\s*(?:(?:and|or)\s+)?|(?:and|or)\s+)#?[A-Za-z_$][\w$]*(?:\.#?[A-Za-z_$][\w$]*)*(?:\(\))?)*\s*(?:[:;.!?]|$)/i.test(after)
+      && (/^[A-Z]/.test(occurrence.name) || /[:;.!?]/.test(after))) return undefined
+  }
+  return positive
+}
+
 /** The fragment planner locates source witnesses; it does not plan a broad explanation. */
 export function sourceQueryRequestsClauseLocations(positiveQuestion: string): boolean {
   if (positiveQuestion.length > 8192) return false
@@ -543,10 +586,11 @@ function sourceNavigationLines(lines: readonly string[], sourceFile: string): Se
 export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: readonly string[], rootPath?: string, cache?: Map<string, string[] | null>, diagnostic?: SourceBodyDiagnosticOptions): SourceBodySearch[] {
   // Optional clauses share a bounded lexical channel. Raw question statistics,
   // exported tokenization and exact source literals retain their old meanings.
+  const supplemental = diagnostic ? questions.map(sourceSupplementalQueryView) : []
   const morphology = !!diagnostic && !!rootPath && questions.length >= 3 && questions.length <= 9
-    && questions.every(question => sourceQueryLiterals(question).length === 0)
+    && supplemental.every(question => question !== undefined)
   const contextual = morphology && diagnostic.contexts?.length === questions.length - 1
-    && diagnostic.contexts.every(context => context.length <= 12_000 && !sourceQueryLiterals(context).length)
+    && diagnostic.contexts.every(context => !context || sourceSupplementalQueryView(context) !== undefined)
     && diagnostic.contexts.some(context => context.length > 0)
   const stems = new Map<string, string>()
   const stem = (word: string): string => {
@@ -558,9 +602,9 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
     return value
   }
   const queries = questions.map((question, index) => {
-    const literals = sourceQueryLiterals(question)
     const normalized = morphology && index > 0
-    const terms = normalized ? [...new Set(tokenizeQuestion(sourceBodyWords(retrievalSearchPrompt(question)).join(' '))
+    const literals = normalized ? [] : sourceQueryLiterals(question)
+    const terms = normalized ? [...new Set(tokenizeQuestion(sourceBodyWords(retrievalSearchPrompt(supplemental[index]!)).join(' '))
       .filter(term => term.length >= 3 && (!BODY_QUERY_NOISE.has(term) || term === 'handle' || term === 'handled'))
       .map(term => `@stem:${stem(term)}`))].slice(0, 32) : bodyTerms(question)
     const literalLookup = sourceQueryIsLiteralLookup(question)
@@ -828,11 +872,14 @@ export function searchSourceBodyQuestions(graph: KnowledgeGraph, questions: read
       })
     })
     const protectedIds = new Set(fullRanking.slice(0, MAX_SOURCE_MATCHES - 3).map(([id]) => id))
+    // Named raw evidence must survive admission before later explicit-owner
+    // scope checks can run. Rescue consumes only the remaining tail seats.
+    for (const [id, match] of fullRanking.slice(0, MAX_SOURCE_MATCHES)) if (match.exact_literal) protectedIds.add(id)
     const nominated = [...wins].sort((a, b) => b[1].count - a[1].count
       || (contextual ? b[1].maxRelevance - a[1].maxRelevance : 0) || a[1].first - b[1].first)
-      .filter(([id]) => !contextual || !protectedIds.has(id)).slice(0, 3).map(([id]) => id)
+      .filter(([id]) => !contextual || !protectedIds.has(id)).slice(0, Math.min(3, MAX_SOURCE_MATCHES - protectedIds.size)).map(([id]) => id)
     if (nominated.length) {
-      const admitted = new Set([...fullRanking.slice(0, MAX_SOURCE_MATCHES - 3).map(([id]) => id), ...nominated])
+      const admitted = new Set([...protectedIds, ...nominated])
       for (const [id] of fullRanking) { if (admitted.size >= MAX_SOURCE_MATCHES) break; admitted.add(id) }
       searches[0]!.matches = new Map(fullRanking.filter(([id]) => admitted.has(id)))
       searches[0]![sourceDiagnosticAdmissionsKey] = nominated

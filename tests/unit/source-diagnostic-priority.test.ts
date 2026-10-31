@@ -7,7 +7,7 @@ import { buildFromJson } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { queryEvidenceObligations, querySourceEvidenceClauses } from '../../src/runtime/retrieve/conceptual-fallback.js'
-import { searchSourceBodies, searchSourceBodyQuestions, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, sourceDiagnosticClauseEvidence, sourceBodyWords, sourceQueryLiterals, sourceQueryWithoutLiteralSpans, type SourceBodyMatch } from '../../src/runtime/retrieve/source-evidence.js'
+import { searchSourceBodies, searchSourceBodyQuestions, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, sourceDiagnosticClauseEvidence, sourceBodyWords, sourceQueryLiterals, sourceSupplementalQueryView, sourceQueryWithoutLiteralSpans, type SourceBodyMatch } from '../../src/runtime/retrieve/source-evidence.js'
 import { sourceExecutableWitnesses } from '../../src/runtime/retrieve/source-executable-witnesses.js'
 import { sourceDiagnosticQueries, sourceDiagnosticSeeds, sourceDiagnosticCandidatePool, sourceDiagnosticContextsKey, sourceDiagnosticDecisionsKey, type SourceDiagnosticClauseMatches } from '../../src/runtime/retrieve/source-diagnostic-priority.js'
 import { sourceQuerySymbols } from '../../src/runtime/retrieve/source-query-symbols.js'
@@ -217,6 +217,73 @@ describe('diagnostic current-source priority', () => {
     const repeated = `${'errors '.repeat(40)}validation handles`
     const repeatedResult = searchSourceBodyQuestions(value.graph, [full, repeated, 'expiration'], value.root, undefined, { allowedOwner: () => true })
     expect(repeatedResult[1]!.matches.get(value.target)?.score).toBe(1.5)
+  })
+
+  it('shares diagnostic slots across authored requests without rewriting raw literal or evidence scope', () => {
+    const full = 'Trace CraftMyLetter AI review of an existing saved letter: credit deduction and durable attempt record before engine call; accepted revision save path; no revision and refund failure path; engine throw and immediate refund success path; HTTP response, letter main text/revision history, balance, attempt state. Then trace recovery job eligibility and transaction behavior, including why repeat recovery is idempotent and accepted attempts excluded. Cite implementation source/tests/config/root README. Ignore model internals.'
+    const obligations = queryEvidenceObligations(full), literals = sourceQueryLiterals(full)
+    const clauses = sourceDiagnosticQueries(full)
+    expect(clauses).toHaveLength(8)
+    expect(clauses.some(clause => clause.includes('credit deduction'))).toBe(true)
+    expect(clauses.some(clause => clause.includes('recovery job eligibility'))).toBe(true)
+    expect(clauses.some(clause => clause.includes('repeat recovery is idempotent') && clause.includes('accepted attempts excluded'))).toBe(true)
+    expect(clauses.every(clause => !/Cite implementation|model internals/.test(clause))).toBe(true)
+    expect(clauses[sourceDiagnosticContextsKey]).toBeUndefined() // The colon is not followed by an interrogative.
+    expect(sourceQueryLiterals(full)).toEqual(literals)
+    expect(literals).toContain('CraftMyLetter')
+    expect(queryEvidenceObligations(full)).toEqual(obligations)
+    expect(sourceDiagnosticQueries(full.replace('CraftMyLetter', 'ParcelDesk'))).toHaveLength(8)
+
+    const natural = 'Trace ParcelDesk lease behavior; validation errors for handles.'
+    expect(sourceDiagnosticQueries(`${natural} Cite implementation source/tests/config/root README.`)).toEqual(sourceDiagnosticQueries(natural))
+    expect(sourceDiagnosticQueries('Trace lease behavior with tests if helpful; validation errors for handles.')).toHaveLength(2)
+    for (const suffix of ['Cite tests that prove rollback.', 'Explain tests for rollback.', 'Include failing tests.']) {
+      expect(sourceDiagnosticQueries(`${natural} ${suffix}`), suffix).toEqual([])
+    }
+    for (const subject of ['"ParcelDesk"', '`ParcelDesk`', 'ParcelDesk()', 'client.ParcelDesk', '#ParcelDesk',
+      'parcelDesk', 'PARCEL_DESK', 'src/ParcelDesk.ts']) {
+      expect(sourceDiagnosticQueries(`Trace ${subject} lease behavior; validation errors for handles.`), subject).toEqual([])
+    }
+    for (const explicit of ['Trace ParcelDesk: how validation works; expiration checks.',
+      'Explain class ParcelDesk; trace validation errors.', 'Find ParcelDesk and OtherDesk; trace validation errors.',
+      'Trace lease behavior; then show ParcelDesk.', 'ParcelDesk; validation errors.',
+      'Trace lease behavior; ParcelDesk; validation errors.']) expect(sourceDiagnosticQueries(explicit), explicit).toEqual([])
+  })
+
+  it('treats a bare topic name lexically only in supplemental queries while preserving raw matches', () => {
+    const value = languageFixture(), full = 'Trace ParcelDesk lifetime behavior', clauses = ['expiration', 'validation errors for handles']
+    const ordinary = searchSourceBodies(value.graph, full, value.root)
+    const searches = searchSourceBodyQuestions(value.graph, [full, ...clauses], value.root, undefined, { allowedOwner: () => true })
+    expect(sourceSupplementalQueryView(full)).toBe(full)
+    expect(sourceQueryLiterals(full)).toEqual(['ParcelDesk'])
+    expect([...searches[0]!.matches]).toEqual([...ordinary.matches])
+    expect(searches[2]!.matches.get(value.target)?.score).toBe(1.5)
+    expect(searches[2]!.matches.get(value.target)?.exact_literal).toBe(false)
+  })
+
+  it('keeps a real named raw owner at the 128 boundary before diagnostic rescue', () => {
+    const value = languageFixture(), names = join(value.root, 'names.ts')
+    writeFileSync(names, [
+      ...Array.from({ length: 127 }, (_, index) => `export function raw${index}() { return "ParcelDesk lifetime errors"; }`),
+      'export function ParcelDesk() {',
+      ...Array.from({ length: 25 }, (_, index) => `  const extra${index} = "unrelated padding";`),
+      '  return "lifetime";', '}',
+    ].join('\n'))
+    const extra = extractJs(names)
+    const graph = buildFromJson({ schema_version: 1,
+      nodes: [...value.graph.nodeEntries().map(([id, attributes]) => ({ ...attributes, id })), ...extra.nodes],
+      edges: extra.edges }, { directed: true })
+    graph.graph.root_path = value.root
+    const named = graph.nodeEntries().find(([, node]) => node.label === 'ParcelDesk()')![0]
+    const full = 'Trace ParcelDesk lifetime errors', ordinary = searchSourceBodies(graph, full, value.root)
+    expect(ordinary.matches.size).toBe(128)
+    expect([...ordinary.matches.keys()].indexOf(named)).toBe(127)
+    expect([...ordinary.matches.values()].every(match => match.exact_literal)).toBe(true)
+    const searches = searchSourceBodyQuestions(graph, [full, 'expiration lifetime', 'validation errors for handles'], value.root,
+      undefined, { allowedOwner: () => true })
+    expect(searches[1]!.matches.has(value.target)).toBe(true)
+    expect([...searches[0]!.matches]).toEqual([...ordinary.matches])
+    expect(searches[0]![sourceDiagnosticAdmissionsKey] ?? []).toEqual([])
   })
 
   it('removes only diagnostic framing votes and preserves authored clauses and code colons', () => {

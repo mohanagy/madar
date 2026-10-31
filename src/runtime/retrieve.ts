@@ -93,7 +93,7 @@ import {
   type RetrievalStageObserver,
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
-import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
+import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceSupplementalQueryView, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
 import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, sourceLocalPriorityKey, sourceClientPriorityKey, sourceSubjectPriorityKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
 import { recoverySourceGuard } from './retrieve/recovery-source-preservation.js'
 import { sourceQuerySymbols, type SourceSymbolOccurrence } from './retrieve/source-query-symbols.js'
@@ -4815,9 +4815,7 @@ function sourceSelectionForTask(
   const diagnosticIds: ReturnType<typeof sourceDiagnosticSeeds> = options.taskIntent === 'debug-flow' && independentBodyPriority && !broadTask && !explicitLevel
     && !behaviorLocation && !operationAnchors.length && firstPosition === undefined && !requested.length
     && !retrievalGate.signals.mentioned_paths.length && !retrievalGate.signals.mentioned_directories?.length
-    && !sourceQueryLiterals(diagnosticQuestion).length
-    && !sourceQuerySymbols(diagnosticQuestion).some(occurrence => occurrence.explicit
-      && (/[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(diagnosticQuestion.slice(occurrence.end))))
+    && sourceSupplementalQueryView(diagnosticQuestion) !== undefined
     && diagnosticExclusions.valid
     ? sourceDiagnosticSeeds(sourceDiagnosticCandidatePool(candidates.filter(node => independentSourceBodyCandidate(graph, node, options, diagnosticRoot)), diagnosticClauseMatches[sourceDiagnosticAdmissionsKey], diagnosticClauseMatches[sourceDiagnosticAlternativesKey]), diagnosticClauseMatches,
       (file, label, text) => !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(file, diagnosticRoot) as never)
