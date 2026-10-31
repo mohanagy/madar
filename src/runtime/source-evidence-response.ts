@@ -445,8 +445,7 @@ function compactPayload(input: RecordValue): RecordValue {
     answerability.verification_targets = unique(answerability.verification_targets.map(value => {
       const target = record(value)
       return typeof target.handle_id === 'string' && handles.has(target.handle_id)
-        ? { handle_id: target.handle_id, ...(target.basis === 'evidence_class'
-          ? pick(target, ['basis', 'obligation_id', 'evidence_class']) : {}) }
+        ? { handle_id: target.handle_id }
         : target
     }))
   }

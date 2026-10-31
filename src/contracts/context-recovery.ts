@@ -27,9 +27,6 @@ export interface MadarCoverageAssessment {
 }
 
 export interface MadarVerificationTarget {
-  /** A class deficit identifies retrieval candidates, not proof of a query-to-owner link. */
-  basis?: 'evidence_class'
-  obligation_id?: string
   handle_id?: string
   evidence_class?: ContextPackEvidenceClass
   focus_files: string[]

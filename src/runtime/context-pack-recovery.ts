@@ -15,7 +15,6 @@ const PREVIEW_NODE_BOOST = 3.5
 
 interface RecoveryAssessment {
   state: MadarAnswerabilityState
-  answerScope: 'complete' | 'partial' | 'none'
   missingObligations: string[]
   verificationTargets: MadarVerificationTarget[]
   strength: 'strong' | 'moderate' | 'weak'
@@ -43,7 +42,6 @@ function assess(result: RetrieveResult, question: string): RecoveryAssessment {
   })
   return {
     state: assessment.answerability.state,
-    answerScope: assessment.answerability.answer_scope,
     missingObligations: assessment.answerability.missing_obligations,
     verificationTargets: assessment.answerability.verification_targets,
     strength: assessment.evidence_strength.level,
@@ -51,14 +49,12 @@ function assess(result: RetrieveResult, question: string): RecoveryAssessment {
   }
 }
 
-function readinessRank(assessment: RecoveryAssessment): number {
-  switch (assessment.state) {
+function readinessRank(state: MadarAnswerabilityState): number {
+  switch (state) {
     case 'ready': return 4
     case 'ready_with_caveat': return 3
     case 'verify_targets': return 2
-    // Resolving a class deficit can leave only unmapped query gaps. Losing a
-    // recovery target is not a regression in the retained partial evidence.
-    case 'insufficient': return assessment.answerScope === 'partial' ? 2 : 1
+    case 'insufficient': return 1
   }
 }
 
@@ -71,8 +67,8 @@ function strengthRank(strength: RecoveryAssessment['strength']): number {
 }
 
 function assessmentImproved(before: RecoveryAssessment, after: RecoveryAssessment): boolean {
-  const beforeReadiness = readinessRank(before)
-  const afterReadiness = readinessRank(after)
+  const beforeReadiness = readinessRank(before.state)
+  const afterReadiness = readinessRank(after.state)
   if (afterReadiness !== beforeReadiness) {
     return afterReadiness > beforeReadiness
   }

@@ -577,39 +577,6 @@ describe('MCP tool profile', () => {
       }
     })
 
-    it('authorizes typed evidence-class targets only through their existing matching handle', () => {
-      const entry = {
-        kind: 'nodes', handle_id: 'expand:explain:supporting:bound', evidence_class: 'supporting', count: 1,
-        preview: [], follow_up: { kind: 'context_pack', task_kind: 'explain', evidence_class: 'supporting',
-          focus_files: ['src/store.ts'], focus_ranges: [{ source_file: 'src/store.ts', start_line: 4, end_line: 8 }] },
-      }
-      const target = { basis: 'evidence_class', obligation_id: 'evidence:supporting',
-        handle_id: entry.handle_id, evidence_class: 'supporting', focus_files: ['src/store.ts'],
-        focus_ranges: entry.follow_up.focus_ranges, reason: 'verify missing evidence:supporting' }
-      const makePayload = (candidate: Record<string, unknown> | undefined, missing = ['evidence:supporting']) => ({
-        task: 'explain', pack: { expandable: [] }, expandable: [structuredClone(entry)],
-        evidence: { answerability: { state: 'verify_targets', answer_scope: 'partial',
-          missing_obligations: missing, verification_targets: candidate ? [structuredClone(candidate)] : [],
-          broad_search_fallback: 'allowed' } },
-      })
-      const valid = constrainStrictContextPackPayload(makePayload(target), { strictContextPackMode: true })
-      expect(valid.expandable).toEqual([entry])
-      expect(valid.evidence.answerability.verification_targets).toEqual([target])
-
-      const { handle_id: _handle, ...withoutHandle } = target
-      for (const [candidate, missing] of [
-        [undefined, ['evidence:supporting']],
-        [withoutHandle, ['evidence:supporting']],
-        [{ ...target, handle_id: 'unknown-handle' }, ['evidence:supporting']],
-        [{ ...target, evidence_class: 'primary' }, ['evidence:supporting']],
-        [{ ...target, obligation_id: 'query:obligation:2' }, ['query:obligation:2']],
-        [target, ['query:obligation:2']],
-      ] as const) {
-        const payload = makePayload(candidate, [...missing]), before = structuredClone(payload)
-        expect(constrainStrictContextPackPayload(payload, { strictContextPackMode: true })).toEqual(before)
-      }
-    })
-
     it('turns a strict file-only verification target into one authorized expansion', async () => {
       const root = createMinimalGraphRoot()
       const graphPath = join(root, 'graph.json')

@@ -3,8 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ContextPackCoverage, ContextPackExpandableRef } from '../../src/contracts/context-pack.js'
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
 import { recoverContextPackResult } from '../../src/runtime/context-pack-recovery.js'
-import { buildMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
-import { buildRetrievalEvidencePlanFromResult } from '../../src/runtime/retrieve/pipeline.js'
 import type { RetrieveResult } from '../../src/runtime/retrieve.js'
 
 function conceptualPlan(finallyCovered: number): NonNullable<RetrieveResult['retrieval_plan']> {
@@ -194,30 +192,6 @@ describe('bounded cumulative context-pack recovery', () => {
     })
   })
 
-  it('accepts real evidence-class recovery when an unrelated query gap still needs evidence', () => {
-    const initial = result({ supportingCovered: false, expandable: [target('expand-supporting', 'supporting')] })
-    const recovered = result({ supportingCovered: true, includeSupportingNode: true })
-    recovered.matched_nodes[1]!.snippet = 'return false'
-    const before = buildRetrievalEvidencePlanFromResult(initial).query_evidence!
-    const after = buildRetrievalEvidencePlanFromResult(recovered).query_evidence!
-    expect(before.missing_obligations.length).toBeGreaterThan(0)
-    expect(after.missing_obligations).toEqual(before.missing_obligations)
-    const runPass = vi.fn(() => recovered)
-    const output = recoverContextPackResult(recoveryGraph(), initial, { question: initial.question, budget: 500 }, runPass)
-
-    expect(runPass).toHaveBeenCalledTimes(1)
-    expect(output.matched_nodes).toEqual(recovered.matched_nodes)
-    expect(output.recovery).toMatchObject({
-      status: 'partial', initial_state: 'verify_targets', final_state: 'insufficient', improved: true,
-      attempts: [expect.objectContaining({ status: 'improved', changed_result: true,
-        missing_obligations_before: before.missing_obligations.length + 1,
-        missing_obligations_after: after.missing_obligations.length })],
-    })
-    expect(buildMadarResponseEvidence({ evidencePlan: buildRetrievalEvidencePlanFromResult(output) }).answerability).toMatchObject({
-      state: 'insufficient', answer_scope: 'partial', verification_targets: [], missing_obligations: after.missing_obligations,
-    })
-  })
-
   it('keeps the cumulative prior result when two bounded attempts remain partial', () => {
     const targets = [target('expand-supporting', 'supporting'), target('expand-alternate', 'alternate')]
     const initial = result({ supportingCovered: false, expandable: targets })
@@ -313,38 +287,6 @@ describe('bounded cumulative context-pack recovery', () => {
       attempts: [],
       improved: false,
     })
-  })
-
-  it('preserves partial source and its cursor without retrying an unrelated generic expansion', () => {
-    const initial = result({ supportingCovered: true, includeSupportingNode: true,
-      expandable: [target('expand-alternate', 'alternate')] })
-    initial.question = 'How does the workflow persist? Also explain audit retention.'
-    Object.assign(initial.matched_nodes[0]!, {
-      snippet: 'export function run() {\n  dispatch()\n[omitted lines 3-5]\n}',
-      snippet_scope: 'symbol', snippet_truncated: true,
-      snippet_line_range: { start_line: 1, end_line: 6 },
-      snippet_omitted_ranges: [{ start_line: 3, end_line: 5 }],
-      source_expand_handle: 'source-expand:0123456789abcdef0123456789abcdef',
-    })
-    const original = structuredClone(initial)
-    const plan = buildRetrievalEvidencePlanFromResult(initial)
-    expect(plan.query_evidence!.missing_obligations.length).toBeGreaterThan(0)
-    const runPass = vi.fn(() => initial)
-    const output = recoverContextPackResult(recoveryGraph(), initial, { question: initial.question, budget: 500 }, runPass)
-
-    expect(runPass).not.toHaveBeenCalled()
-    expect(output.matched_nodes).toEqual(original.matched_nodes)
-    expect(output.relationships).toEqual(original.relationships)
-    expect(output.expandable).toEqual(original.expandable)
-    expect(output.token_count).toBe(original.token_count)
-    expect(output.recovery).toMatchObject({
-      status: 'no_targets', initial_state: 'insufficient', final_state: 'insufficient', attempts: [], improved: false,
-    })
-    expect(buildMadarResponseEvidence({ evidencePlan: buildRetrievalEvidencePlanFromResult(output) }).answerability).toMatchObject({
-      state: 'insufficient', answer_scope: 'partial', verification_targets: [],
-      missing_obligations: plan.query_evidence!.missing_obligations,
-    })
-    expect(initial).toEqual(original)
   })
 
   it('caps new expansion candidates without letting retained originals consume the allowance', () => {

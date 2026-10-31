@@ -4,9 +4,8 @@ import { dirname, join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import type { ContextPackCoverage, ContextPackExpandableRef } from '../../src/contracts/context-pack.js'
+import type { ContextPackCoverage } from '../../src/contracts/context-pack.js'
 import { buildMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
-import { buildRetrievalEvidencePlan } from '../../src/runtime/retrieve/pipeline.js'
 import { createIndexingManifest } from '../../src/pipeline/indexing-outcomes.js'
 import { buildDiscoverySafetyMetadata, relevantDiscoveryExclusions } from '../../src/shared/discovery-safety.js'
 
@@ -71,9 +70,6 @@ describe('mcp-response-evidence', () => {
       broad_search_fallback: 'allowed',
       verification_targets: [expect.objectContaining({
         handle_id: 'expand:explain:supporting:auth',
-        basis: 'evidence_class',
-        obligation_id: 'evidence:supporting',
-        reason: 'retrieve candidates for missing evidence:supporting',
         focus_files: ['src/auth/store.ts'],
       })],
     })
@@ -107,7 +103,7 @@ describe('mcp-response-evidence', () => {
     expect(evidence.agent_directive).toBe('explore_with_caution')
   })
 
-  it('returns insufficient with no answer scope when there is no usable evidence or verification target', () => {
+  it('returns insufficient only when there is no usable evidence or verification target', () => {
     const evidence = buildMadarResponseEvidence({})
 
     expect(evidence.evidence_strength.level).toBe('weak')
@@ -120,57 +116,6 @@ describe('mcp-response-evidence', () => {
     })
     expect(evidence.pack_confidence).toBe('low')
     expect(evidence.agent_directive).toBe('explore_with_caution')
-  })
-
-  it('does not turn generic expansion categories or workflow owners into targets for unrelated gaps', () => {
-    const coverage: ContextPackCoverage = {
-      required_evidence: ['primary'], semantic_required: [], semantic_optional: [],
-      entries: [{ evidence_class: 'primary', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' }],
-      semantic_entries: [], missing_required: [], missing_semantic: [],
-      available_relationships: 0, selected_relationships: 0,
-    }
-    const expandable: ContextPackExpandableRef[] = (['primary', 'supporting'] as const).map(evidence_class => ({
-      kind: 'nodes', handle_id: `expand:explain:${evidence_class}:browse`, evidence_class, count: 1,
-      preview: [{ node_id: evidence_class, label: 'Controller.run', source_file: 'src/controller.ts' }],
-      follow_up: { kind: 'context_pack', task_kind: 'explain', evidence_class, focus_files: ['src/controller.ts'], focus_ranges: [] },
-    }))
-    const input = { coverage, expandable, coveredWorkflowOwners: ['src/controller.ts'] }
-    const queryPlan = buildRetrievalEvidencePlan({
-      ...input, question: 'How does the workflow persist?',
-      matchedNodes: [{ label: 'Controller.run', source_file: 'src/controller.ts', snippet: 'return ready' }],
-      selectedNodeCount: 1,
-    })
-    expect(queryPlan.query_evidence?.missing_obligations.length).toBeGreaterThan(0)
-    const cases: Array<{
-      name: string
-      input: Parameters<typeof buildMadarResponseEvidence>[0]
-      missing: string[]
-      strength: 'moderate' | 'strong'
-    }> = [
-      { name: 'query', input: { ...input, evidencePlan: queryPlan }, missing: queryPlan.query_evidence!.missing_obligations, strength: 'moderate' },
-      { name: 'indexing', input: { ...input, question: 'How does controller.vue work?', indexingManifest: createIndexingManifest({ outcomes: [
-        { path: 'src/controller.vue', kind: 'file', status: 'unsupported', reason: 'unsupported_file_type', capability: null },
-      ] }) }, missing: ['indexing:unsupported_file_type'], strength: 'moderate' },
-      { name: 'semantic', input: { ...input, coverage: { ...coverage,
-        semantic_required: ['tests'], missing_semantic: ['tests'],
-        semantic_entries: [{ category: 'tests', label: 'tests', required: true, available_nodes: 0, selected_nodes: 0, status: 'missing' }],
-        available_relationships: 1, selected_relationships: 1,
-      } }, missing: ['semantic:tests'], strength: 'strong' },
-      { name: 'impact', input: { ...input, impactTraversal: { status: 'depth_limited', depth: 1, node_limit: 500 } },
-        missing: ['impact:depth_limited'], strength: 'moderate' },
-    ]
-    const original = structuredClone(input)
-    for (const entry of cases) {
-      const evidence = buildMadarResponseEvidence(entry.input)
-      expect(evidence.coverage_detail.missing_obligations, entry.name).toEqual(entry.missing)
-      expect(evidence.answerability, entry.name).toMatchObject({
-        state: 'insufficient', answer_scope: 'partial', verification_targets: [], missing_obligations: entry.missing,
-      })
-      expect(evidence.evidence_strength.level, entry.name).toBe(entry.strength)
-      expect(evidence.pack_confidence, entry.name).toBe('medium')
-      expect(evidence.agent_directive, entry.name).toBe('explore_with_caution')
-    }
-    expect(input).toEqual(original)
   })
 
   it('keeps impact traversal limits separate from covered evidence classes', () => {
@@ -233,8 +178,8 @@ describe('mcp-response-evidence', () => {
     expect(buildMadarResponseEvidence({ ...input, impactTraversalSummary: undefined })).toEqual(baseline)
   })
 
-  it('requires a matching class handle rather than workflow-owner metadata for an empty pack', () => {
-    const input: Parameters<typeof buildMadarResponseEvidence>[0] = {
+  it('keeps an exact file target actionable even when the initial pack selected no evidence', () => {
+    const evidence = buildMadarResponseEvidence({
       coverage: {
         required_evidence: ['primary'],
         semantic_required: [],
@@ -249,33 +194,21 @@ describe('mcp-response-evidence', () => {
         selected_relationships: 0,
       },
       coveredWorkflowOwners: ['src/auth/controller.ts'],
-    }
-    const evidence = buildMadarResponseEvidence(input)
+    })
 
     expect(evidence.evidence_strength.level).toBe('weak')
     expect(evidence.answerability).toMatchObject({
-      state: 'insufficient',
+      state: 'verify_targets',
       answer_scope: 'none',
+      caveats: ['no selected evidence; verify the exact target'],
       broad_search_fallback: 'allowed',
-      missing_obligations: ['evidence:primary'],
-      verification_targets: [],
-    })
-    expect(evidence.pack_confidence).toBe('low')
-    expect(evidence.agent_directive).toBe('explore_with_caution')
-    const withClassHandle = buildMadarResponseEvidence({ ...input, expandable: [{
-      kind: 'nodes', handle_id: 'expand:explain:primary:auth', evidence_class: 'primary', count: 1,
-      preview: [{ node_id: 'controller', label: 'Controller.run', source_file: 'src/auth/controller.ts' }],
-      follow_up: { kind: 'context_pack', task_kind: 'explain', evidence_class: 'primary',
-        focus_files: ['src/auth/controller.ts'], focus_ranges: [] },
-    }] })
-    expect(withClassHandle.answerability).toMatchObject({
-      state: 'verify_targets', answer_scope: 'none',
-      caveats: ['no selected evidence; retrieve candidates for the missing evidence class'],
       verification_targets: [expect.objectContaining({
-        handle_id: 'expand:explain:primary:auth', basis: 'evidence_class', obligation_id: 'evidence:primary',
-        reason: 'retrieve candidates for missing evidence:primary',
+        focus_files: ['src/auth/controller.ts'],
+        reason: 'verify evidence:primary',
       })],
     })
+    expect(evidence.pack_confidence).toBe('medium')
+    expect(evidence.agent_directive).toBe('explore_with_caution')
   })
 
   it('downgrades only relevant indexing uncertainty and exposes share-safe reason aggregates', () => {

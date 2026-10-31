@@ -237,6 +237,7 @@ function addMissingObligations(
 
 function verificationTargets(
   expandable: readonly ContextPackExpandableRef[],
+  coveredWorkflowOwners: readonly string[],
   missingObligations: readonly string[],
 ): MadarVerificationTarget[] {
   const missingEvidence = new Set(
@@ -244,19 +245,30 @@ function verificationTargets(
       .filter((obligation) => obligation.startsWith('evidence:'))
       .map((obligation) => obligation.slice('evidence:'.length)),
   )
-  // A class deficit can justify class recovery. Other gap IDs do not establish
-  // that an arbitrary browse scope or previously selected file addresses them.
-  const ordered = expandable.filter((entry) => missingEvidence.has(entry.evidence_class))
-    .sort((left, right) => left.handle_id.localeCompare(right.handle_id))
-  return ordered.slice(0, 4).map((entry): MadarVerificationTarget => ({
-    basis: 'evidence_class',
-    obligation_id: `evidence:${entry.evidence_class}`,
+  const relevantExpandable = missingEvidence.size > 0
+    ? expandable.filter((entry) => missingEvidence.has(entry.evidence_class))
+    : expandable
+  const ordered = [...relevantExpandable].sort((left, right) => (
+    Number(missingEvidence.has(right.evidence_class)) - Number(missingEvidence.has(left.evidence_class))
+    || left.handle_id.localeCompare(right.handle_id)
+  ))
+  const targets = ordered.slice(0, 4).map((entry): MadarVerificationTarget => ({
     handle_id: entry.handle_id,
     evidence_class: entry.evidence_class,
     focus_files: [...new Set(entry.follow_up.focus_files)].slice(0, 5),
     focus_ranges: entry.follow_up.focus_ranges.slice(0, 5),
-    reason: `retrieve candidates for missing evidence:${entry.evidence_class}`,
+    reason: missingEvidence.has(entry.evidence_class)
+      ? `verify missing evidence:${entry.evidence_class}`
+      : `verify evidence:${entry.evidence_class} for ${missingObligations[0] ?? 'unresolved coverage'}`,
   }))
+  if (targets.length > 0 || coveredWorkflowOwners.length === 0 || missingObligations.length === 0) {
+    return targets
+  }
+  return [{
+    focus_files: coveredWorkflowOwners.slice(0, 3),
+    focus_ranges: [],
+    reason: `verify ${missingObligations[0]}`,
+  }]
 }
 
 function answerabilityAssessment(input: {
@@ -307,7 +319,7 @@ function answerabilityAssessment(input: {
     return {
       state: 'verify_targets',
       answer_scope: selectedEvidence > 0 ? 'partial' : 'none',
-      caveats: selectedEvidence > 0 ? [] : ['no selected evidence; retrieve candidates for the missing evidence class'],
+      caveats: selectedEvidence > 0 ? [] : ['no selected evidence; verify the exact target'],
       missing_obligations: input.coverage.missing_obligations,
       verification_targets: input.verificationTargets,
       broad_search_fallback: input.sourceVerificationBlocked ? 'blocked' : 'allowed',
@@ -315,10 +327,8 @@ function answerabilityAssessment(input: {
   }
   return {
     state: 'insufficient',
-    answer_scope: selectedEvidence > 0 ? 'partial' : 'none',
-    caveats: [selectedEvidence > 0
-      ? 'selected evidence is partial; no target is linked to the remaining gaps'
-      : 'no usable evidence or verification target'],
+    answer_scope: 'none',
+    caveats: ['no usable evidence or verification target'],
     missing_obligations: input.coverage.missing_obligations,
     verification_targets: [],
     broad_search_fallback: input.sourceVerificationBlocked ? 'blocked' : 'allowed',
@@ -330,8 +340,7 @@ function compatibilityConfidence(
   strength: MadarEvidenceStrengthAssessment,
   sourceReliabilityFailed: boolean,
 ): MadarResponsePackConfidence {
-  if (sourceReliabilityFailed || (answerability.state === 'insufficient'
-    && (answerability.answer_scope === 'none' || strength.level === 'weak'))) {
+  if (answerability.state === 'insufficient' || sourceReliabilityFailed) {
     return 'low'
   }
   if (answerability.state === 'ready' && strength.level === 'strong') {
@@ -775,6 +784,7 @@ export function assessMadarResponseEvidence(input: {
   coverageDetail = { ...coverageDetail, status: coverage }
   const targets = verificationTargets(
     evidencePlan.expandable,
+    coveredWorkflowOwners,
     coverageDetail.missing_obligations,
   )
   const answerability = answerabilityAssessment({

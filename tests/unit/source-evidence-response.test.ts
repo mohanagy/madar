@@ -31,21 +31,6 @@ function metadataRescueResponse() {
 }
 
 describe('source evidence wire contract', () => {
-  it('retains class recovery attribution when compacting a shared browsing handle', () => {
-    const handle = 'expand:explain:primary:bound'
-    const input = { task: 'explain', pack: { selection_scope: 'task_context' },
-      expandable: [{ handle_id: handle, evidence_class: 'primary', count: 2 }],
-      evidence: { answerability: { advisory: true, missing_obligations: ['evidence:primary', 'query:obligation:2'],
-        verification_targets: [{ handle_id: handle, basis: 'evidence_class', obligation_id: 'evidence:primary',
-          evidence_class: 'primary', reason: 'retrieve candidates for missing evidence:primary' }] } } }
-    const output = finalizeSourceEvidenceResponse(input, 1000)
-    expect(output.evidence).toMatchObject({ answerability: {
-      missing_obligations: ['evidence:primary', 'query:obligation:2'],
-      verification_targets: [{ handle_id: handle, basis: 'evidence_class', obligation_id: 'evidence:primary', evidence_class: 'primary' }],
-    } })
-    expect(output.expandable).toEqual(input.expandable)
-  })
-
   it('checks original verification scope when only its target survives pruning, including verbose fallback', () => {
     const root = mkdtempSync(join(tmpdir(), 'madar-verification-policy-'))
     try {

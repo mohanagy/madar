@@ -1734,7 +1734,6 @@ function strictVerificationAuthorization(payload: Record<string, unknown>): Stri
   const candidate = Array.isArray(answerability.verification_targets)
     ? answerability.verification_targets.find(isObjectRecord) ?? null
     : null
-  if (!candidate) return null
   const requestedHandleId = typeof candidate?.handle_id === 'string' && candidate.handle_id.length > 0
     ? candidate.handle_id
     : null
@@ -1748,12 +1747,6 @@ function strictVerificationAuthorization(payload: Record<string, unknown>): Stri
       candidateFocusFiles.some((file) => entry.follow_up.focus_files.includes(file))
       && entry.evidence_class === candidateEvidenceClass
     ))
-  // Class recovery is justified only by the existing owned class scope and its
-  // still-missing obligation. It must never synthesize a broader file target.
-  if (candidate.basis === 'evidence_class' && (!requestedHandleId || !matchingEntry
-    || matchingEntry.evidence_class !== candidateEvidenceClass
-    || candidate.obligation_id !== `evidence:${candidateEvidenceClass}`
-    || !stringValues(answerability.missing_obligations).includes(candidate.obligation_id))) return null
   const entry = matchingEntry ?? (() => {
     const focusFiles = candidateFocusFiles.length > 0
       ? candidateFocusFiles
@@ -1797,8 +1790,6 @@ function strictVerificationAuthorization(payload: Record<string, unknown>): Stri
   return {
     entry: authorizedEntry,
     target: {
-      ...(candidate.basis === 'evidence_class'
-        ? { basis: candidate.basis, obligation_id: candidate.obligation_id } : {}),
       handle_id: authorizedEntry.handle_id,
       evidence_class: authorizedEntry.evidence_class,
       focus_files: focusFiles,

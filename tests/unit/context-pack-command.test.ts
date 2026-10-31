@@ -1167,65 +1167,6 @@ describe('context-pack-command', () => {
     ]))
   })
 
-  it('keeps typed class targets separate from query gaps introduced by serialization', () => {
-    const prompt = 'Explain invoice creation. Explain archive persistence.'
-    const node = { node_id: 'flow', label: 'Flow.run', source_file: 'src/flow.ts', line_number: 1,
-      snippet: `function run() { const invoiceCreation = createInvoice();\n${'void 0;\n'.repeat(400)}await archivePersistence(); }` }
-    expect(evaluateQueryEvidenceCoverage(prompt, [node])).toMatchObject({ total: 2, covered: 2 })
-    const entry = { kind: 'nodes', handle_id: 'expand:explain:supporting:bound', evidence_class: 'supporting', count: 1,
-      preview: [], follow_up: { kind: 'context_pack', task_kind: 'explain', evidence_class: 'supporting',
-        focus_files: ['src/store.ts'], focus_ranges: [] } }
-    const target = { basis: 'evidence_class', obligation_id: 'evidence:supporting',
-      handle_id: entry.handle_id, evidence_class: 'supporting', focus_files: ['src/store.ts'], focus_ranges: [],
-      reason: 'verify missing evidence:supporting' }
-    for (const variant of ['generic_only', 'reason_only', 'typed_missing', 'typed_covered'] as const) {
-      const classMissing = variant !== 'typed_covered'
-      const targets = variant === 'generic_only' ? [] : variant === 'reason_only'
-        ? [{ handle_id: entry.handle_id, focus_files: ['src/store.ts'], focus_ranges: [], reason: 'verify query:obligation:2' }]
-        : [target]
-      const schema = {
-        task: 'explain', prompt, expandable: [entry],
-        pack: { matched_nodes: [node], relationships: [], community_context: [] },
-        evidence: { pack_confidence: 'medium', agent_directive: 'explore_with_caution', coverage: 'partial',
-          coverage_detail: { status: 'partial', missing_obligations: [
-            ...(classMissing ? ['evidence:supporting'] : []), 'indexing:docs_disabled',
-          ] },
-          answerability: { state: 'verify_targets', answer_scope: 'partial', caveats: ['Runtime activation remains unverified.'],
-            missing_obligations: ['discovery:unreadable_path'], verification_targets: targets, broad_search_fallback: 'allowed' },
-        },
-      }
-      const before = structuredClone(schema), payload = buildAnswerReadyPackSchema(schema, 1_200)
-      expect(schema).toEqual(before)
-      const pack = payload.pack as { matched_nodes: typeof node[] }
-      const evidence = payload.evidence as { coverage_detail: { missing_obligations: string[] }; answerability: {
-        state: string; answer_scope: string; caveats: string[]; missing_obligations: string[];
-        verification_targets?: Array<Record<string, unknown>>;
-      } }
-      expect(pack.matched_nodes).toHaveLength(1)
-      expect(pack.matched_nodes[0]!.snippet).toContain('invoiceCreation')
-      expect(pack.matched_nodes[0]!.snippet).not.toContain('archivePersistence')
-      const coverage = evaluateQueryEvidenceCoverage(prompt, pack.matched_nodes)
-      expect(coverage).toMatchObject({ total: 2, covered: 1, missing_obligations: ['query:obligation:2'] })
-      const missing = [...schema.evidence.coverage_detail.missing_obligations,
-        ...schema.evidence.answerability.missing_obligations, ...coverage.missing_obligations]
-      expect(evidence.answerability.missing_obligations).toEqual(expect.arrayContaining(missing))
-      expect(evidence.coverage_detail.missing_obligations).toEqual(expect.arrayContaining(missing))
-      expect(evidence.answerability.answer_scope).toBe('partial')
-      expect(evidence.answerability.caveats).toContain('Runtime activation remains unverified.')
-      if (variant === 'typed_missing') {
-        expect(evidence.answerability.state).toBe('verify_targets')
-        expect(evidence.answerability.verification_targets).toEqual([target])
-      } else {
-        expect(evidence.answerability.state).toBe('insufficient')
-        expect(evidence.answerability.verification_targets ?? []).toEqual([])
-      }
-      expect((payload.expandable as Array<{ handle_id: string }>).map(ref => ref.handle_id)).toContain(entry.handle_id)
-      expect(payload.serialized_budget).toMatchObject({ max_tokens: 1_200, enforced: true,
-        token_count: estimateQueryTokens(JSON.stringify(payload)) })
-      expect(estimateQueryTokens(JSON.stringify(payload))).toBeLessThanOrEqual(1_200)
-    }
-  })
-
   it('reconciles a retained retrieval-plan receipt to the serialized snippets', () => {
     const prompt = 'Explain the exact end-to-end path from a failed HTTP monitor check to incident creation, notification delivery, and the public status-page result. Compare every distinct overall-status computation. Read-only: do not modify files.'
     const retrieval = retrieveContext(buildCrossLayerMonitorFlowFixture(), {
@@ -1599,7 +1540,6 @@ describe('context-pack-command', () => {
     }
 
     expect(legacyEvidence.coverage).toBe('partial')
-    expect(legacyPayload.evidence).toMatchObject({ pack_confidence: 'low', agent_directive: 'explore_with_caution' })
     expect(legacyEvidence.coverage_detail).toMatchObject({
       status: 'partial',
       missing_obligations: expect.arrayContaining([
