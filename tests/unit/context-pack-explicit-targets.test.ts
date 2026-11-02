@@ -358,6 +358,26 @@ describe('strict context_pack explicit file and symbol targets', () => {
     }
   })
 
+  it('does not repair an invalid navigation-only serializer receipt when filling source', () => {
+    const root = temporaryRoot()
+    const owners = ['first', 'second'].map(name => {
+      const snippet = `export function ${name}() { return 1; }`, sourceFile = `${name}.ts`
+      writeFileSync(join(root, sourceFile), snippet)
+      return { nodeId: name, label: `${name}()`, sourceFile, range: { start: 1, end: 1 }, snippet, validate: () => {} }
+    })
+    expect(() => buildExplicitSourceTargetPayload({ prompt: 'Read exact functions.', task: 'explain', budget: 1000,
+      owners, rootPath: root, governance: { graph_freshness: { status: 'fresh', selected_context_status: 'fresh' } },
+      finalize(input, budget, options) {
+        const pack = (input as RecordValue).pack as RecordValue
+        const payload = finalizeSourceEvidenceResponse({ ...input, pack: { ...pack, matched_nodes: [] } }, budget, options)
+        if ((payload.expandable as unknown[] | undefined)?.length) {
+          (payload.serialized_budget as RecordValue).token_count = -1
+        }
+        return payload
+      },
+    })).toThrow(/serialized budget/)
+  })
+
   it('delivers the first bounded page of one oversized explicit owner without a navigation-only turn', async () => {
     const owner: Owner = { file: 'src/records.ts', symbol: 'processRecords',
       lines: ['export function processRecords(value: number) {',

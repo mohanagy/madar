@@ -202,8 +202,11 @@ function firstExplicitSourcePage(owner: ExplicitSourceTargetOwner, context: Reco
 function fillNavigationOnlySource(payload: RecordValue, owners: readonly ExplicitSourceTargetOwner[],
   generic: ReadonlyMap<string, ReturnType<typeof genericReference>>, budget: number): RecordValue {
   const pack = record(payload.pack), evidence = record(payload.evidence), answerability = record(evidence.answerability)
+  const receipt = record(payload.serialized_budget)
   // Unknown accounting or verification fields need their ordinary serializer.
-  if (Object.keys(payload).some(key => !['task', 'task_intent', 'response_format', 'pack', 'evidence',
+  if (payload.response_format !== SOURCE_EVIDENCE_RESPONSE_FORMAT || receipt.max_tokens !== budget || receipt.enforced !== true
+    || receipt.token_count !== estimateQueryTokens(JSON.stringify(payload)) || Number(receipt.token_count) > budget
+    || Object.keys(payload).some(key => !['task', 'task_intent', 'response_format', 'pack', 'evidence',
     'expandable', 'governance', 'serialized_budget'].includes(key))
     || Object.keys(pack).some(key => !['selection_scope', 'matched_nodes', 'relationships'].includes(key))
     || records(pack.relationships).length
