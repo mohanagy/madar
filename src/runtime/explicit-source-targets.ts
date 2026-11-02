@@ -200,7 +200,7 @@ function firstExplicitSourcePage(owner: ExplicitSourceTargetOwner, context: Reco
  * Do not let an oversized owner reduce a mixed request to navigation alone.
  */
 function fillNavigationOnlySource(payload: RecordValue, owners: readonly ExplicitSourceTargetOwner[],
-  generic: ReadonlyMap<string, ReturnType<typeof genericReference>>, budget: number): RecordValue {
+  generic: ReadonlyMap<string, ReturnType<typeof genericReference>>, budget: number, rootPath: string): RecordValue {
   const pack = record(payload.pack), evidence = record(payload.evidence), answerability = record(evidence.answerability)
   const receipt = record(payload.serialized_budget)
   // Unknown accounting or verification fields need their ordinary serializer.
@@ -230,7 +230,13 @@ function fillNavigationOnlySource(payload: RecordValue, owners: readonly Explici
       if (receipt.token_count === count) { stable = true; break }
       receipt.token_count = count
     }
-    if (stable && receipt.token_count <= budget) retained = candidate
+    if (stable && receipt.token_count <= budget) {
+      owner.validate()
+      const lines = readVerifiedSourceSnapshot(owner.sourceFile, rootPath).lines
+      if (lines.slice(owner.range.start - 1, owner.range.end).join('\n') !== owner.snippet) continue
+      owner.validate()
+      retained = candidate
+    }
   }
   return retained
 }
@@ -317,7 +323,7 @@ export function buildExplicitSourceTargetPayload(options: ExplicitSourceTargetPa
     }
     let missing = owners.filter(owner => !recovered(owner))
     if (!missing.length && !visible.length && owners.length > 1) {
-      payload = fillNavigationOnlySource(payload, owners, generic, options.budget)
+      payload = fillNavigationOnlySource(payload, owners, generic, options.budget, options.rootPath)
       visible = records(record(payload.pack).matched_nodes)
       references = records(payload.expandable)
       advertised.clear()
