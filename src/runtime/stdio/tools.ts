@@ -168,6 +168,7 @@ interface ToolHelpers {
   takeContextPackHandle(handleId: string): unknown
   setContextPackHandle(handleId: string, expansion: unknown): void
   clearContextPackHandles(): void
+  canOfferSourceHandoff?(cursorId: string): boolean
   getContextExpansionQueryGoal?(handleId: string, handle: unknown, binding: string): ContextExpansionQueryGoal | undefined
   getContextPackCache(cacheKey: string): string | undefined
   setContextPackCache(cacheKey: string, payloadText: string): void
@@ -2279,6 +2280,7 @@ function retryEmptyOwnedExpansion(
   const withSourceHandoff = (payload: Record<string, unknown>): Record<string, unknown> => {
     const selection = contextExpansionQuerySelection(stored), handoff = selection?.source_handoff
     if (!queryGoal || payload.expansion_status !== 'no_query_progress' || !selection || !handoff
+      || helpers.canOfferSourceHandoff?.(handoff.source_expand_handle) !== true
       || helpers.getContextPackHandle(handleId) !== stored
       || helpers.getContextExpansionQueryGoal?.(handleId, stored, selection.binding) !== queryGoal) return payload
     const cursor = helpers.getContextPackHandle(handoff.source_expand_handle)

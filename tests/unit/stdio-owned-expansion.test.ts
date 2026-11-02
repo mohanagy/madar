@@ -108,7 +108,6 @@ function handoffFixture() {
 describe('owned generic expansion allocation', () => {
   it('offers a published parent cursor without delivering, advancing or changing explicit source expansion', async () => {
     const f = handoffFixture(), before = JSON.stringify([...f.handles])
-    const explicitBefore = await f.call(1450, f.cursorId)
     const expand = vi.spyOn(continuations, 'expandSourceContinuation')
     const result = await f.call(1450)
     expect(expand).not.toHaveBeenCalled()
@@ -119,7 +118,14 @@ describe('owned generic expansion allocation', () => {
     expect(result.payload.pack.matched_nodes).toEqual([])
     expect(result.payload.expandable).toEqual([{ handle_id: 'owned' }])
     expect(JSON.stringify([...f.handles])).toBe(before)
+    expand.mockRestore()
+    // A failed source request must not suppress a still-useful recovery hint.
+    await expect(f.call(1, f.cursorId)).rejects.toThrow()
+    expect((await f.call(1450)).payload).toHaveProperty('source_handoff')
+    const explicitBefore = await f.call(1450, f.cursorId)
+    expect((await f.call(1450)).payload).not.toHaveProperty('source_handoff')
     expect((await f.call(1450, f.cursorId)).text).toBe(explicitBefore.text)
+    expect((await handoffFixture().call(1450)).payload).toHaveProperty('source_handoff')
     expect((await f.call(128)).payload).not.toHaveProperty('source_handoff')
     f.handles.delete(f.cursorId)
     const absent = await f.call(1450)

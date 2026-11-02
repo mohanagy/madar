@@ -139,3 +139,27 @@ export function publishContextExpansionQuerySelections(
     registry.observe(id, contextExpansionQueryFingerprint(published), selected?.goal, selected?.binding)
   }
 }
+
+/** Bounded transport history. Saturation suppresses hints instead of forgetting use. */
+export class SourceHandoffHistory {
+  private readonly used = new Set<string>()
+  private saturated = false
+  canOffer(id: string): boolean { return !this.saturated && !this.used.has(id) }
+  observe(response: { result?: unknown; error?: unknown }, cursorId: string): void {
+    if (this.saturated || response.error || !record(response.result) || response.result.isError === true
+      || !Array.isArray(response.result.content)) return
+    for (const item of response.result.content) {
+      if (!record(item) || item.type !== 'text' || typeof item.text !== 'string') continue
+      let payload: unknown
+      try { payload = JSON.parse(item.text) } catch { continue }
+      if (!record(payload) || !record(payload.source_continuation)
+        || !Number.isSafeInteger(payload.source_continuation.delivered_lines)
+        || Number(payload.source_continuation.delivered_lines) <= 0) continue
+      if (!this.used.has(cursorId) && this.used.size >= 512) {
+        this.saturated = true
+        this.used.clear()
+      } else this.used.add(cursorId)
+      return
+    }
+  }
+}

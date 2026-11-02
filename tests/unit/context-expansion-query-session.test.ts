@@ -4,7 +4,7 @@ import {
 } from '../../src/runtime/context-expansion-query.js'
 import {
   contextExpansionQueryFingerprint, contextExpansionQuerySelection,
-  publishContextExpansionQuerySelections,
+  publishContextExpansionQuerySelections, SourceHandoffHistory,
 } from '../../src/runtime/context-expansion-query-session.js'
 import { sourceContinuationHandleId, type SourceContinuationHandle } from '../../src/runtime/source-continuation.js'
 
@@ -198,4 +198,19 @@ describe('query selection at final generic-handle publication', () => {
       expect(f.resolve(republished)).toBeUndefined()
     }
   })
+})
+
+it('keeps source-use history bounded without reoffering forgotten cursors', () => {
+  const history = new SourceHandoffHistory()
+  const published = { result: { content: [{ type: 'text', text: JSON.stringify({ source_continuation: { delivered_lines: 1 } }) }] } }
+  history.observe({ error: { message: 'refused' } }, 'unused')
+  history.observe({ result: { content: [{ type: 'text', text: JSON.stringify({ source_continuation: { delivered_lines: 0 } }) }] } }, 'unused')
+  expect(history.canOffer('unused')).toBe(true)
+  for (let index = 0; index < 512; index++) history.observe(published, `cursor:${index}`)
+  expect(history.canOffer('cursor:0')).toBe(false)
+  expect(history.canOffer('unused')).toBe(true)
+  history.observe(published, 'overflow')
+  expect(history.canOffer('cursor:0')).toBe(false)
+  expect(history.canOffer('unused')).toBe(false)
+  expect(new SourceHandoffHistory().canOffer('cursor:0')).toBe(true)
 })

@@ -28,7 +28,8 @@ import {
 import { handleToolCall as handleToolCallRequest } from './stdio/tools.js'
 import { compactDuplicateSourcePositions } from './source-evidence-wire.js'
 import { createContextExpansionQueryRegistry, type ContextExpansionQueryRegistry } from './context-expansion-query.js'
-import { contextExpansionQueryFingerprint, publishContextExpansionQuerySelections } from './context-expansion-query-session.js'
+import { isSourceContinuationHandle } from './source-continuation.js'
+import { contextExpansionQueryFingerprint, publishContextExpansionQuerySelections, SourceHandoffHistory } from './context-expansion-query-session.js'
 import { isSemanticRuntimeAvailable } from './semantic.js'
 import {
   communitiesFromGraph,
@@ -121,6 +122,7 @@ interface StdioSessionState extends ResourceSessionState {
   contextPackHandles?: Map<string, unknown>
   contextPackCache?: ContextPackCacheStore
   /** Transport-lifetime history; ordinary handle/cache clears must not reset it. */
+  sourceHandoffHistory?: SourceHandoffHistory
   contextExpansionQueries?: ContextExpansionQueryRegistry
   /** Slice #81 — per-delta-session node ids already shipped. */
   contextPackNodeIds?: ContextPackNodeIdStore
@@ -946,6 +948,10 @@ export function handleStdioRequest(
         let responseSourceRoot: string | undefined
         let responseRootUnavailable = false
         const writtenHandles = new Map<string, unknown>()
+        const sourceCursorId = toolName === 'context_expand' && typeof toolArguments?.handle_id === 'string'
+          && isSourceContinuationHandle(ensureContextPackHandles(sessionState).get(toolArguments.handle_id))
+          ? toolArguments.handle_id : undefined
+        const handoffHistory = sessionState.sourceHandoffHistory ??= new SourceHandoffHistory()
         const response = handleToolCallRequest(id, graphPath, params, {
           ok,
           failure,
@@ -1028,6 +1034,7 @@ export function handleStdioRequest(
               handles.set(handleId, expansion)
             },
             clearContextPackHandles: () => ensureContextPackHandles(sessionState).clear(),
+            canOfferSourceHandoff: (cursorId) => handoffHistory.canOffer(cursorId),
             getContextExpansionQueryGoal: (handleId, handle, binding) =>
               ensureContextExpansionQueries(sessionState).resolve(handleId, contextExpansionQueryFingerprint(handle), binding),
             getContextPackCache: (cacheKey) => ensureContextPackCache(sessionState).get(cacheKey),
@@ -1072,6 +1079,7 @@ export function handleStdioRequest(
         }
         const finishToolResponse = (toolResponse: StdioResponse): StdioResponse => {
           const compact = compactDuplicateSourcePositions(toolResponse, toolName, toolArguments, responseSourceRoot)
+          if (sourceCursorId) handoffHistory.observe(compact, sourceCursorId)
           publishContextExpansionQuerySelections(compact, writtenHandles, ensureContextPackHandles(sessionState),
             ensureContextExpansionQueries(sessionState))
           return recordContextPackTelemetry(compact)
