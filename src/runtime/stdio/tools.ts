@@ -169,6 +169,7 @@ interface ToolHelpers {
   takeContextPackHandle(handleId: string): unknown
   setContextPackHandle(handleId: string, expansion: unknown): void
   clearContextPackHandles(): void
+  shouldStopDiscovery?(prompt: string, root: string): boolean
   canOfferSourceHandoff?(cursorId: string): boolean
   getContextExpansionQueryGoal?(handleId: string, handle: unknown, binding: string): ContextExpansionQueryGoal | undefined
   getContextPackCache(cacheKey: string): string | undefined
@@ -3326,6 +3327,10 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ? 'source-review'
           : resolvedTask.task_intent,
       })
+      if (task === 'explain' && helpers.shouldStopDiscovery?.(prompt, resolveGraphSourceRoot(graphPath, graph))) {
+        return helpers.failure(id, helpers.jsonrpcServerError,
+          'Repeated discovery added little new source for this unchanged file. Use context_pack with explicit targets or native source verification within the same workspace and exclusions. Source continuations remain available. If evidence is still missing, report an incomplete answer.')
+      }
       const requireFreshGraphInput = Object.hasOwn(toolArguments, 'require_fresh_graph')
         ? toolArguments.require_fresh_graph
         : toolArguments.requireFreshGraph

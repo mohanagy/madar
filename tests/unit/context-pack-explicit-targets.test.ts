@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { DiscoveryProgress } from '../../src/runtime/discovery-progress.js'
 import { exactSourcePromptTargets } from '../../src/runtime/exact-source-prompt.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
@@ -571,4 +572,51 @@ it('keeps broad, quoted, fenced, multi-file and additional-owner requests out of
     'Exact source function .send() in worker.ts. Read other.ts too.',
     'Exact source function .send() in worker.ts.\n```\nmore()\n```',
   ]) expect(exactSourcePromptTargets(prompt), prompt).toBeUndefined()
+})
+
+it('stops repeated discovery for unchanged files while keeping exact lookup and continuations available', async () => {
+  const source = ['export function work() {', ...Array.from({ length: 90 }, (_, i) => `  const v${i} = ${i};`), '  return v0;', '}'].join('\n')
+  const f = fixture({ 'worker.ts': source, 'other.ts': 'export function other() { return 1; }' })
+  const progress = new DiscoveryProgress()
+  Object.assign(f.state, { discoveryProgress: progress })
+  const published = { result: { content: [{ type: 'text', text: JSON.stringify({ pack: { matched_nodes: [{
+    source_file: 'worker.ts', snippet: source, snippet_line_range: { start_line: 1, end_line: 93 },
+  }] } }) }] } }
+  for (let i = 0; i < 3; i++) progress.observe(published, f.root, true)
+  const stopped = await f.response('context_pack', { prompt: 'Explain worker.ts', task: 'explain', budget: 128 })
+  expect(stopped?.error?.message).toMatch(/Repeated discovery.*explicit targets.*native/)
+  expect(estimateQueryTokens(JSON.stringify(stopped?.error))).toBeLessThanOrEqual(128)
+  const exact = await f.call('context_pack', request([{ file: 'worker.ts', symbol: 'work' }], 900))
+  assertPartial(exact)
+  const cursor = exact.pack.matched_nodes.find(node => node.source_expand_handle)?.source_expand_handle
+  expect(cursor).toBeTruthy()
+  const continuation = await f.response('context_expand', { handle_id: cursor, budget: 1500 })
+  expect(continuation?.error).toBeUndefined()
+  expect((await f.response('context_pack', { prompt: 'Exact source function work in worker.ts.', budget: 1000 }))?.error).toBeUndefined()
+  expect((await f.response('context_pack', { prompt: 'Explain other.ts', task: 'explain', budget: 1000 }))?.error).toBeUndefined()
+  expect(new DiscoveryProgress().shouldStop('Explain worker.ts', f.root)).toBe(false)
+  writeFileSync(join(f.root, 'worker.ts'), source.replace('v0 = 0', 'v0 = 1'))
+  expect(progress.shouldStop('Explain worker.ts', f.root)).toBe(false)
+})
+
+it('does not derive stopping authority from fabricated snippets or forgotten history', () => {
+  const root = temporaryRoot(), progress = new DiscoveryProgress()
+  const lines = Array.from({ length: 20 }, (_, i) => `export const v${i} = ${i};`).join('\n')
+  const published = (file: string, snippet: string) => ({ result: { content: [{ type: 'text', text: JSON.stringify({
+    pack: { matched_nodes: [{ source_file: file, snippet, snippet_line_range: { start_line: 1, end_line: 20 } }] },
+  }) }] } })
+  writeFileSync(join(root, 'one.ts'), lines)
+  for (let i = 0; i < 3; i++) progress.observe(published('one.ts', lines.replace('v0', 'wrong')), root, true)
+  expect(progress.shouldStop('Explain one.ts', root)).toBe(false)
+  for (let i = 0; i < 3; i++) progress.observe(published('one.ts', lines), root, true)
+  expect(progress.shouldStop('Explain one.ts', root)).toBe(true)
+  expect(progress.shouldStop('Explain one.ts and other.ts', root)).toBe(false)
+  writeFileSync(join(root, '.madarignore'), 'one.ts\n')
+  expect(progress.shouldStop('Explain one.ts', root)).toBe(false)
+  for (let i = 0; i < 33; i++) {
+    const file = `f${i}.ts`
+    writeFileSync(join(root, file), lines)
+    progress.observe(published(file, lines), root, true)
+  }
+  expect(progress.shouldStop('Explain f0.ts', root)).toBe(false)
 })

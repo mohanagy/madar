@@ -26,6 +26,7 @@ import {
   type ResourceSessionState,
 } from './stdio/resources.js'
 import { handleToolCall as handleToolCallRequest } from './stdio/tools.js'
+import { DiscoveryProgress } from './discovery-progress.js'
 import { compactDuplicateSourcePositions } from './source-evidence-wire.js'
 import { createContextExpansionQueryRegistry, type ContextExpansionQueryRegistry } from './context-expansion-query.js'
 import { isSourceContinuationHandle } from './source-continuation.js'
@@ -122,6 +123,7 @@ interface StdioSessionState extends ResourceSessionState {
   contextPackHandles?: Map<string, unknown>
   contextPackCache?: ContextPackCacheStore
   /** Transport-lifetime history; ordinary handle/cache clears must not reset it. */
+  discoveryProgress?: DiscoveryProgress
   sourceHandoffHistory?: SourceHandoffHistory
   contextExpansionQueries?: ContextExpansionQueryRegistry
   /** Slice #81 — per-delta-session node ids already shipped. */
@@ -948,6 +950,8 @@ export function handleStdioRequest(
         let responseSourceRoot: string | undefined
         let responseRootUnavailable = false
         const writtenHandles = new Map<string, unknown>()
+        const discoveryProgress = sessionState.discoveryProgress ??= new DiscoveryProgress()
+        let discoveryRequest = false
         const sourceCursorId = toolName === 'context_expand' && typeof toolArguments?.handle_id === 'string'
           && isSourceContinuationHandle(ensureContextPackHandles(sessionState).get(toolArguments.handle_id))
           ? toolArguments.handle_id : undefined
@@ -1034,6 +1038,10 @@ export function handleStdioRequest(
               handles.set(handleId, expansion)
             },
             clearContextPackHandles: () => ensureContextPackHandles(sessionState).clear(),
+            shouldStopDiscovery: (prompt, root) => {
+              discoveryRequest = true
+              return discoveryProgress.shouldStop(prompt, root)
+            },
             canOfferSourceHandoff: (cursorId) => handoffHistory.canOffer(cursorId),
             getContextExpansionQueryGoal: (handleId, handle, binding) =>
               ensureContextExpansionQueries(sessionState).resolve(handleId, contextExpansionQueryFingerprint(handle), binding),
@@ -1079,6 +1087,9 @@ export function handleStdioRequest(
         }
         const finishToolResponse = (toolResponse: StdioResponse): StdioResponse => {
           const compact = compactDuplicateSourcePositions(toolResponse, toolName, toolArguments, responseSourceRoot)
+          try {
+            discoveryProgress.observe(compact, resolveGraphSourceRoot(graphPath, loadGraphCached(graphPath)), discoveryRequest)
+          } catch { /* Advisory history must not break a response. */ }
           if (sourceCursorId) handoffHistory.observe(compact, sourceCursorId)
           publishContextExpansionQuerySelections(compact, writtenHandles, ensureContextPackHandles(sessionState),
             ensureContextExpansionQueries(sessionState))
