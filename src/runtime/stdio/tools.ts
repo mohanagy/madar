@@ -2519,6 +2519,7 @@ class FocusedSymbolError extends Error {
 }
 
 interface FocusedSymbolOwner {
+  qualifiedName: string
   nodeId: string
   sourceFile: string
   range: { start: number; end: number }
@@ -2654,7 +2655,7 @@ function focusedSymbolOwner(
     visit(syntax)
     if (concrete !== 1) throw new FocusedSymbolError('context_expand symbol has no unique concrete implementation within this handle scope', true)
     const text = lines.join('\n'), identity = JSON.stringify([canonical, range.start, range.end, qualified])
-    if (!owners.has(identity)) owners.set(identity, { nodeId, sourceFile, range,
+    if (!owners.has(identity)) owners.set(identity, { qualifiedName: qualified, nodeId, sourceFile, range,
       snippet: lines.slice(range.start - 1, range.end).join('\n'),
       validate: () => {
         requireFreshSelectedContext(analyzeGraphContextFreshness(graphPath, graph, { selected_source_files: [sourceFile] }), 'context_expand symbol')
@@ -3266,7 +3267,7 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
               follow_up: { kind: 'context_pack', task_kind: 'explain', evidence_class: 'primary', focus_files: [target.file], focus_ranges: [] } }
             try {
               const owner = focusedSymbolOwner(graph, graphPath, stored, target.symbol, true)
-              return { ...owner, label: String(graph.nodeAttributes(owner.nodeId).label ?? target.symbol) }
+              return { ...owner, label: `${owner.qualifiedName}()` }
             } catch (error) {
               if (error instanceof FocusedSymbolError) {
                 const missingOwner = error.invalidParams && error.message.includes('has no verified function owner')

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -64,7 +64,7 @@ function fixture(files: Record<string, string>) {
     return payload
   }
   const call = async (name: string, args: RecordValue) => parse(await response(name, args), Number(args.budget))
-  return { root, state, response, parse, call }
+  return { root, graphPath, state, response, parse, call }
 }
 
 function request(targets: Target[], budget = 4000): RecordValue {
@@ -528,4 +528,24 @@ describe('strict context_pack explicit file and symbol targets', () => {
     expect(stale?.result).toBeUndefined()
     expect([...f.state.contextPackHandles!]).toEqual(handlesBefore)
   })
+})
+
+// Older version-native indexes can store display labels without class qualification.
+it('uses verified declaration names for explicit methods with legacy display labels', async () => {
+  const f = fixture({ 'worker.ts': 'export class Worker {\n  send() { return "sent"; }\n  private decode() { return "decoded"; }\n}\nexport class Other {\n  send() { return "other"; }\n}\n' })
+  const graph = JSON.parse(readFileSync(f.graphPath, 'utf8'))
+  for (const node of graph.nodes) {
+    if (typeof node.label === 'string' && /send\(\)$/.test(node.label)) node.label = '.send()'
+    if (typeof node.label === 'string' && /decode\(\)$/.test(node.label)) node.label = '.decode()'
+  }
+  writeFileSync(f.graphPath, JSON.stringify(graph))
+  const payload = await f.call('context_pack', request([
+    { file: 'worker.ts', symbol: 'Worker.send' }, { file: 'worker.ts', symbol: 'Worker.decode' },
+  ]))
+  expect(payload.pack.matched_nodes.map(node => node.label)).toEqual(['Worker.send()', 'Worker.decode()'])
+  expect(JSON.stringify(payload)).toContain('decoded')
+  expect(JSON.stringify(payload)).not.toContain('return \"other\"')
+  assertPartial(payload)
+  const ambiguous = await f.response('context_pack', request([{ file: 'worker.ts', symbol: 'send' }]))
+  expect(ambiguous?.error?.message).toMatch(/ambiguous/)
 })
