@@ -23,7 +23,7 @@ madar try "how does authentication work?"
 
 `madar try` builds or reuses the local graph, prints an experimental source preview, and shows an optional agent-install command. It does not modify your source code.
 
-For a concrete example, Madar's included password-reset workspace contains this path:
+Included password-reset example:
 
 ```text
 account-routes.ts
@@ -33,7 +33,7 @@ account-routes.ts
   -> sendPasswordResetEmail()
 ```
 
-This is an example of a partial starting path. The agent must verify the conditions, dependencies, and failure paths needed for its answer.
+Verify required conditions, dependencies, and failure paths.
 
 ## Connect Your Agent
 
@@ -60,7 +60,7 @@ When the file and function are known, use this MCP request:
 
 Replace the example file and symbol with those in your repository. Targets select function source, not a complete workflow; inspect omissions and returned continuation handles. A direct source read remains appropriate.
 
-For a bounded experiment, set `MADAR_EXPERIMENTAL_EXACT_SOURCE_ONLY=1` in the MCP server environment. This selects the strict tool surface and requires explicit `targets`; broad discovery, graph navigation, and generic discovery expansions are rejected. Only continuation handles produced by successful exact-target requests in that session are accepted, without symbol overrides. Discover real names with scoped native search first. The flag is off by default; whole-task accuracy and token savings for this mode remain unverified.
+Experimental opt-in: set `MADAR_EXPERIMENTAL_EXACT_SOURCE_ONLY=1` in the MCP server environment. It requires explicit `targets` and accepts only their session-owned continuations, without symbol overrides. Broad discovery and graph navigation are rejected. Discover real names with scoped native search. Default: off. Accuracy and token savings remain unverified.
 
 Without exact targets, questions such as these use experimental discovery:
 
@@ -122,7 +122,7 @@ The [MCP response shape](https://github.com/mohanagy/madar/blob/main/docs/mcp-re
 
 ## Use Madar Without MCP
 
-The CLI can generate and inspect context without installing an agent integration:
+Generate and inspect context from the CLI:
 
 ```bash
 madar generate .
@@ -168,7 +168,7 @@ Treat every local MCP install, hook, or agent profile as part of your local trus
 
 ## Evidence and Limits
 
-Madar publishes the prompts, answers, traces, and share-safe reports behind its benchmark statements. Two public experiment types answer different questions and should not be compared as if they were the same test.
+Madar publishes benchmark prompts, answers, traces, and share-safe reports. The experiments below measure different conditions.
 
 ### Controlled v0.30 evidence
 
@@ -209,7 +209,7 @@ See the [0.33.0 changelog](https://github.com/mohanagy/madar/blob/main/CHANGELOG
 
 ## Contributing
 
-The most useful contributions right now are tests on real TypeScript and Node.js repositories, missed-context reports, Windows/WSL/MCP reliability improvements, framework detection, and clearer setup examples.
+Useful contributions include real-repository tests, missed-context reports, Windows/WSL/MCP reliability fixes, framework detection, and clearer setup examples.
 
 Open issues or pull requests against the maintained default branch. Before opening a PR, run:
 
