@@ -60,6 +60,8 @@ When the file and function are known, use this MCP request:
 
 Replace the example file and symbol with those in your repository. Targets select function source, not a complete workflow; inspect omissions and returned continuation handles. A direct source read remains appropriate.
 
+For a bounded experiment, set `MADAR_EXPERIMENTAL_EXACT_SOURCE_ONLY=1` in the MCP server environment. This selects the strict tool surface and requires explicit `targets`; broad discovery, graph navigation, and generic discovery expansions are rejected. Only continuation handles produced by successful exact-target requests in that session are accepted, without symbol overrides. Discover real names with scoped native search first. The flag is off by default; whole-task accuracy and token savings for this mode remain unverified.
+
 Without exact targets, questions such as these use experimental discovery:
 
 ```text

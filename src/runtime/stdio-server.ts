@@ -15,7 +15,7 @@ import { watcherStateBlocksGraphReads } from '../contracts/watcher-state.js'
 import { DirectedGraphRequiredError } from './direction.js'
 import { diffGraphs } from './diff.js'
 import { buildGraphSummary } from './graph-summary.js'
-import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, isToolEnabledInProfile, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
+import { MCP_PROMPTS, MCP_TOOLS, activeMcpTools, experimentalExactSourceOnly, isToolEnabledInProfile, resolveToolProfileFromEnv, type McpPromptDefinition } from './stdio/definitions.js'
 import { handleCompletion, handlePromptGet, promptDefinitionsForGraph, readStoredCommunityLabels } from './stdio/prompts.js'
 import {
   emitResourceNotifications,
@@ -121,6 +121,8 @@ interface StdioSessionState extends ResourceSessionState {
   logLevel: McpLogLevel
   contextPromptSessions?: Map<string, ContextSessionState>
   contextPackHandles?: Map<string, unknown>
+  /** Provenance by stored object identity; evicted handles are not retained. */
+  exactSourceHandles?: WeakSet<object>
   contextPackCache?: ContextPackCacheStore
   /** Transport-lifetime history; ordinary handle/cache clears must not reset it. */
   discoveryProgress?: DiscoveryProgress
@@ -775,6 +777,7 @@ export function handleStdioRequest(
   try {
     const params = request.params
     const toolProfile = resolveToolProfileFromEnv()
+    const exactSourceOnly = experimentalExactSourceOnly()
     const strictContextPackProfile = toolProfile === 'strict'
 
     if (strictContextPackProfile && STRICT_DISABLED_LEGACY_GRAPH_METHODS.has(method)) {
@@ -805,7 +808,9 @@ export function handleStdioRequest(
             title: MCP_SERVER_TITLE,
             version: MCP_SERVER_VERSION,
           },
-          instructions: strictContextPackProfile
+          instructions: exactSourceOnly
+            ? 'Experimental exact-source-only mode. Use scoped native search to discover actual function names, then context_pack with explicit targets [{file, symbol}] and optional task=explain. Do not guess symbols. Only continuations from successful exact-target requests in this session may be expanded. Broad discovery, graph navigation, prompts and resources are disabled. Direct source reads remain available. No token savings or quality improvement is established for this mode.'
+            : strictContextPackProfile
             ? `Strict profile: ${SOURCE_RETRIEVAL_ADMISSION} For exact JS/TS functions, use context_pack targets [{file, symbol}] with task=explain. For experimental discovery, ask focused source questions with relevant symbols, literals, and paths; exclude hypothetical values from search terms unless they are actual source literals. Use context_expand for listed handles when more source is needed, or read named files directly. Continue investigating when evidence is incomplete. Graph prompts, resources, and completions are disabled.`
             : 'Use tools/list to discover graph tools, then tools/call to query the generated graph.',
         })
@@ -915,7 +920,7 @@ export function handleStdioRequest(
         // package is actually resolvable on this machine — agents cannot pass
         // parameters that are absent from the schema.
         const semanticAvailable = isSemanticRuntimeAvailable(graphRootPath(graphPath) ?? resolveGraphSourceRoot(graphPath))
-        return ok(id, { tools: activeMcpTools(toolProfile, { semanticAvailable }) })
+        return ok(id, { tools: activeMcpTools(toolProfile, { semanticAvailable, exactSourceOnly }) })
       }
       case 'tools/call': {
         const toolName = stringParam(params, 'name')
@@ -927,6 +932,21 @@ export function handleStdioRequest(
           )
         }
         const toolArguments = recordParam(params, 'arguments')
+        if (exactSourceOnly) {
+          if (toolName === 'context_pack' && !Object.hasOwn(toolArguments ?? {}, 'targets')) {
+            return failure(id, JSONRPC_INVALID_PARAMS,
+              'Exact-source-only mode requires explicit targets [{file, symbol}]. Discover real symbols with scoped native source search; broad discovery is disabled.')
+          }
+          if (toolName === 'context_expand') {
+            const handleId = toolArguments?.handle_id
+            const stored = typeof handleId === 'string' ? ensureContextPackHandles(sessionState).get(handleId) : undefined
+            if (Object.hasOwn(toolArguments ?? {}, 'symbol') || !stored || typeof stored !== 'object'
+              || !sessionState.exactSourceHandles?.has(stored)) {
+              return failure(id, JSONRPC_INVALID_PARAMS,
+                'Exact-source-only mode accepts only continuations from successful exact-target requests in this session, without a symbol override.')
+            }
+          }
+        }
         if (strictContextPackProfile && toolName === 'context_pack') {
           const unsupported = Object.keys(toolArguments ?? {}).filter((key) => key !== 'prompt' && key !== 'task' && key !== 'budget' && key !== 'targets')
           if (unsupported.length > 0) {
@@ -1093,6 +1113,13 @@ export function handleStdioRequest(
           if (sourceCursorId) handoffHistory.observe(compact, sourceCursorId)
           publishContextExpansionQuerySelections(compact, writtenHandles, ensureContextPackHandles(sessionState),
             ensureContextExpansionQueries(sessionState))
+          if (exactSourceOnly && !compact.error && !(compact.result as { isError?: boolean } | undefined)?.isError) {
+            const admitted = sessionState.exactSourceHandles ??= new WeakSet<object>()
+            for (const handleId of writtenHandles.keys()) {
+              const handle = ensureContextPackHandles(sessionState).get(handleId)
+              if (handle && typeof handle === 'object') admitted.add(handle)
+            }
+          }
           return recordContextPackTelemetry(compact)
         }
         return response instanceof Promise ? response.then(finishToolResponse) : finishToolResponse(response)
