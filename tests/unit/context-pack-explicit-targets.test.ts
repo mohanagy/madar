@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { exactSourcePromptTargets } from '../../src/runtime/exact-source-prompt.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { resolveSourceSnippet } from '../../src/runtime/source-evidence-response.js'
@@ -548,4 +549,26 @@ it('uses verified declaration names for explicit methods with legacy display lab
   assertPartial(payload)
   const ambiguous = await f.response('context_pack', request([{ file: 'worker.ts', symbol: 'send' }]))
   expect(ambiguous?.error?.message).toMatch(/ambiguous/)
+})
+
+it('routes an explicit file/function prose instruction through exact lookup', async () => {
+  const f = fixture({ 'worker.ts': 'export class Worker {\n  send() { return "sent"; }\n}\nexport function extractProfileContext() { return "context"; }\n' })
+  const payload = await f.call('context_pack', {
+    prompt: 'Exact source function .send() in worker.ts and extractProfileContext definition. Show arguments passed to upstream call.', budget: 3000,
+  })
+  expect(payload.pack.matched_nodes.map(node => node.label)).toEqual(['Worker.send()', 'extractProfileContext()'])
+  assertPartial(payload)
+})
+
+it('keeps broad, quoted, fenced, multi-file and additional-owner requests out of exact prose routing', () => {
+  expect(exactSourcePromptTargets('Exact source function .send() in worker.ts.')).toEqual([{ file: 'worker.ts', symbol: 'send' }])
+  for (const prompt of [
+    'Explain send() in worker.ts.',
+    'Exact source function .send() in worker.ts.backup.',
+    '"Exact source function .send() in worker.ts."',
+    'Exact source function .send() in worker.ts. Show decodeContext().',
+    'Exact source function .send() in worker.ts and other.ts.',
+    'Exact source function .send() in worker.ts. Read other.ts too.',
+    'Exact source function .send() in worker.ts.\n```\nmore()\n```',
+  ]) expect(exactSourcePromptTargets(prompt), prompt).toBeUndefined()
 })

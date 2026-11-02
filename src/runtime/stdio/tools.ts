@@ -94,6 +94,7 @@ import { createSourceRecoveryPartition, filterSourceRecoveryResponse, restrictSo
   verifySourceRecoveryPartition, type SourceRecoveryPartition } from '../source-recovery-partition.js'
 import { sourceOutsideFileBudgetPreference } from '../source-container-budget.js'
 import { protectSourceDiscoveryWitnesses, scopedSourceDeferralCore } from '../source-scoped-deferral.js'
+import { exactSourcePromptTargets } from '../exact-source-prompt.js'
 import { parseExplicitSourceTargets, buildExplicitSourceTargetPayload, ExplicitSourceTargetError } from '../explicit-source-targets.js'
 import { applySourceLexicalCaution, sourceLexicalDefinitionContext } from '../source-lexical-context.js'
 import { resolveExplicitSourceCallees } from '../explicit-source-callees.js'
@@ -3254,14 +3255,18 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
         return helpers.failure(id, helpers.jsonrpcInvalidParams, `budget must be a number between ${MIN_SOURCE_EVIDENCE_BUDGET} and ${helpers.maxStdioTokenBudget}`)
       }
       const resolvedBudget = budget ?? 3000
-      if (Object.hasOwn(toolArguments, 'targets')) {
+      const exactTargets = Object.hasOwn(toolArguments, 'targets') ? toolArguments.targets
+        : (rawTask === null || rawTask === 'explain')
+          && Object.keys(toolArguments).every(key => ['prompt', 'task', 'budget'].includes(key))
+          ? exactSourcePromptTargets(prompt) : undefined
+      if (Object.hasOwn(toolArguments, 'targets') || exactTargets !== undefined) {
         const unsupported = Object.keys(toolArguments).filter(key => !['prompt', 'task', 'budget', 'targets'].includes(key))
         if (unsupported.length || (Object.hasOwn(toolArguments, 'task') && toolArguments.task !== 'explain')) {
           return helpers.failure(id, helpers.jsonrpcInvalidParams,
             'context_pack targets accepts only prompt, targets, optional task=explain and budget')
         }
         try {
-          const targets = parseExplicitSourceTargets(toolArguments.targets)
+          const targets = parseExplicitSourceTargets(exactTargets)
           const owners = targets.map(target => {
             const stored: StoredContextPackHandle = { prompt, task: 'explain', task_intent: 'explain',
               follow_up: { kind: 'context_pack', task_kind: 'explain', evidence_class: 'primary', focus_files: [target.file], focus_ranges: [] } }
