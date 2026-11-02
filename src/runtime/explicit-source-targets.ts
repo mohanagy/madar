@@ -196,6 +196,42 @@ function firstExplicitSourcePage(owner: ExplicitSourceTargetOwner, context: Reco
   return undefined
 }
 
+/** Once all owners have recovery, use spare budget for complete small owners.
+ * Do not let an oversized owner reduce a mixed request to navigation alone.
+ */
+function fillNavigationOnlySource(payload: RecordValue, owners: readonly ExplicitSourceTargetOwner[],
+  generic: ReadonlyMap<string, ReturnType<typeof genericReference>>, budget: number): RecordValue {
+  const pack = record(payload.pack), evidence = record(payload.evidence), answerability = record(evidence.answerability)
+  // Unknown accounting or verification fields need their ordinary serializer.
+  if (Object.keys(payload).some(key => !['task', 'task_intent', 'response_format', 'pack', 'evidence',
+    'expandable', 'governance', 'serialized_budget'].includes(key))
+    || Object.keys(pack).some(key => !['selection_scope', 'matched_nodes', 'relationships'].includes(key))
+    || records(pack.relationships).length
+    || Object.keys(evidence).some(key => !['answerability', 'agent_directive'].includes(key))
+    || Object.keys(answerability).some(key => !['state', 'answer_scope', 'advisory', 'caveats', 'broad_search_fallback'].includes(key))) return payload
+  let retained = payload
+  const ordered = owners.map(owner => ({ owner, tokens: estimateQueryTokens(JSON.stringify(sourceNode(owner))) }))
+    .sort((left, right) => left.tokens - right.tokens).map(entry => entry.owner)
+  for (const owner of ordered) {
+    const fallback = generic.get(owner.nodeId)
+    if (!fallback) continue
+    const candidate = structuredClone(retained)
+    record(candidate.pack).matched_nodes = [...records(record(candidate.pack).matched_nodes), sourceNode(owner)]
+    candidate.expandable = records(candidate.expandable).filter(ref => ref.handle_id !== fallback.ref.handle_id)
+    if (!records(candidate.expandable).length) delete candidate.expandable
+    const receipt = { max_tokens: budget, token_count: 0, enforced: true }
+    candidate.serialized_budget = receipt
+    let stable = false
+    for (let pass = 0; pass < 12; pass++) {
+      const count = estimateQueryTokens(JSON.stringify(candidate))
+      if (receipt.token_count === count) { stable = true; break }
+      receipt.token_count = count
+    }
+    if (stable && receipt.token_count <= budget) retained = candidate
+  }
+  return retained
+}
+
 /** Every successful result contains either the complete owner or a current-scope recovery route. */
 export function buildExplicitSourceTargetPayload(options: ExplicitSourceTargetPayloadOptions): {
   payload: RecordValue; handles: Map<string, ExplicitSourceTargetStoredHandle>
@@ -248,8 +284,8 @@ export function buildExplicitSourceTargetPayload(options: ExplicitSourceTargetPa
         if (page.child) staged.set(page.child.id, page.child.handle)
       }
     }
-    const visible = records(record(payload.pack).matched_nodes)
-    const references = records(payload.expandable)
+    let visible = records(record(payload.pack).matched_nodes)
+    let references = records(payload.expandable)
     const advertised = new Set<string>()
     const recovered = (owner: ExplicitSourceTargetOwner): boolean => {
       const node = visible.find(value => value.node_id === owner.nodeId && value.label === owner.label
@@ -276,7 +312,14 @@ export function buildExplicitSourceTargetPayload(options: ExplicitSourceTargetPa
       advertised.add(fallback.ref.handle_id)
       return true
     }
-    const missing = owners.filter(owner => !recovered(owner))
+    let missing = owners.filter(owner => !recovered(owner))
+    if (!missing.length && !visible.length && owners.length > 1) {
+      payload = fillNavigationOnlySource(payload, owners, generic, options.budget)
+      visible = records(record(payload.pack).matched_nodes)
+      references = records(payload.expandable)
+      advertised.clear()
+      missing = owners.filter(owner => !recovered(owner))
+    }
     if (!missing.length) {
       // Source finalization is allowed to compact or omit these owners, never to widen selection.
       if (visible.some(node => !owners.some(owner => node.node_id === owner.nodeId && node.label === owner.label

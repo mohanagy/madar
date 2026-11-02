@@ -334,6 +334,30 @@ describe('strict context_pack explicit file and symbol targets', () => {
     await refuse(request([good, util]), /missing|unreadable|source|file|owner|fresh|stale|changed/i)
   })
 
+  it('delivers fitting small owners beside an oversized owner and retains its scoped recovery', async () => {
+    const large = ['export function large(input: number) {',
+      ...Array.from({ length: 1000 }, (_, index) => `  input = (input + ${index}) % 65521;`),
+      '  return input;', '}'].join('\n')
+    const small = 'export function small() {\n  return 1;\n}'
+    const other = 'export function other() {\n  return 2;\n}'
+    const f = fixture({ 'large.ts': large, 'small.ts': small, 'other.ts': other })
+    const largeTarget = { file: 'large.ts', symbol: 'large' }
+    const smallTargets = [{ file: 'small.ts', symbol: 'small' }, { file: 'other.ts', symbol: 'other' }]
+    for (const targets of [[largeTarget, ...smallTargets], [...smallTargets, largeTarget]]) {
+      const payload = await f.call('context_pack', request(targets, 1000))
+      assertPartial(payload)
+      expect(payload.pack.matched_nodes.find(node => node.label === 'small()')?.snippet).toBe(small)
+      expect(payload.pack.matched_nodes.find(node => node.label === 'other()')?.snippet).toBe(other)
+      const recovery = payload.expandable?.find(ref => ref.symbols[0] === 'large')
+      expect(recovery).toBeDefined()
+      expect(payload.expandable).toHaveLength(1)
+      const page = await f.call('context_expand', { handle_id: recovery!.handle_id, budget: 1000 })
+      assertPartial(page)
+      expect(page.pack.matched_nodes[0]?.label).toBe('large()')
+      expect(page.pack.matched_nodes[0]?.source_expand_handle).toBeTruthy()
+    }
+  })
+
   it('delivers the first bounded page of one oversized explicit owner without a navigation-only turn', async () => {
     const owner: Owner = { file: 'src/records.ts', symbol: 'processRecords',
       lines: ['export function processRecords(value: number) {',
