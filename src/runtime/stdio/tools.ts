@@ -3327,7 +3327,8 @@ export function handleToolCall(id: string | number | null, graphPath: string, pa
           ? 'source-review'
           : resolvedTask.task_intent,
       })
-      if (task === 'explain' && helpers.shouldStopDiscovery?.(prompt, resolveGraphSourceRoot(graphPath, graph))) {
+      if (task === 'explain' && Object.keys(toolArguments).every(key => ['prompt', 'task', 'budget'].includes(key))
+        && helpers.shouldStopDiscovery?.(prompt, resolveGraphSourceRoot(graphPath, graph))) {
         return helpers.failure(id, helpers.jsonrpcServerError,
           'Repeated discovery added little new source for this unchanged file. Use context_pack with explicit targets or native source verification within the same workspace and exclusions. Source continuations remain available. If evidence is still missing, report an incomplete answer.')
       }
